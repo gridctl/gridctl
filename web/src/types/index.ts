@@ -579,6 +579,8 @@ export interface AgentProjectionStatus {
   target: string;
   /** identity = canonical bytes copied verbatim; lossy = client-dialect render. */
   render: 'identity' | 'lossy';
+  /** Pack that applied this projection; absent outside packs. */
+  pack?: string;
   state: AgentProjectionState;
   /** Lossy-render report (dropped frontmatter keys) or drift detail. */
   detail?: string;

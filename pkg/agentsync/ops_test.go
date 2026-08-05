@@ -381,3 +381,31 @@ func TestSync_UnavailableClientSkippedOrErrors(t *testing.T) {
 		t.Error("unknown client must error")
 	}
 }
+
+// TestStatuses_CarryPackTag pins the provenance ride-along: a projection
+// applied by a pack reports the tag on its status row; untagged rows
+// omit it (json omitempty keeps the wire shape unchanged for them).
+func TestStatuses_CarryPackTag(t *testing.T) {
+	mgr, _, _ := newTestManager(t, "alpha")
+	ctx := context.Background()
+	if _, err := mgr.Sync(ctx, nil, SyncOptions{Pack: "team-pack"}); err != nil {
+		t.Fatal(err)
+	}
+	statuses, err := mgr.Statuses(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(statuses) != 1 || statuses[0].Pack != "team-pack" {
+		t.Fatalf("statuses = %+v, want pack tag team-pack", statuses)
+	}
+
+	// A plain re-sync never strips the tag; an untagged fresh projection
+	// carries none.
+	if _, err := mgr.Sync(ctx, nil, SyncOptions{Force: true}); err != nil {
+		t.Fatal(err)
+	}
+	statuses, _ = mgr.Statuses(ctx)
+	if statuses[0].Pack != "team-pack" {
+		t.Errorf("re-sync stripped the pack tag: %+v", statuses[0])
+	}
+}

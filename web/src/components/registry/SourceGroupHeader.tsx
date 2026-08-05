@@ -1,5 +1,4 @@
-import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useState } from 'react';
 import { ExternalLink, FolderGit2, PenLine, RefreshCw } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { showToast } from '../ui/Toast';
@@ -8,7 +7,7 @@ import { extractRepoInfo } from '../../lib/repo';
 import { summarizeSkillResults, syncCountsMessage } from '../../lib/skillSync';
 import { DriftSyncDialog } from './DriftSyncDialog';
 import type { SkillSourceStatus } from '../../types';
-import { useRegistryStore } from '../../stores/useRegistryStore';
+import { PackChip } from './PackChip';
 
 interface SourceGroupHeaderProps {
   /** The imported source for this group, or undefined for the "My Skills" group. */
@@ -41,16 +40,6 @@ export function SourceGroupHeader({
 }: SourceGroupHeaderProps) {
   const [updating, setUpdating] = useState(false);
   const [confirmDrift, setConfirmDrift] = useState(false);
-  const navigate = useNavigate();
-  // Reverse ownership: a source imported through a pack shows the pack
-  // name, joining the packs list (origin.source) to this source's name.
-  // Free client-side join; absent until the packs list has loaded.
-  const packs = useRegistryStore((st) => st.packs);
-  const owningPack = useMemo(
-    () => (source ? (packs ?? []).find((pk) => pk.origin.source === source.name) ?? null : null),
-    [packs, source],
-  );
-
   const repoInfo = source ? extractRepoInfo(source.repo) : null;
   const label = source ? (repoInfo ? `${repoInfo.owner}/${repoInfo.repo}` : source.name) : 'My Skills';
   const shortSha = source?.commitSha ? source.commitSha.slice(0, 7) : null;
@@ -118,19 +107,7 @@ export function SourceGroupHeader({
               {shortSha}
             </span>
           )}
-          {owningPack && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                navigate(`/library?kind=pack&selected=${encodeURIComponent(owningPack.name)}`);
-              }}
-              title={`Imported through pack ${owningPack.name}; open the pack detail`}
-              className="text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-secondary/30 bg-secondary/10 text-secondary hover:bg-secondary/20 transition-colors flex-shrink-0"
-            >
-              pack: {owningPack.name}
-            </button>
-          )}
+          {source && <PackChip source={source.name} />}
           {source && repoInfo && (
             <a
               href={`https://github.com/${repoInfo.owner}/${repoInfo.repo}`}

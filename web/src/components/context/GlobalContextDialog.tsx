@@ -24,6 +24,7 @@ import { cn } from '../../lib/cn';
 import { Modal } from '../ui/Modal';
 import { IconButton } from '../ui/IconButton';
 import { StatePill } from '../ui/StatePill';
+import { PACK_CHIP_CLASS } from '../registry/PackChip';
 import { showToast } from '../ui/Toast';
 import { useSplitPane } from '../../hooks/useSplitPane';
 import { SplitPaneHandle } from '../ui/SplitPane';
@@ -899,6 +900,13 @@ function FragmentStatusLine({
     <li className="flex items-center gap-2">
       <StatePill state={f.state} />
       <span className="text-[11px] text-text-secondary font-mono truncate flex-1">{f.name}</span>
+      {f.pack && (
+        // Static inside the modal: navigating under an open dialog would
+        // change the route invisibly, so provenance here is display only.
+        <span title={`Applied by pack ${f.pack}`} className={PACK_CHIP_CLASS}>
+          pack: {f.pack}
+        </span>
+      )}
       {f.state === 'drifted' && (
         <ClientAction
           label="Review"

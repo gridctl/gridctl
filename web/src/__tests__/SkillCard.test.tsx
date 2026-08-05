@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import '@testing-library/jest-dom';
+import { MemoryRouter } from 'react-router';
 import { render, screen, cleanup, within } from '@testing-library/react';
 import { SkillCard } from '../components/registry/SkillCard';
 import type { AgentSkill, SkillSourceStatus } from '../types';
@@ -25,14 +26,14 @@ const noop = () => {};
 
 function renderCard(s: AgentSkill, source?: SkillSourceStatus) {
   return render(
-    <SkillCard
+    <MemoryRouter><SkillCard
       skill={s}
       onEnable={noop}
       onDisable={noop}
       onEdit={noop}
       onDelete={noop}
       source={source}
-    />,
+    /></MemoryRouter>,
   );
 }
 

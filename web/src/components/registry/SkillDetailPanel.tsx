@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { AlertTriangle, BookOpen, Code2, Eye, GitBranch, GitCompareArrows, LockOpen, Pencil, Power, PowerOff, ShieldOff, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { PackChip } from './PackChip';
 import { updateSkillSource } from '../../lib/api';
 import { summarizeSkillResults, syncCountsMessage } from '../../lib/skillSync';
 import { showToast } from '../ui/Toast';
@@ -197,6 +198,7 @@ export function SkillDetailPanel({
                 {repoInfo ? `${repoInfo.owner}/${repoInfo.repo}` : source.name}
               </span>
             )}
+            {source && <PackChip source={source.name} />}
             {/* The chip is the natural place to ask "modified how?", so it
                 opens the same diff the editor's Compare action does. */}
             {hasLocalEdits && source && (

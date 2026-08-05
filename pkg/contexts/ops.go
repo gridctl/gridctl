@@ -69,6 +69,11 @@ type ClientStatus struct {
 type FragmentStatus struct {
 	Name  string `json:"name"`
 	State string `json:"state"`
+	// Pack names the pack that applied this fragment projection; empty
+	// for projections made outside a pack. Additive provenance for UI
+	// chips. Whole-document (single-file and compiled) context entries
+	// record no pack tag, so provenance is per-fragment only.
+	Pack string `json:"pack,omitempty"`
 }
 
 // SyncOptions configure a sync pass.

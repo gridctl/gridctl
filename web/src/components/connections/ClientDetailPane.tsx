@@ -4,6 +4,7 @@ import { Bot, Cable, ChevronDown, ChevronRight, Copy, Globe, Plug, Radio, Wrench
 import { cn } from '../../lib/cn';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { StatePill } from '../ui/StatePill';
+import { PackChip } from '../registry/PackChip';
 import { showToast } from '../ui/Toast';
 import {
   ClientLinkError,
@@ -346,6 +347,7 @@ export function ClientDetailPane({
             >
               {row.agent}
             </button>
+            {row.pack && <PackChip pack={row.pack} />}
             {row.detail && (
               <span className="text-[10px] text-text-muted/70 truncate" title={row.detail}>
                 {row.detail}

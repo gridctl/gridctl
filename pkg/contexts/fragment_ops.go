@@ -228,17 +228,17 @@ func (m *Manager) fragmentStatusFor(t Target, flf *FragmentLockFile, fragments [
 		data, err := os.ReadFile(entry.Target)
 		if err != nil {
 			missing = append(missing, f.Name)
-			cs.Fragments = append(cs.Fragments, FragmentStatus{Name: f.Name, State: StateTargetMissing})
+			cs.Fragments = append(cs.Fragments, FragmentStatus{Name: f.Name, State: StateTargetMissing, Pack: entry.Pack})
 			continue
 		}
 		if contentHash(string(data)) != entry.InstalledHash {
 			drifted = append(drifted, f.Name)
-			cs.Fragments = append(cs.Fragments, FragmentStatus{Name: f.Name, State: StateDrifted})
+			cs.Fragments = append(cs.Fragments, FragmentStatus{Name: f.Name, State: StateDrifted, Pack: entry.Pack})
 			continue
 		}
 		if canonicalContentHash(string(f.Raw)) != entry.CanonicalHash {
 			stale = append(stale, f.Name)
-			cs.Fragments = append(cs.Fragments, FragmentStatus{Name: f.Name, State: StateStale})
+			cs.Fragments = append(cs.Fragments, FragmentStatus{Name: f.Name, State: StateStale, Pack: entry.Pack})
 			continue
 		}
 		synced = append(synced, f.Name)
