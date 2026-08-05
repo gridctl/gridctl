@@ -21,6 +21,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/mcpauth"
 	"github.com/gridctl/gridctl/pkg/metrics"
+	"github.com/gridctl/gridctl/pkg/packops"
 	"github.com/gridctl/gridctl/pkg/pins"
 	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/registry"
@@ -143,6 +144,13 @@ type Server struct {
 	agentsManager *agentsync.Manager
 	agentsOnce    sync.Once
 	agentsErr     error
+
+	// Pack orchestration engine (pkg/packops), lazily built from the
+	// other kind managers on first use; tests inject a temp-home engine
+	// via SetPacksManagers.
+	packsManagers *packops.Managers
+	packsOnce     sync.Once
+	packsErr      error
 }
 
 // SetWiringManager injects the wiring ownership manager. Tests use it
@@ -656,6 +664,15 @@ func (s *Server) Handler() http.Handler {
 	// `gridctl project status|adopt --kind wiring`.
 	mux.HandleFunc("GET /api/project/wiring/status", s.handleProjectWiringStatus)
 	mux.HandleFunc("POST /api/project/wiring/adopt", s.handleProjectWiringAdopt)
+
+	// Pack endpoints (pkg/packops): the REST face of `gridctl pack
+	// add|apply|status|remove`, plus the wizard's read-only preview.
+	mux.HandleFunc("GET /api/packs", s.handlePacksList)
+	mux.HandleFunc("POST /api/packs", s.handlePackAdd)
+	mux.HandleFunc("POST /api/packs/preview", s.handlePackPreview)
+	mux.HandleFunc("GET /api/packs/{name}", s.handlePackGet)
+	mux.HandleFunc("POST /api/packs/{name}/apply", s.handlePackApply)
+	mux.HandleFunc("DELETE /api/packs/{name}", s.handlePackRemove)
 
 	// Static files (UI) - served at root
 	if s.staticFS != nil {
