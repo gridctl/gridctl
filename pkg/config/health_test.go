@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/gridctl/gridctl/pkg/flags"
 	"github.com/gridctl/gridctl/pkg/pricing"
 )
 
@@ -312,29 +313,43 @@ func TestValidateWithIssues_ExperimentalIssues(t *testing.T) {
 		assert.Greater(t, result.WarningCount, 0)
 	})
 
-	t.Run("enabled known flag reports as info", func(t *testing.T) {
+	t.Run("graduated flag warns with migration message", func(t *testing.T) {
 		stack := base()
 		stack.Experimental = map[string]bool{"transport_dual_stack": true}
 		result := ValidateWithIssues(stack)
-		require.True(t, result.Valid)
+		require.True(t, result.Valid, "graduated names warn, never block (Article IX)")
 		var found bool
 		for _, issue := range result.Issues {
 			if issue.Field == "experimental.transport_dual_stack" {
+				found = true
+				assert.Equal(t, SeverityWarning, issue.Severity)
+				assert.Contains(t, issue.Message, "graduated in")
+			}
+		}
+		require.True(t, found, "expected a migration warning for the graduated flag")
+	})
+
+	t.Run("enabled experimental flag reports as info", func(t *testing.T) {
+		reg, err := flags.NewRegistry(flags.Flag{
+			Name:        "test_flag",
+			Description: "synthetic flag for validation tests",
+			Stage:       flags.StageExperimental,
+			Since:       "0.1.0",
+			GraduatesBy: "99.0.0",
+		})
+		require.NoError(t, err)
+		stack := base()
+		stack.Experimental = map[string]bool{"test_flag": true, "off_flag": false}
+		result := &ValidationResult{Valid: true}
+		result.addExperimentalIssues(reg, stack)
+		require.Len(t, result.Issues, 2, "expected the unknown-name warning and the info line")
+		var found bool
+		for _, issue := range result.Issues {
+			if issue.Field == "experimental.test_flag" {
 				found = true
 				assert.Equal(t, SeverityInfo, issue.Severity)
 			}
 		}
 		require.True(t, found, "expected an info line for the enabled flag")
-	})
-
-	t.Run("disabled known flag stays silent", func(t *testing.T) {
-		stack := base()
-		stack.Experimental = map[string]bool{"transport_dual_stack": false}
-		result := ValidateWithIssues(stack)
-		for _, issue := range result.Issues {
-			if strings.HasPrefix(issue.Field, "experimental.") {
-				t.Fatalf("unexpected experimental issue: %+v", issue)
-			}
-		}
 	})
 }
