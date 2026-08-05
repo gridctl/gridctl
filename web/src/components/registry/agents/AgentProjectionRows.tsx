@@ -1,4 +1,6 @@
 import { useCallback, useState } from 'react';
+import { useNavigate } from 'react-router';
+import { Cable } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { Modal } from '../../ui/Modal';
 import { StatePill } from '../../ui/StatePill';
@@ -169,6 +171,7 @@ function ProjectionRow({
   onUnsync: () => void;
   onReviewDrift: () => void;
 }) {
+  const navigate = useNavigate();
   return (
     <li className="flex flex-col gap-1 px-1 py-2">
       {/* flex-wrap: at the 300px right-rail minimum the chips stack onto the
@@ -185,6 +188,14 @@ function ProjectionRow({
           {agentClientName(s.client)}
           {s.experimental && <span className="ml-1 text-[10px] text-text-secondary">(experimental)</span>}
         </span>
+        <button
+          onClick={() => navigate(`/connections?client=${encodeURIComponent(s.client)}`)}
+          title={`Open ${agentClientName(s.client)} in Connections`}
+          aria-label={`Open ${agentClientName(s.client)} in Connections`}
+          className="p-0.5 rounded text-text-muted/60 hover:text-primary transition-colors flex-shrink-0"
+        >
+          <Cable size={12} />
+        </button>
         <span className="ml-auto flex items-center gap-1.5">
           {(s.state === 'stale' || s.state === 'target-missing') && (
             <RowAction label={busy ? 'Syncing…' : 'Sync'} disabled={busy} onClick={onSync} />
