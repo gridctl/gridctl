@@ -2180,7 +2180,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/context
 
 Per-client fields: `slug`, `name`, `supported`, `available` (client detected on this machine), `experimental` (omitted when false), `strategy` (`dedicated-file`, `import-shim`, or `block`; omitted for unsupported clients), `target_path`, `state`, `detail` (human-readable reason or hint), and `synced_at` (omitted when never synced).
 
-In fragments mode, multi-file clients also carry a `fragments` array with one `{ "name", "state" }` entry per out-of-sync fragment (`stale`, `drifted`, or `target-missing`). In-sync fragments are not listed, and the array is omitted when every fragment is in sync.
+In fragments mode, multi-file clients also carry a `fragments` array with one `{ "name", "state" }` entry per out-of-sync fragment (`stale`, `drifted`, or `target-missing`), plus `pack` naming the pack that applied the projection when one did. In-sync fragments are not listed, and the array is omitted when every fragment is in sync.
 
 **State values:** `"in-sync"` | `"stale"` | `"drifted"` | `"target-missing"` | `"never-synced"` | `"unsupported"`
 
@@ -2804,10 +2804,13 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project/agents/
     "render": "identity",
     "state": "in-sync",
     "experimental": true,
+    "pack": "team-pack",
     "synced_at": "2026-08-04T12:00:00Z"
   }
 ]
 ```
+
+`pack` names the pack that applied the projection and is omitted for projections made outside a pack.
 
 #### `POST /api/project/agents/sync`
 
