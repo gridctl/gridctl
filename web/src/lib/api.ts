@@ -2620,6 +2620,8 @@ export type ContextMode = 'single-file' | 'multi-file' | 'compiled';
 export interface ContextFragmentStatus {
   name: string;
   state: ContextState;
+  /** Pack that applied this fragment projection; absent outside packs. */
+  pack?: string;
 }
 
 export interface ContextClientStatus {
