@@ -264,6 +264,45 @@ func TestStdioTransportConnect(t *testing.T) {
 	}
 }
 
+// TestStdioTransportStateless verifies the stdio server/discover probe
+// path against a 2026-07-28-only stdio server: era resolution with no
+// handshake, tool listing, and a tool call carrying resultType.
+func TestStdioTransportStateless(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	client := mcp.NewProcessClient("test-stdio-modern", []string{mockStdioBin, "-protocol", "2026-07-28"}, "", nil)
+	t.Cleanup(func() { client.Close() })
+
+	if err := client.Initialize(ctx); err != nil {
+		t.Fatalf("Initialize (stdio stateless): %v", err)
+	}
+	if client.Era() != mcp.EraStateless {
+		t.Fatalf("era = %q, want stateless (probe must classify without a handshake)", client.Era())
+	}
+	if err := client.RefreshTools(ctx); err != nil {
+		t.Fatalf("RefreshTools (stdio stateless): %v", err)
+	}
+	if len(client.Tools()) == 0 {
+		t.Fatal("expected tools from the modern stdio server, got none")
+	}
+
+	result, err := client.CallTool(ctx, "echo", map[string]any{"message": "stdio-modern"})
+	if err != nil {
+		t.Fatalf("CallTool(echo) via modern stdio: %v", err)
+	}
+	if len(result.Content) == 0 || !strings.Contains(result.Content[0].Text, "stdio-modern") {
+		t.Fatalf("unexpected echo result: %+v", result.Content)
+	}
+	if result.ResultType != mcp.ResultTypeComplete {
+		t.Errorf("resultType = %q, want complete", result.ResultType)
+	}
+}
+
 // TestTransportConnectError verifies that connecting to a port with nothing
 // listening returns an error promptly.
 func TestTransportConnectError(t *testing.T) {
