@@ -2,19 +2,17 @@ import type { RefObject } from 'react';
 import { Search, X } from 'lucide-react';
 import { cn } from '../../lib/cn';
 
-// Filter chrome for the Per-Tool breakdown: search over tool/server names,
-// one server facet, and a priced/unpriced facet. All state lives in the URL
-// (the host owns the params); this component is presentation only. The
-// result-count line is a live region so screen readers hear the filter take
-// effect, matching the workspace's polite-announcement pattern.
+// Filter chrome for the Per-Tool breakdown: search over tool/server names and
+// one server facet. All state lives in the URL (the host owns the params);
+// this component is presentation only. The result-count line is a live region
+// so screen readers hear the filter take effect, matching the workspace's
+// polite-announcement pattern.
 export function ToolsFilterBar({
   query,
   onQuery,
   servers,
   activeServer,
   onServer,
-  priced,
-  onPriced,
   onClearAll,
   matchCount,
   totalCount,
@@ -25,14 +23,12 @@ export function ToolsFilterBar({
   servers: string[];
   activeServer: string | null;
   onServer: (server: string | null) => void;
-  priced: 'yes' | 'no' | null;
-  onPriced: (priced: 'yes' | 'no' | null) => void;
   onClearAll: () => void;
   matchCount: number;
   totalCount: number;
   searchInputRef: RefObject<HTMLInputElement | null>;
 }) {
-  const activeFilterCount = (query ? 1 : 0) + (activeServer ? 1 : 0) + (priced ? 1 : 0);
+  const activeFilterCount = (query ? 1 : 0) + (activeServer ? 1 : 0);
 
   return (
     <div className="px-3 py-2 space-y-1.5 border-b border-border/30">
@@ -86,26 +82,6 @@ export function ToolsFilterBar({
               )}
             >
               {server}
-            </button>
-          );
-        })}
-        <span aria-hidden="true" className="w-px h-3 bg-border/50 mx-1" />
-        {(['yes', 'no'] as const).map((value) => {
-          const active = priced === value;
-          return (
-            <button
-              key={value}
-              type="button"
-              onClick={() => onPriced(active ? null : value)}
-              aria-pressed={active}
-              className={cn(
-                'px-2 py-0.5 rounded-full border text-[10px] transition-colors',
-                active
-                  ? 'border-primary/40 bg-primary/15 text-primary'
-                  : 'border-border/40 text-text-muted hover:text-text-secondary hover:bg-surface-highlight/40',
-              )}
-            >
-              {value === 'yes' ? 'Priced' : 'Unpriced'}
             </button>
           );
         })}
