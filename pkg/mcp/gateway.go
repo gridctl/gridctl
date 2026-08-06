@@ -179,10 +179,6 @@ type Gateway struct {
 	// replaced wholesale on apply and hot-reload.
 	callGates []CallGate
 
-	// costSettler receives each priced call's cost after observation so
-	// budget windows settle synchronously. Guarded by mu.
-	costSettler CostSettler
-
 	// groupPolicy is the compiled `groups:` block: the exposure-layer
 	// curation axis. nil means no groups are configured and only the
 	// default /mcp surface exists. Guarded by mu; replaced wholesale on
@@ -296,13 +292,6 @@ func (g *Gateway) SetCallGates(gates []CallGate) {
 	g.callGates = gates
 }
 
-// SetCostSettler installs the post-call cost settlement hook. Passing nil
-// removes it.
-func (g *Gateway) SetCostSettler(s CostSettler) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.costSettler = s
-}
 
 // SetGroupPolicy installs the compiled tool-group policy. Passing nil
 // removes all groups (their endpoints 404 and bound sessions are denied).
@@ -1957,21 +1946,6 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 				Result:     result,
 			})
 			setGenAISpanAttributes(span, client.Name(), toolName, clientID, summary, result)
-			// Settle the priced cost into budget windows synchronously, on
-			// the same path that computed it. Unpriced calls settle nothing
-			// (the attribution gap is documented, never papered over).
-			if summary.HasCost {
-				g.mu.RLock()
-				settler := g.costSettler
-				g.mu.RUnlock()
-				if settler != nil {
-					settler.SettleToolCallCost(ctx, GateCall{
-						PrefixedTool:   params.Name,
-						ServerName:     client.Name(),
-						ClientAccessID: ClientAccessIDFromContext(ctx),
-					}, summary.CostUSD)
-				}
-			}
 		} else {
 			go obs.ObserveToolCall(client.Name(), replicaID, params.Arguments, result)
 		}
@@ -2025,9 +1999,6 @@ func (g *Gateway) checkCallGates(ctx context.Context, prefixedName string) (Gate
 // Cache-token attributes are emitted only when the underlying tool result
 // reported cache usage; otherwise they are omitted entirely (per the
 // March 2026 GenAI spec, zero-valued counters convey "not reported").
-//
-// gen_ai.cost.usd is gridctl-specific until the GenAI spec defines a cost
-// attribute; it is documented in docs/cost-observability.md.
 func setGenAISpanAttributes(span trace.Span, serverName, toolName, clientID string, summary ToolCallSummary, result *ToolCallResult) {
 	if span == nil || !span.IsRecording() {
 		return
@@ -2055,12 +2026,6 @@ func setGenAISpanAttributes(span trace.Span, serverName, toolName, clientID stri
 		if result.Usage.CacheCreationTokens > 0 {
 			attrs = append(attrs, attribute.Int64("gen_ai.usage.cache_creation.input_tokens", int64(result.Usage.CacheCreationTokens)))
 		}
-	}
-	if summary.Model != "" {
-		attrs = append(attrs, attribute.String("gen_ai.request.model", summary.Model))
-	}
-	if summary.HasCost {
-		attrs = append(attrs, attribute.Float64("gen_ai.cost.usd", summary.CostUSD))
 	}
 	span.SetAttributes(attrs...)
 }
