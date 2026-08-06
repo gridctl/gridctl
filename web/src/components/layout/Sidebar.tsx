@@ -16,7 +16,6 @@ import {
   ArrowUpRight,
   ShieldCheck,
   SlidersHorizontal,
-  DollarSign,
 } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { cn } from '../../lib/cn';
@@ -39,8 +38,6 @@ import { useUIStore } from '../../stores/useUIStore';
 import { useAccessLensStore } from '../../stores/useAccessLensStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { formatRelativeTime } from '../../lib/time';
-import { EffectiveModelTag } from '../pricing/EffectiveModelTag';
-import { MODEL_PRECEDENCE_HINT } from '../pricing/constants';
 import type { MCPServerNodeData, ResourceNodeData, ClientNodeData } from '../../types';
 
 export function Sidebar() {
@@ -52,12 +49,6 @@ export function Sidebar() {
   const autoscaleDecisions = useStackStore((s) => s.autoscaleDecisions);
   const clients = useStackStore((s) => s.clients);
   const mcpServers = useStackStore((s) => s.mcpServers);
-  const clientModels = useStackStore((s) => s.clientModels);
-  const effectiveClientModels = useStackStore((s) => s.effectiveClientModels);
-  const effectiveServerModels = useStackStore((s) => s.effectiveServerModels);
-  const defaultModel = useStackStore((s) => s.defaultModel);
-  const costAttribution = useStackStore((s) => s.costAttribution);
-  const setPricingManagerOpen = useUIStore((s) => s.setPricingManagerOpen);
   const enableAccessLens = useAccessLensStore((s) => s.setEnabled);
   const openAccessLensEditor = useAccessLensStore((s) => s.openSlideOver);
   const { openDetachedWindow } = useWindowManager();
@@ -446,69 +437,6 @@ export function Sidebar() {
                 >
                   <SlidersHorizontal size={14} />
                   Edit Scope
-                </button>
-              </div>
-            </InspectorSection>
-          );
-        })()}
-
-        {/* Pricing Section (clients and MCP servers) — which model this
-            node's calls are priced as, with a path into the manager. */}
-        {(isClient || isServer) && (() => {
-          const declared = isClient
-            ? clientModels[clientData?.slug ?? '']
-            : mcpServers.find((s) => s.name === data.name)?.model;
-          const effective = isClient
-            ? effectiveClientModels[clientData?.slug ?? '']
-            : effectiveServerModels[data.name];
-          // Show the read-only Effective line only when it adds information
-          // beyond the declared line: a mixed blend or unpriced traffic.
-          const showEffective =
-            effective && (effective.provenance === 'mixed' || effective.provenance === 'none');
-          return (
-            <InspectorSection title="Pricing" icon={DollarSign}>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center gap-3">
-                  <span className="text-sm text-text-muted">
-                    {isClient ? 'Priced as' : 'Pricing model'}
-                  </span>
-                  {declared ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-surface-highlight/60 border border-border/40 px-2 py-0.5">
-                      <span className="text-[10px] font-mono text-text-primary">{declared}</span>
-                      <span className="text-[9px] text-text-muted/70">
-                        {isClient ? '· client' : '· server'}
-                      </span>
-                    </span>
-                  ) : !isClient && defaultModel ? (
-                    <span className="text-xs font-mono text-text-muted">
-                      default: {defaultModel}
-                    </span>
-                  ) : (
-                    <span className="text-xs text-text-muted">
-                      {isClient && costAttribution ? 'per-server' : 'not configured'}
-                    </span>
-                  )}
-                </div>
-                {showEffective && effective && (
-                  <div className="flex justify-between items-center gap-3">
-                    <span className="text-sm text-text-muted" title={MODEL_PRECEDENCE_HINT}>
-                      Effective
-                    </span>
-                    <EffectiveModelTag effective={effective} onClick={() => setPricingManagerOpen(true)} />
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setPricingManagerOpen(true)}
-                  className={cn(
-                    'w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-all',
-                    'bg-surface-elevated/60 border border-border/50',
-                    'hover:bg-surface-highlight hover:border-text-muted/30',
-                    'text-text-secondary hover:text-text-primary',
-                  )}
-                >
-                  <DollarSign size={12} />
-                  Edit Pricing Models
                 </button>
               </div>
             </InspectorSection>
