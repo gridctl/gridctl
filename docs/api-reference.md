@@ -632,7 +632,7 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/optimize?min_i
 }
 ```
 
-`impact_tokens_per_week` is the projected weekly token saving, assuming roughly 500 prompts per week; findings that cannot be projected report `0`. Returns `503` when no metrics accumulator is configured; `404` when `stack` does not match the active stack.
+`impact_tokens_per_week` is the projected weekly token saving: schema heuristics assume roughly 500 prompts per week, and `format_savings_shortfall` normalizes its measured savings over the observation window. Findings that cannot be projected report `0`. Returns `503` when no metrics accumulator is configured; `404` when `stack` does not match the active stack.
 
 ---
 
