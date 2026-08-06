@@ -18,7 +18,7 @@ func limitsTestStack(limits *config.LimitsConfig) *config.Stack {
 func TestComputeDiff_LimitsOnlyChange(t *testing.T) {
 	old := limitsTestStack(nil)
 	new := limitsTestStack(&config.LimitsConfig{
-		Budgets: []config.BudgetLimit{{Client: "claude-code", MaxUSD: 5, Period: "daily"}},
+		RateLimits: []config.RateLimit{{Client: "claude-code", CallsPerMinute: 30}},
 	})
 
 	diff := ComputeDiff(old, new)
@@ -41,7 +41,6 @@ func TestComputeDiff_LimitsOnlyChange(t *testing.T) {
 func TestComputeDiff_LimitsIdentical(t *testing.T) {
 	mk := func() *config.LimitsConfig {
 		return &config.LimitsConfig{
-			Budgets:    []config.BudgetLimit{{Server: "github", MaxUSD: 5, Period: "daily"}},
 			RateLimits: []config.RateLimit{{Server: "github", CallsPerMinute: 30}},
 		}
 	}
@@ -63,14 +62,14 @@ func TestComputeDiff_LimitsSetToNil(t *testing.T) {
 	}
 }
 
-func TestComputeDiff_LimitsCapEdit(t *testing.T) {
+func TestComputeDiff_LimitsRateEdit(t *testing.T) {
 	old := limitsTestStack(&config.LimitsConfig{
-		Budgets: []config.BudgetLimit{{Server: "github", MaxUSD: 5, Period: "daily"}},
+		RateLimits: []config.RateLimit{{Server: "github", CallsPerMinute: 30}},
 	})
 	new := limitsTestStack(&config.LimitsConfig{
-		Budgets: []config.BudgetLimit{{Server: "github", MaxUSD: 10, Period: "daily"}},
+		RateLimits: []config.RateLimit{{Server: "github", CallsPerMinute: 60}},
 	})
 	if !ComputeDiff(old, new).LimitsChanged {
-		t.Error("expected a max_usd edit to be detected")
+		t.Error("expected a calls_per_minute edit to be detected")
 	}
 }
