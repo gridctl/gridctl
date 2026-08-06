@@ -192,7 +192,7 @@ Downstream authorization for external servers declared with `auth: {type: oauth}
 
 | Command | Purpose |
 |---|---|
-| `gridctl optimize` | Surface unused servers and tools with projected weekly token impact (assumes ~500 prompts/week). |
+| `gridctl optimize` | Surface unused servers and tools with projected weekly token impact (schema heuristics assume ~500 prompts/week). |
 | `gridctl optimize --stack <name>` | Pick a specific stack when more than one is running. |
 | `gridctl optimize --min-impact 5000` | Filter findings below a weekly token impact threshold (info findings always shown). |
 | `gridctl optimize --severity warn,critical` | Allowlist by severity. |
