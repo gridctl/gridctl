@@ -64,34 +64,13 @@ type Server struct {
 	gatewayAddr   string // e.g. "http://localhost:8180" — used to build MCP config for CLI proxy
 	tokenizerName string // active tokenizer mode: "embedded" or "api"
 
-	// modelAttribution returns the server -> model mapping used to price
-	// tool calls. Nil (or an empty map) means no server-level cost
-	// attribution is configured. Must be safe for concurrent calls.
-	modelAttribution func() map[string]string
-
-	// clientModelAttribution returns the client ID -> model mapping
-	// (stack.yaml client_models) used to price tool calls by calling
-	// client. Nil (or an empty map) means no client-level attribution is
-	// configured. Must be safe for concurrent calls.
-	clientModelAttribution func() map[string]string
-
-	// declaredServerModels returns the server -> model mapping as DECLARED
-	// in stack.yaml (per-server model: only, no default_model folded in).
-	// The UI needs the declared value as the edit baseline; the effective
-	// value comes from modelAttribution. Must be safe for concurrent calls.
-	declaredServerModels func() map[string]string
-
-	// defaultModel returns the gateway-level default_model from stack.yaml,
-	// or "" when none is configured. Must be safe for concurrent calls.
-	defaultModel func() string
-
 	// features returns the enabled experimental flags (stack.yaml
 	// `experimental:` plus env overrides), for the /api/status features
 	// payload. Nil means no flag support is wired. Must be safe for
 	// concurrent calls and must reflect hot-reload swaps.
 	features func() []FeatureStatus
 
-	// limitsStatus returns the budgets/rate-limits consumption snapshot for
+	// limitsStatus returns the rate-limits state snapshot for
 	// GET /api/limits. Nil means the builder wired no limits support (the
 	// endpoint then reports configured: false). Must be safe for concurrent
 	// calls and must reflect hot-reload policy swaps.
@@ -312,15 +291,6 @@ func (s *Server) SetTokenizerName(name string) {
 	s.tokenizerName = name
 }
 
-// SetModelAttribution sets a getter for the server -> model mapping used to
-// price tool calls. The getter (rather than a static map) lets hot reloads of
-// `model:` / `default_model:` reach handlers without re-wiring; it must be
-// safe for concurrent calls. Feeds the optimize model stats and the
-// /api/status cost_attribution flag.
-func (s *Server) SetModelAttribution(get func() map[string]string) {
-	s.modelAttribution = get
-}
-
 // FeatureStatus is one enabled experimental flag as exposed on /api/status.
 // Read-only display metadata: the UI never toggles flags (they are configured
 // in stack.yaml and cannot be changed from the browser).
@@ -344,83 +314,6 @@ func (s *Server) featureList() []FeatureStatus {
 		return nil
 	}
 	return s.features()
-}
-
-// SetClientModelAttribution sets a getter for the client ID -> model mapping
-// (stack.yaml client_models) used to price tool calls by calling client.
-// Same contract as SetModelAttribution: the getter follows hot reloads and
-// must be safe for concurrent calls. Feeds the /api/status client_models
-// exposure, the cost_attribution flag, and the /api/clients model field.
-func (s *Server) SetClientModelAttribution(get func() map[string]string) {
-	s.clientModelAttribution = get
-}
-
-// modelAttributionMap returns the current server -> model mapping, or nil
-// when no attribution getter is wired or nothing is configured.
-func (s *Server) modelAttributionMap() map[string]string {
-	if s.modelAttribution == nil {
-		return nil
-	}
-	return s.modelAttribution()
-}
-
-// clientModelAttributionMap returns the current client -> model mapping, or
-// nil when no attribution getter is wired or nothing is configured.
-func (s *Server) clientModelAttributionMap() map[string]string {
-	if s.clientModelAttribution == nil {
-		return nil
-	}
-	return s.clientModelAttribution()
-}
-
-// SetDeclaredServerModels sets a getter for the server -> model mapping as
-// declared in stack.yaml (per-server model: only). Same contract as
-// SetModelAttribution: the getter follows hot reloads and must be safe for
-// concurrent calls. Feeds the /api/status server model exposure.
-func (s *Server) SetDeclaredServerModels(get func() map[string]string) {
-	s.declaredServerModels = get
-}
-
-// SetDefaultModel sets a getter for the gateway-level default_model. The
-// getter follows hot reloads and must be safe for concurrent calls. Feeds
-// the /api/status default_model exposure.
-func (s *Server) SetDefaultModel(get func() string) {
-	s.defaultModel = get
-}
-
-// declaredServerModelsMap returns the current declared server -> model
-// mapping, or nil when no getter is wired or nothing is configured.
-func (s *Server) declaredServerModelsMap() map[string]string {
-	if s.declaredServerModels == nil {
-		return nil
-	}
-	return s.declaredServerModels()
-}
-
-// defaultModelValue returns the current gateway default_model, or "" when no
-// getter is wired or none is configured.
-func (s *Server) defaultModelValue() string {
-	if s.defaultModel == nil {
-		return ""
-	}
-	return s.defaultModel()
-}
-
-// effectiveClientModels and effectiveServerModels derive the read-time
-// effective-model + provenance maps from the live accumulator snapshots.
-// Return nil when no accumulator is wired or no traffic has been observed.
-func (s *Server) effectiveClientModels() map[string]EffectiveModel {
-	if s.metricsAccumulator == nil {
-		return nil
-	}
-	return deriveEffectiveModels(s.metricsAccumulator.Snapshot().PerClient, s.metricsAccumulator.CostSnapshot().PerClientModels)
-}
-
-func (s *Server) effectiveServerModels() map[string]EffectiveModel {
-	if s.metricsAccumulator == nil {
-		return nil
-	}
-	return deriveEffectiveModels(s.metricsAccumulator.Snapshot().PerServer, s.metricsAccumulator.CostSnapshot().PerServerModels)
 }
 
 // SetStartWatcher sets a callback that activates live-reload file watching for
@@ -483,8 +376,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/mcp-servers/{name}/restart", s.handleMCPServerRestart)
 	mux.HandleFunc("PUT /api/mcp-servers/tools", s.handleSetServerToolsBatch)
 	mux.HandleFunc("PUT /api/mcp-servers/{name}/tools", s.handleSetServerTools)
-	mux.HandleFunc("PUT /api/mcp-servers/{name}/model", s.handleSetServerModel)
-	mux.HandleFunc("PUT /api/gateway/default-model", s.handleSetDefaultModel)
 	mux.HandleFunc("/api/mcp-servers", s.handleMCPServers)
 	mux.HandleFunc("GET /api/auth/servers", s.handleAuthServers)
 	mux.HandleFunc("POST /api/servers/{name}/auth/login", s.handleAuthLogin)
@@ -498,19 +389,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/skills/usage", s.handleSkillsUsage)
 	mux.HandleFunc("/api/logs", s.handleGatewayLogs)
 	mux.HandleFunc("/api/metrics/tokens", s.handleMetricsTokens)
-	mux.HandleFunc("/api/metrics/cost", s.handleMetricsCost)
 	mux.HandleFunc("GET /api/optimize", s.handleOptimize)
 	mux.HandleFunc("GET /api/traces", s.handleTraces)
 	mux.HandleFunc("GET /api/traces/{traceId}", s.handleTraces)
 	mux.HandleFunc("GET /api/traces/{traceId}/otlp", s.handleTraceOTLP)
 	mux.HandleFunc("POST /api/clients/{slug}/scope/preview", s.handleClientScopePreview)
 	mux.HandleFunc("PUT /api/clients/{slug}/scope", s.handleSetClientScope)
-	mux.HandleFunc("PUT /api/clients/{slug}/model", s.handleSetClientModel)
 	mux.HandleFunc("POST /api/clients/{slug}/link", s.handleLinkClient)
 	mux.HandleFunc("DELETE /api/clients/{slug}/link", s.handleUnlinkClient)
 	mux.HandleFunc("POST /api/clients/{slug}/link/preview", s.handleLinkPreview)
 	mux.HandleFunc("/api/clients", s.handleClients)
-	mux.HandleFunc("GET /api/pricing/models", s.handlePricingModels)
 	mux.HandleFunc("/api/reload", s.handleReload)
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/ready", s.handleReady)
@@ -748,33 +636,6 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Registry   *registry.RegistryStatus `json:"registry,omitempty"`
 		CodeMode   string                   `json:"code_mode,omitempty"`
 		TokenUsage *metrics.TokenUsage      `json:"token_usage,omitempty"`
-		Cost       *metrics.CostUsage       `json:"cost,omitempty"`
-		// CostAttribution reports whether any client or server has a model
-		// configured for pricing. False lets the UI explain why cost stays
-		// empty (set `client_models:` or `model:` in stack.yaml) instead of
-		// showing a bare $0.00.
-		CostAttribution bool `json:"cost_attribution,omitempty"`
-		// ClientModels is the declared client ID -> model pricing map from
-		// stack.yaml client_models. Omitted when empty. The UI uses it to
-		// label per-client cost with the model it was priced as.
-		ClientModels map[string]string `json:"client_models,omitempty"`
-		// ServerModels is the EFFECTIVE server -> model pricing map (a
-		// server's own model: with gateway default_model folded in).
-		// Omitted when no server-tier attribution is configured. The
-		// declared per-server value rides on each MCPServerStatus.Model.
-		ServerModels map[string]string `json:"server_models,omitempty"`
-		// DefaultModel is the gateway-level default_model from stack.yaml.
-		// Omitted when not configured. Lets the UI render "inherits
-		// default: <id>" provenance for servers without their own model.
-		DefaultModel string `json:"default_model,omitempty"`
-		// EffectiveClientModels and EffectiveServerModels report which model
-		// actually priced each client's / server's recorded cost, with
-		// provenance (declared | mixed | none). Derived read-only from the
-		// accumulator's model histograms; they describe which declaration
-		// gridctl applied, not what the upstream client ran. Omitted when no
-		// traffic has been observed.
-		EffectiveClientModels map[string]EffectiveModel `json:"effective_client_models,omitempty"`
-		EffectiveServerModels map[string]EffectiveModel `json:"effective_server_models,omitempty"`
 		StackName             string                    `json:"stack_name,omitempty"`
 		// Features maps each ENABLED experimental flag name to true —
 		// the capability-bit view for UI gating. Omitted when nothing is
@@ -809,17 +670,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if s.metricsAccumulator != nil {
 		snap := s.metricsAccumulator.Snapshot()
 		status.TokenUsage = &snap
-		cost := s.metricsAccumulator.CostSnapshot()
-		if !costSnapshotIsZero(cost) {
-			status.Cost = &cost
-		}
-		status.EffectiveClientModels = deriveEffectiveModels(snap.PerClient, cost.PerClientModels)
-		status.EffectiveServerModels = deriveEffectiveModels(snap.PerServer, cost.PerServerModels)
 	}
-	status.ClientModels = s.clientModelAttributionMap()
-	status.ServerModels = s.modelAttributionMap()
-	status.DefaultModel = s.defaultModelValue()
-	status.CostAttribution = len(status.ServerModels) > 0 || len(status.ClientModels) > 0
 	if features := s.featureList(); len(features) > 0 {
 		status.FeatureDetails = features
 		status.Features = make(map[string]bool, len(features))
@@ -829,13 +680,6 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, status)
-}
-
-// costSnapshotIsZero reports whether a CostUsage has any recorded cost data.
-// We omit the /api/status `cost` field entirely when zero so consumers see
-// the same JSON shape they did before per-call cost was recorded.
-func costSnapshotIsZero(c metrics.CostUsage) bool {
-	return c.Session.TotalUSD == 0 && len(c.PerServer) == 0 && len(c.PerReplica) == 0 && len(c.PerClient) == 0
 }
 
 // handleSessions returns active MCP session count and IDs.
@@ -950,14 +794,6 @@ type MCPServerStatus struct {
 	// RegistrationFailed marks a server that never registered with the
 	// gateway; the UI shows it as failed instead of omitting the node.
 	RegistrationFailed bool `json:"registrationFailed,omitempty"`
-	// Model is the pricing model DECLARED on this server in stack.yaml
-	// (model: field only — a gateway default_model is not folded in here).
-	// Empty when the server inherits the default or has no attribution.
-	Model string `json:"model,omitempty"`
-	// EffectiveModel reports which model actually priced this server's
-	// recorded cost, with provenance (declared | mixed | none). Read-only
-	// and derived from observed cost; nil when the server has no traffic.
-	EffectiveModel *EffectiveModel `json:"effectiveModel,omitempty"`
 
 	Replicas  []mcp.ReplicaStatus  `json:"replicas,omitempty"`
 	Autoscale *mcp.AutoscaleStatus `json:"autoscale,omitempty"`
@@ -971,8 +807,6 @@ type MCPServerStatus struct {
 
 func (s *Server) getMCPServerStatuses() []MCPServerStatus {
 	mcpStatuses := s.gateway.Status()
-	declaredModels := s.declaredServerModelsMap()
-	effective := s.effectiveServerModels()
 	statuses := make([]MCPServerStatus, len(mcpStatuses))
 	for i, ms := range mcpStatuses {
 		status := MCPServerStatus{
@@ -995,7 +829,6 @@ func (s *Server) getMCPServerStatuses() []MCPServerStatus {
 			ProtocolVersion:    ms.ProtocolVersion,
 			ProtocolGeneration: ms.ProtocolGeneration,
 			RegistrationFailed: ms.RegistrationFailed,
-			Model:              declaredModels[ms.Name],
 			Replicas:           ms.Replicas,
 			Autoscale:          ms.Autoscale,
 			AuthStatus:         ms.AuthStatus,
@@ -1005,9 +838,6 @@ func (s *Server) getMCPServerStatuses() []MCPServerStatus {
 		if ms.LastCheck != nil {
 			ts := ms.LastCheck.Format(time.RFC3339)
 			status.LastCheck = &ts
-		}
-		if em, ok := effective[ms.Name]; ok {
-			status.EffectiveModel = &em
 		}
 		statuses[i] = status
 	}
@@ -1285,102 +1115,6 @@ func (s *Server) handleDeleteMetricsTokens(w http.ResponseWriter, _ *http.Reques
 	writeJSON(w, map[string]string{"status": "ok", "message": "Token metrics cleared"})
 }
 
-// handleMetricsCost handles cost metrics requests.
-// GET /api/metrics/cost?range=1h&per_client=true — historical cost time-series
-// DELETE /api/metrics/cost — clears recorded cost data without touching tokens
-func (s *Server) handleMetricsCost(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		s.handleGetMetricsCost(w, r)
-	case http.MethodDelete:
-		s.handleDeleteMetricsCost(w, r)
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-// handleGetMetricsCost returns historical cost-over-time data with the same
-// time-range vocabulary as /api/metrics/tokens. Setting per_client=true on
-// the query string includes a `per_client` map grouping cost by the
-// originating MCP client; otherwise the response carries only the
-// session-wide series and per-server breakdown.
-func (s *Server) handleGetMetricsCost(w http.ResponseWriter, r *http.Request) {
-	emptyResponse := metrics.CostTimeSeriesResponse{
-		Range:     "1h",
-		Interval:  "1m",
-		Points:    []metrics.CostDataPoint{},
-		PerServer: map[string][]metrics.CostDataPoint{},
-	}
-	if s.metricsAccumulator == nil {
-		writeJSON(w, emptyResponse)
-		return
-	}
-
-	rangeParam := r.URL.Query().Get("range")
-	duration := parseRange(rangeParam)
-	includeClients := parseBoolQuery(r, "per_client", false)
-
-	var result metrics.CostTimeSeriesResponse
-	if includeClients {
-		result = s.metricsAccumulator.QueryCostByClient(duration)
-	} else {
-		result = s.metricsAccumulator.QueryCost(duration)
-	}
-
-	// Ensure non-nil slices for stable JSON serialization.
-	if result.Points == nil {
-		result.Points = []metrics.CostDataPoint{}
-	}
-	if result.PerServer == nil {
-		result.PerServer = map[string][]metrics.CostDataPoint{}
-	}
-	for name, points := range result.PerServer {
-		if points == nil {
-			result.PerServer[name] = []metrics.CostDataPoint{}
-		}
-	}
-	if includeClients {
-		if result.PerClient == nil {
-			result.PerClient = map[string][]metrics.CostDataPoint{}
-		}
-		for name, points := range result.PerClient {
-			if points == nil {
-				result.PerClient[name] = []metrics.CostDataPoint{}
-			}
-		}
-	}
-
-	writeJSON(w, result)
-}
-
-// handleDeleteMetricsCost clears recorded cost data while leaving token
-// counters and the format-savings tally intact.
-func (s *Server) handleDeleteMetricsCost(w http.ResponseWriter, _ *http.Request) {
-	if s.metricsAccumulator == nil {
-		writeJSON(w, map[string]string{"status": "ok", "message": "Cost metrics cleared"})
-		return
-	}
-	s.metricsAccumulator.ClearCost()
-	writeJSON(w, map[string]string{"status": "ok", "message": "Cost metrics cleared"})
-}
-
-// parseBoolQuery returns the boolean value of a query parameter, falling
-// back to def when the parameter is unset or unparseable. "1", "true",
-// "yes", "on" (case-insensitive) all read as true.
-func parseBoolQuery(r *http.Request, key string, def bool) bool {
-	v := r.URL.Query().Get(key)
-	if v == "" {
-		return def
-	}
-	switch strings.ToLower(v) {
-	case "1", "true", "yes", "on":
-		return true
-	case "0", "false", "no", "off":
-		return false
-	}
-	return def
-}
-
 // parseRange converts a range query parameter to a duration.
 func parseRange(s string) time.Duration {
 	switch s {
@@ -1488,14 +1222,6 @@ type ClientStatus struct {
 	Linked     bool   `json:"linked"`
 	Transport  string `json:"transport"`
 	ConfigPath string `json:"configPath,omitempty"`
-	// Model is the client's declared pricing model from stack.yaml
-	// client_models, when present. Pricing attribution only — it carries no
-	// access-control meaning and is independent of EffectiveScope.
-	Model string `json:"model,omitempty"`
-	// EffectiveModel reports which model actually priced this client's
-	// recorded cost, with provenance (declared | mixed | none). Read-only
-	// and derived from observed cost; nil when the client has no traffic.
-	EffectiveModel *EffectiveModel `json:"effectiveModel,omitempty"`
 	// EffectiveScope is the backend-computed per-client tool access scope when a
 	// `clients:` block is configured: the servers and prefixed tools this client
 	// can reach. nil when no access scoping is in effect, so the frontend can
@@ -1537,8 +1263,6 @@ func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
 	}
 
 	scopingOn := s.gateway != nil && s.gateway.ClientAccessConfigured()
-	clientModels := s.clientModelAttributionMap()
-	effective := s.effectiveClientModels()
 
 	declared := make(map[string]LinkEntryInfo)
 	for _, e := range s.declaredLinks() {
@@ -1561,7 +1285,6 @@ func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
 			Linked:     info.Linked,
 			Transport:  info.Transport,
 			ConfigPath: info.ConfigPath,
-			Model:      clientModels[info.Slug],
 			Drifted:    drifted[info.Slug],
 		}
 		if entry, ok := declared[info.Slug]; ok {
@@ -1580,9 +1303,6 @@ func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
-		}
-		if em, ok := effective[info.Slug]; ok {
-			status.EffectiveModel = &em
 		}
 		// Surface the backend-computed effective scope keyed on the client's
 		// stable identifier (its slug, which is what `gridctl link` assigns and
