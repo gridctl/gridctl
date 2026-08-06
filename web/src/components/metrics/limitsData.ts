@@ -8,7 +8,7 @@ import type { LimitEntry, LimitsReport, LimitState } from '../../lib/api';
 export type LimitRowScope = 'client' | 'server' | 'tool';
 
 // slugKey folds a configured key the way the gateway normalizes client
-// identities (lowercase, separators to hyphens) so a budget declared as
+// identities (lowercase, separators to hyphens) so a limit declared as
 // "Claude Code" still matches the normalized "claude-code" breakdown row.
 // Server and tool keys are matched verbatim; only client keys fold.
 function slugKey(key: string): string {
@@ -25,18 +25,9 @@ function entryMatchesRow(entry: LimitEntry, scope: LimitRowScope, rowName: strin
   return entry.key === rowName;
 }
 
-// budgetForRow returns the budget entry governing a breakdown row, or
-// undefined. Duplicate scopes are rejected by config validation, so first
-// match is the only match.
-export function budgetForRow(
-  entries: LimitEntry[] | undefined,
-  scope: LimitRowScope,
-  rowName: string,
-): LimitEntry | undefined {
-  return entries?.find((e) => e.kind === 'budget' && entryMatchesRow(e, scope, rowName));
-}
-
 // rateForRow returns the rate limit governing a breakdown row, or undefined.
+// Duplicate scopes are rejected by config validation, so first match is the
+// only match.
 export function rateForRow(
   entries: LimitEntry[] | undefined,
   scope: LimitRowScope,
@@ -56,7 +47,9 @@ export interface LimitsSummary {
 }
 
 export function deriveLimitsSummary(report: LimitsReport | null): LimitsSummary {
-  const entries = report?.configured ? report.entries : [];
+  // Rate entries only: the UI no longer surfaces dollar budgets, so any
+  // budget entries still present in the report are ignored here.
+  const entries = report?.configured ? report.entries.filter((e) => e.kind === 'rate') : [];
   const exceededCount = entries.filter((e) => e.state === 'exceeded').length;
   const warnCount = entries.filter((e) => e.state === 'warn').length;
   return {
