@@ -22,7 +22,7 @@ const audit: Record<string, AuditState> = {
 };
 
 const usage: Record<string, ToolUsageStat> = {
-  alpha: { calls: 3, lastCalledAt: '2026-07-20T00:00:00Z', costUsd: 0.5 },
+  alpha: { calls: 3, lastCalledAt: '2026-07-20T00:00:00Z' },
   charlie: { calls: 10, lastCalledAt: '2026-07-01T00:00:00Z' },
 };
 
@@ -69,26 +69,19 @@ describe('sortToolRows', () => {
     expect(out.map((r) => r.name)).toEqual(['alpha', 'charlie', 'bravo']);
   });
 
-  it('sorts by cost with unpriced tools below priced ones (never invents $0)', () => {
-    const out = sortToolRows(rows, 'cost', usage);
-    // alpha is the only priced tool; charlie (unpriced, 10 calls) ties with
-    // bravo at "no data" and falls back to name order.
-    expect(out.map((r) => r.name)).toEqual(['alpha', 'bravo', 'charlie']);
-  });
 });
 
 describe('vocabulary guards', () => {
   it('validates filter and sort tokens for URL/pref parsing', () => {
     expect(isAuditFilter('unused')).toBe(true);
     expect(isAuditFilter('bogus')).toBe(false);
-    expect(isToolSortMode('cost')).toBe(true);
+    expect(isToolSortMode('cost')).toBe(false);
     expect(isToolSortMode('')).toBe(false);
   });
 
   it('marks usage-dependent sorts for the fetch gate', () => {
     expect(sortNeedsUsage('calls')).toBe(true);
     expect(sortNeedsUsage('recent')).toBe(true);
-    expect(sortNeedsUsage('cost')).toBe(true);
     expect(sortNeedsUsage('name')).toBe(false);
     expect(sortNeedsUsage('default')).toBe(false);
   });
