@@ -1,70 +1,30 @@
-import { X, DollarSign } from 'lucide-react';
-import { formatCompactNumber, formatUSD } from '../../lib/format';
+import { X } from 'lucide-react';
+import { formatCompactNumber } from '../../lib/format';
 import { AreaChart } from '../chart/AreaChart';
 import { InspectorStat } from './metricsShared';
 import { PaneAnchor } from '../inspector';
-import { ClientModelCell } from '../pricing/ClientModelCell';
-import { ServerModelCell } from '../pricing/ServerModelCell';
-import {
-  ATTRIBUTION_HINT,
-  MIXED_PROVENANCE_NOTE,
-  UNPRICED_NOTE,
-  MODEL_PRECEDENCE_HINT,
-} from '../pricing/constants';
-import { toCostPoints, toTokenPoints, type BreakdownRow } from './metricsData';
-import type { CostDataPoint, EffectiveModel, TokenDataPoint } from '../../types';
+import { toTokenPoints, type BreakdownRow } from './metricsData';
+import type { TokenDataPoint } from '../../types';
 
 export type MetricsInspectorScope = 'clients' | 'servers' | 'tools';
 
 interface MetricsInspectorProps {
   scope: MetricsInspectorScope;
-  // The selected entity's KPI row, or null to show the overview/legend.
+  // The selected entity's KPI row, or null to show the overview note.
   row: BreakdownRow | null;
-  effective?: EffectiveModel;
-  declaredModel?: string;
-  defaultModel: string;
-  costAttribution: boolean;
-  // Whether the attribution setup hint applies (nothing priced anywhere).
-  // Computed by the host from SessionKpis so the overview legend and the
-  // Cost KPI card agree on when to nudge.
-  showAttributionHint: boolean;
-  onClientSaved: (client: string, model: string) => void;
-  onServerSaved: (server: string, model: string) => void;
-  onOpenManager: () => void;
   onClose: () => void;
-  // Per-entity series for the inspector sparklines, when available.
+  // Per-entity series for the inspector sparkline, when available.
   tokenPoints?: TokenDataPoint[];
-  costPoints?: CostDataPoint[];
 }
 
 // MetricsInspector is the workspace right rail: a per-entity detail view for
-// the selected client, server, or tool. It hosts the inline model editor
-// (relocated here so the breakdown tables stay scannable), the entity's KPI
-// numbers, per-entity sparklines, and the cost-provenance note. Tools have no
-// pricing model of their own (their cost inherits the client/server
-// attribution), so the tools scope shows the KPI numbers without the editor.
-// With nothing selected it falls back to a cost-provenance legend explaining
-// the attribution model.
-export function MetricsInspector({
-  scope,
-  row,
-  effective,
-  declaredModel,
-  defaultModel,
-  costAttribution,
-  showAttributionHint,
-  onClientSaved,
-  onServerSaved,
-  onOpenManager,
-  onClose,
-  tokenPoints,
-  costPoints,
-}: MetricsInspectorProps) {
-  if (!row) return <InspectorOverview onOpenManager={onOpenManager} showHint={showAttributionHint} />;
+// the selected client, server, or tool — the entity's KPI numbers plus a
+// per-entity token sparkline where a series exists. With nothing selected it
+// falls back to a short usage note.
+export function MetricsInspector({ scope, row, onClose, tokenPoints }: MetricsInspectorProps) {
+  if (!row) return <InspectorOverview />;
 
   const tokenSeries = toTokenPoints(tokenPoints ?? []);
-  const costSeries = toCostPoints(costPoints ?? []);
-  const costSeriesHasData = costSeries.some((d) => d['Cost (USD)'] > 0);
 
   return (
     <aside className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
@@ -93,43 +53,6 @@ export function MetricsInspector({
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark p-4 space-y-4">
-        {/* Pricing model editor — clients/servers only; a tool's cost inherits
-            the client/server attribution and has no model of its own. */}
-        {scope !== 'tools' && (
-          <section className="space-y-1.5">
-            <h3 className="text-[10px] uppercase tracking-[0.18em] text-text-muted/70">Pricing model</h3>
-            <div title={MODEL_PRECEDENCE_HINT}>
-              {scope === 'clients' ? (
-                <ClientModelCell
-                  client={row.name}
-                  declaredModel={declaredModel}
-                  effective={effective}
-                  costAttribution={costAttribution}
-                  onSaved={onClientSaved}
-                  onOpenManager={onOpenManager}
-                  pickerAlign="left"
-                />
-              ) : (
-                <ServerModelCell
-                  server={row.name}
-                  declaredModel={declaredModel}
-                  defaultModel={defaultModel}
-                  effective={effective}
-                  onSaved={onServerSaved}
-                  onOpenManager={onOpenManager}
-                  pickerAlign="left"
-                />
-              )}
-            </div>
-            {effective?.provenance === 'mixed' && (
-              <p className="text-[10px] leading-snug text-text-muted/70">{MIXED_PROVENANCE_NOTE}</p>
-            )}
-            {effective?.provenance === 'none' && (
-              <p className="text-[10px] leading-snug text-text-muted/70">{UNPRICED_NOTE}</p>
-            )}
-          </section>
-        )}
-
         {/* KPI numbers */}
         <section className="grid grid-cols-2 gap-2">
           {row.calls !== undefined && (
@@ -138,21 +61,7 @@ export function MetricsInspector({
           <InspectorStat label="Input" value={formatCompactNumber(row.input)} className="text-secondary" />
           <InspectorStat label="Output" value={formatCompactNumber(row.output)} className="text-primary" />
           <InspectorStat label="Total" value={formatCompactNumber(row.total)} className="text-text-primary" />
-          <InspectorStat
-            label="Cost · est."
-            value={row.cost === undefined ? '—' : formatUSD(row.cost)}
-            className={row.cost === undefined ? 'text-text-muted' : 'text-emerald-400'}
-          />
         </section>
-        {scope === 'tools' && row.cost === undefined && (
-          // Not ATTRIBUTION_HINT: a tool has no model of its own, so this
-          // names the Clients/Servers scopes and the gateway default instead
-          // of the generic pricing-manager nudge.
-          <p className="text-[10px] leading-snug text-text-muted/70">
-            No priced calls yet. Set a pricing model on a client or server (Clients/Servers scope), or a
-            gateway default, to enable estimates.
-          </p>
-        )}
 
         {/* Token sparkline */}
         {tokenSeries.length > 0 && (
@@ -176,43 +85,17 @@ export function MetricsInspector({
           </section>
         )}
 
-        {/* Cost sparkline */}
-        {costSeriesHasData && (
-          <section className="space-y-1">
-            <h3 className="text-[10px] uppercase tracking-[0.18em] text-text-muted/70 inline-flex items-center gap-1">
-              <DollarSign size={10} className="text-emerald-400" /> Cost over time
-            </h3>
-            <div role="img" aria-label={`Estimated cost over time for ${row.name}`}>
-              <AreaChart
-                data={costSeries}
-                index="time"
-                categories={['Cost (USD)']}
-                colors={['emerald']}
-                type="default"
-                fill="gradient"
-                showLegend={false}
-                showGridLines={false}
-                showYAxis={false}
-                valueFormatter={(v: number) => formatUSD(v)}
-                className="h-20"
-              />
-            </div>
-          </section>
-        )}
-
         {/* When no time series can render, say why instead of silently
-            omitting the sections — the KPI numbers above are session
-            totals, so a bare inspector otherwise implies the entity has no
-            history at all. Clients get structural wording: no per-client
-            token series exists, and cost buckets only record once a pricing
-            model applies, so "no samples in this window" would be false for
-            an unpriced client that is actively pushing tokens. */}
-        {tokenSeries.length === 0 && !costSeriesHasData && (
+            omitting the section — the KPI numbers above are session totals,
+            so a bare inspector otherwise implies the entity has no history at
+            all. Clients get structural wording: no per-client token series
+            exists. */}
+        {tokenSeries.length === 0 && (
           <p className="text-[10px] leading-snug text-text-muted/70">
             {scope === 'tools'
               ? 'Per-tool time series is not recorded yet; the numbers above are session totals.'
               : scope === 'clients'
-                ? `No cost samples for ${row.name} in this window, and per-client token series is not recorded. The numbers above are session totals.`
+                ? 'Per-client token series is not recorded; the numbers above are session totals.'
                 : `No samples for ${row.name} in this window. The numbers above are session totals.`}
           </p>
         )}
@@ -221,34 +104,20 @@ export function MetricsInspector({
   );
 }
 
-// Shown when nothing is selected — a cost-provenance legend rather than an
-// empty rail, carrying the same honesty copy the cards use. The setup hint
-// only renders while nothing is priced; once attribution or cost exists the
-// legend and the pricing-manager button are the whole story.
-function InspectorOverview({ onOpenManager, showHint }: { onOpenManager: () => void; showHint: boolean }) {
+// Shown when nothing is selected — a short orientation note rather than an
+// empty rail.
+function InspectorOverview() {
   return (
     <aside className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
       <div className="flex-shrink-0 px-4 py-3 border-b border-border-subtle">
-        <div className="text-[10px] uppercase tracking-[0.3em] text-text-muted/60">about cost</div>
+        <div className="text-[10px] uppercase tracking-[0.3em] text-text-muted/60">inspector</div>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark p-4 space-y-3 text-[11px] leading-relaxed text-text-muted">
+        <p>Select a client, server, or tool to inspect its token usage and call activity.</p>
         <p>
-          Select a client, server, or tool to inspect its tokens, estimated cost, and pricing model.
+          Numbers here are measured at the gateway: tokens counted on tool arguments and results,
+          calls counted per tool. Servers additionally record a windowed time series.
         </p>
-        {showHint && <p className="text-text-secondary">{ATTRIBUTION_HINT}.</p>}
-        <div className="space-y-1.5 pt-1">
-          <p className="text-[10px] uppercase tracking-[0.18em] text-text-muted/70">provenance</p>
-          <p><span className="font-mono text-text-secondary">declared</span> — one model priced all recorded cost.</p>
-          <p><span className="font-mono text-text-secondary">mixed</span> — {MIXED_PROVENANCE_NOTE}</p>
-          <p><span className="font-mono text-text-secondary">none</span> — {UNPRICED_NOTE}</p>
-        </div>
-        <button
-          type="button"
-          onClick={onOpenManager}
-          className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10px] font-medium text-primary hover:bg-primary/20 transition-colors"
-        >
-          <DollarSign size={11} /> Edit pricing models
-        </button>
       </div>
     </aside>
   );
