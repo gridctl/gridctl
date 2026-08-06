@@ -2,11 +2,9 @@ package metrics
 
 import (
 	"context"
-	"sort"
 	"testing"
 
 	"github.com/gridctl/gridctl/pkg/mcp"
-	"github.com/gridctl/gridctl/pkg/pricing"
 	"github.com/gridctl/gridctl/pkg/token"
 )
 
@@ -99,276 +97,57 @@ func TestObserver_PerReplica(t *testing.T) {
 	}
 }
 
-// TestObserver_RecordsCostWithCacheTokens covers Acceptance Criterion 21:
-// when a tool result reports cache-read and cache-write tokens, the
-// observer prices them at the provider's cache rates and records the
-// breakdown — never conflating cache traffic into the input-token rate.
-//
-// The fixture uses a deterministic pricing.Source so the test is robust
-// against changes to the embedded LiteLLM snapshot.
-func TestObserver_RecordsCostWithCacheTokens(t *testing.T) {
-	prev := pricing.CurrentSource()
-	defer pricing.SetSource(prev)
-
-	rates := pricing.Rates{
-		InputPerToken:      3e-6,    // $3 / M input
-		OutputPerToken:     15e-6,   // $15 / M output
-		CacheReadPerToken:  0.3e-6,  // $0.30 / M cache read (~10% of input)
-		CacheWritePerToken: 3.75e-6, // $3.75 / M cache write (~125% of input)
-	}
-	pricing.SetSource(staticSource{name: "fixture", rates: map[string]pricing.Rates{
-		"claude-fixture": rates,
-	}})
-
-	counter := token.NewHeuristicCounter(4)
-	acc := NewAccumulator(100)
-	obs := NewObserver(counter, acc)
-	obs.SetModelResolver(func(string, string) string { return "claude-fixture" })
-
-	args := map[string]any{"q": "hello"}
-	result := &mcp.ToolCallResult{
-		Content: []mcp.Content{mcp.NewTextContent("response")},
-		Usage: &mcp.CallUsage{
-			CacheReadTokens:     10000,
-			CacheCreationTokens: 200,
-		},
-	}
-	obs.ObserveToolCall("server-a", -1, args, result)
-
-	snap := acc.CostSnapshot()
-	got := snap.Session
-
-	inputTokens := token.CountJSON(counter, args)
-	outputTokens := counter.Count("response")
-
-	wantInput := float64(inputTokens) * rates.InputPerToken
-	wantOutput := float64(outputTokens) * rates.OutputPerToken
-	wantCacheRead := float64(10000) * rates.CacheReadPerToken
-	wantCacheWrite := float64(200) * rates.CacheWritePerToken
-	wantTotal := wantInput + wantOutput + wantCacheRead + wantCacheWrite
-
-	if !approxUSDEq(got.InputUSD, wantInput) {
-		t.Errorf("InputUSD = %v, want %v", got.InputUSD, wantInput)
-	}
-	if !approxUSDEq(got.OutputUSD, wantOutput) {
-		t.Errorf("OutputUSD = %v, want %v", got.OutputUSD, wantOutput)
-	}
-	if !approxUSDEq(got.CacheReadUSD, wantCacheRead) {
-		t.Errorf("CacheReadUSD = %v, want %v", got.CacheReadUSD, wantCacheRead)
-	}
-	if !approxUSDEq(got.CacheWriteUSD, wantCacheWrite) {
-		t.Errorf("CacheWriteUSD = %v, want %v", got.CacheWriteUSD, wantCacheWrite)
-	}
-	if !approxUSDEq(got.TotalUSD, wantTotal) {
-		t.Errorf("TotalUSD = %v, want %v", got.TotalUSD, wantTotal)
-	}
-
-	// Conflated calculation (cache-read tokens priced at input rate)
-	// would yield a meaningfully larger cache-read component because
-	// input rate is 10x cache-read rate; assert the test would catch
-	// that regression.
-	conflatedCacheRead := float64(10000) * rates.InputPerToken
-	if approxUSDEq(got.CacheReadUSD, conflatedCacheRead) {
-		t.Fatalf("CacheReadUSD %v matches conflated value %v — cache pricing regressed", got.CacheReadUSD, conflatedCacheRead)
-	}
-
-	// And at the total: a regression where every "input-shaped" token
-	// is priced at the input rate (input + cache_read + cache_write
-	// summed and multiplied by InputPerToken) would land near a value
-	// the per-rate calculation never reaches. Assert the recorded
-	// total is not equal to that conflated total.
-	conflatedTotal := float64(inputTokens+10000+200)*rates.InputPerToken +
-		float64(outputTokens)*rates.OutputPerToken
-	if approxUSDEq(got.TotalUSD, conflatedTotal) {
-		t.Fatalf("TotalUSD %v matches fully-conflated total %v — cache pricing regressed", got.TotalUSD, conflatedTotal)
-	}
-
-	// Per-server breakdown carries the same numbers.
-	srv, ok := snap.PerServer["server-a"]
-	if !ok {
-		t.Fatal("expected per-server cost entry for server-a")
-	}
-	if !approxUSDEq(srv.TotalUSD, wantTotal) {
-		t.Errorf("PerServer[server-a].TotalUSD = %v, want %v", srv.TotalUSD, wantTotal)
-	}
-}
-
-// TestObserver_SkipsCostWhenModelUnknown verifies the observer records
-// tokens but no cost when no model can be resolved for the call. This is
-// the default behavior in PR 1 because no MCPServer config field carries
-// a model yet — the cost path goes live in PR 2 once attribution lands.
-func TestObserver_SkipsCostWhenModelUnknown(t *testing.T) {
-	counter := token.NewHeuristicCounter(4)
-	acc := NewAccumulator(100)
-	obs := NewObserver(counter, acc)
-
-	args := map[string]any{"q": "hello"}
-	result := &mcp.ToolCallResult{Content: []mcp.Content{mcp.NewTextContent("ok")}}
-	obs.ObserveToolCall("anonymous-server", -1, args, result)
-
-	tokens := acc.Snapshot()
-	if tokens.Session.TotalTokens == 0 {
-		t.Error("tokens should have been recorded even when model is unknown")
-	}
-	cost := acc.CostSnapshot()
-	if cost.Session.TotalUSD != 0 {
-		t.Errorf("expected zero session cost when no model resolved; got %v", cost.Session.TotalUSD)
-	}
-}
-
 // TestObserver_PerToolAttribution verifies the client-aware path records
-// per-tool tokens for every call and per-tool cost only for priced calls,
-// with the tool's cost matching what the per-server counters recorded for
-// the same traffic.
+// per-tool call counts and tokens for every call.
 func TestObserver_PerToolAttribution(t *testing.T) {
-	prev := pricing.CurrentSource()
-	defer pricing.SetSource(prev)
-	pricing.SetSource(staticSource{name: "fixture", rates: map[string]pricing.Rates{
-		"claude-fixture": {InputPerToken: 3e-6, OutputPerToken: 15e-6},
-	}})
-
 	counter := token.NewHeuristicCounter(4)
 	acc := NewAccumulator(100)
 	obs := NewObserver(counter, acc)
-	obs.SetModelResolver(func(serverName, _ string) string {
-		if serverName == "priced" {
-			return "claude-fixture"
-		}
-		return ""
-	})
 
 	args := map[string]any{"q": "hello"}
 	result := &mcp.ToolCallResult{Content: []mcp.Content{mcp.NewTextContent("response")}}
 
 	obs.ObserveToolCallWithClient(context.Background(), mcp.ToolCallObservation{
-		ServerName: "priced", ReplicaID: -1, ClientID: "client-a", ToolName: "create_issue",
+		ServerName: "github", ReplicaID: -1, ClientID: "client-a", ToolName: "create_issue",
 		Arguments: args, Result: result,
 	})
 	obs.ObserveToolCallWithClient(context.Background(), mcp.ToolCallObservation{
-		ServerName: "unpriced", ReplicaID: -1, ClientID: "client-a", ToolName: "read_file",
+		ServerName: "atlassian", ReplicaID: -1, ClientID: "client-a", ToolName: "read_file",
 		Arguments: args, Result: result,
 	})
 
 	snap := acc.ToolUsageSnapshot()
 
-	priced := snap["priced"]["create_issue"]
 	inputTokens := int64(token.CountJSON(counter, args))
 	outputTokens := int64(counter.Count("response"))
-	if priced.InputTokens != inputTokens || priced.OutputTokens != outputTokens {
-		t.Errorf("priced tool tokens = %d/%d, want %d/%d", priced.InputTokens, priced.OutputTokens, inputTokens, outputTokens)
-	}
-	if priced.CostMicroUSD <= 0 {
-		t.Errorf("priced tool CostMicroUSD = %d, want >0", priced.CostMicroUSD)
-	}
-	// The tool's cost equals the server's cost — it was the only call.
-	serverCost := acc.CostSnapshot().PerServer["priced"].TotalUSD
-	if !approxUSDEq(priced.CostUSD(), serverCost) {
-		t.Errorf("per-tool cost %v != per-server cost %v", priced.CostUSD(), serverCost)
-	}
-
-	unpriced := snap["unpriced"]["read_file"]
-	if unpriced.InputTokens != inputTokens || unpriced.OutputTokens != outputTokens {
-		t.Errorf("unpriced tool tokens = %d/%d, want %d/%d", unpriced.InputTokens, unpriced.OutputTokens, inputTokens, outputTokens)
-	}
-	if unpriced.CostMicroUSD != 0 {
-		t.Errorf("unpriced tool CostMicroUSD = %d, want 0", unpriced.CostMicroUSD)
+	for server, tool := range map[string]string{"github": "create_issue", "atlassian": "read_file"} {
+		stat := snap[server][tool]
+		if stat.Calls != 1 {
+			t.Errorf("%s/%s Calls = %d, want 1", server, tool, stat.Calls)
+		}
+		if stat.InputTokens != inputTokens || stat.OutputTokens != outputTokens {
+			t.Errorf("%s/%s tokens = %d/%d, want %d/%d", server, tool, stat.InputTokens, stat.OutputTokens, inputTokens, outputTokens)
+		}
 	}
 }
 
 // TestObserver_LegacyPathRecordsNoPhantomTool verifies the legacy observer
-// entry point (no tool name) never creates a "" tool entry — even when the
-// call is priced and per-server cost is recorded.
+// entry point (no tool name) never creates a "" tool entry.
 func TestObserver_LegacyPathRecordsNoPhantomTool(t *testing.T) {
-	prev := pricing.CurrentSource()
-	defer pricing.SetSource(prev)
-	pricing.SetSource(staticSource{name: "fixture", rates: map[string]pricing.Rates{
-		"claude-fixture": {InputPerToken: 3e-6, OutputPerToken: 15e-6},
-	}})
-
 	counter := token.NewHeuristicCounter(4)
 	acc := NewAccumulator(100)
 	obs := NewObserver(counter, acc)
-	obs.SetModelResolver(func(string, string) string { return "claude-fixture" })
 
 	args := map[string]any{"q": "hello"}
 	result := &mcp.ToolCallResult{Content: []mcp.Content{mcp.NewTextContent("response")}}
 	obs.ObserveToolCall("server-a", -1, args, result)
 
-	if cost := acc.CostSnapshot().PerServer["server-a"].TotalUSD; cost <= 0 {
-		t.Fatalf("per-server cost = %v, want >0 (the call itself is priced)", cost)
+	if tokens := acc.Snapshot().PerServer["server-a"].TotalTokens; tokens <= 0 {
+		t.Fatalf("per-server tokens = %v, want >0", tokens)
 	}
 	if snap := acc.ToolUsageSnapshot(); snap != nil {
 		t.Errorf("legacy path must not create per-tool entries; got %v", snap)
 	}
-}
-
-// TestObserver_CallLevelModelOverridesResolver confirms a model carried in
-// the call's CallUsage takes precedence over the server-level resolver —
-// gateway operators can override per-server defaults at the call site
-// without touching configuration.
-func TestObserver_CallLevelModelOverridesResolver(t *testing.T) {
-	prev := pricing.CurrentSource()
-	defer pricing.SetSource(prev)
-
-	pricing.SetSource(staticSource{name: "fixture", rates: map[string]pricing.Rates{
-		"call-model":   {InputPerToken: 1, OutputPerToken: 2},
-		"server-model": {InputPerToken: 10, OutputPerToken: 20},
-	}})
-
-	counter := token.NewHeuristicCounter(4)
-	acc := NewAccumulator(100)
-	obs := NewObserver(counter, acc)
-	obs.SetModelResolver(func(string, string) string { return "server-model" })
-
-	result := &mcp.ToolCallResult{
-		Content: []mcp.Content{mcp.NewTextContent("x")},
-		Usage:   &mcp.CallUsage{Model: "call-model"},
-	}
-	obs.ObserveToolCall("s", -1, map[string]any{"a": 1}, result)
-
-	cost := acc.CostSnapshot()
-	if cost.Session.InputUSD == 0 {
-		t.Fatal("expected input cost > 0")
-	}
-	// "call-model" rates are 10x smaller than "server-model"; if the
-	// resolver had won, costs would be ~10x larger. We just assert that
-	// the rates chosen match the call-model side.
-	tokensInput := token.CountJSON(counter, map[string]any{"a": 1})
-	wantInput := float64(tokensInput) * 1.0 // call-model.InputPerToken
-	if !approxUSDEq(cost.Session.InputUSD, wantInput) {
-		t.Errorf("InputUSD = %v, want %v (call-model rate, not server-model)", cost.Session.InputUSD, wantInput)
-	}
-}
-
-// staticSource is a deterministic pricing.Source for tests.
-type staticSource struct {
-	name  string
-	rates map[string]pricing.Rates
-}
-
-func (s staticSource) Lookup(model string) (pricing.Rates, bool) {
-	r, ok := s.rates[model]
-	return r, ok
-}
-
-func (s staticSource) Models() []string {
-	models := make([]string, 0, len(s.rates))
-	for id := range s.rates {
-		models = append(models, id)
-	}
-	sort.Strings(models)
-	return models
-}
-
-func (s staticSource) Name() string { return s.name }
-
-func approxUSDEq(a, b float64) bool {
-	const eps = 1e-9
-	d := a - b
-	if d < 0 {
-		d = -d
-	}
-	return d < eps
 }
 
 // TestObserver_ImplementsClientObserver guarantees the Observer satisfies
@@ -379,17 +158,10 @@ func TestObserver_ImplementsClientObserver(t *testing.T) {
 }
 
 // TestObserver_ObserveToolCallWithClient_AttributesPerClient verifies that
-// the new ClientObserver entry point routes both tokens and cost to the
-// per-client maps without breaking session/per-server aggregates.
+// the ClientObserver entry point routes tokens to the per-client maps
+// without breaking session/per-server aggregates, and surfaces cache token
+// counts from CallUsage on the summary.
 func TestObserver_ObserveToolCallWithClient_AttributesPerClient(t *testing.T) {
-	prev := pricing.CurrentSource()
-	defer pricing.SetSource(prev)
-
-	rates := pricing.Rates{InputPerToken: 1e-6, OutputPerToken: 2e-6}
-	pricing.SetSource(staticSource{name: "fixture", rates: map[string]pricing.Rates{
-		"call-model": rates,
-	}})
-
 	counter := token.NewHeuristicCounter(4)
 	acc := NewAccumulator(100)
 	obs := NewObserver(counter, acc)
@@ -397,7 +169,7 @@ func TestObserver_ObserveToolCallWithClient_AttributesPerClient(t *testing.T) {
 	args := map[string]any{"q": "hello"}
 	result := &mcp.ToolCallResult{
 		Content: []mcp.Content{mcp.NewTextContent("answer")},
-		Usage:   &mcp.CallUsage{Model: "call-model"},
+		Usage:   &mcp.CallUsage{CacheReadTokens: 12, CacheCreationTokens: 3},
 	}
 	summary := obs.ObserveToolCallWithClient(context.Background(), mcp.ToolCallObservation{
 		ServerName: "server-a",
@@ -411,11 +183,8 @@ func TestObserver_ObserveToolCallWithClient_AttributesPerClient(t *testing.T) {
 	if summary.InputTokens == 0 || summary.OutputTokens == 0 {
 		t.Errorf("expected non-zero token counts; got %+v", summary)
 	}
-	if summary.Model != "call-model" {
-		t.Errorf("Model = %q, want %q", summary.Model, "call-model")
-	}
-	if !summary.HasCost || summary.CostUSD == 0 {
-		t.Errorf("expected HasCost=true and non-zero CostUSD; got %+v", summary)
+	if summary.CacheReadTokens != 12 || summary.CacheCreationTokens != 3 {
+		t.Errorf("cache token counts = %d/%d, want 12/3", summary.CacheReadTokens, summary.CacheCreationTokens)
 	}
 
 	tokens := acc.Snapshot()
@@ -427,17 +196,12 @@ func TestObserver_ObserveToolCallWithClient_AttributesPerClient(t *testing.T) {
 		t.Errorf("per-client tokens (%d) should equal session (%d) for single client",
 			clientTokens.TotalTokens, tokens.Session.TotalTokens)
 	}
-
-	costs := acc.CostSnapshot()
-	if _, ok := costs.PerClient["claude-code"]; !ok {
-		t.Fatal("expected per-client cost for claude-code")
-	}
 }
 
 // TestObserver_ObserveToolCallWithClient_EmptyClientNoAttribution covers
-// the case where a tool call carries no session attribution: tokens and
-// cost still record under session/per-server, but per-client maps stay
-// empty so anonymous traffic does not pollute attribution dimensions.
+// the case where a tool call carries no session attribution: tokens still
+// record under session/per-server, but per-client maps stay empty so
+// anonymous traffic does not pollute attribution dimensions.
 func TestObserver_ObserveToolCallWithClient_EmptyClientNoAttribution(t *testing.T) {
 	counter := token.NewHeuristicCounter(4)
 	acc := NewAccumulator(100)
@@ -465,18 +229,9 @@ func TestObserver_ObserveToolCallWithClient_EmptyClientNoAttribution(t *testing.
 // path record identical aggregates for the same input — only attribution
 // dimensions differ.
 func TestObserver_ObserveToolCallWithClient_SummaryMatchesLegacyPath(t *testing.T) {
-	prev := pricing.CurrentSource()
-	defer pricing.SetSource(prev)
-	pricing.SetSource(staticSource{name: "fixture", rates: map[string]pricing.Rates{
-		"m": {InputPerToken: 1, OutputPerToken: 2},
-	}})
-
 	counter := token.NewHeuristicCounter(4)
 	args := map[string]any{"q": "x"}
-	result := &mcp.ToolCallResult{
-		Content: []mcp.Content{mcp.NewTextContent("ok")},
-		Usage:   &mcp.CallUsage{Model: "m"},
-	}
+	result := &mcp.ToolCallResult{Content: []mcp.Content{mcp.NewTextContent("ok")}}
 
 	accLegacy := NewAccumulator(100)
 	NewObserver(counter, accLegacy).ObserveToolCall("s", -1, args, result)
@@ -492,12 +247,6 @@ func TestObserver_ObserveToolCallWithClient_SummaryMatchesLegacyPath(t *testing.
 	if accLegacy.Snapshot().Session != accV2.Snapshot().Session {
 		t.Errorf("session token snapshots diverged: legacy=%v v2=%v",
 			accLegacy.Snapshot().Session, accV2.Snapshot().Session)
-	}
-	if !approxUSDEq(accLegacy.CostSnapshot().Session.TotalUSD,
-		accV2.CostSnapshot().Session.TotalUSD) {
-		t.Errorf("session cost snapshots diverged: legacy=%v v2=%v",
-			accLegacy.CostSnapshot().Session.TotalUSD,
-			accV2.CostSnapshot().Session.TotalUSD)
 	}
 }
 
