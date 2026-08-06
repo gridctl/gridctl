@@ -506,8 +506,10 @@ func TestAnalyze_FormatShortfall_FiresWhenBaselineDemonstrated(t *testing.T) {
 	if hit.Server != "raw-json" {
 		t.Errorf("Server = %q, want raw-json", hit.Server)
 	}
-	if hit.ImpactTokensPerWeek <= 0 {
-		t.Errorf("expected positive impact; got %v", hit.ImpactTokensPerWeek)
+	// Observed savings (50,000 × 30% = 15,000 tokens over a 48h window)
+	// normalize to a weekly rate: 15,000 × 7d/2d = 52,500 tokens/week.
+	if want := int64(52_500); hit.ImpactTokensPerWeek != want {
+		t.Errorf("ImpactTokensPerWeek = %v, want %v (weekly-normalized)", hit.ImpactTokensPerWeek, want)
 	}
 	if !strings.Contains(hit.Remediation, "output_format") {
 		t.Errorf("remediation should mention output_format; got %q", hit.Remediation)
@@ -598,5 +600,28 @@ func TestSeverity_IsActionable(t *testing.T) {
 		if got := tc.s.IsActionable(); got != tc.want {
 			t.Errorf("Severity(%q).IsActionable() = %v, want %v", tc.s, got, tc.want)
 		}
+	}
+}
+
+func TestWeeklyRate(t *testing.T) {
+	now := fixedNow
+	cases := []struct {
+		name     string
+		observed int64
+		start    time.Time
+		want     int64
+	}{
+		{"two-day window scales up 3.5x", 15_000, now.Add(-48 * time.Hour), 52_500},
+		{"two-week window scales down", 14_000, now.Add(-14 * 24 * time.Hour), 7_000},
+		{"exactly one week is identity", 9_000, now.Add(-7 * 24 * time.Hour), 9_000},
+		{"zero start passes through unscaled", 5_000, time.Time{}, 5_000},
+		{"non-positive window passes through", 5_000, now.Add(time.Hour), 5_000},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := weeklyRate(tc.observed, tc.start, now); got != tc.want {
+				t.Errorf("weeklyRate(%d) = %d, want %d", tc.observed, got, tc.want)
+			}
+		})
 	}
 }
