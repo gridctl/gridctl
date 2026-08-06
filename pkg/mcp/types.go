@@ -147,7 +147,7 @@ func GateDeny(message string) GateDecision { return GateDecision{Allow: false, M
 // gates, trifecta policy, CEL conditions) implement this same interface and
 // take a hard-coded position in the slice.
 type CallGate interface {
-	// Name identifies the gate in logs ("rate-limits", "budgets").
+	// Name identifies the gate in logs (e.g. "rate-limits").
 	Name() string
 	// CheckToolCall returns the gate's verdict for one call.
 	CheckToolCall(ctx context.Context, call GateCall) GateDecision
