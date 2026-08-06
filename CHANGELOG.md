@@ -4,6 +4,10 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Removed
+
+- **Breaking (web UI):** the dollar-cost layer is removed from the web UI as the first stage of removing cost estimation entirely (the backend follows in the next release; token and usage metrics stay). The Metrics workspace is now a token/usage surface: the Cost KPI card, cost charts, cost columns and cost-descending default sorts, the Models scope, and the priced/unpriced tool facet are gone, and a session-cumulative Format Savings card takes the fourth KPI slot. The pricing manager, effective-model tags, the command-palette pricing entry, the Stack inspector Pricing section, the wizard pricing fields (the wizard no longer emits `model:` or `default_model:`), the status-bar session-cost pill, the Traces cost pill, and dollar-budget bars are removed; the Limits panel and status-bar chip now surface rate limits only. `gridctl optimize` findings render in the UI without weekly-USD framing. Backend behavior is unchanged in this release: cost APIs still compute and serve, budgets still enforce, and stack.yaml fields still parse (#1089)
+
 ### Features
 
 - Pack provenance chips (experimental): pack ownership now shows wherever pack-managed resources appear, not only in the Packs segment. Agent projection status rows (`GET /api/project/agents/status`) and per-fragment context status rows (`GET /api/context`) gain an additive `pack` field carrying the applying pack's name, which the engines already recorded but never surfaced. In the web UI, a shared chip (unifying the two shipped hand copies) adds `pack: <name>` provenance to the skill inspector, skill cards, the Library table, and agent cards through the existing client-side join, and, straight from the wire, to the Connections client detail's agent projection rows (matching the Wiring section's badge) and the Global Context dialog's per-fragment status lines. Every chip is display plus a deep link to the pack detail; pack management verbs stay in the Packs segment (#1080)
