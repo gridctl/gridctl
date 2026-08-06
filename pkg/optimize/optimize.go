@@ -20,10 +20,13 @@
 //   - format_savings_shortfall: a server emits raw JSON while siblings
 //     demonstrate measured TOON/CSV savings.
 //
-// Impact is denominated in tokens per week: schema tokens the finding
-// would free, projected at an assumed ~500 prompts/week (deliberately
-// conservative). Tokens are what the gateway actually measures; dollar
-// conversion belongs to systems that can see real spend.
+// Impact is denominated in tokens per week. The schema heuristics
+// (unused_server, unused_tool, schema_overhead) project schema tokens at an
+// assumed ~500 prompts/week (deliberately conservative, named in each
+// summary); format_savings_shortfall normalizes its measured savings over
+// the observation window instead, so its number is a rate, not a guess.
+// Tokens are what the gateway actually measures; dollar conversion belongs
+// to systems that can see real spend.
 package optimize
 
 import (
@@ -77,9 +80,11 @@ type Finding struct {
 	Tool string `json:"tool,omitempty"`
 
 	// ImpactTokensPerWeek is the projected weekly token savings from
-	// applying the remediation, computed from measured schema or output
-	// tokens times the assumed ~500 prompts/week. Findings that cannot
-	// prove an impact set this to zero.
+	// applying the remediation. Schema heuristics compute it from measured
+	// schema tokens times the assumed ~500 prompts/week;
+	// format_savings_shortfall normalizes its measured savings over the
+	// observation window. Findings that cannot prove an impact set this
+	// to zero.
 	ImpactTokensPerWeek int64 `json:"impact_tokens_per_week"`
 
 	// Remediation is a paste-ready YAML snippet or shell command that
@@ -484,7 +489,7 @@ func summaryUnusedServer(srv ServerInfo) string {
 }
 
 func summaryUnusedTool(server, tool string) string {
-	return "Tool '" + server + "/" + tool + "' is exposed by the gateway but has not been called in the lookback window. Excluding it shrinks the tool list each client sees on initialize."
+	return "Tool '" + server + "/" + tool + "' is exposed by the gateway but has not been called in the lookback window. Excluding it shrinks the tool list each client sees on initialize (impact projected assuming ~500 prompts/week)."
 }
 
 func remediationUnusedServer(srv ServerInfo) string {
@@ -562,9 +567,12 @@ func detectSchemaOverhead(stats Stats, now time.Time) []Finding {
 // detectFormatSavingsShortfall flags servers that emit raw JSON output
 // (no `output_format` configured) when other servers in the same
 // session have already demonstrated a meaningful savings rate from
-// converting to TOON or CSV. The projected impact is the session
-// baseline rate × the candidate server's measured output tokens —
-// every input is observed, not guessed.
+// converting to TOON or CSV. The savings on the traffic observed so far
+// (session baseline rate × the candidate server's measured output tokens)
+// are normalized over the observation window to a weekly rate, so the
+// impact field keeps its per-week unit without inventing a prompt volume —
+// every input is observed, not guessed. With no ObservationStart the
+// observed value passes through unscaled.
 //
 // Skipped silently when:
 //   - FormatBaseline.SavingsPercent is below the demonstration floor
@@ -588,7 +596,7 @@ func detectFormatSavingsShortfall(stats Stats, now time.Time) []Finding {
 		if usage.OutputTokens < formatShortfallMinOutputTokens {
 			continue
 		}
-		projectedSavedTokens := int64(float64(usage.OutputTokens) * stats.FormatBaseline.SavingsPercent / 100.0)
+		savedObserved := int64(float64(usage.OutputTokens) * stats.FormatBaseline.SavingsPercent / 100.0)
 		out = append(out, Finding{
 			ID:                  "format-savings-shortfall-" + srv.Name,
 			Heuristic:           "format_savings_shortfall",
@@ -596,12 +604,28 @@ func detectFormatSavingsShortfall(stats Stats, now time.Time) []Finding {
 			Title:               "Output format conversion would save tokens: " + srv.Name,
 			Summary:             summaryFormatShortfall(srv, usage, stats.FormatBaseline),
 			Server:              srv.Name,
-			ImpactTokensPerWeek: projectedSavedTokens,
+			ImpactTokensPerWeek: weeklyRate(savedObserved, stats.ObservationStart, now),
 			Remediation:         remediationFormatShortfall(srv),
 			DetectedAt:          now,
 		})
 	}
 	return out
+}
+
+// weeklyRate normalizes a token count measured since start into a per-week
+// rate. A zero start (no observation anchor) or a non-positive window
+// returns the observed value unscaled — better an unscaled measurement than
+// a fabricated rate.
+func weeklyRate(observed int64, start, now time.Time) int64 {
+	if start.IsZero() {
+		return observed
+	}
+	window := now.Sub(start)
+	if window <= 0 {
+		return observed
+	}
+	const week = 7 * 24 * time.Hour
+	return int64(float64(observed) * float64(week) / float64(window))
 }
 
 func schemaOverheadImpact(schemaTokens int) int64 {
@@ -617,7 +641,7 @@ func remediationSchemaOverhead(srv ServerInfo) string {
 }
 
 func summaryFormatShortfall(srv ServerInfo, usage ServerUsage, baseline FormatBaseline) string {
-	return "Server '" + srv.Name + "' emitted " + itoa64(usage.OutputTokens) + " output tokens with no `output_format` configured. Servers in this stack that use TOON or CSV conversion saved " + formatPercent(baseline.SavingsPercent) + "% on average — applying the same conversion to '" + srv.Name + "' would project a similar reduction."
+	return "Server '" + srv.Name + "' emitted " + itoa64(usage.OutputTokens) + " output tokens with no `output_format` configured. Servers in this stack that use TOON or CSV conversion saved " + formatPercent(baseline.SavingsPercent) + "% on average — applying the same conversion projects a similar reduction, normalized to a weekly rate from the observed window."
 }
 
 func remediationFormatShortfall(srv ServerInfo) string {
