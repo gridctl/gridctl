@@ -38,7 +38,7 @@ func (o *Observer) ObserveToolCallWithClient(_ context.Context, obs mcp.ToolCall
 
 // ObservePromptGet records that a registry skill was served via prompts/get,
 // incrementing its cumulative count and last-used timestamp in the parallel
-// prompt-usage namespace. The token/cost path does not apply: prompts are
+// prompt-usage namespace. The token path does not apply: prompts are
 // static content, not tool calls.
 func (o *Observer) ObservePromptGet(obs mcp.PromptGetObservation) {
 	o.accumulator.RecordPromptGet(obs.PromptName)
