@@ -60,5 +60,5 @@ Where they overlap: whitelists (this workspace) decide what the gateway exposes 
 ## Related
 
 - [Configuration Reference](config-schema.md) - `tools:`, `clients:`, and `groups:` blocks
-- [Cost Observability](cost-observability.md) - the deprecated dollar-cost layer and `gridctl optimize`
+- [Usage Observability](cost-observability.md) - the usage metrics behind the Tools data and `gridctl optimize`
 - [REST API Reference](api-reference.md) - the endpoints backing this workspace
