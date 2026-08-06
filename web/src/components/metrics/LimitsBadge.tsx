@@ -4,7 +4,7 @@ import { cn } from '../../lib/cn';
 import { useLimits } from '../../hooks/useLimits';
 import { deriveLimitsSummary } from './limitsData';
 
-// LimitsBadge is the status-bar chip for budget and rate limit pressure.
+// LimitsBadge is the status-bar chip for rate limit pressure.
 // Hidden entirely while every limit is ok (and always when no limits: block
 // is configured) — the bar only speaks up when the operator should look.
 // Follows the PinDriftBadge conventions: severity color + glow dot, click
@@ -20,7 +20,7 @@ export function LimitsBadge() {
   const exceeded = summary.worst === 'exceeded';
   const count = exceeded ? summary.exceededCount : summary.warnCount;
   const label = exceeded
-    ? `${count} budget${count === 1 ? '' : 's'} exceeded`
+    ? `${count} rate limit${count === 1 ? '' : 's'} exceeded`
     : `${count} limit${count === 1 ? '' : 's'} near cap`;
 
   const colorClass = exceeded ? 'text-status-error' : 'text-status-pending';
