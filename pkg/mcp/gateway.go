@@ -174,7 +174,7 @@ type Gateway struct {
 	// callGates are veto-capable pre-call policy checks run in slice order
 	// on every tools/call, after the client-scope check and before routing.
 	// See the CallGate doc in types.go for the fixed-order-slice design
-	// decision. Canonical order: rate limits before budgets, so a
+	// decision. Gates run in their installed order, so a
 	// rate-limited caller gets the cheaper check's message. Guarded by mu;
 	// replaced wholesale on apply and hot-reload.
 	callGates []CallGate
@@ -1761,7 +1761,7 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 		}, nil
 	}
 
-	// Run the pre-call policy gates (rate limits, budgets; see callGates).
+	// Run the pre-call policy gates (rate limits; see callGates).
 	// The first denial short-circuits with the gate's model-readable message.
 	// Code-mode inner calls re-enter this function per callTool, so gates
 	// cover the sandboxed path without extra wiring.
