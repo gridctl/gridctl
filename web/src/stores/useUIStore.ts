@@ -159,12 +159,6 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   openAccessEditor: (slug?: string | null) => void;
   closeAccessEditor: () => void;
 
-  // Pricing models manager: the canonical three-tier cost-attribution
-  // editor, opened from Metrics, the inspector, or the command palette.
-  // Transient (not persisted).
-  pricingManagerOpen: boolean;
-  setPricingManagerOpen: (open: boolean) => void;
-
   // Traces list preferences shared by the workspace and the detached window.
   // Persisted; URL params still win on the in-shell workspace.
   tracesPrefs: TracesPrefs;
@@ -388,9 +382,6 @@ export const useUIStore = create<UIState>()(
       openAccessEditor: (slug) =>
         set({ accessEditorOpen: true, accessEditorSeedSlug: slug ?? null }),
       closeAccessEditor: () => set({ accessEditorOpen: false, accessEditorSeedSlug: null }),
-
-      pricingManagerOpen: false,
-      setPricingManagerOpen: (pricingManagerOpen) => set({ pricingManagerOpen }),
 
       tracesPrefs: { ...TRACES_PREFS_DEFAULTS },
       setTracesPrefs: (prefs) =>
