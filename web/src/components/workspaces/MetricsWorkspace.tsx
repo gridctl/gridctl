@@ -1,9 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
-import { BarChart3, Boxes, Layers, Server, Users, Wrench, X } from 'lucide-react';
+import { BarChart3, Server, Users, Wrench, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import { formatUSD } from '../../lib/format';
 import { useUIStore } from '../../stores/useUIStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
@@ -20,33 +19,24 @@ import {
 import { WorkspaceShell } from '../layout/WorkspaceShell';
 import { PopoutButton } from '../ui/PopoutButton';
 import { PersistedFromMarker } from '../telemetry/PersistedFromMarker';
-import { ClientModelCell } from '../pricing/ClientModelCell';
-import { ServerModelCell } from '../pricing/ServerModelCell';
 import { MetricsControls } from '../metrics/MetricsControls';
 import { MetricsInspector } from '../metrics/MetricsInspector';
 import { SavingsCard } from '../metrics/SavingsCard';
 import { ToolsFilterBar } from '../metrics/ToolsFilterBar';
-import { sharePct } from '../pricing/effectiveModel';
 import {
   MetricsKpiRow,
   TokenChart,
-  CostChart,
   PanelHeader,
   BreakdownTable,
-  ModelBreakdownTable,
-  ModelMixBars,
   ScrollableBreakdown,
   ViewAllButton,
   WindowEmptyNote,
 } from '../metrics/metricsShared';
-import { BudgetBar, LimitsPanel } from '../metrics/LimitsShared';
-import { budgetForRow, deriveLimitsSummary, type LimitRowScope } from '../metrics/limitsData';
+import { LimitsPanel } from '../metrics/LimitsShared';
+import { deriveLimitsSummary } from '../metrics/limitsData';
 import {
-  aggregateModelRows,
   buildTokenChartData,
-  buildCostChartData,
   buildFocusedTokenChartData,
-  buildFocusedCostChartData,
   deriveFocusedTotals,
   derivePerServerRows,
   derivePerClientRows,
@@ -56,7 +46,6 @@ import {
   findingTarget,
   hasMetricsData,
   sortBreakdownRows,
-  FLEET_COST_CATEGORY,
   FLEET_TOKEN_CATEGORY,
   type BreakdownRow,
   type BreakdownSortColumn,
@@ -64,50 +53,41 @@ import {
 } from '../metrics/metricsData';
 import type { OptimizeFinding } from '../../types';
 
-type Scope = 'overview' | 'clients' | 'servers' | 'tools' | 'models';
-const SCOPES: Scope[] = ['overview', 'clients', 'servers', 'tools', 'models'];
+type Scope = 'overview' | 'clients' | 'servers' | 'tools';
+const SCOPES: Scope[] = ['overview', 'clients', 'servers', 'tools'];
 
 function isScope(v: string | null): v is Scope {
   return v != null && (SCOPES as string[]).includes(v);
 }
 
-// The tools filters are one concept spread over three params; every writer
+// The tools filters are one concept spread over two params; every writer
 // that clears them goes through here so a future facet is added once.
 function clearToolParams(params: URLSearchParams): void {
   params.delete('q');
   params.delete('server');
+  // Legacy param from the removed priced/unpriced facet: unread, but dropped
+  // here so pre-removal bookmarks do not carry it forever.
   params.delete('priced');
 }
 
-// MetricsWorkspace is the first-class cost/token observability surface,
+// MetricsWorkspace is the first-class token/usage observability surface,
 // sibling to Stack, Library, Variables, and Tools. The left rail is a scope
-// navigator (overview / clients / servers / tools / models); the center
-// carries the window-scoped KPI row, the trend charts, and the active scope's
-// breakdown; the right rail inspects the selected client, server, or tool
-// (and hosts its inline pricing-model editor). Overview doubles as a home:
-// savings opportunities from the optimize report plus top-5 server/tool
-// previews that jump into their scopes. Selecting a server or client
-// refocuses the center charts on that entity with the fleet as dashed
-// context. Scope, selection, time range (?range=), and the tools filters
-// (?q= / ?server= / ?priced=) are URL-synced so reload and deep links
-// survive. The dashboard body is shared with the detached window via
-// metricsShared.
+// navigator (overview / clients / servers / tools); the center carries the
+// window-scoped KPI row, the token trend chart, and the active scope's
+// breakdown; the right rail inspects the selected client, server, or tool.
+// Overview doubles as a home: optimize findings plus top-5 server/tool
+// previews that jump into their scopes. Selecting a server refocuses the
+// center chart on that entity with the fleet as dashed context. Scope,
+// selection, time range (?range=), and the tools filters (?q= / ?server=)
+// are URL-synced so reload and deep links survive. The dashboard body is
+// shared with the detached window via metricsShared.
 export function MetricsWorkspace() {
   const [searchParams, setSearchParams] = useSearchParams();
   const compact = useUIStore((s) => s.compactMode.metrics);
-  const setPricingManagerOpen = useUIStore((s) => s.setPricingManagerOpen);
   const metricsDetached = useUIStore((s) => s.metricsDetached);
 
   const tokenUsage = useStackStore((s) => s.tokenUsage);
-  const costUsage = useStackStore((s) => s.costUsage);
-  const costAttribution = useStackStore((s) => s.costAttribution);
-  const clientModels = useStackStore((s) => s.clientModels);
-  const effectiveClientModels = useStackStore((s) => s.effectiveClientModels);
-  const effectiveServerModels = useStackStore((s) => s.effectiveServerModels);
   const mcpServers = useStackStore((s) => s.mcpServers);
-  const defaultModel = useStackStore((s) => s.defaultModel);
-  const setClientModelLocal = useStackStore((s) => s.setClientModelLocal);
-  const setServerModelLocal = useStackStore((s) => s.setServerModelLocal);
 
   const { openDetachedWindow } = useWindowManager();
 
@@ -122,8 +102,6 @@ export function MetricsWorkspace() {
   // links stay canonical.
   const toolQuery = searchParams.get('q') ?? '';
   const toolServerFacet = searchParams.get('server');
-  const pricedParam = searchParams.get('priced');
-  const toolPricedFacet: 'yes' | 'no' | null = pricedParam === 'yes' || pricedParam === 'no' ? pricedParam : null;
 
   const setScope = useCallback(
     (next: Scope) => {
@@ -208,21 +186,6 @@ export function MetricsWorkspace() {
     [setSearchParams],
   );
 
-  const setToolPricedFacet = useCallback(
-    (priced: 'yes' | 'no' | null) => {
-      setSearchParams(
-        (prev) => {
-          const params = new URLSearchParams(prev);
-          if (priced) params.set('priced', priced);
-          else params.delete('priced');
-          return params;
-        },
-        { replace: true },
-      );
-    },
-    [setSearchParams],
-  );
-
   const clearToolFilters = useCallback(() => {
     setSearchParams(
       (prev) => {
@@ -267,16 +230,14 @@ export function MetricsWorkspace() {
 
   const [isPaused, setIsPaused] = useState(false);
   const [serverSort, setServerSort] = useState<{ col: BreakdownSortColumn; dir: SortDirection }>({ col: 'total', dir: 'desc' });
-  const [clientSort, setClientSort] = useState<{ col: BreakdownSortColumn; dir: SortDirection }>({ col: 'cost', dir: 'desc' });
-  // Cost-descending default so the most expensive tools surface first.
-  const [toolSort, setToolSort] = useState<{ col: BreakdownSortColumn; dir: SortDirection }>({ col: 'cost', dir: 'desc' });
+  const [clientSort, setClientSort] = useState<{ col: BreakdownSortColumn; dir: SortDirection }>({ col: 'total', dir: 'desc' });
+  const [toolSort, setToolSort] = useState<{ col: BreakdownSortColumn; dir: SortDirection }>({ col: 'total', dir: 'desc' });
   // Polite announcement for range/refresh, read by screen readers.
   const [liveMsg, setLiveMsg] = useState('');
 
-  const { metricsData, costData, isLoading, error, reload, clear } = useMetricsSeries({
+  const { metricsData, isLoading, error, reload, clear } = useMetricsSeries({
     timeRange,
     paused: isPaused,
-    perClient: true,
   });
 
   // Per-tool usage powers the Tools scope (and its rail count badge), so the
@@ -284,78 +245,54 @@ export function MetricsWorkspace() {
   // uses, against the same single per-tool data source.
   const { usage: toolUsageData, error: toolUsageError } = useToolUsage(true);
 
-  // Limit consumption overlays the breakdown rows and the Limits panel. A
-  // stack without a limits: block reports configured: false and renders
-  // nothing anywhere.
+  // Rate-limit state feeds the Limits panel. A stack without a limits: block
+  // reports configured: false and renders nothing anywhere.
   const { report: limitsReport } = useLimits(true);
   const limitsSummary = useMemo(() => deriveLimitsSummary(limitsReport), [limitsReport]);
 
-  // Optimize findings feed the Overview savings card (same hook and cadence
-  // as the gateway sidebar section).
+  // Optimize findings feed the Overview card (same hook and cadence as the
+  // gateway sidebar section).
   const { report: optimizeReport } = useOptimize(true);
-  // Renders the consumption bar under a row's name when a budget governs it.
-  const limitBarFor = useCallback(
-    (scope: LimitRowScope) => (row: BreakdownRow) => {
-      const entry = budgetForRow(limitsSummary.entries, scope, row.name);
-      return entry ? <BudgetBar entry={entry} className="mt-1" /> : null;
-    },
-    [limitsSummary.entries],
-  );
 
   // ---- Derived data -------------------------------------------------------
-  const kpis = deriveSessionKpis(tokenUsage, costUsage, costAttribution, effectiveClientModels, effectiveServerModels);
-  const windowTotals = useMemo(() => deriveWindowTotals(metricsData, costData), [metricsData, costData]);
+  const kpis = deriveSessionKpis(tokenUsage);
+  const windowTotals = useMemo(() => deriveWindowTotals(metricsData), [metricsData]);
   const windowLabel = windowLabelFor(timeRange);
   const chartData = useMemo(() => buildTokenChartData(metricsData), [metricsData]);
-  const costChartData = useMemo(() => buildCostChartData(costData), [costData]);
-  const costSeriesHasData = costChartData.some((d) => d['Cost (USD)'] > 0);
-  const hasData = hasMetricsData(kpis, metricsData, costData);
-
-  const declaredServerModels = useMemo(() => {
-    const out: Record<string, string> = {};
-    for (const s of mcpServers) if (s.model) out[s.name] = s.model;
-    return out;
-  }, [mcpServers]);
+  const hasData = hasMetricsData(kpis, metricsData);
 
   // Server rows union in stack servers with no recorded traffic (zero rows)
   // so an unused server — the optimize report's headline finding — is
   // selectable in the breakdown rather than absent from it.
   const serverNames = useMemo(() => mcpServers.map((s) => s.name), [mcpServers]);
   const serverRows = useMemo(
-    () => sortBreakdownRows(derivePerServerRows(tokenUsage, costUsage, serverNames), serverSort.col, serverSort.dir),
-    [tokenUsage, costUsage, serverNames, serverSort],
+    () => sortBreakdownRows(derivePerServerRows(tokenUsage, serverNames), serverSort.col, serverSort.dir),
+    [tokenUsage, serverNames, serverSort],
   );
   const clientRows = useMemo(
-    () => sortBreakdownRows(derivePerClientRows(tokenUsage, costUsage), clientSort.col, clientSort.dir),
-    [tokenUsage, costUsage, clientSort],
+    () => sortBreakdownRows(derivePerClientRows(tokenUsage), clientSort.col, clientSort.dir),
+    [tokenUsage, clientSort],
   );
   const toolRows = useMemo(
     () => sortBreakdownRows(derivePerToolRows(toolUsageData), toolSort.col, toolSort.dir),
     [toolUsageData, toolSort],
   );
-  // Model rows drive both the mix bars and the Models table; a ModelRow is a
-  // ModelShare superset, so one aggregation serves both and they can never
-  // disagree.
-  const modelRows = useMemo(
-    () => aggregateModelRows(effectiveServerModels, effectiveClientModels),
-    [effectiveServerModels, effectiveClientModels],
-  );
 
-  // Overview previews: top spenders by cost, hard-capped at five rows.
-  // Re-sorts of the scope rows (sortBreakdownRows copies) — one base
+  // Overview previews: top entities by total tokens, hard-capped at five
+  // rows. Re-sorts of the scope rows (sortBreakdownRows copies) — one base
   // derivation per axis.
   const topServerRows = useMemo(
-    () => sortBreakdownRows(serverRows, 'cost', 'desc').slice(0, 5),
+    () => sortBreakdownRows(serverRows, 'total', 'desc').slice(0, 5),
     [serverRows],
   );
   const topToolRows = useMemo(
-    () => sortBreakdownRows(toolRows, 'cost', 'desc').slice(0, 5),
+    () => sortBreakdownRows(toolRows, 'total', 'desc').slice(0, 5),
     [toolRows],
   );
 
   // Tools-scope filtering: search over tool and server names plus the server
-  // and priced facets. The filtered array is what renders AND what drives
-  // keyboard nav, so the two can never disagree.
+  // facet. The filtered array is what renders AND what drives keyboard nav,
+  // so the two can never disagree.
   const toolServers = useMemo(
     () => Array.from(new Set(toolRows.map((r) => r.server).filter((s): s is string => Boolean(s)))).sort(),
     [toolRows],
@@ -364,8 +301,6 @@ export function MetricsWorkspace() {
     const q = toolQuery.trim().toLowerCase();
     return toolRows.filter((r) => {
       if (toolServerFacet && r.server !== toolServerFacet) return false;
-      if (toolPricedFacet === 'yes' && r.cost === undefined) return false;
-      if (toolPricedFacet === 'no' && r.cost !== undefined) return false;
       if (q) {
         // r.name is the composite server__tool key — matching it too means a
         // pasted deep-link value finds its row.
@@ -375,7 +310,7 @@ export function MetricsWorkspace() {
       }
       return true;
     });
-  }, [toolRows, toolQuery, toolServerFacet, toolPricedFacet]);
+  }, [toolRows, toolQuery, toolServerFacet]);
 
   // Rows for the active selectable scope (clients/servers/tools), used by the
   // inspector lookup and keyboard navigation. Tools uses the FILTERED rows so
@@ -422,96 +357,55 @@ export function MetricsWorkspace() {
   const inspectorScope = scope === 'servers' ? 'servers' : scope === 'tools' ? 'tools' : 'clients';
   const inspectorTokenPoints =
     selectedRow && scope === 'servers' ? metricsData?.per_server?.[selectedRow.name] : undefined;
-  const inspectorCostPoints =
-    selectedRow && scope === 'servers'
-      ? costData?.per_server?.[selectedRow.name]
-      : selectedRow && scope === 'clients'
-        ? costData?.per_client?.[selectedRow.name]
-        : undefined;
-  // Tools have no pricing model of their own — their cost inherits the
-  // client/server attribution — so the model editor wiring stays scoped to
-  // clients/servers.
-  const inspectorDeclared =
-    scope === 'servers' ? declaredServerModels[selectedRow?.name ?? ''] : clientModels[selectedRow?.name ?? ''];
-  const inspectorEffective =
-    scope === 'servers'
-      ? effectiveServerModels[selectedRow?.name ?? '']
-      : scope === 'tools'
-        ? undefined
-        : effectiveClientModels[selectedRow?.name ?? ''];
 
-  // ---- Focused center charts ----------------------------------------------
-  // Selecting a server (tokens + cost) or client (cost only — no per-client
-  // token series exists) refocuses the main charts on that entity, with the
+  // ---- Focused center chart -----------------------------------------------
+  // Selecting a server refocuses the main chart on that entity, with the
   // fleet series as dashed context. The entity data is the same per-entity
-  // ranged series the inspector sparklines consume. An entirely empty entity
-  // series keeps the fleet charts + an honest note instead of a flat zero
+  // ranged series the inspector sparkline consumes. An entirely empty entity
+  // series keeps the fleet chart + an honest note instead of a flat zero
   // line (see the zero-fill note in metricsData: zeros are only real when the
   // entity has at least one bucket in the window).
   const focusedName = selectedRow && (scope === 'servers' || scope === 'clients') ? selectedRow.name : null;
   const focusHasTokens = focusedName !== null && (inspectorTokenPoints?.length ?? 0) > 0;
-  const focusHasCost = focusedName !== null && (inspectorCostPoints?.length ?? 0) > 0;
   const focusedTokenChartData = useMemo(
     () => (focusHasTokens && inspectorTokenPoints ? buildFocusedTokenChartData(metricsData, inspectorTokenPoints) : []),
     [focusHasTokens, inspectorTokenPoints, metricsData],
   );
-  const focusedCostChartData = useMemo(
-    () => (focusHasCost && inspectorCostPoints ? buildFocusedCostChartData(costData, inspectorCostPoints) : []),
-    [focusHasCost, inspectorCostPoints, costData],
-  );
   const focusedTotals = useMemo(
-    () => (focusedName ? deriveFocusedTotals(inspectorTokenPoints, inspectorCostPoints, windowTotals) : null),
-    [focusedName, inspectorTokenPoints, inspectorCostPoints, windowTotals],
+    () => (focusedName ? deriveFocusedTotals(inspectorTokenPoints, windowTotals) : null),
+    [focusedName, inspectorTokenPoints, windowTotals],
   );
   // Each term renders only when measurable — "0 tokens" for a client (no
-  // per-client token series exists) or "$0.00" for an idle-window server
-  // would contradict the honesty notes beside the charts. With nothing
-  // measurable the line is suppressed entirely.
+  // per-client token series exists) would contradict the honesty notes
+  // beside the chart. With nothing measurable the line is suppressed.
   const focusLineParts =
     focusedName && focusedTotals
       ? [
           ...(focusedTotals.tokens !== undefined ? [`${focusedTotals.tokens.toLocaleString()} tokens`] : []),
-          ...(focusedTotals.costUSD !== undefined ? [`${formatUSD(focusedTotals.costUSD)} est.`] : []),
-          ...(focusedTotals.share !== undefined ? [`${sharePct(focusedTotals.share)} of window`] : []),
+          ...(focusedTotals.share !== undefined
+            ? [`${Math.round(focusedTotals.share * 100)}% of window`]
+            : []),
         ]
       : [];
   const focusLine = focusLineParts.length > 0 ? `${focusedName}: ${focusLineParts.join(' · ')}` : undefined;
 
-  const costChartVisible = kpis.hasCost || costSeriesHasData;
-  // Honest note whenever a selection cannot (fully) focus the charts, so
-  // fleet data is never silently presented as the entity's.
+  // Honest note whenever a selection cannot focus the chart, so fleet data is
+  // never silently presented as the entity's.
   let focusNote: string | null = null;
   if (selectedRow && scope === 'tools') {
     focusNote = 'Charts show the whole stack; per-tool time series is not recorded yet.';
-  } else if (focusedName && scope === 'servers') {
-    if (!focusHasTokens && !focusHasCost) {
-      focusNote = `No samples for ${focusedName} in this window. Charts show the whole stack as context.`;
-    } else if (!focusHasTokens) {
-      focusNote = `No token samples for ${focusedName} in this window; the token chart shows the whole stack.`;
-    } else if (!focusHasCost && costChartVisible) {
-      focusNote = `No cost samples for ${focusedName} in this window; the cost chart shows the whole stack.`;
-    }
+  } else if (focusedName && scope === 'servers' && !focusHasTokens) {
+    focusNote = `No samples for ${focusedName} in this window. The chart shows the whole stack as context.`;
   } else if (focusedName && scope === 'clients') {
-    focusNote = focusHasCost
-      ? 'The token chart shows the whole stack; per-client token series is not recorded.'
-      : `No cost samples for ${focusedName} in this window, and per-client token series is not recorded. ${costChartVisible ? 'Charts show' : 'The token chart shows'} the whole stack as context.`;
+    focusNote = 'The chart shows the whole stack; per-client token series is not recorded.';
   }
 
   const inspector = (
     <MetricsInspector
       scope={inspectorScope}
       row={scope === 'clients' || scope === 'servers' || scope === 'tools' ? selectedRow : null}
-      effective={inspectorEffective}
-      declaredModel={inspectorDeclared}
-      defaultModel={defaultModel}
-      costAttribution={costAttribution}
-      showAttributionHint={kpis.showAttributionHint}
-      onClientSaved={setClientModelLocal}
-      onServerSaved={setServerModelLocal}
-      onOpenManager={() => setPricingManagerOpen(true)}
       onClose={() => setSelected(null)}
       tokenPoints={inspectorTokenPoints}
-      costPoints={inspectorCostPoints}
     />
   );
 
@@ -523,7 +417,6 @@ export function MetricsWorkspace() {
       clientCount={clientRows.length}
       serverCount={serverRows.length}
       toolCount={toolRows.length}
-      modelCount={modelRows.length}
     />
   );
 
@@ -570,7 +463,6 @@ export function MetricsWorkspace() {
                 setLiveMsg('Metrics refreshed');
               }}
               onClear={() => void clear()}
-              onOpenPricing={() => setPricingManagerOpen(true)}
               right={<PopoutButton onClick={() => openDetachedWindow('metrics')} disabled={metricsDetached} />}
             />
           </header>
@@ -587,9 +479,7 @@ export function MetricsWorkspace() {
 
             {!error && isLoading && !metricsData && <LoadingState />}
 
-            {!error && !hasData && !(isLoading && !metricsData) && (
-              <MetricsEmptyState onOpenPricing={() => setPricingManagerOpen(true)} />
-            )}
+            {!error && !hasData && !(isLoading && !metricsData) && <MetricsEmptyState />}
 
             {!error && hasData && !(isLoading && !metricsData) && (
               <div className="space-y-4 max-w-7xl">
@@ -605,34 +495,19 @@ export function MetricsWorkspace() {
                     Focused: {focusedName} <X size={10} aria-hidden="true" />
                   </button>
                 )}
-                <div className="grid gap-4 xl:grid-cols-2">
-                  {focusedName && focusHasTokens ? (
-                    <TokenChart
-                      data={focusedTokenChartData}
-                      metricsData={metricsData}
-                      subject={focusedName}
-                      categories={['Input Tokens', 'Output Tokens', FLEET_TOKEN_CATEGORY]}
-                      colors={['teal', 'amber', 'gray']}
-                      chartType="default"
-                      dashedCategories={[FLEET_TOKEN_CATEGORY]}
-                    />
-                  ) : (
-                    <TokenChart data={chartData} metricsData={metricsData} />
-                  )}
-                  {costChartVisible &&
-                    (focusedName && focusHasCost ? (
-                      <CostChart
-                        data={focusedCostChartData}
-                        costData={costData}
-                        subject={focusedName}
-                        categories={['Cost (USD)', FLEET_COST_CATEGORY]}
-                        colors={['emerald', 'gray']}
-                        dashedCategories={[FLEET_COST_CATEGORY]}
-                      />
-                    ) : (
-                      <CostChart data={costChartData} costData={costData} />
-                    ))}
-                </div>
+                {focusedName && focusHasTokens ? (
+                  <TokenChart
+                    data={focusedTokenChartData}
+                    metricsData={metricsData}
+                    subject={focusedName}
+                    categories={['Input Tokens', 'Output Tokens', FLEET_TOKEN_CATEGORY]}
+                    colors={['teal', 'amber', 'gray']}
+                    chartType="default"
+                    dashedCategories={[FLEET_TOKEN_CATEGORY]}
+                  />
+                ) : (
+                  <TokenChart data={chartData} metricsData={metricsData} />
+                )}
                 {focusNote && <p className="text-[11px] text-text-muted/70">{focusNote}</p>}
                 <WindowEmptyNote windowTotals={windowTotals} sessionTotal={kpis.total} loaded={metricsData !== null} />
 
@@ -653,9 +528,8 @@ export function MetricsWorkspace() {
                     <BreakdownTable
                       rows={topServerRows}
                       nameLabel="Server"
-                      sortColumn="cost"
+                      sortColumn="total"
                       sortDirection="desc"
-                      showCost
                       onSelectRow={(name) => openInScope('servers', name)}
                     />
                   </PanelHeader>
@@ -670,31 +544,10 @@ export function MetricsWorkspace() {
                     <BreakdownTable
                       rows={topToolRows}
                       nameLabel="Tool"
-                      sortColumn="cost"
+                      sortColumn="total"
                       sortDirection="desc"
-                      showCost
                       onSelectRow={(name) => openInScope('tools', name)}
                     />
-                  </PanelHeader>
-                )}
-
-                {scope === 'overview' && (
-                  <PanelHeader icon={Layers} label="Cost by Model">
-                    <ModelMixBars mix={modelRows} />
-                  </PanelHeader>
-                )}
-
-                {scope === 'models' && (
-                  <PanelHeader icon={Layers} label="Cost by Model">
-                    <ModelMixBars mix={modelRows} />
-                  </PanelHeader>
-                )}
-
-                {/* The Models breakdown: rows are not selectable in v1 (a
-                    model has nothing to show in the right rail yet). */}
-                {scope === 'models' && modelRows.length > 0 && (
-                  <PanelHeader icon={Boxes} label="Model Breakdown">
-                    <ModelBreakdownTable rows={modelRows} />
                   </PanelHeader>
                 )}
 
@@ -710,8 +563,6 @@ export function MetricsWorkspace() {
                           servers={toolServers}
                           activeServer={toolServerFacet}
                           onServer={setToolServerFacet}
-                          priced={toolPricedFacet}
-                          onPriced={setToolPricedFacet}
                           onClearAll={clearToolFilters}
                           matchCount={filteredToolRows.length}
                           totalCount={toolRows.length}
@@ -725,10 +576,8 @@ export function MetricsWorkspace() {
                               sortColumn={toolSort.col}
                               sortDirection={toolSort.dir}
                               onSort={sortTools}
-                              showCost
                               selectedName={selected}
                               onSelectRow={setSelected}
-                              renderNameExtra={limitBarFor('tool')}
                             />
                           </ScrollableBreakdown>
                         ) : (
@@ -747,7 +596,7 @@ export function MetricsWorkspace() {
                       // is unavailable instead of implying calls went unrecorded.
                       <EmptyScopeNote text={`Tool usage unavailable: ${toolUsageError}`} />
                     ) : (
-                      <EmptyScopeNote text="No per-tool usage recorded yet. Tool rows appear after the first tool call; cost needs a pricing model." />
+                      <EmptyScopeNote text="No per-tool usage recorded yet. Tool rows appear after the first tool call." />
                     )}
                   </PanelHeader>
                 )}
@@ -761,20 +610,8 @@ export function MetricsWorkspace() {
                         sortColumn={clientSort.col}
                         sortDirection={clientSort.dir}
                         onSort={sortClients}
-                        showCost
                         selectedName={selected}
                         onSelectRow={setSelected}
-                        renderNameExtra={limitBarFor('client')}
-                        renderModel={(row) => (
-                          <ClientModelCell
-                            client={row.name}
-                            declaredModel={clientModels[row.name]}
-                            effective={effectiveClientModels[row.name]}
-                            costAttribution={costAttribution}
-                            onSaved={setClientModelLocal}
-                            onOpenManager={() => setPricingManagerOpen(true)}
-                          />
-                        )}
                       />
                     ) : (
                       <EmptyScopeNote text="No per-client attribution yet. Calls carry a client identity once an MCP client connects." />
@@ -791,20 +628,8 @@ export function MetricsWorkspace() {
                         sortColumn={serverSort.col}
                         sortDirection={serverSort.dir}
                         onSort={sortServers}
-                        showCost
                         selectedName={selected}
                         onSelectRow={setSelected}
-                        renderNameExtra={limitBarFor('server')}
-                        renderModel={(row) => (
-                          <ServerModelCell
-                            server={row.name}
-                            declaredModel={declaredServerModels[row.name]}
-                            defaultModel={defaultModel}
-                            effective={effectiveServerModels[row.name]}
-                            onSaved={setServerModelLocal}
-                            onOpenManager={() => setPricingManagerOpen(true)}
-                          />
-                        )}
                       />
                     ) : (
                       <EmptyScopeNote text="No per-server traffic recorded yet." />
@@ -831,10 +656,9 @@ interface ScopeRailProps {
   clientCount: number;
   serverCount: number;
   toolCount: number;
-  modelCount: number;
 }
 
-function ScopeRail({ compact, scope, onSelectScope, clientCount, serverCount, toolCount, modelCount }: ScopeRailProps) {
+function ScopeRail({ compact, scope, onSelectScope, clientCount, serverCount, toolCount }: ScopeRailProps) {
   return (
     <aside className="h-full flex flex-col bg-surface border-r border-border-subtle">
       <div className={cn('flex-shrink-0 px-3 border-b border-border-subtle/60', compact ? 'py-2' : 'py-3')}>
@@ -845,7 +669,6 @@ function ScopeRail({ compact, scope, onSelectScope, clientCount, serverCount, to
         <ScopePill label="Clients" icon={Users} count={clientCount} active={scope === 'clients'} onClick={() => onSelectScope('clients')} />
         <ScopePill label="Servers" icon={Server} count={serverCount} active={scope === 'servers'} onClick={() => onSelectScope('servers')} />
         <ScopePill label="Tools" icon={Wrench} count={toolCount} active={scope === 'tools'} onClick={() => onSelectScope('tools')} />
-        <ScopePill label="Models" icon={Boxes} count={modelCount} active={scope === 'models'} onClick={() => onSelectScope('models')} />
       </div>
     </aside>
   );
@@ -905,10 +728,7 @@ function LoadingState() {
           <div key={i} className="h-16 rounded-lg bg-surface-elevated/60 border border-border/30" />
         ))}
       </div>
-      <div className="grid gap-4 xl:grid-cols-2">
-        <div className="h-44 rounded-lg bg-surface-elevated/60 border border-border/30" />
-        <div className="h-44 rounded-lg bg-surface-elevated/60 border border-border/30" />
-      </div>
+      <div className="h-44 rounded-lg bg-surface-elevated/60 border border-border/30" />
     </div>
   );
 }
@@ -924,7 +744,7 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
   );
 }
 
-function MetricsEmptyState({ onOpenPricing }: { onOpenPricing: () => void }) {
+function MetricsEmptyState() {
   return (
     <div className="h-full flex items-center justify-center px-6 py-12">
       <div className="max-w-md w-full text-center space-y-5 animate-fade-in-scale">
@@ -937,16 +757,10 @@ function MetricsEmptyState({ onOpenPricing }: { onOpenPricing: () => void }) {
         <div className="space-y-1.5">
           <h2 className="text-base font-semibold text-text-primary">Your metrics home</h2>
           <p className="text-xs text-text-muted leading-relaxed">
-            Token usage appears here after the first tool call. Estimated cost needs a pricing model:
-            declare one per client or server, or set a gateway default.
+            Metrics populate as tools are called: token usage per server, client, and tool, plus
+            call activity and format-conversion savings.
           </p>
         </div>
-        <button
-          onClick={onOpenPricing}
-          className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-gradient-to-r from-primary to-primary-dark text-background shadow-[0_1px_12px_rgba(245,158,11,0.3)] hover:shadow-[0_2px_18px_rgba(245,158,11,0.4)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200"
-        >
-          Edit pricing models
-        </button>
       </div>
     </div>
   );
