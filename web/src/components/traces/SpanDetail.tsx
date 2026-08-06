@@ -3,7 +3,7 @@ import { X, Clock, Tag, Activity, Copy, ChevronRight, ChevronDown } from 'lucide
 import { cn } from '../../lib/cn';
 import { copyWithToast } from '../ui/Toast';
 import { KVTable } from '../ui/KVTable';
-import { formatUSD, formatCompactNumber } from '../../lib/format';
+import { formatCompactNumber } from '../../lib/format';
 import { formatDuration } from '../../lib/duration';
 import type { Span } from '../../lib/api';
 
@@ -40,7 +40,6 @@ const PROMOTED_FIELDS: { label: string; keys: string[]; format?: (v: string) => 
   { label: 'Client', keys: ['mcp.client.name'] },
   { label: 'Transport', keys: ['network.transport'] },
   { label: 'Replica', keys: ['mcp.replica.id'] },
-  { label: 'Model', keys: ['gen_ai.request.model'] },
   {
     label: 'Input tokens',
     keys: ['gen_ai.usage.input_tokens'],
@@ -50,11 +49,6 @@ const PROMOTED_FIELDS: { label: string; keys: string[]; format?: (v: string) => 
     label: 'Output tokens',
     keys: ['gen_ai.usage.output_tokens'],
     format: (v) => formatCompactNumber(Number(v)),
-  },
-  {
-    label: 'Cost',
-    keys: ['gen_ai.cost.usd'],
-    format: (v) => formatUSD(Number(v)),
   },
 ];
 
@@ -83,7 +77,6 @@ export function SpanDetail({ span, selfTimeMs, onClose }: SpanDetailProps) {
   }).filter((f): f is { label: string; value: string } => f !== null);
   const otherEntries = attrEntries.filter(([key]) => !PROMOTED_KEYS.has(key));
 
-  const cost = span.attributes['gen_ai.cost.usd'];
   const errMsg = span.status === 'error' ? errorMessage(span) : null;
 
   return (
@@ -105,7 +98,7 @@ export function SpanDetail({ span, selfTimeMs, onClose }: SpanDetailProps) {
           stacking into a narrow ribbon with a long scroll. */}
       <div className="flex-1 overflow-y-auto scrollbar-dark min-h-0 p-3 space-y-4 @container">
 
-        {/* Status badge + cost pill + span ID */}
+        {/* Status badge + span ID */}
         <div className="flex items-center gap-2 min-w-0">
           <span
             className={cn(
@@ -117,11 +110,6 @@ export function SpanDetail({ span, selfTimeMs, onClose }: SpanDetailProps) {
           >
             {span.status}
           </span>
-          {cost && (
-            <span className="px-2 py-0.5 text-[10px] font-medium rounded-full border bg-primary/10 text-primary border-primary/20 font-mono flex-shrink-0">
-              {formatUSD(Number(cost))}
-            </span>
-          )}
           <span className="text-[10px] text-text-muted font-mono truncate" title={span.spanId}>
             {span.spanId.slice(0, 16)}
           </span>
