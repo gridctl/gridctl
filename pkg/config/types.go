@@ -38,16 +38,6 @@ type Stack struct {
 	// spellings (on/yes) decode as booleans.
 	Experimental map[string]bool `yaml:"experimental,omitempty" json:"experimental,omitempty"`
 
-	// ClientModels declares which model each connecting client runs, purely
-	// for cost attribution: tool calls from a declared client are priced at
-	// that model's rates ahead of any per-server model or gateway
-	// default_model. Keys are stable client identifiers (the same form used
-	// by clients.profiles and shown on the Stack canvas — e.g. "claude-code").
-	// The map has zero effect on access policy: declaring a model never
-	// requires a clients: block and never restricts an unlisted client.
-	// Empty (the default) disables the client pricing tier.
-	ClientModels map[string]string `yaml:"client_models,omitempty" json:"client_models,omitempty"`
-
 	// References is the variable-usage index, derived during expandStackVars:
 	// which consumers reference each ${var:KEY}/${vault:KEY} key. It is computed
 	// from the stack, not persisted with it — the yaml/json "-" tags keep it out
@@ -138,40 +128,15 @@ type SkillsPolicyConfig struct {
 	Deny []string `yaml:"deny,omitempty" json:"deny,omitempty"`
 }
 
-// LimitsConfig is the optional top-level `limits:` block: declarative budget
-// caps and rate limits enforced on the tool-call dispatch path. Omitting the
-// block preserves legacy behavior — nothing is ever limited (Article IX).
+// LimitsConfig is the optional top-level `limits:` block: declarative rate
+// limits enforced on the tool-call dispatch path. Omitting the block
+// preserves legacy behavior — nothing is ever limited (Article IX).
 //
-// Both entry kinds scope to exactly one of client, server, or tool. The
-// client key is the stable client identifier used by clients.profiles and
-// client_models; server is the stack server name; tool is the router's
-// prefixed name ("github__search_code").
-//
-// Budgets govern attributed cost only: a call whose model cannot be priced
-// records tokens but no dollars, so it spends outside every budget's sight.
-// Rate limits need no pricing and are the recommended backstop.
+// Entries scope to exactly one of client, server, or tool. The client key is
+// the stable client identifier used by clients.profiles; server is the stack
+// server name; tool is the router's prefixed name ("github__search_code").
 type LimitsConfig struct {
-	Budgets    []BudgetLimit `yaml:"budgets,omitempty" json:"budgets,omitempty"`
-	RateLimits []RateLimit   `yaml:"rate_limits,omitempty" json:"rate_limits,omitempty"`
-}
-
-// BudgetLimit caps attributed dollar spend for one scope over a calendar
-// window. Windows are aligned to the daemon's local timezone: daily resets at
-// midnight, weekly on Monday 00:00, monthly on the 1st. Spend is settled
-// after each call completes (cost is only known post-call), so concurrent or
-// in-flight calls can overshoot the cap by their own cost; the next call
-// after the cap is reached is denied.
-type BudgetLimit struct {
-	Client string `yaml:"client,omitempty" json:"client,omitempty"`
-	Server string `yaml:"server,omitempty" json:"server,omitempty"`
-	Tool   string `yaml:"tool,omitempty" json:"tool,omitempty"`
-	// MaxUSD is the cap for the window, in dollars. Must be positive.
-	MaxUSD float64 `yaml:"max_usd" json:"max_usd"`
-	// Period is "daily", "weekly", or "monthly".
-	Period string `yaml:"period" json:"period"`
-	// WarnAtPercent optionally fires a one-time WARN log and a warn state in
-	// status surfaces when spend crosses this percentage of the cap (1-99).
-	WarnAtPercent int `yaml:"warn_at_percent,omitempty" json:"warn_at_percent,omitempty"`
+	RateLimits []RateLimit `yaml:"rate_limits,omitempty" json:"rate_limits,omitempty"`
 }
 
 // RateLimit is a token-bucket call rate for one scope. Burst is the bucket
@@ -243,12 +208,6 @@ func limitScopeKey(client, server, tool string) (kind, key string, ok bool) {
 		kind, key = "tool", tool
 	}
 	return kind, key, set == 1
-}
-
-// ScopeKey returns the budget's scope kind and key; ok=false when the entry
-// does not set exactly one of client/server/tool.
-func (b BudgetLimit) ScopeKey() (kind, key string, ok bool) {
-	return limitScopeKey(b.Client, b.Server, b.Tool)
 }
 
 // ScopeKey returns the rate limit's scope kind and key; ok=false when the
@@ -411,13 +370,6 @@ type GatewayConfig struct {
 	// Security configures security features such as schema pinning. When nil, defaults apply.
 	Security *GatewaySecurityConfig `yaml:"security,omitempty" json:"security,omitempty"`
 
-	// DefaultModel is the model ID used to price tool calls for servers that
-	// do not set their own model field (e.g. "claude-opus-4-7"). Rates come
-	// from the embedded LiteLLM pricing snapshot; resulting figures are
-	// estimates, not billing truth. Empty (the default) disables cost
-	// attribution for servers without a per-server model.
-	DefaultModel string `yaml:"default_model,omitempty" json:"default_model,omitempty"`
-
 	// Tokenizer selects the token counting strategy.
 	// Values: "embedded" (default) uses the cl100k_base BPE vocabulary (pure Go, no network).
 	// "api" uses Anthropic's count_tokens endpoint for exact counts — Anthropic-specific,
@@ -525,14 +477,6 @@ type MCPServer struct {
 	// this server. nil fields inherit; *bool fields explicitly opt in or out.
 	Telemetry *MCPServerTelemetry `yaml:"telemetry,omitempty" json:"telemetry,omitempty"`
 
-	// Model is the model ID used to price this server's tool calls against
-	// the embedded LiteLLM pricing snapshot (e.g. "claude-opus-4-7").
-	// Overrides gateway.default_model for this server. Empty (the default)
-	// means no cost attribution: tokens are still recorded but cost stays
-	// zero. Unknown model IDs are best-effort — they log a single WARN and
-	// price as zero rather than failing validation.
-	Model string `yaml:"model,omitempty" json:"model,omitempty"`
-
 	// Auth configures downstream authentication for external URL servers:
 	// a static bearer token, a static custom header, or OAuth 2.1 brokering
 	// handled by the gateway. nil (the default) preserves the existing
@@ -560,59 +504,6 @@ type ServerAuth struct {
 	Scopes       []string `yaml:"scopes,omitempty"`
 	ClientID     string   `yaml:"client_id,omitempty"`
 	ClientSecret string   `yaml:"client_secret,omitempty"`
-}
-
-// ClientModelAttribution returns the client ID -> model mapping used to
-// price tool calls by calling client, the highest-precedence configured tier
-// (a call-level model reported by the server still wins over it). Entries
-// with empty values are skipped. Returns nil when nothing is configured,
-// which keeps the client pricing tier inert. Keys are NOT re-normalized:
-// they must already be canonical client IDs (see NormalizeClientID in
-// pkg/mcp/clientid.go); ValidateWithIssues warns on keys that are not.
-func (s *Stack) ClientModelAttribution() map[string]string {
-	if s == nil || len(s.ClientModels) == 0 {
-		return nil
-	}
-	var out map[string]string
-	for client, model := range s.ClientModels {
-		if client == "" || model == "" {
-			continue
-		}
-		if out == nil {
-			out = make(map[string]string, len(s.ClientModels))
-		}
-		out[client] = model
-	}
-	return out
-}
-
-// ModelAttribution builds the server name -> effective model mapping used to
-// price tool calls: a server's own Model field wins, then the gateway-level
-// DefaultModel. Servers with no effective model are omitted. Returns nil when
-// no attribution is configured anywhere, which keeps the cost path inert.
-func (s *Stack) ModelAttribution() map[string]string {
-	if s == nil {
-		return nil
-	}
-	var defaultModel string
-	if s.Gateway != nil {
-		defaultModel = s.Gateway.DefaultModel
-	}
-	var out map[string]string
-	for _, server := range s.MCPServers {
-		model := server.Model
-		if model == "" {
-			model = defaultModel
-		}
-		if model == "" {
-			continue
-		}
-		if out == nil {
-			out = make(map[string]string, len(s.MCPServers))
-		}
-		out[server.Name] = model
-	}
-	return out
 }
 
 // AutoscaleConfig controls reactive autoscaling of a ReplicaSet. All fields are
