@@ -19,7 +19,7 @@ type Stack struct {
 	MCPServers []MCPServer            `yaml:"mcp-servers"`
 	Resources  []Resource             `yaml:"resources,omitempty"`
 	Clients    *ClientsConfig         `yaml:"clients,omitempty"`                        // Optional per-client access scoping (NetworkPolicy semantics)
-	Limits     *LimitsConfig          `yaml:"limits,omitempty" json:"limits,omitempty"` // Optional budgets and rate limits enforced at dispatch
+	Limits     *LimitsConfig          `yaml:"limits,omitempty" json:"limits,omitempty"` // Optional rate limits enforced at dispatch
 	Groups     map[string]GroupConfig `yaml:"groups,omitempty" json:"groups,omitempty"` // Optional named tool bundles, each at /groups/{name}/mcp
 	Skills     *SkillsPolicyConfig    `yaml:"skills,omitempty" json:"skills,omitempty"` // Optional global skill exposure policy (allow/deny name globs)
 
