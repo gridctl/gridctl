@@ -1,5 +1,6 @@
 import { Lightbulb } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { formatCompactNumber } from '../../lib/format';
 import { severityClasses, severityIcon } from '../../lib/severity';
 import { findingTarget } from './metricsData';
 import { PanelHeader } from './metricsShared';
@@ -60,6 +61,11 @@ export function SavingsCard({
                 {finding.severity}
               </span>
               <span className="flex-1 min-w-0 truncate text-left text-xs text-text-primary">{finding.title}</span>
+              {(finding.impact_tokens_per_week ?? 0) > 0 && (
+                <span className="flex-shrink-0 text-[10px] font-mono tabular-nums text-text-secondary">
+                  {formatCompactNumber(finding.impact_tokens_per_week ?? 0)} tok/wk
+                </span>
+              )}
             </>
           );
           return (
