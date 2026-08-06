@@ -19,7 +19,6 @@ networks: ...
 mcp-servers: ...
 resources: ...
 clients: ...
-client_models: ...
 limits: ...
 groups: ...
 link: ...
@@ -41,8 +40,7 @@ experimental: ...
 | `mcp-servers` | []object | No | - | MCP server definitions |
 | `resources` | []object | No | - | Supporting container definitions (databases, caches, etc.) |
 | `clients` | object | No | - | Per-client access scoping (see [Clients](#clients-per-client-access-scoping)) |
-| `client_models` | map | No | - | Per-client model pricing attribution (see [Client Models](#client-models-pricing-attribution)) |
-| `limits` | object | No | - | Budgets and rate limits enforced at dispatch (see [Limits](#limits-budgets-and-rate-limits)) |
+| `limits` | object | No | - | Rate limits enforced at dispatch (see [Limits](#limits-rate-limits)) |
 | `groups` | map | No | - | Named tool bundles, each at its own endpoint (see [Groups](#groups-tool-bundles)) |
 | `link` | []string\|object | No | - | LLM clients `gridctl apply` links to this gateway (see [Link](#link-declared-clients)) |
 | `skills` | object | No | - | Global skill exposure policy: allow/deny name globs (see [Skills](#skills-exposure-policy)) |
@@ -81,7 +79,6 @@ gateway:
 | `auth` | object | No | - | Authentication configuration |
 | `code_mode` | string | No | `"off"` | Enable code mode: `"on"` or `"off"` |
 | `code_mode_timeout` | int | No | `30` | Code mode execution timeout in seconds. Must be >= 0 |
-| `default_model` | string | No | - | Model ID used to price tool calls for servers without their own `model` field (e.g. `"claude-opus-4-7"`). Enables cost observability; figures are estimates from the embedded LiteLLM rates, not billing truth. Empty disables cost attribution for servers without a per-server `model` |
 | `output_format` | string | No | `"json"` | Default output format for tool call results: `"json"`, `"toon"`, `"csv"`, or `"text"`. Per-server `output_format` overrides this value |
 | `maxToolResultBytes` | int | No | `65536` | Maximum size of a tool result in bytes before truncation. Results over the limit are truncated with a suffix noting the original size. `0` uses the default (64 KB) |
 | `name` | string | No | `"gridctl-gateway"` | Identity announced to MCP clients in the initialize response (`serverInfo.name`). Some clients (VS Code / GitHub Copilot) display this instead of the entry key in their own config, so give distinct gateways distinct names. Group endpoints announce `<name>/<group>`. Requires a restart to propagate |
@@ -602,7 +599,6 @@ mcp-servers:
 | `replica_policy` | string | No | `"round-robin"` | Dispatch policy when `replicas > 1` or `autoscale` is set: `"round-robin"` or `"least-connections"` |
 | `autoscale` | object | No | - | Reactive autoscaling block. Mutually exclusive with `replicas`. Not supported for external URL or OpenAPI transports. See [Autoscale](#autoscale) |
 | `telemetry` | object | No | - | Per-server telemetry persistence overrides. See [Per-server Overrides](#per-server-overrides) |
-| `model` | string | No | - | Model ID used to price this server's tool calls (e.g. `"claude-opus-4-7"`). Overrides `gateway.default_model`. Enables cost observability for this server; figures are estimates from the embedded LiteLLM rates. Unknown model IDs log a single WARN and price as zero. Edits hot-reload without restarting the server. See [Cost Observability](cost-observability.md) |
 
 **Type determination rules:**
 - Must have exactly one of: `image`, `source`, `url`, `command` (alone), `ssh` + `command`, or `openapi`
@@ -887,112 +883,43 @@ policy (deny); the editor warns before that happens. Finer tool-level
 allow-lists (`tools:`) are enforced by the gateway but edited directly in
 stack.yaml.
 
-Declaring which model a client runs for cost estimates is a separate,
-access-inert concern — see [Client Models](#client-models-pricing-attribution)
-below.
-
 ---
 
-## Client Models (pricing attribution)
+## Limits (rate limits)
 
-The optional top-level `client_models:` map declares which model each
-connecting client runs, purely for cost attribution: tool calls from a
-declared client are priced at that model's rates. This is **pricing, not
-access** — the map never requires a `clients:` block, never restricts any
-client, and has zero effect on the access policy described in
-[Clients](#clients-per-client-access-scoping) above (which is access, not
-pricing).
-
-```yaml
-gateway:
-  default_model: claude-haiku-4-5   # pricing floor for anything not declared
-
-client_models:
-  claude-code: claude-opus-4-7
-  gemini-cli: gemini-2.5-pro
-```
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `client_models` | map | No | - | Stable client identifier → model ID used to price that client's tool calls. Keys are the same identifiers used by `clients.profiles` and shown on the Stack canvas (e.g. `claude-code`). Values are model IDs from the embedded LiteLLM pricing snapshot (e.g. `claude-opus-4-7`) |
-
-Pricing resolution per tool call, highest precedence first: call-level usage
-metadata (when a server reports one) > the calling client's `client_models`
-entry > the target server's `model:` > `gateway.default_model`. Unknown model
-IDs and keys that are not normalized client IDs surface as validation
-warnings (never errors) and price as zero. Edits hot-reload without
-restarting any server. All three tiers are editable in the web UI: inline in
-the Metrics tab's client and server tables, or through the "Pricing models"
-manager (Metrics toolbar, sidebar inspector, or command palette); see
-[Cost Observability](cost-observability.md) for semantics and limitations.
-
----
-
-## Limits (budgets and rate limits)
-
-The optional top-level `limits:` block enforces spending caps and call rates
-at tool-call dispatch. Omitting the block preserves legacy behavior: nothing
-is ever limited. Both entry kinds scope to exactly one of `client`,
-`server`, or `tool`.
+The optional top-level `limits:` block enforces call rates at tool-call
+dispatch. Omitting the block preserves legacy behavior: nothing is ever
+limited. Each entry scopes to exactly one of `client`, `server`, or `tool`.
 
 ```yaml
 limits:
-  budgets:
-    - client: claude-code        # exactly one of client / server / tool
-      max_usd: 5.00
-      period: daily              # daily | weekly | monthly
-      warn_at_percent: 80        # optional soft tier
-    - server: github
-      max_usd: 20
-      period: weekly
   rate_limits:
-    - server: github
+    - server: github             # exactly one of client / server / tool
       calls_per_minute: 30
       burst: 10                  # optional bucket capacity
     - tool: github__search_code
       calls_per_minute: 6
 ```
 
-### Budget fields
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `client` / `server` / `tool` | string | One of | - | Scope key. `client` is the stable client identifier used by `clients.profiles` and `client_models`; `server` is a stack server name; `tool` is a prefixed name (`server__tool`) |
-| `max_usd` | float | Yes | - | Dollar cap for the window; must be positive |
-| `period` | string | Yes | - | `daily`, `weekly`, or `monthly`. Windows are calendar-aligned in the daemon's local timezone: daily resets at midnight, weekly on Monday 00:00, monthly on the 1st |
-| `warn_at_percent` | int | No | - | 1-99. Crossing this percentage of the cap logs one WARN per window and surfaces a `warn` state in `gridctl limits` and `GET /api/limits` |
-
 ### Rate limit fields
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `client` / `server` / `tool` | string | One of | - | Scope key, same vocabulary as budgets |
+| `client` / `server` / `tool` | string | One of | - | Scope key. `client` is the stable client identifier used by `clients.profiles`; `server` is a stack server name; `tool` is a prefixed name (`server__tool`) |
 | `calls_per_minute` | int | Yes | - | Sustained rate; must be positive |
 | `burst` | int | No | max(5, rate/6) | Token-bucket capacity: how many calls may land at once before the sustained rate applies |
 
 ### Enforcement semantics
 
-Enforcement is check-then-settle. A call is admitted against spend already
-recorded; its own cost is settled after it completes, because cost is only
-known once token usage is. Concurrent or in-flight calls can therefore
-overshoot a cap by their own cost; the next matching call after the cap is
-reached is denied. Denials are returned as in-band tool errors with the cap,
-current consumption, reset time, and retry guidance, so agent LLMs stop
-retrying instead of burning tokens.
+Each entry is a token bucket checked at dispatch. A call that finds the
+bucket empty is denied as an in-band tool error carrying the configured
+rate, the scope that tripped, and retry guidance, so agent LLMs stop
+retrying instead of burning tokens. Edits hot-reload without restarting any
+server. Current state surfaces in `gridctl limits` and `GET /api/limits`.
 
-**The attribution gap.** Budgets govern attributed cost only. A call is
-priced when a model resolves for it (call-level usage metadata,
-`client_models`, the server's `model:`, or `gateway.default_model`); a call
-whose model cannot be priced records tokens but no dollars and therefore
-spends outside every budget's sight. Rate limits need no pricing at all and
-are the recommended backstop on any scope you cap.
-
-Budget spend persists in a ledger under `~/.gridctl/limits/<stack>.json`
-(independent of [Telemetry Persistence](#telemetry-persistence)), so a
-daemon restart mid-window never refills a spent budget. Edits hot-reload:
-current-window spend carries over for entries whose scope and period are
-unchanged, and raising a cap never resets its counter. Consumption surfaces
-in `gridctl limits` and `GET /api/limits`.
+Earlier releases also supported dollar `budgets:` in this block; that layer
+has been removed (see [Usage Observability](cost-observability.md)). A
+leftover `budgets:` key is ignored by the loader.
 
 ---
 
