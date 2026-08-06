@@ -654,30 +654,6 @@ func validateLimits(s *Stack, serverNames map[string]bool) ValidationErrors {
 		return kind + ":" + key
 	}
 
-	seenBudgets := make(map[string]bool, len(s.Limits.Budgets))
-	for i := range s.Limits.Budgets {
-		b := &s.Limits.Budgets[i]
-		prefix := fmt.Sprintf("limits.budgets[%d]", i)
-		if scope := validateScope(prefix, b.Client, b.Server, b.Tool); scope != "" {
-			if seenBudgets[scope] {
-				errs = append(errs, ValidationError{prefix, fmt.Sprintf("duplicate budget for %s", scope)})
-			}
-			seenBudgets[scope] = true
-		}
-		if b.MaxUSD <= 0 {
-			errs = append(errs, ValidationError{prefix + ".max_usd", "must be positive"})
-		}
-		switch b.Period {
-		case "daily", "weekly", "monthly":
-			// valid
-		default:
-			errs = append(errs, ValidationError{prefix + ".period", "must be 'daily', 'weekly', or 'monthly'"})
-		}
-		if b.WarnAtPercent < 0 || b.WarnAtPercent > 99 {
-			errs = append(errs, ValidationError{prefix + ".warn_at_percent", "must be between 1 and 99 (omit to disable)"})
-		}
-	}
-
 	seenRates := make(map[string]bool, len(s.Limits.RateLimits))
 	for i := range s.Limits.RateLimits {
 		r := &s.Limits.RateLimits[i]
