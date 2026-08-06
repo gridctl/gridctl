@@ -1,25 +1,29 @@
 // Package optimize produces actionable findings from gateway-observed
-// data — server registrations, per-server token + cost totals, and
-// per-(server, tool) call counts — to help platform engineers reduce
-// spend on a running gridctl stack.
+// data — server registrations, per-server token totals, and per-(server,
+// tool) call counts — to help platform engineers shrink the token
+// footprint of a running gridctl stack.
 //
 // The package is read-only: it never mutates accumulator state or the
 // running gateway. Callers assemble a Stats snapshot, hand it to
 // Analyze, and render the resulting OptimizeReport (CLI table, JSON, or
 // Web UI).
 //
-// Heuristics in v1 (PR 4 of the gateway-cost-observability feature):
+// Heuristics:
 //   - unused_server: a registered server has seen zero tool calls in
 //     the freshness window. Remediation: drop the server from the
 //     stack YAML.
 //   - unused_tool:   a registered tool on an active server has not been
 //     called in the freshness window. Remediation: add it to the
 //     server's tools: exclusion list.
+//   - schema_overhead: a server's tool-list schema outweighs the output
+//     its tools have produced.
+//   - format_savings_shortfall: a server emits raw JSON while siblings
+//     demonstrate measured TOON/CSV savings.
 //
-// Additional heuristics (schema_overhead, format_savings_shortfall,
-// expensive_model_on_cheap_task) ship in PR 5; the Stats shape is
-// intentionally additive so future heuristics can read more inputs
-// without breaking call sites.
+// Impact is denominated in tokens per week: schema tokens the finding
+// would free, projected at an assumed ~500 prompts/week (deliberately
+// conservative). Tokens are what the gateway actually measures; dollar
+// conversion belongs to systems that can see real spend.
 package optimize
 
 import (
@@ -72,25 +76,15 @@ type Finding struct {
 	// server-level findings.
 	Tool string `json:"tool,omitempty"`
 
-	// ImpactUSDPerWeek is the projected weekly USD savings from
-	// applying the remediation. Always derived from measured data;
-	// findings that cannot prove an impact set this to zero.
-	ImpactUSDPerWeek float64 `json:"impact_usd_per_week"`
+	// ImpactTokensPerWeek is the projected weekly token savings from
+	// applying the remediation, computed from measured schema or output
+	// tokens times the assumed ~500 prompts/week. Findings that cannot
+	// prove an impact set this to zero.
+	ImpactTokensPerWeek int64 `json:"impact_tokens_per_week"`
 
 	// Remediation is a paste-ready YAML snippet or shell command that
 	// resolves the finding. Multi-line strings are allowed.
 	Remediation string `json:"remediation"`
-
-	// Model names the model the finding refers to, when one is known. Set
-	// by expensive_model_on_cheap_task from the dominant model that priced
-	// the server's traffic. Empty when only an effective rate was available.
-	Model string `json:"model,omitempty"`
-
-	// Provenance describes how Model was determined: "declared" when it is
-	// the model that priced the server's recorded cost; empty when the
-	// finding fired on a rate inferred from observed cost÷tokens with no
-	// model identity. Mirrors the effective-model provenance vocabulary.
-	Provenance string `json:"provenance,omitempty"`
 
 	// DetectedAt is the wall-clock time the report was generated, not
 	// the time the underlying condition began.
@@ -133,19 +127,18 @@ type ServerInfo struct {
 	OutputFormat string
 }
 
-// ServerUsage carries per-server token and cost totals as observed by
-// the accumulator. The fields mirror metrics.TokenCounts and
-// metrics.CostCounts so call sites can populate them directly.
+// ServerUsage carries per-server token totals as observed by the
+// accumulator. The fields mirror metrics.TokenCounts so call sites can
+// populate them directly.
 type ServerUsage struct {
 	InputTokens  int64
 	OutputTokens int64
 	TotalTokens  int64
-	TotalCostUSD float64
 }
 
 // CallCount returns a coarse "calls happened" indicator for a server.
-// True when any token activity has been recorded, regardless of cost.
-// Used by unused_server: a server with zero observed traffic is unused.
+// True when any token activity has been recorded. Used by
+// unused_server: a server with zero observed traffic is unused.
 func (u ServerUsage) CallCount() bool {
 	return u.TotalTokens > 0
 }
@@ -179,7 +172,7 @@ type Stats struct {
 	// Servers is every server registered in the active stack.
 	Servers []ServerInfo
 
-	// Usage is the per-server token + cost totals keyed by server name.
+	// Usage is the per-server token totals keyed by server name.
 	// Servers absent from this map are treated as zero-traffic.
 	Usage map[string]ServerUsage
 
@@ -199,7 +192,7 @@ type Stats struct {
 	// ToolSchemaTokens is the estimated schema-token cost of each
 	// individual tool definition, keyed server -> tool. Populated from
 	// the same live tools/list measurement as PinStats. Used by
-	// unused_tool to price the context tax an unused tool's definition
+	// unused_tool to size the context tax an unused tool's definition
 	// adds to every prompt. nil (or a missing tool) falls back to a
 	// conservative per-tool estimate.
 	ToolSchemaTokens map[string]map[string]int
@@ -211,25 +204,6 @@ type Stats struct {
 	// value disables the heuristic — without a baseline we have no
 	// gateway-measured evidence that conversion would help here.
 	FormatBaseline FormatBaseline
-
-	// ServerCallCount is the total tool-call count per server, summed
-	// across that server's tools. Used by
-	// expensive_model_on_cheap_task to compute average tokens-per-call.
-	// nil means the heuristic skips per-server avg-tokens math.
-	ServerCallCount map[string]int64
-
-	// ModelStats carries per-server pricing rates when the call site
-	// knows which model dominates traffic for that server. Empty/nil
-	// causes expensive_model_on_cheap_task to fall back to inferring
-	// the rate from observed cost÷tokens.
-	ModelStats map[string]ModelStat
-
-	// ModelHistograms carries the per-server breakdown of recorded cost by
-	// the model that priced it (server -> model ID -> USD). When present it
-	// names the dominant model exactly (the model that priced the most
-	// cost), which resolveDominantRate prefers over the declared ModelStat
-	// or the cost÷tokens fallback. nil leaves the existing behavior intact.
-	ModelHistograms map[string]map[string]float64
 }
 
 // PinStat carries the schema-overhead inputs for a single server. The
@@ -261,45 +235,22 @@ type FormatBaseline struct {
 	SavingsPercent float64
 }
 
-// ModelStat names the dominant model for a server and carries its
-// per-token rates. Used by expensive_model_on_cheap_task to detect
-// "Opus-tier model on a simple lookup tool" without re-deriving rates
-// from cost÷tokens (which conflates input vs output vs cache rates).
-type ModelStat struct {
-	// Model is the canonical model ID (e.g. "claude-opus-4-7"). Empty
-	// when the gateway has no resolver wired for the server, in which
-	// case the heuristic falls back to inferring rate from observed
-	// cost.
-	Model string
-	// InputUSDPerToken is the input-token rate from pricing.Lookup.
-	// Zero disables the rate-based path; the heuristic falls back to
-	// inferring from observed cost÷tokens.
-	InputUSDPerToken float64
-	// OutputUSDPerToken is the output-token rate from pricing.Lookup.
-	// Provided alongside InputUSDPerToken for completeness; the
-	// heuristic itself only needs InputUSDPerToken to detect
-	// Opus-tier pricing.
-	OutputUSDPerToken float64
-}
-
 // ToolStat mirrors metrics.ToolStat so pkg/optimize stays free of an
 // import on pkg/metrics. Callers can populate it directly from
-// metrics.Accumulator.ToolUsageSnapshot(). InputTokens/OutputTokens and
-// CostUSD carry the tool's observed traffic and priced spend; zero values
-// simply mean "nothing recorded" and no heuristic treats them as measured.
+// metrics.Accumulator.ToolUsageSnapshot(). Zero values simply mean
+// "nothing recorded" and no heuristic treats them as measured.
 type ToolStat struct {
 	Calls        int64
 	LastCalledAt time.Time
 	InputTokens  int64
 	OutputTokens int64
-	CostUSD      float64
 }
 
 // Options tunes the Analyze pass. All fields are optional.
 type Options struct {
-	// MinImpactUSDPerWeek filters findings whose projected weekly
-	// savings fall below the threshold. Zero disables the filter.
-	MinImpactUSDPerWeek float64
+	// MinImpactTokensPerWeek filters findings whose projected weekly
+	// token savings fall below the threshold. Zero disables the filter.
+	MinImpactTokensPerWeek int64
 
 	// SeverityFilter, when non-empty, drops findings whose severity is
 	// not in the set. Use to render only warn/critical in CI.
@@ -321,14 +272,9 @@ const (
 	// many prompts a stack sees in a week. We deliberately understate
 	// it (a busy team easily hits >1000/day) so impact numbers do not
 	// over-promise — this is gateway-data-driven inference, not a
-	// guess about the user's workflow.
+	// guess about the user's workflow. Summaries name the assumption
+	// so projected figures never read as measured.
 	estimatedPromptsPerWeek = 500
-
-	// estimatedInputUSDPerToken is the rough per-token input rate used
-	// when the server has no recorded cost yet. ~$3 per million input
-	// tokens, the Anthropic Sonnet rate, is a defensible mid-range
-	// number across providers in 2026.
-	estimatedInputUSDPerToken = 3.0 / 1_000_000.0
 
 	// estimatedToolSchemaTokens is the fallback schema cost of a single
 	// tool definition when no measured per-tool count is available.
@@ -360,37 +306,13 @@ const (
 	// this threshold the projected savings rounds to zero and the
 	// finding adds noise without value.
 	formatShortfallMinOutputTokens = 5_000
-
-	// formatShortfallProjectionWeeks is how many weeks of activity the
-	// projected impact represents — set to 1 so the
-	// `impact_usd_per_week` field stays comparable to the other
-	// heuristics' weekly numbers.
-	formatShortfallProjectionWeeks = 1.0
-
-	// expensiveModelInputRateThreshold flags any server whose dominant
-	// model has an input rate at or above this number. ~$5 per million
-	// input tokens captures Opus-tier and GPT-4-class pricing without
-	// catching mid-tier Sonnet/GPT-4o.
-	expensiveModelInputRateThreshold = 5.0 / 1_000_000.0
-
-	// expensiveModelMaxAvgTokensPerCall is the upper bound on the
-	// per-call token average that still counts as a "simple lookup."
-	// Servers with larger calls (long prompts, big result payloads)
-	// are not the target of this heuristic — it's about cheap tasks
-	// being executed on expensive infra.
-	expensiveModelMaxAvgTokensPerCall = 200.0
-
-	// expensiveModelMinCalls keeps the heuristic from firing on a
-	// single outlier call. Five calls is enough to be a pattern; less
-	// than that is anecdote.
-	expensiveModelMinCalls = 5
 )
 
-// Analyze runs the v1 heuristic pass over the supplied Stats and
-// returns a fully-populated OptimizeReport. The report's Findings slice
-// is sorted by severity (critical → warn → info) then by impact
-// descending so renderers can stream the most actionable finding
-// first without re-sorting.
+// Analyze runs the heuristic pass over the supplied Stats and returns a
+// fully-populated OptimizeReport. The report's Findings slice is sorted
+// by severity (critical → warn → info) then by impact descending so
+// renderers can stream the most actionable finding first without
+// re-sorting.
 func Analyze(stats Stats, opts Options) OptimizeReport {
 	now := stats.Now
 	if now.IsZero() {
@@ -429,10 +351,9 @@ func Analyze(stats Stats, opts Options) OptimizeReport {
 	findings = append(findings, detectUnusedTools(stats, now, cutoff)...)
 	findings = append(findings, detectSchemaOverhead(stats, now)...)
 	findings = append(findings, detectFormatSavingsShortfall(stats, now)...)
-	findings = append(findings, detectExpensiveModelOnCheapTask(stats, now)...)
 
-	if opts.MinImpactUSDPerWeek > 0 {
-		findings = filterByImpact(findings, opts.MinImpactUSDPerWeek)
+	if opts.MinImpactTokensPerWeek > 0 {
+		findings = filterByImpact(findings, opts.MinImpactTokensPerWeek)
 	}
 	if len(opts.SeverityFilter) > 0 {
 		findings = filterBySeverity(findings, opts.SeverityFilter)
@@ -446,8 +367,7 @@ func Analyze(stats Stats, opts Options) OptimizeReport {
 
 // detectUnusedServers flags every initialized server with zero recorded
 // token activity in the freshness window. Impact is the schema overhead
-// the server adds to every prompt × estimated weekly prompts × the
-// server's effective per-token cost.
+// the server adds to every prompt × estimated weekly prompts.
 func detectUnusedServers(stats Stats, now, _ time.Time) []Finding {
 	var out []Finding
 	for _, srv := range stats.Servers {
@@ -458,17 +378,16 @@ func detectUnusedServers(stats Stats, now, _ time.Time) []Finding {
 		if usage.CallCount() {
 			continue
 		}
-		impact := unusedServerImpact(srv, usage)
 		out = append(out, Finding{
-			ID:               "unused-server-" + srv.Name,
-			Heuristic:        "unused_server",
-			Severity:         SeverityWarn,
-			Title:            "Unused server: " + srv.Name,
-			Summary:          summaryUnusedServer(srv),
-			Server:           srv.Name,
-			ImpactUSDPerWeek: impact,
-			Remediation:      remediationUnusedServer(srv),
-			DetectedAt:       now,
+			ID:                  "unused-server-" + srv.Name,
+			Heuristic:           "unused_server",
+			Severity:            SeverityWarn,
+			Title:               "Unused server: " + srv.Name,
+			Summary:             summaryUnusedServer(srv),
+			Server:              srv.Name,
+			ImpactTokensPerWeek: unusedServerImpact(srv),
+			Remediation:         remediationUnusedServer(srv),
+			DetectedAt:          now,
 		})
 	}
 	return out
@@ -482,7 +401,7 @@ func detectUnusedServers(stats Stats, now, _ time.Time) []Finding {
 //
 // The heuristic is intentionally conservative: if the accumulator has
 // no per-tool data at all (legacy gateway, freshly restarted process),
-// it returns no findings rather than flagging every tool.
+// it returns no findings rather than flagging every tool as unused.
 func detectUnusedTools(stats Stats, now, cutoff time.Time) []Finding {
 	if len(stats.ToolUsage) == 0 {
 		return nil
@@ -509,42 +428,26 @@ func detectUnusedTools(stats Stats, now, cutoff time.Time) []Finding {
 				continue
 			}
 			out = append(out, Finding{
-				ID:               "unused-tool-" + srv.Name + "-" + tool,
-				Heuristic:        "unused_tool",
-				Severity:         SeverityInfo,
-				Title:            "Unused tool: " + srv.Name + "/" + tool,
-				Summary:          summaryUnusedTool(srv.Name, tool),
-				Server:           srv.Name,
-				Tool:             tool,
-				ImpactUSDPerWeek: unusedToolImpact(usage, stats.ToolSchemaTokens[srv.Name][tool]),
-				Remediation:      remediationUnusedTool(srv, tool),
-				DetectedAt:       now,
+				ID:                  "unused-tool-" + srv.Name + "-" + tool,
+				Heuristic:           "unused_tool",
+				Severity:            SeverityInfo,
+				Title:               "Unused tool: " + srv.Name + "/" + tool,
+				Summary:             summaryUnusedTool(srv.Name, tool),
+				Server:              srv.Name,
+				Tool:                tool,
+				ImpactTokensPerWeek: unusedToolImpact(stats.ToolSchemaTokens[srv.Name][tool]),
+				Remediation:         remediationUnusedTool(srv, tool),
+				DetectedAt:          now,
 			})
 		}
 	}
 	return out
 }
 
-// observedPerTokenRate returns the server's effective per-token rate
-// (recorded cost ÷ recorded tokens) when it has priced traffic, and the
-// conservative default estimate otherwise. The impact heuristics share
-// this so a future correction to the rate derivation lands in one place.
-func observedPerTokenRate(usage ServerUsage) float64 {
-	if usage.TotalTokens > 0 && usage.TotalCostUSD > 0 {
-		return usage.TotalCostUSD / float64(usage.TotalTokens)
-	}
-	return estimatedInputUSDPerToken
-}
-
-// unusedToolImpact prices the context tax of one unused tool's schema:
+// unusedToolImpact sizes the context tax of one unused tool's schema:
 // the tokens its definition adds to every prompt × estimated weekly
-// prompts × the server's per-token rate. An unused tool has zero observed
-// spend by definition, so this is the schema-tax analogue of
-// unusedServerImpact, not a measured-spend number — the same discipline
-// applies: observed rate when the server has priced traffic, the
-// conservative default otherwise, and a cap so a single oversized schema
-// never over-promises.
-func unusedToolImpact(usage ServerUsage, schemaTokens int) float64 {
+// prompts. Capped so a single oversized schema never over-promises.
+func unusedToolImpact(schemaTokens int) int64 {
 	tokens := schemaTokens
 	if tokens <= 0 {
 		tokens = estimatedToolSchemaTokens
@@ -552,19 +455,14 @@ func unusedToolImpact(usage ServerUsage, schemaTokens int) float64 {
 	if tokens > estimatedSchemaOverheadTokens {
 		tokens = estimatedSchemaOverheadTokens // cap at the per-server estimate to stay conservative
 	}
-	return float64(tokens) * estimatedPromptsPerWeek * observedPerTokenRate(usage)
+	return int64(tokens) * estimatedPromptsPerWeek
 }
 
-func unusedServerImpact(srv ServerInfo, usage ServerUsage) float64 {
-	// If the server has any historic cost we use its observed per-token
-	// rate; otherwise we fall back to the conservative default. We do
-	// not invent numbers when there is no data — usage stays zero, so
-	// the formula returns zero unless we can prove tokens-per-prompt
-	// from elsewhere. Schema-overhead × prompts × default-rate gives a
-	// defensible upper bound for the unused_server case (which has no
-	// usage data by definition) without claiming an impact we did not
-	// measure end-to-end.
-	rate := observedPerTokenRate(usage)
+// unusedServerImpact sizes the schema overhead an unused server adds to
+// every prompt: per-tool schema estimate × tool count (capped at 5×) ×
+// estimated weekly prompts. An unused server has no measured traffic by
+// definition, so this is a conservative projection, not a measurement.
+func unusedServerImpact(srv ServerInfo) int64 {
 	tools := len(srv.Tools)
 	if tools <= 0 {
 		tools = 1
@@ -573,7 +471,7 @@ func unusedServerImpact(srv ServerInfo, usage ServerUsage) float64 {
 	if overhead > 5*estimatedSchemaOverheadTokens {
 		overhead = 5 * estimatedSchemaOverheadTokens // cap at 5× to stay conservative
 	}
-	return float64(overhead) * estimatedPromptsPerWeek * rate
+	return int64(overhead) * estimatedPromptsPerWeek
 }
 
 func summaryUnusedServer(srv ServerInfo) string {
@@ -582,7 +480,7 @@ func summaryUnusedServer(srv ServerInfo) string {
 	if count == 1 {
 		plural = ""
 	}
-	return "Server '" + srv.Name + "' has registered " + itoa(count) + " tool" + plural + " but no calls have been observed. Removing it (or excluding all its tools) frees the schema overhead it adds to every prompt."
+	return "Server '" + srv.Name + "' has registered " + itoa(count) + " tool" + plural + " but no calls have been observed. Removing it (or excluding all its tools) frees the schema overhead it adds to every prompt (impact projected assuming ~500 prompts/week)."
 }
 
 func summaryUnusedTool(server, tool string) string {
@@ -609,8 +507,7 @@ func remediationUnusedTool(srv ServerInfo, tool string) string {
 
 // detectSchemaOverhead flags servers whose tool-list payload (the
 // schema gateway sends on every initialize / tools/list) is large
-// relative to the value the server's tools have produced. The formula
-// is the gateway-data-driven shape of the prompt's heuristic:
+// relative to the value the server's tools have produced:
 //
 //	ratio = output_tokens / schema_tokens
 //
@@ -647,17 +544,16 @@ func detectSchemaOverhead(stats Stats, now time.Time) []Finding {
 		if ratio >= schemaOverheadRatioFloor {
 			continue
 		}
-		impact := schemaOverheadImpact(pin.SchemaTokens, usage)
 		out = append(out, Finding{
-			ID:               "schema-overhead-" + srv.Name,
-			Heuristic:        "schema_overhead",
-			Severity:         SeverityWarn,
-			Title:            "Schema overhead exceeds tool value: " + srv.Name,
-			Summary:          summarySchemaOverhead(srv, pin, usage, ratio),
-			Server:           srv.Name,
-			ImpactUSDPerWeek: impact,
-			Remediation:      remediationSchemaOverhead(srv),
-			DetectedAt:       now,
+			ID:                  "schema-overhead-" + srv.Name,
+			Heuristic:           "schema_overhead",
+			Severity:            SeverityWarn,
+			Title:               "Schema overhead exceeds tool value: " + srv.Name,
+			Summary:             summarySchemaOverhead(srv, pin, usage, ratio),
+			Server:              srv.Name,
+			ImpactTokensPerWeek: schemaOverheadImpact(pin.SchemaTokens),
+			Remediation:         remediationSchemaOverhead(srv),
+			DetectedAt:          now,
 		})
 	}
 	return out
@@ -666,10 +562,9 @@ func detectSchemaOverhead(stats Stats, now time.Time) []Finding {
 // detectFormatSavingsShortfall flags servers that emit raw JSON output
 // (no `output_format` configured) when other servers in the same
 // session have already demonstrated a meaningful savings rate from
-// converting to TOON or CSV. The projected impact uses the session
-// baseline rate × the candidate server's measured output tokens × the
-// candidate's measured per-token cost — every input is observed, not
-// guessed.
+// converting to TOON or CSV. The projected impact is the session
+// baseline rate × the candidate server's measured output tokens —
+// every input is observed, not guessed.
 //
 // Skipped silently when:
 //   - FormatBaseline.SavingsPercent is below the demonstration floor
@@ -693,91 +588,28 @@ func detectFormatSavingsShortfall(stats Stats, now time.Time) []Finding {
 		if usage.OutputTokens < formatShortfallMinOutputTokens {
 			continue
 		}
-		// Per-token rate inferred from observed cost so impact stays
-		// gateway-data-driven. Falls back to the conservative default
-		// when no cost has been recorded yet (rare for a server with
-		// >5K output tokens but possible right after pricing data was
-		// cleared via DELETE /api/metrics/cost).
-		rate := observedPerTokenRate(usage)
-		projectedSavedTokens := float64(usage.OutputTokens) * stats.FormatBaseline.SavingsPercent / 100.0
-		impact := projectedSavedTokens * rate * formatShortfallProjectionWeeks
+		projectedSavedTokens := int64(float64(usage.OutputTokens) * stats.FormatBaseline.SavingsPercent / 100.0)
 		out = append(out, Finding{
-			ID:               "format-savings-shortfall-" + srv.Name,
-			Heuristic:        "format_savings_shortfall",
-			Severity:         SeverityWarn,
-			Title:            "Output format conversion would save tokens: " + srv.Name,
-			Summary:          summaryFormatShortfall(srv, usage, stats.FormatBaseline),
-			Server:           srv.Name,
-			ImpactUSDPerWeek: impact,
-			Remediation:      remediationFormatShortfall(srv),
-			DetectedAt:       now,
+			ID:                  "format-savings-shortfall-" + srv.Name,
+			Heuristic:           "format_savings_shortfall",
+			Severity:            SeverityWarn,
+			Title:               "Output format conversion would save tokens: " + srv.Name,
+			Summary:             summaryFormatShortfall(srv, usage, stats.FormatBaseline),
+			Server:              srv.Name,
+			ImpactTokensPerWeek: projectedSavedTokens,
+			Remediation:         remediationFormatShortfall(srv),
+			DetectedAt:          now,
 		})
 	}
 	return out
 }
 
-// detectExpensiveModelOnCheapTask flags servers where an Opus-tier
-// model dominates traffic but the calls themselves are tiny — short
-// prompts, short results — i.e. the simple-lookup pattern. The
-// finding is informational only because the model usually lives
-// client-side; gridctl can suggest the migration but cannot enforce it.
-//
-// The detection logic prefers explicit ModelStats when the call site
-// knows which model is in use; otherwise it falls back to inferring
-// an effective rate from observed cost÷tokens. When neither signal is
-// available the heuristic stays silent.
-func detectExpensiveModelOnCheapTask(stats Stats, now time.Time) []Finding {
-	if len(stats.ServerCallCount) == 0 {
-		return nil
-	}
-	var out []Finding
-	for _, srv := range stats.Servers {
-		if !srv.Initialized {
-			continue
-		}
-		nCalls := stats.ServerCallCount[srv.Name]
-		if nCalls < expensiveModelMinCalls {
-			continue
-		}
-		usage := stats.Usage[srv.Name]
-		if usage.TotalTokens == 0 {
-			continue
-		}
-		avgTokensPerCall := float64(usage.TotalTokens) / float64(nCalls)
-		if avgTokensPerCall > expensiveModelMaxAvgTokensPerCall {
-			continue
-		}
-		rate, modelName := resolveDominantRate(stats.ModelStats[srv.Name], stats.ModelHistograms[srv.Name], usage)
-		if rate < expensiveModelInputRateThreshold {
-			continue
-		}
-		provenance := ""
-		if modelName != "" {
-			provenance = "declared"
-		}
-		out = append(out, Finding{
-			ID:               "expensive-model-cheap-task-" + srv.Name,
-			Heuristic:        "expensive_model_on_cheap_task",
-			Severity:         SeverityInfo,
-			Title:            "Expensive model on cheap task: " + srv.Name,
-			Summary:          summaryExpensiveModel(srv, usage, nCalls, modelName, rate),
-			Server:           srv.Name,
-			ImpactUSDPerWeek: 0, // informational; client-side model swap is the action
-			Remediation:      remediationExpensiveModel(srv, modelName),
-			Model:            modelName,
-			Provenance:       provenance,
-			DetectedAt:       now,
-		})
-	}
-	return out
-}
-
-func schemaOverheadImpact(schemaTokens int, usage ServerUsage) float64 {
-	return float64(schemaTokens) * estimatedPromptsPerWeek * observedPerTokenRate(usage)
+func schemaOverheadImpact(schemaTokens int) int64 {
+	return int64(schemaTokens) * estimatedPromptsPerWeek
 }
 
 func summarySchemaOverhead(srv ServerInfo, pin PinStat, usage ServerUsage, ratio float64) string {
-	return "Server '" + srv.Name + "' advertises " + itoa(len(srv.Tools)) + " tools (~" + itoa(pin.SchemaTokens) + " schema tokens) but its tools have produced only " + itoa64(usage.OutputTokens) + " output tokens — a usage ratio of " + formatRatio(ratio) + ". Pruning unused tools shrinks the schema sent on every prompt."
+	return "Server '" + srv.Name + "' advertises " + itoa(len(srv.Tools)) + " tools (~" + itoa(pin.SchemaTokens) + " schema tokens) but its tools have produced only " + itoa64(usage.OutputTokens) + " output tokens — a usage ratio of " + formatRatio(ratio) + ". Pruning unused tools shrinks the schema sent on every prompt (impact projected assuming ~500 prompts/week)."
 }
 
 func remediationSchemaOverhead(srv ServerInfo) string {
@@ -792,21 +624,6 @@ func remediationFormatShortfall(srv ServerInfo) string {
 	return "# Switch the server to a token-efficient output format\nmcp-servers:\n  - name: " + srv.Name + "\n    output_format: toon  # or csv when the result is tabular"
 }
 
-func summaryExpensiveModel(srv ServerInfo, usage ServerUsage, nCalls int64, modelName string, rate float64) string {
-	avg := float64(usage.TotalTokens) / float64(nCalls)
-	if modelName == "" {
-		return "Server '" + srv.Name + "' is priced at an Opus-tier rate (" + formatRatePerMillion(rate) + " per million input tokens) but the average call is only " + formatRatio(avg) + " tokens — a simple-lookup pattern. The model selection lives client-side; consider routing this server to a cheaper model when possible."
-	}
-	return "Server '" + srv.Name + "' traffic is priced as " + modelName + " (" + formatRatePerMillion(rate) + " per million input tokens) but the average call is only " + formatRatio(avg) + " tokens — a simple-lookup pattern. The model selection lives client-side; consider routing this server to a cheaper model when possible."
-}
-
-func remediationExpensiveModel(srv ServerInfo, modelName string) string {
-	if modelName == "" {
-		return "# Model selection is client-side; pick a smaller model (e.g. Haiku, gpt-4o-mini) for prompts that primarily call '" + srv.Name + "'."
-	}
-	return "# Priced as (declared): " + modelName + "\n# Model selection is client-side; pick a smaller model (e.g. Haiku, gpt-4o-mini) for prompts that primarily call '" + srv.Name + "'."
-}
-
 func usesFormatConversion(format string) bool {
 	switch format {
 	case "toon", "csv", "text":
@@ -816,62 +633,12 @@ func usesFormatConversion(format string) bool {
 	}
 }
 
-// resolveDominantRate returns the effective input-token rate and the model
-// name for a server's expensive-model check. Resolution order:
-//
-//  1. The histogram's dominant model (the model that priced the most cost) is
-//     the exact, observed attribution. When it has a known rate (ms carries
-//     that model's rate), use it.
-//  2. The declared ModelStat rate, when present.
-//  3. The cost÷tokens fallback — an effective rate with no model identity.
-//
-// histogram maps model ID -> recorded USD for this server; nil leaves the
-// pre-histogram behavior. ms is expected to carry the dominant model's rate
-// when the call site resolved one (the API layer looks it up against the
-// pricing source).
-func resolveDominantRate(ms ModelStat, histogram map[string]float64, usage ServerUsage) (float64, string) {
-	dominant := DominantModel(histogram)
-	if dominant != "" {
-		// The histogram names the model exactly. Prefer its rate when the
-		// call site supplied one for this same model.
-		if ms.InputUSDPerToken > 0 && ms.Model == dominant {
-			return ms.InputUSDPerToken, dominant
-		}
-		if usage.TotalTokens > 0 && usage.TotalCostUSD > 0 {
-			return usage.TotalCostUSD / float64(usage.TotalTokens), dominant
-		}
-	}
-	if ms.InputUSDPerToken > 0 {
-		return ms.InputUSDPerToken, ms.Model
-	}
-	if usage.TotalTokens > 0 && usage.TotalCostUSD > 0 {
-		return usage.TotalCostUSD / float64(usage.TotalTokens), ms.Model
-	}
-	return 0, ms.Model
-}
-
-// DominantModel returns the model ID with the highest recorded cost in a
-// histogram (model ID -> USD), breaking ties by model ID for determinism.
-// Empty when the histogram is nil or empty. Exported so the API layer
-// resolves "the dominant model" with the exact same tie-break rule this
-// package uses, keeping the two in agreement.
-func DominantModel(histogram map[string]float64) string {
-	var best string
-	var bestCost float64
-	for model, cost := range histogram {
-		if cost > bestCost || (cost == bestCost && (best == "" || model < best)) {
-			best, bestCost = model, cost
-		}
-	}
-	return best
-}
-
-func filterByImpact(in []Finding, min float64) []Finding {
+func filterByImpact(in []Finding, min int64) []Finding {
 	out := in[:0]
 	for _, f := range in {
 		// info findings are kept regardless of impact — they exist to
 		// communicate state, not savings.
-		if f.Severity == SeverityInfo || f.ImpactUSDPerWeek >= min {
+		if f.Severity == SeverityInfo || f.ImpactTokensPerWeek >= min {
 			out = append(out, f)
 		}
 	}
@@ -903,8 +670,8 @@ func sortFindings(in []Finding) {
 		if ri != rj {
 			return ri < rj
 		}
-		if in[i].ImpactUSDPerWeek != in[j].ImpactUSDPerWeek {
-			return in[i].ImpactUSDPerWeek > in[j].ImpactUSDPerWeek
+		if in[i].ImpactTokensPerWeek != in[j].ImpactTokensPerWeek {
+			return in[i].ImpactTokensPerWeek > in[j].ImpactTokensPerWeek
 		}
 		return in[i].ID < in[j].ID
 	})
@@ -958,21 +725,6 @@ func formatRatio(r float64) string {
 // formatPercent renders a 0-100 percentage with no decimals.
 func formatPercent(p float64) string {
 	return itoa(int(p + 0.5))
-}
-
-// formatRatePerMillion renders a per-token USD rate as a "$X.XX/M"
-// shape, which is the unit operators reason in when comparing models.
-func formatRatePerMillion(rate float64) string {
-	per := rate * 1_000_000
-	whole := int(per)
-	frac := int((per - float64(whole)) * 100)
-	if frac < 0 {
-		frac = -frac
-	}
-	if frac < 10 {
-		return "$" + itoa(whole) + ".0" + itoa(frac)
-	}
-	return "$" + itoa(whole) + "." + itoa(frac)
 }
 
 // itoa64 is the int64 sibling of itoa.
