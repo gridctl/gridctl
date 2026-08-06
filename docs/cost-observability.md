@@ -1,146 +1,33 @@
-# Cost Observability
+# Usage Observability
 
-> **Deprecation notice.** The dollar-cost layer is being removed. The web UI no longer displays cost estimates, budgets, or the pricing manager: the Metrics workspace is now a token/usage surface (tokens, calls, format savings, rate limits). The backend pieces described below (pricing snapshot, model attribution, `/api/metrics/cost`, dollar budgets, USD-framed optimize output) still function in this release and are removed in the next one; token and usage metrics stay. Rationale: the gateway sits below the LLM client and cannot observe actual spend, so the dollar figure was always an estimate of a fraction of a related quantity.
+Gridctl measures the token traffic that flows through the gateway. Every tool call's arguments and result are counted with a real tokenizer, and the counts accumulate per server, per replica, per client, and per (server, tool) pair, alongside cumulative call counts and last-used timestamps. Because the gateway also performs output format conversion, it measures the savings directly: each converted result is counted before and after conversion, so the reported format savings come from the gateway's own observed traffic, not a projection.
 
-Gridctl prices every observed tool call against an embedded snapshot of LiteLLM's [`model_prices_and_context_window.json`](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json). The cost layer lives in `pkg/pricing` (rate table + normalization) and `pkg/metrics` (parallel cost counters alongside the existing token counters). Cost surfaces in the REST API (`/api/status`, `/api/metrics/cost`), the `gridctl optimize` CLI, opt-in metrics persistence, and the `gen_ai.cost.usd` span attribute on tool-call traces.
+## What the gateway measures
 
-## Model attribution (required for cost data)
+Input tokens are counted on tool-call arguments and output tokens on tool results, attributed to the server that handled the call, the replica that served it, the calling client (from the session's MCP `clientInfo`), and the individual tool. Call counts and last-called timestamps are kept per (server, tool) pair, and registry skills get the same treatment for `prompts/get` usage. When `output_format: toon` or `csv` is active, the format-savings tally records original tokens, formatted tokens, and the saved difference.
 
-Pricing a call requires knowing which model the tokens are billed against. The gateway sits below the LLM client and cannot observe the client's model choice — and the MCP protocol never carries it — so attribution is declared in `stack.yaml`. Resolution per tool call, highest precedence first:
+## Tokenizers
 
-| Precedence | Source | Declared where |
-|---|---|---|
-| 1 | Call-level usage metadata | Reported by the MCP server per call (no standardized wire shape yet; inert today) |
-| 2 | Calling client's model | Top-level `client_models:` map |
-| 3 | Target server's model | `model:` on the server entry |
-| 4 | Stack-wide default | `gateway.default_model` |
+Token counting defaults to an embedded `cl100k_base` BPE tokenizer (`gateway.tokenizer: embedded`). Claude's vocabulary is unpublished, so `cl100k_base` counts are an approximation for Claude models, typically within 10–15% for English and code content. That is accurate enough for the comparisons this data exists for: ranking servers, spotting waste, and trending over time.
 
-The client tier exists because a model is a property of the calling client's session, not the tool server: when Claude Code on Opus and Gemini CLI on Gemini share the same servers, only a per-client declaration prices both correctly. `client_models:` is purely a pricing declaration — it never creates or implies access restrictions (that is the separate `clients:` block).
+For exact counts, set `gateway.tokenizer: api` to route counting through Anthropic's `count_tokens` endpoint, with the key from `gateway.tokenizer_api_key` or the `ANTHROPIC_API_KEY` environment variable. On any API error the counter falls back to the embedded tokenizer rather than dropping the measurement.
 
-```yaml
-gateway:
-  default_model: claude-haiku-4-5   # floor for anything not declared below
+## Where usage surfaces
 
-client_models:
-  claude-code: claude-opus-4-7      # this client's calls price as Opus
-  gemini-cli: gemini-2.5-pro        # regardless of which server they hit
+The **Metrics workspace** in the web UI charts token throughput over time and breaks totals down by server, replica, client, and tool, alongside call counts, format savings, and rate-limit state.
 
-mcp-servers:
-  - name: jira
-    image: mcp/atlassian:latest
-    model: claude-opus-4-7          # prices undeclared clients' calls to this server
-```
+`GET /api/metrics/tokens` returns the token time series (aggregate and per-server) over a selectable range, and `GET /api/tools/usage` returns per-tool call counts, last-called timestamps, and token totals. `GET /api/status` carries the session's aggregate token usage and format savings. See the [REST API Reference](api-reference.md).
 
-Without any attribution, tokens and latency record normally but cost stays zero. Anonymous calls (no client identity on the session) skip the client tier and resolve via the server tier. Edits to any of these fields hot-reload through the file watcher without restarting any server; subsequent calls price against the updated mapping.
+`gridctl optimize` analyzes gateway-observed data and prints findings with a projected weekly token impact: unused servers, unused tools, schema overhead, and format-savings shortfalls, each with a paste-ready YAML remediation. Impact figures (`impact_tokens_per_week` in `--format json`) are tokens per week, projected assuming roughly 500 prompts per week, since a tool schema rides every prompt the client sends. `--min-impact` filters findings below a token threshold; `info` findings are always retained.
 
-### Editing attribution
+Rate limits (`limits.rate_limits` in `stack.yaml`) cap calls per minute per client, server, or tool, enforced at dispatch with no token accounting required. `gridctl limits` and `GET /api/limits` show every configured limit and its state.
 
-As of the UI removal, attribution is declared in `stack.yaml` only: the web UI's model pickers, the pricing models manager, and the creation wizard's pricing fields have been removed. The dedicated pricing endpoints (`PUT /api/clients/{slug}/model`, `PUT /api/mcp-servers/{name}/model`, `PUT /api/gateway/default-model`) still exist in this release for scripted use; they patch only the relevant key, preserve comments and ordering, and never create or touch a `clients:` access block. They are removed with the rest of the backend layer in the next release.
+## Metrics persistence
 
-Two limitations to keep expectations honest. A declared client model is a session-level default: the gateway cannot see a mid-session model switch (e.g. `/model` in Claude Code), so calls keep pricing at the declared model until the declaration changes. And validation is soft by design: model IDs unknown to the pricing snapshot, or `client_models` keys that are not normalized client IDs (`gridctl validate` warns and suggests the canonical form), produce warnings — never errors — and price as zero.
+Opt-in metrics persistence is unchanged: with `telemetry.persist.metrics: true`, the gateway appends diff snapshots to `~/.gridctl/telemetry/<stack>/<server>/metrics.jsonl` and restores cumulative counters from disk on startup. Files written while the removed cost layer was active carry extra keys (`cost_diff`, `cost_total`, `model_cost`); the decoder is non-strict and ignores them, so old files load cleanly and lose nothing but the dollar figures.
 
-Cost figures are estimates — tokenizer-approximated counts multiplied by published list rates. They are built for comparing servers and clients, spotting waste, and trending over time, not for reconciling invoices.
+## The dollar-cost layer was removed
 
-## Effective models (provenance)
+Earlier releases priced tool calls in USD against an embedded LiteLLM rate snapshot, with model attribution declared in `stack.yaml` and dollar budget caps under `limits:`. That layer has been removed. The gateway sits below the LLM client: it never sees the prompt, the client's actual model choice, or the provider invoice, so every dollar figure was an estimate of a fraction of a related quantity. Cost attribution belongs at the LLM proxy layer, where real requests and models are visible; gridctl now reports what it can measure exactly, which is tokens and calls.
 
-The four declared tiers answer "which model *should* price this call". Once calls land, gridctl also records which model *did* price each recorded dollar, per client and per server, and surfaces it as an **effective model** with provenance. This is exact recording, not inference: the resolved model is known at the moment cost is recorded, so the effective model is the model gridctl actually applied — never a guess reverse-engineered from the cost.
-
-| Provenance | Meaning |
-|---|---|
-| `declared` | One model priced all of this entity's recorded cost |
-| `mixed` | Two or more models priced the traffic (an undeclared client hitting servers with different `model:` values, or a declaration changed mid-session) |
-| `none` | Traffic was observed but no attribution resolved, so cost is $0 |
-
-Effective models surface on `/api/status` as `effective_client_models` / `effective_server_models`. The web UI surfaces (Metrics model cells, the sidebar Pricing section, and the Pricing models manager) have been removed.
-
-**What provenance does and does not mean.** A provenance label describes which *declaration* priced the traffic, not which model the upstream client actually ran. The gateway sits below the LLM client and cannot observe the client's model choice (the same reason attribution is declared in the first place). So `mixed` means "your declarations priced this traffic at more than one rate", not "the client used several models", and the UI never says "detected" or "used". True declared-vs-actual drift detection is not possible without a model signal on the wire; the effective model is the honest, exact record of what gridctl applied. Statistical inference of the client's model from the observed cost/token ratio was evaluated and rejected: gridctl computes the cost itself from the resolved model, so such inference would only restate the declaration it started from.
-
-Effective-model history persists alongside cost, so the provenance you see after a gateway restart matches what it was before. `gridctl optimize`'s `expensive_model_on_cheap_task` finding names the dominant model that priced a server's traffic and labels its provenance in both the table detail and `--format json`.
-
-## Per-tool cost
-
-Cost attribution extends below server/client/model granularity to the individual tool. The observer records each call's input/output tokens and, when the call is priced, its cost against the (server, tool) pair at the same point per-server cost is recorded, so the two views always agree on the same traffic.
-
-Where it surfaces (the web UI's per-tool cost column, cost sort, and cost stat have been removed; the UI shows calls and tokens only):
-
-- **`GET /api/tools/usage`** - Each tool stat carries `inputTokens`, `outputTokens`, and `costUsd` alongside `calls` and `lastCalledAt`. `costUsd` is omitted (not zero) when no call was priced.
-- **`gridctl optimize`** - Unused-tool findings report a real weekly dollar impact (see the heuristic notes below).
-
-Per-tool cost inherits every honesty rule of the wider cost system: it is an estimate (token counts × the resolved model's rate), it appears only once a pricing model is declared, unpriced tools render an em dash rather than $0, and provenance stays the existing declared/mixed/none vocabulary. Tools have no pricing model of their own; their cost follows the client/server attribution that priced the call. Per-tool history persists alongside the other metrics, so counts and spend survive a gateway restart.
-
-## Refreshing pricing data
-
-The pricing snapshot is embedded at build time via `//go:embed pkg/pricing/data/model_prices.json`. Refresh it when providers adjust rates or add new models:
-
-```bash
-task pricing:update
-```
-
-The task downloads the latest LiteLLM file. If the download fails, the existing snapshot is preserved (non-fatal). A weekly cadence is recommended; faster than that is rarely necessary because LiteLLM batches rate updates.
-
-## Model-ID normalization
-
-LiteLLM keys vary between provider-prefixed (`anthropic/claude-opus-4-7`), bare (`claude-opus-4-7`), and dated (`claude-opus-4-7-20260416`) forms. Clients emit any of these. `pricing.Lookup` normalizes incoming IDs in this order:
-
-1. The exact form, lower-cased and provider-prefix stripped.
-2. The same form with any trailing `-YYYYMMDD` date suffix removed (so `claude-opus-4-7-20260416` falls back to `claude-opus-4-7`).
-3. A small alias table for IDs that diverge by more than the prefix/date heuristics handle (e.g. `claude-opus-4-latest`, `gpt-4-turbo`).
-
-Unknown models log a single `WARN` per ID and are treated as zero-cost. The cost path is best-effort: pricing data is not a billing source of truth, and the gateway never fabricates rates for unrecognized models.
-
-## Cache-read vs. input pricing
-
-Anthropic's prompt-cache rates are roughly 10% (cache-read) and 125% (cache-write) of input rates. Conflating cache-read tokens with input tokens overstates cost by an order of magnitude on cache-heavy workloads. Gridctl prices each component separately:
-
-- `cache_read_input_token_cost` - applied to `CallUsage.CacheReadTokens`.
-- `cache_creation_input_token_cost` - applied to `CallUsage.CacheCreationTokens`.
-
-Cache fields default to zero. When a tool result reports them via `_meta` (the MCP-spec extension point for usage metadata), the observer prices the components separately and records the breakdown alongside the per-call total.
-
-## Swapping the pricing source
-
-`pricing.Source` is a small interface (`Lookup`, `Name`). The default is `pricing.NewLiteLLMSource()` backed by the embedded JSON. Tests and alternate providers can install their own:
-
-```go
-pricing.SetSource(myFakeSource)
-```
-
-The package-level `Lookup` and `Calculate` functions read through the active source via an atomic pointer, so swaps are safe under concurrent readers.
-
-## `gridctl optimize`
-
-`gridctl optimize` analyzes the running gateway and prints actionable cost-reduction findings. The package ships **five heuristics** in `pkg/optimize`:
-
-- **`unused_server`** - A server is registered in the stack but no tool calls have been observed from it. Removing it (or excluding all its tools) frees the JSON Schema overhead the server adds to every prompt. The reported weekly USD impact uses the server's observed per-token rate when available, otherwise falls back to a conservative default; the formula always derives from measured data.
-- **`unused_tool`** - A server *is* receiving traffic but a specific tool it exposes has not been called inside the lookback window (default 7 days) and is not already excluded via the server's `tools:` filter. Remediation suggests adding the tool to the exclusion list. The weekly USD impact prices the schema context tax of the unused tool's definition: measured per-tool schema tokens (from the live tool list) × estimated weekly prompts × the server's observed per-token rate, with a conservative fallback and cap when no measurement is available. An unused tool has no observed spend by definition, so this is a schema-tax projection, not measured spend.
-- **`schema_overhead`** - A server's tool-list payload (the schema sent on every initialize / tools/list) is large relative to the value the server's tools have produced. The detector measures schema bytes off the live gateway tool list, applies a chars-per-token heuristic, and fires when the ratio of observed output tokens to schema tokens falls below the floor. Remediation prunes unused tools via the server's `tools:` filter.
-- **`format_savings_shortfall`** - A server emits raw JSON (no `output_format`) while other servers in the same session have already demonstrated meaningful savings from converting to TOON or CSV. Projected impact = baseline savings rate × the candidate's measured output tokens × its measured per-token cost. Remediation adds `output_format: toon` (or `csv`) to the server entry.
-- **`expensive_model_on_cheap_task`** *(informational)* - An Opus-tier model dominates traffic on a server whose calls average tiny prompts and tiny results. The detector either reads the rate directly when the gateway resolves a per-server model, or infers the rate from observed cost ÷ tokens. Severity is `info` because model selection lives client-side; gridctl can suggest the migration but cannot enforce it.
-
-A single `info` finding ("need more data") is emitted on a gateway that has been running for less than the minimum observation window (default 24h) so reports never over-fire on freshly applied stacks. Findings are sorted by severity then weekly impact descending so the most actionable item renders first.
-
-The CLI calls `GET /api/optimize` and renders the same `OptimizeReport` either as a styled table (default) or as JSON (`--format json`). Exit codes follow the standard CLI contract (`0`/`1`/`2`).
-
-### What `gridctl optimize` does and does not see
-
-`gridctl optimize` reads only gateway-observed data:
-
-- The list of MCP servers and tools the gateway has registered (`gateway.Status()`).
-- Per-server token + cost totals from the `pkg/metrics` accumulator.
-- Per-(server, tool) call counts, last-called timestamps, token counts, and estimated cost captured by the observer's tool-name attribution (gateways without per-tool data skip the `unused_tool` heuristic).
-
-It deliberately does **not** read:
-
-- Client-side session files (`~/.claude/projects/`, `~/.codex/sessions/`, Cursor's `state.vscdb`, etc.).
-- Anything outside `~/.gridctl/` and the running gateway's process state.
-
-The data shape (`OptimizeReport`, `Finding`, `Stats`) is additive: every new heuristic surfaces through the existing `/api/optimize` endpoint, `gridctl optimize` CLI, and Sidebar Optimize panel without touching call sites.
-
-### Limitations
-
-- The pricing snapshot is best-effort, not a billing source of truth. Unknown models log a single `WARN` and are treated as zero-cost; their findings will under-report impact.
-- The `unused_server` impact uses an estimated upper-bound on schema overhead and weekly prompt count when no usage signal is available. The number is conservative - a busy team easily exceeds it - but stays anchored to measured per-token cost when present.
-- Per-tool tracking starts when the observer's tool-name path deploys; gateways running an older binary will emit no `unused_tool` or `expensive_model_on_cheap_task` findings until restarted.
-- `schema_overhead` reads schema bytes off the live tool list at request time, applies a chars-per-token heuristic (~4), and projects an upper-bound weekly impact assuming the schema rides every prompt. Real savings depend on the consuming client's prompt cadence; the projection is conservative.
-- `format_savings_shortfall` only fires when the session has already demonstrated meaningful savings from another server's `output_format: toon|csv` conversion. Until you've converted at least one server, the heuristic stays silent rather than guessing.
-- `expensive_model_on_cheap_task` is informational only because gridctl cannot override a client's model choice. The finding helps you reason about which servers would benefit from a cheaper-model code path on the client side.
+The removed configuration fields (`gateway.default_model`, per-server `model:`, top-level `client_models:`, and `limits.budgets`) are ignored by the non-strict YAML loader, so an existing stack that still declares them loads without error; the fields simply have no effect. Leftover budget ledger files under the gridctl state directory (`~/.gridctl/limits/`) are orphaned and harmless, and can be deleted at any time.
