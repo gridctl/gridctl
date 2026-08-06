@@ -8,7 +8,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/gridctl/gridctl/pkg/flags"
-	"github.com/gridctl/gridctl/pkg/pricing"
 )
 
 // IssueSeverity represents the severity level of a validation issue.
@@ -172,7 +171,6 @@ func (r *ValidationResult) addWarnings(s *Stack) {
 		r.WarningCount++
 	}
 
-	r.addModelWarnings(s)
 	r.addExperimentalIssues(flags.Default(), s)
 	r.addSkillsPolicyIssues(s)
 }
@@ -233,46 +231,6 @@ func (r *ValidationResult) addExperimentalIssues(reg *flags.Registry, s *Stack) 
 			Message:  "experimental flag enabled",
 			Severity: SeverityInfo,
 		})
-	}
-}
-
-// addModelWarnings flags cost-attribution declarations that would silently
-// price as zero: model IDs unknown to the active pricing source, and
-// client_models keys that differ from the normalized client identity the
-// gateway resolves at call time. Warnings only — unknown models are
-// best-effort by design (single runtime WARN, zero cost), so a typo or a
-// model newer than the embedded pricing snapshot never blocks a deploy.
-func (r *ValidationResult) addModelWarnings(s *Stack) {
-	warnUnknown := func(field, model string) {
-		if model == "" {
-			return
-		}
-		if _, ok := pricing.Lookup(model); !ok {
-			r.Issues = append(r.Issues, ValidationIssue{
-				Field:    field,
-				Message:  fmt.Sprintf("model %q is unknown to the pricing snapshot; calls will record tokens but cost as zero (refresh with `task pricing:update` or check the ID)", model),
-				Severity: SeverityWarning,
-			})
-			r.WarningCount++
-		}
-	}
-
-	if s.Gateway != nil {
-		warnUnknown("gateway.default_model", s.Gateway.DefaultModel)
-	}
-	for i, srv := range s.MCPServers {
-		warnUnknown(fmt.Sprintf("mcp-servers[%d].model", i), srv.Model)
-	}
-	for client, model := range s.ClientModels {
-		warnUnknown(fmt.Sprintf("client_models.%s", client), model)
-		if normalized := normalizedClientModelKey(client); normalized != client {
-			r.Issues = append(r.Issues, ValidationIssue{
-				Field:    fmt.Sprintf("client_models.%s", client),
-				Message:  fmt.Sprintf("key %q is not a normalized client ID and will never match a connecting client; use %q", client, normalized),
-				Severity: SeverityWarning,
-			})
-			r.WarningCount++
-		}
 	}
 }
 
