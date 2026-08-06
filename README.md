@@ -198,9 +198,9 @@ gridctl export                 # Reverse-engineer stack.yaml from a running stac
 
 Learn more → [Configuration Reference](docs/config-schema.md)
 
-### `gridctl optimize` & Cost Observability
+### `gridctl optimize` & Usage Observability
 
-Every tool call is priced against an embedded snapshot of LiteLLM model rates. `gridctl optimize` scans the running gateway and surfaces actionable findings with weekly USD impact (unused servers, unused tools, schema overhead, format-conversion shortfalls, and expensive-model-on-cheap-task patterns), plus a paste-ready YAML remediation for each.
+Every tool call's arguments and results are token-counted per server, replica, client, and tool, and the Metrics workspace charts throughput, call counts, and the savings from output format conversion (measured from the gateway's own before/after counts). `gridctl optimize` scans the running gateway and surfaces actionable findings with projected weekly token impact (unused servers, unused tools, schema overhead, and format-conversion shortfalls), plus a paste-ready YAML remediation for each.
 
 ```bash
 gridctl optimize                          # styled findings table
@@ -208,7 +208,7 @@ gridctl optimize --format json            # machine-readable OptimizeReport
 gridctl optimize --severity warn,critical # narrow to actionable findings
 ```
 
-Learn more → [Cost Observability](docs/cost-observability.md)
+Learn more → [Usage Observability](docs/cost-observability.md)
 
 ### Output Format Conversion
 
@@ -244,17 +244,12 @@ gridctl link cursor --group release
 
 Learn more → [Tools Workspace](docs/tools-workspace.md)
 
-### Budgets and Rate Limits
+### Rate Limits
 
-Cap spend and call rates per client, server, or tool. Both are enforced at tool-call dispatch, so a runaway agent stops at the cap instead of at the invoice. Omitting the block limits nothing.
+Cap call rates per client, server, or tool, enforced at tool-call dispatch, so a runaway agent stops at the limit instead of hammering a server. Omitting the block limits nothing.
 
 ```yaml
 limits:
-  budgets:
-    - client: claude-code
-      max_usd: 5.00
-      period: daily          # daily | weekly | monthly
-      warn_at_percent: 80
   rate_limits:
     - server: github
       calls_per_minute: 30
@@ -262,7 +257,7 @@ limits:
 ```
 
 ```bash
-gridctl limits                     # Spend against caps, windows, and state
+gridctl limits                     # Every rate limit and its state
 ```
 
 Learn more → [Configuration Reference](docs/config-schema.md)
@@ -349,7 +344,7 @@ Learn more → [Packs guide](docs/packs.md)
 
 - **Getting started**: [Installation](docs/installation.md)
 - **Reference**: [CLI](docs/cli-reference.md) · [Configuration](docs/config-schema.md) · [REST API](docs/api-reference.md)
-- **Guides**: [Skills](docs/skills.md) · [Packs](docs/packs.md) · [Tools Workspace](docs/tools-workspace.md) · [Global Context Sync](docs/global-context.md) · [Scaling](docs/scaling.md) · [Cost Observability](docs/cost-observability.md)
+- **Guides**: [Skills](docs/skills.md) · [Packs](docs/packs.md) · [Tools Workspace](docs/tools-workspace.md) · [Global Context Sync](docs/global-context.md) · [Scaling](docs/scaling.md) · [Usage Observability](docs/cost-observability.md)
 - **Operations**: [Project Status](docs/project-status.md) · [Troubleshooting](docs/troubleshooting.md)
 
 Full index at [`docs/`](docs/README.md).
