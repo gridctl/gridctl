@@ -60,14 +60,12 @@ func TestHandleToolsUsage_ReportsPerToolCounts(t *testing.T) {
 	}
 }
 
-// TestHandleToolsUsage_ReportsTokensAndCost covers the per-tool cost
-// extension: tokens ride every recorded call, costUsd appears only for
-// priced tools, and an unpriced tool omits the field entirely (never $0).
-func TestHandleToolsUsage_ReportsTokensAndCost(t *testing.T) {
+// TestHandleToolsUsage_ReportsTokens covers the per-tool token extension:
+// tokens ride every recorded call, and the response carries no cost key.
+func TestHandleToolsUsage_ReportsTokens(t *testing.T) {
 	srv := newTestServerWithMetrics(t)
 	acc := srv.metricsAccumulator
 	acc.RecordToolCallUsage("github", "create_issue", 120, 80)
-	acc.RecordToolCost("github", "create_issue", metrics.CostBreakdown{Input: 0.001, Output: 0.002})
 	acc.RecordToolCallUsage("github", "list_repos", 30, 10)
 
 	resp, code := decodeToolUsage(t, srv)
@@ -75,29 +73,19 @@ func TestHandleToolsUsage_ReportsTokensAndCost(t *testing.T) {
 		t.Fatalf("status = %d, want 200", code)
 	}
 
-	priced := resp.Servers["github"]["create_issue"]
-	if priced.InputTokens != 120 || priced.OutputTokens != 80 {
-		t.Errorf("priced tokens = %d/%d, want 120/80", priced.InputTokens, priced.OutputTokens)
+	first := resp.Servers["github"]["create_issue"]
+	if first.InputTokens != 120 || first.OutputTokens != 80 {
+		t.Errorf("tokens = %d/%d, want 120/80", first.InputTokens, first.OutputTokens)
 	}
-	if priced.CostUSD == nil {
-		t.Fatal("priced tool costUsd missing")
-	}
-	if got, want := *priced.CostUSD, 0.003; got < want-1e-9 || got > want+1e-9 {
-		t.Errorf("costUsd = %v, want %v", got, want)
-	}
-
-	unpriced := resp.Servers["github"]["list_repos"]
-	if unpriced.InputTokens != 30 || unpriced.OutputTokens != 10 {
-		t.Errorf("unpriced tokens = %d/%d, want 30/10", unpriced.InputTokens, unpriced.OutputTokens)
-	}
-	if unpriced.CostUSD != nil {
-		t.Errorf("unpriced tool costUsd = %v, want absent", *unpriced.CostUSD)
+	second := resp.Servers["github"]["list_repos"]
+	if second.InputTokens != 30 || second.OutputTokens != 10 {
+		t.Errorf("tokens = %d/%d, want 30/10", second.InputTokens, second.OutputTokens)
 	}
 }
 
-// TestHandleToolsUsage_UnpricedOmitsCostKey pins the raw JSON contract:
-// the costUsd key is absent for unpriced tools, not null or 0.
-func TestHandleToolsUsage_UnpricedOmitsCostKey(t *testing.T) {
+// TestHandleToolsUsage_NoCostKey pins the raw JSON contract: the removed
+// costUsd key never appears in the response.
+func TestHandleToolsUsage_NoCostKey(t *testing.T) {
 	srv := newTestServerWithMetrics(t)
 	srv.metricsAccumulator.RecordToolCall("github", "list_repos")
 
@@ -108,7 +96,7 @@ func TestHandleToolsUsage_UnpricedOmitsCostKey(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	if body := rec.Body.String(); strings.Contains(body, "costUsd") {
-		t.Errorf("unpriced response must not carry costUsd: %s", body)
+		t.Errorf("response must not carry costUsd: %s", body)
 	}
 }
 

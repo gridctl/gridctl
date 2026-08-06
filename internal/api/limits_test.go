@@ -37,8 +37,8 @@ func TestHandleLimits_ReturnsStatusSnapshot(t *testing.T) {
 	snapshot := limits.StatusReport{
 		Configured: true,
 		Entries: []limits.EntryStatus{
-			{Kind: "budget", Scope: "client", Key: "claude-code", State: "ok",
-				Budget: &limits.BudgetStatus{MaxUSD: 5, SpentUSD: 1.25, Percent: 25, Period: "daily"}},
+			{Kind: "rate", Scope: "client", Key: "claude-code", State: "ok",
+				Rate: &limits.RateStatus{CallsPerMinute: 6, Burst: 5}},
 			{Kind: "rate", Scope: "server", Key: "github", State: "exceeded",
 				Rate: &limits.RateStatus{CallsPerMinute: 30, Burst: 10}},
 		},
@@ -50,9 +50,9 @@ func TestHandleLimits_ReturnsStatusSnapshot(t *testing.T) {
 	assert.Equal(t, http.StatusOK, code)
 	assert.True(t, report.Configured)
 	require.Len(t, report.Entries, 2)
-	assert.Equal(t, "budget", report.Entries[0].Kind)
-	require.NotNil(t, report.Entries[0].Budget)
-	assert.Equal(t, 1.25, report.Entries[0].Budget.SpentUSD)
+	assert.Equal(t, "rate", report.Entries[0].Kind)
+	require.NotNil(t, report.Entries[0].Rate)
+	assert.Equal(t, 6, report.Entries[0].Rate.CallsPerMinute)
 	assert.Equal(t, "exceeded", report.Entries[1].State)
 }
 
