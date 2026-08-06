@@ -312,7 +312,7 @@ describe('TracesWorkspace', () => {
     expect(screen.queryByText(/NaN/)).toBeNull();
   });
 
-  it('promotes MCP attributes and shows the cost pill in span detail', async () => {
+  it('promotes MCP attributes in span detail without a cost pill', async () => {
     renderAt('/traces?trace=abc123def4567890');
     await waitFor(() => {
       expect(screen.getByText('mcp.client.call_tool')).toBeInTheDocument();
@@ -321,12 +321,14 @@ describe('TracesWorkspace', () => {
     await waitFor(() => {
       expect(screen.getByText('MCP')).toBeInTheDocument();
     });
-    // Promoted fields render as labels inside the drawer, cost as a formatted
-    // pill. Scoped to the drawer: the list headers also say Client/Server.
+    // Promoted fields render as labels inside the drawer. Scoped to the
+    // drawer: the list headers also say Client/Server.
     const drawer = within(screen.getByTestId('span-detail'));
     expect(drawer.getByText('Client')).toBeInTheDocument();
     expect(drawer.getByText('Server')).toBeInTheDocument();
-    expect(screen.getAllByText('$0.012').length).toBeGreaterThan(0);
+    // The cost attribute (still emitted by an older gateway) is no longer
+    // promoted; it stays available under Other attributes only.
+    expect(screen.queryByText('$0.012')).toBeNull();
     // Promoted keys don't repeat under Other attributes.
     expect(screen.queryByText('mcp.client.name')).toBeNull();
   });
