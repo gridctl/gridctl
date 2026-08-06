@@ -1,6 +1,8 @@
 # Cost Observability
 
-Gridctl prices every observed tool call against an embedded snapshot of LiteLLM's [`model_prices_and_context_window.json`](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json). The cost layer lives in `pkg/pricing` (rate table + normalization) and `pkg/metrics` (parallel cost counters alongside the existing token counters). Cost surfaces in the REST API (`/api/status`, `/api/metrics/cost`), the Web UI Metrics tab, the `gridctl optimize` CLI, opt-in metrics persistence, and the `gen_ai.cost.usd` span attribute on tool-call traces.
+> **Deprecation notice.** The dollar-cost layer is being removed. The web UI no longer displays cost estimates, budgets, or the pricing manager: the Metrics workspace is now a token/usage surface (tokens, calls, format savings, rate limits). The backend pieces described below (pricing snapshot, model attribution, `/api/metrics/cost`, dollar budgets, USD-framed optimize output) still function in this release and are removed in the next one; token and usage metrics stay. Rationale: the gateway sits below the LLM client and cannot observe actual spend, so the dollar figure was always an estimate of a fraction of a related quantity.
+
+Gridctl prices every observed tool call against an embedded snapshot of LiteLLM's [`model_prices_and_context_window.json`](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json). The cost layer lives in `pkg/pricing` (rate table + normalization) and `pkg/metrics` (parallel cost counters alongside the existing token counters). Cost surfaces in the REST API (`/api/status`, `/api/metrics/cost`), the `gridctl optimize` CLI, opt-in metrics persistence, and the `gen_ai.cost.usd` span attribute on tool-call traces.
 
 ## Model attribution (required for cost data)
 
@@ -29,17 +31,11 @@ mcp-servers:
     model: claude-opus-4-7          # prices undeclared clients' calls to this server
 ```
 
-Without any attribution, tokens and latency record normally but cost stays zero, and the dashboard's cost card shows a configuration hint instead of a number. Anonymous calls (no client identity on the session) skip the client tier and resolve via the server tier. Edits to any of these fields hot-reload through the file watcher without restarting any server; subsequent calls price against the updated mapping.
+Without any attribution, tokens and latency record normally but cost stays zero. Anonymous calls (no client identity on the session) skip the client tier and resolve via the server tier. Edits to any of these fields hot-reload through the file watcher without restarting any server; subsequent calls price against the updated mapping.
 
-### Editing attribution in the UI
+### Editing attribution
 
-All three declared tiers are editable in the web UI without touching `stack.yaml`. The shared model picker is a searchable, provider-grouped combobox over the known-models list (`GET /api/pricing/models`); free-text IDs outside the list are accepted (best-effort pricing, soft warning, $0).
-
-- **Metrics tab** (and the detached `/metrics` window): the Top Clients panel shows each declared client's model with `· client` provenance and edits inline; the per-server table shows `· server` pills or muted `default: <id>` inheritance and edits inline. Clients without a declaration aggregate whatever server/default rates their calls hit, so no single model is shown for them.
-- **Pricing models manager**: a slide-over listing all three tiers in precedence order (clients, servers, gateway default). Opened from the Metrics toolbar's `$` button, the sidebar inspector's Pricing section, or the command palette ("Edit pricing models").
-- **Creation wizard**: `gateway.default_model` (Pricing section) and per-server `model:` (Advanced section) can be set before the first apply.
-
-Writes go through dedicated pricing endpoints (`PUT /api/clients/{slug}/model`, `PUT /api/mcp-servers/{name}/model`, `PUT /api/gateway/default-model`) that patch only the relevant key, preserve comments and ordering, and never create or touch a `clients:` access block. A concurrent external edit surfaces as a 409 conflict so the UI can re-fetch; successful saves hot-reload immediately.
+As of the UI removal, attribution is declared in `stack.yaml` only: the web UI's model pickers, the pricing models manager, and the creation wizard's pricing fields have been removed. The dedicated pricing endpoints (`PUT /api/clients/{slug}/model`, `PUT /api/mcp-servers/{name}/model`, `PUT /api/gateway/default-model`) still exist in this release for scripted use; they patch only the relevant key, preserve comments and ordering, and never create or touch a `clients:` access block. They are removed with the rest of the backend layer in the next release.
 
 Two limitations to keep expectations honest. A declared client model is a session-level default: the gateway cannot see a mid-session model switch (e.g. `/model` in Claude Code), so calls keep pricing at the declared model until the declaration changes. And validation is soft by design: model IDs unknown to the pricing snapshot, or `client_models` keys that are not normalized client IDs (`gridctl validate` warns and suggests the canonical form), produce warnings — never errors — and price as zero.
 
@@ -49,13 +45,13 @@ Cost figures are estimates — tokenizer-approximated counts multiplied by publi
 
 The four declared tiers answer "which model *should* price this call". Once calls land, gridctl also records which model *did* price each recorded dollar, per client and per server, and surfaces it as an **effective model** with provenance. This is exact recording, not inference: the resolved model is known at the moment cost is recorded, so the effective model is the model gridctl actually applied — never a guess reverse-engineered from the cost.
 
-| Provenance | Meaning | Shown as |
-|---|---|---|
-| `declared` | One model priced all of this entity's recorded cost | The model, unchanged from before |
-| `mixed` | Two or more models priced the traffic (an undeclared client hitting servers with different `model:` values, or a declaration changed mid-session) | `<dominant> · NN%` with the full breakdown on hover |
-| `none` | Traffic was observed but no attribution resolved, so cost is $0 | A muted `unpriced` tag |
+| Provenance | Meaning |
+|---|---|
+| `declared` | One model priced all of this entity's recorded cost |
+| `mixed` | Two or more models priced the traffic (an undeclared client hitting servers with different `model:` values, or a declaration changed mid-session) |
+| `none` | Traffic was observed but no attribution resolved, so cost is $0 |
 
-Effective models appear in the Metrics tab's Top Clients and per-server tables (and the detached metrics window), the sidebar inspector's Pricing section, the Pricing models manager, and on `/api/status` as `effective_client_models` / `effective_server_models`. A `mixed` cell is clickable: it opens the Pricing models manager so declaring a single client model — which collapses the blend for future traffic — is one step away.
+Effective models surface on `/api/status` as `effective_client_models` / `effective_server_models`. The web UI surfaces (Metrics model cells, the sidebar Pricing section, and the Pricing models manager) have been removed.
 
 **What provenance does and does not mean.** A provenance label describes which *declaration* priced the traffic, not which model the upstream client actually ran. The gateway sits below the LLM client and cannot observe the client's model choice (the same reason attribution is declared in the first place). So `mixed` means "your declarations priced this traffic at more than one rate", not "the client used several models", and the UI never says "detected" or "used". True declared-vs-actual drift detection is not possible without a model signal on the wire; the effective model is the honest, exact record of what gridctl applied. Statistical inference of the client's model from the observed cost/token ratio was evaluated and rejected: gridctl computes the cost itself from the resolved model, so such inference would only restate the declaration it started from.
 
@@ -65,10 +61,8 @@ Effective-model history persists alongside cost, so the provenance you see after
 
 Cost attribution extends below server/client/model granularity to the individual tool. The observer records each call's input/output tokens and, when the call is priced, its cost against the (server, tool) pair at the same point per-server cost is recorded, so the two views always agree on the same traffic.
 
-Where it surfaces:
+Where it surfaces (the web UI's per-tool cost column, cost sort, and cost stat have been removed; the UI shows calls and tokens only):
 
-- **Metrics workspace, Tools scope** - A fifth entry on the scope rail lists every tool with recorded calls, sorted by cost descending by default. Rows are server-qualified (`server › tool`) because tool names collide across servers; selecting a row opens the inspector with the tool's calls, tokens, and estimated cost. The detached metrics window carries the same Per-Tool table.
-- **Tools workspace** - The detail panel's Usage section shows calls, last-used time, tokens, and estimated cost for the selected tool whenever traffic exists (Audit Mode is not required).
 - **`GET /api/tools/usage`** - Each tool stat carries `inputTokens`, `outputTokens`, and `costUsd` alongside `calls` and `lastCalledAt`. `costUsd` is omitted (not zero) when no call was priced.
 - **`gridctl optimize`** - Unused-tool findings report a real weekly dollar impact (see the heuristic notes below).
 

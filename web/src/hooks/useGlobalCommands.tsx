@@ -3,7 +3,6 @@ import { useReactFlow } from '@xyflow/react';
 import { useNavigate } from 'react-router';
 import {
   Activity,
-  DollarSign,
   Key,
   Library,
   Terminal,
@@ -47,7 +46,6 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
   const toggleCompactCards = useUIStore((s) => s.toggleCompactCards);
   const toggleSpecMode = useUIStore((s) => s.toggleSpecMode);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
-  const setPricingManagerOpen = useUIStore((s) => s.setPricingManagerOpen);
   const setThemeMode = useUIStore((s) => s.setThemeMode);
 
   const mcpServers = useStackStore((s) => s.mcpServers);
@@ -102,7 +100,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         label: 'Open Metrics',
         section: 'global',
         icon: <BarChart2 size={14} />,
-        keywords: ['metrics', 'stats', 'tokens', 'usage', 'cost', 'charts', 'dashboard', 'open'],
+        keywords: ['metrics', 'stats', 'tokens', 'usage', 'charts', 'dashboard', 'open'],
         onSelect: () => navigate('/metrics'),
       },
       {
@@ -247,18 +245,6 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         keywords: ['wizard', 'create', 'new', 'server', 'add', 'resource'],
         onSelect: () => useWizardStore.getState().open(),
       },
-      {
-        id: 'action:pricing-models',
-        label: 'Edit pricing models',
-        section: 'global',
-        icon: <DollarSign size={14} />,
-        keywords: ['pricing', 'cost', 'model', 'models', 'attribution', 'usd', 'edit'],
-        onSelect: () => {
-          // The manager mounts in the Stack workspace's canvas column.
-          navigate('/stack');
-          setPricingManagerOpen(true);
-        },
-      },
     ];
     registerCommands('canvas-actions', commands);
     return () => unregisterCommands('canvas-actions');
@@ -271,7 +257,6 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
     toggleHeatMap,
     toggleCompactCards,
     toggleSpecMode,
-    setPricingManagerOpen,
     navigate,
     onRefresh,
   ]);

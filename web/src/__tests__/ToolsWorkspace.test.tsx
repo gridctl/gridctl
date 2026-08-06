@@ -661,7 +661,6 @@ describe('ToolsWorkspace — optimize convergence line', () => {
     summary: 's',
     server: 'github',
     tool: id,
-    impact_usd_per_week: 0,
     remediation: '',
     detected_at: '2026-07-26T00:00:00Z',
   });
@@ -697,8 +696,7 @@ describe('ToolsWorkspace — optimize convergence line', () => {
           severity: 'info' as const,
           title: 'Need more data',
           summary: 'young gateway',
-          impact_usd_per_week: 0,
-          remediation: '',
+                remediation: '',
           detected_at: '2026-07-26T00:00:00Z',
         },
       ],

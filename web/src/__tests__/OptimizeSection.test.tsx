@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { OptimizeSection } from '../components/sidebar/OptimizeSection';
 import type { OptimizeFinding } from '../types';
 
@@ -13,19 +13,17 @@ const findings: OptimizeFinding[] = vi.hoisted(() => [
     summary: 'Not called in the lookback window.',
     server: 'github',
     tool: 'list_repos',
-    impact_usd_per_week: 4.2,
     remediation: '# tools: filter',
     detected_at: '2026-07-13T00:00:00Z',
   },
   {
-    id: 'expensive-model-cheap-task-github',
-    heuristic: 'expensive_model_on_cheap_task',
+    id: 'schema-overhead-github',
+    heuristic: 'schema_overhead',
     severity: 'info',
-    title: 'Expensive model on cheap task: github',
-    summary: 'Simple-lookup pattern on an Opus-tier rate.',
+    title: 'Schema overhead exceeds tool value: github',
+    summary: 'Schemas outweigh recorded output tokens.',
     server: 'github',
-    impact_usd_per_week: 0,
-    remediation: '# pick a smaller model',
+    remediation: '# prune tools',
     detected_at: '2026-07-13T00:00:00Z',
   },
 ]);
@@ -43,16 +41,18 @@ vi.mock('../lib/api', async (importActual) => {
 });
 
 describe('OptimizeSection', () => {
-  it('renders the weekly-dollar chip for a tool finding with real impact', async () => {
+  it('lists findings with the health score and no dollar framing', async () => {
     render(<OptimizeSection />);
     expect(await screen.findByText('Unused tool: github/list_repos')).toBeInTheDocument();
-    expect(screen.getByText('$4.20/wk')).toBeInTheDocument();
+    expect(screen.getByText('Schema overhead exceeds tool value: github')).toBeInTheDocument();
+    expect(screen.getByText('88/100')).toBeInTheDocument();
+    expect(screen.queryByText(/\/wk/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
   });
 
-  it('hides the chip for zero-impact findings', async () => {
+  it('expands a finding to its remediation snippet', async () => {
     render(<OptimizeSection />);
-    expect(await screen.findByText('Expensive model on cheap task: github')).toBeInTheDocument();
-    // Exactly one chip: the zero-impact finding renders none.
-    expect(screen.getAllByText(/\/wk$/)).toHaveLength(1);
+    fireEvent.click(await screen.findByText('Unused tool: github/list_repos'));
+    expect(await screen.findByText('# tools: filter')).toBeInTheDocument();
   });
 });

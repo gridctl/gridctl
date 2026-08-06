@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, CostMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, PricingModelsResponse, UpdateClientModelResponse, UpdateServerModelResponse, UpdateDefaultModelResponse, SessionsResponse, RegistryAgent, AgentProjectionStatus, AgentSyncResult, AgentUnsyncResult, AgentAdoptResult, SecurityFinding, WiringRow, WiringAdoptResult } from '../types';
+import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, SessionsResponse, RegistryAgent, AgentProjectionStatus, AgentSyncResult, AgentUnsyncResult, AgentAdoptResult, SecurityFinding, WiringRow, WiringAdoptResult } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -647,123 +647,6 @@ export interface LogEntry {
   attrs?: Record<string, unknown>; // Additional attributes
 }
 
-/**
- * Fetch structured gateway logs
- * GET /api/logs
- */
-/**
- * Fetch the canonical model IDs known to the active pricing source.
- * GET /api/pricing/models
- */
-export async function fetchPricingModels(): Promise<PricingModelsResponse> {
-  return fetchJSON<PricingModelsResponse>('/api/pricing/models');
-}
-
-/**
- * Set (or clear, with an empty string) a client's pricing model in the
- * stack's client_models map. Pricing attribution only — never touches the
- * clients: access block.
- * PUT /api/clients/{slug}/model
- */
-export async function updateClientModel(
-  slug: string,
-  model: string,
-): Promise<UpdateClientModelResponse> {
-  const response = await fetch(
-    `${API_BASE}/api/clients/${encodeURIComponent(slug)}/model`,
-    {
-      method: 'PUT',
-      headers: buildHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ model }),
-    },
-  );
-
-  if (response.status === 401) throw new AuthError('Authentication required');
-
-  const data = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    const err = data?.error;
-    const msg =
-      err && typeof err === 'object' && typeof err.message === 'string'
-        ? err.message
-        : typeof err === 'string'
-          ? err
-          : `Update client model failed: ${response.status} ${response.statusText}`;
-    throw new Error(msg);
-  }
-
-  return data as UpdateClientModelResponse;
-}
-
-/**
- * Set (or clear, with an empty string) an MCP server's pricing model
- * (the server's model: field). Pricing attribution only.
- * PUT /api/mcp-servers/{name}/model
- */
-export async function updateServerModel(
-  name: string,
-  model: string,
-): Promise<UpdateServerModelResponse> {
-  const response = await fetch(
-    `${API_BASE}/api/mcp-servers/${encodeURIComponent(name)}/model`,
-    {
-      method: 'PUT',
-      headers: buildHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ model }),
-    },
-  );
-
-  if (response.status === 401) throw new AuthError('Authentication required');
-
-  const data = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    const err = data?.error;
-    const msg =
-      err && typeof err === 'object' && typeof err.message === 'string'
-        ? err.message
-        : typeof err === 'string'
-          ? err
-          : `Update server model failed: ${response.status} ${response.statusText}`;
-    throw new Error(msg);
-  }
-
-  return data as UpdateServerModelResponse;
-}
-
-/**
- * Set (or clear, with an empty string) the gateway-level default pricing
- * model (gateway.default_model). Pricing attribution only.
- * PUT /api/gateway/default-model
- */
-export async function updateDefaultModel(
-  model: string,
-): Promise<UpdateDefaultModelResponse> {
-  const response = await fetch(`${API_BASE}/api/gateway/default-model`, {
-    method: 'PUT',
-    headers: buildHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ model }),
-  });
-
-  if (response.status === 401) throw new AuthError('Authentication required');
-
-  const data = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    const err = data?.error;
-    const msg =
-      err && typeof err === 'object' && typeof err.message === 'string'
-        ? err.message
-        : typeof err === 'string'
-          ? err
-          : `Update default model failed: ${response.status} ${response.statusText}`;
-    throw new Error(msg);
-  }
-
-  return data as UpdateDefaultModelResponse;
-}
-
 // Envelope served by GET /api/logs: the windowed entries plus ring occupancy
 // (total) and capacity, so the UI can label the window against retention.
 export interface GatewayLogsResponse {
@@ -821,23 +704,9 @@ export async function clearTokenMetrics(): Promise<void> {
 }
 
 /**
- * Fetch historical USD-cost metrics. Mirrors fetchTokenMetrics so cost
- * charts can share the existing time-range vocabulary.
- * GET /api/metrics/cost?range=1h&per_client=true
- */
-export async function fetchCostMetrics(
-  range: string = '1h',
-  perClient: boolean = false,
-): Promise<CostMetricsResponse> {
-  const params = new URLSearchParams({ range });
-  if (perClient) params.set('per_client', 'true');
-  return fetchJSON<CostMetricsResponse>(`/api/metrics/cost?${params.toString()}`);
-}
-
-/**
  * Fetch the optimize report (unused servers, unused tools, etc.) for
- * the active stack. Mirrors fetchCostMetrics so the sidebar panel can
- * poll on the same cadence as Token Usage / Cost.
+ * the active stack. Mirrors fetchTokenMetrics so the sidebar panel can
+ * poll on the same cadence as Token Usage.
  * GET /api/optimize?min_impact=0.10&severity=warn,critical
  */
 export async function fetchOptimizeReport(opts?: {
@@ -1474,21 +1343,6 @@ export async function fetchStackRecipes(): Promise<StackRecipe[]> {
 
 // === Limits API ===
 
-/**
- * One budget's consumption within its current window. Numeric fields are
- * always present on budget entries: a zero spent_usd is a real zero, not an
- * unknown. Mirrors pkg/limits BudgetStatus.
- */
-export interface LimitBudgetStatus {
-  max_usd: number;
-  spent_usd: number;
-  percent: number;
-  period: string;
-  warn_at_percent?: number;
-  window_start: string;
-  window_end: string;
-}
-
 /** One rate limit's configuration snapshot. Mirrors pkg/limits RateStatus. */
 export interface LimitRateStatus {
   calls_per_minute: number;
@@ -1498,15 +1352,15 @@ export interface LimitRateStatus {
 export type LimitState = 'ok' | 'warn' | 'exceeded';
 
 /**
- * One limit's snapshot. Exactly one of budget or rate is set, matching kind.
- * Mirrors pkg/limits EntryStatus.
+ * One limit's snapshot. Mirrors pkg/limits EntryStatus. The UI surfaces rate
+ * entries only; `kind` remains in the payload so budget entries from an older
+ * backend are filtered out rather than misread.
  */
 export interface LimitEntry {
   kind: 'budget' | 'rate';
   scope: 'client' | 'server' | 'tool';
   key: string;
   state: LimitState;
-  budget?: LimitBudgetStatus;
   rate?: LimitRateStatus;
 }
 
@@ -1516,7 +1370,7 @@ export interface LimitsReport {
 }
 
 /**
- * Get consumption against every configured budget and rate limit.
+ * Get the state of every configured rate limit.
  * GET /api/limits
  */
 export async function fetchLimits(): Promise<LimitsReport> {

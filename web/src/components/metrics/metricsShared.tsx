@@ -1,25 +1,22 @@
 import { type ComponentType, type ReactNode } from 'react';
-import { ArrowDown, ArrowUp, ArrowUpDown, DollarSign } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Recycle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import { formatCompactNumber, formatUSD } from '../../lib/format';
+import { formatCompactNumber } from '../../lib/format';
 import { AreaChart } from '../chart/AreaChart';
 import type { AvailableChartColorsKeys } from '../chart/chartColors';
-import { ATTRIBUTION_HINT, MIXED_PROVENANCE_NOTE } from '../pricing/constants';
-import { sharePct } from '../pricing/effectiveModel';
-import type { ModelProvenance, ModelShare, TokenMetricsResponse, CostMetricsResponse } from '../../types';
+import type { TokenMetricsResponse } from '../../types';
 import type {
   BreakdownRow,
   BreakdownSortColumn,
-  ModelRow,
   SessionKpis,
   SortDirection,
   WindowTotals,
 } from './metricsData';
 
-// Presentational atoms shared by every metrics surface (bottom glance tab,
-// Metrics workspace, detached window). Pure data helpers and types live in
-// metricsData.ts — this file is components only so Fast Refresh stays happy.
+// Presentational atoms shared by every metrics surface (Metrics workspace,
+// detached window). Pure data helpers and types live in metricsData.ts — this
+// file is components only so Fast Refresh stays happy.
 
 // ---------------------------------------------------------------------------
 // KPI cards
@@ -34,51 +31,37 @@ export function KPICard({ label, value, colorClass }: { label: string; value: nu
   );
 }
 
-// CostKPICard — USD spend for the active window. Renders an em-dash when
-// nothing has been priced (hasCost) OR when the window cost is simply unknown
-// (usd undefined, cost series not loaded) — never a fabricated number. Cost is
-// conveyed by the "$" icon and the "Cost" label, not color alone. The honesty
-// subline points at the config requirement (showHint) or the mixed-provenance
-// caveat.
-export function CostKPICard({
-  usd,
-  hasCost,
-  showHint,
-  showMixedNote,
-}: {
-  usd: number | undefined;
-  hasCost: boolean;
-  showHint?: boolean;
-  showMixedNote?: boolean;
-}) {
-  const known = hasCost && usd !== undefined;
+// SavingsKPICard — tokens saved by the gateway's output-format conversion
+// (TOON/CSV), measured from its own before/after counts. Session-cumulative
+// (no windowed savings series exists), so the label says so explicitly to
+// stand apart from the window-scoped token cards beside it. Renders an
+// em-dash until a conversion has actually saved something — never a
+// fabricated number.
+export function SavingsKPICard({ savingsPercent, savedTokens }: { savingsPercent: number; savedTokens: number }) {
+  const hasSavings = savingsPercent > 0;
   return (
     <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
       <span className="text-[10px] text-text-muted uppercase tracking-wider flex items-center gap-1 mb-1">
-        <DollarSign size={10} className="text-text-muted/70" />
-        Cost <span className="text-text-muted/50 normal-case tracking-normal">· est.</span>
+        <Recycle size={10} className="text-text-muted/70" />
+        Format Savings <span className="text-text-muted/50 normal-case tracking-normal">· session</span>
       </span>
-      <span className={cn('text-lg font-bold tabular-nums', known ? 'text-emerald-400' : 'text-text-muted')}>
-        {usd !== undefined && hasCost ? formatUSD(usd) : '—'}
+      <span className={cn('text-lg font-bold tabular-nums', hasSavings ? 'text-emerald-400' : 'text-text-muted')}>
+        {hasSavings ? `${Math.round(savingsPercent)}%` : '—'}
       </span>
-      {showHint && (
-        <span className="block mt-1 text-[9px] leading-snug text-text-muted/60">{ATTRIBUTION_HINT}</span>
-      )}
-      {!showHint && showMixedNote && (
-        <span className="block mt-1 text-[9px] leading-snug text-text-muted/60">{MIXED_PROVENANCE_NOTE}</span>
+      {hasSavings && (
+        <span className="block mt-1 text-[9px] leading-snug text-text-muted/60">
+          {formatCompactNumber(savedTokens)} tokens saved by output-format conversion
+        </span>
       )}
     </div>
   );
 }
 
-// The full KPI grid, identical across surfaces. The cards are window-scoped —
-// summed from the same ranged series the charts draw, labeled by
-// `windowLabel` — so the range control owns every headline number. The
-// cumulative session totals render once, on their own explicitly labeled
-// line, and never inside the window chrome. Format savings is
-// session-cumulative (no windowed series exists), so it lives on the session
-// line too. Cost pricing state (hasCost / hints) stays session-derived: a
-// priced stack with an idle window honestly shows $0.00 for the window.
+// The full KPI grid, identical across surfaces. The token cards are
+// window-scoped — summed from the same ranged series the charts draw, labeled
+// by `windowLabel` — so the range control owns every headline number. The
+// cumulative session total renders once, on its own explicitly labeled line,
+// and never inside the window chrome.
 export function MetricsKpiRow({
   kpis,
   windowTotals,
@@ -93,13 +76,6 @@ export function MetricsKpiRow({
   // fleet number above them.
   focusLine?: string;
 }) {
-  const sessionParts = [
-    `Session total: ${kpis.total.toLocaleString()} tokens`,
-    ...(kpis.hasCost ? [`${formatUSD(kpis.costUSD ?? 0)} est.`] : []),
-    ...(kpis.savingsPercent > 0
-      ? [`${Math.round(kpis.savingsPercent)}% format savings (${formatCompactNumber(kpis.savedTokens)} saved)`]
-      : []),
-  ];
   return (
     <div className="space-y-1.5">
       <span className="block text-[10px] uppercase tracking-[0.18em] text-text-muted/70">{windowLabel}</span>
@@ -107,15 +83,12 @@ export function MetricsKpiRow({
         <KPICard label="Input Tokens" value={windowTotals.input} colorClass="text-secondary" />
         <KPICard label="Output Tokens" value={windowTotals.output} colorClass="text-primary" />
         <KPICard label="Total Tokens" value={windowTotals.total} colorClass="text-text-primary" />
-        <CostKPICard
-          usd={windowTotals.costUSD}
-          hasCost={kpis.hasCost}
-          showHint={kpis.showAttributionHint}
-          showMixedNote={kpis.hasMixedProvenance}
-        />
+        <SavingsKPICard savingsPercent={kpis.savingsPercent} savedTokens={kpis.savedTokens} />
       </div>
       {focusLine && <p className="text-[10px] font-mono text-text-secondary">{focusLine}</p>}
-      <p className="text-[10px] font-mono text-text-muted">{sessionParts.join(' · ')}</p>
+      <p className="text-[10px] font-mono text-text-muted">
+        Session total: {kpis.total.toLocaleString()} tokens
+      </p>
     </div>
   );
 }
@@ -144,8 +117,8 @@ export function WindowEmptyNote({
 // Charts (with screen-reader text alternatives)
 // ---------------------------------------------------------------------------
 
-// Chart rows are open records: the fleet charts carry the fixed token/cost
-// keys, and the focused variants add a fleet-context category.
+// Chart rows are open records: the fleet charts carry the fixed token keys,
+// and the focused variants add a fleet-context category.
 type ChartRow = { time: string } & Record<string, number | string>;
 
 // Exposes a role="img" + aria-label summary, since the underlying Recharts SVG
@@ -233,100 +206,6 @@ export function TokenChart({
   );
 }
 
-export function CostChart({
-  data,
-  costData,
-  heightClass = 'h-32',
-  subject,
-  categories = ['Cost (USD)'],
-  colors = ['emerald'],
-  dashedCategories,
-}: {
-  data: ChartRow[];
-  costData: CostMetricsResponse | null;
-  heightClass?: string;
-  // Focused-entity variant, mirroring TokenChart's props (cost is never
-  // stacked, so there is no chartType here).
-  subject?: string;
-  categories?: string[];
-  colors?: AvailableChartColorsKeys[];
-  dashedCategories?: string[];
-}) {
-  const title = subject ? `${subject} · Cost` : 'Cost Over Time';
-  const peak = peakFor(data, categories, false, dashedCategories);
-  const summary = `Estimated cost over time${subject ? ` for ${subject}` : ''}: ${data.length} points, peak ${formatUSD(peak)} per interval.`;
-  return (
-    <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-[11px] font-medium text-text-secondary inline-flex items-center gap-1.5">
-          <DollarSign size={11} className="text-emerald-400" />
-          {title}
-        </span>
-        {costData && (
-          <span className="text-[9px] text-text-muted font-mono">
-            {costData.data_points?.length ?? 0} points &middot; {costData.interval} interval
-          </span>
-        )}
-      </div>
-      <ChartFrame label={summary}>
-        <AreaChart
-          data={data}
-          index="time"
-          categories={categories}
-          colors={colors}
-          type="default"
-          dashedCategories={dashedCategories}
-          fill="gradient"
-          // Legend on so cost is labeled by text, not color alone.
-          showLegend
-          showGridLines
-          showYAxis
-          yAxisWidth={56}
-          valueFormatter={(v: number) => formatUSD(v)}
-          className={heightClass}
-        />
-      </ChartFrame>
-    </div>
-  );
-}
-
-// Ranked horizontal bars for the model-mix (preferred over pie/donut for many
-// categories). Each row is a model with its cost share, read as text + length.
-export function ModelMixBars({ mix }: { mix: ModelShare[] }) {
-  if (mix.length === 0) {
-    return (
-      <p className="px-3 py-3 text-[11px] text-text-muted/70 leading-relaxed">
-        No priced traffic yet. Declare a client, server, or default pricing model to populate the
-        model mix.
-      </p>
-    );
-  }
-  const max = mix[0]?.share ?? 1;
-  return (
-    <ul className="px-3 py-2 space-y-1.5" aria-label="Cost by model">
-      {mix.map((m) => (
-        <li key={m.model} className="flex items-center gap-2">
-          <span className="w-40 flex-shrink-0 truncate font-mono text-[10px] text-text-secondary" title={m.model}>
-            {m.model}
-          </span>
-          <span className="relative flex-1 h-3 rounded-sm bg-surface-highlight/40 overflow-hidden">
-            <span
-              className="absolute inset-y-0 left-0 rounded-sm bg-emerald-500/40"
-              style={{ width: `${max > 0 ? (m.share / max) * 100 : 0}%` }}
-            />
-          </span>
-          <span className="w-12 flex-shrink-0 text-right tabular-nums text-[10px] text-text-muted">
-            {sharePct(m.share)}
-          </span>
-          <span className="w-16 flex-shrink-0 text-right tabular-nums text-[10px] text-emerald-400/90">
-            {formatUSD(m.cost_usd)}
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Table primitives
 // ---------------------------------------------------------------------------
@@ -365,54 +244,6 @@ export function ViewAllButton({ onClick }: { onClick: () => void }) {
     >
       View all
     </button>
-  );
-}
-
-function entityCellLabel(entities: string[]): string {
-  if (entities.length <= 2) return entities.join(', ');
-  return `${entities.slice(0, 2).join(', ')} +${entities.length - 2}`;
-}
-
-function provenanceCellLabel(provenance: Record<ModelProvenance, number>): string {
-  const parts = (Object.entries(provenance) as Array<[ModelProvenance, number]>)
-    .filter(([, count]) => count > 0)
-    .map(([kind, count]) => `${count} ${kind}`);
-  return parts.join(' · ') || '—';
-}
-
-// The Models scope breakdown: one row per model with its cost share, the
-// entities it priced, and their provenance mix. Static cost-descending
-// (aggregateModelRows sorts) — a model has nothing to inspect in the right
-// rail yet, so rows are not selectable in v1. Distinct from BreakdownTable,
-// whose columns are hardwired to token counts.
-export function ModelBreakdownTable({ rows }: { rows: ModelRow[] }) {
-  return (
-    <table className="w-full text-xs">
-      <thead>
-        <tr className="border-b border-border/30">
-          <th className="px-3 py-2 text-left font-medium text-text-muted">Model</th>
-          <th className="px-3 py-2 text-right font-medium text-text-muted">Share</th>
-          <th className="px-3 py-2 text-right font-medium text-text-muted">Cost</th>
-          <th className="px-3 py-2 text-left font-medium text-text-muted">Entities</th>
-          <th className="px-3 py-2 text-left font-medium text-text-muted">Provenance</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => (
-          <tr key={row.model} className="border-b border-border/20 last:border-0">
-            <td className="px-3 py-2 font-mono text-text-primary" title={row.model}>
-              {row.model}
-            </td>
-            <td className="px-3 py-2 text-right tabular-nums text-text-secondary">{sharePct(row.share)}</td>
-            <td className="px-3 py-2 text-right tabular-nums text-emerald-400">{formatUSD(row.cost_usd)}</td>
-            <td className="px-3 py-2 font-mono text-[10px] text-text-secondary" title={row.entities.join(', ')}>
-              {entityCellLabel(row.entities)}
-            </td>
-            <td className="px-3 py-2 text-[10px] text-text-muted">{provenanceCellLabel(row.provenance)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
   );
 }
 
@@ -491,21 +322,18 @@ export function InspectorStat({ label, value, className }: { label: string; valu
   );
 }
 
-// BreakdownTable renders the shared client/server breakdown. Each host injects
-// a Model cell via `renderModel`, shows a Cost column when `showCost`, and may
-// make rows selectable (`onSelectRow` + `selectedName`) to drive a detail
-// inspector. The Model cell stops propagation so editing never selects the row.
-// `renderNameExtra` renders below the name cell's text (the limits overlay
-// mounts its consumption bar there); returning null/undefined adds nothing.
+// BreakdownTable renders the shared client/server breakdown. Hosts may make
+// rows selectable (`onSelectRow` + `selectedName`) to drive a detail
+// inspector. `renderNameExtra` renders below the name cell's text (the limits
+// overlay mounts its consumption annotation there); returning null/undefined
+// adds nothing.
 export function BreakdownTable({
   rows,
   nameLabel,
   sortColumn,
   sortDirection,
   onSort,
-  renderModel,
   renderNameExtra,
-  showCost = false,
   selectedName,
   onSelectRow,
 }: {
@@ -514,9 +342,7 @@ export function BreakdownTable({
   sortColumn: BreakdownSortColumn;
   sortDirection: SortDirection;
   onSort?: (column: BreakdownSortColumn) => void;
-  renderModel?: (row: BreakdownRow) => ReactNode;
   renderNameExtra?: (row: BreakdownRow) => ReactNode;
-  showCost?: boolean;
   selectedName?: string | null;
   onSelectRow?: (name: string) => void;
 }) {
@@ -525,15 +351,9 @@ export function BreakdownTable({
       <thead>
         <tr className="border-b border-border/30">
           <SortableHeader label={nameLabel} column="name" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} />
-          {renderModel && (
-            <th className="px-3 py-1.5 text-left text-[10px] font-medium text-text-muted uppercase tracking-wider">Model</th>
-          )}
           <SortableHeader label="Input" column="input" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" />
           <SortableHeader label="Output" column="output" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" />
           <SortableHeader label="Total" column="total" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" />
-          {showCost && (
-            <SortableHeader label="Cost" column="cost" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" />
-          )}
         </tr>
       </thead>
       <tbody>
@@ -547,8 +367,7 @@ export function BreakdownTable({
               // Selectable rows are keyboard-reachable in place (Enter/Space),
               // complementing the workspace-level arrow-key navigation. Only
               // keydowns on the row itself count: events bubbling out of nested
-              // interactive elements (the inline model editor) must keep their
-              // native behavior.
+              // interactive elements must keep their native behavior.
               tabIndex={onSelectRow ? 0 : undefined}
               onKeyDown={
                 onSelectRow
@@ -578,19 +397,9 @@ export function BreakdownTable({
                 )}
                 {renderNameExtra?.(row)}
               </td>
-              {renderModel && (
-                <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                  {renderModel(row)}
-                </td>
-              )}
               <td className="px-3 py-2 text-right text-secondary tabular-nums">{formatCompactNumber(row.input)}</td>
               <td className="px-3 py-2 text-right text-primary tabular-nums">{formatCompactNumber(row.output)}</td>
               <td className="px-3 py-2 text-right text-text-primary font-semibold tabular-nums">{formatCompactNumber(row.total)}</td>
-              {showCost && (
-                <td className={cn('px-3 py-2 text-right tabular-nums', row.cost === undefined ? 'text-text-muted' : 'text-emerald-400')}>
-                  {row.cost === undefined ? '—' : formatUSD(row.cost)}
-                </td>
-              )}
             </tr>
           );
         })}

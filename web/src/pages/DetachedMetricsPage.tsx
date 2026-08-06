@@ -1,24 +1,20 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { BarChart3, AlertCircle, Maximize2, Minimize2, Users, Server, Wrench } from 'lucide-react';
 import { IconButton } from '../components/ui/IconButton';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
 import { fetchStatus } from '../lib/api';
-import { formatCompactNumber, formatUSD } from '../lib/format';
+import { formatCompactNumber } from '../lib/format';
 import { POLLING } from '../lib/constants';
-import { ClientModelCell } from '../components/pricing/ClientModelCell';
-import { ServerModelCell } from '../components/pricing/ServerModelCell';
-import { PricingManagerSlideOver } from '../components/pricing/PricingManagerSlideOver';
 import { useMetricsSeries, windowLabelFor, type MetricsTimeRange } from '../hooks/useMetricsSeries';
 import { useToolUsage } from '../hooks/useToolUsage';
 import { useLimits } from '../hooks/useLimits';
-import { BudgetBar, LimitsPanel } from '../components/metrics/LimitsShared';
-import { budgetForRow, deriveLimitsSummary, type LimitRowScope } from '../components/metrics/limitsData';
+import { LimitsPanel } from '../components/metrics/LimitsShared';
+import { deriveLimitsSummary } from '../components/metrics/limitsData';
 import { MetricsControls } from '../components/metrics/MetricsControls';
-import { MetricsKpiRow, TokenChart, CostChart, PanelHeader, BreakdownTable, ScrollableBreakdown, WindowEmptyNote } from '../components/metrics/metricsShared';
+import { MetricsKpiRow, TokenChart, PanelHeader, BreakdownTable, ScrollableBreakdown, WindowEmptyNote } from '../components/metrics/metricsShared';
 import {
   buildTokenChartData,
-  buildCostChartData,
   derivePerServerRows,
   derivePerClientRows,
   derivePerToolRows,
@@ -29,29 +25,21 @@ import {
   type BreakdownSortColumn,
   type SortDirection,
 } from '../components/metrics/metricsData';
-import type { GatewayStatus, TokenUsage, CostUsage, EffectiveModel } from '../types';
+import type { GatewayStatus, TokenUsage } from '../types';
 
 function DetachedMetricsPageContent() {
   // Real-time status snapshot — the detached window lives outside the app
   // shell, so it owns its own status poll (the in-shell surfaces read the app
   // store instead). The time-series come from the shared useMetricsSeries hook.
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
-  const [costUsage, setCostUsage] = useState<CostUsage | null>(null);
-  const [costAttribution, setCostAttribution] = useState(false);
-  const [clientModels, setClientModels] = useState<Record<string, string>>({});
-  const [serverDeclared, setServerDeclared] = useState<Record<string, string>>({});
-  const [effectiveClientModels, setEffectiveClientModels] = useState<Record<string, EffectiveModel>>({});
-  const [effectiveServerModels, setEffectiveServerModels] = useState<Record<string, EffectiveModel>>({});
   const [serverNames, setServerNames] = useState<string[]>([]);
-  const [defaultModel, setDefaultModel] = useState('');
-  const [pricingManagerOpen, setPricingManagerOpen] = useState(false);
   const [timeRange, setTimeRange] = useState<MetricsTimeRange>('live');
   const [isPaused, setIsPaused] = useState(false);
   const [sortColumn, setSortColumn] = useState<BreakdownSortColumn>('total');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
-  const [clientSortColumn, setClientSortColumn] = useState<BreakdownSortColumn>('cost');
+  const [clientSortColumn, setClientSortColumn] = useState<BreakdownSortColumn>('total');
   const [clientSortDirection, setClientSortDirection] = useState<SortDirection>('desc');
-  const [toolSortColumn, setToolSortColumn] = useState<BreakdownSortColumn>('cost');
+  const [toolSortColumn, setToolSortColumn] = useState<BreakdownSortColumn>('total');
   const [toolSortDirection, setToolSortDirection] = useState<SortDirection>('desc');
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -61,28 +49,17 @@ function DetachedMetricsPageContent() {
   // pipeline the Tools workspace and Metrics Tools scope consume.
   const { usage: toolUsageData, error: toolUsageError } = useToolUsage(true);
 
-  const { metricsData, costData, isLoading, error, reload, clear } = useMetricsSeries({
+  const { metricsData, isLoading, error, reload, clear } = useMetricsSeries({
     timeRange,
     paused: isPaused,
   });
 
-  // Poll status for real-time token + cost usage
+  // Poll status for real-time token usage
   useEffect(() => {
     const pollStatus = async () => {
       try {
         const status: GatewayStatus = await fetchStatus();
         setTokenUsage(status.token_usage ?? null);
-        setCostUsage(status.cost ?? null);
-        setCostAttribution(status.cost_attribution ?? false);
-        setClientModels(status.client_models ?? {});
-        setEffectiveClientModels(status.effective_client_models ?? {});
-        setEffectiveServerModels(status.effective_server_models ?? {});
-        setDefaultModel(status.default_model ?? '');
-        const declared: Record<string, string> = {};
-        for (const s of status['mcp-servers'] ?? []) {
-          if (s.model) declared[s.name] = s.model;
-        }
-        setServerDeclared(declared);
         setServerNames((status['mcp-servers'] ?? []).map((s) => s.name));
       } catch {
         // Ignore status errors
@@ -118,62 +95,21 @@ function DetachedMetricsPageContent() {
     }
   };
 
-  // Optimistic local updates after a successful model save. The detached
-  // window owns local state (not the main window's store); the next status
-  // poll confirms from the backend, and the main window catches up on its own.
-  const handleClientModelSaved = useCallback((client: string, model: string) => {
-    setClientModels((prev) => {
-      const next = { ...prev };
-      if (model === '') delete next[client];
-      else next[client] = model;
-      return next;
-    });
-  }, []);
-
-  const handleServerModelSaved = useCallback((server: string, model: string) => {
-    setServerDeclared((prev) => {
-      const next = { ...prev };
-      if (model === '') delete next[server];
-      else next[server] = model;
-      return next;
-    });
-  }, []);
-
-  const handleDefaultModelSaved = useCallback((model: string) => {
-    setDefaultModel(model);
-  }, []);
-
-  const kpis = deriveSessionKpis(
-    tokenUsage,
-    costUsage,
-    costAttribution,
-    effectiveClientModels,
-    effectiveServerModels,
-  );
-  const sortedServers = sortBreakdownRows(derivePerServerRows(tokenUsage, costUsage, serverNames), sortColumn, sortDirection);
-  const sortedClients = sortBreakdownRows(
-    derivePerClientRows(tokenUsage, costUsage),
-    clientSortColumn,
-    clientSortDirection,
-  );
+  const kpis = deriveSessionKpis(tokenUsage);
+  const sortedServers = sortBreakdownRows(derivePerServerRows(tokenUsage, serverNames), sortColumn, sortDirection);
+  const sortedClients = sortBreakdownRows(derivePerClientRows(tokenUsage), clientSortColumn, clientSortDirection);
   const sortedTools = sortBreakdownRows(derivePerToolRows(toolUsageData), toolSortColumn, toolSortDirection);
 
-  // Limit consumption overlay — same source and presentation as the in-shell
+  // Rate-limit overlay — same source and presentation as the in-shell
   // workspace (parity is the point of the shared core).
   const { report: limitsReport } = useLimits(true);
   const limitsSummary = deriveLimitsSummary(limitsReport);
-  const limitBarFor = (scope: LimitRowScope) => (row: { name: string }) => {
-    const entry = budgetForRow(limitsSummary.entries, scope, row.name);
-    return entry ? <BudgetBar entry={entry} className="mt-1" /> : null;
-  };
 
   const chartData = buildTokenChartData(metricsData);
-  const costChartData = buildCostChartData(costData);
-  const costSeriesHasData = costChartData.some((d) => d['Cost (USD)'] > 0);
-  const hasData = hasMetricsData(kpis, metricsData, costData);
+  const hasData = hasMetricsData(kpis, metricsData);
   // Same windowed-KPI presentation as the in-shell workspace; the detached
   // window keeps its range local (solo window, nothing to deep-link).
-  const windowTotals = deriveWindowTotals(metricsData, costData);
+  const windowTotals = deriveWindowTotals(metricsData);
   const windowLabel = windowLabelFor(timeRange);
 
   const toggleFullscreen = async () => {
@@ -223,7 +159,6 @@ function DetachedMetricsPageContent() {
           onTogglePause={() => setIsPaused((p) => !p)}
           onRefresh={reload}
           onClear={() => void clear()}
-          onOpenPricing={() => setPricingManagerOpen(true)}
           right={
             <IconButton
               icon={isFullscreen ? Minimize2 : Maximize2}
@@ -246,7 +181,6 @@ function DetachedMetricsPageContent() {
               ))}
             </div>
             <div className="h-48 rounded-lg bg-surface-elevated/60 border border-border/30" />
-            <div className="h-32 rounded-lg bg-surface-elevated/60 border border-border/30" />
           </div>
         )}
 
@@ -272,9 +206,6 @@ function DetachedMetricsPageContent() {
           <div className="space-y-4">
             <MetricsKpiRow kpis={kpis} windowTotals={windowTotals} windowLabel={windowLabel} />
             <TokenChart data={chartData} metricsData={metricsData} heightClass="h-48" />
-            {(kpis.hasCost || costSeriesHasData) && (
-              <CostChart data={costChartData} costData={costData} heightClass="h-40" />
-            )}
             <WindowEmptyNote windowTotals={windowTotals} sessionTotal={kpis.total} loaded={metricsData !== null} />
 
 
@@ -282,10 +213,10 @@ function DetachedMetricsPageContent() {
 
             {/* Tables are snapshot-fed, hence "session totals" (same labeling
                 as the in-shell workspace). Parity decision: the workspace's
-                savings card and top-5 previews are deliberately absent here —
+                findings card and top-5 previews are deliberately absent here —
                 the previews would duplicate the full tables below, and the
-                savings card's finding links navigate the /metrics URL scheme,
-                which this solo window does not host. */}
+                finding links navigate the /metrics URL scheme, which this solo
+                window does not host. */}
             {sortedClients.length > 0 && (
               <PanelHeader icon={Users} label="Top Clients · session totals">
                 <BreakdownTable
@@ -294,18 +225,6 @@ function DetachedMetricsPageContent() {
                   sortColumn={clientSortColumn}
                   sortDirection={clientSortDirection}
                   onSort={handleClientSort}
-                  showCost
-                  renderNameExtra={limitBarFor('client')}
-                  renderModel={(row) => (
-                    <ClientModelCell
-                      client={row.name}
-                      declaredModel={clientModels[row.name]}
-                      effective={effectiveClientModels[row.name]}
-                      costAttribution={costAttribution}
-                      onSaved={handleClientModelSaved}
-                      onOpenManager={() => setPricingManagerOpen(true)}
-                    />
-                  )}
                 />
               </PanelHeader>
             )}
@@ -318,18 +237,6 @@ function DetachedMetricsPageContent() {
                   sortColumn={sortColumn}
                   sortDirection={sortDirection}
                   onSort={handleSort}
-                  showCost
-                  renderNameExtra={limitBarFor('server')}
-                  renderModel={(row) => (
-                    <ServerModelCell
-                      server={row.name}
-                      declaredModel={serverDeclared[row.name]}
-                      defaultModel={defaultModel}
-                      effective={effectiveServerModels[row.name]}
-                      onSaved={handleServerModelSaved}
-                      onOpenManager={() => setPricingManagerOpen(true)}
-                    />
-                  )}
                 />
               </PanelHeader>
             )}
@@ -358,8 +265,6 @@ function DetachedMetricsPageContent() {
                         sortColumn={toolSortColumn}
                         sortDirection={toolSortDirection}
                         onSort={handleToolSort}
-                        showCost
-                        renderNameExtra={limitBarFor('tool')}
                       />
                     </ScrollableBreakdown>
                   </>
@@ -374,12 +279,6 @@ function DetachedMetricsPageContent() {
       <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-[10px] text-text-muted">
         <span className="flex items-center gap-2">
           {kpis.total > 0 ? `Session total: ${formatCompactNumber(kpis.total)} tokens` : 'No data'}
-          {kpis.hasCost && (
-            <>
-              <span className="text-text-muted/50">·</span>
-              <span className="text-emerald-400/80">{formatUSD(kpis.costUSD ?? 0)}</span>
-            </>
-          )}
           {isPaused ? ' (paused)' : ''}
         </span>
         <span className="flex items-center gap-1">
@@ -387,26 +286,6 @@ function DetachedMetricsPageContent() {
           Detached Window
         </span>
       </footer>
-
-      {/* Pricing models manager — detached host: data from this window's local
-          status poll, optimistic updates into the same local state. */}
-      <PricingManagerSlideOver
-        open={pricingManagerOpen}
-        onClose={() => setPricingManagerOpen(false)}
-        defaultModel={defaultModel}
-        servers={serverNames.map((name) => ({ name, declaredModel: serverDeclared[name] }))}
-        clients={[...new Set([
-          ...Object.keys(clientModels),
-          ...Object.keys(tokenUsage?.per_client ?? {}),
-          ...Object.keys(costUsage?.per_client ?? {}),
-        ])].sort().map((name) => ({ name, declaredModel: clientModels[name] }))}
-        costAttribution={costAttribution}
-        effectiveClientModels={effectiveClientModels}
-        effectiveServerModels={effectiveServerModels}
-        onClientSaved={handleClientModelSaved}
-        onServerSaved={handleServerModelSaved}
-        onDefaultSaved={handleDefaultModelSaved}
-      />
     </div>
   );
 }

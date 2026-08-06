@@ -1,7 +1,7 @@
 import { useRef, type ReactNode } from 'react';
 import { Wrench } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import { formatCompactNumber, formatUSD } from '../../lib/format';
+import { formatCompactNumber } from '../../lib/format';
 import { CodeViewer } from '../ui/CodeViewer';
 import { ZoomControls } from '../ui/ZoomControls';
 import { InspectorHeader, PaneAnchor } from '../inspector';
@@ -29,7 +29,7 @@ interface ToolDetailPanelProps {
   enabled: boolean;
   auditMode: boolean;
   auditState: AuditState | null;
-  // The tool's observed usage (calls/tokens/cost), when any call has been
+  // The tool's observed usage (calls/tokens), when any call has been
   // recorded. Shown whenever present — not gated on Audit Mode.
   usage?: ToolUsageStat;
   lastCalledAt?: string;
@@ -159,13 +159,6 @@ export function ToolDetailPanel({
                       <InspectorStat label="Last used" value={formatLastUsed(usage.lastCalledAt)} className="text-text-secondary" />
                       <InspectorStat label="Input" value={formatCompactNumber(usage.inputTokens ?? 0)} className="text-secondary" />
                       <InspectorStat label="Output" value={formatCompactNumber(usage.outputTokens ?? 0)} className="text-primary" />
-                      {/* Cost only when a pricing model priced the calls — the
-                          em-dash rule every cost surface follows. */}
-                      <InspectorStat
-                        label="Cost · est."
-                        value={usage.costUsd === undefined ? '—' : formatUSD(usage.costUsd)}
-                        className={usage.costUsd === undefined ? 'text-text-muted' : 'text-emerald-400'}
-                      />
                     </div>
                   )}
                 </div>

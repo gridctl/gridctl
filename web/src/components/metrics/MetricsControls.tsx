@@ -1,14 +1,14 @@
 import { useState, type ReactNode } from 'react';
-import { Pause, Play, RefreshCw, Trash2, DollarSign } from 'lucide-react';
+import { Pause, Play, RefreshCw, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { IconButton } from '../ui/IconButton';
 import { METRICS_TIME_RANGES, type MetricsTimeRange } from '../../hooks/useMetricsSeries';
 
 // MetricsControls is the shared control cluster for every metrics surface:
 // the time-range segmented control, a live/pause toggle, refresh, clear (with
-// an inline confirm), the pricing-manager opener, and a host-supplied `right`
-// slot (popout in-shell, fullscreen detached). Pulling it out of the three
-// hosts keeps their toolbars identical and the clear-confirm logic in one place.
+// an inline confirm), and a host-supplied `right` slot (popout in-shell,
+// fullscreen detached). Pulling it out of the hosts keeps their toolbars
+// identical and the clear-confirm logic in one place.
 export function MetricsControls({
   timeRange,
   onTimeRange,
@@ -16,7 +16,6 @@ export function MetricsControls({
   onTogglePause,
   onRefresh,
   onClear,
-  onOpenPricing,
   right,
   className,
 }: {
@@ -26,7 +25,6 @@ export function MetricsControls({
   onTogglePause: () => void;
   onRefresh: () => void;
   onClear: () => void;
-  onOpenPricing: () => void;
   right?: ReactNode;
   className?: string;
 }) {
@@ -96,7 +94,7 @@ export function MetricsControls({
                     copy names the whole blast radius — never just tokens. */}
                 <p className="text-xs text-text-primary font-medium mb-2">Clear all metrics?</p>
                 <p className="text-[10px] text-text-muted mb-3">
-                  This wipes token, cost, tool usage, and model history. It cannot be undone.
+                  This wipes all recorded token and tool usage history. It cannot be undone.
                 </p>
                 <div className="flex items-center gap-2 justify-end">
                   <button
@@ -119,8 +117,6 @@ export function MetricsControls({
             </>
           )}
         </div>
-
-        <IconButton icon={DollarSign} onClick={onOpenPricing} tooltip="Edit pricing models" size="sm" variant="ghost" />
 
         {right && (
           <>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fetchTokenMetrics, fetchCostMetrics, clearTokenMetrics } from '../lib/api';
+import { fetchTokenMetrics, clearTokenMetrics } from '../lib/api';
 import { POLLING } from '../lib/constants';
-import type { TokenMetricsResponse, CostMetricsResponse } from '../types';
+import type { TokenMetricsResponse } from '../types';
 
 export type MetricsTimeRange = 'live' | '1h' | '6h' | '24h' | '7d';
 
@@ -39,35 +39,26 @@ interface UseMetricsSeriesArgs {
   enabled?: boolean;
   // Suspends the live auto-refresh without unmounting.
   paused?: boolean;
-  // Request per-client cost buckets too (drives the workspace inspector's
-  // per-client cost sparkline). Off by default — the glance surfaces don't
-  // need it.
-  perClient?: boolean;
 }
 
 interface UseMetricsSeriesResult {
   metricsData: TokenMetricsResponse | null;
-  costData: CostMetricsResponse | null;
   isLoading: boolean;
   error: string | null;
   reload: () => void;
   clear: () => Promise<void>;
 }
 
-// useMetricsSeries owns the token + cost time-series polling shared by the
-// bottom Metrics tab, the Metrics workspace, and the detached window. It does
-// NOT own the real-time status snapshot (tokenUsage / costUsage / models) —
-// those come from the app store in-shell, or a local status poll in the
-// detached window. Both series are fetched on one cycle (Promise.allSettled)
-// so a transient failure of one endpoint never drops the other's data.
+// useMetricsSeries owns the token time-series polling shared by the Metrics
+// workspace and the detached window. It does NOT own the real-time status
+// snapshot (tokenUsage) — that comes from the app store in-shell, or a local
+// status poll in the detached window.
 export function useMetricsSeries({
   timeRange,
   enabled = true,
   paused = false,
-  perClient = false,
 }: UseMetricsSeriesArgs): UseMetricsSeriesResult {
   const [metricsData, setMetricsData] = useState<TokenMetricsResponse | null>(null);
-  const [costData, setCostData] = useState<CostMetricsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<number | null>(null);
@@ -80,26 +71,15 @@ export function useMetricsSeries({
   // on a background refresh anyway; explicit reloads flip the flag themselves.
   const loadMetrics = useCallback(async () => {
     try {
-      const [tokenResult, costResult] = await Promise.allSettled([
-        fetchTokenMetrics(apiRange),
-        fetchCostMetrics(apiRange, perClient),
-      ]);
-      if (tokenResult.status === 'fulfilled') setMetricsData(tokenResult.value);
-      if (costResult.status === 'fulfilled') setCostData(costResult.value);
-      const firstFailure =
-        (tokenResult.status === 'rejected' && tokenResult.reason) ||
-        (costResult.status === 'rejected' && costResult.reason);
-      if (firstFailure) {
-        setError(firstFailure instanceof Error ? firstFailure.message : 'Failed to fetch metrics');
-      } else {
-        setError(null);
-      }
+      const data = await fetchTokenMetrics(apiRange);
+      setMetricsData(data);
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch metrics');
     } finally {
       setIsLoading(false);
     }
-  }, [apiRange, perClient]);
+  }, [apiRange]);
 
   // Fetch on mount/enable and whenever the range changes. loadMetrics flips the
   // loading flag itself, so the effect body stays free of synchronous setState.
@@ -134,7 +114,6 @@ export function useMetricsSeries({
   const clear = useCallback(async () => {
     await clearTokenMetrics();
     setMetricsData(null);
-    setCostData(null);
     setIsLoading(true);
     void loadMetrics();
   }, [loadMetrics]);
@@ -145,12 +124,10 @@ export function useMetricsSeries({
   // fetch keeps `error` set instead, so the mismatch cannot wedge the
   // loading state.
   const currentMetrics = metricsData && metricsData.range === apiRange ? metricsData : null;
-  const currentCost = costData && costData.range === apiRange ? costData : null;
   const rangeSwitching = !error && metricsData !== null && currentMetrics === null;
 
   return {
     metricsData: currentMetrics,
-    costData: currentCost,
     isLoading: isLoading || rangeSwitching,
     error,
     reload,

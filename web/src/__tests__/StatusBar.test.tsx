@@ -36,7 +36,6 @@ beforeEach(() => {
     sessions: 0,
     codeMode: 'off',
     tokenUsage: null,
-    costUsage: null,
     featureDetails: [],
     connectionStatus: 'connected',
     lastUpdated: null,

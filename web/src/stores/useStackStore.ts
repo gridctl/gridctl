@@ -11,8 +11,6 @@ import type {
   SessionEntry,
   Tool,
   TokenUsage,
-  CostUsage,
-  EffectiveModel,
   FeatureDetail,
   ConnectionStatus,
   AutoscaleDecisionKind,
@@ -67,15 +65,6 @@ interface StackState {
   sessionEntries: SessionEntry[] | null;
   codeMode: string | null;  // Gateway code mode status ("on" when active)
   tokenUsage: TokenUsage | null; // Token usage metrics from status response
-  costUsage: CostUsage | null;   // USD cost snapshot; null when no cost recorded
-  costAttribution: boolean; // True when any client or server has a pricing model configured
-  clientModels: Record<string, string>; // Declared client -> model pricing map (client_models)
-  serverModels: Record<string, string>; // EFFECTIVE server -> model map (model: with default folded in)
-  defaultModel: string;     // Gateway-level default_model; empty when not configured
-  // Effective model + provenance per client / server, derived read-only from
-  // observed cost. Empty until traffic is observed.
-  effectiveClientModels: Record<string, EffectiveModel>;
-  effectiveServerModels: Record<string, EffectiveModel>;
   stackName: string;        // Active stack name; empty string in stackless mode
   features: Record<string, boolean>;  // Enabled experimental flags, name -> true
   featureDetails: FeatureDetail[];    // Display metadata for the same flags (read-only)
@@ -110,16 +99,6 @@ interface StackState {
   setGatewayStatus: (status: GatewayStatus) => void;
   setClients: (clients: ClientStatus[]) => void;
   setSessionEntries: (entries: SessionEntry[] | null) => void;
-  // Optimistic local edit of a single client's declared pricing model so the
-  // pill reflects a save before the next status poll confirms it. An empty
-  // model removes the entry (mirrors the backend's clear semantics).
-  setClientModelLocal: (client: string, model: string) => void;
-  // Optimistic local edit of a server's declared model. Recomputes the
-  // server's effective entry (declared, else gateway default).
-  setServerModelLocal: (server: string, model: string) => void;
-  // Optimistic local edit of gateway.default_model. Recomputes every
-  // server's effective entry from its declared model and the new default.
-  setDefaultModelLocal: (model: string) => void;
   setTools: (tools: Tool[]) => void;
   setToolCatalog: (toolCatalog: Tool[]) => void;
   setError: (error: string | null) => void;
@@ -151,13 +130,6 @@ export const useStackStore = create<StackState>()(
     sessionEntries: null,
     codeMode: null,
     tokenUsage: null,
-    costUsage: null,
-    costAttribution: false,
-    clientModels: {},
-    serverModels: {},
-    effectiveClientModels: {},
-    effectiveServerModels: {},
-    defaultModel: '',
     stackName: '',
     features: {},
     featureDetails: [],
@@ -214,13 +186,6 @@ export const useStackStore = create<StackState>()(
         sessions: status.sessions ?? 0,
         codeMode: status.code_mode || null,
         tokenUsage: status.token_usage ?? null,
-        costUsage: status.cost ?? null,
-        costAttribution: status.cost_attribution ?? false,
-        clientModels: status.client_models ?? {},
-        serverModels: status.server_models ?? {},
-        effectiveClientModels: status.effective_client_models ?? {},
-        effectiveServerModels: status.effective_server_models ?? {},
-        defaultModel: status.default_model ?? '',
         stackName: status.stack_name || '',
         features: status.features ?? {},
         featureDetails: status.feature_details ?? [],
@@ -240,39 +205,6 @@ export const useStackStore = create<StackState>()(
       set({ clients });
       // No refreshNodesAndEdges here -- setGatewayStatus already triggers it,
       // and clients are read from store state during refresh.
-    },
-
-    setClientModelLocal: (client, model) => {
-      const next = { ...get().clientModels };
-      if (model === '') {
-        delete next[client];
-      } else {
-        next[client] = model;
-      }
-      set({ clientModels: next });
-    },
-
-    setServerModelLocal: (server, model) => {
-      const mcpServers = get().mcpServers.map((s) =>
-        s.name === server ? { ...s, model: model || undefined } : s,
-      );
-      const serverModels = { ...get().serverModels };
-      const effective = model || get().defaultModel;
-      if (effective) {
-        serverModels[server] = effective;
-      } else {
-        delete serverModels[server];
-      }
-      set({ mcpServers, serverModels });
-    },
-
-    setDefaultModelLocal: (model) => {
-      const serverModels: Record<string, string> = {};
-      for (const s of get().mcpServers) {
-        const effective = s.model || model;
-        if (effective) serverModels[s.name] = effective;
-      }
-      set({ defaultModel: model, serverModels });
     },
 
     setTools: (tools) => set({ tools }),

@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import '@testing-library/jest-dom';
 import { MetricsWorkspace } from '../components/workspaces/MetricsWorkspace';
 import { useStackStore } from '../stores/useStackStore';
 import { useUIStore, COMPACT_MODE_DEFAULTS } from '../stores/useUIStore';
-import type { CostMetricsResponse, CostUsage, MCPServerStatus, TokenMetricsResponse, TokenUsage } from '../types';
+import type { MCPServerStatus, TokenMetricsResponse, TokenUsage } from '../types';
 
 vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn() }));
 vi.mock('../hooks/useWindowManager', () => ({
@@ -21,13 +21,12 @@ vi.mock('../lib/api', async (importActual) => {
   return {
     ...actual,
     fetchTokenMetrics: vi.fn(),
-    fetchCostMetrics: vi.fn(),
     fetchOptimizeReport: vi.fn(),
     clearTokenMetrics: vi.fn().mockResolvedValue(undefined),
     fetchToolUsage: vi.fn().mockResolvedValue({
       servers: {
         github: {
-          create_issue: { calls: 4, lastCalledAt: '2026-07-01T00:00:00Z', inputTokens: 120, outputTokens: 80, costUsd: 0.02 },
+          create_issue: { calls: 4, lastCalledAt: '2026-07-01T00:00:00Z', inputTokens: 120, outputTokens: 80 },
           list_repos: { calls: 1, inputTokens: 30, outputTokens: 10 },
         },
       },
@@ -36,7 +35,7 @@ vi.mock('../lib/api', async (importActual) => {
 });
 
 // Imported after the mock factory so the mock-then-import order is visible.
-import { fetchTokenMetrics, fetchCostMetrics, fetchOptimizeReport } from '../lib/api';
+import { fetchTokenMetrics, fetchOptimizeReport } from '../lib/api';
 
 function server(name: string): MCPServerStatus {
   return { name, transport: 'stdio', initialized: true, tools: [], healthy: true } as unknown as MCPServerStatus;
@@ -52,13 +51,7 @@ const tokenUsage: TokenUsage = {
   format_savings: { original_tokens: 0, formatted_tokens: 0, saved_tokens: 0, savings_percent: 0 },
 };
 
-const costUsage: CostUsage = {
-  session: { input_usd: 0.2, output_usd: 0.1, total_usd: 0.3 },
-  per_server: { github: { input_usd: 0.15, output_usd: 0.05, total_usd: 0.2 } },
-  per_client: { claude: { input_usd: 0.2, output_usd: 0.1, total_usd: 0.3 } },
-};
-
-// Series fixtures. The mocked fetchers echo the requested range (the hook
+// Series fixtures. The mocked fetcher echoes the requested range (the hook
 // discards responses whose range does not match the active one), and the
 // default window is empty — the common Live case for an idle stack. Tests
 // that exercise the window math swap in the seeded buckets.
@@ -67,13 +60,6 @@ const emptyTokenSeries: TokenMetricsResponse = {
   interval: '1m',
   data_points: [],
   per_server: {},
-};
-const emptyCostSeries: CostMetricsResponse = {
-  range: '30m',
-  interval: '1m',
-  data_points: [],
-  per_server: {},
-  per_client: {},
 };
 // Values chosen so the compact-formatted KPI cards ("1.2k", "567", "1.8k")
 // cannot collide with any number in the Overview preview tables.
@@ -86,23 +72,10 @@ const seededTokenSeries: TokenMetricsResponse = {
   ],
   per_server: {},
 };
-const seededCostSeries: CostMetricsResponse = {
-  range: '30m',
-  interval: '1m',
-  data_points: [
-    { timestamp: '2026-01-01T00:00:00Z', usd: 0.02 },
-    { timestamp: '2026-01-01T00:01:00Z', usd: 0.03 },
-  ],
-  per_server: {},
-  per_client: {},
-};
 
-function mockSeries(tokens: TokenMetricsResponse, cost: CostMetricsResponse) {
+function mockSeries(tokens: TokenMetricsResponse) {
   vi.mocked(fetchTokenMetrics).mockImplementation((range = '1h') =>
     Promise.resolve({ ...tokens, range }),
-  );
-  vi.mocked(fetchCostMetrics).mockImplementation((range = '1h') =>
-    Promise.resolve({ ...cost, range }),
   );
 }
 
@@ -111,12 +84,6 @@ function seed(over: Partial<ReturnType<typeof useStackStore.getState>> = {}) {
     isLoading: false,
     mcpServers: [server('github'), server('atlassian')],
     tokenUsage,
-    costUsage,
-    costAttribution: true,
-    clientModels: {},
-    effectiveClientModels: {},
-    effectiveServerModels: {},
-    defaultModel: '',
     ...over,
   });
 }
@@ -125,7 +92,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   useUIStore.setState({ compactMode: { ...COMPACT_MODE_DEFAULTS } });
   seed();
-  mockSeries(emptyTokenSeries, emptyCostSeries);
+  mockSeries(emptyTokenSeries);
   vi.mocked(fetchOptimizeReport).mockResolvedValue({ findings: [], health_score: 100, generated_at: 't' });
 });
 
@@ -140,12 +107,12 @@ function renderAt(path = '/metrics') {
 describe('MetricsWorkspace', () => {
   it('renders the scope navigator, the window label, and the session line', async () => {
     renderAt();
-    // Anchor names so "Models" doesn't also match the "Edit pricing models" control.
     expect(screen.getByRole('button', { name: /^overview/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^clients/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^servers/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^tools/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^models/i })).toBeInTheDocument();
+    // The Models scope left with the cost layer.
+    expect(screen.queryByRole('button', { name: /^models/i })).not.toBeInTheDocument();
     // KPI cards are window-scoped (labeled by the active range); the session
     // snapshot renders once, on its own explicitly labeled line.
     expect(await screen.findByText('Total Tokens')).toBeInTheDocument();
@@ -154,15 +121,32 @@ describe('MetricsWorkspace', () => {
   });
 
   it('binds the KPI cards to the ranged series, not the session snapshot', async () => {
-    mockSeries(seededTokenSeries, seededCostSeries);
+    mockSeries(seededTokenSeries);
     renderAt();
-    // Window sums: 1.2k in / 567 out / 1.8k total / $0.050 — not the
-    // 140-token session snapshot, which stays on the session line.
+    // Window sums: 1.2k in / 567 out / 1.8k total — not the 140-token
+    // session snapshot, which stays on the session line.
     expect(await screen.findByText('1.8k')).toBeInTheDocument();
     expect(screen.getByText('1.2k')).toBeInTheDocument();
     expect(screen.getByText('567')).toBeInTheDocument();
-    expect(screen.getByText('$0.050')).toBeInTheDocument();
     expect(screen.getByText(/Session total: 140 tokens/)).toBeInTheDocument();
+  });
+
+  it('shows the format-savings card with an em dash until a conversion saved tokens', async () => {
+    renderAt();
+    expect(await screen.findByText(/Format Savings/)).toBeInTheDocument();
+    expect(screen.getByText('—')).toBeInTheDocument();
+  });
+
+  it('promotes measured format savings into the fourth KPI card', async () => {
+    seed({
+      tokenUsage: {
+        ...tokenUsage,
+        format_savings: { original_tokens: 1000, formatted_tokens: 660, saved_tokens: 340, savings_percent: 34 },
+      },
+    });
+    renderAt();
+    expect(await screen.findByText('34%')).toBeInTheDocument();
+    expect(screen.getByText(/340 tokens saved by output-format conversion/)).toBeInTheDocument();
   });
 
   it('notes an idle window instead of presenting lifetime numbers unlabeled', async () => {
@@ -190,12 +174,14 @@ describe('MetricsWorkspace', () => {
     renderAt();
     fireEvent.click(screen.getByTitle('Clear Metrics'));
     expect(await screen.findByText('Clear all metrics?')).toBeInTheDocument();
-    expect(screen.getByText(/token, cost, tool usage, and model history/)).toBeInTheDocument();
+    expect(screen.getByText(/all recorded token and tool usage history/)).toBeInTheDocument();
   });
 
-  it('defaults to the overview scope with the model-mix panel', async () => {
+  it('offers no pricing-manager entry point anywhere in the workspace', async () => {
     renderAt();
-    expect(await screen.findByText('Cost by Model')).toBeInTheDocument();
+    expect(await screen.findByText('Total Tokens')).toBeInTheDocument();
+    expect(screen.queryByText(/pricing/i)).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Edit pricing models')).not.toBeInTheDocument();
   });
 
   it('switches to the servers breakdown and selects a row into the inspector', async () => {
@@ -207,40 +193,26 @@ describe('MetricsWorkspace', () => {
     expect(screen.getByText('github')).toBeInTheDocument();
     expect(screen.getByText('atlassian')).toBeInTheDocument();
 
-    // Selecting a row opens the inspector (its "Pricing model" section is
-    // unique to a selected entity).
+    // Selecting a row opens the inspector.
     fireEvent.click(screen.getByText('github'));
-    expect(await screen.findByText('Pricing model')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Close inspector')).toBeInTheDocument();
   });
 
-  it('explains an empty per-entity series instead of hiding the sparklines', async () => {
+  it('explains an empty per-entity series instead of hiding the sparkline', async () => {
     // Also pins the ?scope=&selected= deep link the Traces pivot relies on.
     // The full suffix disambiguates the inspector note from the center
     // column's focus note, which shares the same opening sentence.
     renderAt('/metrics?scope=servers&selected=github');
-    expect(await screen.findByText('Pricing model')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Close inspector')).toBeInTheDocument();
     expect(
       await screen.findByText(/No samples for github in this window\. The numbers above are session totals\./),
     ).toBeInTheDocument();
   });
 
-  it('hides the inspector setup hint when cost is already priced', () => {
-    renderAt();
-    expect(screen.queryByText(/Set a pricing model in the pricing manager/)).not.toBeInTheDocument();
-  });
-
-  it('shows the pricing-manager setup hint when nothing is priced', async () => {
-    seed({ costAttribution: false, costUsage: null });
-    renderAt();
-    // Once the data view lands, the hint renders exactly twice: under the
-    // Cost KPI card and in the inspector overview legend.
-    expect(await screen.findByText(/Session total: 140 tokens/)).toBeInTheDocument();
-    expect(screen.getAllByText(/Set a pricing model in the pricing manager/)).toHaveLength(2);
-  });
-
-  it('shows the model-mix panel under the models scope', async () => {
+  it('falls back to overview for the retired models scope', async () => {
     renderAt('/metrics?scope=models');
-    expect(await screen.findByText('Cost by Model')).toBeInTheDocument();
+    // Unknown scopes normalize to overview, whose previews render.
+    expect(await screen.findByText('Top Servers · session totals')).toBeInTheDocument();
   });
 
   it('shows the per-tool breakdown with server-qualified names under the tools scope', async () => {
@@ -249,39 +221,27 @@ describe('MetricsWorkspace', () => {
     // Rows render server › tool so name collisions across servers stay distinct.
     expect(await screen.findByText('create_issue')).toBeInTheDocument();
     expect(screen.getByText('list_repos')).toBeInTheDocument();
-    // Priced tool shows a cost; unpriced tool shows the em dash, never $0.
-    // (Scoped to the table: the window Cost KPI legitimately reads $0.00 for
-    // a priced session with an idle window.)
-    const table = screen.getByRole('table');
-    expect(within(table).getByText('$0.020')).toBeInTheDocument();
-    expect(within(table).getByText('—')).toBeInTheDocument();
-    expect(within(table).queryByText('$0.00')).not.toBeInTheDocument();
   });
 
-  it('selects a tool row into the inspector without a pricing-model editor', async () => {
+  it('selects a tool row into the inspector with its call count', async () => {
     renderAt('/metrics?scope=tools');
     fireEvent.click(await screen.findByText('create_issue'));
-    // The inspector shows the tool's KPI grid (Calls is tools-only)…
+    // The inspector shows the tool's KPI grid (Calls is tools-only).
     expect(await screen.findByText('Calls')).toBeInTheDocument();
-    // …but no pricing editor: a tool's cost inherits client/server attribution.
-    expect(screen.queryByText('Pricing model')).not.toBeInTheDocument();
   });
 
   it('shows the onboarding empty state when there is no traffic', async () => {
-    seed({ tokenUsage: null, costUsage: null, costAttribution: false });
+    seed({ tokenUsage: null });
     renderAt();
     // The first-load skeleton clears once the (empty) series resolves.
     expect(await screen.findByText('Your metrics home')).toBeInTheDocument();
+    expect(screen.getByText(/Metrics populate as tools are called/)).toBeInTheDocument();
   });
 
-  it('focuses the center charts on a selected server with fleet context', async () => {
-    mockSeries(
-      { ...seededTokenSeries, per_server: { github: seededTokenSeries.data_points } },
-      { ...seededCostSeries, per_server: { github: seededCostSeries.data_points } },
-    );
+  it('focuses the center chart on a selected server with fleet context', async () => {
+    mockSeries({ ...seededTokenSeries, per_server: { github: seededTokenSeries.data_points } });
     renderAt('/metrics?scope=servers&selected=github');
     expect(await screen.findByText('github · Token Usage')).toBeInTheDocument();
-    expect(screen.getByText('github · Cost')).toBeInTheDocument();
     // Focused-share line: entity equals fleet here, so 100% of window.
     expect(screen.getByText(/github: 1,801 tokens .* 100% of window/)).toBeInTheDocument();
     // Clear affordance restores the fleet view.
@@ -290,26 +250,24 @@ describe('MetricsWorkspace', () => {
     expect(screen.queryByText('github · Token Usage')).not.toBeInTheDocument();
   });
 
-  it('keeps fleet charts with an honest note when the entity series is empty', async () => {
-    mockSeries(seededTokenSeries, seededCostSeries); // per_server stays {}
+  it('keeps the fleet chart with an honest note when the entity series is empty', async () => {
+    mockSeries(seededTokenSeries); // per_server stays {}
     renderAt('/metrics?scope=servers&selected=github');
     expect(
-      await screen.findByText(/No samples for github in this window\. Charts show the whole stack as context\./),
+      await screen.findByText(/No samples for github in this window\. The chart shows the whole stack as context\./),
     ).toBeInTheDocument();
     // Fleet titles stay — the entity's name never labels fleet data.
     expect(screen.getByText('Token Usage Over Time')).toBeInTheDocument();
     expect(screen.queryByText('github · Token Usage')).not.toBeInTheDocument();
   });
 
-  it('focuses cost only for a selected client and explains the token gap', async () => {
-    mockSeries(seededTokenSeries, {
-      ...seededCostSeries,
-      per_client: { claude: seededCostSeries.data_points },
-    });
+  it('explains the token gap for a selected client', async () => {
+    mockSeries(seededTokenSeries);
     renderAt('/metrics?scope=clients&selected=claude');
-    expect(await screen.findByText('claude · Cost')).toBeInTheDocument();
+    expect(
+      await screen.findByText(/The chart shows the whole stack; per-client token series is not recorded/),
+    ).toBeInTheDocument();
     expect(screen.getByText('Token Usage Over Time')).toBeInTheDocument();
-    expect(screen.getByText(/The token chart shows the whole stack; per-client token series is not recorded/)).toBeInTheDocument();
   });
 
   it('shows top-5 previews on Overview and jumps to the full scope', async () => {
@@ -334,7 +292,6 @@ describe('MetricsWorkspace', () => {
           title: 'Unused server: zapier',
           summary: 'No calls recorded for this server.',
           server: 'zapier',
-          impact_usd_per_week: 2.1,
           remediation: '',
           detected_at: 't',
         },
@@ -343,12 +300,10 @@ describe('MetricsWorkspace', () => {
       generated_at: 't',
     });
     renderAt();
-    expect(await screen.findByText('Savings opportunities')).toBeInTheDocument();
-    // Header total and the row impact are the same single finding here.
-    expect(screen.getAllByText('$2.10/wk')).toHaveLength(2);
+    expect(await screen.findByText('Optimize findings')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Unused server: zapier/ }));
     expect(await screen.findByText('Per-Server · session totals')).toBeInTheDocument();
-    expect(await screen.findByText('Pricing model')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Close inspector')).toBeInTheDocument();
   });
 
   it('deep-links a tool-level finding via the server-qualified row key', async () => {
@@ -361,11 +316,10 @@ describe('MetricsWorkspace', () => {
           id: 'f2',
           heuristic: 'future_tool_heuristic',
           severity: 'warn',
-          title: 'Expensive tool: list_repos',
+          title: 'Heavy tool: list_repos',
           summary: 'Synthetic tool-level finding.',
           server: 'github',
           tool: 'list_repos',
-          impact_usd_per_week: 1.25,
           remediation: '',
           detected_at: 't',
         },
@@ -374,7 +328,7 @@ describe('MetricsWorkspace', () => {
       generated_at: 't',
     });
     renderAt();
-    fireEvent.click(await screen.findByRole('button', { name: /Expensive tool: list_repos/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Heavy tool: list_repos/ }));
     expect(await screen.findByText('Per-Tool · session totals')).toBeInTheDocument();
     expect(await screen.findByText('Calls')).toBeInTheDocument();
   });
@@ -388,7 +342,6 @@ describe('MetricsWorkspace', () => {
           severity: 'info',
           title: 'Need more data',
           summary: 'Re-run after 24 hours of activity.',
-          impact_usd_per_week: 0,
           remediation: '',
           detected_at: 't',
         },
@@ -398,20 +351,7 @@ describe('MetricsWorkspace', () => {
     });
     renderAt();
     expect(await screen.findByText(/Optimize: Re-run after 24 hours/)).toBeInTheDocument();
-    expect(screen.queryByText('Savings opportunities')).not.toBeInTheDocument();
-  });
-
-  it('renders the Models breakdown table with entities and provenance', async () => {
-    seed({
-      effectiveServerModels: {
-        github: { provenance: 'mixed', models: [{ model: 'gpt-4o', cost_usd: 0.2, share: 1 }] },
-        atlassian: { provenance: 'declared', model: 'gpt-4o', models: [{ model: 'gpt-4o', cost_usd: 0.1, share: 1 }] },
-      },
-    });
-    renderAt('/metrics?scope=models');
-    expect(await screen.findByText('Model Breakdown')).toBeInTheDocument();
-    expect(screen.getByText('atlassian, github')).toBeInTheDocument();
-    expect(screen.getByText('1 declared · 1 mixed')).toBeInTheDocument();
+    expect(screen.queryByText('Optimize findings')).not.toBeInTheDocument();
   });
 
   it('filters the tools list by search with a result count', async () => {
@@ -421,15 +361,6 @@ describe('MetricsWorkspace', () => {
     expect(await screen.findByText('1 of 2 tools')).toBeInTheDocument();
     expect(screen.queryByText('list_repos')).not.toBeInTheDocument();
     expect(screen.getByText('create_issue')).toBeInTheDocument();
-  });
-
-  it('filters by the priced facet', async () => {
-    renderAt('/metrics?scope=tools');
-    expect(await screen.findByText('create_issue')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Unpriced' }));
-    expect(await screen.findByText('1 of 2 tools')).toBeInTheDocument();
-    expect(screen.queryByText('create_issue')).not.toBeInTheDocument();
-    expect(screen.getByText('list_repos')).toBeInTheDocument();
   });
 
   it('restores tool filters from the URL and clears to the full list', async () => {
