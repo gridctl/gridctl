@@ -85,13 +85,6 @@ export interface MCPServerStatus {
   // whitelist" (expose all tools the gateway loaded). Present and non-empty
   // means the operator has curated a subset.
   toolWhitelist?: string[];
-  // Pricing model DECLARED on this server in stack.yaml (model: field only;
-  // a gateway default_model is not folded in). Absent when the server
-  // inherits the default or has no attribution.
-  model?: string;
-  // Which model actually priced this server's recorded cost, with provenance.
-  // Read-only; absent when the server has no observed traffic.
-  effectiveModel?: EffectiveModel;
   replicas?: ReplicaStatus[]; // Per-replica runtime status
   autoscale?: AutoscaleStatus; // Live autoscale snapshot (absent when not configured)
   // Downstream OAuth authorization state for external servers with an
@@ -145,10 +138,6 @@ export interface ClientStatus {
   linked: boolean;    // Whether gridctl entry exists in client config
   transport: string;  // "native HTTP" or "mcp-remote bridge"
   configPath?: string; // Config file path (only if detected)
-  model?: string;     // Declared pricing model from client_models (pricing only, not access)
-  // Which model actually priced this client's recorded cost, with provenance.
-  // Read-only; absent when the client has no observed traffic.
-  effectiveModel?: EffectiveModel;
   effectiveScope?: ClientScopeResult; // Per-client access scope (when scoping is configured)
   // Desired state from the stack's link: block, distinct from linked
   // (actual config-file state). linkEntry carries the declared options.
@@ -185,23 +174,6 @@ export interface TokenUsage {
   format_savings: FormatSavings;
 }
 
-// Per-dimension USD cost snapshot mirroring TokenCounts
-export interface CostCounts {
-  input_usd: number;
-  output_usd: number;
-  cache_read_usd?: number;
-  cache_write_usd?: number;
-  total_usd: number;
-}
-
-// Cost usage summary from GET /api/status (cost field)
-export interface CostUsage {
-  session: CostCounts;
-  per_server: Record<string, CostCounts>;
-  per_replica?: Record<string, Record<string, CostCounts>>;
-  per_client?: Record<string, CostCounts>;
-}
-
 // Historical time-series data point
 export interface TokenDataPoint {
   timestamp: string;
@@ -218,21 +190,6 @@ export interface TokenMetricsResponse {
   per_server: Record<string, TokenDataPoint[]>;
 }
 
-// Single bucket of cost-over-time data (USD per minute-aligned bucket)
-export interface CostDataPoint {
-  timestamp: string;
-  usd: number;
-}
-
-// Response from GET /api/metrics/cost
-export interface CostMetricsResponse {
-  range: string;
-  interval: string;
-  data_points: CostDataPoint[];
-  per_server: Record<string, CostDataPoint[]>;
-  per_client?: Record<string, CostDataPoint[]>;
-}
-
 // Severity classifies optimize findings. Mirrors pkg/optimize.Severity
 // on the Go side; "info" findings are advisory and never trigger a
 // non-zero CLI exit.
@@ -247,7 +204,6 @@ export interface OptimizeFinding {
   summary: string;
   server?: string;
   tool?: string;
-  impact_usd_per_week: number;
   remediation: string;
   detected_at: string;
 }
@@ -257,29 +213,6 @@ export interface OptimizeReport {
   findings: OptimizeFinding[];
   health_score: number;
   generated_at: string;
-}
-
-// Model provenance for an effective-model attribution. Mirrors the
-// pkg/optimize / internal/api vocabulary. `declared` = one model priced all
-// recorded cost; `mixed` = multiple models priced the traffic; `none` =
-// traffic observed but nothing priced (cost $0). The set is open so a future
-// `reported` (a wire-level model signal) can extend it.
-export type ModelProvenance = 'declared' | 'mixed' | 'none';
-
-// One model's slice of an entity's recorded cost.
-export interface ModelShare {
-  model: string;
-  cost_usd: number;
-  share: number; // 0–1 of the entity's total recorded cost
-}
-
-// Which model(s) priced an entity's traffic, with provenance. Describes which
-// declaration gridctl applied when pricing — NOT what the upstream client ran.
-export interface EffectiveModel {
-  model?: string;             // dominant model (omitted for `none`)
-  provenance: ModelProvenance;
-  share?: number;             // dominant model's cost share (omitted for `none`)
-  models?: ModelShare[];      // full breakdown, descending by cost
 }
 
 // One enabled experimental flag from /api/status feature_details.
@@ -299,48 +232,9 @@ export interface GatewayStatus {
   sessions?: number;       // Active MCP session count
   code_mode?: string;      // "on" when code mode is active (omitted when off)
   token_usage?: TokenUsage; // Token usage metrics (omitted if no accumulator)
-  cost?: CostUsage;        // Cost snapshot (omitted until any cost is recorded)
-  cost_attribution?: boolean; // True when any client or server has a pricing model configured
-  client_models?: Record<string, string>; // Declared client -> model pricing map (client_models)
-  server_models?: Record<string, string>; // EFFECTIVE server -> model map (model: with default_model folded in)
-  default_model?: string;  // Gateway-level default_model (omitted when not configured)
-  // Effective model + provenance per client / server, derived read-only from
-  // observed cost. Omitted until traffic is observed.
-  effective_client_models?: Record<string, EffectiveModel>;
-  effective_server_models?: Record<string, EffectiveModel>;
   stack_name?: string;     // Active stack name; omitted in stackless mode
   features?: Record<string, boolean>; // Enabled experimental flags, name -> true (omitted when none)
   feature_details?: FeatureDetail[];  // Display metadata for the same flags (omitted when none)
-}
-
-// Response from GET /api/pricing/models
-export interface PricingModelsResponse {
-  source: string;   // Active pricing source name (e.g. "litellm")
-  models: string[]; // Sorted canonical model IDs the source can price
-}
-
-// Response from PUT /api/clients/{slug}/model
-export interface UpdateClientModelResponse {
-  client: string;
-  profileKey: string;
-  model: string;
-  reloaded: boolean;
-  reloadedAt?: string;
-}
-
-// Response from PUT /api/mcp-servers/{name}/model
-export interface UpdateServerModelResponse {
-  server: string;
-  model: string;
-  reloaded: boolean;
-  reloadedAt?: string;
-}
-
-// Response from PUT /api/gateway/default-model
-export interface UpdateDefaultModelResponse {
-  model: string;
-  reloaded: boolean;
-  reloadedAt?: string;
 }
 
 // MCP tool annotations, matching mcp.ToolAnnotations. All fields are
@@ -379,12 +273,9 @@ export interface ToolUsageStat {
   // or (cross-referenced from the status list) has never been called.
   lastCalledAt?: string;
   // Cumulative tokens of the tool's own calls; absent (zero) on responses
-  // from gateways predating per-tool cost attribution.
+  // from gateways predating per-tool attribution.
   inputTokens?: number;
   outputTokens?: number;
-  // Cumulative estimated cost of the tool's priced calls. Absent when no
-  // call was priced — the em-dash rule, never $0.
-  costUsd?: number;
 }
 
 // GET /api/tools/usage — per-(server, tool) call counts + last-called times,
