@@ -44,7 +44,7 @@ func newGateTestGateway(t *testing.T, denyDownstream bool) (*Gateway, *MockAgent
 
 func TestCallGates_DenyShortCircuitsBeforeDownstream(t *testing.T) {
 	g, _ := newGateTestGateway(t, true)
-	deny := &stubGate{name: "budgets", decision: GateDeny("Budget exceeded: do not retry.")}
+	deny := &stubGate{name: "deny-gate", decision: GateDeny("Policy denied: do not retry.")}
 	g.SetCallGates([]CallGate{deny})
 
 	ctx := WithClientAccessID(context.Background(), "claude-code")
@@ -55,7 +55,7 @@ func TestCallGates_DenyShortCircuitsBeforeDownstream(t *testing.T) {
 	if !result.IsError {
 		t.Fatal("denied call must return IsError result")
 	}
-	if got := result.Content[0].Text; got != "Budget exceeded: do not retry." {
+	if got := result.Content[0].Text; got != "Policy denied: do not retry." {
 		t.Errorf("denial text = %q", got)
 	}
 	if len(deny.calls) != 1 {
@@ -70,7 +70,7 @@ func TestCallGates_DenyShortCircuitsBeforeDownstream(t *testing.T) {
 func TestCallGates_FirstDenialWins(t *testing.T) {
 	g, _ := newGateTestGateway(t, true)
 	first := &stubGate{name: "rate-limits", decision: GateDeny("Rate limit exceeded.")}
-	second := &stubGate{name: "budgets", decision: GateDeny("Budget exceeded.")}
+	second := &stubGate{name: "second-deny", decision: GateDeny("Second gate denied.")}
 	g.SetCallGates([]CallGate{first, second})
 
 	result, err := g.HandleToolsCall(context.Background(), ToolCallParams{Name: "github__search"})
