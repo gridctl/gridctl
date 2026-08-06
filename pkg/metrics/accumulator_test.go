@@ -2,7 +2,6 @@ package metrics
 
 import (
 	"encoding/json"
-	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -371,346 +370,7 @@ func TestDownsampleToHour(t *testing.T) {
 
 // --- Cost layer tests ---
 
-func TestAccumulator_RecordCost_SessionAndPerServer(t *testing.T) {
-	acc := NewAccumulator(100)
-
-	acc.RecordCost("server-a", -1, CostBreakdown{
-		Input: 0.10, Output: 0.20, CacheRead: 0.05, CacheWrite: 0.01,
-	})
-	acc.RecordCost("server-a", -1, CostBreakdown{Input: 0.05, Output: 0.10})
-	acc.RecordCost("server-b", -1, CostBreakdown{Input: 0.30, Output: 0.40})
-
-	snap := acc.CostSnapshot()
-	if !approxCostEq(snap.Session.InputUSD, 0.45) {
-		t.Errorf("session input = %v, want 0.45", snap.Session.InputUSD)
-	}
-	if !approxCostEq(snap.Session.OutputUSD, 0.70) {
-		t.Errorf("session output = %v, want 0.70", snap.Session.OutputUSD)
-	}
-	if !approxCostEq(snap.Session.CacheReadUSD, 0.05) {
-		t.Errorf("session cache-read = %v, want 0.05", snap.Session.CacheReadUSD)
-	}
-	if !approxCostEq(snap.Session.CacheWriteUSD, 0.01) {
-		t.Errorf("session cache-write = %v, want 0.01", snap.Session.CacheWriteUSD)
-	}
-	if !approxCostEq(snap.Session.TotalUSD, 1.21) {
-		t.Errorf("session total = %v, want 1.21", snap.Session.TotalUSD)
-	}
-
-	a := snap.PerServer["server-a"]
-	if !approxCostEq(a.TotalUSD, 0.51) {
-		t.Errorf("server-a total = %v, want 0.51", a.TotalUSD)
-	}
-	b := snap.PerServer["server-b"]
-	if !approxCostEq(b.TotalUSD, 0.70) {
-		t.Errorf("server-b total = %v, want 0.70", b.TotalUSD)
-	}
-}
-
-func TestAccumulator_RecordCost_PerReplica(t *testing.T) {
-	acc := NewAccumulator(100)
-
-	acc.RecordCost("multi", 0, CostBreakdown{Input: 0.10, Output: 0.20})
-	acc.RecordCost("multi", 1, CostBreakdown{Input: 0.05, Output: 0.05})
-	acc.RecordCost("multi", 1, CostBreakdown{Input: 0.05, Output: 0.05})
-
-	snap := acc.CostSnapshot()
-	replicas, ok := snap.PerReplica["multi"]
-	if !ok {
-		t.Fatalf("expected per-replica cost map; got %+v", snap.PerReplica)
-	}
-	if !approxCostEq(replicas[0].TotalUSD, 0.30) {
-		t.Errorf("replica 0 total = %v, want 0.30", replicas[0].TotalUSD)
-	}
-	if !approxCostEq(replicas[1].TotalUSD, 0.20) {
-		t.Errorf("replica 1 total = %v, want 0.20", replicas[1].TotalUSD)
-	}
-	server := snap.PerServer["multi"]
-	if !approxCostEq(server.TotalUSD, replicas[0].TotalUSD+replicas[1].TotalUSD) {
-		t.Errorf("server total %v != replica sum %v",
-			server.TotalUSD, replicas[0].TotalUSD+replicas[1].TotalUSD)
-	}
-}
-
-func TestAccumulator_RecordCost_RejectsInvalidValues(t *testing.T) {
-	cases := []CostBreakdown{
-		{Input: math.NaN()},
-		{Output: math.Inf(1)},
-		{CacheRead: -1.0},
-		{CacheWrite: math.Inf(-1)},
-	}
-	for _, c := range cases {
-		acc := NewAccumulator(100)
-		acc.RecordCost("server", -1, c)
-		snap := acc.CostSnapshot()
-		if snap.Session.TotalUSD != 0 {
-			t.Errorf("invalid breakdown %+v should be dropped; got total=%v", c, snap.Session.TotalUSD)
-		}
-	}
-}
-
-func TestAccumulator_RecordCost_ZeroIsNoop(t *testing.T) {
-	acc := NewAccumulator(100)
-	acc.RecordCost("server", -1, CostBreakdown{})
-	snap := acc.CostSnapshot()
-	if snap.Session.TotalUSD != 0 {
-		t.Errorf("zero cost record should be a no-op; got total=%v", snap.Session.TotalUSD)
-	}
-	if _, ok := snap.PerServer["server"]; ok {
-		t.Error("zero cost record should not create per-server entry")
-	}
-}
-
 // --- Model histogram tests ---
-
-func TestAccumulator_RecordCostWithModel_SingleModel(t *testing.T) {
-	acc := NewAccumulator(100)
-	acc.RecordCostWithModel("github", -1, "claude-code", "claude-opus-4-7", 100, 50, CostBreakdown{Input: 0.10, Output: 0.20})
-	acc.RecordCostWithModel("github", -1, "claude-code", "claude-opus-4-7", 40, 10, CostBreakdown{Input: 0.05, Output: 0.05})
-
-	snap := acc.CostSnapshot()
-
-	srv := snap.PerServerModels["github"]
-	if len(srv) != 1 {
-		t.Fatalf("expected 1 server model bucket, got %d (%+v)", len(srv), srv)
-	}
-	m := srv["claude-opus-4-7"]
-	if !approxCostEq(m.CostUSD, 0.40) {
-		t.Errorf("server model cost = %v, want 0.40", m.CostUSD)
-	}
-	if m.InputTokens != 140 || m.OutputTokens != 60 {
-		t.Errorf("server model tokens = (%d,%d), want (140,60)", m.InputTokens, m.OutputTokens)
-	}
-
-	cli := snap.PerClientModels["claude-code"]
-	if len(cli) != 1 {
-		t.Fatalf("expected 1 client model bucket, got %d (%+v)", len(cli), cli)
-	}
-	if !approxCostEq(cli["claude-opus-4-7"].CostUSD, 0.40) {
-		t.Errorf("client model cost = %v, want 0.40", cli["claude-opus-4-7"].CostUSD)
-	}
-}
-
-func TestAccumulator_RecordCostWithModel_MultipleModels(t *testing.T) {
-	acc := NewAccumulator(100)
-	// One undeclared client whose calls hit two servers priced at different models.
-	acc.RecordCostWithModel("github", -1, "cursor", "claude-opus-4-7", 100, 50, CostBreakdown{Input: 0.80, Output: 0.10})
-	acc.RecordCostWithModel("lookup", -1, "cursor", "claude-haiku-4-5", 100, 50, CostBreakdown{Input: 0.05, Output: 0.05})
-
-	snap := acc.CostSnapshot()
-	cli := snap.PerClientModels["cursor"]
-	if len(cli) != 2 {
-		t.Fatalf("expected 2 client model buckets, got %d (%+v)", len(cli), cli)
-	}
-	if !approxCostEq(cli["claude-opus-4-7"].CostUSD, 0.90) {
-		t.Errorf("opus cost = %v, want 0.90", cli["claude-opus-4-7"].CostUSD)
-	}
-	if !approxCostEq(cli["claude-haiku-4-5"].CostUSD, 0.10) {
-		t.Errorf("haiku cost = %v, want 0.10", cli["claude-haiku-4-5"].CostUSD)
-	}
-}
-
-func TestAccumulator_RecordCostWithModel_EmptyModelSkipsHistogram(t *testing.T) {
-	acc := NewAccumulator(100)
-	acc.RecordCostWithModel("github", -1, "claude-code", "", 100, 50, CostBreakdown{Input: 0.10, Output: 0.20})
-
-	snap := acc.CostSnapshot()
-	if snap.PerServerModels != nil {
-		t.Errorf("empty model must not create a histogram; got %+v", snap.PerServerModels)
-	}
-	// Plain cost is still recorded.
-	if !approxCostEq(snap.PerServer["github"].TotalUSD, 0.30) {
-		t.Errorf("plain cost should still record; got %v", snap.PerServer["github"].TotalUSD)
-	}
-}
-
-func TestAccumulator_RecordCostWithModel_ZeroCostNoop(t *testing.T) {
-	acc := NewAccumulator(100)
-	acc.RecordCostWithModel("github", -1, "claude-code", "claude-opus-4-7", 0, 0, CostBreakdown{})
-	snap := acc.CostSnapshot()
-	if snap.PerServerModels != nil || snap.PerClientModels != nil {
-		t.Errorf("zero-cost record must not create histograms; got server=%+v client=%+v",
-			snap.PerServerModels, snap.PerClientModels)
-	}
-}
-
-func TestAccumulator_RecordCostWithModel_AnonymousSkipsClientHistogram(t *testing.T) {
-	acc := NewAccumulator(100)
-	acc.RecordCostWithModel("github", -1, "", "claude-opus-4-7", 100, 50, CostBreakdown{Input: 0.10, Output: 0.20})
-	snap := acc.CostSnapshot()
-	if _, ok := snap.PerServerModels["github"]; !ok {
-		t.Error("anonymous call should still record per-server model histogram")
-	}
-	if snap.PerClientModels != nil {
-		t.Errorf("anonymous call must not create per-client histogram; got %+v", snap.PerClientModels)
-	}
-}
-
-func TestAccumulator_RecordCostWithModel_Concurrent(t *testing.T) {
-	acc := NewAccumulator(1000)
-	var wg sync.WaitGroup
-	const goroutines = 50
-	const calls = 50
-	models := []string{"claude-opus-4-7", "claude-haiku-4-5"}
-	for i := 0; i < goroutines; i++ {
-		wg.Add(1)
-		go func(g int) {
-			defer wg.Done()
-			for j := 0; j < calls; j++ {
-				acc.RecordCostWithModel("server", -1, "client", models[(g+j)%2], 1, 1, CostBreakdown{Input: 0.001, Output: 0.001})
-			}
-		}(i)
-	}
-	wg.Wait()
-
-	snap := acc.CostSnapshot()
-	var total float64
-	for _, m := range snap.PerServerModels["server"] {
-		total += m.CostUSD
-	}
-	want := 0.002 * float64(goroutines*calls)
-	if !approxCostEq(total, want) {
-		t.Errorf("histogram total under concurrent writes = %v, want %v", total, want)
-	}
-}
-
-func TestAccumulator_RestoreServerModels_RoundTrip(t *testing.T) {
-	acc := NewAccumulator(100)
-	acc.RecordCostWithModel("github", -1, "claude-code", "claude-opus-4-7", 100, 50, CostBreakdown{Input: 0.30, Output: 0.10})
-	acc.RecordCostWithModel("lookup", -1, "claude-code", "claude-haiku-4-5", 80, 20, CostBreakdown{Input: 0.05, Output: 0.05})
-
-	persisted := acc.ServerModelMicroSnapshot()
-	if len(persisted) != 2 {
-		t.Fatalf("expected 2 servers in micro snapshot, got %d", len(persisted))
-	}
-
-	// Restore into a fresh accumulator (the restart case).
-	restored := NewAccumulator(100)
-	restored.RestoreServerModels(persisted)
-
-	snap := restored.CostSnapshot()
-	g := snap.PerServerModels["github"]["claude-opus-4-7"]
-	if !approxCostEq(g.CostUSD, 0.40) || g.InputTokens != 100 || g.OutputTokens != 50 {
-		t.Errorf("github bucket after restore = %+v, want cost 0.40 tokens (100,50)", g)
-	}
-	l := snap.PerServerModels["lookup"]["claude-haiku-4-5"]
-	if !approxCostEq(l.CostUSD, 0.10) {
-		t.Errorf("lookup bucket cost after restore = %v, want 0.10", l.CostUSD)
-	}
-}
-
-func TestAccumulator_RestoreServerModels_EmptyIsNoop(t *testing.T) {
-	acc := NewAccumulator(100)
-	acc.RestoreServerModels(nil)
-	if acc.ServerModelMicroSnapshot() != nil {
-		t.Error("restoring an empty map should leave histograms empty")
-	}
-}
-
-func TestAccumulator_ClearCost_DropsModelHistograms(t *testing.T) {
-	acc := NewAccumulator(100)
-	acc.RecordCostWithModel("github", -1, "claude-code", "claude-opus-4-7", 100, 50, CostBreakdown{Input: 0.30, Output: 0.10})
-	acc.ClearCost()
-	snap := acc.CostSnapshot()
-	if snap.PerServerModels != nil || snap.PerClientModels != nil {
-		t.Errorf("ClearCost must drop model histograms; got server=%+v client=%+v",
-			snap.PerServerModels, snap.PerClientModels)
-	}
-}
-
-func TestAccumulator_Clear_DropsModelHistograms(t *testing.T) {
-	acc := NewAccumulator(100)
-	acc.RecordCostWithModel("github", -1, "claude-code", "claude-opus-4-7", 100, 50, CostBreakdown{Input: 0.30, Output: 0.10})
-	acc.Clear()
-	snap := acc.CostSnapshot()
-	if snap.PerServerModels != nil || snap.PerClientModels != nil {
-		t.Errorf("Clear must drop model histograms; got server=%+v client=%+v",
-			snap.PerServerModels, snap.PerClientModels)
-	}
-}
-
-func TestAccumulator_QueryCost(t *testing.T) {
-	acc := NewAccumulator(100)
-	acc.RecordCost("server-a", -1, CostBreakdown{Input: 0.10, Output: 0.20})
-	acc.RecordCost("server-b", -1, CostBreakdown{Input: 0.30, Output: 0.40})
-
-	resp := acc.QueryCost(time.Hour)
-	if resp.Range != "1h" {
-		t.Errorf("range = %q, want 1h", resp.Range)
-	}
-	if resp.Interval != "1m" {
-		t.Errorf("interval = %q, want 1m", resp.Interval)
-	}
-	if len(resp.Points) == 0 {
-		t.Fatal("expected at least one cost data point")
-	}
-	var total float64
-	for _, p := range resp.Points {
-		total += p.USD
-	}
-	if !approxCostEq(total, 1.0) {
-		t.Errorf("aggregate USD = %v, want 1.00", total)
-	}
-	if _, ok := resp.PerServer["server-a"]; !ok {
-		t.Error("expected per-server time-series for server-a")
-	}
-}
-
-func TestAccumulator_RecordCost_Concurrent(t *testing.T) {
-	acc := NewAccumulator(1000)
-	var wg sync.WaitGroup
-	const goroutines = 50
-	const calls = 50
-	for i := 0; i < goroutines; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < calls; j++ {
-				acc.RecordCost("server", j%4, CostBreakdown{Input: 0.001, Output: 0.001})
-			}
-		}()
-	}
-	wg.Wait()
-
-	snap := acc.CostSnapshot()
-	want := 0.002 * float64(goroutines*calls)
-	if !approxCostEq(snap.Session.TotalUSD, want) {
-		t.Errorf("session total under concurrent writes = %v, want %v",
-			snap.Session.TotalUSD, want)
-	}
-}
-
-func TestAccumulator_ClearCost_LeavesTokensUntouched(t *testing.T) {
-	acc := NewAccumulator(100)
-	acc.Record("server-a", 100, 50)
-	acc.RecordCost("server-a", -1, CostBreakdown{Input: 0.10, Output: 0.20})
-
-	acc.ClearCost()
-
-	tokens := acc.Snapshot()
-	if tokens.Session.TotalTokens != 150 {
-		t.Errorf("ClearCost should not touch token counters; got %d", tokens.Session.TotalTokens)
-	}
-
-	cost := acc.CostSnapshot()
-	if cost.Session.TotalUSD != 0 {
-		t.Errorf("expected zero cost after ClearCost; got %v", cost.Session.TotalUSD)
-	}
-	if entry, ok := cost.PerServer["server-a"]; ok && entry.TotalUSD != 0 {
-		t.Errorf("expected zero per-server cost after ClearCost; got %v", entry.TotalUSD)
-	}
-}
-
-func TestAccumulator_Clear_ResetsCost(t *testing.T) {
-	acc := NewAccumulator(100)
-	acc.RecordCost("s", -1, CostBreakdown{Input: 1.0})
-	acc.Clear()
-
-	snap := acc.CostSnapshot()
-	if snap.Session.TotalUSD != 0 {
-		t.Errorf("Clear() should reset cost; got %v", snap.Session.TotalUSD)
-	}
-}
 
 // TestAccumulator_TokenJSONShapeUnchanged covers Acceptance Criterion 3:
 // the JSON representation of the token-side Snapshot has not changed.
@@ -738,15 +398,6 @@ func TestAccumulator_TokenJSONShapeUnchanged(t *testing.T) {
 			t.Errorf("TokenUsage unexpectedly carries %s field; got %s", forbidden, body)
 		}
 	}
-}
-
-func approxCostEq(a, b float64) bool {
-	const eps = 1e-6 // micro-USD precision
-	d := a - b
-	if d < 0 {
-		d = -d
-	}
-	return d < eps
 }
 
 // --- Per-client attribution tests (PR 2) ---
@@ -789,49 +440,6 @@ func TestAccumulator_RecordReplicaWithClient_EmptyClientSkipsClientMap(t *testin
 	}
 }
 
-func TestAccumulator_RecordCostWithClient_CostAttribution(t *testing.T) {
-	acc := NewAccumulator(100)
-
-	acc.RecordCostWithClient("server-a", -1, "claude-code", CostBreakdown{Input: 0.10, Output: 0.20})
-	acc.RecordCostWithClient("server-a", -1, "cursor", CostBreakdown{Input: 0.05, Output: 0.05})
-
-	snap := acc.CostSnapshot()
-	if !approxCostEq(snap.Session.TotalUSD, 0.40) {
-		t.Errorf("session total = %v, want 0.40", snap.Session.TotalUSD)
-	}
-	if !approxCostEq(snap.PerClient["claude-code"].TotalUSD, 0.30) {
-		t.Errorf("claude-code = %v, want 0.30", snap.PerClient["claude-code"].TotalUSD)
-	}
-	if !approxCostEq(snap.PerClient["cursor"].TotalUSD, 0.10) {
-		t.Errorf("cursor = %v, want 0.10", snap.PerClient["cursor"].TotalUSD)
-	}
-}
-
-func TestAccumulator_QueryCostByClient_GroupsByClient(t *testing.T) {
-	acc := NewAccumulator(100)
-
-	acc.RecordCostWithClient("server-a", -1, "claude-code", CostBreakdown{Input: 0.50, Output: 0.50})
-	acc.RecordCostWithClient("server-a", -1, "cursor", CostBreakdown{Input: 0.10})
-
-	withClients := acc.QueryCostByClient(time.Hour)
-	if withClients.PerClient == nil {
-		t.Fatal("expected non-nil PerClient when querying with client grouping")
-	}
-	if len(withClients.PerClient) != 2 {
-		t.Errorf("expected 2 per-client series, got %d", len(withClients.PerClient))
-	}
-
-	// QueryCost (no client grouping) must still leave PerClient nil so
-	// existing consumers see the same JSON shape.
-	withoutClients := acc.QueryCost(time.Hour)
-	if withoutClients.PerClient != nil {
-		t.Errorf("expected nil PerClient on QueryCost; got %v", withoutClients.PerClient)
-	}
-	if len(withoutClients.PerServer) == 0 {
-		t.Error("QueryCost should still surface PerServer time-series")
-	}
-}
-
 func TestAccumulator_TokenUsage_PerClient_OmitemptyWhenAbsent(t *testing.T) {
 	usage := TokenUsage{
 		Session:   TokenCounts{InputTokens: 1, OutputTokens: 1, TotalTokens: 2},
@@ -844,38 +452,6 @@ func TestAccumulator_TokenUsage_PerClient_OmitemptyWhenAbsent(t *testing.T) {
 	body := string(payload)
 	if strings.Contains(body, `"per_client"`) {
 		t.Errorf("expected per_client field omitted when absent; got %s", body)
-	}
-}
-
-func TestAccumulator_CostUsage_PerClient_OmitemptyWhenAbsent(t *testing.T) {
-	usage := CostUsage{
-		Session: CostCounts{InputUSD: 1, TotalUSD: 1},
-	}
-	payload, err := json.Marshal(usage)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(payload)
-	if strings.Contains(body, `"per_client"`) {
-		t.Errorf("expected per_client field omitted when absent; got %s", body)
-	}
-}
-
-func TestAccumulator_ClearCost_AlsoClearsPerClient(t *testing.T) {
-	acc := NewAccumulator(100)
-	acc.RecordReplicaWithClient("s", -1, "client-a", 10, 5)
-	acc.RecordCostWithClient("s", -1, "client-a", CostBreakdown{Input: 1.0})
-
-	acc.ClearCost()
-
-	snap := acc.CostSnapshot()
-	if got := snap.PerClient["client-a"].TotalUSD; got != 0 {
-		t.Errorf("ClearCost should reset per-client cost; got %v", got)
-	}
-	// Token-side per-client should remain intact (ClearCost does not touch tokens).
-	tokens := acc.Snapshot()
-	if tokens.PerClient["client-a"].TotalTokens != 15 {
-		t.Errorf("ClearCost should not touch token counters; got %d", tokens.PerClient["client-a"].TotalTokens)
 	}
 }
 
@@ -930,9 +506,6 @@ func TestAccumulator_RecordToolCallUsage(t *testing.T) {
 	if stat.OutputTokens != 400 {
 		t.Errorf("OutputTokens = %d, want 400", stat.OutputTokens)
 	}
-	if stat.CostMicroUSD != 0 {
-		t.Errorf("CostMicroUSD = %d, want 0 (no priced call)", stat.CostMicroUSD)
-	}
 }
 
 func TestAccumulator_RecordToolCallUsage_EmptyArgsAreNoOp(t *testing.T) {
@@ -941,53 +514,6 @@ func TestAccumulator_RecordToolCallUsage_EmptyArgsAreNoOp(t *testing.T) {
 	acc.RecordToolCallUsage("github", "", 10, 10)
 	if snap := acc.ToolUsageSnapshot(); len(snap) != 0 {
 		t.Errorf("expected empty tool usage; got %v", snap)
-	}
-}
-
-func TestAccumulator_RecordToolCost(t *testing.T) {
-	acc := NewAccumulator(100)
-
-	acc.RecordToolCall("github", "create_issue")
-	acc.RecordToolCost("github", "create_issue", CostBreakdown{Input: 0.001, Output: 0.002})
-	acc.RecordToolCost("github", "create_issue", CostBreakdown{Input: 0.0005, CacheRead: 0.0001})
-
-	stat := acc.ToolUsageSnapshot()["github"]["create_issue"]
-	if want := int64(3600); stat.CostMicroUSD != want {
-		t.Errorf("CostMicroUSD = %d, want %d", stat.CostMicroUSD, want)
-	}
-	if got, want := stat.CostUSD(), 0.0036; got < want-1e-9 || got > want+1e-9 {
-		t.Errorf("CostUSD() = %v, want %v", got, want)
-	}
-}
-
-func TestAccumulator_RecordToolCost_GuardsInvalidInput(t *testing.T) {
-	acc := NewAccumulator(100)
-	acc.RecordToolCost("", "create_issue", CostBreakdown{Input: 0.001})
-	acc.RecordToolCost("github", "", CostBreakdown{Input: 0.001})
-	if snap := acc.ToolUsageSnapshot(); len(snap) != 0 {
-		t.Errorf("expected empty tool usage after empty-name records; got %v", snap)
-	}
-	acc.RecordToolCall("github", "create_issue")
-	acc.RecordToolCost("github", "create_issue", CostBreakdown{})              // zero
-	acc.RecordToolCost("github", "create_issue", CostBreakdown{Input: -0.01}) // invalid
-	if got := acc.ToolUsageSnapshot()["github"]["create_issue"].CostMicroUSD; got != 0 {
-		t.Errorf("CostMicroUSD = %d, want 0 after zero/invalid records", got)
-	}
-}
-
-func TestAccumulator_ClearCost_ZeroesToolCostKeepsUsage(t *testing.T) {
-	acc := NewAccumulator(100)
-	acc.RecordToolCallUsage("github", "create_issue", 100, 200)
-	acc.RecordToolCost("github", "create_issue", CostBreakdown{Input: 0.001})
-
-	acc.ClearCost()
-
-	stat := acc.ToolUsageSnapshot()["github"]["create_issue"]
-	if stat.CostMicroUSD != 0 {
-		t.Errorf("CostMicroUSD = %d, want 0 after ClearCost", stat.CostMicroUSD)
-	}
-	if stat.Calls != 1 || stat.InputTokens != 100 || stat.OutputTokens != 200 {
-		t.Errorf("ClearCost must keep calls/tokens; got %+v", stat)
 	}
 }
 
@@ -1069,34 +595,32 @@ func TestAccumulator_RestoreToolUsage(t *testing.T) {
 		}
 	})
 
-	t.Run("restores tokens and cost, then accumulates on top", func(t *testing.T) {
+	t.Run("restores tokens, then accumulates on top", func(t *testing.T) {
 		acc := NewAccumulator(100)
 		acc.RestoreToolUsage(map[string]map[string]ToolStat{
 			"github": {
-				"create_issue": {Calls: 5, InputTokens: 500, OutputTokens: 300, CostMicroUSD: 1200},
+				"create_issue": {Calls: 5, InputTokens: 500, OutputTokens: 300},
 			},
 		})
 
 		stat := acc.ToolUsageSnapshot()["github"]["create_issue"]
-		if stat.InputTokens != 500 || stat.OutputTokens != 300 || stat.CostMicroUSD != 1200 {
-			t.Fatalf("restored stat = %+v, want tokens 500/300 cost 1200", stat)
+		if stat.InputTokens != 500 || stat.OutputTokens != 300 {
+			t.Fatalf("restored stat = %+v, want tokens 500/300", stat)
 		}
 
 		// Live traffic continues from the restored counters.
 		acc.RecordToolCallUsage("github", "create_issue", 10, 20)
-		acc.RecordToolCost("github", "create_issue", CostBreakdown{Input: 0.0001})
 		stat = acc.ToolUsageSnapshot()["github"]["create_issue"]
-		if stat.Calls != 6 || stat.InputTokens != 510 || stat.OutputTokens != 320 || stat.CostMicroUSD != 1300 {
-			t.Errorf("stat after restore+record = %+v, want calls 6, tokens 510/320, cost 1300", stat)
+		if stat.Calls != 6 || stat.InputTokens != 510 || stat.OutputTokens != 320 {
+			t.Errorf("stat after restore+record = %+v, want calls 6, tokens 510/320", stat)
 		}
 	})
 
-	t.Run("max-wins per token and cost counter", func(t *testing.T) {
+	t.Run("max-wins per token counter", func(t *testing.T) {
 		acc := NewAccumulator(100)
 		acc.RecordToolCallUsage("github", "create_issue", 1000, 1000)
-		acc.RecordToolCost("github", "create_issue", CostBreakdown{Input: 0.01}) // 10_000 micro
 		acc.RestoreToolUsage(map[string]map[string]ToolStat{
-			"github": {"create_issue": {Calls: 5, InputTokens: 100, OutputTokens: 2000, CostMicroUSD: 500}},
+			"github": {"create_issue": {Calls: 5, InputTokens: 100, OutputTokens: 2000}},
 		})
 		stat := acc.ToolUsageSnapshot()["github"]["create_issue"]
 		if stat.InputTokens != 1000 {
@@ -1104,9 +628,6 @@ func TestAccumulator_RestoreToolUsage(t *testing.T) {
 		}
 		if stat.OutputTokens != 2000 {
 			t.Errorf("OutputTokens = %d, want 2000 (larger restore wins)", stat.OutputTokens)
-		}
-		if stat.CostMicroUSD != 10_000 {
-			t.Errorf("CostMicroUSD = %d, want 10000 (live wins over smaller restore)", stat.CostMicroUSD)
 		}
 	})
 }
@@ -1220,7 +741,6 @@ func TestAccumulator_Clear_ResetsPromptUsage(t *testing.T) {
 func TestAccumulator_Clear_ResetsPerClient(t *testing.T) {
 	acc := NewAccumulator(100)
 	acc.RecordReplicaWithClient("s", -1, "client-a", 10, 5)
-	acc.RecordCostWithClient("s", -1, "client-a", CostBreakdown{Input: 1.0})
 
 	acc.Clear()
 
@@ -1228,192 +748,18 @@ func TestAccumulator_Clear_ResetsPerClient(t *testing.T) {
 	if len(tokens.PerClient) != 0 {
 		t.Errorf("Clear should drop per-client tokens; got %v", tokens.PerClient)
 	}
-	cost := acc.CostSnapshot()
-	if len(cost.PerClient) != 0 {
-		t.Errorf("Clear should drop per-client cost; got %v", cost.PerClient)
-	}
-}
-
-// TestAccumulator_RestoreCost_PerServerAndSessionTotals covers the cost
-// analogue of Restore: it overwrites per-server cost component atomics
-// from the supplied map and recomputes session totals as the sum across
-// servers. After RestoreCost the CostSnapshot KPI surfaces should reflect
-// pre-restart spend, matching what telemetry.MetricsFlusher.SeedFromFile
-// reads from disk.
-func TestAccumulator_RestoreCost_PerServerAndSessionTotals(t *testing.T) {
-	acc := NewAccumulator(100)
-
-	acc.RestoreCost(map[string]CostMicroUSDCounts{
-		"github": {
-			InputMicroUSD:      50_000,  // $0.05
-			OutputMicroUSD:     100_000, // $0.10
-			CacheReadMicroUSD:  20_000,  // $0.02
-			CacheWriteMicroUSD: 5_000,   // $0.005
-		},
-		"gitlab": {
-			InputMicroUSD:  300_000, // $0.30
-			OutputMicroUSD: 400_000, // $0.40
-		},
-	})
-
-	snap := acc.CostSnapshot()
-	if !approxCostEq(snap.PerServer["github"].TotalUSD, 0.175) {
-		t.Errorf("github total = %v, want 0.175", snap.PerServer["github"].TotalUSD)
-	}
-	if !approxCostEq(snap.PerServer["github"].CacheReadUSD, 0.02) {
-		t.Errorf("github cache-read = %v, want 0.02", snap.PerServer["github"].CacheReadUSD)
-	}
-	if !approxCostEq(snap.PerServer["gitlab"].TotalUSD, 0.70) {
-		t.Errorf("gitlab total = %v, want 0.70", snap.PerServer["gitlab"].TotalUSD)
-	}
-	// Session totals = sum across all per-server components (matches
-	// Restore's invariant on tokens — per-server is the source of truth,
-	// session is derived).
-	if !approxCostEq(snap.Session.TotalUSD, 0.875) {
-		t.Errorf("session total = %v, want 0.875", snap.Session.TotalUSD)
-	}
-	if !approxCostEq(snap.Session.InputUSD, 0.35) {
-		t.Errorf("session input = %v, want 0.35", snap.Session.InputUSD)
-	}
-}
-
-// TestAccumulator_RestoreCost_EmptyMapIsNoop guards against an
-// edge case where the persistence file has no cost data (legacy or
-// no-priced-calls file). RestoreCost must leave the accumulator's cost
-// state untouched in that case so live RecordCost calls are not erased.
-func TestAccumulator_RestoreCost_EmptyMapIsNoop(t *testing.T) {
-	acc := NewAccumulator(100)
-	acc.RecordCost("github", -1, CostBreakdown{Input: 0.10})
-
-	acc.RestoreCost(nil)
-	acc.RestoreCost(map[string]CostMicroUSDCounts{})
-
-	snap := acc.CostSnapshot()
-	if !approxCostEq(snap.Session.InputUSD, 0.10) {
-		t.Errorf("RestoreCost(empty) erased cost; session input = %v, want 0.10", snap.Session.InputUSD)
-	}
-}
-
-// TestAccumulator_ReplaySnapshot_CostBucket verifies that ReplaySnapshot
-// populates the cost bucket at the correct minute key and that QueryCost
-// returns the rolled-up total. Mirrors the token-only assertion already
-// implicit in TestEndToEnd_MetricsPersistAndReseed but pinned at the
-// accumulator surface.
-func TestAccumulator_ReplaySnapshot_CostBucket(t *testing.T) {
-	acc := NewAccumulator(100)
-
-	ts := time.Now().Add(-30 * time.Minute)            // within the 1h query window
-	acc.ReplaySnapshot("github", ts, 100, 50, 250_000) // $0.25 rolled-up
-
-	resp := acc.QueryCost(time.Hour)
-	var total float64
-	for _, p := range resp.Points {
-		total += p.USD
-	}
-	if !approxCostEq(total, 0.25) {
-		t.Errorf("aggregate cost from replay = %v, want 0.25", total)
-	}
-	per := resp.PerServer["github"]
-	if len(per) == 0 {
-		t.Fatalf("expected per-server cost points after replay; got 0")
-	}
-	var perTotal float64
-	for _, p := range per {
-		perTotal += p.USD
-	}
-	if !approxCostEq(perTotal, 0.25) {
-		t.Errorf("per-server cost from replay = %v, want 0.25", perTotal)
-	}
-}
-
-// TestAccumulator_ReplaySnapshot_CostOnly covers the cost-only replay
-// path: zero token counts plus a non-zero cost. Without explicit
-// handling the early-return guard would silently drop the line; that
-// would lose any priced fixture minute (rare in production, common in
-// tests) on rehydrate.
-func TestAccumulator_ReplaySnapshot_CostOnly(t *testing.T) {
-	acc := NewAccumulator(100)
-	ts := time.Now().Add(-10 * time.Minute)
-
-	acc.ReplaySnapshot("github", ts, 0, 0, 100_000) // tokens=0, cost=$0.10
-
-	resp := acc.QueryCost(time.Hour)
-	var total float64
-	for _, p := range resp.Points {
-		total += p.USD
-	}
-	if !approxCostEq(total, 0.10) {
-		t.Errorf("cost-only replay aggregate = %v, want 0.10", total)
-	}
 }
 
 // TestAccumulator_ReplaySnapshot_AllZeroIsNoop guards the early-return
-// guard: a line with zero tokens and zero cost is genuinely empty and
-// should not allocate a bucket.
+// guard: a line with zero tokens is genuinely empty and should not
+// allocate a bucket.
 func TestAccumulator_ReplaySnapshot_AllZeroIsNoop(t *testing.T) {
 	acc := NewAccumulator(100)
-	acc.ReplaySnapshot("github", time.Now(), 0, 0, 0)
+	acc.ReplaySnapshot("github", time.Now(), 0, 0)
 
 	resp := acc.Query(time.Hour)
 	if len(resp.Points) != 0 {
 		t.Errorf("all-zero replay created %d points; want 0", len(resp.Points))
 	}
-	costResp := acc.QueryCost(time.Hour)
-	if len(costResp.Points) != 0 {
-		t.Errorf("all-zero replay created %d cost points; want 0", len(costResp.Points))
-	}
 }
 
-// TestCostMicroUSDCounts_TotalAndIsZero pins the helper math the
-// flusher and seed paths rely on.
-func TestCostMicroUSDCounts_TotalAndIsZero(t *testing.T) {
-	zero := CostMicroUSDCounts{}
-	if !zero.IsZero() {
-		t.Error("zero value IsZero = false")
-	}
-	if zero.TotalMicroUSD() != 0 {
-		t.Errorf("zero total = %d, want 0", zero.TotalMicroUSD())
-	}
-
-	cc := CostMicroUSDCounts{
-		InputMicroUSD:      1,
-		OutputMicroUSD:     2,
-		CacheReadMicroUSD:  3,
-		CacheWriteMicroUSD: 4,
-	}
-	if cc.IsZero() {
-		t.Error("non-zero value IsZero = true")
-	}
-	if cc.TotalMicroUSD() != 10 {
-		t.Errorf("total = %d, want 10", cc.TotalMicroUSD())
-	}
-}
-
-// TestAccumulator_CostMicroSnapshot_PerServer asserts the persistence-
-// shaped snapshot exposed for flushOnce contains the same per-component
-// values the public CostSnapshot does, just in the int64 micro-USD shape
-// that round-trips losslessly through the on-disk schema.
-func TestAccumulator_CostMicroSnapshot_PerServer(t *testing.T) {
-	acc := NewAccumulator(100)
-	acc.RecordCost("github", -1, CostBreakdown{
-		Input: 0.10, Output: 0.20, CacheRead: 0.01, CacheWrite: 0.005,
-	})
-
-	got := acc.CostMicroSnapshot()
-	gh, ok := got["github"]
-	if !ok {
-		t.Fatalf("expected github entry in CostMicroSnapshot; got %v", got)
-	}
-	if gh.InputMicroUSD != 100_000 {
-		t.Errorf("input micro = %d, want 100000", gh.InputMicroUSD)
-	}
-	if gh.OutputMicroUSD != 200_000 {
-		t.Errorf("output micro = %d, want 200000", gh.OutputMicroUSD)
-	}
-	if gh.CacheReadMicroUSD != 10_000 {
-		t.Errorf("cache-read micro = %d, want 10000", gh.CacheReadMicroUSD)
-	}
-	if gh.CacheWriteMicroUSD != 5_000 {
-		t.Errorf("cache-write micro = %d, want 5000", gh.CacheWriteMicroUSD)
-	}
-}
