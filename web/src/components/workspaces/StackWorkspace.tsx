@@ -4,7 +4,6 @@ import { AlertCircle, RefreshCw, WifiOff } from 'lucide-react';
 import { Sidebar } from '../layout/Sidebar';
 import { Canvas } from '../graph/Canvas';
 import { AccessLens } from '../stack/AccessLens';
-import { PricingManagerHost } from '../pricing/PricingManagerHost';
 import { SpecPane } from '../spec/SpecPane';
 import { ResizeHandle } from '../ui/ResizeHandle';
 import { useStackStore } from '../../stores/useStackStore';
@@ -131,11 +130,6 @@ export function StackWorkspace() {
               action bar, commit gate, and dirty-exit guard. Mounted in the
               canvas column so its absolute overlays anchor to the canvas. */}
           <AccessLens servers={accessServers} />
-
-          {/* Pricing models manager: the canonical three-tier cost-attribution
-              editor. Same canvas-column anchoring as the Access Lens
-              slide-over; opened from Metrics, the inspector, or the palette. */}
-          <PricingManagerHost />
 
           {specOpen && <SpecPane onClose={closeSpec} />}
         </div>
