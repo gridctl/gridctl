@@ -93,15 +93,6 @@ type ToolCallSummary struct {
 	OutputTokens        int
 	CacheReadTokens     int
 	CacheCreationTokens int
-	// Model is the canonical model ID used to price the call, or "" when
-	// no model could be resolved.
-	Model string
-	// CostUSD is the total USD cost recorded for the call. Zero when
-	// HasCost is false.
-	CostUSD float64
-	// HasCost reports whether the active pricing source recognised Model
-	// and produced a non-zero breakdown for the call.
-	HasCost bool
 }
 
 // ClientObserver is the optional richer interface that observers implement to
@@ -160,14 +151,6 @@ type CallGate interface {
 	Name() string
 	// CheckToolCall returns the gate's verdict for one call.
 	CheckToolCall(ctx context.Context, call GateCall) GateDecision
-}
-
-// CostSettler receives the priced cost of a completed tool call so budget
-// counters can settle synchronously on the dispatch path. Invoked only when
-// the observer resolved a model and produced a non-zero cost; unpriced calls
-// settle nothing by design (the documented attribution gap).
-type CostSettler interface {
-	SettleToolCallCost(ctx context.Context, call GateCall, costUSD float64)
 }
 
 // PromptGetObserver receives notifications after a prompt (a registry skill)
