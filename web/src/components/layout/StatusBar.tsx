@@ -1,9 +1,9 @@
-import { Wifi, WifiOff, Clock, Server, Box, Radio, Code, FlaskConical, Gauge, ArrowDown, DollarSign } from 'lucide-react';
+import { Wifi, WifiOff, Clock, Server, Box, Radio, Code, FlaskConical, Gauge, ArrowDown } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { cn } from '../../lib/cn';
 import { useStackStore } from '../../stores/useStackStore';
 import { formatRelativeTime } from '../../lib/time';
-import { formatCompactNumber, formatUSD } from '../../lib/format';
+import { formatCompactNumber } from '../../lib/format';
 import { SpecHealthBadge } from '../spec/SpecHealthBadge';
 import { PinDriftBadge } from '../pins/PinDriftBadge';
 import { PinFindingsBadge } from '../pins/PinFindingsBadge';
@@ -24,13 +24,10 @@ export function StatusBar() {
   const codeMode = useStackStore((s) => s.codeMode);
   const featureDetails = useStackStore((s) => s.featureDetails);
   const tokenUsage = useStackStore((s) => s.tokenUsage);
-  const costUsage = useStackStore((s) => s.costUsage);
   const tokenizerName = useStackStore((s) => s.gatewayInfo?.tokenizer);
   const connectionStatus = useStackStore((s) => s.connectionStatus);
   const lastUpdated = useStackStore((s) => s.lastUpdated);
   const error = useStackStore((s) => s.error);
-
-  const sessionCostUSD = costUsage?.session.total_usd;
 
   const runningServers = (mcpServers ?? []).filter((s) => s.initialized).length;
   const unhealthyServers = (mcpServers ?? []).filter((s) => s.healthy === false).length;
@@ -147,22 +144,6 @@ export function StatusBar() {
           </button>
         )}
 
-        {/* Session cost — emerald + "$" so it reads as money without relying on
-            color alone. Opens the Metrics workspace. */}
-        {sessionCostUSD !== undefined && (
-          <button
-            type="button"
-            onClick={() => navigate('/metrics')}
-            aria-label={`Estimated session cost ${formatUSD(sessionCostUSD)}. Open Metrics workspace`}
-            title="Estimated cost · open Metrics"
-            className="flex items-center gap-1.5 text-text-muted rounded px-1 -mx-1 hover:bg-surface-highlight/50 transition-colors"
-          >
-            <DollarSign size={11} className="text-emerald-400" />
-            <span className="text-emerald-400 font-semibold tabular-nums">{formatUSD(sessionCostUSD)}</span>
-            <span className="text-text-muted/60">est.</span>
-          </button>
-        )}
-
         {/* Tokenizer mode indicator */}
         {tokenizerName && (
           <div className="flex items-center gap-2 text-text-muted">
@@ -194,7 +175,7 @@ export function StatusBar() {
         {/* Pending downstream authorizations (hidden when none) */}
         <AuthPendingBadge />
 
-        {/* Budget/rate limit pressure (hidden while everything is ok) */}
+        {/* Rate limit pressure (hidden while everything is ok) */}
         <LimitsBadge />
       </div>
 
