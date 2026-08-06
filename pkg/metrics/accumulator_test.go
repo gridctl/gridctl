@@ -368,10 +368,6 @@ func TestDownsampleToHour(t *testing.T) {
 	}
 }
 
-// --- Cost layer tests ---
-
-// --- Model histogram tests ---
-
 // TestAccumulator_TokenJSONShapeUnchanged covers Acceptance Criterion 3:
 // the JSON representation of the token-side Snapshot has not changed.
 // Existing /api/metrics/tokens consumers parse this shape; any drift here
