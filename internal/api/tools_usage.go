@@ -9,14 +9,12 @@ import (
 // GET /api/tools/usage. LastCalledAt is a pointer so a tool that has a
 // recorded call count but a zero timestamp (or never-called tools the UI
 // cross-references from the status list) renders as null rather than the
-// Go zero time. CostUSD is a pointer for the same honesty rule every cost
-// surface follows: absent means "no priced calls", never $0.
+// Go zero time.
 type toolUsageStat struct {
 	Calls        int64      `json:"calls"`
 	LastCalledAt *time.Time `json:"lastCalledAt,omitempty"`
 	InputTokens  int64      `json:"inputTokens,omitempty"`
 	OutputTokens int64      `json:"outputTokens,omitempty"`
-	CostUSD      *float64   `json:"costUsd,omitempty"`
 }
 
 // toolUsageResponse is the GET /api/tools/usage envelope. Servers maps each
@@ -31,7 +29,7 @@ type toolUsageResponse struct {
 }
 
 // handleToolsUsage serves GET /api/tools/usage: per-(server, tool) cumulative
-// call counts, last-called timestamps, token counts, and estimated cost from
+// call counts, last-called timestamps, and token counts from
 // the metrics accumulator. The
 // data is seeded from disk on startup (telemetry.MetricsFlusher.SeedFromFile)
 // so it survives gateway restarts for servers with metrics persistence
@@ -62,10 +60,6 @@ func (s *Server) handleToolsUsage(w http.ResponseWriter, _ *http.Request) {
 			if !stat.LastCalledAt.IsZero() {
 				t := stat.LastCalledAt.UTC()
 				entry.LastCalledAt = &t
-			}
-			if stat.CostMicroUSD > 0 {
-				usd := stat.CostUSD()
-				entry.CostUSD = &usd
 			}
 			inner[toolName] = entry
 		}
