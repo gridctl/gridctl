@@ -495,7 +495,7 @@ func Validate(s *Stack) error {
 	// Per-client access scoping validation
 	errs = append(errs, validateClients(s, serverNames)...)
 
-	// Budget and rate limit validation
+	// Rate limit validation
 	errs = append(errs, validateLimits(s, serverNames)...)
 
 	// Tool group validation
