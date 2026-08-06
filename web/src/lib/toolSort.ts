@@ -7,7 +7,7 @@ import type { AuditState } from './toolAudit';
 
 export type AuditFilter = 'all' | 'used' | 'unused' | 'disabled';
 
-export type ToolSortMode = 'default' | 'name' | 'recent' | 'calls' | 'cost';
+export type ToolSortMode = 'default' | 'name' | 'recent' | 'calls';
 
 export const AUDIT_FILTERS: { id: AuditFilter; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -23,7 +23,6 @@ export const TOOL_SORT_MODES: { id: ToolSortMode; label: string; usage: boolean 
   { id: 'name', label: 'Name (A–Z)', usage: false },
   { id: 'recent', label: 'Recently used', usage: true },
   { id: 'calls', label: 'Most calls', usage: true },
-  { id: 'cost', label: 'Highest cost', usage: true },
 ];
 
 export function isAuditFilter(v: unknown): v is AuditFilter {
@@ -66,8 +65,6 @@ export function filterToolRows<T extends FilterableRow>(
 // sortToolRows returns a sorted copy (or the input array untouched for
 // 'default', preserving server-advertised order). Rows missing the sorted-by
 // value sink to the bottom; ties break by name so the order is deterministic.
-// Cost honesty: an unpriced tool (costUsd absent) is "no data", not $0, so it
-// sorts below where a priced $0 would.
 export function sortToolRows<T extends { name: string }>(
   rows: T[],
   mode: ToolSortMode,
@@ -92,14 +89,6 @@ export function sortToolRows<T extends { name: string }>(
       sorted.sort((a, b) => {
         const ca = usage?.[a.name]?.calls ?? 0;
         const cb = usage?.[b.name]?.calls ?? 0;
-        if (ca !== cb) return cb - ca;
-        return byName(a, b);
-      });
-      break;
-    case 'cost':
-      sorted.sort((a, b) => {
-        const ca = usage?.[a.name]?.costUsd ?? Number.NEGATIVE_INFINITY;
-        const cb = usage?.[b.name]?.costUsd ?? Number.NEGATIVE_INFINITY;
         if (ca !== cb) return cb - ca;
         return byName(a, b);
       });
