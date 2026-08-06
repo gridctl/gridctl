@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Lightbulb, TrendingDown, ChevronDown, ChevronRight, Info } from 'lucide-react';
 import { useOptimize } from '../../hooks/useOptimize';
 import { severityClasses, severityIcon } from '../../lib/severity';
+import { formatCompactNumber } from '../../lib/format';
 import type { OptimizeFinding } from '../../types';
 
 function FindingRow({ finding }: { finding: OptimizeFinding }) {
@@ -20,6 +21,11 @@ function FindingRow({ finding }: { finding: OptimizeFinding }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2">
             <span className="text-xs font-medium text-text-primary truncate">{finding.title}</span>
+            {(finding.impact_tokens_per_week ?? 0) > 0 && (
+              <span className="text-[10px] font-mono text-text-secondary tabular-nums whitespace-nowrap">
+                {formatCompactNumber(finding.impact_tokens_per_week ?? 0)} tok/wk
+              </span>
+            )}
           </div>
           {!open && (
             <p className="text-[10px] text-text-muted line-clamp-2 mt-0.5">{finding.summary}</p>
