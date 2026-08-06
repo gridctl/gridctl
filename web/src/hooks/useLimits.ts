@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { fetchLimits, type LimitsReport } from '../lib/api';
 
-// Poll cadence for limit consumption. Budgets move at tool-call speed, not
+// Poll cadence for limit state. Rate limits move at tool-call speed, not
 // render speed; 15s matches the tool-usage poll and is fast enough for the
 // warn/exceeded chip to feel live.
 const LIMITS_POLL_MS = 15000;
