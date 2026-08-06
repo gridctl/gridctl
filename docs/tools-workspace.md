@@ -28,12 +28,11 @@ Audit classifies every tool against a lookback window (24 hours, 7 days, or 30 d
 Honesty rules to keep in mind when reading the overlay:
 
 - Counts cover activity since the gateway process began recording (`Tracking since ...`). With metrics persistence enabled, restored counts may predate it, so "no recorded calls" is not proof of a longer disuse history.
-- Cost figures are estimates (`· est.`) and unpriced tools show an em dash, never $0.
 - When optimize has findings, the header shows "Optimize suggests N unused tools (7d)" with a jump into Audit. Optimize skips servers with no traffic at all (they surface as `unused_server` findings instead) and always classifies against 7 days, so its count can be lower than the Audit overlay's.
 
 ### Filtering and sorting
 
-With Audit on, filter chips narrow the list to All, Used, Unused, or Disabled, with per-state counts. The Destructive chip works with or without Audit and narrows to tools whose server reports `destructiveHint: true`. Sort by name, most recent use, call count, or estimated cost; the default keeps the server-advertised order, and an active search query keeps relevance order instead. Filter, sort, and risk choices persist across sessions and are shareable via the URL.
+With Audit on, filter chips narrow the list to All, Used, Unused, or Disabled, with per-state counts. The Destructive chip works with or without Audit and narrows to tools whose server reports `destructiveHint: true`. Sort by name, most recent use, or call count; the default keeps the server-advertised order, and an active search query keeps relevance order instead. Filter, sort, and risk choices persist across sessions and are shareable via the URL.
 
 ### Remediation
 
@@ -61,5 +60,5 @@ Where they overlap: whitelists (this workspace) decide what the gateway exposes 
 ## Related
 
 - [Configuration Reference](config-schema.md) - `tools:`, `clients:`, and `groups:` blocks
-- [Cost Observability](cost-observability.md) - pricing models behind the cost column and `gridctl optimize`
+- [Cost Observability](cost-observability.md) - the deprecated dollar-cost layer and `gridctl optimize`
 - [REST API Reference](api-reference.md) - the endpoints backing this workspace
