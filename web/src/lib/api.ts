@@ -707,7 +707,7 @@ export async function clearTokenMetrics(): Promise<void> {
  * Fetch the optimize report (unused servers, unused tools, etc.) for
  * the active stack. Mirrors fetchTokenMetrics so the sidebar panel can
  * poll on the same cadence as Token Usage.
- * GET /api/optimize?min_impact=0.10&severity=warn,critical
+ * GET /api/optimize?min_impact=1000&severity=warn,critical
  */
 export async function fetchOptimizeReport(opts?: {
   stack?: string;

@@ -23,30 +23,24 @@ const DefaultMetricsFlushInterval = 60 * time.Second
 // metrics.jsonl. Time, Server, and Diff are populated for every line; Reset
 // is true on the first line written after a token counter reset (server
 // restart, Accumulator.Clear) and the diff for that line is the *full*
-// snapshot. CostReset signals an independent cost-side reset (e.g.
-// Accumulator.ClearCost between flushes) — the two flags are independent
-// so a cost-only clear does not invalidate the token diff on the same
-// line. Cost fields are pointer + omitempty so token-only minutes emit
-// lines byte-identical to the pre-cost-persistence schema.
+// snapshot. Lines written by the removed cost layer carry extra keys
+// (cost_diff, cost_total, model_cost); the non-strict decoder ignores
+// them, so legacy files stay fully readable.
 type MetricsSnapshotLine struct {
-	Time      time.Time                   `json:"ts"`
-	Server    string                      `json:"server"`
-	Reset     bool                        `json:"reset,omitempty"`
-	CostReset bool                        `json:"cost_reset,omitempty"`
-	Diff      metrics.TokenCounts         `json:"diff"`
-	Total     metrics.TokenCounts         `json:"total"`
-	CostDiff  *metrics.CostMicroUSDCounts `json:"cost_diff,omitempty"`
-	CostTotal *metrics.CostMicroUSDCounts `json:"cost_total,omitempty"`
+	Time   time.Time           `json:"ts"`
+	Server string              `json:"server"`
+	Reset  bool                `json:"reset,omitempty"`
+	Diff   metrics.TokenCounts `json:"diff"`
+	Total  metrics.TokenCounts `json:"total"`
 	// ToolUsage carries the server's *cumulative* per-tool counters
-	// (toolName -> calls + last-called + tokens + micro-USD cost) at flush
-	// time — the analogue of Total for tools, not a per-minute diff. The
-	// token/cost fields on ToolStat are omitempty, so lines written before
-	// per-tool cost attribution parse cleanly (zero values) and token-only
-	// entries keep their legacy serialization. omitempty on the map keeps
-	// token-only minutes and legacy pre-tool-usage files byte-identical;
-	// SeedFromFile takes the most recent non-nil ToolUsage per server
-	// (resetting on a token Reset) to rehydrate Audit Mode's usage history
-	// and per-tool spend across restarts.
+	// (toolName -> calls + last-called + tokens) at flush time — the
+	// analogue of Total for tools, not a per-minute diff. The token fields
+	// on ToolStat are omitempty, so lines written before per-tool
+	// attribution parse cleanly (zero values) and token-only entries keep
+	// their legacy serialization. omitempty on the map keeps token-only
+	// minutes and legacy pre-tool-usage files byte-identical; SeedFromFile
+	// takes the most recent non-nil ToolUsage per server (resetting on a
+	// token Reset) to rehydrate Audit Mode's usage history across restarts.
 	ToolUsage map[string]metrics.ToolStat `json:"tool_usage,omitempty"`
 	// PromptUsage carries *cumulative* per-skill prompts/get call counters
 	// (skillName -> calls + last-called) at flush time. Unlike ToolUsage it
@@ -54,14 +48,6 @@ type MetricsSnapshotLine struct {
 	// the reserved PromptUsageNamespace by the dedicated prompt-usage writer.
 	// omitempty keeps every per-server line byte-identical.
 	PromptUsage map[string]metrics.ToolStat `json:"prompt_usage,omitempty"`
-	// ModelCost carries the server's *cumulative* per-model cost histogram
-	// (modelID -> cost + token volume priced under it) at flush time — the
-	// effective-model-provenance analogue of CostTotal. Persisted as a
-	// cumulative snapshot (like ToolUsage), not a diff: SeedFromFile takes
-	// the most recent non-nil ModelCost per server (cleared on a token
-	// Reset) so provenance survives a restart alongside the cost it explains.
-	// omitempty keeps pre-histogram and token-only lines byte-identical.
-	ModelCost map[string]metrics.ModelMicroCounts `json:"model_cost,omitempty"`
 }
 
 // PromptUsageNamespace is the reserved flusher key under which global
@@ -81,12 +67,10 @@ type MetricsFlusher struct {
 	interval time.Duration
 	logger   *slog.Logger
 
-	mu         sync.Mutex
-	writers    map[string]*lumberjack.Logger                  // serverName -> writer
-	prev       map[string]metrics.TokenCounts                 // serverName -> last token snapshot
-	prevCost   map[string]metrics.CostMicroUSDCounts          // serverName -> last cost snapshot (parallel to prev)
-	prevTools  map[string]map[string]metrics.ToolStat         // serverName -> last per-tool snapshot (parallel to prev)
-	prevModels map[string]map[string]metrics.ModelMicroCounts // serverName -> last per-model cost snapshot (parallel to prev)
+	mu        sync.Mutex
+	writers   map[string]*lumberjack.Logger          // serverName -> writer
+	prev      map[string]metrics.TokenCounts         // serverName -> last token snapshot
+	prevTools map[string]map[string]metrics.ToolStat // serverName -> last per-tool snapshot (parallel to prev)
 
 	// Global prompt (skill) usage. The skills registry is not a per-server
 	// entry, so it gets a single dedicated writer rather than living in the
@@ -112,9 +96,7 @@ func NewMetricsFlusher(acc *metrics.Accumulator, interval time.Duration) *Metric
 		interval:    interval,
 		writers:     make(map[string]*lumberjack.Logger),
 		prev:        make(map[string]metrics.TokenCounts),
-		prevCost:    make(map[string]metrics.CostMicroUSDCounts),
 		prevTools:   make(map[string]map[string]metrics.ToolStat),
-		prevModels:  make(map[string]map[string]metrics.ModelMicroCounts),
 		prevPrompts: make(map[string]metrics.ToolStat),
 		stop:        make(chan struct{}),
 		done:        make(chan struct{}),
@@ -181,9 +163,7 @@ func (f *MetricsFlusher) RemoveServer(name string) {
 		delete(f.writers, name)
 	}
 	delete(f.prev, name)
-	delete(f.prevCost, name)
 	delete(f.prevTools, name)
-	delete(f.prevModels, name)
 }
 
 // SetPromptUsageWriter installs (or replaces) the writer for the global
@@ -309,20 +289,16 @@ func (f *MetricsFlusher) run() {
 }
 
 // flushOnce snapshots the accumulator and writes one NDJSON line per
-// configured server with a non-zero delta vs the previous snapshot. A
-// "non-zero delta" means *either* the token diff or the cost diff is
-// non-zero — a minute that records a priced fixture without token
-// attribution still emits a line so its cost reaches disk. The
-// per-server writer map is snapshotted under the mutex; disk I/O happens
-// outside the lock so a slow writer can't block AddServer/RemoveServer.
+// configured server with a non-zero token delta vs the previous snapshot.
+// The per-server writer map is snapshotted under the mutex; disk I/O
+// happens outside the lock so a slow writer can't block
+// AddServer/RemoveServer.
 func (f *MetricsFlusher) flushOnce(now time.Time) {
 	if f.acc == nil {
 		return
 	}
 	snap := f.acc.Snapshot()
-	costSnap := f.acc.CostMicroSnapshot()
 	toolSnap := f.acc.ToolUsageSnapshot()
-	modelSnap := f.acc.ServerModelMicroSnapshot()
 	promptSnap := f.acc.PromptUsageSnapshot()
 
 	type planned struct {
@@ -337,42 +313,21 @@ func (f *MetricsFlusher) flushOnce(now time.Time) {
 		if !ok {
 			continue
 		}
-		// Cost may legitimately be missing from the cost snapshot when no
-		// priced call has hit the server yet — treat a missing entry as
-		// the zero CostMicroUSDCounts so the diff math stays uniform.
-		currentCost := costSnap[name]
 		currentTools := toolSnap[name]
-		currentModels := modelSnap[name]
 		prev, hadPrev := f.prev[name]
-		prevCost, hadPrevCost := f.prevCost[name]
 		// Per-tool usage has no diff/reset machinery — it persists as a
 		// cumulative snapshot. toolChanged forces a line when call counts
-		// advanced even if tokens and cost did not (a tool call need not
-		// attribute tokens), mirroring how cost forces a line independently
-		// of the token diff.
+		// advanced even if tokens did not (a tool call need not attribute
+		// tokens).
 		toolChanged := toolUsageChanged(f.prevTools[name], currentTools)
-		// Per-model cost is also a cumulative snapshot. A model histogram
-		// only advances when cost advances, so a changed histogram already
-		// coincides with a non-zero cost diff — but track it explicitly for
-		// symmetry with toolChanged and to stay robust if that coupling
-		// ever changes.
-		modelChanged := modelCostChanged(f.prevModels[name], currentModels)
 		line := MetricsSnapshotLine{
 			Time:   now.UTC(),
 			Server: name,
 			Total:  current,
 		}
-		// Reset detection runs independently per dimension. A token reset
-		// (first flush, or strictly-decreasing component) writes the full
-		// token snapshot in Diff and sets Reset=true. A cost reset
-		// (ClearCost between flushes — only flagged when prior cost
-		// existed) writes the full cost snapshot in CostDiff and sets
-		// CostReset=true. Splitting the flags is what lets a cost-only
-		// clear preserve the token Diff on the same line; conflating
-		// them would silently drop the token activity for that minute on
-		// SeedFromFile replay.
+		// A token reset (first flush, or strictly-decreasing component)
+		// writes the full token snapshot in Diff and sets Reset=true.
 		tokenReset := !hadPrev || isCounterReset(prev, current)
-		costReset := hadPrevCost && isCostCounterReset(prevCost, currentCost)
 
 		var tokenDiff metrics.TokenCounts
 		if tokenReset {
@@ -387,43 +342,14 @@ func (f *MetricsFlusher) flushOnce(now time.Time) {
 		}
 		line.Diff = tokenDiff
 
-		var costDiff metrics.CostMicroUSDCounts
-		switch {
-		case costReset:
-			line.CostReset = true
-			costDiff = currentCost
-		case tokenReset:
-			// Token reset implies a fresh-server boundary. Match the
-			// existing token contract by carrying the full cost
-			// snapshot in CostDiff so the post-restart cumulative
-			// reconstruction reads the same way for both dimensions.
-			costDiff = currentCost
-		default:
-			costDiff = metrics.CostMicroUSDCounts{
-				InputMicroUSD:      currentCost.InputMicroUSD - prevCost.InputMicroUSD,
-				OutputMicroUSD:     currentCost.OutputMicroUSD - prevCost.OutputMicroUSD,
-				CacheReadMicroUSD:  currentCost.CacheReadMicroUSD - prevCost.CacheReadMicroUSD,
-				CacheWriteMicroUSD: currentCost.CacheWriteMicroUSD - prevCost.CacheWriteMicroUSD,
-			}
-		}
-
-		// Skip lines whose every dimension is empty: token diff zero AND
-		// cost diff zero AND neither dimension reset. A reset line always
+		// Skip lines whose every dimension is empty. A reset line always
 		// emits because it carries the post-reset boundary signal even
 		// when the post-reset state is zero.
 		tokenDiffZero := tokenDiff.InputTokens == 0 && tokenDiff.OutputTokens == 0 && tokenDiff.TotalTokens == 0
-		if !line.Reset && !line.CostReset && tokenDiffZero && costDiff.IsZero() && !toolChanged && !modelChanged {
+		if !line.Reset && tokenDiffZero && !toolChanged {
 			continue
 		}
 
-		if !costDiff.IsZero() || line.CostReset {
-			cd := costDiff
-			line.CostDiff = &cd
-		}
-		if !currentCost.IsZero() {
-			ct := currentCost
-			line.CostTotal = &ct
-		}
 		// Always carry the freshest cumulative tool usage on every emitted
 		// line (not only when toolChanged) so the most recent line per
 		// server — whatever dimension triggered it — holds the latest
@@ -431,23 +357,14 @@ func (f *MetricsFlusher) flushOnce(now time.Time) {
 		if len(currentTools) > 0 {
 			line.ToolUsage = currentTools
 		}
-		// Carry the freshest cumulative model histogram on every emitted
-		// line so the most recent line per server holds the latest
-		// provenance snapshot for SeedFromFile to restore.
-		if len(currentModels) > 0 {
-			line.ModelCost = currentModels
-		}
 
 		plan = append(plan, planned{writer: writer, line: line})
-		// Update prev / prevCost under the lock — even if the write fails
-		// the in-memory state advances; lumberjack rotates rather than
+		// Update prev under the lock — even if the write fails the
+		// in-memory state advances; lumberjack rotates rather than
 		// retaining failed writes, so retry would emit the same delta on
-		// the next tick anyway. Both maps advance together so a partial
-		// failure cannot leave them out of sync for the next tick's diff.
+		// the next tick anyway.
 		f.prev[name] = current
-		f.prevCost[name] = currentCost
 		f.prevTools[name] = currentTools
-		f.prevModels[name] = currentModels
 	}
 
 	// Prompt (skill) usage is global cumulative state under a dedicated
@@ -508,17 +425,6 @@ func isCounterReset(prev, current metrics.TokenCounts) bool {
 		current.TotalTokens < prev.TotalTokens
 }
 
-// isCostCounterReset is the cost analogue of isCounterReset. ClearCost
-// can produce a strictly-decreasing cost component without touching tokens;
-// flushOnce records that as a CostReset (independent of token Reset) so
-// SeedFromFile knows to skip the line's CostDiff for time-series replay
-// while still consuming its token Diff normally.
-func isCostCounterReset(prev, current metrics.CostMicroUSDCounts) bool {
-	return current.InputMicroUSD < prev.InputMicroUSD ||
-		current.OutputMicroUSD < prev.OutputMicroUSD ||
-		current.CacheReadMicroUSD < prev.CacheReadMicroUSD ||
-		current.CacheWriteMicroUSD < prev.CacheWriteMicroUSD
-}
 
 // toolUsageChanged reports whether the cumulative per-tool call counts for a
 // server differ between two snapshots. Comparing call counts alone suffices:
@@ -532,48 +438,27 @@ func toolUsageChanged(prev, current map[string]metrics.ToolStat) bool {
 		return true
 	}
 	for tool, cur := range current {
-		// Every counter participates: CostMicroUSD can move independently of
-		// Calls (ClearCost zeroes it), and a snapshot can land between the
+		// Every counter participates: a snapshot can land between the
 		// observer's calls-counter and token-counter updates — comparing
-		// tokens ensures the next flush corrects an understated line instead
-		// of persisting it forever.
+		// tokens ensures the next flush corrects an understated line
+		// instead of persisting it forever.
 		p, ok := prev[tool]
 		if !ok || p.Calls != cur.Calls || p.InputTokens != cur.InputTokens ||
-			p.OutputTokens != cur.OutputTokens || p.CostMicroUSD != cur.CostMicroUSD {
+			p.OutputTokens != cur.OutputTokens {
 			return true
 		}
 	}
 	return false
 }
 
-// modelCostChanged reports whether a server's cumulative per-model cost
-// histogram differs between two snapshots. A new model key or any changed
-// cost component returns true. Comparing cost alone suffices: token volume
-// in a bucket only advances together with cost.
-func modelCostChanged(prev, current map[string]metrics.ModelMicroCounts) bool {
-	if len(prev) != len(current) {
-		return true
-	}
-	for model, cur := range current {
-		if p, ok := prev[model]; !ok || p.CostMicroUSD != cur.CostMicroUSD {
-			return true
-		}
-	}
-	return false
-}
 
 // SeedFromFile reads up to the last n NDJSON entries from path and seeds
 // these surfaces atomically: cumulative per-server token totals (via
-// Restore), cumulative per-server cost totals (via RestoreCost), cumulative
-// per-(server, tool) call counts for Audit Mode (via RestoreToolUsage),
-// per-minute time-series ring buckets — both tokens and cost — (via
-// ReplaySnapshot), and this flusher's previous-snapshot maps (prev +
-// prevCost + prevTools). The Token
-// Usage Over Time and Cost Over Time charts are backed by the time-series
-// ring; without the bucket replay each would show only a single post-restart
-// point. The Cost KPI card is backed by the cumulative atomics; without
-// RestoreCost it would silently read $0 even when pre-restart cost was
-// non-zero.
+// Restore), cumulative per-(server, tool) call counts for Audit Mode (via
+// RestoreToolUsage), per-minute time-series ring buckets (via
+// ReplaySnapshot), and this flusher's previous-snapshot maps. The Token
+// Usage Over Time chart is backed by the time-series ring; without the
+// bucket replay it would show only a single post-restart point.
 //
 // On-disk format mirrors flushOnce's output: full MetricsSnapshotLine
 // entries plus lighter reset sentinels ({reset, ts, server} only). Reset
@@ -584,13 +469,11 @@ func modelCostChanged(prev, current map[string]metrics.ModelMicroCounts) bool {
 // For time-series, only non-reset lines are replayed: a Reset line's Diff
 // carries the carry-over from prior sessions (full snapshot), not a single
 // minute's activity, so replaying it would create a synthetic spike at the
-// reset boundary. The same skip applies to cost replay.
+// reset boundary.
 //
-// Legacy files predating cost persistence have no CostDiff / CostTotal
-// fields; they unmarshal with nil pointers, the cost diff sums to zero,
-// the cost replay no-ops, and RestoreCost is invoked with an empty map
-// (which itself no-ops). Token state restores normally — the file remains
-// fully readable with no warning.
+// Files written by the removed cost layer carry extra cost keys; the
+// non-strict decoder ignores them and token state restores normally — the
+// file remains fully readable with no warning.
 //
 // Missing or empty files return nil (expected on first run with persistence
 // enabled). Malformed lines are skipped without aborting; a single corrupt
@@ -627,17 +510,13 @@ func (f *MetricsFlusher) SeedFromFile(path string, n int) error {
 		ts     time.Time
 		input  int64
 		output int64
-		cost   int64 // rolled-up micro-USD total for the bucket
 	}
 
-	// Latest Total / CostTotal per server feeds Restore + RestoreCost +
-	// prev / prevCost. Non-reset Diff entries feed ReplaySnapshot in
-	// chronological file order so per-minute buckets appear in the same
-	// shape they had during live operation.
+	// Latest Total per server feeds Restore + prev. Non-reset Diff entries
+	// feed ReplaySnapshot in chronological file order so per-minute buckets
+	// appear in the same shape they had during live operation.
 	latest := make(map[string]metrics.TokenCounts)
-	latestCost := make(map[string]metrics.CostMicroUSDCounts)
 	latestTools := make(map[string]map[string]metrics.ToolStat)
-	latestModels := make(map[string]map[string]metrics.ModelMicroCounts)
 	series := make([]seriesPoint, 0, len(lines))
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -652,9 +531,6 @@ func (f *MetricsFlusher) SeedFromFile(path string, n int) error {
 			continue
 		}
 		latest[rec.Server] = rec.Total
-		if rec.CostTotal != nil {
-			latestCost[rec.Server] = *rec.CostTotal
-		}
 		// Tool usage is a cumulative snapshot, not a diff. A token Reset
 		// means the accumulator cleared (server restart / Clear), wiping
 		// tool usage too — drop the carried-over snapshot so a post-reset
@@ -662,35 +538,17 @@ func (f *MetricsFlusher) SeedFromFile(path string, n int) error {
 		// Any ToolUsage on this same line (post-reset activity) then wins.
 		if rec.Reset {
 			delete(latestTools, rec.Server)
-			delete(latestModels, rec.Server)
 		}
 		if rec.ToolUsage != nil {
 			latestTools[rec.Server] = rec.ToolUsage
 		}
-		// Model histograms ride the same cumulative-snapshot contract as
-		// tool usage: most recent non-nil wins, cleared on a token Reset so
-		// stale provenance never outlives the cost it explained.
-		if rec.ModelCost != nil {
-			latestModels[rec.Server] = rec.ModelCost
+		// A token-reset line skips replay: its Diff is the full carryover,
+		// and replaying it would spike the bucket.
+		if rec.Reset {
+			continue
 		}
-		// Reset and CostReset are independent: a token-reset line skips
-		// token replay (Diff is the full carryover, replaying would spike
-		// the bucket) but its cost diff may still be a real per-minute
-		// delta. Symmetrically, a cost-reset-only line keeps its real
-		// token diff but skips the cost component.
-		var input, output, costMicro int64
-		if !rec.Reset {
-			input = rec.Diff.InputTokens
-			output = rec.Diff.OutputTokens
-		}
-		if !rec.CostReset && !rec.Reset && rec.CostDiff != nil {
-			// Token-reset lines carry CostDiff = currentCost as a
-			// fresh-server boundary marker, not a per-minute delta —
-			// skip cost replay for those too so we don't emit a
-			// synthetic spike alongside the token reset.
-			costMicro = rec.CostDiff.TotalMicroUSD()
-		}
-		if input == 0 && output == 0 && costMicro == 0 {
+		input, output := rec.Diff.InputTokens, rec.Diff.OutputTokens
+		if input == 0 && output == 0 {
 			continue
 		}
 		series = append(series, seriesPoint{
@@ -698,7 +556,6 @@ func (f *MetricsFlusher) SeedFromFile(path string, n int) error {
 			ts:     rec.Time,
 			input:  input,
 			output: output,
-			cost:   costMicro,
 		})
 	}
 
@@ -708,27 +565,19 @@ func (f *MetricsFlusher) SeedFromFile(path string, n int) error {
 
 	// Replay time-series buckets first so the ring buffer fills in
 	// chronological order; then restore cumulative counters; then seed
-	// the flusher's prev / prevCost maps under the lock so the next
-	// flushOnce computes a real diff against the seeded baseline.
+	// the flusher's prev maps under the lock so the next flushOnce
+	// computes a real diff against the seeded baseline.
 	for _, p := range series {
-		f.acc.ReplaySnapshot(p.server, p.ts, p.input, p.output, p.cost)
+		f.acc.ReplaySnapshot(p.server, p.ts, p.input, p.output)
 	}
 	f.acc.Restore(latest)
-	f.acc.RestoreCost(latestCost)
 	f.acc.RestoreToolUsage(latestTools)
-	f.acc.RestoreServerModels(latestModels)
 	f.mu.Lock()
 	for name, counts := range latest {
 		f.prev[name] = counts
 	}
-	for name, counts := range latestCost {
-		f.prevCost[name] = counts
-	}
 	for name, tools := range latestTools {
 		f.prevTools[name] = tools
-	}
-	for name, models := range latestModels {
-		f.prevModels[name] = models
 	}
 	f.mu.Unlock()
 	return nil

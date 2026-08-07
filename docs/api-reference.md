@@ -147,7 +147,6 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
 | `registry` | object | Registry skill counts (omitted if empty) |
 | `code_mode` | string | Code mode status (omitted if `"off"`) |
 | `token_usage` | object | Token usage metrics (omitted if no metrics accumulator) |
-| `cost` | object | USD cost snapshot (omitted when no cost has been recorded) |
 
 **Token usage fields:**
 
@@ -158,27 +157,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
 | `per_client` | map | Token counts keyed by normalized MCP client name (omitted when no per-client traffic has been observed) |
 | `format_savings` | object | Savings from output format conversion (`original_tokens`, `formatted_tokens`, `saved_tokens`, `savings_percent`) |
 
-**Cost fields:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `session` | object | Aggregate USD cost (`input_usd`, `output_usd`, `cache_read_usd`, `cache_write_usd`, `total_usd`) |
-| `per_server` | map | USD cost keyed by server name |
-| `per_replica` | map | USD cost keyed by `(server, replica_id)` (omitted when no replica-aware traffic has been observed) |
-| `per_client` | map | USD cost keyed by normalized MCP client name (omitted when no per-client traffic has been observed) |
-
-**MCP server status** includes `outputFormat` (string, omitted when unset) showing the configured output format for each server, `autoscale` (object, omitted when the server has no autoscale block) described under [`/api/mcp-servers`](#get-apimcp-servers), `model` (string, omitted when empty) showing the declared per-server pricing model, and `effectiveModel` (object, omitted until traffic is observed) reporting which model actually priced the server's recorded cost. Each registered server also reports `protocolVersion` (string, omitted when the server did not report one or has no MCP handshake, as with OpenAPI adapters) carrying the MCP protocol version negotiated at initialize, and `protocolGeneration` (string, `"handshake"` or `"stateless"`, omitted for OpenAPI adapters) carrying the resolved MCP protocol generation. `/api/sessions` responses carry `entries`, one `{id, generation, protocolVersion}` object per active session, alongside the legacy bare `sessions` ID list. A server that failed gateway registration (unreachable endpoint, initialize failure, or unsupported protocol version) still appears in the list with `registrationFailed: true`, `healthy: false`, the failure reason in `healthError`, `initialized: false`, and no replicas, so declared servers are never silently absent.
-
-**Cost-attribution fields** appear at the top level when any client or server declares a pricing model in `stack.yaml`, and are omitted otherwise:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `cost_attribution` | bool | True when at least one client or server has a declared model, so the UI shows real cost instead of `$0.00` |
-| `default_model` | string | Gateway-level `default_model` from `stack.yaml` |
-| `server_models` | map | Effective server -> model map (per-server `model:` with `default_model` folded in) |
-| `client_models` | map | Declared client ID -> model map from `client_models:` |
-| `effective_server_models` | map | Server -> `{model, provenance, share, models}` reporting which model priced each server's cost (`provenance` is `declared`, `mixed`, or `none`) |
-| `effective_client_models` | map | Client -> effective-model object, same shape as above |
+**MCP server status** includes `outputFormat` (string, omitted when unset) showing the configured output format for each server and `autoscale` (object, omitted when the server has no autoscale block) described under [`/api/mcp-servers`](#get-apimcp-servers). Each registered server also reports `protocolVersion` (string, omitted when the server did not report one or has no MCP handshake, as with OpenAPI adapters) carrying the MCP protocol version negotiated at initialize, and `protocolGeneration` (string, `"handshake"` or `"stateless"`, omitted for OpenAPI adapters) carrying the resolved MCP protocol generation. `/api/sessions` responses carry `entries`, one `{id, generation, protocolVersion}` object per active session, alongside the legacy bare `sessions` ID list. A server that failed gateway registration (unreachable endpoint, initialize failure, or unsupported protocol version) still appears in the list with `registrationFailed: true`, `healthy: false`, the failure reason in `healthError`, `initialized: false`, and no replicas, so declared servers are never silently absent.
 
 **Experimental flag fields** appear at the top level when any experimental flag is enabled (via the stack's `experimental:` block or a `GRIDCTL_EXPERIMENTAL_*` env override), and are omitted otherwise:
 
@@ -278,7 +257,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/tools/catalog
 
 #### `GET /api/tools/usage`
 
-Returns per-(server, tool) usage observed by the gateway: cumulative call count, last-called timestamp, token counts, and estimated cost. Powers the Tools workspace **Audit Mode** (which separates actively-used, configured-but-unused, and disabled tools), the Tools detail panel's Usage section, and the Metrics workspace's Tools scope.
+Returns per-(server, tool) usage observed by the gateway: cumulative call count, last-called timestamp, and token counts. Powers the Tools workspace **Audit Mode** (which separates actively-used, configured-but-unused, and disabled tools), the Tools detail panel's Usage section, and the Metrics workspace's Tools scope.
 
 Usage is recorded for both direct tool calls and tools invoked through code mode's `execute` (both flow through the same observer). For servers with metrics persistence enabled, the data is restored from disk on startup so it survives gateway restarts; otherwise it reflects activity since the last gateway start.
 
@@ -296,14 +275,14 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/tools/usage
   "observedSince": "2026-05-20T10:00:00Z",
   "servers": {
     "github": {
-      "create_issue": { "calls": 42, "lastCalledAt": "2026-05-24T09:13:00Z", "inputTokens": 5120, "outputTokens": 18400, "costUsd": 0.291 },
+      "create_issue": { "calls": 42, "lastCalledAt": "2026-05-24T09:13:00Z", "inputTokens": 5120, "outputTokens": 18400 },
       "list_repos": { "calls": 3, "lastCalledAt": "2026-05-21T08:00:00Z", "inputTokens": 240, "outputTokens": 900 }
     }
   }
 }
 ```
 
-`servers` is an object keyed by server name; each value maps unprefixed tool names to their stats. Tools that have never been called are omitted. `inputTokens` and `outputTokens` are the cumulative tokens of the tool's own calls (omitted when zero). `costUsd` is the cumulative estimated cost of the tool's priced calls and is omitted entirely (never `0`) when no call was priced, for example when no pricing model is declared. Returns `503` when no metrics accumulator is configured.
+`servers` is an object keyed by server name; each value maps unprefixed tool names to their stats. Tools that have never been called are omitted. `inputTokens` and `outputTokens` are the cumulative tokens of the tool's own calls (omitted when zero). Returns `503` when no metrics accumulator is configured.
 
 #### `GET /api/skills/usage`
 
@@ -395,8 +374,6 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/clients
 `effectiveScope` is the backend-computed per-client access scope when a
 `clients:` block is configured (servers and prefixed tools the client can
 reach). It is absent when no scoping is in effect.
-
-Each client entry also carries `model` (string, omitted when empty) for the declared per-client pricing model and `effectiveModel` (object, omitted until traffic is observed) reporting which model actually priced the client's cost, with `provenance` (`declared`, `mixed`, or `none`).
 
 When the stack has a `link:` block, declared clients additionally carry
 `declared: true` and a `linkEntry` object with the declared options (`group`,
@@ -616,74 +593,22 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/metri
 
 ---
 
-### Cost Metrics
-
-#### `GET /api/metrics/cost`
-
-Returns historical USD cost time-series data, mirroring the `/api/metrics/tokens` shape. Cost is computed at observation time using the active pricing source (LiteLLM by default) and never recomputed from stored token totals.
-
-**Auth:** Yes
-
-| Query Param | Type | Default | Description |
-|-------------|------|---------|-------------|
-| `range` | string | `"1h"` | Time range: `"30m"`, `"1h"`, `"6h"`, `"24h"`, `"7d"` |
-| `per_client` | bool | `false` | When `true`, the response includes a `per_client` map grouping cost by the originating MCP client (e.g. `claude-code`, `cursor`). |
-
-```bash
-curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/metrics/cost?range=24h&per_client=true"
-```
-
-**Response:**
-```json
-{
-  "range": "24h",
-  "interval": "1h",
-  "data_points": [
-    {"timestamp": "2026-05-07T00:00:00Z", "usd": 0.42}
-  ],
-  "per_server": {
-    "github": [{"timestamp": "2026-05-07T00:00:00Z", "usd": 0.42}]
-  },
-  "per_client": {
-    "claude-code": [{"timestamp": "2026-05-07T00:00:00Z", "usd": 0.30}],
-    "cursor":      [{"timestamp": "2026-05-07T00:00:00Z", "usd": 0.12}]
-  }
-}
-```
-
-#### `DELETE /api/metrics/cost`
-
-Clears recorded cost data while leaving token counters and the format-savings tally intact. Use this when rotating pricing sources or recovering from a bad pricing snapshot without losing token history.
-
-**Auth:** Yes
-
-```bash
-curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/metrics/cost
-```
-
-**Response:**
-```json
-{"status": "ok", "message": "Cost metrics cleared"}
-```
-
----
-
 ### Optimize
 
 #### `GET /api/optimize`
 
-Returns an `OptimizeReport` derived from gateway-observed data: the registered server list, per-server token + cost totals, and per-(server, tool) call counts. v1 implements the `unused_server` and `unused_tool` heuristics; gateways with less than 24h of observation get a single `info` finding ("need more data") so reports never over-fire.
+Returns an `OptimizeReport` derived from gateway-observed data: the registered server list, per-server token totals, and per-(server, tool) call counts. Heuristics cover unused servers, unused tools, schema overhead, and format-savings shortfalls; gateways with less than 24h of observation get a single `info` finding ("need more data") so reports never over-fire.
 
 **Auth:** Yes
 
 | Query Param | Type | Default | Description |
 |-------------|------|---------|-------------|
 | `stack` | string | - | Active stack name. `404` if it does not match. |
-| `min_impact` | float | `0` | Drop findings whose weekly USD impact is below this threshold. `info` findings are always retained. |
+| `min_impact` | int | `0` | Drop findings whose projected weekly token impact is below this threshold. `info` findings are always retained. |
 | `severity` | string | - | Comma-separated allowlist of `info`, `warn`, `critical`. |
 
 ```bash
-curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/optimize?min_impact=0.10"
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/optimize?min_impact=5000"
 ```
 
 **Response:**
@@ -697,7 +622,7 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/optimize?min_i
       "title": "Unused server: github",
       "summary": "Server 'github' has registered 12 tools but no calls have been observed.",
       "server": "github",
-      "impact_usd_per_week": 0.27,
+      "impact_tokens_per_week": 18000,
       "remediation": "# Remove the server entirely:\nmcp-servers:\n  # delete the entry for: github\n",
       "detected_at": "2026-05-07T12:00:00Z"
     }
@@ -707,7 +632,7 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/optimize?min_i
 }
 ```
 
-Returns `503` when no metrics accumulator is configured; `404` when `stack` does not match the active stack.
+`impact_tokens_per_week` is the projected weekly token saving: schema heuristics assume roughly 500 prompts per week, and `format_savings_shortfall` normalizes its measured savings over the observation window. Findings that cannot be projected report `0`. Returns `503` when no metrics accumulator is configured; `404` when `stack` does not match the active stack.
 
 ---
 
@@ -748,7 +673,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/groups
 
 #### `GET /api/limits`
 
-Returns the consumption snapshot for every budget and rate limit declared under `limits:` in stack.yaml. Backs `gridctl limits` and the Metrics workspace. Always `200`: with no limits configured the payload carries `configured: false` and an empty `entries` array.
+Returns the state of every rate limit declared under `limits:` in stack.yaml. Backs `gridctl limits` and the Metrics workspace. Always `200`: with no limits configured the payload carries `configured: false` and an empty `entries` array.
 
 **Auth:** Yes
 
@@ -761,21 +686,6 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/limits
 {
   "configured": true,
   "entries": [
-    {
-      "kind": "budget",
-      "scope": "client",
-      "key": "claude-code",
-      "state": "warn",
-      "budget": {
-        "max_usd": 5,
-        "spent_usd": 4.12,
-        "percent": 82.4,
-        "period": "daily",
-        "warn_at_percent": 80,
-        "window_start": "2026-07-20T00:00:00-04:00",
-        "window_end": "2026-07-21T00:00:00-04:00"
-      }
-    },
     {
       "kind": "rate",
       "scope": "server",
@@ -790,7 +700,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/limits
 }
 ```
 
-`state` is `ok`, `warn` (budget past its `warn_at_percent`), or `exceeded`. Budget entries carry the active calendar window; rate entries report their configured bucket. Hot-reload edits to the `limits:` block are reflected on the next request.
+`kind` is always `"rate"`; it stays on the wire so consumers written against the earlier mixed budget/rate era keep parsing. `state` is `ok` or `exceeded` (the token bucket is currently empty). Hot-reload edits to the `limits:` block are reflected on the next request.
 
 ---
 
@@ -1476,111 +1386,6 @@ Deletes the stored grant **and** the cached dynamic client registration for a se
 #### `GET /oauth/callback`
 
 The authorization-code redirect target. Mounted **outside** the inbound auth middleware - the provider's browser redirect cannot carry a gateway bearer token - and authenticated by the flow's single-use `state` parameter instead. Serves a small HTML page that closes the popup. Not called directly by API clients.
-
----
-
-### Model Attribution
-
-These endpoints declare the pricing model used to cost tool calls, written into the live `stack.yaml` and applied via a hot reload. They affect cost attribution only and carry no access-control meaning. Precedence at pricing time is call-level, then client, then server, then gateway default. Unknown model IDs are accepted (best-effort pricing), surfacing only as load-time validation warnings. Each write is atomic and conflict-detected; an external edit between read and write returns `409`.
-
-#### `PUT /api/mcp-servers/{name}/model`
-
-Sets (or clears) a single MCP server's pricing model (`model:` in its `stack.yaml` entry). An empty string removes the key so the server falls back to `gateway.default_model`.
-
-**Auth:** Yes
-
-```bash
-curl -X PUT -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"model": "claude-opus-4-7"}' \
-  http://localhost:8180/api/mcp-servers/github/model
-```
-
-**Response:**
-```json
-{
-  "server": "github",
-  "model": "claude-opus-4-7",
-  "reloaded": true,
-  "reloadedAt": "2026-05-29T17:00:00Z"
-}
-```
-
-`reloaded` is `false` (and `reloadedAt` omitted) when the daemon is running without live-reload.
-
-**Errors:**
-- `404` - Server not found in the stack file
-- `409 stack_modified` - Stack file changed on disk between read and write
-- `502 reload_failed` - YAML written but hot reload failed
-- `503` - No stack file configured (stackless mode)
-
-#### `PUT /api/gateway/default-model`
-
-Sets (or clears) the stack-wide fallback pricing model (`gateway.default_model`). An empty string removes the key; the `gateway:` block is created when absent and removed again when clearing empties a block this endpoint created.
-
-**Auth:** Yes
-
-```bash
-curl -X PUT -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"model": "claude-sonnet-4-5"}' \
-  http://localhost:8180/api/gateway/default-model
-```
-
-**Response:**
-```json
-{
-  "model": "claude-sonnet-4-5",
-  "reloaded": true,
-  "reloadedAt": "2026-05-29T17:00:00Z"
-}
-```
-
-**Errors:** `409 stack_modified`, `502 reload_failed`, `503` (no stack file), as for the per-server endpoint above.
-
-#### `PUT /api/clients/{slug}/model`
-
-Sets (or clears) a single client's pricing model in the top-level `client_models:` map. An empty string removes the client's entry, and the whole `client_models:` map is removed when it empties. The slug is normalized to the stable profile key. This path never creates or touches a `clients:` access block (whose presence would flip the stack into default-deny access semantics).
-
-**Auth:** Yes
-
-```bash
-curl -X PUT -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"model": "claude-opus-4-7"}' \
-  http://localhost:8180/api/clients/cursor/model
-```
-
-**Response:**
-```json
-{
-  "client": "cursor",
-  "profileKey": "cursor",
-  "model": "claude-opus-4-7",
-  "reloaded": true,
-  "reloadedAt": "2026-05-29T17:00:00Z"
-}
-```
-
-**Errors:** `409 stack_modified`, `502 reload_failed`, `503` (no stack file), plus `400 invalid_client` when the slug is empty after normalization.
-
-#### `GET /api/pricing/models`
-
-Returns the canonical model IDs known to the active pricing source, for UI model pickers. Free-text IDs outside this list are still accepted everywhere (best-effort pricing).
-
-**Auth:** Yes
-
-```bash
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/pricing/models
-```
-
-**Response:**
-```json
-{
-  "source": "litellm",
-  "models": ["claude-opus-4-7", "claude-sonnet-4-5", "gpt-4o"]
-}
-```
 
 ---
 

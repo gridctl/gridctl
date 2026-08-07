@@ -9,7 +9,7 @@
 #   npm install -g @go-task/cli
 #   go install github.com/go-task/task/v3/cmd/task@latest
 
-.PHONY: all build build-web build-go dev clean deps run test test-coverage test-frontend test-integration lint mock-servers clean-mock-servers generate update-pricing validate-pricing help
+.PHONY: all build build-web build-go dev clean deps run test test-coverage test-frontend test-integration lint mock-servers clean-mock-servers generate help
 
 # $(1) is the task name; command-line variable overrides (PORT=, FILE=) pass
 # through via MAKEOVERRIDES, both as Task variables and as environment (make
@@ -72,12 +72,6 @@ clean-mock-servers:
 
 generate:
 	$(call forward,generate)
-
-update-pricing:
-	$(call forward,pricing:update)
-
-validate-pricing:
-	$(call forward,pricing:validate)
 
 help:
 	$(call forward,--list)

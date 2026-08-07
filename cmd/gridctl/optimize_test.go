@@ -15,14 +15,14 @@ import (
 
 func TestFormatImpact(t *testing.T) {
 	cases := []struct {
-		in   float64
+		in   int64
 		want string
 	}{
 		{0, "—"},
-		{-1.0, "—"},
-		{0.005, "<$0.01"},
-		{0.01, "$0.01"},
-		{12.345, "$12.35"},
+		{-1, "—"},
+		{950, "950"},
+		{18_000, "18.0K"},
+		{2_500_000, "2.5M"},
 	}
 	for _, tc := range cases {
 		if got := formatImpact(tc.in); got != tc.want {
@@ -91,19 +91,19 @@ func TestRenderOptimizeTable_PrintsRemediation(t *testing.T) {
 	report := optimize.OptimizeReport{
 		HealthScore: 80,
 		Findings: []optimize.Finding{{
-			ID:               "unused-server-github",
-			Heuristic:        "unused_server",
-			Severity:         optimize.SeverityWarn,
-			Title:            "Unused server: github",
-			Summary:          "no calls observed",
-			ImpactUSDPerWeek: 1.50,
-			Remediation:      "mcp-servers:\n  # delete entry: github",
-			DetectedAt:       time.Now(),
+			ID:                  "unused-server-github",
+			Heuristic:           "unused_server",
+			Severity:            optimize.SeverityWarn,
+			Title:               "Unused server: github",
+			Summary:             "no calls observed",
+			ImpactTokensPerWeek: 18_000,
+			Remediation:         "mcp-servers:\n  # delete entry: github",
+			DetectedAt:          time.Now(),
 		}},
 	}
 	renderOptimizeTable(&buf, report, false)
 	out := buf.String()
-	for _, want := range []string{"github", "warn", "$1.50", "delete entry"} {
+	for _, want := range []string{"github", "warn", "18.0K", "delete entry"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected output to contain %q; got: %s", want, out)
 		}
@@ -112,8 +112,8 @@ func TestRenderOptimizeTable_PrintsRemediation(t *testing.T) {
 
 func TestFetchOptimizeReport_HappyPath(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Query().Get("min_impact"); got != "0.5" {
-			t.Errorf("min_impact query = %q, want %q", got, "0.5")
+		if got := r.URL.Query().Get("min_impact"); got != "500" {
+			t.Errorf("min_impact query = %q, want %q", got, "500")
 		}
 		if got := r.URL.Query().Get("severity"); got != "warn" {
 			t.Errorf("severity query = %q, want %q", got, "warn")
@@ -124,7 +124,7 @@ func TestFetchOptimizeReport_HappyPath(t *testing.T) {
 	defer server.Close()
 
 	port := mustPort(t, server.URL)
-	report, err := fetchOptimizeReport(port, "", 0.5, "warn")
+	report, err := fetchOptimizeReport(port, "", 500, "warn")
 	if err != nil {
 		t.Fatalf("fetchOptimizeReport: %v", err)
 	}

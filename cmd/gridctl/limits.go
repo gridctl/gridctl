@@ -22,7 +22,6 @@ const limitsHTTPTimeout = 10 * time.Second
 // can rely on a stable contract.
 const (
 	limitsExitOK             = 0
-	limitsExitExceeded       = 1
 	limitsExitInfrastructure = 2
 )
 
@@ -35,24 +34,20 @@ var (
 
 var limitsCmd = &cobra.Command{
 	Use:   "limits",
-	Short: "Show budget and rate limit consumption",
-	Long: `Show every configured budget and rate limit with its current
-consumption: spend against dollar caps (with the active calendar window)
-and token-bucket rate limits.
+	Short: "Show rate limit state",
+	Long: `Show every configured token-bucket rate limit with its current
+state.
 
 Limits are declared in stack.yaml under 'limits:' and enforced at tool-call
-dispatch. Budgets govern attributed cost only; calls whose model cannot be
-priced spend outside every budget's sight, so pair budgets with rate limits
-as a backstop.
+dispatch.
 
 Default output is a styled table; use '--format json' to emit the same
 status report the API returns.
 
 Exit codes:
-  0  all limits clear (or no limits configured)
-  1  at least one budget exceeded
+  0  success (including no limits configured)
   2  infrastructure error (gateway unreachable)`,
-	Example: `  gridctl limits              Show consumption against every limit
+	Example: `  gridctl limits              Show the state of every rate limit
   gridctl limits --json       Machine-readable status
   gridctl limits -s my-stack  Query a specific running stack`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -84,10 +79,6 @@ Exit codes:
 			}
 		} else {
 			renderLimitsTable(os.Stdout, report, *limitsPlain)
-		}
-
-		if limitsExceeded(report) {
-			os.Exit(limitsExitExceeded)
 		}
 		return nil
 	},
@@ -128,29 +119,14 @@ func fetchLimitsReport(port int) (limits.StatusReport, error) {
 	return report, nil
 }
 
-// limitsExceeded reports whether any budget entry is over its cap. Rate
-// entries do not affect the exit code: a momentarily drained bucket is
-// normal operation, not an actionable condition.
-func limitsExceeded(report limits.StatusReport) bool {
-	for _, e := range report.Entries {
-		if e.Kind == "budget" && e.State == "exceeded" {
-			return true
-		}
-	}
-	return false
-}
 
-// renderLimitsTable prints the consumption table, or a configuration hint
-// when no limits block exists.
+// renderLimitsTable prints the state table, or a configuration hint when no
+// limits block exists.
 func renderLimitsTable(w io.Writer, report limits.StatusReport, plain bool) {
 	if !report.Configured {
 		fmt.Fprintln(w, "No limits configured. Add a 'limits:' block to stack.yaml, e.g.:")
 		fmt.Fprintln(w, "")
 		fmt.Fprintln(w, "  limits:")
-		fmt.Fprintln(w, "    budgets:")
-		fmt.Fprintln(w, "      - client: claude-code")
-		fmt.Fprintln(w, "        max_usd: 5.00")
-		fmt.Fprintln(w, "        period: daily")
 		fmt.Fprintln(w, "    rate_limits:")
 		fmt.Fprintln(w, "      - server: github")
 		fmt.Fprintln(w, "        calls_per_minute: 30")
@@ -158,19 +134,14 @@ func renderLimitsTable(w io.Writer, report limits.StatusReport, plain bool) {
 	}
 
 	t := output.NewTableWriter(w, plain)
-	t.AppendHeader(table.Row{"Kind", "Scope", "Key", "Limit", "Used", "Window", "State"})
+	t.AppendHeader(table.Row{"Kind", "Scope", "Key", "Limit", "Burst", "State"})
 	for _, e := range report.Entries {
-		var limit, used, window string
-		switch {
-		case e.Budget != nil:
-			limit = fmt.Sprintf("$%.2f %s", e.Budget.MaxUSD, e.Budget.Period)
-			used = fmt.Sprintf("$%.2f (%.0f%%)", e.Budget.SpentUSD, e.Budget.Percent)
-			window = "resets " + e.Budget.WindowEnd.Format("2006-01-02 15:04")
-		case e.Rate != nil:
+		var limit, burst string
+		if e.Rate != nil {
 			limit = fmt.Sprintf("%d calls/min", e.Rate.CallsPerMinute)
-			used = fmt.Sprintf("burst %d", e.Rate.Burst)
+			burst = fmt.Sprintf("%d", e.Rate.Burst)
 		}
-		t.AppendRow(table.Row{e.Kind, e.Scope, e.Key, limit, used, window, e.State})
+		t.AppendRow(table.Row{e.Kind, e.Scope, e.Key, limit, burst, e.State})
 	}
 	t.Render()
 }

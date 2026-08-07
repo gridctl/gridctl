@@ -14,9 +14,6 @@ vars:
   DATE:
     sh: date -u +"%Y-%m-%dT%H:%M:%SZ"
   LDFLAGS: -X main.version={{.VERSION}} -X main.commit={{.COMMIT}} -X main.date={{.DATE}}
-  PRICING_URL: https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json
-  PRICING_DIR: pkg/pricing/data
-  PRICING_DEST: pkg/pricing/data/model_prices.json
 
 tasks:
   default:
@@ -144,44 +141,6 @@ tasks:
     desc: Regenerate mocks under pkg/mcp/ and pkg/runtime/ (requires mockgen)
     cmds:
       - go generate ./pkg/mcp/... ./pkg/runtime/...
-
-  pricing:update:
-    desc: Refresh the embedded LiteLLM pricing snapshot (weekly cadence)
-    summary: |
-      Fetches the upstream LiteLLM pricing table, validates it with
-      scripts/validate-pricing.sh, and replaces {{.PRICING_DEST}} only on
-      success. A fetch failure warns and keeps the existing snapshot (exit 0);
-      a validation failure keeps the snapshot and exits 1.
-    cmds:
-      - |
-        echo "Refreshing pricing data from {{.PRICING_URL}}..."
-        tmp=$(mktemp {{.PRICING_DIR}}/.model_prices.XXXXXX)
-        if curl -sSL --fail --max-time 30 -o "$tmp" {{.PRICING_URL}}; then
-          if scripts/validate-pricing.sh "$tmp" {{.PRICING_DEST}}; then
-            mv "$tmp" {{.PRICING_DEST}}
-            echo "Updated {{.PRICING_DEST}} ($(wc -c < {{.PRICING_DEST}}) bytes)."
-          else
-            rm -f "$tmp"
-            echo "ERROR: pricing validation failed; keeping existing {{.PRICING_DEST}}." >&2
-            exit 1
-          fi
-        else
-          rm -f "$tmp"
-          echo "WARN: pricing refresh failed; keeping existing {{.PRICING_DEST}}."
-        fi
-
-  pricing:validate:
-    desc: Validate a pricing snapshot (FILE=... to test a candidate)
-    summary: |
-      Runs scripts/validate-pricing.sh against the committed snapshot by
-      default; point it at any candidate with `task pricing:validate
-      FILE=/path/to/table.json`. The candidate is always compared against the
-      committed snapshot's entry count. Exits non-zero on malformed, empty, or
-      substantially shrunken input.
-    vars:
-      FILE: '{{.FILE | default .PRICING_DEST}}'
-    cmds:
-      - scripts/validate-pricing.sh "{{.FILE}}" "{{.PRICING_DEST}}"
 
   mock:servers:
     desc: Build and start the example mock MCP servers (PORT=9001)

@@ -292,6 +292,7 @@ describe('MetricsWorkspace', () => {
           title: 'Unused server: zapier',
           summary: 'No calls recorded for this server.',
           server: 'zapier',
+          impact_tokens_per_week: 2_250_000,
           remediation: '',
           detected_at: 't',
         },
@@ -301,6 +302,7 @@ describe('MetricsWorkspace', () => {
     });
     renderAt();
     expect(await screen.findByText('Optimize findings')).toBeInTheDocument();
+    expect(screen.getByText('2.3M tok/wk')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Unused server: zapier/ }));
     expect(await screen.findByText('Per-Server · session totals')).toBeInTheDocument();
     expect(await screen.findByLabelText('Close inspector')).toBeInTheDocument();

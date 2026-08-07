@@ -13,6 +13,7 @@ const findings: OptimizeFinding[] = vi.hoisted(() => [
     summary: 'Not called in the lookback window.',
     server: 'github',
     tool: 'list_repos',
+    impact_tokens_per_week: 150_000,
     remediation: '# tools: filter',
     detected_at: '2026-07-13T00:00:00Z',
   },
@@ -41,12 +42,14 @@ vi.mock('../lib/api', async (importActual) => {
 });
 
 describe('OptimizeSection', () => {
-  it('lists findings with the health score and no dollar framing', async () => {
+  it('lists findings with token impact and no dollar framing', async () => {
     render(<OptimizeSection />);
     expect(await screen.findByText('Unused tool: github/list_repos')).toBeInTheDocument();
     expect(screen.getByText('Schema overhead exceeds tool value: github')).toBeInTheDocument();
     expect(screen.getByText('88/100')).toBeInTheDocument();
-    expect(screen.queryByText(/\/wk/)).not.toBeInTheDocument();
+    // Token impact renders compactly; zero/absent impact renders nothing.
+    expect(screen.getByText('150k tok/wk')).toBeInTheDocument();
+    expect(screen.getAllByText(/tok\/wk/)).toHaveLength(1);
     expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
   });
 

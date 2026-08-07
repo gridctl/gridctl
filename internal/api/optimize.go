@@ -7,9 +7,7 @@ import (
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/mcp"
-	"github.com/gridctl/gridctl/pkg/metrics"
 	"github.com/gridctl/gridctl/pkg/optimize"
-	"github.com/gridctl/gridctl/pkg/pricing"
 )
 
 // handleOptimize handles GET /api/optimize and produces an
@@ -24,7 +22,7 @@ import (
 //
 // Query parameters (all optional):
 //   - stack:      validate against the running stack name; mismatch is 404.
-//   - min_impact: USD-per-week threshold; findings with impact below this
+//   - min_impact: tokens-per-week threshold; findings with impact below this
 //     are dropped (info findings remain so the report stays informative).
 //   - severity:   comma-separated severity allowlist (info, warn, critical).
 func (s *Server) handleOptimize(w http.ResponseWriter, r *http.Request) {
@@ -45,8 +43,8 @@ func (s *Server) handleOptimize(w http.ResponseWriter, r *http.Request) {
 
 	stats := s.optimizeStats()
 	opts := optimize.Options{
-		MinImpactUSDPerWeek: parseFloatQuery(r, "min_impact"),
-		SeverityFilter:      parseSeverityFilter(r),
+		MinImpactTokensPerWeek: parseIntQuery(r, "min_impact"),
+		SeverityFilter:         parseSeverityFilter(r),
 	}
 
 	report := optimize.Analyze(stats, opts)
@@ -66,15 +64,12 @@ func (s *Server) optimizeStats() optimize.Stats {
 	if acc := s.metricsAccumulator; acc != nil {
 		stats.ObservationStart = acc.StartedAt()
 		usage := acc.Snapshot()
-		costSnap := acc.CostSnapshot()
 		stats.Usage = make(map[string]optimize.ServerUsage, len(usage.PerServer))
 		for name, counts := range usage.PerServer {
-			cost := costSnap.PerServer[name]
 			stats.Usage[name] = optimize.ServerUsage{
 				InputTokens:  counts.InputTokens,
 				OutputTokens: counts.OutputTokens,
 				TotalTokens:  counts.TotalTokens,
-				TotalCostUSD: cost.TotalUSD,
 			}
 		}
 		if toolSnap := acc.ToolUsageSnapshot(); len(toolSnap) > 0 {
@@ -87,11 +82,16 @@ func (s *Server) optimizeStats() optimize.Stats {
 						LastCalledAt: stat.LastCalledAt,
 						InputTokens:  stat.InputTokens,
 						OutputTokens: stat.OutputTokens,
-						CostUSD:      stat.CostUSD(),
 					}
 				}
 				stats.ToolUsage[serverName] = inner
 			}
+		}
+		snap := acc.Snapshot()
+		stats.FormatBaseline = optimize.FormatBaseline{
+			OriginalTokens:  snap.FormatSavings.OriginalTokens,
+			FormattedTokens: snap.FormatSavings.FormattedTokens,
+			SavingsPercent:  snap.FormatSavings.SavingsPercent,
 		}
 	}
 	if s.gateway != nil {
@@ -108,79 +108,7 @@ func (s *Server) optimizeStats() optimize.Stats {
 		}
 		stats.PinStats, stats.ToolSchemaTokens = computeSchemaTokens(s.gateway)
 	}
-	if acc := s.metricsAccumulator; acc != nil {
-		snap := acc.Snapshot()
-		stats.FormatBaseline = optimize.FormatBaseline{
-			OriginalTokens:  snap.FormatSavings.OriginalTokens,
-			FormattedTokens: snap.FormatSavings.FormattedTokens,
-			SavingsPercent:  snap.FormatSavings.SavingsPercent,
-		}
-		stats.ServerCallCount = computeServerCallCount(acc.ToolUsageSnapshot())
-		stats.ModelHistograms = serverModelHistograms(acc.CostSnapshot().PerServerModels)
-	}
-	// Declared per-server attribution provides rates; the histogram (when
-	// present) names the model that actually priced traffic. Merge so the
-	// dominant histogram model rides with its looked-up rate, which
-	// resolveDominantRate prefers over the declared value.
-	stats.ModelStats = lookupModelStats(s.modelAttributionMap())
-	stats.ModelStats = mergeHistogramModelStats(stats.ModelStats, stats.ModelHistograms)
 	return stats
-}
-
-// serverModelHistograms flattens the accumulator's per-server model cost
-// histogram (model -> ModelCost) into the model -> USD shape pkg/optimize
-// consumes. Returns nil when no histogram data exists so the optimize path
-// keeps its pre-histogram behavior.
-func serverModelHistograms(perServer map[string]map[string]metrics.ModelCost) map[string]map[string]float64 {
-	if len(perServer) == 0 {
-		return nil
-	}
-	out := make(map[string]map[string]float64, len(perServer))
-	for server, models := range perServer {
-		inner := make(map[string]float64, len(models))
-		for model, mc := range models {
-			inner[model] = mc.CostUSD
-		}
-		out[server] = inner
-	}
-	return out
-}
-
-// mergeHistogramModelStats ensures each server's dominant histogram model
-// carries its pricing rate in ModelStats, so resolveDominantRate can name the
-// exact model that priced traffic with a real (not cost÷tokens) rate. A
-// declared ModelStat for the same server is overridden only when the
-// dominant histogram model differs and prices successfully.
-func mergeHistogramModelStats(declared map[string]optimize.ModelStat, histograms map[string]map[string]float64) map[string]optimize.ModelStat {
-	if len(histograms) == 0 {
-		return declared
-	}
-	out := declared
-	if out == nil {
-		out = make(map[string]optimize.ModelStat)
-	}
-	for server, models := range histograms {
-		dominant := optimize.DominantModel(models)
-		if dominant == "" {
-			continue
-		}
-		if existing, ok := out[server]; ok && existing.Model == dominant {
-			continue // declared rate already names the dominant model
-		}
-		rates, ok := pricing.Lookup(dominant)
-		if !ok {
-			continue
-		}
-		out[server] = optimize.ModelStat{
-			Model:             dominant,
-			InputUSDPerToken:  rates.InputPerToken,
-			OutputUSDPerToken: rates.OutputPerToken,
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
 }
 
 // computeSchemaTokens estimates schema-overhead tokens by marshaling the
@@ -246,67 +174,18 @@ func splitPrefixedTool(prefixed string) (server, tool string, ok bool) {
 	return prefixed[:idx], prefixed[idx+len(delim):], true
 }
 
-// computeServerCallCount sums the per-(server, tool) call counts the
-// accumulator captured into a per-server total. Used by the
-// expensive_model_on_cheap_task heuristic to compute average tokens
-// per call without the metrics package growing a separate counter.
-func computeServerCallCount(toolUsage map[string]map[string]metrics.ToolStat) map[string]int64 {
-	if len(toolUsage) == 0 {
-		return nil
-	}
-	out := make(map[string]int64, len(toolUsage))
-	for server, tools := range toolUsage {
-		var total int64
-		for _, stat := range tools {
-			total += stat.Calls
-		}
-		if total > 0 {
-			out[server] = total
-		}
-	}
-	return out
-}
-
-// lookupModelStats resolves per-token rates from the active pricing.Source
-// for each server with model attribution (a `model:` field or the gateway
-// `default_model:`), so expensive_model_on_cheap_task can read the rate
-// directly and name the model in its summary. Servers without attribution —
-// or whose model is unknown to the pricing source — are omitted; the
-// heuristic falls back to inferring rate from observed cost÷tokens.
-func lookupModelStats(models map[string]string) map[string]optimize.ModelStat {
-	if len(models) == 0 {
-		return nil
-	}
-	out := make(map[string]optimize.ModelStat, len(models))
-	for server, model := range models {
-		rates, ok := pricing.Lookup(model)
-		if !ok {
-			continue
-		}
-		out[server] = optimize.ModelStat{
-			Model:             model,
-			InputUSDPerToken:  rates.InputPerToken,
-			OutputUSDPerToken: rates.OutputPerToken,
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-// parseFloatQuery returns the float64 value of a query parameter, or 0
-// when the parameter is unset or unparseable.
-func parseFloatQuery(r *http.Request, key string) float64 {
+// parseIntQuery returns the int64 value of a query parameter, or 0 when
+// the parameter is unset or unparseable.
+func parseIntQuery(r *http.Request, key string) int64 {
 	v := r.URL.Query().Get(key)
 	if v == "" {
 		return 0
 	}
-	f, err := strconv.ParseFloat(v, 64)
+	n, err := strconv.ParseInt(v, 10, 64)
 	if err != nil {
 		return 0
 	}
-	return f
+	return n
 }
 
 // parseSeverityFilter splits a comma-separated severity list, dropping

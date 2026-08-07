@@ -31,16 +31,17 @@ const (
 
 var (
 	optimizeStack     string
-	optimizeMinImpact float64
+	optimizeMinImpact int64
 	optimizeSeverity  string
 	optimizeFormat    string
 )
 
 var optimizeCmd = &cobra.Command{
 	Use:   "optimize",
-	Short: "Surface cost-reduction findings from gateway-observed data",
+	Short: "Surface token-reduction findings from gateway-observed data",
 	Long: `Analyze the running gateway for unused servers and tools and print
-actionable findings with weekly USD impact.
+actionable findings with weekly token impact (projected assuming ~500
+prompts/week).
 
 Default output is a styled table; use '--format json' to emit the same
 OptimizeReport the API returns.
@@ -87,7 +88,7 @@ Exit codes:
 
 func init() {
 	optimizeCmd.Flags().StringVarP(&optimizeStack, "stack", "s", "", "Stack to query (auto-detected when only one stack is running)")
-	optimizeCmd.Flags().Float64Var(&optimizeMinImpact, "min-impact", 0, "Filter findings below this weekly USD impact (info findings always shown)")
+	optimizeCmd.Flags().Int64Var(&optimizeMinImpact, "min-impact", 0, "Filter findings below this weekly token impact (info findings always shown)")
 	optimizeCmd.Flags().StringVar(&optimizeSeverity, "severity", "", "Comma-separated severity allowlist: info,warn,critical")
 	optimizeCmd.Flags().StringVar(&optimizeFormat, "format", "", "Output format: 'json' for machine-readable output (default: table)")
 	optimizeJSON = addJSONAlias(optimizeCmd)
@@ -108,13 +109,13 @@ func resolveOptimizePort(stackName string) (int, error) {
 // fetchOptimizeReport calls GET /api/optimize on the local gateway and
 // decodes the response. Non-2xx HTTP statuses are mapped to errors so
 // the caller can map them to exit code 2.
-func fetchOptimizeReport(port int, stack string, minImpact float64, severity string) (optimize.OptimizeReport, error) {
+func fetchOptimizeReport(port int, stack string, minImpact int64, severity string) (optimize.OptimizeReport, error) {
 	q := url.Values{}
 	if stack != "" {
 		q.Set("stack", stack)
 	}
 	if minImpact > 0 {
-		q.Set("min_impact", strconv.FormatFloat(minImpact, 'f', -1, 64))
+		q.Set("min_impact", strconv.FormatInt(minImpact, 10))
 	}
 	if severity != "" {
 		q.Set("severity", severity)
@@ -154,13 +155,13 @@ func renderOptimizeTable(w io.Writer, report optimize.OptimizeReport, plain bool
 	}
 
 	t := output.NewTableWriter(w, plain)
-	t.AppendHeader(table.Row{"SEVERITY", "TITLE", "WEEKLY $", "REMEDIATION"})
+	t.AppendHeader(table.Row{"SEVERITY", "TITLE", "WEEKLY TOKENS", "REMEDIATION"})
 
 	for _, f := range report.Findings {
 		t.AppendRow(table.Row{
 			severityLabel(f.Severity),
 			f.Title,
-			formatImpact(f.ImpactUSDPerWeek),
+			formatImpact(f.ImpactTokensPerWeek),
 			firstLine(f.Remediation),
 		})
 	}
@@ -207,14 +208,17 @@ func severityLabel(s optimize.Severity) string {
 	}
 }
 
-func formatImpact(usd float64) string {
-	if usd <= 0 {
+func formatImpact(tokens int64) string {
+	if tokens <= 0 {
 		return "—"
 	}
-	if usd < 0.01 {
-		return "<$0.01"
+	if tokens >= 1_000_000 {
+		return fmt.Sprintf("%.1fM", float64(tokens)/1_000_000)
 	}
-	return fmt.Sprintf("$%.2f", usd)
+	if tokens >= 1_000 {
+		return fmt.Sprintf("%.1fK", float64(tokens)/1_000)
+	}
+	return fmt.Sprintf("%d", tokens)
 }
 
 func firstLine(s string) string {

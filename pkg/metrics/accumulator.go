@@ -2,7 +2,6 @@
 package metrics
 
 import (
-	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,150 +37,6 @@ type TokenUsage struct {
 	FormatSavings FormatSavings          `json:"format_savings"`
 }
 
-// CostBreakdown is the per-call USD cost split passed to RecordCost. Cache
-// fields are priced separately from input tokens to match LiteLLM's cache
-// rate fields — conflating them mis-prices providers like Anthropic by
-// roughly an order of magnitude.
-type CostBreakdown struct {
-	Input      float64
-	Output     float64
-	CacheRead  float64
-	CacheWrite float64
-}
-
-// IsZero reports whether all components are zero. Used by RecordCost to
-// short-circuit accumulator updates when a tool call has no priceable
-// usage (unknown model, all-zero token counts).
-func (c CostBreakdown) IsZero() bool {
-	return c.Input == 0 && c.Output == 0 && c.CacheRead == 0 && c.CacheWrite == 0
-}
-
-// IsValid reports whether every component is finite and non-negative.
-// A misconfigured Source could in theory return NaN/Inf rates or a
-// negative Calculate result; recording those into atomic counters would
-// permanently corrupt the snapshot. RecordCost drops invalid breakdowns.
-func (c CostBreakdown) IsValid() bool {
-	for _, v := range [4]float64{c.Input, c.Output, c.CacheRead, c.CacheWrite} {
-		if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 {
-			return false
-		}
-	}
-	return true
-}
-
-// CostCounts is the snapshot shape for a single dimension (session,
-// per-server, per-replica) of cost accumulation. All values are USD.
-// Cache fields are omitempty so consumers that only care about
-// input/output costs are not forced to render zeroes.
-type CostCounts struct {
-	InputUSD      float64 `json:"input_usd"`
-	OutputUSD     float64 `json:"output_usd"`
-	CacheReadUSD  float64 `json:"cache_read_usd,omitempty"`
-	CacheWriteUSD float64 `json:"cache_write_usd,omitempty"`
-	TotalUSD      float64 `json:"total_usd"`
-}
-
-// CostMicroUSDCounts is the int64 micro-USD shape used by the persistence
-// layer to round-trip the four cost components without float precision
-// loss. Mirrors the in-memory atomic representation on serverCounters.
-type CostMicroUSDCounts struct {
-	InputMicroUSD      int64 `json:"input_micro_usd,omitempty"`
-	OutputMicroUSD     int64 `json:"output_micro_usd,omitempty"`
-	CacheReadMicroUSD  int64 `json:"cache_read_micro_usd,omitempty"`
-	CacheWriteMicroUSD int64 `json:"cache_write_micro_usd,omitempty"`
-}
-
-// IsZero reports whether all four cost components are zero.
-func (c CostMicroUSDCounts) IsZero() bool {
-	return c.InputMicroUSD == 0 && c.OutputMicroUSD == 0 &&
-		c.CacheReadMicroUSD == 0 && c.CacheWriteMicroUSD == 0
-}
-
-// TotalMicroUSD returns the rolled-up sum of the four components — the
-// shape ReplaySnapshot stores per bucket, matching addCostToBucket's live
-// behavior of writing a single total per minute.
-func (c CostMicroUSDCounts) TotalMicroUSD() int64 {
-	return c.InputMicroUSD + c.OutputMicroUSD + c.CacheReadMicroUSD + c.CacheWriteMicroUSD
-}
-
-// ModelCost is the per-model slice of an entity's cost histogram: the USD
-// cost and token volume recorded under one resolved model ID. Token fields
-// count only the calls that were priced (cost recorded), not the entity's
-// full token traffic — unpriced calls have no model to attribute to.
-type ModelCost struct {
-	CostUSD      float64 `json:"cost_usd"`
-	InputTokens  int64   `json:"input_tokens,omitempty"`
-	OutputTokens int64   `json:"output_tokens,omitempty"`
-}
-
-// ModelMicroCounts is the int64 micro-USD persistence shape for one model
-// histogram bucket, mirroring CostMicroUSDCounts' role for plain cost.
-type ModelMicroCounts struct {
-	CostMicroUSD int64 `json:"cost_micro_usd,omitempty"`
-	InputTokens  int64 `json:"input_tokens,omitempty"`
-	OutputTokens int64 `json:"output_tokens,omitempty"`
-}
-
-// CostUsage is the top-level cost snapshot. The shape mirrors TokenUsage so
-// API consumers can render cost charts beside token charts.
-type CostUsage struct {
-	Session    CostCounts                    `json:"session"`
-	PerServer  map[string]CostCounts         `json:"per_server"`
-	PerReplica map[string]map[int]CostCounts `json:"per_replica,omitempty"`
-	// PerClient groups USD cost by the originating MCP client. omitempty so
-	// pre-attribution consumers keep their existing JSON shape.
-	PerClient map[string]CostCounts `json:"per_client,omitempty"`
-	// PerServerModels and PerClientModels break each entity's recorded cost
-	// down by the model that priced it (entity -> model ID -> totals). The
-	// model is always known at RecordCostWithModel time — these are exact
-	// recordings of which declared rate applied, not statistical estimates.
-	// omitempty preserves the pre-histogram JSON shape.
-	PerServerModels map[string]map[string]ModelCost `json:"per_server_models,omitempty"`
-	PerClientModels map[string]map[string]ModelCost `json:"per_client_models,omitempty"`
-}
-
-// CostDataPoint is the time-series shape for cost-over-time queries.
-type CostDataPoint struct {
-	Timestamp time.Time `json:"timestamp"`
-	USD       float64   `json:"usd"`
-}
-
-// CostTimeSeriesResponse is the cost analogue of TimeSeriesResponse. The
-// `Range` and `Interval` strings reuse the same vocabulary as the token
-// time-series so charts can share a time-range selector.
-type CostTimeSeriesResponse struct {
-	Range     string                     `json:"range"`
-	Interval  string                     `json:"interval"`
-	Points    []CostDataPoint            `json:"data_points"`
-	PerServer map[string][]CostDataPoint `json:"per_server"`
-	// PerClient groups cost over time by originating MCP client. Populated
-	// only when the API caller requests per-client grouping (the
-	// `per_client=true` query parameter on /api/metrics/cost) so the JSON
-	// stays compact for the common per-server view.
-	PerClient map[string][]CostDataPoint `json:"per_client,omitempty"`
-}
-
-// costScale converts the public USD float64 values to the int64
-// micro-USD representation used by the atomic counters and ring buffers.
-// Internal accumulation uses fixed-point (1 unit = 1e-6 USD = 1 micro-USD)
-// so additions are atomic int64 ops; conversion back to float64 happens
-// only at snapshot time.
-const costScale = 1_000_000
-
-func usdToMicro(usd float64) int64 {
-	if usd == 0 {
-		return 0
-	}
-	return int64(usd * costScale)
-}
-
-func microToUSD(micro int64) float64 {
-	if micro == 0 {
-		return 0
-	}
-	return float64(micro) / costScale
-}
-
 // DataPoint is a single time-series data point with token counts.
 type DataPoint struct {
 	Timestamp    time.Time `json:"timestamp"`
@@ -198,35 +53,22 @@ type TimeSeriesResponse struct {
 	PerServer map[string][]DataPoint `json:"per_server"`
 }
 
+// bucket holds accumulated token counts for a single minute.
+type bucket struct {
+	timestamp    time.Time
+	inputTokens  int64
+	outputTokens int64
+}
+
 // bucketKey returns the minute-aligned key for a timestamp.
 func bucketKey(t time.Time) time.Time {
 	return t.Truncate(time.Minute)
 }
 
-// bucket holds accumulated token counts and total USD cost for a single
-// minute. Cost is stored as int64 micro-USD (1 unit = 1e-6 USD) so the
-// addition is a plain integer write under the bucket mutex; precision below
-// nano-USD is irrelevant for any realistic call.
-type bucket struct {
-	timestamp    time.Time
-	inputTokens  int64
-	outputTokens int64
-	costMicroUSD int64
-}
-
 // serverCounters holds atomic counters for a single server.
-//
-// Cost components are stored as int64 micro-USD so they share the
-// lock-free atomic.Int64 pattern used for tokens. The float64 USD shape
-// is reconstructed at Snapshot time.
 type serverCounters struct {
 	inputTokens  atomic.Int64
 	outputTokens atomic.Int64
-
-	inputCostMicroUSD      atomic.Int64
-	outputCostMicroUSD     atomic.Int64
-	cacheReadCostMicroUSD  atomic.Int64
-	cacheWriteCostMicroUSD atomic.Int64
 }
 
 // replicaCounters holds atomic counters for a single replica. Keyed by
@@ -235,34 +77,14 @@ type serverCounters struct {
 type replicaCounters struct {
 	inputTokens  atomic.Int64
 	outputTokens atomic.Int64
-
-	inputCostMicroUSD      atomic.Int64
-	outputCostMicroUSD     atomic.Int64
-	cacheReadCostMicroUSD  atomic.Int64
-	cacheWriteCostMicroUSD atomic.Int64
 }
 
-// clientCounters holds per-client atomic counters for token + cost
-// aggregates. Keyed by the normalized client ID (mcp.NormalizeClientID).
-// The cardinality is bounded by the number of distinct MCP clients
-// (~10s in practice), so the map fits easily under the same RWMutex
-// pattern used for per-server aggregates.
+// clientCounters holds per-client atomic counters for token aggregates.
+// Keyed by the normalized client ID (mcp.NormalizeClientID). The
+// cardinality is bounded by the number of distinct MCP clients (~10s in
+// practice), so the map fits easily under the same RWMutex pattern used
+// for per-server aggregates.
 type clientCounters struct {
-	inputTokens  atomic.Int64
-	outputTokens atomic.Int64
-
-	inputCostMicroUSD      atomic.Int64
-	outputCostMicroUSD     atomic.Int64
-	cacheReadCostMicroUSD  atomic.Int64
-	cacheWriteCostMicroUSD atomic.Int64
-}
-
-// modelCounters holds atomic counters for one (entity, model) histogram
-// bucket: micro-USD cost plus the token volume priced under that model.
-// Cardinality is bounded by the number of distinct models that actually
-// price traffic (a handful in practice), so the nested maps stay small.
-type modelCounters struct {
-	costMicroUSD atomic.Int64
 	inputTokens  atomic.Int64
 	outputTokens atomic.Int64
 }
@@ -274,34 +96,23 @@ type modelCounters struct {
 // last cleared; LastCalledAt is the wall-clock time the most recent call
 // was recorded, or the zero value when no calls have been recorded.
 // InputTokens/OutputTokens are the cumulative token counts of the tool's
-// own calls; CostMicroUSD is the cumulative priced cost of those calls
-// in micro-USD (zero when no call was priced). The token/cost fields are
-// omitempty so persisted lines written before per-tool cost attribution
-// stay byte-identical.
+// own calls. The token fields are omitempty so persisted lines written
+// before per-tool attribution stay byte-identical.
 type ToolStat struct {
 	Calls        int64     `json:"calls"`
 	LastCalledAt time.Time `json:"last_called_at,omitempty"`
 	InputTokens  int64     `json:"input_tokens,omitempty"`
 	OutputTokens int64     `json:"output_tokens,omitempty"`
-	CostMicroUSD int64     `json:"cost_micro_usd,omitempty"`
-}
-
-// CostUSD returns the tool's cumulative priced cost in USD.
-func (t ToolStat) CostUSD() float64 {
-	return microToUSD(t.CostMicroUSD)
 }
 
 // toolUsage holds per-(server, tool) atomic counters. lastCalledNanos
 // stores time.UnixNano so the read path can produce a time.Time without
-// taking a lock. Cost is stored in micro-USD (matching modelCounters) so
-// the counter stays a lock-free integer. Keyed by (serverName -> toolName)
-// in the accumulator.
+// taking a lock. Keyed by (serverName -> toolName) in the accumulator.
 type toolUsage struct {
 	calls           atomic.Int64
 	lastCalledNanos atomic.Int64
 	inputTokens     atomic.Int64
 	outputTokens    atomic.Int64
-	costMicroUSD    atomic.Int64
 }
 
 // promptUsage holds per-skill atomic counters for prompts/get serving. Same
@@ -319,8 +130,8 @@ type promptUsage struct {
 // of pre-aggregated 1-minute time buckets.
 type Accumulator struct {
 	// startedAt is set when NewAccumulator is called and never reset by
-	// Clear or ClearCost. Consumers (e.g. pkg/optimize) use it to gate
-	// findings that require a minimum observation window.
+	// Clear. Consumers (e.g. pkg/optimize) use it to gate findings that
+	// require a minimum observation window.
 	startedAt time.Time
 
 	// Session totals (atomic for lock-free reads)
@@ -348,26 +159,10 @@ type Accumulator struct {
 	serverBufMu sync.RWMutex
 	serverBufs  map[string]*serverBuffer
 
-	// Per-client totals (token + cost). Cardinality is bounded by the number
-	// of distinct MCP clients seen on the gateway (~10s in practice).
+	// Per-client token totals. Cardinality is bounded by the number of
+	// distinct MCP clients seen on the gateway (~10s in practice).
 	clientMu sync.RWMutex
 	clients  map[string]*clientCounters
-
-	// Per-client cost ring buffers, used to group /api/metrics/cost by the
-	// originating client. Tokens are not bucketed per-client because the
-	// existing TokenUsage / token time-series path is unchanged in PR 2.
-	clientBufMu sync.RWMutex
-	clientBufs  map[string]*serverBuffer
-
-	// Per-server and per-client model histograms: entity -> model ID ->
-	// counters for cost recorded under that model. Written by
-	// RecordCostWithModel alongside the plain cost counters so every
-	// recorded dollar carries its pricing model. Cardinality is bounded by
-	// (entities × models in use); no eviction by design.
-	serverModelMu sync.RWMutex
-	serverModels  map[string]map[string]*modelCounters
-	clientModelMu sync.RWMutex
-	clientModels  map[string]map[string]*modelCounters
 
 	// Per-(server, tool) call counters. Powers the unused_tool optimize
 	// heuristic: a tool registered on a server but absent from this map
@@ -384,15 +179,6 @@ type Accumulator struct {
 	// Format savings (atomic for lock-free reads)
 	savingsOriginal  atomic.Int64
 	savingsFormatted atomic.Int64
-
-	// Session-level cost totals (micro-USD, atomic). The per-component
-	// breakdown is preserved separately so consumers can render
-	// "input vs cache-read" without recomputing from token counts —
-	// recomputation would be wrong when models drift mid-window.
-	sessionInputCostMicroUSD      atomic.Int64
-	sessionOutputCostMicroUSD     atomic.Int64
-	sessionCacheReadCostMicroUSD  atomic.Int64
-	sessionCacheWriteCostMicroUSD atomic.Int64
 }
 
 // serverBuffer is a per-server ring buffer of minute buckets.
@@ -415,18 +201,15 @@ func NewAccumulator(maxDataPoints int) *Accumulator {
 		replicas:     make(map[string]map[int]*replicaCounters),
 		buckets:      make([]bucket, maxDataPoints),
 		maxSize:      maxDataPoints,
-		serverBufs:   make(map[string]*serverBuffer),
-		clients:      make(map[string]*clientCounters),
-		clientBufs:   make(map[string]*serverBuffer),
-		serverModels: make(map[string]map[string]*modelCounters),
-		clientModels: make(map[string]map[string]*modelCounters),
-		toolUsage:    make(map[string]map[string]*toolUsage),
-		promptUsage:  make(map[string]*promptUsage),
+		serverBufs:  make(map[string]*serverBuffer),
+		clients:     make(map[string]*clientCounters),
+		toolUsage:   make(map[string]map[string]*toolUsage),
+		promptUsage: make(map[string]*promptUsage),
 	}
 }
 
 // StartedAt returns the wall-clock time the accumulator was created.
-// Clear and ClearCost do not reset this value — the start-of-observation
+// Clear does not reset this value — the start-of-observation
 // window stays anchored to the gateway lifetime, which is what
 // pkg/optimize uses to gate "<24h of data" findings.
 func (a *Accumulator) StartedAt() time.Time {
@@ -575,25 +358,6 @@ func (a *Accumulator) RecordToolCallUsage(serverName, toolName string, inputToke
 	tu.outputTokens.Add(int64(outputTokens))
 }
 
-// RecordToolCost adds a priced call's USD cost to the per-(server, tool)
-// micro-USD counter. Called only when the observer priced the call, so an
-// unpriced call leaves the tool's cost untouched (never a fabricated $0).
-//
-// An empty serverName or toolName is a no-op so callers without per-tool
-// attribution (legacy ToolCallObserver path) can invoke unconditionally.
-func (a *Accumulator) RecordToolCost(serverName, toolName string, cost CostBreakdown) {
-	if serverName == "" || toolName == "" {
-		return
-	}
-	if cost.IsZero() || !cost.IsValid() {
-		return
-	}
-	totalMicro := usdToMicro(cost.Input) + usdToMicro(cost.Output) +
-		usdToMicro(cost.CacheRead) + usdToMicro(cost.CacheWrite)
-	tu := a.getOrCreateToolUsage(serverName, toolName)
-	tu.costMicroUSD.Add(totalMicro)
-}
-
 func (a *Accumulator) getOrCreateToolUsage(serverName, toolName string) *toolUsage {
 	a.toolUsageMu.RLock()
 	if m, ok := a.toolUsage[serverName]; ok {
@@ -642,7 +406,6 @@ func (a *Accumulator) ToolUsageSnapshot() map[string]map[string]ToolStat {
 				LastCalledAt: lastCalled,
 				InputTokens:  tu.inputTokens.Load(),
 				OutputTokens: tu.outputTokens.Load(),
-				CostMicroUSD: tu.costMicroUSD.Load(),
 			}
 		}
 		out[serverName] = inner
@@ -661,9 +424,9 @@ func (a *Accumulator) ToolUsageSnapshot() map[string]map[string]ToolStat {
 // code-mode calls (Gateway.CallTool → HandleToolsCall → Observer →
 // RecordToolCall), so a restored snapshot reflects both equally.
 //
-// Restore is max-wins per counter — calls, tokens, and micro-USD cost alike:
-// an existing in-memory value is kept when it already exceeds the restored one
-// (defensive against a seed racing late initialization; all four counters are
+// Restore is max-wins per counter — calls and tokens alike: an existing
+// in-memory value is kept when it already exceeds the restored one
+// (defensive against a seed racing late initialization; the counters are
 // monotonic between resets, so max-wins never double-counts). Entries with no
 // recorded calls are skipped so the snapshot stays sparse. An empty map is a
 // no-op.
@@ -704,9 +467,6 @@ func (a *Accumulator) RestoreToolUsage(perServer map[string]map[string]ToolStat)
 			}
 			if stat.OutputTokens > tu.outputTokens.Load() {
 				tu.outputTokens.Store(stat.OutputTokens)
-			}
-			if stat.CostMicroUSD > tu.costMicroUSD.Load() {
-				tu.costMicroUSD.Store(stat.CostMicroUSD)
 			}
 		}
 	}
@@ -807,154 +567,6 @@ func (a *Accumulator) RecordFormatSavings(serverName string, originalTokens, for
 	a.savingsFormatted.Add(int64(formattedTokens))
 }
 
-// RecordCost adds a per-call USD cost observation alongside the token
-// observation that RecordReplica records. Pass replicaID < 0 to skip the
-// per-replica update, mirroring RecordReplica.
-//
-// Cost MUST be computed at observation time, not derived from stored token
-// totals at read time: a model change mid-window would otherwise mis-price
-// earlier calls. Cache-read and cache-write components arrive as separate
-// fields on CostBreakdown so the Snapshot shape can preserve the split.
-func (a *Accumulator) RecordCost(serverName string, replicaID int, cost CostBreakdown) {
-	a.RecordCostWithClient(serverName, replicaID, "", cost)
-}
-
-// RecordCostWithClient is the client-aware variant of RecordCost. The cost
-// is added to the per-client cost aggregates and per-client cost ring
-// buffer in addition to the session, per-server, and per-replica
-// aggregates. An empty clientID skips the per-client update.
-func (a *Accumulator) RecordCostWithClient(serverName string, replicaID int, clientID string, cost CostBreakdown) {
-	if cost.IsZero() {
-		return
-	}
-	if !cost.IsValid() {
-		return
-	}
-	inputMicro := usdToMicro(cost.Input)
-	outputMicro := usdToMicro(cost.Output)
-	cacheReadMicro := usdToMicro(cost.CacheRead)
-	cacheWriteMicro := usdToMicro(cost.CacheWrite)
-	totalMicro := inputMicro + outputMicro + cacheReadMicro + cacheWriteMicro
-
-	a.sessionInputCostMicroUSD.Add(inputMicro)
-	a.sessionOutputCostMicroUSD.Add(outputMicro)
-	a.sessionCacheReadCostMicroUSD.Add(cacheReadMicro)
-	a.sessionCacheWriteCostMicroUSD.Add(cacheWriteMicro)
-
-	sc := a.getOrCreateServerCounters(serverName)
-	sc.inputCostMicroUSD.Add(inputMicro)
-	sc.outputCostMicroUSD.Add(outputMicro)
-	sc.cacheReadCostMicroUSD.Add(cacheReadMicro)
-	sc.cacheWriteCostMicroUSD.Add(cacheWriteMicro)
-
-	if replicaID >= 0 {
-		rc := a.getOrCreateReplicaCounters(serverName, replicaID)
-		rc.inputCostMicroUSD.Add(inputMicro)
-		rc.outputCostMicroUSD.Add(outputMicro)
-		rc.cacheReadCostMicroUSD.Add(cacheReadMicro)
-		rc.cacheWriteCostMicroUSD.Add(cacheWriteMicro)
-	}
-
-	if clientID != "" {
-		cc := a.getOrCreateClientCounters(clientID)
-		cc.inputCostMicroUSD.Add(inputMicro)
-		cc.outputCostMicroUSD.Add(outputMicro)
-		cc.cacheReadCostMicroUSD.Add(cacheReadMicro)
-		cc.cacheWriteCostMicroUSD.Add(cacheWriteMicro)
-	}
-
-	now := bucketKey(time.Now())
-	a.addCostToBucket(now, totalMicro)
-	a.addCostToServerBucket(serverName, now, totalMicro)
-	if clientID != "" {
-		a.addCostToClientBucket(clientID, now, totalMicro)
-	}
-}
-
-// RecordCostWithModel is RecordCostWithClient plus model attribution: the
-// resolved model ID that priced this call is recorded into the per-server
-// (and, when clientID is non-empty, per-client) model histograms alongside
-// the plain cost counters. inputTokens/outputTokens are the call's token
-// counts — the same values the observer records via RecordReplicaWithClient —
-// so each histogram bucket carries the token volume priced under its model.
-//
-// An empty model updates the plain cost counters only (matching the
-// pre-histogram behavior); in practice the observer never records cost
-// without a resolved model, so every recorded dollar lands in a histogram.
-func (a *Accumulator) RecordCostWithModel(serverName string, replicaID int, clientID, model string, inputTokens, outputTokens int, cost CostBreakdown) {
-	if cost.IsZero() || !cost.IsValid() {
-		return
-	}
-	a.RecordCostWithClient(serverName, replicaID, clientID, cost)
-	if model == "" {
-		return
-	}
-
-	totalMicro := usdToMicro(cost.Input) + usdToMicro(cost.Output) +
-		usdToMicro(cost.CacheRead) + usdToMicro(cost.CacheWrite)
-
-	mc := getOrCreateModelCounters(&a.serverModelMu, a.serverModels, serverName, model)
-	mc.costMicroUSD.Add(totalMicro)
-	mc.inputTokens.Add(int64(inputTokens))
-	mc.outputTokens.Add(int64(outputTokens))
-
-	if clientID != "" {
-		cc := getOrCreateModelCounters(&a.clientModelMu, a.clientModels, clientID, model)
-		cc.costMicroUSD.Add(totalMicro)
-		cc.inputTokens.Add(int64(inputTokens))
-		cc.outputTokens.Add(int64(outputTokens))
-	}
-}
-
-// getOrCreateModelCounters returns the (entity, model) histogram bucket from
-// the given map, creating the nested maps on first use. The same
-// double-checked-locking pattern as the per-server/per-client counters.
-func getOrCreateModelCounters(mu *sync.RWMutex, histograms map[string]map[string]*modelCounters, entity, model string) *modelCounters {
-	mu.RLock()
-	if m, ok := histograms[entity]; ok {
-		if mc, ok := m[model]; ok {
-			mu.RUnlock()
-			return mc
-		}
-	}
-	mu.RUnlock()
-
-	mu.Lock()
-	defer mu.Unlock()
-	m, ok := histograms[entity]
-	if !ok {
-		m = make(map[string]*modelCounters)
-		histograms[entity] = m
-	}
-	mc, ok := m[model]
-	if !ok {
-		mc = &modelCounters{}
-		m[model] = mc
-	}
-	return mc
-}
-
-// getOrCreateServerCounters returns the per-server counter bucket, creating
-// it on first use. Safe for concurrent access. Used by RecordCost; the
-// token RecordReplica path inlines the same double-checked-locking pattern.
-func (a *Accumulator) getOrCreateServerCounters(serverName string) *serverCounters {
-	a.serverMu.RLock()
-	sc, ok := a.servers[serverName]
-	a.serverMu.RUnlock()
-	if ok {
-		return sc
-	}
-
-	a.serverMu.Lock()
-	defer a.serverMu.Unlock()
-	sc, ok = a.servers[serverName]
-	if !ok {
-		sc = &serverCounters{}
-		a.servers[serverName] = sc
-	}
-	return sc
-}
-
 // addToBucket adds tokens to the aggregate ring buffer for the given minute.
 func (a *Accumulator) addToBucket(ts time.Time, input, output int64) {
 	a.bufMu.Lock()
@@ -981,35 +593,6 @@ func (a *Accumulator) addToBucket(ts time.Time, input, output int64) {
 		inputTokens:  input,
 		outputTokens: output,
 	}
-	a.position++
-	if a.position >= a.maxSize {
-		a.position = 0
-		a.wrapped = true
-	}
-}
-
-// addCostToBucket adds a USD cost (in micro-USD) to the aggregate ring
-// buffer for the given minute. Mirrors addToBucket but updates the bucket's
-// cost field. The bucket is created if no live slot for ts exists, even
-// when token counts have not yet been recorded for that minute — cost can
-// arrive on its own (e.g. a unit test pricing a fixture).
-func (a *Accumulator) addCostToBucket(ts time.Time, costMicro int64) {
-	a.bufMu.Lock()
-	defer a.bufMu.Unlock()
-
-	idx := a.position
-	if idx > 0 || a.wrapped {
-		lastIdx := idx - 1
-		if lastIdx < 0 {
-			lastIdx = a.maxSize - 1
-		}
-		if a.buckets[lastIdx].timestamp.Equal(ts) {
-			a.buckets[lastIdx].costMicroUSD += costMicro
-			return
-		}
-	}
-
-	a.buckets[idx] = bucket{timestamp: ts, costMicroUSD: costMicro}
 	a.position++
 	if a.position >= a.maxSize {
 		a.position = 0
@@ -1061,95 +644,6 @@ func (a *Accumulator) addToServerBucket(serverName string, ts time.Time, input, 
 	if sb.position >= sb.maxSize {
 		sb.position = 0
 		sb.wrapped = true
-	}
-}
-
-// addCostToServerBucket adds a USD cost (in micro-USD) to a per-server
-// ring buffer, mirroring addToServerBucket. Creates the buffer if it does
-// not exist yet so cost-only servers (rare in production but common in
-// tests) still appear in time-series queries.
-func (a *Accumulator) addCostToServerBucket(serverName string, ts time.Time, costMicro int64) {
-	a.serverBufMu.RLock()
-	sb, ok := a.serverBufs[serverName]
-	a.serverBufMu.RUnlock()
-
-	if !ok {
-		a.serverBufMu.Lock()
-		sb, ok = a.serverBufs[serverName]
-		if !ok {
-			sb = &serverBuffer{
-				buckets: make([]bucket, a.maxSize),
-				maxSize: a.maxSize,
-			}
-			a.serverBufs[serverName] = sb
-		}
-		a.serverBufMu.Unlock()
-	}
-
-	a.serverBufMu.Lock()
-	defer a.serverBufMu.Unlock()
-
-	idx := sb.position
-	if idx > 0 || sb.wrapped {
-		lastIdx := idx - 1
-		if lastIdx < 0 {
-			lastIdx = sb.maxSize - 1
-		}
-		if sb.buckets[lastIdx].timestamp.Equal(ts) {
-			sb.buckets[lastIdx].costMicroUSD += costMicro
-			return
-		}
-	}
-
-	sb.buckets[idx] = bucket{timestamp: ts, costMicroUSD: costMicro}
-	sb.position++
-	if sb.position >= sb.maxSize {
-		sb.position = 0
-		sb.wrapped = true
-	}
-}
-
-// addCostToClientBucket adds a USD cost (in micro-USD) to a per-client ring
-// buffer, mirroring addCostToServerBucket. Used by RecordCostWithClient to
-// power the per_client grouping on /api/metrics/cost.
-func (a *Accumulator) addCostToClientBucket(clientID string, ts time.Time, costMicro int64) {
-	a.clientBufMu.RLock()
-	cb, ok := a.clientBufs[clientID]
-	a.clientBufMu.RUnlock()
-
-	if !ok {
-		a.clientBufMu.Lock()
-		cb, ok = a.clientBufs[clientID]
-		if !ok {
-			cb = &serverBuffer{
-				buckets: make([]bucket, a.maxSize),
-				maxSize: a.maxSize,
-			}
-			a.clientBufs[clientID] = cb
-		}
-		a.clientBufMu.Unlock()
-	}
-
-	a.clientBufMu.Lock()
-	defer a.clientBufMu.Unlock()
-
-	idx := cb.position
-	if idx > 0 || cb.wrapped {
-		lastIdx := idx - 1
-		if lastIdx < 0 {
-			lastIdx = cb.maxSize - 1
-		}
-		if cb.buckets[lastIdx].timestamp.Equal(ts) {
-			cb.buckets[lastIdx].costMicroUSD += costMicro
-			return
-		}
-	}
-
-	cb.buckets[idx] = bucket{timestamp: ts, costMicroUSD: costMicro}
-	cb.position++
-	if cb.position >= cb.maxSize {
-		cb.position = 0
-		cb.wrapped = true
 	}
 }
 
@@ -1232,304 +726,6 @@ func (a *Accumulator) Snapshot() TokenUsage {
 			SavingsPercent:  savingsPct,
 		},
 	}
-}
-
-// CostMicroSnapshot returns per-server cumulative cost in the int64
-// micro-USD shape used by the persistence layer. Skipping the float USD
-// round-trip avoids any precision loss between the in-memory atomics and
-// the on-disk schema. Used by telemetry.MetricsFlusher.flushOnce to
-// compute a cost diff against prevCost in the same units that get written
-// to metrics.jsonl, and consumed symmetrically by SeedFromFile via
-// RestoreCost. Session totals are not returned — they are derivable as
-// the sum across servers, which RestoreCost re-derives on rehydrate.
-func (a *Accumulator) CostMicroSnapshot() map[string]CostMicroUSDCounts {
-	a.serverMu.RLock()
-	defer a.serverMu.RUnlock()
-	out := make(map[string]CostMicroUSDCounts, len(a.servers))
-	for name, sc := range a.servers {
-		out[name] = CostMicroUSDCounts{
-			InputMicroUSD:      sc.inputCostMicroUSD.Load(),
-			OutputMicroUSD:     sc.outputCostMicroUSD.Load(),
-			CacheReadMicroUSD:  sc.cacheReadCostMicroUSD.Load(),
-			CacheWriteMicroUSD: sc.cacheWriteCostMicroUSD.Load(),
-		}
-	}
-	return out
-}
-
-// ServerModelMicroSnapshot returns the per-server model histograms in the
-// int64 micro-USD shape the persistence layer round-trips. Keyed
-// server -> model -> counts, mirroring CostMicroSnapshot's role for plain
-// per-server cost. Only per-server histograms persist; per-client cost (and
-// thus per-client model histograms) have no on-disk equivalent, matching the
-// existing cost-persistence scope.
-func (a *Accumulator) ServerModelMicroSnapshot() map[string]map[string]ModelMicroCounts {
-	a.serverModelMu.RLock()
-	defer a.serverModelMu.RUnlock()
-	if len(a.serverModels) == 0 {
-		return nil
-	}
-	out := make(map[string]map[string]ModelMicroCounts, len(a.serverModels))
-	for server, models := range a.serverModels {
-		inner := make(map[string]ModelMicroCounts, len(models))
-		for model, mc := range models {
-			inner[model] = ModelMicroCounts{
-				CostMicroUSD: mc.costMicroUSD.Load(),
-				InputTokens:  mc.inputTokens.Load(),
-				OutputTokens: mc.outputTokens.Load(),
-			}
-		}
-		out[server] = inner
-	}
-	return out
-}
-
-// RestoreServerModels overwrites the per-server model histograms from a
-// persisted snapshot, the model analogue of RestoreCost. Used on daemon
-// startup so a restored server's effective-model provenance matches what it
-// was before restart (otherwise replayed cost would render with empty
-// provenance). Servers absent from the map keep their current histogram.
-func (a *Accumulator) RestoreServerModels(perServer map[string]map[string]ModelMicroCounts) {
-	if len(perServer) == 0 {
-		return
-	}
-	a.serverModelMu.Lock()
-	defer a.serverModelMu.Unlock()
-	for server, models := range perServer {
-		inner, ok := a.serverModels[server]
-		if !ok {
-			inner = make(map[string]*modelCounters, len(models))
-			a.serverModels[server] = inner
-		}
-		for model, counts := range models {
-			mc, ok := inner[model]
-			if !ok {
-				mc = &modelCounters{}
-				inner[model] = mc
-			}
-			mc.costMicroUSD.Store(counts.CostMicroUSD)
-			mc.inputTokens.Store(counts.InputTokens)
-			mc.outputTokens.Store(counts.OutputTokens)
-		}
-	}
-}
-
-// CostSnapshot returns the current cost usage summary in USD. The shape
-// mirrors Snapshot()'s TokenUsage so API responses can carry both side by
-// side. Cache fields are non-zero only when RecordCost recorded cache
-// usage; otherwise they are omitted from JSON via omitempty.
-func (a *Accumulator) CostSnapshot() CostUsage {
-	sessionInput := microToUSD(a.sessionInputCostMicroUSD.Load())
-	sessionOutput := microToUSD(a.sessionOutputCostMicroUSD.Load())
-	sessionCacheRead := microToUSD(a.sessionCacheReadCostMicroUSD.Load())
-	sessionCacheWrite := microToUSD(a.sessionCacheWriteCostMicroUSD.Load())
-
-	a.serverMu.RLock()
-	perServer := make(map[string]CostCounts, len(a.servers))
-	for name, sc := range a.servers {
-		perServer[name] = readCostCounts(
-			sc.inputCostMicroUSD.Load(),
-			sc.outputCostMicroUSD.Load(),
-			sc.cacheReadCostMicroUSD.Load(),
-			sc.cacheWriteCostMicroUSD.Load(),
-		)
-	}
-	a.serverMu.RUnlock()
-
-	a.replicaMu.RLock()
-	var perReplica map[string]map[int]CostCounts
-	if len(a.replicas) > 0 {
-		perReplica = make(map[string]map[int]CostCounts, len(a.replicas))
-		for name, m := range a.replicas {
-			inner := make(map[int]CostCounts, len(m))
-			for id, rc := range m {
-				inner[id] = readCostCounts(
-					rc.inputCostMicroUSD.Load(),
-					rc.outputCostMicroUSD.Load(),
-					rc.cacheReadCostMicroUSD.Load(),
-					rc.cacheWriteCostMicroUSD.Load(),
-				)
-			}
-			perReplica[name] = inner
-		}
-	}
-	a.replicaMu.RUnlock()
-
-	a.clientMu.RLock()
-	var perClient map[string]CostCounts
-	if len(a.clients) > 0 {
-		perClient = make(map[string]CostCounts, len(a.clients))
-		for name, cc := range a.clients {
-			perClient[name] = readCostCounts(
-				cc.inputCostMicroUSD.Load(),
-				cc.outputCostMicroUSD.Load(),
-				cc.cacheReadCostMicroUSD.Load(),
-				cc.cacheWriteCostMicroUSD.Load(),
-			)
-		}
-	}
-	a.clientMu.RUnlock()
-
-	return CostUsage{
-		Session: CostCounts{
-			InputUSD:      sessionInput,
-			OutputUSD:     sessionOutput,
-			CacheReadUSD:  sessionCacheRead,
-			CacheWriteUSD: sessionCacheWrite,
-			TotalUSD:      sessionInput + sessionOutput + sessionCacheRead + sessionCacheWrite,
-		},
-		PerServer:       perServer,
-		PerReplica:      perReplica,
-		PerClient:       perClient,
-		PerServerModels: readModelHistograms(&a.serverModelMu, a.serverModels),
-		PerClientModels: readModelHistograms(&a.clientModelMu, a.clientModels),
-	}
-}
-
-// readModelHistograms snapshots a model histogram map into the public
-// ModelCost shape (USD floats). Returns nil when empty so CostSnapshot's
-// omitempty keeps the pre-histogram JSON shape.
-func readModelHistograms(mu *sync.RWMutex, histograms map[string]map[string]*modelCounters) map[string]map[string]ModelCost {
-	mu.RLock()
-	defer mu.RUnlock()
-	if len(histograms) == 0 {
-		return nil
-	}
-	out := make(map[string]map[string]ModelCost, len(histograms))
-	for entity, models := range histograms {
-		inner := make(map[string]ModelCost, len(models))
-		for model, mc := range models {
-			inner[model] = ModelCost{
-				CostUSD:      microToUSD(mc.costMicroUSD.Load()),
-				InputTokens:  mc.inputTokens.Load(),
-				OutputTokens: mc.outputTokens.Load(),
-			}
-		}
-		out[entity] = inner
-	}
-	return out
-}
-
-// readCostCounts assembles a CostCounts from raw micro-USD atomic loads.
-func readCostCounts(inputMicro, outputMicro, cacheReadMicro, cacheWriteMicro int64) CostCounts {
-	in := microToUSD(inputMicro)
-	out := microToUSD(outputMicro)
-	cr := microToUSD(cacheReadMicro)
-	cw := microToUSD(cacheWriteMicro)
-	return CostCounts{
-		InputUSD:      in,
-		OutputUSD:     out,
-		CacheReadUSD:  cr,
-		CacheWriteUSD: cw,
-		TotalUSD:      in + out + cr + cw,
-	}
-}
-
-// QueryCost returns historical cost-over-time data for the given duration.
-// For ranges > 6h, data points are downsampled to hourly buckets, matching
-// the Query (token) behavior so charts can share the same time-range
-// selector. The PerClient map on the response is left nil; call
-// QueryCostByClient when caller asks for per-client grouping.
-func (a *Accumulator) QueryCost(duration time.Duration) CostTimeSeriesResponse {
-	return a.queryCost(duration, false)
-}
-
-// QueryCostByClient is QueryCost with per-client grouping enabled. The
-// returned response has its PerClient field populated alongside PerServer
-// so consumers can render either dimension off a single response.
-func (a *Accumulator) QueryCostByClient(duration time.Duration) CostTimeSeriesResponse {
-	return a.queryCost(duration, true)
-}
-
-func (a *Accumulator) queryCost(duration time.Duration, includeClients bool) CostTimeSeriesResponse {
-	cutoff := time.Now().Add(-duration)
-	downsample := duration > 6*time.Hour
-
-	rangeName := formatRange(duration)
-	interval := "1m"
-	if downsample {
-		interval = "1h"
-	}
-
-	points := a.queryCostBuffer(cutoff, downsample)
-
-	a.serverBufMu.RLock()
-	perServer := make(map[string][]CostDataPoint, len(a.serverBufs))
-	for name, sb := range a.serverBufs {
-		perServer[name] = queryServerCostBuffer(sb, cutoff, downsample)
-	}
-	a.serverBufMu.RUnlock()
-
-	resp := CostTimeSeriesResponse{
-		Range:     rangeName,
-		Interval:  interval,
-		Points:    points,
-		PerServer: perServer,
-	}
-
-	if includeClients {
-		a.clientBufMu.RLock()
-		perClient := make(map[string][]CostDataPoint, len(a.clientBufs))
-		for name, cb := range a.clientBufs {
-			perClient[name] = queryServerCostBuffer(cb, cutoff, downsample)
-		}
-		a.clientBufMu.RUnlock()
-		resp.PerClient = perClient
-	}
-	return resp
-}
-
-func (a *Accumulator) queryCostBuffer(cutoff time.Time, downsample bool) []CostDataPoint {
-	a.bufMu.RLock()
-	defer a.bufMu.RUnlock()
-
-	raw := extractBuckets(a.buckets, a.maxSize, a.position, a.wrapped, cutoff)
-	if downsample {
-		return downsampleCostToHour(raw)
-	}
-	return toCostDataPoints(raw)
-}
-
-func queryServerCostBuffer(sb *serverBuffer, cutoff time.Time, downsample bool) []CostDataPoint {
-	raw := extractBuckets(sb.buckets, sb.maxSize, sb.position, sb.wrapped, cutoff)
-	if downsample {
-		return downsampleCostToHour(raw)
-	}
-	return toCostDataPoints(raw)
-}
-
-func toCostDataPoints(buckets []bucket) []CostDataPoint {
-	points := make([]CostDataPoint, len(buckets))
-	for i, b := range buckets {
-		points[i] = CostDataPoint{
-			Timestamp: b.timestamp,
-			USD:       microToUSD(b.costMicroUSD),
-		}
-	}
-	return points
-}
-
-func downsampleCostToHour(buckets []bucket) []CostDataPoint {
-	if len(buckets) == 0 {
-		return nil
-	}
-	hourly := make(map[time.Time]*CostDataPoint)
-	var order []time.Time
-	for _, b := range buckets {
-		hourKey := b.timestamp.Truncate(time.Hour)
-		dp, ok := hourly[hourKey]
-		if !ok {
-			dp = &CostDataPoint{Timestamp: hourKey}
-			hourly[hourKey] = dp
-			order = append(order, hourKey)
-		}
-		dp.USD += microToUSD(b.costMicroUSD)
-	}
-	result := make([]CostDataPoint, len(order))
-	for i, key := range order {
-		result[i] = *hourly[key]
-	}
-	return result
 }
 
 // Query returns historical time-series data for the given duration.
@@ -1689,56 +885,6 @@ func (a *Accumulator) Restore(perServer map[string]TokenCounts) {
 	a.sessionOutput.Store(sessionOut)
 }
 
-// RestoreCost is the cost analogue of Restore: it overwrites per-server
-// cost component atomics with the supplied map and recomputes session
-// cost totals as the sum across all servers (matching the invariant
-// RecordCost maintains). Used on daemon startup by
-// telemetry.MetricsFlusher.SeedFromFile to repopulate cumulative cost
-// counters from a persisted metrics.jsonl file so the Cost KPI card
-// reflects pre-restart spend the moment the UI loads.
-//
-// Per-component splitting (input / output / cache-read / cache-write) is
-// preserved on the cumulative atomics so CostSnapshot.Session can render
-// the breakdown without recomputing — same trade-off live RecordCost
-// makes. The time-series ring buffers are populated separately via
-// ReplaySnapshot, which carries only the rolled-up total per bucket.
-//
-// Servers absent from the map retain their current cost state. Replicas,
-// format-savings, and per-client cost have no on-disk equivalent in the
-// snapshot format and are not restored.
-func (a *Accumulator) RestoreCost(perServer map[string]CostMicroUSDCounts) {
-	if len(perServer) == 0 {
-		return
-	}
-
-	a.serverMu.Lock()
-	defer a.serverMu.Unlock()
-
-	for name, counts := range perServer {
-		sc, ok := a.servers[name]
-		if !ok {
-			sc = &serverCounters{}
-			a.servers[name] = sc
-		}
-		sc.inputCostMicroUSD.Store(counts.InputMicroUSD)
-		sc.outputCostMicroUSD.Store(counts.OutputMicroUSD)
-		sc.cacheReadCostMicroUSD.Store(counts.CacheReadMicroUSD)
-		sc.cacheWriteCostMicroUSD.Store(counts.CacheWriteMicroUSD)
-	}
-
-	var sessionIn, sessionOut, sessionCR, sessionCW int64
-	for _, sc := range a.servers {
-		sessionIn += sc.inputCostMicroUSD.Load()
-		sessionOut += sc.outputCostMicroUSD.Load()
-		sessionCR += sc.cacheReadCostMicroUSD.Load()
-		sessionCW += sc.cacheWriteCostMicroUSD.Load()
-	}
-	a.sessionInputCostMicroUSD.Store(sessionIn)
-	a.sessionOutputCostMicroUSD.Store(sessionOut)
-	a.sessionCacheReadCostMicroUSD.Store(sessionCR)
-	a.sessionCacheWriteCostMicroUSD.Store(sessionCW)
-}
-
 // ReplaySnapshot adds a historical observation to the time-series ring
 // buffers (aggregate + per-server) without touching cumulative counters.
 // Used by telemetry.MetricsFlusher.SeedFromFile to rehydrate per-minute
@@ -1746,36 +892,20 @@ func (a *Accumulator) RestoreCost(perServer map[string]CostMicroUSDCounts) {
 // activity continuously alongside live data instead of resetting to a single
 // post-restart point.
 //
-// costMicro is the rolled-up total cost for the minute (sum of the four
-// CostBreakdown components) in int64 micro-USD, matching the live
-// RecordCost path which also calls addCostToBucket(now, totalMicro). Pass 0
-// for token-only replays (legacy persistence files predate the cost field).
-// Cost-only replays — non-zero costMicro with zero token counts — are
-// supported so a minute that recorded a priced fixture without token
-// attribution still hydrates its cost bucket on seed.
-//
-// Cumulative counters are restored separately via Restore + RestoreCost.
-// Calling both with the same source data reproduces the on-disk state.
+// Cumulative counters are restored separately via Restore. Calling both
+// with the same source data reproduces the on-disk state.
 //
 // ts is bucketed to the minute via the same key the live Record path uses,
 // so chronological replay produces one bucket per flush minute and live
 // observations after replay continue advancing the same ring naturally.
-func (a *Accumulator) ReplaySnapshot(serverName string, ts time.Time, inputTokens, outputTokens, costMicro int64) {
-	if inputTokens == 0 && outputTokens == 0 && costMicro == 0 {
+func (a *Accumulator) ReplaySnapshot(serverName string, ts time.Time, inputTokens, outputTokens int64) {
+	if inputTokens == 0 && outputTokens == 0 {
 		return
 	}
 	bucket := bucketKey(ts)
-	if inputTokens != 0 || outputTokens != 0 {
-		a.addToBucket(bucket, inputTokens, outputTokens)
-		if serverName != "" {
-			a.addToServerBucket(serverName, bucket, inputTokens, outputTokens)
-		}
-	}
-	if costMicro != 0 {
-		a.addCostToBucket(bucket, costMicro)
-		if serverName != "" {
-			a.addCostToServerBucket(serverName, bucket, costMicro)
-		}
+	a.addToBucket(bucket, inputTokens, outputTokens)
+	if serverName != "" {
+		a.addToServerBucket(serverName, bucket, inputTokens, outputTokens)
 	}
 }
 
@@ -1796,14 +926,6 @@ func (a *Accumulator) Clear() {
 	a.clients = make(map[string]*clientCounters)
 	a.clientMu.Unlock()
 
-	a.serverModelMu.Lock()
-	a.serverModels = make(map[string]map[string]*modelCounters)
-	a.serverModelMu.Unlock()
-
-	a.clientModelMu.Lock()
-	a.clientModels = make(map[string]map[string]*modelCounters)
-	a.clientModelMu.Unlock()
-
 	a.bufMu.Lock()
 	a.buckets = make([]bucket, a.maxSize)
 	a.position = 0
@@ -1813,10 +935,6 @@ func (a *Accumulator) Clear() {
 	a.serverBufMu.Lock()
 	a.serverBufs = make(map[string]*serverBuffer)
 	a.serverBufMu.Unlock()
-
-	a.clientBufMu.Lock()
-	a.clientBufs = make(map[string]*serverBuffer)
-	a.clientBufMu.Unlock()
 
 	a.toolUsageMu.Lock()
 	a.toolUsage = make(map[string]map[string]*toolUsage)
@@ -1828,94 +946,6 @@ func (a *Accumulator) Clear() {
 
 	a.savingsOriginal.Store(0)
 	a.savingsFormatted.Store(0)
-
-	a.sessionInputCostMicroUSD.Store(0)
-	a.sessionOutputCostMicroUSD.Store(0)
-	a.sessionCacheReadCostMicroUSD.Store(0)
-	a.sessionCacheWriteCostMicroUSD.Store(0)
-}
-
-// ClearCost resets cost counters and cost ring-buffer values without
-// touching token counters or format-savings state. Used by the
-// `DELETE /api/metrics/cost` endpoint so operators can wipe cost data
-// without losing token history.
-func (a *Accumulator) ClearCost() {
-	a.sessionInputCostMicroUSD.Store(0)
-	a.sessionOutputCostMicroUSD.Store(0)
-	a.sessionCacheReadCostMicroUSD.Store(0)
-	a.sessionCacheWriteCostMicroUSD.Store(0)
-
-	a.serverMu.RLock()
-	for _, sc := range a.servers {
-		sc.inputCostMicroUSD.Store(0)
-		sc.outputCostMicroUSD.Store(0)
-		sc.cacheReadCostMicroUSD.Store(0)
-		sc.cacheWriteCostMicroUSD.Store(0)
-	}
-	a.serverMu.RUnlock()
-
-	a.replicaMu.RLock()
-	for _, m := range a.replicas {
-		for _, rc := range m {
-			rc.inputCostMicroUSD.Store(0)
-			rc.outputCostMicroUSD.Store(0)
-			rc.cacheReadCostMicroUSD.Store(0)
-			rc.cacheWriteCostMicroUSD.Store(0)
-		}
-	}
-	a.replicaMu.RUnlock()
-
-	a.clientMu.RLock()
-	for _, cc := range a.clients {
-		cc.inputCostMicroUSD.Store(0)
-		cc.outputCostMicroUSD.Store(0)
-		cc.cacheReadCostMicroUSD.Store(0)
-		cc.cacheWriteCostMicroUSD.Store(0)
-	}
-	a.clientMu.RUnlock()
-
-	// Per-tool cost is cost data; per-tool calls and tokens are usage data
-	// and survive a cost wipe (mirroring how server token counters persist).
-	a.toolUsageMu.RLock()
-	for _, tools := range a.toolUsage {
-		for _, tu := range tools {
-			tu.costMicroUSD.Store(0)
-		}
-	}
-	a.toolUsageMu.RUnlock()
-
-	// Model histograms are pure cost data — drop them entirely (rather than
-	// zeroing) so a cleared entity reports provenance `none`, not a `mixed`
-	// histogram full of zero-cost models.
-	a.serverModelMu.Lock()
-	a.serverModels = make(map[string]map[string]*modelCounters)
-	a.serverModelMu.Unlock()
-
-	a.clientModelMu.Lock()
-	a.clientModels = make(map[string]map[string]*modelCounters)
-	a.clientModelMu.Unlock()
-
-	a.bufMu.Lock()
-	for i := range a.buckets {
-		a.buckets[i].costMicroUSD = 0
-	}
-	a.bufMu.Unlock()
-
-	a.serverBufMu.Lock()
-	for _, sb := range a.serverBufs {
-		for i := range sb.buckets {
-			sb.buckets[i].costMicroUSD = 0
-		}
-	}
-	a.serverBufMu.Unlock()
-
-	a.clientBufMu.Lock()
-	for _, cb := range a.clientBufs {
-		for i := range cb.buckets {
-			cb.buckets[i].costMicroUSD = 0
-		}
-	}
-	a.clientBufMu.Unlock()
 }
 
 // formatRange returns a human-readable range string for a duration.

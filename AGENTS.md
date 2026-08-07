@@ -21,7 +21,6 @@ Task (https://taskfile.dev) is the entry point for everything; tasks live in `Ta
 | `task test:frontend` | `cd web && npm test` (Vitest). |
 | `task lint` | `golangci-lint run` plus `npm run lint` in `web/` (both CI-gated). |
 | `task generate` | Regenerates `go.uber.org/mock` mocks under `pkg/mcp/` and `pkg/runtime/`. Required after touching the interfaces they're generated from. |
-| `task pricing:update` | Refreshes the embedded LiteLLM pricing snapshot at `pkg/pricing/data/model_prices.json` (weekly cadence). |
 | `task mock:servers` | Builds and runs the example mock MCP servers in `examples/_mock-servers/` (HTTP on PORT, SSE on PORT+1; `PORT=9001` default). Pair with `task mock:clean`. |
 
 Always test local changes with `task build` followed by `./gridctl …`. The `gridctl` binary on `$PATH` is typically a brew-installed release and will not reflect your changes.
@@ -74,19 +73,19 @@ pkg/contexts/       Global agent-context projection (`gridctl ctx`): one canonic
 pkg/wiring/         Key-level ownership of gateway entries merged into client MCP configs (`gridctl project`, link/unlink).
 pkg/pack/           gridctl-pack.yaml manifest schema; orchestration lives in cmd/gridctl/pack.go (`gridctl pack`).
 pkg/skillpins/      TOFU pins over skill documents (per-file digests, findings); the `gridctl skill pins` store.
-pkg/limits/         Enforces the `limits:` block: dollar budget caps and rate limits, with a windowed spend ledger.
+pkg/limits/         Enforces the `limits:` block: token-bucket rate limits on the tool-call dispatch path.
 pkg/provisioner/    LLM-client config writers (claude, claudecode, cursor, windsurf, gemini, antigravity, opencode, grok, goose,
                     cline, anythingllm, roo, zed, continue, vscode). JSON and TOML helpers in json.go / toml.go.
                     Backed by `gridctl link` / `gridctl unlink`.
 pkg/vault/          Encrypted variable store (XChaCha20-Poly1305 + Argon2id). The `gridctl var` and (deprecated) `gridctl vault` CLIs.
 pkg/pins/           TOFU schema pinning for tool definitions; drift surfaces in pkg/pins + `gridctl pins`.
-pkg/optimize/       Cost analysis: feeds `gridctl optimize` and the UI's findings panel using the embedded LiteLLM prices.
-pkg/telemetry/      Tool-call accounting (counts, latency, cost). Buffered in-memory; surfaced via /api/telemetry.
+pkg/optimize/       Usage analysis: feeds `gridctl optimize` and the UI's findings panel with token-denominated findings.
+pkg/telemetry/      Tool-call accounting (counts, latency, tokens). Buffered in-memory; surfaced via /api/telemetry.
 pkg/tracing/        OTLP exporter + in-memory trace buffer for `gridctl traces` and the UI traces panel.
 pkg/reload/         Stack hot-reload (file watcher + diff-and-apply path).
 pkg/controller/     Application composition root: builds the gateway, mounts the API server, embedded UI, and MCP transports
                     (gateway_builder.go), and owns deploy/daemonize orchestration for `gridctl apply` and `gridctl serve`.
-pkg/metrics/, pkg/token/, pkg/format/, pkg/pricing/, pkg/output/, pkg/logging/, pkg/jsonrpc/, pkg/state/, pkg/git/, pkg/dockerclient/   Supporting libs.
+pkg/metrics/, pkg/token/, pkg/format/, pkg/output/, pkg/logging/, pkg/jsonrpc/, pkg/state/, pkg/git/, pkg/dockerclient/   Supporting libs.
 
 web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). Zustand stores in src/stores/, route map in
                     src/routes.tsx, feature components grouped under src/components/<workspace>/. Nine workspaces:
@@ -94,12 +93,12 @@ web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). 
                     files are popout windows that mirror specific panels.
 
 tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway lifecycle, hot reload, autoscaler,
-                    replicas, transports (incl. Podman), code-mode cost, private git auth, optimize heuristics.
+                    replicas, transports (incl. Podman), private git auth, optimize heuristics.
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
                     portable-pack). examples/_mock-servers/ is the source for `task mock:servers`.
 docs/               User-facing documentation (cli-reference, config-schema, api-reference, skills, packs, tools-workspace,
-                    global-context, scaling, cost-observability, installation, project-status, troubleshooting).
+                    global-context, scaling, cost-observability (now usage observability), installation, project-status, troubleshooting).
 ```
 
 End-to-end request flow for an upstream MCP tool call: client → HTTP listener built by `pkg/controller` (gateway_builder.go) → `pkg/mcp` transport (SSE/streamable/stdio) → `mcp.Gateway` router → per-server `mcp.Client` (process/SSE/HTTP/OpenAPI) → response, with telemetry, tracing, schema pinning, and (optional) output-format conversion attached on the way back.

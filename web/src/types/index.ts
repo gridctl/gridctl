@@ -204,6 +204,11 @@ export interface OptimizeFinding {
   summary: string;
   server?: string;
   tool?: string;
+  // Projected weekly token savings from applying the remediation. Schema
+  // heuristics assume ~500 prompts/week; format_savings_shortfall
+  // normalizes measured savings over the observation window. 0 or absent
+  // means no provable impact.
+  impact_tokens_per_week?: number;
   remediation: string;
   detected_at: string;
 }

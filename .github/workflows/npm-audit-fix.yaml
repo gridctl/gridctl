@@ -11,7 +11,7 @@ name: NPM Audit Fix
 
 on:
   schedule:
-    # Mondays at 05:30 UTC, just ahead of the pricing refresh so both
+    # Mondays at 05:30 UTC so weekly maintenance
     # auto-PRs are waiting at the start of the week.
     - cron: "30 5 * * 1"
   workflow_dispatch:
@@ -77,7 +77,7 @@ jobs:
 
       # peter-evans/create-pull-request is a no-op when the working tree is
       # clean (nothing fixable), and reuses the same branch/PR on re-runs.
-      # Same GITHUB_TOKEN caveats as update-pricing.yaml: downstream
+      # GITHUB_TOKEN caveat: downstream
       # workflows do not run on the auto-PR without a PAT/App token, and
       # "Allow GitHub Actions to create and approve pull requests" must be
       # enabled in repo settings.

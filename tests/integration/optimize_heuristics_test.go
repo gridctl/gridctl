@@ -10,9 +10,8 @@ import (
 	"github.com/gridctl/gridctl/pkg/optimize"
 )
 
-// TestOptimize_AllThreeHeuristicsFireTogether exercises the v1.5
-// heuristics (schema_overhead, format_savings_shortfall,
-// expensive_model_on_cheap_task) end-to-end through the
+// TestOptimize_AllHeuristicsFireTogether exercises the heuristics
+// (schema_overhead, format_savings_shortfall) end-to-end through the
 // metrics.Accumulator: per-server tokens, per-tool counts, and
 // session format-savings totals all flow into the optimize.Stats
 // shape, then optimize.Analyze returns the expected findings.
@@ -23,7 +22,7 @@ import (
 // metrics.Accumulator's exported snapshots carry the data the
 // heuristics need (tool counts, format savings) without further
 // transformation, which is the contract the API handler relies on.
-func TestOptimize_AllThreeHeuristicsFireTogether(t *testing.T) {
+func TestOptimize_AllHeuristicsFireTogether(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -42,15 +41,6 @@ func TestOptimize_AllThreeHeuristicsFireTogether(t *testing.T) {
 	acc.RecordReplica("toon-server", -1, 500, 7_000)
 	acc.RecordFormatSavings("toon-server", 10_000, 7_000)
 
-	// expensive_model_on_cheap_task candidate: short calls but
-	// effective rate inferred from cost÷tokens lands above the
-	// Opus-tier threshold.
-	for i := 0; i < 10; i++ {
-		acc.RecordReplica("lookup", -1, 5, 5)
-		acc.RecordCost("lookup", -1, metrics.CostBreakdown{Input: 0.00005, Output: 0.00005})
-		acc.RecordToolCall("lookup", "get_user")
-	}
-
 	now := time.Now()
 	stats := optimize.Stats{
 		StackName:        "integration",
@@ -60,21 +50,18 @@ func TestOptimize_AllThreeHeuristicsFireTogether(t *testing.T) {
 			{Name: "fat-schema", Tools: []string{"rarely_used", "another", "third"}, Initialized: true},
 			{Name: "raw-json", Tools: []string{"list_things"}, Initialized: true},
 			{Name: "toon-server", Tools: []string{"emit"}, Initialized: true, OutputFormat: "toon"},
-			{Name: "lookup", Tools: []string{"get_user"}, Initialized: true},
 		},
-		Usage:           usageFromAccumulator(acc),
-		ToolUsage:       toolUsageFromAccumulator(acc),
-		PinStats:        map[string]optimize.PinStat{"fat-schema": {SchemaTokens: 8_000}},
-		FormatBaseline:  formatBaselineFromAccumulator(acc),
-		ServerCallCount: serverCallCountFromAccumulator(acc),
+		Usage:          usageFromAccumulator(acc),
+		ToolUsage:      toolUsageFromAccumulator(acc),
+		PinStats:       map[string]optimize.PinStat{"fat-schema": {SchemaTokens: 8_000}},
+		FormatBaseline: formatBaselineFromAccumulator(acc),
 	}
 
 	rep := optimize.Analyze(stats, optimize.Options{})
 
 	want := map[string]bool{
-		"schema_overhead":              false,
-		"format_savings_shortfall":     false,
-		"expensive_model_on_cheap_task": false,
+		"schema_overhead":          false,
+		"format_savings_shortfall": false,
 	}
 	for _, f := range rep.Findings {
 		if _, ok := want[f.Heuristic]; ok {
@@ -90,14 +77,12 @@ func TestOptimize_AllThreeHeuristicsFireTogether(t *testing.T) {
 
 func usageFromAccumulator(acc *metrics.Accumulator) map[string]optimize.ServerUsage {
 	tokens := acc.Snapshot()
-	cost := acc.CostSnapshot()
 	out := make(map[string]optimize.ServerUsage, len(tokens.PerServer))
 	for name, counts := range tokens.PerServer {
 		out[name] = optimize.ServerUsage{
 			InputTokens:  counts.InputTokens,
 			OutputTokens: counts.OutputTokens,
 			TotalTokens:  counts.TotalTokens,
-			TotalCostUSD: cost.PerServer[name].TotalUSD,
 		}
 	}
 	return out
@@ -115,22 +100,6 @@ func toolUsageFromAccumulator(acc *metrics.Accumulator) map[string]map[string]op
 			inner[name] = optimize.ToolStat{Calls: stat.Calls, LastCalledAt: stat.LastCalledAt}
 		}
 		out[server] = inner
-	}
-	return out
-}
-
-func serverCallCountFromAccumulator(acc *metrics.Accumulator) map[string]int64 {
-	tu := acc.ToolUsageSnapshot()
-	if len(tu) == 0 {
-		return nil
-	}
-	out := make(map[string]int64, len(tu))
-	for server, tools := range tu {
-		var total int64
-		for _, stat := range tools {
-			total += stat.Calls
-		}
-		out[server] = total
 	}
 	return out
 }

@@ -17,17 +17,9 @@ type ConfigDiff struct {
 	// It needs an in-memory policy refresh (via the reload's onConfigApplied hook)
 	// but no container or network work, so it must still mark the diff non-empty.
 	ClientsChanged bool
-	// ModelAttributionChanged indicates the server and/or client model
-	// mappings used for cost attribution changed (a server's `model:`, the
-	// gateway's `default_model:`, or a `client_models:` entry). Like
-	// ClientsChanged it needs only an in-memory refresh via the
-	// onConfigApplied hook — pricing metadata never warrants a container
-	// restart — but it must still mark the diff non-empty.
-	ModelAttributionChanged bool
-	// LimitsChanged indicates the budget/rate-limit (`limits:`) block
+	// LimitsChanged indicates the rate-limit (`limits:`) block
 	// changed. Like ClientsChanged it needs only an in-memory policy rebuild
-	// via the onConfigApplied hook (current-window spend carries over for
-	// unchanged entries) but must still mark the diff non-empty.
+	// via the onConfigApplied hook (in-memory bucket state rebuilds) but must still mark the diff non-empty.
 	LimitsChanged bool
 	// GroupsChanged indicates the tool-group (`groups:`) block changed.
 	// Like ClientsChanged it needs only an in-memory policy rebuild via the
@@ -86,7 +78,6 @@ func (d *ConfigDiff) IsEmpty() bool {
 		len(d.Resources.Modified) == 0 &&
 		!d.NetworkChanged &&
 		!d.ClientsChanged &&
-		!d.ModelAttributionChanged &&
 		!d.LimitsChanged &&
 		!d.GroupsChanged &&
 		!d.ExperimentalChanged &&
@@ -109,10 +100,7 @@ func ComputeDiff(old, new *config.Stack) *ConfigDiff {
 	// Detect per-client access (`clients:`) changes
 	diff.ClientsChanged = clientsChanged(old, new)
 
-	// Detect cost-attribution (`client_models:` / `model:` / `default_model:`) changes
-	diff.ModelAttributionChanged = modelAttributionChanged(old, new)
-
-	// Detect budget/rate-limit (`limits:`) changes
+	// Detect rate-limit (`limits:`) changes
 	diff.LimitsChanged = limitsChanged(old, new)
 
 	// Detect tool-group (`groups:`) changes
@@ -158,15 +146,6 @@ func limitsChanged(old, new *config.Stack) bool {
 	return !reflect.DeepEqual(old.Limits, new.Limits)
 }
 
-// modelAttributionChanged reports whether the effective cost-attribution
-// mappings — server -> model and client -> model — differ between two
-// stacks. Comparing the resolved maps (rather than raw fields) means a
-// no-op edit — e.g. adding a per-server model: identical to the gateway
-// default_model — does not mark the diff non-empty.
-func modelAttributionChanged(old, new *config.Stack) bool {
-	return !maps.Equal(old.ModelAttribution(), new.ModelAttribution()) ||
-		!maps.Equal(old.ClientModelAttribution(), new.ClientModelAttribution())
-}
 
 // clientsChanged reports whether the per-client access (`clients:`) block
 // differs between two stacks. A change here requires the gateway's in-memory

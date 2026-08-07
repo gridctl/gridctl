@@ -46,7 +46,7 @@ func TestAnalyze_UnusedServer_FiresOnZeroTraffic(t *testing.T) {
 		{Name: "filesystem", Tools: []string{"read_file"}, Initialized: true},
 	}
 	stats.Usage = map[string]ServerUsage{
-		"filesystem": {InputTokens: 1000, OutputTokens: 500, TotalTokens: 1500, TotalCostUSD: 0.01},
+		"filesystem": {InputTokens: 1000, OutputTokens: 500, TotalTokens: 1500},
 	}
 
 	rep := Analyze(stats, Options{})
@@ -67,8 +67,8 @@ func TestAnalyze_UnusedServer_FiresOnZeroTraffic(t *testing.T) {
 	if fired.Severity != SeverityWarn {
 		t.Errorf("Severity = %q, want warn", fired.Severity)
 	}
-	if fired.ImpactUSDPerWeek <= 0 {
-		t.Errorf("ImpactUSDPerWeek = %v, want >0", fired.ImpactUSDPerWeek)
+	if fired.ImpactTokensPerWeek <= 0 {
+		t.Errorf("ImpactTokensPerWeek = %v, want >0", fired.ImpactTokensPerWeek)
 	}
 	if !strings.Contains(fired.Remediation, "github") {
 		t.Errorf("remediation should reference server name; got %q", fired.Remediation)
@@ -81,7 +81,7 @@ func TestAnalyze_UnusedServer_SkipsActiveServer(t *testing.T) {
 		{Name: "github", Tools: []string{"create_issue"}, Initialized: true},
 	}
 	stats.Usage = map[string]ServerUsage{
-		"github": {TotalTokens: 100, TotalCostUSD: 0.001},
+		"github": {TotalTokens: 100},
 	}
 	stats.ToolUsage = map[string]map[string]ToolStat{
 		"github": {
@@ -119,7 +119,7 @@ func TestAnalyze_UnusedTool_FiresWhenToolColdInWindow(t *testing.T) {
 		{Name: "github", Tools: []string{"create_issue", "list_issues"}, Initialized: true},
 	}
 	stats.Usage = map[string]ServerUsage{
-		"github": {TotalTokens: 100, TotalCostUSD: 0.001},
+		"github": {TotalTokens: 100},
 	}
 	stats.ToolUsage = map[string]map[string]ToolStat{
 		"github": {
@@ -146,8 +146,8 @@ func TestAnalyze_UnusedTool_FiresWhenToolColdInWindow(t *testing.T) {
 	if !strings.Contains(hit.Remediation, "list_issues") {
 		t.Errorf("remediation should reference tool name; got %q", hit.Remediation)
 	}
-	if hit.ImpactUSDPerWeek <= 0 {
-		t.Errorf("ImpactUSDPerWeek = %v, want >0 (schema-tax impact)", hit.ImpactUSDPerWeek)
+	if hit.ImpactTokensPerWeek <= 0 {
+		t.Errorf("ImpactTokensPerWeek = %v, want >0 (schema-tax impact)", hit.ImpactTokensPerWeek)
 	}
 }
 
@@ -156,9 +156,8 @@ func TestAnalyze_UnusedTool_ImpactFromMeasuredSchemaTokens(t *testing.T) {
 	stats.Servers = []ServerInfo{
 		{Name: "github", Tools: []string{"create_issue", "list_issues"}, Initialized: true},
 	}
-	// Observed rate = 0.001 / 100 = 1e-5 USD per token.
 	stats.Usage = map[string]ServerUsage{
-		"github": {TotalTokens: 100, TotalCostUSD: 0.001},
+		"github": {TotalTokens: 100},
 	}
 	stats.ToolUsage = map[string]map[string]ToolStat{
 		"github": {
@@ -172,10 +171,10 @@ func TestAnalyze_UnusedTool_ImpactFromMeasuredSchemaTokens(t *testing.T) {
 	rep := Analyze(stats, Options{})
 
 	hit := findToolFinding(t, rep, "unused_tool", "list_issues")
-	// 800 schema tokens × 500 prompts/week × 1e-5 USD/token = $4.00/week.
-	want := 800.0 * estimatedPromptsPerWeek * 1e-5
-	if diff := hit.ImpactUSDPerWeek - want; diff > 1e-9 || diff < -1e-9 {
-		t.Errorf("ImpactUSDPerWeek = %v, want %v", hit.ImpactUSDPerWeek, want)
+	// 800 schema tokens × 500 prompts/week = 400,000 tokens/week.
+	want := int64(800) * estimatedPromptsPerWeek
+	if hit.ImpactTokensPerWeek != want {
+		t.Errorf("ImpactTokensPerWeek = %v, want %v", hit.ImpactTokensPerWeek, want)
 	}
 }
 
@@ -185,7 +184,7 @@ func TestAnalyze_UnusedTool_ImpactFallsBackWithoutSchemaTokens(t *testing.T) {
 		{Name: "github", Tools: []string{"create_issue", "list_issues"}, Initialized: true},
 	}
 	stats.Usage = map[string]ServerUsage{
-		"github": {TotalTokens: 100, TotalCostUSD: 0.001},
+		"github": {TotalTokens: 100},
 	}
 	stats.ToolUsage = map[string]map[string]ToolStat{
 		"github": {
@@ -197,10 +196,10 @@ func TestAnalyze_UnusedTool_ImpactFallsBackWithoutSchemaTokens(t *testing.T) {
 	rep := Analyze(stats, Options{})
 
 	hit := findToolFinding(t, rep, "unused_tool", "list_issues")
-	// estimatedToolSchemaTokens × 500 prompts/week × observed 1e-5 USD/token.
-	want := float64(estimatedToolSchemaTokens) * estimatedPromptsPerWeek * 1e-5
-	if diff := hit.ImpactUSDPerWeek - want; diff > 1e-9 || diff < -1e-9 {
-		t.Errorf("ImpactUSDPerWeek = %v, want %v (conservative fallback)", hit.ImpactUSDPerWeek, want)
+	// estimatedToolSchemaTokens × 500 prompts/week.
+	want := int64(estimatedToolSchemaTokens) * estimatedPromptsPerWeek
+	if hit.ImpactTokensPerWeek != want {
+		t.Errorf("ImpactTokensPerWeek = %v, want %v (conservative fallback)", hit.ImpactTokensPerWeek, want)
 	}
 }
 
@@ -210,7 +209,7 @@ func TestAnalyze_UnusedTool_ImpactCappedAtServerEstimate(t *testing.T) {
 		{Name: "github", Tools: []string{"create_issue", "list_issues"}, Initialized: true},
 	}
 	stats.Usage = map[string]ServerUsage{
-		"github": {TotalTokens: 100, TotalCostUSD: 0.001},
+		"github": {TotalTokens: 100},
 	}
 	stats.ToolUsage = map[string]map[string]ToolStat{
 		"github": {
@@ -225,9 +224,9 @@ func TestAnalyze_UnusedTool_ImpactCappedAtServerEstimate(t *testing.T) {
 	rep := Analyze(stats, Options{})
 
 	hit := findToolFinding(t, rep, "unused_tool", "list_issues")
-	want := float64(estimatedSchemaOverheadTokens) * estimatedPromptsPerWeek * 1e-5
-	if diff := hit.ImpactUSDPerWeek - want; diff > 1e-9 || diff < -1e-9 {
-		t.Errorf("ImpactUSDPerWeek = %v, want %v (capped)", hit.ImpactUSDPerWeek, want)
+	want := int64(estimatedSchemaOverheadTokens) * estimatedPromptsPerWeek
+	if hit.ImpactTokensPerWeek != want {
+		t.Errorf("ImpactTokensPerWeek = %v, want %v (capped)", hit.ImpactTokensPerWeek, want)
 	}
 }
 
@@ -254,7 +253,7 @@ func TestAnalyze_UnusedTool_HonorsWhitelist(t *testing.T) {
 		},
 	}
 	stats.Usage = map[string]ServerUsage{
-		"github": {TotalTokens: 100, TotalCostUSD: 0.001},
+		"github": {TotalTokens: 100},
 	}
 	stats.ToolUsage = map[string]map[string]ToolStat{
 		"github": {
@@ -277,7 +276,7 @@ func TestAnalyze_UnusedTool_SkippedWithoutPerToolData(t *testing.T) {
 		{Name: "github", Tools: []string{"create_issue", "list_issues"}, Initialized: true},
 	}
 	stats.Usage = map[string]ServerUsage{
-		"github": {TotalTokens: 100, TotalCostUSD: 0.001},
+		"github": {TotalTokens: 100},
 	}
 	// stats.ToolUsage intentionally nil — legacy gateway with no per-tool tracking.
 
@@ -298,7 +297,7 @@ func TestAnalyze_FindingsSortedBySeverityThenImpact(t *testing.T) {
 		{Name: "active", Tools: []string{"x"}, Initialized: true},
 	}
 	stats.Usage = map[string]ServerUsage{
-		"active": {TotalTokens: 1000, TotalCostUSD: 0.01},
+		"active": {TotalTokens: 1000},
 	}
 	stats.ToolUsage = map[string]map[string]ToolStat{
 		"active": {
@@ -326,9 +325,9 @@ func TestAnalyze_MinImpactFilter_RetainsInfo(t *testing.T) {
 		{Name: "small", Tools: []string{"a"}, Initialized: true},
 	}
 
-	rep := Analyze(stats, Options{MinImpactUSDPerWeek: 1_000_000})
+	rep := Analyze(stats, Options{MinImpactTokensPerWeek: 1_000_000})
 	for _, f := range rep.Findings {
-		if f.Severity != SeverityInfo && f.ImpactUSDPerWeek < 1_000_000 {
+		if f.Severity != SeverityInfo && f.ImpactTokensPerWeek < 1_000_000 {
 			t.Errorf("min-impact filter let through low-impact non-info finding %+v", f)
 		}
 	}
@@ -355,7 +354,7 @@ func TestAnalyze_NoFindings_HealthScore100(t *testing.T) {
 		{Name: "a", Tools: []string{"x"}, Initialized: true},
 	}
 	stats.Usage = map[string]ServerUsage{
-		"a": {TotalTokens: 100, TotalCostUSD: 0.001},
+		"a": {TotalTokens: 100},
 	}
 	stats.ToolUsage = map[string]map[string]ToolStat{
 		"a": {"x": {Calls: 1, LastCalledAt: fixedNow.Add(-1 * time.Hour)}},
@@ -377,7 +376,7 @@ func TestAnalyze_SchemaOverhead_FiresOnLowRatio(t *testing.T) {
 		{Name: "fat-schema", Tools: []string{"a", "b", "c"}, Initialized: true},
 	}
 	stats.Usage = map[string]ServerUsage{
-		"fat-schema": {OutputTokens: 5_000, TotalTokens: 5_000, TotalCostUSD: 0.015},
+		"fat-schema": {OutputTokens: 5_000, TotalTokens: 5_000},
 	}
 	stats.PinStats = map[string]PinStat{
 		"fat-schema": {SchemaTokens: 8_000},
@@ -401,8 +400,8 @@ func TestAnalyze_SchemaOverhead_FiresOnLowRatio(t *testing.T) {
 	if hit.Server != "fat-schema" {
 		t.Errorf("Server = %q, want fat-schema", hit.Server)
 	}
-	if hit.ImpactUSDPerWeek <= 0 {
-		t.Errorf("expected non-zero impact; got %v", hit.ImpactUSDPerWeek)
+	if hit.ImpactTokensPerWeek <= 0 {
+		t.Errorf("expected non-zero impact; got %v", hit.ImpactTokensPerWeek)
 	}
 	if !strings.Contains(hit.Remediation, "tools:") {
 		t.Errorf("remediation should suggest pruning tools; got %q", hit.Remediation)
@@ -417,7 +416,7 @@ func TestAnalyze_SchemaOverhead_SkipsHighRatio(t *testing.T) {
 	stats.Usage = map[string]ServerUsage{
 		// Output tokens >> schema tokens — the server delivers
 		// real value relative to its schema size.
-		"lean": {OutputTokens: 100_000, TotalTokens: 100_000, TotalCostUSD: 0.30},
+		"lean": {OutputTokens: 100_000, TotalTokens: 100_000},
 	}
 	stats.PinStats = map[string]PinStat{
 		"lean": {SchemaTokens: 3_000},
@@ -441,7 +440,7 @@ func TestAnalyze_SchemaOverhead_SkipsBelowFloor(t *testing.T) {
 		{Name: "tiny", Tools: []string{"a"}, Initialized: true},
 	}
 	stats.Usage = map[string]ServerUsage{
-		"tiny": {OutputTokens: 100, TotalTokens: 100, TotalCostUSD: 0.0003},
+		"tiny": {OutputTokens: 100, TotalTokens: 100},
 	}
 	stats.PinStats = map[string]PinStat{
 		// Below schemaOverheadMinSchemaTokens — heuristic stays silent.
@@ -463,7 +462,7 @@ func TestAnalyze_SchemaOverhead_NilPinStatsIsSilent(t *testing.T) {
 		{Name: "any", Tools: []string{"a"}, Initialized: true},
 	}
 	stats.Usage = map[string]ServerUsage{
-		"any": {OutputTokens: 100, TotalTokens: 100, TotalCostUSD: 0.0003},
+		"any": {OutputTokens: 100, TotalTokens: 100},
 	}
 
 	rep := Analyze(stats, Options{})
@@ -481,7 +480,7 @@ func TestAnalyze_FormatShortfall_FiresWhenBaselineDemonstrated(t *testing.T) {
 		{Name: "raw-json", Tools: []string{"a"}, Initialized: true, OutputFormat: ""},
 	}
 	stats.Usage = map[string]ServerUsage{
-		"raw-json": {OutputTokens: 50_000, TotalTokens: 50_000, TotalCostUSD: 0.15},
+		"raw-json": {OutputTokens: 50_000, TotalTokens: 50_000},
 	}
 	stats.FormatBaseline = FormatBaseline{
 		OriginalTokens:  10_000,
@@ -507,8 +506,10 @@ func TestAnalyze_FormatShortfall_FiresWhenBaselineDemonstrated(t *testing.T) {
 	if hit.Server != "raw-json" {
 		t.Errorf("Server = %q, want raw-json", hit.Server)
 	}
-	if hit.ImpactUSDPerWeek <= 0 {
-		t.Errorf("expected positive impact; got %v", hit.ImpactUSDPerWeek)
+	// Observed savings (50,000 × 30% = 15,000 tokens over a 48h window)
+	// normalize to a weekly rate: 15,000 × 7d/2d = 52,500 tokens/week.
+	if want := int64(52_500); hit.ImpactTokensPerWeek != want {
+		t.Errorf("ImpactTokensPerWeek = %v, want %v (weekly-normalized)", hit.ImpactTokensPerWeek, want)
 	}
 	if !strings.Contains(hit.Remediation, "output_format") {
 		t.Errorf("remediation should mention output_format; got %q", hit.Remediation)
@@ -521,7 +522,7 @@ func TestAnalyze_FormatShortfall_SkipsServerAlreadyConverting(t *testing.T) {
 		{Name: "toon-server", Tools: []string{"a"}, Initialized: true, OutputFormat: "toon"},
 	}
 	stats.Usage = map[string]ServerUsage{
-		"toon-server": {OutputTokens: 50_000, TotalTokens: 50_000, TotalCostUSD: 0.15},
+		"toon-server": {OutputTokens: 50_000, TotalTokens: 50_000},
 	}
 	stats.FormatBaseline = FormatBaseline{SavingsPercent: 30.0}
 	stats.ToolUsage = map[string]map[string]ToolStat{
@@ -543,7 +544,7 @@ func TestAnalyze_FormatShortfall_SilentWithoutBaseline(t *testing.T) {
 		{Name: "raw-json", Tools: []string{"a"}, Initialized: true},
 	}
 	stats.Usage = map[string]ServerUsage{
-		"raw-json": {OutputTokens: 100_000, TotalTokens: 100_000, TotalCostUSD: 0.30},
+		"raw-json": {OutputTokens: 100_000, TotalTokens: 100_000},
 	}
 	// FormatBaseline left at zero — no demonstrated savings.
 	stats.ToolUsage = map[string]map[string]ToolStat{
@@ -566,7 +567,7 @@ func TestAnalyze_FormatShortfall_SkipsBelowOutputFloor(t *testing.T) {
 	}
 	stats.Usage = map[string]ServerUsage{
 		// Below formatShortfallMinOutputTokens.
-		"small": {OutputTokens: 1_000, TotalTokens: 1_000, TotalCostUSD: 0.003},
+		"small": {OutputTokens: 1_000, TotalTokens: 1_000},
 	}
 	stats.FormatBaseline = FormatBaseline{SavingsPercent: 30.0}
 	stats.ToolUsage = map[string]map[string]ToolStat{
@@ -582,197 +583,9 @@ func TestAnalyze_FormatShortfall_SkipsBelowOutputFloor(t *testing.T) {
 	}
 }
 
-func TestAnalyze_ExpensiveModel_FiresOnHighRateLowAvgTokens(t *testing.T) {
-	stats := baseStats()
-	stats.Servers = []ServerInfo{
-		{Name: "lookup", Tools: []string{"get_user"}, Initialized: true},
-	}
-	stats.Usage = map[string]ServerUsage{
-		// 50 calls × 20 tokens each = 1000 tokens. At Opus rate that's a
-		// non-trivial cost, but each call is cheap-task small.
-		"lookup": {OutputTokens: 500, TotalTokens: 1_000, TotalCostUSD: 0.015},
-	}
-	stats.ServerCallCount = map[string]int64{"lookup": 50}
-	stats.ModelStats = map[string]ModelStat{
-		"lookup": {Model: "claude-opus-4-7", InputUSDPerToken: 15.0 / 1_000_000.0},
-	}
-	stats.ToolUsage = map[string]map[string]ToolStat{
-		"lookup": {"get_user": {Calls: 50, LastCalledAt: fixedNow.Add(-1 * time.Hour)}},
-	}
-
-	rep := Analyze(stats, Options{})
-
-	var hit *Finding
-	for i := range rep.Findings {
-		if rep.Findings[i].Heuristic == "expensive_model_on_cheap_task" {
-			hit = &rep.Findings[i]
-			break
-		}
-	}
-	if hit == nil {
-		t.Fatal("expected expensive_model_on_cheap_task finding")
-	}
-	if hit.Severity != SeverityInfo {
-		t.Errorf("Severity = %q, want info (informational only in v1)", hit.Severity)
-	}
-	if !strings.Contains(hit.Summary, "claude-opus-4-7") {
-		t.Errorf("summary should name the model; got %q", hit.Summary)
-	}
-	if hit.Model != "claude-opus-4-7" {
-		t.Errorf("finding Model = %q, want claude-opus-4-7", hit.Model)
-	}
-	if hit.Provenance != "declared" {
-		t.Errorf("finding Provenance = %q, want declared", hit.Provenance)
-	}
-	if hit.ImpactUSDPerWeek != 0 {
-		t.Errorf("impact must be zero (informational only); got %v", hit.ImpactUSDPerWeek)
-	}
-}
-
 // TestAnalyze_ExpensiveModel_NamesDominantHistogramModel verifies the finding
 // names the model that priced the most cost (from the histogram) even when no
 // declared ModelStat exists, and labels its provenance declared.
-func TestAnalyze_ExpensiveModel_NamesDominantHistogramModel(t *testing.T) {
-	stats := baseStats()
-	stats.Servers = []ServerInfo{
-		{Name: "lookup", Tools: []string{"get_user"}, Initialized: true},
-	}
-	// Effective rate = 0.0005 / 10 = 5e-5 = $50/M, above threshold.
-	stats.Usage = map[string]ServerUsage{
-		"lookup": {OutputTokens: 5, TotalTokens: 10, TotalCostUSD: 0.0005},
-	}
-	stats.ServerCallCount = map[string]int64{"lookup": 50}
-	stats.ToolUsage = map[string]map[string]ToolStat{
-		"lookup": {"get_user": {Calls: 50, LastCalledAt: fixedNow.Add(-1 * time.Hour)}},
-	}
-	// No declared ModelStat; the histogram names the dominant model exactly.
-	stats.ModelHistograms = map[string]map[string]float64{
-		"lookup": {"claude-opus-4-7": 0.0004, "claude-haiku-4-5": 0.0001},
-	}
-
-	rep := Analyze(stats, Options{})
-	var hit *Finding
-	for i := range rep.Findings {
-		if rep.Findings[i].Heuristic == "expensive_model_on_cheap_task" {
-			hit = &rep.Findings[i]
-			break
-		}
-	}
-	if hit == nil {
-		t.Fatal("expected expensive_model_on_cheap_task finding")
-	}
-	if hit.Model != "claude-opus-4-7" {
-		t.Errorf("finding should name dominant histogram model; got Model=%q", hit.Model)
-	}
-	if hit.Provenance != "declared" {
-		t.Errorf("provenance = %q, want declared", hit.Provenance)
-	}
-	if !strings.Contains(hit.Summary, "claude-opus-4-7") {
-		t.Errorf("summary should name the dominant model; got %q", hit.Summary)
-	}
-}
-
-func TestAnalyze_ExpensiveModel_InfersRateFromCostWhenModelStatsAbsent(t *testing.T) {
-	stats := baseStats()
-	stats.Servers = []ServerInfo{
-		{Name: "lookup", Tools: []string{"get_user"}, Initialized: true},
-	}
-	// Effective rate = 0.0001 / 10 = 1e-5 = $10/M, well above threshold.
-	stats.Usage = map[string]ServerUsage{
-		"lookup": {OutputTokens: 5, TotalTokens: 10, TotalCostUSD: 0.0001},
-	}
-	stats.ServerCallCount = map[string]int64{"lookup": 10}
-	stats.ToolUsage = map[string]map[string]ToolStat{
-		"lookup": {"get_user": {Calls: 10, LastCalledAt: fixedNow.Add(-1 * time.Hour)}},
-	}
-
-	rep := Analyze(stats, Options{})
-
-	var hit *Finding
-	for i := range rep.Findings {
-		if rep.Findings[i].Heuristic == "expensive_model_on_cheap_task" {
-			hit = &rep.Findings[i]
-			break
-		}
-	}
-	if hit == nil {
-		t.Fatal("expected expensive_model_on_cheap_task finding via inferred rate")
-	}
-}
-
-func TestAnalyze_ExpensiveModel_SkipsLargeAvgCalls(t *testing.T) {
-	stats := baseStats()
-	stats.Servers = []ServerInfo{
-		{Name: "verbose", Tools: []string{"summarize"}, Initialized: true},
-	}
-	// Avg tokens per call = 5000 — well above expensiveModelMaxAvgTokensPerCall.
-	stats.Usage = map[string]ServerUsage{
-		"verbose": {OutputTokens: 25_000, TotalTokens: 50_000, TotalCostUSD: 0.75},
-	}
-	stats.ServerCallCount = map[string]int64{"verbose": 10}
-	stats.ModelStats = map[string]ModelStat{
-		"verbose": {Model: "claude-opus-4-7", InputUSDPerToken: 15.0 / 1_000_000.0},
-	}
-	stats.ToolUsage = map[string]map[string]ToolStat{
-		"verbose": {"summarize": {Calls: 10, LastCalledAt: fixedNow.Add(-1 * time.Hour)}},
-	}
-
-	rep := Analyze(stats, Options{})
-
-	for _, f := range rep.Findings {
-		if f.Heuristic == "expensive_model_on_cheap_task" {
-			t.Errorf("must skip when avg tokens per call is large; got %+v", f)
-		}
-	}
-}
-
-func TestAnalyze_ExpensiveModel_SkipsCheapModel(t *testing.T) {
-	stats := baseStats()
-	stats.Servers = []ServerInfo{
-		{Name: "lookup", Tools: []string{"get_user"}, Initialized: true},
-	}
-	stats.Usage = map[string]ServerUsage{
-		"lookup": {OutputTokens: 500, TotalTokens: 1_000, TotalCostUSD: 0.0003},
-	}
-	stats.ServerCallCount = map[string]int64{"lookup": 50}
-	// Haiku-tier rate — below the threshold.
-	stats.ModelStats = map[string]ModelStat{
-		"lookup": {Model: "claude-haiku-4-5", InputUSDPerToken: 0.25 / 1_000_000.0},
-	}
-	stats.ToolUsage = map[string]map[string]ToolStat{
-		"lookup": {"get_user": {Calls: 50, LastCalledAt: fixedNow.Add(-1 * time.Hour)}},
-	}
-
-	rep := Analyze(stats, Options{})
-
-	for _, f := range rep.Findings {
-		if f.Heuristic == "expensive_model_on_cheap_task" {
-			t.Errorf("must skip cheap-model traffic; got %+v", f)
-		}
-	}
-}
-
-func TestAnalyze_ExpensiveModel_SkipsBelowMinCalls(t *testing.T) {
-	stats := baseStats()
-	stats.Servers = []ServerInfo{
-		{Name: "lookup", Tools: []string{"get_user"}, Initialized: true},
-	}
-	stats.Usage = map[string]ServerUsage{
-		"lookup": {OutputTokens: 30, TotalTokens: 60, TotalCostUSD: 0.001},
-	}
-	stats.ServerCallCount = map[string]int64{"lookup": 3} // < expensiveModelMinCalls
-	stats.ModelStats = map[string]ModelStat{
-		"lookup": {Model: "claude-opus-4-7", InputUSDPerToken: 15.0 / 1_000_000.0},
-	}
-
-	rep := Analyze(stats, Options{})
-
-	for _, f := range rep.Findings {
-		if f.Heuristic == "expensive_model_on_cheap_task" {
-			t.Errorf("must skip when call count is below threshold; got %+v", f)
-		}
-	}
-}
 
 func TestSeverity_IsActionable(t *testing.T) {
 	cases := []struct {
@@ -787,5 +600,28 @@ func TestSeverity_IsActionable(t *testing.T) {
 		if got := tc.s.IsActionable(); got != tc.want {
 			t.Errorf("Severity(%q).IsActionable() = %v, want %v", tc.s, got, tc.want)
 		}
+	}
+}
+
+func TestWeeklyRate(t *testing.T) {
+	now := fixedNow
+	cases := []struct {
+		name     string
+		observed int64
+		start    time.Time
+		want     int64
+	}{
+		{"two-day window scales up 3.5x", 15_000, now.Add(-48 * time.Hour), 52_500},
+		{"two-week window scales down", 14_000, now.Add(-14 * 24 * time.Hour), 7_000},
+		{"exactly one week is identity", 9_000, now.Add(-7 * 24 * time.Hour), 9_000},
+		{"zero start passes through unscaled", 5_000, time.Time{}, 5_000},
+		{"non-positive window passes through", 5_000, now.Add(time.Hour), 5_000},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := weeklyRate(tc.observed, tc.start, now); got != tc.want {
+				t.Errorf("weeklyRate(%d) = %d, want %d", tc.observed, got, tc.want)
+			}
+		})
 	}
 }

@@ -3566,9 +3566,8 @@ func TestGateway_ReplicaStatuses_UnknownServer(t *testing.T) {
 // --- Per-client attribution dispatch (PR 2) ---
 
 // recordingClientObserver captures the ToolCallObservation passed by the
-// gateway. The summary it returns is non-trivial so the gateway sets the
-// gen_ai.cost.usd span attribute on the span — production code uses the
-// metrics.Observer.
+// gateway. The summary it returns is non-trivial so the gateway sets token
+// span attributes — production code uses the metrics.Observer.
 type recordingClientObserver struct {
 	mu      sync.Mutex
 	calls   []ToolCallObservation
@@ -3611,7 +3610,7 @@ func TestGateway_ClientObserver_PropagatesClientID(t *testing.T) {
 	g.Router().AddClient(client)
 	g.Router().RefreshTools()
 
-	obs := &recordingClientObserver{summary: ToolCallSummary{InputTokens: 1, OutputTokens: 1, Model: "m", CostUSD: 0.05, HasCost: true}}
+	obs := &recordingClientObserver{summary: ToolCallSummary{InputTokens: 1, OutputTokens: 1}}
 	g.SetToolCallObserver(obs)
 
 	ctx := WithClientID(context.Background(), "claude-code")

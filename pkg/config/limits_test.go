@@ -32,16 +32,12 @@ func TestValidate_Limits(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "valid budget and rate entries",
+			name: "valid rate entries",
 			limits: &LimitsConfig{
-				Budgets: []BudgetLimit{
-					{Client: "claude-code", MaxUSD: 5, Period: "daily", WarnAtPercent: 80},
-					{Server: "github", MaxUSD: 20, Period: "weekly"},
-					{Tool: "github__search_code", MaxUSD: 1, Period: "monthly"},
-				},
 				RateLimits: []RateLimit{
 					{Server: "github", CallsPerMinute: 30, Burst: 10},
 					{Client: "cursor", CallsPerMinute: 6},
+					{Tool: "github__search_code", CallsPerMinute: 12},
 				},
 			},
 			wantErr: false,
@@ -49,7 +45,7 @@ func TestValidate_Limits(t *testing.T) {
 		{
 			name: "no scope key",
 			limits: &LimitsConfig{
-				Budgets: []BudgetLimit{{MaxUSD: 5, Period: "daily"}},
+				RateLimits: []RateLimit{{CallsPerMinute: 5}},
 			},
 			wantErr: true,
 			errMsg:  "exactly one of 'client', 'server', or 'tool'",
@@ -65,7 +61,7 @@ func TestValidate_Limits(t *testing.T) {
 		{
 			name: "unknown server scope",
 			limits: &LimitsConfig{
-				Budgets: []BudgetLimit{{Server: "nonexistent", MaxUSD: 5, Period: "daily"}},
+				RateLimits: []RateLimit{{Server: "nonexistent", CallsPerMinute: 5}},
 			},
 			wantErr: true,
 			errMsg:  "unknown MCP server 'nonexistent'",
@@ -81,34 +77,10 @@ func TestValidate_Limits(t *testing.T) {
 		{
 			name: "tool references unknown server",
 			limits: &LimitsConfig{
-				Budgets: []BudgetLimit{{Tool: "slack__post", MaxUSD: 5, Period: "daily"}},
+				RateLimits: []RateLimit{{Tool: "slack__post", CallsPerMinute: 5}},
 			},
 			wantErr: true,
 			errMsg:  "references unknown MCP server 'slack'",
-		},
-		{
-			name: "non-positive max_usd",
-			limits: &LimitsConfig{
-				Budgets: []BudgetLimit{{Client: "cursor", MaxUSD: 0, Period: "daily"}},
-			},
-			wantErr: true,
-			errMsg:  "max_usd",
-		},
-		{
-			name: "invalid period",
-			limits: &LimitsConfig{
-				Budgets: []BudgetLimit{{Client: "cursor", MaxUSD: 5, Period: "hourly"}},
-			},
-			wantErr: true,
-			errMsg:  "must be 'daily', 'weekly', or 'monthly'",
-		},
-		{
-			name: "warn_at_percent out of range",
-			limits: &LimitsConfig{
-				Budgets: []BudgetLimit{{Client: "cursor", MaxUSD: 5, Period: "daily", WarnAtPercent: 100}},
-			},
-			wantErr: true,
-			errMsg:  "warn_at_percent",
 		},
 		{
 			name: "non-positive rate",
@@ -127,26 +99,15 @@ func TestValidate_Limits(t *testing.T) {
 			errMsg:  "burst",
 		},
 		{
-			name: "duplicate budget scope",
-			limits: &LimitsConfig{
-				Budgets: []BudgetLimit{
-					{Server: "github", MaxUSD: 5, Period: "daily"},
-					{Server: "github", MaxUSD: 10, Period: "weekly"},
-				},
-			},
-			wantErr: true,
-			errMsg:  "duplicate budget",
-		},
-		{
 			name: "duplicate client scope after slugging",
 			limits: &LimitsConfig{
-				Budgets: []BudgetLimit{
-					{Client: "Claude Code", MaxUSD: 5, Period: "daily"},
-					{Client: "claude-code", MaxUSD: 9, Period: "daily"},
+				RateLimits: []RateLimit{
+					{Client: "Claude Code", CallsPerMinute: 5},
+					{Client: "claude-code", CallsPerMinute: 9},
 				},
 			},
 			wantErr: true,
-			errMsg:  "duplicate budget",
+			errMsg:  "duplicate rate limit",
 		},
 		{
 			name: "duplicate rate scope",
@@ -158,14 +119,6 @@ func TestValidate_Limits(t *testing.T) {
 			},
 			wantErr: true,
 			errMsg:  "duplicate rate limit",
-		},
-		{
-			name: "same scope across budget and rate lists is fine",
-			limits: &LimitsConfig{
-				Budgets:    []BudgetLimit{{Server: "github", MaxUSD: 5, Period: "daily"}},
-				RateLimits: []RateLimit{{Server: "github", CallsPerMinute: 30}},
-			},
-			wantErr: false,
 		},
 	}
 
@@ -186,23 +139,23 @@ func TestValidate_Limits(t *testing.T) {
 	}
 }
 
-func TestBudgetLimit_ScopeKey(t *testing.T) {
+func TestRateLimit_ScopeKey(t *testing.T) {
 	tests := []struct {
 		name     string
-		budget   BudgetLimit
+		rate     RateLimit
 		wantKind string
 		wantKey  string
 		wantOK   bool
 	}{
-		{"client scope", BudgetLimit{Client: "claude-code"}, "client", "claude-code", true},
-		{"server scope", BudgetLimit{Server: "github"}, "server", "github", true},
-		{"tool scope", BudgetLimit{Tool: "github__search"}, "tool", "github__search", true},
-		{"empty", BudgetLimit{}, "", "", false},
-		{"two set", BudgetLimit{Client: "a", Tool: "b__c"}, "", "", false},
+		{"client scope", RateLimit{Client: "claude-code"}, "client", "claude-code", true},
+		{"server scope", RateLimit{Server: "github"}, "server", "github", true},
+		{"tool scope", RateLimit{Tool: "github__search"}, "tool", "github__search", true},
+		{"empty", RateLimit{}, "", "", false},
+		{"two set", RateLimit{Client: "a", Tool: "b__c"}, "", "", false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			kind, key, ok := tc.budget.ScopeKey()
+			kind, key, ok := tc.rate.ScopeKey()
 			if ok != tc.wantOK {
 				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
 			}
@@ -214,7 +167,8 @@ func TestBudgetLimit_ScopeKey(t *testing.T) {
 }
 
 // TestLimitsConfig_RoundTrip asserts the limits block survives a load/save
-// cycle without dropping fields (Article IX back-compat).
+// cycle without dropping fields (Article IX back-compat). A legacy budgets:
+// block is ignored by the non-strict decoder rather than erroring.
 func TestLimitsConfig_RoundTrip(t *testing.T) {
 	src := `version: "1"
 name: test
@@ -229,10 +183,6 @@ limits:
     - client: claude-code
       max_usd: 5.5
       period: daily
-      warn_at_percent: 80
-    - server: github
-      max_usd: 20
-      period: weekly
   rate_limits:
     - server: github
       calls_per_minute: 30
@@ -244,9 +194,6 @@ limits:
 	}
 	if stack.Limits == nil {
 		t.Fatal("limits block dropped on unmarshal")
-	}
-	if got := stack.Limits.Budgets[0]; got.Client != "claude-code" || got.MaxUSD != 5.5 || got.Period != "daily" || got.WarnAtPercent != 80 {
-		t.Errorf("budgets[0] = %+v", got)
 	}
 	if got := stack.Limits.RateLimits[0]; got.Server != "github" || got.CallsPerMinute != 30 || got.Burst != 10 {
 		t.Errorf("rate_limits[0] = %+v", got)
@@ -260,7 +207,7 @@ limits:
 	if err := yaml.Unmarshal(out, &reparsed); err != nil {
 		t.Fatalf("re-unmarshal: %v", err)
 	}
-	if reparsed.Limits == nil || len(reparsed.Limits.Budgets) != 2 || len(reparsed.Limits.RateLimits) != 1 {
+	if reparsed.Limits == nil || len(reparsed.Limits.RateLimits) != 1 {
 		t.Fatalf("round-trip lost entries: %+v", reparsed.Limits)
 	}
 }
