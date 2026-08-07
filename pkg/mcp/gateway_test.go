@@ -1086,6 +1086,46 @@ func TestGateway_HealthMonitor_ReconnectionFails(t *testing.T) {
 	}
 }
 
+func TestGateway_HealthMonitor_RecoversHTTPEraFlip(t *testing.T) {
+	// #1088 end-to-end at the monitor level: a handshake-era HTTP server
+	// redeploys as stateless-only. One health cycle must detect the flip
+	// through Ping, reconnect the live client, re-resolve the era, and
+	// put the replica back in rotation with the post-flip tool list.
+	ts, flip := newGenerationFlipServer(t)
+	defer ts.Close()
+
+	ctx := context.Background()
+	c := NewClient("flip-http", ts.URL)
+	if err := c.Initialize(ctx); err != nil {
+		t.Fatalf("legacy Initialize: %v", err)
+	}
+	if err := c.RefreshTools(ctx); err != nil {
+		t.Fatalf("legacy RefreshTools: %v", err)
+	}
+
+	g := NewGateway()
+	g.Router().AddClient(c)
+	g.SetServerMeta(MCPServerConfig{Name: "flip-http", Transport: TransportHTTP})
+
+	flip()
+	g.checkHealth(ctx)
+
+	hs := g.GetHealthStatus("flip-http")
+	if hs == nil {
+		t.Fatal("expected health status for flip-http")
+	}
+	if !hs.Healthy {
+		t.Fatalf("expected healthy after flip recovery, got error %q", hs.Error)
+	}
+	if c.Era() != EraStateless {
+		t.Errorf("era = %q, want stateless after monitor-driven reconnect", c.Era())
+	}
+	tools := c.Tools()
+	if len(tools) != 1 || tools[0].Name != "modern-tool" {
+		t.Errorf("Tools() = %v, want the post-flip tool list", tools)
+	}
+}
+
 func TestGateway_HealthMonitor_SkipsReconnectForNonReconnectable(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	g := NewGateway()

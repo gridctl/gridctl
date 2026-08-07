@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -28,6 +30,7 @@ type Client struct {
 	protocolVersion string        // negotiated at initialize; stamped on subsequent requests
 	pingTimeout     time.Duration // 0 = use DefaultPingTimeout
 	headerSource    HeaderSource  // optional downstream auth header (nil = none)
+	reconnMu        sync.Mutex    // serializes Reconnect (stdio/process precedent)
 }
 
 // SetHeaderSource installs the downstream auth header source. Must be called
@@ -37,15 +40,17 @@ func (c *Client) SetHeaderSource(hs HeaderSource) {
 }
 
 // applyAuthHeader attaches the downstream auth header when a source is set.
-// Source errors abort the request and pass through unchanged so typed errors
-// (e.g. authorization-required) reach the caller.
+// Source errors abort the request wrapped as AuthSourceError (message
+// unchanged, typed errors still reachable through Unwrap) so callers can
+// tell "the credential machinery failed before any exchange" from "the
+// server answered".
 func (c *Client) applyAuthHeader(ctx context.Context, req *http.Request) error {
 	if c.headerSource == nil {
 		return nil
 	}
 	name, value, err := c.headerSource.AuthHeader(ctx)
 	if err != nil {
-		return err
+		return &AuthSourceError{Err: err}
 	}
 	if name != "" {
 		req.Header.Set(name, value)
@@ -248,10 +253,15 @@ func (c *Client) sendHTTPOnce(ctx context.Context, req jsonrpc.Request) (*jsonrp
 	}
 
 	// Capture session ID if provided (for stateful MCP servers). A
-	// stateless-era server never mints sessions; ignore any echo.
+	// stateless-era server never mints sessions; ignore any echo. The
+	// era is re-checked at write time so a response that raced a
+	// re-negotiation cannot write a stale session over the flipped
+	// client's state.
 	if sid := httpResp.Header.Get("Mcp-Session-Id"); sid != "" && era != EraStateless {
 		c.mu.Lock()
-		c.sessionID = sid
+		if c.era != EraStateless {
+			c.sessionID = sid
+		}
 		c.mu.Unlock()
 	}
 
@@ -301,7 +311,7 @@ func (c *Client) parseSSEResponse(body io.Reader) (*jsonrpc.Response, error) {
 	return nil, fmt.Errorf("no response with ID found in SSE stream")
 }
 
-// Ping checks if the agent is reachable.
+// Ping checks server liveness with an era-appropriate protocol request.
 func (c *Client) Ping(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, pingTimeoutOrDefault(c.pingTimeout))
 	defer cancel()
@@ -320,34 +330,154 @@ func (c *Client) Ping(ctx context.Context) error {
 		return verifyDiscoverHealth(result)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", c.endpoint, nil)
-	if err != nil {
+	return c.pingHandshake(ctx)
+}
+
+// pingHandshake health-checks a handshake-era server with a protocol-level
+// ping (stdio/process parity) instead of the old bare reachability GET,
+// which a server redeployed as stateless-only still answers 200 while
+// every tool call fails (#1088). Health fails only on transport-level
+// unreachability, an auth signal, or positive evidence of a generation
+// flip; every other answer preserves the long-standing tolerance for lax
+// legacy servers that reject unknown methods and proxies that reject
+// unauthenticated requests while serving real traffic fine.
+func (c *Client) pingHandshake(ctx context.Context) error {
+	// A client that once negotiated but now has no resolved era is a
+	// failed re-negotiation (Reconnect resets the era before probing).
+	// Era-less requests cannot serve tool calls, so health must keep
+	// failing until Reconnect converges rather than reading the
+	// reachable server as healthy (the stdio "not connected" latch
+	// equivalent). Pre-Initialize readiness probes also run era-less but
+	// are not initialized yet, and must stay tolerant: a modern answer
+	// there means the server is up and Initialize will adopt it, and
+	// failing health would deadlock registration.
+	if c.Era() == "" && c.IsInitialized() {
+		return errors.New("protocol generation unresolved after a failed re-negotiation; awaiting reconnect")
+	}
+
+	err := c.call(ctx, "ping", nil, nil)
+	if err == nil {
+		return nil
+	}
+
+	// Broker-managed auth state must keep surfacing so the health monitor
+	// can distinguish needs-auth from unreachable.
+	var needsAuth *NeedsAuthError
+	if errors.As(err, &needsAuth) {
+		return err
+	}
+	// An auth challenge is actionable with credentials configured; without
+	// them any completed response counts as reachable (some proxies reject
+	// unauthenticated requests while authenticated traffic works).
+	var authErr *AuthRequiredError
+	if errors.As(err, &authErr) {
+		if c.headerSource != nil {
+			return err
+		}
+		return nil
+	}
+	// A header-source failure happened before any exchange with the
+	// server; tolerating it would read a token-endpoint outage as a
+	// healthy server while every tool call fails on the same error.
+	var srcErr *AuthSourceError
+	if errors.As(err, &srcErr) {
 		return err
 	}
 
-	if err := c.applyAuthHeader(ctx, req); err != nil {
-		return err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	// Reachability is all Ping asserts, with one exception: when this client
-	// has credentials configured, an auth challenge means the server is up
-	// but the credential is missing or rejected, and callers need to
-	// distinguish that from both "ready" and "unreachable". Without
-	// configured credentials the status code stays ignored, preserving the
-	// long-standing behavior for servers that 401 bare GETs (e.g. proxies)
-	// while serving authenticated POST traffic fine.
-	if c.headerSource != nil {
-		if authErr := authRequiredFromResponse(resp, ""); authErr != nil {
-			return authErr
+	// Generation-flip detection. Only meaningful once the era actually
+	// resolved to handshake (see the latch above for the era-less
+	// states). Skipped under a handshake pin: the pin makes Initialize
+	// (and so Reconnect) unable to ever adopt the stateless era, so
+	// failing health would strand the server with no recovery path.
+	if c.Era() == EraHandshake && c.generationPinValue() != GenerationHandshake {
+		if isRecognizedModernError(err) {
+			// These codes exist only in the stateless era; the peer
+			// validated modern request rules, so the flip is certain.
+			return fmt.Errorf("handshake-era health check: server enforces stateless-era (%s) request rules; generation flip detected: %w", StatelessProtocolVersion, err)
+		}
+		if rpcErr := rpcErrorFrom(err); rpcErr != nil && rpcErr.Code == jsonrpc.MethodNotFound {
+			// Ambiguous: a stateless-only server removed ping, but a lax
+			// legacy server may reject it too. Confirm with a read-only
+			// server/discover probe before failing health.
+			if c.confirmGenerationFlip(ctx) {
+				return fmt.Errorf("handshake-era health check: server answers as a stateless-era (%s) peer; generation flip detected: %w", StatelessProtocolVersion, err)
+			}
+			return nil
 		}
 	}
 
+	// A deadline or cancellation that fired after response headers
+	// arrived (a stalled body) surfaces as a bare context error, not a
+	// url.Error; both are unreachability.
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return err
+	}
+
+	// Transport-level failures (connection refused, DNS, dial timeout)
+	// are unreachability regardless of era.
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return err
+	}
+
+	// Everything else means the server completed an HTTP exchange:
+	// odd statuses, JSON-RPC errors without flip evidence, undecodable
+	// bodies. All stay healthy, matching the old reachability semantics
+	// (the bare GET never read the body); tool calls surface real
+	// failures.
+	return nil
+}
+
+// confirmGenerationFlip reports whether the server positively answers as
+// a stateless-era peer. Read-only: unlike the Initialize probe it never
+// adopts the era or version (Ping detects, Reconnect converges). The
+// stale handshake MCP-Protocol-Version header this request carries makes
+// a strict modern server reject it with a modern-only error code, which
+// confirms the flip just as well as a discover result does.
+func (c *Client) confirmGenerationFlip(ctx context.Context) bool {
+	var result DiscoverResult
+	err := c.call(ctx, "server/discover", map[string]any{"_meta": statelessMetaMap(StatelessProtocolVersion)}, &result)
+	if err != nil {
+		return isRecognizedModernError(err)
+	}
+	return discoverIndicatesModern(result)
+}
+
+// Reconnect re-resolves the protocol generation and refreshes the tool
+// list on the live client, so a health-detected generation flip converges
+// instead of requiring a gateway restart. HTTP holds no persistent
+// connection, so unlike stdio/process there is no transport teardown.
+// Thread-safe: concurrent callers block until reconnection completes.
+func (c *Client) Reconnect(ctx context.Context) error {
+	c.reconnMu.Lock()
+	defer c.reconnMu.Unlock()
+
+	c.logger.Info("reconnecting to HTTP server")
+
+	// Initialize resets the era and negotiated version, but the session is
+	// transport state it knows nothing about: a stale handshake-era session
+	// ID must not leak into the re-negotiated connection.
+	c.mu.Lock()
+	c.sessionID = ""
+	c.mu.Unlock()
+
+	if err := c.Initialize(ctx); err != nil {
+		return fmt.Errorf("reinitialize: %w", err)
+	}
+
+	// The tool cache must be repopulated before returning: the gateway
+	// verifies schema pins against Tools() right after a successful
+	// reconnect, and a flipped server's post-flip schemas are the ones
+	// that must be compared. On failure the era goes back to unresolved
+	// so the Ping latch keeps health failing: a half-reconnected client
+	// reading healthy would serve stale pre-flip tools and skip pin
+	// verification forever.
+	if err := c.RefreshTools(ctx); err != nil {
+		c.SetEra("")
+		return fmt.Errorf("refresh tools: %w", err)
+	}
+
+	c.logger.Info("reconnected to HTTP server")
 	return nil
 }
 

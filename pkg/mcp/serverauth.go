@@ -39,6 +39,19 @@ func (e *NeedsAuthError) Error() string {
 		e.Server, e.Server)
 }
 
+// AuthSourceError wraps a failure raised by the header source itself,
+// before any HTTP exchange with the server (token endpoint outage,
+// malformed token response). Health classification must not read these
+// as a reachable server: the request never left the gateway. Unwrap
+// keeps typed errors (NeedsAuthError) reachable through errors.As.
+type AuthSourceError struct {
+	Err error
+}
+
+func (e *AuthSourceError) Error() string { return e.Err.Error() }
+
+func (e *AuthSourceError) Unwrap() error { return e.Err }
+
 // TokenInvalidator is implemented by header sources that cache credentials.
 // InvalidateToken drops the cached credential and reports whether a retry
 // is worthwhile (i.e. a refresh path exists). The transport calls it once

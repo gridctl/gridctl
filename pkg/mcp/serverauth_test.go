@@ -51,33 +51,32 @@ func TestStaticHeaderSourceFor(t *testing.T) {
 }
 
 func TestClient_AttachesAuthHeader(t *testing.T) {
+	// Ping is a protocol-level JSON-RPC request (#1088), so every request
+	// including the health check must carry the configured auth header;
+	// key the capture by JSON-RPC method, not HTTP verb.
 	var mu sync.Mutex
-	var postAuth, pingAuth string
+	authByMethod := make(map[string]string)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		if r.Method == http.MethodGet {
-			pingAuth = r.Header.Get("Authorization")
-		} else {
-			postAuth = r.Header.Get("Authorization")
-		}
-		mu.Unlock()
-
-		if r.Method == http.MethodGet {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
 		var req jsonrpc.Request
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Errorf("decode request: %v", err)
 			return
 		}
+		mu.Lock()
+		authByMethod[req.Method] = r.Header.Get("Authorization")
+		mu.Unlock()
+
 		w.Header().Set("Content-Type", "application/json")
-		result := InitializeResult{
-			ProtocolVersion: "2025-06-18",
-			ServerInfo:      ServerInfo{Name: "test", Version: "1.0"},
+		if req.Method == "initialize" {
+			result := InitializeResult{
+				ProtocolVersion: "2025-06-18",
+				ServerInfo:      ServerInfo{Name: "test", Version: "1.0"},
+			}
+			_ = json.NewEncoder(w).Encode(jsonrpc.NewSuccessResponse(req.ID, result))
+			return
 		}
-		_ = json.NewEncoder(w).Encode(jsonrpc.NewSuccessResponse(req.ID, result))
+		_ = json.NewEncoder(w).Encode(jsonrpc.NewSuccessResponse(req.ID, nil))
 	}))
 	defer ts.Close()
 
@@ -93,10 +92,10 @@ func TestClient_AttachesAuthHeader(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	if postAuth != "Bearer tok" {
-		t.Errorf("POST Authorization = %q, want %q", postAuth, "Bearer tok")
+	if got := authByMethod["initialize"]; got != "Bearer tok" {
+		t.Errorf("initialize Authorization = %q, want %q", got, "Bearer tok")
 	}
-	if pingAuth != "Bearer tok" {
-		t.Errorf("Ping Authorization = %q, want %q", pingAuth, "Bearer tok")
+	if got := authByMethod["ping"]; got != "Bearer tok" {
+		t.Errorf("ping Authorization = %q, want %q", got, "Bearer tok")
 	}
 }
