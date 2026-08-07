@@ -732,7 +732,8 @@ var _ transporter = (*ProcessClient)(nil)
 var _ connector = (*StdioClient)(nil)
 var _ connector = (*ProcessClient)(nil)
 
-// Compile-time assertions: stdio/process clients implement Reconnectable.
+// Compile-time assertions: all JSON-RPC clients implement Reconnectable.
+var _ Reconnectable = (*Client)(nil)
 var _ Reconnectable = (*StdioClient)(nil)
 var _ Reconnectable = (*ProcessClient)(nil)
 
