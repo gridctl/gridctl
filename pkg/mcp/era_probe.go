@@ -196,16 +196,7 @@ func (r *RPCClient) adoptDiscoverResult(result DiscoverResult) (bool, error) {
 	if result.ResultType != ResultTypeComplete || len(result.SupportedVersions) == 0 {
 		return false, nil
 	}
-	var chosen string
-	sawStateless := false
-	for _, v := range result.SupportedVersions {
-		if EraOfVersion(v) == EraStateless {
-			sawStateless = true
-			if IsSupportedProtocolVersion(v) && chosen == "" {
-				chosen = v
-			}
-		}
-	}
+	sawStateless, chosen := discoverVersions(result)
 	if chosen == "" {
 		if !sawStateless {
 			// A "discover" result listing only handshake-era versions is
@@ -235,12 +226,42 @@ func verifyDiscoverHealth(result DiscoverResult) error {
 	if result.ResultType != ResultTypeComplete {
 		return fmt.Errorf("server/discover health check: resultType %q, want %q", result.ResultType, ResultTypeComplete)
 	}
+	if _, mutual := discoverVersions(result); mutual == "" {
+		return fmt.Errorf("server/discover health check: no mutually supported stateless-era version (server: %v)", result.SupportedVersions)
+	}
+	return nil
+}
+
+// discoverVersions walks a discover result's supportedVersions once and
+// reports both facts the classifiers need: whether any stateless-era
+// version appears at all (the loose "is this a modern peer" predicate)
+// and the first mutually supported one, empty when none (the strict
+// "can we talk to it" predicate). Keeping one walker pins the loose and
+// strict predicates together so they cannot drift.
+func discoverVersions(result DiscoverResult) (sawStateless bool, mutual string) {
 	for _, v := range result.SupportedVersions {
-		if EraOfVersion(v) == EraStateless && IsSupportedProtocolVersion(v) {
-			return nil
+		if EraOfVersion(v) != EraStateless {
+			continue
+		}
+		sawStateless = true
+		if mutual == "" && IsSupportedProtocolVersion(v) {
+			mutual = v
 		}
 	}
-	return fmt.Errorf("server/discover health check: no mutually supported stateless-era version (server: %v)", result.SupportedVersions)
+	return sawStateless, mutual
+}
+
+// discoverIndicatesModern reports whether a discover result positively
+// identifies a stateless-era peer, mutual version or not. Looser than
+// verifyDiscoverHealth on purpose: flip detection must flag a modern
+// peer even when no mutual version exists (Reconnect then fails loudly
+// with the no-mutual-version diagnosis instead of health lying green).
+func discoverIndicatesModern(result DiscoverResult) bool {
+	if result.ResultType != ResultTypeComplete {
+		return false
+	}
+	sawStateless, _ := discoverVersions(result)
+	return sawStateless
 }
 
 // serverInfoFromMeta extracts the spec's serverInfo _meta key from a
