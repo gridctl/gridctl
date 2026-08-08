@@ -500,6 +500,9 @@ export interface AgentProjectionStatus {
   state: AgentProjectionState;
   /** Lossy-render report (dropped frontmatter keys) or drift detail. */
   detail?: string;
+  /** Model preference a stack policy rewrite wrote into the projected
+   *  file; absent for pass-through projections (wire: model_value). */
+  model_value?: string;
   experimental?: boolean;
   synced_at?: string;
 }
