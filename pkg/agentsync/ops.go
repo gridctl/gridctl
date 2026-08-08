@@ -105,7 +105,10 @@ type ProjectionStatus struct {
 	Target  string `json:"target"`
 	// Render is the target's render class: "identity" (canonical bytes
 	// copied verbatim) or "lossy" (client dialect, some keys dropped).
-	Render       string     `json:"render"`
+	Render string `json:"render"`
+	// ModelValue is the model preference a policy rewrite wrote into the
+	// installed bytes; empty for pass-through projections.
+	ModelValue   string     `json:"model_value,omitempty"`
 	State        string     `json:"state"`
 	Detail       string     `json:"detail,omitempty"`
 	Experimental bool       `json:"experimental,omitempty"`
@@ -366,6 +369,7 @@ func (m *Manager) materialize(a skills.InstalledAgent, t Target, lf *LockFile, o
 	// (staleness), InstalledHash whatever was written (drift).
 	install := src
 	var detail string
+	modelValue := ""
 	if t.Render != nil {
 		def, perr := skills.ParseAgentMD(src)
 		if perr != nil {
@@ -384,6 +388,22 @@ func (m *Manager) materialize(a skills.InstalledAgent, t Target, lf *LockFile, o
 		}
 		install = rendered.Bytes
 		detail = lossyDetail(t.Slug, rendered.Dropped)
+	} else if m.modelPolicy != nil {
+		// Model preference policy applies to identity install bytes only:
+		// rendered dialects deliberately drop the key (see render.go).
+		declared, scalarOK := declaredAgentModel(src)
+		if resolved, need := m.modelPolicy.NeedsRewrite(a.Name, declared); need {
+			switch rewritten, ok := rewriteAgentModel(src, resolved); {
+			case !scalarOK:
+				detail = "model preference not applied: existing model value is not a single-line scalar"
+			case ok:
+				install = rewritten
+				modelValue = resolved
+				detail = fmt.Sprintf("model preference %q applied (policy)", resolved)
+			default:
+				detail = "model preference not applied: frontmatter is not line-rewritable"
+			}
+		}
 	}
 	installHash := contentHash(install)
 
@@ -408,6 +428,25 @@ func (m *Manager) materialize(a skills.InstalledAgent, t Target, lf *LockFile, o
 	if exists {
 		destHash = contentHash(existing)
 	}
+
+	// Preserve rule: without stack context (nil policy), a projection
+	// carrying a model policy rewrite is never reverted to pass-through
+	// bytes (a policy-less sync must not undo the daemon's work). A clean
+	// rewritten copy is left untouched; drift keeps its usual meaning,
+	// and an explicit --force reverts to pass-through (no policy is
+	// loaded that could reproduce the rewrite). A loaded stack without
+	// the block compiles to a non-nil empty policy, so it reconciles
+	// back here rather than preserving.
+	if m.modelPolicy == nil && entry != nil && entry.ModelValue != "" && exists && !opts.Force {
+		if destHash == entry.InstalledHash {
+			res.Action = ActionUnchanged
+			res.Detail = "model policy: unknown (no stack loaded); rewritten projection preserved"
+			return res
+		}
+		res.Action = ActionSkippedDrift
+		return res
+	}
+
 	if exists && entry != nil {
 		if destHash != entry.InstalledHash {
 			if !opts.Force {
@@ -423,7 +462,7 @@ func (m *Manager) materialize(a skills.InstalledAgent, t Target, lf *LockFile, o
 		// drift on the next pass.
 		if destHash == installHash {
 			res.Action = ActionUnchanged
-			m.record(lf, a.Name, t.Slug, dest, installHash, srcHash, opts.Pack)
+			m.record(lf, a.Name, t.Slug, dest, installHash, srcHash, modelValue, opts.Pack)
 			return res
 		}
 	}
@@ -462,7 +501,7 @@ func (m *Manager) materialize(a skills.InstalledAgent, t Target, lf *LockFile, o
 		res.Action, res.Error = ActionError, err.Error()
 		return res
 	}
-	m.record(lf, a.Name, t.Slug, dest, installHash, srcHash, opts.Pack)
+	m.record(lf, a.Name, t.Slug, dest, installHash, srcHash, modelValue, opts.Pack)
 	res.Detail = detail
 	if exists {
 		res.Action = ActionUpdated
@@ -473,9 +512,10 @@ func (m *Manager) materialize(a skills.InstalledAgent, t Target, lf *LockFile, o
 }
 
 // record updates the lock entry for one projection. On identity targets
-// the installed and canonical hashes coincide at write; on rendered
+// the installed and canonical hashes coincide at write (unless a model
+// policy rewrite diverged them, marked by modelValue); on rendered
 // targets they differ by construction.
-func (m *Manager) record(lf *LockFile, agent, client, target, installedHash, canonicalHash, packTag string) {
+func (m *Manager) record(lf *LockFile, agent, client, target, installedHash, canonicalHash, modelValue, packTag string) {
 	if packTag == "" {
 		if prev := lf.entry(agent, client); prev != nil {
 			packTag = prev.Pack
@@ -486,6 +526,7 @@ func (m *Manager) record(lf *LockFile, agent, client, target, installedHash, can
 		InstalledHash:    installedHash,
 		CanonicalHash:    canonicalHash,
 		CreatedByGridctl: true,
+		ModelValue:       modelValue,
 		Pack:             packTag,
 		SyncedAt:         time.Now().UTC(),
 	})
@@ -534,12 +575,13 @@ func (m *Manager) Statuses(ctx context.Context) ([]ProjectionStatus, error) {
 // statusFor computes one projection's status row.
 func (m *Manager) statusFor(agent, client string, entry *Entry) ProjectionStatus {
 	ps := ProjectionStatus{
-		Agent:   agent,
-		Client:  client,
-		Channel: ChannelCopy,
-		Render:  "identity",
-		Target:  entry.Target,
-		Pack:    entry.Pack,
+		Agent:      agent,
+		Client:     client,
+		Channel:    ChannelCopy,
+		Render:     "identity",
+		ModelValue: entry.ModelValue,
+		Target:     entry.Target,
+		Pack:       entry.Pack,
 	}
 	syncedAt := entry.SyncedAt
 	ps.SyncedAt = &syncedAt
@@ -578,6 +620,30 @@ func (m *Manager) statusFor(agent, client string, entry *Entry) ProjectionStatus
 	if contentHash(src) != entry.CanonicalHash {
 		ps.State = StateStale
 		return ps
+	}
+
+	// Model preference policy checks apply to identity targets only:
+	// rendered dialects drop the key, so policy never changes their
+	// expected bytes.
+	if t, tok := FindTarget(client); tok && t.Render == nil {
+		if pol := m.currentModelPolicy(); pol == nil {
+			if entry.ModelValue != "" {
+				ps.Detail = "model policy: unknown (no stack loaded); rewritten projection preserved"
+			}
+		} else {
+			expected := src
+			declared, scalarOK := declaredAgentModel(src)
+			if resolved, need := pol.NeedsRewrite(agent, declared); need && scalarOK {
+				if rewritten, rok := rewriteAgentModel(src, resolved); rok {
+					expected = rewritten
+				}
+			}
+			if contentHash(expected) != entry.InstalledHash {
+				ps.State = StateStale
+				ps.Detail = "model preference policy changed; run 'gridctl skill project sync --kind agent'"
+				return ps
+			}
+		}
 	}
 	ps.State = StateInSync
 	return ps
