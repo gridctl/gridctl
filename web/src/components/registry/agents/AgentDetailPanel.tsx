@@ -4,6 +4,7 @@ import { InspectorHeader, InspectorTabList, InspectorTabButton, PaneAnchor } fro
 import { MarkdownPreview } from '../MarkdownPreview';
 import { AgentProjectionRows } from './AgentProjectionRows';
 import { agentClientName, formatExtraValue } from './agentModel';
+import { ModelChip, ModelHonorList } from '../ModelChip';
 import { PackChip } from '../PackChip';
 import { fetchRegistryAgent } from '../../../lib/api';
 import type { AgentProjectionStatus, RegistryAgent } from '../../../types';
@@ -21,6 +22,9 @@ interface AgentDetailPanelProps {
 
 // The two frontmatter keys with cross-client meaning. Everything else in
 // extra is client-specific or vendor data and renders in the plain list.
+// `model` renders through the typed modelPreference view when the backend
+// provides one (declared/resolved provenance plus the honor matrix); the
+// raw row remains the fallback for older backends.
 const TRANSLATED_KEYS = ['tools', 'model'];
 
 /**
@@ -79,7 +83,9 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
     );
   }
 
+  const modelPref = agent.modelPreference;
   const translated = TRANSLATED_KEYS
+    .filter((key) => !(key === 'model' && modelPref))
     .map((key) => ({ key, field: agent.extra?.find((f) => f.key === key) }))
     .filter((e) => e.field !== undefined);
   const otherExtra = (agent.extra ?? []).filter((f) => !TRANSLATED_KEYS.includes(f.key));
@@ -135,6 +141,37 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
             <p className="text-sm text-text-secondary leading-relaxed">
               {agent.description || <span className="italic text-text-muted/50">No description</span>}
             </p>
+
+            {modelPref && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] uppercase tracking-wider text-text-muted inline-flex items-center gap-2">
+                  Model preference
+                  <ModelChip modelPreference={modelPref} />
+                </span>
+                {modelPref.declared && (
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[11px] font-mono text-text-muted w-14 flex-shrink-0">declared</span>
+                    <span className="text-xs text-text-primary font-mono break-all">
+                      {modelPref.declared.value}
+                    </span>
+                  </div>
+                )}
+                {modelPref.resolved && (
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[11px] font-mono text-text-muted w-14 flex-shrink-0">applied</span>
+                    <span className="text-xs text-text-primary font-mono break-all">
+                      {modelPref.resolved.value}{' '}
+                      <span className="text-text-muted">(policy {modelPref.resolved.resolution})</span>
+                    </span>
+                  </div>
+                )}
+                <ModelHonorList honor={modelPref.honor} />
+                <p className="text-[10px] text-text-muted/70">
+                  A preference is a durable default per projection target; clients keep their own
+                  resolution order and may override it.
+                </p>
+              </div>
+            )}
 
             {translated.length > 0 && (
               <div className="flex flex-col gap-1.5">
