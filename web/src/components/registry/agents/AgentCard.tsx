@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { Bot, GitBranch, Pencil, Trash2 } from 'lucide-react';
 import { cn } from '../../../lib/cn';
+import { ModelChip } from '../ModelChip';
 import { PackChip } from '../PackChip';
 import { StatePill } from '../../ui/StatePill';
 import { agentClientName } from './agentModel';
@@ -79,6 +80,7 @@ export const AgentCard = memo(({ agent, statuses, onSelect, onEdit, onDelete, is
             </span>
           )}
           {agent.source && <PackChip source={agent.source} className="mt-0.5" />}
+          <ModelChip modelPreference={agent.modelPreference} className="mt-0.5" />
         </div>
 
         <p className={cn(
