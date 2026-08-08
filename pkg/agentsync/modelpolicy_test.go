@@ -2,6 +2,7 @@ package agentsync
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -232,8 +233,8 @@ func TestAgentAdopt_PolicyKeysNeverReachCanonical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Changed {
-		t.Fatalf("policy-only delta must adopt nothing, got %+v", res)
+	if res.Changed || !res.PolicyKeysRestored {
+		t.Fatalf("policy-only delta must adopt nothing and report the restore, got %+v", res)
 	}
 	canon, _ := os.ReadFile(registryDir + "/agents/a/AGENT.md")
 	if !strings.Contains(string(canon), "model: opus") {
@@ -268,6 +269,38 @@ func TestAgentAdopt_PolicyKeysNeverReachCanonical(t *testing.T) {
 	}
 	if !strings.Contains(string(canon), "model: opus") || strings.Contains(string(canon), "haiku") {
 		t.Fatalf("the policy value must never reach the canonical:\n%s", string(canon))
+	}
+}
+
+func TestAgentAdopt_RestoreFailureRefusesRatherThanPoisons(t *testing.T) {
+	mgr, home, registryDir := newTestManager(t)
+	writeAgent(t, registryDir, "a", agentContentWithModel("a", "opus"))
+	mgr.SetModelPolicy(&registry.ModelPolicy{Rewrite: true, Overrides: map[string]string{"a": "haiku"}})
+	if _, err := mgr.Sync(context.Background(), nil, SyncOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Hand-edit the projected file into a form the restore surgery
+	// refuses (a block-scalar model whose value still normalizes to the
+	// policy's write). The adopt must refuse outright: falling through
+	// would write the policy value into the canonical store.
+	projected := readProjected(t, home, "a")
+	mangled := strings.Replace(projected, "model: haiku\n", "model: |\n  haiku\n", 1)
+	if mangled == projected {
+		t.Fatal("precondition: projected model line not found")
+	}
+	if err := os.WriteFile(projectedPath(home, "a"), []byte(mangled), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := mgr.Adopt(context.Background(), "a", "claude-code")
+	var refusal *AdoptRefusal
+	if err == nil || !errors.As(err, &refusal) {
+		t.Fatalf("expected an adopt refusal, got %v", err)
+	}
+	canon, _ := os.ReadFile(registryDir + "/agents/a/AGENT.md")
+	if !strings.Contains(string(canon), "model: opus") || strings.Contains(string(canon), "haiku") {
+		t.Fatalf("a failed restore must never write the policy value into the canonical:\n%s", string(canon))
 	}
 }
 
