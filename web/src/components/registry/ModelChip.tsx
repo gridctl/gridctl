@@ -27,6 +27,7 @@ export function ModelChip({
   return (
     <span
       title={title}
+      aria-label={title}
       data-testid="model-chip"
       className={cn(
         'text-[9px] font-medium tracking-wider px-1.5 py-0.5 rounded-full border flex-shrink-0 font-mono lowercase',
@@ -38,6 +39,31 @@ export function ModelChip({
     >
       {info.value}
       {info.viaPolicy && <span className="opacity-70"> · policy</span>}
+    </span>
+  );
+}
+
+/**
+ * Quiet chip for a projection row: the model preference a stack policy
+ * rewrite wrote into that projected file (wire `model_value`). Distinct
+ * from ModelChip, which shows the registry-side preference; this one
+ * answers "what landed on disk". Renders nothing for pass-through
+ * projections.
+ */
+export function ProjectedModelChip({ value, className }: { value?: string; className?: string }) {
+  if (!value) return null;
+  const title = `Projected file carries the stack model preference policy value ${value}`;
+  return (
+    <span
+      title={title}
+      aria-label={title}
+      data-testid="projected-model-chip"
+      className={cn(
+        'text-[10px] px-1.5 py-0.5 rounded border border-primary/25 bg-primary/10 text-primary font-mono whitespace-nowrap',
+        className,
+      )}
+    >
+      {value} <span className="opacity-70">· policy</span>
     </span>
   );
 }
