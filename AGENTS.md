@@ -98,7 +98,7 @@ examples/           Example stack YAMLs grouped by surface (getting-started, tra
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
                     portable-pack). examples/_mock-servers/ is the source for `task mock:servers`.
 docs/               User-facing documentation (cli-reference, config-schema, api-reference, skills, packs, tools-workspace,
-                    global-context, scaling, cost-observability (now usage observability), installation, project-status, troubleshooting).
+                    global-context, scaling, usage-observability, installation, project-status, troubleshooting).
 ```
 
 End-to-end request flow for an upstream MCP tool call: client → HTTP listener built by `pkg/controller` (gateway_builder.go) → `pkg/mcp` transport (SSE/streamable/stdio) → `mcp.Gateway` router → per-server `mcp.Client` (process/SSE/HTTP/OpenAPI) → response, with telemetry, tracing, schema pinning, and (optional) output-format conversion attached on the way back.
