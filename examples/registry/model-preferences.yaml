@@ -1,0 +1,46 @@
+# Model Preferences Example
+#
+# Sets model preference defaults and overrides for skill and agent
+# projections. This is a preference layer over the `model:` frontmatter
+# in files gridctl projects into client directories: clients still
+# resolve their own model (env vars and per-invocation parameters
+# outrank projected frontmatter), and nothing here measures or prices
+# anything.
+#
+# Start with overrides only: a `default:` under `rewrite: true` rewrites
+# every projected skill that declares no model and forces those
+# projections from symlink to copy channel (status shows the reason as
+# "copy (model policy)").
+#
+# Usage:
+#   gridctl apply examples/registry/model-preferences.yaml
+#   gridctl skill project sync my-skill --clients claude-code
+#   gridctl skill project status
+#
+# The daemon applies the policy on every projection reconcile. From the
+# CLI without a daemon, pass the stack explicitly:
+#   gridctl skill project sync --stack examples/registry/model-preferences.yaml
+#
+# Removing the block (or setting rewrite: false) reconciles projections
+# back to pass-through and restores symlink channel on the next
+# policy-aware sync.
+
+version: "1"
+name: model-preferences-demo
+
+network:
+  name: model-preferences-net
+
+mcp-servers:
+  - name: mock-http
+    url: http://localhost:9001/mcp
+
+model_preferences:
+  skills:
+    rewrite: true
+    overrides:
+      incident-triage: opus      # raise: this one needs the strongest model
+      simple-formatter: haiku    # lower: mechanical work on a cheap model
+  agents:
+    rewrite: true
+    default: sonnet              # agents without a declaration get sonnet
