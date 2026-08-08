@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { AlertTriangle, BookOpen, Code2, Eye, GitBranch, GitCompareArrows, LockOpen, Pencil, Power, PowerOff, ShieldOff, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { ModelChip, ModelHonorList } from './ModelChip';
 import { PackChip } from './PackChip';
 import { updateSkillSource } from '../../lib/api';
 import { summarizeSkillResults, syncCountsMessage } from '../../lib/skillSync';
@@ -199,6 +200,7 @@ export function SkillDetailPanel({
               </span>
             )}
             {source && <PackChip source={source.name} />}
+            <ModelChip modelPreference={skill.modelPreference} />
             {/* The chip is the natural place to ask "modified how?", so it
                 opens the same diff the editor's Compare action does. */}
             {hasLocalEdits && source && (
@@ -615,6 +617,34 @@ function SkillOverview({
               />
             )}
           </dl>
+        </Section>
+      )}
+
+      {skill.modelPreference && (
+        <Section title="Model preference">
+          <div className="flex flex-col gap-2">
+            <dl className="space-y-1.5">
+              {skill.modelPreference.declared && (
+                <MetaRow
+                  label="Declared"
+                  value={`${skill.modelPreference.declared.value} (${skill.modelPreference.declared.sourceKey})`}
+                  mono
+                />
+              )}
+              {skill.modelPreference.resolved && (
+                <MetaRow
+                  label="Applied"
+                  value={`${skill.modelPreference.resolved.value} (policy ${skill.modelPreference.resolved.resolution})`}
+                  mono
+                />
+              )}
+            </dl>
+            <ModelHonorList honor={skill.modelPreference.honor} />
+            <p className="text-[10px] text-text-muted/70 leading-relaxed">
+              A preference is a durable default per projection target; clients keep their own
+              resolution order and may override it.
+            </p>
+          </div>
         </Section>
       )}
 
