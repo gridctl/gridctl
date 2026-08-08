@@ -28,6 +28,15 @@ const hashScheme = project.HashScheme
 // the tree hash their link target. Generalizes the single-file
 // InstalledHash used by pkg/skills drift detection.
 func treeHash(dir string) (string, error) {
+	return treeHashWith(dir, nil)
+}
+
+// treeHashWith is treeHash with per-file content overrides (relative
+// path → bytes). It answers "what would the tree hash be if these files
+// held these bytes": the model policy rewrite uses it to fingerprint
+// the projected tree (registry source with SKILL.md substituted)
+// without writing anything.
+func treeHashWith(dir string, overrides map[string][]byte) (string, error) {
 	type manifestEntry struct{ rel, sum string }
 	var entries []manifestEntry
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
@@ -40,6 +49,11 @@ func treeHash(dir string) (string, error) {
 		rel, rerr := filepath.Rel(dir, path)
 		if rerr != nil {
 			return rerr
+		}
+		if data, ok := overrides[filepath.ToSlash(rel)]; ok {
+			sum := sha256.Sum256(data)
+			entries = append(entries, manifestEntry{rel: rel, sum: hex.EncodeToString(sum[:])})
+			return nil
 		}
 		if d.Type()&fs.ModeSymlink != 0 {
 			link, lerr := os.Readlink(path)
@@ -69,13 +83,17 @@ func treeHash(dir string) (string, error) {
 	return hashScheme + hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// copyDirAtomic copies src to dst via a temp sibling directory renamed
-// into place, so a crash never leaves a half-copied skill at dst. An
-// existing dst is renamed away first (rename over a non-empty directory
-// fails) and removed after the swap. Temp and old names are dot-prefixed
-// so a client scanning the skills root mid-swap never discovers them as
-// phantom skills.
-func copyDirAtomic(src, dst string) error {
+// copyDirAtomicWith copies src to dst via a temp sibling directory
+// renamed into place, so a crash never leaves a half-copied skill at
+// dst. An existing dst is renamed away first (rename over a non-empty
+// directory fails) and removed after the swap. Temp and old names are
+// dot-prefixed so a client scanning the skills root mid-swap never
+// discovers them as phantom skills. Per-file content overrides
+// (relative path → bytes) are substituted inside the staged temp
+// directory, so the swap stays atomic and the source tree is never
+// touched: this is how a model policy rewrite writes a projected
+// SKILL.md without copy-then-edit races.
+func copyDirAtomicWith(src, dst string, overrides map[string][]byte) error {
 	parent := filepath.Dir(dst)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return fmt.Errorf("creating %s: %w", parent, err)
@@ -84,7 +102,7 @@ func copyDirAtomic(src, dst string) error {
 	if err != nil {
 		return fmt.Errorf("creating temp dir: %w", err)
 	}
-	if err := copyTree(src, tmp); err != nil {
+	if err := copyTreeWith(src, tmp, overrides); err != nil {
 		_ = os.RemoveAll(tmp)
 		return err
 	}
@@ -112,6 +130,12 @@ func copyDirAtomic(src, dst string) error {
 // copyTree recursively copies src into dst (which already exists),
 // preserving file modes. Symlinks are recreated as symlinks.
 func copyTree(src, dst string) error {
+	return copyTreeWith(src, dst, nil)
+}
+
+// copyTreeWith is copyTree with per-file content overrides (relative
+// path → bytes); overridden files keep the source file's mode.
+func copyTreeWith(src, dst string, overrides map[string][]byte) error {
 	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -124,6 +148,13 @@ func copyTree(src, dst string) error {
 			return nil
 		}
 		out := filepath.Join(dst, rel)
+		if data, ok := overrides[filepath.ToSlash(rel)]; ok && !d.IsDir() {
+			info, ierr := d.Info()
+			if ierr != nil {
+				return ierr
+			}
+			return os.WriteFile(out, data, info.Mode().Perm())
+		}
 		switch {
 		case d.IsDir():
 			info, ierr := d.Info()
