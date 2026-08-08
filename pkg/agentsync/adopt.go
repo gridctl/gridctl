@@ -104,14 +104,25 @@ func (m *Manager) Adopt(ctx context.Context, agent, client string) (*AdoptResult
 		if entry.ModelValue != "" {
 			projModel, projScalarOK := declaredAgentModel(projected)
 			if projScalarOK && registry.NormalizeModelValue(projModel) == registry.NormalizeModelValue(entry.ModelValue) {
-				if canonModel, scalarOK := declaredAgentModel(canon); scalarOK {
-					if restored, rok := rewriteAgentModel(projected, canonModel); rok {
-						if !bytes.Equal(restored, projected) {
-							res.PolicyKeysRestored = true
-						}
-						projected = restored
-					}
+				// The projected model is the policy's own write, so it MUST
+				// be restored before write-back. Any failure here is a hard
+				// refusal: falling through would adopt the policy-resolved
+				// value into the canonical store, the exact poisoning the
+				// invariant forbids.
+				canonModel, scalarOK := declaredAgentModel(canon)
+				if !scalarOK {
+					return &AdoptRefusal{msg: fmt.Sprintf(
+						"cannot adopt %s's copy of %s: the canonical model declaration is not a single-line scalar, so the projection's policy-written model key cannot be restored to it; edit the canonical AGENT.md first", client, agent)}
 				}
+				restored, rok := rewriteAgentModel(projected, canonModel)
+				if !rok {
+					return &AdoptRefusal{msg: fmt.Sprintf(
+						"cannot adopt %s's copy of %s: its policy-written model key could not be restored to the author's declaration (the frontmatter is not line-rewritable); revert the model line by hand and re-run adopt", client, agent)}
+				}
+				if !bytes.Equal(restored, projected) {
+					res.PolicyKeysRestored = true
+				}
+				projected = restored
 			}
 		}
 
