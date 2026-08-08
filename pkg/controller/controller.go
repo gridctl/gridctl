@@ -25,6 +25,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	"github.com/gridctl/gridctl/pkg/skillpins"
+	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/vault"
 )
@@ -688,8 +689,12 @@ func DeniedActiveSkillWarnings(stack *config.Stack) []string {
 // content-level model preference lint findings pkg/config cannot
 // compute alone (it deliberately never reads the registry):
 //
-//   - model-preference-unhonored (info-worded): a preference resolves
-//     for a skill while some projection target ignores or drops it.
+//   - model-preference-unhonored: one aggregate line per rewriting
+//     scope naming how many items resolve a preference while some of
+//     that kind's projection targets ignore or drop the key. Aggregate
+//     by design: a per-item warning would repeat the same fact for
+//     every skill in the registry. Surfacing-only scopes (rewrite
+//     false) project nothing and are skipped.
 //   - model-preference-portability: an active skill declares top-level
 //     `model:`, which spec-strict consumers outside Claude Code reject
 //     (`metadata` is the portable placement, string values only).
@@ -701,35 +706,61 @@ func ModelPreferenceWarnings(stack *config.Stack) []string {
 	if stack == nil || stack.ModelPreferences == nil {
 		return nil
 	}
-	skillPolicy, _ := stack.ModelPolicies()
-	store := registry.NewStore(filepath.Join(state.BaseDir(), "registry"))
+	skillPolicy, agentPolicy := stack.ModelPolicies()
+	registryDir := filepath.Join(state.BaseDir(), "registry")
+	store := registry.NewStore(registryDir)
 	if err := store.Load(); err != nil {
 		return nil
 	}
 
-	var dropTargets []string
-	for slug, status := range registry.SkillHonorMatrix() {
-		if status == registry.HonorIgnored || status == registry.HonorDropped {
-			dropTargets = append(dropTargets, slug)
+	dropTargetsOf := func(matrix map[string]registry.HonorStatus) []string {
+		var out []string
+		for slug, status := range matrix {
+			if status == registry.HonorIgnored || status == registry.HonorDropped {
+				out = append(out, slug)
+			}
 		}
+		sort.Strings(out)
+		return out
 	}
-	sort.Strings(dropTargets)
-
-	// The unhonored finding only makes sense for scopes that project
-	// something: a surfacing-only scope (rewrite false) changes no file,
-	// so warning per skill would be pure noise.
-	skillRewrite := stack.ModelPreferences.Skills != nil && stack.ModelPreferences.Skills.Rewrite
 
 	var warnings []string
-	for _, sk := range store.ActiveSkills() {
-		pref := registry.ExtractModelPreference(sk)
-		resolved, resolution := skillPolicy.Resolve(sk.Name, pref.Value())
-		if skillRewrite && resolved != "" && len(dropTargets) > 0 {
-			warnings = append(warnings, fmt.Sprintf(
-				"model-preference-unhonored: skill %q resolves model preference %q (%s), which these projection targets do not honor: %s",
-				sk.Name, resolved, resolution, strings.Join(dropTargets, ", ")))
+
+	skillRewrite := stack.ModelPreferences.Skills != nil && stack.ModelPreferences.Skills.Rewrite
+	if drop := dropTargetsOf(registry.SkillHonorMatrix()); skillRewrite && len(drop) > 0 {
+		resolving := 0
+		for _, sk := range store.ActiveSkills() {
+			if resolved, _ := skillPolicy.Resolve(sk.Name, registry.ExtractModelPreference(sk).Value()); resolved != "" {
+				resolving++
+			}
 		}
-		if pref != nil && pref.SourceKey == registry.ModelSourceTopLevel {
+		if resolving > 0 {
+			warnings = append(warnings, fmt.Sprintf(
+				"model-preference-unhonored: %d active skill(s) resolve a model preference under rewrite, and these skill projection targets do not honor the key: %s",
+				resolving, strings.Join(drop, ", ")))
+		}
+	}
+
+	agentRewrite := stack.ModelPreferences.Agents != nil && stack.ModelPreferences.Agents.Rewrite
+	if drop := dropTargetsOf(registry.AgentHonorMatrix()); agentRewrite && len(drop) > 0 {
+		resolving := 0
+		if agents, err := skills.ListAgents(registryDir); err == nil {
+			for _, a := range agents {
+				declared, _ := a.Definition.DeclaredModel()
+				if resolved, _ := agentPolicy.Resolve(a.Name, declared); resolved != "" {
+					resolving++
+				}
+			}
+		}
+		if resolving > 0 {
+			warnings = append(warnings, fmt.Sprintf(
+				"model-preference-unhonored: %d imported agent(s) resolve a model preference under rewrite; rendered dialects drop the key by design: %s",
+				resolving, strings.Join(drop, ", ")))
+		}
+	}
+
+	for _, sk := range store.ActiveSkills() {
+		if pref := registry.ExtractModelPreference(sk); pref != nil && pref.SourceKey == registry.ModelSourceTopLevel {
 			warnings = append(warnings, fmt.Sprintf(
 				"model-preference-portability: skill %q declares top-level `model:`, which spec-strict consumers outside Claude Code reject as an unknown key; `metadata` is the portable placement (string values)",
 				sk.Name))
