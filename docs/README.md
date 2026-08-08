@@ -11,7 +11,7 @@ New to gridctl? Read in this order:
 3. **[Configuration Reference](config-schema.md)** - the shape of `stack.yaml`
 4. **[Skills](skills.md)** - serve skills to upstream MCP clients and project skills and agents onto disk
 5. **[Packs](packs.md)** - import skills, agents, rules, and wiring as one unit from a git repo
-6. **[Scaling](scaling.md)** and **[Usage Observability](cost-observability.md)** - operate at volume
+6. **[Scaling](scaling.md)** and **[Usage Observability](usage-observability.md)** - operate at volume
 7. **[Troubleshooting](troubleshooting.md)** - when something goes wrong
 
 ## Getting Started
@@ -38,7 +38,7 @@ New to gridctl? Read in this order:
 | [Tools Workspace](tools-workspace.md) | Curate the exposed tool surface - whitelists, Audit Mode, annotation hints, fleet actions, per-client access, and groups |
 | [Global Context Sync](global-context.md) | Manage the global context (one canonical AGENTS.md, or an opt-in rule fragment library with per-client assembly) via `gridctl ctx`, the web UI, or the REST API |
 | [Scaling stdio servers](scaling.md) | Run multiple replicas of a single MCP server - policies, trade-offs, observability |
-| [Usage Observability](cost-observability.md) | Token and call metrics, tokenizer options, format savings, and the `gridctl optimize` heuristics |
+| [Usage Observability](usage-observability.md) | Token and call metrics, tokenizer options, format savings, and the `gridctl optimize` heuristics |
 
 ## Operations
 

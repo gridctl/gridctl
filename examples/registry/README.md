@@ -8,6 +8,7 @@ Examples demonstrating the skills and agents registry. Skills follow the [agents
 |------|-------------|
 | `registry-basic.yaml` | Single server with basic Agent Skills |
 | `registry-advanced.yaml` | Two servers with cross-server skills |
+| `model-preferences.yaml` | Stack-level model preference defaults and overrides for projected skills and agents |
 | `skills.yaml` | Remote skill source list (public, private HTTPS via the variable store, private SSH via ssh-agent) |
 | `items/code-review/` | Pre-made skill: code review checklist |
 | `items/explain-error/` | Pre-made skill: error explanation helper |

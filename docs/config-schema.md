@@ -920,7 +920,7 @@ retrying instead of burning tokens. Edits hot-reload without restarting any
 server. Current state surfaces in `gridctl limits` and `GET /api/limits`.
 
 Earlier releases also supported dollar `budgets:` in this block; that layer
-has been removed (see [Usage Observability](cost-observability.md)). A
+has been removed (see [Usage Observability](usage-observability.md)). A
 leftover `budgets:` key is ignored by the loader.
 
 ---
