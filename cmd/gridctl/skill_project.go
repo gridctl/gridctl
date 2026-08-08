@@ -9,7 +9,9 @@ import (
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/agentsync"
+	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/output"
+	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/skillsync"
 
 	"github.com/jedib0t/go-pretty/v6/table"
@@ -27,6 +29,7 @@ var (
 	skillProjectSyncForce   bool
 	skillProjectSyncFormat  string
 	skillProjectSyncKind    string
+	skillProjectSyncStack   string
 	skillProjectSyncJSON    *bool
 	skillProjectSyncPlain   *bool
 
@@ -134,12 +137,18 @@ Exit codes:
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
 		}
+		skillPol, agentPol, perr := syncModelPolicies(skillProjectSyncStack)
+		if perr != nil {
+			fmt.Fprintln(os.Stderr, perr)
+			os.Exit(ctxExitInfrastructure)
+		}
 		if skillProjectSyncKind == skillProjectKindAgent {
 			mgr, err := newAgentProjectManager()
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(ctxExitInfrastructure)
 			}
+			mgr.SetModelPolicy(agentPol)
 			opts := agentsync.SyncOptions{
 				Clients: skillProjectSyncClients,
 				DryRun:  skillProjectSyncDryRun,
@@ -155,6 +164,7 @@ Exit codes:
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
 		}
+		mgr.SetModelPolicy(skillPol)
 		opts := skillsync.SyncOptions{
 			Clients: skillProjectSyncClients,
 			Copy:    skillProjectSyncCopy,
@@ -319,6 +329,7 @@ func init() {
 	skillProjectSyncCmd.Flags().BoolVar(&skillProjectSyncForce, "force", false, "Overwrite drifted copies and unmanaged destination paths (after a backup)")
 	skillProjectSyncCmd.Flags().StringVar(&skillProjectSyncFormat, "format", "", "Output format: 'json' for machine-readable output (default: table)")
 	skillProjectSyncCmd.Flags().StringVar(&skillProjectSyncKind, "kind", "skill", "Resource kind to sync: skill or agent (agents are experimental and always copied)")
+	skillProjectSyncCmd.Flags().StringVar(&skillProjectSyncStack, "stack", "", "Stack file whose model_preferences policy applies to this sync (default: no policy; previously rewritten projections are preserved)")
 	skillProjectSyncJSON = addJSONAlias(skillProjectSyncCmd)
 	skillProjectSyncPlain = addPlainFlag(skillProjectSyncCmd)
 
@@ -344,6 +355,32 @@ func init() {
 	skillProjectCmd.AddCommand(skillProjectUnsyncCmd)
 	skillProjectCmd.AddCommand(skillProjectAdoptCmd)
 	skillCmd.AddCommand(skillProjectCmd)
+}
+
+// syncModelPolicies loads the model preference policies for a sync
+// invocation. Without --stack, both are nil: the sync runs pass-through
+// for new projections and preserves projections a policy previously
+// rewrote (the daemon is the authoritative policy-aware path; reverting
+// its rewrites here would make the two flip-flop the same files).
+func syncModelPolicies(stackPath string) (skillPol, agentPol *registry.ModelPolicy, err error) {
+	if stackPath == "" {
+		return nil, nil, nil
+	}
+	stack, _, err := config.ValidateStackFile(stackPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("loading --stack %s: %w", stackPath, err)
+	}
+	skillPol, agentPol = stack.ModelPolicies()
+	return skillPol, agentPol, nil
+}
+
+// channelLabel renders a channel with its reason, so a policy-forced
+// copy is never displayed as a plain copy.
+func channelLabel(channel, reason string) string {
+	if reason == skillsync.ChannelReasonModelPolicy {
+		return channel + " (model policy)"
+	}
+	return channel
 }
 
 // newSkillProjectManager loads the registry and builds the projection
@@ -425,10 +462,17 @@ func runSkillProjectSync(ctx context.Context, stdout, stderr io.Writer, mgr *ski
 		}
 		t := output.NewTableWriter(stdout, plain)
 		t.AppendHeader(table.Row{"SKILL", "CLIENT", "CHANNEL", "ACTION", "TARGET"})
+		flips := 0
 		for _, r := range results {
-			t.AppendRow(table.Row{r.Skill, r.Client, r.Channel, skillProjectActionLabel(r.Action), r.Target})
+			if r.Reason == skillsync.ChannelReasonModelPolicy && r.Channel == string(skillsync.ChannelCopy) {
+				flips++
+			}
+			t.AppendRow(table.Row{r.Skill, r.Client, channelLabel(r.Channel, r.Reason), skillProjectActionLabel(r.Action), r.Target})
 		}
 		t.Render()
+		if opts.DryRun && flips > 0 {
+			fmt.Fprintf(stdout, "\n%d skill projection(s) carry the model preference policy and use copy channel (symlink is not available for rewritten content).\n", flips)
+		}
 		for _, r := range results {
 			if r.Error != "" {
 				fmt.Fprintf(stdout, "\n%s → %s: %s\n", r.Skill, r.Client, r.Error)
@@ -436,6 +480,9 @@ func runSkillProjectSync(ctx context.Context, stdout, stderr io.Writer, mgr *ski
 			if r.Action == skillsync.ActionSkippedDrift && r.Error == "" {
 				fmt.Fprintf(stdout, "\n%s → %s: projected copy was hand-edited. Overwrite with 'gridctl skill project sync %s --clients %s --force', or remove it with 'gridctl skill project unsync %s --clients %s'\n",
 					r.Skill, r.Client, r.Skill, r.Client, r.Skill, r.Client)
+			}
+			if r.Detail != "" && r.Error == "" {
+				fmt.Fprintf(stdout, "\n%s → %s: %s\n", r.Skill, r.Client, r.Detail)
 			}
 		}
 	}
@@ -529,9 +576,11 @@ func runSkillProjectStatus(ctx context.Context, stdout, stderr io.Writer, mgr *s
 		t := output.NewTableWriter(stdout, plain)
 		t.AppendHeader(table.Row{"SKILL", "CLIENT", "CHANNEL", "RENDER", "STATE", "TARGET"})
 		for _, s := range statuses {
-			t.AppendRow(table.Row{s.Skill, s.Client, s.Channel, s.Render, skillProjectStateLabel(s), s.Target})
+			t.AppendRow(table.Row{s.Skill, s.Client, channelLabel(s.Channel, s.ChannelReason), s.Render, skillProjectStateLabel(s), s.Target})
 		}
 		for _, s := range agentStatuses {
+			// Agents are always copies; the channel is never policy-forced,
+			// so no reason label applies (a rewrite surfaces via detail).
 			t.AppendRow(table.Row{s.Agent + " (agent)", s.Client, s.Channel, s.Render, agentProjectStateLabel(s), s.Target})
 		}
 		t.Render()
@@ -620,10 +669,17 @@ func runSkillProjectAdopt(ctx context.Context, stdout, stderr io.Writer, mgr *sk
 		return ctxExitOK
 	}
 	if len(res.ChangedFiles) == 0 {
+		if res.PolicyKeysRestored {
+			fmt.Fprintf(stdout, "✓ %s's copy of %s differs only in its model preference keys, which are managed by stack policy and were not adopted\n", client, skill)
+			return ctxExitOK
+		}
 		fmt.Fprintf(stdout, "✓ %s's copy of %s already matches the registry; hashes refreshed\n", client, skill)
 		return ctxExitOK
 	}
 	fmt.Fprintf(stdout, "✓ Adopted %s's copy of %s into %s\n", client, skill, res.RegistryDir)
+	if res.PolicyKeysRestored {
+		fmt.Fprintln(stdout, "  model preference keys are managed by stack policy; the author's declaration was preserved in the registry")
+	}
 	for _, f := range res.ChangedFiles {
 		fmt.Fprintf(stdout, "  updated: %s\n", f)
 	}
@@ -822,10 +878,17 @@ func runAgentProjectAdopt(ctx context.Context, stdout, stderr io.Writer, mgr *ag
 		return ctxExitOK
 	}
 	if !res.Changed {
+		if res.PolicyKeysRestored {
+			fmt.Fprintf(stdout, "✓ %s's copy of %s differs only in its model preference key, which is managed by stack policy and was not adopted\n", client, agent)
+			return ctxExitOK
+		}
 		fmt.Fprintf(stdout, "✓ %s's copy of %s already matches the store; hashes refreshed\n", client, agent)
 		return ctxExitOK
 	}
 	fmt.Fprintf(stdout, "✓ Adopted %s's copy of %s into %s\n", client, agent, res.CanonicalFile)
+	if res.PolicyKeysRestored {
+		fmt.Fprintln(stdout, "  the model preference key is managed by stack policy; the author's declaration was preserved in the store")
+	}
 	if res.BackupFile != "" {
 		fmt.Fprintf(stdout, "  previous AGENT.md kept as %s\n", res.BackupFile)
 	}
