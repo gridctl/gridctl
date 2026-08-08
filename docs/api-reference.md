@@ -1941,7 +1941,7 @@ Registry skill and agent responses also carry a `modelPreference` object when th
 }
 ```
 
-`declared` is the author's frontmatter declaration (`sourceKey` is `model`, `metadata.preferred-model`, or `metadata.model`). `resolved` appears only when the daemon has a stack with the matching `model_preferences` scope loaded; `resolution` names the winning source (`author` | `default` | `override`). `honor` maps projection target slugs to what each target does with the preference (`honored` | `ignored` | `unknown` | `dropped-on-render`).
+`declared` is the author's frontmatter declaration (`sourceKey` is `model`, `metadata.preferred-model`, or `metadata.model`). `resolved` appears only when a loaded stack policy default or override decides the value; `resolution` names the winning source (`default` | `override`), and an author declaration a policy leaves untouched stays `declared`-only. `honor` maps projection target slugs to what each target does with the preference (`honored` | `ignored` | `unknown` | `dropped-on-render`).
 
 ### Global Context
 
