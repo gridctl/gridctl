@@ -4,6 +4,7 @@ import { Bot, Cable, ChevronDown, ChevronRight, Copy, Globe, Plug, Radio, Wrench
 import { cn } from '../../lib/cn';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { StatePill } from '../ui/StatePill';
+import { ProjectedModelChip } from '../registry/ModelChip';
 import { PackChip } from '../registry/PackChip';
 import { showToast } from '../ui/Toast';
 import {
@@ -349,6 +350,7 @@ export function ClientDetailPane({
             >
               {row.render}
             </span>
+            <ProjectedModelChip value={row.model_value} />
             <button
               onClick={() => navigate(`/library?kind=agent&selected=${encodeURIComponent(row.agent)}`)}
               className="text-xs text-text-primary hover:text-primary transition-colors font-mono truncate"

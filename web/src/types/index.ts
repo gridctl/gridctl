@@ -422,6 +422,23 @@ export interface AgentSkill {
   // record nor a policy verdict. Every field is optional on the wire
   // (omitempty), so zero counts and false flags simply do not appear.
   governance?: SkillGovernance;
+  // Declared/resolved model preference view; absent when nothing declares
+  // or resolves one.
+  modelPreference?: ModelPreference;
+}
+
+// ModelPreference mirrors the backend's modelPreference object on registry
+// skill and agent responses. Declared is the author's frontmatter
+// declaration; resolved appears only when a loaded stack policy default or
+// override decides the value (an author declaration a policy leaves
+// untouched stays declared-only); honor maps projection target slugs to
+// what each target does with the key. The whole object is absent when
+// nothing is declared and no policy resolves — older backends simply never
+// send it.
+export interface ModelPreference {
+  declared?: { value: string; sourceKey: string };
+  resolved?: { value: string; resolution: 'default' | 'override' };
+  honor?: Record<string, string>;
 }
 
 // SkillGovernance mirrors the backend's governance object on registry skill
@@ -461,6 +478,9 @@ export interface RegistryAgent {
   dir?: string;
   body?: string;
   raw?: string;
+  /** Declared/resolved model preference view; absent when nothing declares
+   *  or resolves one. */
+  modelPreference?: ModelPreference;
 }
 
 // Shared projection-state vocabulary from the pkg/project engine. The CLI and
@@ -480,6 +500,9 @@ export interface AgentProjectionStatus {
   state: AgentProjectionState;
   /** Lossy-render report (dropped frontmatter keys) or drift detail. */
   detail?: string;
+  /** Model preference a stack policy rewrite wrote into the projected
+   *  file; absent for pass-through projections (wire: model_value). */
+  model_value?: string;
   experimental?: boolean;
   synced_at?: string;
 }
