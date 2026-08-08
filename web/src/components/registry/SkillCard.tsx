@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { BookOpen, Check, GitBranch } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { ModelChip } from './ModelChip';
 import { PackChip } from './PackChip';
 import { StateBadge } from './StateBadge';
 import { SkillActions } from './SkillActions';
@@ -185,6 +186,8 @@ export const SkillCard = memo(({
             <span aria-hidden="true" className="text-text-muted/40">·</span>
           )}
           {metaSummary && <span className="truncate min-w-0">{metaSummary}</span>}
+          <span className="flex-1 min-w-0" aria-hidden="true" />
+          <ModelChip modelPreference={skill.modelPreference} />
         </div>
       </div>
 
