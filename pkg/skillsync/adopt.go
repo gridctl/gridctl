@@ -38,6 +38,11 @@ type AdoptResult struct {
 	BackupFile string `json:"backup_file,omitempty"`
 	// ChangedFiles lists the relative paths written back.
 	ChangedFiles []string `json:"changed_files"`
+	// PolicyKeysRestored reports that the projected SKILL.md carried a
+	// stack model preference rewrite whose keys were restored to the
+	// author's declaration before write-back: policy-owned deltas are
+	// never adopted into the registry canonical.
+	PolicyKeysRestored bool `json:"policy_keys_restored,omitempty"`
 }
 
 // adoptSkipped are gridctl-managed metadata files never pulled back:
@@ -94,6 +99,31 @@ func (m *Manager) Adopt(ctx context.Context, skill, client string) (*AdoptResult
 		if err != nil {
 			return err
 		}
+
+		// Policy-owned deltas are not adoptable: when the projection
+		// carries a model policy rewrite, the keys still holding the
+		// policy's own value (recorded at rewrite time) are restored to
+		// the author's canonical declaration before write-back, so an
+		// adopt can never poison the registry canonical with a
+		// policy-resolved value. A model key the user deliberately edited
+		// to some other value is the user's edit and adopts like any
+		// other change. A SKILL.md whose only delta was the policy
+		// rewrite drops out of the changed set entirely.
+		var restoredSkillMD []byte
+		if entry.ModelValue != "" && slicesContains(changed, "SKILL.md") {
+			restored, policyOnly, rerr := restoreAuthorModel(entry.Target, src, entry.ModelValue)
+			if rerr != nil {
+				return rerr
+			}
+			switch {
+			case policyOnly:
+				changed = slicesRemove(changed, "SKILL.md")
+				res.PolicyKeysRestored = true
+			case restored != nil:
+				restoredSkillMD = restored
+				res.PolicyKeysRestored = true
+			}
+		}
 		res.ChangedFiles = changed
 
 		if len(changed) > 0 {
@@ -127,6 +157,9 @@ func (m *Manager) Adopt(ctx context.Context, skill, client string) (*AdoptResult
 				if rerr != nil {
 					return fmt.Errorf("reading projected %s: %w (the registry skill may be partially adopted; the previous SKILL.md is kept as %s)", rel, rerr, backup)
 				}
+				if rel == "SKILL.md" && restoredSkillMD != nil {
+					data = restoredSkillMD
+				}
 				dest := filepath.Join(src, rel)
 				if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 					return fmt.Errorf("creating %s: %w (the registry skill may be partially adopted; the previous SKILL.md is kept as %s)", filepath.Dir(dest), err, backup)
@@ -137,12 +170,39 @@ func (m *Manager) Adopt(ctx context.Context, skill, client string) (*AdoptResult
 			}
 		}
 
-		// Force-resync the pair so the recorded hashes match the adopted
-		// content; the projected copy is backed up before the replace
-		// (it drifted from the recorded hash by definition).
-		sres := m.materialize(sk, t, ChannelCopy, lf, SyncOptions{Force: true})
-		if sres.Action == ActionError {
-			return fmt.Errorf("re-syncing %s to %s after adopt: %s", skill, client, sres.Error)
+		// Re-sync the pair so the recorded hashes match the adopted
+		// content. A rewritten projection is deliberately not
+		// re-materialized: this manager may hold no policy (CLI adopt has
+		// no stack context) and a force-resync would revert the rewrite,
+		// and under a live policy a re-render here would use the
+		// pre-adopt in-memory skill. The lock is refreshed to on-disk
+		// truth instead; the next policy-aware sync reconciles anything
+		// left stale.
+		if entry.ModelValue != "" {
+			destHash, herr := treeHash(entry.Target)
+			if herr != nil {
+				return fmt.Errorf("hashing projected copy after adopt: %w", herr)
+			}
+			srcHash, herr := treeHash(src)
+			if herr != nil {
+				return fmt.Errorf("hashing registry skill after adopt: %w", herr)
+			}
+			// The rewrite marker describes current bytes: when the adopt
+			// equalized the projection and the canonical (the user's own
+			// model edit was adopted), nothing rewritten remains.
+			mv := entry.ModelValue
+			if destHash == srcHash {
+				mv = ""
+			}
+			m.record(lf, skill, client, ChannelCopy, entry.Target, srcHash, destHash, entry.ChannelReason, mv, "")
+		} else {
+			// Force-resync the pair so the recorded hashes match the
+			// adopted content; the projected copy is backed up before the
+			// replace (it drifted from the recorded hash by definition).
+			sres := m.materialize(sk, t, ChannelCopy, lf, SyncOptions{Force: true})
+			if sres.Action == ActionError {
+				return fmt.Errorf("re-syncing %s to %s after adopt: %s", skill, client, sres.Error)
+			}
 		}
 		if err := saveView(pl, lf); err != nil {
 			return err
@@ -151,6 +211,128 @@ func (m *Manager) Adopt(ctx context.Context, skill, client string) (*AdoptResult
 		return nil
 	})
 	return result, err
+}
+
+// restoreAuthorModel rebuilds a projected SKILL.md with the model keys
+// the policy wrote (still holding the applied value) restored to the
+// registry canonical's declarations (author intent), undoing the policy
+// rewrite while keeping every real user edit. Keys the user edited to a
+// different value are theirs and are left alone. It returns policyOnly
+// true when the restored bytes match the canonical (raw or
+// parse-rendered), meaning the policy rewrite was the file's only
+// delta; restored is nil when no key holds the applied value (the whole
+// delta is the user's).
+//
+// Restoration prefers line surgery on the projected bytes over a
+// parse/re-render, so an adopt adds no normalization beyond what the
+// projection itself already carries; the parse/render path is the
+// fallback for the rare metadata-key cases surgery cannot express.
+func restoreAuthorModel(target, src, applied string) (restored []byte, policyOnly bool, err error) {
+	projRaw, err := os.ReadFile(filepath.Join(target, "SKILL.md")) // #nosec G304 -- fixed name inside the managed projection
+	if err != nil {
+		return nil, false, fmt.Errorf("reading projected SKILL.md: %w", err)
+	}
+	canonRaw, err := os.ReadFile(filepath.Join(src, "SKILL.md")) // #nosec G304 -- fixed name inside the registry skill dir
+	if err != nil {
+		return nil, false, fmt.Errorf("reading registry SKILL.md: %w", err)
+	}
+	proj, err := registry.ParseSkillMD(projRaw)
+	if err != nil {
+		return nil, false, fmt.Errorf("parsing projected SKILL.md: %w", err)
+	}
+	canon, err := registry.ParseSkillMD(canonRaw)
+	if err != nil {
+		return nil, false, fmt.Errorf("parsing registry SKILL.md: %w", err)
+	}
+
+	appliedNorm := registry.NormalizeModelValue(applied)
+	holdsApplied := func(v any) bool {
+		s, ok := v.(string)
+		return ok && registry.NormalizeModelValue(s) == appliedNorm
+	}
+	topOwned := holdsApplied(proj.Extra["model"])
+	metaOwned := map[string]bool{}
+	for _, key := range []string{"preferred-model", "model"} {
+		if v, ok := proj.Metadata[key]; ok && registry.NormalizeModelValue(v) == appliedNorm {
+			metaOwned[key] = true
+		}
+	}
+	if !topOwned && len(metaOwned) == 0 {
+		// Every model key was edited away from the policy value: the
+		// delta is entirely the user's.
+		return nil, false, nil
+	}
+
+	var restoredBytes []byte
+	_, projHasMetaModel := proj.Metadata["model"]
+	_, projHasMetaPreferred := proj.Metadata["preferred-model"]
+	if topOwned && len(metaOwned) == 0 && !projHasMetaModel && !projHasMetaPreferred {
+		// Common case: only the top-level key is involved. Line surgery
+		// keeps every other projected byte verbatim.
+		canonTop, _ := canon.Extra["model"].(string)
+		if out, ok := registry.RewriteTopLevelModelLine(projRaw, canonTop); ok {
+			restoredBytes = out
+		}
+	}
+	if restoredBytes == nil {
+		if topOwned {
+			if v, ok := canon.Extra["model"]; ok {
+				if proj.Extra == nil {
+					proj.Extra = map[string]any{}
+				}
+				proj.Extra["model"] = v
+			} else {
+				delete(proj.Extra, "model")
+			}
+		}
+		for key := range metaOwned {
+			if v, ok := canon.Metadata[key]; ok {
+				proj.Metadata[key] = v
+			} else {
+				delete(proj.Metadata, key)
+			}
+		}
+		restoredBytes, err = registry.RenderSkillMD(proj)
+		if err != nil {
+			return nil, false, fmt.Errorf("rendering restored SKILL.md: %w", err)
+		}
+	}
+
+	if bytes.Equal(restoredBytes, projRaw) {
+		return nil, false, nil
+	}
+	if bytes.Equal(restoredBytes, canonRaw) {
+		return restoredBytes, true, nil
+	}
+	canonNorm, err := registry.RenderSkillMD(canon)
+	if err != nil {
+		return nil, false, fmt.Errorf("rendering registry SKILL.md: %w", err)
+	}
+	if bytes.Equal(restoredBytes, canonNorm) {
+		return restoredBytes, true, nil
+	}
+	return restoredBytes, false, nil
+}
+
+// slicesContains reports whether list holds v.
+func slicesContains(list []string, v string) bool {
+	for _, s := range list {
+		if s == v {
+			return true
+		}
+	}
+	return false
+}
+
+// slicesRemove returns list without v, preserving order.
+func slicesRemove(list []string, v string) []string {
+	out := list[:0]
+	for _, s := range list {
+		if s != v {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // validateAdoptedSkill refuses projected content the registry could not

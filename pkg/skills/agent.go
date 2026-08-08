@@ -54,6 +54,30 @@ func (d *AgentDefinition) ExtraByKey(key string) (*yaml.Node, bool) {
 	return nil, false
 }
 
+// DeclaredModel reads the definition's top-level `model:` value. ok is
+// false when the declaration exists but is not a scalar (a structured
+// value cannot be honored or safely rewritten); an absent key reports
+// ("", true). Every surface that answers "what model does this agent
+// declare" (sync, CLI, REST) goes through this one helper so they can
+// never disagree on non-scalar handling.
+func (d *AgentDefinition) DeclaredModel() (string, bool) {
+	if d == nil {
+		return "", true
+	}
+	node, present := d.ExtraByKey("model")
+	if !present {
+		return "", true
+	}
+	if node.Kind != yaml.ScalarNode {
+		return "", false
+	}
+	var v string
+	if err := node.Decode(&v); err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(v), true
+}
+
 // agentNamePattern matches valid agent names: lowercase letters, digits,
 // and hyphens. Colons are excluded (Claude Code v2.1.218+ refuses agent
 // names containing ":").

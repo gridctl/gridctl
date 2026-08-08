@@ -64,14 +64,27 @@ type SyncOptions struct {
 	Pack string
 }
 
+// ChannelReasonModelPolicy marks a projection whose copied bytes carry
+// a stack model preference rewrite (which is also what forced it off
+// symlink channel). Aliased from the engine so the skill and agent
+// kinds can never drift apart on the string.
+const ChannelReasonModelPolicy = project.ChannelReasonModelPolicy
+
 // SyncResult describes what happened (or would happen) for one
 // (skill, client) projection.
 type SyncResult struct {
-	Skill      string `json:"skill"`
-	Client     string `json:"client"`
-	Channel    string `json:"channel,omitempty"`
+	Skill   string `json:"skill"`
+	Client  string `json:"client"`
+	Channel string `json:"channel,omitempty"`
+	// Reason names why the channel or bytes diverged from pass-through
+	// ("model-policy"); the CLI renders it beside the channel so a
+	// forced flip is never silent.
+	Reason     string `json:"channel_reason,omitempty"`
 	Target     string `json:"target,omitempty"`
 	Action     string `json:"action"`
+	// Detail carries advisory notes (model policy application or
+	// preservation); empty otherwise.
+	Detail     string `json:"detail,omitempty"`
 	BackupPath string `json:"backup_path,omitempty"`
 	Error      string `json:"error,omitempty"`
 }
@@ -104,7 +117,14 @@ type ProjectionStatus struct {
 	// Render is always "identity" for skills (registry content is placed
 	// as-is); present so JSON consumers see the same column the status
 	// table renders across kinds.
-	Render       string     `json:"render"`
+	Render string `json:"render"`
+	// ChannelReason marks a channel forced off the user's choice
+	// ("model-policy" when the rewrite forced this projection from
+	// symlink to copy); the status table renders it beside the channel.
+	ChannelReason string `json:"channel_reason,omitempty"`
+	// ModelValue is the model preference a policy rewrite wrote into
+	// the projected bytes; empty for pass-through projections.
+	ModelValue   string     `json:"model_value,omitempty"`
 	State        string     `json:"state"`
 	Detail       string     `json:"detail,omitempty"`
 	Experimental bool       `json:"experimental,omitempty"`
@@ -347,7 +367,11 @@ func (m *Manager) reconcileLocked(ctx context.Context, pl *project.Lock, lf *Loc
 			continue
 		}
 		// Preserve the recorded channel, unless the table now forces one.
-		res := m.materialize(sk, t, t.channel(entry.Channel == ChannelCopy), lf, opts)
+		// A policy-forced copy does not self-perpetuate: materialize
+		// recomputes the force from the current policy, so removing the
+		// policy restores symlink where the reason was model-policy.
+		copyRequested := entry.Channel == ChannelCopy && entry.ChannelReason != ChannelReasonModelPolicy
+		res := m.materialize(sk, t, t.channel(copyRequested), lf, opts)
 		results = append(results, res)
 		if err := m.persistIfRecorded(pl, lf, res, opts.DryRun); err != nil {
 			return results, err
@@ -378,18 +402,88 @@ func (m *Manager) removeOne(skill, client string, entry *Entry, lf *LockFile, dr
 	return res
 }
 
+// modelRewriteFor answers whether the current policy requires this
+// skill's projection to carry a rewritten SKILL.md, returning the
+// rendered bytes and the resolved value. Caller must hold m.mu.
+func (m *Manager) modelRewriteFor(sk *registry.AgentSkill) (data []byte, resolved string, need bool, err error) {
+	declared := registry.ExtractModelPreference(sk).Value()
+	resolved, need = m.modelPolicy.NeedsRewrite(sk.Name, declared)
+	if !need {
+		return nil, "", false, nil
+	}
+	data, err = registry.RenderWithModelPreference(sk, resolved)
+	if err != nil {
+		return nil, "", false, fmt.Errorf("rendering model preference for %s: %w", sk.Name, err)
+	}
+	return data, resolved, true, nil
+}
+
 // materialize creates or refreshes one (skill, client) projection,
 // updating its lock entry in place.
 func (m *Manager) materialize(sk *registry.AgentSkill, t Target, ch Channel, lf *LockFile, opts SyncOptions) SyncResult {
 	src := m.skillSourceDir(sk)
 	dest := filepath.Join(t.skillsDir(m.home), sk.Name)
-	res := SyncResult{Skill: sk.Name, Client: t.Slug, Channel: string(ch), Target: dest}
 	entry := lf.entry(sk.Name, t.Slug)
+
+	// Model policy: a resolved preference differing from the author's
+	// declaration substitutes SKILL.md in the projected tree, which is
+	// impossible over a symlink. A projection that would otherwise be
+	// symlinked is forced to copy channel with the reason recorded so
+	// the flip is never silent; a copy the user (or the target table)
+	// already chose keeps its empty reason, so --copy stays sticky when
+	// the policy later goes away.
+	var rewriteBytes []byte
+	reason := ""
+	modelValue := ""
+	var detail string
+	if m.modelPolicy != nil {
+		b, v, need, rerr := m.modelRewriteFor(sk)
+		if rerr != nil {
+			return SyncResult{Skill: sk.Name, Client: t.Slug, Channel: string(ch), Target: dest, Action: ActionError, Error: rerr.Error()}
+		}
+		if need {
+			rewriteBytes = b
+			modelValue = v
+			if ch != ChannelCopy {
+				ch = ChannelCopy
+				reason = ChannelReasonModelPolicy
+			}
+			detail = fmt.Sprintf("model preference %q applied (policy)", v)
+		}
+	}
+
+	res := SyncResult{Skill: sk.Name, Client: t.Slug, Channel: string(ch), Reason: reason, Target: dest, Detail: detail}
 
 	info, lerr := os.Lstat(dest)
 	exists := lerr == nil
 	if lerr != nil && !os.IsNotExist(lerr) {
 		res.Action, res.Error = ActionError, lerr.Error()
+		return res
+	}
+
+	// Preserve rule: without stack context (nil policy), a projection
+	// carrying a model policy rewrite is never reverted to pass-through
+	// bytes (a policy-less sync must not undo the daemon's work). A
+	// clean rewritten copy is left untouched; drift keeps its usual
+	// meaning, and an explicit --force reverts to pass-through (no
+	// policy is loaded that could reproduce the rewrite). A loaded
+	// stack without the block compiles to a non-nil empty policy, so
+	// it reconciles back rather than preserving.
+	if m.modelPolicy == nil && entry != nil && entry.ModelValue != "" &&
+		exists && info.Mode()&fs.ModeSymlink == 0 && !opts.Force {
+		destHash, herr := treeHash(dest)
+		if herr != nil {
+			res.Action, res.Error = ActionError, herr.Error()
+			return res
+		}
+		if destHash == entry.InstalledHash {
+			res.Channel = string(entry.Channel)
+			res.Reason = entry.ChannelReason
+			res.Action = ActionUnchanged
+			res.Detail = "model policy: unknown (no stack loaded); rewritten projection preserved"
+			return res
+		}
+		res.Action = ActionSkippedDrift
 		return res
 	}
 
@@ -408,7 +502,9 @@ func (m *Manager) materialize(sk *registry.AgentSkill, t Target, ch Channel, lf 
 	needsBackup := entry == nil
 
 	// Managed destinations get a drift check before any replace, and an
-	// unchanged short-circuit when nothing moved.
+	// unchanged short-circuit when nothing moved. Drift is judged
+	// against InstalledHash (the bytes gridctl wrote, rewritten or not);
+	// staleness against TreeHash (the registry source at sync time).
 	if exists && entry != nil {
 		switch entry.Channel {
 		case ChannelCopy:
@@ -417,22 +513,36 @@ func (m *Manager) materialize(sk *registry.AgentSkill, t Target, ch Channel, lf 
 				res.Action, res.Error = ActionError, herr.Error()
 				return res
 			}
-			if destHash != entry.TreeHash {
+			if destHash != entry.InstalledHash {
 				if !opts.Force {
 					res.Action = ActionSkippedDrift
 					return res
 				}
 				needsBackup = true
 			}
-			if destHash == entry.TreeHash && ch == ChannelCopy {
+			if destHash == entry.InstalledHash && ch == ChannelCopy {
 				srcHash, herr := treeHash(src)
 				if herr != nil {
 					res.Action, res.Error = ActionError, herr.Error()
 					return res
 				}
-				if srcHash == entry.TreeHash {
+				// Unchanged means the destination already holds exactly what
+				// this sync would write: registry unmoved AND the expected
+				// projected bytes (with the current policy applied) match
+				// what is on disk. Judging against the recorded hashes alone
+				// would let a policy change record new state while old bytes
+				// stay on disk.
+				expected := srcHash
+				if rewriteBytes != nil {
+					expected, herr = treeHashWith(src, map[string][]byte{"SKILL.md": rewriteBytes})
+					if herr != nil {
+						res.Action, res.Error = ActionError, herr.Error()
+						return res
+					}
+				}
+				if srcHash == entry.TreeHash && expected == entry.InstalledHash {
 					res.Action = ActionUnchanged
-					m.record(lf, sk.Name, t.Slug, ch, dest, entry.TreeHash, opts.Pack)
+					m.record(lf, sk.Name, t.Slug, ch, dest, srcHash, expected, reason, modelValue, opts.Pack)
 					return res
 				}
 			}
@@ -449,7 +559,7 @@ func (m *Manager) materialize(sk *registry.AgentSkill, t Target, ch Channel, lf 
 			}
 			if rerr == nil && ch == ChannelSymlink && link == src {
 				res.Action = ActionUnchanged
-				m.record(lf, sk.Name, t.Slug, ch, dest, "", opts.Pack)
+				m.record(lf, sk.Name, t.Slug, ch, dest, "", "", "", "", opts.Pack)
 				return res
 			}
 			// A link re-pointed away from the registry is drift, exactly
@@ -502,22 +612,33 @@ func (m *Manager) materialize(sk *registry.AgentSkill, t Target, ch Channel, lf 
 			res.Action, res.Error = ActionError, err.Error()
 			return res
 		}
-		m.record(lf, sk.Name, t.Slug, ch, dest, "", opts.Pack)
+		m.record(lf, sk.Name, t.Slug, ch, dest, "", "", "", "", opts.Pack)
 		res.Action = ActionLinked
 	case ChannelCopy:
-		// The source hash is computed before the copy; the copy is
-		// content-identical by construction, so a post-copy hash cannot
-		// fail and leave an unrecorded gridctl artifact behind.
+		// The source hash is computed before the copy; the copy content
+		// (with any SKILL.md substitution applied inside the staged temp
+		// directory) is deterministic, so a post-copy hash cannot fail
+		// and leave an unrecorded gridctl artifact behind.
 		h, herr := treeHash(src)
 		if herr != nil {
 			res.Action, res.Error = ActionError, herr.Error()
 			return res
 		}
-		if err := copyDirAtomic(src, dest); err != nil {
+		installed := h
+		var overrides map[string][]byte
+		if rewriteBytes != nil {
+			overrides = map[string][]byte{"SKILL.md": rewriteBytes}
+			installed, herr = treeHashWith(src, overrides)
+			if herr != nil {
+				res.Action, res.Error = ActionError, herr.Error()
+				return res
+			}
+		}
+		if err := copyDirAtomicWith(src, dest, overrides); err != nil {
 			res.Action, res.Error = ActionError, err.Error()
 			return res
 		}
-		m.record(lf, sk.Name, t.Slug, ch, dest, h, opts.Pack)
+		m.record(lf, sk.Name, t.Slug, ch, dest, h, installed, reason, modelValue, opts.Pack)
 		res.Action = ActionCopied
 	}
 	if exists {
@@ -528,8 +649,11 @@ func (m *Manager) materialize(sk *registry.AgentSkill, t Target, ch Channel, lf 
 
 // record updates the lock entry for one projection. The pack tag is
 // stamped when the sync carries one and carried forward otherwise, so a
-// plain re-sync never strips pack ownership.
-func (m *Manager) record(lf *LockFile, skill, client string, ch Channel, target, hash, packTag string) {
+// plain re-sync never strips pack ownership. canonicalHash fingerprints
+// the registry source tree (staleness), installedHash the projected
+// tree as written (drift); for symlinks both are empty, for plain
+// copies they coincide.
+func (m *Manager) record(lf *LockFile, skill, client string, ch Channel, target, canonicalHash, installedHash, reason, modelValue, packTag string) {
 	if packTag == "" {
 		if prev := lf.entry(skill, client); prev != nil {
 			packTag = prev.Pack
@@ -539,7 +663,10 @@ func (m *Manager) record(lf *LockFile, skill, client string, ch Channel, target,
 		Channel:          ch,
 		Target:           target,
 		CreatedByGridctl: true,
-		TreeHash:         hash,
+		TreeHash:         canonicalHash,
+		InstalledHash:    installedHash,
+		ChannelReason:    reason,
+		ModelValue:       modelValue,
 		Pack:             packTag,
 		SyncedAt:         time.Now().UTC(),
 	})
@@ -566,11 +693,13 @@ func (m *Manager) Statuses(ctx context.Context) ([]ProjectionStatus, error) {
 // statusFor computes one projection's status row.
 func (m *Manager) statusFor(skill, client string, entry *Entry) ProjectionStatus {
 	ps := ProjectionStatus{
-		Render: "identity",
-		Skill:   skill,
-		Client:  client,
-		Channel: string(entry.Channel),
-		Target:  entry.Target,
+		Render:        "identity",
+		Skill:         skill,
+		Client:        client,
+		Channel:       string(entry.Channel),
+		ChannelReason: entry.ChannelReason,
+		ModelValue:    entry.ModelValue,
+		Target:        entry.Target,
 	}
 	syncedAt := entry.SyncedAt
 	ps.SyncedAt = &syncedAt
@@ -594,6 +723,8 @@ func (m *Manager) statusFor(skill, client string, entry *Entry) ProjectionStatus
 		return ps
 	}
 
+	pol := m.currentModelPolicy()
+
 	switch entry.Channel {
 	case ChannelSymlink:
 		link, rerr := os.Readlink(entry.Target)
@@ -614,6 +745,15 @@ func (m *Manager) statusFor(skill, client string, entry *Entry) ProjectionStatus
 			ps.Detail = "symlink target no longer exists"
 			return ps
 		}
+		// A symlink cannot carry a rewrite: a policy that now resolves a
+		// differing preference needs this projection re-synced to copy.
+		if declared := registry.ExtractModelPreference(sk).Value(); pol != nil {
+			if _, need := pol.NeedsRewrite(skill, declared); need {
+				ps.State = StateStale
+				ps.Detail = "model preference policy applies; run 'gridctl skill project sync' to project a rewritten copy (model policy)"
+				return ps
+			}
+		}
 		ps.State = StateInSync
 		return ps
 	case ChannelCopy:
@@ -623,7 +763,7 @@ func (m *Manager) statusFor(skill, client string, entry *Entry) ProjectionStatus
 			ps.Detail = herr.Error()
 			return ps
 		}
-		if destHash != entry.TreeHash {
+		if destHash != entry.InstalledHash {
 			ps.State = StateDrifted
 			return ps
 		}
@@ -635,6 +775,36 @@ func (m *Manager) statusFor(skill, client string, entry *Entry) ProjectionStatus
 		}
 		if srcHash != entry.TreeHash {
 			ps.State = StateStale
+			return ps
+		}
+		if pol == nil {
+			if entry.ModelValue != "" {
+				ps.Detail = "model policy: unknown (no stack loaded); rewritten projection preserved"
+			}
+			ps.State = StateInSync
+			return ps
+		}
+		// With a policy loaded, in-sync also means the projected bytes
+		// match what the current policy would write.
+		expected := srcHash
+		declared := registry.ExtractModelPreference(sk).Value()
+		if resolved, need := pol.NeedsRewrite(skill, declared); need {
+			data, rerr := registry.RenderWithModelPreference(sk, resolved)
+			if rerr != nil {
+				ps.State = StateStale
+				ps.Detail = rerr.Error()
+				return ps
+			}
+			expected, herr = treeHashWith(m.skillSourceDir(sk), map[string][]byte{"SKILL.md": data})
+			if herr != nil {
+				ps.State = StateStale
+				ps.Detail = herr.Error()
+				return ps
+			}
+		}
+		if expected != entry.InstalledHash {
+			ps.State = StateStale
+			ps.Detail = "model preference policy changed; run 'gridctl skill project sync'"
 			return ps
 		}
 		ps.State = StateInSync

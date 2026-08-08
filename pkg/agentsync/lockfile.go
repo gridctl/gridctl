@@ -31,6 +31,12 @@ type Entry struct {
 	// CreatedByGridctl marks the path as gridctl-owned. Always true for
 	// recorded entries.
 	CreatedByGridctl bool
+	// ModelValue is the model preference a policy rewrite wrote into the
+	// installed bytes; non-empty marks the projection as rewritten (the
+	// preserve rule and adopt key on it), and the value lets adopt tell
+	// the policy's write apart from a deliberate user edit. Empty for
+	// pass-through projections.
+	ModelValue string
 	// Pack tags the projection with the pack that applied it (empty =
 	// not pack-managed).
 	Pack     string
@@ -74,6 +80,7 @@ func viewFromLock(pl *project.Lock) *LockFile {
 			InstalledHash:    e.InstalledHash,
 			CanonicalHash:    e.CanonicalHash,
 			CreatedByGridctl: e.CreatedByGridctl,
+			ModelValue:       e.ModelValue,
 			Pack:             e.Pack,
 			SyncedAt:         e.SyncedAt,
 		})
@@ -97,6 +104,7 @@ func saveView(pl *project.Lock, lf *LockFile) error {
 				Path:             e.Target,
 				Channel:          ChannelCopy,
 				CreatedByGridctl: e.CreatedByGridctl,
+				ModelValue:       e.ModelValue,
 				InstalledHash:    e.InstalledHash,
 				CanonicalHash:    e.CanonicalHash,
 				Pack:             e.Pack,

@@ -46,6 +46,7 @@ type Server struct {
 	stackName          string
 	logBuffer          *logging.LogBuffer
 	reloadHandler      *reload.Handler
+	modelPolicies      func() (skillPolicy, agentPolicy *registry.ModelPolicy)
 	provisioners       *provisioner.Registry
 	linkServerName     string
 	registryServer     *registry.Server

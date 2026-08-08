@@ -65,6 +65,30 @@ type Manager struct {
 	// wiring kind's "daemon enforces, human overrides" posture. A plain func
 	// keeps skillsync decoupled from the policy's home package.
 	policy func(name string) (allowed bool, rule string)
+
+	// modelPolicy is the optional compiled `model_preferences.skills`
+	// scope, installed by the controller (daemon) or a --stack-carrying
+	// CLI invocation. nil means no stack context: pass-through for new
+	// projections, preserve for projections a policy previously rewrote
+	// (model policy is stateful on disk, so a policy-less sync must not
+	// undo the daemon's work).
+	modelPolicy *registry.ModelPolicy
+}
+
+// SetModelPolicy installs the compiled model preference policy for the
+// skills scope. Passing nil removes it (pass-through plus preserve).
+func (m *Manager) SetModelPolicy(p *registry.ModelPolicy) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.modelPolicy = p
+}
+
+// currentModelPolicy reads the installed policy under the manager
+// mutex, for lock-free read paths (Statuses) racing SetModelPolicy.
+func (m *Manager) currentModelPolicy() *registry.ModelPolicy {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.modelPolicy
 }
 
 // SetPolicy installs the skill exposure check. Passing nil removes it.

@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	"github.com/gridctl/gridctl/pkg/skillpins"
+	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/vault"
 )
@@ -678,6 +680,90 @@ func DeniedActiveSkillWarnings(stack *config.Stack) []string {
 		if allowed, rule := policy.Evaluate(sk.Name); !allowed {
 			warnings = append(warnings, fmt.Sprintf(
 				"skill %q is active but denied by the skills policy (rule: %s); it will not be exposed or projected", sk.Name, rule))
+		}
+	}
+	return warnings
+}
+
+// ModelPreferenceWarnings loads the registry read-only and reports the
+// content-level model preference lint findings pkg/config cannot
+// compute alone (it deliberately never reads the registry):
+//
+//   - model-preference-unhonored: one aggregate line per rewriting
+//     scope naming how many items resolve a preference while some of
+//     that kind's projection targets ignore or drop the key. Aggregate
+//     by design: a per-item warning would repeat the same fact for
+//     every skill in the registry. Surfacing-only scopes (rewrite
+//     false) project nothing and are skipped.
+//   - model-preference-portability: an active skill declares top-level
+//     `model:`, which spec-strict consumers outside Claude Code reject
+//     (`metadata` is the portable placement, string values only).
+//
+// All findings are advisory; the cmd layer appends them as warnings that
+// never block a deploy. Best-effort: an unreadable registry yields
+// nothing.
+func ModelPreferenceWarnings(stack *config.Stack) []string {
+	if stack == nil || stack.ModelPreferences == nil {
+		return nil
+	}
+	skillPolicy, agentPolicy := stack.ModelPolicies()
+	registryDir := filepath.Join(state.BaseDir(), "registry")
+	store := registry.NewStore(registryDir)
+	if err := store.Load(); err != nil {
+		return nil
+	}
+
+	dropTargetsOf := func(matrix map[string]registry.HonorStatus) []string {
+		var out []string
+		for slug, status := range matrix {
+			if status == registry.HonorIgnored || status == registry.HonorDropped {
+				out = append(out, slug)
+			}
+		}
+		sort.Strings(out)
+		return out
+	}
+
+	var warnings []string
+
+	skillRewrite := stack.ModelPreferences.Skills != nil && stack.ModelPreferences.Skills.Rewrite
+	if drop := dropTargetsOf(registry.SkillHonorMatrix()); skillRewrite && len(drop) > 0 {
+		resolving := 0
+		for _, sk := range store.ActiveSkills() {
+			if resolved, _ := skillPolicy.Resolve(sk.Name, registry.ExtractModelPreference(sk).Value()); resolved != "" {
+				resolving++
+			}
+		}
+		if resolving > 0 {
+			warnings = append(warnings, fmt.Sprintf(
+				"model-preference-unhonored: %d active skill(s) resolve a model preference under rewrite, and these skill projection targets do not honor the key: %s",
+				resolving, strings.Join(drop, ", ")))
+		}
+	}
+
+	agentRewrite := stack.ModelPreferences.Agents != nil && stack.ModelPreferences.Agents.Rewrite
+	if drop := dropTargetsOf(registry.AgentHonorMatrix()); agentRewrite && len(drop) > 0 {
+		resolving := 0
+		if agents, err := skills.ListAgents(registryDir); err == nil {
+			for _, a := range agents {
+				declared, _ := a.Definition.DeclaredModel()
+				if resolved, _ := agentPolicy.Resolve(a.Name, declared); resolved != "" {
+					resolving++
+				}
+			}
+		}
+		if resolving > 0 {
+			warnings = append(warnings, fmt.Sprintf(
+				"model-preference-unhonored: %d imported agent(s) resolve a model preference under rewrite; rendered dialects drop the key by design: %s",
+				resolving, strings.Join(drop, ", ")))
+		}
+	}
+
+	for _, sk := range store.ActiveSkills() {
+		if pref := registry.ExtractModelPreference(sk); pref != nil && pref.SourceKey == registry.ModelSourceTopLevel {
+			warnings = append(warnings, fmt.Sprintf(
+				"model-preference-portability: skill %q declares top-level `model:`, which spec-strict consumers outside Claude Code reject as an unknown key; `metadata` is the portable placement (string values)",
+				sk.Name))
 		}
 	}
 	return warnings

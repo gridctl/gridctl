@@ -124,6 +124,9 @@ type registryAgentListItem struct {
 	Source string            `json:"source,omitempty"`
 	Extra  []agentExtraField `json:"extra,omitempty"`
 	Dir    string            `json:"dir,omitempty"`
+	// ModelPreference is the declared/resolved model preference view
+	// (nil when the agent declares nothing and no policy resolves one).
+	ModelPreference *modelPreferenceView `json:"modelPreference,omitempty"`
 }
 
 // registryAgent is the full wire shape: the list projection plus the
@@ -153,20 +156,21 @@ func (s *Server) agentSources() map[string]string {
 }
 
 // newRegistryAgentListItem projects one installed agent into list shape.
-func newRegistryAgentListItem(a skills.InstalledAgent, sources map[string]string) registryAgentListItem {
+func (s *Server) newRegistryAgentListItem(a skills.InstalledAgent, sources map[string]string) registryAgentListItem {
 	return registryAgentListItem{
-		Name:        a.Name,
-		Description: a.Definition.Description,
-		Source:      sources[a.Name],
-		Extra:       agentExtraWire(a.Definition),
-		Dir:         a.Dir,
+		Name:            a.Name,
+		Description:     a.Definition.Description,
+		Source:          sources[a.Name],
+		Extra:           agentExtraWire(a.Definition),
+		Dir:             a.Dir,
+		ModelPreference: s.agentModelPreference(a),
 	}
 }
 
 // newRegistryAgent projects one installed agent into full shape.
-func newRegistryAgent(a skills.InstalledAgent, sources map[string]string) registryAgent {
+func (s *Server) newRegistryAgent(a skills.InstalledAgent, sources map[string]string) registryAgent {
 	return registryAgent{
-		registryAgentListItem: newRegistryAgentListItem(a, sources),
+		registryAgentListItem: s.newRegistryAgentListItem(a, sources),
 		Body:                  a.Definition.Body,
 		Raw:                   string(a.Definition.Raw),
 	}
@@ -193,7 +197,7 @@ func (s *Server) handleRegistryAgentsList(w http.ResponseWriter, r *http.Request
 	if r.URL.Query().Get("full") == "1" {
 		items := make([]registryAgent, 0, len(agents))
 		for _, a := range agents {
-			items = append(items, newRegistryAgent(a, sources))
+			items = append(items, s.newRegistryAgent(a, sources))
 		}
 		writeJSON(w, items)
 		return
@@ -201,7 +205,7 @@ func (s *Server) handleRegistryAgentsList(w http.ResponseWriter, r *http.Request
 
 	items := make([]registryAgentListItem, 0, len(agents))
 	for _, a := range agents {
-		items = append(items, newRegistryAgentListItem(a, sources))
+		items = append(items, s.newRegistryAgentListItem(a, sources))
 	}
 	writeJSON(w, items)
 }
@@ -219,7 +223,7 @@ func (s *Server) handleRegistryAgentGet(w http.ResponseWriter, r *http.Request) 
 		writeJSONError(w, "Agent not found: "+name, http.StatusNotFound)
 		return
 	}
-	writeJSON(w, newRegistryAgent(*a, s.agentSources()))
+	writeJSON(w, s.newRegistryAgent(*a, s.agentSources()))
 }
 
 // handleRegistryAgentPut updates an agent's file. The body carries the
@@ -281,7 +285,7 @@ func (s *Server) handleRegistryAgentPut(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	a := skills.InstalledAgent{Name: name, Definition: saved, Dir: skills.AgentDir(registryDir, name)}
-	writeJSON(w, newRegistryAgent(a, s.agentSources()))
+	writeJSON(w, s.newRegistryAgent(a, s.agentSources()))
 }
 
 // handleRegistryAgentDelete removes an agent from the canonical store,
