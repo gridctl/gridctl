@@ -404,6 +404,7 @@ func runSkillListAgents() error {
 	type agentEntry struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
+		Model       string `json:"model,omitempty"`
 		Repo        string `json:"repo,omitempty"`
 		Ref         string `json:"ref,omitempty"`
 	}
@@ -411,6 +412,7 @@ func runSkillListAgents() error {
 	var entries []agentEntry
 	for _, a := range agents {
 		entry := agentEntry{Name: a.Name, Description: a.Definition.Description}
+		entry.Model, _ = a.Definition.DeclaredModel()
 		if origin, err := skills.ReadOrigin(a.Dir); err == nil {
 			entry.Repo = origin.Repo
 			entry.Ref = origin.Ref
@@ -425,17 +427,18 @@ func runSkillListAgents() error {
 	}
 
 	t := output.NewTableWriter(os.Stdout, *skillListPlain)
-	t.AppendHeader(table.Row{"Name", "Description", "Repo"})
+	t.AppendHeader(table.Row{"Name", "Description", "Model", "Repo"})
 	for _, e := range entries {
 		repo := e.Repo
 		if repo != "" && e.Ref != "" {
 			repo = fmt.Sprintf("%s@%s", repo, e.Ref)
 		}
-		t.AppendRow(table.Row{e.Name, e.Description, repo})
+		t.AppendRow(table.Row{e.Name, e.Description, e.Model, repo})
 	}
 	t.Render()
 	return nil
 }
+
 
 func runSkillList() error {
 	store, err := loadRegistry()
@@ -453,6 +456,7 @@ func runSkillList() error {
 		Name   string `json:"name"`
 		State  string `json:"state"`
 		Source string `json:"source"`
+		Model  string `json:"model,omitempty"`
 		Repo   string `json:"repo,omitempty"`
 		Ref    string `json:"ref,omitempty"`
 	}
@@ -464,6 +468,7 @@ func runSkillList() error {
 			Name:   sk.Name,
 			State:  string(sk.State),
 			Source: "local",
+			Model:  registry.ExtractModelPreference(sk).Value(),
 		}
 
 		skillDir := skillDirPath(sk)
@@ -488,13 +493,13 @@ func runSkillList() error {
 	}
 
 	t := output.NewTableWriter(os.Stdout, *skillListPlain)
-	t.AppendHeader(table.Row{"Name", "State", "Source", "Repo"})
+	t.AppendHeader(table.Row{"Name", "State", "Source", "Model", "Repo"})
 	for _, e := range entries {
 		repo := e.Repo
 		if repo != "" && e.Ref != "" {
 			repo = fmt.Sprintf("%s@%s", repo, e.Ref)
 		}
-		t.AppendRow(table.Row{e.Name, e.State, e.Source, repo})
+		t.AppendRow(table.Row{e.Name, e.State, e.Source, e.Model, repo})
 	}
 	t.Render()
 
