@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/gridctl/gridctl/pkg/flags"
+	"github.com/gridctl/gridctl/pkg/registry"
 )
 
 // IssueSeverity represents the severity level of a validation issue.
@@ -173,6 +175,58 @@ func (r *ValidationResult) addWarnings(s *Stack) {
 
 	r.addExperimentalIssues(flags.Default(), s)
 	r.addSkillsPolicyIssues(s)
+	r.addModelPreferencesIssues(s)
+}
+
+// addModelPreferencesIssues reports on the `model_preferences:` block.
+// All findings are advisory (warnings and info; the block can never
+// fail validation): model alias vocabularies churn on client-release
+// timescales, and an unknown override name may simply arrive later via
+// pack. The value check is `model-preference-unknown-alias`; content
+// checks that need the registry (unhonored targets, portability) join
+// at the cmd layer like the skills-policy apply warnings.
+func (r *ValidationResult) addModelPreferencesIssues(s *Stack) {
+	if s.ModelPreferences == nil {
+		return
+	}
+	checkScope := func(name string, scope *ModelPreferenceScope) {
+		if scope == nil {
+			return
+		}
+		warnValue := func(field, value string) {
+			if value == "" || registry.IsKnownModelValue(value) {
+				return
+			}
+			r.Issues = append(r.Issues, ValidationIssue{
+				Field:    field,
+				Message:  fmt.Sprintf("model-preference-unknown-alias: %q is neither a documented alias (%s) nor shaped like a full model ID; clients fall back to their own default for values they cannot resolve", value, strings.Join(registry.KnownModelAliases(), ", ")),
+				Severity: SeverityWarning,
+			})
+			r.WarningCount++
+		}
+		warnValue("model_preferences."+name+".default", scope.Default)
+		keys := make([]string, 0, len(scope.Overrides))
+		for k := range scope.Overrides {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			warnValue("model_preferences."+name+".overrides."+k, scope.Overrides[k])
+		}
+		if scope.Rewrite {
+			detail := fmt.Sprintf("%d override(s)", len(scope.Overrides))
+			if scope.Default != "" {
+				detail += fmt.Sprintf(", default %q applies to every projected %s with no declared preference (affected projections are forced to copy channel)", scope.Default, strings.TrimSuffix(name, "s"))
+			}
+			r.Issues = append(r.Issues, ValidationIssue{
+				Field:    "model_preferences." + name,
+				Message:  "projection rewrite enabled for " + name + ": " + detail,
+				Severity: SeverityInfo,
+			})
+		}
+	}
+	checkScope("skills", s.ModelPreferences.Skills)
+	checkScope("agents", s.ModelPreferences.Agents)
 }
 
 // addSkillsPolicyIssues reports on the `skills:` exposure block. Validate has
