@@ -59,6 +59,27 @@ type GatewayInstance struct {
 	RegistryServer *registry.Server // Internal registry MCP server (nil if empty)
 	Broker         *mcpauth.Broker  // Downstream OAuth broker (nil when the token store is unavailable)
 	SkillPinStore  *skillpins.Store // TOFU pins for registry skill documents (nil when unavailable)
+
+	// Compiled model_preferences scopes from the live stack, swapped on
+	// config apply (mirroring SetSkillPolicy) and read by the projection
+	// reconcile so a hot-reloaded policy applies on the next pass.
+	modelPolicyMu    sync.Mutex
+	skillModelPolicy *registry.ModelPolicy
+	agentModelPolicy *registry.ModelPolicy
+}
+
+// SetModelPolicies swaps the compiled model preference policies.
+func (inst *GatewayInstance) SetModelPolicies(skills, agents *registry.ModelPolicy) {
+	inst.modelPolicyMu.Lock()
+	defer inst.modelPolicyMu.Unlock()
+	inst.skillModelPolicy, inst.agentModelPolicy = skills, agents
+}
+
+// CurrentModelPolicies reads the compiled model preference policies.
+func (inst *GatewayInstance) CurrentModelPolicies() (skills, agents *registry.ModelPolicy) {
+	inst.modelPolicyMu.Lock()
+	defer inst.modelPolicyMu.Unlock()
+	return inst.skillModelPolicy, inst.agentModelPolicy
 }
 
 // GatewayBuilder constructs and runs the MCP gateway from a stack config.
@@ -1259,6 +1280,13 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 		vaultLookup = b.vaultStore
 		vaultSetLookup = newVaultSetAdapter(b.vaultStore)
 	}
+	// Seed the compiled model preference policies from the stack the
+	// daemon started with; the config-applied callback below keeps them
+	// current across hot reloads. The API reads them live so REST
+	// responses carry resolved values exactly when a stack is loaded.
+	inst.SetModelPolicies(b.stack.ModelPolicies())
+	inst.APIServer.SetModelPolicyProvider(inst.CurrentModelPolicies)
+
 	reloadHandler := reload.NewHandler(b.stackPath, b.stack, inst.Gateway, b.rt, b.config.Port, b.config.BasePort, vaultLookup, vaultSetLookup)
 	reloadHandler.SetLogger(slog.New(handler))
 	reloadHandler.SetNoExpand(b.config.NoExpand)
@@ -1301,6 +1329,11 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 		// prompt/resource surface (and projection reconcile) on the next
 		// request. Stateless recompile, no carry-over.
 		inst.Gateway.SetSkillPolicy(mcp.NewSkillPolicy(skillsPolicySpec(newCfg)))
+		// Swap the compiled model preference policies so a
+		// `model_preferences:` edit applies on the next projection
+		// reconcile (which the stack watcher triggers right after this
+		// callback). Stateless recompile, no carry-over.
+		inst.SetModelPolicies(newCfg.ModelPolicies())
 		b.applyTelemetryConfig(inst.APIServer, handler)
 	})
 	inst.APIServer.SetReloadHandler(reloadHandler)
@@ -1447,12 +1480,17 @@ func reconcileSkillProjections(ctx context.Context, inst *GatewayInstance, home 
 	// client config endpoints change only on explicit user action, and a
 	// daemon silently rewriting them would be the exact failure mode
 	// wiring ownership exists to prevent. Keep it out of this loop.
+	skillModelPolicy, agentModelPolicy := inst.CurrentModelPolicies()
 	mgr := skillsync.NewManagerWithHome(home, inst.RegistryServer.Store())
 	// The reconcile enforces the stack's skill exposure policy: denied
 	// recorded projections are skipped (visible, never silently removed).
 	mgr.SetPolicy(func(name string) (bool, string) {
 		return inst.Gateway.CurrentSkillPolicy().Evaluate(name)
 	})
+	// And the stack's model preference policy: the daemon is the
+	// authoritative policy-aware sync path, so rewrite, reconcile-back,
+	// and channel restoration all happen here.
+	mgr.SetModelPolicy(skillModelPolicy)
 	results, err := mgr.Reconcile(ctx)
 	if err != nil {
 		logger.Warn("skill projection reconcile failed", "error", err)
@@ -1464,6 +1502,7 @@ func reconcileSkillProjections(ctx context.Context, inst *GatewayInstance, home 
 	// Agent projections reconcile with the same posture: recorded set
 	// only, drift never forced, failures logged and tolerated.
 	agentMgr := agentsync.NewManagerWithHome(home, inst.RegistryServer.Store().Dir())
+	agentMgr.SetModelPolicy(agentModelPolicy)
 	agentResults, err := agentMgr.Reconcile(ctx)
 	if err != nil {
 		logger.Warn("agent projection reconcile failed", "error", err)
