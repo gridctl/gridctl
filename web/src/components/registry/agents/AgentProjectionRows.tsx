@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Cable } from 'lucide-react';
 import { cn } from '../../../lib/cn';
+import { ProjectedModelChip } from '../ModelChip';
 import { Modal } from '../../ui/Modal';
 import { StatePill } from '../../ui/StatePill';
 import { showToast } from '../../ui/Toast';
@@ -184,6 +185,7 @@ function ProjectionRow({
         >
           {s.render}
         </span>
+        <ProjectedModelChip value={s.model_value} />
         <span className="text-xs text-text-primary whitespace-nowrap">
           {agentClientName(s.client)}
           {s.experimental && <span className="ml-1 text-[10px] text-text-secondary">(experimental)</span>}
