@@ -1287,6 +1287,21 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 	inst.SetModelPolicies(b.stack.ModelPolicies())
 	inst.APIServer.SetModelPolicyProvider(inst.CurrentModelPolicies)
 
+	// Resolve the projection home once, at the composition boundary, so
+	// every refresh path below (including the config-applied callback)
+	// reconciles against an explicit home instead of resolving the real
+	// one deep inside library code (which is how tests once deleted real
+	// skill projections). Empty on resolution failure; reconcile then
+	// skips with a warning.
+	projectionHome := b.homeDir
+	if projectionHome == "" {
+		if h, err := os.UserHomeDir(); err == nil {
+			projectionHome = h
+		} else {
+			slog.New(handler).Warn("home directory unavailable; skill projection reconcile disabled", "error", err)
+		}
+	}
+
 	reloadHandler := reload.NewHandler(b.stackPath, b.stack, inst.Gateway, b.rt, b.config.Port, b.config.BasePort, vaultLookup, vaultSetLookup)
 	reloadHandler.SetLogger(slog.New(handler))
 	reloadHandler.SetNoExpand(b.config.NoExpand)
@@ -1329,28 +1344,24 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 		// prompt/resource surface (and projection reconcile) on the next
 		// request. Stateless recompile, no carry-over.
 		inst.Gateway.SetSkillPolicy(mcp.NewSkillPolicy(skillsPolicySpec(newCfg)))
-		// Swap the compiled model preference policies so a
-		// `model_preferences:` edit applies on the next projection
-		// reconcile (which the stack watcher triggers right after this
-		// callback). Stateless recompile, no carry-over.
+		// Swap the compiled model preference policies. Stateless
+		// recompile, no carry-over.
 		inst.SetModelPolicies(newCfg.ModelPolicies())
 		b.applyTelemetryConfig(inst.APIServer, handler)
+		// Re-stamp projections so a `model_preferences:` edit reaches
+		// disk on EVERY successful reload path, not only under --watch:
+		// manual `gridctl reload` and POST /api/reload end here without
+		// ever passing through refreshRegistry. The --watch path also
+		// refreshes the registry right after this callback; the engine's
+		// cross-process lock serializes the two passes and the second is
+		// an idempotent no-op. Reload already does container work, so a
+		// projection reconcile adds negligible time under the handler's
+		// lock, and its failures are logged, never propagated.
+		if inst.RegistryServer != nil {
+			reconcileSkillProjections(ctx, inst, projectionHome, slog.New(handler))
+		}
 	})
 	inst.APIServer.SetReloadHandler(reloadHandler)
-
-	// Resolve the projection home once, at the composition boundary, so
-	// every refresh path below reconciles against an explicit home
-	// instead of resolving the real one deep inside library code (which
-	// is how tests once deleted real skill projections). Empty on
-	// resolution failure; reconcile then skips with a warning.
-	projectionHome := b.homeDir
-	if projectionHome == "" {
-		if h, err := os.UserHomeDir(); err == nil {
-			projectionHome = h
-		} else {
-			slog.New(handler).Warn("home directory unavailable; skill projection reconcile disabled", "error", err)
-		}
-	}
 
 	// startWatcher starts a file watcher for the given stack path.
 	// It is called immediately when --watch is active, and exposed via SetStartWatcher
