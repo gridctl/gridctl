@@ -7,8 +7,8 @@ import (
 
 // modelPreferenceView is the wire shape for a skill or agent's model
 // preference: the author's declaration (always present when declared),
-// the policy-resolved value (present only when the daemon has a stack
-// with a model_preferences scope loaded; the UI never guesses), and
+// the policy-resolved value (present only when a loaded stack policy
+// default or override decides the value; the UI never guesses), and
 // the per-target honor matrix keyed by target slug. The whole object is
 // omitted when there is neither a declaration nor a policy resolution,
 // so older frontends see nothing new.
@@ -57,12 +57,20 @@ func honorWire(m map[string]registry.HonorStatus) map[string]string {
 }
 
 // modelPreferenceWire builds the wire view from a declaration and a
-// policy, or nil when neither says anything.
+// policy, or nil when neither says anything. Resolved is attached only
+// when the policy actually decided something (a default or an
+// override): a loaded stack without a model_preferences block compiles
+// to an empty known-absent policy, and echoing the author's own value
+// back as "resolved" under it would make every declared skill read as
+// policy-governed.
 func modelPreferenceWire(name string, pref *registry.ModelPreference, pol *registry.ModelPolicy, honor map[string]registry.HonorStatus) *modelPreferenceView {
 	declared := pref.Value()
 	resolved, resolution := "", ""
 	if pol != nil {
 		resolved, resolution = pol.Resolve(name, declared)
+	}
+	if resolution == registry.ResolutionAuthor {
+		resolved, resolution = "", ""
 	}
 	if declared == "" && resolved == "" {
 		return nil
