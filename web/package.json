@@ -16,7 +16,7 @@
     "@codemirror/lint": "^6.9.7",
     "@codemirror/state": "^6.7.1",
     "@codemirror/view": "^6.43.7",
-    "@dagrejs/dagre": "^3.0.0",
+    "@dagrejs/dagre": "^3.1.0",
     "@lobehub/icons": "^5.15.0",
     "@rjsf/core": "^6.7.1",
     "@rjsf/utils": "^6.6.2",
