@@ -41,6 +41,7 @@ Current as of **v0.1.0-beta.15 plus `[Unreleased]`** (see [CHANGELOG.md](../CHAN
 | Global context sync (ctx) | Experimental | May change without notice |
 | Rules fragment library (ctx add / list / rm, fragments mode) | Experimental | May change without notice |
 | Skill governance pins (skill pins, skills: policy) | Experimental | May change without notice |
+| Model preferences (model_preferences: block, projection rewrite) | Experimental | May change without notice |
 | Distributed tracing | Experimental | May change without notice |
 | Usage observability (token metrics, optimize) | Experimental | May change without notice |
 | Telemetry persistence | Experimental | May change without notice |
@@ -54,7 +55,7 @@ Current as of **v0.1.0-beta.15 plus `[Unreleased]`** (see [CHANGELOG.md](../CHAN
 | Tool groups | Experimental | May change without notice |
 | Per-client access scoping | Experimental | May change without notice |
 | Rate limits | Experimental | May change without notice |
-| Dollar-cost layer (pricing, model attribution, budgets) | Removed in v0.1.x | The gateway cannot observe actual spend; token metrics remain (see [Usage Observability](cost-observability.md)) |
+| Dollar-cost layer (pricing, model attribution, budgets) | Removed in v0.1.x | The gateway cannot observe actual spend; token metrics remain (see [Usage Observability](usage-observability.md)) |
 | Typed skill SDK (Go, TS) | Removed in v0.1.x | Replaced by prompt-only skills |
 | Go plugin skill loader | Removed in v0.1.x | Replaced by prompt-only skills |
 | Agent IDE (`gridctl agent dev`) | Removed in v0.1.x | Use the Library workspace instead |
