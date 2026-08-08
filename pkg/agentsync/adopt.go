@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/project"
+	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/skills"
 )
 
@@ -34,6 +35,11 @@ type AdoptResult struct {
 	BackupFile string `json:"backup_file,omitempty"`
 	// Changed reports whether the projected content differed from canon.
 	Changed bool `json:"changed"`
+	// PolicyKeysRestored reports that the projected file carried a stack
+	// model preference rewrite whose keys were restored to the author's
+	// declaration before write-back: policy-owned deltas are never
+	// adopted into the canonical store.
+	PolicyKeysRestored bool `json:"policy_keys_restored,omitempty"`
 }
 
 // Adopt pulls a hand-edited projected agent file back into the
@@ -86,6 +92,29 @@ func (m *Manager) Adopt(ctx context.Context, agent, client string) (*AdoptResult
 			return fmt.Errorf("reading canonical AGENT.md: %w", err)
 		}
 
+		// Policy-owned deltas are not adoptable: when the projection
+		// carries a model policy rewrite whose value is still in place,
+		// the model key is restored to the author's canonical declaration
+		// before any comparison or write-back, so an adopt can never
+		// poison the canonical store with a policy-resolved value. A
+		// projection whose only delta was the policy key then compares
+		// equal and adopts nothing. A model key the user deliberately
+		// edited to some other value is the user's edit and adopts like
+		// any other change.
+		if entry.ModelValue != "" {
+			projModel, projScalarOK := declaredAgentModel(projected)
+			if projScalarOK && registry.NormalizeModelValue(projModel) == registry.NormalizeModelValue(entry.ModelValue) {
+				if canonModel, scalarOK := declaredAgentModel(canon); scalarOK {
+					if restored, rok := rewriteAgentModel(projected, canonModel); rok {
+						if !bytes.Equal(restored, projected) {
+							res.PolicyKeysRestored = true
+						}
+						projected = restored
+					}
+				}
+			}
+		}
+
 		if !bytes.Equal(projected, canon) {
 			res.Changed = true
 			// Store-side backup first, following the pkg/skills .pre-<sha>
@@ -112,12 +141,37 @@ func (m *Manager) Adopt(ctx context.Context, agent, client string) (*AdoptResult
 			}
 		}
 
-		// Force-resync the pair so the recorded hashes match the adopted
-		// content (the projected file drifted from the recorded hash by
-		// definition when Changed).
-		sres := m.materialize(skills.InstalledAgent{Name: agent, Dir: a.Dir}, t, lf, SyncOptions{Force: true})
-		if sres.Action == ActionError {
-			return fmt.Errorf("re-syncing %s to %s after adopt: %s", agent, client, sres.Error)
+		// Re-sync the pair so the recorded hashes match the adopted
+		// content. A rewritten projection is deliberately not
+		// re-materialized: this manager may hold no policy (CLI adopt has
+		// no stack context) and a force-resync would revert the rewrite.
+		// The lock is refreshed to on-disk truth instead; the next
+		// policy-aware sync reconciles anything left stale.
+		if entry.ModelValue != "" {
+			diskProjected, exists, derr := readIfExists(entry.Target)
+			if derr != nil || !exists {
+				return fmt.Errorf("re-reading projected file after adopt: %v", derr)
+			}
+			newCanon, cerr := os.ReadFile(canonicalFile) // #nosec G304 -- fixed name inside the managed store
+			if cerr != nil {
+				return fmt.Errorf("re-reading canonical AGENT.md after adopt: %w", cerr)
+			}
+			// The rewrite marker describes current bytes: when the adopt
+			// equalized the projection and the canonical (the user's own
+			// model edit was adopted), nothing rewritten remains.
+			mv := entry.ModelValue
+			if bytes.Equal(diskProjected, newCanon) {
+				mv = ""
+			}
+			m.record(lf, agent, client, entry.Target, contentHash(diskProjected), contentHash(newCanon), mv, "")
+		} else {
+			// Force-resync the pair so the recorded hashes match the
+			// adopted content (the projected file drifted from the
+			// recorded hash by definition when Changed).
+			sres := m.materialize(skills.InstalledAgent{Name: agent, Dir: a.Dir}, t, lf, SyncOptions{Force: true})
+			if sres.Action == ActionError {
+				return fmt.Errorf("re-syncing %s to %s after adopt: %s", agent, client, sres.Error)
+			}
 		}
 		if err := saveView(pl, lf); err != nil {
 			return err

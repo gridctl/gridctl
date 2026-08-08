@@ -50,6 +50,9 @@ type registrySkillListItem struct {
 	// Governance is the pin/provenance/policy summary (nil when neither a
 	// pin record nor a policy verdict exists for the skill).
 	Governance *skillGovernance `json:"governance,omitempty"`
+	// ModelPreference is the declared/resolved model preference view
+	// (nil when the skill declares nothing and no policy resolves one).
+	ModelPreference *modelPreferenceView `json:"modelPreference,omitempty"`
 }
 
 // newRegistrySkillListItem projects one skill into its list shape.
@@ -67,6 +70,7 @@ func (s *Server) newRegistrySkillListItem(sk *registry.AgentSkill) registrySkill
 		FileCount:          sk.FileCount,
 		Dir:                sk.Dir,
 		Governance:         s.skillGovernanceFor(sk.Name),
+		ModelPreference:    s.skillModelPreference(sk),
 	}
 }
 
@@ -145,12 +149,14 @@ func (s *Server) handleRegistrySkillGet(w http.ResponseWriter, r *http.Request) 
 		writeJSONError(w, "Skill not found: "+name, http.StatusNotFound)
 		return
 	}
-	// The embedded skill keeps the original wire shape; governance rides
-	// alongside (nil when nothing is known, omitted from the JSON).
+	// The embedded skill keeps the original wire shape; governance and
+	// the model preference view ride alongside (nil when nothing is
+	// known, omitted from the JSON).
 	writeJSON(w, struct {
 		*registry.AgentSkill
-		Governance *skillGovernance `json:"governance,omitempty"`
-	}{sk, s.skillGovernanceFor(name)})
+		Governance      *skillGovernance     `json:"governance,omitempty"`
+		ModelPreference *modelPreferenceView `json:"modelPreference,omitempty"`
+	}{sk, s.skillGovernanceFor(name), s.skillModelPreference(sk)})
 }
 
 // handleRegistrySkillPut updates a skill.

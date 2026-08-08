@@ -70,6 +70,12 @@ const (
 	ActionWouldUpdate        = "would-update"
 )
 
+// ChannelReasonModelPolicy is the Entry.ChannelReason value marking a
+// projection whose installed bytes carry a stack model preference
+// rewrite. Defined once in the engine so the skill and agent kinds can
+// never drift apart on the string.
+const ChannelReasonModelPolicy = "model-policy"
+
 // HashScheme prefixes every stored hash so a future scheme change never
 // presents as false drift (the pkg/pins lesson).
 const HashScheme = "sha256:"
@@ -104,6 +110,21 @@ type Entry struct {
 	Channel          string `yaml:"channel,omitempty"`
 	CreatedByGridctl bool   `yaml:"created_by_gridctl,omitempty"`
 	TreeHash         string `yaml:"tree_hash,omitempty"`
+	// ChannelReason records why the CHANNEL diverges from what the user
+	// or target table chose: ChannelReasonModelPolicy marks a skill
+	// projection forced off symlink because its bytes carry a policy
+	// rewrite. Empty when the channel is the user's own choice (a --copy
+	// the policy merely rewrote keeps its empty reason, so the copy
+	// stays sticky when the policy goes away). Absent in pre-existing
+	// lockfiles, which migrate-on-read as empty.
+	ChannelReason string `yaml:"channel_reason,omitempty"`
+	// ModelValue records the model preference a policy rewrite wrote
+	// into the projected bytes; non-empty is the "bytes are rewritten"
+	// marker the preserve rule and adopt key on, and the value itself
+	// lets adopt distinguish the policy's write from a deliberate user
+	// edit of the same key. Empty for pass-through projections. Skill
+	// and agent kinds both use it.
+	ModelValue string `yaml:"model_value,omitempty"`
 
 	// KindContext attributes.
 	Strategy      string `yaml:"strategy,omitempty"`

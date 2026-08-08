@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -678,6 +679,60 @@ func DeniedActiveSkillWarnings(stack *config.Stack) []string {
 		if allowed, rule := policy.Evaluate(sk.Name); !allowed {
 			warnings = append(warnings, fmt.Sprintf(
 				"skill %q is active but denied by the skills policy (rule: %s); it will not be exposed or projected", sk.Name, rule))
+		}
+	}
+	return warnings
+}
+
+// ModelPreferenceWarnings loads the registry read-only and reports the
+// content-level model preference lint findings pkg/config cannot
+// compute alone (it deliberately never reads the registry):
+//
+//   - model-preference-unhonored (info-worded): a preference resolves
+//     for a skill while some projection target ignores or drops it.
+//   - model-preference-portability: an active skill declares top-level
+//     `model:`, which spec-strict consumers outside Claude Code reject
+//     (`metadata` is the portable placement, string values only).
+//
+// All findings are advisory; the cmd layer appends them as warnings that
+// never block a deploy. Best-effort: an unreadable registry yields
+// nothing.
+func ModelPreferenceWarnings(stack *config.Stack) []string {
+	if stack == nil || stack.ModelPreferences == nil {
+		return nil
+	}
+	skillPolicy, _ := stack.ModelPolicies()
+	store := registry.NewStore(filepath.Join(state.BaseDir(), "registry"))
+	if err := store.Load(); err != nil {
+		return nil
+	}
+
+	var dropTargets []string
+	for slug, status := range registry.SkillHonorMatrix() {
+		if status == registry.HonorIgnored || status == registry.HonorDropped {
+			dropTargets = append(dropTargets, slug)
+		}
+	}
+	sort.Strings(dropTargets)
+
+	// The unhonored finding only makes sense for scopes that project
+	// something: a surfacing-only scope (rewrite false) changes no file,
+	// so warning per skill would be pure noise.
+	skillRewrite := stack.ModelPreferences.Skills != nil && stack.ModelPreferences.Skills.Rewrite
+
+	var warnings []string
+	for _, sk := range store.ActiveSkills() {
+		pref := registry.ExtractModelPreference(sk)
+		resolved, resolution := skillPolicy.Resolve(sk.Name, pref.Value())
+		if skillRewrite && resolved != "" && len(dropTargets) > 0 {
+			warnings = append(warnings, fmt.Sprintf(
+				"model-preference-unhonored: skill %q resolves model preference %q (%s), which these projection targets do not honor: %s",
+				sk.Name, resolved, resolution, strings.Join(dropTargets, ", ")))
+		}
+		if pref != nil && pref.SourceKey == registry.ModelSourceTopLevel {
+			warnings = append(warnings, fmt.Sprintf(
+				"model-preference-portability: skill %q declares top-level `model:`, which spec-strict consumers outside Claude Code reject as an unknown key; `metadata` is the portable placement (string values)",
+				sk.Name))
 		}
 	}
 	return warnings

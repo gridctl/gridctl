@@ -23,6 +23,7 @@ limits: ...
 groups: ...
 link: ...
 skills: ...
+model_preferences: ...
 experimental: ...
 ```
 
@@ -44,6 +45,7 @@ experimental: ...
 | `groups` | map | No | - | Named tool bundles, each at its own endpoint (see [Groups](#groups-tool-bundles)) |
 | `link` | []string\|object | No | - | LLM clients `gridctl apply` links to this gateway (see [Link](#link-declared-clients)) |
 | `skills` | object | No | - | Global skill exposure policy: allow/deny name globs (see [Skills](#skills-exposure-policy)) |
+| `model_preferences` | object | No | - | Model preference defaults and overrides for skill and agent projections (see [Model Preferences](#model-preferences)) |
 | `experimental` | object | No | - | Feature flags for experimental behavior (see [Experimental](#experimental-feature-flags)) |
 
 ---
@@ -1023,6 +1025,43 @@ skills:
 Evaluation order per skill name: a `deny` match denies (naming the glob as the rule), then an `allow` match admits, then `default` decides. A denied skill is excluded from `prompts/list`, `resources/list`, `prompts/get`/`resources/read` (indistinguishable from an absent skill on the wire), and projection sync — but denial is a filter, never a state change: the skill keeps its draft/active/disabled state, stays visible in the Library and registry API flagged with the matching rule, and `gridctl apply` prints a warning for every active skill the policy hides. Recorded projections of a newly denied skill are skipped and reported, never silently removed. Unparseable glob patterns are rejected at validation.
 
 The policy is global. Per-client skill scoping remains deferred, matching the `clients:` block's documented tools-only scope. Edits hot-reload without container restarts. The block is not inherited across `extends` (matching `clients`/`groups`/`limits`).
+
+## Model Preferences
+
+The optional top-level `model_preferences:` block sets model preference defaults and overrides for skill and agent projections. It manages the `model:` frontmatter in files gridctl projects into client directories; it is a preference layer, not enforcement (clients resolve their own model, and env vars or per-invocation parameters outrank projected frontmatter), and it is unrelated to the removed cost-attribution `model:`/`default_model` fields; nothing here measures, estimates, or prices anything.
+
+```yaml
+model_preferences:
+  skills:
+    rewrite: true            # opt-in; default false = surfacing only, nothing on disk changes
+    default: sonnet          # applied where the author declared nothing
+    overrides:               # exact registry names; beats the author's declaration, raise or lower
+      incident-triage: opus
+      simple-formatter: haiku
+  agents:
+    rewrite: true
+    default: sonnet
+```
+
+### Fields
+
+Each scope (`skills`, `agents`) carries the same three fields:
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `rewrite` | bool | no | `false` | Opts the scope into projection rewrite. False keeps pure pass-through: preferences are surfaced in the UI, CLI, and API but no projected file changes. |
+| `default` | string | no | - | Preference applied where the author declared nothing. High blast radius with `rewrite: true`: every projected skill without a declared model is rewritten and forced to copy channel. Prefer `overrides` for early adoption. |
+| `overrides` | map | no | - | Exact registry name to preference, applied regardless of the author's declaration, in either direction. Unknown names warn but never error (the skill may arrive later via pack). |
+
+Values are Claude Code model aliases (`default`, `best`, `fable`, `sonnet`, `opus`, `haiku`, `sonnet[1m]`, `opus[1m]`, `opusplan`, `inherit`) or full model IDs. Alias resolution is provider-conditional; gridctl never claims which concrete version an alias resolves to.
+
+### Semantics
+
+Resolution per name: an override beats the author's declaration beats `default`. With `rewrite: true`, `gridctl skill project sync` writes the resolved preference into the projected file's frontmatter, never into the registry canonical, which stays byte-identical (skill pins hash the canonical, so policy can never trip pin drift). A skill projection whose resolved preference differs from its stored frontmatter cannot stay a symlink (the link points at the canonical), so it is forced to copy channel with the reason shown in status output as `copy (model policy)`. Rendered agent dialects (OpenCode, Copilot, Gemini CLI) continue to drop `model` (their vocabularies are not Claude's), reported per sync and in the honor matrix; the rewrite applies to identity copies only.
+
+Policy binding: the daemon compiles the block from its loaded stack and applies it on every projection reconcile; `gridctl skill project sync --stack <path>` applies it from the CLI. A sync running without stack context never reverts a rewritten projection (status shows `model policy: unknown (no stack loaded)`); the explicit off switch is `rewrite: false` (or removing the covering default/override), which reconciles projections back to pass-through and restores symlink channel on the next policy-aware sync. Edits hot-reload without container restarts. The block is not inherited across `extends` (matching `clients`/`groups`/`limits`/`skills`).
+
+Advisory lint (never blocks a deploy): `model-preference-unknown-alias` (a value is neither a known alias nor shaped like a model ID), `model-preference-unhonored` (a preference resolves for targets that ignore or drop it), and `model-preference-portability` (top-level `model:` in a SKILL.md is rejected by spec-strict consumers outside Claude Code; `metadata` is the portable placement).
 
 ## Link (declared clients)
 

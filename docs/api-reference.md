@@ -1931,6 +1931,18 @@ Deletes the pin record (`204`); the next registry refresh re-pins fresh. `404` w
 
 Registry skill responses (`GET /api/registry/skills`, `GET /api/registry/skills/{name}`) additionally carry a `governance` object when known: `source` (`local` | `git`), `origin`, `pinStatus` (`pinned` | `drift`), `findingsCount`, `maxFindingSeverity`, and — when a `skills:` policy denies the skill — `policyDenied` with the matching `policyRule`.
 
+Registry skill and agent responses also carry a `modelPreference` object when the item declares a model preference or a `model_preferences:` policy resolves one (absent otherwise, so older frontends see nothing new):
+
+```json
+"modelPreference": {
+  "declared": { "value": "opus", "sourceKey": "model" },
+  "resolved": { "value": "sonnet", "resolution": "override" },
+  "honor": { "claude-code": "honored", "opencode": "dropped-on-render" }
+}
+```
+
+`declared` is the author's frontmatter declaration (`sourceKey` is `model`, `metadata.preferred-model`, or `metadata.model`). `resolved` appears only when the daemon has a stack with the matching `model_preferences` scope loaded; `resolution` names the winning source (`author` | `default` | `override`). `honor` maps projection target slugs to what each target does with the preference (`honored` | `ignored` | `unknown` | `dropped-on-render`).
+
 ### Global Context
 
 Manage the canonical global agent-context file (`~/.gridctl/context/AGENTS.md`) and its projection into each linked client's global context location. Backs `gridctl ctx` and the web UI's Global Context dialog; see [Global Context Sync](global-context.md) for concepts (write strategies, drift, adoption). These endpoints are pure file operations against the gateway host's home directory and work in stackless mode.

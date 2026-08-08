@@ -24,6 +24,7 @@ import (
 	"sync"
 
 	"github.com/gridctl/gridctl/pkg/project"
+	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/skills"
 )
 
@@ -197,6 +198,12 @@ type Manager struct {
 	registryDir string
 	store       *project.Store
 	mu          sync.Mutex
+
+	// modelPolicy is the optional compiled `model_preferences.agents`
+	// scope, installed by the controller (daemon) or a --stack-carrying
+	// CLI invocation. nil means no stack context: pass-through for new
+	// projections, preserve for projections a policy previously rewrote.
+	modelPolicy *registry.ModelPolicy
 }
 
 // NewManager builds a Manager rooted at the user's home directory. It

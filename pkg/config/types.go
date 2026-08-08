@@ -23,6 +23,15 @@ type Stack struct {
 	Groups     map[string]GroupConfig `yaml:"groups,omitempty" json:"groups,omitempty"` // Optional named tool bundles, each at /groups/{name}/mcp
 	Skills     *SkillsPolicyConfig    `yaml:"skills,omitempty" json:"skills,omitempty"` // Optional global skill exposure policy (allow/deny name globs)
 
+	// ModelPreferences is the optional top-level `model_preferences:`
+	// block: per-scope model preference defaults and overrides applied to
+	// skill and agent projections. Omitting the block preserves legacy
+	// behavior; projections are byte-identical pass-throughs (Article
+	// IX). Deliberately a sibling of Skills, never nested under it: the
+	// `skills:` block is gateway exposure policy, an unrelated domain.
+	// Not inherited across `extends` (matching clients/groups/limits).
+	ModelPreferences *ModelPreferencesConfig `yaml:"model_preferences,omitempty" json:"model_preferences,omitempty"`
+
 	// Link declares LLM clients that `gridctl apply` connects to this
 	// stack's gateway once it is healthy. See LinkEntry for entry forms and
 	// reconcile semantics. Empty (the default) preserves legacy behavior:
@@ -126,6 +135,39 @@ type SkillsPolicyConfig struct {
 	Allow []string `yaml:"allow,omitempty" json:"allow,omitempty"`
 	// Deny lists skill-name globs hidden from exposure; deny beats allow.
 	Deny []string `yaml:"deny,omitempty" json:"deny,omitempty"`
+}
+
+// ModelPreferencesConfig is the optional top-level `model_preferences:`
+// block. Each scope carries a projection-time model preference policy
+// for its kind. A preference is a durable default the client may still
+// override (env vars and per-invocation parameters outrank projected
+// frontmatter); nothing here enforces, measures, or costs anything.
+type ModelPreferencesConfig struct {
+	// Skills is the policy for skill projections (pkg/skillsync).
+	Skills *ModelPreferenceScope `yaml:"skills,omitempty" json:"skills,omitempty"`
+	// Agents is the policy for agent projections (pkg/agentsync).
+	Agents *ModelPreferenceScope `yaml:"agents,omitempty" json:"agents,omitempty"`
+}
+
+// ModelPreferenceScope is one kind's model preference policy.
+//
+// Resolution order: Overrides beats the author's declaration beats
+// Default. Overrides apply in either direction (raising to a stronger
+// model or lowering to a cheaper one). With Rewrite false (the
+// default), the scope is surfacing-only: nothing on disk changes.
+type ModelPreferenceScope struct {
+	// Rewrite opts the scope into projection rewrite: projected files
+	// carry the resolved preference, and affected skill projections are
+	// forced to copy channel (status names the reason). Default false =
+	// pure pass-through.
+	Rewrite bool `yaml:"rewrite,omitempty" json:"rewrite,omitempty"`
+	// Default applies where the author declared nothing.
+	Default string `yaml:"default,omitempty" json:"default,omitempty"`
+	// Overrides maps exact registry names (case-sensitive, no globs) to
+	// the preference applied regardless of the author's declaration.
+	// Unknown names warn at validate time but never error: the skill may
+	// arrive later via pack.
+	Overrides map[string]string `yaml:"overrides,omitempty" json:"overrides,omitempty"`
 }
 
 // LimitsConfig is the optional top-level `limits:` block: declarative rate

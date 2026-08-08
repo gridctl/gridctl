@@ -33,6 +33,11 @@ type ConfigDiff struct {
 	// changed. Like ClientsChanged it needs only an in-memory policy rebuild
 	// via the onConfigApplied hook but must still mark the diff non-empty.
 	SkillsPolicyChanged bool
+	// ModelPreferencesChanged indicates the `model_preferences:` block
+	// changed. Like ClientsChanged it needs only the compiled projection
+	// model policy swapped via the onConfigApplied hook (the next
+	// projection reconcile applies it); no containers are touched.
+	ModelPreferencesChanged bool
 }
 
 // MCPServerDiff contains changes to MCP servers.
@@ -81,7 +86,8 @@ func (d *ConfigDiff) IsEmpty() bool {
 		!d.LimitsChanged &&
 		!d.GroupsChanged &&
 		!d.ExperimentalChanged &&
-		!d.SkillsPolicyChanged
+		!d.SkillsPolicyChanged &&
+		!d.ModelPreferencesChanged
 }
 
 // ComputeDiff computes the differences between two stack configurations.
@@ -112,7 +118,19 @@ func ComputeDiff(old, new *config.Stack) *ConfigDiff {
 	// Detect skill exposure policy (`skills:`) changes
 	diff.SkillsPolicyChanged = skillsPolicyChanged(old, new)
 
+	// Detect projection model preference (`model_preferences:`) changes
+	diff.ModelPreferencesChanged = modelPreferencesChanged(old, new)
+
 	return diff
+}
+
+// modelPreferencesChanged reports whether the `model_preferences:` block
+// differs between two stacks. A change needs only the compiled projection
+// model policy swapped (via the reload's onConfigApplied hook); no
+// containers are touched. DeepEqual handles the nil-to-set transitions
+// directly.
+func modelPreferencesChanged(old, new *config.Stack) bool {
+	return !reflect.DeepEqual(old.ModelPreferences, new.ModelPreferences)
 }
 
 // skillsPolicyChanged reports whether the `skills:` block differs between two
