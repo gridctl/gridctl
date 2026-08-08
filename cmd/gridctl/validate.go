@@ -70,6 +70,19 @@ func runValidate(stackPath string) error {
 		}
 	}
 
+	// Content-level model preference findings need the registry too;
+	// same cmd-layer join, all advisory.
+	if stack != nil && stack.ModelPreferences != nil {
+		for _, w := range controller.ModelPreferenceWarnings(stack) {
+			result.Issues = append(result.Issues, config.ValidationIssue{
+				Field:    "model_preferences",
+				Message:  w,
+				Severity: config.SeverityWarning,
+			})
+			result.WarningCount++
+		}
+	}
+
 	if validateFormat == "json" {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
