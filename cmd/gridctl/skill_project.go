@@ -34,6 +34,7 @@ var (
 	skillProjectSyncPlain   *bool
 
 	skillProjectStatusFormat string
+	skillProjectStatusStack  string
 	skillProjectStatusJSON   *bool
 	skillProjectStatusPlain  *bool
 
@@ -206,16 +207,23 @@ Exit codes:
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
 		}
+		skillPol, agentPol, perr := syncModelPolicies(skillProjectStatusStack)
+		if perr != nil {
+			fmt.Fprintln(os.Stderr, perr)
+			os.Exit(ctxExitInfrastructure)
+		}
 		mgr, err := newSkillProjectManager()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
 		}
+		mgr.SetModelPolicy(skillPol)
 		agentMgr, err := newAgentProjectManager()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
 		}
+		agentMgr.SetModelPolicy(agentPol)
 		if exit := runSkillProjectStatus(cmd.Context(), os.Stdout, os.Stderr, mgr, agentMgr, format, *skillProjectStatusPlain); exit != ctxExitOK {
 			os.Exit(exit)
 		}
@@ -334,6 +342,7 @@ func init() {
 	skillProjectSyncPlain = addPlainFlag(skillProjectSyncCmd)
 
 	skillProjectStatusCmd.Flags().StringVar(&skillProjectStatusFormat, "format", "", "Output format: 'json' for machine-readable output (default: table)")
+	skillProjectStatusCmd.Flags().StringVar(&skillProjectStatusStack, "stack", "", "Stack file whose model_preferences policy informs staleness (default: no policy; rewritten projections report their preserved state)")
 	skillProjectStatusJSON = addJSONAlias(skillProjectStatusCmd)
 	skillProjectStatusPlain = addPlainFlag(skillProjectStatusCmd)
 
