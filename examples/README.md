@@ -63,6 +63,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | var-sets | - | - | - | - | - | - | ✅ |
 | registry-basic | stdio | - | - | - | ✅ | - | - |
 | registry-advanced | stdio | - | - | - | ✅ | - | - |
+| model-preferences | http | - | - | - | ✅ | - | - |
 
 ## 💻 Usage Pattern
 
