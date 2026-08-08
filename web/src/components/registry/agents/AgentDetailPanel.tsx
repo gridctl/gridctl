@@ -97,14 +97,17 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
       <InspectorHeader
         title={agent.name}
         subtitle={
-          agent.source ? (
-            <span className="text-[11px] text-text-muted inline-flex items-center gap-1.5">
-              from {agent.source}
-              <PackChip source={agent.source} />
-            </span>
-          ) : (
-            <span className="text-[11px] text-text-muted">local agent</span>
-          )
+          <span className="text-[11px] text-text-muted inline-flex items-center gap-1.5">
+            {agent.source ? (
+              <>
+                from {agent.source}
+                <PackChip source={agent.source} />
+              </>
+            ) : (
+              'local agent'
+            )}
+            <ModelChip modelPreference={agent.modelPreference} />
+          </span>
         }
         icon={Bot}
         accent="primary"
@@ -152,7 +155,8 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
                   <div className="flex items-baseline gap-2">
                     <span className="text-[11px] font-mono text-text-muted w-14 flex-shrink-0">declared</span>
                     <span className="text-xs text-text-primary font-mono break-all">
-                      {modelPref.declared.value}
+                      {modelPref.declared.value}{' '}
+                      <span className="text-text-muted">({modelPref.declared.sourceKey})</span>
                     </span>
                   </div>
                 )}
