@@ -198,14 +198,14 @@ func recordFragmentSync(flf *FragmentLockFile, t Target, f *Fragment, target, wr
 // fragments responsible so the row is actionable rather than a bare verdict.
 func (m *Manager) fragmentStatusFor(t Target, flf *FragmentLockFile, fragments []*Fragment) ClientStatus {
 	cs := ClientStatus{
-		Slug:         t.Slug,
-		Name:         t.Name,
-		Supported:    true,
-		Available:    t.available(m.home),
-		Experimental: t.Experimental,
-		Strategy:     string(t.Strategy),
-		TargetPath:   fragmentTargetDir(t, m.home),
-		Mode:         ModeMultiFile,
+		Slug:       t.Slug,
+		Name:       t.Name,
+		Supported:  true,
+		Available:  t.available(m.home),
+		Unofficial: t.Unofficial,
+		Strategy:   string(t.Strategy),
+		TargetPath: fragmentTargetDir(t, m.home),
+		Mode:       ModeMultiFile,
 	}
 	if cs.TargetPath == "" {
 		cs.Supported = false
