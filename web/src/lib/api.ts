@@ -2483,7 +2483,8 @@ export interface ContextClientStatus {
   name: string;
   supported: boolean;
   available: boolean;
-  experimental?: boolean;
+  /** Path rests on unofficial sourcing rather than published client docs. */
+  unofficial?: boolean;
   strategy?: string;
   mode?: ContextMode;
   target_path?: string;
