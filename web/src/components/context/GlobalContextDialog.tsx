@@ -838,8 +838,13 @@ function ClientRow({
       )}
       <span className="text-xs text-text-primary whitespace-nowrap">
         {c.name}
-        {c.experimental && c.supported && (
-          <span className="ml-1 text-[10px] text-text-secondary">(experimental)</span>
+        {c.unofficial && c.supported && (
+          <span
+            className="ml-1 text-[10px] text-text-secondary"
+            title="Path sourced unofficially; it may move without an upstream release note"
+          >
+            (unofficial path)
+          </span>
         )}
       </span>
       <span className="text-[11px] text-text-muted font-mono truncate flex-1" title={c.target_path ?? c.detail}>
