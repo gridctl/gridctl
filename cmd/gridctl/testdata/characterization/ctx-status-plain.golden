@@ -8,7 +8,7 @@ opencode  block  ✗ drifted  $HOME/.config/opencode/AGENTS.md
 zed  block  — never-synced  $HOME/.config/zed/AGENTS.md (client not detected)
 cline  block  — never-synced  $HOME/.agents/AGENTS.md (client not detected)
 grok  block  — never-synced  $HOME/.grok/AGENTS.md (client not detected)
-antigravity  block  — never-synced (experimental)  $HOME/.gemini/AGENTS.md (client not detected)
+antigravity  block  — never-synced (unofficial path)  $HOME/.gemini/AGENTS.md (client not detected)
 windsurf  block  — never-synced  $HOME/.codeium/windsurf/memories/global_rules.md (client not detected)
 roo  dedicated-file  — never-synced  $HOME/.roo/rules/gridctl.md (client not detected)
 continue  dedicated-file  — never-synced  $HOME/.continue/rules/gridctl.md (client not detected)

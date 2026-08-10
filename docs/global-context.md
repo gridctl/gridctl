@@ -34,7 +34,7 @@ Each client receives the canonical content through the safest mechanism it suppo
 | Import shim | Gemini CLI (`~/.gemini/GEMINI.md`), Goose (`~/.config/goose/.goosehints`) | One `@`-import line referencing the canonical file is inserted; the rest of the file is never reordered or rewritten. Canonical edits flow through the reference without re-syncing. |
 | Managed block | OpenCode, Zed, Cline, Grok Build (`~/.grok/AGENTS.md`), Antigravity, Windsurf | The full file is written when absent; when user content exists, a `<!-- BEGIN GRIDCTL MANAGED -->` … `<!-- END GRIDCTL MANAGED -->` block is inserted and only that block is ever rewritten. Windsurf's `global_rules.md` has a 6,000-character limit; oversized content is refused with a count. |
 
-Not syncable, reported honestly in `ctx status` instead of worked around: Claude Desktop (instructions live in the app UI), Cursor (global User Rules are app-internal storage), and AnythingLLM (UI/API only). Antigravity's global path rests on unofficial documentation and is flagged experimental.
+Not syncable, reported honestly in `ctx status` instead of worked around: Claude Desktop (instructions live in the app UI), Cursor (global User Rules are app-internal storage), and AnythingLLM (UI/API only). Antigravity's global path rests on unofficial sourcing rather than published client documentation, so `ctx status` marks it `unofficial path`: the projection is supported, but the path may move without an upstream release note.
 
 Every write is preceded by a timestamped backup (`<file>.gridctl-backup-<ts>`, three retained) and performed atomically. Managed content carries a header naming the source and the edit command, so a reader landing in the file knows where changes belong.
 

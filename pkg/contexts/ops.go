@@ -43,12 +43,12 @@ const (
 
 // ClientStatus is one client's row in `ctx status` and GET /api/context.
 type ClientStatus struct {
-	Slug         string `json:"slug"`
-	Name         string `json:"name"`
-	Supported    bool   `json:"supported"`
-	Available    bool   `json:"available"`
-	Experimental bool   `json:"experimental,omitempty"`
-	Strategy     string `json:"strategy,omitempty"`
+	Slug       string `json:"slug"`
+	Name       string `json:"name"`
+	Supported  bool   `json:"supported"`
+	Available  bool   `json:"available"`
+	Unofficial bool   `json:"unofficial,omitempty"`
+	Strategy   string `json:"strategy,omitempty"`
 	// Mode is how this client receives the context: single-file (the
 	// pre-fragments default), compiled, or multi-file. Omitted while
 	// fragments mode is off so pre-fragments consumers see no new field.
@@ -196,13 +196,13 @@ func (m *Manager) Statuses(ctx context.Context) ([]ClientStatus, error) {
 // fragments that moved.
 func (m *Manager) statusFor(t Target, entry *ClientEntry, canonicalHash string, currentInputs map[string]string) ClientStatus {
 	cs := ClientStatus{
-		Slug:         t.Slug,
-		Name:         t.Name,
-		Supported:    true,
-		Available:    t.available(m.home),
-		Experimental: t.Experimental,
-		Strategy:     string(t.Strategy),
-		TargetPath:   t.targetPath(m.home),
+		Slug:       t.Slug,
+		Name:       t.Name,
+		Supported:  true,
+		Available:  t.available(m.home),
+		Unofficial: t.Unofficial,
+		Strategy:   string(t.Strategy),
+		TargetPath: t.targetPath(m.home),
 	}
 	if cs.TargetPath == "" {
 		cs.Supported = false

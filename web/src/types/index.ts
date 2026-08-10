@@ -503,7 +503,6 @@ export interface AgentProjectionStatus {
   /** Model preference a stack policy rewrite wrote into the projected
    *  file; absent for pass-through projections (wire: model_value). */
   model_value?: string;
-  experimental?: boolean;
   synced_at?: string;
 }
 

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-const validManifest = `apiVersion: gridctl.dev/v1alpha1
+const validManifest = `apiVersion: gridctl.dev/v1
 kind: Pack
 name: team-pack
 version: 1.0.0
@@ -33,9 +33,41 @@ func TestParse_Valid(t *testing.T) {
 	}
 }
 
+// Packs authored before the schema graduated to gridctl.dev/v1 must keep
+// importing unchanged: the two versions are structurally identical and
+// v1alpha1 stays accepted indefinitely (Article IX).
+func TestParse_LegacyAPIVersionStillAccepted(t *testing.T) {
+	src := strings.Replace(validManifest, APIVersion, LegacyAPIVersion, 1)
+	m, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatalf("%s must still parse: %v", LegacyAPIVersion, err)
+	}
+	if m.APIVersion != LegacyAPIVersion {
+		t.Errorf("apiVersion = %q, want the manifest's own value preserved", m.APIVersion)
+	}
+	if m.Name != "team-pack" || !m.Wiring {
+		t.Errorf("legacy manifest decoded differently: %+v", m)
+	}
+}
+
+// The rejection message names every accepted version so an author on a
+// wrong apiVersion learns both spellings, not just the current one.
+func TestParse_UnsupportedAPIVersionNamesBoth(t *testing.T) {
+	src := strings.Replace(validManifest, APIVersion, "gridctl.dev/v2", 1)
+	_, err := Parse([]byte(src))
+	if err == nil {
+		t.Fatal("expected an error for an unsupported apiVersion")
+	}
+	for _, want := range []string{APIVersion, LegacyAPIVersion} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q should name %q", err, want)
+		}
+	}
+}
+
 func TestParse_Envelope(t *testing.T) {
 	cases := map[string]string{
-		"bad apiVersion": strings.Replace(validManifest, "gridctl.dev/v1alpha1", "gridctl.dev/v2", 1),
+		"bad apiVersion": strings.Replace(validManifest, "gridctl.dev/v1", "gridctl.dev/v2", 1),
 		"bad kind":       strings.Replace(validManifest, "kind: Pack", "kind: Bundle", 1),
 		"missing name":   strings.Replace(validManifest, "name: team-pack\n", "", 1),
 		"bad name":       strings.Replace(validManifest, "name: team-pack", "name: Team_Pack", 1),

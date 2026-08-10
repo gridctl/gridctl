@@ -336,7 +336,7 @@ func init() {
 	skillProjectSyncCmd.Flags().BoolVar(&skillProjectSyncDryRun, "dry-run", false, "Show what would change without writing")
 	skillProjectSyncCmd.Flags().BoolVar(&skillProjectSyncForce, "force", false, "Overwrite drifted copies and unmanaged destination paths (after a backup)")
 	skillProjectSyncCmd.Flags().StringVar(&skillProjectSyncFormat, "format", "", "Output format: 'json' for machine-readable output (default: table)")
-	skillProjectSyncCmd.Flags().StringVar(&skillProjectSyncKind, "kind", "skill", "Resource kind to sync: skill or agent (agents are experimental and always copied)")
+	skillProjectSyncCmd.Flags().StringVar(&skillProjectSyncKind, "kind", "skill", "Resource kind to sync: skill or agent (agents are always copied)")
 	skillProjectSyncCmd.Flags().StringVar(&skillProjectSyncStack, "stack", "", "Stack file whose model_preferences policy applies to this sync (default: no policy; previously rewritten projections are preserved)")
 	skillProjectSyncJSON = addJSONAlias(skillProjectSyncCmd)
 	skillProjectSyncPlain = addPlainFlag(skillProjectSyncCmd)
@@ -715,8 +715,8 @@ func skillProjectActionLabel(action string) string {
 // skillProjectStateLabel renders a status glyph + state.
 func skillProjectStateLabel(s skillsync.ProjectionStatus) string {
 	label := s.State
-	if s.Experimental {
-		label += " (experimental)"
+	if s.Unofficial {
+		label += " (unofficial path)"
 	}
 	switch s.State {
 	case skillsync.StateInSync:
@@ -734,9 +734,6 @@ func skillProjectStateLabel(s skillsync.ProjectionStatus) string {
 // same vocabulary and glyphs as skills.
 func agentProjectStateLabel(s agentsync.ProjectionStatus) string {
 	label := s.State
-	if s.Experimental {
-		label += " (experimental)"
-	}
 	switch s.State {
 	case agentsync.StateInSync:
 		return "✓ " + label

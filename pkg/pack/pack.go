@@ -17,6 +17,8 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -24,8 +26,18 @@ import (
 // ManifestFileName is the fixed manifest location at a repo root.
 const ManifestFileName = "gridctl-pack.yaml"
 
-// APIVersion is the only manifest schema this gridctl understands.
-const APIVersion = "gridctl.dev/v1alpha1"
+// APIVersion is the current manifest schema, emitted by everything
+// gridctl writes and documented as the value authors should use.
+const APIVersion = "gridctl.dev/v1"
+
+// LegacyAPIVersion is the pre-1.0 alpha schema. It is structurally
+// identical to APIVersion and stays accepted indefinitely so packs
+// authored before the graduation keep importing (Article IX).
+const LegacyAPIVersion = "gridctl.dev/v1alpha1"
+
+// acceptedAPIVersions lists every manifest schema this gridctl parses,
+// current first for error text.
+var acceptedAPIVersions = []string{APIVersion, LegacyAPIVersion}
 
 // Kind is the manifest's required kind value.
 const Kind = "Pack"
@@ -88,8 +100,9 @@ func ParseFile(path string) (*Manifest, error) {
 
 // Validate checks the manifest's schema envelope and name.
 func (m *Manifest) Validate() error {
-	if m.APIVersion != APIVersion {
-		return fmt.Errorf("unsupported apiVersion %q (this gridctl supports %s)", m.APIVersion, APIVersion)
+	if !slices.Contains(acceptedAPIVersions, m.APIVersion) {
+		return fmt.Errorf("unsupported apiVersion %q (this gridctl supports %s)",
+			m.APIVersion, strings.Join(acceptedAPIVersions, ", "))
 	}
 	if m.Kind != Kind {
 		return fmt.Errorf("unsupported kind %q (expected %s)", m.Kind, Kind)

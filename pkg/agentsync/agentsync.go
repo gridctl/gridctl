@@ -68,8 +68,6 @@ type Target struct {
 	// agents directory itself is created on first sync, but only inside
 	// a detected client tree.
 	DetectDirs []string
-	// Experimental marks the target's tier; surfaced in status output.
-	Experimental bool
 	// Render converts the canonical definition into the client dialect.
 	// Nil means identity: the canonical bytes are copied verbatim.
 	Render RenderFunc
@@ -109,36 +107,32 @@ func (t Target) renderKind() string {
 func Targets() []Target {
 	return []Target{
 		{
-			Slug:         "claude-code",
-			Name:         "Claude Code",
-			AgentsPath:   "~/.claude/agents",
-			DetectDirs:   []string{"~/.claude"},
-			Experimental: true,
+			Slug:       "claude-code",
+			Name:       "Claude Code",
+			AgentsPath: "~/.claude/agents",
+			DetectDirs: []string{"~/.claude"},
 		},
 		{
-			Slug:         "opencode",
-			Name:         "OpenCode",
-			AgentsPath:   "~/.config/opencode/agents",
-			DetectDirs:   []string{"~/.config/opencode"},
-			Experimental: true,
-			Render:       renderOpenCode,
+			Slug:       "opencode",
+			Name:       "OpenCode",
+			AgentsPath: "~/.config/opencode/agents",
+			DetectDirs: []string{"~/.config/opencode"},
+			Render:     renderOpenCode,
 		},
 		{
-			Slug:         "copilot",
-			Name:         "GitHub Copilot",
-			AgentsPath:   "~/.copilot/agents",
-			DetectDirs:   []string{"~/.copilot"},
-			Experimental: true,
-			Render:       renderCopilot,
-			FileName:     func(name string) string { return name + ".agent.md" },
+			Slug:       "copilot",
+			Name:       "GitHub Copilot",
+			AgentsPath: "~/.copilot/agents",
+			DetectDirs: []string{"~/.copilot"},
+			Render:     renderCopilot,
+			FileName:   func(name string) string { return name + ".agent.md" },
 		},
 		{
-			Slug:         "gemini",
-			Name:         "Gemini CLI",
-			AgentsPath:   "~/.gemini/agents",
-			DetectDirs:   []string{"~/.gemini"},
-			Experimental: true,
-			Render:       renderGemini,
+			Slug:       "gemini",
+			Name:       "Gemini CLI",
+			AgentsPath: "~/.gemini/agents",
+			DetectDirs: []string{"~/.gemini"},
+			Render:     renderGemini,
 		},
 	}
 }

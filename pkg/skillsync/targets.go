@@ -40,9 +40,11 @@ type Target struct {
 	// its exact path (symlinks went undiscovered under a related Gemini
 	// skills path; vercel-labs/skills#633).
 	ForcedChannel Channel
-	// Experimental marks targets whose documented path rests on
-	// unofficial sourcing; surfaced in status output.
-	Experimental bool
+	// Unofficial marks targets whose path rests on unofficial sourcing
+	// rather than published client documentation. The projection is
+	// supported; the path may move without an upstream release note.
+	// Surfaced in status output so the caveat is never silent.
+	Unofficial bool
 }
 
 // Targets returns the supported projection targets in display order.
@@ -75,7 +77,7 @@ func Targets() []Target {
 			DetectDirs:     []string{"~/.gemini/config", "~/.gemini/antigravity"},
 			DefaultChannel: ChannelCopy,
 			ForcedChannel:  ChannelCopy,
-			Experimental:   true,
+			Unofficial:     true,
 		},
 	}
 }

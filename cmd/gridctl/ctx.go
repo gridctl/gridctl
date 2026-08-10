@@ -863,8 +863,8 @@ func runCtxEdit(ctx context.Context, stdout, stderr io.Writer, mgr *contexts.Man
 // states a user must act on.
 func ctxStateLabel(cs contexts.ClientStatus) string {
 	label := cs.State
-	if cs.Experimental && cs.Supported {
-		label += " (experimental)"
+	if cs.Unofficial && cs.Supported {
+		label += " (unofficial path)"
 	}
 	switch cs.State {
 	case contexts.StateInSync:

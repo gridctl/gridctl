@@ -79,9 +79,9 @@ type SyncResult struct {
 	// Reason names why the channel or bytes diverged from pass-through
 	// ("model-policy"); the CLI renders it beside the channel so a
 	// forced flip is never silent.
-	Reason     string `json:"channel_reason,omitempty"`
-	Target     string `json:"target,omitempty"`
-	Action     string `json:"action"`
+	Reason string `json:"channel_reason,omitempty"`
+	Target string `json:"target,omitempty"`
+	Action string `json:"action"`
 	// Detail carries advisory notes (model policy application or
 	// preservation); empty otherwise.
 	Detail     string `json:"detail,omitempty"`
@@ -124,11 +124,11 @@ type ProjectionStatus struct {
 	ChannelReason string `json:"channel_reason,omitempty"`
 	// ModelValue is the model preference a policy rewrite wrote into
 	// the projected bytes; empty for pass-through projections.
-	ModelValue   string     `json:"model_value,omitempty"`
-	State        string     `json:"state"`
-	Detail       string     `json:"detail,omitempty"`
-	Experimental bool       `json:"experimental,omitempty"`
-	SyncedAt     *time.Time `json:"synced_at,omitempty"`
+	ModelValue string     `json:"model_value,omitempty"`
+	State      string     `json:"state"`
+	Detail     string     `json:"detail,omitempty"`
+	Unofficial bool       `json:"unofficial,omitempty"`
+	SyncedAt   *time.Time `json:"synced_at,omitempty"`
 }
 
 // NeedsAttention reports whether any projection requires action:
@@ -704,7 +704,7 @@ func (m *Manager) statusFor(skill, client string, entry *Entry) ProjectionStatus
 	syncedAt := entry.SyncedAt
 	ps.SyncedAt = &syncedAt
 	if t, ok := FindTarget(client); ok {
-		ps.Experimental = t.Experimental
+		ps.Unofficial = t.Unofficial
 	}
 
 	sk, gerr := m.source.GetSkill(skill)

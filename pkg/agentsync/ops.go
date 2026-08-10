@@ -111,7 +111,6 @@ type ProjectionStatus struct {
 	ModelValue   string     `json:"model_value,omitempty"`
 	State        string     `json:"state"`
 	Detail       string     `json:"detail,omitempty"`
-	Experimental bool       `json:"experimental,omitempty"`
 	// Pack names the pack that applied this projection; empty for
 	// projections made outside a pack. Additive provenance for UI chips.
 	Pack     string     `json:"pack,omitempty"`
@@ -586,7 +585,6 @@ func (m *Manager) statusFor(agent, client string, entry *Entry) ProjectionStatus
 	syncedAt := entry.SyncedAt
 	ps.SyncedAt = &syncedAt
 	if t, ok := FindTarget(client); ok {
-		ps.Experimental = t.Experimental
 		ps.Render = t.renderKind()
 	}
 

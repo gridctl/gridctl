@@ -14,7 +14,8 @@ import (
 var infoJSONFlag bool
 
 // infoJSON is the machine-readable shape of `gridctl info --json`.
-// The schema is experimental until 1.0.
+// The schema is backward compatible within 0.x: fields may be added,
+// never removed or retyped without a clearly-labeled release.
 type infoJSON struct {
 	Runtime  string `json:"runtime"`
 	Socket   string `json:"socket,omitempty"`
@@ -40,7 +41,7 @@ remediation hints, run 'gridctl doctor'.`,
 }
 
 func init() {
-	infoCmd.Flags().BoolVar(&infoJSONFlag, "json", false, "Output as JSON (experimental schema)")
+	infoCmd.Flags().BoolVar(&infoJSONFlag, "json", false, "Output as JSON")
 }
 
 func runInfo(asJSON bool) error {

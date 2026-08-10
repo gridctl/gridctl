@@ -26,7 +26,8 @@ var (
 )
 
 // statusGatewayJSON is one gateway entry of `gridctl status --json`.
-// The schema is experimental until 1.0.
+// The schema is backward compatible within 0.x: fields may be added,
+// never removed or retyped without a clearly-labeled release.
 type statusGatewayJSON struct {
 	Name      string    `json:"name"`
 	Port      int       `json:"port"`
@@ -74,7 +75,7 @@ Use --stack to filter by a specific stack.
 Use --replicas to expand multi-replica servers to one row per replica.`,
 	Example: `  gridctl status               Show all gateways and containers
   gridctl status --replicas    One row per replica
-  gridctl status --json        Machine-readable output (experimental schema)`,
+  gridctl status --json        Machine-readable output`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		format := ""
 		if statusJSON {
@@ -90,7 +91,7 @@ Use --replicas to expand multi-replica servers to one row per replica.`,
 func init() {
 	statusCmd.Flags().StringVarP(&statusStack, "stack", "s", "", "Only show containers from this stack")
 	statusCmd.Flags().BoolVar(&statusShowReplicas, "replicas", false, "Expand to one row per replica instead of rolled-up per-server state")
-	statusCmd.Flags().BoolVar(&statusJSON, "json", false, "Output status as JSON (experimental schema)")
+	statusCmd.Flags().BoolVar(&statusJSON, "json", false, "Output status as JSON")
 	statusPlain = addPlainFlag(statusCmd)
 }
 

@@ -1,4 +1,4 @@
-# Packs (experimental)
+# Packs
 
 A pack is a git repository carrying a `gridctl-pack.yaml` manifest at its root: a versioned selector over the repo's skills, agents, rule fragments, and gateway wiring, so one import configures a whole team setup. Packs are a thin composition layer — `pack add` runs the same origin pipeline as `gridctl skill add` for skills and agents (security scan, `--trust` gate, drift-safe updates); rule fragments get the same blocking scan and `--trust` gate, and `pack add` refreshes a rule whose content changed upstream, provided you have not edited it locally. A rule you have edited is reported as locally modified and left alone; take the pack's version with `gridctl ctx rm <name>` followed by `pack add`, which discards your copy. Rules installed before gridctl recorded per-rule provenance are treated as locally modified until their next `pack add` records it. `skill update` still does not cover rules; `pack add` is their update path. `pack apply` drives the same projection engines as `gridctl skill project sync` (see the [Skills guide](skills.md)), `gridctl ctx sync` (see [Global Context Sync](global-context.md)), and `gridctl project sync --kind wiring`, scoped to the pack. Every projection a pack applies is tagged with the pack name in `~/.gridctl/project.lock.yaml`, which is what makes `pack status` and cascade removal exact. Per-command flags and exit codes are in the [CLI reference](cli-reference.md#packs).
 
@@ -6,7 +6,7 @@ A pack is a git repository carrying a `gridctl-pack.yaml` manifest at its root: 
 
 ```yaml
 # gridctl-pack.yaml (repo root)
-apiVersion: gridctl.dev/v1alpha1
+apiVersion: gridctl.dev/v1
 kind: Pack
 name: network-eng            # required: lowercase letters, digits, hyphens
 version: 1.0.0               # optional metadata (plugin.json-aligned)
@@ -21,6 +21,8 @@ wiring: true                         # ensure the gateway entry in client config
 clients: []                          # wiring scope; empty = all detected clients
 rules: [team-style]                  # context fragments from rules/*.md or fragments/*.md (opt-in; empty = none)
 ```
+
+`gridctl.dev/v1alpha1` is the pre-1.0 spelling of the same schema and stays accepted indefinitely, so packs authored before the graduation import unchanged; write `gridctl.dev/v1` in new manifests.
 
 Skills follow the `SKILL.md` convention and agents the `agents/*.md` convention, exactly as plain skill repos do — a pack repo is a skill repo plus a manifest. Rule fragments live under `rules/*.md` or `fragments/*.md` (filename base is the fragment name). Names the manifest selects but the repo does not ship are reported as `unresolved` (exit 1) and kept in the pack record so status stays honest. Unlike skills/agents, an empty `rules:` list means **none** (rules are opt-in). A rule whose name collides with a local fragment of different content is skipped, never overwritten; identical content installs idempotently. A first rule install that activates fragments mode migrates AGENTS.md with an explicit printed message, exactly like `ctx add`.
 
@@ -41,7 +43,7 @@ Packs add bookkeeping, not a second write path. `gridctl skill project sync`, `g
 
 ## REST and web UI
 
-The full verb set is available over HTTP: `GET /api/packs` (list), `GET /api/packs/{name}` (detail with per-resource state rows), `POST /api/packs` (add from git, behind the same blocking security scan; also the update path against an already-imported origin), `POST /api/packs/preview` (read-only manifest resolution), `POST /api/packs/{name}/apply` (with `clients`, `force`, and `dry_run`, matching the CLI flags), and `DELETE /api/packs/{name}` (with a dry-run cascade preview). See the [API reference](api-reference.md#packs-experimental). The web UI's Library workspace surfaces installed packs in its Packs segment.
+The full verb set is available over HTTP: `GET /api/packs` (list), `GET /api/packs/{name}` (detail with per-resource state rows), `POST /api/packs` (add from git, behind the same blocking security scan; also the update path against an already-imported origin), `POST /api/packs/preview` (read-only manifest resolution), `POST /api/packs/{name}/apply` (with `clients`, `force`, and `dry_run`, matching the CLI flags), and `DELETE /api/packs/{name}` (with a dry-run cascade preview). See the [API reference](api-reference.md#packs). The web UI's Library workspace surfaces installed packs in its Packs segment.
 
 Status rows for rules report per-client projection state once a pack is applied (drift and staleness per fragment-file projection; a compiled client's whole-document state stays in `gridctl ctx status`), with a store-presence row for a rule that was imported but never projected.
 

@@ -164,10 +164,7 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
   // KPI counts. Always rendered, zero included: the strip itself is the
   // signal that agents support exists on a fresh install. Projected means
   // "has any projection rows" (coverage), not "all in sync" (health —
-  // that is what Drifted and the per-row states are for). No Experimental
-  // KPI: every current target is experimental-tier, so the count would
-  // just mirror Projected and teach a false axis; the per-row suffix
-  // carries the tier signal.
+  // that is what Drifted and the per-row states are for).
   const kpis = useMemo(() => {
     const total = (agents ?? []).length;
     let projected = 0;

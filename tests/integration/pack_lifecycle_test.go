@@ -48,7 +48,7 @@ func TestPackLifecycle_AddStatusApplyRemove(t *testing.T) {
 		t.Fatal(err)
 	}
 	files := map[string]string{
-		"gridctl-pack.yaml": `apiVersion: gridctl.dev/v1alpha1
+		"gridctl-pack.yaml": `apiVersion: gridctl.dev/v1
 kind: Pack
 name: integ-pack
 version: 1.0.0

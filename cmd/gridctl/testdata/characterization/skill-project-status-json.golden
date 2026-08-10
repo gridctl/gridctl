@@ -10,7 +10,7 @@
   "target": "$HOME/.gemini/config/skills/alpha",
   "render": "identity",
   "state": "drifted",
-  "experimental": true,
+  "unofficial": true,
   "synced_at": "<TS>"
   },
   {
@@ -31,7 +31,7 @@
   "target": "$HOME/.gemini/config/skills/beta",
   "render": "identity",
   "state": "stale",
-  "experimental": true,
+  "unofficial": true,
   "synced_at": "<TS>"
   }
   ]

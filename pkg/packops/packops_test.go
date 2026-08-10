@@ -21,7 +21,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/wiring"
 )
 
-const testManifest = `apiVersion: gridctl.dev/v1alpha1
+const testManifest = `apiVersion: gridctl.dev/v1
 kind: Pack
 name: team-pack
 version: 1.0.0

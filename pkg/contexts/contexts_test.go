@@ -918,8 +918,8 @@ func TestGrokIsSupportedBlockTarget(t *testing.T) {
 	if tgt.MaxChars != 0 {
 		t.Errorf("MaxChars = %d, want 0 (Grok documents no cap)", tgt.MaxChars)
 	}
-	if tgt.Experimental {
-		t.Error("grok must not be experimental; path comes from first-party docs")
+	if tgt.Unofficial {
+		t.Error("grok path comes from first-party docs; it is not unofficial")
 	}
 	if _, stillUnsupported := findUnsupported("grok"); stillUnsupported {
 		t.Error("grok must no longer be listed unsupported")

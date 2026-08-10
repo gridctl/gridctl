@@ -1876,7 +1876,7 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/pins/
 
 ---
 
-### Skill Pins *(experimental)*
+### Skill Pins
 
 TOFU content pins for registry skill documents: per-file digests over the canonical `SKILL.md` plus supporting files, drift review, and approval bound to a composite hash. Advisory poisoning findings ride on each record. See [skills.md](./skills.md#skill-pins-and-exposure-policy).
 
@@ -1995,7 +1995,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/context
 | `needs_sync` | bool | True when any client is `stale`, `drifted`, or `target-missing` |
 | `clients` | []object | One entry per known client |
 
-Per-client fields: `slug`, `name`, `supported`, `available` (client detected on this machine), `experimental` (omitted when false), `strategy` (`dedicated-file`, `import-shim`, or `block`; omitted for unsupported clients), `target_path`, `state`, `detail` (human-readable reason or hint), and `synced_at` (omitted when never synced).
+Per-client fields: `slug`, `name`, `supported`, `available` (client detected on this machine), `unofficial` (the target path rests on unofficial sourcing rather than published client docs; omitted when false), `strategy` (`dedicated-file`, `import-shim`, or `block`; omitted for unsupported clients), `target_path`, `state`, `detail` (human-readable reason or hint), and `synced_at` (omitted when never synced).
 
 In fragments mode, multi-file clients also carry a `fragments` array with one `{ "name", "state" }` entry per out-of-sync fragment (`stale`, `drifted`, or `target-missing`), plus `pack` naming the pack that applied the projection when one did. In-sync fragments are not listed, and the array is omitted when every fragment is in sync.
 
@@ -2199,7 +2199,7 @@ Removes a fragment after writing a backup. Returns `{ "name", "backup" }`.
 
 ---
 
-### Skill Sources *(experimental)*
+### Skill Sources
 
 Manage git-imported skill dependencies (`skills.yaml` + lock file). Mirrors `gridctl skill *` operations for the Library workspace.
 
@@ -2317,9 +2317,9 @@ Force-updates a single skill to upstream content, backing up the current file fi
 
 ---
 
-### Registry (Agent Skills) *(experimental)*
+### Registry (Agent Skills)
 
-Manage reusable skills stored as SKILL.md files. Skills have three lifecycle states: `draft`, `active`, and `disabled`. The registry also holds imported agent definitions; see [Registry (Agents)](#registry-agents-experimental) below.
+Manage reusable skills stored as SKILL.md files. Skills have three lifecycle states: `draft`, `active`, and `disabled`. The registry also holds imported agent definitions; see [Registry (Agents)](#registry-agents) below.
 
 #### `GET /api/registry/status`
 
@@ -2528,7 +2528,7 @@ Deletes a file from a skill directory. The `{path...}` segment is variadic, so n
 
 ---
 
-### Registry (Agents) *(experimental)*
+### Registry (Agents)
 
 Manage imported agent definitions (`~/.gridctl/registry/agents/<name>/AGENT.md`). Agents are single-file definitions projected into client directories; gridctl never executes them, and they are not gateway-routed MCP content. Agents enter the store through import (`gridctl skill add` or `POST /api/skills/sources`), so there is no create endpoint; PUT edits an existing agent.
 
@@ -2596,9 +2596,9 @@ Removes an agent from the canonical store, including its origin sidecar and lock
 
 ---
 
-### Agent Projection *(experimental)*
+### Agent Projection
 
-Per-client projection of imported agents: the REST face of `gridctl skill project --kind agent`, backed by the same engine and lockfile (`~/.gridctl/project.lock.yaml`). States use the shared projection vocabulary: `in-sync`, `stale`, `drifted`, `target-missing`. Each row carries `render` (`identity`: canonical bytes copied verbatim, currently Claude Code; `lossy`: client-dialect render that drops unmappable keys, currently OpenCode, Copilot, and Gemini CLI) and `experimental`.
+Per-client projection of imported agents: the REST face of `gridctl skill project --kind agent`, backed by the same engine and lockfile (`~/.gridctl/project.lock.yaml`). States use the shared projection vocabulary: `in-sync`, `stale`, `drifted`, `target-missing`. Each row carries `render` (`identity`: canonical bytes copied verbatim, currently Claude Code; `lossy`: client-dialect render that drops unmappable keys, currently OpenCode, Copilot, and Gemini CLI).
 
 #### `GET /api/project/agents/status`
 
@@ -2620,7 +2620,6 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project/agents/
     "target": "/home/user/.claude/agents/code-reviewer.md",
     "render": "identity",
     "state": "in-sync",
-    "experimental": true,
     "pack": "team-pack",
     "synced_at": "2026-08-04T12:00:00Z"
   }
@@ -2669,7 +2668,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project
 
 ---
 
-### Wiring Ownership *(experimental)*
+### Wiring Ownership
 
 Per-client gateway-entry ownership: the REST face of `gridctl project status|adopt --kind wiring`, backed by the wiring ownership records in the unified project lockfile. States use the wiring vocabulary: `in-sync`, `stale` (gateway port or entry shape changed), `drifted` (edited since gridctl wrote it), `target-missing`, `foreign` (an entry at gridctl's name that gridctl never recorded), and `missing` (detected client, nothing recorded, nothing present). This is the full form of the fact `GET /api/clients` collapses into its single `drifted` boolean.
 
@@ -2714,7 +2713,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project
 
 ---
 
-### Packs *(experimental)*
+### Packs
 
 The REST face of `gridctl pack add|apply|status|remove`, plus a read-only preview for import flows. A pack is one git repository carrying a `gridctl-pack.yaml` manifest selecting skills, agents, context rule fragments, and optional gateway wiring (see the [Packs guide](packs.md)). Per-resource rows use the shared projection-state vocabulary (`in-sync`, `stale`, `drifted`, `target-missing`, `foreign`, `missing`), plus `unresolved` for manifest selections the repository does not ship.
 

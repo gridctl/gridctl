@@ -483,11 +483,6 @@ func (info *RuntimeInfo) CLIName() string {
 	return string(info.Type)
 }
 
-// IsExperimental returns true if this runtime is experimental.
-func (info *RuntimeInfo) IsExperimental() bool {
-	return false
-}
-
 // IsSupportedPodmanVersion returns true if the Podman version supports netavark (4.0+).
 func (info *RuntimeInfo) IsSupportedPodmanVersion() bool {
 	if info.Type != RuntimePodman {

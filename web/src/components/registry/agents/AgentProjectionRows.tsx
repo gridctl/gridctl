@@ -23,9 +23,9 @@ interface AgentProjectionRowsProps {
 
 /**
  * Per-client projection rows for one agent, in the shipped ClientsStrip /
- * ClientRow grammar: state pill, render chip, client name with an inline
- * experimental suffix, truncated target path, and inline text-button
- * actions. Adopt is only ever offered on identity rows; lossy rows get an
+ * ClientRow grammar: state pill, render chip, client name, truncated
+ * target path, and inline text-button actions. Adopt is only ever offered
+ * on identity rows; lossy rows get an
  * always-visible explanation with the two real alternatives as buttons —
  * never a disabled button whose reason hides in a tooltip.
  */
@@ -188,7 +188,6 @@ function ProjectionRow({
         <ProjectedModelChip value={s.model_value} />
         <span className="text-xs text-text-primary whitespace-nowrap">
           {agentClientName(s.client)}
-          {s.experimental && <span className="ml-1 text-[10px] text-text-secondary">(experimental)</span>}
         </span>
         <button
           onClick={() => navigate(`/connections?client=${encodeURIComponent(s.client)}`)}

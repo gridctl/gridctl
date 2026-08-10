@@ -235,8 +235,8 @@ func TestSkillProjectLabels(t *testing.T) {
 			t.Errorf("label(%s) = %q, want prefix %q", state, got, prefix)
 		}
 	}
-	got := skillProjectStateLabel(skillsync.ProjectionStatus{State: skillsync.StateInSync, Experimental: true})
-	if !strings.Contains(got, "(experimental)") {
-		t.Errorf("experimental marker missing: %q", got)
+	got := skillProjectStateLabel(skillsync.ProjectionStatus{State: skillsync.StateInSync, Unofficial: true})
+	if !strings.Contains(got, "(unofficial path)") {
+		t.Errorf("unofficial-path marker missing: %q", got)
 	}
 }

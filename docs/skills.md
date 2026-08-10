@@ -189,7 +189,7 @@ Skills are natural-language documents that agents obey, and after import nothing
 
 **Exposure policy.** An optional `skills:` block in stack.yaml globally filters which registry skills are exposed and projected — see the [config schema](./config-schema.md#skills-exposure-policy). Denied skills disappear from `prompts/list`/`resources/list` and are skipped by projection sync, but they keep their registry state, stay visible in the Library and API flagged with the matching rule, and `gridctl apply` warns for every active skill the policy hides. Denial is never silent.
 
-## Agent definitions (experimental)
+## Agent definitions
 
 The import pipeline also understands Claude Code subagent definitions. `gridctl skill add` discovers any `agents/*.md` files (an `agents/` directory at the repo root or at any subdirectory root, the layout Claude Code plugin repos already use) alongside `SKILL.md` discovery, so a repo shipping `skills/` plus `agents/` imports as a unit:
 
@@ -211,7 +211,7 @@ Four targets exist, gated by client detection. `claude-code` is the identity tar
 
 One Claude Code quirk worth knowing: it only watches agent directories that existed when the session started. If `~/.claude/agents` did not exist before the first `sync --kind agent`, restart Claude Code once to pick the agents up; subsequent syncs hot-reload.
 
-The rendered dialects were verified against each client's documentation as of August 2026; they are experimental, and a client changing its format shows up as drift or a failed load in that client, never as damage to the canonical store.
+The rendered dialects were verified against each client's documentation as of August 2026. They track formats gridctl does not own, so a client changing its format shows up as drift or a failed load in that client, never as damage to the canonical store.
 
 ### Agents in the web UI
 

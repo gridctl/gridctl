@@ -1,4 +1,4 @@
 SKILL  CLIENT  CHANNEL  RENDER  STATE  TARGET
-alpha  antigravity  copy  identity  ✗ drifted (experimental)  $HOME/.gemini/config/skills/alpha
+alpha  antigravity  copy  identity  ✗ drifted (unofficial path)  $HOME/.gemini/config/skills/alpha
 alpha  claude-code  symlink  identity  ✓ in-sync  $HOME/.claude/skills/alpha
-beta  antigravity  copy  identity  ~ stale (experimental)  $HOME/.gemini/config/skills/beta
+beta  antigravity  copy  identity  ~ stale (unofficial path)  $HOME/.gemini/config/skills/beta
