@@ -349,7 +349,7 @@ func (s *Store) writeTombstone(path, backupDir string) error {
 		Note    string `yaml:"note"`
 	}{
 		Version: legacyTombstoneVersion,
-		Note: fmt.Sprintf("projection state moved to %s; this tombstone makes older gridctl versions (before the unified project lockfile, v0.1.0-beta.16) fail loudly instead of diverging. The original file is preserved at %s.",
+		Note: fmt.Sprintf("projection state moved to %s; this tombstone makes older gridctl versions (before the unified project lockfile, v0.1.0-rc.1) fail loudly instead of diverging. The original file is preserved at %s.",
 			s.Path(), filepath.Join(backupDir, filepath.Base(path))),
 	}
 	data, err := yaml.Marshal(tombstone)
