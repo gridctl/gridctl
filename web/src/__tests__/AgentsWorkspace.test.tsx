@@ -59,7 +59,6 @@ const identityInSync: AgentProjectionStatus = {
   target: '/home/u/.claude/agents/code-reviewer.md',
   render: 'identity',
   state: 'in-sync',
-  experimental: true,
 };
 
 const lossyDrifted: AgentProjectionStatus = {
@@ -70,7 +69,6 @@ const lossyDrifted: AgentProjectionStatus = {
   render: 'lossy',
   state: 'drifted',
   detail: 'dropped keys: tools, model',
-  experimental: true,
 };
 
 function renderWorkspace() {
