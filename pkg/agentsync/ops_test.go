@@ -238,8 +238,8 @@ func TestStatuses_FourStates(t *testing.T) {
 	if len(statuses) != 1 || statuses[0].State != StateInSync {
 		t.Fatalf("statuses = %+v, want in-sync", statuses)
 	}
-	if !statuses[0].Experimental {
-		t.Error("claude-code agent target must surface as experimental")
+	if statuses[0].Render != "identity" {
+		t.Errorf("render = %q, want claude-code to receive canonical bytes", statuses[0].Render)
 	}
 
 	// Hand edit at the destination: drifted.
