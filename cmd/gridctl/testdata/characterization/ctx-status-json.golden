@@ -77,7 +77,7 @@
   "name": "Antigravity",
   "supported": true,
   "available": false,
-  "experimental": true,
+  "unofficial": true,
   "strategy": "block",
   "target_path": "$HOME/.gemini/AGENTS.md",
   "state": "never-synced"
