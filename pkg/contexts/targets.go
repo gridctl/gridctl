@@ -49,9 +49,11 @@ type Target struct {
 	// MaxChars caps the rendered target file size; 0 means unlimited.
 	// Windsurf enforces a 6,000-character limit on global_rules.md.
 	MaxChars int
-	// Experimental marks targets whose documented path rests on
-	// unofficial sourcing; surfaced in status output.
-	Experimental bool
+	// Unofficial marks targets whose path rests on unofficial sourcing
+	// rather than published client documentation. The projection is
+	// supported; the path may move without an upstream release note.
+	// Surfaced in status output so the caveat is never silent.
+	Unofficial bool
 }
 
 // UnsupportedClient is a linked client with no writable global context
@@ -133,8 +135,8 @@ func Targets() []Target {
 			Paths:    allOS("~/.gemini/AGENTS.md"),
 			// Antigravity-specific dirs, not plain ~/.gemini, so a
 			// Gemini-CLI-only install doesn't read as Antigravity.
-			DetectDirs:   []string{"~/.gemini/config", "~/.gemini/antigravity"},
-			Experimental: true,
+			DetectDirs: []string{"~/.gemini/config", "~/.gemini/antigravity"},
+			Unofficial: true,
 		},
 		{
 			Slug:       "windsurf",
