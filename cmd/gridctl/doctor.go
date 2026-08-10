@@ -53,7 +53,8 @@ type doctorCheck struct {
 }
 
 // doctorReport is the machine-readable shape of `gridctl doctor --json`.
-// The schema is experimental until 1.0.
+// The schema is backward compatible within 0.x: fields may be added,
+// never removed or retyped without a clearly-labeled release.
 type doctorReport struct {
 	OK           bool          `json:"ok"`
 	ErrorCount   int           `json:"error_count"`
@@ -78,7 +79,7 @@ Exit codes:
   1  one or more errors
   2  doctor itself failed to run`,
 	Example: `  gridctl doctor               Run all checks
-  gridctl doctor --json        Machine-readable report (experimental schema)
+  gridctl doctor --json        Machine-readable report
   gridctl doctor -q            Only print failures and warnings`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
