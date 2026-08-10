@@ -4,6 +4,10 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.0-rc.1] - 2026-08-10
+
+First release candidate. Every shipped feature surface is now Stable (see [docs/project-status.md](docs/project-status.md)); the Experimental tier is retained only for features shipping dark behind the `experimental:` feature-flag registry, which currently holds none.
+
 ### Removed
 
 - **Breaking:** the dollar-cost layer is removed from the backend, completing the staged removal begun with the web UI entry below. The gateway sits below the LLM client and cannot observe actual spend, so its dollar figures were always estimates of a fraction of a related quantity; token and usage metrics, which the gateway does measure, stay. Gone: `pkg/pricing` and the embedded LiteLLM snapshot (with the weekly refresh workflow and `task pricing:*`), the stack.yaml attribution fields (`gateway.default_model`, per-server `model:`, `client_models:`) and dollar budgets under `limits:` (rate limits stay; existing configs still load, with the removed keys ignored by the non-strict parser), the pricing and cost API routes (`GET /api/pricing/models`, the three model PUT routes, `GET`/`DELETE /api/metrics/cost`) and the `/api/status` cost and model-attribution fields, `costUsd` on `/api/tools/usage`, the `expensive_model_on_cheap_task` heuristic, the `gen_ai.cost.usd` and `gen_ai.request.model` span attributes (token and cache attributes stay), and the budget spend ledger (leftover ledger files under the state directory are orphaned and harmless). `gridctl optimize` findings now report `impact_tokens_per_week` (projected assuming ~500 prompts/week, named in the summary) instead of `impact_usd_per_week`, and `--min-impact` is token-denominated; `gridctl limits` reports rate limits only, and its budget-exceeded exit code 1 is gone. Token counting (`pkg/token`, `tokenizer:` config) is untouched (#1089)
