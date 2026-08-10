@@ -62,7 +62,7 @@ var skillAddCmd = &cobra.Command{
 	Use:   "add <repo-url>",
 	Short: "Import skills and agents from a git repository",
 	Long: "Clone a repository, discover SKILL.md files and agent definitions " +
-		"(agents/*.md, experimental), and import them into the local registry. " +
+		"(agents/*.md), and import them into the local registry. " +
 		"A repo shipping skills/ plus agents/ imports as a unit.",
 	Example: `  gridctl skill add https://github.com/acme/skills
   gridctl skill add git@github.com:acme/private-skills.git --vault-key GH_TOKEN`,
@@ -384,7 +384,7 @@ func runSkillAdd(repoURL string) error {
 
 	fmt.Printf("Imported %d skill(s), %d agent(s) from %s\n", len(result.Imported), len(result.ImportedAgents), repoURL)
 	if len(result.ImportedAgents) > 0 {
-		fmt.Println("Agents are experimental: list them with 'gridctl skill list --kind agent', project them with 'gridctl skill project sync --kind agent'.")
+		fmt.Println("List agents with 'gridctl skill list --kind agent', project them with 'gridctl skill project sync --kind agent'.")
 	}
 
 	return nil
