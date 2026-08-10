@@ -142,7 +142,7 @@ var builtin = []Flag{
 		Stage:       StageGraduated,
 		Since:       "0.1.0",
 		GraduatesBy: "0.3.0",
-		Message:     "graduated in 0.1.0-beta.16; remove the entry, the dual-stack transport is always on and per-server pinning lives in protocol_generation",
+		Message:     "graduated in 0.1.0-rc.1; remove the entry, the dual-stack transport is always on and per-server pinning lives in protocol_generation",
 	},
 }
 
