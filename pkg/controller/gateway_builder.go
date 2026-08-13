@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 
 	"github.com/gridctl/gridctl/internal/api"
+	"github.com/gridctl/gridctl/internal/openapipreview"
 	"github.com/gridctl/gridctl/internal/probe"
 	"github.com/gridctl/gridctl/pkg/agentsync"
 	"github.com/gridctl/gridctl/pkg/config"
@@ -808,6 +809,17 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 		prober.SetOAuthSource(broker.HeaderSourceForResource)
 	}
 	server.SetProber(prober)
+
+	// Wire the wizard's OpenAPI spec preview. Separate from the probe above,
+	// which deliberately refuses OpenAPI: the probe speaks MCP and yields
+	// tools, while curating a spec needs the method, path, and tags that tool
+	// conversion discards.
+	var previewLogger *slog.Logger
+	if handler != nil {
+		previewLogger = slog.New(handler).With("subsystem", "openapi-preview")
+	}
+	server.SetOpenAPIPreviewer(openapipreview.New(
+		openapipreview.NewCache(openapipreview.DefaultTTL), previewLogger))
 
 	// Wire distributed tracing
 	tracingCfg := buildTracingConfig(b.stack.Gateway)

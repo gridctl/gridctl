@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gridctl/gridctl/internal/openapipreview"
 	"github.com/gridctl/gridctl/internal/probe"
 	"github.com/gridctl/gridctl/pkg/agentsync"
 	"github.com/gridctl/gridctl/pkg/config"
@@ -85,6 +86,11 @@ type Server struct {
 	// with the gateway). Nil disables the /api/servers/probe endpoint.
 	prober       *probe.Prober
 	probeLimiter *probeLimiter
+
+	// openapiPreviewer parses an OpenAPI spec so the wizard can list its
+	// operations before deploy. Nil disables /api/openapi/operations.
+	openapiPreviewer      *openapipreview.Previewer
+	openapiPreviewLimiter *probeLimiter
 
 	// oauthBroker handles downstream OAuth for external servers. Nil
 	// disables the /api/servers/{name}/auth/* endpoints and the
@@ -517,6 +523,11 @@ func (s *Server) Handler() http.Handler {
 	// "Discover tools" flow for servers not yet loaded in the stack.
 	mux.HandleFunc("POST /api/servers/probe", s.handleProbe)
 
+	// OpenAPI spec preview — lists a spec's operations so the wizard can
+	// curate them before deploy. Sibling of the probe, not part of it: the
+	// probe speaks MCP and returns tools, which discard method, path, and tags.
+	mux.HandleFunc("POST /api/openapi/operations", s.handleOpenAPIPreview)
+
 	// Registry endpoints
 	mux.HandleFunc("GET /api/registry/status", s.handleRegistryStatus)
 	mux.HandleFunc("GET /api/registry/skills", s.handleRegistrySkillsList)
@@ -637,7 +648,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Registry   *registry.RegistryStatus `json:"registry,omitempty"`
 		CodeMode   string                   `json:"code_mode,omitempty"`
 		TokenUsage *metrics.TokenUsage      `json:"token_usage,omitempty"`
-		StackName             string                    `json:"stack_name,omitempty"`
+		StackName  string                   `json:"stack_name,omitempty"`
 		// Features maps each ENABLED experimental flag name to true —
 		// the capability-bit view for UI gating. Omitted when nothing is
 		// enabled so the no-flags payload is byte-identical to before.
