@@ -138,8 +138,9 @@ jobs:
   podman-integration:
     # Pinned to a specific Ubuntu major rather than ubuntu-latest so a future
     # label rollover cannot silently change the container stack under these
-    # tests. GitHub does not allow pinning a specific runner image release, so
-    # the Install Podman step below still has to defend against image drift.
+    # tests. Note this does NOT pin the image release: the ubuntu-24.04 label
+    # serves whatever build is current, so image drift within the major still
+    # reaches this job (see #1092).
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: test
@@ -157,22 +158,14 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq podman netavark aardvark-dns
-          # Some runner images preinstall a newer Podman that sits ahead of the
-          # archive build on PATH. That binary then runs against the archive's
-          # older netavark/aardvark-dns, and rootless inter-container DNS stops
-          # resolving with no error until a container lookup fails (#1092).
-          # Prefer the apt set, whose components are version-matched.
-          apt_podman=/usr/bin/podman
-          current=$(command -v podman || true)
-          if [ -n "$current" ] && [ "$current" != "$apt_podman" ] && [ -x "$apt_podman" ]; then
-            echo "::notice::Preferring $apt_podman over preinstalled $current ($("$current" --version 2>/dev/null))"
-            # Keep the original for diagnostics, then point its path at the apt
-            # build so anything referencing it — systemd units included —
-            # resolves to the version-matched binary rather than breaking.
-            sudo mv "$current" "$current.image-preinstalled"
-            sudo ln -sf "$apt_podman" "$current"
-            hash -r
-          fi
+          # Do NOT force the archive Podman ahead of a newer preinstalled one.
+          # That was tried and reverted: on images shipping Podman 5.x, pointing
+          # PATH at the archive's 4.9.3 breaks container startup outright
+          # (conmon failures across every container test), which is far worse
+          # than the single rootless-DNS failure it was meant to address. The
+          # real mismatch is the other way round — Podman 5.x against the
+          # archive's netavark/aardvark-dns 1.4.0, which is too old — and fixing
+          # it needs a newer netavark from outside the Ubuntu archive (#1092).
           # Print the resolved set so a future mismatch is diagnosable from the
           # log alone rather than by bisecting runner images.
           echo "podman:       $(command -v podman) — $(podman --version)"
