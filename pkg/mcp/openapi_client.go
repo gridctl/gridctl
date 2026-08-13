@@ -3,8 +3,6 @@ package mcp
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -111,34 +109,11 @@ func NewOpenAPIClient(name string, cfg *OpenAPIClientConfig) (*OpenAPIClient, er
 		}
 	}
 
-	// Build HTTP transport — clone default to avoid mutating shared state
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-
-	// Configure TLS if cert files are provided
-	if cfg.TLSCertFile != "" {
-		cert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
-		if err != nil {
-			return nil, fmt.Errorf("loading TLS client certificate: %w", err)
-		}
-		tlsCfg := &tls.Config{
-			Certificates:       []tls.Certificate{cert},
-			InsecureSkipVerify: cfg.TLSInsecureSkipVerify, //nolint:gosec // user-controlled config
-		}
-		if cfg.TLSCAFile != "" {
-			caCert, err := os.ReadFile(cfg.TLSCAFile)
-			if err != nil {
-				return nil, fmt.Errorf("reading TLS CA file: %w", err)
-			}
-			caPool := x509.NewCertPool()
-			if !caPool.AppendCertsFromPEM(caCert) {
-				return nil, fmt.Errorf("parsing TLS CA certificate: no valid certificates found in %s", cfg.TLSCAFile)
-			}
-			tlsCfg.RootCAs = caPool
-		}
-		transport.TLSClientConfig = tlsCfg
+	httpClient, err := NewOpenAPIHTTPClient(cfg.TLSCertFile, cfg.TLSKeyFile, cfg.TLSCAFile, cfg.TLSInsecureSkipVerify)
+	if err != nil {
+		return nil, err
 	}
-
-	c.httpClient = &http.Client{Timeout: defaultOpenAPITimeout, Transport: transport}
+	c.httpClient = httpClient
 
 	// Build OAuth2 token source for client credentials flow
 	if cfg.AuthType == "oauth2" {
@@ -233,31 +208,22 @@ func (c *OpenAPIClient) RefreshTools(ctx context.Context) error {
 		return nil
 	}
 
-	for path, pathItem := range doc.Paths.Map() {
-		if pathItem == nil {
+	// EnumerateOperations is shared with the wizard preview so both agree on
+	// which operations exist and which are unusable. Skipped entries are the
+	// ones that could never become tools (no operationId, or a sanitized name
+	// that comes out empty); the include/exclude filter is applied here because
+	// it is client state, not a property of the spec.
+	for _, summary := range EnumerateOperations(doc) {
+		if summary.Skipped {
 			continue
 		}
-		for method, op := range pathItem.Operations() {
-			if op == nil || op.OperationID == "" {
-				continue // Skip operations without ID
-			}
-
-			// Apply include/exclude filters
-			if !c.shouldInclude(op.OperationID) {
-				continue
-			}
-
-			// Convert to MCP tool
-			tool, operation := c.operationToTool(method, path, op)
-
-			// Handle empty tool name (operationID was all invalid chars)
-			if tool.Name == "" {
-				continue
-			}
-
-			tools = append(tools, tool)
-			operations[tool.Name] = operation
+		if !c.shouldInclude(summary.OperationID) {
+			continue
 		}
+
+		tool, operation := c.operationToTool(summary.Method, summary.Path, summary.op)
+		tools = append(tools, tool)
+		operations[tool.Name] = operation
 	}
 
 	c.mu.Lock()
@@ -351,12 +317,22 @@ func (c *OpenAPIClient) Ping(ctx context.Context) error {
 
 // loadSpec loads the OpenAPI spec from URL or file.
 func (c *OpenAPIClient) loadSpec(ctx context.Context) (*openapi3.T, error) {
+	return loadSpecFrom(ctx, c.spec, c.httpClient, c.noExpand, true)
+}
+
+// loadSpecFrom loads and parses an OpenAPI document from a URL or file path.
+//
+// Shared by the deployed client and the wizard preview so the fetch cap,
+// content-type rejection, and env expansion cannot drift between them.
+// allowExternalRefs is a parameter rather than a constant because preview
+// deliberately declines to follow refs; see LoadOpenAPISpecForPreview.
+func loadSpecFrom(ctx context.Context, spec string, client *http.Client, noExpand, allowExternalRefs bool) (*openapi3.T, error) {
 	loader := openapi3.NewLoader()
-	loader.IsExternalRefsAllowed = true
+	loader.IsExternalRefsAllowed = allowExternalRefs
 	loader.Context = ctx // Propagate context for cancellation
 
-	if strings.HasPrefix(c.spec, "http://") || strings.HasPrefix(c.spec, "https://") {
-		data, err := c.fetchSpec(ctx)
+	if strings.HasPrefix(spec, "http://") || strings.HasPrefix(spec, "https://") {
+		data, err := fetchSpecFrom(ctx, spec, client)
 		if err != nil {
 			return nil, err
 		}
@@ -364,35 +340,37 @@ func (c *OpenAPIClient) loadSpec(ctx context.Context) (*openapi3.T, error) {
 	}
 
 	// Load from file
-	data, err := os.ReadFile(c.spec)
+	data, err := os.ReadFile(spec)
 	if err != nil {
 		return nil, fmt.Errorf("reading spec file: %w", err)
 	}
 
 	// Apply environment variable expansion for local files (unless disabled)
-	if !c.noExpand {
+	if !noExpand {
 		data = expandEnvVars(data)
 	}
 
 	return loader.LoadFromData(data)
 }
 
-// fetchSpec fetches an OpenAPI spec from a URL with content-type validation.
-func (c *OpenAPIClient) fetchSpec(ctx context.Context) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", c.spec, nil)
+// fetchSpecFrom fetches an OpenAPI spec from a URL with content-type validation.
+// Spec fetching is deliberately unauthenticated: the API credentials configured
+// for a server authenticate calls to the API, not retrieval of its description.
+func fetchSpecFrom(ctx context.Context, spec string, client *http.Client) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", spec, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating spec request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json, application/yaml, application/x-yaml")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetching spec from %s: %w", c.spec, err)
+		return nil, fmt.Errorf("fetching spec from %s: %w", spec, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("fetching spec from %s: HTTP %d", c.spec, resp.StatusCode)
+		return nil, &SpecFetchError{URL: spec, StatusCode: resp.StatusCode}
 	}
 
 	// Reject HTML responses early with a clear error
