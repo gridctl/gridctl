@@ -293,6 +293,20 @@ function buildMCPServer(data: MCPServerFormData, indentLevel = 2): string {
             if (tls.insecureSkipVerify === true) lines.push(`${inner}    insecureSkipVerify: true`);
           }
         }
+        // Generation-time operation filter. Guard on length, not definedness:
+        // the form's mode toggle leaves an empty array behind, and an empty
+        // include list means "include everything" to the backend, so emitting
+        // it would read as a whitelist while acting as a no-op.
+        const ops = data.openapi.operations;
+        if (ops?.include?.length) {
+          lines.push(`${inner}  operations:`);
+          lines.push(`${inner}    include:`);
+          lines.push(serializeArray(ops.include, indentLevel + 8));
+        } else if (ops?.exclude?.length) {
+          lines.push(`${inner}  operations:`);
+          lines.push(`${inner}    exclude:`);
+          lines.push(serializeArray(ops.exclude, indentLevel + 8));
+        }
       }
       break;
   }
@@ -468,6 +482,20 @@ function buildStack(data: StackFormData): string {
   return lines.join('\n') + '\n';
 }
 
+// Infer the server type from the YAML rather than assuming container.
+// Block headers (openapi:, ssh:, source:, command:) carry no inline value, so
+// the flat parser below never records them — match those against the raw text.
+// Order matters: a source server nests `url:` under `source:`, which the flat
+// parser records as a top-level `url`, so `source:` must be checked first.
+function detectServerType(yaml: string, result: Record<string, unknown>): ServerType {
+  if (/^\s*openapi:\s*$/m.test(yaml)) return 'openapi';
+  if (/^\s*ssh:\s*$/m.test(yaml)) return 'ssh';
+  if (/^\s*source:\s*$/m.test(yaml)) return 'source';
+  if (result.url) return 'external';
+  if (/^\s*command:\s*$/m.test(yaml) && !result.image) return 'local';
+  return 'container';
+}
+
 // Parse YAML string back to form data (best-effort for expert mode)
 export function parseYAMLToForm(yaml: string, resourceType: ResourceType): WizardFormData | { error: string } {
   try {
@@ -539,24 +567,25 @@ export function parseYAMLToForm(yaml: string, resourceType: ResourceType): Wizar
           rawPolicy === 'least-connections' || rawPolicy === 'round-robin'
             ? rawPolicy
             : undefined;
-        return {
-          type: 'mcp-server',
-          data: {
-            name: (result.name as string) || '',
-            serverType: 'container',
-            image: result.image as string,
-            transport: result.transport as string,
-            // autoscale and replicas are mutually exclusive at the backend —
-            // don't surface stale replica fields if autoscale is present.
-            replicas: autoscale
-              ? undefined
-              : Number.isFinite(parsedReplicas) && parsedReplicas > 0
-                ? parsedReplicas
-                : undefined,
-            replicaPolicy: autoscale ? undefined : replicaPolicy,
-            autoscale,
-          },
+        const data: MCPServerFormData = {
+          name: (result.name as string) || '',
+          serverType: detectServerType(yaml, result),
+          // autoscale and replicas are mutually exclusive at the backend —
+          // don't surface stale replica fields if autoscale is present.
+          replicas: autoscale
+            ? undefined
+            : Number.isFinite(parsedReplicas) && parsedReplicas > 0
+              ? parsedReplicas
+              : undefined,
+          replicaPolicy: autoscale ? undefined : replicaPolicy,
+          autoscale,
         };
+        // Only carry through fields the flat parser actually saw. The caller
+        // merges this over existing form state, so assigning undefined here
+        // would clobber configuration this parser cannot represent.
+        if (result.image) data.image = result.image as string;
+        if (result.transport) data.transport = result.transport as string;
+        return { type: 'mcp-server', data };
       }
       case 'resource':
         return {

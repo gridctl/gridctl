@@ -136,7 +136,11 @@ jobs:
         run: go test -tags=integration -race -timeout 10m -run TestConformance ./tests/integration/...
 
   podman-integration:
-    runs-on: ubuntu-latest
+    # Pinned to a specific Ubuntu major rather than ubuntu-latest so a future
+    # label rollover cannot silently change the container stack under these
+    # tests. GitHub does not allow pinning a specific runner image release, so
+    # the Install Podman step below still has to defend against image drift.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: test
 
@@ -153,6 +157,27 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq podman netavark aardvark-dns
+          # Some runner images preinstall a newer Podman that sits ahead of the
+          # archive build on PATH. That binary then runs against the archive's
+          # older netavark/aardvark-dns, and rootless inter-container DNS stops
+          # resolving with no error until a container lookup fails (#1092).
+          # Prefer the apt set, whose components are version-matched.
+          apt_podman=/usr/bin/podman
+          current=$(command -v podman || true)
+          if [ -n "$current" ] && [ "$current" != "$apt_podman" ] && [ -x "$apt_podman" ]; then
+            echo "::notice::Preferring $apt_podman over preinstalled $current ($("$current" --version 2>/dev/null))"
+            # Keep the original for diagnostics, then point its path at the apt
+            # build so anything referencing it — systemd units included —
+            # resolves to the version-matched binary rather than breaking.
+            sudo mv "$current" "$current.image-preinstalled"
+            sudo ln -sf "$apt_podman" "$current"
+            hash -r
+          fi
+          # Print the resolved set so a future mismatch is diagnosable from the
+          # log alone rather than by bisecting runner images.
+          echo "podman:       $(command -v podman) — $(podman --version)"
+          echo "netavark:     $(dpkg-query -W -f='${Version}' netavark 2>/dev/null || echo absent)"
+          echo "aardvark-dns: $(dpkg-query -W -f='${Version}' aardvark-dns 2>/dev/null || echo absent)"
 
       - name: Start Podman socket
         run: |

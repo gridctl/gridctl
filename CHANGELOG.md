@@ -4,6 +4,16 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- The create-server wizard now writes the OpenAPI operations filter it collects. The Operations Filter control captured an include/exclude list of `operationId` values into form state, but the YAML serializer never emitted the `operations` key, so the deployed server generated a tool for every operation in the spec. Because an absent include list means "generate everything" to the backend, the loss was silent: no error, no warning, and the Review step does not display the generated YAML. The control has never worked since it was added, and shipped in every release from v0.1.0-beta.10. An empty selection still omits the key rather than emitting `include: []`, which would read as a whitelist while acting as a no-op. Note for anyone resuming a wizard draft saved before this release: drafts persist raw form state rather than generated YAML, so a stored operations list is intact and will now be applied on the next deploy, shrinking that server's tool set to what was originally selected. A shrinking tool set is deliberately not treated as schema-pin drift, so `gridctl pins verify --exit-code` and `pins diff` still exit 0; stale pin records for removed tools clear on `gridctl pins approve <server>` (#1112)
+
+- Expert mode no longer discards a server's type on the way back to the form. Toggling the wizard's raw-YAML editor off ran a parser that returned `serverType: 'container'` for every input, which orphaned the whole `openapi`, `ssh`, or `source` block: the data survived in form state but the serializer never reached it, so deploying afterwards silently dropped the spec, auth, TLS, and operations filter. The type is now inferred from the YAML, and the parser no longer overwrites fields it cannot represent. The remaining limitation is unchanged and now stated in the editor: edits made inside expert mode to nested configuration do not carry back to the form view (#1112)
+
+### Changed
+
+- The Node version used for frontend development is pinned via `.nvmrc` and an advisory `engines` field on `web/package.json`, matching the Node 22 that CI runs. The frontend test suite does not start on Node 20 (`jsdom` fails with `webidl.util.markAsUncloneable is not a function`), and on Node 23 and newer a built-in web-storage global collides with the jsdom one and fails a large share of component tests. Production builds are unaffected on newer versions; this pins the development and test environment (#1112)
+
 ## [0.1.0-rc.1] - 2026-08-10
 
 First release candidate. Every shipped feature surface is now Stable (see [docs/project-status.md](docs/project-status.md)); the Experimental tier is retained only for features shipping dark behind the `experimental:` feature-flag registry, which currently holds none.
