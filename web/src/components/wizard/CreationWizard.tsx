@@ -795,19 +795,27 @@ function ExpertEditor({
   error: string | null;
 }) {
   return (
-    <div className="space-y-3 h-full">
+    <div className="flex flex-col gap-3 h-full">
       {error && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-status-error/10 border border-status-error/20 text-status-error text-xs">
           <AlertCircle size={12} />
           <span>{error}</span>
         </div>
       )}
+      <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-background/40 border border-border/40 text-text-muted text-[11px]">
+        <AlertCircle size={12} className="mt-0.5 shrink-0" />
+        <span>
+          Edits to nested configuration — spec, auth, TLS, and operation filters — may not
+          carry back to the form view when you switch out of YAML mode. Deploy from here to
+          keep them.
+        </span>
+      </div>
       <textarea
         value={yaml}
         onChange={(e) => onChange(e.target.value)}
         spellCheck={false}
         className={cn(
-          'w-full h-[calc(100%-2rem)] font-mono text-[11px] leading-[1.7] resize-none',
+          'w-full flex-1 min-h-0 font-mono text-[11px] leading-[1.7] resize-none',
           'bg-background/40 border rounded-xl px-4 py-3',
           'focus:outline-none focus:border-primary/50 text-text-primary',
           'placeholder:text-text-muted/50 scrollbar-dark transition-colors',
