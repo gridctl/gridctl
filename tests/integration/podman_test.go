@@ -52,14 +52,23 @@ func netavarkTooOldFor(ctx context.Context, podmanVersion string) (string, bool)
 		return "", false
 	}
 	raw := strings.TrimSpace(string(out))
-	major, minor, ok := leadingVersion(raw)
+	return raw, incompatibleStack(podmanVersion, raw)
+}
+
+// incompatibleStack holds the version rule on its own so it is testable without
+// a live Podman. Keeping it pure matters here: CI runners draw from a mixed
+// image fleet, so the skip path above cannot be relied on to execute on any
+// given run, and the rule would otherwise ship unverified.
+func incompatibleStack(podmanVersion, netavarkVersion string) bool {
+	pMajor, _, ok := leadingVersion(podmanVersion)
+	if !ok || pMajor < 5 {
+		return false
+	}
+	nMajor, nMinor, ok := leadingVersion(netavarkVersion)
 	if !ok {
-		return "", false
+		return false
 	}
-	if major == 1 && minor < 10 {
-		return raw, true
-	}
-	return "", false
+	return nMajor == 1 && nMinor < 10
 }
 
 // TestPodmanRootless_MultiContainerNetworking is the graduation gate for stable Podman
@@ -371,5 +380,34 @@ func TestLeadingVersion(t *testing.T) {
 			t.Errorf("leadingVersion(%q) = (%d, %d, %v), want (%d, %d, %v)",
 				c.in, major, minor, ok, c.major, c.minor, c.ok)
 		}
+	}
+}
+
+func TestIncompatibleStack(t *testing.T) {
+	cases := []struct {
+		name     string
+		podman   string
+		netavark string
+		want     bool
+	}{
+		// The pairing observed on ubuntu24/20260810.271, which fails with
+		// silent DNS non-resolution (#1092).
+		{"podman 5 with archive netavark", "5.8.4", "1.4.0", true},
+		// The pairing on ubuntu24/20260720.247, which works.
+		{"podman 4 with archive netavark", "4.9.3", "1.4.0", false},
+		// Podman 5 with a netavark new enough to drive it.
+		{"podman 5 with modern netavark", "5.8.4", "1.10.3", false},
+		{"podman 5 with much newer netavark", "5.8.4", "2.0.0", false},
+		// Unparseable input must not skip — running and failing is safer than
+		// masking a real regression.
+		{"unknown podman", "", "1.4.0", false},
+		{"unknown netavark", "5.8.4", "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := incompatibleStack(c.podman, c.netavark); got != c.want {
+				t.Errorf("incompatibleStack(%q, %q) = %v, want %v", c.podman, c.netavark, got, c.want)
+			}
+		})
 	}
 }
