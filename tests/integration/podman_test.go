@@ -5,12 +5,62 @@ package integration
 import (
 	"context"
 	"os"
+	"os/exec"
+	"regexp"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/runtime"
 	_ "github.com/gridctl/gridctl/pkg/runtime/docker" // register factory
 )
+
+var versionRe = regexp.MustCompile(`(\d+)\.(\d+)`)
+
+// leadingVersion pulls the major and minor out of a version string such as
+// "5.8.4" or "netavark 1.4.0".
+func leadingVersion(s string) (major, minor int, ok bool) {
+	m := versionRe.FindStringSubmatch(s)
+	if m == nil {
+		return 0, 0, false
+	}
+	major, _ = strconv.Atoi(m[1])
+	minor, _ = strconv.Atoi(m[2])
+	return major, minor, true
+}
+
+// netavarkTooOldFor reports whether the host's netavark is too old for the
+// running Podman, returning the detected netavark version for the skip message.
+//
+// Podman 5.x drives a netavark interface that 1.4.x does not implement. The
+// pairing fails only as silent DNS non-resolution rather than a startup error,
+// so without this check the suite reports a gridctl networking bug when the
+// real fault is the host's container stack (#1092). Ubuntu 24.04 ships netavark
+// 1.4.0, so any runner image carrying Podman 5.x hits this.
+//
+// Deliberately conservative: if the netavark version cannot be determined, this
+// returns false so the test still runs. Masking a genuine regression is worse
+// than a confusing failure, and a real gridctl DNS break would clear this check
+// and fail the assertions below as it should.
+func netavarkTooOldFor(ctx context.Context, podmanVersion string) (string, bool) {
+	if major, _, ok := leadingVersion(podmanVersion); !ok || major < 5 {
+		return "", false
+	}
+	out, err := exec.CommandContext(ctx, "podman", "info", "--format", "{{.Host.NetworkBackendInfo.Version}}").Output()
+	if err != nil {
+		return "", false
+	}
+	raw := strings.TrimSpace(string(out))
+	major, minor, ok := leadingVersion(raw)
+	if !ok {
+		return "", false
+	}
+	if major == 1 && minor < 10 {
+		return raw, true
+	}
+	return "", false
+}
 
 // TestPodmanRootless_MultiContainerNetworking is the graduation gate for stable Podman
 // support. It verifies that two containers on a shared named bridge network can resolve
@@ -29,6 +79,14 @@ func TestPodmanRootless_MultiContainerNetworking(t *testing.T) {
 		t.Skip("skipping: requires Podman runtime (Docker detected)")
 	}
 	t.Logf("Podman version=%s rootless=%v socket=%s", info.Version, info.IsRootless(), info.SocketPath)
+
+	probeCtx, probeCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer probeCancel()
+	if netavark, tooOld := netavarkTooOldFor(probeCtx, info.Version); tooOld {
+		t.Skipf("skipping: Podman %s needs a newer netavark than this host's %s; "+
+			"rootless inter-container DNS cannot work on this stack, so the result "+
+			"would say nothing about gridctl (see #1092)", info.Version, netavark)
+	}
 
 	rt, err := runtime.NewWithInfo(info)
 	if err != nil {
@@ -293,3 +351,25 @@ func TestContainerCleanup_CreatedNeverStarted(t *testing.T) {
 	}
 }
 
+func TestLeadingVersion(t *testing.T) {
+	cases := []struct {
+		in           string
+		major, minor int
+		ok           bool
+	}{
+		{"5.8.4", 5, 8, true},
+		{"1.4.0", 1, 4, true},
+		{"netavark 1.4.0", 1, 4, true},
+		{"4.9.3+ds1-1ubuntu0.2", 4, 9, true},
+		{"1.10.3", 1, 10, true},
+		{"", 0, 0, false},
+		{"unknown", 0, 0, false},
+	}
+	for _, c := range cases {
+		major, minor, ok := leadingVersion(c.in)
+		if ok != c.ok || major != c.major || minor != c.minor {
+			t.Errorf("leadingVersion(%q) = (%d, %d, %v), want (%d, %d, %v)",
+				c.in, major, minor, ok, c.major, c.minor, c.ok)
+		}
+	}
+}
