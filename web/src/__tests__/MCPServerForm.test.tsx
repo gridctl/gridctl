@@ -621,6 +621,71 @@ describe('YAML serialization — new fields', () => {
     expect((parsed.data as MCPServerFormData).replicas).toBe(3);
     expect((parsed.data as MCPServerFormData).replicaPolicy).toBe('least-connections');
   });
+
+  it('serializes an openapi operations include list', () => {
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: {
+        name: 'petstore',
+        serverType: 'openapi',
+        openapi: {
+          spec: 'https://petstore3.swagger.io/api/v3/openapi.json',
+          operations: { include: ['getPetById', 'listPets'] },
+        },
+      },
+    });
+    // Pin the nesting: the block has to sit under openapi: at the depth the
+    // Go loader expects, not merely appear somewhere in the document.
+    expect(yaml).toContain('\n  operations:\n    include:\n      - getPetById\n      - listPets');
+    expect(yaml).not.toContain('exclude:');
+  });
+
+  it('serializes an openapi operations exclude list', () => {
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: {
+        name: 'petstore',
+        serverType: 'openapi',
+        openapi: {
+          spec: 'https://petstore3.swagger.io/api/v3/openapi.json',
+          operations: { exclude: ['deletePet'] },
+        },
+      },
+    });
+    expect(yaml).toContain('\n  operations:\n    exclude:\n      - deletePet');
+    expect(yaml).not.toContain('include:');
+  });
+
+  it('omits the operations block when no filter is set', () => {
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: {
+        name: 'petstore',
+        serverType: 'openapi',
+        openapi: { spec: 'https://petstore3.swagger.io/api/v3/openapi.json' },
+      },
+    });
+    expect(yaml).not.toContain('operations:');
+  });
+
+  it('omits the operations block when the filter list is empty', () => {
+    // The form's include/exclude mode toggle leaves an empty array behind.
+    // An empty include list means "include everything" to the backend, so
+    // emitting it would read as a whitelist while acting as a no-op.
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: {
+        name: 'petstore',
+        serverType: 'openapi',
+        openapi: {
+          spec: 'https://petstore3.swagger.io/api/v3/openapi.json',
+          operations: { include: [] },
+        },
+      },
+    });
+    expect(yaml).not.toContain('operations:');
+    expect(yaml).not.toContain('include:');
+  });
 });
 
 describe('MCPServerForm — replicas UI', () => {
@@ -971,9 +1036,9 @@ describe('YAML serialization — autoscale', () => {
       type: 'mcp-server',
       data: {
         ...(parsed.data as MCPServerFormData),
-        // parseYAMLToForm hard-codes serverType: 'container' and does not
-        // recover the image line; patch back so the rebuild matches what we
-        // started with.
+        // parseYAMLToForm now infers the server type and carries the image
+        // through, so these are already correct; restated to keep the rebuild
+        // pinned to what we started with.
         serverType: 'container',
         image: 'test:latest',
       },
@@ -1128,5 +1193,76 @@ describe('YAML serialization — external auth', () => {
       data: { name: 'plain', serverType: 'external', url: 'https://mcp.example.com/mcp' },
     });
     expect(yaml).not.toContain('auth:');
+  });
+});
+
+describe('parseYAMLToForm — server type detection', () => {
+  const parse = (yaml: string): MCPServerFormData => {
+    const parsed = parseYAMLToForm(yaml, 'mcp-server');
+    if ('error' in parsed) throw new Error(parsed.error);
+    return parsed.data as MCPServerFormData;
+  };
+
+  it('detects an openapi server from its block header', () => {
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: {
+        name: 'petstore',
+        serverType: 'openapi',
+        openapi: { spec: 'https://petstore3.swagger.io/api/v3/openapi.json' },
+      },
+    });
+    expect(parse(yaml).serverType).toBe('openapi');
+  });
+
+  it('detects an ssh server from its block header', () => {
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: {
+        name: 'edge',
+        serverType: 'ssh',
+        ssh: { host: 'edge.example.com', user: 'ops' },
+        command: ['mcp-server'],
+      },
+    });
+    expect(parse(yaml).serverType).toBe('ssh');
+  });
+
+  it('detects an external server from a url scalar', () => {
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: { name: 'remote', serverType: 'external', url: 'https://mcp.example.com/sse' },
+    });
+    expect(parse(yaml).serverType).toBe('external');
+  });
+
+  it('still falls back to container for an image-based server', () => {
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: { name: 'junos', serverType: 'container', image: 'test:latest' },
+    });
+    expect(parse(yaml).serverType).toBe('container');
+  });
+
+  it('preserves an openapi operations filter across an expert-mode round trip', () => {
+    const original: MCPServerFormData = {
+      name: 'petstore',
+      serverType: 'openapi',
+      openapi: {
+        spec: 'https://petstore3.swagger.io/api/v3/openapi.json',
+        operations: { include: ['getPetById'] },
+      },
+    };
+    const yaml = buildYAML({ type: 'mcp-server', data: original });
+    const parsed = parseYAMLToForm(yaml, 'mcp-server');
+    expect('error' in parsed).toBe(false);
+    if ('error' in parsed) return;
+    // The wizard store merges the parse result over existing form state
+    // (useWizardStore.updateFormData is a shallow merge), so reproduce that
+    // shape rather than trusting the parse result alone.
+    const merged = { ...original, ...(parsed.data as MCPServerFormData) };
+    const rebuilt = buildYAML({ type: 'mcp-server', data: merged });
+    expect(rebuilt).toContain('operations:');
+    expect(rebuilt).toContain('- getPetById');
   });
 });
