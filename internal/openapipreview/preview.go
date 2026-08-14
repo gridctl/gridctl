@@ -198,6 +198,19 @@ func classifyLoadError(spec string, err error) *Error {
 		return &Error{Code: CodeFetchFailed, Message: msg, Hint: hint}
 	}
 
+	// Preview disables external $ref following, and kin-openapi enforces that by
+	// failing the whole parse rather than omitting the referencing operations.
+	// A multi-file spec, including one whose operations are all inline and only
+	// its schemas are split out, therefore deploys fine but never previews. Say
+	// so, instead of sending the operator to inspect a valid document.
+	if strings.Contains(msg, "disallowed external reference") {
+		return &Error{
+			Code:    CodeParseFailed,
+			Message: msg,
+			Hint:    "This spec pulls in another document with $ref. Preview does not follow external references, so use a self-contained spec or enter operation IDs manually. Deploy is unaffected.",
+		}
+	}
+
 	switch {
 	case strings.Contains(msg, "reading spec file"):
 		return &Error{
