@@ -40,7 +40,12 @@ beforeEach(() => {
     loaded_at: new Date().toISOString(),
     cached: false,
   });
-  vi.spyOn(apiModule, 'validateStackSpec').mockResolvedValue({ issues: [] });
+  vi.spyOn(apiModule, 'validateStackSpec').mockResolvedValue({
+    valid: true,
+    errorCount: 0,
+    warningCount: 0,
+    issues: [],
+  });
 });
 
 function openOpenAPIForm(operations?: { include?: string[]; exclude?: string[] }) {
