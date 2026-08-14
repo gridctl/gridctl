@@ -7,10 +7,10 @@ import type { OperationsFilter } from '../lib/openapiOperations';
 import * as apiModule from '../lib/api';
 import { ProbeError, type OpenAPIOperation, type OpenAPIPreviewSuccess } from '../lib/api';
 
-const setTotal = vi.fn();
+const setStats = vi.fn();
 vi.mock('../stores/useWizardStore', () => ({
   useWizardStore: vi.fn((selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ setOpenAPIOperationTotal: setTotal }),
+    selector({ setOpenAPIOperationStats: setStats }),
   ),
 }));
 
@@ -63,6 +63,11 @@ function Harness({
 }
 
 async function loadSpec() {
+  // A seeded selection with no loaded list opens in manual entry, so reopen the
+  // picker first when that is where we landed.
+  const backToPicker = screen.queryByRole('button', { name: /back to picker/i });
+  if (backToPicker) fireEvent.click(backToPicker);
+
   fireEvent.click(screen.getByRole('button', { name: /load operations from the openapi spec/i }));
   await waitFor(() => expect(screen.getByText(/^Showing \d+ of/)).toBeInTheDocument());
 }
@@ -70,7 +75,7 @@ async function loadSpec() {
 describe('OperationsPicker', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    setTotal.mockClear();
+    setStats.mockClear();
     vi.spyOn(apiModule, 'previewOpenAPIOperations').mockResolvedValue(previewResult());
   });
 
@@ -245,10 +250,69 @@ describe('OperationsPicker', () => {
     expect(screen.getByText('deprecated')).toBeInTheDocument();
   });
 
-  it('warns when the selection includes DELETE operations', async () => {
-    render(<Harness initial={{ include: ['deletePet'] }} />);
+  // The warning must describe the deployed surface, not the click history. In
+  // exclude mode the destructive operations are the ones left unchecked, and
+  // All mode — the default, and the large-spec case — exposes every DELETE.
+  it.each([
+    ['all mode exposes every DELETE', undefined, /1 operation using DELETE becomes a tool/i],
+    ['include mode counts selected DELETEs', { include: ['deletePet', 'listPets'] }, /1 operation using DELETE becomes a tool/i],
+    ['exclude mode counts unexcluded DELETEs', { exclude: ['listPets'] }, /1 operation using DELETE becomes a tool/i],
+  ])('warns about destructive operations: %s', async (_name, initial, pattern) => {
+    render(<Harness initial={initial as OperationsFilter | undefined} />);
     await loadSpec();
-    expect(screen.getByText(/uses DELETE/i)).toBeInTheDocument();
+    expect(screen.getByText(pattern as RegExp)).toBeInTheDocument();
+  });
+
+  it('drops the destructive warning when the DELETE is excluded', async () => {
+    render(<Harness initial={{ exclude: ['deletePet'] }} />);
+    await loadSpec();
+    expect(screen.queryByText(/using DELETE/i)).not.toBeInTheDocument();
+  });
+
+  it('drops the destructive warning when no DELETE is selected', async () => {
+    render(<Harness initial={{ include: ['listPets'] }} />);
+    await loadSpec();
+    expect(screen.queryByText(/using DELETE/i)).not.toBeInTheDocument();
+  });
+
+  // Returning from Review, restoring a session, or opening a draft remounts the
+  // picker with a selection and no loaded list. An empty "Load operations" box
+  // there reads as though the selection was lost.
+  it('falls back to manual entry when a selection has no loaded list', () => {
+    render(<Harness initial={{ include: ['listPets', 'createPet'] }} />);
+
+    expect(screen.getByLabelText('Operation IDs to include')).toHaveValue('listPets\ncreatePet');
+    expect(screen.queryByRole('button', { name: /load operations from the openapi spec/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /back to picker/i })).toBeInTheDocument();
+  });
+
+  it('still shows the empty state when there is no selection to display', () => {
+    render(<Harness />);
+    expect(screen.getByRole('button', { name: /load operations from the openapi spec/i })).toBeInTheDocument();
+  });
+
+  // Counting is not membership: after a spec change and reload, leftover IDs
+  // from the previous document can make the totals line up while none of the
+  // new operations are checked.
+  it('reaches manual entry from the empty state', () => {
+    render(<Harness />);
+    fireEvent.click(screen.getAllByRole('button', { name: /enter operation IDs manually/i })[0]);
+    expect(screen.getByRole('button', { name: /back to picker/i })).toBeInTheDocument();
+  });
+
+  it('does not offer All-mode conversion when the counts match but the sets do not', async () => {
+    vi.spyOn(apiModule, 'previewOpenAPIOperations').mockResolvedValue(
+      previewResult({
+        operations: [
+          operation({ operation_id: 'newAlpha', path: '/alpha' }),
+          operation({ operation_id: 'newBeta', path: '/beta' }),
+        ],
+      }),
+    );
+    render(<Harness initial={{ include: ['staleOne', 'staleTwo'] }} />);
+    await loadSpec();
+
+    expect(screen.queryByRole('button', { name: /switch to all operations/i })).not.toBeInTheDocument();
   });
 
   it('advises against exposing a large spec wholesale', async () => {
@@ -307,7 +371,6 @@ describe('OperationsPicker', () => {
   it('keeps manual entry available as a fallback and writes raw IDs from it', async () => {
     const onChange = vi.fn();
     render(<Harness initial={{ include: ['seed'] }} onChangeSpy={onChange} />);
-    fireEvent.click(screen.getAllByRole('button', { name: /enter operation IDs manually/i })[0]);
 
     const textarea = screen.getByLabelText('Operation IDs to include');
     fireEvent.change(textarea, { target: { value: 'pets.list\n  getPetById  \n' } });
@@ -333,9 +396,9 @@ describe('OperationsPicker', () => {
     expect(screen.getByText(/cannot be re-enabled from the Tools Whitelist/i)).toBeInTheDocument();
   });
 
-  it('publishes the selectable total for the Review step', async () => {
+  it('publishes the selectable total and destructive count for the Review step', async () => {
     render(<Harness />);
     await loadSpec();
-    expect(setTotal).toHaveBeenCalledWith(4);
+    expect(setStats).toHaveBeenLastCalledWith({ total: 4, deleteCount: 1 });
   });
 });
