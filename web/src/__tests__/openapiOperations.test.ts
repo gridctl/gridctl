@@ -9,6 +9,7 @@ import {
   formatOperationsSummary,
   methodColorClass,
   operationRowLabel,
+  operationsBecomingTools,
   selectableOperations,
   selectedOperationIds,
 } from '../lib/openapiOperations';
@@ -128,6 +129,40 @@ describe('formatOperationsSummary', () => {
 
   it('treats an empty selection as no filter', () => {
     expect(formatOperationsSummary({ include: [] }, 517)).toBe('All 517');
+  });
+});
+
+describe('operationsBecomingTools', () => {
+  const operations = [
+    op({ operation_id: 'listPets' }),
+    op({ operation_id: 'deletePet', method: 'DELETE' }),
+    op({ operation_id: 'listStores' }),
+  ];
+
+  it('returns everything in all mode, whatever is selected', () => {
+    expect(operationsBecomingTools(operations, 'all', new Set(['listPets']))).toHaveLength(3);
+  });
+
+  it('returns the chosen set in include mode', () => {
+    const result = operationsBecomingTools(operations, 'include', new Set(['deletePet']));
+    expect(result.map((o) => o.operation_id)).toEqual(['deletePet']);
+  });
+
+  it('returns the complement in exclude mode', () => {
+    const result = operationsBecomingTools(operations, 'exclude', new Set(['deletePet']));
+    expect(result.map((o) => o.operation_id)).toEqual(['listPets', 'listStores']);
+  });
+});
+
+describe('formatOperationsSummary with a destructive count', () => {
+  it('appends the DELETE count when there is one', () => {
+    expect(formatOperationsSummary({ include: ['a', 'b'] }, 517, 2)).toBe('2 of 517 (include) · 2 DELETE');
+    expect(formatOperationsSummary(undefined, 517, 3)).toBe('All 517 · 3 DELETE');
+  });
+
+  it('omits it when nothing destructive is exposed', () => {
+    expect(formatOperationsSummary({ include: ['a'] }, 517, 0)).toBe('1 of 517 (include)');
+    expect(formatOperationsSummary({ include: ['a'] }, 517)).toBe('1 of 517 (include)');
   });
 });
 
