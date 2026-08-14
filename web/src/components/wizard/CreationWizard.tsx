@@ -167,7 +167,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
     setYamlContent,
     yamlError,
     setYamlError,
-    openapiOperationTotal,
+    openapiOperationStats,
     reset,
   } = useWizardStore();
 
@@ -177,8 +177,12 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
   const mcpServerData = formData['mcp-server'];
   const operationsSummary = useMemo(() => {
     if (selectedType !== 'mcp-server' || mcpServerData?.serverType !== 'openapi') return null;
-    return formatOperationsSummary(mcpServerData.openapi?.operations, openapiOperationTotal);
-  }, [selectedType, mcpServerData, openapiOperationTotal]);
+    return formatOperationsSummary(
+      mcpServerData.openapi?.operations,
+      openapiOperationStats?.total ?? null,
+      openapiOperationStats?.deleteCount ?? null,
+    );
+  }, [selectedType, mcpServerData, openapiOperationStats]);
 
   const mcpServersRaw = useStackStore((s) => s.mcpServers);
   const resourcesRaw = useStackStore((s) => s.resources);
