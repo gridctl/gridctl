@@ -127,3 +127,36 @@ describe('ReviewStep handleSaveAndLoad', () => {
     expect(initializeStack).not.toHaveBeenCalled();
   });
 });
+
+describe('ReviewStep operations summary', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (validateStackSpec as ReturnType<typeof vi.fn>).mockResolvedValue({ issues: [] });
+  });
+
+  function renderWith(operationsSummary?: string | null) {
+    render(
+      <ReviewStep
+        yaml={YAML}
+        resourceType="mcp-server"
+        resourceName="petstore"
+        operationsSummary={operationsSummary}
+      />,
+    );
+  }
+
+  it.each([
+    ['All 517', 'all mode'],
+    ['12 of 517 (include)', 'include mode'],
+    ['12 of 517 excluded (exclude)', 'exclude mode'],
+  ])('shows the summary row "%s" for %s', (summary) => {
+    renderWith(summary);
+    expect(screen.getByText('Operations')).toBeInTheDocument();
+    expect(screen.getByText(summary)).toBeInTheDocument();
+  });
+
+  it('omits the row entirely for resources that have no operations filter', () => {
+    renderWith(null);
+    expect(screen.queryByText('Operations')).not.toBeInTheDocument();
+  });
+});
