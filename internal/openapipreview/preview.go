@@ -15,6 +15,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -171,6 +172,32 @@ func classifyLoadError(spec string, err error) *Error {
 	}
 
 	msg := err.Error()
+
+	// An unexpanded variable is checked before anything structural: it surfaces
+	// as either a fetch or a read failure depending on whether the literal
+	// looks like a URL, and both are baffling without naming the real cause.
+	if strings.Contains(spec, "${") {
+		return &Error{
+			Code:    CodeParseFailed,
+			Message: msg,
+			Hint:    "The spec path still contains an unexpanded variable. Variables resolve at deploy time, so enter operation IDs manually or preview with a literal path.",
+		}
+	}
+
+	// The host never answered: DNS failure, refused connection, TLS rejection,
+	// or timeout. http.Client.Do returns *url.Error for all of them, and none
+	// produce a SpecFetchError, which only wraps a non-2xx response. Without
+	// this branch they fall through to "confirm the document is valid OpenAPI",
+	// which sends the operator to inspect a document that was never served.
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		hint := "Confirm the URL is reachable from the gateway host. The gateway fetches the spec, not the browser, so a host resolvable only on your machine will fail here."
+		if urlErr.Timeout() {
+			hint = "The spec host did not respond in time. Confirm it is reachable from the gateway host, or enter operation IDs manually."
+		}
+		return &Error{Code: CodeFetchFailed, Message: msg, Hint: hint}
+	}
+
 	switch {
 	case strings.Contains(msg, "reading spec file"):
 		return &Error{
@@ -183,14 +210,6 @@ func classifyLoadError(spec string, err error) *Error {
 			Code:    CodeFetchFailed,
 			Message: msg,
 			Hint:    "Point at the raw spec (often /openapi.json or /openapi.yaml) rather than the rendered docs page.",
-		}
-	case strings.Contains(spec, "${"):
-		// An unexpanded variable reaches here as a parse or fetch failure and
-		// is confusing without this hint, since the wizard shows the literal.
-		return &Error{
-			Code:    CodeParseFailed,
-			Message: msg,
-			Hint:    "The spec path still contains an unexpanded variable. Variables resolve at deploy time, so enter operation IDs manually or preview with a literal path.",
 		}
 	default:
 		return &Error{
