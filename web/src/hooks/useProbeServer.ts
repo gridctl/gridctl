@@ -6,17 +6,7 @@ import {
   type ProbeSuccess,
   type ProbedTool,
 } from '../lib/api';
-
-// A stable session id for this tab, sent as X-Session-ID so the backend can
-// enforce per-session concurrency caps separately from global ones. Generating
-// it lazily the first time the hook is used avoids wasting entropy for users
-// who never open the wizard.
-let sessionId: string | null = null;
-function getSessionId(): string {
-  if (sessionId) return sessionId;
-  sessionId = `wizard-${Math.random().toString(36).slice(2, 10)}-${Date.now()}`;
-  return sessionId;
-}
+import { getWizardSessionId } from '../lib/wizardSession';
 
 export interface ProbeState {
   loading: boolean;
@@ -63,7 +53,7 @@ export function useProbeServer(): UseProbeServer {
 
     setState((s) => ({ ...s, loading: true, error: null }));
     try {
-      const result = await probeServer(config, getSessionId());
+      const result = await probeServer(config, getWizardSessionId());
       if (controller.signal.aborted) return null;
       setState({
         loading: false,
