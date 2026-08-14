@@ -3,9 +3,11 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -14,6 +16,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/pkg/stdcopy"
+
+	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	_ "github.com/gridctl/gridctl/pkg/runtime/docker" // register factory
 )
@@ -279,14 +285,26 @@ func TestPodmanRootless_MultiContainerNetworking(t *testing.T) {
 	// Allow container-b to register with the network's DNS before container-a queries it.
 	time.Sleep(2 * time.Second)
 
-	// Start container-a — runs nslookup and exits.
-	// BusyBox nslookup (included in alpine:latest) resolves via the container network's DNS.
+	// Start container-a — resolves container-b and exits.
+	//
+	// The exit status is BusyBox nslookup's, preserved so the assertion below is
+	// unchanged, but the command also records what the resolver actually did.
+	// An exit code on its own cannot tell "the name did not resolve" apart from
+	// "it resolved and the client objected to something else", and this test
+	// previously reported the former without ever establishing it. getent is
+	// included as a second opinion because it goes through the standard
+	// resolver and, unlike nslookup, does not care about the server's answer to
+	// queries the test is not asking about.
+	const lookupCmd = `nslookup container-b; rc=$?; echo "nslookup_exit=$rc"; ` +
+		`getent hosts container-b && echo "getent=ok" || echo "getent=fail"; ` +
+		`echo "--- resolv.conf ---"; cat /etc/resolv.conf; exit $rc`
+
 	statusA, err := rt.Runtime().Start(ctx, runtime.WorkloadConfig{
 		Name:        "container-a",
 		Stack:       stackName,
 		Type:        runtime.WorkloadTypeMCPServer,
 		Image:       "alpine:latest",
-		Command:     []string{"sh", "-c", "nslookup container-b"},
+		Command:     []string{"sh", "-c", lookupCmd},
 		NetworkName: netName,
 		Labels:      managedLabels("container-a"),
 	})
@@ -319,12 +337,43 @@ func TestPodmanRootless_MultiContainerNetworking(t *testing.T) {
 	}
 	t.Logf("container-a exit_code=%d status=%s", result.State.ExitCode, result.State.Status)
 
+	// Always logged, not just on failure: a passing run that took an unexpected
+	// route through the resolver is worth seeing too.
+	t.Logf("container-a output:\n%s", containerOutput(ctx, dockerCli, string(statusA.ID)))
+
 	if result.State.ExitCode != 0 {
-		t.Errorf("inter-container DNS resolution failed: container-a exited %d (expected 0)\n"+
-			"container-a could not resolve 'container-b' by DNS alias on network %q\n"+
-			"ensure netavark and aardvark-dns are installed for rootless Podman networking",
-			result.State.ExitCode, netName)
+		t.Errorf("inter-container DNS lookup of 'container-b' on network %q failed: "+
+			"container-a exited %d (expected 0). The output logged above shows what the "+
+			"resolver returned; check it before assuming the name did not resolve",
+			netName, result.State.ExitCode)
 	}
+}
+
+// containerOutput returns a container's combined stdout and stderr, or a
+// bracketed reason it could not be read. Diagnosing a DNS failure needs what the
+// lookup printed, so this never returns an error the caller might drop — a
+// missing diagnostic is worse than an ugly one.
+func containerOutput(ctx context.Context, cli dockerclient.DockerClient, id string) string {
+	rc, err := cli.ContainerLogs(ctx, id, container.LogsOptions{ShowStdout: true, ShowStderr: true})
+	if err != nil {
+		return "<logs unavailable: " + err.Error() + ">"
+	}
+	defer func() { _ = rc.Close() }()
+
+	raw, err := io.ReadAll(rc)
+	if err != nil {
+		return "<logs unreadable: " + err.Error() + ">"
+	}
+
+	// Log streams are multiplexed for containers started without a TTY and raw
+	// otherwise. Demultiplex, falling back to the bytes as read: which shape
+	// arrives depends on how the workload was started, and guessing wrong would
+	// discard the very output this exists to capture.
+	var buf bytes.Buffer
+	if _, err := stdcopy.StdCopy(&buf, &buf, bytes.NewReader(raw)); err != nil || buf.Len() == 0 {
+		return strings.TrimSpace(string(raw))
+	}
+	return strings.TrimSpace(buf.String())
 }
 
 // TestRuntimeDetection_AutoDetect verifies auto-detection finds the available runtime.

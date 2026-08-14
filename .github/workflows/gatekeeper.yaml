@@ -275,6 +275,28 @@ jobs:
           GRIDCTL_RUNTIME: podman
         run: go test -tags=integration -race -timeout 5m ./tests/integration/...
 
+      - name: Podman network diagnostics
+        # This job has failed on image drift several times, and each round trip
+        # to collect basic state costs a full CI cycle. Collect it on the way
+        # out instead. Runs only on failure and never fails the job itself, so a
+        # missing tool here cannot mask the real error above.
+        if: failure()
+        run: |
+          set +e
+          echo "--- helper processes ---"
+          pgrep -a aardvark-dns || echo "aardvark-dns: not running"
+          pgrep -a netavark || echo "netavark: not running"
+          echo "--- resolved helper paths ---"
+          podman info --format json | jq -c '.host.networkBackendInfo'
+          echo "--- networks ---"
+          podman network ls
+          echo "--- aardvark-dns state ---"
+          ls -la "${XDG_RUNTIME_DIR}/containers/networks/aardvark-dns/" 2>&1 | head -20
+          head -n 40 "${XDG_RUNTIME_DIR}"/containers/networks/aardvark-dns/* 2>&1
+          echo "--- podman user service log ---"
+          journalctl --user -u podman.socket -u podman.service -n 80 --no-pager 2>&1 | tail -40
+          exit 0
+
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 5
