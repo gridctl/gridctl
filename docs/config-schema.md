@@ -575,6 +575,10 @@ mcp-servers:
           - getPetById
 ```
 
+The `operations` filter runs at tool-generation time: an excluded operation never becomes a tool at all. List raw `operationId` values from the spec, not the generated tool names - the two differ whenever an ID contains characters outside `[a-zA-Z0-9_-]`, and a list of generated names matches nothing.
+
+In the web wizard, the OpenAPI Configuration section's Operations Filter loads the spec on demand (`POST /api/openapi/operations`) and lets you search and select operations by ID, path, method, or tag, writing the raw IDs for you. Because this filter decides what is generated, what it removes cannot be restored from the runtime `tools` whitelist; `tools` is the reversible filter, applied after generation.
+
 ### All MCP Server Fields
 
 | Field | Type | Required | Default | Description |
@@ -591,7 +595,7 @@ mcp-servers:
 | `network` | string | Conditional | - | Network to join (required in advanced network mode) |
 | `ssh` | object | Conditional | - | SSH connection config (see [SSH](#ssh)) |
 | `openapi` | object | Conditional | - | OpenAPI spec config (see [OpenAPI](#openapi)) |
-| `tools` | []string | No | - | Tool whitelist. Empty exposes all tools. The web wizard populates this from the live stack for running servers, and offers an optional probe of external-URL servers to discover their tools before deploy. Container / stdio / local-process / SSH / OpenAPI servers are curated from the Stack sidebar after deploy. Editable live from the Stack sidebar's Tools editor - `PUT /api/mcp-servers/{name}/tools` rewrites this field atomically and triggers a hot reload |
+| `tools` | []string | No | - | Tool whitelist. Empty exposes all tools. The web wizard populates this from the live stack for running servers, and offers an optional probe of external-URL servers to discover their tools before deploy. Container / stdio / local-process / SSH servers are curated from the Stack sidebar after deploy; OpenAPI servers are curated before deploy with the wizard's Operations Filter (see [OpenAPI](#openapi-server)). Editable live from the Stack sidebar's Tools editor - `PUT /api/mcp-servers/{name}/tools` rewrites this field atomically and triggers a hot reload |
 | `output_format` | string | No | - | Output format override: `"json"`, `"toon"`, `"csv"`, or `"text"`. Overrides `gateway.output_format` for this server |
 | `pin_schemas` | bool | No | - | Override schema pinning for this server. `false` disables pinning regardless of gateway setting. Omit to inherit from `gateway.security.schema_pinning.enabled` |
 | `ready_timeout` | duration | No | `30s` | Readiness wait for container-based HTTP/SSE servers. Accepts any `time.Duration` string (e.g. `"60s"`, `"2m"`). When a container does not become ready within this window, the container is stopped and removed so a retry starts clean. Ignored for stdio, external, local process, SSH, and OpenAPI servers |
