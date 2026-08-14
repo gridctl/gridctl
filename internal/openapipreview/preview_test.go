@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -238,6 +239,54 @@ func TestPreview_UnexpandedVariableIsNamed(t *testing.T) {
 		if !strings.Contains(err.Hint, "unexpanded variable") {
 			t.Errorf("spec %q: hint = %q, want it to name the unexpanded variable", spec, err.Hint)
 		}
+	}
+}
+
+// External $ref does not degrade the preview, it fails the whole parse -
+// kin-openapi refuses the document rather than omitting the operations that
+// reference it. The operator must be told that, not told to check a document
+// that deploys perfectly well.
+func TestPreview_ExternalRefIsNamedAndNotFetched(t *testing.T) {
+	var refFetched atomic.Bool
+	refSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		refFetched.Store(true)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"type":"object"}`))
+	}))
+	defer refSrv.Close()
+
+	spec := `
+openapi: 3.0.0
+info: {title: T, version: "1"}
+paths:
+  /pets:
+    get:
+      operationId: listPets
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: '` + refSrv.URL + `/pet.json'
+`
+	path := filepath.Join(t.TempDir(), "spec.yaml")
+	if err := os.WriteFile(path, []byte(spec), 0o600); err != nil {
+		t.Fatalf("writing spec: %v", err)
+	}
+
+	p := New(NewCache(DefaultTTL), nil)
+	_, err := p.Preview(context.Background(), Request{Spec: path})
+	if err == nil {
+		t.Fatal("expected an error for a spec with an external reference")
+	}
+	if !strings.Contains(err.Hint, "$ref") {
+		t.Errorf("hint = %q, want it to name $ref", err.Hint)
+	}
+	// The security property this narrowing exists for: a spec cannot drive the
+	// daemon into fetching another URL.
+	if refFetched.Load() {
+		t.Error("preview fetched the external reference; external refs must not be followed")
 	}
 }
 
