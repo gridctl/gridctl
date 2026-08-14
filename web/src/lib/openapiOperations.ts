@@ -59,6 +59,25 @@ export function selectableOperations(operations: OpenAPIOperation[]): OpenAPIOpe
 }
 
 /**
+ * The operations that will actually become tools under a given mode and
+ * selection. In All mode that is everything selectable; in include mode the
+ * chosen set; in exclude mode everything left unchosen.
+ *
+ * Used for advisories that must describe the deployed surface rather than the
+ * click history — notably the DELETE warning, which in exclude mode concerns
+ * the operations the operator did *not* touch.
+ */
+export function operationsBecomingTools(
+  operations: OpenAPIOperation[],
+  mode: OperationsMode,
+  selected: ReadonlySet<string>,
+): OpenAPIOperation[] {
+  if (mode === 'all') return operations;
+  if (mode === 'include') return operations.filter((op) => selected.has(op.operation_id));
+  return operations.filter((op) => !selected.has(op.operation_id));
+}
+
+/**
  * The picker's header count. States the real outcome in every mode rather than
  * just the selection size, because "12 selected" alone does not tell an
  * operator how many tools they are about to create.
@@ -83,17 +102,23 @@ export function formatOperationsCount(
 export function formatOperationsSummary(
   ops: OperationsFilter | undefined,
   total: number | null,
+  deleteCount: number | null = null,
 ): string {
   const mode = deriveOperationsMode(ops);
   const count = selectedOperationIds(ops).length;
 
+  let base: string;
   if (mode === 'all' || count === 0) {
-    return total === null ? 'All operations' : `All ${total}`;
+    base = total === null ? 'All operations' : `All ${total}`;
+  } else if (mode === 'include') {
+    base = total === null ? `${count} selected (include)` : `${count} of ${total} (include)`;
+  } else {
+    base = total === null ? `${count} excluded (exclude)` : `${count} of ${total} excluded (exclude)`;
   }
-  if (mode === 'include') {
-    return total === null ? `${count} selected (include)` : `${count} of ${total} (include)`;
-  }
-  return total === null ? `${count} excluded (exclude)` : `${count} of ${total} excluded (exclude)`;
+
+  // The destructive surface is repeated at the point of deploy, not left behind
+  // on the form step where it was first shown.
+  return deleteCount ? `${base} · ${deleteCount} DELETE` : base;
 }
 
 // Method colors follow the Swagger convention as closely as the theme palette
