@@ -59,7 +59,8 @@ type Result struct {
 // unsupportedHint is the canonical guidance shown when the probe cannot run.
 // It points users at the post-deploy tool editor on the Stack sidebar,
 // which is the primary curation surface for container / local-process /
-// stdio / SSH / OpenAPI servers.
+// stdio / SSH servers. OpenAPI servers get their own hint, because the spec
+// preview curates them before deploy.
 const unsupportedHint = "Enter tool names manually in the wizard's Advanced section, or curate them from the Stack sidebar after deploy."
 
 // Prober enumerates an MCP server's tools without registering it with the
@@ -70,6 +71,10 @@ const unsupportedHint = "Enter tool names manually in the wizard's Advanced sect
 // hint pointing users at the post-deploy tool editor. Running a server
 // ephemerally before deploy is a niche workflow compared to the common
 // deploy-then-curate flow that the Stack sidebar editor supports.
+//
+// OpenAPI is the exception that does have a pre-deploy path, just not this
+// one: POST /api/openapi/operations parses the spec directly, without running
+// anything. See internal/openapipreview.
 type Prober struct {
 	cache  *Cache
 	logger *slog.Logger
@@ -176,7 +181,7 @@ func unsupportedReason(cfg config.MCPServer) *Error {
 	case cfg.IsOpenAPI():
 		return newErr(CodeUnsupportedTransport,
 			"Probe not supported for openapi servers.",
-			"Use openapi.operations.include / exclude to curate tools, or the Stack sidebar editor after deploy.")
+			"Load the spec from the wizard's Operations Filter to pick operations before deploy, or use the Stack sidebar editor afterwards.")
 	case cfg.IsLocalProcess():
 		return newErr(CodeUnsupportedTransport,
 			"Probe not supported for local-process servers.",
