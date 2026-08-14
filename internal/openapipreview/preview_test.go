@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -185,6 +186,58 @@ func TestPreview_MissingLocalFileHintsAtGatewayHost(t *testing.T) {
 	}
 	if err.Code != CodeFetchFailed {
 		t.Errorf("code = %q, want %q", err.Code, CodeFetchFailed)
+	}
+}
+
+// An unreachable host must classify as a fetch failure, not a parse failure.
+// The two need different fixes, and telling an operator to check a document
+// that was never served sends them at the wrong problem entirely.
+func TestPreview_UnreachableHostIsFetchFailure(t *testing.T) {
+	p := New(NewCache(DefaultTTL), nil)
+	// .invalid is reserved by RFC 2606 and never resolves.
+	_, err := p.Preview(context.Background(), Request{Spec: "https://gridctl-preview.invalid/openapi.json"})
+	if err == nil {
+		t.Fatal("expected an error for an unresolvable host")
+	}
+	if err.Code != CodeFetchFailed {
+		t.Errorf("code = %q, want %q", err.Code, CodeFetchFailed)
+	}
+	if !strings.Contains(err.Hint, "reachable") {
+		t.Errorf("hint = %q, want it to point at reachability", err.Hint)
+	}
+}
+
+// A 401 and an unreachable host must stay distinguishable by code.
+func TestPreview_AuthAndUnreachableUseDistinctCodes(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	p := New(NewCache(DefaultTTL), nil)
+	_, authErr := p.Preview(context.Background(), Request{Spec: srv.URL})
+	if authErr == nil || authErr.Code != CodeNeedsAuth {
+		t.Fatalf("401 code = %v, want %q", authErr, CodeNeedsAuth)
+	}
+
+	_, unreachableErr := p.Preview(context.Background(), Request{Spec: "https://gridctl-preview.invalid/openapi.json"})
+	if unreachableErr == nil || unreachableErr.Code == authErr.Code {
+		t.Errorf("unreachable code = %v, want something other than %q", unreachableErr, authErr.Code)
+	}
+}
+
+// An unexpanded variable is named as such rather than reported as whatever
+// low-level failure the literal happens to produce.
+func TestPreview_UnexpandedVariableIsNamed(t *testing.T) {
+	p := New(NewCache(DefaultTTL), nil)
+	for _, spec := range []string{"https://${API_HOST}/openapi.json", "/specs/${ENV}/openapi.yaml"} {
+		_, err := p.Preview(context.Background(), Request{Spec: spec})
+		if err == nil {
+			t.Fatalf("spec %q: expected an error", spec)
+		}
+		if !strings.Contains(err.Hint, "unexpanded variable") {
+			t.Errorf("spec %q: hint = %q, want it to name the unexpanded variable", spec, err.Hint)
+		}
 	}
 }
 
