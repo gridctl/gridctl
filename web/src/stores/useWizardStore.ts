@@ -34,6 +34,12 @@ interface WizardState {
   yamlContent: string;
   yamlError: string | null;
 
+  // How many selectable operations the last OpenAPI spec load found. Transient
+  // UI state, not config: it lets the Review step say "12 of 517" instead of
+  // just "12". Null whenever no spec has been loaded this session, which is the
+  // normal case for manually-entered operation IDs.
+  openapiOperationTotal: number | null;
+
   // Drafts
   drafts: WizardDraft[];
   draftsLoading: boolean;
@@ -48,6 +54,7 @@ interface WizardState {
   setExpertMode: (enabled: boolean) => void;
   setYamlContent: (content: string) => void;
   setYamlError: (error: string | null) => void;
+  setOpenAPIOperationTotal: (total: number | null) => void;
   reset: () => void;
 
   // Draft actions
@@ -103,6 +110,7 @@ export const useWizardStore = create<WizardState>()(
     expertMode: savedState?.expertMode ?? false,
     yamlContent: savedState?.yamlContent ?? '',
     yamlError: null,
+    openapiOperationTotal: null,
     drafts: [],
     draftsLoading: false,
 
@@ -158,6 +166,14 @@ export const useWizardStore = create<WizardState>()(
       set({ yamlError: error });
     },
 
+    // Deliberately not persisted to sessionStorage: it describes a spec fetched
+    // this session, and a stale total quoted against a since-edited spec would
+    // be worse than no total. After a page reload the Review step falls back to
+    // the count-only wording.
+    setOpenAPIOperationTotal: (total) => {
+      set({ openapiOperationTotal: total });
+    },
+
     reset: () => {
       const fresh = {
         currentStep: 'type' as WizardStep,
@@ -167,6 +183,7 @@ export const useWizardStore = create<WizardState>()(
         expertMode: false,
         yamlContent: '',
         yamlError: null,
+        openapiOperationTotal: null,
       };
       set(fresh);
       saveSession({ ...get(), ...fresh });
@@ -186,6 +203,9 @@ export const useWizardStore = create<WizardState>()(
         currentStep: 'form' as WizardStep,
         formData,
         isOpen: true,
+        // The draft carries its own spec; any total from a previous load
+        // describes a different document.
+        openapiOperationTotal: null,
       };
       set(updates);
       saveSession({ ...get(), ...updates });
