@@ -180,18 +180,22 @@ jobs:
           echo "aardvark-dns (image):    $(dpkg-query -W -f='${Version}' aardvark-dns 2>/dev/null || echo absent)"
 
       - name: Pin Podman network stack
-        # Root cause of the recurring rootless-DNS failure: the job never
-        # controlled its own network stack. It inherited whatever netavark and
-        # aardvark-dns the runner image shipped, and that pairing changes
-        # underneath the tests whenever GitHub rolls an image. On
-        # ubuntu24/20260810.271 the image's Podman 5.8.4 resolved netavark
-        # 1.17.2 while aardvark-dns stayed at the archive's 1.4.0; a netavark
-        # that new driving an aardvark-dns that old resolves nothing and reports
-        # no error, which surfaces as a gridctl networking failure (#1092).
+        # This job had no control over its own container network stack: it
+        # inherited whatever netavark and aardvark-dns the runner image shipped,
+        # and `runs-on` cannot pin an image release, so the pairing changed
+        # underneath the tests whenever GitHub rolled an image. On
+        # ubuntu24/20260810.271 that meant Podman 5.8.4 resolving netavark
+        # 1.17.2 against the Ubuntu archive's aardvark-dns 1.4.0, a combination
+        # upstream does not support.
         #
-        # Installing a matched pair ourselves makes the job deterministic
-        # regardless of image drift. Upstream publishes one x86_64 binary per
-        # release, which is what this runner is.
+        # To be clear about what this did and did not fix: the DNS test failures
+        # that prompted it turned out to be a test bug, not a broken stack (see
+        # the lookup command in podman_test.go). This step is what makes the job
+        # deterministic rather than dependent on image contents; it is not the
+        # fix for those failures (#1092).
+        #
+        # Upstream publishes one x86_64 binary per release, which is what this
+        # runner is.
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"

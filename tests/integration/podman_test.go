@@ -139,16 +139,16 @@ func incompatibleStack(podmanVersion, netavarkVersion string) bool {
 }
 
 // mismatchedHelpers reports whether netavark and aardvark-dns come from
-// different release lines. netavark spawns aardvark-dns and the two share a
-// protocol that is not stable across minors, so a mismatched pair resolves
-// nothing while reporting no error at all.
+// different release lines. netavark spawns aardvark-dns and upstream cuts the
+// two together, so a pair straddling minors is an unsupported configuration.
 //
-// This is the case that got past the guard on ubuntu24/20260810.271: Podman
-// 5.8.4 with netavark 1.17.2 is a perfectly good pairing and incompatibleStack
-// correctly cleared it, but aardvark-dns was still the archive's 1.4.0, so DNS
-// failed anyway and the suite blamed gridctl (#1092). Comparing Podman against
-// netavark alone can never catch that — the broken relationship is between the
-// two helpers.
+// Scope note, because the history here is easy to misread: the DNS failures on
+// ubuntu24/20260810.271 were NOT caused by a mismatched pair. That host ran
+// netavark 1.17.2 against aardvark-dns 1.4.0 and resolution worked; the test
+// was misreading a BusyBox nslookup exit code (see the lookup command above).
+// This check is therefore a guard against an unsupported host configuration,
+// not a reproduction of a known failure — which is why it only ever skips, and
+// only when both versions are known.
 func mismatchedHelpers(netavarkVersion, aardvarkVersion string) bool {
 	nMajor, nMinor, ok := leadingVersion(netavarkVersion)
 	if !ok {
@@ -187,8 +187,8 @@ func checkNetworkStack(podmanVersion string, s networkStack) (skip string, diags
 		diags = append(diags, "aardvark-dns version undetermined, running the test anyway: "+s.AardvarkDiag)
 	case mismatchedHelpers(s.Netavark, s.Aardvark):
 		return fmt.Sprintf("netavark %s and aardvark-dns %s are from different release "+
-			"lines; the pair resolves no names and reports no error, so the result "+
-			"would say nothing about gridctl (see #1092)", s.Netavark, s.Aardvark), diags
+			"lines, which upstream does not support; a result on this host would say "+
+			"nothing about gridctl either way (see #1092)", s.Netavark, s.Aardvark), diags
 	}
 
 	diags = append(diags, fmt.Sprintf("container stack: podman %s + netavark %s + aardvark-dns %s",
@@ -214,11 +214,10 @@ func TestPodmanRootless_MultiContainerNetworking(t *testing.T) {
 	}
 	t.Logf("Podman version=%s rootless=%v socket=%s", info.Version, info.IsRootless(), info.SocketPath)
 
-	// A mismatched host network stack fails as silent DNS non-resolution rather
-	// than a startup error, so without this check the suite reports a gridctl
-	// networking bug when the real fault is the host's container stack (#1092).
-	// The diagnostics are always logged because a guard that declines silently
-	// is indistinguishable from a guard that found nothing wrong.
+	// Report the host's container network stack, and decline to draw conclusions
+	// from a host whose stack upstream does not support. The diagnostics are
+	// always logged because a guard that declines silently is indistinguishable
+	// from a guard that found nothing wrong (#1092).
 	probeCtx, probeCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer probeCancel()
 	skip, diags := checkNetworkStack(info.Version, readNetworkStack(probeCtx))
@@ -287,16 +286,25 @@ func TestPodmanRootless_MultiContainerNetworking(t *testing.T) {
 
 	// Start container-a — resolves container-b and exits.
 	//
-	// The exit status is BusyBox nslookup's, preserved so the assertion below is
-	// unchanged, but the command also records what the resolver actually did.
-	// An exit code on its own cannot tell "the name did not resolve" apart from
-	// "it resolved and the client objected to something else", and this test
-	// previously reported the former without ever establishing it. getent is
-	// included as a second opinion because it goes through the standard
-	// resolver and, unlike nslookup, does not care about the server's answer to
-	// queries the test is not asking about.
-	const lookupCmd = `nslookup container-b; rc=$?; echo "nslookup_exit=$rc"; ` +
-		`getent hosts container-b && echo "getent=ok" || echo "getent=fail"; ` +
+	// The exit status is getent's, NOT nslookup's. getent goes through the
+	// standard resolver and succeeds when the name resolves, which is the thing
+	// under test. BusyBox nslookup cannot express that: it queries every entry
+	// in the resolv.conf search list and exits non-zero if any of them fails,
+	// so on a host whose resolv.conf carries a search domain beyond Podman's own
+	// it reports failure having already resolved the name correctly.
+	//
+	// That is exactly what happened here. GitHub's runners are Azure VMs, and
+	// Podman copies the host search list into the container, so container-a
+	// resolved container-b.dns.podman to its address and then exited 1 over an
+	// NXDOMAIN for container-b.<azure-internal-zone> — a name nothing was ever
+	// meant to answer. The test read that exit code as "DNS is broken" and
+	// blamed the container network stack for a working lookup (#1092).
+	//
+	// nslookup output is kept for diagnostics only. Do not restore it as the
+	// signal.
+	const lookupCmd = `getent hosts container-b; rc=$?; echo "getent_exit=$rc"; ` +
+		`echo "--- nslookup (diagnostic only, exit status not asserted) ---"; ` +
+		`nslookup container-b; echo "nslookup_exit=$?"; ` +
 		`echo "--- resolv.conf ---"; cat /etc/resolv.conf; exit $rc`
 
 	statusA, err := rt.Runtime().Start(ctx, runtime.WorkloadConfig{
@@ -342,9 +350,9 @@ func TestPodmanRootless_MultiContainerNetworking(t *testing.T) {
 	t.Logf("container-a output:\n%s", containerOutput(ctx, dockerCli, string(statusA.ID)))
 
 	if result.State.ExitCode != 0 {
-		t.Errorf("inter-container DNS lookup of 'container-b' on network %q failed: "+
-			"container-a exited %d (expected 0). The output logged above shows what the "+
-			"resolver returned; check it before assuming the name did not resolve",
+		t.Errorf("inter-container DNS resolution failed: container-a could not resolve "+
+			"'container-b' by DNS alias on network %q (getent exited %d). The output "+
+			"logged above shows what the resolver returned",
 			netName, result.State.ExitCode)
 	}
 }
@@ -565,10 +573,10 @@ func TestIncompatibleStack(t *testing.T) {
 		netavark string
 		want     bool
 	}{
-		// The pairing observed on ubuntu24/20260810.271, which fails with
-		// silent DNS non-resolution (#1092).
+		// The pairing observed on ubuntu24/20260810.271 (#1092). Unsupported
+		// upstream; note this was not what made that image's DNS test fail.
 		{"podman 5 with archive netavark", "5.8.4", "1.4.0", true},
-		// The pairing on ubuntu24/20260720.247, which works.
+		// The pairing on ubuntu24/20260720.247.
 		{"podman 4 with archive netavark", "4.9.3", "1.4.0", false},
 		// Podman 5 with a netavark new enough to drive it.
 		{"podman 5 with modern netavark", "5.8.4", "1.10.3", false},
