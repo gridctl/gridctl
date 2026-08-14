@@ -25,6 +25,7 @@ import {
   formatOperationsCount,
   methodColorClass,
   operationRowLabel,
+  operationsBecomingTools,
   selectableOperations,
   selectedOperationIds,
   type OperationsFilter,
@@ -83,10 +84,11 @@ const MODE_OPTIONS: { mode: OperationsMode; label: string; help: string }[] = [
  */
 export function OperationsPicker({ spec, tls, operations, onChange }: OperationsPickerProps) {
   const preview = useOpenAPIOperations();
-  const setTotal = useWizardStore((s) => s.setOpenAPIOperationTotal);
+  const setStats = useWizardStore((s) => s.setOpenAPIOperationStats);
 
   const [modeOverride, setModeOverride] = useState<OperationsMode | null>(null);
-  const [manualMode, setManualMode] = useState(false);
+  // Tri-state, mirroring ToolsPicker: null defers to the auto choice below.
+  const [manualOverride, setManualOverride] = useState<boolean | null>(null);
   const [query, setQuery] = useState('');
   const [methodFilter, setMethodFilter] = useState<string | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
@@ -106,14 +108,14 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
   const total = usable.length;
   const loaded = allOperations !== null;
 
-  // Publish the total for the Review step's summary row. Cleared on unmount so
-  // a stale count cannot outlive the OpenAPI form.
-  useEffect(() => {
-    if (loaded) setTotal(total);
-  }, [loaded, total, setTotal]);
-  useEffect(() => () => setTotal(null), [setTotal]);
-
   const specChanged = loaded && preview.loadedSpec !== spec;
+
+  // The loaded list lives in component state, so stepping forward to Review and
+  // back, restoring a session, or opening a draft all return here with a
+  // populated selection and nothing to render it against. Falling back to
+  // manual entry shows the operator what they already chose instead of an empty
+  // "Load operations" box that reads as though the selection was lost.
+  const manualMode = manualOverride ?? (!loaded && selectedIds.length > 0);
 
   const methods = useMemo(() => collectMethods(usable), [usable]);
   const tags = useMemo(() => collectTags(usable), [usable]);
@@ -190,12 +192,28 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
     void preview.load({ spec, tls: hasTLS(tls) ? tls : undefined });
   };
 
-  const deleteSelected = useMemo(() => {
-    if (mode !== 'include') return [];
-    return usable.filter((op) => selected.has(op.operation_id) && op.method.toUpperCase() === 'DELETE');
-  }, [mode, usable, selected]);
+  // DELETE operations among those that will actually become tools. Counted in
+  // every mode, not just include: All is the default and the large-spec case,
+  // and in exclude mode the destructive surface is what was left unchecked.
+  const destructiveCount = useMemo(
+    () => operationsBecomingTools(usable, mode, selected).filter((op) => op.method.toUpperCase() === 'DELETE').length,
+    [usable, mode, selected],
+  );
 
-  const everythingSelected = mode === 'include' && total > 0 && selectedIds.length === total;
+  // Set membership, not a count match. After the spec changes and reloads,
+  // leftover IDs from the previous document can make the counts line up while
+  // none of the new operations are checked; offering the pin-vs-track switch
+  // there would drop a still-partial filter.
+  const everythingSelected =
+    mode === 'include' && total > 0 && usable.every((op) => selected.has(op.operation_id));
+
+  // Publish the counts the Review step quotes. Deliberately NOT cleared on
+  // unmount: the wizard unmounts the whole form on the way to Review, which is
+  // precisely where the total has to survive. The store clears it on wizard
+  // reset and draft load, and CreationWizard only reads it for OpenAPI servers.
+  useEffect(() => {
+    if (loaded) setStats({ total, deleteCount: destructiveCount });
+  }, [loaded, total, destructiveCount, setStats]);
 
   if (manualMode) {
     return (
@@ -204,7 +222,7 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
           <label className={cn(labelClass, 'mb-0')}>Operations Filter</label>
           <button
             type="button"
-            onClick={() => setManualMode(false)}
+            onClick={() => setManualOverride(false)}
             className="flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
           >
             <ArrowLeft size={10} />
@@ -230,7 +248,7 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
         <label className={cn(labelClass, 'mb-0')}>Operations Filter</label>
         <button
           type="button"
-          onClick={() => setManualMode(true)}
+          onClick={() => setManualOverride(true)}
           className="flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
         >
           <Edit3 size={10} />
@@ -282,7 +300,7 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
           {preview.error && <PreviewErrorPanel error={preview.error} onRetry={spec ? handleLoad : undefined} />}
           <button
             type="button"
-            onClick={() => setManualMode(true)}
+            onClick={() => setManualOverride(true)}
             className="inline-flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
           >
             <Edit3 size={10} />
@@ -312,15 +330,16 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
             </div>
           )}
 
-          {deleteSelected.length > 0 && (
+          {destructiveCount > 0 && (
             <div
               role="status"
               className="flex items-start gap-2 rounded-md border border-status-pending/40 bg-status-pending/[0.05] px-3 py-2"
             >
               <AlertTriangle size={12} className="text-status-pending flex-shrink-0 mt-0.5" />
               <p className="text-[10px] text-text-muted">
-                {deleteSelected.length} selected operation{deleteSelected.length > 1 ? 's use' : ' uses'}{' '}
-                DELETE. Those tools can destroy data once exposed.
+                {destructiveCount} operation{destructiveCount > 1 ? 's' : ''} using DELETE
+                {destructiveCount > 1 ? ' become tools' : ' becomes a tool'} with this filter. Those
+                tools can destroy data once exposed.
               </p>
             </div>
           )}
