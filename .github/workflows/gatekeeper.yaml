@@ -138,12 +138,19 @@ jobs:
   podman-integration:
     # Pinned to a specific Ubuntu major rather than ubuntu-latest so a future
     # label rollover cannot silently change the container stack under these
-    # tests. Note this does NOT pin the image release: the ubuntu-24.04 label
-    # serves whatever build is current, so image drift within the major still
-    # reaches this job (see #1092).
+    # tests. This does NOT pin the image release — the ubuntu-24.04 label serves
+    # whatever build is current — so the network stack is provisioned explicitly
+    # below rather than inherited from the image (#1092).
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: test
+
+    env:
+      # netavark and aardvark-dns release in lockstep and must stay on the same
+      # minor: netavark spawns aardvark-dns over a protocol that is not stable
+      # across minors. Bump these together.
+      NETAVARK_VERSION: v1.17.2
+      AARDVARK_DNS_VERSION: v1.17.1
 
     steps:
       - uses: actions/checkout@v5
@@ -157,20 +164,67 @@ jobs:
       - name: Install Podman
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq podman netavark aardvark-dns
+          sudo apt-get install -y -qq podman
           # Do NOT force the archive Podman ahead of a newer preinstalled one.
           # That was tried and reverted: on images shipping Podman 5.x, pointing
           # PATH at the archive's 4.9.3 breaks container startup outright
           # (conmon failures across every container test), which is far worse
-          # than the single rootless-DNS failure it was meant to address. The
-          # real mismatch is the other way round — Podman 5.x against the
-          # archive's netavark/aardvark-dns 1.4.0, which is too old — and fixing
-          # it needs a newer netavark from outside the Ubuntu archive (#1092).
-          # Print the resolved set so a future mismatch is diagnosable from the
-          # log alone rather than by bisecting runner images.
-          echo "podman:       $(command -v podman) — $(podman --version)"
-          echo "netavark:     $(dpkg-query -W -f='${Version}' netavark 2>/dev/null || echo absent)"
-          echo "aardvark-dns: $(dpkg-query -W -f='${Version}' aardvark-dns 2>/dev/null || echo absent)"
+          # than the single rootless-DNS failure it was meant to address (#1092).
+          #
+          # netavark and aardvark-dns are deliberately NOT installed from the
+          # archive here. The archive caps them at 1.4.0 on 24.04, and the next
+          # step provisions a matched pair from upstream instead. Printing what
+          # the image happened to ship keeps the drift visible in the log.
+          echo "podman:                  $(command -v podman) — $(podman --version)"
+          echo "netavark (from image):   $(dpkg-query -W -f='${Version}' netavark 2>/dev/null || echo absent)"
+          echo "aardvark-dns (image):    $(dpkg-query -W -f='${Version}' aardvark-dns 2>/dev/null || echo absent)"
+
+      - name: Pin Podman network stack
+        # This job had no control over its own container network stack: it
+        # inherited whatever netavark and aardvark-dns the runner image shipped,
+        # and `runs-on` cannot pin an image release, so the pairing changed
+        # underneath the tests whenever GitHub rolled an image. On
+        # ubuntu24/20260810.271 that meant Podman 5.8.4 resolving netavark
+        # 1.17.2 against the Ubuntu archive's aardvark-dns 1.4.0, a combination
+        # upstream does not support.
+        #
+        # To be clear about what this did and did not fix: the DNS test failures
+        # that prompted it turned out to be a test bug, not a broken stack (see
+        # the lookup command in podman_test.go). This step is what makes the job
+        # deterministic rather than dependent on image contents; it is not the
+        # fix for those failures (#1092).
+        #
+        # Upstream publishes one x86_64 binary per release, which is what this
+        # runner is.
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+
+          fetch() {
+            repo="$1"; version="$2"; name="$3"
+            base="https://github.com/containers/${repo}/releases/download/${version}"
+            curl -fsSL --retry 3 --retry-delay 2 -o "${tmp}/${name}.gz" "${base}/${name}.gz"
+            curl -fsSL --retry 3 --retry-delay 2 -o "${tmp}/${name}.sha256sum" "${base}/sha256sum"
+            # The release checksum file also lists a vendor tarball this job does
+            # not download. --ignore-missing skips that entry while still failing
+            # if the binary that WAS downloaded does not match.
+            ( cd "${tmp}" && sha256sum --check --ignore-missing --status "${name}.sha256sum" )
+            gunzip -f "${tmp}/${name}.gz"
+          }
+
+          fetch netavark "${NETAVARK_VERSION}" netavark
+          fetch aardvark-dns "${AARDVARK_DNS_VERSION}" aardvark-dns
+
+          # Write to every directory Podman searches for helper binaries rather
+          # than guessing which one wins. Overwriting all of them means the
+          # resolved pair is the pinned pair no matter how the image lays itself
+          # out or which order the lookup takes. Only netavark and aardvark-dns
+          # are replaced — every other helper in these directories (rootlessport,
+          # pasta, catatonit) is left exactly as the image shipped it.
+          for dir in /usr/local/libexec/podman /usr/local/lib/podman /usr/libexec/podman /usr/lib/podman; do
+            sudo install -Dm755 "${tmp}/netavark" "${dir}/netavark"
+            sudo install -Dm755 "${tmp}/aardvark-dns" "${dir}/aardvark-dns"
+          done
 
       - name: Start Podman socket
         run: |
@@ -181,8 +235,41 @@ jobs:
 
       - name: Verify Podman
         run: |
+          set -euo pipefail
           podman info --format '{{.Version.Version}}'
           podman info --format 'network_backend={{.Host.NetworkBackend}}'
+
+          # Assert Podman actually resolved the pinned pair. Without this the pin
+          # is only a hope: if a future image moves the helper directories, the
+          # binaries land somewhere Podman never looks and the job goes back to
+          # failing four minutes later inside a test, with the same misleading
+          # "gridctl cannot resolve DNS" symptom.
+          #
+          # Versions are read with jq, not a Go template. A template naming a
+          # field that moved errors the step out with nothing useful; an absent
+          # JSON key reads as empty here and lands in the failure message with
+          # the whole document attached. The guard this job previously relied on
+          # failed silently for precisely that reason.
+          info="$(podman info --format json)"
+          backend="$(jq -c '.host.networkBackendInfo' <<<"${info}")"
+          netavark="$(jq -r '.host.networkBackendInfo.version // ""' <<<"${info}")"
+          aardvark="$(jq -r '.host.networkBackendInfo.dns.version // ""' <<<"${info}")"
+          echo "netavark:     ${netavark:-<unreported>}"
+          echo "aardvark-dns: ${aardvark:-<unreported>}"
+
+          fail() {
+            echo "::error::Podman resolved an unpinned network stack: $1"
+            echo "networkBackendInfo: ${backend}"
+            exit 1
+          }
+          case "${netavark}" in
+            *"${NETAVARK_VERSION#v}"*) ;;
+            *) fail "netavark is '${netavark:-<unreported>}', want ${NETAVARK_VERSION#v}" ;;
+          esac
+          case "${aardvark}" in
+            *"${AARDVARK_DNS_VERSION#v}"*) ;;
+            *) fail "aardvark-dns is '${aardvark:-<unreported>}', want ${AARDVARK_DNS_VERSION#v}" ;;
+          esac
 
       - name: Install Go dependencies
         run: go mod download
@@ -191,6 +278,28 @@ jobs:
         env:
           GRIDCTL_RUNTIME: podman
         run: go test -tags=integration -race -timeout 5m ./tests/integration/...
+
+      - name: Podman network diagnostics
+        # This job has failed on image drift several times, and each round trip
+        # to collect basic state costs a full CI cycle. Collect it on the way
+        # out instead. Runs only on failure and never fails the job itself, so a
+        # missing tool here cannot mask the real error above.
+        if: failure()
+        run: |
+          set +e
+          echo "--- helper processes ---"
+          pgrep -a aardvark-dns || echo "aardvark-dns: not running"
+          pgrep -a netavark || echo "netavark: not running"
+          echo "--- resolved helper paths ---"
+          podman info --format json | jq -c '.host.networkBackendInfo'
+          echo "--- networks ---"
+          podman network ls
+          echo "--- aardvark-dns state ---"
+          ls -la "${XDG_RUNTIME_DIR}/containers/networks/aardvark-dns/" 2>&1 | head -20
+          head -n 40 "${XDG_RUNTIME_DIR}"/containers/networks/aardvark-dns/* 2>&1
+          echo "--- podman user service log ---"
+          journalctl --user -u podman.socket -u podman.service -n 80 --no-pager 2>&1 | tail -40
+          exit 0
 
   frontend:
     runs-on: ubuntu-latest
