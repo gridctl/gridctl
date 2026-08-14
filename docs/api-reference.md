@@ -1267,6 +1267,65 @@ Error codes:
 
 Env-var values and auth secrets (`auth.token`, `auth.value`, `auth.client_secret`) present in the request body are scrubbed from error messages and hints to avoid leaking secrets.
 
+#### `POST /api/openapi/operations`
+
+Parses an OpenAPI document and returns every operation it contains, without registering anything with the gateway. Powers the wizard's "Load operations" button on the OpenAPI Configuration section. A sibling of the probe rather than part of it: the probe returns `[]mcp.Tool`, which discards the method, path, and tags an operations picker filters on.
+
+**Auth:** Yes
+
+**Request:**
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-ID: wizard-1" \
+  -d '{"spec":"https://petstore3.swagger.io/api/v3/openapi.json"}' \
+  http://localhost:8180/api/openapi/operations
+```
+
+The body takes `spec` (a URL or a path on the gateway host) and an optional `tls` block (`certFile`, `keyFile`, `caFile`, `insecureSkipVerify`), mirroring the `openapi` block of the YAML schema. There is deliberately **no auth block**: specs are fetched unauthenticated on the deployed path too, so accepting credentials would imply a capability the gateway does not have. The body is capped at 64 KiB.
+
+`X-Session-ID` behaves as it does for the probe. Concurrency is capped at **3 in-flight loads per session** and **10 globally**, with `Retry-After: 3` on rejection. Successful parses are cached for 5 minutes, keyed on the spec reference and TLS material.
+
+External `$ref` resolution is **disabled** on this path (it stays enabled for deploy), because the endpoint is reachable from the browser against an arbitrary operator-supplied URL and following references would let a hostile spec drive further daemon-side requests. kin-openapi enforces this by rejecting the whole document, so a multi-file spec fails to preview with a `$ref`-specific hint while still deploying normally.
+
+**Response:**
+```json
+{
+  "title": "Swagger Petstore",
+  "version": "1.0.17",
+  "operations": [
+    {
+      "operation_id": "pets.list",
+      "tool_name": "pets_list",
+      "method": "GET",
+      "path": "/pets",
+      "summary": "List all pets",
+      "tags": ["pet"],
+      "deprecated": false
+    },
+    { "method": "POST", "path": "/health", "skipped": true, "skip_reason": "no_operation_id" }
+  ],
+  "skipped_count": 1,
+  "loaded_at": "2025-01-15T10:30:00Z",
+  "cached": false
+}
+```
+
+`operation_id` and `tool_name` are both returned on purpose: `openapi.operations.include` / `exclude` match the raw `operation_id`, while `tool_name` is the sanitized identifier advertised over MCP. They differ whenever an ID contains characters outside `[a-zA-Z0-9_-]`, so anything persisted into `stack.yaml` must use `operation_id`. Operations that cannot become tools are returned as `skipped` rows with a `skip_reason` (`no_operation_id` or `unusable_tool_name`) rather than being omitted, and enumeration is shared with the deployed tool builder so preview and deploy cannot disagree.
+
+**Error envelope:**
+```json
+{ "error": { "code": "fetch_failed", "message": "...", "hint": "..." } }
+```
+
+Error codes:
+- `invalid_request` (400) - Body malformed or `spec` empty
+- `needs_auth` (422) - The spec URL answered 401/403
+- `fetch_failed` (422) - Host unreachable, local path missing, or the URL served a docs page instead of the document
+- `parse_failed` (422) - Document served but not valid OpenAPI 3.x, including a disallowed external `$ref` or an unexpanded `${VAR}` in the path
+- `rate_limited` (429 / 503) - Session or global load cap exceeded
+- `internal` (500 / 503) - Unexpected failure, or preview not configured on this daemon
+
 #### `PATCH /api/mcp-servers/{name}/telemetry`
 
 Updates the per-server `telemetry.persist` overrides in the live stack YAML. Each signal (`logs`, `metrics`, `traces`) can be set to `true`, `false`, or `null` (clear the override and inherit the stack default). Send `persist: null` to remove the entire per-server telemetry block.

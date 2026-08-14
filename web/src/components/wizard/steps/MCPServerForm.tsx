@@ -22,6 +22,7 @@ import type { ProbeServerAuth, ProbeServerConfig } from '../../../lib/api';
 import { VariablesPopover } from '../VariablesPopover';
 import { TransportAdvisor } from '../TransportAdvisor';
 import { ToolsPicker } from './ToolsPicker';
+import { OperationsPicker } from './OperationsPicker';
 
 // --- Server type definitions ---
 
@@ -161,8 +162,10 @@ function showPortField(serverType: ServerType, transport: string): boolean {
 
 // Translate the wizard form into the probe endpoint's wire shape. Returns
 // null for every transport the probe does not support — which, after the
-// descope, is everything except external URL. Container / local-process /
-// SSH / OpenAPI servers are curated from the Stack sidebar after deploy.
+// descope, is everything except external URL. Container / local-process / SSH
+// servers are curated from the Stack sidebar after deploy; OpenAPI servers use
+// the spec preview in OperationsPicker, which enumerates operations without
+// running anything.
 function buildProbeConfig(data: MCPServerFormData): ProbeServerConfig | null {
   if (data.serverType !== 'external') return null;
   if (!data.url) return null;
@@ -1113,79 +1116,16 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                 </div>
               )}
               {/* Operations filter */}
-              <div>
-                <label className={labelClass}>Operations Filter</label>
-                <div className="flex gap-2 mb-2">
-                  {['include', 'exclude'].map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => {
-                        const ops = mode === 'include'
-                          ? { include: data.openapi?.operations?.include ?? [], exclude: undefined }
-                          : { exclude: data.openapi?.operations?.exclude ?? [], include: undefined };
-                        onChange({
-                          openapi: { ...data.openapi, spec: data.openapi?.spec ?? '', operations: ops as MCPServerFormData['openapi'] extends undefined ? never : NonNullable<MCPServerFormData['openapi']>['operations'] },
-                        });
-                      }}
-                      className={cn(
-                        'px-3 py-1 rounded-lg text-[10px] font-medium transition-all border',
-                        (mode === 'include' && data.openapi?.operations?.include) ||
-                        (mode === 'exclude' && data.openapi?.operations?.exclude)
-                          ? 'bg-primary/10 border-primary/30 text-primary'
-                          : 'bg-white/[0.02] border-white/[0.06] text-text-muted',
-                      )}
-                    >
-                      {mode}
-                    </button>
-                  ))}
-                  {(data.openapi?.operations?.include || data.openapi?.operations?.exclude) && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onChange({ openapi: { ...data.openapi, spec: data.openapi?.spec ?? '', operations: undefined } })
-                      }
-                      className="px-2 py-1 text-[10px] text-text-muted hover:text-text-secondary"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-                {data.openapi?.operations?.include && (
-                  <textarea
-                    value={data.openapi.operations.include.join('\n')}
-                    onChange={(e) =>
-                      onChange({
-                        openapi: {
-                          ...data.openapi,
-                          spec: data.openapi?.spec ?? '',
-                          operations: { include: e.target.value.split('\n').filter(Boolean) },
-                        },
-                      })
-                    }
-                    placeholder="One operation per line"
-                    rows={3}
-                    className={cn(inputClass, 'font-mono resize-none')}
-                  />
-                )}
-                {data.openapi?.operations?.exclude && (
-                  <textarea
-                    value={data.openapi.operations.exclude.join('\n')}
-                    onChange={(e) =>
-                      onChange({
-                        openapi: {
-                          ...data.openapi,
-                          spec: data.openapi?.spec ?? '',
-                          operations: { exclude: e.target.value.split('\n').filter(Boolean) },
-                        },
-                      })
-                    }
-                    placeholder="One operation per line"
-                    rows={3}
-                    className={cn(inputClass, 'font-mono resize-none')}
-                  />
-                )}
-              </div>
+              <OperationsPicker
+                spec={data.openapi?.spec ?? ''}
+                tls={data.openapi?.tls}
+                operations={data.openapi?.operations}
+                onChange={(operations) =>
+                  onChange({
+                    openapi: { ...data.openapi, spec: data.openapi?.spec ?? '', operations },
+                  })
+                }
+              />
             </div>
           )}
 

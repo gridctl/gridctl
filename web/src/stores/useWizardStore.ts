@@ -4,6 +4,15 @@ import type { ResourceType, MCPServerFormData, ResourceFormData, StackFormData }
 
 export type WizardStep = 'type' | 'template' | 'form' | 'review';
 
+// Counts from a loaded OpenAPI spec, published by the operations picker so the
+// Review step can quote them after the form has unmounted.
+export interface OpenAPIOperationStats {
+  // Operations that can become tools (skipped rows excluded).
+  total: number;
+  // DELETE operations that will become tools under the current filter.
+  deleteCount: number;
+}
+
 export interface WizardDraft {
   id: string;
   name: string;
@@ -34,6 +43,13 @@ interface WizardState {
   yamlContent: string;
   yamlError: string | null;
 
+  // Counts from the last OpenAPI spec load. Transient UI state, not config: it
+  // lets the Review step say "12 of 517" instead of just "12", and repeat the
+  // destructive-operation count at the point of deploy. Null whenever no spec
+  // has been loaded this session, which is the normal case for
+  // manually-entered operation IDs.
+  openapiOperationStats: OpenAPIOperationStats | null;
+
   // Drafts
   drafts: WizardDraft[];
   draftsLoading: boolean;
@@ -48,6 +64,7 @@ interface WizardState {
   setExpertMode: (enabled: boolean) => void;
   setYamlContent: (content: string) => void;
   setYamlError: (error: string | null) => void;
+  setOpenAPIOperationStats: (stats: OpenAPIOperationStats | null) => void;
   reset: () => void;
 
   // Draft actions
@@ -103,6 +120,7 @@ export const useWizardStore = create<WizardState>()(
     expertMode: savedState?.expertMode ?? false,
     yamlContent: savedState?.yamlContent ?? '',
     yamlError: null,
+    openapiOperationStats: null,
     drafts: [],
     draftsLoading: false,
 
@@ -158,6 +176,14 @@ export const useWizardStore = create<WizardState>()(
       set({ yamlError: error });
     },
 
+    // Deliberately not persisted to sessionStorage: it describes a spec fetched
+    // this session, and a stale total quoted against a since-edited spec would
+    // be worse than no total. After a page reload the Review step falls back to
+    // the count-only wording.
+    setOpenAPIOperationStats: (stats) => {
+      set({ openapiOperationStats: stats });
+    },
+
     reset: () => {
       const fresh = {
         currentStep: 'type' as WizardStep,
@@ -167,6 +193,7 @@ export const useWizardStore = create<WizardState>()(
         expertMode: false,
         yamlContent: '',
         yamlError: null,
+        openapiOperationStats: null,
       };
       set(fresh);
       saveSession({ ...get(), ...fresh });
@@ -186,6 +213,9 @@ export const useWizardStore = create<WizardState>()(
         currentStep: 'form' as WizardStep,
         formData,
         isOpen: true,
+        // The draft carries its own spec; any counts from a previous load
+        // describe a different document.
+        openapiOperationStats: null,
       };
       set(updates);
       saveSession({ ...get(), ...updates });

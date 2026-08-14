@@ -2,7 +2,17 @@ package mcp
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
+	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 )
@@ -213,4 +223,91 @@ func TestRefreshTools_IncludeMatchesRawOperationID(t *testing.T) {
 	if c.allTools[0].Name != "pets_get_byId" {
 		t.Errorf("tool name = %q, want the sanitized pets_get_byId", c.allTools[0].Name)
 	}
+}
+
+// A private CA or insecureSkipVerify must take effect on its own. Both used to
+// be gated behind a client certificate, which made them silent no-ops for the
+// far more common case of a server presenting a self-signed or internally
+// issued certificate to an unauthenticated client.
+func TestNewOpenAPIHTTPClient_TLSWithoutClientCert(t *testing.T) {
+	tests := []struct {
+		name               string
+		caFile             string
+		insecureSkipVerify bool
+		wantTLS            bool
+		wantSkipVerify     bool
+	}{
+		{name: "no tls material", wantTLS: false},
+		{name: "skip verify alone", insecureSkipVerify: true, wantTLS: true, wantSkipVerify: true},
+		{name: "ca file alone", caFile: writeTestCA(t), wantTLS: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client, err := NewOpenAPIHTTPClient("", "", tc.caFile, tc.insecureSkipVerify)
+			if err != nil {
+				t.Fatalf("NewOpenAPIHTTPClient: %v", err)
+			}
+			transport, ok := client.Transport.(*http.Transport)
+			if !ok {
+				t.Fatalf("transport = %T, want *http.Transport", client.Transport)
+			}
+			if !tc.wantTLS {
+				// The cloned default transport may already carry a config; what
+				// matters is that no verification was weakened.
+				if cfg := transport.TLSClientConfig; cfg != nil {
+					if cfg.InsecureSkipVerify {
+						t.Error("verification disabled without being asked")
+					}
+					if cfg.RootCAs != nil {
+						t.Error("root CAs replaced without being asked")
+					}
+				}
+				return
+			}
+			if transport.TLSClientConfig == nil {
+				t.Fatal("TLSClientConfig is nil; the setting was silently ignored")
+			}
+			// HTTP/2 negotiation from the default transport must survive.
+			if len(transport.TLSClientConfig.NextProtos) == 0 {
+				t.Error("NextProtos was dropped; the TLS config replaced rather than amended the clone")
+			}
+			if transport.TLSClientConfig.InsecureSkipVerify != tc.wantSkipVerify {
+				t.Errorf("InsecureSkipVerify = %v, want %v",
+					transport.TLSClientConfig.InsecureSkipVerify, tc.wantSkipVerify)
+			}
+			if tc.caFile != "" && transport.TLSClientConfig.RootCAs == nil {
+				t.Error("RootCAs is nil; the CA file was silently ignored")
+			}
+			if len(transport.TLSClientConfig.Certificates) != 0 {
+				t.Error("no client certificate was configured, so none should be attached")
+			}
+		})
+	}
+}
+
+// writeTestCA emits a throwaway self-signed certificate usable as a CA file.
+func writeTestCA(t *testing.T) string {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generating key: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "gridctl-test-ca"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("creating certificate: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "ca.pem")
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	if err := os.WriteFile(path, pemBytes, 0o600); err != nil {
+		t.Fatalf("writing CA file: %v", err)
+	}
+	return path
 }

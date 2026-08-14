@@ -24,6 +24,7 @@ import { useWizardStore, type WizardStep } from '../../stores/useWizardStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { useRegistryStore } from '../../stores/useRegistryStore';
 import { buildYAML, parseYAMLToForm, type ResourceType, type WizardFormData, type MCPServerFormData } from '../../lib/yaml-builder';
+import { formatOperationsSummary } from '../../lib/openapiOperations';
 import { catalogEntryToFormData } from '../../lib/catalog';
 import type { CatalogEntry } from '../../lib/api';
 import { TemplateGrid } from './TemplateGrid';
@@ -166,8 +167,22 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
     setYamlContent,
     yamlError,
     setYamlError,
+    openapiOperationStats,
     reset,
   } = useWizardStore();
+
+  // One-line outcome of the OpenAPI operations filter for the Review step.
+  // Only meaningful for an OpenAPI server; every other type leaves it null so
+  // the summary grid keeps its four cells.
+  const mcpServerData = formData['mcp-server'];
+  const operationsSummary = useMemo(() => {
+    if (selectedType !== 'mcp-server' || mcpServerData?.serverType !== 'openapi') return null;
+    return formatOperationsSummary(
+      mcpServerData.openapi?.operations,
+      openapiOperationStats?.total ?? null,
+      openapiOperationStats?.deleteCount ?? null,
+    );
+  }, [selectedType, mcpServerData, openapiOperationStats]);
 
   const mcpServersRaw = useStackStore((s) => s.mcpServers);
   const resourcesRaw = useStackStore((s) => s.resources);
@@ -447,6 +462,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
                       counts,
                       handleDeploy,
                       handleCatalogSelect,
+                      operationsSummary,
                     )}
                   </div>
                 </div>
@@ -478,6 +494,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
                 counts,
                 handleDeploy,
                 handleCatalogSelect,
+                operationsSummary,
               )}
             </div>
           )}
@@ -531,6 +548,7 @@ function renderStepContent(
   counts: Record<ResourceType, number>,
   onDeploy: () => void,
   onCatalogSelect: (entry: CatalogEntry) => void,
+  operationsSummary: string | null,
 ) {
   switch (step) {
     case 'type':
@@ -582,6 +600,7 @@ function renderStepContent(
               : ''
           }
           onDeploy={onDeploy}
+          operationsSummary={operationsSummary}
         />
       );
   }

@@ -21,9 +21,19 @@ interface ReviewStepProps {
   resourceType: string;
   resourceName: string;
   onDeploy?: () => void;
+  // Outcome of the OpenAPI operations filter, pre-formatted by the caller.
+  // Passed in rather than parsed back out of the YAML, which would have to
+  // re-derive a count the generated document deliberately does not carry.
+  operationsSummary?: string | null;
 }
 
-export function ReviewStep({ yaml, resourceType, resourceName, onDeploy }: ReviewStepProps) {
+export function ReviewStep({
+  yaml,
+  resourceType,
+  resourceName,
+  onDeploy,
+  operationsSummary,
+}: ReviewStepProps) {
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [validating, setValidating] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -270,6 +280,12 @@ export function ReviewStep({ yaml, resourceType, resourceName, onDeploy }: Revie
               {validating ? 'Checking...' : hasErrors ? 'Invalid' : 'Valid'}
             </div>
           </div>
+          {operationsSummary && (
+            <div className="col-span-2">
+              <span className="text-text-muted">Operations</span>
+              <div className="text-text-primary font-medium mt-0.5">{operationsSummary}</div>
+            </div>
+          )}
         </div>
       </div>
 

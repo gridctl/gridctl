@@ -686,6 +686,26 @@ describe('YAML serialization — new fields', () => {
     expect(yaml).not.toContain('operations:');
     expect(yaml).not.toContain('include:');
   });
+
+  it('serializes raw operationIds verbatim, including characters the tool name drops', () => {
+    // The backend filter matches the raw operationId from the spec, while the
+    // advertised MCP tool name is sanitized to [a-zA-Z0-9_-]. Writing the
+    // sanitized form here would produce a filter that matches nothing and
+    // silently expose every operation.
+    const yaml = buildYAML({
+      type: 'mcp-server',
+      data: {
+        name: 'petstore',
+        serverType: 'openapi',
+        openapi: {
+          spec: 'https://petstore3.swagger.io/api/v3/openapi.json',
+          operations: { include: ['pets.list', 'pets.getById'] },
+        },
+      },
+    });
+    expect(yaml).toContain('\n  operations:\n    include:\n      - pets.list\n      - pets.getById');
+    expect(yaml).not.toContain('pets_list');
+  });
 });
 
 describe('MCPServerForm — replicas UI', () => {

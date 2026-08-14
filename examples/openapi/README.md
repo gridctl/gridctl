@@ -87,6 +87,10 @@ openapi:
 > [!NOTE]
 > You cannot use both `include` and `exclude` on the same server. Pick one.
 
+Use the raw `operationId` from the spec, not the generated tool name. Tool names are sanitized to `[a-zA-Z0-9_-]`, so an operation like `pets.list` is advertised as `pets_list` while the filter still matches `pets.list`. Listing the sanitized name matches nothing and quietly exposes every operation.
+
+Filtering here is generation-time: excluded operations never become tools, which is what keeps a large spec from flooding a client's tool list. It is also not reversible from the runtime `tools` whitelist, so treat it as the exposure decision. In the web UI, the create-server wizard's Operations Filter loads the spec and lets you pick operations by ID, path, method, or tag instead of writing the list by hand.
+
 ### Environment Variable Expansion
 
 Local spec files support `${VAR}` and `${VAR:-default}` syntax for dynamic values. Disable with the `--no-expand` flag on `gridctl apply`.

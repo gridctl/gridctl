@@ -2215,6 +2215,92 @@ export async function probeServer(config: ProbeServerConfig, sessionId?: string)
   return data as ProbeSuccess;
 }
 
+// === OpenAPI Operations Preview ===
+
+// Wire shape accepted by POST /api/openapi/operations. There is deliberately no
+// auth block: specs are fetched unauthenticated on the deployed path too, so
+// sending credentials here would imply a capability the gateway does not have.
+export interface OpenAPIPreviewRequest {
+  spec: string;
+  tls?: {
+    certFile?: string;
+    keyFile?: string;
+    caFile?: string;
+    insecureSkipVerify?: boolean;
+  };
+}
+
+// One operation row from the preview endpoint.
+//
+// operation_id and tool_name are both present on purpose: the
+// openapi.operations include/exclude filter matches operation_id (the raw spec
+// value), while tool_name is the sanitized identifier the model actually sees.
+// They differ whenever an operationId contains characters outside
+// [a-zA-Z0-9_-], so anything persisted into stack.yaml must use operation_id.
+export interface OpenAPIOperation {
+  operation_id: string;
+  tool_name: string;
+  method: string;
+  path: string;
+  summary?: string;
+  description?: string;
+  tags?: string[];
+  deprecated?: boolean;
+  // Skipped operations cannot become tools at all (no operationId, or a
+  // sanitized name that comes out empty). They are reported rather than
+  // dropped so the picker's counts match what deploy will actually produce.
+  skipped?: boolean;
+  skip_reason?: string;
+}
+
+export interface OpenAPIPreviewSuccess {
+  title?: string;
+  version?: string;
+  operations: OpenAPIOperation[];
+  skipped_count: number;
+  loaded_at: string;
+  cached: boolean;
+}
+
+/**
+ * Parse an OpenAPI spec and enumerate its operations without deploying
+ * anything. Backs the wizard's "Load operations" button.
+ *
+ * Shares the probe's error envelope, so failures reject with ProbeError
+ * carrying a stable `code` (invalid_request, needs_auth, fetch_failed,
+ * parse_failed, rate_limited, internal), AuthError on 401, or a plain Error
+ * for transport issues.
+ * POST /api/openapi/operations
+ */
+export async function previewOpenAPIOperations(
+  request: OpenAPIPreviewRequest,
+  sessionId?: string,
+  signal?: AbortSignal,
+): Promise<OpenAPIPreviewSuccess> {
+  const headers = buildHeaders({ 'Content-Type': 'application/json' });
+  if (sessionId) headers['X-Session-ID'] = sessionId;
+  const response = await fetch(`${API_BASE}/api/openapi/operations`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(request),
+    signal,
+  });
+
+  if (response.status === 401) throw new AuthError('Authentication required');
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const err = data?.error;
+    if (err && typeof err.code === 'string') {
+      throw new ProbeError(err.code, err.message ?? 'Loading operations failed', err.hint, response.status);
+    }
+    throw new Error(`Loading operations failed: ${response.status} ${response.statusText}`);
+  }
+
+  return data as OpenAPIPreviewSuccess;
+}
+
 // === Downstream Server Authorization (OAuth brokering) ===
 
 /**

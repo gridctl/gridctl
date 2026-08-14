@@ -20,14 +20,26 @@ func NewOpenAPIHTTPClient(certFile, keyFile, caFile string, insecureSkipVerify b
 	// Clone the default transport to avoid mutating shared state.
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 
-	if certFile != "" {
-		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-		if err != nil {
-			return nil, fmt.Errorf("loading TLS client certificate: %w", err)
+	// Any one of these three is reason to build a TLS config. Gating the whole
+	// block on certFile made a private CA or insecureSkipVerify a silent no-op
+	// unless a client certificate happened to be configured too, which is not
+	// how either field reads in stack.yaml or in the wizard.
+	if certFile != "" || caFile != "" || insecureSkipVerify {
+		// Mutate the cloned config rather than substituting a fresh one. The
+		// clone is already a private deep copy, and it carries the default
+		// transport's NextProtos - replacing it would quietly drop HTTP/2 for
+		// every spec fetch that configures any TLS material.
+		tlsCfg := transport.TLSClientConfig
+		if tlsCfg == nil {
+			tlsCfg = &tls.Config{MinVersion: tls.VersionTLS12}
 		}
-		tlsCfg := &tls.Config{
-			Certificates:       []tls.Certificate{cert},
-			InsecureSkipVerify: insecureSkipVerify, //nolint:gosec // user-controlled config
+		tlsCfg.InsecureSkipVerify = insecureSkipVerify //nolint:gosec // user-controlled config
+		if certFile != "" {
+			cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+			if err != nil {
+				return nil, fmt.Errorf("loading TLS client certificate: %w", err)
+			}
+			tlsCfg.Certificates = []tls.Certificate{cert}
 		}
 		if caFile != "" {
 			caCert, err := os.ReadFile(caFile)
@@ -160,8 +172,13 @@ func EnumerateOperations(doc *openapi3.T) []OperationSummary {
 // operator-supplied URL, so following refs inside a fetched document would let
 // a hostile spec drive further daemon-side requests. The deployed path keeps
 // external refs enabled because that spec is already committed to stack.yaml.
-// The trade-off is that a spec whose operations live behind $ref to another
-// document previews as incomplete; the operator can still enter IDs manually.
+//
+// The trade-off is sharper than "previews as incomplete": kin-openapi rejects
+// the entire document rather than dropping the referencing operations, so a
+// multi-file spec - including one whose operations are all inline and only its
+// schemas are split out - fails to preview while deploying normally. The
+// openapipreview classifier names $ref in that case so the operator is not sent
+// to inspect a valid document, and manual entry remains available.
 func LoadOpenAPISpecForPreview(ctx context.Context, spec string, client *http.Client) (*openapi3.T, error) {
 	return loadSpecFrom(ctx, spec, client, false, false)
 }
