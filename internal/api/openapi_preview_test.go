@@ -139,8 +139,28 @@ func TestHandleOpenAPIPreview_UnreachableSpecIsUnprocessable(t *testing.T) {
 		`{"spec":"http://127.0.0.1:1/nope.json"}`)
 
 	assert.Equal(t, http.StatusUnprocessableEntity, code)
+	// Assert the code, not just the status. The web UI keys its copy off it,
+	// and asserting only the status is how the original misclassification
+	// (an unreachable host reported as parse_failed) shipped.
+	assert.Equal(t, openapipreview.CodeFetchFailed, errWire["error"]["code"])
 	assert.NotEmpty(t, errWire["error"]["message"])
 	assert.NotEmpty(t, errWire["error"]["hint"])
+}
+
+// The two failures an operator most needs told apart must stay apart at the
+// HTTP layer, which is the path the UI actually travels.
+func TestHandleOpenAPIPreview_AuthRequiredIsDistinctFromUnreachable(t *testing.T) {
+	specSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer specSrv.Close()
+
+	s := wiredPreviewServer()
+	_, _, authWire := postPreview(t, s, `{"spec":"`+specSrv.URL+`"}`)
+	assert.Equal(t, openapipreview.CodeNeedsAuth, authWire["error"]["code"])
+
+	_, _, unreachableWire := postPreview(t, s, `{"spec":"http://127.0.0.1:1/nope.json"}`)
+	assert.Equal(t, openapipreview.CodeFetchFailed, unreachableWire["error"]["code"])
 }
 
 func TestHandleOpenAPIPreview_SecondCallIsCached(t *testing.T) {
