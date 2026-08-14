@@ -32,28 +32,37 @@ func leadingVersion(s string) (major, minor int, ok bool) {
 	return major, minor, true
 }
 
-// netavarkVersion returns the netavark version Podman reports. The second
-// return is a diagnostic explaining why the version could not be determined,
-// and is empty on success.
+// networkStack is the pair of helper binaries Podman drives for rootless
+// container networking, as Podman itself reports them. Each version carries its
+// own diagnostic explaining why it could not be determined, empty on success.
 //
-// Callers MUST surface that diagnostic. An earlier version of this guard asked
+// Callers MUST surface those diagnostics. An earlier version of this guard asked
 // for a single Go-template field and swallowed any error, so when the field did
 // not resolve it silently reported "cannot determine" and the guard never fired
 // — indistinguishable from a healthy host. Parsing the whole document and
 // reporting what was actually seen makes that failure mode visible instead.
-func netavarkVersion(ctx context.Context) (string, string) {
-	out, err := exec.CommandContext(ctx, "podman", "info", "--format", "json").Output()
-	if err != nil {
-		return "", "podman info failed: " + err.Error()
-	}
-	return parseNetavarkVersion(out)
+type networkStack struct {
+	Netavark     string
+	NetavarkDiag string
+	Aardvark     string
+	AardvarkDiag string
 }
 
-// parseNetavarkVersion extracts the netavark version from `podman info --format
+// readNetworkStack returns the netavark and aardvark-dns versions Podman reports.
+func readNetworkStack(ctx context.Context) networkStack {
+	out, err := exec.CommandContext(ctx, "podman", "info", "--format", "json").Output()
+	if err != nil {
+		diag := "podman info failed: " + err.Error()
+		return networkStack{NetavarkDiag: diag, AardvarkDiag: diag}
+	}
+	return parseNetworkStack(out)
+}
+
+// parseNetworkStack extracts both helper versions from `podman info --format
 // json` output. Split from the exec so the JSON handling is testable without a
 // live Podman — the previous guard shipped its field lookup unverified and that
 // lookup is precisely what failed.
-func parseNetavarkVersion(out []byte) (string, string) {
+func parseNetworkStack(out []byte) networkStack {
 	var info struct {
 		Host struct {
 			NetworkBackend     string `json:"networkBackend"`
@@ -61,35 +70,56 @@ func parseNetavarkVersion(out []byte) (string, string) {
 				Backend string `json:"backend"`
 				Version string `json:"version"`
 				Package string `json:"package"`
+				DNS     struct {
+					Version string `json:"version"`
+					Package string `json:"package"`
+				} `json:"dns"`
 			} `json:"networkBackendInfo"`
 		} `json:"host"`
 	}
 	if err := json.Unmarshal(out, &info); err != nil {
-		return "", "podman info returned unparseable JSON: " + err.Error()
+		diag := "podman info returned unparseable JSON: " + err.Error()
+		return networkStack{NetavarkDiag: diag, AardvarkDiag: diag}
 	}
 
-	// The version may be reported bare ("1.4.0"), prefixed ("netavark 1.4.0"),
-	// or only via the package string. leadingVersion copes with all three, so
-	// take the first field that yields a version.
 	nb := info.Host.NetworkBackendInfo
-	for _, candidate := range []string{nb.Version, nb.Package} {
+	stack := networkStack{}
+
+	// A version may be reported bare ("1.4.0"), prefixed ("netavark 1.4.0"), or
+	// only via the package string. leadingVersion copes with all three, so take
+	// the first field that yields a version.
+	//
+	// Every field consulted is named in the diagnostic. networkBackend is
+	// included because it is known to populate, so if it parses while
+	// networkBackendInfo does not, the JSON key names are what changed.
+	stack.Netavark, stack.NetavarkDiag = firstVersion(
+		fmt.Sprintf("no netavark version in podman info (networkBackend=%q backend=%q version=%q package=%q)",
+			info.Host.NetworkBackend, nb.Backend, nb.Version, nb.Package),
+		nb.Version, nb.Package)
+
+	stack.Aardvark, stack.AardvarkDiag = firstVersion(
+		fmt.Sprintf("no aardvark-dns version in podman info (networkBackendInfo.dns version=%q package=%q)",
+			nb.DNS.Version, nb.DNS.Package),
+		nb.DNS.Version, nb.DNS.Package)
+
+	return stack
+}
+
+// firstVersion returns the first candidate containing a parseable version, or
+// the supplied diagnostic when none does.
+func firstVersion(diag string, candidates ...string) (string, string) {
+	for _, candidate := range candidates {
 		if _, _, ok := leadingVersion(candidate); ok {
 			return strings.TrimSpace(candidate), ""
 		}
 	}
-
-	// Report every field consulted. networkBackend is included because it is
-	// known to populate, so if it parses while networkBackendInfo does not, the
-	// JSON key names are what changed.
-	return "", fmt.Sprintf(
-		"no netavark version in podman info (networkBackend=%q backend=%q version=%q package=%q)",
-		info.Host.NetworkBackend, nb.Backend, nb.Version, nb.Package)
+	return "", diag
 }
 
-// incompatibleStack holds the version rule on its own so it is testable without
-// a live Podman. Keeping it pure matters here: CI runners draw from a mixed
-// image fleet, so the skip path above cannot be relied on to execute on any
-// given run, and the rule would otherwise ship unverified.
+// incompatibleStack reports whether Podman is too new for the netavark driving
+// it. Held apart from the test so it is testable without a live Podman: CI
+// runners draw from a mixed image fleet, so the skip path cannot be relied on to
+// execute on any given run, and the rule would otherwise ship unverified.
 func incompatibleStack(podmanVersion, netavarkVersion string) bool {
 	pMajor, _, ok := leadingVersion(podmanVersion)
 	if !ok || pMajor < 5 {
@@ -100,6 +130,64 @@ func incompatibleStack(podmanVersion, netavarkVersion string) bool {
 		return false
 	}
 	return nMajor == 1 && nMinor < 10
+}
+
+// mismatchedHelpers reports whether netavark and aardvark-dns come from
+// different release lines. netavark spawns aardvark-dns and the two share a
+// protocol that is not stable across minors, so a mismatched pair resolves
+// nothing while reporting no error at all.
+//
+// This is the case that got past the guard on ubuntu24/20260810.271: Podman
+// 5.8.4 with netavark 1.17.2 is a perfectly good pairing and incompatibleStack
+// correctly cleared it, but aardvark-dns was still the archive's 1.4.0, so DNS
+// failed anyway and the suite blamed gridctl (#1092). Comparing Podman against
+// netavark alone can never catch that — the broken relationship is between the
+// two helpers.
+func mismatchedHelpers(netavarkVersion, aardvarkVersion string) bool {
+	nMajor, nMinor, ok := leadingVersion(netavarkVersion)
+	if !ok {
+		return false
+	}
+	aMajor, aMinor, ok := leadingVersion(aardvarkVersion)
+	if !ok {
+		return false
+	}
+	return nMajor != aMajor || nMinor != aMinor
+}
+
+// checkNetworkStack reports why the host cannot support rootless inter-container
+// DNS, or an empty string when the test should run, alongside diagnostics to log
+// either way.
+//
+// It fails open on purpose: an undetermined version runs the test, so a genuine
+// gridctl regression is never masked by a probe that came back blank. Skipping
+// is reserved for stacks that are provably incapable of the thing under test,
+// where a failure would say nothing about gridctl. In CI this cannot hide drift
+// either — the workflow pins both helpers and asserts the resolved versions
+// before any test runs, so a mismatch fails the job outright rather than
+// reaching this skip.
+func checkNetworkStack(podmanVersion string, s networkStack) (skip string, diags []string) {
+	switch {
+	case s.NetavarkDiag != "":
+		diags = append(diags, "netavark version undetermined, running the test anyway: "+s.NetavarkDiag)
+	case incompatibleStack(podmanVersion, s.Netavark):
+		return fmt.Sprintf("Podman %s needs a newer netavark than this host's %s; rootless "+
+			"inter-container DNS cannot work on this stack, so the result would say "+
+			"nothing about gridctl (see #1092)", podmanVersion, s.Netavark), diags
+	}
+
+	switch {
+	case s.AardvarkDiag != "":
+		diags = append(diags, "aardvark-dns version undetermined, running the test anyway: "+s.AardvarkDiag)
+	case mismatchedHelpers(s.Netavark, s.Aardvark):
+		return fmt.Sprintf("netavark %s and aardvark-dns %s are from different release "+
+			"lines; the pair resolves no names and reports no error, so the result "+
+			"would say nothing about gridctl (see #1092)", s.Netavark, s.Aardvark), diags
+	}
+
+	diags = append(diags, fmt.Sprintf("container stack: podman %s + netavark %s + aardvark-dns %s",
+		podmanVersion, s.Netavark, s.Aardvark))
+	return "", diags
 }
 
 // TestPodmanRootless_MultiContainerNetworking is the graduation gate for stable Podman
@@ -120,27 +208,19 @@ func TestPodmanRootless_MultiContainerNetworking(t *testing.T) {
 	}
 	t.Logf("Podman version=%s rootless=%v socket=%s", info.Version, info.IsRootless(), info.SocketPath)
 
-	// Podman 5.x drives a netavark interface that 1.4.x does not implement, and
-	// the pairing fails as silent DNS non-resolution rather than a startup
-	// error. Without this check the suite reports a gridctl networking bug when
-	// the real fault is the host's container stack (#1092).
-	//
-	// Fails open on purpose: an undetermined netavark version runs the test, so
-	// a genuine regression is never masked. The diagnostic is always logged
-	// because a guard that declines silently is indistinguishable from a guard
-	// that found nothing wrong.
+	// A mismatched host network stack fails as silent DNS non-resolution rather
+	// than a startup error, so without this check the suite reports a gridctl
+	// networking bug when the real fault is the host's container stack (#1092).
+	// The diagnostics are always logged because a guard that declines silently
+	// is indistinguishable from a guard that found nothing wrong.
 	probeCtx, probeCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer probeCancel()
-	netavark, diag := netavarkVersion(probeCtx)
-	switch {
-	case diag != "":
-		t.Logf("netavark version undetermined, running the test anyway: %s", diag)
-	case incompatibleStack(info.Version, netavark):
-		t.Skipf("skipping: Podman %s needs a newer netavark than this host's %s; "+
-			"rootless inter-container DNS cannot work on this stack, so the result "+
-			"would say nothing about gridctl (see #1092)", info.Version, netavark)
-	default:
-		t.Logf("container stack: podman %s + netavark %s", info.Version, netavark)
+	skip, diags := checkNetworkStack(info.Version, readNetworkStack(probeCtx))
+	for _, d := range diags {
+		t.Log(d)
+	}
+	if skip != "" {
+		t.Skip("skipping: " + skip)
 	}
 
 	rt, err := runtime.NewWithInfo(info)
@@ -458,7 +538,96 @@ func TestIncompatibleStack(t *testing.T) {
 	}
 }
 
-func TestParseNetavarkVersion(t *testing.T) {
+func TestMismatchedHelpers(t *testing.T) {
+	cases := []struct {
+		name               string
+		netavark, aardvark string
+		want               bool
+	}{
+		// The pairing observed on ubuntu24/20260810.271: Podman's own netavark
+		// against the Ubuntu archive's aardvark-dns. Cleared by
+		// incompatibleStack, broken in practice.
+		{"podman netavark with archive aardvark", "netavark 1.17.2", "aardvark-dns 1.4.0", true},
+		// The pinned pair this job now provisions. Patch levels differ within
+		// the minor, which is normal: upstream cuts the two projects together
+		// but does not always need the same patch on both.
+		{"pinned pair", "netavark 1.17.2", "aardvark-dns 1.17.1", false},
+		{"identical versions", "1.4.0", "1.4.0", false},
+		{"same minor across majors differs", "2.1.0", "1.1.0", true},
+		{"minor drift within a major", "1.17.2", "1.10.3", true},
+		// Unparseable input must not skip — running and failing is safer than
+		// masking a real regression.
+		{"unknown netavark", "", "aardvark-dns 1.4.0", false},
+		{"unknown aardvark", "netavark 1.17.2", "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := mismatchedHelpers(c.netavark, c.aardvark); got != c.want {
+				t.Errorf("mismatchedHelpers(%q, %q) = %v, want %v",
+					c.netavark, c.aardvark, got, c.want)
+			}
+		})
+	}
+}
+
+func TestCheckNetworkStack(t *testing.T) {
+	healthy := networkStack{Netavark: "netavark 1.17.2", Aardvark: "aardvark-dns 1.17.1"}
+
+	t.Run("pinned stack runs and logs what it saw", func(t *testing.T) {
+		skip, diags := checkNetworkStack("5.8.4", healthy)
+		if skip != "" {
+			t.Fatalf("healthy stack must not skip, got %q", skip)
+		}
+		if len(diags) != 1 || !strings.Contains(diags[0], "aardvark-dns 1.17.1") {
+			t.Errorf("diags = %q, want one line naming both helpers", diags)
+		}
+	})
+
+	// The regression this guard exists for. Podman and netavark agree, so the
+	// old podman-versus-netavark rule cleared it and the suite failed inside
+	// the DNS assertion instead.
+	t.Run("skips the pairing that got past the old guard", func(t *testing.T) {
+		skip, _ := checkNetworkStack("5.8.4", networkStack{
+			Netavark: "netavark 1.17.2",
+			Aardvark: "aardvark-dns 1.4.0",
+		})
+		if skip == "" {
+			t.Fatal("netavark 1.17.2 with aardvark-dns 1.4.0 must skip")
+		}
+		if !strings.Contains(skip, "different release lines") {
+			t.Errorf("skip reason %q should name the mismatch", skip)
+		}
+	})
+
+	t.Run("skips podman 5 on archive netavark", func(t *testing.T) {
+		skip, _ := checkNetworkStack("5.8.4", networkStack{
+			Netavark: "netavark 1.4.0",
+			Aardvark: "aardvark-dns 1.4.0",
+		})
+		if !strings.Contains(skip, "needs a newer netavark") {
+			t.Errorf("skip reason %q should name the podman/netavark gap", skip)
+		}
+	})
+
+	// Failing open matters more than skipping cleanly: a blank probe must never
+	// be able to hide a real gridctl networking regression.
+	t.Run("undetermined versions run the test", func(t *testing.T) {
+		for _, s := range []networkStack{
+			{NetavarkDiag: "probe failed", Aardvark: "aardvark-dns 1.17.1"},
+			{Netavark: "netavark 1.17.2", AardvarkDiag: "probe failed"},
+		} {
+			skip, diags := checkNetworkStack("5.8.4", s)
+			if skip != "" {
+				t.Errorf("undetermined version must not skip, got %q", skip)
+			}
+			if len(diags) == 0 {
+				t.Error("an undetermined version must be logged, not swallowed")
+			}
+		}
+	})
+}
+
+func TestParseNetworkStack(t *testing.T) {
 	// Shape taken from `podman info --format json`, trimmed to the fields the
 	// guard reads.
 	const realistic = `{
@@ -468,69 +637,86 @@ func TestParseNetavarkVersion(t *testing.T) {
 	      "backend": "netavark",
 	      "version": "netavark 1.4.0",
 	      "package": "netavark-1.4.0-4",
-	      "path": "/usr/libexec/podman/netavark"
+	      "path": "/usr/libexec/podman/netavark",
+	      "dns": {
+	        "version": "aardvark-dns 1.4.0",
+	        "package": "aardvark-dns-1.4.0-5",
+	        "path": "/usr/libexec/podman/aardvark-dns"
+	      }
 	    }
 	  }
 	}`
 
-	t.Run("reads the version field", func(t *testing.T) {
-		got, diag := parseNetavarkVersion([]byte(realistic))
-		if diag != "" {
-			t.Fatalf("unexpected diagnostic: %s", diag)
+	t.Run("reads both version fields", func(t *testing.T) {
+		got := parseNetworkStack([]byte(realistic))
+		if got.NetavarkDiag != "" || got.AardvarkDiag != "" {
+			t.Fatalf("unexpected diagnostics: %q / %q", got.NetavarkDiag, got.AardvarkDiag)
 		}
-		if got != "netavark 1.4.0" {
-			t.Errorf("got %q, want %q", got, "netavark 1.4.0")
+		if got.Netavark != "netavark 1.4.0" {
+			t.Errorf("netavark = %q, want %q", got.Netavark, "netavark 1.4.0")
 		}
-		if !incompatibleStack("5.8.4", got) {
+		if got.Aardvark != "aardvark-dns 1.4.0" {
+			t.Errorf("aardvark = %q, want %q", got.Aardvark, "aardvark-dns 1.4.0")
+		}
+		if !incompatibleStack("5.8.4", got.Netavark) {
 			t.Error("podman 5.8.4 with netavark 1.4.0 must be reported incompatible")
 		}
 	})
 
-	t.Run("falls back to the package field", func(t *testing.T) {
-		const versionless = `{"host":{"networkBackend":"netavark","networkBackendInfo":{"backend":"netavark","version":"","package":"netavark-1.4.0-4"}}}`
-		got, diag := parseNetavarkVersion([]byte(versionless))
-		if diag != "" {
-			t.Fatalf("unexpected diagnostic: %s", diag)
+	t.Run("falls back to the package fields", func(t *testing.T) {
+		const versionless = `{"host":{"networkBackend":"netavark","networkBackendInfo":{"backend":"netavark","version":"","package":"netavark-1.4.0-4","dns":{"version":"","package":"aardvark-dns-1.4.0-5"}}}}`
+		got := parseNetworkStack([]byte(versionless))
+		if got.NetavarkDiag != "" || got.AardvarkDiag != "" {
+			t.Fatalf("unexpected diagnostics: %q / %q", got.NetavarkDiag, got.AardvarkDiag)
 		}
-		if got != "netavark-1.4.0-4" {
-			t.Errorf("got %q, want the package string", got)
+		if got.Netavark != "netavark-1.4.0-4" || got.Aardvark != "aardvark-dns-1.4.0-5" {
+			t.Errorf("got %q / %q, want the package strings", got.Netavark, got.Aardvark)
 		}
 	})
 
-	t.Run("bare version", func(t *testing.T) {
-		const bare = `{"host":{"networkBackendInfo":{"version":"1.10.3"}}}`
-		got, diag := parseNetavarkVersion([]byte(bare))
-		if diag != "" {
-			t.Fatalf("unexpected diagnostic: %s", diag)
+	t.Run("bare versions", func(t *testing.T) {
+		const bare = `{"host":{"networkBackendInfo":{"version":"1.17.2","dns":{"version":"1.17.1"}}}}`
+		got := parseNetworkStack([]byte(bare))
+		if got.NetavarkDiag != "" || got.AardvarkDiag != "" {
+			t.Fatalf("unexpected diagnostics: %q / %q", got.NetavarkDiag, got.AardvarkDiag)
 		}
-		if incompatibleStack("5.8.4", got) {
-			t.Error("netavark 1.10.3 is new enough for podman 5.x")
+		if incompatibleStack("5.8.4", got.Netavark) {
+			t.Error("netavark 1.17.2 is new enough for podman 5.x")
+		}
+		if mismatchedHelpers(got.Netavark, got.Aardvark) {
+			t.Error("1.17.2 and 1.17.1 are the same release line")
 		}
 	})
 
 	// This is the case that silently broke the previous guard: the fields it
 	// wanted were absent. The diagnostic must name what was actually seen so
 	// the next failure is fixable from the log alone.
-	t.Run("diagnostic names the fields consulted", func(t *testing.T) {
+	t.Run("diagnostics name the fields consulted", func(t *testing.T) {
 		const renamed = `{"host":{"networkBackend":"netavark","networkBackendInfo":{"backend":"netavark"}}}`
-		got, diag := parseNetavarkVersion([]byte(renamed))
-		if got != "" {
-			t.Errorf("got %q, want empty when no version is present", got)
+		got := parseNetworkStack([]byte(renamed))
+		if got.Netavark != "" || got.Aardvark != "" {
+			t.Errorf("got %q / %q, want empty when no version is present", got.Netavark, got.Aardvark)
 		}
-		if diag == "" {
-			t.Fatal("a missing version must produce a diagnostic, not silence")
+		if got.NetavarkDiag == "" || got.AardvarkDiag == "" {
+			t.Fatal("missing versions must produce diagnostics, not silence")
 		}
 		for _, want := range []string{"networkBackend", "version", "package"} {
-			if !strings.Contains(diag, want) {
-				t.Errorf("diagnostic %q does not mention %q", diag, want)
+			if !strings.Contains(got.NetavarkDiag, want) {
+				t.Errorf("netavark diagnostic %q does not mention %q", got.NetavarkDiag, want)
 			}
+		}
+		// The dns subtree is the field lookup this change adds, and it is the
+		// one that cannot be verified against a live Podman from a workstation.
+		// If Podman ever moves or renames it, the diagnostic has to say so.
+		if !strings.Contains(got.AardvarkDiag, "networkBackendInfo.dns") {
+			t.Errorf("aardvark diagnostic %q does not name the dns subtree", got.AardvarkDiag)
 		}
 	})
 
 	t.Run("unparseable json", func(t *testing.T) {
-		_, diag := parseNetavarkVersion([]byte("not json"))
-		if diag == "" {
-			t.Error("unparseable JSON must produce a diagnostic")
+		got := parseNetworkStack([]byte("not json"))
+		if got.NetavarkDiag == "" || got.AardvarkDiag == "" {
+			t.Error("unparseable JSON must produce diagnostics")
 		}
 	})
 }
