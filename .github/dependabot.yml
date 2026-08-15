@@ -32,3 +32,14 @@ updates:
           - "react-dom"
           - "@types/react"
           - "@types/react-dom"
+    ignore:
+      # typescript-eslint caps its typescript peer at <6.1.0, so a TS 7 bump
+      # fails npm ci with ERESOLVE (see PR #1124). Forcing the install past it
+      # does not help: typescript-eslint hard-errors on load under TS 7.0 with
+      # "typescript-eslint does not support TS 7.0", and upstream is targeting
+      # TS >=7.1 only (typescript-eslint#10940). The compiler itself is fine,
+      # tsc -b passes clean on 7.0.2. Drop this ignore once typescript-eslint
+      # ships TS 7 support and TS >=7.1 is released.
+      - dependency-name: "typescript"
+        update-types:
+          - "version-update:semver-major"
