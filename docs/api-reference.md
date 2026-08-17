@@ -2839,13 +2839,14 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/packs \
 | `path` | string | Subdirectory within the repository |
 | `trust` | bool | Accept security findings (the CLI's `--trust`) |
 | `dryRun` | bool | Resolve and report without importing |
+| `auth` | object | Credentials for a private repository; same shape as the skill source endpoints (see below) |
 
 **Response:** `201` with `{ "doc": <add document>, "notes": [...] }`. The document carries the resolved selection, `unresolved`, `skipped` (with reasons), and `warnings`; `notes` carries progress prose (rule updates, fragments-mode activation).
 
 **Errors:**
-- `400` - Missing repo or invalid body
+- `400` - Missing repo, invalid body, or an unresolvable `auth.credentialRef`
 - `409` - Security findings without trust: `{ "error", "pack", "findings": [{kind, name, findings}] }`; nothing was imported
-- `422` - No `gridctl-pack.yaml` at the repository root
+- `422` - No `gridctl-pack.yaml` at the repository root, or no reachable ssh-agent (see [pack auth](#pack-authentication))
 
 #### `POST /api/packs/preview`
 
@@ -2859,7 +2860,45 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/packs/p
   -d '{"repo": "https://github.com/acme/team-pack"}'
 ```
 
-**Errors:** `422` when the repository has no manifest (the body suggests the Skill import flow for plain skill repos).
+| Field | Type | Description |
+|---|---|---|
+| `repo` | string | Git repository URL (required) |
+| `ref` | string | Branch, tag, or commit; default: the default branch |
+| `path` | string | Subdirectory within the repository |
+| `auth` | object | Credentials for a private repository (see below) |
+
+**Errors:** `400` when `auth.credentialRef` cannot be resolved. `422` when the repository has no manifest (the body suggests the Skill import flow for plain skill repos), or when an SSH URL has no reachable ssh-agent.
+
+#### Pack authentication
+
+`POST /api/packs` and `POST /api/packs/preview` accept an optional `auth` object with the same shape and field names as the [skill source endpoints](#skill-sources):
+
+```json
+{
+  "method": "token",
+  "token": "ghp_...",
+  "credentialRef": "${vault:GIT_TOKEN}",
+  "sshKeyPath": "/path/to/key"
+}
+```
+
+`credentialRef` is resolved against the live vault; raw `token` values are transient and never persisted. Only the reference is recorded, on the pack's imported source and on each resource's origin sidecar.
+
+Omit `auth` entirely on a repository already imported with a reference and that stored reference is resolved automatically, which is how an update previews a private pack with no user input. Sending an empty object (`"auth": {}`) is an explicit request to use no credentials and suppresses the stored reference.
+
+`POST /api/packs/{name}/apply` takes no `auth`: it projects already-imported material and never clones.
+
+**The ssh-agent case.** An SSH URL with no reachable agent returns `422` with a structured body rather than a generic failure, because it is fixable by the caller and a token cannot fix it:
+
+```json
+{
+  "error": "Pack preview failed: ssh agent not available: SSH_AUTH_SOCK is unset in this gridctl process...",
+  "code": "ssh_agent_unavailable",
+  "httpsEquivalent": "https://github.com/acme/team-pack"
+}
+```
+
+`httpsEquivalent` is the server's rewrite of the SSH URL and is present only when the input was SSH-form. Clients should branch on `code`, not on the message. The daemon inherits `SSH_AUTH_SOCK` only from the shell that started it, so a browser-driven import cannot rely on the agent in the user's terminal; see [troubleshooting](troubleshooting.md#ssh-agent-not-available).
 
 #### `POST /api/packs/{name}/apply`
 
