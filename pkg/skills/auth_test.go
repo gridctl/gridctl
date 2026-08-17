@@ -2,6 +2,9 @@ package skills
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
@@ -81,6 +84,16 @@ func TestResolveAuther_GitHubTokenFallback(t *testing.T) {
 
 func TestResolveAuther_NoFallbackForSSH(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "env-token")
+	// An agent must look reachable, or the ambient-SSH preflight refuses
+	// before we get to assert anything about the token fallback. Pinning it
+	// also keeps this test hermetic: it used to pass or fail depending on
+	// whether the machine running it happened to have an agent.
+	sock := filepath.Join(t.TempDir(), "agent.sock")
+	if err := os.WriteFile(sock, nil, 0600); err != nil {
+		t.Fatalf("stub agent socket: %v", err)
+	}
+	t.Setenv("SSH_AUTH_SOCK", sock)
+
 	auther, err := resolveAuther(AuthConfig{}, "git@github.com:org/repo")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -91,6 +104,60 @@ func TestResolveAuther_NoFallbackForSSH(t *testing.T) {
 	}
 	if auth != nil {
 		t.Errorf("expected NoAuth for SSH URL with no explicit config, got %T", auth)
+	}
+}
+
+// The GITHUB_TOKEN fallback is HTTPS-only, which is the point of the test
+// above. This asserts the same boundary from the other side: an SSH URL must
+// never come back carrying that token, whatever the agent situation.
+func TestResolveAuther_SSHNeverUsesGitHubToken(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "env-token")
+	t.Setenv("SSH_AUTH_SOCK", "")
+
+	auther, err := resolveAuther(AuthConfig{}, "git@github.com:org/repo")
+	if err == nil {
+		if _, isToken := auther.(gitpkg.HTTPSTokenAuth); isToken {
+			t.Fatal("SSH URL resolved to an HTTPS token auther")
+		}
+	}
+}
+
+func TestResolveAuther_AmbientSSHWithoutAgentIsRefused(t *testing.T) {
+	t.Setenv("SSH_AUTH_SOCK", "")
+
+	_, err := resolveAuther(AuthConfig{}, "git@github.com:org/repo")
+	if !errors.Is(err, gitpkg.ErrSSHAgentMissing) {
+		t.Fatalf("expected ErrSSHAgentMissing, got %v", err)
+	}
+	// The message must name the process, not the user's shell: the shell they
+	// typed in probably does have an agent, so "no ssh-agent" reads as wrong.
+	if !strings.Contains(err.Error(), "gridctl process") {
+		t.Errorf("error should name the gridctl process as the one lacking an agent, got %q", err.Error())
+	}
+}
+
+func TestResolveAuther_AmbientSSHWithUnreachableSocketIsRefused(t *testing.T) {
+	// The daemon case: SSH_AUTH_SOCK was inherited but the agent has since
+	// exited, so the path is set and dials nothing.
+	t.Setenv("SSH_AUTH_SOCK", filepath.Join(t.TempDir(), "gone.sock"))
+
+	_, err := resolveAuther(AuthConfig{}, "git@github.com:org/repo")
+	if !errors.Is(err, gitpkg.ErrSSHAgentMissing) {
+		t.Fatalf("expected ErrSSHAgentMissing for a stale socket path, got %v", err)
+	}
+}
+
+func TestResolveAuther_ExplicitMethodSkipsAmbientPreflight(t *testing.T) {
+	// An explicit ssh-key never consults the agent, so a missing agent must
+	// not block it.
+	t.Setenv("SSH_AUTH_SOCK", "")
+
+	auther, err := resolveAuther(AuthConfig{Method: "ssh-key", SSHKeyPath: "/tmp/key"}, "git@github.com:org/repo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := auther.(gitpkg.SSHKeyFileAuth); !ok {
+		t.Errorf("expected SSHKeyFileAuth, got %T", auther)
 	}
 }
 
