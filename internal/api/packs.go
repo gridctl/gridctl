@@ -89,6 +89,30 @@ func (s *Server) packsImporter() (*skills.Importer, error) {
 	return imp, nil
 }
 
+// storedPackCredentialRef returns the credential reference recorded for a
+// repository's imported source, or "" when the repository is unknown or was
+// imported without one. It is the fallback that lets a re-import or an update
+// authenticate without the caller re-supplying credentials, mirroring what
+// the skill source handlers do with resolveCheckAuth.
+//
+// A missing or unreadable lockfile is not an error here: it only means there
+// is no stored reference to fall back to, and the caller-supplied auth (or
+// ambient behavior) still applies.
+func (s *Server) storedPackCredentialRef(repo string) string {
+	if repo == "" {
+		return ""
+	}
+	lf, err := skills.ReadLockFile(s.lockFilePath())
+	if err != nil {
+		return ""
+	}
+	src, ok := lf.Sources[skills.RepoToName(repo)]
+	if !ok {
+		return ""
+	}
+	return src.CredentialRef
+}
+
 // packErrorStatus maps pkg/packops sentinel errors to HTTP statuses.
 func packErrorStatus(err error) int {
 	var fe *packops.FindingsError
@@ -180,11 +204,12 @@ func (s *Server) handlePackAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Repo   string `json:"repo"`
-		Ref    string `json:"ref,omitempty"`
-		Path   string `json:"path,omitempty"`
-		Trust  bool   `json:"trust,omitempty"`
-		DryRun bool   `json:"dryRun,omitempty"`
+		Repo   string       `json:"repo"`
+		Ref    string       `json:"ref,omitempty"`
+		Path   string       `json:"path,omitempty"`
+		Trust  bool         `json:"trust,omitempty"`
+		DryRun bool         `json:"dryRun,omitempty"`
+		Auth   *AuthRequest `json:"auth,omitempty"`
 	}
 	if err := decodeJSONBody(r, &req); err != nil {
 		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -192,6 +217,11 @@ func (s *Server) handlePackAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Repo == "" {
 		writeJSONError(w, "repo is required", http.StatusBadRequest)
+		return
+	}
+	auth, err := s.resolveCheckAuth(req.Auth, s.storedPackCredentialRef(req.Repo))
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -202,6 +232,7 @@ func (s *Server) handlePackAdd(w http.ResponseWriter, r *http.Request) {
 		Trust:           req.Trust,
 		DryRun:          req.DryRun,
 		BlockOnFindings: true,
+		Auth:            auth,
 	})
 	if err != nil {
 		var fe *packops.FindingsError
@@ -219,7 +250,7 @@ func (s *Server) handlePackAdd(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, err.Error(), status)
 			return
 		}
-		writeGitError(w, "Pack import failed: ", err)
+		writeGitErrorForRepo(w, "Pack import failed: ", req.Repo, err)
 		return
 	}
 
@@ -233,9 +264,10 @@ func (s *Server) handlePackAdd(w http.ResponseWriter, r *http.Request) {
 // POST /api/packs/preview
 func (s *Server) handlePackPreview(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Repo string `json:"repo"`
-		Ref  string `json:"ref,omitempty"`
-		Path string `json:"path,omitempty"`
+		Repo string       `json:"repo"`
+		Ref  string       `json:"ref,omitempty"`
+		Path string       `json:"path,omitempty"`
+		Auth *AuthRequest `json:"auth,omitempty"`
 	}
 	if err := decodeJSONBody(r, &req); err != nil {
 		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -245,13 +277,21 @@ func (s *Server) handlePackPreview(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, "repo is required", http.StatusBadRequest)
 		return
 	}
-	res, err := packops.Preview(r.Context(), packops.PreviewOptions{Repo: req.Repo, Ref: req.Ref, Path: req.Path})
+	// The stored-reference fallback is what lets the update dialog preview an
+	// already-imported private pack with no user input: it previews on mount,
+	// with no fields to fill.
+	auth, err := s.resolveCheckAuth(req.Auth, s.storedPackCredentialRef(req.Repo))
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	res, err := packops.Preview(r.Context(), packops.PreviewOptions{Repo: req.Repo, Ref: req.Ref, Path: req.Path, Auth: auth})
 	if err != nil {
 		if status := packErrorStatus(err); status != http.StatusInternalServerError {
 			writeJSONError(w, err.Error(), status)
 			return
 		}
-		writeGitError(w, "Pack preview failed: ", err)
+		writeGitErrorForRepo(w, "Pack preview failed: ", req.Repo, err)
 		return
 	}
 	writeJSON(w, res)
