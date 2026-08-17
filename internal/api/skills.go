@@ -225,18 +225,58 @@ func gitErrorStatus(err error) int {
 		errors.Is(err, gitpkg.ErrEmptyToken),
 		errors.Is(err, gitpkg.ErrHostKeyMismatch):
 		return http.StatusBadRequest
+	case errors.Is(err, gitpkg.ErrSSHAgentMissing):
+		// The request is well-formed and the credentials are not wrong;
+		// the daemon simply has no agent to authenticate with. 422 keeps
+		// it distinguishable from a server fault, which is what a bare
+		// 500 made it look like.
+		return http.StatusUnprocessableEntity
 	default:
 		return http.StatusInternalServerError
 	}
+}
+
+// gitErrorCode names a classified git failure for clients that need to branch
+// on the cause rather than parse the message. Empty for causes a client has no
+// distinct remedy for; those are adequately described by the status alone.
+func gitErrorCode(err error) string {
+	if errors.Is(err, gitpkg.ErrSSHAgentMissing) {
+		return "ssh_agent_unavailable"
+	}
+	return ""
 }
 
 // writeGitError classifies and redacts an error from a git operation before
 // writing it to the response. Callers should use this rather than passing
 // raw go-git errors straight through writeJSONError.
 func writeGitError(w http.ResponseWriter, prefix string, err error) {
+	writeGitErrorForRepo(w, prefix, "", err)
+}
+
+// writeGitErrorForRepo is writeGitError with the repository URL in hand, which
+// lets it add the structured fields a client needs to offer a remedy: a stable
+// code, and for an unreachable ssh-agent the HTTPS URL for the same repository.
+// Deriving that rewrite here keeps one implementation for every frontend.
+//
+// The body stays a superset of writeGitError's, so existing clients reading
+// only "error" are unaffected.
+func writeGitErrorForRepo(w http.ResponseWriter, prefix, repo string, err error) {
 	classified := gitpkg.ClassifyError(err)
 	redacted := gitpkg.RedactError(classified)
-	writeJSONError(w, prefix+redacted.Error(), gitErrorStatus(classified))
+
+	body := map[string]string{"error": prefix + redacted.Error()}
+	if code := gitErrorCode(classified); code != "" {
+		body["code"] = code
+	}
+	if errors.Is(classified, gitpkg.ErrSSHAgentMissing) {
+		if https, ok := gitpkg.HTTPSEquivalent(repo); ok {
+			body["httpsEquivalent"] = https
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(gitErrorStatus(classified))
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 // handleSkillSourcesList returns all configured skill sources with update status.
