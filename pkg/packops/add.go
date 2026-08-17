@@ -29,6 +29,11 @@ type AddOptions struct {
 	// import with per-resource skips, its documented contract); the REST
 	// layer sets it so a 409 can never follow a half-done import.
 	BlockOnFindings bool
+	// Auth authenticates the clone and, when it carries a CredentialRef,
+	// is persisted by reference so a later update re-resolves without the
+	// caller re-supplying credentials. A zero value keeps the ambient
+	// behavior (ssh-agent for SSH, GITHUB_TOKEN for HTTPS, else anonymous).
+	Auth skills.AuthConfig
 }
 
 // AddDoc is the machine-readable pack add document.
@@ -58,7 +63,7 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	clone, err := skills.CloneAndDiscover(opts.Repo, opts.Ref, opts.Path, skills.AuthConfig{}, slog.Default())
+	clone, err := skills.CloneAndDiscover(opts.Repo, opts.Ref, opts.Path, opts.Auth, slog.Default())
 	if err != nil {
 		return nil, err
 	}
@@ -114,6 +119,11 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 			Selected:       selectedSkills,
 			SelectedAgents: selectedAgents,
 			Discovered:     clone,
+			// Discovered is set, so the importer does not re-clone and Auth
+			// buys no network access here. It is what persists the
+			// CredentialRef into the origin sidecars and the lockfile
+			// source, which is what lets a later update re-resolve.
+			Auth: opts.Auth,
 		})
 		if ierr != nil {
 			return nil, ierr
@@ -145,7 +155,7 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 		res.Doc.Rules = resolved.rules
 	}
 	if !opts.DryRun {
-		if err := recordLockedPack(ctx, m.lockPath(), manifest, resolved, opts.Repo, opts.Ref, clone.CommitSHA); err != nil {
+		if err := recordLockedPack(ctx, m.lockPath(), manifest, resolved, opts.Repo, opts.Ref, clone.CommitSHA, opts.Auth.CredentialRef); err != nil {
 			return nil, err
 		}
 	}
@@ -369,12 +379,17 @@ func priorPackRules(lockPath, packName string) map[string]skills.LockedRule {
 // when the import wrote nothing (wiring-only packs, or a fully skipped
 // selection). The whole read-modify-write cycle holds the import
 // lockfile's cross-process lock.
-func recordLockedPack(ctx context.Context, lockPath string, m *pack.Manifest, resolved resolvedSelection, repo, ref, commitSHA string) error {
+//
+// credentialRef is carried onto a source this function creates. On the
+// normal path Import has already written it; this branch runs precisely
+// when Import wrote nothing, and without it a wiring-only private pack
+// would record no way to authenticate its next update.
+func recordLockedPack(ctx context.Context, lockPath string, m *pack.Manifest, resolved resolvedSelection, repo, ref, commitSHA, credentialRef string) error {
 	return skills.MutateLockFile(ctx, lockPath, func(lf *skills.LockFile) (bool, error) {
 		sourceName := skills.RepoToName(repo)
 		src, ok := lf.Sources[sourceName]
 		if !ok {
-			src = skills.LockedSource{Repo: repo, Ref: ref, CommitSHA: commitSHA}
+			src = skills.LockedSource{Repo: repo, Ref: ref, CommitSHA: commitSHA, CredentialRef: credentialRef}
 		}
 		src.Pack = &skills.LockedPack{
 			Name:        m.Name,
