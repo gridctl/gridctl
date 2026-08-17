@@ -163,10 +163,32 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
     s.key.toLowerCase().includes(filter.toLowerCase()),
   );
 
+  // The dropdown portals to document.body, which puts it outside any ancestor
+  // dialog's focus-trap container and outside its Escape handler's reach. Own
+  // both keys here rather than asking every consumer to opt in: a trap that
+  // cannot see this subtree yanks focus straight back out of it, and an
+  // ancestor listening for Escape closes the whole dialog instead of just the
+  // picker. React routes portal events through the component tree, so stopping
+  // propagation here does reach those document-level listeners.
+  const handleDropdownKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      setOpen(false);
+      triggerRef.current?.focus();
+      return;
+    }
+    if (e.key === 'Tab') {
+      // Let the browser move focus within the dropdown; an ancestor trap would
+      // treat this subtree as "outside" and pull focus back to the dialog.
+      e.stopPropagation();
+    }
+  };
+
   // Rendered via portal to escape ancestor overflow containers
   const dropdown = position && (
     <div
       ref={dropdownRef}
+      onKeyDown={handleDropdownKeyDown}
       style={{
         position: 'fixed',
         top: position.top,
