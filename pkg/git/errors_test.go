@@ -3,6 +3,7 @@ package git
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -63,5 +64,37 @@ func TestSentinelsAreDistinct(t *testing.T) {
 			t.Errorf("duplicate sentinel identity: %v", s)
 		}
 		seen[s] = struct{}{}
+	}
+}
+
+func TestClassifyError_DoesNotDoubleWrapAlreadyClassified(t *testing.T) {
+	// A failure raised against a sentinel inside gridctl, then wrapped with
+	// operational context, then classified on the way out. The sentinel text
+	// must appear once, not twice.
+	inner := fmt.Errorf("%w: SSH_AUTH_SOCK is unset in this gridctl process", ErrSSHAgentMissing)
+	wrapped := fmt.Errorf("cloning repository: %w", inner)
+
+	got := ClassifyError(wrapped)
+	if !errors.Is(got, ErrSSHAgentMissing) {
+		t.Fatalf("lost the sentinel: %v", got)
+	}
+	if n := strings.Count(got.Error(), ErrSSHAgentMissing.Error()); n != 1 {
+		t.Errorf("sentinel text appears %d times, want 1: %q", n, got.Error())
+	}
+	if got.Error() != wrapped.Error() {
+		t.Errorf("already-classified error was rewritten: %q", got.Error())
+	}
+}
+
+func TestClassifyError_StillClassifiesRawLibraryText(t *testing.T) {
+	// The substring fallback must still fire for errors that never touched a
+	// sentinel, which is the case the preflight cannot cover.
+	raw := errors.New(`error creating SSH agent: "SSH agent requested but SSH_AUTH_SOCK not-specified"`)
+	got := ClassifyError(raw)
+	if !errors.Is(got, ErrSSHAgentMissing) {
+		t.Fatalf("raw library text was not classified: %v", got)
+	}
+	if !errors.Is(got, raw) {
+		t.Error("classification dropped the original cause")
 	}
 }
