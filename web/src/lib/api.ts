@@ -21,11 +21,38 @@ export class AuthError extends Error {
  */
 export class HTTPError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /**
+   * Stable machine code for failures a client has a distinct remedy for
+   * (currently `ssh_agent_unavailable`). Branch on this, never on message
+   * text, which is prose and changes.
+   */
+  code?: string;
+  /**
+   * For an ssh-agent failure on an SSH URL, the server's rewrite of that URL
+   * to HTTPS. Absent when the input was not SSH-form.
+   */
+  httpsEquivalent?: string;
+  constructor(
+    status: number,
+    message: string,
+    extra?: { code?: string; httpsEquivalent?: string },
+  ) {
     super(message);
     this.status = status;
     this.name = 'HTTPError';
+    this.code = extra?.code;
+    this.httpsEquivalent = extra?.httpsEquivalent;
   }
+}
+
+/** Pull the structured git-error fields off an error response body. */
+function gitErrorExtra(data: unknown): { code?: string; httpsEquivalent?: string } {
+  const body = (data ?? {}) as { code?: unknown; httpsEquivalent?: unknown };
+  return {
+    code: typeof body.code === 'string' ? body.code : undefined,
+    httpsEquivalent:
+      typeof body.httpsEquivalent === 'string' ? body.httpsEquivalent : undefined,
+  };
 }
 
 /**
@@ -781,6 +808,7 @@ async function mutateJSON<T>(
     throw new HTTPError(
       response.status,
       data.error || `${method} ${endpoint} failed: ${response.status}`,
+      gitErrorExtra(data),
     );
   }
 
@@ -2866,7 +2894,11 @@ async function packFetch<T>(endpoint: string, method: 'GET' | 'POST' | 'DELETE',
     if (response.status === 409 && Array.isArray(data.findings)) {
       throw new PackFindingsError(data.error ?? 'Security findings', data.pack ?? '', data.findings);
     }
-    throw new HTTPError(response.status, data.error || `${method} ${endpoint} failed: ${response.status}`);
+    throw new HTTPError(
+      response.status,
+      data.error || `${method} ${endpoint} failed: ${response.status}`,
+      gitErrorExtra(data),
+    );
   }
   return response.json();
 }
@@ -2897,12 +2929,25 @@ export async function addPack(req: {
   path?: string;
   trust?: boolean;
   dryRun?: boolean;
+  auth?: SkillAuth;
 }): Promise<{ doc: PackAddDoc; notes: string[] }> {
   return packFetch<{ doc: PackAddDoc; notes: string[] }>('/api/packs', 'POST', req);
 }
 
-/** Resolve a pack manifest read-only. POST /api/packs/preview */
-export async function previewPack(req: { repo: string; ref?: string; path?: string }): Promise<PackPreview> {
+/**
+ * Resolve a pack manifest read-only. POST /api/packs/preview
+ *
+ * Omitting `auth` on a repository already imported with a credential
+ * reference makes the server resolve that stored reference, which is how an
+ * update previews a private pack with no user input. Passing an empty object
+ * is an explicit request to use no credentials.
+ */
+export async function previewPack(req: {
+  repo: string;
+  ref?: string;
+  path?: string;
+  auth?: SkillAuth;
+}): Promise<PackPreview> {
   return packFetch<PackPreview>('/api/packs/preview', 'POST', req);
 }
 

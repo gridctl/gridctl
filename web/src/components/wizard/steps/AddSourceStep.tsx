@@ -7,23 +7,16 @@ import {
   ExternalLink,
   FolderGit2,
   Clock,
-  ShieldCheck,
-  ChevronDown,
-  ChevronRight,
-  KeyRound,
-  X,
 } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { extractRepoInfo } from '../../../lib/repo';
 import { Button } from '../../ui/Button';
-import {
-  previewSkillSource,
-  fetchSkillSources,
-  HTTPError,
-  type SkillAuth,
-} from '../../../lib/api';
+import { previewSkillSource, fetchSkillSources } from '../../../lib/api';
+import { authBannerFor, isSSHUrl, shouldOpenAuthCard } from '../../../lib/gitAuthErrors';
 import { showToast } from '../../ui/Toast';
-import { VariablesPopover } from '../VariablesPopover';
+import { AuthCard } from '../AuthCard';
+import { useAuthCard } from '../useAuthCard';
+import type { SkillAuth } from '../../../lib/api';
 import type { AgentPreview, SkillPreview, SkillSourceStatus } from '../../../types';
 
 interface AddSourceStepProps {
@@ -40,27 +33,6 @@ interface AddSourceStepProps {
 const GITHUB_URL_REGEX = /^https?:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/;
 const GIT_URL_REGEX = /^(?:https?:\/\/|git@)[\w.-]+[:/][\w.-]+\/[\w.-]+(?:\.git)?$/;
 
-type AuthMode = 'vault' | 'token';
-
-function isSSHUrl(url: string): boolean {
-  const trimmed = url.trim();
-  return trimmed.startsWith('git@') || trimmed.startsWith('ssh://');
-}
-
-// Classify a scan error to decide whether to auto-open the auth card.
-function shouldOpenAuthCard(err: unknown): boolean {
-  if (err instanceof HTTPError) {
-    if (err.status === 401 || err.status === 404) return true;
-  }
-  const msg = err instanceof Error ? err.message.toLowerCase() : '';
-  return (
-    msg.includes('authentication required') ||
-    msg.includes('authentication failed') ||
-    msg.includes('repository not found') ||
-    msg.includes('credentials were rejected')
-  );
-}
-
 export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
   const [url, setUrl] = useState('');
   const [ref, setRef] = useState('');
@@ -72,11 +44,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
   const urlInputRef = useRef<HTMLInputElement>(null);
 
   // Auth card state — the whole card is transient, never persisted.
-  const [authOpen, setAuthOpen] = useState(false);
-  const [authMode, setAuthMode] = useState<AuthMode>('vault');
-  const [vaultRef, setVaultRef] = useState<string>('');
-  const [pasteToken, setPasteToken] = useState<string>('');
-  const [authBanner, setAuthBanner] = useState<string | null>(null);
+  const auth = useAuthCard();
 
   const ssh = isSSHUrl(url);
 
@@ -101,19 +69,6 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
     return GIT_URL_REGEX.test(val.trim()) || GITHUB_URL_REGEX.test(val.trim());
   };
 
-  // Build a SkillAuth from the current card state, or undefined to signal
-  // "ambient" (no auth header at all) which preserves public-repo behavior.
-  const buildAuth = useCallback((): SkillAuth | undefined => {
-    if (ssh) return undefined; // ambient ssh-agent
-    if (authMode === 'vault' && vaultRef) {
-      return { method: 'token', credentialRef: vaultRef };
-    }
-    if (authMode === 'token' && pasteToken) {
-      return { method: 'token', token: pasteToken };
-    }
-    return undefined;
-  }, [ssh, authMode, vaultRef, pasteToken]);
-
   const handleScan = async () => {
     const trimmedUrl = url.trim();
     if (!trimmedUrl) return;
@@ -125,9 +80,9 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
 
     setLoading(true);
     setError(null);
-    setAuthBanner(null);
+    auth.clearBanner();
 
-    const auth = buildAuth();
+    const authPayload = auth.buildAuth(ssh);
 
     try {
       const sourceName = trimmedUrl.split('/').pop()?.replace(/\.git$/, '') ?? 'source';
@@ -135,7 +90,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
         repo: trimmedUrl,
         ref: ref || undefined,
         path: path || undefined,
-        auth,
+        auth: authPayload,
       });
 
       const malformed = result.malformed ?? [];
@@ -164,19 +119,14 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
         );
       }
 
-      onPreviewLoaded(result.skills, trimmedUrl, ref, path, auth, agents);
+      onPreviewLoaded(result.skills, trimmedUrl, ref, path, authPayload, agents);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to scan repository';
       setError(msg);
       showToast('error', msg);
 
       if (shouldOpenAuthCard(err) && !ssh) {
-        setAuthOpen(true);
-        setAuthBanner(
-          err instanceof HTTPError && err.status === 404
-            ? 'Not found. If this is a private repository, add credentials below and try again.'
-            : 'This repository requires authentication.',
-        );
+        auth.openWithBanner(authBannerFor(err));
       }
     } finally {
       setLoading(false);
@@ -278,123 +228,9 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
           </div>
         </div>
 
-        {/* Auth card — inline collapsible. Collapsed by default; auto-opens
-            on 401/404 from a scan. Transient only: never persisted. */}
-        <div
-          data-testid="auth-card"
-          className={cn(
-            'rounded-lg border border-border/30 bg-white/[0.02] transition-colors',
-            authOpen && 'border-border/50 bg-white/[0.03]',
-          )}
-        >
-          <button
-            type="button"
-            aria-expanded={authOpen}
-            aria-controls="auth-card-body"
-            onClick={() => setAuthOpen((v) => !v)}
-            className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-text-secondary hover:text-text-primary transition-colors"
-          >
-            <ShieldCheck size={12} className="text-primary/70" />
-            <span className="font-medium">Authentication</span>
-            <span className="text-text-muted text-[10px]">
-              {ssh ? '— using ssh-agent' : authOpen ? '' : '(optional)'}
-            </span>
-            <span className="ml-auto text-text-muted">
-              {authOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            </span>
-          </button>
-
-          {authOpen && (
-            <div
-              id="auth-card-body"
-              className="px-3 pb-3 pt-1 space-y-2.5 border-t border-border/20"
-            >
-              {authBanner && (
-                <div className="flex items-start gap-1.5 text-[10px] text-status-pending bg-status-pending/5 border border-status-pending/20 rounded-md px-2 py-1.5">
-                  <AlertCircle size={10} className="mt-0.5 flex-shrink-0" />
-                  <span>{authBanner}</span>
-                </div>
-              )}
-
-              {ssh ? (
-                <div className="flex items-center gap-1.5 text-[10px] text-text-muted">
-                  <KeyRound size={10} />
-                  <span>Using ssh-agent — no token needed.</span>
-                </div>
-              ) : (
-                <>
-                  {/* Mode selector — real radios for accessibility */}
-                  <fieldset className="flex gap-1 text-[10px]">
-                    <legend className="sr-only">Authentication method</legend>
-                    {(
-                      [
-                        { v: 'vault', label: 'Vault secret', sub: 'recommended' },
-                        { v: 'token', label: 'Paste token', sub: 'not saved' },
-                      ] as const
-                    ).map((opt) => (
-                      <label
-                        key={opt.v}
-                        className={cn(
-                          'flex-1 cursor-pointer rounded-md px-2 py-1.5 border text-center transition-colors',
-                          authMode === opt.v
-                            ? 'bg-primary/10 border-primary/30 text-primary'
-                            : 'bg-white/[0.02] border-white/[0.06] text-text-muted hover:text-text-secondary',
-                        )}
-                      >
-                        <input
-                          type="radio"
-                          name="auth-mode"
-                          value={opt.v}
-                          checked={authMode === opt.v}
-                          onChange={() => setAuthMode(opt.v)}
-                          className="sr-only"
-                        />
-                        <span className="block font-medium">{opt.label}</span>
-                        <span className="block text-[9px] opacity-70">{opt.sub}</span>
-                      </label>
-                    ))}
-                  </fieldset>
-
-                  {authMode === 'vault' ? (
-                    <div className="flex items-center gap-2">
-                      {vaultRef ? (
-                        <div className="flex-1 flex items-center justify-between gap-2 bg-background/60 border border-border/40 rounded-md px-2 py-1.5 text-[10px] font-mono text-text-primary">
-                          <span className="truncate">{vaultRef}</span>
-                          <button
-                            type="button"
-                            onClick={() => setVaultRef('')}
-                            className="text-text-muted hover:text-status-error transition-colors"
-                            aria-label="Clear vault selection"
-                          >
-                            <X size={11} />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex-1 text-[10px] text-text-muted italic px-1">
-                          Choose a vault key →
-                        </div>
-                      )}
-                      <VariablesPopover onSelect={setVaultRef} />
-                    </div>
-                  ) : (
-                    <>
-                      <input
-                        type="password"
-                        value={pasteToken}
-                        onChange={(e) => setPasteToken(e.target.value)}
-                        placeholder="Personal Access Token"
-                        className="w-full bg-background/60 border border-border/40 rounded-md px-2 py-1.5 text-[11px] font-mono focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors"
-                      />
-                      <p className="text-[10px] text-text-muted">
-                        Used once for this scan — not saved anywhere.
-                      </p>
-                    </>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-        </div>
+        {/* Credentials — collapsed and optional; auto-opens on an
+            auth-shaped failure. Transient only: never persisted. */}
+        <AuthCard controller={auth} ssh={ssh} />
 
         {/* Scan button */}
         <Button
