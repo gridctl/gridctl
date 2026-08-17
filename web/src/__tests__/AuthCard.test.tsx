@@ -19,16 +19,14 @@ vi.mock('../lib/api', async () => {
  */
 function Harness({
   ssh = false,
-  inDialog = false,
   onController,
 }: {
   ssh?: boolean;
-  inDialog?: boolean;
   onController?: (c: AuthCardController) => void;
 }) {
   const controller = useAuthCard();
   onController?.(controller);
-  return <AuthCard controller={controller} ssh={ssh} inDialog={inDialog} />;
+  return <AuthCard controller={controller} ssh={ssh} />;
 }
 
 describe('AuthCard', () => {
