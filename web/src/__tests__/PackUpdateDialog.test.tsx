@@ -9,7 +9,7 @@ vi.mock('../lib/api', async () => {
     ...actual,
     previewPack: vi.fn(),
     addPack: vi.fn(),
-    fetchVariables: vi.fn().mockResolvedValue([]),
+    fetchVariables: vi.fn().mockResolvedValue([{ key: 'GIT_TOKEN', secret: true }]),
     createVariable: vi.fn(),
   };
 });
@@ -157,5 +157,69 @@ describe('PackUpdateDialog', () => {
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/boom/i));
     expect(screen.getByRole('button', { name: /update from origin/i })).toBeDisabled();
+  });
+});
+
+/**
+ * The vault picker portals its dropdown to document.body, which puts it outside
+ * the dialog's focus-trap container and outside the dialog's Escape handler.
+ * Both of those defaults are actively wrong for a picker that belongs to the
+ * dialog, and this is the recommended recovery path for a private pack imported
+ * with a one-off token, so it has to be keyboard-reachable.
+ */
+describe('PackUpdateDialog — vault picker keyboard handling', () => {
+  beforeEach(() => {
+    mockPreview.mockReset();
+    mockAdd.mockReset();
+  });
+
+  async function openVaultPicker(onClose = vi.fn()) {
+    mockPreview.mockRejectedValueOnce(new AuthError('Authentication required'));
+    render(
+      <PackUpdateDialog
+        packName="team-pack"
+        origin={origin}
+        onClose={onClose}
+        onUpdated={vi.fn()}
+      />,
+    );
+    await waitFor(() => screen.getByRole('button', { name: /retry with credentials/i }));
+    fireEvent.click(screen.getByRole('button', { name: /authentication/i }));
+    fireEvent.click(screen.getByTitle('Insert variable'));
+    const filter = await waitFor(() => screen.getByPlaceholderText(/filter variables/i));
+    return { filter, onClose };
+  }
+
+  it('Escape closes the picker, not the dialog', async () => {
+    const { filter, onClose } = await openVaultPicker();
+
+    fireEvent.keyDown(filter, { key: 'Escape' });
+
+    expect(onClose).not.toHaveBeenCalled();
+    // The picker itself closed, so Escape did something visible.
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText(/filter variables/i)).not.toBeInTheDocument(),
+    );
+  });
+
+  // Asserted on the event rather than on resulting focus: the dialog's focus
+  // trap only ever moves focus by calling preventDefault first, so an
+  // uncancelled Tab means the trap never ran. Checking document.activeElement
+  // instead would be order-dependent, because jsdom reports offsetParent as
+  // null for every element, which changes which branch of the trap fires.
+  it('Tab is left alone, so the trap cannot yank focus out of the picker', async () => {
+    const { filter } = await openVaultPicker();
+
+    const notCancelled = fireEvent.keyDown(filter, { key: 'Tab' });
+
+    expect(notCancelled).toBe(true);
+  });
+
+  it('Shift+Tab is left alone too', async () => {
+    const { filter } = await openVaultPicker();
+
+    const notCancelled = fireEvent.keyDown(filter, { key: 'Tab', shiftKey: true });
+
+    expect(notCancelled).toBe(true);
   });
 });
