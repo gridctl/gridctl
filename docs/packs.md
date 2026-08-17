@@ -32,10 +32,29 @@ Field names follow the Claude Code plugin.json family where the semantics match,
 
 | Command | Purpose |
 |---|---|
-| `gridctl pack add <repo-url>` | Clone, read the manifest, and import exactly its selection into the registry (`--ref`, `--trust`, `--dry-run`, `--format json`). Registry-side only. Exit `0` clean, `1` partial (unresolved or skipped), `2` infrastructure. |
+| `gridctl pack add <repo-url>` | Clone, read the manifest, and import exactly its selection into the registry (`--ref`, `--trust`, `--dry-run`, `--format json`). Auth flags for private repos: `--vault-key <key>`, `--auth-token-stdin`, `--auth-token <pat>`, `--ssh-key <path>`. Registry-side only. Exit `0` clean, `1` partial (unresolved or skipped), `2` infrastructure. |
 | `gridctl pack apply <name>` | Project the pack: skills and agents through the projection engines, rule fragments through `ctx` (pack-tagged), and (when `wiring: true`) the gateway entry through the wiring ownership manager, scoped to `clients:`. Additive, never transactional: each resource succeeds or skips independently (`Applied N/M` summary), drifted resources skip with an adopt/`--force` hint, a resource tagged by a different pack is refused, and wiring skips with a hint when no gateway is running. `--force`, `--dry-run`, `--clients`, `--format json`. |
 | `gridctl pack status [name]` | Per-resource state in the shared vocabulary (in-sync, stale, drifted, target-missing, foreign, missing) plus `unresolved` rows. Exit `0`/`1`/`2`. |
 | `gridctl pack remove <name>` | Cascade removal in dependency order: projections unsynced from client trees (rule fragment projections by pack tag only), wiring records removed through the ownership manager (entries gridctl did not record are never deleted), then the pack's registry skills, agents, and installed fragments, then the pack record. Drifted projections are kept with a remediation hint unless `--force`; a partial removal trims the pack record to what stayed. `--dry-run`, `--format json`. |
+
+## Private pack repositories
+
+A pack is a git repository, so a private one needs credentials the same way an imported skill source does. `gridctl pack add` takes the same flags as `gridctl skill add`:
+
+- `--vault-key <key>`: resolves the token from a `${var:KEY}` vault entry. Prefer this. It is the only form gridctl can re-resolve later, so it is the only one where a private pack keeps updating after the first import.
+- `--auth-token-stdin`: reads the token from stdin, keeping it out of shell history and out of the process list. `--auth-token -` does the same thing.
+- `--auth-token <pat>`: an ephemeral HTTPS token, kept for CI ergonomics. Passing a literal value prints a warning, because the value lands in your shell history and is visible to anyone who can run `ps`.
+- `--ssh-key <path>`: an SSH private key path. Set `GRIDCTL_SSH_KEY_PASSPHRASE` if the key is encrypted.
+
+Only the reference is ever written to disk. A pack imported with `--vault-key GIT_TOKEN` records `${var:GIT_TOKEN}` in the import lockfile and in each resource's origin sidecar, never the token value, and a later `gridctl skill update` re-resolves it with nothing re-supplied. A pack imported with a literal or piped token records no reference at all, by design, so its next update falls back to ambient credentials.
+
+Over REST, `POST /api/packs` and `POST /api/packs/preview` accept the same optional `auth` object the skill source endpoints take. Omit it on a repository that was already imported with a `--vault-key` reference and the stored reference is used automatically, which is how the web UI's update dialog previews a private pack without asking for anything.
+
+### The daemon and ssh-agent
+
+`gridctl apply` and `gridctl serve` daemonize by re-spawning with the environment of the shell that launched them, so the daemon has a usable `SSH_AUTH_SOCK` only if that shell did, and a long-running daemon can outlive the agent it inherited. Every import driven from the web UI or the REST API runs in the daemon's environment, not in the shell of whoever is using the browser. If you rely on an agent, start it before the daemon and restart the daemon after restarting the agent.
+
+gridctl does not read `~/.ssh/config`. Per-host `IdentityFile` entries have no effect, which is why an SSH URL that works with the `git` CLI can still fail here. For a private pack the dependable options are an HTTPS URL with `--vault-key`, or `--ssh-key` naming the key explicitly.
 
 ## Interplay with the standalone verbs
 

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/contexts"
+	gitpkg "github.com/gridctl/gridctl/pkg/git"
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/pack"
 	"github.com/gridctl/gridctl/pkg/packops"
@@ -67,11 +68,15 @@ func newPackManagers() (*packops.Managers, error) {
 // --- pack add ---
 
 var (
-	packAddRef    string
-	packAddTrust  bool
-	packAddDryRun bool
-	packAddFormat string
-	packAddJSON   *bool
+	packAddRef            string
+	packAddTrust          bool
+	packAddDryRun         bool
+	packAddFormat         string
+	packAddJSON           *bool
+	packAddAuthToken      string
+	packAddAuthTokenStdin bool
+	packAddVaultKey       string
+	packAddSSHKey         string
 )
 
 var packAddCmd = &cobra.Command{
@@ -90,7 +95,8 @@ Exit codes:
   0  imported cleanly
   1  partial (unresolved selections, or skipped resources)
   2  infrastructure error (clone, auth, missing or invalid manifest)`,
-	Args: cobra.ExactArgs(1),
+	Args:    cobra.ExactArgs(1),
+	PreRunE: validateSkillAuthFlags(&packAddAuthToken, &packAddVaultKey, &packAddAuthTokenStdin),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		format, err := resolveFormat(packAddFormat, cmd.Flags().Changed("format"), *packAddJSON)
 		if err != nil {
@@ -108,7 +114,12 @@ Exit codes:
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
 		}
-		if exit := runPackAdd(cmd.Context(), os.Stdout, os.Stderr, mgrs, imp, args[0], packAddRef, packAddTrust, packAddDryRun, format); exit != ctxExitOK {
+		authCfg, err := buildAuthConfigFromFlags(os.Stderr, os.Stdin, packAddAuthToken, packAddAuthTokenStdin, packAddVaultKey, packAddSSHKey)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(ctxExitInfrastructure)
+		}
+		if exit := runPackAdd(cmd.Context(), os.Stdout, os.Stderr, mgrs, imp, args[0], packAddRef, packAddTrust, packAddDryRun, format, authCfg); exit != ctxExitOK {
 			os.Exit(exit)
 		}
 		return nil
@@ -116,10 +127,15 @@ Exit codes:
 }
 
 // runPackAdd clones, resolves the manifest selection, and imports.
-func runPackAdd(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Managers, imp *skills.Importer, repo, ref string, trust, dryRun bool, format string) int {
-	res, err := mgrs.Add(ctx, imp, packops.AddOptions{Repo: repo, Ref: ref, Trust: trust, DryRun: dryRun})
+func runPackAdd(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Managers, imp *skills.Importer, repo, ref string, trust, dryRun bool, format string, auth skills.AuthConfig) int {
+	res, err := mgrs.Add(ctx, imp, packops.AddOptions{Repo: repo, Ref: ref, Trust: trust, DryRun: dryRun, Auth: auth})
 	if err != nil {
-		fmt.Fprintln(stderr, err)
+		// Same classify-hint-redact path as 'skill add'. Printing the raw
+		// error here used to leak a token embedded in the repo URL and told
+		// the user nothing about how to authenticate.
+		classified := gitpkg.ClassifyError(err)
+		printSkillAuthHint(stderr, repo, classified)
+		fmt.Fprintln(stderr, gitpkg.RedactError(classified))
 		return ctxExitInfrastructure
 	}
 	doc := res.Doc
@@ -472,6 +488,10 @@ func init() {
 	packAddCmd.Flags().BoolVar(&packAddTrust, "trust", false, "Proceed despite security findings")
 	packAddCmd.Flags().BoolVar(&packAddDryRun, "dry-run", false, "Resolve and report without importing")
 	packAddCmd.Flags().StringVar(&packAddFormat, "format", "text", "Output format: text or json")
+	packAddCmd.Flags().StringVar(&packAddAuthToken, "auth-token", "", "Personal Access Token (HTTPS only; not persisted; intended for CI use). Pass \"-\" to read it from stdin")
+	packAddCmd.Flags().BoolVar(&packAddAuthTokenStdin, "auth-token-stdin", false, "Read the Personal Access Token from stdin (keeps it out of shell history)")
+	packAddCmd.Flags().StringVar(&packAddVaultKey, "vault-key", "", "Resolve the PAT from this vault key (e.g. GIT_TOKEN)")
+	packAddCmd.Flags().StringVar(&packAddSSHKey, "ssh-key", "", "Use an SSH private key at this path (SSH URLs only)")
 	packAddJSON = addJSONAlias(packAddCmd)
 
 	packApplyCmd.Flags().BoolVar(&packApplyForce, "force", false, "Overwrite drifted or foreign resources (after backup)")

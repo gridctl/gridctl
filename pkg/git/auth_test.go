@@ -3,6 +3,8 @@ package git
 import (
 	"errors"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
@@ -103,5 +105,40 @@ func TestSSHKeyFileAuth_MissingFile(t *testing.T) {
 	_, err := SSHKeyFileAuth{KeyPath: "/definitely/does/not/exist/keyfile"}.AuthFor("git@github.com:a/b")
 	if err == nil {
 		t.Error("expected error loading nonexistent key file")
+	}
+}
+
+func TestSSHAgentAvailable_Unset(t *testing.T) {
+	t.Setenv("SSH_AUTH_SOCK", "")
+	err := SSHAgentAvailable()
+	if !errors.Is(err, ErrSSHAgentMissing) {
+		t.Fatalf("expected ErrSSHAgentMissing, got %v", err)
+	}
+	// The remedy differs by cause, so the message must distinguish "never had
+	// one" from "had one and lost it".
+	if !strings.Contains(err.Error(), "unset") {
+		t.Errorf("message should say the socket is unset, got %q", err.Error())
+	}
+}
+
+func TestSSHAgentAvailable_UnreachableSocket(t *testing.T) {
+	t.Setenv("SSH_AUTH_SOCK", filepath.Join(t.TempDir(), "gone.sock"))
+	err := SSHAgentAvailable()
+	if !errors.Is(err, ErrSSHAgentMissing) {
+		t.Fatalf("expected ErrSSHAgentMissing for a stale path, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "cannot reach") {
+		t.Errorf("message should say the socket is unreachable, got %q", err.Error())
+	}
+}
+
+func TestSSHAgentAvailable_Reachable(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "agent.sock")
+	if err := os.WriteFile(sock, nil, 0600); err != nil {
+		t.Fatalf("stub socket: %v", err)
+	}
+	t.Setenv("SSH_AUTH_SOCK", sock)
+	if err := SSHAgentAvailable(); err != nil {
+		t.Errorf("expected nil for a reachable socket path, got %v", err)
 	}
 }

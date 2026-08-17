@@ -46,6 +46,25 @@ func DetectProtocol(url string) Protocol {
 	}
 }
 
+// SSHAgentAvailable reports whether this process can reach an ssh-agent,
+// returning ErrSSHAgentMissing when it cannot.
+//
+// The distinction matters for error text: the shell a user types in usually
+// does have an agent, so "no ssh-agent" reads as wrong. A daemonized gridctl
+// inherits SSH_AUTH_SOCK only from the shell that started it, and a
+// long-running daemon can outlive the agent it inherited, so the accurate
+// statement is that this process has no reachable socket.
+func SSHAgentAvailable() error {
+	sock := os.Getenv("SSH_AUTH_SOCK")
+	if sock == "" {
+		return fmt.Errorf("%w: SSH_AUTH_SOCK is unset in this gridctl process, which inherits an agent only from the shell that started it", ErrSSHAgentMissing)
+	}
+	if _, err := os.Stat(sock); err != nil {
+		return fmt.Errorf("%w: SSH_AUTH_SOCK names %q, which this gridctl process cannot reach (the agent may have exited since the process started)", ErrSSHAgentMissing, sock)
+	}
+	return nil
+}
+
 // Auther returns a transport.AuthMethod appropriate for the given URL.
 // A nil AuthMethod with a nil error means "no credentials required"; a
 // non-nil error surfaces misconfiguration (wrong protocol, missing agent,
@@ -94,8 +113,8 @@ func (a SSHAgentAuth) AuthFor(url string) (transport.AuthMethod, error) {
 	if p := DetectProtocol(url); p != ProtocolSSH {
 		return nil, fmt.Errorf("%w: SSHAgentAuth requires an ssh:// or user@host:path URL, got %q (%s)", ErrProtocolMismatch, url, p)
 	}
-	if os.Getenv("SSH_AUTH_SOCK") == "" {
-		return nil, ErrSSHAgentMissing
+	if err := SSHAgentAvailable(); err != nil {
+		return nil, err
 	}
 	user := a.User
 	if user == "" {

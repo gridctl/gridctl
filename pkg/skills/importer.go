@@ -66,6 +66,19 @@ func resolveAuther(cfg AuthConfig, url string) (gitpkg.Auther, error) {
 			return gitpkg.HTTPSTokenAuth{Token: token}, nil
 		}
 	}
+	// Ambient SSH: go-git dials the agent itself from a nil AuthMethod and
+	// reports a raw xanzy/ssh-agent string when it cannot, which tells the
+	// user nothing they can act on. Preflight so the failure names the cause.
+	//
+	// NoAuth is still what we return once an agent is reachable. Substituting
+	// SSHAgentAuth here would look tidier but would force the user to "git",
+	// discarding an explicit user@host from the URL that go-git's own default
+	// builder honors.
+	if gitpkg.DetectProtocol(url) == gitpkg.ProtocolSSH {
+		if err := gitpkg.SSHAgentAvailable(); err != nil {
+			return nil, err
+		}
+	}
 	return gitpkg.NoAuth{}, nil
 }
 
