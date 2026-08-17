@@ -1,6 +1,6 @@
 import { useCallback, useId, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { AlertTriangle, ArrowLeft, CheckCircle2, Download, Loader2, Package } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, Download, Loader2, Package, ShieldAlert } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { Button } from '../../ui/Button';
 import { showToast } from '../../ui/Toast';
@@ -15,6 +15,15 @@ import {
   type PackPreviewResource,
 } from '../../../lib/api';
 import { describeApplyDoc } from '../../registry/packs/packModel';
+import { AuthCard } from '../AuthCard';
+import { useAuthCard } from '../useAuthCard';
+import {
+  authBannerFor,
+  httpsEquivalentOf,
+  isSSHAgentError,
+  isSSHUrl,
+  shouldOpenAuthCard,
+} from '../../../lib/gitAuthErrors';
 
 type PackStep = 'source' | 'review' | 'done';
 
@@ -45,27 +54,71 @@ export function PackImportWizard() {
   // add, or a daemon whose preview omitted blocking) carries the server's
   // findings; adopting them re-arms the trust gate instead of dead-ending.
   const [serverFindings, setServerFindings] = useState<PackPreviewResource[] | null>(null);
+  const auth = useAuthCard();
+  // The ssh-agent failure is auth-shaped but a token cannot fix it, so it gets
+  // its own banner instead of opening the credentials card.
+  const [agentBlock, setAgentBlock] = useState<{ message: string; https?: string } | null>(null);
+
+  const ssh = isSSHUrl(repo);
+
+  /**
+   * Route a clone failure to the one remedy that fits it. Shared by preview
+   * and install so an auth failure discovered at either point lands the user
+   * in the same place, with every field they filled still filled.
+   */
+  const handleCloneFailure = useCallback(
+    (err: unknown, fallback: string) => {
+      const msg = err instanceof Error ? err.message : fallback;
+      setSourceError(msg);
+      if (isSSHAgentError(err)) {
+        setAgentBlock({ message: msg, https: httpsEquivalentOf(err) });
+        return;
+      }
+      setAgentBlock(null);
+      if (shouldOpenAuthCard(err) && !ssh) {
+        auth.openWithBanner(authBannerFor(err));
+      }
+    },
+    [ssh, auth],
+  );
 
   const handlePreview = useCallback(async () => {
     if (!repo.trim() || loading) return;
     setLoading(true);
     setSourceError(null);
+    setAgentBlock(null);
+    auth.clearBanner();
     try {
       const p = await previewPack({
         repo: repo.trim(),
         ref: ref.trim() || undefined,
         path: path.trim() || undefined,
+        auth: auth.buildAuth(ssh),
       });
       setPreview(p);
       setTrustAck(false);
       setServerFindings(null);
       setStep('review');
     } catch (err) {
-      setSourceError(err instanceof Error ? err.message : 'Preview failed');
+      handleCloneFailure(err, 'Preview failed');
     } finally {
       setLoading(false);
     }
-  }, [repo, ref, path, loading]);
+  }, [repo, ref, path, loading, auth, ssh, handleCloneFailure]);
+
+  /**
+   * Swap the SSH URL for the HTTPS one the server derived and open the
+   * credentials card in vault mode. This is the only remedy a browser user can
+   * act on: an agent lives in the daemon's environment, not theirs.
+   */
+  const switchToHTTPS = useCallback(() => {
+    const https = agentBlock?.https;
+    if (!https) return;
+    setRepo(https);
+    setAgentBlock(null);
+    setSourceError(null);
+    auth.openInVaultMode('Now using HTTPS. Choose a vault secret holding a token with read access.');
+  }, [agentBlock, auth]);
 
   const previewFlagged: PackPreviewResource[] = preview
     ? [...preview.skills, ...preview.agents, ...preview.rules].filter(
@@ -87,6 +140,7 @@ export function PackImportWizard() {
         ref: ref.trim() || undefined,
         path: path.trim() || undefined,
         trust: needsTrust && trustAck,
+        auth: auth.buildAuth(ssh),
       });
       setInstalled(res);
       setStep('done');
@@ -95,13 +149,19 @@ export function PackImportWizard() {
         setServerFindings(err.findings);
         setTrustAck(false);
         showToast('error', err.message);
+      } else if (isSSHAgentError(err) || shouldOpenAuthCard(err)) {
+        // Credentials live on the source step, so that is where the fix is.
+        // Going back preserves every field: it is the same component state,
+        // not a restart.
+        handleCloneFailure(err, 'Import failed');
+        setStep('source');
       } else {
         showToast('error', err instanceof Error ? err.message : 'Import failed');
       }
     } finally {
       setInstalling(false);
     }
-  }, [preview, installing, repo, ref, path, needsTrust, trustAck]);
+  }, [preview, installing, repo, ref, path, needsTrust, trustAck, auth, ssh, handleCloneFailure]);
 
   const goToPack = useCallback(
     (packName: string) => {
@@ -178,10 +238,39 @@ export function PackImportWizard() {
           </label>
         </div>
 
+        {/* Credentials — collapsed and optional. Most packs are public, so
+            leading with a credentials question would tax every import for the
+            minority case; it opens itself when a clone fails auth-shaped. */}
+        <AuthCard controller={auth} ssh={ssh} />
+
+        {/* One announcement channel for source-step failures: this region,
+            never a toast as well. */}
         {sourceError && (
           <p role="alert" className="text-xs text-status-error">
             {sourceError}
           </p>
+        )}
+
+        {agentBlock && (
+          <div className="rounded-lg border border-status-pending/30 bg-status-pending/5 p-3 space-y-2">
+            <p className="flex items-center gap-1.5 text-xs text-status-pending font-medium">
+              <ShieldAlert size={13} aria-hidden="true" /> No ssh-agent reachable
+            </p>
+            <p className="text-[11px] text-text-muted">
+              The gridctl daemon has no usable agent socket. It inherits one only from the
+              shell that started it, and can outlive it, so an agent in your own terminal
+              does not help here. A token cannot authenticate an SSH URL.
+            </p>
+            {agentBlock.https && (
+              <Button size="sm" onClick={switchToHTTPS}>
+                Try HTTPS instead
+              </Button>
+            )}
+            <p className="text-[11px] text-text-muted">
+              Otherwise: start an agent, add your key, and restart the daemon so it inherits
+              the socket.
+            </p>
+          </div>
         )}
 
         <div className="flex justify-end">
