@@ -148,6 +148,47 @@ failed to start server on port 9000: listen tcp :9000: bind: address already in 
 
 ---
 
+## Skills, Agents, and Packs
+
+### ssh agent not available
+
+**Symptoms:**
+
+```
+ssh agent not available: SSH_AUTH_SOCK is unset in this gridctl process, which
+inherits an agent only from the shell that started it
+```
+
+Over REST this arrives as HTTP 422 with `"code": "ssh_agent_unavailable"` and, for an SSH URL, an `httpsEquivalent` field naming the HTTPS URL for the same repository.
+
+**Causes:**
+
+Importing a skill, agent, or pack from an SSH URL when the gridctl process has no reachable ssh-agent socket. Note the wording: your shell almost certainly does have an agent. The process doing the clone may not.
+
+- `gridctl apply` and `gridctl serve` daemonize by re-spawning with the launching shell's environment, so a daemon started from a shell without an agent never had one, and a long-running daemon can outlive the agent it did inherit.
+- Every import from the web UI or the REST API runs in the daemon's environment, not in your terminal's.
+- gridctl does not read `~/.ssh/config`, so a per-host `IdentityFile` entry that makes plain `git clone` work does nothing here.
+
+**Resolution:**
+
+1. Use the HTTPS URL with a credential, which needs no agent at all:
+   ```bash
+   gridctl pack add https://github.com/acme/pack --vault-key GIT_TOKEN
+   ```
+
+2. Or start an agent and restart the daemon so it inherits the socket. Restarting the agent alone is not enough; the daemon captured its environment at start:
+   ```bash
+   eval "$(ssh-agent -s)" && ssh-add
+   gridctl serve --foreground
+   ```
+
+3. Or name the key directly, which bypasses the agent:
+   ```bash
+   gridctl pack add git@github.com:acme/pack.git --ssh-key ~/.ssh/id_ed25519
+   ```
+
+---
+
 ## Container Startup
 
 ### Image pull failures
