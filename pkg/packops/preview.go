@@ -17,6 +17,9 @@ type PreviewOptions struct {
 	Repo string
 	Ref  string
 	Path string
+	// Auth authenticates the clone. A zero value keeps the ambient
+	// behavior (ssh-agent for SSH, GITHUB_TOKEN for HTTPS, else anonymous).
+	Auth skills.AuthConfig
 }
 
 // PreviewResource is one resolved resource with its scan findings.
@@ -69,7 +72,7 @@ func Preview(ctx context.Context, opts PreviewOptions) (*PreviewResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	clone, err := skills.CloneAndDiscover(opts.Repo, opts.Ref, opts.Path, skills.AuthConfig{}, slog.Default())
+	clone, err := skills.CloneAndDiscover(opts.Repo, opts.Ref, opts.Path, opts.Auth, slog.Default())
 	if err != nil {
 		return nil, err
 	}
