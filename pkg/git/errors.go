@@ -50,6 +50,19 @@ func ClassifyError(err error) error {
 	if err == nil {
 		return nil
 	}
+	// Already classified: return it untouched. Some failures are raised
+	// against a sentinel here in gridctl and then classified again on the way
+	// out, and re-wrapping would print the sentinel's text twice ("ssh agent
+	// not available: cloning: ssh agent not available: ...").
+	for _, sentinel := range []error{
+		ErrAuthRequired, ErrAuthFailed, ErrNotFound,
+		ErrHostKeyMismatch, ErrSSHAgentMissing,
+		ErrEmptyToken, ErrProtocolMismatch,
+	} {
+		if errors.Is(err, sentinel) {
+			return err
+		}
+	}
 	switch {
 	case errors.Is(err, transport.ErrAuthenticationRequired):
 		return fmt.Errorf("%w: %w", ErrAuthRequired, err)
