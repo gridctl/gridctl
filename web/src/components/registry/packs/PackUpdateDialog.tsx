@@ -11,6 +11,9 @@ import {
   type PackPreview,
   type PackPreviewResource,
 } from '../../../lib/api';
+import { AuthCard } from '../../wizard/AuthCard';
+import { useAuthCard } from '../../wizard/useAuthCard';
+import { isSSHAgentError, isSSHUrl, shouldOpenAuthCard } from '../../../lib/gitAuthErrors';
 
 interface PackUpdateDialogProps {
   packName: string;
@@ -38,20 +41,41 @@ export function PackUpdateDialog({ packName, origin, onClose, onUpdated }: PackU
   const [trustAck, setTrustAck] = useState(false);
   const [busy, setBusy] = useState(false);
   const [serverFindings, setServerFindings] = useState<PackPreviewResource[] | null>(null);
+  const auth = useAuthCard();
+  // Whether the failure is one credentials could fix. A missing ssh-agent is
+  // not, so offering a token field there would imply a remedy that does not
+  // exist.
+  const [authFixable, setAuthFixable] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
+  const ssh = isSSHUrl(origin.repo);
+
+  // Preview on mount, and again on an explicit retry. Sending no auth field is
+  // deliberate: the server then resolves the credential reference recorded at
+  // import, which is what lets a vault-backed private pack resolve here with
+  // no input at all.
   useEffect(() => {
     let cancelled = false;
-    previewPack({ repo: origin.repo, ref: origin.ref })
+    const supplied = auth.buildAuth(ssh);
+    previewPack({ repo: origin.repo, ref: origin.ref, auth: supplied })
       .then((p) => {
-        if (!cancelled) setPreview(p);
+        if (cancelled) return;
+        setPreview(p);
+        setPreviewError(null);
+        setAuthFixable(false);
       })
       .catch((err) => {
-        if (!cancelled) setPreviewError(err instanceof Error ? err.message : 'Preview failed');
+        if (cancelled) return;
+        setPreviewError(err instanceof Error ? err.message : 'Preview failed');
+        setAuthFixable(!isSSHAgentError(err) && shouldOpenAuthCard(err) && !ssh);
       });
     return () => {
       cancelled = true;
     };
-  }, [origin.repo, origin.ref]);
+    // auth.buildAuth is read at call time; retries bump `attempt` on purpose so
+    // a credential the user just entered is picked up without remounting.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [origin.repo, origin.ref, attempt, ssh]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -81,6 +105,7 @@ export function PackUpdateDialog({ packName, origin, onClose, onUpdated }: PackU
         repo: origin.repo,
         ref: origin.ref,
         trust: needsTrust && trustAck,
+        auth: auth.buildAuth(ssh),
       });
       for (const note of res.notes ?? []) showToast('success', note);
       const skipped = res.doc.skipped ?? [];
@@ -103,7 +128,7 @@ export function PackUpdateDialog({ packName, origin, onClose, onUpdated }: PackU
       }
       setBusy(false);
     }
-  }, [busy, origin.repo, origin.ref, needsTrust, trustAck, packName, onUpdated]);
+  }, [busy, origin.repo, origin.ref, needsTrust, trustAck, packName, onUpdated, auth, ssh]);
 
   return (
     <div className="fixed inset-0 z-[60] animate-fade-in-scale bg-background/80 backdrop-blur-sm flex items-center justify-center">
@@ -125,8 +150,32 @@ export function PackUpdateDialog({ packName, origin, onClose, onUpdated }: PackU
             {origin.repo}
             {origin.ref ? `@${origin.ref}` : ''}
           </p>
-          {previewError && <p className="text-status-error">{previewError}</p>}
+          {previewError && (
+            <p role="alert" className="text-status-error">
+              {previewError}
+            </p>
+          )}
           {!preview && !previewError && <p>Resolving the manifest…</p>}
+
+          {/* A private pack whose credential was a one-off token records no
+              reference to re-resolve, so this dialog used to open straight into
+              an error with Update disabled and nothing to do about it. */}
+          {authFixable && (
+            <div className="space-y-2">
+              <p className="text-[11px]">
+                This repository needs credentials. Supply them to resolve the manifest, or
+                re-import the pack to store a vault reference for future updates.
+              </p>
+              <AuthCard controller={auth} ssh={ssh} inDialog />
+              <button
+                type="button"
+                onClick={() => setAttempt((n) => n + 1)}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg text-primary bg-primary/10 border border-primary/25 hover:bg-primary/15 transition-colors"
+              >
+                Retry with credentials
+              </button>
+            </div>
+          )}
           {preview && (
             <>
               <p>
