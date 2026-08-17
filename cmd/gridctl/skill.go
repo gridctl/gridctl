@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -35,27 +36,29 @@ var skillCmd = &cobra.Command{
 
 // Flags
 var (
-	skillAddRef        string
-	skillAddPath       string
-	skillAddNoActivate bool
-	skillAddTrust      bool
-	skillAddForce      bool
-	skillAddRename     string
-	skillAddAuthToken  string
-	skillAddVaultKey   string
-	skillAddSSHKey     string
-	skillListRemote    bool
-	skillListFormat    string
-	skillListKind      string
-	skillRemoveKind    string
-	skillInfoKind      string
-	skillUpdateDryRun  bool
-	skillUpdateForce   bool
-	skillUpdateTrust   bool
-	skillTryDuration   string
-	skillTryAuthToken  string
-	skillTryVaultKey   string
-	skillTrySSHKey     string
+	skillAddRef            string
+	skillAddPath           string
+	skillAddNoActivate     bool
+	skillAddTrust          bool
+	skillAddForce          bool
+	skillAddRename         string
+	skillAddAuthToken      string
+	skillAddAuthTokenStdin bool
+	skillAddVaultKey       string
+	skillAddSSHKey         string
+	skillListRemote        bool
+	skillListFormat        string
+	skillListKind          string
+	skillRemoveKind        string
+	skillInfoKind          string
+	skillUpdateDryRun      bool
+	skillUpdateForce       bool
+	skillUpdateTrust       bool
+	skillTryDuration       string
+	skillTryAuthToken      string
+	skillTryAuthTokenStdin bool
+	skillTryVaultKey       string
+	skillTrySSHKey         string
 )
 
 var skillAddCmd = &cobra.Command{
@@ -67,7 +70,7 @@ var skillAddCmd = &cobra.Command{
 	Example: `  gridctl skill add https://github.com/acme/skills
   gridctl skill add git@github.com:acme/private-skills.git --vault-key GH_TOKEN`,
 	Args:    cobra.ExactArgs(1),
-	PreRunE: validateSkillAuthFlags(&skillAddAuthToken, &skillAddVaultKey),
+	PreRunE: validateSkillAuthFlags(&skillAddAuthToken, &skillAddVaultKey, &skillAddAuthTokenStdin),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runSkillAdd(args[0])
 	},
@@ -174,7 +177,7 @@ var skillTryCmd = &cobra.Command{
 	Short:   "Temporarily import a skill",
 	Long:    "Import a skill temporarily for evaluation. Automatically removed after the specified duration.",
 	Args:    cobra.ExactArgs(1),
-	PreRunE: validateSkillAuthFlags(&skillTryAuthToken, &skillTryVaultKey),
+	PreRunE: validateSkillAuthFlags(&skillTryAuthToken, &skillTryVaultKey, &skillTryAuthTokenStdin),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runSkillTry(args[0])
 	},
@@ -187,7 +190,8 @@ func init() {
 	skillAddCmd.Flags().BoolVar(&skillAddTrust, "trust", false, "Skip security scan confirmation")
 	skillAddCmd.Flags().BoolVar(&skillAddForce, "force", false, "Overwrite existing skills")
 	skillAddCmd.Flags().StringVar(&skillAddRename, "rename", "", "Rename the skill on import (single skill only)")
-	skillAddCmd.Flags().StringVar(&skillAddAuthToken, "auth-token", "", "Personal Access Token (HTTPS only; not persisted; intended for CI use)")
+	skillAddCmd.Flags().StringVar(&skillAddAuthToken, "auth-token", "", "Personal Access Token (HTTPS only; not persisted; intended for CI use). Pass \"-\" to read it from stdin")
+	skillAddCmd.Flags().BoolVar(&skillAddAuthTokenStdin, "auth-token-stdin", false, "Read the Personal Access Token from stdin (keeps it out of shell history)")
 	skillAddCmd.Flags().StringVar(&skillAddVaultKey, "vault-key", "", "Resolve the PAT from this vault key (e.g. GIT_TOKEN)")
 	skillAddCmd.Flags().StringVar(&skillAddSSHKey, "ssh-key", "", "Use an SSH private key at this path (SSH URLs only)")
 
@@ -205,7 +209,8 @@ func init() {
 	skillUpdateCmd.Flags().BoolVar(&skillUpdateTrust, "trust", false, "Skip security scan confirmation for updated content")
 
 	skillTryCmd.Flags().StringVar(&skillTryDuration, "duration", "10m", "Duration before auto-cleanup")
-	skillTryCmd.Flags().StringVar(&skillTryAuthToken, "auth-token", "", "Personal Access Token (HTTPS only; not persisted)")
+	skillTryCmd.Flags().StringVar(&skillTryAuthToken, "auth-token", "", "Personal Access Token (HTTPS only; not persisted). Pass \"-\" to read it from stdin")
+	skillTryCmd.Flags().BoolVar(&skillTryAuthTokenStdin, "auth-token-stdin", false, "Read the Personal Access Token from stdin (keeps it out of shell history)")
 	skillTryCmd.Flags().StringVar(&skillTryVaultKey, "vault-key", "", "Resolve the PAT from this vault key")
 	skillTryCmd.Flags().StringVar(&skillTrySSHKey, "ssh-key", "", "Use an SSH private key at this path (SSH URLs only)")
 
@@ -247,21 +252,63 @@ func newImporter(store *registry.Store) *skills.Importer {
 	return imp
 }
 
+// stdinTokenSentinel is the conventional "read it from stdin" value for a
+// flag that otherwise takes a literal, accepted alongside --auth-token-stdin.
+const stdinTokenSentinel = "-"
+
 // validateSkillAuthFlags returns a PreRunE that rejects mutually exclusive
-// auth flag combinations.
-func validateSkillAuthFlags(token, vaultKey *string) func(*cobra.Command, []string) error {
+// auth flag combinations. The three ways to supply a token are exclusive;
+// --ssh-key is a different protocol and is checked by buildAuthConfigFromFlags
+// only insofar as it takes precedence.
+func validateSkillAuthFlags(token, vaultKey *string, tokenStdin *bool) func(*cobra.Command, []string) error {
 	return func(_ *cobra.Command, _ []string) error {
-		if *token != "" && *vaultKey != "" {
+		literal := *token != "" && *token != stdinTokenSentinel
+		fromStdin := *tokenStdin || *token == stdinTokenSentinel
+		switch {
+		case literal && *vaultKey != "":
 			return errors.New("--auth-token and --vault-key are mutually exclusive")
+		case fromStdin && *vaultKey != "":
+			return errors.New("--auth-token-stdin and --vault-key are mutually exclusive")
+		case literal && *tokenStdin:
+			return errors.New("--auth-token and --auth-token-stdin are mutually exclusive")
 		}
 		return nil
 	}
 }
 
+// readTokenFromStdin reads a single-line token from stdin, trimming trailing
+// newline and surrounding whitespace. Tokens copied out of a provider UI
+// routinely carry a trailing newline, and a token with whitespace attached
+// fails authentication in a way that looks like a wrong token.
+func readTokenFromStdin(stdin io.Reader) (string, error) {
+	data, err := io.ReadAll(io.LimitReader(stdin, 8192))
+	if err != nil {
+		return "", fmt.Errorf("reading token from stdin: %w", err)
+	}
+	token := strings.TrimSpace(string(data))
+	if token == "" {
+		return "", errors.New("no token read from stdin")
+	}
+	return token, nil
+}
+
+// warnLiteralToken tells the user that a token passed as a literal argument
+// is now in their shell history and in the process list, and names the two
+// forms that are not. Docker takes the same approach: keep the flag for CI
+// ergonomics, but say plainly that it is the unsafe form.
+func warnLiteralToken(stderr io.Writer) {
+	fmt.Fprintln(stderr, "warning: --auth-token puts the token in your shell history and in the process list; use --auth-token-stdin or --vault-key instead")
+}
+
 // buildAuthConfigFromFlags translates CLI auth flags into skills.AuthConfig.
 // When --vault-key is set, the vault is unlocked (prompting if necessary)
 // and the reference is resolved immediately so Import sees a ready Token.
-func buildAuthConfigFromFlags(token, vaultKey, sshKey string) (skills.AuthConfig, error) {
+//
+// Only --vault-key yields a CredentialRef, and so only --vault-key survives
+// the import: a literal or piped token is transient by construction, which is
+// why an update of a repo imported that way falls back to ambient credentials.
+func buildAuthConfigFromFlags(stderr io.Writer, stdin io.Reader, token string, tokenStdin bool, vaultKey, sshKey string) (skills.AuthConfig, error) {
+	fromStdin := tokenStdin || token == stdinTokenSentinel
 	switch {
 	case sshKey != "":
 		return skills.AuthConfig{
@@ -269,7 +316,14 @@ func buildAuthConfigFromFlags(token, vaultKey, sshKey string) (skills.AuthConfig
 			SSHKeyPath:    sshKey,
 			SSHPassphrase: os.Getenv("GRIDCTL_SSH_KEY_PASSPHRASE"),
 		}, nil
+	case fromStdin:
+		resolved, err := readTokenFromStdin(stdin)
+		if err != nil {
+			return skills.AuthConfig{}, err
+		}
+		return skills.AuthConfig{Method: "token", Token: resolved}, nil
 	case token != "":
+		warnLiteralToken(stderr)
 		return skills.AuthConfig{Method: "token", Token: token}, nil
 	case vaultKey != "":
 		ref := fmt.Sprintf("${var:%s}", vaultKey)
@@ -304,19 +358,28 @@ func cliCredentialResolver(ref string) (string, error) {
 
 // printSkillAuthHint emits an actionable suggestion for a classified git
 // auth error. Returns true when a hint was printed.
-func printSkillAuthHint(err error) bool {
+//
+// repo may be empty; when it names an SSH URL the ssh-agent hint can offer the
+// HTTPS equivalent, which is the one remedy that needs no agent at all.
+func printSkillAuthHint(stderr io.Writer, repo string, err error) bool {
 	switch {
 	case errors.Is(err, gitpkg.ErrAuthRequired), errors.Is(err, gitpkg.ErrNotFound):
-		fmt.Fprintln(os.Stderr, "hint: this repository may be private; add credentials with --auth-token or --vault-key")
+		fmt.Fprintln(stderr, "hint: this repository may be private; add credentials with --vault-key (recommended) or --auth-token")
 		return true
 	case errors.Is(err, gitpkg.ErrAuthFailed):
-		fmt.Fprintln(os.Stderr, "hint: credentials were rejected; verify the token has repo-read access")
+		fmt.Fprintln(stderr, "hint: credentials were rejected; verify the token has repo-read access")
 		return true
 	case errors.Is(err, gitpkg.ErrSSHAgentMissing):
-		fmt.Fprintln(os.Stderr, `hint: ssh-agent not detected; run eval "$(ssh-agent -s)" && ssh-add, or use --auth-token`)
+		if https, ok := gitpkg.HTTPSEquivalent(repo); ok {
+			fmt.Fprintf(stderr, "hint: retry over HTTPS with a credential: %s --vault-key GIT_TOKEN\n", https)
+		} else {
+			fmt.Fprintln(stderr, "hint: retry over HTTPS with --vault-key (recommended) or --auth-token-stdin")
+		}
+		fmt.Fprintln(stderr, `hint: or start an agent and restart the daemon so it inherits the socket: eval "$(ssh-agent -s)" && ssh-add`)
+		fmt.Fprintln(stderr, "hint: or name the key directly with --ssh-key <path>")
 		return true
 	case errors.Is(err, gitpkg.ErrHostKeyMismatch):
-		fmt.Fprintln(os.Stderr, "hint: the SSH host key does not match ~/.ssh/known_hosts — investigate before retrying")
+		fmt.Fprintln(stderr, "hint: the SSH host key does not match ~/.ssh/known_hosts — investigate before retrying")
 		return true
 	}
 	return false
@@ -328,7 +391,7 @@ func runSkillAdd(repoURL string) error {
 		return err
 	}
 
-	authCfg, err := buildAuthConfigFromFlags(skillAddAuthToken, skillAddVaultKey, skillAddSSHKey)
+	authCfg, err := buildAuthConfigFromFlags(os.Stderr, os.Stdin, skillAddAuthToken, skillAddAuthTokenStdin, skillAddVaultKey, skillAddSSHKey)
 	if err != nil {
 		return err
 	}
@@ -346,7 +409,7 @@ func runSkillAdd(repoURL string) error {
 	})
 	if err != nil {
 		classified := gitpkg.ClassifyError(err)
-		printSkillAuthHint(classified)
+		printSkillAuthHint(os.Stderr, repoURL, classified)
 		return gitpkg.RedactError(classified)
 	}
 
@@ -438,7 +501,6 @@ func runSkillListAgents() error {
 	t.Render()
 	return nil
 }
-
 
 func runSkillList() error {
 	store, err := loadRegistry()
@@ -845,7 +907,7 @@ func runSkillTry(repoURL string) error {
 		return err
 	}
 
-	authCfg, err := buildAuthConfigFromFlags(skillTryAuthToken, skillTryVaultKey, skillTrySSHKey)
+	authCfg, err := buildAuthConfigFromFlags(os.Stderr, os.Stdin, skillTryAuthToken, skillTryAuthTokenStdin, skillTryVaultKey, skillTrySSHKey)
 	if err != nil {
 		return err
 	}
@@ -859,7 +921,7 @@ func runSkillTry(repoURL string) error {
 	})
 	if err != nil {
 		classified := gitpkg.ClassifyError(err)
-		printSkillAuthHint(classified)
+		printSkillAuthHint(os.Stderr, repoURL, classified)
 		return gitpkg.RedactError(classified)
 	}
 
