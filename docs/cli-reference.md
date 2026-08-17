@@ -66,7 +66,7 @@ Install MCP servers by name instead of hand-writing `command`/`args`/`env`. The 
 
 | Command | Purpose |
 |---|---|
-| `gridctl pack add <repo-url>` | Import a pack's selection into the registry (`--ref`, `--trust`, `--dry-run`, `--format json` or `--json`). Auth flags for private repos, same as `skill add`: `--vault-key <key>`, `--auth-token-stdin`, `--auth-token <pat>`, `--ssh-key <path>`. Exit `0` clean, `1` partial (unresolved or skipped), `2` infrastructure. |
+| `gridctl pack add <repo-url>` | Import a pack's selection into the registry (`--ref`, `--path`, `--trust`, `--dry-run`, `--format json` or `--json`). `--path` scopes resource discovery to a subdirectory; the manifest is still read from the repository root. Auth flags for private repos, same as `skill add`: `--vault-key <key>`, `--auth-token-stdin`, `--auth-token <pat>`, `--ssh-key <path>`. Exit `0` clean, `1` partial (unresolved or skipped), `2` infrastructure. |
 | `gridctl pack apply <name>` | Project the pack through the existing engines, tagging every projection (`--force`, `--dry-run`, `--clients`, `--format json` or `--json`, `--plain`). Additive; `Applied N/M` summary; exit `0`/`1`/`2`. |
 | `gridctl pack status [name]` | Per-resource state (shared vocabulary plus `unresolved`); exit `0`/`1`/`2`. `--format json` or `--json`, `--plain`. |
 | `gridctl pack remove <name>` | Cascade removal: projections, wiring records, registry entries, then the pack record; drifted projections kept unless `--force` (`--dry-run`, `--format json` or `--json`). |

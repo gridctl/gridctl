@@ -247,3 +247,70 @@ describe('AddSourceStep — malformed SKILL.md reporting', () => {
     );
   });
 });
+
+/**
+ * A missing ssh-agent is auth-shaped but no token can fix it, so the wizard
+ * must not open the credentials card. Before this it showed the raw message
+ * and stopped, leaving a browser user with no remedy at all — an agent lives
+ * in the daemon's environment, not theirs.
+ */
+describe('AddSourceStep — unreachable ssh-agent', () => {
+  beforeEach(() => {
+    mockPreview.mockReset();
+    mockToast.mockReset();
+  });
+
+  const agentError = (https?: string) =>
+    new HTTPError(422, 'Clone failed: ssh agent not available: SSH_AUTH_SOCK is unset', {
+      code: 'ssh_agent_unavailable',
+      ...(https ? { httpsEquivalent: https } : {}),
+    });
+
+  const scanSSH = () => {
+    fireEvent.change(screen.getByPlaceholderText(/https:\/\/github/i), {
+      target: { value: 'git@github.com:acme/private.git' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /scan for skills/i }));
+  };
+
+  it('shows its own banner and does not open the credentials card', async () => {
+    mockPreview.mockRejectedValueOnce(agentError('https://github.com/acme/private'));
+    render(<AddSourceStep onPreviewLoaded={vi.fn()} />);
+    scanSSH();
+
+    await waitFor(() => expect(screen.getByText(/no ssh-agent reachable/i)).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /authentication/i })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(screen.getByText(/restart the daemon/i)).toBeInTheDocument();
+  });
+
+  it('"Try HTTPS instead" rewrites the URL and opens the card in vault mode', async () => {
+    mockPreview.mockRejectedValueOnce(agentError('https://github.com/acme/private'));
+    render(<AddSourceStep onPreviewLoaded={vi.fn()} />);
+    scanSSH();
+
+    await waitFor(() => screen.getByRole('button', { name: /try https instead/i }));
+    fireEvent.click(screen.getByRole('button', { name: /try https instead/i }));
+
+    expect(screen.getByPlaceholderText(/https:\/\/github/i)).toHaveValue(
+      'https://github.com/acme/private',
+    );
+    expect(screen.getByRole('button', { name: /authentication/i })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    expect(screen.getByLabelText(/vault secret/i)).toBeChecked();
+    expect(screen.queryByText(/no ssh-agent reachable/i)).not.toBeInTheDocument();
+  });
+
+  it('offers no HTTPS switch when the server derived none', async () => {
+    mockPreview.mockRejectedValueOnce(agentError());
+    render(<AddSourceStep onPreviewLoaded={vi.fn()} />);
+    scanSSH();
+
+    await waitFor(() => expect(screen.getByText(/no ssh-agent reachable/i)).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /try https instead/i })).not.toBeInTheDocument();
+  });
+});

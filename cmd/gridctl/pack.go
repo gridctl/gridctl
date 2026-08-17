@@ -69,6 +69,7 @@ func newPackManagers() (*packops.Managers, error) {
 
 var (
 	packAddRef            string
+	packAddPath           string
 	packAddTrust          bool
 	packAddDryRun         bool
 	packAddFormat         string
@@ -119,7 +120,7 @@ Exit codes:
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
 		}
-		if exit := runPackAdd(cmd.Context(), os.Stdout, os.Stderr, mgrs, imp, args[0], packAddRef, packAddTrust, packAddDryRun, format, authCfg); exit != ctxExitOK {
+		if exit := runPackAdd(cmd.Context(), os.Stdout, os.Stderr, mgrs, imp, args[0], packAddRef, packAddPath, packAddTrust, packAddDryRun, format, authCfg); exit != ctxExitOK {
 			os.Exit(exit)
 		}
 		return nil
@@ -127,8 +128,12 @@ Exit codes:
 }
 
 // runPackAdd clones, resolves the manifest selection, and imports.
-func runPackAdd(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Managers, imp *skills.Importer, repo, ref string, trust, dryRun bool, format string, auth skills.AuthConfig) int {
-	res, err := mgrs.Add(ctx, imp, packops.AddOptions{Repo: repo, Ref: ref, Trust: trust, DryRun: dryRun, Auth: auth})
+func runPackAdd(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Managers, imp *skills.Importer, repo, ref, path string, trust, dryRun bool, format string, auth skills.AuthConfig) int {
+	// Path scopes discovery to a subdirectory. It has to be passed here as
+	// well as over REST: 'pack add' is the documented update verb, so a CLI
+	// re-add that dropped it would silently re-resolve the whole repository
+	// and overwrite the pack record with a wider set.
+	res, err := mgrs.Add(ctx, imp, packops.AddOptions{Repo: repo, Ref: ref, Path: path, Trust: trust, DryRun: dryRun, Auth: auth})
 	if err != nil {
 		// Same classify-hint-redact path as 'skill add'. Printing the raw
 		// error here used to leak a token embedded in the repo URL and told
@@ -485,6 +490,7 @@ func loadLockedPack(name string) (*skills.LockedPack, error) {
 
 func init() {
 	packAddCmd.Flags().StringVar(&packAddRef, "ref", "", "Git ref to import (branch, tag, or commit; default: the default branch)")
+	packAddCmd.Flags().StringVar(&packAddPath, "path", "", "Subdirectory within the repository to import from")
 	packAddCmd.Flags().BoolVar(&packAddTrust, "trust", false, "Proceed despite security findings")
 	packAddCmd.Flags().BoolVar(&packAddDryRun, "dry-run", false, "Resolve and report without importing")
 	packAddCmd.Flags().StringVar(&packAddFormat, "format", "text", "Output format: text or json")

@@ -427,7 +427,7 @@ func (s *Server) handleSkillSourceAdd(w http.ResponseWriter, r *http.Request) {
 		Auth:           authCfg,
 	})
 	if err != nil {
-		writeGitError(w, "Import failed: ", err)
+		writeGitErrorForRepo(w, "Import failed: ", req.Repo, err)
 		return
 	}
 
@@ -527,7 +527,7 @@ func (s *Server) handleSkillSourceCheck(w http.ResponseWriter, r *http.Request) 
 	logger := slog.Default()
 	newSHA, changed, err := skills.FetchAndCompare(src.Repo, src.Ref, src.CommitSHA, authCfg, logger)
 	if err != nil {
-		writeGitError(w, "Check failed: ", err)
+		writeGitErrorForRepo(w, "Check failed: ", src.Repo, err)
 		return
 	}
 
@@ -800,7 +800,7 @@ func (s *Server) handleSkillSourcePreview(w http.ResponseWriter, r *http.Request
 	logger := slog.Default()
 	result, err := skills.CloneAndDiscover(repo, ref, path, authCfg, logger)
 	if err != nil {
-		writeGitError(w, "Clone failed: ", err)
+		writeGitErrorForRepo(w, "Clone failed: ", repo, err)
 		return
 	}
 

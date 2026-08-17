@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useState } from 'react';
-import { AlertTriangle, Upload } from 'lucide-react';
+import { AlertTriangle, Copy, ShieldAlert, Upload } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { useFocusTrap } from '../../../hooks/useFocusTrap';
 import { showToast } from '../../ui/Toast';
@@ -13,7 +13,12 @@ import {
 } from '../../../lib/api';
 import { AuthCard } from '../../wizard/AuthCard';
 import { useAuthCard } from '../../wizard/useAuthCard';
-import { isSSHAgentError, isSSHUrl, shouldOpenAuthCard } from '../../../lib/gitAuthErrors';
+import {
+  httpsEquivalentOf,
+  isSSHAgentError,
+  isSSHUrl,
+  shouldOpenAuthCard,
+} from '../../../lib/gitAuthErrors';
 
 interface PackUpdateDialogProps {
   packName: string;
@@ -46,6 +51,13 @@ export function PackUpdateDialog({ packName, origin, onClose, onUpdated }: PackU
   // not, so offering a token field there would imply a remedy that does not
   // exist.
   const [authFixable, setAuthFixable] = useState(false);
+  // The ssh-agent failure is auth-shaped but no token can fix it. Unlike the
+  // import wizard there is no URL field to rewrite here: this dialog acts on
+  // the origin recorded at import. Silently repointing that origin would
+  // change what the pack tracks without the user asking, so the honest remedy
+  // is to name the HTTPS URL and say it has to be re-imported.
+  const [agentHTTPS, setAgentHTTPS] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
   const ssh = isSSHUrl(origin.repo);
@@ -63,11 +75,13 @@ export function PackUpdateDialog({ packName, origin, onClose, onUpdated }: PackU
         setPreview(p);
         setPreviewError(null);
         setAuthFixable(false);
+        setAgentHTTPS(null);
       })
       .catch((err) => {
         if (cancelled) return;
         setPreviewError(err instanceof Error ? err.message : 'Preview failed');
         setAuthFixable(!isSSHAgentError(err) && shouldOpenAuthCard(err) && !ssh);
+        setAgentHTTPS(isSSHAgentError(err) ? (httpsEquivalentOf(err) ?? '') : null);
       });
     return () => {
       cancelled = true;
@@ -174,6 +188,48 @@ export function PackUpdateDialog({ packName, origin, onClose, onUpdated }: PackU
               >
                 Retry with credentials
               </button>
+            </div>
+          )}
+          {agentHTTPS !== null && (
+            <div className="rounded-lg border border-status-pending/30 bg-status-pending/5 p-2.5 space-y-2">
+              <p className="flex items-center gap-1.5 text-status-pending font-medium">
+                <ShieldAlert size={12} aria-hidden="true" /> No ssh-agent reachable
+              </p>
+              <p className="text-[11px]">
+                This pack was imported over SSH, and the daemon has no usable agent socket.
+                It inherits one only from the shell that started it, and can outlive it. A
+                token cannot authenticate an SSH URL.
+              </p>
+              {agentHTTPS ? (
+                <>
+                  <p className="text-[11px]">
+                    Re-import the pack over HTTPS to update it. Updating here cannot switch
+                    protocol on its own: that would repoint the origin this pack tracks.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 truncate rounded-md bg-background/60 border border-border/40 px-2 py-1 text-[11px] font-mono text-text-primary">
+                      {agentHTTPS}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard?.writeText(agentHTTPS);
+                        setCopied(true);
+                      }}
+                      aria-label="Copy the HTTPS URL"
+                      className="p-1.5 rounded-md text-text-muted hover:text-primary hover:bg-primary/10 transition-colors"
+                    >
+                      <Copy size={12} />
+                    </button>
+                  </div>
+                  {copied && <p className="text-[10px] text-status-running">Copied.</p>}
+                </>
+              ) : (
+                <p className="text-[11px]">
+                  Start an agent, add your key, and restart the daemon so it inherits the
+                  socket.
+                </p>
+              )}
             </div>
           )}
           {preview && (

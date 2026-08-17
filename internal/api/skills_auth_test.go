@@ -185,3 +185,51 @@ func TestWriteGitError_RedactsEmbeddedToken(t *testing.T) {
 		t.Errorf("response body leaked the token: %s", rec.Body.String())
 	}
 }
+
+// A skill clone that fails with no reachable ssh-agent must carry the same
+// structured remedy the pack endpoints send. Before this, every skill call
+// site passed an empty repo into writeGitErrorForRepo, so `code` arrived but
+// `httpsEquivalent` never did — leaving the client with a cause and no fix,
+// while docs/troubleshooting.md said otherwise.
+func TestHandleSkillSourcePreview_SSHAgentCarriesHTTPSEquivalent(t *testing.T) {
+	t.Setenv("SSH_AUTH_SOCK", "")
+	srv, _ := setupRegistryTestServer(t)
+
+	rec := doJSON(t, srv, http.MethodPost, "/api/skills/sources/private/preview",
+		`{"repo":"git@github.com:acme/private-skills.git"}`)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422: %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["code"] != "ssh_agent_unavailable" {
+		t.Errorf("code = %q, want ssh_agent_unavailable", body["code"])
+	}
+	if body["httpsEquivalent"] != "https://github.com/acme/private-skills" {
+		t.Errorf("httpsEquivalent = %q, want the rewritten URL", body["httpsEquivalent"])
+	}
+	if strings.Contains(body["error"], "not-specified") {
+		t.Errorf("raw go-git string reached the client: %q", body["error"])
+	}
+}
+
+// An HTTPS skill repo has no SSH URL to rewrite, so the field must be absent
+// rather than empty — a client keys the action off its presence.
+func TestHandleSkillSourcePreview_HTTPSRepoOmitsEquivalent(t *testing.T) {
+	t.Setenv("SSH_AUTH_SOCK", "")
+	srv, _ := setupRegistryTestServer(t)
+
+	rec := doJSON(t, srv, http.MethodPost, "/api/skills/sources/nope/preview",
+		`{"repo":"https://127.0.0.1:1/acme/nope.git"}`)
+
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, ok := body["httpsEquivalent"]; ok {
+		t.Errorf("httpsEquivalent present for an HTTPS repo: %q", body["httpsEquivalent"])
+	}
+}

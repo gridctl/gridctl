@@ -137,7 +137,7 @@ describe('PackUpdateDialog', () => {
    * A missing agent is auth-shaped but no token can fix it, so the dialog must
    * not offer a credentials field for it.
    */
-  it('does not offer credentials for an unreachable ssh-agent', async () => {
+  it('does not offer credentials for an unreachable ssh-agent, but does offer a remedy', async () => {
     mockPreview.mockRejectedValueOnce(
       new HTTPError(422, 'Pack preview failed: ssh agent not available', {
         code: 'ssh_agent_unavailable',
@@ -147,8 +147,30 @@ describe('PackUpdateDialog', () => {
     renderDialog({ repo: 'git@github.com:acme/team-pack.git' });
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/ssh agent/i));
+    // A token cannot authenticate an SSH URL.
     expect(screen.queryByRole('button', { name: /retry with credentials/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^authentication/i })).not.toBeInTheDocument();
+
+    // But the dialog must not dead-end: it names the cause and the HTTPS URL.
+    expect(screen.getByText(/no ssh-agent reachable/i)).toBeInTheDocument();
+    expect(screen.getByText('https://github.com/acme/team-pack')).toBeInTheDocument();
+    // It must not claim it can switch protocol itself — that would repoint the
+    // origin this pack tracks.
+    expect(screen.getByText(/re-import the pack over https/i)).toBeInTheDocument();
+  });
+
+  it('falls back to the agent instructions when no HTTPS equivalent was derived', async () => {
+    mockPreview.mockRejectedValueOnce(
+      new HTTPError(422, 'Pack preview failed: ssh agent not available', {
+        code: 'ssh_agent_unavailable',
+      }),
+    );
+    renderDialog({ repo: 'ssh://git@internal/acme/pack.git' });
+
+    await waitFor(() => expect(screen.getByText(/no ssh-agent reachable/i)).toBeInTheDocument());
+    // No URL to offer, so no copy affordance and no misleading instruction.
+    expect(screen.queryByRole('button', { name: /copy the https url/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/restart the daemon/i)).toBeInTheDocument();
   });
 
   it('keeps Update disabled while the manifest has not resolved', async () => {
