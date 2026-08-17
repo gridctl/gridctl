@@ -90,9 +90,12 @@ Re-importing replaces those three directories wholesale, so content deleted upst
 
 Supported auth flows for private repos:
 
-- `--auth-token <pat>`: an ephemeral HTTPS personal access token, suitable for CI.
-- `--vault-key <key>`: resolves the token from a `${var:KEY}` entry; suitable for long-running daemons.
-- `--ssh-key <path>`: SSH private key path.
+- `--vault-key <key>`: resolves the token from a `${var:KEY}` entry; suitable for long-running daemons, and the only form gridctl can re-resolve on a later update.
+- `--auth-token-stdin`: reads an HTTPS personal access token from stdin, keeping it out of shell history and out of the process list. `--auth-token -` is equivalent.
+- `--auth-token <pat>`: the same token as a literal argument, kept for CI ergonomics. A literal value prints a warning, because it lands in shell history and is visible to anyone who can run `ps`.
+- `--ssh-key <path>`: SSH private key path. Set `GRIDCTL_SSH_KEY_PASSPHRASE` for an encrypted key.
+
+gridctl does not read `~/.ssh/config`, and a daemonized gridctl inherits `SSH_AUTH_SOCK` only from the shell that started it, so an SSH URL that works with the `git` CLI can still fail. See [troubleshooting](troubleshooting.md#ssh-agent-not-available).
 
 ### Reconciling local edits (web UI)
 
