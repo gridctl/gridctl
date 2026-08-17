@@ -166,7 +166,7 @@ export function PackUpdateDialog({ packName, origin, onClose, onUpdated }: PackU
                 This repository needs credentials. Supply them to resolve the manifest, or
                 re-import the pack to store a vault reference for future updates.
               </p>
-              <AuthCard controller={auth} ssh={ssh} inDialog />
+              <AuthCard controller={auth} ssh={ssh} />
               <button
                 type="button"
                 onClick={() => setAttempt((n) => n + 1)}
