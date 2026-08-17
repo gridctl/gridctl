@@ -1,9 +1,17 @@
 import { AuthError, HTTPError } from './api';
 
+/**
+ * SCP-style git URL: `user@host:path`, any user. Mirrors the server's pattern
+ * in `pkg/git/auth.go` deliberately — a narrower client rule (matching only
+ * `git@`) shows token fields for something like `deploy@git.internal:acme/p.git`,
+ * and the token then fails with a protocol mismatch it could never satisfy.
+ */
+const SCP_SYNTAX = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+:/;
+
 /** SSH-form git URL: SCP syntax or an explicit ssh:// scheme. */
 export function isSSHUrl(url: string): boolean {
   const trimmed = url.trim();
-  return trimmed.startsWith('git@') || trimmed.startsWith('ssh://');
+  return trimmed.startsWith('ssh://') || SCP_SYNTAX.test(trimmed);
 }
 
 /**
