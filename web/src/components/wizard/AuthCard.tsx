@@ -8,8 +8,6 @@ interface AuthCardProps {
   controller: AuthCardController;
   /** SSH URLs authenticate through the agent; the card says so and collects nothing. */
   ssh: boolean;
-  /** Rendered inside a modal, where a nested popover's Escape must not close the dialog. */
-  inDialog?: boolean;
 }
 
 /**
@@ -19,7 +17,7 @@ interface AuthCardProps {
  * with a credentials question would tax every import for the minority case. It
  * opens on its own when a scan fails in an auth-shaped way.
  */
-export function AuthCard({ controller, ssh, inDialog = false }: AuthCardProps) {
+export function AuthCard({ controller, ssh }: AuthCardProps) {
   const {
     open,
     setOpen,
@@ -125,13 +123,7 @@ export function AuthCard({ controller, ssh, inDialog = false }: AuthCardProps) {
               </fieldset>
 
               {mode === 'vault' ? (
-                <div
-                  className="flex items-center gap-2"
-                  // Inside a modal the dialog listens for Escape on the
-                  // document, so a nested popover's Escape would close the
-                  // whole dialog instead of just the popover.
-                  onKeyDown={inDialog ? (e) => { if (e.key === 'Escape') e.stopPropagation(); } : undefined}
-                >
+                <div className="flex items-center gap-2">
                   {vaultRef ? (
                     <div className="flex-1 flex items-center justify-between gap-2 bg-background/60 border border-border/40 rounded-md px-2 py-1.5 text-[10px] font-mono text-text-primary">
                       <span className="truncate">{vaultRef}</span>
