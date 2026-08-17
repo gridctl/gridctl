@@ -7,12 +7,19 @@ import {
   ExternalLink,
   FolderGit2,
   Clock,
+  ShieldAlert,
 } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { extractRepoInfo } from '../../../lib/repo';
 import { Button } from '../../ui/Button';
 import { previewSkillSource, fetchSkillSources } from '../../../lib/api';
-import { authBannerFor, isSSHUrl, shouldOpenAuthCard } from '../../../lib/gitAuthErrors';
+import {
+  authBannerFor,
+  httpsEquivalentOf,
+  isSSHAgentError,
+  isSSHUrl,
+  shouldOpenAuthCard,
+} from '../../../lib/gitAuthErrors';
 import { showToast } from '../../ui/Toast';
 import { AuthCard } from '../AuthCard';
 import { useAuthCard } from '../useAuthCard';
@@ -45,6 +52,9 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
 
   // Auth card state — the whole card is transient, never persisted.
   const auth = useAuthCard();
+  // The ssh-agent failure is auth-shaped but no token can fix it, so it gets
+  // its own banner rather than opening the credentials card.
+  const [agentBlock, setAgentBlock] = useState<{ https?: string } | null>(null);
 
   const ssh = isSSHUrl(url);
 
@@ -80,6 +90,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
 
     setLoading(true);
     setError(null);
+    setAgentBlock(null);
     auth.clearBanner();
 
     const authPayload = auth.buildAuth(ssh);
@@ -125,12 +136,25 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
       setError(msg);
       showToast('error', msg);
 
-      if (shouldOpenAuthCard(err) && !ssh) {
+      if (isSSHAgentError(err)) {
+        setAgentBlock({ https: httpsEquivalentOf(err) });
+      } else if (shouldOpenAuthCard(err) && !ssh) {
         auth.openWithBanner(authBannerFor(err));
       }
     } finally {
       setLoading(false);
     }
+  };
+
+  // The only remedy a browser user can act on: an agent lives in the daemon's
+  // environment, not theirs, so switching protocol is the fix, not a token.
+  const switchToHTTPS = () => {
+    const https = agentBlock?.https;
+    if (!https) return;
+    setUrl(https);
+    setAgentBlock(null);
+    setError(null);
+    auth.openInVaultMode('Now using HTTPS. Choose a vault secret holding a token with read access.');
   };
 
   const handleRecentClick = (source: SkillSourceStatus) => {
@@ -231,6 +255,28 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
         {/* Credentials — collapsed and optional; auto-opens on an
             auth-shaped failure. Transient only: never persisted. */}
         <AuthCard controller={auth} ssh={ssh} />
+
+        {agentBlock && (
+          <div className="rounded-lg border border-status-pending/30 bg-status-pending/5 p-3 space-y-2">
+            <p className="flex items-center gap-1.5 text-[11px] text-status-pending font-medium">
+              <ShieldAlert size={12} aria-hidden="true" /> No ssh-agent reachable
+            </p>
+            <p className="text-[10px] text-text-muted">
+              The gridctl daemon has no usable agent socket. It inherits one only from the
+              shell that started it, and can outlive it, so an agent in your own terminal
+              does not help here. A token cannot authenticate an SSH URL.
+            </p>
+            {agentBlock.https && (
+              <Button variant="primary" size="sm" onClick={switchToHTTPS}>
+                Try HTTPS instead
+              </Button>
+            )}
+            <p className="text-[10px] text-text-muted">
+              Otherwise: start an agent, add your key, and restart the daemon so it inherits
+              the socket.
+            </p>
+          </div>
+        )}
 
         {/* Scan button */}
         <Button
