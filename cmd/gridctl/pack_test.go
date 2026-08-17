@@ -101,7 +101,7 @@ func TestPackAddApplyStatusRemove_EndToEnd(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
 	// Add: imports exactly the selection.
-	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, repo, "", false, false, "text"); exit != ctxExitOK {
+	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, repo, "", false, false, "text", skills.AuthConfig{}); exit != ctxExitOK {
 		t.Fatalf("add exit = %d\n%s%s", exit, stdout.String(), stderr.String())
 	}
 	if !strings.Contains(stdout.String(), `Imported pack "team-pack" (1 skills, 1 agents, wiring: yes)`) {
@@ -207,7 +207,7 @@ func TestPackAdd_UnresolvedSelection(t *testing.T) {
 	repo := packFixture(t, manifest, nil)
 	var stdout, stderr bytes.Buffer
 
-	exit := runPackAdd(context.Background(), &stdout, &stderr, freshManagers(), imp, repo, "", false, false, "text")
+	exit := runPackAdd(context.Background(), &stdout, &stderr, freshManagers(), imp, repo, "", false, false, "text", skills.AuthConfig{})
 	if exit != ctxExitAttention {
 		t.Fatalf("exit = %d, want 1\n%s%s", exit, stdout.String(), stderr.String())
 	}
@@ -228,7 +228,7 @@ func TestPackAdd_NoManifestRefuses(t *testing.T) {
 	repo := initRepoNoManifest(t)
 	var stdout, stderr bytes.Buffer
 
-	exit := runPackAdd(context.Background(), &stdout, &stderr, freshManagers(), imp, repo, "", false, false, "text")
+	exit := runPackAdd(context.Background(), &stdout, &stderr, freshManagers(), imp, repo, "", false, false, "text", skills.AuthConfig{})
 	if exit != ctxExitInfrastructure {
 		t.Fatalf("exit = %d, want 2", exit)
 	}
@@ -265,7 +265,7 @@ func TestPackApply_ForeignPackRefusal(t *testing.T) {
 
 	// Import and apply pack A owning skill alpha.
 	repoA := packFixture(t, packTestManifest, nil)
-	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, repoA, "", false, false, "text"); exit != ctxExitOK {
+	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, repoA, "", false, false, "text", skills.AuthConfig{}); exit != ctxExitOK {
 		t.Fatal(stderr.String())
 	}
 	if exit := runPackApply(ctx, &stdout, &stderr, freshManagers(), "team-pack", false, false, nil, "text", true); exit == ctxExitInfrastructure {
@@ -280,7 +280,7 @@ func TestPackApply_ForeignPackRefusal(t *testing.T) {
 	stderr.Reset()
 	// Add B: alpha already exists; explicit selection overwrites in the
 	// registry (selected-implies-force), which is the import contract.
-	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, repoB, "", false, false, "text"); exit == ctxExitInfrastructure {
+	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, repoB, "", false, false, "text", skills.AuthConfig{}); exit == ctxExitInfrastructure {
 		t.Fatal(stderr.String())
 	}
 
@@ -313,7 +313,7 @@ func TestPackRemove_DriftedResourceKept(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	repo := packFixture(t, strings.Replace(packTestManifest, "wiring: true", "wiring: false", 1), nil)
 
-	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, repo, "", false, false, "text"); exit != ctxExitOK {
+	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, repo, "", false, false, "text", skills.AuthConfig{}); exit != ctxExitOK {
 		t.Fatal(stderr.String())
 	}
 	if exit := runPackApply(ctx, &stdout, &stderr, freshManagers(), "team-pack", false, false, nil, "text", true); exit != ctxExitOK {
@@ -366,7 +366,7 @@ func TestPackAdd_FullyUnresolvedImportsNothing(t *testing.T) {
 	repo := packFixture(t, manifest, nil)
 	var stdout, stderr bytes.Buffer
 
-	exit := runPackAdd(context.Background(), &stdout, &stderr, freshManagers(), imp, repo, "", false, false, "text")
+	exit := runPackAdd(context.Background(), &stdout, &stderr, freshManagers(), imp, repo, "", false, false, "text", skills.AuthConfig{})
 	if exit != ctxExitAttention {
 		t.Fatalf("exit = %d, want 1\n%s%s", exit, stdout.String(), stderr.String())
 	}
@@ -397,7 +397,7 @@ func TestPackAdd_SkillAddSourceKeepsItsIdentity(t *testing.T) {
 
 	// Pack repo also ships a skill named alpha.
 	packRepo := packFixture(t, strings.Replace(packTestManifest, "wiring: true", "wiring: false", 1), nil)
-	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, packRepo, "", false, false, "text"); exit == ctxExitInfrastructure {
+	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, packRepo, "", false, false, "text", skills.AuthConfig{}); exit == ctxExitInfrastructure {
 		t.Fatal(stderr.String())
 	}
 
