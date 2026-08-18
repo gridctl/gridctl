@@ -152,6 +152,11 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   setCommandPaletteOpen: (open: boolean) => void;
   toggleCommandPalette: () => void;
 
+  // Reset dialog (the machine-wide `gridctl reset` surface): opened from
+  // the Connections danger zone or the command palette. Transient.
+  resetDialogOpen: boolean;
+  setResetDialogOpen: (open: boolean) => void;
+
   // Per-client access editor: opened from the Stack inspector ("Edit Scope")
   // seeded to a specific client. Transient (not persisted).
   accessEditorOpen: boolean;
@@ -356,6 +361,10 @@ export const useUIStore = create<UIState>()(
 
       // Command palette (always starts closed)
       commandPaletteOpen: false,
+
+      // Reset dialog (always starts closed)
+      resetDialogOpen: false,
+      setResetDialogOpen: (resetDialogOpen) => set({ resetDialogOpen }),
 
       // Access editor (always starts closed)
       accessEditorOpen: false,
