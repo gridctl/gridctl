@@ -234,7 +234,14 @@ func loadRegistry() (*registry.Store, error) {
 }
 
 func registryDir() string {
-	return filepath.Join(state.BaseDir(), "registry")
+	base, err := state.BaseDir()
+	if err != nil {
+		// Effectively unreachable: the root command validates home
+		// resolution before any subcommand runs. CLI-layer exit keeps
+		// the ten call sites signature-free without hiding the error.
+		cobra.CheckErr(err)
+	}
+	return filepath.Join(base, "registry")
 }
 
 func skillDirPath(sk *registry.AgentSkill) string {
