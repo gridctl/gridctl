@@ -106,7 +106,9 @@ export function PackUpdateDialog({ packName, origin, onClose, onUpdated }: PackU
   }, [handleKeyDown]);
 
   const previewFlagged = preview
-    ? [...preview.skills, ...preview.agents, ...preview.rules].filter((r) => (r.findings ?? []).length > 0)
+    ? [...(preview.skills ?? []), ...(preview.agents ?? []), ...(preview.rules ?? [])].filter(
+        (r) => (r.findings ?? []).length > 0,
+      )
     : [];
   const flagged = serverFindings ?? previewFlagged;
   const needsTrust = serverFindings !== null || flagged.some((r) => r.blocking);
@@ -240,8 +242,8 @@ export function PackUpdateDialog({ packName, origin, onClose, onUpdated }: PackU
                 selection updates.
               </p>
               <p className="font-mono text-[11px]">
-                {preview.skills.length} skills, {preview.agents.length} agents,{' '}
-                {preview.rules.length} rules{preview.wiring ? ', wiring' : ''}
+                {(preview.skills ?? []).length} skills, {(preview.agents ?? []).length} agents,{' '}
+                {(preview.rules ?? []).length} rules{preview.wiring ? ', wiring' : ''}
                 {(preview.unresolved ?? []).length > 0 &&
                   ` (${(preview.unresolved ?? []).length} unresolved)`}
               </p>

@@ -2,6 +2,7 @@ package packops
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -175,5 +176,66 @@ func walkFiles(t *testing.T, root string, visit func(path string, content []byte
 	})
 	if err != nil {
 		t.Fatalf("walk %s: %v", root, err)
+	}
+}
+
+// The wire shape matters, not the Go value: encoding/json turns a nil slice
+// into null, and every client is typed for an array. A pack whose selection
+// resolves to nothing (or whose import produces no progress notes) used to
+// send null and crash the import wizard's success step.
+func TestAdd_ListFieldsMarshalAsEmptyArraysNotNull(t *testing.T) {
+	mgrs, imp := testEnv(t)
+	// A manifest naming resources the repo does not ship resolves to nothing,
+	// leaving the selection slices nil. An empty manifest list would not do:
+	// it means "everything discovered" and resolves to a populated set.
+	unresolvableManifest := `apiVersion: gridctl.dev/v1
+kind: Pack
+name: ghost-pack
+version: 1.0.0
+description: Selects nothing that exists
+author:
+  name: Test
+skills: [ghost]
+agents: [phantom]
+wiring: true
+`
+	repo := packFixture(t, unresolvableManifest, nil)
+
+	res, err := mgrs.Add(context.Background(), imp, AddOptions{Repo: repo})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	encoded, err := json.Marshal(map[string]any{"doc": res.Doc, "notes": res.Notes})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	body := string(encoded)
+
+	for _, nulled := range []string{`"skills":null`, `"agents":null`, `"notes":null`} {
+		if strings.Contains(body, nulled) {
+			t.Errorf("response carries %s; a nil slice reached the wire: %s", nulled, body)
+		}
+	}
+	for _, empty := range []string{`"skills":[]`, `"agents":[]`, `"notes":[]`} {
+		if !strings.Contains(body, empty) {
+			t.Errorf("expected %s in the response, got: %s", empty, body)
+		}
+	}
+}
+
+// A populated response must serialize exactly as before.
+func TestAdd_PopulatedListsAreUnchanged(t *testing.T) {
+	mgrs, imp := testEnv(t)
+	repo := packFixture(t, testManifest, nil)
+
+	res, err := mgrs.Add(context.Background(), imp, AddOptions{Repo: repo})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	encoded, _ := json.Marshal(res.Doc)
+	body := string(encoded)
+	if !strings.Contains(body, `"skills":["alpha"]`) {
+		t.Errorf("populated skills changed shape: %s", body)
 	}
 }

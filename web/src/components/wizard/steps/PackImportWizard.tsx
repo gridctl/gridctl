@@ -121,7 +121,7 @@ export function PackImportWizard() {
   }, [agentBlock, auth]);
 
   const previewFlagged: PackPreviewResource[] = preview
-    ? [...preview.skills, ...preview.agents, ...preview.rules].filter(
+    ? [...(preview.skills ?? []), ...(preview.agents ?? []), ...(preview.rules ?? [])].filter(
         (r) => (r.findings ?? []).length > 0,
       )
     : [];
@@ -408,7 +408,7 @@ export function PackImportWizard() {
           Imported into the registry. Apply projects skills, agents, rules, and wiring to
           your clients.
         </p>
-        {installed.notes.map((n, i) => (
+        {(installed.notes ?? []).map((n, i) => (
           <p key={i} className="text-[11px] text-text-muted">{n}</p>
         ))}
         {skipped.length > 0 && (
@@ -451,14 +451,17 @@ export function PackImportWizard() {
 
 /** One kind's resolved names, read-only. */
 function ResolvedKind({ label, resources }: { label: string; resources: PackPreviewResource[] }) {
-  if (resources.length === 0) return null;
+  // A nil Go slice reaches the wire as null despite the array type, so never
+  // trust the shape of a list that came from the API.
+  const list = resources ?? [];
+  if (list.length === 0) return null;
   return (
     <div>
       <p className="text-[10px] uppercase tracking-wider font-medium text-text-muted mb-1">
-        {label} <span className="font-mono normal-case">({resources.length})</span>
+        {label} <span className="font-mono normal-case">({list.length})</span>
       </p>
       <p className="text-[11px] font-mono text-text-secondary">
-        {resources.map((r) => r.name).join(', ')}
+        {list.map((r) => r.name).join(', ')}
       </p>
     </div>
   );

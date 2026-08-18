@@ -36,6 +36,16 @@ type AddOptions struct {
 	Auth skills.AuthConfig
 }
 
+// orEmpty returns a non-nil slice so encoding/json emits [] rather than null.
+// Only needed for fields without omitempty, where null reaches the wire and
+// breaks any client that maps over the value its type promises.
+func orEmpty(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
 // AddDoc is the machine-readable pack add document.
 type AddDoc struct {
 	SchemaVersion int      `json:"schema_version"`
@@ -88,17 +98,23 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 		}
 	}
 
-	res := &AddResult{Doc: AddDoc{
-		SchemaVersion: SchemaVersion,
-		DryRun:        opts.DryRun,
-		Pack:          manifest.Name,
-		Skills:        resolved.skills,
-		Agents:        resolved.agents,
-		Rules:         resolved.rules,
-		Wiring:        manifest.Wiring,
-		Unresolved:    resolved.unresolved,
-		Warnings:      manifest.Warnings(),
-	}}
+	// Skills, Agents, and Notes carry no omitempty, so a nil slice would
+	// marshal as JSON null while every client is typed for an array. Preview
+	// already initializes its lists for the same reason; these did not.
+	res := &AddResult{
+		Doc: AddDoc{
+			SchemaVersion: SchemaVersion,
+			DryRun:        opts.DryRun,
+			Pack:          manifest.Name,
+			Skills:        orEmpty(resolved.skills),
+			Agents:        orEmpty(resolved.agents),
+			Rules:         resolved.rules,
+			Wiring:        manifest.Wiring,
+			Unresolved:    resolved.unresolved,
+			Warnings:      manifest.Warnings(),
+		},
+		Notes: []string{},
+	}
 
 	if !opts.DryRun && (len(resolved.skills) > 0 || len(resolved.agents) > 0) {
 		// Selection lists ride to the importer as the manifest wrote them

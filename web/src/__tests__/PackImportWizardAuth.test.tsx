@@ -239,3 +239,56 @@ describe('PackImportWizard — unreachable ssh-agent', () => {
     );
   });
 });
+
+/**
+ * Go marshals a nil slice as null, not [], so the API can send null for list
+ * fields the TypeScript types declare as arrays. A clean import produces no
+ * progress notes, which sent `"notes": null` and crashed the success step with
+ * "Cannot read properties of null (reading 'map')" — after the import had
+ * already succeeded, so the user saw a full-page error and no confirmation.
+ */
+describe('PackImportWizard — null list fields from the API', () => {
+  beforeEach(() => {
+    mockPreview.mockReset();
+    mockAdd.mockReset();
+    mockToast.mockReset();
+  });
+
+  it('renders the success step when notes comes back null', async () => {
+    mockPreview.mockResolvedValueOnce(emptyPreview);
+    mockAdd.mockResolvedValueOnce({
+      doc: { pack: 'team-pack', skills: [], agents: [] },
+      notes: null,
+    } as never);
+
+    renderWizard();
+    enterRepo('https://github.com/acme/team-pack');
+    clickPreview();
+
+    await waitFor(() => screen.getByRole('button', { name: /import pack/i }));
+    fireEvent.click(screen.getByRole('button', { name: /import pack/i }));
+
+    // The success step renders instead of the error boundary swallowing it.
+    await waitFor(() => expect(screen.getByText(/pack imported/i)).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /apply now/i })).toBeInTheDocument();
+  });
+
+  it('renders the review step when a pack ships no agents or rules', async () => {
+    mockPreview.mockResolvedValueOnce({
+      pack: 'skills-only',
+      wiring: false,
+      skills: [{ kind: 'skill', name: 'alpha' }],
+      agents: null,
+      rules: null,
+    } as never);
+
+    renderWizard();
+    enterRepo('https://github.com/acme/skills-only');
+    clickPreview();
+
+    // Spreading null would throw before anything rendered.
+    await waitFor(() => expect(screen.getByText('skills-only')).toBeInTheDocument());
+    expect(screen.getByText(/alpha/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /import pack/i })).toBeInTheDocument();
+  });
+});
