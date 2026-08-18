@@ -26,6 +26,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/project"
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/skills"
+	"github.com/gridctl/gridctl/pkg/state"
 )
 
 // Sentinel errors callers branch on.
@@ -206,7 +207,7 @@ type Manager struct {
 // injected home keeps the suite away from real client agent
 // directories.
 func NewManager(registryDir string) (*Manager, error) {
-	home, err := os.UserHomeDir()
+	home, err := state.Home()
 	if err != nil {
 		return nil, fmt.Errorf("resolving home directory: %w", err)
 	}
