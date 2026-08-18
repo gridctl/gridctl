@@ -55,10 +55,16 @@ type Client struct {
 // NewClient returns a registry client with the production base URL and the
 // shared cache directory under ~/.gridctl/cache/catalog.
 func NewClient() *Client {
+	// An unresolvable home only disables the on-disk cache (empty
+	// cacheDir is guarded at the read/write sites); search still works.
+	cacheDir := ""
+	if base, err := state.BaseDir(); err == nil {
+		cacheDir = filepath.Join(base, "cache", "catalog")
+	}
 	return &Client{
 		baseURL:    defaultRegistryBaseURL,
 		httpClient: &http.Client{Timeout: registryRequestTimeout},
-		cacheDir:   filepath.Join(state.BaseDir(), "cache", "catalog"),
+		cacheDir:   cacheDir,
 		ttl:        registryCacheTTL,
 		now:        time.Now,
 	}
@@ -288,6 +294,9 @@ func cacheFileName(kind, key string) string {
 // non-zero maxAge, is younger than it. maxAge 0 accepts any age (the stale
 // fallback path).
 func (c *Client) readCache(name string, maxAge time.Duration) ([]serverResult, bool) {
+	if c.cacheDir == "" {
+		return nil, false
+	}
 	data, err := os.ReadFile(filepath.Join(c.cacheDir, name))
 	if err != nil {
 		return nil, false
@@ -305,6 +314,9 @@ func (c *Client) readCache(name string, maxAge time.Duration) ([]serverResult, b
 // writeCache persists results best-effort; a failed write only costs the
 // next call a refetch.
 func (c *Client) writeCache(name string, results []serverResult) {
+	if c.cacheDir == "" {
+		return
+	}
 	doc := cacheDoc{FetchedAt: c.now(), Results: results}
 	data, err := json.Marshal(doc)
 	if err != nil {
