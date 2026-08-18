@@ -36,13 +36,13 @@ function previewResponse(overrides?: Partial<ResetDoc>): ResetPreviewResponse {
 
 // jsdom cannot navigate, so the dialog's hard-reload exit goes through
 // the pageReload seam; each test observes it via this spy.
-let reloadSpy: ReturnType<typeof vi.fn>;
+let reloadSpy: ReturnType<typeof vi.fn<() => void>>;
 
 describe('ResetDialog', () => {
   beforeEach(() => {
     vi.mocked(fetchResetPreview).mockReset();
     vi.mocked(executeReset).mockReset();
-    reloadSpy = vi.fn();
+    reloadSpy = vi.fn<() => void>();
     pageReload.current = reloadSpy;
   });
 
