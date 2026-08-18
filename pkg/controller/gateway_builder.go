@@ -313,9 +313,13 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 	inst.Gateway.SetSkillPolicy(mcp.NewSkillPolicy(skillsPolicySpec(b.stack)))
 
 	// Phase 1b: Create registry server (internal MCP server)
-	regDir := filepath.Join(state.BaseDir(), "registry")
-	if b.registryDir != "" {
-		regDir = b.registryDir
+	regDir := b.registryDir
+	if regDir == "" {
+		base, err := state.BaseDir()
+		if err != nil {
+			return nil, fmt.Errorf("resolving registry directory: %w", err)
+		}
+		regDir = filepath.Join(base, "registry")
 	}
 	registryStore := registry.NewStore(regDir)
 	registryServer := registry.New(registryStore)
@@ -436,7 +440,11 @@ func (b *GatewayBuilder) seedLogsFromDisk(buf *logging.LogBuffer, handler slog.H
 		if srv.Name == "" || !srv.PersistLogs(b.stack) {
 			continue
 		}
-		path := state.TelemetryServerPath(b.stack.Name, srv.Name, "logs")
+		path, perr := state.TelemetryServerPath(b.stack.Name, srv.Name, "logs")
+		if perr != nil {
+			logger.Warn("telemetry: cannot resolve path", "server", srv.Name, "error", perr)
+			continue
+		}
 		if err := buf.SeedFromFile(path, telemetrySeedLimit); err != nil {
 			logger.Warn("telemetry: seed logs failed", "server", srv.Name, "path", path, "error", err)
 		}
@@ -457,7 +465,11 @@ func (b *GatewayBuilder) seedTracesFromDisk(handler slog.Handler) {
 		if srv.Name == "" || !srv.PersistTraces(b.stack) {
 			continue
 		}
-		path := state.TelemetryServerPath(b.stack.Name, srv.Name, "traces")
+		path, perr := state.TelemetryServerPath(b.stack.Name, srv.Name, "traces")
+		if perr != nil {
+			logger.Warn("telemetry: cannot resolve path", "server", srv.Name, "error", perr)
+			continue
+		}
 		if err := b.tracingProvider.Buffer.SeedFromFile(path, telemetrySeedLimit); err != nil {
 			logger.Warn("telemetry: seed traces failed", "server", srv.Name, "path", path, "error", err)
 		}
@@ -480,7 +492,11 @@ func (b *GatewayBuilder) seedMetricsFromDisk(handler slog.Handler) {
 		if srv.Name == "" || !srv.PersistMetrics(b.stack) {
 			continue
 		}
-		path := state.TelemetryServerPath(b.stack.Name, srv.Name, "metrics")
+		path, perr := state.TelemetryServerPath(b.stack.Name, srv.Name, "metrics")
+		if perr != nil {
+			logger.Warn("telemetry: cannot resolve path", "server", srv.Name, "error", perr)
+			continue
+		}
 		if err := b.telemetry.metricsFlusher.SeedFromFile(path, telemetrySeedLimit); err != nil {
 			logger.Warn("telemetry: seed metrics failed", "server", srv.Name, "path", path, "error", err)
 		}
@@ -489,8 +505,10 @@ func (b *GatewayBuilder) seedMetricsFromDisk(handler slog.Handler) {
 	// Seed global prompt (skill) usage from the reserved namespace, persisted
 	// off the stack-global metrics toggle (the registry is not a stack server).
 	if b.stack.Telemetry != nil && b.stack.Telemetry.Persist.Metrics {
-		ppath := state.TelemetryServerPath(b.stack.Name, telemetry.PromptUsageNamespace, "metrics")
-		if err := b.telemetry.metricsFlusher.SeedPromptUsageFromFile(ppath, telemetrySeedLimit); err != nil {
+		ppath, perr := state.TelemetryServerPath(b.stack.Name, telemetry.PromptUsageNamespace, "metrics")
+		if perr != nil {
+			logger.Warn("telemetry: cannot resolve prompt-usage path", "error", perr)
+		} else if err := b.telemetry.metricsFlusher.SeedPromptUsageFromFile(ppath, telemetrySeedLimit); err != nil {
 			logger.Warn("telemetry: seed prompt usage failed", "path", ppath, "error", err)
 		}
 	}
@@ -556,10 +574,12 @@ func (b *GatewayBuilder) Run(ctx context.Context, inst *GatewayInstance, verbose
 	gateway.StartAutoscaler(ctx, mcp.DefaultAutoscalerInterval)
 
 	// Start background skill update check (non-blocking)
-	skills.CheckUpdatesBackground(
-		filepath.Join(state.BaseDir(), "registry"),
-		slog.New(bufferHandler),
-	)
+	if base, err := state.BaseDir(); err == nil {
+		skills.CheckUpdatesBackground(
+			filepath.Join(base, "registry"),
+			slog.New(bufferHandler),
+		)
+	}
 
 	// Start the telemetry metrics flusher (no-op when no server opts in).
 	if b.telemetry != nil && b.telemetry.metricsFlusher != nil {
@@ -726,6 +746,11 @@ func (b *GatewayBuilder) allowUnauthenticated() bool {
 func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging.LogBuffer, webFS fs.FS, registryServer *registry.Server, handler slog.Handler, broker *mcpauth.Broker) (*api.Server, error) {
 	server := api.NewServer(gateway, webFS)
 	server.SetDockerClient(b.rt.DockerClient())
+	if b.rt != nil {
+		// Container teardown for POST /api/reset; the reset engine's
+		// other managers are lazily built inside the API server.
+		server.SetResetRuntime(b.rt)
+	}
 	server.SetStackName(b.stack.Name)
 	server.SetStackFile(b.config.StackPath)
 	server.SetLogBuffer(logBuffer)
@@ -1031,8 +1056,10 @@ func (b *GatewayBuilder) applyTelemetryConfig(apiServer *api.Server, handler slo
 			if err := state.EnsureTelemetryServerDir(stack.Name, telemetry.PromptUsageNamespace); err != nil {
 				logger.Warn("telemetry: cannot ensure prompt-usage dir", "error", err)
 			} else {
-				path := state.TelemetryServerPath(stack.Name, telemetry.PromptUsageNamespace, "metrics")
-				if err := flusher.SetPromptUsageWriter(path, telemetryRotationOpts(stack)); err != nil {
+				path, perr := state.TelemetryServerPath(stack.Name, telemetry.PromptUsageNamespace, "metrics")
+				if perr != nil {
+					logger.Warn("telemetry: cannot resolve prompt-usage path", "error", perr)
+				} else if err := flusher.SetPromptUsageWriter(path, telemetryRotationOpts(stack)); err != nil {
 					logger.Warn("telemetry: prompt-usage writer install failed", "path", path, "error", err)
 				}
 			}
@@ -1092,7 +1119,11 @@ func (b *GatewayBuilder) applyTelemetryConfig(apiServer *api.Server, handler slo
 				logger.Warn("telemetry: cannot ensure dir", "server", name, "error", err)
 				continue
 			}
-			path := state.TelemetryServerPath(stack.Name, name, "logs")
+			path, perr := state.TelemetryServerPath(stack.Name, name, "logs")
+			if perr != nil {
+				logger.Warn("telemetry: cannot resolve path", "server", name, "error", perr)
+				continue
+			}
 			if err := router.AddServer(name, path, opts); err != nil {
 				logger.Warn("telemetry: log writer install failed", "server", name, "path", path, "error", err)
 			}
@@ -1112,7 +1143,11 @@ func (b *GatewayBuilder) applyTelemetryConfig(apiServer *api.Server, handler slo
 				logger.Warn("telemetry: cannot ensure dir", "server", name, "error", err)
 				continue
 			}
-			path := state.TelemetryServerPath(stack.Name, name, "metrics")
+			path, perr := state.TelemetryServerPath(stack.Name, name, "metrics")
+			if perr != nil {
+				logger.Warn("telemetry: cannot resolve path", "server", name, "error", perr)
+				continue
+			}
 			if err := flusher.AddServer(name, path, opts); err != nil {
 				logger.Warn("telemetry: metrics writer install failed", "server", name, "path", path, "error", err)
 			}
@@ -1132,7 +1167,11 @@ func (b *GatewayBuilder) applyTelemetryConfig(apiServer *api.Server, handler slo
 				logger.Warn("telemetry: cannot ensure dir", "server", name, "error", err)
 				continue
 			}
-			path := state.TelemetryServerPath(stack.Name, name, "traces")
+			path, perr := state.TelemetryServerPath(stack.Name, name, "traces")
+			if perr != nil {
+				logger.Warn("telemetry: cannot resolve path", "server", name, "error", perr)
+				continue
+			}
 			if err := tc.AddServer(name, path, opts); err != nil {
 				logger.Warn("telemetry: traces writer install failed", "server", name, "path", path, "error", err)
 			}
@@ -1307,7 +1346,7 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 	// skips with a warning.
 	projectionHome := b.homeDir
 	if projectionHome == "" {
-		if h, err := os.UserHomeDir(); err == nil {
+		if h, err := state.Home(); err == nil {
 			projectionHome = h
 		} else {
 			slog.New(handler).Warn("home directory unavailable; skill projection reconcile disabled", "error", err)
