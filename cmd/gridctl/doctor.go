@@ -314,7 +314,7 @@ func checkStaleState(ctx context.Context, checks *[]doctorCheck) {
 		*checks = append(*checks, doctorCheck{
 			ID:      "state.stale",
 			Status:  doctorStatusWarn,
-			Message: fmt.Sprintf("stale state for stopped stack(s): %s (clean up with 'gridctl destroy <name>')", strings.Join(stale, ", ")),
+			Message: fmt.Sprintf("stale state for stopped stack(s): %s (clean up one with 'gridctl destroy <name>', or everything with 'gridctl reset')", strings.Join(stale, ", ")),
 		})
 		return
 	}
