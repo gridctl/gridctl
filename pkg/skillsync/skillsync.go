@@ -15,12 +15,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sync"
 
 	"github.com/gridctl/gridctl/pkg/project"
 	"github.com/gridctl/gridctl/pkg/registry"
+	"github.com/gridctl/gridctl/pkg/state"
 )
 
 // Sentinel errors callers branch on.
@@ -114,7 +114,7 @@ func (m *Manager) policyDenied(name string) (bool, string) {
 // injected home keeps the suite away from real client skill
 // directories.
 func NewManager(store SkillSource) (*Manager, error) {
-	home, err := os.UserHomeDir()
+	home, err := state.Home()
 	if err != nil {
 		return nil, fmt.Errorf("resolving home directory: %w", err)
 	}
