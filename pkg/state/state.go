@@ -2,6 +2,7 @@ package state
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,13 +12,33 @@ import (
 
 const daemonShutdownGracePeriod = 5 * time.Second
 
+// daemonStateSchemaVersion is the current schema of the per-stack daemon
+// state file. Version 1 is the pre-versioned file (schema_version absent);
+// version 2 adds the schema_version and home fields. Readers refuse a newer
+// version rather than guess (Article XVII).
+const daemonStateSchemaVersion = 2
+
+// ErrNewerSchema marks a state file written by a newer gridctl. Callers
+// must refuse to act on it, and above all must not "clean it up": the
+// file belongs to a daemon this binary cannot represent.
+var ErrNewerSchema = errors.New("state file written by a newer gridctl")
+
 // DaemonState represents the state of a running daemon.
 type DaemonState struct {
-	StackName string    `json:"stack_name"`
-	StackFile string    `json:"stack_file"`
-	PID       int       `json:"pid"`
-	Port      int       `json:"port"`
-	StartedAt time.Time `json:"started_at"`
+	// SchemaVersion identifies the state-file schema. Absent (0) in
+	// files written before versioning; treated as version 1 on read.
+	SchemaVersion int       `json:"schema_version,omitempty"`
+	StackName     string    `json:"stack_name"`
+	StackFile     string    `json:"stack_file"`
+	PID           int       `json:"pid"`
+	Port          int       `json:"port"`
+	StartedAt     time.Time `json:"started_at"`
+
+	// Home is the resolved home directory the daemon was started under
+	// (see Home()). Subcommands compare it against their own resolved
+	// home so a GRIDCTL_HOME mismatch surfaces as a named warning
+	// instead of a confusing empty state.
+	Home string `json:"home,omitempty"`
 
 	// AuthToken and AuthHeader carry the gateway's inbound credentials so
 	// local subcommands can authenticate against the API they already know
@@ -37,71 +58,122 @@ type DaemonState struct {
 	AuthType   string `json:"auth_type,omitempty"`
 }
 
-// BaseDir returns the base gridctl directory (~/.gridctl/).
-func BaseDir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".gridctl")
+// BaseDir returns the base gridctl directory (<home>/.gridctl). It errors
+// rather than falling back to a relative path when the home cannot be
+// resolved: every caller below joins onto this value, and a destructive
+// operation aimed at a relative ".gridctl" would target the working
+// directory.
+func BaseDir() (string, error) {
+	home, err := Home()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".gridctl"), nil
 }
 
-// StateDir returns the directory for state files (~/.gridctl/state/).
-func StateDir() string {
-	return filepath.Join(BaseDir(), "state")
+// StateDir returns the directory for state files (<home>/.gridctl/state).
+func StateDir() (string, error) {
+	base, err := BaseDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "state"), nil
 }
 
-// LogDir returns the directory for log files (~/.gridctl/logs/).
-func LogDir() string {
-	return filepath.Join(BaseDir(), "logs")
+// LogDir returns the directory for log files (<home>/.gridctl/logs).
+func LogDir() (string, error) {
+	base, err := BaseDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "logs"), nil
 }
 
-// VaultDir returns the directory for vault storage (~/.gridctl/vault/).
-func VaultDir() string {
-	return filepath.Join(BaseDir(), "vault")
+// VaultDir returns the directory for vault storage (<home>/.gridctl/vault).
+func VaultDir() (string, error) {
+	base, err := BaseDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "vault"), nil
 }
 
-// PinsDir returns the directory for schema pin files (~/.gridctl/pins/).
-func PinsDir() string {
-	return filepath.Join(BaseDir(), "pins")
+// PinsDir returns the directory for schema pin files (<home>/.gridctl/pins).
+func PinsDir() (string, error) {
+	base, err := BaseDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "pins"), nil
 }
 
-// StacksDir returns the directory for saved stack files (~/.gridctl/stacks/).
-func StacksDir() string {
-	return filepath.Join(BaseDir(), "stacks")
+// StacksDir returns the directory for saved stack files (<home>/.gridctl/stacks).
+func StacksDir() (string, error) {
+	base, err := BaseDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "stacks"), nil
 }
 
-// PinsPath returns the path to the pin file for a stack (~/.gridctl/pins/{name}.json).
-func PinsPath(name string) string {
-	return filepath.Join(PinsDir(), name+".json")
+// PinsPath returns the path to the pin file for a stack (<home>/.gridctl/pins/{name}.json).
+func PinsPath(name string) (string, error) {
+	dir, err := PinsDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, name+".json"), nil
 }
 
 // SkillPinsPath returns the path to the skill pin file for a stack
-// (~/.gridctl/pins/skills/{name}.json). A subdirectory, not a filename
+// (<home>/.gridctl/pins/skills/{name}.json). A subdirectory, not a filename
 // suffix, keeps the namespace disjoint from tool pins: any suffix scheme
 // inside PinsDir would collide with a stack literally named with that
 // suffix (PinsPath("x.skills") == a suffix-based SkillPinsPath("x")).
 // Skill pins track registry documents, not live tool sets, and the two
 // stores version independently.
-func SkillPinsPath(name string) string {
-	return filepath.Join(PinsDir(), "skills", name+".json")
+func SkillPinsPath(name string) (string, error) {
+	dir, err := PinsDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "skills", name+".json"), nil
 }
 
 // StatePath returns the path to a state file for a stack.
-func StatePath(name string) string {
-	return filepath.Join(StateDir(), name+".json")
+func StatePath(name string) (string, error) {
+	dir, err := StateDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, name+".json"), nil
 }
 
 // LogPath returns the path to a log file for a stack.
-func LogPath(name string) string {
-	return filepath.Join(LogDir(), name+".log")
+func LogPath(name string) (string, error) {
+	dir, err := LogDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, name+".log"), nil
 }
 
 // LockPath returns the path to a lock file for a stack.
-func LockPath(name string) string {
-	return filepath.Join(StateDir(), name+".lock")
+func LockPath(name string) (string, error) {
+	dir, err := StateDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, name+".lock"), nil
 }
 
 // Load reads a daemon state file.
 func Load(name string) (*DaemonState, error) {
-	data, err := os.ReadFile(StatePath(name))
+	path, err := StatePath(name)
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -111,14 +183,32 @@ func Load(name string) (*DaemonState, error) {
 		return nil, fmt.Errorf("parsing state file: %w", err)
 	}
 
+	// Article XVII: refuse a newer schema instead of guessing at it.
+	// Absent (0) is the pre-versioned file, read as version 1.
+	if state.SchemaVersion > daemonStateSchemaVersion {
+		return nil, fmt.Errorf("%w: %s has schema version %d, newer than this gridctl understands (%d); upgrade gridctl",
+			ErrNewerSchema, path, state.SchemaVersion, daemonStateSchemaVersion)
+	}
+
 	return &state, nil
 }
 
-// Save writes a daemon state file.
+// Save writes a daemon state file, stamping the current schema version and
+// the resolved home the daemon runs under.
 func Save(state *DaemonState) error {
-	// Ensure directory exists
-	if err := os.MkdirAll(StateDir(), 0755); err != nil {
+	dir, err := StateDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("creating state directory: %w", err)
+	}
+
+	state.SchemaVersion = daemonStateSchemaVersion
+	if state.Home == "" {
+		if home, err := Home(); err == nil {
+			state.Home = home
+		}
 	}
 
 	// #nosec G117 -- AuthToken is intentionally persisted: local subcommands
@@ -130,7 +220,11 @@ func Save(state *DaemonState) error {
 		return fmt.Errorf("marshaling state: %w", err)
 	}
 
-	if err := os.WriteFile(StatePath(state.StackName), data, 0600); err != nil {
+	path, err := StatePath(state.StackName)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		return fmt.Errorf("writing state file: %w", err)
 	}
 
@@ -139,7 +233,10 @@ func Save(state *DaemonState) error {
 
 // Delete removes a state file.
 func Delete(name string) error {
-	path := StatePath(name)
+	path, err := StatePath(name)
+	if err != nil {
+		return err
+	}
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return err
 	}
@@ -148,7 +245,10 @@ func Delete(name string) error {
 
 // List returns all daemon states.
 func List() ([]DaemonState, error) {
-	dir := StateDir()
+	dir, err := StateDir()
+	if err != nil {
+		return nil, err
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -204,6 +304,11 @@ func CheckAndClean(name string) (bool, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
+		}
+		// A newer-schema file is NOT corruption: it belongs to a daemon a
+		// newer binary is running. Deleting it would orphan that daemon.
+		if errors.Is(err, ErrNewerSchema) {
+			return false, err
 		}
 		// If we can't load the state file (corrupt), we should probably clean it
 		// Try to delete it so we can start fresh
@@ -271,26 +376,42 @@ func KillDaemon(state *DaemonState) error {
 
 // EnsureLogDir creates the log directory if it doesn't exist.
 func EnsureLogDir() error {
-	return os.MkdirAll(LogDir(), 0755)
+	dir, err := LogDir()
+	if err != nil {
+		return err
+	}
+	return os.MkdirAll(dir, 0755)
 }
 
 // TelemetryDir returns the root directory for opt-in telemetry persistence
-// (~/.gridctl/telemetry/). Subtree layout: <stack>/<server>/{logs,metrics,traces}.jsonl.
-func TelemetryDir() string {
-	return filepath.Join(BaseDir(), "telemetry")
+// (<home>/.gridctl/telemetry). Subtree layout: <stack>/<server>/{logs,metrics,traces}.jsonl.
+func TelemetryDir() (string, error) {
+	base, err := BaseDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "telemetry"), nil
 }
 
 // TelemetryServerDir returns the per-server directory under TelemetryDir for
 // the given stack and server.
-func TelemetryServerDir(stackName, serverName string) string {
-	return filepath.Join(TelemetryDir(), stackName, serverName)
+func TelemetryServerDir(stackName, serverName string) (string, error) {
+	dir, err := TelemetryDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, stackName, serverName), nil
 }
 
 // TelemetryServerPath returns the path to a single signal file for a server.
 // signal must be "logs", "metrics", or "traces"; any string is accepted but
 // only those three are produced by the daemon.
-func TelemetryServerPath(stackName, serverName, signal string) string {
-	return filepath.Join(TelemetryServerDir(stackName, serverName), signal+".jsonl")
+func TelemetryServerPath(stackName, serverName, signal string) (string, error) {
+	dir, err := TelemetryServerDir(stackName, serverName)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, signal+".jsonl"), nil
 }
 
 // EnsureTelemetryServerDir creates the per-server telemetry directory with
@@ -298,18 +419,29 @@ func TelemetryServerPath(stackName, serverName, signal string) string {
 // path inherit the same restrictive permissions because lumberjack will not
 // chmod them on its own.
 func EnsureTelemetryServerDir(stackName, serverName string) error {
-	return os.MkdirAll(TelemetryServerDir(stackName, serverName), 0700)
+	dir, err := TelemetryServerDir(stackName, serverName)
+	if err != nil {
+		return err
+	}
+	return os.MkdirAll(dir, 0700)
 }
 
 // WithLock executes fn while holding an exclusive lock on the stack state.
 // Returns error if lock cannot be acquired within timeout.
 func WithLock(name string, timeout time.Duration, fn func() error) error {
-	// Ensure directory exists
-	if err := os.MkdirAll(StateDir(), 0755); err != nil {
+	dir, err := StateDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("creating state directory: %w", err)
 	}
 
-	lockFile, err := os.OpenFile(LockPath(name), os.O_CREATE|os.O_RDWR, 0644)
+	lockPath, err := LockPath(name)
+	if err != nil {
+		return err
+	}
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		return fmt.Errorf("opening lock file: %w", err)
 	}
