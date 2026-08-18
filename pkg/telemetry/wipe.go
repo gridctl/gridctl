@@ -47,7 +47,11 @@ func Wipe(stackName, serverName, signal string) error {
 }
 
 func doWipe(stackName, serverName, signal string) error {
-	stackDir := filepath.Join(state.TelemetryDir(), stackName)
+	teleDir, err := state.TelemetryDir()
+	if err != nil {
+		return err
+	}
+	stackDir := filepath.Join(teleDir, stackName)
 	entries, err := os.ReadDir(stackDir)
 	if err != nil {
 		if os.IsNotExist(err) {
