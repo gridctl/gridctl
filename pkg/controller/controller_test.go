@@ -74,7 +74,10 @@ func TestStackController_Serve_LoadsVaultBestEffort(t *testing.T) {
 		t.Error("expected nil vaultStore before Serve()")
 	}
 
-	vaultDir := state.VaultDir()
+	vaultDir, verr := state.VaultDir()
+	if verr != nil {
+		t.Fatalf("VaultDir: %v", verr)
+	}
 	if vaultDir == "" {
 		t.Error("expected non-empty vault dir from state.VaultDir()")
 	}
@@ -183,7 +186,6 @@ func TestBuildWorkloadSummaries_DefaultTransport(t *testing.T) {
 		t.Errorf("expected transport 'http' for default, got '%s'", summaries[0].Transport)
 	}
 }
-
 
 func TestBuildWorkloadSummaries_Resources(t *testing.T) {
 	stack := &config.Stack{
