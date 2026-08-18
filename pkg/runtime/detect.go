@@ -199,6 +199,9 @@ func extractSocketPath(host string) string {
 func resolveDockerContext() (string, error) {
 	dir := os.Getenv("DOCKER_CONFIG")
 	if dir == "" {
+		// Deliberately the real OS home, not state.Home(): ~/.docker is
+		// machine-level Docker state, not gridctl state, and must not
+		// move under GRIDCTL_HOME (see pkg/state/homeguard_test.go).
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", nil
