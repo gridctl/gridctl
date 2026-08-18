@@ -61,6 +61,15 @@ func (m *Managers) Execute(ctx context.Context, opts Options, progress Progress)
 	// user where the safety copy landed.
 	doc.Rows = append(doc.Rows, emit(Row{Kind: "backup", Name: "pre-reset archive", Path: backupPath, Action: "written", Detail: doc.BackupNote}))
 
+	// Surfaces whose manager failed to construct are reported and
+	// counted up front: a "clean" exit 0 that silently skipped every
+	// projection would be a lie.
+	for _, name := range m.Missing {
+		doc.Failed++
+		doc.Rows = append(doc.Rows, emit(Row{Kind: name, Name: name, Action: ActionSkipped,
+			Detail: "manager unavailable; nothing on this surface was removed (re-run reset once it is back)"}))
+	}
+
 	fail := func(r Row, err error) {
 		r.Action = ActionFailed
 		r.Error = err.Error()
@@ -96,6 +105,23 @@ func (m *Managers) Execute(ctx context.Context, opts Options, progress Progress)
 		}
 		row.Action = ActionStopped
 		ok(row)
+	}
+	if inv.orphanPID != 0 && inv.orphanPID != opts.SelfPID {
+		// Foreground process under OUR home with no state file: kill it
+		// so its reconcile loop cannot re-project mid-reset. No state
+		// lock to take and no state file to delete; its containers keep
+		// their stack name and are destroyed by name if any remain.
+		row := Row{Kind: "daemon", Name: "gridctl (foreground)", Detail: fmt.Sprintf("pid %d", inv.orphanPID)}
+		if err := state.KillDaemon(&state.DaemonState{StackName: "gridctl", PID: inv.orphanPID}); err != nil {
+			fail(row, err)
+		} else {
+			row.Action = ActionStopped
+			ok(row)
+		}
+	}
+	if inv.foreignDaemonHome != "" {
+		ok(Row{Kind: "daemon", Name: "gridctl (other home)", Action: ActionSkipped,
+			Detail: fmt.Sprintf("daemon on port %d runs under home %s; not touched", defaultGatewayPort, inv.foreignDaemonHome)})
 	}
 
 	// A canceled context aborts the cascade here rather than letting a
