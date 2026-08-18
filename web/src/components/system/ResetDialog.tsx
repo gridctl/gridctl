@@ -5,7 +5,6 @@ import {
   ChevronDown,
   ChevronRight,
   Loader2,
-  ShieldCheck,
   Trash2,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
@@ -20,6 +19,12 @@ import {
 
 type Phase = 'preview' | 'confirm' | 'running' | 'result';
 type Tier = 'default' | 'purge';
+
+// Seam over the hard page reload so tests can observe the exit without
+// jsdom navigation errors — the server side has the same seam for the
+// same reason (SetResetExit observes self-termination without dying).
+// eslint-disable-next-line react-refresh/only-export-components -- test seam; exported for unit tests alongside the dialog
+export const pageReload = { current: () => window.location.reload() };
 
 /**
  * ResetDialog is the web face of `gridctl reset`: a single focus-trapped
@@ -88,11 +93,19 @@ export function ResetDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   }
 
   // Escape and backdrop must not abandon a reset mid-flight; the cascade
-  // is running server-side whether or not the dialog stays open.
+  // is running server-side whether or not the dialog stays open. Once an
+  // execute has succeeded, every exit reloads, not just Done: the stores
+  // describe a world the reset dismantled, so X and Escape must not
+  // strand the user on a stale page. A failed execute (stale token, 409)
+  // changed nothing server-side and closes without reloading.
   const guardedClose = useCallback(() => {
     if (phase === 'running') return;
+    if (phase === 'result' && result) {
+      pageReload.current();
+      return;
+    }
     onClose();
-  }, [phase, onClose]);
+  }, [phase, result, onClose]);
 
   const run = useCallback(async () => {
     if (!preview) return;
@@ -135,7 +148,7 @@ export function ResetDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         />
       )}
       {phase === 'running' && <RunningView tier={tier} gridctlDir={preview?.confirm_phrase ?? ''} />}
-      {phase === 'result' && <ResultView result={result} execError={execError} />}
+      {phase === 'result' && <ResultView result={result} execError={execError} onClose={onClose} />}
     </Modal>
   );
 }
@@ -216,14 +229,19 @@ function PreviewView({ preview, previewError, tier, onTier, onContinue, onCancel
         {kept.length > 0 ? (
           <div className="rounded-md border border-status-pending/30 bg-status-pending/[0.06] px-3 py-2 space-y-1.5">
             <p className="flex items-center gap-1.5 font-medium text-status-pending">
-              <ShieldCheck size={12} aria-hidden="true" />
+              <AlertTriangle size={12} aria-hidden="true" />
               Kept: your edits are safe ({kept.length})
             </p>
             <ul className="space-y-0.5 text-[11px] text-text-secondary">
               {kept.map((r) => (
-                <li key={r.kind + r.name + (r.client ?? '')}>
-                  <span className="font-mono">{r.kind} {r.name}</span>
-                  {r.detail ? <span className="text-text-muted"> — {r.detail}</span> : null}
+                <li key={r.kind + r.name + (r.client ?? '')} className="flex items-baseline gap-2">
+                  <span className="text-[10px] px-2 py-0.5 rounded-full border font-medium whitespace-nowrap border-status-pending/30 bg-status-pending/10 text-status-pending">
+                    kept (edited)
+                  </span>
+                  <span className="min-w-0">
+                    <span className="font-mono">{r.kind} {r.name}</span>
+                    {r.detail ? <span className="text-text-muted"> — {r.detail}</span> : null}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -401,9 +419,14 @@ function ClientGroup({ name, rows }: { name: string; rows: ResetRow[] }) {
         <ul className="border-t border-border/20 px-3 py-1.5 space-y-0.5">
           {rows.map((r, i) => (
             <li key={i} className="flex items-baseline gap-2 text-[11px]">
+              {/* Future tense: nothing has been deleted on the preview screen. */}
               <span className="inline-flex items-center gap-1 text-status-error">
                 <Trash2 size={10} aria-hidden="true" />
-                {r.action === 'dropped-record' ? 'record' : 'removed'}
+                {r.action === 'dropped-record'
+                  ? 'record'
+                  : r.action === 'would-stop'
+                    ? 'will stop'
+                    : 'will remove'}
               </span>
               <span className="text-text-secondary">{r.kind}</span>
               <span className="font-mono text-[10px] text-text-muted truncate">{r.path || r.name}</span>
@@ -525,7 +548,9 @@ function ConfirmView({ preview, tier, phrase, onPhrase, onBack, onCancel, onConf
               'disabled:opacity-40 disabled:cursor-not-allowed',
             )}
           >
-            {purge ? `Reset and delete ${preview.confirm_phrase}` : 'Reset (keep state directory)'}
+            {/* Both labels name the resolved path, never an abstract noun
+                (the docker/for-mac#6758 tier-confusion countermeasure). */}
+            {purge ? `Reset and delete ${preview.confirm_phrase}` : `Reset (keep ${preview.confirm_phrase})`}
           </button>
         </div>
       </div>
@@ -535,12 +560,16 @@ function ConfirmView({ preview, tier, phrase, onPhrase, onBack, onCancel, onConf
 
 // --- running ---------------------------------------------------------------
 
+// Mirrors the engine's phase order (pkg/resetops/execute.go): backup,
+// daemons, projections, contexts, wiring, containers, state files.
 const RUN_STEPS = [
   'Writing backup',
   'Stopping daemons',
   'Removing projections',
+  'Removing context rules',
   'Removing gateway entries from client configs',
   'Removing containers and networks',
+  'Removing state files',
 ];
 
 function RunningView({ tier, gridctlDir }: { tier: Tier; gridctlDir: string }) {
@@ -562,10 +591,23 @@ function RunningView({ tier, gridctlDir }: { tier: Tier; gridctlDir: string }) {
 
 // --- result ----------------------------------------------------------------
 
-const DONE_ACTIONS = new Set(['removed', 'stopped', 'removed-file', 'removed-region', 'dropped-record']);
+// The actions the engine emits for completed work (execute.go); preview
+// forms never appear in a result document.
+const DONE_ACTIONS = new Set(['removed', 'stopped', 'dropped-record']);
 
-function ResultView({ result, execError }: { result: ResetDoc | null; execError: string | null }) {
+function ResultView({
+  result,
+  execError,
+  onClose,
+}: {
+  result: ResetDoc | null;
+  execError: string | null;
+  onClose: () => void;
+}) {
   if (!result) {
+    // A failed execute (stale token, 409, transport error) changed nothing
+    // server-side: Close keeps the app as it was; reloading is for the
+    // success path only.
     return (
       <div className="space-y-3 text-xs">
         <div className="flex items-start gap-2 rounded-md border border-status-error/40 bg-status-error/[0.06] px-3 py-2" role="alert">
@@ -577,7 +619,7 @@ function ResultView({ result, execError }: { result: ResetDoc | null; execError:
           run it again.
         </p>
         <div className="flex justify-end">
-          <DoneButton />
+          <FooterButton onClick={onClose}>Close</FooterButton>
         </div>
       </div>
     );
@@ -646,7 +688,7 @@ function DoneButton() {
   return (
     <button
       type="button"
-      onClick={() => window.location.reload()}
+      onClick={() => pageReload.current()}
       className="rounded-md px-3 py-1.5 text-[11px] font-medium border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
     >
       Done
