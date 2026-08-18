@@ -69,7 +69,7 @@ If gridctl was installed via Homebrew, `gridctl upgrade` detects that and recomm
 ## Uninstalling
 
 Before removing the binary, remove what gridctl placed elsewhere on the
-machine — projected skills and rules in client directories, gateway
+machine: projected skills and rules in client directories, gateway
 entries in client MCP configs, and running containers. The installer's
 `--purge` removes only `~/.gridctl` and leaves all of that behind:
 
@@ -77,13 +77,17 @@ entries in client MCP configs, and running containers. The installer's
 gridctl reset --purge
 ```
 
-Then remove the binary:
+Then remove the binary (follow-up: `install.sh --purge` should invoke
+`gridctl reset --purge` itself while the binary is still on PATH):
 
 ```bash
 # Standalone install
 curl -fsSL https://raw.githubusercontent.com/gridctl/gridctl/main/install.sh | sh -s -- --uninstall
 
 # Also remove the config directory at ~/.gridctl
+# (redundant after `gridctl reset --purge`; if reset was skipped, this
+# removes ONLY ~/.gridctl and strands projections and client-config
+# entries)
 curl -fsSL https://raw.githubusercontent.com/gridctl/gridctl/main/install.sh | sh -s -- --uninstall --purge
 
 # Homebrew install
