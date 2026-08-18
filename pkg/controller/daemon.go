@@ -47,7 +47,11 @@ func (d *DaemonManager) Fork(stack *config.Stack) (int, error) {
 		return 0, fmt.Errorf("creating log directory: %w", err)
 	}
 
-	logFile, err := os.OpenFile(state.LogPath(stack.Name), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	logPath, err := state.LogPath(stack.Name)
+	if err != nil {
+		return 0, err
+	}
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
 		return 0, fmt.Errorf("opening log file: %w", err)
 	}
@@ -101,7 +105,11 @@ func (d *DaemonManager) ForkStackless() (int, error) {
 		return 0, fmt.Errorf("creating log directory: %w", err)
 	}
 
-	logFile, err := os.OpenFile(state.LogPath("gridctl"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	logPath, err := state.LogPath("gridctl")
+	if err != nil {
+		return 0, err
+	}
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
 		return 0, fmt.Errorf("opening log file: %w", err)
 	}
