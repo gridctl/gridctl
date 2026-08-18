@@ -3,13 +3,14 @@ package builder
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"github.com/gridctl/gridctl/pkg/state"
 	"os"
 	"path/filepath"
 )
 
 // CacheDir returns the gridctl cache directory.
 func CacheDir() (string, error) {
-	home, err := os.UserHomeDir()
+	home, err := state.Home()
 	if err != nil {
 		return "", err
 	}
