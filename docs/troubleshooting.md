@@ -718,6 +718,11 @@ daemon state (re-authorize with `gridctl auth login`) and
 cache/logs/telemetry (recreated as needed); it does include the vault,
 pins, registry, context store, saved stacks, and lockfiles.
 
+Reset does not remove built container images or named Docker volumes;
+they are not gridctl-owned the way labeled containers are. If leftover
+`gridctl-*` images or volumes bother you, clear them with
+`docker image prune` and `docker volume prune`.
+
 ## General
 
 ### Getting help
