@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/gridctl/gridctl/pkg/state"
 	"gopkg.in/yaml.v3"
 )
 
@@ -121,7 +122,12 @@ func LoadSkillsConfig(path string) (*SkillsConfig, error) {
 
 // SkillsConfigPath returns the default path to skills.yaml.
 func SkillsConfigPath() string {
-	home, _ := os.UserHomeDir()
+	home, err := state.Home()
+	if err != nil {
+		// No resolvable home: return "" so callers fail on a missing
+		// file instead of reading a relative path in the cwd.
+		return ""
+	}
 	return filepath.Join(home, ".gridctl", "skills.yaml")
 }
 
