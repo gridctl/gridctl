@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/gridctl/gridctl/pkg/env"
+	"github.com/gridctl/gridctl/pkg/state"
 )
 
 // UpdateStatus records the result of a background update check.
@@ -30,7 +31,10 @@ type SkillUpdate struct {
 
 // UpdateCachePath returns the path to the cached update status file.
 func UpdateCachePath() string {
-	home, _ := os.UserHomeDir()
+	home, err := state.Home()
+	if err != nil {
+		return ""
+	}
 	return filepath.Join(home, ".gridctl", "cache", "skill-updates.yaml")
 }
 
