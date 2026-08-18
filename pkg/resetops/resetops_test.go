@@ -26,6 +26,11 @@ func sandboxHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv(state.HomeEnv, home)
+	// Never probe the machine's real gateway port from unit tests.
+	origFind, origHome := findOrphanFn, daemonHomeFn
+	findOrphanFn = func(int) (int, bool, error) { return 0, false, nil }
+	daemonHomeFn = func(int) (string, bool) { return "", false }
+	t.Cleanup(func() { findOrphanFn, daemonHomeFn = origFind, origHome })
 	return home
 }
 
@@ -288,7 +293,7 @@ func TestExecute_Idempotent(t *testing.T) {
 func TestExecute_RuntimeUnavailableReported(t *testing.T) {
 	home := sandboxHome(t)
 	// One recorded daemon state file under the sandbox home.
-	if err := state.Save(&state.DaemonState{StackName: "demo", PID: 1}); err != nil {
+	if err := state.Save(&state.DaemonState{StackName: "demo", PID: 999999}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	m := &Managers{Home: home} // Runtime nil
@@ -313,7 +318,7 @@ func TestExecute_RuntimeUnavailableReported(t *testing.T) {
 
 func TestExecute_ScopedToOwnStateFiles(t *testing.T) {
 	home := sandboxHome(t)
-	if err := state.Save(&state.DaemonState{StackName: "mine", PID: 1}); err != nil {
+	if err := state.Save(&state.DaemonState{StackName: "mine", PID: 999999}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	rt := &fakeRuntime{}
@@ -551,7 +556,7 @@ func TestBackup_CapturesDirectoryTargets(t *testing.T) {
 
 func TestExecute_CanceledContextAbortsBeforeStateDeletion(t *testing.T) {
 	home := sandboxHome(t)
-	if err := state.Save(&state.DaemonState{StackName: "demo", PID: 1}); err != nil {
+	if err := state.Save(&state.DaemonState{StackName: "demo", PID: 999999}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	// A skill Statuses fake that cancels the context mid-cascade: the
@@ -593,4 +598,68 @@ func mustStatePath(t *testing.T, name string) string {
 		t.Fatalf("StatePath: %v", err)
 	}
 	return p
+}
+
+func TestExecute_OrphanAdoptedOnlyForOwnHome(t *testing.T) {
+	home := sandboxHome(t)
+	findOrphanFn = func(int) (int, bool, error) { return 999999, true, nil }
+	daemonHomeFn = func(int) (string, bool) { return home, true }
+	m := &Managers{Home: home}
+
+	doc, err := m.Execute(context.Background(), Options{}, nil)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	var stopped bool
+	for _, r := range doc.Rows {
+		if r.Kind == "daemon" && r.Name == "gridctl (foreground)" && r.Action == ActionStopped {
+			stopped = true
+		}
+	}
+	if !stopped {
+		t.Errorf("own-home orphan must be stopped; rows: %+v", doc.Rows)
+	}
+}
+
+func TestExecute_ForeignHomeOrphanNeverSignaled(t *testing.T) {
+	home := sandboxHome(t)
+	findOrphanFn = func(int) (int, bool, error) { return 999999, true, nil }
+	daemonHomeFn = func(int) (string, bool) { return "/somebody/else", true }
+	m := &Managers{Home: home}
+
+	doc, err := m.Execute(context.Background(), Options{}, nil)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	for _, r := range doc.Rows {
+		if r.Kind == "daemon" && r.Action == ActionStopped {
+			t.Fatalf("foreign-home daemon must never be signaled: %+v", r)
+		}
+	}
+	var advisory bool
+	for _, r := range doc.Rows {
+		if r.Kind == "daemon" && r.Action == ActionSkipped {
+			advisory = true
+		}
+	}
+	if !advisory {
+		t.Error("a foreign-home daemon must be reported, not silently ignored")
+	}
+}
+
+func TestExecute_UnidentifiableOrphanNeverSignaled(t *testing.T) {
+	home := sandboxHome(t)
+	findOrphanFn = func(int) (int, bool, error) { return 999999, true, nil }
+	daemonHomeFn = func(int) (string, bool) { return "", false } // old binary: no home field
+	m := &Managers{Home: home}
+
+	doc, err := m.Execute(context.Background(), Options{}, nil)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	for _, r := range doc.Rows {
+		if r.Action == ActionStopped {
+			t.Fatalf("an orphan that cannot prove its home must never be signaled: %+v", r)
+		}
+	}
 }
