@@ -62,11 +62,25 @@ type PinStore struct {
 func New(stackName string) *PinStore {
 	ps := &PinStore{
 		stackName:   stackName,
-		path:        state.PinsPath(stackName),
 		scanEnabled: true,
 	}
 	ps.data = ps.emptyPinFile()
 	return ps
+}
+
+// ensurePath resolves the on-disk location lazily so New stays error-free;
+// resolution fails only when no home directory is available. Callers hold
+// ps.mu.
+func (ps *PinStore) ensurePath() error {
+	if ps.path != "" {
+		return nil
+	}
+	p, err := state.PinsPath(ps.stackName)
+	if err != nil {
+		return fmt.Errorf("pins: resolving pin file path: %w", err)
+	}
+	ps.path = p
+	return nil
 }
 
 // NewWithPath creates a PinStore that stores pins in dir/{stackName}.json.
@@ -125,6 +139,9 @@ func (ps *PinStore) Load() error {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
+	if err := ps.ensurePath(); err != nil {
+		return err
+	}
 	data, err := os.ReadFile(ps.path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -525,6 +542,9 @@ func (ps *PinStore) buildVerifyResult(serverName string, sp *ServerPins, tools [
 // saveLocked writes the pin file atomically. Creates the directory on first write.
 // Caller must hold ps.mu.Lock().
 func (ps *PinStore) saveLocked() error {
+	if err := ps.ensurePath(); err != nil {
+		return err
+	}
 	// The directory derives from ps.path, not state.PinsDir(): a store
 	// built via NewWithPath must never create the real pins directory.
 	if err := os.MkdirAll(filepath.Dir(ps.path), 0755); err != nil {
