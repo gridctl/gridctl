@@ -60,6 +60,9 @@ type statusMCPServerJSON struct {
 
 // statusReport is the machine-readable shape of `gridctl status --json`.
 type statusReport struct {
+	// Home is the resolved home directory this invocation runs under
+	// (add-only field; GRIDCTL_HOME when overridden).
+	Home       string                `json:"home,omitempty"`
 	Gateways   []statusGatewayJSON   `json:"gateways"`
 	Containers []statusContainerJSON `json:"containers"`
 	MCPServers []statusMCPServerJSON `json:"mcp_servers"`
@@ -205,8 +208,11 @@ func runStatus(stack string, showReplicas, asJSON, plain bool) error {
 		}
 	}
 
+	resolvedHome, _ := state.Home()
+
 	if asJSON {
 		report := statusReport{
+			Home:       resolvedHome,
 			Gateways:   gatewaysJSON,
 			Containers: containersJSON,
 			MCPServers: make([]statusMCPServerJSON, 0),
@@ -221,6 +227,11 @@ func runStatus(stack string, showReplicas, asJSON, plain bool) error {
 		}
 		return output.EncodeJSON(os.Stdout, report)
 	}
+
+	if state.HomeOverridden() {
+		printer.Info("Home", "path", resolvedHome, "source", state.HomeEnv)
+	}
+	warnDaemonHomeMismatch(printer, resolvedHome, filteredStates)
 
 	if len(containers) == 0 && len(gateways) == 0 {
 		printer.Info("No managed gateways or containers found")
@@ -551,6 +562,37 @@ func formatUptime(d time.Duration) string {
 		return fmt.Sprintf("%dh", int(d.Hours()))
 	default:
 		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	}
+}
+
+// warnDaemonHomeMismatch probes the default gateway port when none of our
+// state files claims it, and warns when a daemon there reports a different
+// resolved home. With two homes there are two state directories, so the
+// other daemon is invisible to state.List(); without this probe the user
+// sees a confusing empty status while a gateway is plainly running.
+func warnDaemonHomeMismatch(printer *output.Printer, resolvedHome string, states []state.DaemonState) {
+	const defaultPort = 8180
+	for _, s := range states {
+		if s.Port == defaultPort {
+			return // that port is ours; nothing to disambiguate
+		}
+	}
+	api := newDaemonAPI(defaultPort, 1*time.Second)
+	resp, err := api.Get(api.URL("/api/status"))
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	var st struct {
+		Home string `json:"home"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&st) != nil || st.Home == "" {
+		return
+	}
+	if st.Home != resolvedHome {
+		printer.Warn("a gridctl daemon on the default port uses a different home",
+			"daemon_home", st.Home, "this_home", resolvedHome,
+			"hint", "set "+state.HomeEnv+"="+st.Home+" (or unset it) to address that daemon")
 	}
 }
 
