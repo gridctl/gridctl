@@ -22,6 +22,8 @@ import {
   Sun,
   Moon,
   Monitor,
+  Plug,
+  RotateCcw,
 } from 'lucide-react';
 import type { ThemeMode } from '../themes/types';
 import { useCommandRegistry } from './useCommandRegistry';
@@ -128,6 +130,27 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         shortcut: ['⌘', '3'],
         keywords: ['variables', 'vault', 'secrets', 'keys', 'env', 'workspace', 'open'],
         onSelect: () => navigate('/vault'),
+      },
+      {
+        id: 'navigate:connections',
+        label: 'Go to Connections',
+        section: 'global',
+        icon: <Plug size={14} />,
+        keywords: ['connections', 'clients', 'link', 'hub', 'workspace', 'go'],
+        onSelect: () => navigate('/connections'),
+      },
+      {
+        id: 'system:reset-gridctl',
+        label: 'Reset gridctl…',
+        section: 'global',
+        icon: <RotateCcw size={14} />,
+        keywords: ['reset', 'purge', 'remove', 'uninstall', 'danger', 'factory', 'clean'],
+        // The dialog lives in Connections; navigating first keeps one
+        // mount point instead of a second dialog instance in the shell.
+        onSelect: () => {
+          navigate('/connections');
+          useUIStore.getState().setResetDialogOpen(true);
+        },
       },
     ];
     registerCommands('navigation', commands);
