@@ -19,6 +19,8 @@ import { useListNav } from '../../hooks/useListNav';
 import type { AgentProjectionStatus, ClientStatus, SessionEntry, WiringRow } from '../../types';
 import { showToast } from '../ui/Toast';
 import { GlobalContextDialog } from '../context/GlobalContextDialog';
+import { ResetDialog } from '../system/ResetDialog';
+import { useUIStore } from '../../stores/useUIStore';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
 import { ClientDetailPane } from '../connections/ClientDetailPane';
 import { ConnectionsRail } from '../connections/ConnectionsRail';
@@ -66,6 +68,8 @@ export default function ConnectionsWorkspace() {
   const [contextReviewSlug, setContextReviewSlug] = useState<string | null>(null);
 
   // ---- Data: wiring + agent projections + context, refreshed together. ----
+  const resetDialogOpen = useUIStore((s) => s.resetDialogOpen);
+
   const refreshHealth = useCallback(async () => {
     const results = await Promise.allSettled([
       fetchWiringStatus(),
@@ -400,6 +404,8 @@ export default function ConnectionsWorkspace() {
         </WorkspaceShell>
       </div>
 
+      <DangerZoneStrip onOpen={() => useUIStore.getState().setResetDialogOpen(true)} />
+
       {changes.length > 0 && (
         <div className="flex-shrink-0 border-t border-border-subtle bg-surface px-6 py-3">
           <div className="flex items-center justify-between">
@@ -433,6 +439,11 @@ export default function ConnectionsWorkspace() {
         />
       )}
 
+      <ResetDialog
+        isOpen={resetDialogOpen}
+        onClose={() => useUIStore.getState().setResetDialogOpen(false)}
+      />
+
       <GlobalContextDialog
         isOpen={showContextDialog}
         initialDriftSlug={contextReviewSlug}
@@ -442,6 +453,30 @@ export default function ConnectionsWorkspace() {
           void refreshHealth();
         }}
       />
+    </div>
+  );
+}
+
+/**
+ * The quiet entry point for the machine-wide reset: a collapsed one-line
+ * strip, never a header affordance — the most destructive verb in the
+ * product must be sought out, not stumbled into from ever-present chrome.
+ */
+function DangerZoneStrip({ onOpen }: { onOpen: () => void }) {
+  return (
+    <div className="flex-shrink-0 border-t border-border-subtle bg-surface px-6 py-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] text-text-muted">
+          Danger zone: remove everything gridctl placed on this machine
+        </span>
+        <button
+          type="button"
+          onClick={onOpen}
+          className="rounded-md px-2.5 py-1 text-[11px] font-medium border border-status-error/30 text-status-error/90 hover:bg-status-error/10 hover:text-status-error transition-colors"
+        >
+          Reset gridctl…
+        </button>
+      </div>
     </div>
   );
 }
