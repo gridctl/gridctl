@@ -16,13 +16,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 
 	"github.com/gowebpki/jcs"
 
 	"github.com/gridctl/gridctl/pkg/project"
 	"github.com/gridctl/gridctl/pkg/provisioner"
+	"github.com/gridctl/gridctl/pkg/state"
 )
 
 // DefaultServerName is the config entry key gridctl writes when no
@@ -71,7 +71,7 @@ type Manager struct {
 // NewManager builds a Manager rooted at the user's home directory. CLI
 // call sites only; anything tests can reach uses NewManagerWithHome.
 func NewManager() (*Manager, error) {
-	home, err := os.UserHomeDir()
+	home, err := state.Home()
 	if err != nil {
 		return nil, fmt.Errorf("resolving home directory: %w", err)
 	}

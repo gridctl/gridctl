@@ -475,6 +475,10 @@ wrong passphrase or corrupted vault
    gridctl var set <KEY>   # the store is recreated on first write
    ```
 
+   If more than the vault is wedged, prefer `gridctl reset` over hand-run
+   `rm -rf`: it removes only what gridctl created (projections, wiring
+   entries, containers), writes a backup first, and is safe to re-run.
+
 ---
 
 ## Podman-Specific Issues
@@ -685,6 +689,39 @@ Static heuristics are one layer. Published benchmarks put signature-only detecti
 The unified projection lockfile (`~/.gridctl/project.lock.yaml`) carries a schema version, and an older gridctl refuses to touch a file written by a newer one rather than risk corrupting it. Upgrade gridctl on this machine, or restore the pre-migration state from `~/.gridctl/project-migration-backup/` if you need to stay on the older version.
 
 ---
+
+## Recovering from reset
+
+`gridctl reset` writes a tar.gz backup before deleting anything: under
+`~/.gridctl/backups/` for the default tier, or beside the removed
+directory (`~/.gridctl-backup-reset-<timestamp>.tar.gz`) for `--purge`.
+The backup is a safety copy, not an undo; gridctl has no restore
+command, and copying projection files back by hand leaves the lockfile
+out of sync (everything shows as drifted).
+
+The supported recovery path is forward: re-run the imports that created
+the state.
+
+```bash
+gridctl apply <stack.yaml>      # stacks, containers, daemons
+gridctl pack add <repo>         # skills, agents, rules, wiring from a pack
+gridctl skill add <repo>        # individually imported skills
+gridctl link <client>           # gateway entries in client configs
+```
+
+Manual fallback: extract the archive from the home directory it was
+made in (`tar -xzf <backup> -C ~`). Paths inside are relative to that
+home. After a manual extract of projection files, run
+`gridctl project status` and adopt or re-sync anything reported as
+drifted. The purge-tier archive deliberately excludes oauth tokens and
+daemon state (re-authorize with `gridctl auth login`) and
+cache/logs/telemetry (recreated as needed); it does include the vault,
+pins, registry, context store, saved stacks, and lockfiles.
+
+Reset does not remove built container images or named Docker volumes;
+they are not gridctl-owned the way labeled containers are. If leftover
+`gridctl-*` images or volumes bother you, clear them with
+`docker image prune` and `docker volume prune`.
 
 ## General
 

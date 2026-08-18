@@ -83,7 +83,11 @@ type TokenStore struct {
 // When dir is empty, <state base dir>/oauth is used.
 func NewTokenStore(dir string) (*TokenStore, error) {
 	if dir == "" {
-		dir = filepath.Join(state.BaseDir(), "oauth")
+		base, err := state.BaseDir()
+		if err != nil {
+			return nil, fmt.Errorf("resolving oauth state dir: %w", err)
+		}
+		dir = filepath.Join(base, "oauth")
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("creating oauth state dir: %w", err)

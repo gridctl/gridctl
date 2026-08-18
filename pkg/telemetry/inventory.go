@@ -43,7 +43,11 @@ func Inventory(stackName, serverName string) ([]InventoryRecord, error) {
 	if stackName == "" {
 		return []InventoryRecord{}, nil
 	}
-	stackDir := filepath.Join(state.TelemetryDir(), stackName)
+	teleDir, err := state.TelemetryDir()
+	if err != nil {
+		return nil, err
+	}
+	stackDir := filepath.Join(teleDir, stackName)
 	entries, err := os.ReadDir(stackDir)
 	if err != nil {
 		if os.IsNotExist(err) {

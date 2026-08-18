@@ -30,7 +30,10 @@ Accepts either the stack YAML file or the stack name shown by
 
 By default client configs are left untouched (linked clients simply point
 at a stopped gateway). With --unlink, the entries declared in the stack's
-link: block are also removed from their client configs.`,
+link: block are also removed from their client configs.
+
+Destroy tears down one stack. To reset gridctl itself (every stack,
+projection, and client-config entry on this machine) use 'gridctl reset'.`,
 	Example: `  gridctl destroy stack.yaml            Destroy by file
   gridctl destroy mystack               Destroy by stack name (see 'gridctl status')
   gridctl destroy stack.yaml --unlink   Also unlink clients declared in link:`,

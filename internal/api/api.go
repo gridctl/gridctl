@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gridctl/gridctl/internal/openapipreview"
@@ -27,8 +28,10 @@ import (
 	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/reload"
+	"github.com/gridctl/gridctl/pkg/resetops"
 	"github.com/gridctl/gridctl/pkg/runtime/docker"
 	"github.com/gridctl/gridctl/pkg/skillpins"
+	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/tracing"
 	"github.com/gridctl/gridctl/pkg/vault"
 	"github.com/gridctl/gridctl/pkg/wiring"
@@ -137,6 +140,18 @@ type Server struct {
 	packsManagers *packops.Managers
 	packsOnce     sync.Once
 	packsErr      error
+
+	// Reset engine (pkg/resetops), lazily built from the same kind
+	// managers; tests inject a temp-home engine via SetResetManagers.
+	// resetTokenStore holds the single-use preview-issued confirm
+	// tokens; resetRunning serializes executions (409 on overlap).
+	resetManagers   *resetops.Managers
+	resetOnce       sync.Once
+	resetErr        error
+	resetRuntime    resetops.Runtime
+	resetTokenStore resetTokens
+	resetRunning    atomic.Bool
+	resetExit       func(int)
 }
 
 // SetWiringManager injects the wiring ownership manager. Tests use it
@@ -565,6 +580,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/project/wiring/status", s.handleProjectWiringStatus)
 	mux.HandleFunc("POST /api/project/wiring/adopt", s.handleProjectWiringAdopt)
 
+	// Reset endpoints (pkg/resetops): the REST face of `gridctl reset`.
+	// Both are loopback-gated and token-guarded (see guardResetRequest).
+	mux.HandleFunc("POST /api/reset/preview", s.handleResetPreview)
+	mux.HandleFunc("POST /api/reset", s.handleResetExecute)
+
 	// Pack endpoints (pkg/packops): the REST face of `gridctl pack
 	// add|apply|status|remove`, plus the wizard's read-only preview.
 	mux.HandleFunc("GET /api/packs", s.handlePacksList)
@@ -649,6 +669,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		CodeMode   string                   `json:"code_mode,omitempty"`
 		TokenUsage *metrics.TokenUsage      `json:"token_usage,omitempty"`
 		StackName  string                   `json:"stack_name,omitempty"`
+		// Home is the resolved home directory this daemon runs under, so
+		// CLI subcommands can detect a GRIDCTL_HOME mismatch (add-only).
+		Home string `json:"home,omitempty"`
 		// Features maps each ENABLED experimental flag name to true —
 		// the capability-bit view for UI gating. Omitted when nothing is
 		// enabled so the no-flags payload is byte-identical to before.
@@ -671,6 +694,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	// mode, so stackFile is the authoritative indicator.
 	if s.stackFile != "" {
 		status.StackName = s.stackName
+	}
+	if home, err := state.Home(); err == nil {
+		status.Home = home
 	}
 	if cm := s.gateway.CodeModeStatus(); cm != "off" {
 		status.CodeMode = cm

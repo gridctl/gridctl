@@ -189,14 +189,16 @@ func (sc *StackController) Serve(ctx context.Context) error {
 	}
 
 	// Load vault (best-effort; errors are non-fatal in stackless mode)
-	vaultStore := vault.NewStore(state.VaultDir())
-	if err := vaultStore.Load(); err == nil {
-		if vaultStore.IsLocked() {
-			if pass := os.Getenv("GRIDCTL_VAULT_PASSPHRASE"); pass != "" {
-				_ = vaultStore.Unlock(pass)
+	if vaultDir, err := state.VaultDir(); err == nil {
+		vaultStore := vault.NewStore(vaultDir)
+		if err := vaultStore.Load(); err == nil {
+			if vaultStore.IsLocked() {
+				if pass := os.Getenv("GRIDCTL_VAULT_PASSPHRASE"); pass != "" {
+					_ = vaultStore.Unlock(pass)
+				}
 			}
+			sc.vaultStore = vaultStore
 		}
-		sc.vaultStore = vaultStore
 	}
 
 	// Foreground mode: run gateway directly without daemonizing.
@@ -212,14 +214,16 @@ func (sc *StackController) Serve(ctx context.Context) error {
 // It saves state and runs the gateway directly.
 func (sc *StackController) runStacklessDaemonChild(ctx context.Context) error {
 	// Load vault best-effort
-	vaultStore := vault.NewStore(state.VaultDir())
-	if err := vaultStore.Load(); err == nil {
-		if vaultStore.IsLocked() {
-			if pass := os.Getenv("GRIDCTL_VAULT_PASSPHRASE"); pass != "" {
-				_ = vaultStore.Unlock(pass)
+	if vaultDir, err := state.VaultDir(); err == nil {
+		vaultStore := vault.NewStore(vaultDir)
+		if err := vaultStore.Load(); err == nil {
+			if vaultStore.IsLocked() {
+				if pass := os.Getenv("GRIDCTL_VAULT_PASSPHRASE"); pass != "" {
+					_ = vaultStore.Unlock(pass)
+				}
 			}
+			sc.vaultStore = vaultStore
 		}
-		sc.vaultStore = vaultStore
 	}
 
 	st := &state.DaemonState{
@@ -248,14 +252,15 @@ func (sc *StackController) runStacklessDaemonMode() error {
 		return fmt.Errorf("failed to start daemon: %w", err)
 	}
 
+	logPath, _ := state.LogPath("gridctl")
 	if err := daemon.WaitForHealth(sc.config.Port, 30*time.Second); err != nil {
-		return fmt.Errorf("daemon failed to start: %w\nCheck logs at %s", err, state.LogPath("gridctl"))
+		return fmt.Errorf("daemon failed to start: %w\nCheck logs at %s", err, logPath)
 	}
 
 	fmt.Printf("gridctl started in stackless mode\n")
 	fmt.Printf("  Web UI: http://localhost:%d\n", sc.config.Port)
 	fmt.Printf("  PID:    %d\n", pid)
-	fmt.Printf("  Logs:   %s\n", state.LogPath("gridctl"))
+	fmt.Printf("  Logs:   %s\n", logPath)
 	// Teardown instructions always print (scripts capture them); extra
 	// conversational hints go through Printer.Hint and are TTY-only.
 	fmt.Printf("\nUse 'gridctl stop' to stop.\n")
@@ -306,7 +311,11 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 	sc.config = cfg
 
 	// Load vault
-	vaultStore := vault.NewStore(state.VaultDir())
+	vaultDir, err := state.VaultDir()
+	if err != nil {
+		return fmt.Errorf("loading vault: %w", err)
+	}
+	vaultStore := vault.NewStore(vaultDir)
 	if err := vaultStore.Load(); err != nil {
 		return fmt.Errorf("loading vault: %w", err)
 	}
@@ -587,15 +596,16 @@ func (sc *StackController) runDaemonMode(ctx context.Context, stack *config.Stac
 		return fmt.Errorf("failed to start daemon: %w", err)
 	}
 
+	stackLogPath, _ := state.LogPath(stack.Name)
 	if err := daemon.WaitForReady(sc.config.Port, 60*time.Second); err != nil {
 		reporter.EndPhase(false)
-		return fmt.Errorf("daemon failed to become ready: %w\nCheck logs at %s", err, state.LogPath(stack.Name))
+		return fmt.Errorf("daemon failed to become ready: %w\nCheck logs at %s", err, stackLogPath)
 	}
 
 	st, err := state.Load(stack.Name)
 	if err != nil {
 		reporter.EndPhase(false)
-		return fmt.Errorf("daemon may have failed to start - check logs at %s", state.LogPath(stack.Name))
+		return fmt.Errorf("daemon may have failed to start - check logs at %s", stackLogPath)
 	}
 	reporter.EndPhase(true)
 
@@ -612,7 +622,7 @@ func (sc *StackController) runDaemonMode(ctx context.Context, stack *config.Stac
 		fmt.Printf("Stack '%s' started successfully\n", stack.Name)
 		fmt.Printf("  Gateway: http://localhost:%d\n", st.Port)
 		fmt.Printf("  PID: %d\n", pid)
-		fmt.Printf("  Logs: %s\n", state.LogPath(stack.Name))
+		fmt.Printf("  Logs: %s\n", stackLogPath)
 		fmt.Printf("\nUse 'gridctl destroy %s' to stop\n", sc.config.StackPath)
 	}
 
@@ -671,7 +681,11 @@ func DeniedActiveSkillWarnings(stack *config.Stack) []string {
 		return nil
 	}
 	policy := mcp.NewSkillPolicy(skillsPolicySpec(stack))
-	store := registry.NewStore(filepath.Join(state.BaseDir(), "registry"))
+	base, err := state.BaseDir()
+	if err != nil {
+		return nil
+	}
+	store := registry.NewStore(filepath.Join(base, "registry"))
 	if err := store.Load(); err != nil {
 		return nil
 	}
@@ -707,7 +721,11 @@ func ModelPreferenceWarnings(stack *config.Stack) []string {
 		return nil
 	}
 	skillPolicy, agentPolicy := stack.ModelPolicies()
-	registryDir := filepath.Join(state.BaseDir(), "registry")
+	base, err := state.BaseDir()
+	if err != nil {
+		return nil
+	}
+	registryDir := filepath.Join(base, "registry")
 	store := registry.NewStore(registryDir)
 	if err := store.Load(); err != nil {
 		return nil

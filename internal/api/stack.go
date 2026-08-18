@@ -28,12 +28,18 @@ type stackEntry struct {
 }
 
 // stacksDirPath returns the saved-stacks directory: the injected
-// override when set (tests), the global default otherwise.
+// override when set (tests), the global default otherwise. An empty
+// return means the home could not be resolved; ReadDir on "" then
+// fails loudly rather than reading a relative path.
 func (s *Server) stacksDirPath() string {
 	if s.stacksDir != "" {
 		return s.stacksDir
 	}
-	return state.StacksDir()
+	dir, err := state.StacksDir()
+	if err != nil {
+		return ""
+	}
+	return dir
 }
 
 // handleStacksList lists all saved stacks in ~/.gridctl/stacks/.

@@ -7,16 +7,19 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/output"
+	"github.com/gridctl/gridctl/pkg/state"
 
 	"github.com/spf13/cobra"
 )
 
 var (
+	homeFlag     string
 	runtimeFlag  string
 	noColorFlag  bool
 	logLevelFlag string
@@ -73,6 +76,31 @@ set from a git repo as a pack.`,
 		if lvl != slog.LevelInfo {
 			slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lvl})))
 		}
+		// --home is sugar over GRIDCTL_HOME: set it in-process before any
+		// path resolves, so the daemon child inherits it via os.Environ()
+		// (a new argv flag would be dropped by the rebuilt daemon argv).
+		if homeFlag != "" {
+			abs, err := filepath.Abs(homeFlag)
+			if err != nil {
+				return fmt.Errorf("resolving --home: %w", err)
+			}
+			if err := os.Setenv(state.HomeEnv, abs); err != nil {
+				return fmt.Errorf("setting %s: %w", state.HomeEnv, err)
+			}
+		}
+		// Validate home resolution once, before any command runs, so path
+		// helpers downstream never see an unresolvable home mid-operation.
+		if _, err := state.Home(); err != nil {
+			return err
+		}
+		// Disclose a non-default home once, on stderr, for commands that
+		// mutate state; status/doctor print it in their own output. Silent
+		// when default keeps output clean; silent when overridden is how
+		// state gets destroyed in the wrong root.
+		if state.HomeOverridden() && stateMutatingCommand(cmd) {
+			home, _ := state.Home()
+			fmt.Fprintf(os.Stderr, "home: %s (%s)\n", home, state.HomeEnv)
+		}
 		return nil
 	},
 }
@@ -87,7 +115,25 @@ func parseLogLevelFlag(s string) (slog.Level, error) {
 	return 0, fmt.Errorf("invalid --log-level %q (allowed: debug, info, warn, error)\nRun 'gridctl --help' for usage", s)
 }
 
+// stateMutatingCommand reports whether cmd (or an ancestor) is one of the
+// verbs that writes gridctl or client state, the set that discloses a
+// non-default home on stderr.
+func stateMutatingCommand(cmd *cobra.Command) bool {
+	mutating := map[string]bool{
+		"apply": true, "serve": true, "reset": true, "link": true,
+		"unlink": true, "project": true, "pack": true, "skill": true,
+		"ctx": true, "import": true, "reload": true, "destroy": true,
+	}
+	for c := cmd; c != nil; c = c.Parent() {
+		if mutating[c.Name()] {
+			return true
+		}
+	}
+	return false
+}
+
 func init() {
+	rootCmd.PersistentFlags().StringVar(&homeFlag, "home", "", "Replace the home directory for every gridctl path (state and client projections). Equivalent to setting GRIDCTL_HOME.")
 	rootCmd.PersistentFlags().StringVar(&runtimeFlag, "runtime", "", "Container runtime to use (docker, podman). Auto-detected if not set.")
 	rootCmd.PersistentFlags().BoolVar(&noColorFlag, "no-color", false, "Disable colored output (also honors NO_COLOR and TERM=dumb)")
 	rootCmd.PersistentFlags().StringVar(&logLevelFlag, "log-level", "info", "Minimum log level: debug, info, warn, error")
@@ -144,6 +190,7 @@ func init() {
 		limitsCmd:    groupObserve,
 		infoCmd:      groupSystem,
 		doctorCmd:    groupSystem,
+		resetCmd:     groupSystem,
 		openCmd:      groupSystem,
 		versionCmd:   groupSystem,
 		upgradeCmd:   groupSystem,

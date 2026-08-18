@@ -347,7 +347,10 @@ func resolveRelativePaths(s *Stack, basePath string) {
 
 // expandTildeAndResolvePath expands ~ to home directory and resolves relative paths.
 func expandTildeAndResolvePath(path, basePath string) string {
-	// Expand ~ to home directory
+	// Expand ~ to home directory. Deliberately the real OS home, not
+	// state.Home(): the tilde appears in user-authored stack.yaml paths,
+	// where ~ means the user's actual home regardless of GRIDCTL_HOME
+	// (see pkg/state/homeguard_test.go).
 	if len(path) > 0 && path[0] == '~' {
 		if home, err := os.UserHomeDir(); err == nil {
 			if len(path) == 1 {
@@ -476,4 +479,3 @@ func mergeStacks(child, parent *Stack) {
 		child.Networks = parent.Networks
 	}
 }
-

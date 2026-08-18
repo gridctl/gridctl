@@ -1,14 +1,21 @@
 package provisioner
 
 import (
+	"github.com/gridctl/gridctl/pkg/state"
 	"os"
 	"path/filepath"
 	"runtime"
 )
 
-// homeDir returns the current user's home directory.
+// homeDir returns the directory client config paths resolve under.
+// This honors GRIDCTL_HOME deliberately: under an overridden home,
+// wiring and projections must land inside the override, or a "demo
+// home" would silently edit the real client configs.
 func homeDir() string {
-	h, _ := os.UserHomeDir()
+	h, err := state.Home()
+	if err != nil {
+		return ""
+	}
 	return h
 }
 

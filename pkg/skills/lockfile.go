@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/state"
 	"gopkg.in/yaml.v3"
 )
 
@@ -118,7 +119,12 @@ type LockedRule struct {
 
 // LockFilePath returns the default path to skills.lock.yaml.
 func LockFilePath() string {
-	home, _ := os.UserHomeDir()
+	home, err := state.Home()
+	if err != nil {
+		// No resolvable home: return "" so callers fail on a missing
+		// file instead of writing a relative path in the cwd.
+		return ""
+	}
 	return filepath.Join(home, ".gridctl", "skills.lock.yaml")
 }
 

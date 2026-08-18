@@ -12,6 +12,9 @@ import (
 func setTempHome(t *testing.T) {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
+	// A developer's exported GRIDCTL_HOME must not leak into tests that
+	// assert against $HOME-derived paths.
+	t.Setenv(HomeEnv, "")
 }
 
 func TestBaseDir(t *testing.T) {
@@ -19,7 +22,11 @@ func TestBaseDir(t *testing.T) {
 
 	home := os.Getenv("HOME")
 	expected := filepath.Join(home, ".gridctl")
-	if got := BaseDir(); got != expected {
+	got, err := BaseDir()
+	if err != nil {
+		t.Fatalf("BaseDir: %v", err)
+	}
+	if got != expected {
 		t.Errorf("BaseDir() = %q, want %q", got, expected)
 	}
 }
@@ -29,7 +36,11 @@ func TestStateDir(t *testing.T) {
 
 	home := os.Getenv("HOME")
 	expected := filepath.Join(home, ".gridctl", "state")
-	if got := StateDir(); got != expected {
+	got, err := StateDir()
+	if err != nil {
+		t.Fatalf("StateDir: %v", err)
+	}
+	if got != expected {
 		t.Errorf("StateDir() = %q, want %q", got, expected)
 	}
 }
@@ -39,7 +50,11 @@ func TestLogDir(t *testing.T) {
 
 	home := os.Getenv("HOME")
 	expected := filepath.Join(home, ".gridctl", "logs")
-	if got := LogDir(); got != expected {
+	got, err := LogDir()
+	if err != nil {
+		t.Fatalf("LogDir: %v", err)
+	}
+	if got != expected {
 		t.Errorf("LogDir() = %q, want %q", got, expected)
 	}
 }
@@ -49,7 +64,11 @@ func TestStatePath(t *testing.T) {
 
 	home := os.Getenv("HOME")
 	expected := filepath.Join(home, ".gridctl", "state", "test-topo.json")
-	if got := StatePath("test-topo"); got != expected {
+	got, err := StatePath("test-topo")
+	if err != nil {
+		t.Fatalf("StatePath: %v", err)
+	}
+	if got != expected {
 		t.Errorf("StatePath(test-topo) = %q, want %q", got, expected)
 	}
 }
@@ -59,7 +78,11 @@ func TestLogPath(t *testing.T) {
 
 	home := os.Getenv("HOME")
 	expected := filepath.Join(home, ".gridctl", "logs", "test-topo.log")
-	if got := LogPath("test-topo"); got != expected {
+	got, err := LogPath("test-topo")
+	if err != nil {
+		t.Fatalf("LogPath: %v", err)
+	}
+	if got != expected {
 		t.Errorf("LogPath(test-topo) = %q, want %q", got, expected)
 	}
 }
@@ -69,7 +92,11 @@ func TestTelemetryDir(t *testing.T) {
 
 	home := os.Getenv("HOME")
 	expected := filepath.Join(home, ".gridctl", "telemetry")
-	if got := TelemetryDir(); got != expected {
+	got, err := TelemetryDir()
+	if err != nil {
+		t.Fatalf("TelemetryDir: %v", err)
+	}
+	if got != expected {
 		t.Errorf("TelemetryDir() = %q, want %q", got, expected)
 	}
 }
@@ -90,7 +117,10 @@ func TestTelemetryServerPath(t *testing.T) {
 		{"prod", "weather-api", "logs", filepath.Join(home, ".gridctl", "telemetry", "prod", "weather-api", "logs.jsonl")},
 	}
 	for _, tc := range tests {
-		got := TelemetryServerPath(tc.stack, tc.server, tc.signal)
+		got, err := TelemetryServerPath(tc.stack, tc.server, tc.signal)
+		if err != nil {
+			t.Fatalf("TelemetryServerPath: %v", err)
+		}
 		if got != tc.want {
 			t.Errorf("TelemetryServerPath(%q,%q,%q) = %q, want %q", tc.stack, tc.server, tc.signal, got, tc.want)
 		}
@@ -103,7 +133,10 @@ func TestEnsureTelemetryServerDir(t *testing.T) {
 	if err := EnsureTelemetryServerDir("my-stack", "github"); err != nil {
 		t.Fatalf("EnsureTelemetryServerDir: %v", err)
 	}
-	dir := TelemetryServerDir("my-stack", "github")
+	dir, err := TelemetryServerDir("my-stack", "github")
+	if err != nil {
+		t.Fatalf("TelemetryServerDir: %v", err)
+	}
 	info, err := os.Stat(dir)
 	if err != nil {
 		t.Fatalf("stat: %v", err)
@@ -121,11 +154,11 @@ func TestSave_CreatesFile(t *testing.T) {
 	setTempHome(t)
 
 	state := &DaemonState{
-		StackName:"my-topo",
+		StackName: "my-topo",
 		StackFile: "/path/to/stack.yaml",
-		PID:          12345,
-		Port:         8080,
-		StartedAt:    time.Now(),
+		PID:       12345,
+		Port:      8080,
+		StartedAt: time.Now(),
 	}
 
 	if err := Save(state); err != nil {
@@ -133,7 +166,10 @@ func TestSave_CreatesFile(t *testing.T) {
 	}
 
 	// Verify file exists
-	path := StatePath("my-topo")
+	path, perr := StatePath("my-topo")
+	if perr != nil {
+		t.Fatalf("StatePath: %v", perr)
+	}
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		t.Errorf("expected state file to exist at %s", path)
 	}
@@ -143,8 +179,8 @@ func TestSave_CreatesDirectory(t *testing.T) {
 	setTempHome(t)
 
 	state := &DaemonState{
-		StackName:"my-topo",
-		PID:          12345,
+		StackName: "my-topo",
+		PID:       12345,
 	}
 
 	// StateDir doesn't exist yet
@@ -153,7 +189,10 @@ func TestSave_CreatesDirectory(t *testing.T) {
 	}
 
 	// Verify directory was created
-	dir := StateDir()
+	dir, derr := StateDir()
+	if derr != nil {
+		t.Fatalf("StateDir: %v", derr)
+	}
 	info, err := os.Stat(dir)
 	if err != nil {
 		t.Fatalf("expected state directory to exist: %v", err)
@@ -170,11 +209,11 @@ func TestLoad_Success(t *testing.T) {
 
 	// Save a state first
 	original := &DaemonState{
-		StackName:"test-topo",
+		StackName: "test-topo",
 		StackFile: "/path/to/topo.yaml",
-		PID:          9999,
-		Port:         8080,
-		StartedAt:    startTime,
+		PID:       9999,
+		Port:      8080,
+		StartedAt: startTime,
 	}
 	if err := Save(original); err != nil {
 		t.Fatalf("Save() error = %v", err)
@@ -220,12 +259,15 @@ func TestLoad_InvalidJSON(t *testing.T) {
 	setTempHome(t)
 
 	// Create state directory
-	if err := os.MkdirAll(StateDir(), 0755); err != nil {
+	if err := os.MkdirAll(mustStateDir(t), 0755); err != nil {
 		t.Fatalf("failed to create state dir: %v", err)
 	}
 
 	// Write invalid JSON
-	path := StatePath("invalid")
+	path, perr := StatePath("invalid")
+	if perr != nil {
+		t.Fatalf("StatePath: %v", perr)
+	}
 	if err := os.WriteFile(path, []byte("not json"), 0644); err != nil {
 		t.Fatalf("failed to write invalid file: %v", err)
 	}
@@ -240,13 +282,16 @@ func TestDelete_Success(t *testing.T) {
 	setTempHome(t)
 
 	// Save a state first
-	state := &DaemonState{StackName:"to-delete", PID: 123}
+	state := &DaemonState{StackName: "to-delete", PID: 123}
 	if err := Save(state); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
 
 	// Verify file exists
-	path := StatePath("to-delete")
+	path, perr := StatePath("to-delete")
+	if perr != nil {
+		t.Fatalf("StatePath: %v", perr)
+	}
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		t.Fatal("expected file to exist before delete")
 	}
@@ -289,7 +334,7 @@ func TestList_MultipleStates(t *testing.T) {
 
 	// Save multiple states
 	for _, name := range []string{"topo-a", "topo-b", "topo-c"} {
-		state := &DaemonState{StackName:name, PID: 100}
+		state := &DaemonState{StackName: name, PID: 100}
 		if err := Save(state); err != nil {
 			t.Fatalf("Save(%s) error = %v", name, err)
 		}
@@ -309,24 +354,24 @@ func TestList_SkipsInvalidFiles(t *testing.T) {
 	setTempHome(t)
 
 	// Create state directory
-	if err := os.MkdirAll(StateDir(), 0755); err != nil {
+	if err := os.MkdirAll(mustStateDir(t), 0755); err != nil {
 		t.Fatalf("failed to create state dir: %v", err)
 	}
 
 	// Save a valid state
-	state := &DaemonState{StackName:"valid", PID: 100}
+	state := &DaemonState{StackName: "valid", PID: 100}
 	if err := Save(state); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
 
 	// Write an invalid JSON file
-	invalidPath := filepath.Join(StateDir(), "invalid.json")
+	invalidPath := filepath.Join(mustStateDir(t), "invalid.json")
 	if err := os.WriteFile(invalidPath, []byte("not json"), 0644); err != nil {
 		t.Fatalf("failed to write invalid file: %v", err)
 	}
 
 	// Write a non-JSON file
-	nonJSONPath := filepath.Join(StateDir(), "readme.txt")
+	nonJSONPath := filepath.Join(mustStateDir(t), "readme.txt")
 	if err := os.WriteFile(nonJSONPath, []byte("readme"), 0644); err != nil {
 		t.Fatalf("failed to write non-JSON file: %v", err)
 	}
@@ -349,7 +394,7 @@ func TestIsRunning_NilState(t *testing.T) {
 }
 
 func TestIsRunning_ZeroPID(t *testing.T) {
-	state := &DaemonState{StackName:"test", PID: 0}
+	state := &DaemonState{StackName: "test", PID: 0}
 	if IsRunning(state) {
 		t.Error("expected IsRunning with PID=0 to be false")
 	}
@@ -357,7 +402,7 @@ func TestIsRunning_ZeroPID(t *testing.T) {
 
 func TestIsRunning_CurrentProcess(t *testing.T) {
 	// Use current process - this should be running
-	state := &DaemonState{StackName:"test", PID: os.Getpid()}
+	state := &DaemonState{StackName: "test", PID: os.Getpid()}
 	if !IsRunning(state) {
 		t.Error("expected IsRunning for current process to be true")
 	}
@@ -365,7 +410,7 @@ func TestIsRunning_CurrentProcess(t *testing.T) {
 
 func TestIsRunning_InvalidPID(t *testing.T) {
 	// Use a very high PID that's unlikely to exist
-	state := &DaemonState{StackName:"test", PID: 999999999}
+	state := &DaemonState{StackName: "test", PID: 999999999}
 	if IsRunning(state) {
 		t.Error("expected IsRunning for invalid PID to be false")
 	}
@@ -379,7 +424,7 @@ func TestKillDaemon_NilState(t *testing.T) {
 }
 
 func TestKillDaemon_ZeroPID(t *testing.T) {
-	state := &DaemonState{StackName:"test", PID: 0}
+	state := &DaemonState{StackName: "test", PID: 0}
 	// Should not error
 	if err := KillDaemon(state); err != nil {
 		t.Errorf("KillDaemon with PID=0 error = %v", err)
@@ -394,7 +439,10 @@ func TestEnsureLogDir(t *testing.T) {
 	}
 
 	// Verify directory exists
-	dir := LogDir()
+	dir, derr := LogDir()
+	if derr != nil {
+		t.Fatalf("LogDir: %v", derr)
+	}
 	info, err := os.Stat(dir)
 	if err != nil {
 		t.Fatalf("expected log directory to exist: %v", err)
@@ -421,7 +469,11 @@ func TestLockPath(t *testing.T) {
 
 	home := os.Getenv("HOME")
 	expected := filepath.Join(home, ".gridctl", "state", "test-topo.lock")
-	if got := LockPath("test-topo"); got != expected {
+	got, err := LockPath("test-topo")
+	if err != nil {
+		t.Fatalf("LockPath: %v", err)
+	}
+	if got != expected {
 		t.Errorf("LockPath(test-topo) = %q, want %q", got, expected)
 	}
 }
@@ -466,7 +518,10 @@ func TestWithLock_CreatesDirectory(t *testing.T) {
 	}
 
 	// Verify directory was created
-	dir := StateDir()
+	dir, derr := StateDir()
+	if derr != nil {
+		t.Fatalf("StateDir: %v", derr)
+	}
 	info, err := os.Stat(dir)
 	if err != nil {
 		t.Fatalf("expected state directory to exist: %v", err)
@@ -527,8 +582,8 @@ func TestCheckAndClean_RunningProcess(t *testing.T) {
 
 	// Save state with current process PID (which is running)
 	state := &DaemonState{
-		StackName:"test-topo",
-		PID:          os.Getpid(),
+		StackName: "test-topo",
+		PID:       os.Getpid(),
 	}
 	if err := Save(state); err != nil {
 		t.Fatalf("Save() error = %v", err)
@@ -553,8 +608,8 @@ func TestCheckAndClean_DeadProcess(t *testing.T) {
 
 	// Save state with a PID that doesn't exist
 	state := &DaemonState{
-		StackName:"test-topo",
-		PID:          999999999, // Very high PID unlikely to exist
+		StackName: "test-topo",
+		PID:       999999999, // Very high PID unlikely to exist
 	}
 	if err := Save(state); err != nil {
 		t.Fatalf("Save() error = %v", err)
@@ -571,5 +626,42 @@ func TestCheckAndClean_DeadProcess(t *testing.T) {
 	// State file should be deleted
 	if _, err := Load("test-topo"); !os.IsNotExist(err) {
 		t.Error("expected state file to be deleted")
+	}
+}
+
+// mustStateDir resolves StateDir or fails the test.
+func mustStateDir(t *testing.T) string {
+	t.Helper()
+	dir, err := StateDir()
+	if err != nil {
+		t.Fatalf("StateDir: %v", err)
+	}
+	return dir
+}
+
+func TestPathHelpers_DeriveFromHome(t *testing.T) {
+	setTempHome(t)
+	home := os.Getenv("HOME")
+
+	cases := []struct {
+		name string
+		fn   func() (string, error)
+		want string
+	}{
+		{"VaultDir", VaultDir, filepath.Join(home, ".gridctl", "vault")},
+		{"PinsDir", PinsDir, filepath.Join(home, ".gridctl", "pins")},
+		{"StacksDir", StacksDir, filepath.Join(home, ".gridctl", "stacks")},
+		{"PinsPath", func() (string, error) { return PinsPath("s") }, filepath.Join(home, ".gridctl", "pins", "s.json")},
+		{"SkillPinsPath", func() (string, error) { return SkillPinsPath("s") }, filepath.Join(home, ".gridctl", "pins", "skills", "s.json")},
+		{"TelemetryServerDir", func() (string, error) { return TelemetryServerDir("st", "sv") }, filepath.Join(home, ".gridctl", "telemetry", "st", "sv")},
+	}
+	for _, tc := range cases {
+		got, err := tc.fn()
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if got != tc.want {
+			t.Errorf("%s = %q, want %q", tc.name, got, tc.want)
+		}
 	}
 }

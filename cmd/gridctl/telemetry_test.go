@@ -26,7 +26,10 @@ func seedTelemetry(t *testing.T, stack, server, signal, content string, mtime ti
 	if err := state.EnsureTelemetryServerDir(stack, server); err != nil {
 		t.Fatalf("ensure dir: %v", err)
 	}
-	path := state.TelemetryServerPath(stack, server, signal)
+	path, perr := state.TelemetryServerPath(stack, server, signal)
+	if perr != nil {
+		t.Fatalf("path: %v", perr)
+	}
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}

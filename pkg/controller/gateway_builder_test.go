@@ -53,7 +53,6 @@ func TestGatewayBuilder_BuildLogging_Existing(t *testing.T) {
 	}
 }
 
-
 func TestBuildTracingConfig_MaxTraces(t *testing.T) {
 	// The documented default ring buffer capacity (docs/config-schema.md).
 	const defaultMaxTraces = 1000
@@ -559,7 +558,6 @@ func TestGatewayBuilder_Build_WebFSSuccess(t *testing.T) {
 	}
 }
 
-
 // TestGatewayBuilder_PersistedLogsArriveOnDisk drives a record through the
 // canonical pkg/mcp/gateway pattern (clientLogger := g.logger.With("server", name))
 // and asserts the per-server logs.jsonl receives the entry. Locks in the
@@ -594,7 +592,10 @@ func TestGatewayBuilder_PersistedLogsArriveOnDisk(t *testing.T) {
 	// Lumberjack writes through synchronously inside slog handler, so the
 	// file should be non-empty by the time Handle returns. Read it and
 	// verify the message round-trips through JSON.
-	path := state.TelemetryServerPath(stack.Name, "github", "logs")
+	path, perr := state.TelemetryServerPath(stack.Name, "github", "logs")
+	if perr != nil {
+		t.Fatalf("path: %v", perr)
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		t.Fatalf("open %s: %v", path, err)
@@ -643,7 +644,6 @@ func TestNewGatewayBuilder_Fields(t *testing.T) {
 	}
 }
 
-
 func TestGatewayBuilder_PrintEndpoints(t *testing.T) {
 	regDir := t.TempDir()
 	cfg := Config{Port: 8888}
@@ -660,7 +660,6 @@ func TestGatewayBuilder_PrintEndpoints(t *testing.T) {
 	// Should not panic
 	builder.printEndpoints(inst)
 }
-
 
 func TestGatewayBuilder_SetupHotReload_NoWatch(t *testing.T) {
 	regDir := t.TempDir()
@@ -795,7 +794,6 @@ func TestGatewayBuilder_SetupHotReload_WithWatch(t *testing.T) {
 	// Should set up reload handler and start watcher
 	builder.setupHotReload(ctx, inst, registrar, handler, true)
 }
-
 
 // TestGatewayBuilder_RefusesUnauthenticatedExposure is the regression case:
 // before this, a widened bind with no auth started and served the API to the

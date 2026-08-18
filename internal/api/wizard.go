@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/gridctl/gridctl/pkg/state"
 	"io"
 	"net/http"
 	"os"
@@ -25,7 +26,7 @@ type WizardDraft struct {
 
 // wizardDraftsDir returns the path to the wizard drafts directory.
 func wizardDraftsDir() string {
-	home, err := os.UserHomeDir()
+	home, err := state.Home()
 	if err != nil {
 		return ""
 	}

@@ -21,6 +21,7 @@ import (
 	"sync"
 
 	"github.com/gridctl/gridctl/pkg/project"
+	"github.com/gridctl/gridctl/pkg/state"
 )
 
 // Sentinel errors callers branch on.
@@ -80,7 +81,7 @@ type Manager struct {
 
 // NewManager builds a Manager rooted at the user's home directory.
 func NewManager() (*Manager, error) {
-	home, err := os.UserHomeDir()
+	home, err := state.Home()
 	if err != nil {
 		return nil, fmt.Errorf("resolving home directory: %w", err)
 	}

@@ -184,7 +184,11 @@ func TestResolveLogsStackLeftoverLogFile(t *testing.T) {
 	if err := state.EnsureLogDir(); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(state.LogPath("old"), []byte("history\n"), 0o600); err != nil {
+	oldLogPath, err := state.LogPath("old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(oldLogPath, []byte("history\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

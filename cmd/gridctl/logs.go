@@ -78,7 +78,10 @@ func runLogs(ctx context.Context, w io.Writer, name string) error {
 		return streamContainerLogs(ctx, w, name, logsServer, logsTail, logsFollow)
 	}
 
-	path := state.LogPath(name)
+	path, err := state.LogPath(name)
+	if err != nil {
+		return err
+	}
 	if _, err := os.Stat(path); err != nil {
 		return fmt.Errorf("no daemon log for stack %q at %s (deploy it with 'gridctl apply <stack.yaml>')", name, path)
 	}
@@ -101,8 +104,10 @@ func resolveLogsStack(name string) (string, error) {
 			}
 		}
 		// No state file: still allow a leftover log file to be read.
-		if _, statErr := os.Stat(state.LogPath(name)); statErr == nil {
-			return name, nil
+		if logPath, pathErr := state.LogPath(name); pathErr == nil {
+			if _, statErr := os.Stat(logPath); statErr == nil {
+				return name, nil
+			}
 		}
 		return "", fmt.Errorf("stack %q not found (try 'gridctl status')", name)
 	}

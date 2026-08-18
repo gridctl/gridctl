@@ -116,8 +116,8 @@ func init() {
 // stackInventory pairs a stack name with its inventory records so the CLI can
 // render a multi-stack report without losing the parent stack on each row.
 type stackInventory struct {
-	Stack   string                       `json:"stack"`
-	Records []telemetry.InventoryRecord  `json:"records"`
+	Stack   string                      `json:"stack"`
+	Records []telemetry.InventoryRecord `json:"records"`
 }
 
 // statusRow is the flat per-(stack, signal) row used for tables and JSON
@@ -137,7 +137,10 @@ type statusRow struct {
 // listTelemetryStacks returns the names of stacks that have a directory under
 // ~/.gridctl/telemetry/. A missing root returns an empty slice without error.
 func listTelemetryStacks() ([]string, error) {
-	root := state.TelemetryDir()
+	root, err := state.TelemetryDir()
+	if err != nil {
+		return nil, err
+	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -391,7 +394,10 @@ func runTelemetryTail(stack, server, signal string) error {
 		return fmt.Errorf("invalid signal %q (expected logs, metrics, or traces)", signal)
 	}
 
-	path := state.TelemetryServerPath(stack, server, signal)
+	path, err := state.TelemetryServerPath(stack, server, signal)
+	if err != nil {
+		return err
+	}
 	dir := filepath.Dir(path)
 	if _, err := os.Stat(dir); err != nil {
 		if os.IsNotExist(err) {
