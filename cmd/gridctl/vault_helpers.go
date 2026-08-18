@@ -18,7 +18,11 @@ import (
 // store struct is still vault.Store. The "vault → var" rename is at the user
 // surface (commands, YAML syntax, web routes), not the internal naming.
 func loadVault() (*vault.Store, error) {
-	store := vault.NewStore(state.VaultDir())
+	vaultDir, err := state.VaultDir()
+	if err != nil {
+		return nil, fmt.Errorf("loading variable store: %w", err)
+	}
+	store := vault.NewStore(vaultDir)
 	if err := store.Load(); err != nil {
 		return nil, fmt.Errorf("loading variable store: %w", err)
 	}
