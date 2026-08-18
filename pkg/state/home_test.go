@@ -84,7 +84,7 @@ func TestDaemonState_RecordsHomeAndVersion(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv(HomeEnv, dir)
 
-	if err := Save(&DaemonState{StackName: "vtest", PID: 1}); err != nil {
+	if err := Save(&DaemonState{StackName: "vtest", PID: 999999}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	st, err := Load("vtest")
@@ -103,7 +103,7 @@ func TestDaemonState_RefusesNewerSchema(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv(HomeEnv, dir)
 
-	if err := Save(&DaemonState{StackName: "newer", PID: 1}); err != nil {
+	if err := Save(&DaemonState{StackName: "newer", PID: 999999}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	// Rewrite with a future schema version.
