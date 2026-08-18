@@ -106,7 +106,9 @@ func TestResetExecute_GuardsAndTokenFlow(t *testing.T) {
 		t.Errorf("tokenless execute status = %d, want 422", rec.Code)
 	}
 
-	// 5. Preview, then purge-execute with the token but the WRONG phrase: 422.
+	// 5. Preview, then purge-execute with the token but the WRONG phrase:
+	// 422, and the typo must NOT burn the token (the phrase is printed by
+	// the preview; it gates attention, not secrecy).
 	rec := serveReset(t, srv, resetRequest(t, "/api/reset/preview", `{"purge":true}`))
 	var pv struct {
 		ConfirmToken string `json:"confirm_token"`
@@ -119,11 +121,21 @@ func TestResetExecute_GuardsAndTokenFlow(t *testing.T) {
 		t.Errorf("literal-tilde phrase status = %d, want 422 (phrase must be the resolved path)", rec.Code)
 	}
 
-	// 6. The wrong-phrase attempt consumed the token (single use): a
-	// retry with the CORRECT phrase but the same token is also 422.
+	// 6. Retry with the CORRECT phrase and the SAME token succeeds: the
+	// wrong-phrase attempt left it valid for exactly one correct use.
+	srv.SetResetExit(func(int) {}) // purge succeeds; do not exit the test binary
 	body = `{"purge":true,"confirm_token":"` + pv.ConfirmToken + `","confirm_phrase":"` + gridctlDir + `"}`
-	if rec := serveReset(t, srv, resetRequest(t, "/api/reset", body)); rec.Code != http.StatusUnprocessableEntity {
-		t.Errorf("reused token status = %d, want 422 (single use)", rec.Code)
+	if rec := serveReset(t, srv, resetRequest(t, "/api/reset", body)); rec.Code != http.StatusOK {
+		t.Errorf("correct retry status = %d, want 200 (typo must not burn the token)", rec.Code)
+	}
+
+	// 7. After a successful purge the daemon is terminally busy: the
+	// finalize path holds the in-flight lock until the process exits, so
+	// any further reset attempt is 409 (never a second cascade racing a
+	// pending exit).
+	body = `{"purge":true,"confirm_token":"` + pv.ConfirmToken + `","confirm_phrase":"` + gridctlDir + `"}`
+	if rec := serveReset(t, srv, resetRequest(t, "/api/reset", body)); rec.Code != http.StatusConflict {
+		t.Errorf("post-purge attempt status = %d, want 409 (daemon is exiting)", rec.Code)
 	}
 }
 
@@ -174,6 +186,13 @@ func TestResetExecute_DefaultTierSucceedsOnEmptyHome(t *testing.T) {
 	// Default tier preserves the vault.
 	if _, err := os.Stat(filepath.Join(home, ".gridctl", "vault")); err != nil {
 		t.Error("default tier must preserve ~/.gridctl/vault")
+	}
+	// A successful consume is single use: the default tier releases the
+	// in-flight lock, so the reuse fails on the burned token (422), not
+	// on the lock (409).
+	rec = serveReset(t, srv, resetRequest(t, "/api/reset", body))
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("reused token status = %d, want 422 (single use after success)", rec.Code)
 	}
 }
 
