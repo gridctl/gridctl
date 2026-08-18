@@ -2977,3 +2977,76 @@ export async function removePack(
     'DELETE',
   );
 }
+
+// === Reset (machine-wide teardown; the REST face of `gridctl reset`) ===
+
+/** One artifact line in a reset preview or result document. */
+export interface ResetRow {
+  kind: string; // skill | agent | context | wiring | daemon | containers | state-file | gridctl-dir | backup
+  name: string;
+  client?: string;
+  path?: string;
+  action: string; // would-remove | would-stop | removed | stopped | kept-drift | kept-foreign | dropped-record | already-gone | failed | skipped | written
+  detail?: string;
+  error?: string;
+}
+
+/** What --purge destroys beyond the cascade; -1 counts render "unknown". */
+export interface ResetPurgeStats {
+  gridctl_dir: string;
+  vault_variables: number;
+  oauth_servers: number;
+  pin_files: number;
+  telemetry_bytes: number;
+}
+
+/** The versioned reset document: one shape for preview and result. */
+export interface ResetDoc {
+  schema_version: number;
+  home: string;
+  purge: boolean;
+  dry_run: boolean;
+  backup_path?: string;
+  backup_note?: string;
+  rows: ResetRow[] | null;
+  kept?: string[];
+  failed: number;
+  purge_stats?: ResetPurgeStats;
+}
+
+export interface ResetPreviewResponse {
+  /** Single-use token bound to the previewed tier; execute must present it. */
+  confirm_token: string;
+  /** The RESOLVED path purge must type — never a literal "~/.gridctl". */
+  confirm_phrase: string;
+  doc: ResetDoc;
+}
+
+/** Preview the reset blast radius and obtain the confirm token.
+ *  POST /api/reset/preview (loopback-only server-side). */
+export async function fetchResetPreview(opts: {
+  purge: boolean;
+  force?: boolean;
+}): Promise<ResetPreviewResponse> {
+  return packFetch<ResetPreviewResponse>('/api/reset/preview', 'POST', {
+    purge: opts.purge,
+    force: opts.force ?? false,
+  });
+}
+
+/** Execute the reset. Requires a live preview token; purge additionally
+ *  requires the resolved-path phrase. POST /api/reset. On purge the
+ *  daemon writes the result document, then exits. */
+export async function executeReset(req: {
+  purge: boolean;
+  force?: boolean;
+  confirm_token: string;
+  confirm_phrase?: string;
+}): Promise<ResetDoc> {
+  return packFetch<ResetDoc>('/api/reset', 'POST', {
+    purge: req.purge,
+    force: req.force ?? false,
+    confirm_token: req.confirm_token,
+    confirm_phrase: req.confirm_phrase ?? '',
+  });
+}
