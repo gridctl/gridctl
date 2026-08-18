@@ -89,15 +89,23 @@ func (s *Server) resetMgr() (*resetops.Managers, error) {
 		m := &resetops.Managers{Home: home}
 		if sm, err := s.skillsyncManager(); err == nil {
 			m.Skills = sm
+		} else {
+			m.Missing = append(m.Missing, "skill")
 		}
 		if am, err := s.agentsMgr(); err == nil {
 			m.Agents = am
+		} else {
+			m.Missing = append(m.Missing, "agent")
 		}
 		if cm, err := s.contextsMgr(); err == nil {
 			m.Contexts = cm
+		} else {
+			m.Missing = append(m.Missing, "context")
 		}
 		if wm, err := s.wiringMgr(); err == nil {
 			m.Wiring = wm
+		} else {
+			m.Missing = append(m.Missing, "wiring")
 		}
 		if s.resetRuntime != nil {
 			m.Runtime = s.resetRuntime
@@ -220,10 +228,10 @@ func (s *Server) handleResetExecute(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	if !s.resetTokenStore.consume(req.ConfirmToken, req.Purge, req.Force) {
-		writeJSONError(w, "missing, expired, or already-used confirm token; call POST /api/reset/preview first", http.StatusUnprocessableEntity)
-		return
-	}
+	// Cheap request checks run BEFORE the token is consumed: the phrase
+	// is printed by the preview (it is a deliberate-attention gate, not
+	// a secret), so burning the single-use token on a typo or on a 409
+	// only forces a pointless re-preview.
 	if req.Purge && req.ConfirmPhrase != mgr.GridctlDir() {
 		writeJSONError(w, "purge requires confirm_phrase to equal "+mgr.GridctlDir(), http.StatusUnprocessableEntity)
 		return
@@ -242,6 +250,11 @@ func (s *Server) handleResetExecute(w http.ResponseWriter, r *http.Request) {
 			s.resetRunning.Store(false)
 		}
 	}()
+
+	if !s.resetTokenStore.consume(req.ConfirmToken, req.Purge, req.Force) {
+		writeJSONError(w, "missing, expired, or already-used confirm token; call POST /api/reset/preview first", http.StatusUnprocessableEntity)
+		return
+	}
 
 	doc, err := mgr.Execute(r.Context(), resetops.Options{
 		Purge:   req.Purge,
