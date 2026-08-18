@@ -13,6 +13,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/pack"
 	"github.com/gridctl/gridctl/pkg/packops"
 	"github.com/gridctl/gridctl/pkg/skills"
+	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/wiring"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/spf13/cobra"
@@ -42,7 +43,7 @@ working on the same resources.`,
 
 // newPackManagers builds the packops engine against the user's home.
 func newPackManagers() (*packops.Managers, error) {
-	home, err := os.UserHomeDir()
+	home, err := state.Home()
 	if err != nil {
 		return nil, fmt.Errorf("resolving home directory: %w", err)
 	}
