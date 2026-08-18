@@ -93,21 +93,25 @@ func newResetManagers(printer *output.Printer) (*resetops.Managers, func(), erro
 
 	if sm, err := newSkillProjectManager(); err != nil {
 		printer.Warn("skill projections unavailable; their removal is skipped", "error", err)
+		m.Missing = append(m.Missing, "skill")
 	} else {
 		m.Skills = sm
 	}
 	if am, err := newAgentProjectManager(); err != nil {
 		printer.Warn("agent projections unavailable; their removal is skipped", "error", err)
+		m.Missing = append(m.Missing, "agent")
 	} else {
 		m.Agents = am
 	}
 	if cm, err := contexts.NewManager(); err != nil {
 		printer.Warn("context manager unavailable; context removal is skipped", "error", err)
+		m.Missing = append(m.Missing, "context")
 	} else {
 		m.Contexts = cm
 	}
 	if wm, err := wiring.NewManager(); err != nil {
 		printer.Warn("wiring manager unavailable; client-config removal is skipped", "error", err)
+		m.Missing = append(m.Missing, "wiring")
 	} else {
 		m.Wiring = wm
 	}
