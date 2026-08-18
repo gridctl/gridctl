@@ -15,10 +15,13 @@ package resetops
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/gridctl/gridctl/pkg/agentsync"
 	"github.com/gridctl/gridctl/pkg/contexts"
@@ -31,6 +34,35 @@ import (
 
 // SchemaVersion versions every reset document (Article X / XVII).
 const SchemaVersion = 1
+
+// defaultGatewayPort mirrors the serve/apply default; the orphan scan
+// deliberately probes only this port (the stop --force precedent).
+const defaultGatewayPort = 8180
+
+// Seams over the orphan scan so unit tests never probe a real port.
+var (
+	findOrphanFn = state.FindOrphan
+	// daemonHomeFn reports the resolved home a daemon on port claims via
+	// /api/status, and whether it reported one at all.
+	daemonHomeFn = probeDaemonHome
+)
+
+// probeDaemonHome asks the daemon on port which home it runs under.
+func probeDaemonHome(port int) (string, bool) {
+	client := &http.Client{Timeout: time.Second}
+	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/api/status", port))
+	if err != nil {
+		return "", false
+	}
+	defer resp.Body.Close()
+	var st struct {
+		Home string `json:"home"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&st) != nil || st.Home == "" {
+		return "", false
+	}
+	return st.Home, true
+}
 
 // Row actions. Preview uses the would- forms; execution reports what
 // actually happened.
@@ -151,6 +183,14 @@ type Managers struct {
 	Wiring   wireManager
 	Runtime  Runtime
 	Home     string
+
+	// Missing names surfaces whose manager could not be constructed
+	// (unreadable registry, unresolvable home for one kind). Each entry
+	// becomes a skipped row and a counted failure, so a reset that could
+	// not see a surface exits 1 and the user re-runs once it is back. A
+	// nil manager with no Missing entry means the surface is simply not
+	// configured (tests, minimal embeddings) and stays silent.
+	Missing []string
 }
 
 // inventory is the single source both Preview and Execute act on.
@@ -163,6 +203,15 @@ type inventory struct {
 	keptSkills   map[string]bool
 	keptAgents   map[string]bool
 	keptContexts map[string]bool
+
+	// orphanPID is a foreground gridctl process on the default port with
+	// no state file (serve -f / apply -f), confirmed via /api/status to
+	// run under OUR home; its reconcile loop would otherwise re-project
+	// mid-reset. foreignDaemonHome records a daemon on the default port
+	// that belongs to a DIFFERENT home (or an old binary that reports
+	// none): advisory only, never touched.
+	orphanPID         int
+	foreignDaemonHome string
 }
 
 // collect reads every surface once. Read-only; safe for dry runs.
@@ -196,6 +245,7 @@ func (m *Managers) collect(ctx context.Context, opts Options) (*inventory, error
 	if inv.stacks, err = state.List(); err != nil {
 		return nil, fmt.Errorf("reading daemon state: %w", err)
 	}
+	inv.scanOrphan(m.Home)
 
 	// Drift pre-filter (the packops splitKept rule, extended to contexts):
 	// skillsync/agentsync/contexts unsync is NOT drift-aware, so a drifted
@@ -218,6 +268,33 @@ func (m *Managers) collect(ctx context.Context, opts Options) (*inventory, error
 		}
 	}
 	return inv, nil
+}
+
+// scanOrphan looks for a foreground gridctl on the default port with no
+// state file. Adopted into the daemon phase only when it provably runs
+// under our home; anything else is reported, never signaled, because
+// the port carries no home and killing another GRIDCTL_HOME's process
+// is exactly the cross-home damage reset must not do.
+func (inv *inventory) scanOrphan(home string) {
+	for _, s := range inv.stacks {
+		if s.Port == defaultGatewayPort {
+			return // the port is accounted for by a state file
+		}
+	}
+	pid, ok, err := findOrphanFn(defaultGatewayPort)
+	if err != nil || !ok {
+		return
+	}
+	daemonHome, reported := daemonHomeFn(defaultGatewayPort)
+	if reported && daemonHome == home {
+		inv.orphanPID = pid
+		return
+	}
+	if reported {
+		inv.foreignDaemonHome = daemonHome
+	} else {
+		inv.foreignDaemonHome = "unknown (daemon predates home reporting)"
+	}
 }
 
 // rows renders the inventory as preview rows (would- actions).
@@ -284,6 +361,14 @@ func (inv *inventory) rows(opts Options) ([]Row, []string) {
 			Detail: "all containers and networks of this stack"})
 		statePath, _ := state.StatePath(s.StackName)
 		rows = append(rows, Row{Kind: "state-file", Name: s.StackName, Path: statePath, Action: ActionWouldRemove})
+	}
+	if inv.orphanPID != 0 {
+		rows = append(rows, Row{Kind: "daemon", Name: "gridctl (foreground)", Action: ActionWouldStop,
+			Detail: fmt.Sprintf("pid %d, port %d, no state file; its containers keep their stack name (destroy them by name if any remain)", inv.orphanPID, defaultGatewayPort)})
+	}
+	if inv.foreignDaemonHome != "" {
+		rows = append(rows, Row{Kind: "daemon", Name: "gridctl (other home)", Action: ActionSkipped,
+			Detail: fmt.Sprintf("daemon on port %d runs under home %s; not touched (use 'gridctl stop --force' from that home)", defaultGatewayPort, inv.foreignDaemonHome)})
 	}
 
 	sort.SliceStable(rows, func(i, j int) bool {
