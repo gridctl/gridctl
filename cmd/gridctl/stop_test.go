@@ -138,7 +138,11 @@ func TestRunStop_OrphanDaemon_WithForce(t *testing.T) {
 		t.Error("expected orphan process to be terminated")
 	}
 	// No state file should have been written.
-	if _, err := os.Stat(state.StatePath("gridctl")); !os.IsNotExist(err) {
+	statePath, perr := state.StatePath("gridctl")
+	if perr != nil {
+		t.Fatal(perr)
+	}
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
 		t.Errorf("expected no state file, got err=%v", err)
 	}
 }
