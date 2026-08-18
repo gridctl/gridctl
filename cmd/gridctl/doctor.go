@@ -104,6 +104,7 @@ func init() {
 func runDoctorChecks(ctx context.Context) doctorReport {
 	var checks []doctorCheck
 
+	checkHome(&checks)
 	info := checkRuntimeDetect(&checks)
 	checkRuntimeSocket(ctx, &checks, info)
 	checkRuntimeVersion(&checks, info)
@@ -252,12 +253,32 @@ func checkNpx(checks *[]doctorCheck) {
 	})
 }
 
+// checkHome reports the resolved home and its source, so a GRIDCTL_HOME
+// override is always visible where users troubleshoot. An unresolvable
+// home is a hard failure: every other check derives paths from it.
+func checkHome(checks *[]doctorCheck) {
+	home, err := state.Home()
+	if err != nil {
+		*checks = append(*checks, doctorCheck{ID: "home", Status: doctorStatusFail, Message: err.Error()})
+		return
+	}
+	msg := home
+	if state.HomeOverridden() {
+		msg += " (from " + state.HomeEnv + ")"
+	}
+	*checks = append(*checks, doctorCheck{ID: "home", Status: doctorStatusInfo, Message: msg})
+}
+
 func checkStateDir(ctx context.Context, checks *[]doctorCheck) {
 	if err := ctx.Err(); err != nil {
 		*checks = append(*checks, doctorCheck{ID: "state.dir", Status: doctorStatusInfo, Message: "skipped (cancelled)"})
 		return
 	}
-	dir := state.StateDir()
+	dir, err := state.StateDir()
+	if err != nil {
+		*checks = append(*checks, doctorCheck{ID: "state.dir", Status: doctorStatusFail, Message: fmt.Sprintf("cannot resolve state directory: %v", err)})
+		return
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		*checks = append(*checks, doctorCheck{ID: "state.dir", Status: doctorStatusFail, Message: fmt.Sprintf("%s not writable: %v", dir, err)})
 		return
@@ -309,7 +330,7 @@ func checkProjectLockfile(ctx context.Context, checks *[]doctorCheck) {
 		*checks = append(*checks, doctorCheck{ID: "project.lockfile", Status: doctorStatusInfo, Message: "skipped (cancelled)"})
 		return
 	}
-	home, err := os.UserHomeDir()
+	home, err := state.Home()
 	if err != nil {
 		*checks = append(*checks, doctorCheck{ID: "project.lockfile", Status: doctorStatusWarn, Message: fmt.Sprintf("home directory unavailable: %v", err)})
 		return
@@ -322,7 +343,7 @@ func checkProjectLockfile(ctx context.Context, checks *[]doctorCheck) {
 		*checks = append(*checks, doctorCheck{
 			ID:     "project.lockfile",
 			Status: doctorStatusFail,
-			Message: fmt.Sprintf("migration tombstone at %s but %s is missing; restore it from %s",
+			Message: fmt.Sprintf("migration tombstone at %s but %s is missing; restore it from %s, or start over with 'gridctl reset'",
 				strings.Join(st.Tombstones, ", "), st.UnifiedPath, st.BackupRoot),
 		})
 	case st.LegacySkill || st.LegacyContext:
@@ -428,7 +449,12 @@ func checkVault(ctx context.Context, checks *[]doctorCheck) {
 		*checks = append(*checks, doctorCheck{ID: "vault", Status: doctorStatusInfo, Message: "skipped (cancelled)"})
 		return
 	}
-	store := vault.NewStore(state.VaultDir())
+	vaultDir, err := state.VaultDir()
+	if err != nil {
+		*checks = append(*checks, doctorCheck{ID: "vault", Status: doctorStatusWarn, Message: fmt.Sprintf("could not resolve vault dir: %v", err)})
+		return
+	}
+	store := vault.NewStore(vaultDir)
 	if err := store.Load(); err != nil {
 		*checks = append(*checks, doctorCheck{ID: "vault", Status: doctorStatusWarn, Message: fmt.Sprintf("could not read vault: %v", err)})
 		return
