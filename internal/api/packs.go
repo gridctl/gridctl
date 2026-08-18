@@ -5,11 +5,11 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"os"
 
 	"github.com/gridctl/gridctl/pkg/packops"
 	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/skillsync"
+	"github.com/gridctl/gridctl/pkg/state"
 )
 
 // decodeJSONBody decodes a required JSON request body.
@@ -39,7 +39,7 @@ func (s *Server) packsMgr() (*packops.Managers, error) {
 			s.packsErr = errors.New("registry not available")
 			return
 		}
-		home, err := os.UserHomeDir()
+		home, err := state.Home()
 		if err != nil {
 			s.packsErr = err
 			return
