@@ -59,11 +59,25 @@ type Store struct {
 func New(stackName string) *Store {
 	ps := &Store{
 		stackName:   stackName,
-		path:        state.SkillPinsPath(stackName),
 		scanEnabled: true,
 	}
 	ps.data = ps.emptyPinFile()
 	return ps
+}
+
+// ensurePath resolves the on-disk location lazily so New stays error-free;
+// resolution fails only when no home directory is available. Callers hold
+// ps.mu.
+func (ps *Store) ensurePath() error {
+	if ps.path != "" {
+		return nil
+	}
+	p, err := state.SkillPinsPath(ps.stackName)
+	if err != nil {
+		return fmt.Errorf("skillpins: resolving pin file path: %w", err)
+	}
+	ps.path = p
+	return nil
 }
 
 // NewWithPath creates a Store that keeps pins in dir/{stackName}.skills.json.
@@ -105,6 +119,9 @@ func (ps *Store) Load() error {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
+	if err := ps.ensurePath(); err != nil {
+		return err
+	}
 	data, err := os.ReadFile(ps.path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -443,6 +460,9 @@ func (ps *Store) withFileLock(fn func() error) error {
 
 // saveLocked writes the pin file atomically. Caller must hold ps.mu.Lock().
 func (ps *Store) saveLocked() error {
+	if err := ps.ensurePath(); err != nil {
+		return err
+	}
 	// The directory derives from ps.path, not state.PinsDir(): a store built
 	// via NewWithPath must never create the real pins directory.
 	if err := os.MkdirAll(filepath.Dir(ps.path), 0755); err != nil {
