@@ -31,7 +31,7 @@ When a stack exposes dozens of tools, each tool definition consumes context wind
 
 ### Sandbox
 
-Code runs in a [goja](https://github.com/nicholasgasior/goja) JavaScript runtime (ES5.1 compatible). Modern syntax (arrow functions, destructuring, template literals) is transpiled via esbuild.
+Code runs in a [goja](https://github.com/dop251/goja) JavaScript runtime (ES5.1 compatible). Modern syntax (arrow functions, destructuring, template literals) is transpiled via esbuild.
 
 **Bindings:**
 - `mcp.callTool(serverName, toolName, args)` - synchronous, returns parsed objects
@@ -43,7 +43,7 @@ Code runs in a [goja](https://github.com/nicholasgasior/goja) JavaScript runtime
 
 ### ACL Enforcement
 
-Agent-level tool access is enforced inside the sandbox. An agent can only call tools from servers listed in its `uses` field, even through `mcp.callTool()`.
+Tool access is enforced inside the sandbox using the connecting client's allowed-tool set. A client restricted via `clients:` scoping or connected through a group endpoint can only reach its permitted tools, even through `mcp.callTool()`. See [access-control/](../access-control/) for scoping examples.
 
 ## ⚙️ Configuration
 
