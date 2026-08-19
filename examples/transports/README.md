@@ -9,6 +9,7 @@ Examples demonstrating different MCP transport types.
 | `local-mcp.yaml` | stdio | Run MCP servers as local host processes |
 | `ssh-mcp.yaml` | ssh+stdio | Connect to MCP servers on remote machines via SSH |
 | `external-mcp.yaml` | http, sse | Connect to external HTTP and SSE MCP servers |
+| `external-auth.yaml` | http | Authenticate to external servers: OAuth brokering, bearer token, custom header |
 
 ## ⚙️ Prerequisites
 
