@@ -318,7 +318,7 @@ The same operations are available over the REST API (`GET /api/telemetry/invento
 
 ## Secrets
 
-References variable sets from the vault for automatic secret injection into containers.
+References variable sets from the encrypted variable store (`gridctl var`) for automatic secret injection into containers. The `secrets:` field name is kept for compatibility; the store behind it is the unified variable store, and the deprecated `${vault:KEY}` reference syntax is a compatibility alias for `${var:KEY}` (see [Variable Expansion](#variable-expansion)).
 
 ```yaml
 secrets:
@@ -595,6 +595,7 @@ In the web wizard, the OpenAPI Configuration section's Operations Filter loads t
 | `network` | string | Conditional | - | Network to join (required in advanced network mode) |
 | `ssh` | object | Conditional | - | SSH connection config (see [SSH](#ssh)) |
 | `openapi` | object | Conditional | - | OpenAPI spec config (see [OpenAPI](#openapi)) |
+| `auth` | object | No | - | External-server authentication: `type: bearer`, `header`, or `oauth` (see [External Server Authentication](#external-server-authentication)). URL servers only |
 | `tools` | []string | No | - | Tool whitelist. Empty exposes all tools. The web wizard populates this from the live stack for running servers, and offers an optional probe of external-URL servers to discover their tools before deploy. Container / stdio / local-process / SSH servers are curated from the Stack sidebar after deploy; OpenAPI servers are curated before deploy with the wizard's Operations Filter (see [OpenAPI](#openapi-server)). Editable live from the Stack sidebar's Tools editor - `PUT /api/mcp-servers/{name}/tools` rewrites this field atomically and triggers a hot reload |
 | `output_format` | string | No | - | Output format override: `"json"`, `"toon"`, `"csv"`, or `"text"`. Overrides `gateway.output_format` for this server |
 | `pin_schemas` | bool | No | - | Override schema pinning for this server. `false` disables pinning regardless of gateway setting. Omit to inherit from `gateway.security.schema_pinning.enabled` |
@@ -635,7 +636,7 @@ Build configuration for container images from source code.
 
 ### Source Auth
 
-Declares how gridctl authenticates when cloning a private git repository at build time. Raw tokens must **never** appear in `stack.yaml` - use `credential_ref` to point at a vault key, which is resolved against the live vault on every clone.
+Declares how gridctl authenticates when cloning a private git repository at build time. Raw tokens must **never** appear in `stack.yaml` - use `credential_ref` to point at a variable-store key, which is resolved against the live store on every clone.
 
 ```yaml
 mcp-servers:
@@ -1227,7 +1228,7 @@ auth:
 **Security rules:**
 
 - Raw PAT or SSH key material must never appear in `skills.yaml`, the lock file, or origin sidecars.
-- `credential_ref` is the only credential field persisted; the live vault is consulted on every remote operation so rotating a secret takes effect immediately.
+- `credential_ref` is the only credential field persisted; the live variable store is consulted on every remote operation so rotating a secret takes effect immediately.
 - Prefer `credential_ref` over embedding credentials in the `repo` URL (`https://TOKEN@host/...`). Any userinfo or known PAT patterns that do leak into errors and logs are scrubbed by the redaction layer, but vault references keep them out of on-disk state entirely.
 - The CLI equivalents are `--auth-token <pat>` (ephemeral), `--vault-key <key>` (persisted as `credential_ref`), and `--ssh-key <path>` on `skill add` / `skill try`.
 
