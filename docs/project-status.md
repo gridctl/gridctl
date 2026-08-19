@@ -9,7 +9,7 @@ Gridctl is pre-1.0 software. This page tracks the stability tier of each feature
 
 Every shipped feature surface is Stable as of the release candidate. The Experimental tier is retained for features that ship dark behind the `experimental:` feature-flag registry (see [Config Schema](config-schema.md#experimental-feature-flags)); no surface currently sits in it.
 
-Current as of **v0.1.0-rc.1 plus `[Unreleased]`** (see [CHANGELOG.md](../CHANGELOG.md) for release-by-release detail).
+Current as of **v0.1.0-rc.2 plus `[Unreleased]`** (see [CHANGELOG.md](../CHANGELOG.md) for release-by-release detail).
 
 ## Feature stability
 
