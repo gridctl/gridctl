@@ -19,7 +19,7 @@ Hosted remote endpoints use `url:` with native OAuth brokering (`atlassian-mcp.y
 ```yaml
 mcp-servers:
   - name: atlassian
-    url: https://mcp.atlassian.com/v1/sse
+    url: https://mcp.atlassian.com/v1/mcp/authv2
     auth:
       type: oauth
 ```
