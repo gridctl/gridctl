@@ -71,6 +71,57 @@ openapi:
     valueEnv: API_KEY              # Sends: X-API-Key: <$API_KEY>
 ```
 
+**Query parameter** - appends an API key to every request URL:
+
+```yaml
+openapi:
+  spec: https://api.example.com/openapi.json
+  auth:
+    type: query
+    paramName: appid               # Appends: ?appid=<$OPENWEATHER_API_KEY>
+    valueEnv: OPENWEATHER_API_KEY
+```
+
+**OAuth2 client credentials** - fetches a short-lived token from `tokenUrl` and injects it as a bearer header; tokens are cached and refreshed on expiry:
+
+```yaml
+openapi:
+  spec: https://api.example.com/openapi.json
+  auth:
+    type: oauth2
+    clientIdEnv: OAUTH_CLIENT_ID
+    clientSecretEnv: OAUTH_CLIENT_SECRET
+    tokenUrl: https://auth.example.com/oauth/token
+    scopes: [read:data, write:data]
+```
+
+**HTTP Basic** - sends `Authorization: Basic <base64(username:password)>`:
+
+```yaml
+openapi:
+  spec: https://api.example.com/openapi.json
+  auth:
+    type: basic
+    usernameEnv: API_USERNAME
+    passwordEnv: API_PASSWORD
+```
+
+**mTLS** - the `tls:` block is transport-layer and combines with any auth type:
+
+```yaml
+openapi:
+  spec: https://secure-api.example.com/openapi.json
+  auth:
+    type: bearer
+    tokenEnv: SECURE_API_TOKEN
+  tls:
+    certFile: ~/.gridctl/certs/client.pem
+    keyFile: ~/.gridctl/certs/client-key.pem
+    caFile: ~/.gridctl/certs/ca.pem
+```
+
+All patterns are exercised in `openapi-auth.yaml`; see [`docs/config-schema.md`](../../docs/config-schema.md) for the full field reference.
+
 ### Operation Filtering
 
 Control which API operations become MCP tools:
