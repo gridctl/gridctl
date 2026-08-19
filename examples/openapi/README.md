@@ -24,7 +24,7 @@ When deployed, Gridctl:
 | File | Description |
 |------|-------------|
 | `openapi-basic.yaml` | Load a public API spec, with and without operation filtering |
-| `openapi-auth.yaml` | Bearer token and API key authentication patterns |
+| `openapi-auth.yaml` | Bearer, custom header, query parameter, OAuth2 client credentials, and HTTP Basic authentication, plus mTLS |
 
 ## 🔧 Configuration Reference
 
