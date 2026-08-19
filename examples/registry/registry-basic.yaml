@@ -15,7 +15,7 @@
 #   cp -r examples/registry/items/* ~/.gridctl/registry/skills/
 #
 # Then activate a skill:
-#   curl -X POST http://localhost:8180/api/registry/skills/echo-and-time/activate
+#   curl -X POST http://localhost:8180/api/registry/skills/code-review/activate
 
 version: "1"
 name: registry-basic
