@@ -15,8 +15,8 @@ network:
   name: skills-demo-net
 
 mcp-servers:
+  # Tools server for skill workflows to call
   - name: tools-server
     image: alpine:latest
     port: 8080
     command: ["sh", "-c", "while true; do sleep 3600; done"]
-    description: "Tools server for skill workflows to call"
