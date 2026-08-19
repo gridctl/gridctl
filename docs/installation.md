@@ -45,7 +45,7 @@ Download the tarball for your platform from the [releases page](https://github.c
 <details>
 <summary><strong>Build from source</strong></summary>
 
-Requires Go 1.26+, Node 20+, and [Task](https://taskfile.dev/docs/installation).
+Requires Go 1.26+, Node 22+ (pinned in `.nvmrc` and `web/package.json` engines), and [Task](https://taskfile.dev/docs/installation).
 
 ```bash
 git clone https://github.com/gridctl/gridctl
@@ -77,8 +77,9 @@ entries in client MCP configs, and running containers. The installer's
 gridctl reset --purge
 ```
 
-Then remove the binary (follow-up: `install.sh --purge` should invoke
-`gridctl reset --purge` itself while the binary is still on PATH):
+Then remove the binary. (A planned follow-up may teach `install.sh --purge` to
+invoke `gridctl reset --purge` itself while the binary is still on PATH; today
+the installer does not, so run reset yourself first as shown above.)
 
 ```bash
 # Standalone install
@@ -105,6 +106,10 @@ gridctl import --all --dry-run  # Preview everything without writing
 ```
 
 The scan is read-only on client configs; the only file modified is your stack file, which is backed up first. Identical servers found in several clients are imported once (their provenance is shown), entries pointing at the gridctl gateway itself are filtered out, and plaintext secret-looking env values are offered into the encrypted variable store as `${var:KEY}` references. After importing, run `gridctl apply` to deploy and `gridctl link` to point the clients at the gateway.
+
+## Isolated and CI installs
+
+`GRIDCTL_HOME` (or the `--home <dir>` global flag) replaces the home directory every gridctl path derives from: `~/.gridctl` and the client projection targets alike. `GRIDCTL_HOME=/tmp/demo gridctl apply` runs a fully isolated instance that cannot touch real client configs, which is the right shape for CI jobs, demos, and trying gridctl without committing your machine to it. `gridctl doctor` reports the active home and its source. See [Home directory override](cli-reference.md#home-directory-override) for the full semantics.
 
 ## Container runtime
 
