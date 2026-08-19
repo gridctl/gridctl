@@ -71,8 +71,9 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | autoscale-basic | stdio | Reactive autoscaling with `autoscale:` |
 | otlp-jaeger | - | Gateway OTLP trace export |
 | registry-basic | stdio | Skills as MCP prompts, single server |
-| registry-advanced | stdio | Cross-server skills |
+| registry-advanced | stdio | Two servers; comments show cross-server `allowed-tools` |
 | model-preferences | http | Model preference defaults for projected skills and agents |
+| skills.yaml | - (skill sources) | Remote git skill sources for `gridctl skill update` |
 | declarative-link | stdio (container) | `link:` block, `groups:` endpoints |
 | portable-stack | http (containers) | Committable stack, all values from the variable store |
 | portable-pack | - (pack manifest) | Skills, agents, rules, and wiring from one manifest |
