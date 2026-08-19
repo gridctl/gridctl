@@ -69,7 +69,7 @@ mcp-servers:
   # Authorize once with `gridctl auth login atlassian`; tokens are stored
   # encrypted and refreshed automatically.
   - name: atlassian
-    url: https://mcp.atlassian.com/v1/sse
+    url: https://mcp.atlassian.com/v1/mcp/authv2
     auth:
       type: oauth
 
