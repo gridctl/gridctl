@@ -75,6 +75,7 @@ The same operations are exposed as CLI subcommands. Use these when scripting or 
 | Validate a skill's frontmatter | `gridctl skill validate <name>` |
 | Import skills from a git repo | `gridctl skill add <repo-url>` |
 | Update imported skills (alias `sync`) | `gridctl skill update [name]` |
+| Try a skill temporarily before importing | `gridctl skill try <repo-url>` |
 | Pin an imported skill to a ref | `gridctl skill pin <name> <ref>` |
 | Remove a skill | `gridctl skill remove <name>` |
 
@@ -149,6 +150,8 @@ Three targets in v1:
 | `antigravity` | `~/.gemini/config/skills/` | copy (forced) | Symlink discovery is unverified in Antigravity, so this target always copies. |
 
 `skill project status` lists only recorded projections, unlike `gridctl ctx status`, which enumerates every known client including never-synced ones. The asymmetry is deliberate: the context canon targets all clients by default, while skill projection is an explicit allow-list, so an empty table here means "nothing projected", not "nothing detected".
+
+Skill projection is CLI-only: there is no `/api/project/skills` REST surface. Agent projection does have one (`/api/project/agents/*`, see the [API reference](api-reference.md#agent-projection)); the skills half stays on the CLI and the daemon's own reconcile loop.
 
 Skills are projected by symlink where possible: the link points into the registry, so registry edits propagate instantly and a projected skill can never drift. `--copy` materializes copies instead (and copy-forced targets always do); copies get tree-hash drift detection, and a hand-edited copy is skipped on sync until you decide with `--force` (overwrite after a timestamped backup) or `unsync` (remove it).
 

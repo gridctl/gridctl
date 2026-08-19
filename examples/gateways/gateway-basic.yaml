@@ -17,7 +17,7 @@
 #   gridctl apply examples/gateways/gateway-basic.yaml
 #
 #   Then connect clients to Gridctl's gateway URL:
-#   http://localhost:8080/sse
+#   http://localhost:8180/mcp
 
 version: "1"
 name: gateway-basic

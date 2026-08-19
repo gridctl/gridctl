@@ -1,10 +1,10 @@
 # REST API Reference
 
-The gridctl gateway exposes a REST API for managing stacks, secrets, skills, schema and skill pins, the global context (including rule fragments), and MCP protocol interactions. By default the gateway listens on port `8180`.
+The gridctl gateway exposes a REST API for managing stacks, secrets, skills, packs, schema and skill pins, the global context (including rule fragments), agent projection and client wiring, usage telemetry and traces, optimize findings, daemon reset, and MCP protocol interactions. By default the gateway listens on port `8180`.
 
 ## Authentication
 
-When `gateway.auth` is configured, all endpoints except `/health` and `/ready` require authentication. CORS preflight (`OPTIONS`) requests are also exempt.
+When `gateway.auth` is configured, authentication is required for `/api/*`, `/mcp`, `/sse`, `/message`, and `/.well-known/*` paths. Exempt: `/health`, `/ready`, CORS preflight (`OPTIONS`) requests, the static web UI (`GET /`), `/oauth/callback`, and the group MCP endpoints (`/groups/{name}/mcp`, `/groups/{name}/sse`).
 
 **Bearer token:**
 ```bash
@@ -139,11 +139,12 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `gateway` | object | Gateway name and version |
+| `gateway` | object | Gateway name, version, and active `tokenizer` (`embedded` or `api`, omitted when unset) |
 | `mcp-servers` | []object | Status of each MCP server |
 | `resources` | []object | Resource container status |
-| `sessions` | int | Active SSE session count |
+| `sessions` | int | Active Streamable HTTP session count (see [`/api/sessions`](#get-apisessions)) |
 | `stack_name` | string | Active stack name (omitted in stackless mode) |
+| `home` | string | Resolved home directory this daemon runs under (omitted when unresolvable); lets CLI subcommands detect a `GRIDCTL_HOME` mismatch |
 | `registry` | object | Registry skill counts (omitted if empty) |
 | `code_mode` | string | Code mode status (omitted if `"off"`) |
 | `token_usage` | object | Token usage metrics (omitted if no metrics accumulator) |
@@ -854,6 +855,60 @@ Returns `503` if reload is not enabled (gateway started without `--watch`).
 
 ---
 
+### Reset
+
+REST half of `gridctl reset`: removes everything gridctl placed on the machine (projected skills, agents, and context rules, owned gateway entries in client MCP configs, and every stack's daemons, containers, and networks). The default tier preserves `~/.gridctl`; `purge: true` deletes it too. Both endpoints share the same engine and guards as the CLI; the web UI's Reset dialog is built on them.
+
+**Transport guards (both endpoints):** requests are accepted only from loopback connections; a request carrying an `Origin` header must be same-origin; and `Content-Type: application/json` is required (so the request can never be a CORS simple request). Violations return `403` (or `415` for the content type). These guards apply on top of gateway auth.
+
+#### `POST /api/reset/preview`
+
+Computes the reset inventory without writing anything and issues the single-use confirm token the execute call must present.
+
+**Auth:** Yes (plus the transport guards above)
+
+**Request:**
+```json
+{ "purge": false, "force": false }
+```
+
+**Response:**
+```json
+{
+  "confirm_token": "<single-use token>",
+  "confirm_phrase": "/Users/you/.gridctl",
+  "doc": { "...": "the dry-run result document, grouped per client" }
+}
+```
+
+The token is bound to the exact `purge` and `force` combination it was issued for and expires after five minutes. `confirm_phrase` is the resolved state-directory path a purge must echo back; it is a deliberate-attention gate printed by the preview, not a secret.
+
+#### `POST /api/reset`
+
+Executes the reset. Requires a live preview token; purge additionally requires the resolved-path confirm phrase, so the UI gate is server-enforced rather than decorative.
+
+**Auth:** Yes (plus the transport guards above)
+
+**Request:**
+```json
+{
+  "purge": true,
+  "force": false,
+  "confirm_token": "<from the preview>",
+  "confirm_phrase": "/Users/you/.gridctl"
+}
+```
+
+**Response:** the full result document, flushed before the serving daemon dismantles itself (the daemon sits inside the blast radius, so teardown of its own process, state file, and any purge removal is deferred until after the response is written).
+
+**Errors:**
+- `403` / `415` - transport guard violations (non-loopback, cross-origin, wrong content type)
+- `409` - a reset is already running
+- `422` - missing, expired, already-used, or wrong-tier confirm token (re-run the preview), or a purge whose `confirm_phrase` does not equal the resolved path
+- `503` - reset engine not initialized
+
+---
+
 ### Stack Management
 
 Endpoints for validating, inspecting, and editing the active stack spec. Most write paths use the same lock + hash + atomic-write pattern as the tool-whitelist editor: concurrent external edits surface as `409 stack_modified`, and a successful write may trigger a hot reload (`502 reload_failed` when the YAML saved but reload failed).
@@ -903,7 +958,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/stack/health
   "dependencies": { "status": "resolved" },
   "replicas": {
     "github": [
-      { "replicaId": "github-0", "state": "healthy", "inFlight": 0, "uptimeSeconds": 3600 }
+      { "replicaId": 0, "state": "healthy", "inFlight": 0, "uptimeSeconds": 3600 }
     ]
   }
 }
@@ -928,7 +983,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/stack/spec
 
 #### `GET /api/stack/export`
 
-Returns the active stack as sanitized exportable YAML (sensitive env values replaced with `${vault:...}` placeholders).
+Returns the active stack as sanitized exportable YAML (sensitive env values replaced with `${var:KEY}` placeholders; values already written as `${var:KEY}` or the deprecated `${vault:KEY}` alias are left untouched).
 
 **Auth:** Yes
 
@@ -2268,12 +2323,12 @@ Auth for private repos accepts an optional `auth` object on mutating endpoints:
 {
   "method": "token",
   "token": "ghp_...",
-  "credentialRef": "${vault:GIT_TOKEN}",
+  "credentialRef": "${var:GIT_TOKEN}",
   "sshKeyPath": "/path/to/key"
 }
 ```
 
-`credentialRef` is resolved against the live vault; raw `token` values are transient and never persisted.
+`credentialRef` is resolved against the live variable store; raw `token` values are transient and never persisted.
 
 #### `GET /api/skills/sources`
 
@@ -2877,12 +2932,12 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/packs/p
 {
   "method": "token",
   "token": "ghp_...",
-  "credentialRef": "${vault:GIT_TOKEN}",
+  "credentialRef": "${var:GIT_TOKEN}",
   "sshKeyPath": "/path/to/key"
 }
 ```
 
-`credentialRef` is resolved against the live vault; raw `token` values are transient and never persisted. Only the reference is recorded, on the pack's imported source and on each resource's origin sidecar.
+`credentialRef` is resolved against the live variable store; raw `token` values are transient and never persisted. Only the reference is recorded, on the pack's imported source and on each resource's origin sidecar.
 
 Omit `auth` entirely on a repository already imported with a reference and that stored reference is resolved automatically, which is how an update previews a private pack with no user input. Sending an empty object (`"auth": {}`) is an explicit request to use no credentials and suppresses the stored reference.
 

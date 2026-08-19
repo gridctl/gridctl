@@ -9,7 +9,7 @@ Gridctl is pre-1.0 software. This page tracks the stability tier of each feature
 
 Every shipped feature surface is Stable as of the release candidate. The Experimental tier is retained for features that ship dark behind the `experimental:` feature-flag registry (see [Config Schema](config-schema.md#experimental-feature-flags)); no surface currently sits in it.
 
-Current as of **v0.1.0-beta.15 plus `[Unreleased]`** (see [CHANGELOG.md](../CHANGELOG.md) for release-by-release detail).
+Current as of **v0.1.0-rc.1 plus `[Unreleased]`** (see [CHANGELOG.md](../CHANGELOG.md) for release-by-release detail).
 
 ## Feature stability
 
@@ -49,6 +49,9 @@ Current as of **v0.1.0-beta.15 plus `[Unreleased]`** (see [CHANGELOG.md](../CHAN
 | Telemetry persistence | Stable | Backward compatible in 0.x |
 | Server catalog (search, add) | Stable | Backward compatible in 0.x |
 | Client config import (import) | Stable | Backward compatible in 0.x |
+| Machine reset (`gridctl reset`, reset REST + web UI dialog) | Stable | Backward compatible in 0.x |
+| Home directory override (`GRIDCTL_HOME`, `--home`) | Stable | Backward compatible in 0.x |
+| MCP protocol generation dual-stack (handshake + 2026-07-28 stateless) | Stable | Both generations served and auto-negotiated per client and per server |
 | Declarative client linking (`link:`) | Stable | Backward compatible in 0.x |
 | Wiring ownership (link / unlink recording, project) | Stable | Backward compatible in 0.x |
 | Downstream OAuth brokering (auth) | Stable | Backward compatible in 0.x |

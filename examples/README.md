@@ -13,15 +13,16 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | Folder | Description |
 |--------|-------------|
 | [🎯 getting-started/](getting-started/) | Basic examples to get up and running |
-| [🔌 transports/](transports/) | MCP transport types: local process, SSH, HTTP, SSE |
-| [📦 platforms/](platforms/) | Third-party MCP servers (container-based) |
+| [🔌 transports/](transports/) | MCP transport types: local process, SSH, HTTP, SSE, and external-server auth |
+| [📦 platforms/](platforms/) | Third-party MCP servers: remote OAuth endpoints, containers, and host processes |
 | [🔗 openapi/](openapi/) | Turn REST APIs into MCP tools via OpenAPI specs |
-| [🔐 access-control/](access-control/) | Tool filtering and security patterns |
+| [🔐 access-control/](access-control/) | Tool filtering and per-client scoping |
 | [⚡ code-mode/](code-mode/) | Reduce context window with search + execute meta-tools |
 | [🔒 gateways/](gateways/) | Bridge to existing infrastructure |
+| [🖇️ declarative-link/](declarative-link/) | Auto-link LLM clients on apply with a `link:` block |
 | [🔑 secrets-vault/](secrets-vault/) | Encrypted variables and variable sets |
-| [📈 autoscale/](autoscale/) | Static replicas and reactive autoscaling |
-| [🧳 portable-stack/](portable-stack/) | Single-file portable stack with inlined config |
+| [📈 autoscale/](autoscale/) | Reactive autoscaling of MCP server replicas |
+| [🧳 portable-stack/](portable-stack/) | Stack that stays committable by keeping every per-environment value in the variable store |
 | [🎒 portable-pack/](portable-pack/) | Pack repo: skills, agents, and rules behind one `gridctl-pack.yaml` |
 | [🔭 tracing/](tracing/) | Distributed tracing and OTLP export |
 | [📋 registry/](registry/) | Skills and agents registry ([agentskills.io](https://agentskills.io) spec) |
@@ -42,28 +43,40 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 
 ## 📊 Feature Matrix
 
-| Example | Transports | Tool Filtering | External | OpenAPI | Registry | Code Mode | Variables |
-|---------|------------|----------------|----------|---------|----------|-----------|-----------|
-| mcp-basic | - | ✅ | - | - | - | - | - |
-| local-mcp | stdio | - | - | - | - | - | - |
-| ssh-mcp | ssh+stdio | - | - | - | - | - | - |
-| external-mcp | http, sse | - | ✅ | - | - | - | - |
-| atlassian-mcp | sse | - | ✅ | - | - | - | - |
-| chrome-devtools-mcp | stdio | - | ✅ | - | - | - | - |
-| context7-mcp | stdio | - | ✅ | - | - | - | - |
-| github-mcp | stdio | - | ✅ | - | - | - | - |
-| zapier-mcp | stdio | - | ✅ | - | - | - | - |
-| openapi-basic | openapi | - | - | ✅ | - | - | - |
-| openapi-auth | openapi | - | - | ✅ | - | - | - |
-| tool-filtering | - | ✅ | - | - | - | - | - |
-| code-mode-basic | - | - | - | - | - | ✅ | - |
-| gateway-basic | http | - | ✅ | - | - | - | - |
-| gateway-remote | http | - | ✅ | - | - | - | - |
-| var-basic | stdio | - | - | - | - | - | ✅ |
-| var-sets | - | - | - | - | - | - | ✅ |
-| registry-basic | stdio | - | - | - | ✅ | - | - |
-| registry-advanced | stdio | - | - | - | ✅ | - | - |
-| model-preferences | http | - | - | - | ✅ | - | - |
+| Example | Transport | Demonstrates |
+|---------|-----------|--------------|
+| mcp-basic | http (containers) | Multiple servers, tool filtering |
+| skills-basic | http (container) | Skills registry alongside a stack |
+| local-mcp | stdio | Local host processes |
+| ssh-mcp | ssh+stdio | Remote servers over SSH |
+| external-mcp | http, sse | External URL servers |
+| external-auth | http | External-server auth: oauth, bearer, header |
+| atlassian-mcp | http (remote URL) | Hosted platform server with OAuth brokering |
+| chrome-devtools-mcp | stdio (host process) | Browser automation via npx |
+| context7-mcp | stdio (host process) | Library docs via npx |
+| github-mcp | stdio (container) | Official containerized platform server |
+| zapier-mcp | http (remote URL) | Hosted platform server with OAuth brokering |
+| openapi-basic | openapi | REST API as MCP tools, operation filtering |
+| openapi-auth | openapi | Bearer, header, query, OAuth2, basic auth, and mTLS |
+| tool-filtering | http (containers) | Server-level tool whitelists |
+| per-client-scoping | http (containers) | `clients:` blocks restricting servers and tools per client |
+| code-mode-basic | http (containers) | Search + execute meta-tools |
+| gateway-basic | http | Gateway to an existing MCP server, tokenizer config |
+| gateway-remote | http | Gateway to a remote MCP deployment |
+| var-basic | stdio, http | `${var:KEY}` variable references |
+| var-sets | http (containers) | Variable sets fanning out to all workloads |
+| var-sets-scoped | stdio | Variable sets scoped to named servers and resources |
+| vault-basic | stdio, http | Deprecated `${vault:}` alias (regression fixture) |
+| vault-sets | http (container) | Deprecated vault sets (regression fixture) |
+| autoscale-basic | stdio | Reactive autoscaling with `autoscale:` |
+| otlp-jaeger | - | Gateway OTLP trace export |
+| registry-basic | stdio | Skills as MCP prompts, single server |
+| registry-advanced | stdio | Two servers; comments show cross-server `allowed-tools` |
+| model-preferences | http | Model preference defaults for projected skills and agents |
+| skills.yaml | - (skill sources) | Remote git skill sources for `gridctl skill update` |
+| declarative-link | stdio (container) | `link:` block, `groups:` endpoints |
+| portable-stack | http (containers) | Committable stack, all values from the variable store |
+| portable-pack | - (pack manifest) | Skills, agents, rules, and wiring from one manifest |
 
 ## 💻 Usage Pattern
 
@@ -73,9 +86,9 @@ All examples follow the same deployment pattern:
 # Deploy a stack
 gridctl apply examples/<category>/<file>.yaml
 
-# Force recreate containers
-gridctl apply examples/<category>/<file>.yaml
-
 # View status
 gridctl status
+
+# Tear down
+gridctl destroy examples/<category>/<file>.yaml
 ```

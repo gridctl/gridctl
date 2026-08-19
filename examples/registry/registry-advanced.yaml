@@ -10,11 +10,13 @@
 # Usage:
 #   gridctl apply examples/registry/registry-advanced.yaml
 #
-# After deploying, copy the cross-server skill:
-#   cp -r examples/registry/items/chained-calculation ~/.gridctl/registry/skills/
+# After deploying, copy the pre-made skills and activate one:
+#   cp -r examples/registry/items/* ~/.gridctl/registry/skills/
+#   curl -X POST http://localhost:8180/api/registry/skills/code-review/activate
 #
-# Then activate it:
-#   curl -X POST http://localhost:8180/api/registry/skills/chained-calculation/activate
+# To make a skill span both servers below, list tools from each in its
+# frontmatter, e.g.:
+#   allowed-tools: math-server__add, text-server__echo
 
 version: "1"
 name: registry-advanced

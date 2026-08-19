@@ -11,7 +11,7 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md). We expect all 
 ### Prerequisites
 
 - **Go** 1.26 or later (the version in `go.mod`)
-- **Node.js** 20 or later
+- **Node.js** 22 or later (the frontend is pinned to 22 via `.nvmrc` and `web/package.json` engines; tests do not start on 20)
 - **Docker** (for running containers and integration tests)
 - **Git** with commit signing configured
 - **Task** (`brew install go-task/tap/go-task`, `npm install -g @go-task/cli`, or another [install method](https://taskfile.dev/docs/installation))

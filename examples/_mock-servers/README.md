@@ -63,7 +63,7 @@ A Go-based MCP server that supports HTTP and SSE transports.
 ```bash
 cd examples/_mock-servers/mock-mcp-server
 
-# HTTP mode
+# HTTP mode (defaults to port 8080 when -port is omitted)
 go run main.go -port 9001
 
 # SSE mode
@@ -72,6 +72,17 @@ go run main.go -port 9002 -sse
 # Stateless generation (2026-07-28: server/discover, no handshake)
 go run main.go -port 9001 -protocol 2026-07-28
 ```
+
+### OAuth Flags
+
+The server can simulate an OAuth 2.1 protected resource for exercising `auth.type: oauth` brokering:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-oauth` | off | Require OAuth 2.1 authorization |
+| `-oauth-no-dcr` | off | Refuse dynamic client registration (501) |
+| `-oauth-access-ttl` | 3600 | Access token lifetime in seconds |
+| `-base-url` | `http://127.0.0.1:<port>` | Externally visible base URL |
 
 ### Usage
 

@@ -1,6 +1,6 @@
 # 📦 Platforms
 
-Third-party MCP servers that Gridctl runs as containers.
+Third-party MCP servers, in the three shapes they ship in: hosted remote endpoints with OAuth, containers, and host processes.
 
 ## 📄 Examples
 
@@ -12,9 +12,19 @@ Third-party MCP servers that Gridctl runs as containers.
 | `github-mcp.yaml` | GitHub | Official GitHub MCP server for repos, issues, PRs |
 | `zapier-mcp.yaml` | Zapier | Integrate with 8000+ apps through Zapier automation |
 
-## 🔧 Pattern
+## 🔧 Patterns
 
-These examples use `image:` to run MCP servers as containers:
+Hosted remote endpoints use `url:` with native OAuth brokering (`atlassian-mcp.yaml`, `zapier-mcp.yaml`):
+
+```yaml
+mcp-servers:
+  - name: atlassian
+    url: https://mcp.atlassian.com/v1/mcp/authv2
+    auth:
+      type: oauth
+```
+
+Containerized servers use `image:` (`github-mcp.yaml`):
 
 ```yaml
 mcp-servers:
@@ -23,13 +33,21 @@ mcp-servers:
     transport: stdio
 ```
 
+Host processes use `command:` (`chrome-devtools-mcp.yaml`, `context7-mcp.yaml`):
+
+```yaml
+mcp-servers:
+  - name: context7
+    command: ["npx", "-y", "@upstash/context7-mcp"]
+```
+
 For connecting to **existing** MCP servers, see [🔒 gateways/](../gateways/).
 
 ## ⚙️ Prerequisites
 
 ### atlassian-mcp.yaml
 
-Requires an Atlassian Cloud account. OAuth authentication is handled via browser flow on first use.
+Requires an Atlassian Cloud account. Authorize once with `gridctl auth login atlassian` after apply; tokens are stored encrypted and refreshed automatically.
 
 ### chrome-devtools-mcp.yaml
 
@@ -55,7 +73,7 @@ export GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxxxxxxxxxxx
 
 ### zapier-mcp.yaml
 
-Requires a Zapier account and Node.js installed. OAuth authentication is handled via browser flow on first use.
+Requires a Zapier account and a configured server at [mcp.zapier.com](https://mcp.zapier.com). Authorize once with `gridctl auth login zapier` after apply.
 
 ## 💻 Usage
 

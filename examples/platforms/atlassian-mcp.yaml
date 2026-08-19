@@ -19,8 +19,11 @@ version: "1"
 name: atlassian-mcp
 
 mcp-servers:
+  # Streamable HTTP endpoint (the default transport). Atlassian retired the
+  # older /v1/sse endpoint on 30 June 2026; /v1/mcp/authv2 is the URL its
+  # docs give MCP clients that broker OAuth themselves.
   - name: atlassian
-    url: https://mcp.atlassian.com/v1/sse
+    url: https://mcp.atlassian.com/v1/mcp/authv2
     auth:
       type: oauth
 
@@ -29,4 +32,4 @@ mcp-servers:
   # plaintext under ~/.mcp-auth):
   #
   # - name: atlassian
-  #   command: ["npx", "mcp-remote", "https://mcp.atlassian.com/v1/sse"]
+  #   command: ["npx", "mcp-remote", "https://mcp.atlassian.com/v1/mcp/authv2"]

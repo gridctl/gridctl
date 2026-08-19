@@ -9,6 +9,7 @@ Examples demonstrating different MCP transport types.
 | `local-mcp.yaml` | stdio | Run MCP servers as local host processes |
 | `ssh-mcp.yaml` | ssh+stdio | Connect to MCP servers on remote machines via SSH |
 | `external-mcp.yaml` | http, sse | Connect to external HTTP and SSE MCP servers |
+| `external-auth.yaml` | http | Authenticate to external servers: OAuth brokering, bearer token, custom header |
 
 ## ⚙️ Prerequisites
 
@@ -52,10 +53,15 @@ go run main.go -port 9002 -sse      # SSE mode
 
 Requires SSH access to a remote host running an MCP server.
 
+### external-auth.yaml
+
+The bearer and header servers read their credentials from the variable store (`gridctl var set GITHUB_PAT`, `gridctl var set INTERNAL_API_KEY`); the OAuth server deploys in a "needs auth" state until you run `gridctl auth login notion`.
+
 ## 💻 Usage
 
 ```bash
 gridctl apply examples/transports/local-mcp.yaml
 gridctl apply examples/transports/ssh-mcp.yaml
 gridctl apply examples/transports/external-mcp.yaml
+gridctl apply examples/transports/external-auth.yaml
 ```

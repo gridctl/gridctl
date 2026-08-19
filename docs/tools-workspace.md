@@ -9,7 +9,7 @@ The Tools workspace (`/tools` in the web UI on `:8180`) is the control plane for
 - **Detail rail (right)**: description, input schema, server-reported hints, and usage stats for the selected tool.
 - **Header**: global search across every server, plus the Groups, Access, Fleet, and Audit entry points.
 
-Everything an operator would put in a support link lives in the URL: `?server=`, `?q=`, `?tool=`, `?audit=1`, `?window=`, `?filter=`, `?sort=`, and `?risk=`. Defaults are omitted, so a bare `/tools` stays canonical.
+Everything an operator would put in a support link lives in the URL: `?server=`, `?q=`, `?tool=`, `?audit=1`, `?window=`, `?filter=`, `?sort=`, `?risk=`, and `?client=<slug>` (the Connections hub's deep link: opens the per-client access editor on that client once, then drops itself from the URL). Defaults are omitted, so a bare `/tools` stays canonical.
 
 ## Expose-all semantics
 

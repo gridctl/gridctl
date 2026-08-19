@@ -65,12 +65,13 @@ link:
 # Downstream MCP servers behind the gateway
 mcp-servers:
 
-  # Jira and Confluence via Atlassian's hosted remote MCP
+  # Jira and Confluence via Atlassian's hosted remote MCP.
+  # Authorize once with `gridctl auth login atlassian`; tokens are stored
+  # encrypted and refreshed automatically.
   - name: atlassian
-    command:
-      - npx
-      - mcp-remote
-      - https://mcp.atlassian.com/v1/mcp
+    url: https://mcp.atlassian.com/v1/mcp/authv2
+    auth:
+      type: oauth
 
   # GitHub repos, issues, and PRs (containerized stdio server)
   - name: github
@@ -85,14 +86,12 @@ mcp-servers:
       - npx
       - '@playwright/mcp@latest'
 
-  # SaaS app actions through Zapier's hosted MCP endpoint
+  # SaaS app actions through Zapier's hosted MCP endpoint.
+  # Same flow: `gridctl auth login zapier` after apply.
   - name: zapier
-    command:
-      - npx
-      - mcp-remote
-      - https://mcp.zapier.com/api/v1/connect
-      - --header
-      - 'Authorization: Bearer ${var:ZAPIER_MCP_TOKEN}'
+    url: https://mcp.zapier.com/api/v1/connect
+    auth:
+      type: oauth
 ```
 
 ## 🪛 Install
@@ -110,7 +109,7 @@ Installs the latest release to `~/.local/bin/gridctl`. Full instructions for Hom
 gridctl init
 
 # Apply the example stack
-gridctl apply examples/getting-started/skills-basic.yaml
+gridctl apply examples/getting-started/mcp-basic.yaml
 
 # Check what's running
 gridctl status
@@ -119,7 +118,7 @@ gridctl status
 open http://localhost:8180
 
 # Clean up
-gridctl destroy examples/getting-started/skills-basic.yaml
+gridctl destroy examples/getting-started/mcp-basic.yaml
 ```
 
 ## 🖥️ Connect LLM Application
@@ -328,7 +327,8 @@ Learn more → [Packs guide](docs/packs.md)
 | Example | What It Shows |
 |:--------|:--------------|
 | [`mcp-basic.yaml`](examples/getting-started/mcp-basic.yaml) | Stack with multiple MCP servers and tool filtering |
-| [`local-mcp.yaml`](examples/transports/local-mcp.yaml) | Local process and SSH-tunneled MCP transports |
+| [`local-mcp.yaml`](examples/transports/local-mcp.yaml) | Run MCP servers as local host processes over stdio |
+| [`ssh-mcp.yaml`](examples/transports/ssh-mcp.yaml) | Connect to MCP servers on remote machines via SSH |
 | [`openapi-basic.yaml`](examples/openapi/openapi-basic.yaml) | Turn a REST API into MCP tools via OpenAPI spec |
 | [`code-mode-basic.yaml`](examples/code-mode/code-mode-basic.yaml) | Gateway code mode with search + execute meta-tools |
 | [`github-mcp.yaml`](examples/platforms/github-mcp.yaml) | GitHub MCP server integration |

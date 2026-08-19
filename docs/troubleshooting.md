@@ -134,9 +134,9 @@ failed to start server on port 9000: listen tcp :9000: bind: address already in 
    ss -tlnp | grep 9000
    ```
 
-2. If a previous gridctl instance is running, stop it first:
+2. If a previous gridctl instance is running, stop it first (`destroy` takes the stack file or the name shown in `gridctl status`; a stackless daemon is stopped with `gridctl stop`):
    ```bash
-   gridctl destroy
+   gridctl destroy stack.yaml
    ```
 
 3. Start on a different port: `--port` sets the gateway/web UI port (default `8180`), `--base-port` sets the MCP server host-port allocation base (default `9000`):
@@ -390,11 +390,11 @@ Network changes cannot be applied via hot reload because containers must be recr
 
 **Resolution:**
 
-Perform a full restart:
+Perform a full restart (`destroy` takes the stack file or the name shown in `gridctl status`):
 
 ```bash
-gridctl destroy
-gridctl apply
+gridctl destroy stack.yaml
+gridctl apply stack.yaml
 ```
 
 ### Partial reload failure
