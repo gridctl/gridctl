@@ -80,7 +80,7 @@ cp -r examples/registry/items/* ~/.gridctl/registry/skills/
 gridctl apply examples/registry/registry-basic.yaml
 
 # Activate a skill
-curl -X POST http://localhost:8180/api/registry/skills/echo-and-time/activate
+curl -X POST http://localhost:8180/api/registry/skills/code-review/activate
 ```
 
 ### Option B: Create via API
@@ -108,9 +108,6 @@ curl -X POST http://localhost:8180/api/registry/skills/my-skill/activate
 |-------|------|-----------|
 | `code-review` | development, review | any |
 | `explain-error` | debugging, errors | any |
-| `echo-and-time` | basic, demo | registry-basic |
-| `add-and-echo` | chaining, demo | registry-basic |
-| `chained-calculation` | cross-server, chaining | registry-advanced |
 
 ## SKILL.md Format
 
@@ -157,7 +154,7 @@ curl http://localhost:8180/api/registry/status | jq
 curl http://localhost:8180/api/registry/skills | jq
 
 # Activate a skill
-curl -X POST http://localhost:8180/api/registry/skills/echo-and-time/activate
+curl -X POST http://localhost:8180/api/registry/skills/code-review/activate
 
 # Validate a SKILL.md without saving
 curl -X POST http://localhost:8180/api/registry/skills/validate \
@@ -169,7 +166,7 @@ description: Test skill
 # Test'
 
 # Manage supporting files
-curl http://localhost:8180/api/registry/skills/echo-and-time/files | jq
+curl http://localhost:8180/api/registry/skills/code-review/files | jq
 ```
 
 ### Web UI
