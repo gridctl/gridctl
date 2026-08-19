@@ -4,6 +4,10 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.0-rc.2] - 2026-08-19
+
+Second release candidate. Adds `gridctl reset` and its web UI dialog, the `GRIDCTL_HOME` override, pack import credentials across CLI, REST, and both wizards, and an OpenAPI operations picker in the create-server wizard, plus fixes for OpenAPI TLS handling, the operations filter, and the pack wizard crash.
+
 ### Features
 
 - The web UI gains the reset surface: a danger-zone strip at the foot of the Connections workspace (plus a command-palette entry) opens a Reset gridctl dialog backed by the same engine as `gridctl reset`. The dialog opens on the server's dry run and renders nothing actionable until it resolves, so the blast radius the user confirms is the one the engine computed: removable artifacts grouped per client with expand-to-detail, hand-edited items in a calm amber "your edits are safe" section rather than the removal list, and an explicit statement per client that everything else there is untouched. The two tiers are stacked radio cards whose labels name outcomes and paths, with the purge card red-bordered at rest, not only when selected, so the heavier option can never read as the milder one; switching tiers refetches the preview because the confirm token is tier-bound. Purge requires typing the resolved state-directory path the preview returned, the same string the server enforces, so the browser gate is real rather than decorative. Escape and backdrop clicks are inert while the reset runs, results are announced in-dialog through a live region (never a toast, which has none), partial failures list each failed row with the server's error verbatim and the idempotent-retry remediation, and both tiers finish by reloading the page: the serving daemon sits inside the blast radius either way, so the stores describe a world that no longer exists (#1142)
