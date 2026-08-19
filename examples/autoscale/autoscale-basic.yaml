@@ -8,6 +8,9 @@
 # `autoscale` and `replicas` are mutually exclusive. A server without an
 # `autoscale` block continues to behave exactly as it does today.
 #
+# Prerequisites:
+#   Run `task mock:servers` from the project root to build the mock server.
+#
 # Run with:
 #   gridctl validate examples/autoscale/autoscale-basic.yaml   # exits 0
 #   gridctl apply    examples/autoscale/autoscale-basic.yaml
@@ -22,8 +25,9 @@ network:
 
 mcp-servers:
   - name: junos
+    # The command is executed relative to the stack file directory
     command:
-      - examples/_mock-servers/local-stdio-server/local-stdio-server
+      - ../_mock-servers/local-stdio-server/mock-stdio-server
     autoscale:
       min: 1                    # always keep at least 1 replica healthy
       max: 8                    # upper bound (sanity-capped at 32)
