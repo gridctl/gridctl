@@ -54,6 +54,7 @@ mcp-servers:
       - "@playwright/mcp@latest"
 
 resources:
+  # Reached by the MCP servers over the stack network as "postgres:5432";
+  # no host port publishing is involved.
   - name: postgres
     image: postgres:16
-    port: 5432
