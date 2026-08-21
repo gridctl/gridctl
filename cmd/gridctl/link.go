@@ -32,7 +32,7 @@ var linkCmd = &cobra.Command{
 Without arguments, detects installed LLM clients and presents a selection list.
 With a client name, links that specific client directly.
 
-Supported clients: claude, claude-code, cursor, windsurf, vscode, gemini, antigravity, opencode, grok, continue, cline, anythingllm, roo, zed, goose`,
+Supported clients: claude, claude-code, cursor, windsurf, vscode, gemini, antigravity, opencode, grok, continue, cline, anythingllm, lmstudio, roo, zed, goose`,
 	Example: `  gridctl link                 Pick from detected clients interactively
   gridctl link claude          Link Claude Desktop directly
   gridctl link --all           Link every detected client
@@ -274,6 +274,9 @@ func doLink(ctx context.Context, printer *output.Printer, prov provisioner.Clien
 	case wiring.ActionLinked, wiring.ActionUpdated:
 		transport := provisioner.TransportDescriptionFor(prov)
 		printer.Info(fmt.Sprintf("Linked %s (via %s)", prov.Name(), transport))
+		for _, note := range provisioner.PostLinkNotesFor(prov) {
+			printer.Print("  %s\n", note)
+		}
 		return nil
 	case wiring.ActionSkippedForeign, wiring.ActionSkippedDrift:
 		printer.Warn(fmt.Sprintf("Skipped %s: %s. %s", prov.Name(), res.Detail, capitalizeFirst(res.Remediation)))
@@ -318,7 +321,11 @@ func showDryRun(printer *output.Printer, prov provisioner.ClientProvisioner, con
 // two. The suggestion is never auto-run.
 func unknownClientError(registry *provisioner.Registry, slug string) error {
 	msg := fmt.Sprintf("unknown client %q", slug)
-	if s := output.Suggest(slug, registry.AllSlugs()); s != "" {
+	if slug == "lms" {
+		// "lms" is LM Studio's headless CLI, not the MCP host, and sits
+		// beyond Suggest's edit-distance window from "lmstudio".
+		msg += "\n\"lms\" is LM Studio's headless CLI; the desktop app's slug is \"lmstudio\"."
+	} else if s := output.Suggest(slug, registry.AllSlugs()); s != "" {
 		msg += fmt.Sprintf("\nDid you mean %q?", s)
 	}
 	msg += "\nSupported clients: " + strings.Join(registry.AllSlugs(), ", ")
