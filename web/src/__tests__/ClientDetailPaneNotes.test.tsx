@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
+import { render, screen, cleanup, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { ClientDetailPane } from '../components/connections/ClientDetailPane';
 import type { ClientStatus } from '../types';
@@ -42,7 +42,7 @@ beforeEach(() => {
 });
 
 describe('ClientDetailPane client notes', () => {
-  it('renders backend-provided notes verbatim in the Wiring section', () => {
+  it('renders backend-provided notes without expanding any section', () => {
     renderPane({
       name: 'LM Studio',
       slug: 'lmstudio',
@@ -51,7 +51,8 @@ describe('ClientDetailPane client notes', () => {
       transport: 'native HTTP',
       notes: NOTES,
     });
-    fireEvent.click(screen.getByRole('button', { name: /wiring/i }));
+    // The notes sit above the collapsible sections: a web-only link never
+    // sees the CLI output, so the copy must not hide behind a click.
     const list = screen.getByTestId('client-notes');
     for (const note of NOTES) {
       expect(within(list).getByText(note)).toBeInTheDocument();
@@ -66,7 +67,6 @@ describe('ClientDetailPane client notes', () => {
       linked: true,
       transport: 'native HTTP',
     });
-    fireEvent.click(screen.getByRole('button', { name: /wiring/i }));
     expect(screen.queryByTestId('client-notes')).not.toBeInTheDocument();
   });
 });
