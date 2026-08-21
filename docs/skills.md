@@ -36,7 +36,7 @@ Two channels, complementary and per-client.
 
 **File projection (opt-in).** `gridctl skill project sync <skill>` places selected active skills into native client skill directories, where clients that read skills from disk auto-trigger them from the frontmatter description. See [Projecting skills into clients](#projecting-skills-into-clients).
 
-Not every linked client can use both channels, and two cannot use either:
+Not every linked client can use both channels, and some cannot use either:
 
 | Client | MCP prompts | Projected files |
 |---|---|---|
@@ -46,6 +46,7 @@ Not every linked client can use both channels, and two cannot use either:
 | Antigravity | ✗ (tools-only MCP client) | ✓ (`~/.gemini/config/skills/`) |
 | Claude Desktop | partial (prompt attachments) | ✗ (skills are account-level uploads) |
 | AnythingLLM | ✗ (tools-only) | ✗ (plugin-based skills, no SKILL.md) |
+| LM Studio | unverified (no documented prompt UI in chat) | ✗ (no skills directory; system prompt is per-chat) |
 
 For Antigravity and Grok Build, projection is the only way gridctl skills reach the client at all.
 
