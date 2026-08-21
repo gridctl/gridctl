@@ -141,6 +141,14 @@
   "available": false,
   "state": "unsupported",
   "detail": "workspace system prompt is UI/API only; no context file"
+  },
+  {
+  "slug": "lmstudio",
+  "name": "LM Studio",
+  "supported": false,
+  "available": false,
+  "state": "unsupported",
+  "detail": "system prompt is per-chat in the app UI; no global context file"
   }
   ]
 }

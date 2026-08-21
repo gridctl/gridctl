@@ -16,3 +16,4 @@ vscode  dedicated-file  — never-synced  $HOME/.copilot/instructions/gridctl.in
 claude  — unsupported  instructions live in the app UI; no global context file
 cursor  — unsupported  global User Rules are stored in app-internal storage; no supported file path
 anythingllm  — unsupported  workspace system prompt is UI/API only; no context file
+lmstudio  — unsupported  system prompt is per-chat in the app UI; no global context file
