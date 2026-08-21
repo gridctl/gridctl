@@ -177,6 +177,7 @@ func Unsupported() []UnsupportedClient {
 		{Slug: "claude", Name: "Claude Desktop", Reason: "instructions live in the app UI; no global context file"},
 		{Slug: "cursor", Name: "Cursor", Reason: "global User Rules are stored in app-internal storage; no supported file path"},
 		{Slug: "anythingllm", Name: "AnythingLLM", Reason: "workspace system prompt is UI/API only; no context file"},
+		{Slug: "lmstudio", Name: "LM Studio", Reason: "system prompt is per-chat in the app UI; no global context file"},
 	}
 }
 
