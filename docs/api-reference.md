@@ -383,6 +383,10 @@ actual state (linked). For a declared entry whose resolved server name differs
 from the default (a `group` or `name` override), `linked` reflects that
 resolved entry name.
 
+`notes` is a string array of client-specific post-link guidance declared by
+the client's provisioner (currently only LM Studio), omitted when empty. The
+Connections detail pane renders it verbatim.
+
 #### `POST /api/clients/{slug}/scope/preview`
 
 Computes what committing a per-client access-scope draft would do, without touching the stack file. Returns the exact YAML patch the matching `PUT .../scope` would write plus a per-client impact summary, so the UI's commit gate can render the consequences (and block a lockout) before saving.
