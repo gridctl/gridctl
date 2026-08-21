@@ -116,6 +116,8 @@ var clientNameAliases = map[string]string{
 	"lm studio":      "lmstudio",
 	"lm-studio":      "lmstudio",
 	"lmstudio":       "lmstudio",
+	// The name LM Studio actually sends, verified on the wire against 0.4.x.
+	"lmstudio-mcp-server-session": "lmstudio",
 }
 
 // NormalizeClientID returns a stable, lowercase, hyphenated identifier for
