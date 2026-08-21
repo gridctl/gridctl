@@ -185,6 +185,19 @@ export function ClientDetailPane({
             No gateway entry recorded for this client. Use the connect toggle to link it.
           </p>
         )}
+        {(client.notes ?? []).length > 0 && (
+          <ul
+            className="flex flex-col gap-1 px-1 py-1.5 border-b border-border/20"
+            aria-label={`${client.name} client notes`}
+            data-testid="client-notes"
+          >
+            {(client.notes ?? []).map((note) => (
+              <li key={note} className="text-[11px] text-text-muted">
+                {note}
+              </li>
+            ))}
+          </ul>
+        )}
         {(wiringRows ?? []).map((row) => (
           <div key={row.name} className="flex flex-col gap-1 px-1 py-1.5">
             <div className="flex items-center gap-2 flex-wrap">
