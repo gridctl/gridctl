@@ -135,7 +135,7 @@ Declaring a `link:` block in stack.yaml (as above) does the same thing on every 
 
 Already have MCP servers configured in your clients? `gridctl import` runs the same detection in reverse: it scans those configs (read-only), dedupes the servers it finds, and appends your selection to stack.yaml, offering plaintext secrets into the encrypted variable store on the way.
 
-Supported clients: Claude Desktop, Claude Code, Cursor, Windsurf, VS Code, Gemini, Antigravity, OpenCode, Grok Build, Continue, Cline, AnythingLLM, Roo, Zed, Goose
+Supported clients: Claude Desktop, Claude Code, Cursor, Windsurf, VS Code, Gemini, Antigravity, OpenCode, Grok Build, Continue, Cline, AnythingLLM, LM Studio, Roo, Zed, Goose
 
 <details>
 <summary>Manual configuration</summary>
