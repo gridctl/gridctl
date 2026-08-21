@@ -52,7 +52,7 @@ func TestNewRegistry(t *testing.T) {
 
 	expected := []string{
 		"claude", "claude-code", "cursor", "windsurf", "vscode", "gemini", "antigravity", "opencode", "grok",
-		"continue", "cline", "anythingllm", "roo", "zed", "goose",
+		"continue", "cline", "anythingllm", "lmstudio", "roo", "zed", "goose",
 	}
 	if len(slugs) != len(expected) {
 		t.Fatalf("expected %d clients, got %d: %v", len(expected), len(slugs), slugs)
@@ -84,6 +84,7 @@ func TestRegistry_FindBySlug(t *testing.T) {
 		{"continue", true, "Continue"},
 		{"cline", true, "Cline"},
 		{"anythingllm", true, "AnythingLLM"},
+		{"lmstudio", true, "LM Studio"},
 		{"roo", true, "Roo Code"},
 		{"zed", true, "Zed"},
 		{"goose", true, "Goose"},
@@ -1077,6 +1078,7 @@ func TestClientProvisioners_ImplementInterface(t *testing.T) {
 		newContinueDev(),
 		newCline(),
 		newAnythingLLM(),
+		newLMStudio(),
 		newRooCode(),
 		newZed(),
 		newGoose(),
@@ -2708,7 +2710,7 @@ func TestNewRegistry_WithNewClients(t *testing.T) {
 
 	expected := []string{
 		"claude", "claude-code", "cursor", "windsurf", "vscode", "gemini", "antigravity", "opencode", "grok",
-		"continue", "cline", "anythingllm", "roo", "zed", "goose",
+		"continue", "cline", "anythingllm", "lmstudio", "roo", "zed", "goose",
 	}
 	if len(slugs) != len(expected) {
 		t.Fatalf("expected %d clients, got %d: %v", len(expected), len(slugs), slugs)
@@ -3625,6 +3627,7 @@ func TestBuildEntry_PortRebuildsStreamableURL(t *testing.T) {
 		{"vscode", newVSCode().buildEntry(opts), "url"},
 		{"roo", newRooCode().buildEntry(opts), "url"},
 		{"anythingllm", newAnythingLLM().buildEntry(opts), "url"},
+		{"lmstudio", newLMStudio().buildEntry(opts), "url"},
 		{"goose", newGoose().buildEntry(opts), "uri"},
 	}
 	want := "http://localhost:9999/groups/dev/mcp?client=ci"
