@@ -14,6 +14,7 @@ import {
   RooCode,
   Goose,
   Codex,
+  LmStudio,
 } from '@lobehub/icons';
 
 /**
@@ -51,6 +52,7 @@ const CLIENT_ICONS: Record<string, ComponentType<ClientIconProps>> = {
   roo: RooCode,
   goose: Goose,
   codex: Codex,
+  lmstudio: LmStudio,
 };
 
 /**
