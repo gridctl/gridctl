@@ -1392,6 +1392,21 @@ func TestHandleClients_WithProvisioners(t *testing.T) {
 	if first.Transport == "" {
 		t.Error("expected non-empty transport")
 	}
+
+	// Post-link notes surface only for clients whose provisioner declares
+	// them (provisioner.PostLinkNoter); everyone else omits the field.
+	for _, c := range clients {
+		switch c.Slug {
+		case "lmstudio":
+			if len(c.Notes) == 0 {
+				t.Error("expected lmstudio to carry post-link notes")
+			}
+		default:
+			if len(c.Notes) != 0 {
+				t.Errorf("expected no notes for %s, got %v", c.Slug, c.Notes)
+			}
+		}
+	}
 }
 
 func TestHandleClients_MethodNotAllowed(t *testing.T) {

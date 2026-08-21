@@ -162,6 +162,24 @@ export function ClientDetailPane({
         </div>
       </div>
 
+      {/* Client-specific guidance from the backend provisioner. Rendered
+          unconditionally above the collapsible sections: a web-only link
+          never prints the CLI notes, so this is the only place the user
+          sees them. */}
+      {(client.notes ?? []).length > 0 && (
+        <ul
+          className="flex flex-col gap-1 px-5 py-2.5 border-b border-border/30 bg-surface-elevated/20"
+          aria-label={`${client.name} client notes`}
+          data-testid="client-notes"
+        >
+          {(client.notes ?? []).map((note) => (
+            <li key={note} className="text-[11px] text-text-muted">
+              {note}
+            </li>
+          ))}
+        </ul>
+      )}
+
       {/* Wiring: the gateway entry's ownership state. */}
       <Section
         icon={<Plug size={13} />}

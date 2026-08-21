@@ -21,6 +21,22 @@ func TestUnknownClientErrorSuggests(t *testing.T) {
 	}
 }
 
+func TestUnknownClientErrorLMSHint(t *testing.T) {
+	err := unknownClientError(provisioner.NewRegistry(), "lms")
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "headless CLI") || !strings.Contains(msg, "lmstudio") {
+		t.Errorf("expected the lms-vs-lmstudio hint, got %q", msg)
+	}
+	// The hint replaces the edit-distance path; "lms" is too far from any
+	// slug for Suggest, and a generic guess next to the hint would be noise.
+	if strings.Contains(msg, "Did you mean") {
+		t.Errorf("expected no did-you-mean alongside the lms hint, got %q", msg)
+	}
+}
+
 func TestUnknownClientErrorNoWildGuess(t *testing.T) {
 	err := unknownClientError(provisioner.NewRegistry(), "totally-unrelated-thing")
 	if err == nil {

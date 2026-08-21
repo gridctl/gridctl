@@ -40,3 +40,4 @@ export const Cline = makeCompoundIcon('Cline');
 export const RooCode = makeCompoundIcon('RooCode');
 export const Goose = makeCompoundIcon('Goose');
 export const Codex = makeCompoundIcon('Codex');
+export const LmStudio = makeCompoundIcon('LmStudio');

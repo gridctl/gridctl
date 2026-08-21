@@ -116,6 +116,7 @@ func NewRegistry() *Registry {
 			newContinueDev(),
 			newCline(),
 			newAnythingLLM(),
+			newLMStudio(),
 			newRooCode(),
 			newZed(),
 			newGoose(),
@@ -192,6 +193,23 @@ func TransportDescriptionFor(prov ClientProvisioner) string {
 	return TransportDescription(prov.NeedsBridge())
 }
 
+// PostLinkNoter is an optional interface for provisioners with
+// client-specific guidance worth showing after a successful link. The CLI
+// prints the notes below the link confirmation; the web UI surfaces them on
+// the client's Connections detail pane.
+type PostLinkNoter interface {
+	PostLinkNotes() []string
+}
+
+// PostLinkNotesFor returns the provisioner's post-link notes, or nil when it
+// declares none.
+func PostLinkNotesFor(prov ClientProvisioner) []string {
+	if n, ok := prov.(PostLinkNoter); ok {
+		return n.PostLinkNotes()
+	}
+	return nil
+}
+
 // ClientInfo holds detection and link status for one client provisioner.
 type ClientInfo struct {
 	Name       string
@@ -200,6 +218,9 @@ type ClientInfo struct {
 	Linked     bool
 	Transport  string
 	ConfigPath string
+	// Notes carries the provisioner's post-link guidance (PostLinkNoter);
+	// empty for clients without client-specific caveats.
+	Notes []string
 }
 
 // AllClientInfo returns detection and link status for every registered client.
@@ -210,6 +231,7 @@ func (r *Registry) AllClientInfo(serverName string) []ClientInfo {
 			Name:      c.Name(),
 			Slug:      c.Slug(),
 			Transport: TransportDescriptionFor(c),
+			Notes:     PostLinkNotesFor(c),
 		}
 		if path, found := c.Detect(); found {
 			info.Detected = true

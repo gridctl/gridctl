@@ -146,6 +146,10 @@ export interface ClientStatus {
   // A recorded gridctl entry in this client's config was edited since
   // gridctl wrote it (wiring ownership drift).
   drifted?: boolean;
+  // Client-specific post-link guidance from the backend provisioner;
+  // absent for clients without caveats. Rendered verbatim, never
+  // hardcoded per client in the frontend.
+  notes?: string[];
 }
 
 // Token counts for a session or server

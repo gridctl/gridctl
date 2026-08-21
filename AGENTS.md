@@ -75,7 +75,7 @@ pkg/pack/           gridctl-pack.yaml manifest schema; orchestration lives in cm
 pkg/skillpins/      TOFU pins over skill documents (per-file digests, findings); the `gridctl skill pins` store.
 pkg/limits/         Enforces the `limits:` block: token-bucket rate limits on the tool-call dispatch path.
 pkg/provisioner/    LLM-client config writers (claude, claudecode, cursor, windsurf, gemini, antigravity, opencode, grok, goose,
-                    cline, anythingllm, roo, zed, continue, vscode). JSON and TOML helpers in json.go / toml.go.
+                    cline, anythingllm, lmstudio, roo, zed, continue, vscode). JSON and TOML helpers in json.go / toml.go.
                     Backed by `gridctl link` / `gridctl unlink`.
 pkg/vault/          Encrypted variable store (XChaCha20-Poly1305 + Argon2id). The `gridctl var` and (deprecated) `gridctl vault` CLIs.
 pkg/pins/           TOFU schema pinning for tool definitions; drift surfaces in pkg/pins + `gridctl pins`.

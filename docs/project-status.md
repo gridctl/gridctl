@@ -75,7 +75,7 @@ Current as of **v0.1.0-rc.2 plus `[Unreleased]`** (see [CHANGELOG.md](../CHANGEL
 - Skills registry is local-only with no remote discovery.
 - Agents and packs are first-class in the web UI: the Library's Agents segment covers catalog, editing, and per-client projection over the agents REST endpoints, and its Packs segment covers the full pack lifecycle (import, apply, status, remove) over the pack REST endpoints.
 - Agent renders for OpenCode, Copilot, and Gemini CLI are lossy by design: each dialect drops frontmatter keys it cannot express, and `skill project status` names the dropped keys per row. Claude Code receives the canonical bytes verbatim.
-- Global context sync covers 12 of 15 linkable clients; Claude Desktop, Cursor, and AnythingLLM expose no writable global context file, and Windsurf caps `global_rules.md` at 6,000 characters.
+- Global context sync covers 12 of 16 linkable clients; Claude Desktop, Cursor, AnythingLLM, and LM Studio expose no writable global context file, and Windsurf caps `global_rules.md` at 6,000 characters.
 - Antigravity's skills and global-context paths rest on unofficial sourcing rather than published documentation. Those targets are marked `unofficial` in `ctx status` and `skill project status`; the projection itself is supported, but the path may move without an upstream release note.
 - Web UI requires a modern browser (no IE11 support).
 

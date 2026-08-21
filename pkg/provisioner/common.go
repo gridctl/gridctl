@@ -270,6 +270,8 @@ func getProvisionerBase(prov ClientProvisioner) (*mcpServersProvisioner, bool) {
 		return &p.mcpServersProvisioner, true
 	case *AnythingLLM:
 		return &p.mcpServersProvisioner, true
+	case *LMStudio:
+		return &p.mcpServersProvisioner, true
 	default:
 		_ = p
 		return nil, false

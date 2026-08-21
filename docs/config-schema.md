@@ -1088,7 +1088,7 @@ link:
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `client` | string | **Yes** | - | Client slug (same set as `gridctl link`: claude, claude-code, cursor, windsurf, vscode, gemini, antigravity, opencode, grok, continue, cline, anythingllm, roo, zed, goose) |
+| `client` | string | **Yes** | - | Client slug (same set as `gridctl link`: claude, claude-code, cursor, windsurf, vscode, gemini, antigravity, opencode, grok, continue, cline, anythingllm, lmstudio, roo, zed, goose) |
 | `group` | string | No | - | Tool group whose endpoint to link; must exist in `groups:`. The entry name defaults to `gridctl-<group>` |
 | `client_id` | string | No | - | Stable client identifier embedded on the gateway URL for per-client access scoping. Not defaulted: existing imperative links carry no identifier, and defaulting one would conflict with them on first reconcile |
 | `name` | string | No | `gridctl` | Server entry name in the client config |

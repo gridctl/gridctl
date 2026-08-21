@@ -1273,6 +1273,9 @@ type ClientStatus struct {
 	// Drifted reports that a recorded gridctl entry in this client's
 	// config was edited since gridctl wrote it (wiring ownership).
 	Drifted bool `json:"drifted,omitempty"`
+	// Notes carries the provisioner's client-specific post-link guidance
+	// (provisioner.PostLinkNoter); absent for clients without caveats.
+	Notes []string `json:"notes,omitempty"`
 }
 
 // LinkEntryInfo is the wire shape of a declared link: entry's options.
@@ -1324,6 +1327,7 @@ func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
 			Transport:  info.Transport,
 			ConfigPath: info.ConfigPath,
 			Drifted:    drifted[info.Slug],
+			Notes:      info.Notes,
 		}
 		if entry, ok := declared[info.Slug]; ok {
 			status.Declared = true

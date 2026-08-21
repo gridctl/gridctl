@@ -26,6 +26,10 @@ func TestNormalizeClientID(t *testing.T) {
 		{"cline", "Cline", "cline"},
 		{"zed", "Zed", "zed"},
 		{"goose", "goose", "goose"},
+		{"lm studio spaced", "LM Studio", "lmstudio"},
+		{"lm-studio hyphen", "lm-studio", "lmstudio"},
+		{"lmstudio collapsed", "LMStudio", "lmstudio"},
+		{"lmstudio wire name", "lmstudio-mcp-server-session", "lmstudio"},
 
 		// Unknown clients fall through with slugification.
 		{"unknown camel", "MyAgent", "myagent"},
