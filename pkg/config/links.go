@@ -83,6 +83,7 @@ var linkClientSlugs = map[string]bool{
 	"continue":    true,
 	"cline":       true,
 	"anythingllm": true,
+	"lmstudio":    true,
 	"roo":         true,
 	"zed":         true,
 	"goose":       true,
@@ -96,7 +97,7 @@ func linkClientSlugList() []string {
 	return []string{
 		"claude", "claude-code", "cursor", "windsurf", "vscode", "gemini",
 		"antigravity", "opencode", "grok", "continue", "cline",
-		"anythingllm", "roo", "zed", "goose",
+		"anythingllm", "lmstudio", "roo", "zed", "goose",
 	}
 }
 
