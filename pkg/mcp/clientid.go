@@ -113,6 +113,9 @@ var clientNameAliases = map[string]string{
 	"cline":          "cline",
 	"zed":            "zed",
 	"goose":          "goose",
+	"lm studio":      "lmstudio",
+	"lm-studio":      "lmstudio",
+	"lmstudio":       "lmstudio",
 }
 
 // NormalizeClientID returns a stable, lowercase, hyphenated identifier for
