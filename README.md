@@ -129,6 +129,10 @@ The easiest way to connect is with `gridctl link`, which auto-detects installed 
 gridctl link              # Interactive: detect and select clients
 gridctl link claude       # Link a specific client
 gridctl link --all        # Link all detected clients at once
+
+# Local-model clients bog down on large tool lists; link a smaller
+# surface via a tool group (or enable gateway code_mode)
+gridctl link lmstudio --group <name>
 ```
 
 Declaring a `link:` block in stack.yaml (as above) does the same thing on every `gridctl apply`: each listed client is linked idempotently once the gateway is healthy, and clients that aren't installed warn and skip. `gridctl destroy --unlink` removes those entries again.
