@@ -4,6 +4,10 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.0-rc.3] - 2026-08-22
+
+Third release candidate. Adds LM Studio as the 16th `gridctl link` client, live-verified against a real 0.4.x install, along with a post-link notes channel that surfaces client-specific guidance in both the CLI and the Connections detail pane.
+
 ### Features
 
 - `gridctl link lmstudio` connects LM Studio (an MCP host since 0.3.17) to the gateway: a url-only streamable-HTTP `gridctl` entry written into `~/.lmstudio/mcp.json` with wiring ownership, the stack.yaml `link:` block, `gridctl import`, and the Connections workspace all included. The entry carries no `type` key (LM Studio's in-app editor strips unknown keys), and session attribution maps the app's `clientInfo.name` to the `lmstudio` slug. After a successful link, client-specific notes cover the version floor, lazy server loading, per-tool approval, the distinction from the OpenAI-compatible API on port 1234, and a tip to prefer `--group` or code mode for local models; the same notes appear on the client's Connections detail pane, sourced from the backend so future clients with caveats need no frontend work. `gridctl ctx` reports LM Studio as unsupported (system prompt is per-chat in the app UI), and `gridctl link lms` explains that `lms` is the headless CLI rather than the MCP host (#1165)
