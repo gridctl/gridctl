@@ -1,0 +1,10 @@
+TARGET  ACTION  PATH
+litellm-fragment  skipped-drift  $HOME/.litellm/gridctl-models.yaml
+litellm-include  skipped-drift  $HOME/.litellm/config.yaml
+opencode  would-update  $HOME/.config/opencode/opencode.json
+
+litellm-fragment: the fragment was edited since gridctl wrote it; adopt the edit or re-run with --force to overwrite
+
+litellm-include: the include line was removed from the parent config; re-run with --force to re-add it, or 'gridctl models unsync' to drop the record
+
+opencode: would write provider.litellm (v1 schema)

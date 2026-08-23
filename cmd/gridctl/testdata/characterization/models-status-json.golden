@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "policy_path": "$HOME/.gridctl/models/policy.yaml",
+  "policy_exists": true,
+  "needs_attention": true,
+  "targets": [
+  {
+  "target": "litellm-fragment",
+  "client": "litellm",
+  "state": "drifted",
+  "restart_pending": true,
+  "path": "$HOME/.litellm/gridctl-models.yaml",
+  "detail": "the fragment was edited since gridctl wrote it",
+  "synced_at": "<TS>"
+  },
+  {
+  "target": "litellm-include",
+  "client": "litellm",
+  "state": "drifted",
+  "path": "$HOME/.litellm/config.yaml",
+  "detail": "the include line was removed from the parent config",
+  "synced_at": "<TS>"
+  },
+  {
+  "target": "opencode",
+  "client": "opencode",
+  "state": "stale",
+  "path": "$HOME/.config/opencode/opencode.json",
+  "detail": "the policy changed since the last sync",
+  "synced_at": "<TS>"
+  }
+  ]
+}

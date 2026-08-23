@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "dry_run": true,
+  "has_failures": true,
+  "results": [
+  {
+  "target": "litellm-fragment",
+  "client": "litellm",
+  "path": "$HOME/.litellm/gridctl-models.yaml",
+  "action": "skipped-drift",
+  "detail": "the fragment was edited since gridctl wrote it; adopt the edit or re-run with --force to overwrite"
+  },
+  {
+  "target": "litellm-include",
+  "client": "litellm",
+  "path": "$HOME/.litellm/config.yaml",
+  "action": "skipped-drift",
+  "detail": "the include line was removed from the parent config; re-run with --force to re-add it, or 'gridctl models unsync' to drop the record"
+  },
+  {
+  "target": "opencode",
+  "client": "opencode",
+  "path": "$HOME/.config/opencode/opencode.json",
+  "action": "would-update",
+  "detail": "would write provider.litellm (v1 schema)"
+  }
+  ]
+}
