@@ -48,6 +48,13 @@ const (
 	// knows KindContext must never be able to drop or clobber fragment
 	// records it cannot represent.
 	KindContextFragment Kind = "context-fragment"
+	// KindModels projects the model routing policy into a LiteLLM router
+	// fragment, the include: line referencing it in the parent LiteLLM
+	// config, and client provider config (pkg/modelsync). Its own kind
+	// for the same reason as KindContextFragment: an older gridctl that
+	// cannot represent these records must never drop them via
+	// ReplaceKind.
+	KindModels Kind = "models"
 )
 
 // Projection states shared by every kind. Kinds may extend the
@@ -147,6 +154,20 @@ type Entry struct {
 	Group      string   `yaml:"group,omitempty"`
 	ClientID   string   `yaml:"client_id,omitempty"`
 	Hashes     []string `yaml:"hashes,omitempty"`
+
+	// KindModels attributes. AckedHash is the restart latch on the
+	// rendered LiteLLM fragment: sync moves only InstalledHash, and the
+	// target reports restart-pending until `gridctl models ack-restart`
+	// copies InstalledHash here; sync never clears the latch itself.
+	// IncludeRef is the include path written into the parent LiteLLM
+	// config (relative to the parent's directory when possible);
+	// IncludeMode records how the include: key was mutated (created |
+	// appended | promoted | flow) so unsync restores the prior shape,
+	// with IncludeOriginal holding the scalar a promotion replaced.
+	AckedHash       string `yaml:"acked_hash,omitempty"`
+	IncludeRef      string `yaml:"include_ref,omitempty"`
+	IncludeMode     string `yaml:"include_mode,omitempty"`
+	IncludeOriginal string `yaml:"include_original,omitempty"`
 
 	// Pack tags the projection with the pack that applied it (empty =
 	// not pack-managed). Any kind may carry it; `gridctl pack` uses it
