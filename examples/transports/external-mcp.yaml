@@ -10,13 +10,16 @@
 #   - Connecting to production MCP servers in separate deployments
 #   - Connecting to MCP servers managed by other orchestration systems
 #
-# Prerequisites:
+# Prerequisites (for a fast start):
 #   Run `task mock:servers` from the project root to build and start mock servers.
 #   This starts mock-mcp-server on ports 9001 (HTTP) and 9002 (SSE).
 #   Or start manually:
 #     cd examples/_mock-servers/mock-mcp-server
 #     go run main.go -port 9001           # HTTP mode
 #     go run main.go -port 9002 -sse      # SSE mode
+#   Start order is not critical: a server that is not reachable at deploy
+#   time registers as failed, and the gateway retries automatically until
+#   it comes up.
 #
 # Usage:
 #   gridctl apply examples/transports/external-mcp.yaml
@@ -34,7 +37,8 @@ network:
 mcp-servers:
 
   # External HTTP MCP server
-  # The mock server should be running at this URL before deploying
+  # Ideally running at this URL before deploying; if it is not, the gateway
+  # keeps retrying and registers it once it comes up.
   - name: mock-http
     url: http://localhost:9001/mcp
     transport: http
