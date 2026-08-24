@@ -24,13 +24,15 @@ export function isConnected(c: ClientStatus): boolean {
 const WIRING_ATTENTION = new Set(['stale', 'drifted', 'target-missing', 'foreign']);
 const CONTEXT_ATTENTION = new Set(['stale', 'drifted', 'target-missing']);
 const AGENT_ATTENTION = new Set(['stale', 'drifted', 'target-missing']);
-// Model routing mirrors the engine's NeedsAttention: restart-pending is
-// an annotation and never counts; never-synced is an invitation.
+// Model routing: restart-pending is an annotation and never counts,
+// matching the engine's NeedsAttention. Never-synced is deliberately
+// looser than the engine (whose exit-code contract counts it): here it
+// is an invitation, not a fault, matching the sets above.
 const MODELS_ATTENTION = new Set(['stale', 'drifted', 'target-missing']);
 
-/** One client's joined ownership health across the three projection
- *  domains. Ownership only — live connectivity is a separate axis and
- *  must never fold into this. */
+/** One client's joined ownership health across the projection domains.
+ *  Ownership only — live connectivity is a separate axis and must never
+ *  fold into this. */
 export interface ClientHealth {
   attention: boolean;
   /** Human-readable reasons, one per drifting domain, in display order. */
