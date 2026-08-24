@@ -30,7 +30,9 @@ function renderPane(client: ClientStatus) {
         agentRows={[]}
         sessions={[]}
         onRefresh={() => {}}
+        modelsTargets={null}
         onReviewContext={() => {}}
+        onOpenModelRouting={() => {}}
       />
     </MemoryRouter>,
   );
