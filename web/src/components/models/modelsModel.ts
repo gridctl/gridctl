@@ -15,9 +15,11 @@ export function modelsTargetLabel(target: string): string {
 }
 
 /**
- * States that need a sync or a decision. Mirrors the engine's
- * NeedsAttention exactly: restart-pending is an annotation, never
- * attention, and never-synced is an invitation, not a fault.
+ * States that need a sync or a decision. Restart-pending is an
+ * annotation and never counts, matching the engine's NeedsAttention.
+ * Never-synced is deliberately looser than the engine (whose exit-code
+ * contract counts it): in the UI a declared-but-never-synced target is
+ * an invitation, not a fault, matching the context and agent sets.
  */
 export const MODELS_ATTENTION = new Set(['stale', 'drifted', 'target-missing']);
 
