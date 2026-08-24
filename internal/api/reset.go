@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/modelsync"
 	"github.com/gridctl/gridctl/pkg/resetops"
 	"github.com/gridctl/gridctl/pkg/state"
 )
@@ -101,6 +102,11 @@ func (s *Server) resetMgr() (*resetops.Managers, error) {
 			m.Contexts = cm
 		} else {
 			m.Missing = append(m.Missing, "context")
+		}
+		if mm, err := modelsync.NewManager(); err == nil {
+			m.Models = mm
+		} else {
+			m.Missing = append(m.Missing, "models")
 		}
 		if wm, err := s.wiringMgr(); err == nil {
 			m.Wiring = wm

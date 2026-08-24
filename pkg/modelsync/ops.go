@@ -248,25 +248,50 @@ func (m *Manager) syncFragment(p *Policy, v *view, fragPath, policyHash string, 
 	renderedHash := contentHash(rendered)
 
 	e := v.entries[srcFragment]
+
+	// A fragment_path (or config_path) change strands the previously
+	// rendered file at the old location; clean it up rather than leaving
+	// stale routing config the lockfile no longer tracks. Only bytes
+	// gridctl wrote are removed; a hand-edited old fragment stays put
+	// and is reported.
+	var movedNote string
+	if e != nil && e.Path != "" && e.Path != fragPath {
+		if old, oerr := os.ReadFile(e.Path); oerr == nil {
+			if contentHash(old) == e.InstalledHash {
+				if opts.DryRun {
+					movedNote = fmt.Sprintf("would remove the old fragment at %s", e.Path)
+				} else if rerr := os.Remove(e.Path); rerr != nil {
+					res.Action, res.Error = ActionError, rerr.Error()
+					return res, false
+				}
+			} else {
+				movedNote = fmt.Sprintf("the old fragment at %s was hand-edited and is left in place; remove it yourself", e.Path)
+			}
+		}
+	}
+
 	disk, diskErr := os.ReadFile(fragPath)
 	exists := diskErr == nil
 
+	movedPath := e != nil && e.Path != "" && e.Path != fragPath
 	switch {
-	case e == nil && exists && !opts.Force:
+	case (e == nil || movedPath) && exists && !opts.Force:
+		// Never recorded at this path: whatever sits there is foreign.
 		res.Action = ActionSkippedForeign
 		res.Detail = "a file already exists at the fragment path but gridctl did not create it; re-run with --force to overwrite"
 		return res, false
-	case e != nil && exists && contentHash(disk) != e.InstalledHash && !opts.Force:
+	case e != nil && !movedPath && exists && contentHash(disk) != e.InstalledHash && !opts.Force:
 		res.Action = ActionSkippedDrift
 		res.Detail = "the fragment was edited since gridctl wrote it; adopt the edit or re-run with --force to overwrite"
 		return res, false
-	case exists && contentHash(disk) == renderedHash && e != nil:
+	case exists && contentHash(disk) == renderedHash && e != nil && !movedPath:
 		res.Action = ActionUnchanged
 		return res, false
 	}
 
 	if opts.DryRun {
 		res.Action = ActionWouldUpdate
+		res.Detail = movedNote
 		if opts.Diff {
 			res.Diff = unifiedDiff(string(disk), string(rendered),
 				fragPath+" (current)", fragPath+" (after sync)")
@@ -304,6 +329,9 @@ func (m *Manager) syncFragment(p *Policy, v *view, fragPath, policyHash string, 
 	v.entries[srcFragment] = entry
 	res.Action, res.BackupPath = ActionUpdated, backup
 	res.Detail = "LiteLLM reads config only at startup; restart it, then run 'gridctl models ack-restart'"
+	if movedNote != "" {
+		res.Detail = movedNote + "; " + res.Detail
+	}
 	return res, true
 }
 
@@ -330,7 +358,10 @@ func (m *Manager) syncInclude(p *Policy, v *view, fragPath string, opts SyncOpti
 
 	// A fragment path change leaves a stale include entry behind; drop
 	// the old line first so the parent never includes a missing file.
-	if e != nil && e.IncludeRef != "" && e.IncludeRef != ref && hasIncludeLine(content, e.IncludeRef) {
+	// refChanged also marks the new line's absence as a declared move,
+	// never user drift.
+	refChanged := e != nil && e.IncludeRef != "" && e.IncludeRef != ref
+	if refChanged && hasIncludeLine(content, e.IncludeRef) {
 		if opts.DryRun {
 			res.Action = ActionWouldUpdate
 			res.Detail = fmt.Sprintf("would replace include entry %q with %q", e.IncludeRef, ref)
@@ -357,7 +388,7 @@ func (m *Manager) syncInclude(p *Policy, v *view, fragPath string, opts SyncOpti
 		return res, false
 	}
 
-	if e != nil && !opts.Force {
+	if e != nil && !refChanged && !opts.Force {
 		res.Action = ActionSkippedDrift
 		res.Detail = "the include line was removed from the parent config; re-run with --force to re-add it, or 'gridctl models unsync' to drop the record"
 		return res, false
@@ -441,6 +472,42 @@ func (m *Manager) syncOpenCode(p *Policy, v *view, opts SyncOptions) (SyncResult
 	}
 
 	e := v.entries[srcOpenCode]
+
+	// A schema-generation flip (an explicit policy change, or detect
+	// following the client's own v1-to-v2 migration) moves the owned
+	// subtree to a different container. Migrate the old entry out rather
+	// than leaving an orphaned duplicate the lockfile no longer tracks;
+	// only a value gridctl wrote is removed.
+	var migratedNote string
+	if e != nil && e.Strategy != "" && e.Strategy != schema {
+		oldContainer, oldID, oldCur, oldExists, oerr := readOwnedProvider(e)
+		if oerr != nil {
+			res.Action, res.Error = ActionError, oerr.Error()
+			return res, false
+		}
+		if oldExists {
+			oldHash, herr := valueHash(oldCur)
+			switch {
+			case herr != nil:
+				res.Action, res.Error = ActionError, herr.Error()
+				return res, false
+			case hashRecorded(e.Hashes, oldHash):
+				if opts.DryRun {
+					res.Action = ActionWouldUpdate
+					res.Detail = fmt.Sprintf("would migrate the provider entry from %s (%s schema) to %s (%s schema)",
+						oldContainer, e.Strategy, render.Container, schema)
+					return res, false
+				}
+				if _, _, rerr := removeProviderValue(e.ConfigPath, oldContainer, oldID); rerr != nil {
+					res.Action, res.Error = ActionError, rerr.Error()
+					return res, false
+				}
+			default:
+				migratedNote = fmt.Sprintf("the old %s.%s entry was hand-edited and is left in place; remove it yourself", oldContainer, oldID)
+			}
+		}
+	}
+
 	cur, exists, err := readProviderValue(cfgPath, render.Container, oc.ProviderID)
 	if err != nil {
 		res.Action, res.Error = ActionError, err.Error()
@@ -496,7 +563,36 @@ func (m *Manager) syncOpenCode(p *Policy, v *view, opts SyncOptions) (SyncResult
 	}
 	res.Action, res.BackupPath = ActionUpdated, backup
 	res.Detail = fmt.Sprintf("select the %q model in OpenCode to route through the policy", oc.ProviderID+"/"+p.Router.EntryModel)
+	if migratedNote != "" {
+		res.Detail = migratedNote + "; " + res.Detail
+	}
 	return res, true
+}
+
+// containerForSchema maps a config generation to its provider
+// container key. The single source for the mapping outside the
+// renderer.
+func containerForSchema(schema string) string {
+	if schema == SchemaV2 {
+		return "providers"
+	}
+	return "provider"
+}
+
+// readOwnedProvider resolves a recorded entry back to its container,
+// provider id, and current on-disk value.
+func readOwnedProvider(e *project.Entry) (container, providerID string, cur map[string]any, exists bool, err error) {
+	container = containerForSchema(e.Strategy)
+	providerID = providerIDFromPath(e.Path, container)
+	cur, exists, err = readProviderValue(e.ConfigPath, container, providerID)
+	return container, providerID, cur, exists, err
+}
+
+// syncedAtPtr copies an entry's timestamp for a status row, so the row
+// never aliases the lockfile view.
+func syncedAtPtr(e *project.Entry) *time.Time {
+	t := e.SyncedAt
+	return &t
 }
 
 // Statuses reports every target's projection state. Read-only.
@@ -534,8 +630,7 @@ func (m *Manager) fragmentStatus(p *Policy, v *view) Status {
 		return row
 	}
 	row.Path = e.Path
-	t := e.SyncedAt
-	row.SyncedAt = &t
+	row.SyncedAt = syncedAtPtr(e)
 	row.RestartPending = e.InstalledHash != e.AckedHash
 
 	disk, err := os.ReadFile(e.Path)
@@ -567,8 +662,7 @@ func (m *Manager) includeStatus(p *Policy, v *view) (Status, bool) {
 		return row, true
 	}
 	row.Path = e.ConfigPath
-	t := e.SyncedAt
-	row.SyncedAt = &t
+	row.SyncedAt = syncedAtPtr(e)
 
 	raw, err := os.ReadFile(e.ConfigPath)
 	switch {
@@ -612,15 +706,9 @@ func (m *Manager) opencodeStatus(p *Policy, v *view) (Status, bool) {
 		return row, true
 	}
 	row.Path = e.ConfigPath
-	t := e.SyncedAt
-	row.SyncedAt = &t
+	row.SyncedAt = syncedAtPtr(e)
 
-	container := "provider"
-	if e.Strategy == SchemaV2 {
-		container = "providers"
-	}
-	providerID := providerIDFromPath(e.Path, container)
-	cur, exists, err := readProviderValue(e.ConfigPath, container, providerID)
+	_, _, cur, exists, err := readOwnedProvider(e)
 	switch {
 	case err != nil:
 		row.State = StateTargetMissing
@@ -722,13 +810,7 @@ func (m *Manager) Unsync(ctx context.Context, opts UnsyncOptions) ([]UnsyncResul
 
 func (m *Manager) unsyncOpenCode(v *view, e *project.Entry, opts UnsyncOptions) UnsyncResult {
 	res := UnsyncResult{Target: srcOpenCode, Client: clientOpenCode, Path: e.ConfigPath}
-	container := "provider"
-	if e.Strategy == SchemaV2 {
-		container = "providers"
-	}
-	providerID := providerIDFromPath(e.Path, container)
-
-	cur, exists, err := readProviderValue(e.ConfigPath, container, providerID)
+	container, providerID, cur, exists, err := readOwnedProvider(e)
 	if err != nil {
 		res.Action, res.Error = ActionError, err.Error()
 		return res
@@ -856,12 +938,7 @@ func (m *Manager) Adopt(ctx context.Context) ([]AdoptResult, error) {
 		}
 		if e := v.entries[srcOpenCode]; e != nil {
 			res := AdoptResult{Target: srcOpenCode, Client: clientOpenCode, Path: e.ConfigPath}
-			container := "provider"
-			if e.Strategy == SchemaV2 {
-				container = "providers"
-			}
-			id := providerIDFromPath(e.Path, container)
-			if cur, exists, rerr := readProviderValue(e.ConfigPath, container, id); rerr == nil && exists {
+			if _, _, cur, exists, rerr := readOwnedProvider(e); rerr == nil && exists {
 				if h, herr := valueHash(cur); herr == nil {
 					e.Hashes = appendHash(e.Hashes, h)
 					res.Action = ActionAdopted

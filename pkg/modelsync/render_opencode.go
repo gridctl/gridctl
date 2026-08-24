@@ -30,11 +30,6 @@ type OpenCodeRender struct {
 	Value     map[string]any
 }
 
-// Pointer returns the RFC 6901 pointer to the owned subtree.
-func (r OpenCodeRender) Pointer(providerID string) string {
-	return "/" + r.Container + "/" + providerID
-}
-
 // RenderOpenCode builds the provider stanza for the resolved schema
 // generation. The API key is always an env reference, never a literal.
 func RenderOpenCode(p *Policy, schema string) (OpenCodeRender, error) {
