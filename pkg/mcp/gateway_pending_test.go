@@ -14,6 +14,9 @@ import (
 
 	"go.uber.org/mock/gomock"
 
+	"github.com/docker/docker/api/types/container"
+	"github.com/gridctl/gridctl/pkg/dockerclient"
+
 	"github.com/gridctl/gridctl/pkg/jsonrpc"
 )
 
@@ -406,5 +409,112 @@ func TestGateway_RegisterReplaceClosesPreviousClients(t *testing.T) {
 	}
 	if !closed.Load() {
 		t.Error("expected the replaced set's client to be closed")
+	}
+}
+
+func TestGateway_RestartMCPServer_CancelKeepsPending(t *testing.T) {
+	addr := reserveAddr(t)
+	g := NewGateway()
+
+	if err := g.RegisterMCPServer(context.Background(), externalHTTPConfig("flaky-restart", addr)); err == nil {
+		t.Fatal("expected registration to fail while the endpoint is down")
+	}
+
+	// A restart whose request context dies mid-attempt (client disconnect)
+	// must not permanently exit the retry loop.
+	cctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := g.RestartMCPServer(cctx, "flaky-restart"); err == nil {
+		t.Fatal("expected cancelled restart to fail")
+	}
+	if _, _, ok := g.pendingSnapshot("flaky-restart"); !ok {
+		t.Fatal("cancelled restart must not drop the pending entry")
+	}
+
+	startServerAt(t, addr)
+	if err := g.RestartMCPServer(context.Background(), "flaky-restart"); err != nil {
+		t.Fatalf("restart after the endpoint came up: %v", err)
+	}
+}
+
+func TestGateway_Unregister_RacingRetryCommitDoesNotResurrect(t *testing.T) {
+	// Unregister must take ownership (generation bump) before teardown so a
+	// retry commit racing it can never re-add the server after removal.
+	srv := httptest.NewServer(pendingTestMCPHandler())
+	defer srv.Close()
+	ctx := context.Background()
+
+	for i := 0; i < 15; i++ {
+		g := NewGateway()
+		cfg := MCPServerConfig{Name: "race", Transport: TransportHTTP, Endpoint: srv.URL, External: true, ReadyTimeout: 1 * time.Second}
+		g.pendingMu.Lock()
+		g.regGen["race"] = 1
+		g.pending["race"] = &pendingRegistration{policy: ReplicaPolicyRoundRobin, cfgs: []MCPServerConfig{cfg}, backoff: &backoffState{}}
+		g.pendingMu.Unlock()
+
+		g.retryPendingRegistrations(ctx)
+		time.Sleep(time.Duration(i%5) * time.Millisecond)
+		g.UnregisterMCPServer("race")
+
+		// Once Unregister returns, any later commit must abort on the bumped
+		// generation; the settle sleep catches a late resurrection.
+		time.Sleep(200 * time.Millisecond)
+		g.mu.RLock()
+		_, hasMeta := g.serverMeta["race"]
+		g.mu.RUnlock()
+		if hasMeta || g.Router().GetReplicaSet("race") != nil {
+			t.Fatalf("round %d: unregistered server was resurrected by a racing retry commit", i)
+		}
+	}
+}
+
+// restartRecorder stubs just the container-restart call the pending retry
+// path makes; every other DockerClient method panics via the nil embed,
+// which the failure-path test never reaches.
+type restartRecorder struct {
+	dockerclient.DockerClient
+	restarted atomic.Bool
+	err       error
+}
+
+func (r *restartRecorder) ContainerRestart(_ context.Context, _ string, _ container.StopOptions) error {
+	r.restarted.Store(true)
+	return r.err
+}
+
+func TestGateway_PendingRetry_RestartsStdioContainer(t *testing.T) {
+	g := NewGateway()
+	rec := &restartRecorder{err: errors.New("daemon busy")}
+	g.SetDockerClient(rec)
+
+	cfg := MCPServerConfig{Name: "stdio-pending", Transport: TransportStdio, ContainerID: "abc123"}
+	g.pendingMu.Lock()
+	g.regGen["stdio-pending"] = 1
+	g.pending["stdio-pending"] = &pendingRegistration{policy: ReplicaPolicyRoundRobin, cfgs: []MCPServerConfig{cfg}, backoff: &backoffState{}}
+	g.pendingMu.Unlock()
+
+	g.retryPendingRegistrations(context.Background())
+
+	deadline := time.Now().Add(5 * time.Second)
+	for !rec.restarted.Load() {
+		if time.Now().After(deadline) {
+			t.Fatal("pending retry never attempted the container restart")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// The failed restart advances backoff and keeps the entry pending.
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		g.pendingMu.Lock()
+		pe := g.pending["stdio-pending"]
+		settled := pe != nil && !pe.inFlight && pe.backoff.Attempts() > 0
+		g.pendingMu.Unlock()
+		if settled {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("failed container restart must advance backoff and keep the entry pending")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
