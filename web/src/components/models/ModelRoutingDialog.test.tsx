@@ -147,6 +147,79 @@ describe('ModelRoutingDialog', () => {
     );
   });
 
+  it('skipped results offer Overwrite, so force is reachable without drift', async () => {
+    // Foreign files never show as drifted: status stays never-synced and
+    // the sync pass reports skipped-foreign. Without this affordance the
+    // engine copy points at a --force no button can set.
+    vi.mocked(syncModels).mockImplementation(async (body) => {
+      if (body?.dry_run) {
+        return [{ target: 'litellm-fragment', client: 'litellm', path: '/x', action: 'would-update', diff: '--- a\n+++ b' }];
+      }
+      if (body?.force) {
+        return [{ target: 'litellm-fragment', client: 'litellm', path: '/x', action: 'updated' }];
+      }
+      return [
+        { target: 'litellm-fragment', client: 'litellm', path: '/x', action: 'skipped-foreign', detail: 'a file already exists at the fragment path' },
+      ];
+    });
+    renderDialog();
+    fireEvent.click(await screen.findByRole('button', { name: 'Sync all targets' }));
+    expect(await screen.findByText('skipped-foreign')).toBeInTheDocument();
+
+    const overwrite = screen.getByRole('button', { name: 'Overwrite with policy' });
+    fireEvent.click(overwrite);
+    // The confirm names the forced pass's real write set once the
+    // preview resolves.
+    expect(await screen.findByText(/Rewrite LiteLLM router fragment from the/)).toBeInTheDocument();
+    expect(screen.getByText(/latches restart-pending/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Overwrite' }));
+    await waitFor(() =>
+      expect(syncModels).toHaveBeenCalledWith({ force: true }),
+    );
+  });
+
+  it('Overwrite confirm names the whole forced write set, not only drift', async () => {
+    // Force is whole-policy: a stale fragment is rewritten alongside the
+    // drifted OpenCode row the review was opened for.
+    vi.mocked(fetchModelsStatus).mockResolvedValue({
+      ...syncedDoc,
+      targets: [
+        { target: 'litellm-fragment', client: 'litellm', state: 'stale' },
+        { target: 'opencode', client: 'opencode', state: 'drifted' },
+      ],
+    });
+    vi.mocked(syncModels).mockResolvedValue([
+      { target: 'litellm-fragment', client: 'litellm', path: '/x', action: 'would-update', diff: 'd1' },
+      { target: 'opencode', client: 'opencode', path: '/y', action: 'would-update', diff: 'd2' },
+    ]);
+    renderDialog();
+    fireEvent.click(await screen.findByRole('button', { name: 'Review drift' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Overwrite with policy' }));
+    const confirm = await screen.findByText(/Rewrite LiteLLM router fragment, OpenCode provider/);
+    expect(confirm).toBeInTheDocument();
+    expect(screen.getByText(/latches restart-pending/)).toBeInTheDocument();
+  });
+
+  it('gates Review on validation errors when Overwrite is the only resolution', async () => {
+    vi.mocked(fetchModelsStatus).mockResolvedValue({
+      ...syncedDoc,
+      targets: [
+        { target: 'litellm-fragment', client: 'litellm', state: 'in-sync' },
+        { target: 'litellm-include', client: 'litellm', state: 'drifted' },
+      ],
+    });
+    vi.mocked(fetchModelsValidation).mockResolvedValue({
+      policy_path: '/home/u/.gridctl/models/policy.yaml',
+      valid: false,
+      issues: [{ severity: 'error', field: 'router.entry_model', message: 'entry_model is required' }],
+    });
+    renderDialog();
+    const review = await screen.findByRole('button', { name: 'Review drift' });
+    expect(review).toBeDisabled();
+    expect(review).toHaveAttribute('title', expect.stringContaining('valid policy'));
+  });
+
   it('Escape closes exactly one stacked layer per press', async () => {
     vi.mocked(fetchModelsStatus).mockResolvedValue({
       ...syncedDoc,
