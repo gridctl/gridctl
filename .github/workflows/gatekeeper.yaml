@@ -72,7 +72,9 @@ jobs:
           # CI, so validation reads the unset value as a missing required
           # field. Giving it a default would ship a working credential in a
           # public repo, which is worse than not validating the file.
-          mapfile -t files < <(find examples -name "*.yaml" -not -name "skills.yaml" -not -name "gridctl-pack.yaml" -not -name "gateway-remote.yaml" | sort)
+          # examples/model-policy holds a gridctl models policy and a LiteLLM
+          # proxy config (different schemas) — neither is a stack.
+          mapfile -t files < <(find examples -name "*.yaml" -not -name "skills.yaml" -not -name "gridctl-pack.yaml" -not -name "gateway-remote.yaml" -not -path "examples/model-policy/*" | sort)
           if [ ${#files[@]} -eq 0 ]; then
             echo "No example stacks found, skipping validation"
             exit 0

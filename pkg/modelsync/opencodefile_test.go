@@ -34,8 +34,8 @@ func TestUpsertProvider_PreservesEverythingElse(t *testing.T) {
 		"name":    "LiteLLM",
 		"options": map[string]any{"baseURL": "http://localhost:4000/v1", "apiKey": "{env:LITELLM_KEY}"},
 	}
-	if _, err := upsertProviderValue(path, "provider", "litellm", value); err != nil {
-		t.Fatal(err)
+	if _, containerCreated, err := upsertProviderValue(path, "provider", "litellm", value); err != nil || !containerCreated {
+		t.Fatalf("upsert: err=%v containerCreated=%v", err, containerCreated)
 	}
 	out, err := os.ReadFile(path)
 	if err != nil {
@@ -64,9 +64,9 @@ func TestUpsertProvider_PreservesEverythingElse(t *testing.T) {
 		t.Errorf("read back %v", cur)
 	}
 
-	// Removal restores the original bytes exactly (the empty container
-	// gridctl added is removed with the value it wrapped).
-	if _, existed, err := removeProviderValue(path, "provider", "litellm"); err != nil || !existed {
+	// Removal with removeContainer restores the original shape: the
+	// container gridctl added goes with the value it wrapped.
+	if _, existed, err := removeProviderValue(path, "provider", "litellm", true); err != nil || !existed {
 		t.Fatalf("remove: %v existed=%v", err, existed)
 	}
 	after, _ := os.ReadFile(path)
@@ -78,11 +78,14 @@ func TestUpsertProvider_PreservesEverythingElse(t *testing.T) {
 	if strings.Contains(string(after), "LiteLLM") {
 		t.Errorf("provider value not removed:\n%s", after)
 	}
+	if strings.Contains(string(after), `"provider"`) {
+		t.Errorf("gridctl-created container must be removed once emptied:\n%s", after)
+	}
 }
 
 func TestUpsertProvider_CreatesMissingFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "opencode.json")
-	if _, err := upsertProviderValue(path, "providers", "litellm", map[string]any{"package": "x"}); err != nil {
+	if _, _, err := upsertProviderValue(path, "providers", "litellm", map[string]any{"package": "x"}); err != nil {
 		t.Fatal(err)
 	}
 	cur, exists, err := readProviderValue(path, "providers", "litellm")
@@ -93,11 +96,11 @@ func TestUpsertProvider_CreatesMissingFile(t *testing.T) {
 
 func TestRemoveProvider_MissingIsNotAnError(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "opencode.json")
-	if _, existed, err := removeProviderValue(path, "provider", "litellm"); err != nil || existed {
+	if _, existed, err := removeProviderValue(path, "provider", "litellm", true); err != nil || existed {
 		t.Fatalf("missing file: err=%v existed=%v", err, existed)
 	}
 	path = writeTemp(t, "opencode2.json", `{"theme":"dark"}`)
-	if _, existed, err := removeProviderValue(path, "provider", "litellm"); err != nil || existed {
+	if _, existed, err := removeProviderValue(path, "provider", "litellm", true); err != nil || existed {
 		t.Fatalf("missing key: err=%v existed=%v", err, existed)
 	}
 }

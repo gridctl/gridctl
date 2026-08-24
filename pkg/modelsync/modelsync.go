@@ -34,6 +34,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -146,11 +147,31 @@ func (m *Manager) FragmentPath(p *Policy) (string, error) {
 }
 
 // opencodeConfigPath resolves the OpenCode config location: the
-// policy's override, else the standard per-home location. Home-relative
-// on every platform so GRIDCTL_HOME isolation covers it.
+// policy's override, else the platform's standard location resolved
+// against home (so GRIDCTL_HOME isolation covers it).
 func (m *Manager) opencodeConfigPath(oc *OpenCodeClient) (string, error) {
 	if oc.ConfigPath != "" {
 		return m.expandPath(oc.ConfigPath)
 	}
+	if runtime.GOOS == "windows" {
+		// %APPDATA% under the resolved home, matching the provisioner's
+		// platform table without breaking home isolation.
+		return filepath.Join(m.home, "AppData", "Roaming", "opencode", "opencode.json"), nil
+	}
 	return filepath.Join(m.home, ".config", "opencode", "opencode.json"), nil
+}
+
+// ResolveOpenCode resolves the client config path and the concrete
+// schema generation exactly the way sync does, so render and sync can
+// never disagree about the emitted shape.
+func (m *Manager) ResolveOpenCode(p *Policy) (configPath, schema string, err error) {
+	oc := p.Clients.OpenCode
+	if oc == nil {
+		return "", "", fmt.Errorf("policy has no clients.opencode block")
+	}
+	configPath, err = m.opencodeConfigPath(oc)
+	if err != nil {
+		return "", "", err
+	}
+	return configPath, ResolveOpenCodeSchema(oc.Schema, configPath), nil
 }

@@ -54,8 +54,9 @@ func TestRenderOpenCode_V2Golden(t *testing.T) {
     }
   },
   "name": "LiteLLM",
-  "package": "@ai-sdk/openai-compatible",
+  "package": "aisdk:@ai-sdk/openai-compatible",
   "settings": {
+    "apiKey": "{env:LITELLM_KEY}",
     "baseURL": "http://localhost:4000/v1"
   }
 }`

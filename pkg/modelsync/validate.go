@@ -127,15 +127,21 @@ func (m *Manager) Validate(p *Policy) []Issue {
 		validateOpenCodeClient(oc, add)
 	}
 	if lt := p.Targets.LiteLLM; lt != nil {
+		var parentPath string
 		if lt.ConfigPath == "" {
 			add(SeverityError, "targets.litellm.config_path",
 				"config_path is required so sync knows which LiteLLM config includes the fragment")
-		} else if _, err := m.expandPath(lt.ConfigPath); err != nil {
+		} else if pp, err := m.expandPath(lt.ConfigPath); err != nil {
 			add(SeverityError, "targets.litellm.config_path", err.Error())
+		} else {
+			parentPath = pp
 		}
 		if lt.FragmentPath != "" {
-			if _, err := m.expandPath(lt.FragmentPath); err != nil {
+			if fp, err := m.expandPath(lt.FragmentPath); err != nil {
 				add(SeverityError, "targets.litellm.fragment_path", err.Error())
+			} else if parentPath != "" && fp == parentPath {
+				add(SeverityError, "targets.litellm.fragment_path",
+					"fragment_path must differ from config_path; syncing would overwrite your own LiteLLM config wholesale")
 			}
 		}
 	}

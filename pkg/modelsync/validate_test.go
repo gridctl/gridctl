@@ -116,6 +116,20 @@ func TestValidate_SecretInPassthrough(t *testing.T) {
 	}
 }
 
+func TestValidate_FragmentPathMustDifferFromConfigPath(t *testing.T) {
+	m := NewManagerWithHome(t.TempDir())
+	p := testPolicy(t)
+	p.Targets.LiteLLM = &LiteLLMTarget{
+		ConfigPath:   "~/.litellm/config.yaml",
+		FragmentPath: "~/.litellm/config.yaml",
+	}
+	issues := m.Validate(p)
+	found := issueFor(issues, "targets.litellm.fragment_path")
+	if found == nil || found.Severity != SeverityError {
+		t.Errorf("fragment_path == config_path must error, got %+v", issues)
+	}
+}
+
 func TestValidate_ParentBackendWarning(t *testing.T) {
 	home := t.TempDir()
 	m := NewManagerWithHome(home)

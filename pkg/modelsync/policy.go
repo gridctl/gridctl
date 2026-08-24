@@ -151,9 +151,11 @@ func ParsePolicy(data []byte) (*Policy, error) {
 	return &p, nil
 }
 
-// Hash fingerprints the policy document bytes with the engine's scheme.
+// Hash fingerprints the policy document with the engine's scheme,
+// CRLF-normalized so a line-ending flip (git autocrlf) never reads as
+// a stale policy.
 func (p *Policy) Hash() string {
-	sum := sha256.Sum256(p.raw)
+	sum := sha256.Sum256([]byte(normalizeNewlines(string(p.raw))))
 	return project.HashScheme + hex.EncodeToString(sum[:])
 }
 

@@ -117,6 +117,31 @@ func TestInitFromLiteLLM_ScaffoldsReferences(t *testing.T) {
 	}
 }
 
+// Regression (B4): a BACKEND named smart-router must also push the
+// router entry name off it; a colliding entry would be a duplicate
+// model_list name LiteLLM silently load-balances.
+func TestInitFromLiteLLM_BackendNameCollision(t *testing.T) {
+	home := t.TempDir()
+	m := NewManagerWithHome(home)
+	cfg := filepath.Join(home, "config.yaml")
+	content := "model_list:\n" +
+		"  - model_name: smart-router\n    litellm_params:\n      model: openai/qwen3\n" +
+		"  - model_name: gridctl-router\n    litellm_params:\n      model: openai/fable\n"
+	if err := os.WriteFile(cfg, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.InitFromLiteLLM(cfg, false); err != nil {
+		t.Fatal(err)
+	}
+	p, err := m.LoadPolicy()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Router.EntryModel != "gridctl-router-2" {
+		t.Errorf("entry model = %q, want gridctl-router-2", p.Router.EntryModel)
+	}
+}
+
 func mustRead(t *testing.T, path string) []byte {
 	t.Helper()
 	data, err := os.ReadFile(path)

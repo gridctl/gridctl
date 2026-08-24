@@ -34,6 +34,25 @@ type includeEdit struct {
 	Original string
 }
 
+// normalizeIncludeItem strips a trailing YAML comment and matching
+// quotes from an include entry, so `"gridctl-models.yaml"` and
+// `gridctl-models.yaml  # managed` both compare equal to the bare ref
+// instead of reading as a missing (and then duplicated) line.
+func normalizeIncludeItem(s string) string {
+	value, _ := splitInlineComment(s)
+	return unquoteScalar(value)
+}
+
+// unquoteScalar removes one matching pair of single or double quotes.
+func unquoteScalar(s string) string {
+	if len(s) >= 2 {
+		if (s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'') {
+			return s[1 : len(s)-1]
+		}
+	}
+	return s
+}
+
 // hasIncludeLine reports whether content's include entries contain ref.
 func hasIncludeLine(content, ref string) bool {
 	form, keyIdx, lines := findIncludeKey(normalizeNewlines(content))
@@ -41,13 +60,12 @@ func hasIncludeLine(content, ref string) bool {
 	case "none":
 		return false
 	case "scalar":
-		value, _ := splitInlineComment(includeKeyRe.FindStringSubmatch(lines[keyIdx])[1])
-		return value == ref
+		return normalizeIncludeItem(includeKeyRe.FindStringSubmatch(lines[keyIdx])[1]) == ref
 	case "flow":
 		return flowContains(lines[keyIdx], ref)
 	}
 	for _, idx := range includeItemIndexes(lines, keyIdx) {
-		if m := includeItemRe.FindStringSubmatch(lines[idx]); m != nil && m[2] == ref {
+		if m := includeItemRe.FindStringSubmatch(lines[idx]); m != nil && normalizeIncludeItem(m[2]) == ref {
 			return true
 		}
 	}
@@ -122,13 +140,21 @@ func removeIncludeLine(content, ref, mode, original string) (string, error) {
 	case "flow":
 		lines[keyIdx] = flowRemove(lines[keyIdx], ref)
 		return strings.Join(lines, "\n"), nil
+	case "scalar":
+		// A scalar include of exactly our ref (written by hand, or
+		// adopted at sync time) is removed by dropping the key line: it
+		// is the one-item form of a created list.
+		if normalizeIncludeItem(includeKeyRe.FindStringSubmatch(lines[keyIdx])[1]) == ref {
+			return strings.Join(removeLineAt(lines, keyIdx), "\n"), nil
+		}
+		return norm, nil
 	case "bare":
 		items := includeItemIndexes(lines, keyIdx)
 		remaining := make([]string, 0, len(items))
 		refIdx := -1
 		for _, idx := range items {
 			m := includeItemRe.FindStringSubmatch(lines[idx])
-			if m != nil && m[2] == ref && refIdx == -1 {
+			if m != nil && normalizeIncludeItem(m[2]) == ref && refIdx == -1 {
 				refIdx = idx
 				continue
 			}
@@ -143,12 +169,12 @@ func removeIncludeLine(content, ref, mode, original string) (string, error) {
 		switch {
 		case mode == includeCreated && len(remaining) == 0:
 			lines = removeLineAt(lines, keyIdx)
-		case mode == includePromoted && len(remaining) == 1 && remaining[0] == original:
+		case mode == includePromoted && len(remaining) == 1 && normalizeIncludeItem(remaining[0]) == unquoteScalar(original):
 			// Restore the scalar form, keeping any comment that rode the
 			// key line through the promotion. Only when the surviving item
 			// still sits directly under the key; a rearranged list stays a
 			// list rather than risking an unrelated line.
-			if m := includeItemRe.FindStringSubmatch(lines[keyIdx+1]); m != nil && m[2] == original {
+			if m := includeItemRe.FindStringSubmatch(lines[keyIdx+1]); m != nil && normalizeIncludeItem(m[2]) == unquoteScalar(original) {
 				_, comment := splitInlineComment(strings.TrimPrefix(lines[keyIdx], "include:"))
 				restored := "include: " + original
 				if comment != "" {

@@ -137,24 +137,52 @@ func (m *Manager) InitFromLiteLLM(path string, force bool) error {
 		return fmt.Errorf("%s declares no model_list entries to reference", abs)
 	}
 
-	entryModel := "smart-router"
-	for _, taken := range scan.AutoRouterNames {
-		if taken == entryModel {
-			entryModel = "gridctl-router"
+	// Every existing model_name is occupied, backends included: a router
+	// entry colliding with any of them would be exactly the duplicate
+	// model_list name this design exists to prevent.
+	occupied := map[string]bool{}
+	for _, name := range scan.ModelNames {
+		occupied[name] = true
+	}
+	for _, name := range scan.AutoRouterNames {
+		occupied[name] = true
+	}
+	entryModel := ""
+	for _, candidate := range []string{"smart-router", "gridctl-router", "gridctl-router-2",
+		"gridctl-router-3", "gridctl-router-4"} {
+		if !occupied[candidate] {
+			entryModel = candidate
+			break
 		}
 	}
-	first := scan.ModelNames[0]
+	if entryModel == "" {
+		return fmt.Errorf("could not pick a router model name; every candidate collides with an existing model_name")
+	}
+
+	// Only reference names the policy schema can hold; anything else
+	// (exotic YAML scalars) would be interpolated unquoted into the
+	// scaffold and could inject structure.
+	var backends []string
+	for _, name := range scan.ModelNames {
+		if backendRe.MatchString(name) {
+			backends = append(backends, name)
+		}
+	}
+	if len(backends) == 0 {
+		return fmt.Errorf("%s declares no model_list names the policy can reference", abs)
+	}
+	first := backends[0]
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "# gridctl models policy scaffolded from %s.\n", abs)
+	fmt.Fprintf(&b, "# gridctl models policy scaffolded from %q.\n", abs)
 	b.WriteString("# Backends reference model_name values from that config; edit the tier\n")
 	b.WriteString("# mapping below, then run 'gridctl models sync'.\n")
 	b.WriteString("name: default\nkind: models\n")
-	fmt.Fprintf(&b, "description: Routing policy scaffolded from %s\n\n", filepath.Base(abs))
+	b.WriteString("description: Routing policy scaffolded from an existing LiteLLM config\n\n")
 	b.WriteString("router:\n")
 	fmt.Fprintf(&b, "  entry_model: %s\n", entryModel)
 	b.WriteString("  default_tier: MEDIUM\n\nbackends:\n")
-	for _, name := range scan.ModelNames {
+	for _, name := range backends {
 		fmt.Fprintf(&b, "  - %s\n", name)
 	}
 	b.WriteString("\n# Every tier starts on the first backend; spread them across your\n")
@@ -169,7 +197,7 @@ func (m *Manager) InitFromLiteLLM(path string, force bool) error {
 	b.WriteString("    base_url: http://localhost:4000/v1\n    api_key_env: LITELLM_KEY\n")
 	b.WriteString("    schema: detect\n")
 	b.WriteString("\ntargets:\n  litellm:\n")
-	fmt.Fprintf(&b, "    config_path: %s\n", abs)
+	fmt.Fprintf(&b, "    config_path: %q\n", abs)
 
 	return m.initWith(b.String(), force)
 }

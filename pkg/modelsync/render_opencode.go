@@ -62,10 +62,13 @@ func RenderOpenCode(p *Policy, schema string) (OpenCodeRender, error) {
 			Schema:    SchemaV2,
 			Container: "providers",
 			Value: map[string]any{
-				"package": "@ai-sdk/openai-compatible",
+				// v2 renamed npm to package and prefixes AI SDK packages
+				// with aisdk: (the v1-to-v2 migration shape).
+				"package": "aisdk:@ai-sdk/openai-compatible",
 				"name":    "LiteLLM",
 				"settings": map[string]any{
 					"baseURL": oc.BaseURL,
+					"apiKey":  "{env:" + oc.APIKeyEnv + "}",
 				},
 				// v2 drops custom providers that omit env entirely; the
 				// list also keys the client's own key resolution.

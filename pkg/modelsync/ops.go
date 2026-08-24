@@ -2,6 +2,7 @@ package modelsync
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -452,14 +453,13 @@ func includeEntry(parent, ref, mode, original, pack string) *project.Entry {
 func (m *Manager) syncOpenCode(p *Policy, v *view, opts SyncOptions) (SyncResult, bool) {
 	res := SyncResult{Target: srcOpenCode, Client: clientOpenCode}
 	oc := p.Clients.OpenCode
-	cfgPath, err := m.opencodeConfigPath(oc)
+	cfgPath, schema, err := m.ResolveOpenCode(p)
 	if err != nil {
 		res.Action, res.Error = ActionError, err.Error()
 		return res, false
 	}
 	res.Path = cfgPath
 
-	schema := ResolveOpenCodeSchema(oc.Schema, cfgPath)
 	render, err := RenderOpenCode(p, schema)
 	if err != nil {
 		res.Action, res.Error = ActionError, err.Error()
@@ -498,7 +498,7 @@ func (m *Manager) syncOpenCode(p *Policy, v *view, opts SyncOptions) (SyncResult
 						oldContainer, e.Strategy, render.Container, schema)
 					return res, false
 				}
-				if _, _, rerr := removeProviderValue(e.ConfigPath, oldContainer, oldID); rerr != nil {
+				if _, _, rerr := removeProviderValue(e.ConfigPath, oldContainer, oldID, e.CreatedFile); rerr != nil {
 					res.Action, res.Error = ActionError, rerr.Error()
 					return res, false
 				}
@@ -537,10 +537,13 @@ func (m *Manager) syncOpenCode(p *Policy, v *view, opts SyncOptions) (SyncResult
 	if opts.DryRun {
 		res.Action = ActionWouldUpdate
 		res.Detail = fmt.Sprintf("would write %s.%s (%s schema)", render.Container, oc.ProviderID, schema)
+		if opts.Diff {
+			res.Diff = providerDiff(cur, render.Value, cfgPath+"#"+render.Container+"."+oc.ProviderID)
+		}
 		return res, false
 	}
 
-	backup, err := upsertProviderValue(cfgPath, render.Container, oc.ProviderID, render.Value)
+	backup, containerCreated, err := upsertProviderValue(cfgPath, render.Container, oc.ProviderID, render.Value)
 	if err != nil {
 		res.Action, res.Error = ActionError, err.Error()
 		return res, false
@@ -549,6 +552,7 @@ func (m *Manager) syncOpenCode(p *Policy, v *view, opts SyncOptions) (SyncResult
 	pack := ""
 	if e != nil {
 		prior, pack = e.Hashes, e.Pack
+		containerCreated = containerCreated || (e.CreatedFile && e.Strategy == schema)
 	}
 	v.entries[srcOpenCode] = &project.Entry{
 		Kind:       project.KindModels,
@@ -557,9 +561,13 @@ func (m *Manager) syncOpenCode(p *Policy, v *view, opts SyncOptions) (SyncResult
 		Path:       cfgPath + "#" + render.Container + "." + oc.ProviderID,
 		ConfigPath: cfgPath,
 		Strategy:   schema,
-		Hashes:     appendHash(prior, plannedHash),
-		Pack:       pack,
-		SyncedAt:   time.Now(),
+		// CreatedFile here marks the container object as gridctl's, so
+		// unsync can remove it once emptied instead of leaving a stray
+		// "provider": {} behind.
+		CreatedFile: containerCreated,
+		Hashes:      appendHash(prior, plannedHash),
+		Pack:        pack,
+		SyncedAt:    time.Now(),
 	}
 	res.Action, res.BackupPath = ActionUpdated, backup
 	res.Detail = fmt.Sprintf("select the %q model in OpenCode to route through the policy", oc.ProviderID+"/"+p.Router.EntryModel)
@@ -567,6 +575,23 @@ func (m *Manager) syncOpenCode(p *Policy, v *view, opts SyncOptions) (SyncResult
 		res.Detail = migratedNote + "; " + res.Detail
 	}
 	return res, true
+}
+
+// providerDiff renders a unified diff of the owned subtree only (the
+// rest of the file is untouched by the patch write), for dry-run
+// previews.
+func providerDiff(current, planned map[string]any, label string) string {
+	marshal := func(v map[string]any) string {
+		if v == nil {
+			return ""
+		}
+		data, err := json.MarshalIndent(v, "", "  ")
+		if err != nil {
+			return ""
+		}
+		return string(data) + "\n"
+	}
+	return unifiedDiff(marshal(current), marshal(planned), label+" (current)", label+" (after sync)")
 }
 
 // containerForSchema maps a config generation to its provider
@@ -825,7 +850,7 @@ func (m *Manager) unsyncOpenCode(v *view, e *project.Entry, opts UnsyncOptions) 
 		res.Detail = "the provider entry was hand-edited; kept (re-run with --force to remove)"
 		return res
 	}
-	backup, _, err := removeProviderValue(e.ConfigPath, container, providerID)
+	backup, _, err := removeProviderValue(e.ConfigPath, container, providerID, e.CreatedFile)
 	if err != nil {
 		res.Action, res.Error = ActionError, err.Error()
 		return res

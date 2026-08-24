@@ -65,13 +65,15 @@ func readTopLevelString(path, key string) string {
 }
 
 // upsertProviderValue writes the owned subtree, creating the file and
-// container as needed. Returns the backup path (empty for a new file).
-func upsertProviderValue(path, container, id string, value map[string]any) (string, error) {
+// container as needed. Returns the backup path (empty for a new file)
+// and whether gridctl created the container object, so unsync knows it
+// may remove an emptied container it introduced.
+func upsertProviderValue(path, container, id string, value map[string]any) (backup string, containerCreated bool, err error) {
 	raw, err := os.ReadFile(path)
 	created := false
 	if err != nil {
 		if !os.IsNotExist(err) {
-			return "", fmt.Errorf("reading %s: %w", path, err)
+			return "", false, fmt.Errorf("reading %s: %w", path, err)
 		}
 		raw = []byte("{}\n")
 		created = true
@@ -81,12 +83,13 @@ func upsertProviderValue(path, container, id string, value map[string]any) (stri
 	}
 	v, err := hujson.Parse(raw)
 	if err != nil {
-		return "", fmt.Errorf("parsing %s: %w", path, err)
+		return "", false, fmt.Errorf("parsing %s: %w", path, err)
 	}
 
 	var ops []patchOp
 	ptr := "/" + container + "/" + id
 	if v.Find("/"+container) == nil {
+		containerCreated = true
 		ops = append(ops, patchOp{Op: "add", Path: "/" + container, Value: map[string]any{}})
 	}
 	op := "add"
@@ -97,30 +100,31 @@ func upsertProviderValue(path, container, id string, value map[string]any) (stri
 
 	patch, err := json.Marshal(ops)
 	if err != nil {
-		return "", fmt.Errorf("encoding patch: %w", err)
+		return "", false, fmt.Errorf("encoding patch: %w", err)
 	}
 	if err := v.Patch(patch); err != nil {
-		return "", fmt.Errorf("patching %s: %w", path, err)
+		return "", false, fmt.Errorf("patching %s: %w", path, err)
 	}
 
-	var backup string
 	if !created {
 		if backup, err = createBackup(path); err != nil {
-			return "", err
+			return "", false, err
 		}
 	} else if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return "", fmt.Errorf("creating %s: %w", filepath.Dir(path), err)
+		return "", false, fmt.Errorf("creating %s: %w", filepath.Dir(path), err)
 	}
 	if err := project.AtomicWriteFile(path, v.Pack()); err != nil {
-		return "", err
+		return "", false, err
 	}
-	return backup, nil
+	return backup, containerCreated, nil
 }
 
 // removeProviderValue removes the owned subtree. A missing file or key
-// reports existed=false and writes nothing; an emptied container object
-// is left in place (harmless, and it may predate gridctl).
-func removeProviderValue(path, container, id string) (backup string, existed bool, err error) {
+// reports existed=false and writes nothing. When gridctl created the
+// container object (removeContainer) and removing the value empties
+// it, the container goes too, restoring the pre-sync shape; a
+// container that predates gridctl is always left in place.
+func removeProviderValue(path, container, id string, removeContainer bool) (backup string, existed bool, err error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -142,6 +146,18 @@ func removeProviderValue(path, container, id string) (backup string, existed boo
 	}
 	if err := v.Patch(patch); err != nil {
 		return "", false, fmt.Errorf("patching %s: %w", path, err)
+	}
+	if removeContainer {
+		if cont := v.Find("/" + container); cont != nil {
+			if obj, ok := cont.Value.(*hujson.Object); ok && len(obj.Members) == 0 {
+				drop, derr := json.Marshal([]patchOp{{Op: "remove", Path: "/" + container}})
+				if derr == nil {
+					if perr := v.Patch(drop); perr != nil {
+						return "", true, fmt.Errorf("patching %s: %w", path, perr)
+					}
+				}
+			}
+		}
 	}
 	if backup, err = createBackup(path); err != nil {
 		return "", true, err

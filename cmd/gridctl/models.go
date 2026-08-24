@@ -79,7 +79,15 @@ var (
 	modelsValidateFormat string
 	modelsValidateJSON   *bool
 
-	modelsUnsyncForce bool
+	modelsUnsyncForce  bool
+	modelsUnsyncFormat string
+	modelsUnsyncJSON   *bool
+
+	modelsAdoptFormat string
+	modelsAdoptJSON   *bool
+
+	modelsAckFormat string
+	modelsAckJSON   *bool
 )
 
 var modelsInitCmd = &cobra.Command{
@@ -156,7 +164,7 @@ var modelsValidateCmd = &cobra.Command{
 	Long: `Checks the policy for schema errors, undeclared tier backends, literal
 secrets, and LiteLLM keys that must stay in the parent config
 (router_settings, fallbacks: an included fragment silently replaces
-them). Exit 0 clean, 1 findings, 2 error.`,
+them). Exit 0 clean (warnings alone stay 0), 1 errors, 2 error.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		format, err := resolveFormat(modelsValidateFormat, cmd.Flags().Changed("format"), *modelsValidateJSON)
@@ -260,28 +268,21 @@ var modelsUnsyncCmd = &cobra.Command{
 	Long: `Removes the OpenCode provider stanza, the include: line, and the
 rendered fragment, restoring everything outside gridctl's own writes
 byte-for-byte. Hand-edited targets are kept unless --force; the policy
-document itself is never touched.`,
+document itself is never touched. Exit 0 clean, 1 when anything was
+kept or failed, 2 on error.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		format, err := resolveFormat(modelsUnsyncFormat, cmd.Flags().Changed("format"), *modelsUnsyncJSON)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(modelsExitInfrastructure)
+		}
 		mgr, err := modelsync.NewManager()
 		if err != nil {
-			return err
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(modelsExitInfrastructure)
 		}
-		results, err := mgr.Unsync(cmd.Context(), modelsync.UnsyncOptions{Force: modelsUnsyncForce})
-		if err != nil {
-			return err
-		}
-		p := output.New()
-		if len(results) == 0 {
-			p.Info("nothing synced; nothing to remove")
-			return nil
-		}
-		for _, r := range results {
-			p.Info("unsync", "target", r.Target, "action", r.Action, "path", r.Path)
-			if r.Detail != "" {
-				p.Warn(r.Detail, "target", r.Target)
-			}
-		}
+		os.Exit(runModelsUnsync(cmd.Context(), os.Stdout, os.Stderr, mgr, modelsUnsyncForce, format))
 		return nil
 	},
 }
@@ -290,21 +291,21 @@ var modelsAdoptCmd = &cobra.Command{
 	Use:   "adopt",
 	Short: "Record the current on-disk state as gridctl-owned",
 	Long: `Clears drift by accepting hand edits of the fragment or the OpenCode
-provider entry as the new owned state. No file is modified.`,
+provider entry as the new owned state. No file is modified. Exit 0 on
+success, 2 on error (including nothing synced yet).`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		format, err := resolveFormat(modelsAdoptFormat, cmd.Flags().Changed("format"), *modelsAdoptJSON)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(modelsExitInfrastructure)
+		}
 		mgr, err := modelsync.NewManager()
 		if err != nil {
-			return err
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(modelsExitInfrastructure)
 		}
-		results, err := mgr.Adopt(cmd.Context())
-		if err != nil {
-			return err
-		}
-		p := output.New()
-		for _, r := range results {
-			p.Info("adopt", "target", r.Target, "action", r.Action, "path", r.Path)
-		}
+		os.Exit(runModelsAdopt(cmd.Context(), os.Stdout, os.Stderr, mgr, format))
 		return nil
 	},
 }
@@ -313,19 +314,119 @@ var modelsAckRestartCmd = &cobra.Command{
 	Use:   "ack-restart",
 	Short: "Mark LiteLLM as restarted since the last sync",
 	Long: `Clears the restart-pending annotation. Run it after actually
-restarting LiteLLM; gridctl never probes the process to guess.`,
+restarting LiteLLM; gridctl never probes the process to guess. Exit 0
+on success, 2 on error (including nothing synced yet).`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		format, err := resolveFormat(modelsAckFormat, cmd.Flags().Changed("format"), *modelsAckJSON)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(modelsExitInfrastructure)
+		}
 		mgr, err := modelsync.NewManager()
 		if err != nil {
-			return err
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(modelsExitInfrastructure)
 		}
-		if err := mgr.AckRestart(cmd.Context()); err != nil {
-			return err
-		}
-		output.New().Info("restart acknowledged; the policy is live")
+		os.Exit(runModelsAckRestart(cmd.Context(), os.Stdout, os.Stderr, mgr, format))
 		return nil
 	},
+}
+
+// modelsUnsyncDoc is the machine-readable unsync document.
+type modelsUnsyncDoc struct {
+	SchemaVersion int                      `json:"schema_version"`
+	HasFailures   bool                     `json:"has_failures"`
+	Results       []modelsync.UnsyncResult `json:"results"`
+}
+
+func runModelsUnsync(ctx context.Context, stdout, stderr io.Writer, mgr *modelsync.Manager, force bool, format string) int {
+	results, err := mgr.Unsync(ctx, modelsync.UnsyncOptions{Force: force})
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return modelsExitInfrastructure
+	}
+	hasFailures := false
+	for _, r := range results {
+		if r.Action == modelsync.ActionError || r.Action == modelsync.ActionKeptDrift {
+			hasFailures = true
+		}
+	}
+	doc := modelsUnsyncDoc{SchemaVersion: modelsJSONSchemaVersion, HasFailures: hasFailures, Results: results}
+	if strings.EqualFold(format, "json") {
+		if err := output.EncodeJSON(stdout, doc); err != nil {
+			fmt.Fprintln(stderr, err)
+			return modelsExitInfrastructure
+		}
+	} else {
+		if len(results) == 0 {
+			fmt.Fprintln(stdout, "nothing synced; nothing to remove")
+		}
+		for _, r := range results {
+			fmt.Fprintf(stdout, "%s  %s  %s\n", r.Action, r.Target, r.Path)
+			if r.Detail != "" {
+				fmt.Fprintf(stdout, "  %s\n", r.Detail)
+			}
+			if r.Error != "" {
+				fmt.Fprintf(stdout, "  %s\n", r.Error)
+			}
+		}
+	}
+	if hasFailures {
+		return modelsExitAttention
+	}
+	return modelsExitOK
+}
+
+// modelsAdoptDoc is the machine-readable adopt document.
+type modelsAdoptDoc struct {
+	SchemaVersion int                     `json:"schema_version"`
+	Results       []modelsync.AdoptResult `json:"results"`
+}
+
+func runModelsAdopt(ctx context.Context, stdout, stderr io.Writer, mgr *modelsync.Manager, format string) int {
+	results, err := mgr.Adopt(ctx)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return modelsExitInfrastructure
+	}
+	doc := modelsAdoptDoc{SchemaVersion: modelsJSONSchemaVersion, Results: results}
+	if strings.EqualFold(format, "json") {
+		if err := output.EncodeJSON(stdout, doc); err != nil {
+			fmt.Fprintln(stderr, err)
+			return modelsExitInfrastructure
+		}
+	} else {
+		for _, r := range results {
+			fmt.Fprintf(stdout, "%s  %s  %s\n", r.Action, r.Target, r.Path)
+			if r.Detail != "" {
+				fmt.Fprintf(stdout, "  %s\n", r.Detail)
+			}
+		}
+	}
+	return modelsExitOK
+}
+
+// modelsAckDoc is the machine-readable ack-restart document.
+type modelsAckDoc struct {
+	SchemaVersion int  `json:"schema_version"`
+	Acknowledged  bool `json:"acknowledged"`
+}
+
+func runModelsAckRestart(ctx context.Context, stdout, stderr io.Writer, mgr *modelsync.Manager, format string) int {
+	if err := mgr.AckRestart(ctx); err != nil {
+		fmt.Fprintln(stderr, err)
+		return modelsExitInfrastructure
+	}
+	if strings.EqualFold(format, "json") {
+		if err := output.EncodeJSON(stdout, modelsAckDoc{SchemaVersion: modelsJSONSchemaVersion, Acknowledged: true}); err != nil {
+			fmt.Fprintln(stderr, err)
+			return modelsExitInfrastructure
+		}
+	} else {
+		fmt.Fprintln(stdout, "restart acknowledged; the policy is live")
+	}
+	return modelsExitOK
 }
 
 func init() {
@@ -351,6 +452,12 @@ func init() {
 	modelsValidateJSON = addJSONAlias(modelsValidateCmd)
 
 	modelsUnsyncCmd.Flags().BoolVar(&modelsUnsyncForce, "force", false, "Also remove hand-edited (drifted) targets")
+	modelsUnsyncCmd.Flags().StringVar(&modelsUnsyncFormat, "format", "table", "Output format: table or json")
+	modelsUnsyncJSON = addJSONAlias(modelsUnsyncCmd)
+	modelsAdoptCmd.Flags().StringVar(&modelsAdoptFormat, "format", "table", "Output format: table or json")
+	modelsAdoptJSON = addJSONAlias(modelsAdoptCmd)
+	modelsAckRestartCmd.Flags().StringVar(&modelsAckFormat, "format", "table", "Output format: table or json")
+	modelsAckJSON = addJSONAlias(modelsAckRestartCmd)
 
 	modelsCmd.AddCommand(modelsInitCmd, modelsEditCmd, modelsValidateCmd, modelsRenderCmd,
 		modelsSyncCmd, modelsStatusCmd, modelsUnsyncCmd, modelsAdoptCmd, modelsAckRestartCmd)
@@ -416,9 +523,11 @@ func runModelsRender(mgr *modelsync.Manager, target, out string, stdout io.Write
 		if p.Clients.OpenCode == nil {
 			return fmt.Errorf("policy has no clients.opencode block")
 		}
-		schema := p.Clients.OpenCode.Schema
-		if schema == "" || schema == modelsync.SchemaDetect {
-			schema = modelsync.SchemaV1
+		// The same path-and-schema resolution sync uses, so render can
+		// never emit a different generation than sync would write.
+		_, schema, rerr := mgr.ResolveOpenCode(p)
+		if rerr != nil {
+			return rerr
 		}
 		render, rerr := modelsync.RenderOpenCode(p, schema)
 		if rerr != nil {
