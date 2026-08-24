@@ -61,6 +61,9 @@ export default function ConnectionsWorkspace() {
 
   const [wiringRows, setWiringRows] = useState<WiringRow[] | null>(null);
   const [modelsDoc, setModelsDoc] = useState<ModelsStatusDoc | null>(null);
+  // A failed models fetch is its own fact, distinct from "still
+  // loading": the pane says unavailable instead of loading forever.
+  const [modelsFailed, setModelsFailed] = useState(false);
   const [showModelsDialog, setShowModelsDialog] = useState(false);
   const [sessionsFailed, setSessionsFailed] = useState(false);
   const [staged, setStaged] = useState<StagedChanges>({});
@@ -89,7 +92,12 @@ export default function ConnectionsWorkspace() {
     if (results[3].status === 'fulfilled') {
       useStackStore.getState().setClients(results[3].value);
     }
-    if (results[4].status === 'fulfilled') setModelsDoc(results[4].value);
+    if (results[4].status === 'fulfilled') {
+      setModelsDoc(results[4].value);
+      setModelsFailed(false);
+    } else {
+      setModelsFailed(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -400,6 +408,7 @@ export default function ConnectionsWorkspace() {
                 }
                 sessionsFailed={sessionsFailed}
                 modelsTargets={modelsTargets}
+                modelsFailed={modelsFailed}
                 onRefresh={refreshHealth}
                 onReviewContext={() => {
                   setContextReviewSlug(selectedSlug);
