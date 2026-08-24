@@ -100,11 +100,11 @@ func TestGatewayRegistrationRetryRecovery(t *testing.T) {
 	}
 	var sawTool bool
 	for _, tool := range tools.Tools {
-		if strings.HasPrefix(tool.Name, "late-boot") || tool.Name != "" {
+		if strings.Contains(tool.Name, "echo") {
 			sawTool = true
 		}
 	}
 	if !sawTool {
-		t.Error("expected the recovered server's tools in the aggregated list")
+		t.Error("expected the recovered server's echo tool in the aggregated list")
 	}
 }
