@@ -4,6 +4,10 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- `gridctl models` (Experimental) manages one model routing policy document (`~/.gridctl/models/policy.yaml`) and projects it into a LiteLLM auto-router config fragment plus an OpenCode provider stanza, giving a self-hosted mixed local-and-cloud model fleet a versioned source of truth with the same ownership, drift, and backup guarantees as skill and context projection. The rendered fragment carries only the router (LiteLLM's `include:` extends `model_list` across files, so backends stay declared once in the user's own config and are referenced by name; re-emitting them would silently load-balance duplicates), the `include:` line is a single-line text edit that leaves the rest of the parent config byte-identical, and the OpenCode write is an RFC 6902 patch that owns only the provider subtree and never touches the user's top-level `model` pick. Because LiteLLM reads config only at startup, sync latches a `restart-pending` state that only `gridctl models ack-restart` clears, and the sync output distinguishes "file written" from "policy live". The verb family (`init` with topology templates or `--from-litellm` scaffolding, `edit`, `validate`, `render`, `sync` with `--dry-run --diff` and `--check`, `status`, `adopt`, `unsync`, `ack-restart`) follows the projection house conventions, `gridctl reset` covers the new kind, and the rendered schema is contract-checked in CI by booting a digest-pinned LiteLLM release (v1.97.0, Auto Router v2) against a fragment included from a human-shaped config (#1178)
+
 ## [0.1.0-rc.3] - 2026-08-22
 
 Third release candidate. Adds LM Studio as the 16th `gridctl link` client, live-verified against a real 0.4.x install, along with a post-link notes channel that surfaces client-specific guidance in both the CLI and the Connections detail pane.

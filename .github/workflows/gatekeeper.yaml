@@ -108,6 +108,32 @@ jobs:
       - name: Integration tests
         run: go test -tags=integration -race -timeout 5m ./tests/integration/...
 
+  litellm-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Go dependencies
+        run: go mod download
+
+      # The pull dominates a cold run and stays outside the test
+      # timeout; the test itself skips when the image is absent, so
+      # this step is what makes the contract check actually run.
+      - name: Pull pinned LiteLLM image
+        run: docker pull ghcr.io/berriai/litellm:v1.97.0@sha256:468c25f35f3e5ec4e414974f00deab93337b1b4d9953cabcfd3722e59415f834
+
+      - name: LiteLLM config contract test
+        run: go test -tags=integration -race -timeout 10m -run TestLiteLLMBootsRenderedFragment -v ./tests/integration/...
+
   conformance:
     runs-on: ubuntu-latest
     timeout-minutes: 15

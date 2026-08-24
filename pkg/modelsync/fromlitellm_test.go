@@ -50,8 +50,12 @@ func TestParseLiteLLMConfig_IncludeCycleStops(t *testing.T) {
 	dir := t.TempDir()
 	a := filepath.Join(dir, "a.yaml")
 	b := filepath.Join(dir, "b.yaml")
-	os.WriteFile(a, []byte("include: b.yaml\nmodel_list:\n  - model_name: one\n"), 0644)
-	os.WriteFile(b, []byte("include: a.yaml\nmodel_list:\n  - model_name: two\n"), 0644)
+	if err := os.WriteFile(a, []byte("include: b.yaml\nmodel_list:\n  - model_name: one\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(b, []byte("include: a.yaml\nmodel_list:\n  - model_name: two\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	scan, err := ParseLiteLLMConfig(a)
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +69,9 @@ func TestInitFromLiteLLM_ScaffoldsReferences(t *testing.T) {
 	home := t.TempDir()
 	m := NewManagerWithHome(home)
 	cfg := filepath.Join(home, ".litellm", "config.yaml")
-	os.MkdirAll(filepath.Dir(cfg), 0755)
+	if err := os.MkdirAll(filepath.Dir(cfg), 0755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(cfg, []byte(`model_list:
   - model_name: qwen-local
     litellm_params:

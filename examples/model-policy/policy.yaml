@@ -1,0 +1,45 @@
+# gridctl models policy: local models for routine work, cloud for the
+# hard tiers. Backends reference model_name values from the LiteLLM
+# config's own model_list (see litellm-config.yaml); gridctl renders
+# only the router.
+name: default
+kind: models
+description: Local for routine tiers, cloud for complex work
+
+router:
+  entry_model: smart-router     # the model name clients select
+  default_tier: MEDIUM          # where unclassifiable requests land
+
+backends:
+  - qwen-local
+  - claude-sonnet
+
+tiers:
+  SIMPLE: qwen-local
+  MEDIUM: qwen-local
+  COMPLEX: claude-sonnet
+  REASONING: claude-sonnet
+
+# Coding agents carry huge system prompts; ignore raw token count.
+weights:
+  tokenCount: 0.0
+  reasoningMarkers: 0.40
+  technicalTerms: 0.25
+  codePresence: 0.20
+  simpleIndicators: 0.10
+  multiStepPatterns: 0.05
+
+# Auto-router keys gridctl does not model ride through verbatim:
+passthrough:
+  session_affinity: true
+
+clients:
+  opencode:
+    provider_id: litellm
+    base_url: http://localhost:4000/v1
+    api_key_env: LITELLM_KEY    # an env var name, never a literal key
+    schema: detect
+
+targets:
+  litellm:
+    config_path: ~/.litellm/config.yaml

@@ -110,6 +110,19 @@ tasks:
     cmds:
       - go test -tags=integration -race -timeout 5m ./tests/integration/...
 
+  test:litellm:
+    desc: Run the LiteLLM contract test against the pinned proxy image (multi-GB pull)
+    summary: |
+      Pre-pulls the digest-pinned LiteLLM image, then boots it against a
+      rendered gridctl models fragment included from a human-shaped
+      config and asserts the router model is served. The pull dominates
+      a cold run, so it happens outside the test timeout; the plain
+      test:integration suite skips this test when the image is not
+      already cached.
+    cmds:
+      - docker pull ghcr.io/berriai/litellm:v1.97.0@sha256:468c25f35f3e5ec4e414974f00deab93337b1b4d9953cabcfd3722e59415f834
+      - go test -tags=integration -race -timeout 10m -run TestLiteLLMBootsRenderedFragment ./tests/integration/...
+
   test:conformance:
     desc: Run the MCP conformance suite against a live gateway (requires Node 22+)
     summary: |
