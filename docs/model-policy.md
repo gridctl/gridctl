@@ -102,4 +102,8 @@ The same contract as every gridctl projection. `status` reports `in-sync`, `stal
 
 ## Command reference
 
-See the [CLI reference](cli-reference.md#model-routing-models) for the full verb table (`init`, `edit`, `validate`, `render`, `sync`, `status`, `ack-restart`, `adopt`, `unsync`), flags, and exit codes. There is no REST or web UI surface for the models policy in this release; like skill projection, it is CLI-first by decision, not by gap.
+See the [CLI reference](cli-reference.md#model-routing-models) for the full verb table (`init`, `edit`, `validate`, `render`, `sync`, `status`, `ack-restart`, `adopt`, `unsync`), flags, and exit codes.
+
+## Web UI
+
+The web UI's Connections workspace carries a Model routing dialog (the header action, or the Model routing section in OpenCode's detail pane) mirroring the reconcile half of the CLI: per-target status, the policy's routing summary, validation findings, drift review with diffs, whole-policy sync, adopt, and the restart acknowledgment. The REST endpoints behind it are documented in the [API reference](api-reference.md#model-routing) and inherit the Experimental tier. The policy document itself stays CLI-edited (`gridctl models init`, `gridctl models edit`); there is no browser editor by design, so the file remains the single source of truth.
