@@ -13,6 +13,7 @@ import {
   fetchModelsValidation,
   syncModels,
 } from '../../lib/api';
+import { formatStampOrUnknown } from '../../lib/time';
 import type {
   ModelsStatusDoc,
   ModelsSyncResult,
@@ -58,6 +59,23 @@ export function ModelRoutingDialog({ isOpen, onClose }: ModelRoutingDialogProps)
   const [confirmMarkRestarted, setConfirmMarkRestarted] = useState(false);
   const [confirmAdopt, setConfirmAdopt] = useState(false);
   const [confirmOverwrite, setConfirmOverwrite] = useState(false);
+  // The forced dry-run: what Overwrite with policy would write. Shared
+  // by the Review diffs and the Overwrite confirm, so the confirm names
+  // the real blast radius (force is whole-policy and also rewrites
+  // stale and never-synced targets, not only the drifted rows that
+  // opened the review).
+  const [forcedPreview, setForcedPreview] = useState<ModelsSyncResult[] | null>(null);
+  const [forcedPreviewError, setForcedPreviewError] = useState<string | null>(null);
+
+  const loadForcedPreview = useCallback(() => {
+    setForcedPreview(null);
+    setForcedPreviewError(null);
+    syncModels({ dry_run: true, diff: true, force: true })
+      .then(setForcedPreview)
+      .catch((err) =>
+        setForcedPreviewError(err instanceof Error ? err.message : 'Preview failed'),
+      );
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -142,11 +160,37 @@ export function ModelRoutingDialog({ isOpen, onClose }: ModelRoutingDialogProps)
 
   const targets = doc?.targets ?? [];
   const drifted = driftedTargets(targets);
+  const adoptableDrift = hasAdoptableDrift(targets);
   const validationBlocks = validation !== null && !validation.valid;
   const syncDisabledTitle = validationBlocks
     ? 'The policy has validation errors; fix them before syncing'
     : undefined;
   const canMutate = !!doc?.policy_exists && !doc?.policy_error && !busy && !validationBlocks;
+  // A skipped result names force as the only way through (a foreign file
+  // at the target path, or recorded drift); without this the engine copy
+  // points at a flag no button can set.
+  const skippedResults = (results ?? []).filter(
+    (r) => r.action === 'skipped-foreign' || r.action === 'skipped-drift',
+  );
+  // Review's only verb on inadoptable drift is Overwrite, which an
+  // invalid policy cannot render; gate the entry rather than walking the
+  // user into a danger confirm that can only 409.
+  const reviewDisabledTitle =
+    validationBlocks && !adoptableDrift
+      ? 'Overwrite is the only resolution here, and it needs a valid policy'
+      : undefined;
+
+  const openReview = () => {
+    loadForcedPreview();
+    setReviewing(true);
+  };
+  const openOverwriteConfirm = () => {
+    // Reaching this from the results strip means no review is open and
+    // any earlier preview may predate the last mutation; reload. From
+    // inside Review the preview was fetched on open and stays current.
+    if (!reviewing) loadForcedPreview();
+    setConfirmOverwrite(true);
+  };
 
   // Escape and backdrop close the topmost layer only. Every stacked
   // layer (this modal, the drift review's modal, each confirm) registers
@@ -244,6 +288,22 @@ export function ModelRoutingDialog({ isOpen, onClose }: ModelRoutingDialogProps)
                 <SyncResultRow key={r.target} result={r} />
               ))}
             </ul>
+            {skippedResults.length > 0 && (
+              <div className="flex items-center gap-2 flex-wrap pt-1">
+                <span className="text-[11px] text-text-muted flex-1">
+                  Skipped targets are written only by overwriting: the engine never touches a
+                  drifted or foreign file on a plain sync.
+                </span>
+                <button
+                  onClick={openOverwriteConfirm}
+                  disabled={busy || validationBlocks}
+                  title={syncDisabledTitle}
+                  className="px-3 py-1.5 text-xs font-medium text-red-400 border border-red-400/25 rounded-lg hover:bg-red-400/10 transition-colors disabled:opacity-50 whitespace-nowrap"
+                >
+                  Overwrite with policy
+                </button>
+              </div>
+            )}
           </section>
         )}
       </div>
@@ -263,8 +323,9 @@ export function ModelRoutingDialog({ isOpen, onClose }: ModelRoutingDialogProps)
             <ActionButton
               label="Review drift"
               subtle
-              disabled={busy}
-              onClick={() => setReviewing(true)}
+              disabled={busy || !!reviewDisabledTitle}
+              title={reviewDisabledTitle}
+              onClick={openReview}
             />
           )}
           <span className="ml-auto" />
@@ -281,10 +342,13 @@ export function ModelRoutingDialog({ isOpen, onClose }: ModelRoutingDialogProps)
         <DriftReviewDialog
           drifted={drifted}
           busy={busy}
-          adoptable={hasAdoptableDrift(targets)}
+          adoptable={adoptableDrift}
+          diffs={forcedPreview === null ? null : forcedPreview.filter((r) => r.diff)}
+          diffError={forcedPreviewError}
+          overwriteDisabledTitle={syncDisabledTitle}
           onClose={closeTop}
           onAdopt={() => setConfirmAdopt(true)}
-          onOverwrite={() => setConfirmOverwrite(true)}
+          onOverwrite={openOverwriteConfirm}
         />
       )}
 
@@ -345,15 +409,7 @@ export function ModelRoutingDialog({ isOpen, onClose }: ModelRoutingDialogProps)
           void runSync({ force: true }, 'Sync results');
         }}
         title="Overwrite with policy"
-        message={
-          <>
-            <p>
-              Rewrite {drifted.length > 0 ? listTargets(drifted) : 'every declared target'} from the
-              policy, discarding the on-disk edits?
-            </p>
-            <p>The engine backs each file up before overwriting.</p>
-          </>
-        }
+        message={<OverwriteMessage preview={forcedPreview} />}
         confirmLabel="Overwrite"
         variant="danger"
       />
@@ -361,8 +417,37 @@ export function ModelRoutingDialog({ isOpen, onClose }: ModelRoutingDialogProps)
   );
 }
 
-function listTargets(rows: ModelsTargetStatus[]): string {
-  return rows.map((t) => modelsTargetLabel(t.target)).join(', ');
+/**
+ * The Overwrite confirm's body, naming the real blast radius: force is
+ * whole-policy, so the forced dry-run's would-update rows are the list,
+ * not the drifted rows that opened the review. Until the preview
+ * resolves the copy stays honest about scope rather than guessing.
+ */
+function OverwriteMessage({ preview }: { preview: ModelsSyncResult[] | null }) {
+  const wouldWrite = (preview ?? []).filter((r) => r.action === 'would-update');
+  const latches = wouldWrite.some((r) => r.target === 'litellm-fragment');
+  return (
+    <>
+      <p>
+        {wouldWrite.length > 0 ? (
+          <>
+            Rewrite {wouldWrite.map((r) => modelsTargetLabel(r.target)).join(', ')} from the
+            policy, discarding what is on disk?
+          </>
+        ) : (
+          <>
+            Rewrite every target that no longer matches the policy, discarding what is on disk?
+            Overwrite is whole-policy: stale and never-synced targets are written too, not only
+            the drifted ones.
+          </>
+        )}
+      </p>
+      <p>
+        The engine backs each file up before overwriting.
+        {latches && ' Rewriting the fragment latches restart-pending until you restart LiteLLM.'}
+      </p>
+    </>
+  );
 }
 
 /**
@@ -485,6 +570,11 @@ function TargetRow({
           {t.path}
         </span>
       )}
+      {t.synced_at && (
+        <span className="text-[11px] text-text-muted/70">
+          synced {formatStampOrUnknown(t.synced_at)}
+        </span>
+      )}
       {t.detail && <span className="text-[11px] text-text-muted/80">{t.detail}</span>}
     </li>
   );
@@ -535,12 +625,17 @@ function SyncResultRow({ result: r }: { result: ModelsSyncResult }) {
  * resolutions. Adopt is offered only when a drifted row is one Adopt can
  * record (fragment or OpenCode); include-line drift resolves only via
  * Overwrite, and the dialog says so in prose rather than hiding the
- * reason in a disabled button.
+ * reason in a disabled button. The diffs come from the parent's forced
+ * dry-run (drifted targets skip a plain dry-run), which the Overwrite
+ * confirm also reads to name its blast radius.
  */
 function DriftReviewDialog({
   drifted,
   busy,
   adoptable,
+  diffs,
+  diffError,
+  overwriteDisabledTitle,
   onClose,
   onAdopt,
   onOverwrite,
@@ -548,29 +643,15 @@ function DriftReviewDialog({
   drifted: ModelsTargetStatus[];
   busy: boolean;
   adoptable: boolean;
+  /** Forced dry-run rows that carry a diff; null while loading. */
+  diffs: ModelsSyncResult[] | null;
+  diffError: string | null;
+  /** Set while validation errors block a forced sync from rendering. */
+  overwriteDisabledTitle?: string;
   onClose: () => void;
   onAdopt: () => void;
   onOverwrite: () => void;
 }) {
-  const [diffs, setDiffs] = useState<ModelsSyncResult[] | null>(null);
-  const [diffError, setDiffError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    // Drifted targets skip a plain dry-run, so the review previews the
-    // forced pass: exactly what Overwrite with policy would write.
-    syncModels({ dry_run: true, diff: true, force: true })
-      .then((res) => {
-        if (!cancelled) setDiffs(res.filter((r) => r.diff));
-      })
-      .catch((err) => {
-        if (!cancelled) setDiffError(err instanceof Error ? err.message : 'Preview failed');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const includeOnly = !adoptable;
   return (
     <Modal isOpen onClose={onClose} title="Review drift" size="wide">
@@ -616,7 +697,8 @@ function DriftReviewDialog({
         )}
         <button
           onClick={onOverwrite}
-          disabled={busy}
+          disabled={busy || !!overwriteDisabledTitle}
+          title={overwriteDisabledTitle}
           className="px-3 py-1.5 text-xs font-medium text-red-400 border border-red-400/25 rounded-lg hover:bg-red-400/10 transition-colors disabled:opacity-50"
         >
           Overwrite with policy
