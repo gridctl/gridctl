@@ -200,6 +200,16 @@ describe('sortClients', () => {
 });
 
 describe('ConnectionsWorkspace hub', () => {
+  it('header Model routing action opens the dialog', async () => {
+    renderHub();
+    fireEvent.click(await screen.findByRole('button', { name: 'Model routing' }));
+    expect(await screen.findByRole('heading', { name: 'Model routing' })).toBeInTheDocument();
+    expect(fetchModelsStatus).toHaveBeenCalled();
+    // The beforeEach doc has no policy: the dialog opens on the init
+    // empty state rather than an error.
+    expect(await screen.findByText('No model routing policy yet')).toBeInTheDocument();
+  });
+
   it('renders the rail and a detail pane with the two axes separately labeled', async () => {
     renderHub();
     // Default selection prefers the attention client (claude has a
