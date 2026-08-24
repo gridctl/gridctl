@@ -344,11 +344,30 @@ Tool calls fail with `connection lost` after working initially.
 
 2. If OOMKilled, increase the container's memory limit.
 
-3. Use hot reload to restart the affected server:
+3. Wait one health-check cycle (30 seconds by default): the gateway's health monitor detects the lost connection and reconnects automatically with exponential backoff. If the server needs a manual kick, restart just that server:
    ```bash
-   # Touch the config to trigger reload
-   gridctl reload
+   curl -X POST http://localhost:8180/api/mcp-servers/<name>/restart
    ```
+   (`gridctl reload` only applies stack.yaml changes; with an unchanged file it is a no-op.)
+
+### Server was not running when gridctl started
+
+**Symptoms:**
+
+`gridctl status` shows a server as failed with `ready timeout after 30s`, and its tools are missing from the gateway, even though the server is running now. Typical with external URL servers started by hand after `gridctl apply`, or after a reboot where gridctl came up before its backends.
+
+**Causes:**
+
+The server was unreachable during gridctl's registration attempt. Registration is retried automatically: the failed server enters a retry loop driven by the health monitor, with exponential backoff capped at 30 seconds, and the status message shows when the next attempt is due (`retrying in 8s`).
+
+**Resolution:**
+
+1. Start the backend server. The gateway registers it automatically within one retry cycle; no gridctl restart and no config change is needed.
+2. To force an attempt immediately, use the Restart button in the web UI or:
+   ```bash
+   curl -X POST http://localhost:8180/api/mcp-servers/<name>/restart
+   ```
+3. Servers whose failure cannot heal on its own are not retried: authorization failures (for a broker-managed OAuth server, fix with `gridctl auth login <name>`; for a raw 401 from a server with no `auth:` block, add `auth: {type: oauth}` or the correct static credentials to that server in stack.yaml), configuration errors (fix stack.yaml and reload), and container HTTP/SSE servers whose container was removed after the readiness timeout (fix with `gridctl reload` after a config change, or re-apply).
 
 ### Client shows "gridctl-gateway" instead of my config entry name
 
@@ -411,8 +430,8 @@ Some servers reload successfully while others fail. The reload result shows erro
 
 **Resolution:**
 
-1. Fix the specific server's configuration in `stack.yaml`.
-2. Run `gridctl reload` again - only the failed changes will be retried.
+1. If the failure was transient (the backend was briefly unreachable), no action is needed: failed registrations are retried automatically by the health monitor and the server joins once it is reachable.
+2. If the failure is a configuration problem, fix the server's configuration in `stack.yaml` and run `gridctl reload`. Reload is diff-driven, so re-running it against an unchanged file is a no-op.
 3. Servers that reloaded successfully are unaffected.
 
 ---
