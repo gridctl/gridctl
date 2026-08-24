@@ -124,7 +124,7 @@ export function ConnectionsRail({
           title={
             attentionOnly
               ? 'Show all clients'
-              : 'Show only clients with wiring, context, or agent drift'
+              : 'Show only clients with wiring, context, agent, or model-routing drift'
           }
           className={cn(
             'h-6 px-2 text-[10px] font-medium rounded border transition-colors flex items-center gap-1 flex-shrink-0',
@@ -210,7 +210,7 @@ export function ConnectionsRail({
         {attentionOnly && clients.length === 0 && (
           <div className="px-3 py-6 text-center space-y-2">
             <CheckCircle2 size={16} className="mx-auto text-status-running/70" />
-            <p className="text-[11px] text-text-muted">All clear: no wiring, context, or agent drift.</p>
+            <p className="text-[11px] text-text-muted">All clear: no wiring, context, agent, or model-routing drift.</p>
             <button onClick={onToggleAttention} className="text-[11px] text-primary hover:underline">
               Show all {totalCount} {totalCount === 1 ? 'client' : 'clients'}
             </button>
