@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -690,8 +691,8 @@ func TestServerRegistrar_RegisterOne_External(t *testing.T) {
 // without spinning up a real Docker daemon.
 type recordingRuntime struct {
 	runtime.WorkloadRuntime // embed for unused methods; nil-panic signals unexpected calls
-	stopCalls   []runtime.WorkloadID
-	removeCalls []runtime.WorkloadID
+	stopCalls               []runtime.WorkloadID
+	removeCalls             []runtime.WorkloadID
 }
 
 func (r *recordingRuntime) Stop(_ context.Context, id runtime.WorkloadID) error {
@@ -822,5 +823,35 @@ func TestServerRegistrar_BuildConfigFromMCPServer_ContainerHTTP_NoCleanupWithout
 	cfg := r.buildConfigFromMCPServer(server, 9201, "", "/path/stack.yaml")
 	if cfg.CleanupOnReadyFailure != nil {
 		t.Error("cleanup closure must be nil without a workload id")
+	}
+}
+
+func TestServerRegistrar_RegisterAll_FailedServerStaysRetryable(t *testing.T) {
+	gw := mcp.NewGateway()
+	r := NewServerRegistrar(gw, false)
+	r.SetLogger(slog.Default())
+
+	stack := &config.Stack{
+		MCPServers: []config.MCPServer{
+			{Name: "proc", Command: []string{"/nonexistent-gridctl-test-binary"}},
+		},
+	}
+	result := &runtime.UpResult{
+		MCPServers: []runtime.MCPServerResult{
+			{Name: "proc", LocalProcess: true, Command: []string{"/nonexistent-gridctl-test-binary"}},
+		},
+	}
+
+	// Live context: the failure is a real exec not-found, which is retryable.
+	r.RegisterAll(context.Background(), result, stack, "/path/stack.yaml")
+
+	// The failed server must stay retryable at the RegisterAll boundary: a
+	// manual restart attempts registration now instead of reporting unknown.
+	err := gw.RestartMCPServer(context.Background(), "proc")
+	if err == nil {
+		t.Fatal("expected restart to fail for a nonexistent binary")
+	}
+	if strings.Contains(err.Error(), "unknown MCP server") {
+		t.Fatalf("a failed registration must stay retryable, got: %v", err)
 	}
 }

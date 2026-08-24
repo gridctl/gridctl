@@ -122,6 +122,45 @@ type HealthStatus struct {
 // DefaultHealthCheckInterval is the default interval between health checks.
 const DefaultHealthCheckInterval = 30 * time.Second
 
+// pendingProbeTimeout bounds the reachability probe that runs before a
+// pending-registration retry of an HTTP/SSE server. The probe is a single
+// Ping on its own context, so a down endpoint costs about this long per
+// retry cycle instead of a full ready window.
+const pendingProbeTimeout = 2 * time.Second
+
+// errStaleRegistration aborts a pending-registration retry whose per-name
+// generation no longer matches: the server was unregistered or explicitly
+// re-registered while the attempt was in flight, and committing would
+// resurrect or clobber it.
+var errStaleRegistration = errors.New("stale registration attempt")
+
+// pendingRegistration remembers a server whose registration failed with a
+// retryable error so the health-monitor cadence can re-attempt it. The full
+// per-replica config slice is stored because serverMeta keeps only the
+// canonical cfgs[0] and replicas differ in runtime handles.
+type pendingRegistration struct {
+	policy   string
+	cfgs     []MCPServerConfig
+	backoff  *backoffState
+	inFlight bool
+}
+
+// terminalRegistrationError marks a registration failure that fails
+// identically on every attempt (a config error, not a network condition),
+// so the pending-retry loop must not pick it up. Error text is unchanged;
+// only errors.As classification is added.
+type terminalRegistrationError struct{ err error }
+
+func (e *terminalRegistrationError) Error() string { return e.err.Error() }
+func (e *terminalRegistrationError) Unwrap() error { return e.err }
+
+func terminalRegistration(err error) error { return &terminalRegistrationError{err: err} }
+
+func isTerminalRegistrationError(err error) bool {
+	var t *terminalRegistrationError
+	return errors.As(err, &t)
+}
+
 // Gateway aggregates multiple MCP servers into a single endpoint.
 type Gateway struct {
 	router    *Router
@@ -142,6 +181,19 @@ type Gateway struct {
 
 	regFailMu            sync.RWMutex
 	registrationFailures map[string]string // name -> error message for servers that failed to register
+
+	// pendingMu guards the never-connected retry bookkeeping: pending holds
+	// servers whose registration failed retryably (they have no serverMeta
+	// and no router entry, so the health monitor cannot see them), regGen is
+	// the per-name registration generation that in-flight retries must match
+	// to commit, and cleanupRan flags names whose ready-failure cleanup
+	// removed the backing container (retrying such a config can never
+	// converge). Ordering: pendingMu may be held while taking mu or router
+	// locks (the commit path), never the reverse.
+	pendingMu  sync.Mutex
+	pending    map[string]*pendingRegistration
+	regGen     map[string]uint64
+	cleanupRan map[string]bool
 
 	authStateMu sync.RWMutex
 	authState   map[string]ServerAuthState // name -> downstream authorization state
@@ -209,6 +261,9 @@ func NewGateway() *Gateway {
 		autoscalers:          make(map[string]*Autoscaler),
 		registrationFailures: make(map[string]string),
 		authState:            make(map[string]ServerAuthState),
+		pending:              make(map[string]*pendingRegistration),
+		regGen:               make(map[string]uint64),
+		cleanupRan:           make(map[string]bool),
 	}
 }
 
@@ -615,8 +670,13 @@ func (g *Gateway) StartCleanup(ctx context.Context) {
 
 // StartHealthMonitor starts periodic health checking for all registered MCP servers.
 // It runs alongside StartCleanup and stops when the gateway context is cancelled.
+// Pending registrations (servers that failed to register with a retryable
+// error) are scanned once immediately — RegisterAll completes before the
+// monitor starts, so a server that came up during the initial ready wait
+// does not sit out a full ticker interval — and then on every tick.
 func (g *Gateway) StartHealthMonitor(ctx context.Context, interval time.Duration) {
 	go func() {
+		g.retryPendingRegistrations(ctx)
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -625,9 +685,195 @@ func (g *Gateway) StartHealthMonitor(ctx context.Context, interval time.Duration
 				return
 			case <-ticker.C:
 				g.checkHealth(ctx)
+				g.retryPendingRegistrations(ctx)
 			}
 		}
 	}()
+}
+
+// retryPendingRegistrations launches one attempt goroutine per pending
+// registration that is not already in flight and whose backoff window has
+// elapsed. Attempts run detached so a slow connect cannot starve health
+// checks; ctx is the gateway run context (never a per-attempt timeout —
+// a deadline here would flow into exec.CommandContext and kill a
+// successfully started process/SSH child; see probePendingEndpoint for the
+// bounded reachability check).
+func (g *Gateway) retryPendingRegistrations(ctx context.Context) {
+	if ctx.Err() != nil {
+		return
+	}
+	type job struct {
+		name   string
+		policy string
+		cfgs   []MCPServerConfig
+		gen    uint64
+	}
+	now := time.Now()
+	var jobs []job
+	g.pendingMu.Lock()
+	for name, pe := range g.pending {
+		if pe.inFlight || !pe.backoff.ShouldTry(now) {
+			continue
+		}
+		pe.inFlight = true
+		jobs = append(jobs, job{name: name, policy: pe.policy, cfgs: pe.cfgs, gen: g.regGen[name]})
+	}
+	g.pendingMu.Unlock()
+	for _, j := range jobs {
+		go g.attemptPendingRegistration(ctx, j.name, j.policy, j.cfgs, j.gen)
+	}
+}
+
+// attemptPendingRegistration runs one retry for a pending server: a short
+// reachability probe (HTTP/SSE only), then a full registration attempt
+// guarded by the captured generation so it can never resurrect a server
+// that was unregistered or replaced while the attempt was in flight.
+func (g *Gateway) attemptPendingRegistration(ctx context.Context, name, policy string, cfgs []MCPServerConfig, gen uint64) {
+	defer func() {
+		g.pendingMu.Lock()
+		if pe := g.pending[name]; pe != nil {
+			pe.inFlight = false
+		}
+		g.pendingMu.Unlock()
+	}()
+
+	// A pending stdio container (typically a failed docker restart) can
+	// only converge if its container is running again; connecting to a
+	// stopped container fails forever. Restart it first, best-effort,
+	// gated by the same backoff as the connect attempt.
+	for i := range cfgs {
+		c := cfgs[i]
+		if c.Transport != TransportStdio || c.External || c.LocalProcess || c.SSH || c.OpenAPI ||
+			c.ContainerID == "" || g.dockerCli == nil {
+			continue
+		}
+		timeout := 10
+		if err := g.dockerCli.ContainerRestart(ctx, c.ContainerID, container.StopOptions{Timeout: &timeout}); err != nil {
+			g.advancePendingBackoff(name, err)
+			return
+		}
+	}
+
+	if err := g.probePendingEndpoint(ctx, cfgs[0]); err != nil {
+		if isAuthError(err) {
+			// The endpoint is reachable but wants authorization now: stop
+			// retrying (the OAuth flow owns needs-auth recovery) and record
+			// the state so status stays truthful.
+			g.dropPending(name)
+			g.RecordRegistrationFailure(name, err)
+			return
+		}
+		g.advancePendingBackoff(name, err)
+		return
+	}
+
+	err := g.registerReplicaSet(ctx, name, policy, cfgs, gen)
+	if err != nil {
+		if errors.Is(err, errStaleRegistration) {
+			return
+		}
+		g.advancePendingBackoff(name, err)
+		g.RecordRegistrationFailure(name, err)
+		return
+	}
+	g.logger.Info("MCP server registered after retry", "name", name)
+}
+
+// probePendingEndpoint pings an HTTP/SSE endpoint once with a short deadline
+// before a full retry attempt. Non-HTTP transports skip the probe: their
+// registration attempts fail fast on their own. The deadline lives on a
+// dedicated probe context that never reaches buildAgentClient, so it cannot
+// kill a spawned child process.
+func (g *Gateway) probePendingEndpoint(ctx context.Context, cfg MCPServerConfig) error {
+	if cfg.OpenAPI || cfg.LocalProcess || cfg.SSH || cfg.Transport == TransportStdio {
+		return nil
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, pendingProbeTimeout)
+	defer cancel()
+	probe := NewClient(cfg.Name, cfg.Endpoint)
+	probe.SetLogger(g.logger.With("server", cfg.Name))
+	if cfg.Transport == TransportSSE && (cfg.ProtocolGeneration == "" || cfg.ProtocolGeneration == GenerationAuto) {
+		probe.SetGenerationPin(GenerationHandshake)
+	}
+	if cfg.HeaderSource != nil {
+		probe.SetHeaderSource(cfg.HeaderSource)
+	} else if hs := StaticHeaderSourceFor(cfg.Auth); hs != nil {
+		probe.SetHeaderSource(hs)
+	}
+	defer closeAgentClient(probe)
+	return probe.Ping(probeCtx)
+}
+
+// advancePendingBackoff records a failed retry against the entry's backoff.
+func (g *Gateway) advancePendingBackoff(name string, err error) {
+	g.pendingMu.Lock()
+	pe := g.pending[name]
+	var delay time.Duration
+	if pe != nil {
+		delay = pe.backoff.Advance(time.Now())
+	}
+	g.pendingMu.Unlock()
+	if pe != nil {
+		g.logger.Debug("registration retry failed", "name", name, "error", err, "next_retry_in", delay.Round(time.Millisecond))
+	}
+}
+
+// dropPending removes the pending entry for name without touching the
+// registration generation.
+func (g *Gateway) dropPending(name string) {
+	g.pendingMu.Lock()
+	delete(g.pending, name)
+	g.pendingMu.Unlock()
+}
+
+// pendingSnapshot returns a copy of the pending entry's policy and configs,
+// and whether one exists. The entry itself is left in place; an explicit
+// registration for the name deletes it and bumps the generation.
+func (g *Gateway) pendingSnapshot(name string) (string, []MCPServerConfig, bool) {
+	g.pendingMu.Lock()
+	defer g.pendingMu.Unlock()
+	pe := g.pending[name]
+	if pe == nil {
+		return "", nil, false
+	}
+	cfgs := make([]MCPServerConfig, len(pe.cfgs))
+	copy(cfgs, pe.cfgs)
+	return pe.policy, cfgs, true
+}
+
+// notePendingRegistrationFailure records a failed registration for retry.
+// Auth failures are excluded (the OAuth OnAuthorized hook re-drives those,
+// and retrying without a grant is futile), terminal config errors are
+// excluded (they fail identically every time), caller cancellation does
+// not create an entry (an aborted apply or shutdown is not a server-down
+// condition) but also does not remove one, and a name whose ready-failure
+// cleanup removed the backing container is excluded (the stored endpoint
+// can never converge). An existing entry keeps its backoff state and takes
+// on the caller's configs, so retries always attempt the latest shape.
+func (g *Gateway) notePendingRegistrationFailure(name, policy string, cfgs []MCPServerConfig, err error) {
+	g.pendingMu.Lock()
+	defer g.pendingMu.Unlock()
+	if g.cleanupRan[name] {
+		delete(g.cleanupRan, name)
+		delete(g.pending, name)
+		return
+	}
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return
+	}
+	if isAuthError(err) || isTerminalRegistrationError(err) {
+		// These fail the same way on every attempt; an entry left over from
+		// an earlier retryable failure must not keep looping on them.
+		delete(g.pending, name)
+		return
+	}
+	if pe, exists := g.pending[name]; exists {
+		pe.policy = policy
+		pe.cfgs = cfgs
+		return
+	}
+	g.pending[name] = &pendingRegistration{policy: policy, cfgs: cfgs, backoff: &backoffState{}}
+	g.logger.Info("MCP server registration will be retried", "name", name)
 }
 
 // checkHealth pings every replica of every registered MCP server and updates
@@ -1072,8 +1318,28 @@ func (g *Gateway) StartAutoscaler(ctx context.Context, interval time.Duration) {
 // error when every replica failed, or when the single-replica case fails
 // (in which case the caller sees the same error shape as before).
 func (g *Gateway) RegisterMCPReplicaSet(ctx context.Context, name, policy string, cfgs []MCPServerConfig) error {
+	// An explicit registration takes ownership of the name: bump the
+	// generation so any in-flight pending retry aborts before committing.
+	// An existing pending entry is deliberately left in place — it is
+	// deleted on successful commit, and kept (with refreshed configs) on
+	// failure so a cancelled caller (e.g. a restart whose request context
+	// died mid-wait) does not permanently exit the retry loop.
+	g.pendingMu.Lock()
+	g.regGen[name]++
+	g.pendingMu.Unlock()
+	return g.registerReplicaSet(ctx, name, policy, cfgs, 0)
+}
+
+// registerReplicaSet is the shared registration body. gen == 0 marks an
+// explicit registration; a non-zero gen marks a pending-registration retry,
+// which only commits while the per-name generation still matches the value
+// captured at launch (errStaleRegistration otherwise).
+func (g *Gateway) registerReplicaSet(ctx context.Context, name, policy string, cfgs []MCPServerConfig, gen uint64) error {
 	if len(cfgs) == 0 {
 		return fmt.Errorf("register %s: no replica configs", name)
+	}
+	if gen != 0 && !g.registrationGenIs(name, gen) {
+		return errStaleRegistration
 	}
 	start := time.Now()
 	clients := make([]AgentClient, 0, len(cfgs))
@@ -1088,13 +1354,31 @@ func (g *Gateway) RegisterMCPReplicaSet(ctx context.Context, name, policy string
 				g.logger.Warn("replica registration failed; skipping", "name", name, "replica", i, "error", err)
 				continue
 			}
+			g.notePendingRegistrationFailure(name, policy, cfgs, err)
 			return err
 		}
 		clients = append(clients, client)
 	}
 	if len(clients) == 0 {
-		return fmt.Errorf("register %s: all %d replicas failed: %w", name, len(cfgs), firstErr)
+		err := fmt.Errorf("register %s: all %d replicas failed: %w", name, len(cfgs), firstErr)
+		g.notePendingRegistrationFailure(name, policy, cfgs, err)
+		return err
 	}
+
+	// Commit. For retry attempts the generation check must be atomic with
+	// the meta/router writes, so the whole section runs under pendingMu: a
+	// concurrent unregister or explicit re-registration bumps the generation
+	// first and the stale attempt closes its clients instead of committing.
+	g.pendingMu.Lock()
+	if gen != 0 && g.regGen[name] != gen {
+		g.pendingMu.Unlock()
+		for _, c := range clients {
+			closeAgentClient(c)
+		}
+		return errStaleRegistration
+	}
+	delete(g.pending, name)
+	delete(g.cleanupRan, name)
 
 	// Store metadata before pin check so pinningEnabledForServer can read PinSchemas.
 	// For a replica set, we store cfgs[0] as canonical — all replicas share the
@@ -1118,11 +1402,42 @@ func (g *Gateway) RegisterMCPReplicaSet(ctx context.Context, name, policy string
 		}
 	}
 
+	// A concurrent commit for the same name can land between a caller's
+	// decision to register and this point (a manual restart of a pending
+	// server racing the background retry). AddReplicaSet replaces silently,
+	// so collect the replaced set's clients and close them instead of
+	// leaking them — for process transports an orphaned set means an
+	// orphaned child. Closing happens after the unlock: a process close can
+	// block for seconds and must not extend the pendingMu critical section.
+	var replaced []*Replica
+	if old := g.router.GetReplicaSet(name); old != nil {
+		replaced = old.Replicas()
+	}
 	g.router.AddReplicaSet(NewReplicaSet(name, policy, clients))
 	g.router.RefreshTools()
+	g.pendingMu.Unlock()
+	for _, r := range replaced {
+		closeAgentClient(r.Client())
+	}
+
+	// Success clears failure and stale needs-auth state gateway-side: the
+	// controller's recordOutcome only covers its own callers, and the retry
+	// path has no controller in the loop.
+	g.ClearRegistrationFailure(name)
+	if st, ok := g.ServerAuthState(name); ok && st.Status == AuthStatusNeedsAuth {
+		g.ClearServerAuthState(name)
+	}
 
 	g.logger.Info("registered MCP server", "name", name, "transport", cfgs[0].Transport, "replicas", len(clients), "tools", len(clients[0].Tools()), "duration", time.Since(start))
 	return nil
+}
+
+// registrationGenIs reports whether the per-name registration generation
+// currently equals gen.
+func (g *Gateway) registrationGenIs(name string, gen uint64) bool {
+	g.pendingMu.Lock()
+	defer g.pendingMu.Unlock()
+	return g.regGen[name] == gen
 }
 
 // BuildAgentClient creates, connects, and initializes an AgentClient from a
@@ -1145,11 +1460,11 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (Ag
 	// Handle OpenAPI servers
 	if cfg.OpenAPI {
 		if cfg.OpenAPIConfig == nil {
-			return nil, fmt.Errorf("OpenAPI config required for OpenAPI server %s", cfg.Name)
+			return nil, terminalRegistration(fmt.Errorf("OpenAPI config required for OpenAPI server %s", cfg.Name))
 		}
 		openAPIClient, err := NewOpenAPIClient(cfg.Name, cfg.OpenAPIConfig)
 		if err != nil {
-			return nil, fmt.Errorf("creating OpenAPI client %s: %w", cfg.Name, err)
+			return nil, terminalRegistration(fmt.Errorf("creating OpenAPI client %s: %w", cfg.Name, err))
 		}
 		openAPIClient.SetLogger(clientLogger)
 		openAPIClient.SetPingTimeout(cfg.PingTimeout)
@@ -1186,7 +1501,7 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (Ag
 		switch cfg.Transport {
 		case TransportStdio:
 			if g.dockerCli == nil {
-				return nil, fmt.Errorf("docker client not set for stdio transport")
+				return nil, terminalRegistration(fmt.Errorf("docker client not set for stdio transport"))
 			}
 			stdioClient := NewStdioClient(cfg.Name, cfg.ContainerID, g.dockerCli)
 			stdioClient.SetLogger(clientLogger)
@@ -1243,7 +1558,7 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (Ag
 			}
 			agentClient = httpClient
 		default:
-			return nil, fmt.Errorf("unknown transport: %s", cfg.Transport)
+			return nil, terminalRegistration(fmt.Errorf("unknown transport: %s", cfg.Transport))
 		}
 	}
 
@@ -1294,6 +1609,17 @@ func (g *Gateway) SetServerMeta(cfg MCPServerConfig) {
 
 // UnregisterMCPServer removes an MCP server from the gateway.
 func (g *Gateway) UnregisterMCPServer(name string) {
+	// Take ownership before any teardown: bump the generation and drop
+	// retry state under pendingMu first. In this order an in-flight retry
+	// commit either finishes before this blocks on pendingMu (and its
+	// registration is torn down just below), or observes the bumped
+	// generation and aborts. The reverse order lets a commit re-add the
+	// server between the teardown and the bump.
+	g.pendingMu.Lock()
+	g.regGen[name]++
+	delete(g.pending, name)
+	delete(g.cleanupRan, name)
+	g.pendingMu.Unlock()
 	g.router.RemoveClient(name)
 	g.router.RefreshTools()
 	g.unregisterAutoscaler(name)
@@ -1401,6 +1727,19 @@ func (g *Gateway) RestartMCPServer(ctx context.Context, name string) error {
 	cfg, ok := g.serverMeta[name]
 	g.mu.RUnlock()
 	if !ok {
+		// A server whose registration failed retryably has no serverMeta but
+		// does have a pending entry; a manual restart is an explicit "try
+		// now" and must not 404. Genuinely unknown names still error.
+		if policy, cfgs, isPending := g.pendingSnapshot(name); isPending {
+			g.logger.Info("restarting pending MCP server", "name", name)
+			if err := g.RegisterMCPReplicaSet(ctx, name, policy, cfgs); err != nil {
+				err = fmt.Errorf("re-registering MCP server %s: %w", name, err)
+				g.RecordRegistrationFailure(name, err)
+				return err
+			}
+			g.logger.Info("MCP server restarted", "name", name)
+			return nil
+		}
 		return fmt.Errorf("unknown MCP server: %s", name)
 	}
 
@@ -1425,8 +1764,10 @@ func (g *Gateway) RestartMCPServer(ctx context.Context, name string) error {
 			if err := g.dockerCli.ContainerRestart(ctx, cfg.ContainerID, container.StopOptions{Timeout: &timeout}); err != nil {
 				err = fmt.Errorf("restarting container for %s: %w", name, err)
 				// The server was already unregistered; record the failure so
-				// it does not silently vanish from status and the UI.
+				// it does not silently vanish from status and the UI, and
+				// keep it retryable so a failed restart is not permanent.
 				g.RecordRegistrationFailure(name, err)
+				g.notePendingRegistrationFailure(name, ReplicaPolicyRoundRobin, []MCPServerConfig{cfg}, err)
 				return err
 			}
 		}
@@ -1480,6 +1821,15 @@ func (g *Gateway) handleReadyFailure(ctx context.Context, cfg MCPServerConfig, w
 		g.logger.Warn("cleanup after ready timeout failed; orphan may remain",
 			"name", cfg.Name, "error", err)
 	}
+	// The backing container is gone (or at least stopped), so a pending
+	// retry of the stored endpoint can never converge. Flag the name so the
+	// failure site drops it from retry consideration. The flag, not the
+	// closure's presence, is the discriminator: every container HTTP/SSE
+	// config carries the closure, including initialize-after-ready failures
+	// where the container is still up and retry is worthwhile.
+	g.pendingMu.Lock()
+	g.cleanupRan[cfg.Name] = true
+	g.pendingMu.Unlock()
 }
 
 // effectiveReadyTimeout reports the duration waitForHTTPServer will actually use
@@ -2637,7 +2987,20 @@ func (g *Gateway) Status() []MCPServerStatus {
 
 	// Servers that failed registration entirely have no router client and no
 	// serverMeta entry; surface them as unhealthy rows so they are never a
-	// silent absence in the CLI or the UI.
+	// silent absence in the CLI or the UI. Names with a pending retry carry
+	// a short hint so the row reads as recovering, not terminal. The hint is
+	// snapshotted before regFailMu so the two locks never nest.
+	retryHints := make(map[string]string)
+	g.pendingMu.Lock()
+	for name, pe := range g.pending {
+		wait := time.Until(pe.backoff.NextAt()).Round(time.Second)
+		if wait <= 0 {
+			retryHints[name] = "; retrying now"
+		} else {
+			retryHints[name] = fmt.Sprintf("; retrying in %s", wait)
+		}
+	}
+	g.pendingMu.Unlock()
 	g.regFailMu.RLock()
 	for name, msg := range g.registrationFailures {
 		if seen[name] {
@@ -2649,7 +3012,7 @@ func (g *Gateway) Status() []MCPServerStatus {
 			Name:               name,
 			Tools:              []string{},
 			Healthy:            &failed,
-			HealthError:        msg,
+			HealthError:        msg + retryHints[name],
 			RegistrationFailed: true,
 		})
 	}
