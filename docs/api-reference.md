@@ -2831,6 +2831,85 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project
 
 ---
 
+### Model Routing
+
+The REST face of `gridctl models status|sync|adopt|ack-restart|validate` (Experimental, like the CLI surface), backed by the models projection kind in the unified project lockfile. Read and reconcile only: the policy document itself is edited via `gridctl models edit`, never over REST. Sync and adopt are whole-policy operations; the engine has no per-target selection.
+
+#### `GET /api/project/models/status`
+
+Returns the status document: policy identity, a read-only routing summary projected from the parsed policy, and per-target rows. `targets` is variable-length: the `litellm-fragment` row always exists (state `never-synced` with no policy); the `litellm-include` and `opencode` rows appear only when declared in the policy or recorded in the lockfile. `restart_pending` on the fragment row is an annotation, never a drift state: it does not affect `needs_attention`. An unparseable policy is reported in `policy_error` with a `200`, never a `500`.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project/models/status
+```
+
+**Response:**
+```json
+{
+  "policy_path": "/home/user/.gridctl/models/policy.yaml",
+  "policy_exists": true,
+  "needs_attention": false,
+  "routing": {
+    "entry_model": "smart-router",
+    "default_tier": "MEDIUM",
+    "backends": ["qwen-local", "claude-sonnet"],
+    "tiers": {"SIMPLE": "qwen-local", "MEDIUM": "qwen-local", "COMPLEX": "claude-sonnet", "REASONING": "claude-sonnet"}
+  },
+  "targets": [
+    {
+      "target": "litellm-fragment",
+      "client": "litellm",
+      "state": "in-sync",
+      "restart_pending": true,
+      "path": "/home/user/litellm/gridctl-models.yaml",
+      "synced_at": "2026-08-24T12:00:00Z"
+    }
+  ]
+}
+```
+
+#### `GET /api/project/models/validate`
+
+Validates the policy and returns findings (`severity`, `field`, `message`), errors first. No policy is `404`; a policy that does not parse is `400`.
+
+**Auth:** Yes
+
+**Response:** `{"policy_path": "...", "valid": true, "issues": []}`
+
+#### `POST /api/project/models/sync`
+
+Projects the policy into every declared target in one pass. All body fields optional: `dry_run` previews without writing, `diff` attaches unified diffs to `would-update` rows, and `force` overwrites drifted and foreign targets (with a backup). The handler validates first: an invalid policy returns `409` with the findings (`{"error": ..., "issues": [...]}`), never a `500`. Drifted targets without `force` report `skipped-drift` rows in a `200`; the engine fails closed.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project/models/sync \
+  -H "Content-Type: application/json" \
+  -d '{"dry_run": true, "diff": true}'
+```
+
+**Response:** per-target rows (`target`, `client`, `path`, `action`, optional `detail`, `backup_path`, `diff`, `error`). A fragment write carries the restart guidance in `detail`: LiteLLM reads config only at startup.
+
+#### `POST /api/project/models/adopt`
+
+Records the current on-disk state of every recorded target as gridctl-owned, clearing drift without touching any file. Covers the fragment and the OpenCode provider only; a removed include line is not adoptable and is restored only by a forced sync. Nothing synced yet is `409`.
+
+**Auth:** Yes
+
+**Response:** per-target rows (`target`, `client`, `path`, `action: "adopted"` or `"already-gone"`).
+
+#### `POST /api/project/models/ack-restart`
+
+Records that the user restarted LiteLLM since the last fragment write: the only way the restart-pending latch clears. gridctl never probes the process. Nothing synced yet is `409`.
+
+**Auth:** Yes
+
+**Response:** `{"acknowledged": true}`
+
+---
+
 ### Packs
 
 The REST face of `gridctl pack add|apply|status|remove`, plus a read-only preview for import flows. A pack is one git repository carrying a `gridctl-pack.yaml` manifest selecting skills, agents, context rule fragments, and optional gateway wiring (see the [Packs guide](packs.md)). Per-resource rows use the shared projection-state vocabulary (`in-sync`, `stale`, `drifted`, `target-missing`, `foreign`, `missing`), plus `unresolved` for manifest selections the repository does not ship.
