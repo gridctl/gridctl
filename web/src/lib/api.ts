@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, SessionsResponse, RegistryAgent, AgentProjectionStatus, AgentSyncResult, AgentUnsyncResult, AgentAdoptResult, SecurityFinding, WiringRow, WiringAdoptResult } from '../types';
+import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, SessionsResponse, RegistryAgent, AgentProjectionStatus, AgentSyncResult, AgentUnsyncResult, AgentAdoptResult, SecurityFinding, WiringRow, WiringAdoptResult, ModelsStatusDoc, ModelsSyncResult, ModelsAdoptResult, ModelsValidateDoc } from '../types';
 
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
@@ -975,6 +975,44 @@ export async function adoptWiringEntry(client: string, name?: string): Promise<W
     client,
     ...(name ? { name } : {}),
   });
+}
+
+// --- Model routing (REST face of `gridctl models`) ---
+
+export async function fetchModelsStatus(): Promise<ModelsStatusDoc> {
+  return fetchJSON<ModelsStatusDoc>('/api/project/models/status');
+}
+
+export async function fetchModelsValidation(): Promise<ModelsValidateDoc> {
+  return fetchJSON<ModelsValidateDoc>('/api/project/models/validate');
+}
+
+/**
+ * Sync is whole-policy: the engine walks every declared target in one
+ * pass, so there is no per-target variant. dry_run + diff is the
+ * preview; force overwrites drifted and foreign targets.
+ */
+export async function syncModels(body?: {
+  dry_run?: boolean;
+  diff?: boolean;
+  force?: boolean;
+}): Promise<ModelsSyncResult[]> {
+  return mutateJSON<ModelsSyncResult[]>('/api/project/models/sync', 'POST', body ?? {});
+}
+
+/**
+ * Adopt records every recorded target's on-disk bytes as gridctl-owned
+ * without touching any file. It covers the fragment and the OpenCode
+ * provider only; include-line drift resolves via force sync.
+ */
+export async function adoptModels(): Promise<ModelsAdoptResult[]> {
+  return mutateJSON<ModelsAdoptResult[]>('/api/project/models/adopt', 'POST', {});
+}
+
+/** Records that the user restarted LiteLLM themselves; gridctl never
+ *  probes the process. */
+export async function ackModelsRestart(): Promise<{ acknowledged: boolean }> {
+  return mutateJSON<{ acknowledged: boolean }>('/api/project/models/ack-restart', 'POST', {});
 }
 
 // --- Skill File Management ---
