@@ -737,6 +737,23 @@ func (g *Gateway) attemptPendingRegistration(ctx context.Context, name, policy s
 		g.pendingMu.Unlock()
 	}()
 
+	// A pending stdio container (typically a failed docker restart) can
+	// only converge if its container is running again; connecting to a
+	// stopped container fails forever. Restart it first, best-effort,
+	// gated by the same backoff as the connect attempt.
+	for i := range cfgs {
+		c := cfgs[i]
+		if c.Transport != TransportStdio || c.External || c.LocalProcess || c.SSH || c.OpenAPI ||
+			c.ContainerID == "" || g.dockerCli == nil {
+			continue
+		}
+		timeout := 10
+		if err := g.dockerCli.ContainerRestart(ctx, c.ContainerID, container.StopOptions{Timeout: &timeout}); err != nil {
+			g.advancePendingBackoff(name, err)
+			return
+		}
+	}
+
 	if err := g.probePendingEndpoint(ctx, cfgs[0]); err != nil {
 		if isAuthError(err) {
 			// The endpoint is reachable but wants authorization now: stop
@@ -827,11 +844,12 @@ func (g *Gateway) pendingSnapshot(name string) (string, []MCPServerConfig, bool)
 // notePendingRegistrationFailure records a failed registration for retry.
 // Auth failures are excluded (the OAuth OnAuthorized hook re-drives those,
 // and retrying without a grant is futile), terminal config errors are
-// excluded (they fail identically every time), caller cancellation is
-// excluded (an aborted apply or shutdown is not a server-down condition),
-// and a name whose ready-failure cleanup removed the backing container is
-// excluded (the stored endpoint can never converge). An existing entry
-// keeps its backoff state.
+// excluded (they fail identically every time), caller cancellation does
+// not create an entry (an aborted apply or shutdown is not a server-down
+// condition) but also does not remove one, and a name whose ready-failure
+// cleanup removed the backing container is excluded (the stored endpoint
+// can never converge). An existing entry keeps its backoff state and takes
+// on the caller's configs, so retries always attempt the latest shape.
 func (g *Gateway) notePendingRegistrationFailure(name, policy string, cfgs []MCPServerConfig, err error) {
 	g.pendingMu.Lock()
 	defer g.pendingMu.Unlock()
@@ -840,11 +858,18 @@ func (g *Gateway) notePendingRegistrationFailure(name, policy string, cfgs []MCP
 		delete(g.pending, name)
 		return
 	}
-	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
-		isAuthError(err) || isTerminalRegistrationError(err) {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return
 	}
-	if _, exists := g.pending[name]; exists {
+	if isAuthError(err) || isTerminalRegistrationError(err) {
+		// These fail the same way on every attempt; an entry left over from
+		// an earlier retryable failure must not keep looping on them.
+		delete(g.pending, name)
+		return
+	}
+	if pe, exists := g.pending[name]; exists {
+		pe.policy = policy
+		pe.cfgs = cfgs
 		return
 	}
 	g.pending[name] = &pendingRegistration{policy: policy, cfgs: cfgs, backoff: &backoffState{}}
@@ -1294,11 +1319,13 @@ func (g *Gateway) StartAutoscaler(ctx context.Context, interval time.Duration) {
 // (in which case the caller sees the same error shape as before).
 func (g *Gateway) RegisterMCPReplicaSet(ctx context.Context, name, policy string, cfgs []MCPServerConfig) error {
 	// An explicit registration takes ownership of the name: bump the
-	// generation so any in-flight pending retry aborts before committing,
-	// and drop the pending entry (a failure below re-records it fresh).
+	// generation so any in-flight pending retry aborts before committing.
+	// An existing pending entry is deliberately left in place — it is
+	// deleted on successful commit, and kept (with refreshed configs) on
+	// failure so a cancelled caller (e.g. a restart whose request context
+	// died mid-wait) does not permanently exit the retry loop.
 	g.pendingMu.Lock()
 	g.regGen[name]++
-	delete(g.pending, name)
 	g.pendingMu.Unlock()
 	return g.registerReplicaSet(ctx, name, policy, cfgs, 0)
 }
@@ -1378,16 +1405,20 @@ func (g *Gateway) registerReplicaSet(ctx context.Context, name, policy string, c
 	// A concurrent commit for the same name can land between a caller's
 	// decision to register and this point (a manual restart of a pending
 	// server racing the background retry). AddReplicaSet replaces silently,
-	// so close the replaced set's clients instead of leaking them — for
-	// process transports an orphaned set means an orphaned child.
+	// so collect the replaced set's clients and close them instead of
+	// leaking them — for process transports an orphaned set means an
+	// orphaned child. Closing happens after the unlock: a process close can
+	// block for seconds and must not extend the pendingMu critical section.
+	var replaced []*Replica
 	if old := g.router.GetReplicaSet(name); old != nil {
-		for _, r := range old.Replicas() {
-			closeAgentClient(r.Client())
-		}
+		replaced = old.Replicas()
 	}
 	g.router.AddReplicaSet(NewReplicaSet(name, policy, clients))
 	g.router.RefreshTools()
 	g.pendingMu.Unlock()
+	for _, r := range replaced {
+		closeAgentClient(r.Client())
+	}
 
 	// Success clears failure and stale needs-auth state gateway-side: the
 	// controller's recordOutcome only covers its own callers, and the retry
@@ -1578,19 +1609,23 @@ func (g *Gateway) SetServerMeta(cfg MCPServerConfig) {
 
 // UnregisterMCPServer removes an MCP server from the gateway.
 func (g *Gateway) UnregisterMCPServer(name string) {
+	// Take ownership before any teardown: bump the generation and drop
+	// retry state under pendingMu first. In this order an in-flight retry
+	// commit either finishes before this blocks on pendingMu (and its
+	// registration is torn down just below), or observes the bumped
+	// generation and aborts. The reverse order lets a commit re-add the
+	// server between the teardown and the bump.
+	g.pendingMu.Lock()
+	g.regGen[name]++
+	delete(g.pending, name)
+	delete(g.cleanupRan, name)
+	g.pendingMu.Unlock()
 	g.router.RemoveClient(name)
 	g.router.RefreshTools()
 	g.unregisterAutoscaler(name)
 	g.mu.Lock()
 	delete(g.serverMeta, name)
 	g.mu.Unlock()
-	// Drop pending-retry state and bump the generation so an in-flight
-	// retry attempt cannot resurrect the removed server after this returns.
-	g.pendingMu.Lock()
-	g.regGen[name]++
-	delete(g.pending, name)
-	delete(g.cleanupRan, name)
-	g.pendingMu.Unlock()
 	g.ClearRegistrationFailure(name)
 	// Auth state follows the same lifecycle as registration failures:
 	// without this, a removed server would keep a ghost needs-auth row in
