@@ -16,6 +16,7 @@ Plain tables: `status`, `search`, `skill list`, `pins list`, `optimize`, `teleme
 - [Packs](#packs)
 - [Wiring ownership (project)](#wiring-ownership-project)
 - [Global context](#global-context)
+- [Model routing (models)](#model-routing-models)
 - [Groups](#groups)
 - [Skills](#skills)
 - [Variables](#variables)
@@ -98,6 +99,22 @@ Install MCP servers by name instead of hand-writing `command`/`args`/`env`. The 
 | `gridctl ctx adopt <client> [fragment]` | Pull a client's hand edit back into the canon or a fragment. Multi-file clients require a fragment name; compiled targets refuse unless `--into <fragment>` captures the whole body. |
 | `gridctl ctx unsync [client...]` | Remove managed artifacts (`--all` for every synced client; `--format json` or `--json` for machine output). Dedicated files and multi-file fragment projections are deleted; shim lines and managed blocks are stripped; user-owned content is preserved. |
 | `gridctl ctx edit [fragment]` | Open the canonical file (or a fragment) in `$VISUAL`/`$EDITOR`, then print sync state. In fragments mode a name is required. |
+
+## Model routing (models)
+
+`gridctl models` manages one model routing policy document (`~/.gridctl/models/policy.yaml`) and projects it into a LiteLLM auto-router config fragment (plus the `include:` line referencing it from your own LiteLLM config) and an OpenCode provider stanza. gridctl never proxies inference: LiteLLM does the routing, gridctl only compiles and synchronizes configuration. Unrelated to the `model_preferences:` stack block (a per-skill model hint) and to the gateway's MCP tool router. See [`docs/model-policy.md`](./model-policy.md) for the policy schema, ownership model, and the restart contract. All `models` commands are pure file operations; no running gateway or LiteLLM is required. Experimental.
+
+| Command | Purpose |
+|---|---|
+| `gridctl models init` | Scaffold the policy. `--template local-only\|hybrid\|cloud-primary` picks a commented starter (default `hybrid`); `--from-litellm <path>` scaffolds from an existing LiteLLM config (its `model_list` names become backend references, never copied inventory, and the config becomes the sync target); `--force` overwrites. |
+| `gridctl models edit` | Open the policy in `$VISUAL`/`$EDITOR`, validate on close, and print next steps. |
+| `gridctl models validate` | Check the policy: schema errors, tiers referencing undeclared backends, literal secrets (rendered output carries only env references), and LiteLLM keys that must stay in the parent config (`router_settings`, `fallbacks`: an included fragment silently replaces them). Warns about backends missing from the parent's `model_list`. Exit `0` clean (warnings alone stay `0`), `1` errors, `2` error. `--format json` or `--json`. |
+| `gridctl models render` | Render one target to stdout (`-o <file>` to write): `--target litellm` (the router-only fragment) or `--target opencode` (the provider stanza). Never touches sync state; useful for piping to a remote host yourself. |
+| `gridctl models sync` | Render the fragment, keep the `include:` line in your LiteLLM config pointing at it (a single-line edit; the rest of the file survives byte-for-byte, comments included), and write the OpenCode provider stanza (an RFC 6902 patch; your own keys, including the top-level `model` pick, are never touched). `--dry-run` previews (`--diff` adds unified diffs), `--force` overwrites drifted and foreign targets, `--check` is CI mode (no writes, exit `1` when anything is out of sync), `--format json` or `--json`. Every write takes a timestamped backup. Sync output states plainly that LiteLLM reads config only at startup and prints the restart hint. |
+| `gridctl models status` | Per-target state (`in-sync`, `stale`, `drifted`, `target-missing`, `never-synced`) plus the `restart-pending` annotation on the fragment (set by sync, cleared only by `ack-restart`, never by another sync, and never affects the exit code). Exit `0` clean, `1` attention, `2` error. `--format json` or `--json`, `--plain`. |
+| `gridctl models ack-restart` | Record that LiteLLM was restarted since the last fragment write. gridctl never probes the process to guess. `--format json` or `--json`. |
+| `gridctl models adopt` | Accept hand edits of the fragment or the provider entry as the new owned state (clears drift without touching any file). `--format json` or `--json`. |
+| `gridctl models unsync` | Remove the provider stanza, the include line (restoring a promoted scalar `include:` if that is what existed), and the fragment; everything outside gridctl's own writes survives byte-for-byte. `--force` also removes hand-edited targets; exit `1` when anything was kept or failed. The policy document itself is never touched. `--format json` or `--json`. |
 
 ## Groups
 

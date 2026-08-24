@@ -1,0 +1,12 @@
+Policy: $HOME/.gridctl/models/policy.yaml
+
+TARGET  STATE  PATH
+litellm-fragment  drifted (restart-pending)  $HOME/.litellm/gridctl-models.yaml
+litellm-include  drifted  $HOME/.litellm/config.yaml
+opencode  stale  $HOME/.config/opencode/opencode.json
+
+litellm-fragment: the fragment was edited since gridctl wrote it
+
+litellm-include: the include line was removed from the parent config
+
+opencode: the policy changed since the last sync

@@ -1,0 +1,23 @@
+# Human-owned LiteLLM proxy config. Model inventory, retries, and
+# fallbacks live here and only here; gridctl adds one include: line
+# pointing at its rendered router fragment and touches nothing else.
+model_list:
+  - model_name: qwen-local
+    litellm_params:
+      model: openai/qwen3
+      api_base: http://127.0.0.1:8000/v1   # vLLM on the same box as LiteLLM
+      api_key: os.environ/DUMMY_KEY
+
+  - model_name: claude-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+router_settings:
+  num_retries: 2
+  timeout: 60
+  fallbacks:
+    - smart-router: [qwen-local]   # safety net if the router's pick fails
+
+general_settings:
+  master_key: os.environ/LITELLM_KEY

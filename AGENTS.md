@@ -70,6 +70,8 @@ pkg/agentsync/      Projects imported agents to clients: identity copy for Claud
                     OpenCode, Copilot, and Gemini CLI (`gridctl skill project --kind agent`).
 pkg/contexts/       Global agent-context projection (`gridctl ctx`): one canonical file, or opt-in rule fragments
                     with multi-file and compiled per-client assembly.
+pkg/modelsync/      Model routing policy projection (`gridctl models`): a router-only LiteLLM fragment plus its include:
+                    line in the parent config, and an OpenCode provider stanza, with drift and restart-pending state.
 pkg/wiring/         Key-level ownership of gateway entries merged into client MCP configs (`gridctl project`, link/unlink).
 pkg/pack/           gridctl-pack.yaml manifest schema; orchestration lives in cmd/gridctl/pack.go (`gridctl pack`).
 pkg/skillpins/      TOFU pins over skill documents (per-file digests, findings); the `gridctl skill pins` store.
@@ -96,9 +98,9 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
                     replicas, transports (incl. Podman), private git auth, optimize heuristics.
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
-                    portable-pack). examples/_mock-servers/ is the source for `task mock:servers`.
+                    portable-pack, model-policy). examples/_mock-servers/ is the source for `task mock:servers`.
 docs/               User-facing documentation (cli-reference, config-schema, api-reference, skills, packs, tools-workspace,
-                    global-context, scaling, usage-observability, installation, project-status, troubleshooting).
+                    global-context, model-policy, scaling, usage-observability, installation, project-status, troubleshooting).
 ```
 
 End-to-end request flow for an upstream MCP tool call: client → HTTP listener built by `pkg/controller` (gateway_builder.go) → `pkg/mcp` transport (SSE/streamable/stdio) → `mcp.Gateway` router → per-server `mcp.Client` (process/SSE/HTTP/OpenAPI) → response, with telemetry, tracing, schema pinning, and (optional) output-format conversion attached on the way back.

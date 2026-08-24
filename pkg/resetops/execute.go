@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/agentsync"
+	"github.com/gridctl/gridctl/pkg/modelsync"
 	"github.com/gridctl/gridctl/pkg/skillsync"
 	"github.com/gridctl/gridctl/pkg/state"
 )
@@ -179,6 +180,39 @@ func (m *Managers) Execute(ctx context.Context, opts Options, progress Progress)
 			}
 			for _, r := range results {
 				ok(Row{Kind: "context", Name: r.Slug, Client: r.Slug, Path: r.TargetPath, Action: r.Action})
+			}
+		}
+	}
+
+	if err := ctx.Err(); err != nil {
+		return doc, err
+	}
+	// Phase 3b: models projections through their manager. Its Unsync is
+	// drift-aware itself (kept-drift rows come back as results), so no
+	// pre-filter names are passed.
+	progress("models", nil)
+	if m.Models != nil && len(inv.modelRows) > 0 {
+		anySynced := false
+		for _, r := range inv.modelRows {
+			if modelSynced(r) {
+				anySynced = true
+				break
+			}
+		}
+		if anySynced {
+			results, err := m.Models.Unsync(ctx, modelsync.UnsyncOptions{Force: opts.Force})
+			if err != nil {
+				fail(Row{Kind: "models", Name: "models projections"}, err)
+			} else {
+				for _, r := range results {
+					row := Row{Kind: "models", Name: r.Target, Client: r.Client, Path: r.Path, Action: r.Action, Detail: r.Detail}
+					if r.Error != "" {
+						row.Action = ActionFailed
+						row.Error = r.Error
+						doc.Failed++
+					}
+					doc.Rows = append(doc.Rows, emit(row))
+				}
 			}
 		}
 	}

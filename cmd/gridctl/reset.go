@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/gridctl/gridctl/pkg/contexts"
+	"github.com/gridctl/gridctl/pkg/modelsync"
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/resetops"
 	"github.com/gridctl/gridctl/pkg/runtime"
@@ -35,8 +36,10 @@ var resetCmd = &cobra.Command{
 	Short: "Remove everything gridctl placed on this machine",
 	Long: `Removes every artifact gridctl created outside its own directory:
 projected skills, agents, and context rules in client directories,
-gateway entries gridctl owns inside shared client MCP configs, and the
-containers, networks, and daemons of every stack under the active home.
+model routing config (the LiteLLM fragment, its include line, and the
+OpenCode provider stanza), gateway entries gridctl owns inside shared
+client MCP configs, and the containers, networks, and daemons of every
+stack under the active home.
 
 The default tier PRESERVES ~/.gridctl (vault, oauth grants, pins,
 registry, cache, telemetry, logs). --purge deletes ~/.gridctl as well.
@@ -108,6 +111,12 @@ func newResetManagers(printer *output.Printer) (*resetops.Managers, func(), erro
 		m.Missing = append(m.Missing, "context")
 	} else {
 		m.Contexts = cm
+	}
+	if mm, err := modelsync.NewManager(); err != nil {
+		printer.Warn("models manager unavailable; models removal is skipped", "error", err)
+		m.Missing = append(m.Missing, "models")
+	} else {
+		m.Models = mm
 	}
 	if wm, err := wiring.NewManager(); err != nil {
 		printer.Warn("wiring manager unavailable; client-config removal is skipped", "error", err)
@@ -185,7 +194,8 @@ func runReset(ctx context.Context, format string) error {
 	phaseTitles := map[string]string{
 		"backup": "Writing backup", "daemons": "Stopping daemons",
 		"projections": "Removing skill and agent projections",
-		"contexts":    "Removing context rules", "wiring": "Removing gateway entries from client configs",
+		"contexts":    "Removing context rules", "models": "Removing models projections",
+		"wiring": "Removing gateway entries from client configs",
 		"containers": "Removing containers and networks", "state": "Removing state files",
 		"purge": "Deleting " + mgrs.GridctlDir(),
 	}

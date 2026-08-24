@@ -25,6 +25,7 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/agentsync"
 	"github.com/gridctl/gridctl/pkg/contexts"
+	"github.com/gridctl/gridctl/pkg/modelsync"
 	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/skillsync"
 	"github.com/gridctl/gridctl/pkg/state"
@@ -160,6 +161,11 @@ type contextSyncer interface {
 	Unsync(ctx context.Context, slug string) ([]contexts.UnsyncResult, error)
 }
 
+type modelsSyncer interface {
+	Statuses(ctx context.Context) ([]modelsync.Status, error)
+	Unsync(ctx context.Context, opts modelsync.UnsyncOptions) ([]modelsync.UnsyncResult, error)
+}
+
 type wireManager interface {
 	Statuses(ctx context.Context, opts wiring.StatusOptions) ([]wiring.Row, error)
 	UnlinkClient(ctx context.Context, prov provisioner.ClientProvisioner, configPath, name string, force, dryRun bool) (wiring.Result, error)
@@ -180,6 +186,7 @@ type Managers struct {
 	Skills   skillSyncer
 	Agents   agentSyncer
 	Contexts contextSyncer
+	Models   modelsSyncer
 	Wiring   wireManager
 	Runtime  Runtime
 	Home     string
@@ -198,11 +205,13 @@ type inventory struct {
 	skills       []skillsync.ProjectionStatus
 	agents       []agentsync.ProjectionStatus
 	contextRows  []contexts.ClientStatus
+	modelRows    []modelsync.Status
 	wiringRows   []wiring.Row
 	stacks       []state.DaemonState
 	keptSkills   map[string]bool
 	keptAgents   map[string]bool
 	keptContexts map[string]bool
+	keptModels   map[string]bool
 
 	// orphanPID is a foreground gridctl process on the default port with
 	// no state file (serve -f / apply -f), confirmed via /api/status to
@@ -220,6 +229,7 @@ func (m *Managers) collect(ctx context.Context, opts Options) (*inventory, error
 		keptSkills:   map[string]bool{},
 		keptAgents:   map[string]bool{},
 		keptContexts: map[string]bool{},
+		keptModels:   map[string]bool{},
 	}
 	var err error
 	if m.Skills != nil {
@@ -235,6 +245,11 @@ func (m *Managers) collect(ctx context.Context, opts Options) (*inventory, error
 	if m.Contexts != nil {
 		if inv.contextRows, err = m.Contexts.Statuses(ctx); err != nil {
 			return nil, fmt.Errorf("reading context state: %w", err)
+		}
+	}
+	if m.Models != nil {
+		if inv.modelRows, err = m.Models.Statuses(ctx); err != nil {
+			return nil, fmt.Errorf("reading models projections: %w", err)
 		}
 	}
 	if m.Wiring != nil {
@@ -264,6 +279,13 @@ func (m *Managers) collect(ctx context.Context, opts Options) (*inventory, error
 		for _, c := range inv.contextRows {
 			if c.State == contexts.StateDrifted {
 				inv.keptContexts[c.Slug] = true
+			}
+		}
+		// The models Unsync IS drift-aware (it keeps drifted targets on
+		// its own), but the kept set still feeds the preview rows.
+		for _, r := range inv.modelRows {
+			if r.State == modelsync.StateDrifted {
+				inv.keptModels[r.Target] = true
 			}
 		}
 	}
@@ -339,6 +361,19 @@ func (inv *inventory) rows(opts Options) ([]Row, []string) {
 		rows = append(rows, Row{Kind: "context", Name: c.Slug, Client: c.Slug, Path: c.TargetPath, Action: ActionWouldRemove})
 	}
 
+	for _, r := range inv.modelRows {
+		if !modelSynced(r) {
+			continue
+		}
+		if inv.keptModels[r.Target] {
+			rows = append(rows, Row{Kind: "models", Name: r.Target, Client: r.Client, Path: r.Path, Action: ActionKeptDrift,
+				Detail: modelsKeptDetail})
+			kept = append(kept, "models/"+r.Target)
+			continue
+		}
+		rows = append(rows, Row{Kind: "models", Name: r.Target, Client: r.Client, Path: r.Path, Action: ActionWouldRemove})
+	}
+
 	for _, w := range inv.wiringRows {
 		action, detail, _ := wiringDisposition(w.State, opts.Force)
 		if action == "" {
@@ -387,6 +422,19 @@ func (inv *inventory) rows(opts Options) ([]Row, []string) {
 // contextKeptDetail is the shared drift-kept wording for context rows,
 // used by both the preview and the executor so they cannot diverge.
 const contextKeptDetail = "the context artifact was hand-edited; kept (re-run with --force to remove)"
+
+// modelsKeptDetail is the shared drift-kept wording for models rows.
+const modelsKeptDetail = "the models artifact was hand-edited; kept (re-run with --force to remove)"
+
+// modelSynced reports whether a models status row has anything on disk
+// that reset would touch.
+func modelSynced(r modelsync.Status) bool {
+	switch r.State {
+	case modelsync.StateNeverSynced, modelsync.StateTargetMissing:
+		return false
+	}
+	return r.Path != ""
+}
 
 // wiringDisposition classifies one wiring record for both the preview
 // and the executor: the row action (preview form), the shared detail

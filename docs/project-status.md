@@ -7,7 +7,7 @@ Gridctl is pre-1.0 software. This page tracks the stability tier of each feature
 - **Stable** - production-ready. Backward-compatible changes only within the `0.x` line; breaking changes ride a clearly-labeled release.
 - **Experimental** - usable but the API, CLI surface, or output shape may change without notice. Pin a version if you build automation on top of it.
 
-Every shipped feature surface is Stable as of the release candidate. The Experimental tier is retained for features that ship dark behind the `experimental:` feature-flag registry (see [Config Schema](config-schema.md#experimental-feature-flags)); no surface currently sits in it.
+Nearly every shipped feature surface is Stable as of the release candidate; the table below marks the exceptions. The Experimental tier also covers features that ship dark behind the `experimental:` feature-flag registry (see [Config Schema](config-schema.md#experimental-feature-flags)), though a surface can be Experimental for stability reasons without being flag-gated (the model routing policy is: its CLI is on by default, but the upstream LiteLLM schema it renders is still evolving).
 
 Current as of **v0.1.0-rc.3 plus `[Unreleased]`** (see [CHANGELOG.md](../CHANGELOG.md) for release-by-release detail).
 
@@ -44,6 +44,7 @@ Current as of **v0.1.0-rc.3 plus `[Unreleased]`** (see [CHANGELOG.md](../CHANGEL
 | Rules fragment library (ctx add / list / rm, fragments mode) | Stable | Backward compatible in 0.x |
 | Skill governance pins (skill pins, skills: policy) | Stable | Backward compatible in 0.x |
 | Model preferences (model_preferences: block, projection rewrite) | Stable | Backward compatible in 0.x |
+| Model routing policy (gridctl models, LiteLLM + OpenCode projection) | Experimental | Renderer pinned to LiteLLM v1.94+ Auto Router v2; the upstream auto-router schema is still evolving |
 | Distributed tracing | Stable | Backward compatible in 0.x |
 | Usage observability (token metrics, optimize) | Stable | Backward compatible in 0.x |
 | Telemetry persistence | Stable | Backward compatible in 0.x |

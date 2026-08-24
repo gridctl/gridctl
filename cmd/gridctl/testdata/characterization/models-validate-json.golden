@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "policy_path": "$HOME/.gridctl/models/policy.yaml",
+  "valid": true,
+  "issues": null
+}
