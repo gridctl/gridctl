@@ -33,9 +33,11 @@ interface ClientDetailPaneProps {
   sessions: SessionEntry[] | null;
   /** True when the sessions fetch failed: unavailable, not loading. */
   sessionsFailed?: boolean;
-  /** null while the model routing status has not loaded (or its fetch
-   *  failed); the section must say so rather than claiming no target. */
+  /** null while the model routing status has not loaded; the section
+   *  must say so rather than claiming no target. */
   modelsTargets: ModelsTargetStatus[] | null;
+  /** True when the models status fetch failed: unavailable, not loading. */
+  modelsFailed?: boolean;
   onRefresh: () => Promise<void> | void;
   onReviewContext: () => void;
   onOpenModelRouting: () => void;
@@ -59,6 +61,7 @@ export function ClientDetailPane({
   sessions,
   sessionsFailed = false,
   modelsTargets,
+  modelsFailed = false,
   onRefresh,
   onReviewContext,
   onOpenModelRouting,
@@ -406,7 +409,9 @@ export function ClientDetailPane({
           client.slug !== 'opencode'
             ? 'not a model-routing target'
             : modelsTargets === null
-              ? 'loading'
+              ? modelsFailed
+                ? 'unavailable'
+                : 'loading'
               : modelsRow
                 ? modelsRow.state
                 : 'not declared in the policy'
@@ -421,7 +426,9 @@ export function ClientDetailPane({
         )}
         {client.slug === 'opencode' && modelsTargets === null && (
           <p className="text-[11px] text-text-muted px-1">
-            Model routing state has not loaded. It appears once the status fetch resolves.
+            {modelsFailed
+              ? 'Model routing state is unavailable: the status fetch failed (or the daemon predates it).'
+              : 'Model routing state has not loaded. It appears once the status fetch resolves.'}
           </p>
         )}
         {client.slug === 'opencode' && modelsTargets !== null && !modelsRow && (
