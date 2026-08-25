@@ -18,6 +18,10 @@
   <a href="https://www.bestpractices.dev/projects/12295"><img src="https://www.bestpractices.dev/projects/12295/badge" alt="OpenSSF Best Practices"></a>
 </p>
 
+<p align="center">
+  <a href="https://devhunt.org/tool/gridctl" title="DevHunt - Tool of the Week"><img src="assets/devhunt.svg" width="200" alt="DevHunt - Tool of the Week, 1st Place"></a>
+</p>
+
 ---
 
 ![Gridctl](assets/dashboard.png)
