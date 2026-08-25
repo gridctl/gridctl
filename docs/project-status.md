@@ -44,7 +44,7 @@ Current as of **v0.1.0-rc.3 plus `[Unreleased]`** (see [CHANGELOG.md](../CHANGEL
 | Rules fragment library (ctx add / list / rm, fragments mode) | Stable | Backward compatible in 0.x |
 | Skill governance pins (skill pins, skills: policy) | Stable | Backward compatible in 0.x |
 | Model preferences (model_preferences: block, projection rewrite) | Stable | Backward compatible in 0.x |
-| Model routing policy (gridctl models, LiteLLM + OpenCode projection) | Experimental | Renderer pinned to LiteLLM v1.94+ Auto Router v2; the upstream auto-router schema is still evolving |
+| Model routing policy (gridctl models, LiteLLM + OpenCode projection) | Experimental | Renderer pinned to LiteLLM v1.94+ Auto Router v2; the upstream auto-router schema is still evolving. The web UI's Model routing dialog and `/api/project/models` endpoints inherit this tier |
 | Distributed tracing | Stable | Backward compatible in 0.x |
 | Usage observability (token metrics, optimize) | Stable | Backward compatible in 0.x |
 | Telemetry persistence | Stable | Backward compatible in 0.x |

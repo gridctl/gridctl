@@ -1,6 +1,6 @@
 import { useCallback, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
-import { Bot, Cable, ChevronDown, ChevronRight, Copy, Globe, Plug, Radio, Wrench } from 'lucide-react';
+import { Bot, Cable, ChevronDown, ChevronRight, Copy, Globe, Plug, Radio, Route, Wrench } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { StatePill } from '../ui/StatePill';
@@ -16,7 +16,7 @@ import {
   type ContextClientStatus,
 } from '../../lib/api';
 import { AGENT_TARGET_SLUGS, agentClientName } from '../registry/agents/agentModel';
-import type { AgentProjectionStatus, ClientStatus, SessionEntry, WiringRow } from '../../types';
+import type { AgentProjectionStatus, ClientStatus, ModelsTargetStatus, SessionEntry, WiringRow } from '../../types';
 import { ClientBrandIcon, Badges } from './ConnectionsRail';
 import { sessionIdentity, type ClientHealth } from './connectionsModel';
 
@@ -33,8 +33,14 @@ interface ClientDetailPaneProps {
   sessions: SessionEntry[] | null;
   /** True when the sessions fetch failed: unavailable, not loading. */
   sessionsFailed?: boolean;
+  /** null while the model routing status has not loaded; the section
+   *  must say so rather than claiming no target. */
+  modelsTargets: ModelsTargetStatus[] | null;
+  /** True when the models status fetch failed: unavailable, not loading. */
+  modelsFailed?: boolean;
   onRefresh: () => Promise<void> | void;
   onReviewContext: () => void;
+  onOpenModelRouting: () => void;
 }
 
 /**
@@ -54,8 +60,11 @@ export function ClientDetailPane({
   agentRows,
   sessions,
   sessionsFailed = false,
+  modelsTargets,
+  modelsFailed = false,
   onRefresh,
   onReviewContext,
+  onOpenModelRouting,
 }: ClientDetailPaneProps) {
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
@@ -98,6 +107,9 @@ export function ClientDetailPane({
   }
 
   const isAgentTarget = AGENT_TARGET_SLUGS.has(client.slug);
+  // The models join is by client slug; only OpenCode's provider row ever
+  // matches (the LiteLLM targets carry client "litellm", not a slug).
+  const modelsRow = (modelsTargets ?? []).find((t) => t.client === client.slug) ?? null;
   const ownershipAttention = health.attention;
   const scope = client.effectiveScope;
   const attributedSessions = sessions ?? [];
@@ -384,6 +396,62 @@ export function ClientDetailPane({
             )}
           </div>
         ))}
+      </Section>
+
+      {/* Model routing: the OpenCode provider stanza from the models
+          policy. A summary plus deep link only — actions live in the
+          Model routing dialog, whose verbs are whole-policy and would
+          lie about their blast radius as row buttons here. */}
+      <Section
+        icon={<Route size={13} />}
+        title="Model routing"
+        summary={
+          client.slug !== 'opencode'
+            ? 'not a model-routing target'
+            : modelsTargets === null
+              ? modelsFailed
+                ? 'unavailable'
+                : 'loading'
+              : modelsRow
+                ? modelsRow.state
+                : 'not declared in the policy'
+        }
+        attention={!!modelsRow && ['stale', 'drifted', 'target-missing'].includes(modelsRow.state)}
+      >
+        {client.slug !== 'opencode' && (
+          <p className="text-[11px] text-text-muted px-1" data-testid="not-models-target">
+            Not a model-routing target: the models policy projects a provider stanza to OpenCode
+            only (the LiteLLM targets belong to no client).
+          </p>
+        )}
+        {client.slug === 'opencode' && modelsTargets === null && (
+          <p className="text-[11px] text-text-muted px-1">
+            {modelsFailed
+              ? 'Model routing state is unavailable: the status fetch failed (or the daemon predates it).'
+              : 'Model routing state has not loaded. It appears once the status fetch resolves.'}
+          </p>
+        )}
+        {client.slug === 'opencode' && modelsTargets !== null && !modelsRow && (
+          <p className="text-[11px] text-text-muted px-1">
+            The models policy declares no OpenCode client (or no policy exists yet). Manage it from
+            the Model routing dialog.
+          </p>
+        )}
+        {modelsRow && (
+          <div className="flex items-center gap-2 flex-wrap px-1 py-1.5">
+            <StatePill state={modelsRow.state} />
+            <span
+              className="text-[11px] text-text-muted font-mono truncate flex-1"
+              title={modelsRow.path}
+            >
+              {modelsRow.path}
+            </span>
+            <InlineAction label="Open" subtle onClick={onOpenModelRouting} />
+          </div>
+        )}
+        {modelsRow?.detail && (
+          <span className="text-[11px] text-text-muted/80 px-1">{modelsRow.detail}</span>
+        )}
       </Section>
 
       {/* Access scope: a one-liner deep-linking into Tools. */}

@@ -23,6 +23,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/mcpauth"
 	"github.com/gridctl/gridctl/pkg/metrics"
+	"github.com/gridctl/gridctl/pkg/modelsync"
 	"github.com/gridctl/gridctl/pkg/packops"
 	"github.com/gridctl/gridctl/pkg/pins"
 	"github.com/gridctl/gridctl/pkg/provisioner"
@@ -133,6 +134,14 @@ type Server struct {
 	agentsManager *agentsync.Manager
 	agentsOnce    sync.Once
 	agentsErr     error
+
+	// Model routing manager (pkg/modelsync), lazily built against the
+	// real home directory on first use; tests inject a temp-home manager
+	// via SetModelsManager. Shared with the reset engine so in-process
+	// mutations serialize on one mutex.
+	modelsManager *modelsync.Manager
+	modelsOnce    sync.Once
+	modelsErr     error
 
 	// Pack orchestration engine (pkg/packops), lazily built from the
 	// other kind managers on first use; tests inject a temp-home engine
@@ -579,6 +588,15 @@ func (s *Server) Handler() http.Handler {
 	// `gridctl project status|adopt --kind wiring`.
 	mux.HandleFunc("GET /api/project/wiring/status", s.handleProjectWiringStatus)
 	mux.HandleFunc("POST /api/project/wiring/adopt", s.handleProjectWiringAdopt)
+
+	// Model routing endpoints (pkg/modelsync): the REST face of
+	// `gridctl models status|sync|adopt|ack-restart|validate`. Read and
+	// reconcile only: the policy document is edited via the CLI.
+	mux.HandleFunc("GET /api/project/models/status", s.handleProjectModelsStatus)
+	mux.HandleFunc("GET /api/project/models/validate", s.handleProjectModelsValidate)
+	mux.HandleFunc("POST /api/project/models/sync", s.handleProjectModelsSync)
+	mux.HandleFunc("POST /api/project/models/adopt", s.handleProjectModelsAdopt)
+	mux.HandleFunc("POST /api/project/models/ack-restart", s.handleProjectModelsAckRestart)
 
 	// Reset endpoints (pkg/resetops): the REST face of `gridctl reset`.
 	// Both are loopback-gated and token-guarded (see guardResetRequest).

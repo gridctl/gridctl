@@ -28,6 +28,8 @@ vi.mock('../lib/api', async () => {
     fetchWiringStatus: vi.fn(),
     adoptWiringEntry: vi.fn(),
     fetchAgentProjectionStatus: vi.fn(),
+    fetchModelsStatus: vi.fn(),
+    fetchModelsValidation: vi.fn(),
     fetchGlobalContext: vi.fn(),
     linkClient: vi.fn(),
     unlinkClient: vi.fn(),
@@ -44,6 +46,7 @@ import {
   linkClient,
   fetchAgentProjectionStatus,
   fetchGlobalContext,
+  fetchModelsStatus,
   fetchSessions,
   fetchWiringStatus,
 } from '../lib/api';
@@ -96,6 +99,12 @@ beforeEach(() => {
   vi.mocked(fetchAgentProjectionStatus).mockResolvedValue([]);
   vi.mocked(fetchGlobalContext).mockResolvedValue(emptyContextDoc);
   vi.mocked(fetchSessions).mockResolvedValue({ count: 0, sessions: [], entries: [] });
+  vi.mocked(fetchModelsStatus).mockResolvedValue({
+    policy_path: '/home/u/.gridctl/models/policy.yaml',
+    policy_exists: false,
+    needs_attention: false,
+    targets: [],
+  });
 });
 
 describe('clientHealth', () => {
@@ -141,6 +150,32 @@ describe('clientHealth', () => {
     expect(health.attention).toBe(false);
   });
 
+  it('joins OpenCode model-routing drift, and only drift', () => {
+    const drifted = clientHealth('opencode', null, null, null, [
+      { target: 'opencode', client: 'opencode', state: 'drifted', path: '/home/u/.config/opencode/opencode.json' },
+    ]);
+    expect(drifted.attention).toBe(true);
+    expect(drifted.reasons).toEqual(['model routing drifted']);
+
+    // Restart-pending is an annotation, never attention: the fragment
+    // row is in-sync and its latch must not light the rail.
+    const pending = clientHealth('opencode', null, null, null, [
+      { target: 'opencode', client: 'opencode', state: 'in-sync' },
+      { target: 'litellm-fragment', client: 'litellm', state: 'in-sync', restart_pending: true },
+    ]);
+    expect(pending.attention).toBe(false);
+  });
+
+  it('never joins LiteLLM model-routing targets to any rail slug', () => {
+    // client "litellm" is not a provisioner slug; drift on the fragment
+    // or include line lives in the Model routing dialog alone.
+    const health = clientHealth('claude', null, null, null, [
+      { target: 'litellm-fragment', client: 'litellm', state: 'drifted' },
+      { target: 'litellm-include', client: 'litellm', state: 'target-missing' },
+    ]);
+    expect(health.attention).toBe(false);
+  });
+
   it('surfaces agent slugs that join no client instead of dropping them', () => {
     const slugs = unjoinedAgentSlugs(
       [
@@ -165,6 +200,16 @@ describe('sortClients', () => {
 });
 
 describe('ConnectionsWorkspace hub', () => {
+  it('header Model routing action opens the dialog', async () => {
+    renderHub();
+    fireEvent.click(await screen.findByRole('button', { name: 'Model routing' }));
+    expect(await screen.findByRole('heading', { name: 'Model routing' })).toBeInTheDocument();
+    expect(fetchModelsStatus).toHaveBeenCalled();
+    // The beforeEach doc has no policy: the dialog opens on the init
+    // empty state rather than an error.
+    expect(await screen.findByText('No model routing policy yet')).toBeInTheDocument();
+  });
+
   it('renders the rail and a detail pane with the two axes separately labeled', async () => {
     renderHub();
     // Default selection prefers the attention client (claude has a

@@ -938,6 +938,85 @@ export interface WiringAdoptResult {
   error?: string;
 }
 
+// Model routing projection states: the engine vocabulary plus the
+// never-synced extension for declared-but-never-synced targets.
+export type ModelsTargetState =
+  | 'in-sync'
+  | 'stale'
+  | 'drifted'
+  | 'target-missing'
+  | 'never-synced';
+
+// One target row from GET /api/project/models/status. Targets is
+// variable-length: the fragment row always exists; the include and
+// OpenCode rows appear only when declared in the policy or recorded in
+// the lockfile.
+export interface ModelsTargetStatus {
+  target: 'litellm-fragment' | 'litellm-include' | 'opencode';
+  client: string;
+  state: ModelsTargetState;
+  /** Annotation on the fragment row, never a drift state: the file on
+   *  disk is newer than what the running LiteLLM proxy is serving. */
+  restart_pending?: boolean;
+  path?: string;
+  detail?: string;
+  synced_at?: string;
+}
+
+// Read-only routing summary projected from the parsed policy.
+export interface ModelsRoutingSummary {
+  entry_model: string;
+  default_tier: string;
+  backends: string[];
+  tiers: Record<string, string>;
+}
+
+// Response of GET /api/project/models/status.
+export interface ModelsStatusDoc {
+  policy_path: string;
+  policy_exists: boolean;
+  needs_attention: boolean;
+  /** Parse failure carried in the document; status never 500s on it. */
+  policy_error?: string;
+  routing?: ModelsRoutingSummary;
+  targets: ModelsTargetStatus[];
+}
+
+// One row from POST /api/project/models/sync.
+export interface ModelsSyncResult {
+  target: string;
+  client: string;
+  path: string;
+  action: string;
+  detail?: string;
+  backup_path?: string;
+  diff?: string;
+  error?: string;
+}
+
+// One row from POST /api/project/models/adopt.
+export interface ModelsAdoptResult {
+  target: string;
+  client: string;
+  path: string;
+  action: string;
+  detail?: string;
+}
+
+// One finding from GET /api/project/models/validate.
+export interface ModelsIssue {
+  severity: 'error' | 'warning';
+  field: string;
+  message: string;
+}
+
+// Response of GET /api/project/models/validate.
+export interface ModelsValidateDoc {
+  policy_path: string;
+  valid: boolean;
+  issues: ModelsIssue[];
+}
+
 // Response shape of GET /api/sessions. entries rides alongside the
 // legacy bare ID list and is absent from pre-dual-stack daemons, whose
 // sessions are all handshake-generation by definition.
