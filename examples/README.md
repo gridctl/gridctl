@@ -64,7 +64,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | code-mode-basic | http (containers) | Search + execute meta-tools |
 | gateway-basic | http | Gateway to an existing MCP server, tokenizer config |
 | gateway-remote | http | Gateway to a remote MCP deployment |
-| var-basic | stdio, http | `${var:KEY}` variable references |
+| var-basic | stdio, http | `${var:KEY}` references and value-free `variables:` declarations |
 | var-sets | http (containers) | Variable sets fanning out to all workloads |
 | var-sets-scoped | stdio | Variable sets scoped to named servers and resources |
 | vault-basic | stdio, http | Deprecated `${vault:}` alias (regression fixture) |
