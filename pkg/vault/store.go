@@ -253,6 +253,9 @@ func (s *Store) GetVariable(key string) (Variable, bool) {
 // from the secrets-only era and many callers rely on it). For new keys the
 // secure default (IsSecret=true, Type=string) applies (Article XII).
 func (s *Store) Set(key, value string) error {
+	if IsInternalCredential(key) {
+		return NewInternalCredentialError(key)
+	}
 	return state.WithLock("vault", 5*time.Second, func() error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -277,6 +280,9 @@ func (s *Store) Set(key, value string) error {
 // existing Type/IsSecret metadata for known keys; new keys default to
 // secret/string.
 func (s *Store) SetWithSet(key, value, setName string) error {
+	if IsInternalCredential(key) {
+		return NewInternalCredentialError(key)
+	}
 	return state.WithLock("vault", 5*time.Second, func() error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -318,6 +324,9 @@ func (s *Store) SetVariable(v Variable) error {
 	}
 	if !IsValidType(v.Type) {
 		return fmt.Errorf("invalid variable type: %q", v.Type)
+	}
+	if IsInternalCredential(v.Key) {
+		return NewInternalCredentialError(v.Key)
 	}
 
 	return state.WithLock("vault", 5*time.Second, func() error {
@@ -374,7 +383,7 @@ func (s *Store) List() []Variable {
 // Import bulk-imports variables. Plain-map imports default to secret/string
 // (Article XII secure default); callers needing per-key type or visibility
 // should use ImportVariables.
-func (s *Store) Import(secrets map[string]string) (int, error) {
+func (s *Store) Import(secrets map[string]string) (ImportResult, error) {
 	vars := make([]Variable, 0, len(secrets))
 	for k, v := range secrets {
 		vars = append(vars, Variable{Key: k, Value: v, Type: TypeString, IsSecret: true})
@@ -384,8 +393,27 @@ func (s *Store) Import(secrets map[string]string) (int, error) {
 
 // ImportVariables bulk-imports variables, preserving per-entry metadata.
 // Returns the count of keys imported.
-func (s *Store) ImportVariables(vars []Variable) (int, error) {
-	var count int
+func (s *Store) ImportVariables(vars []Variable) (ImportResult, error) {
+	result := ImportResult{Skipped: []string{}}
+	valid := make([]Variable, 0, len(vars))
+	for _, v := range vars {
+		if v.Key == "" {
+			continue
+		}
+		if IsInternalCredential(v.Key) {
+			result.Skipped = append(result.Skipped, v.Key)
+			continue
+		}
+		if v.Type == "" {
+			v.Type = TypeString
+		}
+		if !IsValidType(v.Type) {
+			return ImportResult{}, fmt.Errorf("invalid variable type %q for key %q", v.Type, v.Key)
+		}
+		valid = append(valid, v)
+	}
+	sort.Strings(result.Skipped)
+
 	err := state.WithLock("vault", 5*time.Second, func() error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -394,40 +422,63 @@ func (s *Store) ImportVariables(vars []Variable) (int, error) {
 			return err
 		}
 
-		for _, v := range vars {
-			if v.Key == "" {
-				continue
-			}
-			if v.Type == "" {
-				v.Type = TypeString
-			}
-			if !IsValidType(v.Type) {
-				return fmt.Errorf("invalid variable type %q for key %q", v.Type, v.Key)
-			}
-			s.variables[v.Key] = stampAgainstStored(v, s.variables)
+		variables := cloneVariables(s.variables)
+		sets := cloneSets(s.sets)
+		for _, v := range valid {
+			variables[v.Key] = stampAgainstStored(v, variables)
 			if v.Set != "" {
-				if _, exists := s.sets[v.Set]; !exists {
-					s.sets[v.Set] = Set{Name: v.Set}
+				if _, exists := sets[v.Set]; !exists {
+					sets[v.Set] = Set{Name: v.Set}
 				}
 			}
-			count++
+			result.Imported++
 		}
-		return s.saveLocked()
+		previousVariables, previousSets := s.variables, s.sets
+		s.variables, s.sets = variables, sets
+		if err := s.saveLocked(); err != nil {
+			s.variables, s.sets = previousVariables, previousSets
+			result.Imported = 0
+			return err
+		}
+		return nil
 	})
-	return count, err
+	return result, err
 }
 
-// Export returns all variables as a key-value map.
-func (s *Store) Export() map[string]string {
+func cloneVariables(source map[string]Variable) map[string]Variable {
+	result := make(map[string]Variable, len(source))
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
+}
+
+func cloneSets(source map[string]Set) map[string]Set {
+	result := make(map[string]Set, len(source))
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
+}
+
+// Export returns downstream-safe variables and the sorted internal keys that
+// were omitted. Omitted values are never returned.
+func (s *Store) Export() (map[string]string, []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.reloadOrWarn()
 
 	result := make(map[string]string, len(s.variables))
+	var omitted []string
 	for k, v := range s.variables {
+		if IsInternalCredential(k) {
+			omitted = append(omitted, k)
+			continue
+		}
 		result[k] = v.Value
 	}
-	return result
+	sort.Strings(omitted)
+	return result, omitted
 }
 
 // Keys returns sorted key names only.
@@ -582,7 +633,7 @@ func (s *Store) GetSetSecrets(setName string) []Variable {
 
 	var result []Variable
 	for _, v := range s.variables {
-		if v.Set == setName {
+		if v.Set == setName && !IsInternalCredential(v.Key) {
 			result = append(result, v)
 		}
 	}

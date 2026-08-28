@@ -473,27 +473,39 @@ func TestProcessClient_CallTimeout(t *testing.T) {
 }
 
 func TestProcessClient_NewProcessClient_EnvMerge(t *testing.T) {
+	t.Setenv("CUSTOM_VAR", "ambient")
+	t.Setenv("ORDINARY_AMBIENT", "kept")
+	t.Setenv("GRIDCTL_VAULT_PASSPHRASE", "blocked")
+	t.Setenv("GRIDCTL_FUTURE_KEY", "blocked")
+	t.Setenv("OP_CONNECT_TOKEN", "blocked")
+	t.Setenv("OP_SERVICE_ACCOUNT_TOKEN", "blocked")
+	t.Setenv("GRIDCTL_SSH_KEY_PASSPHRASE", "blocked")
 	client := NewProcessClient("test", []string{"cat"}, "/tmp", map[string]string{
-		"CUSTOM_VAR": "value1",
-		"ANOTHER":    "value2",
+		"CUSTOM_VAR":         "value1",
+		"ANOTHER":            "value2",
+		"GRIDCTL_CONFIGURED": "blocked",
 	})
 
-	// The env should contain the custom vars appended to os.Environ()
-	foundCustom := false
-	foundAnother := false
+	got := make(map[string]string)
 	for _, env := range client.env {
-		if env == "CUSTOM_VAR=value1" {
-			foundCustom = true
-		}
-		if env == "ANOTHER=value2" {
-			foundAnother = true
+		key, value, ok := strings.Cut(env, "=")
+		if ok {
+			if _, duplicate := got[key]; duplicate {
+				t.Fatalf("duplicate environment key %q", key)
+			}
+			got[key] = value
 		}
 	}
-	if !foundCustom {
-		t.Error("expected CUSTOM_VAR=value1 in environment")
+	if got["CUSTOM_VAR"] != "value1" || got["ANOTHER"] != "value2" || got["ORDINARY_AMBIENT"] != "kept" {
+		t.Fatalf("merged environment missing expected values: %v", got)
 	}
-	if !foundAnother {
-		t.Error("expected ANOTHER=value2 in environment")
+	for _, key := range []string{
+		"GRIDCTL_VAULT_PASSPHRASE", "GRIDCTL_SSH_KEY_PASSPHRASE", "GRIDCTL_FUTURE_KEY",
+		"GRIDCTL_CONFIGURED", "OP_CONNECT_TOKEN", "OP_SERVICE_ACCOUNT_TOKEN",
+	} {
+		if _, present := got[key]; present {
+			t.Errorf("internal credential %q reached child environment", key)
+		}
 	}
 }
 

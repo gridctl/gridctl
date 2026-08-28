@@ -2,15 +2,179 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"log/slog"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/gridctl/gridctl/pkg/vault"
 )
 
 // mockVault implements VaultLookup for testing.
 type mockVault struct {
 	secrets map[string]string
+}
+
+func TestResolveVariable_Verdicts(t *testing.T) {
+	store := &mockVault{secrets: map[string]string{
+		"STORE_ONLY":       "stored",
+		"BOTH":             "stored",
+		"OP_CONNECT_TOKEN": "never-export",
+	}}
+	t.Setenv("BOTH", "ambient")
+	t.Setenv("ENV_ONLY", "ambient")
+	t.Setenv("GRIDCTL_VAULT_PASSPHRASE", "must-not-resolve")
+	t.Setenv("OP_CONNECT_TOKEN", "must-not-resolve")
+
+	tests := []struct {
+		key         string
+		wantValue   string
+		wantVerdict ResolutionVerdict
+		wantDenied  bool
+	}{
+		{key: "STORE_ONLY", wantValue: "stored", wantVerdict: ResolutionStore},
+		{key: "BOTH", wantValue: "stored", wantVerdict: ResolutionStore},
+		{key: "ENV_ONLY", wantValue: "ambient", wantVerdict: ResolutionEnvFallback},
+		{key: "MISSING", wantVerdict: ResolutionUnset},
+		{key: "GRIDCTL_VAULT_PASSPHRASE", wantVerdict: ResolutionDenied, wantDenied: true},
+		{key: "OP_CONNECT_TOKEN", wantVerdict: ResolutionDenied, wantDenied: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.key, func(t *testing.T) {
+			got := ResolveVariable(store, tc.key)
+			if got.Value != tc.wantValue || got.Verdict != tc.wantVerdict {
+				t.Fatalf("ResolveVariable() = %+v, want value %q verdict %q", got, tc.wantValue, tc.wantVerdict)
+			}
+			var denied *vault.InternalCredentialError
+			if errors.As(got.Error, &denied) != tc.wantDenied {
+				t.Fatalf("denied error = %v, want %v", got.Error, tc.wantDenied)
+			}
+		})
+	}
+}
+
+func TestExpandStringResolved_DeniesLegacyStoredCredential(t *testing.T) {
+	store := &mockVault{secrets: map[string]string{"OP_CONNECT_TOKEN": "never-export"}}
+	t.Setenv("OP_CONNECT_TOKEN", "must-not-resolve")
+
+	expanded, _, _, problems := ExpandStringResolved("${var:OP_CONNECT_TOKEN}", store)
+	if expanded != "${var:OP_CONNECT_TOKEN}" {
+		t.Fatalf("ExpandStringResolved() = %q, want denied reference left literal", expanded)
+	}
+	if len(problems) != 1 {
+		t.Fatalf("problems = %v, want one typed denial", problems)
+	}
+	var denied *vault.InternalCredentialError
+	if !errors.As(problems[0], &denied) || denied.Key != "OP_CONNECT_TOKEN" {
+		t.Fatalf("problem = %v, want typed denial for OP_CONNECT_TOKEN", problems[0])
+	}
+}
+
+func TestExpandStringResolved_ReferenceAwarePolicy(t *testing.T) {
+	t.Setenv("GRIDCTL_ORDINARY_SETTING", "allowed")
+	t.Setenv("GRIDCTL_PRIVATE", "blocked")
+	store := &mockVault{secrets: map[string]string{}}
+
+	expanded, _, _, problems := ExpandStringResolved("${GRIDCTL_ORDINARY_SETTING}", store)
+	if expanded != "allowed" || len(problems) != 0 {
+		t.Fatalf("ordinary expansion = %q, problems=%v", expanded, problems)
+	}
+	expanded, _, _, problems = ExpandStringResolved("${var:GRIDCTL_PRIVATE}", store)
+	if expanded != "${var:GRIDCTL_PRIVATE}" || len(problems) != 1 {
+		t.Fatalf("store expansion = %q, problems=%v", expanded, problems)
+	}
+}
+
+func TestVaultResolver_PreservesOrdinaryGridctlEnvironment(t *testing.T) {
+	t.Setenv("GRIDCTL_ORDINARY_SETTING", "allowed")
+	got, _, _ := ExpandString("${GRIDCTL_ORDINARY_SETTING}", VaultResolver(&mockVault{secrets: map[string]string{}}))
+	if got != "allowed" {
+		t.Fatalf("ExpandString() = %q, want allowed", got)
+	}
+}
+
+func TestExpandStackVarsWithEnvChecked_Denied(t *testing.T) {
+	t.Setenv("OP_CONNECT_TOKEN", "blocked")
+	stack := &Stack{MCPServers: []MCPServer{{Env: map[string]string{"INNOCENT": "${var:OP_CONNECT_TOKEN}"}}}}
+	err := ExpandStackVarsWithEnvChecked(stack)
+	var denied *vault.InternalCredentialError
+	if !errors.As(err, &denied) {
+		t.Fatalf("error = %v, want typed denial", err)
+	}
+	if got := stack.MCPServers[0].Env["INNOCENT"]; got != "${var:OP_CONNECT_TOKEN}" {
+		t.Fatalf("denied reference = %q, want literal", got)
+	}
+}
+
+func TestLoadStack_InternalCredentialsStayLiteralAndError(t *testing.T) {
+	t.Setenv("GRIDCTL_VAULT_PASSPHRASE", "ambient-secret")
+	content := `
+name: denied
+mcp-servers:
+  - name: local
+    command: ["helper"]
+    env:
+      CONTROL: "${var:GRIDCTL_VAULT_PASSPHRASE}"
+`
+	path := writeTempFile(t, content)
+	_, err := LoadStack(path, WithVault(&mockVault{secrets: map[string]string{}}))
+	var denied *vault.InternalCredentialError
+	if !errors.As(err, &denied) || denied.Key != "GRIDCTL_VAULT_PASSPHRASE" {
+		t.Fatalf("LoadStack() error = %v, want typed denied resolution", err)
+	}
+}
+
+func TestLoadStack_InternalEnvironmentPolicy(t *testing.T) {
+	t.Setenv("GRIDCTL_ORDINARY_SETTING", "allowed")
+	t.Setenv("OP_CONNECT_TOKEN", "denied")
+
+	allowed := `
+name: allowed
+mcp-servers:
+  - name: local
+    command: ["helper"]
+    env:
+      SETTING: "${GRIDCTL_ORDINARY_SETTING}"
+`
+	stack, err := LoadStack(writeTempFile(t, allowed))
+	if err != nil {
+		t.Fatalf("ordinary GRIDCTL_ interpolation failed: %v", err)
+	}
+	if got := stack.MCPServers[0].Env["SETTING"]; got != "allowed" {
+		t.Fatalf("SETTING = %q, want allowed", got)
+	}
+
+	deniedContent := `
+name: denied
+mcp-servers:
+  - name: local
+    command: ["helper"]
+    env:
+      TOKEN: "$OP_CONNECT_TOKEN"
+`
+	_, err = LoadStack(writeTempFile(t, deniedContent))
+	var denied *vault.InternalCredentialError
+	if !errors.As(err, &denied) {
+		t.Fatalf("exact credential interpolation error = %v, want typed denial", err)
+	}
+}
+
+func TestValidateStackFile_DeniesInternalCredentialReferences(t *testing.T) {
+	t.Setenv("OP_CONNECT_TOKEN", "must-not-export")
+	content := `
+name: denied
+mcp-servers:
+  - name: local
+    command: ["helper"]
+    env:
+      INNOCENT_NAME: "${var:OP_CONNECT_TOKEN}"
+`
+	_, _, err := ValidateStackFile(writeTempFile(t, content))
+	var denied *vault.InternalCredentialError
+	if !errors.As(err, &denied) || denied.Key != "OP_CONNECT_TOKEN" {
+		t.Fatalf("ValidateStackFile() error = %v, want typed denial", err)
+	}
 }
 
 func (m *mockVault) Get(key string) (string, bool) {

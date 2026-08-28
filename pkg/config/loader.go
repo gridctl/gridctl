@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	vaultpkg "github.com/gridctl/gridctl/pkg/vault"
 	"gopkg.in/yaml.v3"
 )
 
@@ -56,16 +57,11 @@ func LoadStack(path string, opts ...LoadOption) (*Stack, error) {
 		return nil, err
 	}
 
-	// Build resolver
-	var resolve Resolver
-	if cfg.vault != nil {
-		resolve = VaultResolver(cfg.vault)
-	} else {
-		resolve = EnvResolver()
-	}
-
 	// Expand variable references in string values
-	unresolved, emptyVars := expandStackVars(&stack, resolve)
+	unresolved, emptyVars, resolutionProblems := expandStackVarsResolved(&stack, newReferenceResolver(cfg.vault))
+	if len(resolutionProblems) > 0 {
+		return nil, fmt.Errorf("resolving stack variable: %w", resolutionProblems[0])
+	}
 
 	// Fail on unresolved variable references only if a store was provided.
 	if cfg.vault != nil && len(unresolved) > 0 {
@@ -121,6 +117,9 @@ func injectSetSecrets(s *Stack, vault VaultSetLookup) {
 		}
 		members := make(map[string]string)
 		for _, sec := range vault.GetSetSecrets(ref.Name) {
+			if vaultpkg.IsInternalCredential(sec.Key) {
+				continue
+			}
 			members[sec.Key] = sec.Value
 		}
 		secretsFor[ref.Name] = members
@@ -175,18 +174,30 @@ func injectSetSecrets(s *Stack, vault VaultSetLookup) {
 // newly expandable field, route it through expandField and it is indexed for
 // free.
 func expandStackVars(s *Stack, resolve Resolver) (unresolvedVault []string, emptyEnvVars []string) {
+	resolved, empty, _ := expandStackVarsResolved(s, func(name string, _ bool) ResolutionResult {
+		value, ok := resolve(name)
+		if !ok {
+			return ResolutionResult{Verdict: ResolutionUnset}
+		}
+		return ResolutionResult{Value: value, Verdict: ResolutionEnvFallback}
+	})
+	return resolved, empty
+}
+
+func expandStackVarsResolved(s *Stack, resolve referenceResolver) (unresolvedVault []string, emptyEnvVars []string, resolutionProblems []error) {
 	index := ReferenceIndex{}
 
 	// expandField expands one field's value and records every ${var:KEY}
 	// reference it contains against the consumer site c.
 	expandField := func(c Consumer, val string) string {
-		result, refs, unresolved, empty := ExpandStringRefs(val, resolve)
-		for _, key := range refs {
+		result, denied := expandStringRefs(val, resolve)
+		for _, key := range result.storeRefs {
 			index.add(key, c)
 		}
-		unresolvedVault = append(unresolvedVault, unresolved...)
-		emptyEnvVars = append(emptyEnvVars, empty...)
-		return result
+		unresolvedVault = append(unresolvedVault, result.unresolvedVault...)
+		emptyEnvVars = append(emptyEnvVars, result.emptyEnvVars...)
+		resolutionProblems = append(resolutionProblems, denied...)
+		return result.expanded
 	}
 
 	s.Name = expandField(Consumer{Kind: RefKindStack, Field: "name"}, s.Name)
@@ -292,7 +303,7 @@ func expandStackVars(s *Stack, resolve Resolver) (unresolvedVault []string, empt
 
 	s.References = index
 	s.UnresolvedRefs = dedupeStrings(unresolvedVault)
-	return unresolvedVault, emptyEnvVars
+	return unresolvedVault, emptyEnvVars, resolutionProblems
 }
 
 // dedupeStrings returns the input with duplicates removed, preserving first-seen

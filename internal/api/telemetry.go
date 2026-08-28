@@ -278,7 +278,10 @@ func (s *Server) validatePatchedStack(w http.ResponseWriter, updated []byte, lab
 		writeJSONError(w, "Failed to parse patched stack: "+err.Error(), http.StatusInternalServerError)
 		return err
 	}
-	config.ExpandStackVarsWithEnv(&stack)
+	if err := config.ExpandStackVarsWithEnvChecked(&stack); err != nil {
+		writeJSONError(w, "Stack variable resolution failed after "+label+": "+err.Error(), http.StatusUnprocessableEntity)
+		return err
+	}
 	stack.SetDefaults()
 	if result := config.ValidateWithIssues(&stack); !result.Valid {
 		w.Header().Set("Content-Type", "application/json")

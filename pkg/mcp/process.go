@@ -8,12 +8,15 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/jsonrpc"
+	"github.com/gridctl/gridctl/pkg/vault"
 )
 
 const processKillGracePeriod = 5 * time.Second
@@ -54,10 +57,31 @@ func (c *ProcessClient) SetPingTimeout(d time.Duration) {
 // The command is executed with the given working directory and environment.
 // Environment variables are merged with the current process environment.
 func NewProcessClient(name string, command []string, workDir string, env map[string]string) *ProcessClient {
-	// Build environment: inherit current env and merge specified vars
-	envList := os.Environ()
+	// Normalize the inherited environment so configured values replace rather
+	// than duplicate ambient entries. Internal credentials never cross this
+	// downstream process boundary.
+	merged := make(map[string]string)
+	for _, entry := range os.Environ() {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok || vault.IsInternalCredential(key) {
+			continue
+		}
+		merged[key] = value
+	}
 	for k, v := range env {
-		envList = append(envList, fmt.Sprintf("%s=%s", k, v))
+		if vault.IsInternalCredential(k) {
+			continue
+		}
+		merged[k] = v
+	}
+	keys := make([]string, 0, len(merged))
+	for key := range merged {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	envList := make([]string, 0, len(keys))
+	for _, key := range keys {
+		envList = append(envList, fmt.Sprintf("%s=%s", key, merged[key]))
 	}
 
 	c := &ProcessClient{

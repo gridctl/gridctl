@@ -279,6 +279,9 @@ func validateAndNormalize(typeName, value string) (string, error) {
 }
 
 func runVarSet(key string) error {
+	if vault.IsInternalCredential(key) {
+		return vault.NewInternalCredentialError(key)
+	}
 	if varSetSecret && varSetPlaintext {
 		return fmt.Errorf("--secret and --plaintext are mutually exclusive")
 	}
@@ -481,13 +484,16 @@ func runVarImport(file string) error {
 		return err
 	}
 
-	count, err := store.ImportVariables(vars)
+	result, err := store.ImportVariables(vars)
 	if err != nil {
 		return err
 	}
 
 	printer := output.New()
-	printer.Info("Imported variables", "count", count, "file", file)
+	printer.Info("Imported variables", "count", result.Imported, "file", file)
+	for _, key := range result.Skipped {
+		printer.Warn("Skipped internal credential", "key", key)
+	}
 	return nil
 }
 
@@ -501,12 +507,16 @@ func runVarExport() error {
 		return err
 	}
 
-	vars := store.List()
-	if len(vars) == 0 {
-		fmt.Println("No variables stored")
-		return nil
+	allVars := store.List()
+	vars := make([]vault.Variable, 0, len(allVars))
+	var omitted []string
+	for _, v := range allVars {
+		if vault.IsInternalCredential(v.Key) {
+			omitted = append(omitted, v.Key)
+			continue
+		}
+		vars = append(vars, v)
 	}
-
 	switch varExportFmt {
 	case "json":
 		type entry struct {
@@ -517,8 +527,12 @@ func runVarExport() error {
 			Set      string `json:"set,omitempty"`
 		}
 		out := struct {
-			Variables []entry `json:"variables"`
-		}{Variables: make([]entry, 0, len(vars))}
+			Variables []entry  `json:"variables"`
+			Warnings  []string `json:"warnings"`
+		}{Variables: make([]entry, 0, len(vars)), Warnings: make([]string, 0, len(omitted))}
+		for _, key := range omitted {
+			out.Warnings = append(out.Warnings, "omitted internal credential: "+key)
+		}
 		for _, v := range vars {
 			val := v.Value
 			if !varExportPlain && v.IsSecret {
@@ -535,6 +549,14 @@ func runVarExport() error {
 		data, _ := json.MarshalIndent(out, "", "  ")
 		fmt.Println(string(data))
 	default: // env
+		printer := output.NewWithWriter(os.Stderr)
+		for _, key := range omitted {
+			printer.Warn("Omitted internal credential", "key", key)
+		}
+		if len(vars) == 0 {
+			fmt.Println("No exportable variables stored")
+			return nil
+		}
 		for _, v := range vars {
 			// Markers above the KEY=VALUE line only when they differ from
 			// the .env defaults (secret/string) so existing .env consumers

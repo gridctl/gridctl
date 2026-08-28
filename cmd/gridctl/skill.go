@@ -355,8 +355,10 @@ func cliCredentialResolver(ref string) (string, error) {
 	if err := ensureUnlocked(store); err != nil {
 		return "", err
 	}
-	resolver := config.VaultResolver(store)
-	expanded, unresolved, _ := config.ExpandString(ref, resolver)
+	expanded, unresolved, _, problems := config.ExpandStringResolved(ref, store)
+	if len(problems) > 0 {
+		return "", problems[0]
+	}
 	if len(unresolved) > 0 {
 		return "", fmt.Errorf("vault key %q not found", unresolved[0])
 	}

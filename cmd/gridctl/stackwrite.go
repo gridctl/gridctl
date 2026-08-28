@@ -120,7 +120,9 @@ func writeServersToStack(stackPath string, servers []config.MCPServer, overwrite
 	if err := yaml.Unmarshal(updated, &stack); err != nil {
 		return "", fmt.Errorf("post-append stack does not parse: %w", err)
 	}
-	config.ExpandStackVarsWithEnv(&stack)
+	if err := config.ExpandStackVarsWithEnvChecked(&stack); err != nil {
+		return "", fmt.Errorf("post-append stack variable resolution failed; nothing written: %w", err)
+	}
 	stack.SetDefaults()
 	if result := config.ValidateWithIssues(&stack); !result.Valid {
 		var lines []string

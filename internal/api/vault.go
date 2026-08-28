@@ -2,12 +2,22 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"regexp"
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/vault"
 )
+
+func writeVariableMutationError(w http.ResponseWriter, action string, err error) {
+	var denied *vault.InternalCredentialError
+	if errors.As(err, &denied) {
+		writeJSONError(w, action+": "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSONError(w, action+": "+err.Error(), http.StatusInternalServerError)
+}
 
 // validKeyRegex matches valid variable key names (same pattern as variable names).
 var validKeyRegex = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
@@ -221,7 +231,7 @@ func (s *Server) handleVaultCreate(w http.ResponseWriter, r *http.Request) {
 		Set:      req.Set,
 	}
 	if err := s.vaultStore.SetVariable(v); err != nil {
-		writeJSONError(w, "Failed to save variable: "+err.Error(), http.StatusInternalServerError)
+		writeVariableMutationError(w, "Failed to save variable", err)
 		return
 	}
 
@@ -317,7 +327,7 @@ func (s *Server) handleVaultKeyPut(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.vaultStore.SetVariable(existing); err != nil {
-		writeJSONError(w, "Failed to update variable: "+err.Error(), http.StatusInternalServerError)
+		writeVariableMutationError(w, "Failed to update variable", err)
 		return
 	}
 	writeJSON(w, map[string]any{
@@ -486,26 +496,26 @@ func (s *Server) handleVaultImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var count int
+	var result vault.ImportResult
 	switch {
 	case len(req.Variables) > 0:
-		c, err := s.vaultStore.ImportVariables(req.Variables)
+		importResult, err := s.vaultStore.ImportVariables(req.Variables)
 		if err != nil {
 			writeJSONError(w, "Failed to import variables: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		count = c
+		result = importResult
 	case len(req.Secrets) > 0:
-		c, err := s.vaultStore.Import(req.Secrets)
+		importResult, err := s.vaultStore.Import(req.Secrets)
 		if err != nil {
 			writeJSONError(w, "Failed to import variables: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		count = c
+		result = importResult
 	default:
 		writeJSONError(w, "No variables provided", http.StatusBadRequest)
 		return
 	}
 
-	writeJSON(w, map[string]any{"imported": count})
+	writeJSON(w, result)
 }

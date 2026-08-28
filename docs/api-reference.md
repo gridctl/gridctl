@@ -1653,6 +1653,9 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var \
 ```
 
 Key names must match `[a-zA-Z_][a-zA-Z0-9_]*`.
+Names beginning with `GRIDCTL_`, plus `OP_CONNECT_TOKEN` and
+`OP_SERVICE_ACCOUNT_TOKEN`, are reserved internal credentials. Creating or
+updating one returns `400 Bad Request` with the key name but never its value.
 
 #### `GET /api/var/{key}`
 
@@ -1844,7 +1847,18 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/imp
 
 **Response:**
 ```json
-{"imported": 2}
+{"imported": 2, "skipped": []}
+```
+
+Reserved internal credential keys are skipped while valid entries are imported.
+The response names every skipped key in deterministic order and never includes
+its value:
+
+```json
+{
+  "imported": 1,
+  "skipped": ["GRIDCTL_VAULT_PASSPHRASE", "OP_CONNECT_TOKEN"]
+}
 ```
 
 When the vault is locked, all endpoints except `status`, `unlock`, and `lock` return `423 Locked`:
