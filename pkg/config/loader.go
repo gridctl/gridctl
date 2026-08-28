@@ -67,6 +67,7 @@ func LoadStack(path string, opts ...LoadOption) (*Stack, error) {
 	if cfg.vault != nil && len(unresolved) > 0 {
 		msg := fmt.Sprintf("missing variable(s): %s", strings.Join(unresolved, ", "))
 		msg += "\n  To fix: gridctl var set <KEY>"
+		msg += "\n  Diagnose: gridctl var explain <KEY>"
 		return nil, fmt.Errorf("%s", msg)
 	}
 
@@ -429,6 +430,9 @@ func resolveExtends(child *Stack, childAbsPath string, visited map[string]bool, 
 	if err := resolveExtends(&parent, absParentPath, visited, depth+1); err != nil {
 		return err
 	}
+	if err := checkDeclarationConflicts(child.Variables, parent.Variables); err != nil {
+		return fmt.Errorf("extends: %w", err)
+	}
 
 	// Resolve parent's relative paths against parent's directory before merging into child.
 	// Without this, inherited paths would be re-resolved against the child's directory.
@@ -449,6 +453,7 @@ func resolveExtends(child *Stack, childAbsPath string, visited map[string]bool, 
 // block silently inherited from a parent stack is a policy the operator
 // never sees). A new block needs an explicit decision here either way.
 func mergeStacks(child, parent *Stack) {
+	mergeVariableDeclarations(child, parent)
 	// MCPServers: child wins on name collision; parent-only servers appended
 	if len(parent.MCPServers) > 0 {
 		childNames := make(map[string]bool, len(child.MCPServers))
@@ -488,5 +493,40 @@ func mergeStacks(child, parent *Stack) {
 	if child.Network.Name == "" && len(child.Networks) == 0 {
 		child.Network = parent.Network
 		child.Networks = parent.Networks
+	}
+}
+
+func mergeVariableDeclarations(child, parent *Stack) {
+	if len(parent.Variables) == 0 {
+		return
+	}
+	if child.Variables == nil {
+		child.Variables = make(map[string]VariableDeclaration, len(parent.Variables))
+	}
+	for key, p := range parent.Variables {
+		c, ok := child.Variables[key]
+		if !ok {
+			child.Variables[key] = p
+			continue
+		}
+		if c.Required == nil {
+			c.Required = p.Required
+		} else if p.IsRequired() && !c.IsRequired() {
+			v := true
+			c.Required = &v
+		}
+		if c.Secret == nil {
+			c.Secret = p.Secret
+		}
+		if c.Type == "" {
+			c.Type = p.Type
+		}
+		if c.Description == "" {
+			c.Description = p.Description
+		}
+		if c.Docs == "" {
+			c.Docs = p.Docs
+		}
+		child.Variables[key] = c
 	}
 }

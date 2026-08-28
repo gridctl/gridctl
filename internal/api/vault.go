@@ -139,10 +139,14 @@ func (s *Server) handleVaultLock(w http.ResponseWriter, r *http.Request) {
 
 // variableEntry is the wire shape for /api/var list and detail responses.
 type variableEntry struct {
-	Key      string             `json:"key"`
-	Type     vault.VariableType `json:"type"`
-	IsSecret bool               `json:"is_secret"`
-	Set      string             `json:"set,omitempty"`
+	Key         string             `json:"key"`
+	Type        vault.VariableType `json:"type"`
+	IsSecret    bool               `json:"is_secret"`
+	Set         string             `json:"set,omitempty"`
+	Description string             `json:"description,omitempty"`
+	Docs        string             `json:"docs,omitempty"`
+	Example     string             `json:"example,omitempty"`
+	Deprecated  string             `json:"deprecated,omitempty"`
 	// LastRotated is the RFC3339 stamp of the last value change, omitted when
 	// unknown. Metadata only: it carries no part of the value.
 	LastRotated string `json:"last_rotated,omitempty"`
@@ -168,6 +172,10 @@ func (s *Server) handleVaultList(w http.ResponseWriter, _ *http.Request) {
 			Type:        v.Type,
 			IsSecret:    v.IsSecret,
 			Set:         v.Set,
+			Description: v.Description,
+			Docs:        v.Docs,
+			Example:     v.Example,
+			Deprecated:  v.Deprecated,
 			LastRotated: v.LastRotated,
 		}
 	}
@@ -190,11 +198,15 @@ func (s *Server) handleVaultCreate(w http.ResponseWriter, r *http.Request) {
 	// Decode into a pointer-bool struct so omitted is_secret defaults to
 	// true (Article XII secure default) rather than Go's zero-value false.
 	var req struct {
-		Key      string             `json:"key"`
-		Value    string             `json:"value"`
-		Type     vault.VariableType `json:"type"`
-		IsSecret *bool              `json:"is_secret"`
-		Set      string             `json:"set,omitempty"`
+		Key         string             `json:"key"`
+		Value       string             `json:"value"`
+		Type        vault.VariableType `json:"type"`
+		IsSecret    *bool              `json:"is_secret"`
+		Set         string             `json:"set,omitempty"`
+		Description string             `json:"description,omitempty"`
+		Docs        string             `json:"docs,omitempty"`
+		Example     string             `json:"example,omitempty"`
+		Deprecated  string             `json:"deprecated,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -224,11 +236,15 @@ func (s *Server) handleVaultCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	v := vault.Variable{
-		Key:      req.Key,
-		Value:    req.Value,
-		Type:     req.Type,
-		IsSecret: isSecret,
-		Set:      req.Set,
+		Key:         req.Key,
+		Value:       req.Value,
+		Type:        req.Type,
+		IsSecret:    isSecret,
+		Set:         req.Set,
+		Description: req.Description,
+		Docs:        req.Docs,
+		Example:     req.Example,
+		Deprecated:  req.Deprecated,
 	}
 	if err := s.vaultStore.SetVariable(v); err != nil {
 		writeVariableMutationError(w, "Failed to save variable", err)
@@ -262,13 +278,7 @@ func (s *Server) handleVaultKeyGet(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, "Variable not found: "+key, http.StatusNotFound)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"key":       v.Key,
-		"value":     v.Value,
-		"type":      v.Type,
-		"is_secret": v.IsSecret,
-		"set":       v.Set,
-	})
+	writeJSON(w, v)
 }
 
 // handleVaultKeyPut updates a variable. Accepts partial updates: keys not
@@ -288,10 +298,14 @@ func (s *Server) handleVaultKeyPut(w http.ResponseWriter, r *http.Request) {
 
 	key := r.PathValue("key")
 	var req struct {
-		Value    *string             `json:"value"`
-		Type     *vault.VariableType `json:"type"`
-		IsSecret *bool               `json:"is_secret"`
-		Set      *string             `json:"set"`
+		Value       *string             `json:"value"`
+		Type        *vault.VariableType `json:"type"`
+		IsSecret    *bool               `json:"is_secret"`
+		Set         *string             `json:"set"`
+		Description *string             `json:"description"`
+		Docs        *string             `json:"docs"`
+		Example     *string             `json:"example"`
+		Deprecated  *string             `json:"deprecated"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -324,6 +338,18 @@ func (s *Server) handleVaultKeyPut(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Set != nil {
 		existing.Set = *req.Set
+	}
+	if req.Description != nil {
+		existing.Description = *req.Description
+	}
+	if req.Docs != nil {
+		existing.Docs = *req.Docs
+	}
+	if req.Example != nil {
+		existing.Example = *req.Example
+	}
+	if req.Deprecated != nil {
+		existing.Deprecated = *req.Deprecated
 	}
 
 	if err := s.vaultStore.SetVariable(existing); err != nil {

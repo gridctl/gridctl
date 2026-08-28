@@ -26,9 +26,10 @@ const (
 // stack file. Casing therefore tracks the schema's own YAML tags, which mix
 // camelCase (identityFile, baseUrl) and snake_case (build_args, ssh_key_path).
 type Consumer struct {
-	Kind  ReferenceKind `json:"kind"`
-	Name  string        `json:"name,omitempty"`
-	Field string        `json:"field"`
+	Kind   ReferenceKind `json:"kind"`
+	Name   string        `json:"name,omitempty"`
+	Field  string        `json:"field"`
+	Source string        `json:"source,omitempty"`
 
 	// Target names the workload a scoped secrets.sets entry injects into, and
 	// TargetKind says whether that is a server or a resource. Both are set only
@@ -42,6 +43,69 @@ type Consumer struct {
 	// that field to mean the workload would silently break them.
 	Target     string        `json:"target,omitempty"`
 	TargetKind ReferenceKind `json:"targetKind,omitempty"`
+}
+
+// BuildVariableUsage combines explicit references with synthetic set
+// consumers. setMembers maps set names to value-free variable keys.
+func BuildVariableUsage(spec *Stack, setMembers map[string][]string) (ReferenceIndex, bool) {
+	usage := ReferenceIndex{}
+	if spec == nil {
+		return usage, true
+	}
+	for key, consumers := range spec.References {
+		usage[key] = append([]Consumer(nil), consumers...)
+	}
+	complete := true
+	if spec.Secrets == nil || len(spec.Secrets.Sets) == 0 {
+		return usage, complete
+	}
+	if setMembers == nil {
+		return usage, false
+	}
+	for _, ref := range spec.Secrets.Sets {
+		consumers := SetConsumersFor(ref, spec)
+		for _, key := range setMembers[ref.Name] {
+			for _, c := range consumers {
+				found := false
+				for _, existing := range usage[key] {
+					if existing == c {
+						found = true
+						break
+					}
+				}
+				if !found {
+					usage[key] = append(usage[key], c)
+				}
+			}
+		}
+	}
+	return usage, complete
+}
+
+// SetConsumersFor returns the synthetic consumers contributed by one set ref.
+func SetConsumersFor(ref SecretSetRef, spec *Stack) []Consumer {
+	base := Consumer{Kind: RefKindSecretsSet, Name: ref.Name, Field: "secrets.sets"}
+	if !ref.Scoped() {
+		return []Consumer{base}
+	}
+	var out []Consumer
+	for _, srv := range spec.MCPServers {
+		if ref.InjectsIntoServer(srv.Name) {
+			c := base
+			c.Target = srv.Name
+			c.TargetKind = RefKindMCPServer
+			out = append(out, c)
+		}
+	}
+	for _, res := range spec.Resources {
+		if ref.InjectsIntoResource(res.Name) {
+			c := base
+			c.Target = res.Name
+			c.TargetKind = RefKindResource
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // ReferenceIndex maps a variable-store key to the consumers that reference it.

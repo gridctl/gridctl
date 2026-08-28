@@ -1,9 +1,11 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -189,7 +191,6 @@ mcp-servers:
 		t.Errorf("expected URL expansion, got '%s'", topo.MCPServers[1].URL)
 	}
 }
-
 
 func TestLoadStack_InvalidYAML(t *testing.T) {
 	content := `
@@ -498,7 +499,6 @@ func TestValidate_MultiNetwork(t *testing.T) {
 	}
 }
 
-
 func TestMCPServerToolsFilter(t *testing.T) {
 	content := `
 version: "1"
@@ -537,7 +537,6 @@ mcp-servers:
 		t.Errorf("expected no tools in filter, got %d", len(topo.MCPServers[1].Tools))
 	}
 }
-
 
 func TestLoadStack_AuthConfig(t *testing.T) {
 	content := `
@@ -1332,5 +1331,35 @@ extends: ../parents/base.yaml
 	want := filepath.Join(parentsDir, "keys", "id_rsa")
 	if inherited.SSH.IdentityFile != want {
 		t.Errorf("inherited ssh.identityFile resolved against wrong directory:\n  got  %q\n  want %q", inherited.SSH.IdentityFile, want)
+	}
+}
+
+func TestParseStackIndex_ExtendsDeclarationsAndProvenance(t *testing.T) {
+	dir := t.TempDir()
+	parent := filepath.Join(dir, "parent.yaml")
+	child := filepath.Join(dir, "child.yaml")
+	writeFile(t, parent, "version: v1\nname: parent\nvariables:\n  TOKEN:\n    required: true\n    type: string\n    description: parent\nmcp-servers:\n  - name: parent\n    command: [echo, '${var:TOKEN}']\n")
+	writeFile(t, child, "version: v1\nname: child\nextends: parent.yaml\nvariables:\n  TOKEN:\n    description: child\nmcp-servers: []\n")
+	stack, err := ParseStackIndex(context.Background(), child)
+	if err != nil {
+		t.Fatal(err)
+	}
+	declaration := stack.Variables["TOKEN"]
+	if !declaration.IsRequired() || declaration.ValueType() != "string" || declaration.Description != "child" {
+		t.Fatalf("declaration = %#v", declaration)
+	}
+	if got := stack.References["TOKEN"]; len(got) != 1 || got[0].Source != parent {
+		t.Fatalf("references = %#v", got)
+	}
+}
+
+func TestLoadStack_RejectsDeclarationConflict(t *testing.T) {
+	dir := t.TempDir()
+	parent := filepath.Join(dir, "parent.yaml")
+	child := filepath.Join(dir, "child.yaml")
+	writeFile(t, parent, "version: v1\nname: parent\nvariables:\n  TOKEN:\n    type: string\nmcp-servers: []\n")
+	writeFile(t, child, "version: v1\nname: child\nextends: parent.yaml\nvariables:\n  TOKEN:\n    type: json\nmcp-servers: []\n")
+	if _, err := LoadStack(child); err == nil || !strings.Contains(err.Error(), "conflicting declared types") {
+		t.Fatalf("LoadStack() error = %v", err)
 	}
 }

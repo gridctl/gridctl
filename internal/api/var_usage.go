@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"sort"
 
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/vault"
@@ -12,13 +13,7 @@ import (
 // JSON response is "{}" (not null) when nothing references any variable or no
 // stack is loaded.
 func buildVariableUsage(spec *config.Stack) map[string][]config.Consumer {
-	usage := map[string][]config.Consumer{}
-	if spec == nil {
-		return usage
-	}
-	for key, consumers := range spec.References {
-		usage[key] = consumers
-	}
+	usage, _ := config.BuildVariableUsage(spec, map[string][]string{})
 	return usage
 }
 
@@ -43,7 +38,7 @@ func appendSetConsumers(usage map[string][]config.Consumer, spec *config.Stack, 
 		// yields the single untargeted consumer. This must track
 		// injectSetSecrets exactly, or the index reports reach the stack does
 		// not actually have.
-		consumers := setConsumersFor(ref, spec)
+		consumers := config.SetConsumersFor(ref, spec)
 		if len(consumers) == 0 {
 			continue
 		}
@@ -120,8 +115,11 @@ func (s *Server) handleVariableUsage(w http.ResponseWriter, _ *http.Request) {
 
 // driftEntry is one stack reference that no stored variable satisfies.
 type driftEntry struct {
-	Key       string            `json:"key"`
-	Consumers []config.Consumer `json:"consumers"`
+	Key         string                         `json:"key"`
+	Consumers   []config.Consumer              `json:"consumers"`
+	Declaration *config.VariableDeclaration    `json:"declaration,omitempty"`
+	Diagnostics []config.DeclarationDiagnostic `json:"diagnostics,omitempty"`
+	Unknown     bool                           `json:"unknown,omitempty"`
 }
 
 // buildVariableDrift lists the keys the stack references that the store cannot
@@ -135,16 +133,40 @@ type driftEntry struct {
 // second.
 func buildVariableDrift(spec *config.Stack, store *vault.Store) []driftEntry {
 	out := []driftEntry{}
-	if spec == nil || store == nil || store.IsLocked() {
+	if spec == nil {
+		return out
+	}
+	if store == nil || store.IsLocked() {
+		keys := make([]string, 0, len(spec.Variables))
+		for key := range spec.Variables {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			declaration := spec.Variables[key]
+			consumers := spec.References[key]
+			if consumers == nil {
+				consumers = []config.Consumer{}
+			}
+			out = append(out, driftEntry{Key: key, Consumers: consumers, Declaration: &declaration, Unknown: true})
+		}
 		return out
 	}
 	// One snapshot of the key set rather than a lookup per reference: the
 	// store reloads on read, so per-key checks could straddle an external
 	// write and report a half-updated picture.
 	stored := make(map[string]bool)
-	for _, k := range store.Keys() {
-		stored[k] = true
+	metadata := make(map[string]config.VariableMetadata)
+	for _, variable := range store.List() {
+		stored[variable.Key] = true
+		metadata[variable.Key] = config.VariableMetadata{Type: string(variable.Type), Secret: variable.IsSecret, Deprecated: variable.Deprecated}
 	}
+	diagnostics := config.DiagnoseDeclarations(spec, metadata, false)
+	byKey := make(map[string][]config.DeclarationDiagnostic)
+	for _, diagnostic := range diagnostics {
+		byKey[diagnostic.Key] = append(byKey[diagnostic.Key], diagnostic)
+	}
+	seen := make(map[string]bool)
 	for _, key := range spec.UnresolvedRefs {
 		if stored[key] {
 			continue
@@ -153,8 +175,35 @@ func buildVariableDrift(spec *config.Stack, store *vault.Store) []driftEntry {
 		if consumers == nil {
 			consumers = []config.Consumer{}
 		}
-		out = append(out, driftEntry{Key: key, Consumers: consumers})
+		declaration, declared := spec.Variables[key]
+		entry := driftEntry{Key: key, Consumers: consumers, Diagnostics: byKey[key]}
+		if declared {
+			entry.Declaration = &declaration
+		}
+		out = append(out, entry)
+		seen[key] = true
 	}
+	for key, keyDiagnostics := range byKey {
+		if seen[key] || stored[key] {
+			continue
+		}
+		var missingDiagnostics []config.DeclarationDiagnostic
+		for _, diagnostic := range keyDiagnostics {
+			if diagnostic.Code == "required_unset" {
+				missingDiagnostics = append(missingDiagnostics, diagnostic)
+			}
+		}
+		if len(missingDiagnostics) == 0 {
+			continue
+		}
+		declaration := spec.Variables[key]
+		consumers := spec.References[key]
+		if consumers == nil {
+			consumers = []config.Consumer{}
+		}
+		out = append(out, driftEntry{Key: key, Consumers: consumers, Declaration: &declaration, Diagnostics: missingDiagnostics})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	return out
 }
 

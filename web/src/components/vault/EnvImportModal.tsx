@@ -67,6 +67,7 @@ interface RowState {
   isSecret: boolean;
   skipped: boolean;
   revealed: boolean;
+	metadata: ParsedEnvEntry['metadata'];
 }
 
 function rowFromParsed(
@@ -88,6 +89,7 @@ function rowFromParsed(
     isSecret: override?.isSecret ?? entry.isSecret ?? true,
     skipped: override?.skipped ?? false,
     revealed: override?.revealed ?? false,
+		metadata: entry.metadata,
   };
 }
 
@@ -285,6 +287,10 @@ export function EnvImportModal({
         type: r.type,
         isSecret: r.isSecret,
         set: r.set || undefined,
+		description: r.metadata?.description,
+		docs: r.metadata?.docs,
+		example: r.metadata?.example,
+		deprecated: r.metadata?.deprecated,
       };
     });
     setSubmitting(true);

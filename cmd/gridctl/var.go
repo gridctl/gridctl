@@ -520,11 +520,15 @@ func runVarExport() error {
 	switch varExportFmt {
 	case "json":
 		type entry struct {
-			Key      string `json:"key"`
-			Value    string `json:"value"`
-			Type     string `json:"type"`
-			IsSecret bool   `json:"is_secret"`
-			Set      string `json:"set,omitempty"`
+			Key         string `json:"key"`
+			Value       string `json:"value"`
+			Type        string `json:"type"`
+			IsSecret    bool   `json:"is_secret"`
+			Set         string `json:"set,omitempty"`
+			Description string `json:"description,omitempty"`
+			Docs        string `json:"docs,omitempty"`
+			Example     string `json:"example,omitempty"`
+			Deprecated  string `json:"deprecated,omitempty"`
 		}
 		out := struct {
 			Variables []entry  `json:"variables"`
@@ -543,7 +547,8 @@ func runVarExport() error {
 				Value:    val,
 				Type:     string(v.Type),
 				IsSecret: v.IsSecret,
-				Set:      v.Set,
+				Set:      v.Set, Description: v.Description, Docs: v.Docs,
+				Example: v.Example, Deprecated: v.Deprecated,
 			})
 		}
 		data, _ := json.MarshalIndent(out, "", "  ")
@@ -567,6 +572,10 @@ func runVarExport() error {
 			if v.Type != "" && v.Type != vault.TypeString {
 				fmt.Printf("# @type=%s\n", v.Type)
 			}
+			writeEnvMarker("description", v.Description)
+			writeEnvMarker("docs", v.Docs)
+			writeEnvMarker("example", v.Example)
+			writeEnvMarker("deprecated", v.Deprecated)
 			val := v.Value
 			if !varExportPlain && v.IsSecret {
 				val = maskValue(val)
@@ -788,9 +797,11 @@ func parseVariablesEnv(content string) ([]vault.Variable, error) {
 	var out []vault.Variable
 	pendingType := vault.TypeString
 	pendingIsSecret := true
+	pendingMetadata := map[string]string{}
 	resetMarkers := func() {
 		pendingType = vault.TypeString
 		pendingIsSecret = true
+		pendingMetadata = map[string]string{}
 	}
 
 	for _, raw := range strings.Split(content, "\n") {
@@ -814,6 +825,14 @@ func parseVariablesEnv(content string) ([]vault.Variable, error) {
 					return nil, fmt.Errorf("invalid @type marker: %q", typeVal)
 				}
 				pendingType = typeVal
+			case strings.HasPrefix(marker, "@description="):
+				pendingMetadata["description"] = parseEnvMarkerValue(strings.TrimPrefix(marker, "@description="))
+			case strings.HasPrefix(marker, "@docs="):
+				pendingMetadata["docs"] = parseEnvMarkerValue(strings.TrimPrefix(marker, "@docs="))
+			case strings.HasPrefix(marker, "@example="):
+				pendingMetadata["example"] = parseEnvMarkerValue(strings.TrimPrefix(marker, "@example="))
+			case strings.HasPrefix(marker, "@deprecated="):
+				pendingMetadata["deprecated"] = parseEnvMarkerValue(strings.TrimPrefix(marker, "@deprecated="))
 			}
 			continue
 		}
@@ -841,10 +860,14 @@ func parseVariablesEnv(content string) ([]vault.Variable, error) {
 		}
 
 		out = append(out, vault.Variable{
-			Key:      key,
-			Value:    value,
-			Type:     pendingType,
-			IsSecret: pendingIsSecret,
+			Key:         key,
+			Value:       value,
+			Type:        pendingType,
+			IsSecret:    pendingIsSecret,
+			Description: pendingMetadata["description"],
+			Docs:        pendingMetadata["docs"],
+			Example:     pendingMetadata["example"],
+			Deprecated:  pendingMetadata["deprecated"],
 		})
 		resetMarkers()
 	}
@@ -853,4 +876,17 @@ func parseVariablesEnv(content string) ([]vault.Variable, error) {
 		return nil, fmt.Errorf("no valid KEY=VALUE pairs found")
 	}
 	return out, nil
+}
+
+func writeEnvMarker(name, value string) {
+	if value != "" {
+		fmt.Printf("# @%s=%s\n", name, strconv.Quote(value))
+	}
+}
+
+func parseEnvMarkerValue(value string) string {
+	if unquoted, err := strconv.Unquote(value); err == nil {
+		return unquoted
+	}
+	return value
 }

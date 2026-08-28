@@ -46,6 +46,9 @@ type Stack struct {
 	// deploy. Deliberately typed map[string]bool so YAML 1.1 boolean
 	// spellings (on/yes) decode as booleans.
 	Experimental map[string]bool `yaml:"experimental,omitempty" json:"experimental,omitempty"`
+	// Variables documents value-free prerequisites. Declarations are advisory
+	// and never participate in expansion or write to the variable store.
+	Variables map[string]VariableDeclaration `yaml:"variables,omitempty" json:"variables,omitempty"`
 
 	// References is the variable-usage index, derived during expandStackVars:
 	// which consumers reference each ${var:KEY}/${vault:KEY} key. It is computed
@@ -66,6 +69,32 @@ type Stack struct {
 	// list is a superset that callers narrow by checking the vault themselves
 	// (see the drift endpoint). Computed, never persisted.
 	UnresolvedRefs []string `yaml:"-" json:"-"`
+}
+
+// VariableDeclaration documents one stack or pack variable prerequisite.
+// Pointer booleans distinguish an omitted default from an explicit value when
+// declarations are merged through extends.
+type VariableDeclaration struct {
+	Required    *bool  `yaml:"required,omitempty" json:"required,omitempty"`
+	Secret      *bool  `yaml:"secret,omitempty" json:"secret,omitempty"`
+	Type        string `yaml:"type,omitempty" json:"type,omitempty"`
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+	Docs        string `yaml:"docs,omitempty" json:"docs,omitempty"`
+}
+
+// IsRequired reports the declaration's effective required setting.
+func (d VariableDeclaration) IsRequired() bool { return d.Required != nil && *d.Required }
+
+// IsSecret reports the declaration's effective sensitivity. Secret is the
+// secure default when omitted.
+func (d VariableDeclaration) IsSecret() bool { return d.Secret == nil || *d.Secret }
+
+// ValueType reports the effective declared type.
+func (d VariableDeclaration) ValueType() string {
+	if d.Type == "" {
+		return "string"
+	}
+	return d.Type
 }
 
 // ClientsConfig is the optional top-level per-client access scoping block.

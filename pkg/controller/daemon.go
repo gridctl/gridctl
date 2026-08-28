@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/config"
@@ -72,9 +71,7 @@ func (d *DaemonManager) Fork(stack *config.Stack) (int, error) {
 	args = appendLogLevelArg(args, effectiveLogLevel(d.config))
 	cmd := exec.Command(exe, args...)
 
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setsid: true, // Create new session
-	}
+	configureDaemonProcess(cmd)
 
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
@@ -124,9 +121,7 @@ func (d *DaemonManager) ForkStackless() (int, error) {
 	args = appendLogLevelArg(args, effectiveLogLevel(d.config))
 	cmd := exec.Command(exe, args...)
 
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setsid: true,
-	}
+	configureDaemonProcess(cmd)
 
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile

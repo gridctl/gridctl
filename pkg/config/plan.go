@@ -16,17 +16,18 @@ const (
 
 // DiffItem represents a single change in the plan.
 type DiffItem struct {
-	Action   DiffAction `json:"action"`
-	Kind     string     `json:"kind"`     // "mcp-server", "agent", "resource", "a2a-agent", "gateway", "network"
-	Name     string     `json:"name"`
-	Details  []string   `json:"details,omitempty"` // human-readable change descriptions
+	Action  DiffAction `json:"action"`
+	Kind    string     `json:"kind"` // "mcp-server", "agent", "resource", "a2a-agent", "gateway", "network"
+	Name    string     `json:"name"`
+	Details []string   `json:"details,omitempty"` // human-readable change descriptions
 }
 
 // PlanDiff is the complete diff between two stack specs.
 type PlanDiff struct {
-	HasChanges bool       `json:"hasChanges"`
-	Items      []DiffItem `json:"items"`
-	Summary    string     `json:"summary"`
+	HasChanges          bool                    `json:"hasChanges"`
+	Items               []DiffItem              `json:"items"`
+	Summary             string                  `json:"summary"`
+	VariableDiagnostics []DeclarationDiagnostic `json:"variableDiagnostics,omitempty"`
 }
 
 // ComputePlan compares a new spec against the currently running spec and returns a structured diff.

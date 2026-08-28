@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -29,7 +30,7 @@ Exit codes:
 		if validateFormat, err = resolveFormat(validateFormat, cmd.Flags().Changed("format"), *validateJSON); err != nil {
 			return err
 		}
-		return runValidate(args[0])
+		return runValidate(cmd.Context(), args[0])
 	},
 }
 
@@ -40,7 +41,7 @@ func init() {
 	validateJSON = addJSONAlias(validateCmd)
 }
 
-func runValidate(stackPath string) error {
+func runValidate(ctx context.Context, stackPath string) error {
 	stack, result, err := config.ValidateStackFile(stackPath)
 	if err != nil {
 		// File read or YAML parse error — not a validation issue
@@ -82,6 +83,11 @@ func runValidate(stackPath string) error {
 			result.WarningCount++
 		}
 	}
+	indexed, err := config.ParseStackIndex(ctx, stackPath)
+	if err != nil {
+		return fmt.Errorf("indexing stack declarations: %w", err)
+	}
+	appendDeclarationValidationIssues(result, declarationDiagnostics(indexed))
 
 	if validateFormat == "json" {
 		enc := json.NewEncoder(os.Stdout)
@@ -100,6 +106,40 @@ func runValidate(stackPath string) error {
 	}
 
 	return nil
+}
+
+func declarationDiagnostics(stack *config.Stack) []config.DeclarationDiagnostic {
+	if stack == nil || len(stack.Variables) == 0 {
+		return nil
+	}
+	metadata := map[string]config.VariableMetadata{}
+	locked := true
+	if store, err := loadVault(); err == nil && !store.IsLocked() {
+		locked = false
+		for _, variable := range store.List() {
+			metadata[variable.Key] = config.VariableMetadata{Type: string(variable.Type), Secret: variable.IsSecret, Deprecated: variable.Deprecated}
+		}
+		for key, declaration := range stack.Variables {
+			if _, exists := metadata[key]; exists {
+				continue
+			}
+			if _, present := os.LookupEnv(key); present {
+				metadata[key] = config.VariableMetadata{Type: declaration.ValueType(), Secret: declaration.IsSecret()}
+			}
+		}
+	}
+	return config.DiagnoseDeclarations(stack, metadata, locked)
+}
+
+func appendDeclarationValidationIssues(result *config.ValidationResult, diagnostics []config.DeclarationDiagnostic) {
+	for _, diagnostic := range diagnostics {
+		result.Issues = append(result.Issues, config.ValidationIssue{
+			Field:    "variables." + diagnostic.Key,
+			Message:  diagnostic.Message,
+			Severity: config.SeverityWarning,
+		})
+		result.WarningCount++
+	}
 }
 
 func printValidationResult(path string, result *config.ValidationResult) {

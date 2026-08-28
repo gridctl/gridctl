@@ -68,6 +68,16 @@ func Validate(s *Stack) error {
 	if s.Name == "" {
 		errs = append(errs, ValidationError{"stack.name", "is required"})
 	}
+	for key, declaration := range s.Variables {
+		if key == "" {
+			errs = append(errs, ValidationError{"variables", "declaration key cannot be empty"})
+		}
+		switch declaration.Type {
+		case "", "string", "json", "list", "number", "bool":
+		default:
+			errs = append(errs, ValidationError{"variables." + key + ".type", "must be one of: string, json, list, number, bool"})
+		}
+	}
 
 	// Gateway code_mode validation
 	if s.Gateway != nil && s.Gateway.CodeMode != "" {
