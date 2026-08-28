@@ -198,8 +198,10 @@ func resolveCredentialRef(ref string, v *vault.Store) (string, error) {
 	if v == nil {
 		return "", fmt.Errorf("vault not configured; cannot resolve %s", ref)
 	}
-	resolver := config.VaultResolver(v)
-	expanded, unresolved, _ := config.ExpandString(ref, resolver)
+	expanded, unresolved, _, problems := config.ExpandStringResolved(ref, v)
+	if len(problems) > 0 {
+		return "", problems[0]
+	}
 	if len(unresolved) > 0 {
 		return "", fmt.Errorf("vault key %q not found", unresolved[0])
 	}

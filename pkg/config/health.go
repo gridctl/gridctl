@@ -30,16 +30,16 @@ type ValidationIssue struct {
 
 // ValidationResult holds the complete output of spec validation.
 type ValidationResult struct {
-	Valid      bool              `json:"valid"`
-	ErrorCount   int            `json:"errorCount"`
-	WarningCount int            `json:"warningCount"`
-	Issues     []ValidationIssue `json:"issues"`
+	Valid        bool              `json:"valid"`
+	ErrorCount   int               `json:"errorCount"`
+	WarningCount int               `json:"warningCount"`
+	Issues       []ValidationIssue `json:"issues"`
 }
 
 // SpecHealth aggregates validation, drift, and dependency status.
 type SpecHealth struct {
-	Validation  ValidationStatus  `json:"validation"`
-	Drift       DriftStatus       `json:"drift"`
+	Validation   ValidationStatus `json:"validation"`
+	Drift        DriftStatus      `json:"drift"`
 	Dependencies DependencyStatus `json:"dependencies"`
 
 	// Replicas reports live per-replica health for every server that has
@@ -290,7 +290,17 @@ func (r *ValidationResult) addExperimentalIssues(reg *flags.Registry, s *Stack) 
 
 // ExpandStackVarsWithEnv expands environment variable references in stack fields.
 func ExpandStackVarsWithEnv(s *Stack) {
-	expandStackVars(s, EnvResolver())
+	_ = ExpandStackVarsWithEnvChecked(s)
+}
+
+// ExpandStackVarsWithEnvChecked expands environment references and returns a
+// typed error when a reserved internal credential is referenced.
+func ExpandStackVarsWithEnvChecked(s *Stack) error {
+	_, _, problems := expandStackVarsResolved(s, newReferenceResolver(nil))
+	if len(problems) > 0 {
+		return problems[0]
+	}
+	return nil
 }
 
 // ValidateStackFile loads a stack file and validates it without deploying.
@@ -306,8 +316,12 @@ func ValidateStackFile(path string) (*Stack, *ValidationResult, error) {
 		return nil, nil, fmt.Errorf("parsing stack YAML: %w", err)
 	}
 
-	// Expand env vars (no vault — validate-only doesn't need secrets)
-	expandStackVars(&stack, EnvResolver())
+	// Expand environment variables without allowing bootstrap credentials to
+	// cross into the parsed stack used by validation and export callers.
+	_, _, resolutionProblems := expandStackVarsResolved(&stack, newReferenceResolver(nil))
+	if len(resolutionProblems) > 0 {
+		return nil, nil, fmt.Errorf("resolving stack variable: %w", resolutionProblems[0])
+	}
 
 	// Apply defaults
 	stack.SetDefaults()

@@ -3,9 +3,11 @@ package vault
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -103,12 +105,12 @@ func TestStore_Import(t *testing.T) {
 		"KEY3": "val3",
 	}
 
-	count, err := store.Import(input)
+	result, err := store.Import(input)
 	if err != nil {
 		t.Fatalf("Import() error: %v", err)
 	}
-	if count != 3 {
-		t.Errorf("Import() count = %d, want 3", count)
+	if result.Imported != 3 {
+		t.Errorf("Import() count = %d, want 3", result.Imported)
 	}
 
 	for k, want := range input {
@@ -142,7 +144,10 @@ func TestStore_Export(t *testing.T) {
 	_ = store.Set("A", "1")
 	_ = store.Set("B", "2")
 
-	exported := store.Export()
+	exported, omitted := store.Export()
+	if len(omitted) != 0 {
+		t.Fatalf("Export() omitted = %v, want none", omitted)
+	}
 	if len(exported) != 2 {
 		t.Fatalf("Export() returned %d entries, want 2", len(exported))
 	}
@@ -711,12 +716,12 @@ func TestStore_ImportVariables(t *testing.T) {
 		{Key: "C", Value: `["x","y"]`, Type: TypeList, IsSecret: false},
 	}
 
-	count, err := store.ImportVariables(vars)
+	result, err := store.ImportVariables(vars)
 	if err != nil {
 		t.Fatalf("ImportVariables() error: %v", err)
 	}
-	if count != 3 {
-		t.Errorf("count = %d, want 3", count)
+	if result.Imported != 3 {
+		t.Errorf("count = %d, want 3", result.Imported)
 	}
 
 	b, _ := store.GetVariable("B")
@@ -726,6 +731,117 @@ func TestStore_ImportVariables(t *testing.T) {
 	c, _ := store.GetVariable("C")
 	if c.Type != TypeList {
 		t.Errorf("C.Type = %q, want %q", c.Type, TypeList)
+	}
+}
+
+func TestStore_DeniesInternalCredentialMutations(t *testing.T) {
+	store := NewStore(t.TempDir())
+	tests := []struct {
+		name string
+		set  func() error
+	}{
+		{name: "Set", set: func() error { return store.Set("GRIDCTL_TEST", "value") }},
+		{name: "SetWithSet", set: func() error { return store.SetWithSet("OP_CONNECT_TOKEN", "value", "legacy") }},
+		{name: "SetVariable", set: func() error {
+			return store.SetVariable(Variable{Key: "OP_SERVICE_ACCOUNT_TOKEN", Value: "value", Type: TypeString, IsSecret: true})
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var denied *InternalCredentialError
+			if err := tc.set(); !errors.As(err, &denied) {
+				t.Fatalf("error = %v, want InternalCredentialError", err)
+			}
+		})
+	}
+	if got := store.List(); len(got) != 0 {
+		t.Fatalf("denied mutations changed store: %v", got)
+	}
+}
+
+func TestStore_ImportVariables_SkipsDeniedTransactionally(t *testing.T) {
+	store := NewStore(t.TempDir())
+	result, err := store.ImportVariables([]Variable{
+		{Key: "SAFE", Value: "safe", Type: TypeString, IsSecret: true},
+		{Key: "GRIDCTL_VAULT_PASSPHRASE", Value: "denied", Type: TypeString, IsSecret: true},
+		{Key: "OP_CONNECT_TOKEN", Value: "denied-too", Type: TypeString, IsSecret: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Imported != 1 || !reflect.DeepEqual(result.Skipped, []string{"GRIDCTL_VAULT_PASSPHRASE", "OP_CONNECT_TOKEN"}) {
+		t.Fatalf("result = %+v", result)
+	}
+	if !store.Has("SAFE") || store.Has("GRIDCTL_VAULT_PASSPHRASE") || store.Has("OP_CONNECT_TOKEN") {
+		t.Fatalf("unexpected store contents: %v", store.Keys())
+	}
+
+	_, err = store.ImportVariables([]Variable{
+		{Key: "OTHER", Value: "would-partially-apply", Type: TypeString, IsSecret: true},
+		{Key: "INVALID", Value: "bad", Type: "invalid", IsSecret: true},
+	})
+	if err == nil {
+		t.Fatal("expected invalid type error")
+	}
+	if store.Has("OTHER") {
+		t.Fatal("invalid import partially mutated in-memory store")
+	}
+}
+
+func TestStore_ImportVariables_SaveFailureDoesNotMutateMemory(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(baseDir, []byte("file"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewStore(baseDir)
+	result, err := store.ImportVariables([]Variable{{
+		Key: "SAFE", Value: "must-not-stick", Type: TypeString, IsSecret: true, Set: "new-set",
+	}})
+	if err == nil {
+		t.Fatal("expected persistence error")
+	}
+	if result.Imported != 0 {
+		t.Fatalf("result.Imported = %d, want 0", result.Imported)
+	}
+	if store.Has("SAFE") || len(store.ListSets()) != 0 {
+		t.Fatalf("failed import mutated memory: keys=%v sets=%v", store.Keys(), store.ListSets())
+	}
+}
+
+func TestStore_LegacyInternalCredentialsAreFilteredWithoutRewrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "secrets.json")
+	original := []byte(`{"version":2,"variables":[{"key":"SAFE","value":"usable","type":"string","is_secret":true,"set":"legacy"},{"key":"GRIDCTL_OLD_CONTROL","value":"never-deliver","type":"string","is_secret":true,"set":"legacy"},{"key":"OP_CONNECT_TOKEN","value":"never-export","type":"string","is_secret":true}]}`)
+	if err := os.WriteFile(path, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewStore(dir)
+	if err := store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := store.Get("OP_CONNECT_TOKEN"); !ok || got != "never-export" {
+		t.Fatal("legacy denied key must remain available for diagnosis and deletion")
+	}
+	members := store.GetSetSecrets("legacy")
+	if len(members) != 1 || members[0].Key != "SAFE" {
+		t.Fatalf("GetSetSecrets() = %v, want SAFE only", members)
+	}
+	exported, omitted := store.Export()
+	if len(exported) != 1 || exported["SAFE"] != "usable" {
+		t.Fatalf("Export() = %v", exported)
+	}
+	if !reflect.DeepEqual(omitted, []string{"GRIDCTL_OLD_CONTROL", "OP_CONNECT_TOKEN"}) {
+		t.Fatalf("omitted = %v", omitted)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, original) {
+		t.Fatal("read-only operations rewrote legacy store")
+	}
+	if err := store.Delete("OP_CONNECT_TOKEN"); err != nil {
+		t.Fatalf("Delete() legacy denied key: %v", err)
 	}
 }
 

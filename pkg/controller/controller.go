@@ -157,8 +157,10 @@ func (sc *StackController) credentialResolver() runtime.CredentialResolver {
 		if sc.vaultStore == nil {
 			return "", fmt.Errorf("vault not configured; cannot resolve %s", ref)
 		}
-		resolver := config.VaultResolver(sc.vaultStore)
-		expanded, unresolved, _ := config.ExpandString(ref, resolver)
+		expanded, unresolved, _, problems := config.ExpandStringResolved(ref, sc.vaultStore)
+		if len(problems) > 0 {
+			return "", problems[0]
+		}
 		if len(unresolved) > 0 {
 			return "", fmt.Errorf("vault key %q not found", unresolved[0])
 		}

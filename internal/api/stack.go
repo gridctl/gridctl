@@ -224,7 +224,16 @@ func (s *Server) handleStackValidate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Match CLI validation: expand env vars, apply defaults
-	config.ExpandStackVarsWithEnv(&stack)
+	if err := config.ExpandStackVarsWithEnvChecked(&stack); err != nil {
+		writeJSON(w, &config.ValidationResult{
+			Valid:      false,
+			ErrorCount: 1,
+			Issues: []config.ValidationIssue{{
+				Field: "variables", Message: err.Error(), Severity: config.SeverityError,
+			}},
+		})
+		return
+	}
 	stack.SetDefaults()
 	result := config.ValidateWithIssues(&stack)
 	writeJSON(w, result)
@@ -685,7 +694,10 @@ func (s *Server) handleStackAppend(w http.ResponseWriter, r *http.Request) {
 	case "resource":
 		stack.Resources = append(stack.Resources, newResource)
 	}
-	config.ExpandStackVarsWithEnv(&stack)
+	if err := config.ExpandStackVarsWithEnvChecked(&stack); err != nil {
+		writeJSONError(w, "Stack variable resolution failed after append: "+err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
 	stack.SetDefaults()
 	if result := config.ValidateWithIssues(&stack); !result.Valid {
 		w.Header().Set("Content-Type", "application/json")

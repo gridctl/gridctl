@@ -95,6 +95,24 @@ func TestInjectSetSecrets(t *testing.T) {
 	})
 }
 
+func TestInjectSetSecrets_FiltersInternalCredentials(t *testing.T) {
+	s := &Stack{
+		Secrets:    &Secrets{Sets: setRefs("legacy")},
+		MCPServers: []MCPServer{{Name: "local"}},
+	}
+	vault := &mockSetVault{sets: map[string][]VaultSecret{
+		"legacy": {
+			{Key: "SAFE", Value: "delivered"},
+			{Key: "GRIDCTL_VAULT_PASSPHRASE", Value: "blocked"},
+			{Key: "OP_CONNECT_TOKEN", Value: "blocked"},
+		},
+	}}
+	injectSetSecrets(s, vault)
+	if got := s.MCPServers[0].Env; len(got) != 1 || got["SAFE"] != "delivered" {
+		t.Fatalf("injected env = %v, want SAFE only", got)
+	}
+}
+
 func TestInjectSetSecrets_Scoping(t *testing.T) {
 	devSet := map[string][]VaultSecret{
 		"dev": {{Key: "API_KEY", Value: "sk-123"}},

@@ -47,6 +47,12 @@ type SetSummary struct {
 	Count       int    `json:"count"`
 }
 
+// ImportResult describes a bulk import without exposing imported values.
+type ImportResult struct {
+	Imported int      `json:"imported"`
+	Skipped  []string `json:"skipped"`
+}
+
 // CurrentStoreVersion is the on-disk schema version this build emits.
 // v0 (legacy flat array) and v1 (object with "secrets" key) loads are
 // supported but every save rewrites the file as v2.

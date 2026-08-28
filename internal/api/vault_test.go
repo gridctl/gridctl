@@ -135,6 +135,55 @@ func TestHandleVault_Import(t *testing.T) {
 	}
 }
 
+func TestHandleVault_RejectsInternalCredentialMutations(t *testing.T) {
+	server, _ := setupVaultServer(t)
+	handler := server.Handler()
+
+	tests := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{method: http.MethodPost, path: "/api/var", body: `{"key":"GRIDCTL_VAULT_PASSPHRASE","value":"blocked"}`},
+		{method: http.MethodPut, path: "/api/var/OP_CONNECT_TOKEN", body: `{"value":"blocked"}`},
+	}
+	for _, tc := range tests {
+		req := loopbackRequest(tc.method, tc.path, strings.NewReader(tc.body))
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("%s %s status = %d, want 400; body=%s", tc.method, tc.path, w.Code, w.Body.String())
+		}
+		if strings.Contains(w.Body.String(), "blocked") {
+			t.Fatal("response leaked denied value")
+		}
+	}
+}
+
+func TestHandleVault_ImportReportsSkippedInternalCredentials(t *testing.T) {
+	server, store := setupVaultServer(t)
+	body := `{"variables":[{"key":"SAFE","value":"ok","type":"string"},{"key":"GRIDCTL_PRIVATE","value":"blocked","type":"string"},{"key":"OP_SERVICE_ACCOUNT_TOKEN","value":"blocked-too","type":"string"}]}`
+	req := loopbackRequest(http.MethodPost, "/api/var/import", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", w.Code, w.Body.String())
+	}
+	var result vault.ImportResult
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Imported != 1 || len(result.Skipped) != 2 || result.Skipped[0] != "GRIDCTL_PRIVATE" || result.Skipped[1] != "OP_SERVICE_ACCOUNT_TOKEN" {
+		t.Fatalf("result = %+v", result)
+	}
+	if !store.Has("SAFE") || store.Has("GRIDCTL_PRIVATE") || store.Has("OP_SERVICE_ACCOUNT_TOKEN") {
+		t.Fatalf("unexpected keys: %v", store.Keys())
+	}
+	if strings.Contains(w.Body.String(), "blocked") {
+		t.Fatal("response leaked skipped values")
+	}
+}
+
 func TestHandleVault_NotAvailable(t *testing.T) {
 	server := &Server{} // no vault store
 	handler := server.Handler()
