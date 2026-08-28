@@ -80,6 +80,8 @@ pkg/provisioner/    LLM-client config writers (claude, claudecode, cursor, winds
                     cline, anythingllm, lmstudio, roo, zed, continue, vscode). JSON and TOML helpers in json.go / toml.go.
                     Backed by `gridctl link` / `gridctl unlink`.
 pkg/vault/          Encrypted variable store (XChaCha20-Poly1305 + Argon2id). The `gridctl var` and (deprecated) `gridctl vault` CLIs.
+pkg/varrun/         Explicit stored-variable delivery to child processes, including output redaction and signal forwarding.
+pkg/varscan/        Exact stored-secret scanning for working-tree files and staged Git blobs.
 pkg/pins/           TOFU schema pinning for tool definitions; drift surfaces in pkg/pins + `gridctl pins`.
 pkg/optimize/       Usage analysis: feeds `gridctl optimize` and the UI's findings panel with token-denominated findings.
 pkg/telemetry/      Tool-call accounting (counts, latency, tokens). Buffered in-memory; surfaced via /api/telemetry.
