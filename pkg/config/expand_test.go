@@ -17,10 +17,15 @@ type mockVault struct {
 }
 
 func TestResolveVariable_Verdicts(t *testing.T) {
-	store := &mockVault{secrets: map[string]string{"STORE_ONLY": "stored", "BOTH": "stored"}}
+	store := &mockVault{secrets: map[string]string{
+		"STORE_ONLY":       "stored",
+		"BOTH":             "stored",
+		"OP_CONNECT_TOKEN": "never-export",
+	}}
 	t.Setenv("BOTH", "ambient")
 	t.Setenv("ENV_ONLY", "ambient")
 	t.Setenv("GRIDCTL_VAULT_PASSPHRASE", "must-not-resolve")
+	t.Setenv("OP_CONNECT_TOKEN", "must-not-resolve")
 
 	tests := []struct {
 		key         string
@@ -33,6 +38,7 @@ func TestResolveVariable_Verdicts(t *testing.T) {
 		{key: "ENV_ONLY", wantValue: "ambient", wantVerdict: ResolutionEnvFallback},
 		{key: "MISSING", wantVerdict: ResolutionUnset},
 		{key: "GRIDCTL_VAULT_PASSPHRASE", wantVerdict: ResolutionDenied, wantDenied: true},
+		{key: "OP_CONNECT_TOKEN", wantVerdict: ResolutionDenied, wantDenied: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.key, func(t *testing.T) {
@@ -45,6 +51,23 @@ func TestResolveVariable_Verdicts(t *testing.T) {
 				t.Fatalf("denied error = %v, want %v", got.Error, tc.wantDenied)
 			}
 		})
+	}
+}
+
+func TestExpandStringResolved_DeniesLegacyStoredCredential(t *testing.T) {
+	store := &mockVault{secrets: map[string]string{"OP_CONNECT_TOKEN": "never-export"}}
+	t.Setenv("OP_CONNECT_TOKEN", "must-not-resolve")
+
+	expanded, _, _, problems := ExpandStringResolved("${var:OP_CONNECT_TOKEN}", store)
+	if expanded != "${var:OP_CONNECT_TOKEN}" {
+		t.Fatalf("ExpandStringResolved() = %q, want denied reference left literal", expanded)
+	}
+	if len(problems) != 1 {
+		t.Fatalf("problems = %v, want one typed denial", problems)
+	}
+	var denied *vault.InternalCredentialError
+	if !errors.As(problems[0], &denied) || denied.Key != "OP_CONNECT_TOKEN" {
+		t.Fatalf("problem = %v, want typed denial for OP_CONNECT_TOKEN", problems[0])
 	}
 }
 
