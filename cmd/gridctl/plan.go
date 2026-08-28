@@ -38,7 +38,7 @@ Use -y or --auto-approve to auto-approve and apply changes.`,
 		if planFormat, err = resolveFormat(planFormat, cmd.Flags().Changed("format"), *planJSON); err != nil {
 			return err
 		}
-		return runPlan(args[0])
+		return runPlan(cmd.Context(), args[0])
 	},
 }
 
@@ -51,7 +51,7 @@ func init() {
 	planJSON = addJSONAlias(planCmd)
 }
 
-func runPlan(stackPath string) error {
+func runPlan(ctx context.Context, stackPath string) error {
 	// Load and validate the proposed spec
 	proposed, result, err := config.ValidateStackFile(stackPath)
 	if err != nil {
@@ -61,7 +61,11 @@ func runPlan(stackPath string) error {
 		printValidationResult(stackPath, result)
 		return fmt.Errorf("proposed spec has %d validation error(s)", result.ErrorCount)
 	}
-	diagnostics := declarationDiagnostics(proposed)
+	indexed, err := config.ParseStackIndex(ctx, stackPath)
+	if err != nil {
+		return fmt.Errorf("indexing stack declarations: %w", err)
+	}
+	diagnostics := declarationDiagnostics(indexed)
 	appendDeclarationValidationIssues(result, diagnostics)
 
 	// Find the running stack's state

@@ -478,6 +478,16 @@ func TestBuildVariableDrift_LockedOrAbsentStore(t *testing.T) {
 	}
 }
 
+func TestBuildVariableDrift_DoesNotReportStoredDeclarationAdvisories(t *testing.T) {
+	store := newSetVault(t, "TOKEN")
+	spec := &config.Stack{
+		Variables: map[string]config.VariableDeclaration{"TOKEN": {}},
+	}
+	if got := buildVariableDrift(spec, store); len(got) != 0 {
+		t.Fatalf("stored declaration drift = %+v, want none", got)
+	}
+}
+
 // TestHandleVariableDrift_SatisfiedByEnvironment pins the subtlest case: the
 // deploy-time resolver reads the store first and the process environment
 // second, so a key the environment supplies is not a deploy failure and must

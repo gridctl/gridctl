@@ -184,7 +184,16 @@ func buildVariableDrift(spec *config.Stack, store *vault.Store) []driftEntry {
 		seen[key] = true
 	}
 	for key, keyDiagnostics := range byKey {
-		if seen[key] || len(keyDiagnostics) == 0 {
+		if seen[key] || stored[key] {
+			continue
+		}
+		var missingDiagnostics []config.DeclarationDiagnostic
+		for _, diagnostic := range keyDiagnostics {
+			if diagnostic.Code == "required_unset" {
+				missingDiagnostics = append(missingDiagnostics, diagnostic)
+			}
+		}
+		if len(missingDiagnostics) == 0 {
 			continue
 		}
 		declaration := spec.Variables[key]
@@ -192,7 +201,7 @@ func buildVariableDrift(spec *config.Stack, store *vault.Store) []driftEntry {
 		if consumers == nil {
 			consumers = []config.Consumer{}
 		}
-		out = append(out, driftEntry{Key: key, Consumers: consumers, Declaration: &declaration, Diagnostics: keyDiagnostics})
+		out = append(out, driftEntry{Key: key, Consumers: consumers, Declaration: &declaration, Diagnostics: missingDiagnostics})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	return out

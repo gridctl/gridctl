@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -29,7 +30,7 @@ Exit codes:
 		if validateFormat, err = resolveFormat(validateFormat, cmd.Flags().Changed("format"), *validateJSON); err != nil {
 			return err
 		}
-		return runValidate(args[0])
+		return runValidate(cmd.Context(), args[0])
 	},
 }
 
@@ -40,7 +41,7 @@ func init() {
 	validateJSON = addJSONAlias(validateCmd)
 }
 
-func runValidate(stackPath string) error {
+func runValidate(ctx context.Context, stackPath string) error {
 	stack, result, err := config.ValidateStackFile(stackPath)
 	if err != nil {
 		// File read or YAML parse error — not a validation issue
@@ -82,7 +83,11 @@ func runValidate(stackPath string) error {
 			result.WarningCount++
 		}
 	}
-	appendDeclarationValidationIssues(result, declarationDiagnostics(stack))
+	indexed, err := config.ParseStackIndex(ctx, stackPath)
+	if err != nil {
+		return fmt.Errorf("indexing stack declarations: %w", err)
+	}
+	appendDeclarationValidationIssues(result, declarationDiagnostics(indexed))
 
 	if validateFormat == "json" {
 		enc := json.NewEncoder(os.Stdout)

@@ -257,8 +257,34 @@ func renderExplainTable(cmd *cobra.Command, doc explainDocument) {
 	t.AppendRow(table.Row{"Last rotated", pointerText(doc.LastRotated)})
 	t.AppendRow(table.Row{"Environment present", doc.EnvironmentPresent})
 	t.AppendRow(table.Row{"Verdict", pointerText(doc.Verdict)})
-	t.AppendRow(table.Row{"Consumers", len(doc.Consumers)})
 	t.AppendRow(table.Row{"Consumer coverage", doc.ConsumerCoverage})
+	for _, consumer := range doc.Consumers {
+		name := fmt.Sprintf("%s/%s", consumer.Kind, consumer.Name)
+		if consumer.Name == "" {
+			name = string(consumer.Kind)
+		}
+		t.AppendRow(table.Row{"Consumer", fmt.Sprintf("%s (%s)", name, consumer.Field)})
+	}
+	if doc.Declaration != nil {
+		t.AppendRow(table.Row{"Declared required", doc.Declaration.IsRequired()})
+		t.AppendRow(table.Row{"Declared type", doc.Declaration.ValueType()})
+		t.AppendRow(table.Row{"Declared sensitive", doc.Declaration.IsSecret()})
+		if doc.Declaration.Description != "" {
+			t.AppendRow(table.Row{"Declared description", doc.Declaration.Description})
+		}
+		if doc.Declaration.Docs != "" {
+			t.AppendRow(table.Row{"Declared docs", doc.Declaration.Docs})
+		}
+	}
+	if doc.Description != nil && *doc.Description != "" {
+		t.AppendRow(table.Row{"Description", *doc.Description})
+	}
+	if doc.Docs != nil && *doc.Docs != "" {
+		t.AppendRow(table.Row{"Docs", *doc.Docs})
+	}
+	if doc.Deprecated != nil && *doc.Deprecated != "" {
+		t.AppendRow(table.Row{"Deprecated", *doc.Deprecated})
+	}
 	for _, problem := range doc.Problems {
 		t.AppendRow(table.Row{"Problem", problem})
 	}

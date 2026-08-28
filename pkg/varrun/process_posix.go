@@ -20,7 +20,11 @@ func processSignals() []os.Signal {
 func signalProcess(p *os.Process, sig os.Signal, group bool) error {
 	if group {
 		if s, ok := sig.(syscall.Signal); ok {
-			return syscall.Kill(-p.Pid, s)
+			if err := syscall.Kill(-p.Pid, s); errors.Is(err, syscall.ESRCH) {
+				return os.ErrProcessDone
+			} else {
+				return err
+			}
 		}
 	}
 	return p.Signal(sig)

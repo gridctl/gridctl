@@ -66,23 +66,27 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	signal.Notify(sigCh, sigs...)
 	defer signal.Stop(sigCh)
 	done := make(chan struct{})
+	forwardDone := make(chan struct{})
 	var forwardErr error
 	var mu sync.Mutex
 	go func() {
-		select {
-		case sig := <-sigCh:
-			mu.Lock()
-			forwardErr = signalProcess(cmd.Process, sig, group)
-			mu.Unlock()
-		case <-ctx.Done():
-			mu.Lock()
-			forwardErr = terminateProcess(cmd.Process, group)
-			mu.Unlock()
-		case <-done:
+		defer close(forwardDone)
+		ctxDone := ctx.Done()
+		for {
+			select {
+			case sig := <-sigCh:
+				recordForwardError(&mu, &forwardErr, signalProcess(cmd.Process, sig, group))
+			case <-ctxDone:
+				recordForwardError(&mu, &forwardErr, terminateProcess(cmd.Process, group))
+				ctxDone = nil
+			case <-done:
+				return
+			}
 		}
 	}()
 	waitErr := cmd.Wait()
 	close(done)
+	<-forwardDone
 	outErr, errErr := closeOut(), closeErr()
 	mu.Lock()
 	fwdErr := forwardErr
@@ -101,6 +105,17 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, fmt.Errorf("waiting for command: %w", waitErr)
 	}
 	return Result{ExitCode: code}, nil
+}
+
+func recordForwardError(mu *sync.Mutex, dst *error, err error) {
+	if err == nil || errors.Is(err, os.ErrProcessDone) {
+		return
+	}
+	mu.Lock()
+	if *dst == nil {
+		*dst = err
+	}
+	mu.Unlock()
 }
 
 func outputWriter(dst io.Writer, raw bool, secrets []string) (io.Writer, func() error) {

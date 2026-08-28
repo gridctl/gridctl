@@ -210,11 +210,13 @@ func unmetPackVariables(declarations map[string]skills.LockedVariableDeclaration
 	if len(declarations) == 0 {
 		return nil
 	}
+	store, err := loadVault()
+	if err != nil || store.IsLocked() {
+		return nil
+	}
 	stored := map[string]bool{}
-	if store, err := loadVault(); err == nil && !store.IsLocked() {
-		for _, variable := range store.List() {
-			stored[variable.Key] = true
-		}
+	for _, variable := range store.List() {
+		stored[variable.Key] = true
 	}
 	keys := make([]string, 0, len(declarations))
 	for key, declaration := range declarations {

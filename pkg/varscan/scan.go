@@ -138,8 +138,8 @@ func candidatesFrom(vars []vault.Variable, result *Result) []candidate {
 }
 
 func scanWorking(ctx context.Context, paths []string, candidates []candidate, result *Result) error {
-	root, matcher := ignoreMatcher()
 	for _, requested := range paths {
+		root, matcher := ignoreMatcher(requested)
 		err := filepath.WalkDir(requested, func(path string, d os.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
@@ -184,15 +184,21 @@ func scanWorking(ctx context.Context, paths []string, candidates []candidate, re
 	return nil
 }
 
-func ignoreMatcher() (string, gitignore.Matcher) {
-	cwd, _ := os.Getwd()
-	repo, err := git.PlainOpenWithOptions(cwd, &git.PlainOpenOptions{DetectDotGit: true})
+func ignoreMatcher(requested string) (string, gitignore.Matcher) {
+	start, err := filepath.Abs(requested)
 	if err != nil {
-		return cwd, nil
+		return requested, nil
+	}
+	if info, statErr := os.Stat(start); statErr == nil && !info.IsDir() {
+		start = filepath.Dir(start)
+	}
+	repo, err := git.PlainOpenWithOptions(start, &git.PlainOpenOptions{DetectDotGit: true})
+	if err != nil {
+		return start, nil
 	}
 	wt, err := repo.Worktree()
 	if err != nil {
-		return cwd, nil
+		return start, nil
 	}
 	root := wt.Filesystem.Root()
 	patterns, err := gitignore.ReadPatterns(wt.Filesystem, nil)

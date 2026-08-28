@@ -40,12 +40,15 @@ func parseStackIndex(ctx context.Context, path string, visited map[string]bool, 
 	if err := yaml.Unmarshal(data, &child); err != nil {
 		return nil, fmt.Errorf("parsing stack YAML: %w", err)
 	}
-	clone := child
-	_, _, problems := expandStackVarsResolved(&clone, func(string, bool) ResolutionResult { return ResolutionResult{Verdict: ResolutionUnset} })
+	var indexCopy Stack
+	if err := yaml.Unmarshal(data, &indexCopy); err != nil {
+		return nil, fmt.Errorf("parsing stack YAML for reference index: %w", err)
+	}
+	_, _, problems := expandStackVarsResolved(&indexCopy, func(string, bool) ResolutionResult { return ResolutionResult{Verdict: ResolutionUnset} })
 	if len(problems) > 0 {
 		return nil, problems[0]
 	}
-	child.References = clone.References
+	child.References = indexCopy.References
 	for key, consumers := range child.References {
 		for i := range consumers {
 			consumers[i].Source = path
