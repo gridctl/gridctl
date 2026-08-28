@@ -388,6 +388,32 @@ The Variables workspace reflects scoping: a scoped set's variables list the
 workloads they actually reach, and each one links to that node on the Stack
 canvas.
 
+### Reserved internal credentials
+
+The `GRIDCTL_` namespace is reserved for gridctl bootstrap and control-plane
+settings. `OP_CONNECT_TOKEN` and `OP_SERVICE_ACCOUNT_TOKEN` are reserved as
+well. These keys cannot be added to the variable store and are filtered from
+store-derived set injection and local MCP process inheritance. A
+`${var:GRIDCTL_*}` or `${vault:GRIDCTL_*}` reference stays literal and reports a
+reserved-credential resolution error; it never falls back to an ambient value.
+The two reserved 1Password keys follow the same rule.
+
+Existing stores are not rewritten merely because they contain a key accepted
+by an older gridctl version. Unrelated variables remain usable, and the legacy
+entry can still be listed, diagnosed, and deleted. Move any value meant for a
+downstream workload to a non-reserved name, update its references, and remove
+the old record:
+
+```bash
+gridctl var delete GRIDCTL_OLD_KEY --force
+```
+
+This policy is a control-plane boundary rather than a general secret-name
+filter. Names such as `GITHUB_TOKEN` remain valid store keys. Ordinary
+`$GRIDCTL_SETTING` and `${GRIDCTL_SETTING}` interpolation also remains valid
+for non-credential settings, while the exact bootstrap credential names never
+expand into downstream stack configuration.
+
 ---
 
 ## Network

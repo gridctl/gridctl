@@ -159,8 +159,8 @@ The variable store holds both secrets (encrypted at rest, redacted in logs) and 
 | `gridctl var get <key>` | Retrieve a variable (secrets masked; `--plain` to unmask). |
 | `gridctl var list` | List all variables with type, visibility, and set assignment (`--format json` or `--json`). |
 | `gridctl var delete <key>` | Remove a variable (`--force` to skip confirmation). |
-| `gridctl var import <file>` | Import from `.env` or `.json` (`--format` to override auto-detection; `# @public` / `# @type=` markers tag entries). |
-| `gridctl var export` | Export variables (`--format env\|json`, `--plain` to unmask). |
+| `gridctl var import <file>` | Import from `.env` or `.json` (`--format` to override auto-detection; `# @public` / `# @type=` markers tag entries). Reserved internal credential keys are skipped and named in warnings; valid entries are still imported. |
+| `gridctl var export` | Export variables (`--format env\|json`, `--plain` to unmask). Reserved internal credential keys are always omitted, including from masked exports, and named without their values. |
 | `gridctl var sets list` | List variable sets and their member counts. |
 | `gridctl var sets create <name>` | Create a variable set. |
 | `gridctl var sets delete <name>` | Delete a variable set (members are unassigned, not deleted). |
@@ -168,6 +168,22 @@ The variable store holds both secrets (encrypted at rest, redacted in logs) and 
 | `gridctl var change-passphrase` | Re-encrypt with a new passphrase. |
 
 > `gridctl vault …` is a deprecated alias for `gridctl var …`, removed at v1.0. The `${vault:KEY}` reference syntax is likewise deprecated in favor of `${var:KEY}`.
+
+`GRIDCTL_*`, `OP_CONNECT_TOKEN`, and `OP_SERVICE_ACCOUNT_TOKEN` are reserved for
+gridctl bootstrap and control-plane credentials. They cannot be created or
+updated in the variable store and are never delivered through variable sets,
+exports, or local MCP process environments. Store files created by older
+versions remain readable so an operator can diagnose and remove a legacy entry:
+
+```bash
+gridctl var delete GRIDCTL_VAULT_PASSPHRASE --force
+```
+
+Rename any value intended for a downstream workload to a non-reserved key and
+update its `${var:KEY}` references before removal. Ordinary `$GRIDCTL_*` and
+`${GRIDCTL_*}` environment interpolation remains available for non-credential
+control settings; the exact bootstrap credential names never expand into stack
+configuration.
 
 ## Pins (TOFU schema pinning)
 
