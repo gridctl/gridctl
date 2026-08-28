@@ -14,6 +14,21 @@
 version: "1"
 name: var-basic
 
+# Declarations document requirements without carrying values or changing
+# expansion. `gridctl var explain KEY --file <this-file>` reports them with
+# each key's consumers and store-first resolution verdict.
+variables:
+  GITHUB_TOKEN:
+    required: true
+    description: Token used by the GitHub MCP server
+    docs: https://github.com/github/github-mcp-server#github-personal-access-token
+  OPENAI_API_KEY:
+    required: true
+    description: API key used by the AI service
+  LOG_LEVEL:
+    secret: false
+    description: Service logging verbosity
+
 mcp-servers:
   - name: github
     image: ghcr.io/github/github-mcp-server:latest
