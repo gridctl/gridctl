@@ -1295,6 +1295,40 @@ metadata field for each entry. PR 1 records the type only; PR 2 will wire
 type-aware expansion so a `type=json` value can unmarshal directly into a
 YAML mapping.
 
+Stored records may also carry value-free `description`, `docs`, `example`, and
+`deprecated` metadata. JSON import and export use those field names. `.env`
+round trips use JSON-quoted `# @description=`, `# @docs=`, `# @example=`, and
+`# @deprecated=` comments immediately before the variable. A blank line or a
+consumed assignment resets pending markers.
+
+### Variable declarations
+
+An optional top-level `variables:` map documents prerequisites without
+supplying values:
+
+```yaml
+variables:
+  GITHUB_TOKEN:
+    required: true
+    secret: true
+    type: string
+    description: Token used by the GitHub server
+    docs: https://docs.github.com/authentication
+
+mcp-servers:
+  - name: github
+    env:
+      GITHUB_TOKEN: ${var:GITHUB_TOKEN}
+```
+
+Defaults are `required: false`, `secret: true`, and `type: string`.
+Declarations are advisory: they never contain defaults or values, participate
+in expansion, write the store, prompt, or make a previously valid apply fail.
+Across `extends`, parent declarations are inherited, child documentation
+replaces parent text only when supplied, `required: true` wins in either layer,
+and conflicting explicit type or sensitivity declarations are rejected. A
+plaintext declaration cannot weaken a stored secret.
+
 ---
 
 ## Name Uniqueness

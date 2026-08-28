@@ -20,6 +20,13 @@ agents: [neteng-reviewer]            # same
 wiring: true                         # ensure the gateway entry in client configs
 clients: []                          # wiring scope; empty = all detected clients
 rules: [team-style]                  # context fragments from rules/*.md or fragments/*.md (opt-in; empty = none)
+variables:
+  GITHUB_TOKEN:
+    required: true
+    secret: true
+    type: string
+    description: Token used by the GitHub tools
+    docs: https://docs.github.com/authentication
 ```
 
 `gridctl.dev/v1alpha1` is the pre-1.0 spelling of the same schema and stays accepted indefinitely, so packs authored before the graduation import unchanged; write `gridctl.dev/v1` in new manifests.
@@ -27,6 +34,14 @@ rules: [team-style]                  # context fragments from rules/*.md or frag
 Skills follow the `SKILL.md` convention and agents the `agents/*.md` convention, exactly as plain skill repos do — a pack repo is a skill repo plus a manifest. Rule fragments live under `rules/*.md` or `fragments/*.md` (filename base is the fragment name). Names the manifest selects but the repo does not ship are reported as `unresolved` (exit 1) and kept in the pack record so status stays honest. Unlike skills/agents, an empty `rules:` list means **none** (rules are opt-in). A rule whose name collides with a local fragment of different content is skipped, never overwritten; identical content installs idempotently. A first rule install that activates fragments mode migrates AGENTS.md with an explicit printed message, exactly like `ctx add`.
 
 Field names follow the Claude Code plugin.json family where the semantics match, so a pack maps onto that ecosystem rather than fighting it. The word "bundle" is deliberately avoided: the MCP ecosystem uses it for `.mcpb`, a single-server archive format.
+
+The optional `variables:` map uses the same value-free declaration fields as
+`stack.yaml`: `required`, `secret`, `type`, `description`, and `docs`, with
+defaults of false, true, and string for the first three fields. Import records
+the declarations and lists unmet required keys with `gridctl var set KEY`
+commands. It never imports a value, edits a stack, writes the variable store,
+or prompts. Packs without declarations retain the version-two lock shape;
+version three is used only when declarations must be represented.
 
 ## Verbs
 

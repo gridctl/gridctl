@@ -158,8 +158,11 @@ The variable store holds both secrets (encrypted at rest, redacted in logs) and 
 | `gridctl var set <key>` | Store a variable (interactive prompt, or `--value`). Secret by default (`--secret` makes that explicit); `--plaintext` for non-sensitive config visible in logs. `--type <string\|json\|list\|number\|bool>` tags the value's shape; `--set <name>` assigns it to a variable set. |
 | `gridctl var get <key>` | Retrieve a variable (secrets masked; `--plain` to unmask). |
 | `gridctl var list` | List all variables with type, visibility, and set assignment (`--format json` or `--json`). |
+| `gridctl var explain <key>` | Show store lock state, value-free metadata, environment presence, store-first resolution verdict, declarations, and stack consumers without exposing the value (`--file`, `--format json` or `--json`; exit `0` resolved, `1` unset/denied/locked-partial, `2` operational failure). |
+| `gridctl var run --set <name>\|--only <keys>\|--all -- <command> [args...]` | Execute a command directly with only the selected stored variables overlaid on its environment. Non-TTY output is exact-value redacted by default; `--no-redact` disables it, and `--redact` requires both outputs to be non-TTY. The child controls the exit code after spawn; setup failures exit `3`. Use an explicit shell command such as `sh -c '...'` when shell syntax is required. |
+| `gridctl var scan [paths...]` | Scan working-tree text for exact stored secret values, or scan changed Git index blobs with `--staged` (`--format json` or `--json`; exit `0` clean, `1` findings, `2` incomplete or failed). Paths cannot be combined with `--staged`. |
 | `gridctl var delete <key>` | Remove a variable (`--force` to skip confirmation). |
-| `gridctl var import <file>` | Import from `.env` or `.json` (`--format` to override auto-detection; `# @public` / `# @type=` markers tag entries). Reserved internal credential keys are skipped and named in warnings; valid entries are still imported. |
+| `gridctl var import <file>` | Import from `.env` or `.json` (`--format` to override auto-detection; `# @public`, `# @type=`, `# @description=`, `# @docs=`, `# @example=`, and `# @deprecated=` markers tag entries). Reserved internal credential keys are skipped and named in warnings; valid entries are still imported. |
 | `gridctl var export` | Export variables (`--format env\|json`, `--plain` to unmask). Reserved internal credential keys are always omitted, including from masked exports, and named without their values. |
 | `gridctl var sets list` | List variable sets and their member counts. |
 | `gridctl var sets create <name>` | Create a variable set. |
@@ -184,6 +187,14 @@ update its `${var:KEY}` references before removal. Ordinary `$GRIDCTL_*` and
 `${GRIDCTL_*}` environment interpolation remains available for non-credential
 control settings; the exact bootstrap credential names never expand into stack
 configuration.
+
+`var scan` compares exact non-empty secret values of at least eight bytes. It
+does not detect patterns, transformed values, multiline values, or repository
+history. Working-tree scans honor `.gitignore`, do not follow symlinks, skip
+binary files using an initial-sample NUL-byte check, and skip files larger than
+10 MiB. Each file is capped at 100 findings. A pre-commit check can run
+`gridctl var scan --staged`; use Gitleaks or TruffleHog as well when pattern and
+history scanning are required.
 
 ## Pins (TOFU schema pinning)
 
