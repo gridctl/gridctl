@@ -50,6 +50,7 @@ func TestRun_StdinPlaintextAndCredentialStripping(t *testing.T) {
 		Command: []string{os.Args[0], "-test.run=TestRun_StdinPlaintextAndCredentialStripping"},
 		Environment: []string{
 			"VAR_RUN_IO_HELPER=1",
+			"GOCOVERDIR=" + t.TempDir(),
 			"TOKEN=ambient",
 			"GRIDCTL_VAULT_PASSPHRASE=ambient-passphrase",
 		},
