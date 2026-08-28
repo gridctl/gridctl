@@ -63,11 +63,11 @@ gateway:
   bind: "0.0.0.0"
   # Required whenever bind is not loopback: gridctl refuses to start with a
   # network-reachable listener and no authentication. Store the token in the
-  # vault ('gridctl var set GRIDCTL_TOKEN <value> --secret') rather than
+  # variable store ('gridctl var set GATEWAY_TOKEN') rather than
   # committing it here, and send it as 'Authorization: Bearer <token>'.
   auth:
     type: bearer
-    token: "${GRIDCTL_TOKEN}"
+    token: "${var:GATEWAY_TOKEN}"
 
 network:
   name: devstack
