@@ -2,6 +2,18 @@ import { describe, it, expect } from 'vitest';
 import { parseEnv } from '../lib/envParser';
 
 describe('parseEnv', () => {
+	it('round-trips gridctl metadata markers and resets at blanks', () => {
+		const input = '# @public\n# @type=list\n# @description="service tags"\n# @docs="https://example.test/docs"\nTAGS=a,b\n\nPLAIN=value';
+		const { entries } = parseEnv(input);
+		expect(entries[0]).toMatchObject({
+			key: 'TAGS',
+			type: 'list',
+			isSecret: false,
+			metadata: { description: 'service tags', docs: 'https://example.test/docs' },
+		});
+		expect(entries[1]).toMatchObject({ key: 'PLAIN', type: 'string', metadata: {} });
+		expect(entries[1].isSecret).toBeUndefined();
+	});
   it('parses a basic KEY=value pair', () => {
     const { entries, ignored } = parseEnv('FOO=bar');
     expect(ignored).toHaveLength(0);

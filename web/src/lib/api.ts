@@ -1084,6 +1084,10 @@ export interface Variable {
   // means unknown, not never: variables untouched since the field shipped
   // carry no stamp, so render the absence as unknown rather than a date.
   last_rotated?: string;
+	description?: string;
+	docs?: string;
+	example?: string;
+	deprecated?: string;
 }
 
 export interface VariableSet {
@@ -1162,6 +1166,10 @@ export interface CreateVariableInput {
   type?: VariableType;
   isSecret?: boolean;
   set?: string;
+	description?: string;
+	docs?: string;
+	example?: string;
+	deprecated?: string;
 }
 
 export async function createVariable(input: CreateVariableInput): Promise<void> {
@@ -1169,6 +1177,10 @@ export async function createVariable(input: CreateVariableInput): Promise<void> 
   if (input.type !== undefined) body.type = input.type;
   if (input.isSecret !== undefined) body.is_secret = input.isSecret;
   if (input.set) body.set = input.set;
+	if (input.description !== undefined) body.description = input.description;
+	if (input.docs !== undefined) body.docs = input.docs;
+	if (input.example !== undefined) body.example = input.example;
+	if (input.deprecated !== undefined) body.deprecated = input.deprecated;
   await mutateJSON<unknown>('/api/var', 'POST', body);
 }
 
@@ -1185,6 +1197,10 @@ export interface UpdateVariableInput {
   type?: VariableType;
   isSecret?: boolean;
   set?: string;
+	description?: string;
+	docs?: string;
+	example?: string;
+	deprecated?: string;
 }
 
 export async function updateVariable(key: string, input: UpdateVariableInput): Promise<void> {
@@ -1193,6 +1209,10 @@ export async function updateVariable(key: string, input: UpdateVariableInput): P
   if (input.type !== undefined) body.type = input.type;
   if (input.isSecret !== undefined) body.is_secret = input.isSecret;
   if (input.set !== undefined) body.set = input.set;
+	if (input.description !== undefined) body.description = input.description;
+	if (input.docs !== undefined) body.docs = input.docs;
+	if (input.example !== undefined) body.example = input.example;
+	if (input.deprecated !== undefined) body.deprecated = input.deprecated;
   await mutateJSON<unknown>(`/api/var/${encodeURIComponent(key)}`, 'PUT', body);
 }
 
@@ -1243,6 +1263,10 @@ export interface ImportVariableInput {
   type: VariableType;
   isSecret: boolean;
   set?: string;
+	description?: string;
+	docs?: string;
+	example?: string;
+	deprecated?: string;
 }
 
 export interface ImportVariablesResult {
@@ -1262,6 +1286,10 @@ export async function importVariables(
       type: v.type,
       is_secret: v.isSecret,
       ...(v.set ? { set: v.set } : {}),
+		...(v.description ? { description: v.description } : {}),
+		...(v.docs ? { docs: v.docs } : {}),
+		...(v.example ? { example: v.example } : {}),
+		...(v.deprecated ? { deprecated: v.deprecated } : {}),
     })),
   };
   return mutateJSON<ImportVariablesResult>('/api/var/import', 'POST', body);

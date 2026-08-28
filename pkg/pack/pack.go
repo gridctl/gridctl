@@ -73,6 +73,18 @@ type Manifest struct {
 	// rules/*.md (or fragments/*.md) discovery. Empty means none
 	// (rules are opt-in, never import-all).
 	Rules []string `yaml:"rules,omitempty" json:"rules,omitempty"`
+	// Variables documents value-free prerequisites. Installing a pack never
+	// writes these declarations to a stack or variable store.
+	Variables map[string]VariableDeclaration `yaml:"variables,omitempty" json:"variables,omitempty"`
+}
+
+// VariableDeclaration documents a pack prerequisite.
+type VariableDeclaration struct {
+	Required    *bool  `yaml:"required,omitempty" json:"required,omitempty"`
+	Secret      *bool  `yaml:"secret,omitempty" json:"secret,omitempty"`
+	Type        string `yaml:"type,omitempty" json:"type,omitempty"`
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+	Docs        string `yaml:"docs,omitempty" json:"docs,omitempty"`
 }
 
 // Parse decodes and validates a manifest.
@@ -112,6 +124,16 @@ func (m *Manifest) Validate() error {
 	}
 	if !namePattern.MatchString(m.Name) {
 		return fmt.Errorf("pack name %q must be lowercase letters, digits, and hyphens", m.Name)
+	}
+	for key, declaration := range m.Variables {
+		if key == "" {
+			return fmt.Errorf("variable declaration key cannot be empty")
+		}
+		switch declaration.Type {
+		case "", "string", "json", "list", "number", "bool":
+		default:
+			return fmt.Errorf("variable %q has unsupported type %q", key, declaration.Type)
+		}
 	}
 	return m.validateRuleNames()
 }

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gridctl/gridctl/pkg/vault"
 )
 
 func TestRunVarExport_DeniedOnlyJSONRemainsValid(t *testing.T) {
@@ -89,4 +91,39 @@ func captureStderr(t *testing.T, fn func()) string {
 	result := <-done
 	os.Stderr = original
 	return result
+}
+
+func TestParseVariablesEnv_MetadataRoundTrip(t *testing.T) {
+	input := "# @public\n# @type=json\n# @description=\"service config\"\n# @docs=\"https://example.test/docs\"\n# @example=\"{\\\"enabled\\\":true}\"\n# @deprecated=\"use NEW_CONFIG\"\nCONFIG={\"enabled\":true}\n\nPLAIN=value\n"
+	vars, err := parseVariablesEnv(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(vars) != 2 {
+		t.Fatalf("variables = %#v", vars)
+	}
+	got := vars[0]
+	if got.IsSecret || got.Type != vault.TypeJSON || got.Description != "service config" || got.Docs != "https://example.test/docs" || got.Example != `{"enabled":true}` || got.Deprecated != "use NEW_CONFIG" {
+		t.Fatalf("metadata = %#v", got)
+	}
+	if vars[1].Description != "" || !vars[1].IsSecret || vars[1].Type != vault.TypeString {
+		t.Fatalf("markers leaked to next variable: %#v", vars[1])
+	}
+}
+
+func TestSelectRunVariables_UnionAndDeniedFiltering(t *testing.T) {
+	previousAll, previousSets, previousOnly := varRunAll, varRunSets, varRunOnly
+	varRunAll, varRunSets, varRunOnly = false, []string{"prod"}, []string{"REGION", "TOKEN"}
+	t.Cleanup(func() { varRunAll, varRunSets, varRunOnly = previousAll, previousSets, previousOnly })
+	selected, err := selectRunVariables([]vault.Variable{
+		{Key: "TOKEN", Set: "prod"},
+		{Key: "REGION"},
+		{Key: "GRIDCTL_VAULT_PASSPHRASE", Set: "prod"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(selected) != 2 || selected[0].Key != "TOKEN" || selected[1].Key != "REGION" {
+		t.Fatalf("selected = %#v", selected)
+	}
 }

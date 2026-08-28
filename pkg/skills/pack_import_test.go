@@ -131,6 +131,21 @@ func TestLockedPack_RoundTripAndVersionStamping(t *testing.T) {
 	require.Equal(t, "packsrc", srcName)
 	require.Equal(t, []string{"alpha"}, src.Pack.Skills)
 	require.Equal(t, []string{"ghost"}, src.Pack.Unresolved)
+
+	// Declarations require version 3, and survive a round trip without values.
+	required := true
+	src.Pack.Variables = map[string]LockedVariableDeclaration{
+		"TOKEN": {Required: &required, Type: "string", Description: "API token"},
+	}
+	lf.SetSource(srcName, *src)
+	require.NoError(t, WriteLockFile(path, lf))
+	data, _ = os.ReadFile(path)
+	require.Contains(t, string(data), "version: 3")
+	back, err = ReadLockFile(path)
+	require.NoError(t, err)
+	_, src, ok = back.FindPackSource("team-pack")
+	require.True(t, ok)
+	require.Equal(t, "API token", src.Pack.Variables["TOKEN"].Description)
 }
 
 func TestImport_DiscoveredSkipsSecondClone(t *testing.T) {

@@ -147,7 +147,7 @@ func parseSecretsData(data []byte) (map[string]Variable, map[string]Set, error) 
 		}
 		return variables, sets, nil
 	case trimmed[0] == '{':
-		// v1 or v2: try v2 first by checking for "version" / "variables" keys.
+		// v1-v3: try the versioned shape first.
 		var probe struct {
 			Version   *int              `json:"version"`
 			Variables []json.RawMessage `json:"variables"`
@@ -160,7 +160,10 @@ func parseSecretsData(data []byte) (map[string]Variable, map[string]Set, error) 
 		if probe.Version != nil || probe.Variables != nil {
 			var sd storeData
 			if err := json.Unmarshal(data, &sd); err != nil {
-				return nil, nil, fmt.Errorf("parsing vault (v2): %w", err)
+				return nil, nil, fmt.Errorf("parsing vault: %w", err)
+			}
+			if sd.Version > CurrentStoreVersion {
+				return nil, nil, fmt.Errorf("vault store version %d is newer than supported version %d", sd.Version, CurrentStoreVersion)
 			}
 			for _, v := range sd.Variables {
 				if v.Type == "" {

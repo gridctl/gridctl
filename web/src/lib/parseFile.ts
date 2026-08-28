@@ -93,6 +93,12 @@ function fromV2(items: unknown[]): ParseEnvResult {
       quoted: false,
       isSecret,
       set: typeof item.set === 'string' && item.set ? item.set : undefined,
+		metadata: {
+			description: typeof item.description === 'string' ? item.description : undefined,
+			docs: typeof item.docs === 'string' ? item.docs : undefined,
+			example: typeof item.example === 'string' ? item.example : undefined,
+			deprecated: typeof item.deprecated === 'string' ? item.deprecated : undefined,
+		},
     });
   });
 

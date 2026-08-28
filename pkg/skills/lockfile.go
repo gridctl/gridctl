@@ -17,7 +17,7 @@ import (
 // per-source agents; version 2 added per-source pack records. Files are
 // written at the lowest version that can represent them (see
 // WriteLockFile), so users without packs keep downgrade freedom.
-const ImportLockVersion = 2
+const ImportLockVersion = 3
 
 // ErrNewerImportLockVersion signals a skills.lock.yaml written by a
 // newer gridctl. Callers must never paper over it: acting on state a
@@ -82,7 +82,17 @@ type LockedPack struct {
 	// Unresolved lists manifest-selected names discovery could not find,
 	// so status can keep reporting them until the upstream repo (or the
 	// manifest) is fixed.
-	Unresolved []string `yaml:"unresolved,omitempty"`
+	Unresolved []string                             `yaml:"unresolved,omitempty"`
+	Variables  map[string]LockedVariableDeclaration `yaml:"variables,omitempty"`
+}
+
+// LockedVariableDeclaration persists one value-free pack prerequisite.
+type LockedVariableDeclaration struct {
+	Required    *bool  `yaml:"required,omitempty"`
+	Secret      *bool  `yaml:"secret,omitempty"`
+	Type        string `yaml:"type,omitempty"`
+	Description string `yaml:"description,omitempty"`
+	Docs        string `yaml:"docs,omitempty"`
 }
 
 // FindPackSource finds the source carrying a pack by pack name.
@@ -183,14 +193,15 @@ func WriteLockFile(path string, lf *LockFile) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return fmt.Errorf("creating lock file directory: %w", err)
 	}
-	// Stamp the lowest version that can represent the file: pack records
-	// need version 2 (an older binary would silently drop them on
-	// rewrite); everything else stays readable by version-1 binaries.
+	// Stamp the lowest version that can represent the file.
 	lf.Version = 1
 	for _, src := range lf.Sources {
 		if src.Pack != nil {
-			lf.Version = ImportLockVersion
-			break
+			lf.Version = 2
+			if len(src.Pack.Variables) > 0 {
+				lf.Version = ImportLockVersion
+				break
+			}
 		}
 	}
 

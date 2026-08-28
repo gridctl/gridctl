@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/contexts"
@@ -145,6 +146,7 @@ func runPackAdd(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Man
 		return ctxExitInfrastructure
 	}
 	doc := res.Doc
+	doc.UnmetVariables = unmetPackVariables(doc.Variables)
 
 	if strings.EqualFold(format, "json") {
 		if err := output.EncodeJSON(stdout, doc); err != nil {
@@ -179,6 +181,21 @@ func runPackAdd(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Man
 		for _, u := range doc.Unresolved {
 			fmt.Fprintf(stdout, "Unresolved: pack selects %q but the repository does not ship it\n", u)
 		}
+		for _, variable := range doc.UnmetVariables {
+			visibility := "secret"
+			if !variable.Secret {
+				visibility = "plaintext"
+			}
+			fmt.Fprintf(stdout, "Required variable %s is unset (type: %s, %s)", variable.Key, variable.Type, visibility)
+			if variable.Description != "" {
+				fmt.Fprintf(stdout, ": %s", variable.Description)
+			}
+			fmt.Fprintln(stdout)
+			if variable.Docs != "" {
+				fmt.Fprintf(stdout, "  Docs: %s\n", variable.Docs)
+			}
+			fmt.Fprintf(stdout, "  %s\n", variable.Command)
+		}
 		if !dryRun && len(doc.Unresolved) == 0 && len(doc.Skipped) == 0 {
 			fmt.Fprintf(stdout, "Run 'gridctl pack apply %s' to project it.\n", doc.Pack)
 		}
@@ -187,6 +204,40 @@ func runPackAdd(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Man
 		return ctxExitAttention
 	}
 	return ctxExitOK
+}
+
+func unmetPackVariables(declarations map[string]skills.LockedVariableDeclaration) []packops.VariableRequirement {
+	if len(declarations) == 0 {
+		return nil
+	}
+	stored := map[string]bool{}
+	if store, err := loadVault(); err == nil && !store.IsLocked() {
+		for _, variable := range store.List() {
+			stored[variable.Key] = true
+		}
+	}
+	keys := make([]string, 0, len(declarations))
+	for key, declaration := range declarations {
+		if declaration.Required != nil && *declaration.Required && !stored[key] {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	out := make([]packops.VariableRequirement, 0, len(keys))
+	for _, key := range keys {
+		declaration := declarations[key]
+		typeName := declaration.Type
+		if typeName == "" {
+			typeName = "string"
+		}
+		secret := declaration.Secret == nil || *declaration.Secret
+		out = append(out, packops.VariableRequirement{
+			Key: key, Type: typeName, Secret: secret,
+			Description: declaration.Description, Docs: declaration.Docs,
+			Command: "gridctl var set " + key,
+		})
+	}
+	return out
 }
 
 // --- pack apply ---

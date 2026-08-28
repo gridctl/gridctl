@@ -61,6 +61,8 @@ func runPlan(stackPath string) error {
 		printValidationResult(stackPath, result)
 		return fmt.Errorf("proposed spec has %d validation error(s)", result.ErrorCount)
 	}
+	diagnostics := declarationDiagnostics(proposed)
+	appendDeclarationValidationIssues(result, diagnostics)
 
 	// Find the running stack's state
 	current, err := loadCurrentStack(proposed.Name)
@@ -70,6 +72,7 @@ func runPlan(stackPath string) error {
 
 	// Compute the diff
 	diff := config.ComputePlan(proposed, current)
+	diff.VariableDiagnostics = diagnostics
 
 	// Declared client links are host-only work, kept out of PlanDiff.Items
 	// so the container/gateway summary never claims link changes.
@@ -86,6 +89,9 @@ func runPlan(stackPath string) error {
 	}
 
 	printPlanDiff(os.Stdout, diff)
+	for _, diagnostic := range diagnostics {
+		fmt.Printf("! variable %s: %s\n", diagnostic.Key, diagnostic.Message)
+	}
 	printLinkActions(os.Stdout, links)
 
 	if !diff.HasChanges {

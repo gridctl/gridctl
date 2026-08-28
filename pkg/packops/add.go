@@ -48,16 +48,28 @@ func orEmpty(s []string) []string {
 
 // AddDoc is the machine-readable pack add document.
 type AddDoc struct {
-	SchemaVersion int      `json:"schema_version"`
-	DryRun        bool     `json:"dry_run,omitempty"`
-	Pack          string   `json:"pack"`
-	Skills        []string `json:"skills"`
-	Agents        []string `json:"agents"`
-	Rules         []string `json:"rules,omitempty"`
-	Wiring        bool     `json:"wiring"`
-	Unresolved    []string `json:"unresolved,omitempty"`
-	Skipped       []string `json:"skipped,omitempty"`
-	Warnings      []string `json:"warnings,omitempty"`
+	SchemaVersion  int                                         `json:"schema_version"`
+	DryRun         bool                                        `json:"dry_run,omitempty"`
+	Pack           string                                      `json:"pack"`
+	Skills         []string                                    `json:"skills"`
+	Agents         []string                                    `json:"agents"`
+	Rules          []string                                    `json:"rules,omitempty"`
+	Wiring         bool                                        `json:"wiring"`
+	Unresolved     []string                                    `json:"unresolved,omitempty"`
+	Skipped        []string                                    `json:"skipped,omitempty"`
+	Warnings       []string                                    `json:"warnings,omitempty"`
+	Variables      map[string]skills.LockedVariableDeclaration `json:"variables,omitempty"`
+	UnmetVariables []VariableRequirement                       `json:"unmet_variables,omitempty"`
+}
+
+// VariableRequirement is a value-free prerequisite reported after import.
+type VariableRequirement struct {
+	Key         string `json:"key"`
+	Type        string `json:"type"`
+	Secret      bool   `json:"secret"`
+	Description string `json:"description,omitempty"`
+	Docs        string `json:"docs,omitempty"`
+	Command     string `json:"command"`
 }
 
 // AddResult pairs the document with progress notes the CLI prints in
@@ -112,6 +124,7 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 			Wiring:        manifest.Wiring,
 			Unresolved:    resolved.unresolved,
 			Warnings:      manifest.Warnings(),
+			Variables:     lockedVariableDeclarations(manifest.Variables),
 		},
 		Notes: []string{},
 	}
@@ -419,8 +432,23 @@ func recordLockedPack(ctx context.Context, lockPath string, m *pack.Manifest, re
 			Rules:       resolved.rules,
 			RuleFiles:   resolved.ruleFiles,
 			Unresolved:  resolved.unresolved,
+			Variables:   lockedVariableDeclarations(m.Variables),
 		}
 		lf.SetSource(sourceName, src)
 		return true, nil
 	})
+}
+
+func lockedVariableDeclarations(in map[string]pack.VariableDeclaration) map[string]skills.LockedVariableDeclaration {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]skills.LockedVariableDeclaration, len(in))
+	for key, d := range in {
+		out[key] = skills.LockedVariableDeclaration{
+			Required: d.Required, Secret: d.Secret, Type: d.Type,
+			Description: d.Description, Docs: d.Docs,
+		}
+	}
+	return out
 }

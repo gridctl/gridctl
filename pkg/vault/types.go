@@ -17,11 +17,15 @@ const (
 // configuration share the same struct; IsSecret gates redaction and
 // the on-disk encryption envelope is unchanged either way.
 type Variable struct {
-	Key      string       `json:"key"`
-	Value    string       `json:"value"`
-	Type     VariableType `json:"type"`
-	IsSecret bool         `json:"is_secret"`
-	Set      string       `json:"set,omitempty"`
+	Key         string       `json:"key"`
+	Value       string       `json:"value"`
+	Type        VariableType `json:"type"`
+	IsSecret    bool         `json:"is_secret"`
+	Set         string       `json:"set,omitempty"`
+	Description string       `json:"description,omitempty"`
+	Docs        string       `json:"docs,omitempty"`
+	Example     string       `json:"example,omitempty"`
+	Deprecated  string       `json:"deprecated,omitempty"`
 
 	// LastRotated is an RFC3339 UTC timestamp of the last time this variable's
 	// value changed, whether by rotation or a manual edit. Metadata changes
@@ -55,10 +59,10 @@ type ImportResult struct {
 
 // CurrentStoreVersion is the on-disk schema version this build emits.
 // v0 (legacy flat array) and v1 (object with "secrets" key) loads are
-// supported but every save rewrites the file as v2.
-const CurrentStoreVersion = 2
+// supported but every save rewrites the file as v3.
+const CurrentStoreVersion = 3
 
-// storeData is the v2 on-disk schema for secrets.json. The plaintext bytes
+// storeData is the v3 on-disk schema for secrets.json. The plaintext bytes
 // inside an encrypted vault share this shape.
 type storeData struct {
 	Version   int        `json:"version"`

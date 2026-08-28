@@ -15,6 +15,12 @@ export interface ParsedEnvEntry {
   // secure defaults (secret, unassigned).
   isSecret?: boolean;
   set?: string;
+	metadata?: {
+		description?: string;
+		docs?: string;
+		example?: string;
+		deprecated?: string;
+	};
 }
 
 export interface IgnoredEnvLine {
@@ -57,13 +63,37 @@ export function parseEnv(input: string): ParseEnvResult {
   const entries: ParsedEnvEntry[] = [];
   const ignored: IgnoredEnvLine[] = [];
 
-  const lines = input.split(/\r?\n/);
+	const lines = input.split(/\r?\n/);
+	let pendingIsSecret: boolean | undefined;
+	let pendingType: VariableType | undefined;
+	let pendingMetadata: ParsedEnvEntry['metadata'] = {};
+	const resetMarkers = () => {
+		pendingIsSecret = undefined;
+		pendingType = undefined;
+		pendingMetadata = {};
+	};
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const lineNo = i + 1;
     const trimmed = line.trim();
-    if (trimmed.length === 0) continue;
-    if (trimmed.startsWith('#')) continue;
+		if (trimmed.length === 0) {
+			resetMarkers();
+			continue;
+		}
+		if (trimmed.startsWith('#')) {
+			const marker = trimmed.slice(1).trim();
+			if (marker === '@public') pendingIsSecret = false;
+			else if (marker.startsWith('@type=')) {
+				const value = marker.slice('@type='.length) as VariableType;
+				if (['string', 'json', 'list', 'number', 'bool'].includes(value)) pendingType = value;
+			} else {
+				for (const name of ['description', 'docs', 'example', 'deprecated'] as const) {
+					const prefix = `@${name}=`;
+					if (marker.startsWith(prefix)) pendingMetadata[name] = parseMarkerValue(marker.slice(prefix.length));
+				}
+			}
+			continue;
+		}
 
     // Strip an optional leading `export ` so values copied from shell
     // scripts work without modification.
@@ -102,12 +132,24 @@ export function parseEnv(input: string): ParseEnvResult {
       line: lineNo,
       key: rawKey,
       value: parsed.value,
-      type: detectType(parsed.value, parsed.quoted),
-      quoted: parsed.quoted,
-    });
+			type: pendingType ?? detectType(parsed.value, parsed.quoted),
+			quoted: parsed.quoted,
+			isSecret: pendingIsSecret,
+			metadata: { ...pendingMetadata },
+		});
+		resetMarkers();
   }
 
   return { entries, ignored };
+}
+
+function parseMarkerValue(value: string): string {
+	try {
+		const parsed: unknown = JSON.parse(value);
+		return typeof parsed === 'string' ? parsed : value;
+	} catch {
+		return value;
+	}
 }
 
 interface ParseValueOk {

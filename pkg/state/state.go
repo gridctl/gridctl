@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
 )
 
@@ -292,7 +291,7 @@ func VerifyPID(pid int) bool {
 		return false
 	}
 	// Signal 0 checks for existence without killing
-	return process.Signal(syscall.Signal(0)) == nil
+	return processExists(process)
 }
 
 // CheckAndClean checks if a state file exists and if the process is running.
@@ -347,7 +346,7 @@ func KillDaemon(state *DaemonState) error {
 	}
 
 	// Send SIGTERM for graceful shutdown
-	if err := process.Signal(syscall.SIGTERM); err != nil {
+	if err := terminateProcess(process); err != nil {
 		if err == os.ErrProcessDone {
 			return nil
 		}
@@ -364,7 +363,7 @@ func KillDaemon(state *DaemonState) error {
 	}
 
 	// Process still running, send SIGKILL
-	if err := process.Signal(syscall.SIGKILL); err != nil {
+	if err := killProcess(process); err != nil {
 		if err == os.ErrProcessDone {
 			return nil
 		}
@@ -449,8 +448,9 @@ func WithLock(name string, timeout time.Duration, fn func() error) error {
 
 	// Try to acquire lock with timeout
 	deadline := time.Now().Add(timeout)
+	var unlock func() error
 	for {
-		err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		unlock, err = tryFileLock(lockFile)
 		if err == nil {
 			break
 		}
@@ -460,9 +460,7 @@ func WithLock(name string, timeout time.Duration, fn func() error) error {
 		time.Sleep(100 * time.Millisecond)
 	}
 	// Lock acquired - ensure we unlock before closing file
-	defer func() {
-		_ = syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
-	}()
+	defer func() { _ = unlock() }()
 
 	return fn()
 }
