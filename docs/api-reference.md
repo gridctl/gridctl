@@ -1576,12 +1576,15 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/status
 {
   "locked": false,
   "encrypted": true,
+  "variables_count": 12,
   "secrets_count": 12,
   "sets_count": 2
 }
 ```
 
-`secrets_count` and `sets_count` are only included when the vault is unlocked.
+The counts are only included when the store is unlocked. `variables_count` is
+the canonical total; `secrets_count` is a compatibility alias with the same
+value.
 
 #### `POST /api/var/unlock`
 
@@ -1619,7 +1622,8 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/loc
 
 #### `GET /api/var`
 
-Lists all secret keys with their set assignments (values not included).
+Lists all variables with type, visibility, set assignment, value-free metadata,
+and last-rotation time. Values are not included.
 
 **Auth:** Yes | **Requires:** Vault unlocked
 
@@ -1630,26 +1634,39 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var
 **Response:**
 ```json
 [
-  {"key": "DB_PASSWORD", "set": "production"},
-  {"key": "API_KEY"}
+  {
+    "key": "DB_PASSWORD",
+    "type": "string",
+    "is_secret": true,
+    "set": "production",
+    "description": "Database password",
+    "docs": "https://example.com/database-credentials",
+    "last_rotated": "2026-08-28T18:30:00Z"
+  },
+  {"key": "LOG_LEVEL", "type": "string", "is_secret": false}
 ]
 ```
 
+`description`, `docs`, `example`, `deprecated`, `set`, and `last_rotated` are
+omitted when empty. An absent `last_rotated` means unknown, including variables
+whose value has not changed since rotation tracking was added.
+
 #### `POST /api/var`
 
-Creates a new secret.
+Creates a variable. Variables default to `type: "string"` and
+`is_secret: true` when those fields are omitted.
 
 **Auth:** Yes | **Requires:** Vault unlocked
 
 ```bash
 curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var \
   -H "Content-Type: application/json" \
-  -d '{"key": "DB_PASSWORD", "value": "secret123", "set": "production"}'
+  -d '{"key": "DB_PASSWORD", "value": "secret123", "type": "string", "is_secret": true, "set": "production", "description": "Database password"}'
 ```
 
 **Response:** `201 Created`
 ```json
-{"key": "DB_PASSWORD", "status": "created"}
+{"key": "DB_PASSWORD", "type": "string", "is_secret": true, "status": "created"}
 ```
 
 Key names must match `[a-zA-Z_][a-zA-Z0-9_]*`.
@@ -1659,7 +1676,7 @@ updating one returns `400 Bad Request` with the key name but never its value.
 
 #### `GET /api/var/{key}`
 
-Returns a secret value.
+Returns the full variable record, including its value and metadata.
 
 **Auth:** Yes | **Requires:** Vault unlocked
 
@@ -1669,12 +1686,22 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/DB_PASSWORD
 
 **Response:**
 ```json
-{"key": "DB_PASSWORD", "value": "secret123"}
+{
+  "key": "DB_PASSWORD",
+  "value": "secret123",
+  "type": "string",
+  "is_secret": true,
+  "set": "production",
+  "description": "Database password",
+  "last_rotated": "2026-08-28T18:30:00Z"
+}
 ```
 
 #### `PUT /api/var/{key}`
 
-Updates a secret value.
+Partially updates a variable. Omitted fields retain their stored values. The
+accepted fields are `value`, `type`, `is_secret`, `set`, `description`, `docs`,
+`example`, and `deprecated`; an empty string clears an optional text field.
 
 **Auth:** Yes | **Requires:** Vault unlocked
 
@@ -1686,12 +1713,12 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/DB_P
 
 **Response:**
 ```json
-{"key": "DB_PASSWORD", "status": "updated"}
+{"key": "DB_PASSWORD", "type": "string", "is_secret": true, "status": "updated"}
 ```
 
 #### `DELETE /api/var/{key}`
 
-Deletes a secret.
+Deletes a variable.
 
 **Auth:** Yes | **Requires:** Vault unlocked
 
@@ -1744,7 +1771,7 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/s
 
 #### `PUT /api/var/{key}/set`
 
-Assigns or unassigns a secret to a variable set.
+Assigns or unassigns a variable to a variable set.
 
 **Auth:** Yes | **Requires:** Vault unlocked
 
@@ -1803,14 +1830,16 @@ consumer with neither field set. `name` always holds the set name.
 
 #### `GET /api/var/drift`
 
-Lists the `${var:KEY}` references in the active stack that no stored variable
-satisfies. These are exactly the references that would fail a deploy, so the
-workspace can warn while authoring rather than at apply time. Keys and
-reference sites only, never values.
+Reports unresolved `${var:KEY}` references and value-free declaration
+diagnostics for the active stack. An unresolved reference without a default
+would fail deployment; a declaration-only diagnostic is advisory. Responses
+contain keys, reference sites, declarations, and diagnostics, never values.
 
 A reference carrying a default (`${var:KEY:-fallback}`) is valid config and is
-never reported. A locked or absent store returns `[]`, since membership cannot
-be checked while locked.
+never reported. Entries can include the stack's value-free `declaration` and
+declaration `diagnostics`. When the store is locked or absent, declared keys are
+returned with `"unknown": true` because membership cannot be checked; an
+undeclared reference is not reported as missing without that evidence.
 
 **Auth:** Yes
 
@@ -1825,6 +1854,15 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/drift
     "key": "GITLAB_API_TOKEN",
     "consumers": [
       { "kind": "mcp-server", "name": "gitlab", "field": "auth.token" }
+    ],
+    "declaration": {
+      "required": true,
+      "secret": true,
+      "type": "string",
+      "description": "GitLab API token"
+    },
+    "diagnostics": [
+      { "code": "required_unset", "key": "GITLAB_API_TOKEN", "message": "required variable is unset", "consumers": 1 }
     ]
   }
 ]
@@ -1835,14 +1873,16 @@ not mirrored onto the deprecated `/api/vault` surface.
 
 #### `POST /api/var/import`
 
-Bulk imports secrets.
+Bulk imports variables. The metadata-preserving shape is `{"variables": [...]}`;
+the legacy `{"secrets": {"KEY": "value"}}` map remains accepted and imports
+each entry as a secret string.
 
 **Auth:** Yes | **Requires:** Vault unlocked
 
 ```bash
 curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/import \
   -H "Content-Type: application/json" \
-  -d '{"secrets": {"API_KEY": "key123", "DB_HOST": "localhost"}}'
+  -d '{"variables": [{"key": "API_KEY", "value": "key123", "type": "string", "is_secret": true, "description": "Service API key"}, {"key": "DB_HOST", "value": "localhost", "type": "string", "is_secret": false}]}'
 ```
 
 **Response:**

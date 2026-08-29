@@ -300,6 +300,32 @@ gridctl auth status
 
 Learn more → [Configuration Reference](docs/config-schema.md)
 
+### Scoped Variable Delivery
+
+Keep secrets and environment-specific configuration in the variable store (encrypted at rest when locked), declare value-free prerequisites in `stack.yaml`, and inspect where each key is consumed without exposing its value. Delivery stays explicit: stack references and scoped sets feed workloads, while `var run` selects the keys made available to a child process.
+
+```yaml
+variables:
+  GITHUB_TOKEN:
+    required: true
+    description: Token used by the GitHub server
+
+mcp-servers:
+  - name: github
+    env:
+      GITHUB_PERSONAL_ACCESS_TOKEN: ${var:GITHUB_TOKEN}
+```
+
+```bash
+gridctl var explain GITHUB_TOKEN     # Resolution, declaration, and consumers
+gridctl var run --only GITHUB_TOKEN -- gh auth status
+gridctl var scan --staged            # Exact-value check before commit
+```
+
+Names beginning with `GRIDCTL_`, plus `OP_CONNECT_TOKEN` and `OP_SERVICE_ACCOUNT_TOKEN`, are reserved for gridctl control-plane credentials and cannot be delivered to workloads.
+
+Learn more → [CLI Reference](docs/cli-reference.md#variables) · [Variable declarations](docs/config-schema.md#variable-declarations)
+
 ### Skill Library
 
 Every `SKILL.md` in your registry surfaces to upstream MCP clients as a prompt. Author in the Library workspace in the web UI (or via `gridctl skill *` on the CLI), activate, and the prompt becomes available to Claude Desktop, Claude Code, Cursor, Codex, or anything that speaks MCP.
