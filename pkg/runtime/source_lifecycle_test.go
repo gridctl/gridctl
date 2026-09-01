@@ -236,7 +236,7 @@ func TestOrchestrator_Up_SourceRefChangeReplacesStaleContainer(t *testing.T) {
 	if rt.started[1].Image != "gridctl-source:commit-b" {
 		t.Fatalf("second Start image = %q, want second build result", rt.started[1].Image)
 	}
-	if rt.started[1].Image == generateTag("demo", "source") {
+	if rt.started[1].Image == "gridctl-demo-source:latest" {
 		t.Fatalf("second Start reused mutable image %q", rt.started[1].Image)
 	}
 	if len(rt.removed) != 1 {

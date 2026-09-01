@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,7 +83,7 @@ func commitFile(t *testing.T, repoPath, name, content, msg string) string {
 func makeStaleClone(t *testing.T, srcPath, destPath string) (repo *gogit.Repository, staleSHA, freshSHA string) {
 	t.Helper()
 
-	repo, err := Clone(destPath, CloneOptions{URL: srcPath}, testLogger())
+	repo, err := Clone(context.Background(), destPath, CloneOptions{URL: srcPath}, testLogger())
 	if err != nil {
 		t.Fatalf("clone: %v", err)
 	}
@@ -125,7 +126,7 @@ func TestSyncWorktree_AdvancesStaleLocalBranch(t *testing.T) {
 	destPath := filepath.Join(t.TempDir(), "clone")
 	repo, staleSHA, freshSHA := makeStaleClone(t, srcPath, destPath)
 
-	gotSHA, err := SyncWorktree(repo, "master")
+	gotSHA, err := SyncWorktree(context.Background(), repo, "master")
 	if err != nil {
 		t.Fatalf("sync worktree: %v", err)
 	}
@@ -150,7 +151,7 @@ func TestSyncWorktree_DefaultBranchIdempotent(t *testing.T) {
 	destPath := filepath.Join(t.TempDir(), "clone")
 	repo, _, freshSHA := makeStaleClone(t, srcPath, destPath)
 
-	first, err := SyncWorktree(repo, "")
+	first, err := SyncWorktree(context.Background(), repo, "")
 	if err != nil {
 		t.Fatalf("first sync: %v", err)
 	}
@@ -160,7 +161,7 @@ func TestSyncWorktree_DefaultBranchIdempotent(t *testing.T) {
 
 	// A branch sync re-attaches HEAD; a repeat sync must resolve the default
 	// branch again and be a no-op.
-	second, err := SyncWorktree(repo, "")
+	second, err := SyncWorktree(context.Background(), repo, "")
 	if err != nil {
 		t.Fatalf("second sync: %v", err)
 	}
@@ -184,7 +185,7 @@ func TestDefaultBranch_DetachedHead(t *testing.T) {
 	srcPath := initWorkRepo(t)
 	destPath := filepath.Join(t.TempDir(), "clone")
 
-	repo, err := Clone(destPath, CloneOptions{URL: srcPath}, testLogger())
+	repo, err := Clone(context.Background(), destPath, CloneOptions{URL: srcPath}, testLogger())
 	if err != nil {
 		t.Fatalf("clone: %v", err)
 	}
@@ -216,7 +217,7 @@ func TestResolveRemoteRef_AnnotatedTagPeels(t *testing.T) {
 	srcPath := initWorkRepo(t) // carries annotated tag v1.0.0 on the initial commit
 	destPath := filepath.Join(t.TempDir(), "clone")
 
-	repo, err := Clone(destPath, CloneOptions{URL: srcPath, AllTags: true}, testLogger())
+	repo, err := Clone(context.Background(), destPath, CloneOptions{URL: srcPath, AllTags: true}, testLogger())
 	if err != nil {
 		t.Fatalf("clone: %v", err)
 	}
@@ -234,7 +235,7 @@ func TestResolveRemoteRef_AnnotatedTagPeels(t *testing.T) {
 		t.Errorf("resolved %s, want peeled commit %s", sha, head.Hash().String())
 	}
 
-	if _, err := SyncWorktree(repo, "v1.0.0"); err != nil {
+	if _, err := SyncWorktree(context.Background(), repo, "v1.0.0"); err != nil {
 		t.Errorf("sync to annotated tag: %v", err)
 	}
 }
@@ -245,7 +246,7 @@ func TestResolveRemoteRef_RawSHA(t *testing.T) {
 	srcPath := initWorkRepo(t)
 	destPath := filepath.Join(t.TempDir(), "clone")
 
-	repo, err := Clone(destPath, CloneOptions{URL: srcPath}, testLogger())
+	repo, err := Clone(context.Background(), destPath, CloneOptions{URL: srcPath}, testLogger())
 	if err != nil {
 		t.Fatalf("clone: %v", err)
 	}
@@ -260,5 +261,13 @@ func TestResolveRemoteRef_RawSHA(t *testing.T) {
 	}
 	if sha != head.Hash().String() {
 		t.Errorf("resolved %s, want %s", sha, head.Hash().String())
+	}
+}
+
+func TestSyncWorktree_CanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := SyncWorktree(ctx, nil, "main"); err != context.Canceled {
+		t.Fatalf("SyncWorktree error = %v, want context canceled", err)
 	}
 }

@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -13,12 +14,12 @@ import (
 
 // CloneOrUpdate clones a git repository or updates it if it already exists.
 // Returns the path to the cloned repository. A nil auth means unauthenticated.
-func CloneOrUpdate(url, ref string, auth transport.AuthMethod, logger *slog.Logger) (string, error) {
-	if err := EnsureReposCacheDir(); err != nil {
+func CloneOrUpdate(ctx context.Context, url, ref string, auth transport.AuthMethod, logger *slog.Logger) (string, error) {
+	if err := EnsureBuilderReposCacheDir(); err != nil {
 		return "", fmt.Errorf("creating cache dir: %w", err)
 	}
 
-	repoPath, err := URLToPath(url)
+	repoPath, err := BuilderURLToPath(url)
 	if err != nil {
 		return "", fmt.Errorf("getting cache path: %w", err)
 	}
@@ -26,15 +27,15 @@ func CloneOrUpdate(url, ref string, auth transport.AuthMethod, logger *slog.Logg
 	// Check if repo already exists
 	if _, err := os.Stat(repoPath); err == nil {
 		// Repo exists, try to update
-		return updateRepo(repoPath, ref, auth, logger)
+		return updateRepo(ctx, repoPath, ref, auth, logger)
 	}
 
 	// Clone the repository
-	return cloneRepo(url, ref, repoPath, auth, logger)
+	return cloneRepo(ctx, url, ref, repoPath, auth, logger)
 }
 
-func cloneRepo(url, ref, destPath string, auth transport.AuthMethod, logger *slog.Logger) (string, error) {
-	repo, err := gitpkg.Clone(destPath, gitpkg.CloneOptions{
+func cloneRepo(ctx context.Context, url, ref, destPath string, auth transport.AuthMethod, logger *slog.Logger) (string, error) {
+	repo, err := gitpkg.Clone(ctx, destPath, gitpkg.CloneOptions{
 		URL:  url,
 		Ref:  ref,
 		Auth: auth,
@@ -46,7 +47,7 @@ func cloneRepo(url, ref, destPath string, auth transport.AuthMethod, logger *slo
 	// Land on ref explicitly so the single-branch fallback path ends in the
 	// right worktree state. On the happy path this is a no-op.
 	if ref != "" {
-		if err := gitpkg.Checkout(repo, ref); err != nil {
+		if err := gitpkg.Checkout(ctx, repo, ref); err != nil {
 			return "", err
 		}
 	}
@@ -58,7 +59,7 @@ func cloneRepo(url, ref, destPath string, auth transport.AuthMethod, logger *slo
 	return destPath, nil
 }
 
-func updateRepo(repoPath, ref string, auth transport.AuthMethod, logger *slog.Logger) (string, error) {
+func updateRepo(ctx context.Context, repoPath, ref string, auth transport.AuthMethod, logger *slog.Logger) (string, error) {
 	logger.Info("updating cached repository")
 
 	repo, err := gitpkg.Open(repoPath)
@@ -67,12 +68,12 @@ func updateRepo(repoPath, ref string, auth transport.AuthMethod, logger *slog.Lo
 		return "", fmt.Errorf("opening repository (will need to re-clone): %w", err)
 	}
 
-	if err := gitpkg.Fetch(repoPath, gitpkg.FetchOptions{Auth: auth}, logger); err != nil {
+	if err := gitpkg.Fetch(ctx, repoPath, gitpkg.FetchOptions{Auth: auth}, logger); err != nil {
 		logger.Warn("fetch failed, using existing", "error", err)
 	}
 
 	if ref != "" {
-		if err := gitpkg.Checkout(repo, ref); err != nil {
+		if err := gitpkg.Checkout(ctx, repo, ref); err != nil {
 			return "", err
 		}
 	}

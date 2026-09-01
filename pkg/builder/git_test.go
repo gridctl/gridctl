@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/cgi" //nolint:gosec // G504: CVE-2016-5386 (Httpoxy) fixed in Go 1.6.3; used only against httptest.Server in this test
@@ -11,8 +12,8 @@ import (
 	"testing"
 
 	"github.com/go-git/go-git/v5"
-	gohttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	gohttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 
 	gitpkg "github.com/gridctl/gridctl/pkg/git"
 )
@@ -68,7 +69,7 @@ func TestCloneRepo(t *testing.T) {
 	destDir := filepath.Join(t.TempDir(), "clone")
 	logger := newTestLogger()
 
-	path, err := cloneRepo(bareRepo, "", destDir, nil, logger)
+	path, err := cloneRepo(context.Background(), bareRepo, "", destDir, nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -92,7 +93,7 @@ func TestCloneRepo_WithRef(t *testing.T) {
 	logger := newTestLogger()
 
 	// go-git PlainInit creates "master" as the default branch
-	path, err := cloneRepo(bareRepo, "master", destDir, nil, logger)
+	path, err := cloneRepo(context.Background(), bareRepo, "master", destDir, nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -109,7 +110,7 @@ func TestCloneRepo_InvalidURL(t *testing.T) {
 	destDir := filepath.Join(t.TempDir(), "clone")
 	logger := newTestLogger()
 
-	_, err := cloneRepo("/nonexistent/path", "", destDir, nil, logger)
+	_, err := cloneRepo(context.Background(), "/nonexistent/path", "", destDir, nil, logger)
 	if err == nil {
 		t.Fatal("expected error for invalid URL")
 	}
@@ -124,12 +125,12 @@ func TestUpdateRepo(t *testing.T) {
 	cloneDir := filepath.Join(t.TempDir(), "clone")
 	logger := newTestLogger()
 
-	_, err := cloneRepo(bareRepo, "", cloneDir, nil, logger)
+	_, err := cloneRepo(context.Background(), bareRepo, "", cloneDir, nil, logger)
 	if err != nil {
 		t.Fatalf("clone failed: %v", err)
 	}
 
-	path, err := updateRepo(cloneDir, "", nil, logger)
+	path, err := updateRepo(context.Background(), cloneDir, "", nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -146,7 +147,7 @@ func TestUpdateRepo_InvalidRepo(t *testing.T) {
 	invalidDir := t.TempDir()
 	logger := newTestLogger()
 
-	_, err := updateRepo(invalidDir, "", nil, logger)
+	_, err := updateRepo(context.Background(), invalidDir, "", nil, logger)
 	if err == nil {
 		t.Fatal("expected error for invalid repo")
 	}
@@ -162,7 +163,7 @@ func TestCloneOrUpdate_Clone(t *testing.T) {
 
 	logger := newTestLogger()
 
-	path, err := CloneOrUpdate(bareRepo, "", nil, logger)
+	path, err := CloneOrUpdate(context.Background(), bareRepo, "", nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -187,13 +188,13 @@ func TestCloneOrUpdate_Update(t *testing.T) {
 	logger := newTestLogger()
 
 	// First call clones
-	path1, err := CloneOrUpdate(bareRepo, "", nil, logger)
+	path1, err := CloneOrUpdate(context.Background(), bareRepo, "", nil, logger)
 	if err != nil {
 		t.Fatalf("first call: %v", err)
 	}
 
 	// Second call updates
-	path2, err := CloneOrUpdate(bareRepo, "", nil, logger)
+	path2, err := CloneOrUpdate(context.Background(), bareRepo, "", nil, logger)
 	if err != nil {
 		t.Fatalf("second call: %v", err)
 	}
@@ -265,7 +266,7 @@ func TestCloneOrUpdate_ForwardsAuth(t *testing.T) {
 
 	// Without auth: clone must fail with the classified ErrAuthRequired so
 	// callers can distinguish auth from network errors.
-	_, err := CloneOrUpdate(repoURL, "", nil, logger)
+	_, err := CloneOrUpdate(context.Background(), repoURL, "", nil, logger)
 	if err == nil {
 		t.Fatal("expected error cloning without auth")
 	}
@@ -277,7 +278,7 @@ func TestCloneOrUpdate_ForwardsAuth(t *testing.T) {
 	// forwarded into the git transport.
 	t.Setenv("HOME", t.TempDir())
 	auth := &gohttp.BasicAuth{Username: validToken, Password: ""}
-	if _, err := CloneOrUpdate(repoURL, "", auth, logger); err != nil {
+	if _, err := CloneOrUpdate(context.Background(), repoURL, "", auth, logger); err != nil {
 		t.Fatalf("clone with valid auth: %v", err)
 	}
 }

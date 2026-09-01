@@ -3,6 +3,7 @@ package builder
 import (
 	"crypto/sha256"
 	"encoding/hex"
+
 	"github.com/gridctl/gridctl/pkg/state"
 	"os"
 	"path/filepath"
@@ -16,6 +17,52 @@ func CacheDir() (string, error) {
 	}
 	cacheDir := filepath.Join(home, ".gridctl", "cache")
 	return cacheDir, nil
+}
+
+// BuilderCacheDir returns the cache namespace reserved for source image builds.
+func BuilderCacheDir() (string, error) {
+	cacheDir, err := CacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(cacheDir, "builder"), nil
+}
+
+// BuilderWorktreesDir returns the parent for isolated build worktrees.
+func BuilderWorktreesDir() (string, error) {
+	dir, err := BuilderCacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "worktrees"), nil
+}
+
+// BuilderReposCacheDir returns the builder-only repository cache directory.
+func BuilderReposCacheDir() (string, error) {
+	dir, err := BuilderCacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "repos"), nil
+}
+
+// BuilderURLToPath converts a git URL to a builder repository cache path.
+func BuilderURLToPath(url string) (string, error) {
+	dir, err := BuilderReposCacheDir()
+	if err != nil {
+		return "", err
+	}
+	hash := sha256.Sum256([]byte(url))
+	return filepath.Join(dir, hex.EncodeToString(hash[:8])), nil
+}
+
+// EnsureBuilderReposCacheDir creates the builder repository cache directory.
+func EnsureBuilderReposCacheDir() error {
+	dir, err := BuilderReposCacheDir()
+	if err != nil {
+		return err
+	}
+	return os.MkdirAll(dir, 0755)
 }
 
 // ReposCacheDir returns the directory for cached git repositories.

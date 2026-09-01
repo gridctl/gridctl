@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -33,7 +34,7 @@ func TestMCP_PrivateHTTPS_NoAuth_ReturnsAuthRequired(t *testing.T) {
 	// No SourceAuth at all — the public-repo path. Must fail with the
 	// classified ErrAuthRequired so callers can distinguish it from a
 	// network or DNS error.
-	_, err := builder.CloneOrUpdate(repoURL, "", nil, logging.NewDiscardLogger())
+	_, err := builder.CloneOrUpdate(context.Background(), repoURL, "", nil, logging.NewDiscardLogger())
 	if err == nil {
 		t.Fatal("expected error cloning private repo without auth")
 	}
@@ -64,7 +65,7 @@ func TestMCP_PrivateHTTPS_WrongToken_ReturnsAuthFailed(t *testing.T) {
 		t.Fatalf("AuthForSource (wrong token): %v", err)
 	}
 
-	_, err = builder.CloneOrUpdate(repoURL, "", auth, logging.NewDiscardLogger())
+	_, err = builder.CloneOrUpdate(context.Background(), repoURL, "", auth, logging.NewDiscardLogger())
 	if err == nil {
 		t.Fatal("expected error cloning with wrong token")
 	}
@@ -102,7 +103,7 @@ func TestMCP_PrivateHTTPS_ValidToken_Succeeds(t *testing.T) {
 		t.Fatal("expected non-nil auth method for token+credential_ref")
 	}
 
-	path, err := builder.CloneOrUpdate(repoURL, "", auth, logging.NewDiscardLogger())
+	path, err := builder.CloneOrUpdate(context.Background(), repoURL, "", auth, logging.NewDiscardLogger())
 	if err != nil {
 		t.Fatalf("CloneOrUpdate with valid auth: %v", err)
 	}

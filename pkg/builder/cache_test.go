@@ -31,6 +31,54 @@ func TestReposCacheDir(t *testing.T) {
 	}
 }
 
+func TestBuilderWorktreesDir_UsesSeparateNamespace(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir, err := BuilderWorktreesDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(".gridctl", "cache", "builder", "worktrees")
+	if !strings.HasSuffix(dir, want) {
+		t.Fatalf("BuilderWorktreesDir = %q, want suffix %q", dir, want)
+	}
+	if strings.HasSuffix(dir, filepath.Join("cache", "repos")) {
+		t.Fatalf("builder worktrees share the skills repository namespace: %q", dir)
+	}
+}
+
+func TestBuilderURLToPath_DoesNotShareSkillsCache(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	const url = "https://github.com/example/repo"
+	builderPath, err := BuilderURLToPath(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sharedPath, err := URLToPath(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if builderPath == sharedPath {
+		t.Fatalf("builder and skills cache paths alias: %q", builderPath)
+	}
+}
+
+func TestBuilderReposCacheDir(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir, err := BuilderReposCacheDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(dir, filepath.Join(".gridctl", "cache", "builder", "repos")) {
+		t.Fatalf("BuilderReposCacheDir = %q", dir)
+	}
+	if err := EnsureBuilderReposCacheDir(); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		t.Fatalf("builder repository cache not created: %v", err)
+	}
+}
+
 func TestURLToPath_Deterministic(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
