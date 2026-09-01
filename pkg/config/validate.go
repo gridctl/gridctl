@@ -14,6 +14,12 @@ import (
 // to mirror the tolerant matching in pins.FilterFindings.
 var scanIgnoreCodeRe = regexp.MustCompile(`(?i)^p[0-9]{3}$`)
 
+var sourceDistributionNamePattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$`)
+var sourceExactPEP440Pattern = regexp.MustCompile(`(?i)^v?(?:[0-9]+!)?[0-9]+(?:\.[0-9]+)*(?:(?:a|b|rc)[0-9]+)?(?:[._-]?post[0-9]+)?(?:[._-]?dev[0-9]+)?(?:\+[a-z0-9]+(?:[._-][a-z0-9]+)*)?$`)
+var sourceExtraPattern = regexp.MustCompile(`^[a-z0-9]+(?:[-_.][a-z0-9]+)*$`)
+var sourceDependencyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*(?:\[[A-Za-z0-9,._-]+\])?(?:\s*(?:===|==|!=|~=|<=|>=|<|>)\s*[A-Za-z0-9*+.!_-]+)?(?:\s*;\s*[A-Za-z0-9_. -]+(?:==|!=|<=|>=|<|>)\s*["'][A-Za-z0-9_. -]+["'])?$`)
+var sourceDebianPackagePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*$`)
+
 // maxReplicas is the sanity cap on MCPServer.Replicas. Values above this
 // are almost certainly a config error; the cap also bounds per-server
 // fan-out costs for things like health checking and least-connections scans.
@@ -1065,14 +1071,24 @@ func validateTelemetryRetention(r *RetentionConfig) ValidationErrors {
 
 func validateSource(s *Source, prefix string) ValidationErrors {
 	var errs ValidationErrors
+	pythonRuntime := s.Runtime == "python" || s.Type == "pypi"
+
+	if s.Runtime != "" && s.Runtime != "python" {
+		errs = append(errs, ValidationError{prefix + ".runtime", "must be 'python'"})
+	}
 
 	switch s.Type {
 	case "git":
 		if s.URL == "" {
 			errs = append(errs, ValidationError{prefix + ".url", "is required for git source"})
 		}
-		if s.Path != "" {
+		if s.Path != "" && !pythonRuntime {
 			errs = append(errs, ValidationError{prefix + ".path", "should not be set for git source (use 'url' instead)"})
+		} else if s.Path != "" && !isCleanRelativeSourcePath(s.Path) {
+			errs = append(errs, ValidationError{prefix + ".path", "must be a clean relative path within the git checkout"})
+		}
+		if s.ProjectPath != "" {
+			errs = append(errs, ValidationError{prefix + ".project_path", "is only valid for a Python local source"})
 		}
 	case "local":
 		if s.Path == "" {
@@ -1081,11 +1097,57 @@ func validateSource(s *Source, prefix string) ValidationErrors {
 		if s.URL != "" {
 			errs = append(errs, ValidationError{prefix + ".url", "should not be set for local source (use 'path' instead)"})
 		}
+		if s.ProjectPath != "" && (!pythonRuntime || !isCleanRelativeSourcePath(s.ProjectPath)) {
+			errs = append(errs, ValidationError{prefix + ".project_path", "must be a clean relative path for a Python local source"})
+		}
+	case "pypi":
+		if !sourceDistributionNamePattern.MatchString(s.Package) {
+			errs = append(errs, ValidationError{prefix + ".package", "is required and must be a valid public PyPI project name"})
+		}
+		if !sourceExactPEP440Pattern.MatchString(s.Ref) || strings.EqualFold(s.Ref, "latest") {
+			errs = append(errs, ValidationError{prefix + ".ref", "must be an exact published PEP 440 version"})
+		}
+		if s.URL != "" {
+			errs = append(errs, ValidationError{prefix + ".url", "Private PyPI indexes are not supported. Vendor a custom Dockerfile."})
+		}
+		if s.Path != "" || s.ProjectPath != "" || s.Dockerfile != "" || s.Auth != nil {
+			errs = append(errs, ValidationError{prefix, "pypi source does not accept path, project_path, dockerfile, or auth"})
+		}
 	case "":
-		errs = append(errs, ValidationError{prefix + ".type", "is required (must be 'git' or 'local')"})
+		errs = append(errs, ValidationError{prefix + ".type", "is required (must be 'git', 'local', or 'pypi')"})
 	default:
-		errs = append(errs, ValidationError{prefix + ".type", "must be 'git' or 'local'"})
+		errs = append(errs, ValidationError{prefix + ".type", "must be 'git', 'local', or 'pypi'"})
+	}
+
+	if !pythonRuntime && (s.Package != "" || s.Python != "" || len(s.Extras) > 0 || len(s.With) > 0 || len(s.Packages) > 0) {
+		errs = append(errs, ValidationError{prefix + ".runtime", "must be 'python' when Python build fields are set"})
+	}
+	if s.Type != "pypi" && s.Package != "" {
+		errs = append(errs, ValidationError{prefix + ".package", "is only valid for pypi source"})
+	}
+	if s.Python != "" && s.Python != "3.10" && s.Python != "3.11" && s.Python != "3.12" && s.Python != "3.13" {
+		errs = append(errs, ValidationError{prefix + ".python", "must be one of 3.10, 3.11, 3.12, or 3.13"})
+	}
+	for i, value := range s.Extras {
+		if value != strings.ToLower(strings.TrimSpace(value)) || !sourceExtraPattern.MatchString(value) {
+			errs = append(errs, ValidationError{fmt.Sprintf("%s.extras[%d]", prefix, i), "must be a normalized Python extra name"})
+		}
+	}
+	for i, value := range s.With {
+		value = strings.TrimSpace(value)
+		if len(value) > 256 || !sourceDependencyPattern.MatchString(value) {
+			errs = append(errs, ValidationError{fmt.Sprintf("%s.with[%d]", prefix, i), "must be a valid PEP 508 dependency specifier"})
+		}
+	}
+	for i, value := range s.Packages {
+		if value != strings.ToLower(strings.TrimSpace(value)) || !sourceDebianPackagePattern.MatchString(value) {
+			errs = append(errs, ValidationError{fmt.Sprintf("%s.packages[%d]", prefix, i), "must be a conservative Debian package name"})
+		}
 	}
 
 	return errs
+}
+
+func isCleanRelativeSourcePath(value string) bool {
+	return value != "" && !strings.Contains(value, "\\") && !path.IsAbs(value) && path.Clean(value) == value && value != "." && !strings.HasPrefix(value, "../")
 }

@@ -13,12 +13,13 @@ import (
 
 // Builder handles building images from source.
 type Builder struct {
-	cli dockerclient.DockerClient
+	cli          dockerclient.DockerClient
+	pypiResolver pypiReleaseResolver
 }
 
 // New creates a new Builder instance.
 func New(cli dockerclient.DockerClient) *Builder {
-	return &Builder{cli: cli}
+	return &Builder{cli: cli, pypiResolver: NewPyPIResolver(nil)}
 }
 
 // Build builds an image from the given options.
@@ -31,7 +32,7 @@ func (b *Builder) Build(ctx context.Context, opts BuildOptions) (*BuildResult, e
 	opts.Logger = logger
 	plan, err := b.Resolve(ctx, opts)
 	if err != nil {
-		return nil, fmt.Errorf("preparing source: %w", err)
+		return nil, err
 	}
 	defer func() { _ = plan.Close() }()
 	if !opts.NoCache {

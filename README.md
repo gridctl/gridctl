@@ -205,6 +205,24 @@ gridctl export                 # Reverse-engineer stack.yaml from a running stac
 
 Learn more → [Configuration Reference](docs/config-schema.md)
 
+### Generated Python Containers
+
+Build an exact public PyPI release, or a packaged Python project from git or a
+local directory, without maintaining a Dockerfile. Generated images use pinned
+Python and uv bases, run as a non-root user, and keep existing host `uvx`
+workflows unchanged.
+
+```yaml
+mcp-servers:
+  - name: fetch
+    source:
+      type: pypi
+      package: mcp-server-fetch
+      ref: 0.6.0
+```
+
+Learn more → [Source configuration](docs/config-schema.md#source) · [Runnable example](examples/python-sources/)
+
 ### `gridctl optimize` & Usage Observability
 
 Every tool call's arguments and results are token-counted per server, replica, client, and tool, and the Metrics workspace charts throughput, call counts, and the savings from output format conversion (measured from the gateway's own before/after counts). `gridctl optimize` scans the running gateway and surfaces actionable findings with projected weekly token impact (unused servers, unused tools, schema overhead, and format-conversion shortfalls), plus a paste-ready YAML remediation for each.
@@ -371,6 +389,7 @@ Learn more → [Packs guide](docs/packs.md)
 | [`per-client-scoping.yaml`](examples/access-control/per-client-scoping.yaml) | Restrict which servers and tools each linked client may touch |
 | [`declarative-link/stack.yaml`](examples/declarative-link/stack.yaml) | Auto-link LLM clients on apply with a `link:` block |
 | [`autoscale-basic.yaml`](examples/autoscale/autoscale-basic.yaml) | Reactive replica autoscaling for a stdio server |
+| [`pypi.yaml`](examples/python-sources/pypi.yaml) | Generate a non-root Python container from an exact PyPI release |
 | [`otlp-jaeger.yaml`](examples/tracing/otlp-jaeger.yaml) | Export traces to Jaeger via OTLP |
 | [`portable-pack/`](examples/portable-pack) | Team pack: skills, agents, and wiring from one manifest |
 

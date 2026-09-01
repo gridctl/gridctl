@@ -1,0 +1,24 @@
+# Generated Python container from an exact public PyPI release.
+#
+# Prerequisites:
+#   - Docker or Podman
+#   - Network access to pypi.org and files.pythonhosted.org for the first build
+#
+# Usage:
+#   gridctl validate examples/python-sources/pypi.yaml
+#   gridctl apply examples/python-sources/pypi.yaml
+#   gridctl logs --server fetch
+#   gridctl destroy examples/python-sources/pypi.yaml
+
+version: "1"
+name: python-pypi
+
+mcp-servers:
+  - name: fetch
+    source:
+      type: pypi
+      package: mcp-server-fetch
+      ref: 0.6.0
+
+    # type: pypi implies runtime: python. Generated Python servers default to
+    # stdio, and this package's single console script is selected automatically.

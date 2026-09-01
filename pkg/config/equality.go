@@ -17,6 +17,9 @@ func MCPServerEqual(a, b MCPServer) bool {
 func canonicalizeMCPServer(server *MCPServer) {
 	if server.Source != nil {
 		server.Source = canonicalSource(server.Source)
+		if isGeneratedPythonSource(server.Source) && server.Transport == "" {
+			server.Transport = "stdio"
+		}
 	}
 	if server.Autoscale == nil && server.Replicas <= 0 {
 		server.Replicas = 1
@@ -69,11 +72,23 @@ func canonicalSource(source *Source) *Source {
 		return nil
 	}
 	copy := *source
-	if copy.Dockerfile == "" {
+	if copy.Type == "pypi" && copy.Runtime == "" {
+		copy.Runtime = "python"
+	}
+	if copy.Runtime == "" && copy.Dockerfile == "" {
 		copy.Dockerfile = "Dockerfile"
 	}
 	if copy.Type == "git" && copy.Ref == "" {
 		copy.Ref = "main"
+	}
+	if len(copy.Extras) == 0 {
+		copy.Extras = nil
+	}
+	if len(copy.With) == 0 {
+		copy.With = nil
+	}
+	if len(copy.Packages) == 0 {
+		copy.Packages = nil
 	}
 	return &copy
 }

@@ -17,6 +17,7 @@ Current as of **v0.1.0-rc.3 plus `[Unreleased]`** (see [CHANGELOG.md](../CHANGEL
 |---------|--------|---------------|
 | MCP gateway (stdio, SSE, HTTP) | Stable | Backward compatible in 0.x |
 | Container orchestration (Docker) | Stable | Backward compatible in 0.x |
+| Generated Python source containers (PyPI, git, local) | Stable | Opt-in through `source.runtime: python` or `source.type: pypi`; existing Dockerfile sources are unchanged |
 | Config schema (servers, resources) | Stable | Backward compatible in 0.x |
 | Auth middleware (bearer, API key) | Stable | Backward compatible in 0.x |
 | Hot reload | Stable | Backward compatible in 0.x |
@@ -72,6 +73,7 @@ Current as of **v0.1.0-rc.3 plus `[Unreleased]`** (see [CHANGELOG.md](../CHANGEL
 ## Known limitations
 
 - Podman rootless multi-container networking requires `netavark` and `aardvark-dns` (Podman 4.0+); `pasta`/`slirp4netns` are egress-only transports and are not used for inter-container communication.
+- Generated Python package sources support the official public PyPI index only. Private indexes require a custom Dockerfile.
 - Code mode sandbox has no filesystem access (by design).
 - Skills registry is local-only with no remote discovery.
 - Agents and packs are first-class in the web UI: the Library's Agents segment covers catalog, editing, and per-client projection over the agents REST endpoints, and its Packs segment covers the full pack lifecycle (import, apply, status, remove) over the pack REST endpoints.

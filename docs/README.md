@@ -26,7 +26,7 @@ New to gridctl? Read in this order:
 | Document | Description |
 |----------|-------------|
 | [CLI Reference](cli-reference.md) | Every `gridctl` command, grouped by domain - stack lifecycle, catalog, LLM clients, packs, wiring ownership, global context, groups, skills, variables, pins, server authorization, traces, optimize, limits, telemetry, system |
-| [Configuration Reference](config-schema.md) | Every field in `stack.yaml` - server types, networks, resources, auth, variables |
+| [Configuration Reference](config-schema.md) | Every field in `stack.yaml` - server types, generated Python sources, networks, resources, auth, variables |
 | [REST API Reference](api-reference.md) | Gateway endpoints, request/response formats, authentication |
 
 ## Guides
@@ -49,6 +49,6 @@ New to gridctl? Read in this order:
 
 ## Quick Links
 
-- [Examples](../examples/) - example stacks and repos (transports, OpenAPI, skills registry, portable pack, variables, tracing, autoscale, code mode, access control, declarative linking)
+- [Examples](../examples/) - example stacks and repos (transports, generated Python sources, OpenAPI, skills registry, portable pack, variables, tracing, autoscale, code mode, access control, declarative linking)
 - [Contributing](../CONTRIBUTING.md) - development setup and conventions
 - [Changelog](../CHANGELOG.md) - release history

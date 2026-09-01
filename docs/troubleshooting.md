@@ -191,6 +191,40 @@ Importing a skill, agent, or pack from an SSH URL when the gridctl process has n
 
 ## Container Startup
 
+### Generated Python source fails before build
+
+**Symptoms:**
+
+```text
+No Dockerfile or Python project metadata was found in <path>. Add a Dockerfile, pyproject.toml, or setup.py.
+This package installs no commands. Set the server command explicitly.
+This package provides commands: <candidates>. Set the server command to one of them.
+Package requires Python <range>, which is incompatible with image selection <selection>. Set source.python to a compatible version from 3.10 through 3.13, or use a custom Dockerfile.
+No PyPI project named <package>.
+<version> is not a published version of <package>. Latest is <latest>.
+<version> of <package> is yanked on PyPI. Choose a non-yanked version.
+```
+
+**Resolution:**
+
+1. For git or local generation, set `source.runtime: python`, omit
+   `source.dockerfile`, and point `source.path` (git) or
+   `source.project_path` (local) at a packaged project containing a static
+   `pyproject.toml` or `setup.py`.
+2. Set the MCP server's top-level `command` when metadata has no console script
+   or has several possible scripts. Candidate names in the error are sorted.
+3. For PyPI, use an exact public release in `source.ref`; `latest`, version
+   ranges, yanked releases, and private indexes are rejected.
+4. If package metadata requires an unsupported interpreter, choose a compatible
+   `source.python` from 3.10 through 3.13, or provide a custom Dockerfile.
+
+Generated contexts are temporary and do not modify the source tree. Build logs
+come from the existing server log path: `gridctl logs --server <name>`. When
+`source.dockerfile` is non-empty, the INFO log
+`Found configured Dockerfile; building from it.` confirms that gridctl selected
+the custom Dockerfile instead of generation; a missing configured file fails
+before the image build.
+
 ### Image pull failures
 
 **Symptoms:**

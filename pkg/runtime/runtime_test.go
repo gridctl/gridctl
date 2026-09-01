@@ -18,11 +18,13 @@ func testLogger() *slog.Logger {
 
 // MockBuilder is a mock implementation of Builder for testing.
 type MockBuilder struct {
-	BuildError  error
-	BuildResult *BuildResult
+	BuildError   error
+	BuildResult  *BuildResult
+	BuildOptions []BuildOptions
 }
 
 func (m *MockBuilder) Build(ctx context.Context, opts BuildOptions) (*BuildResult, error) {
+	m.BuildOptions = append(m.BuildOptions, opts)
 	if m.BuildError != nil {
 		return nil, m.BuildError
 	}
@@ -33,6 +35,41 @@ func (m *MockBuilder) Build(ctx context.Context, opts BuildOptions) (*BuildResul
 		ImageTag: "gridctl-test-source:resolved-123456789abc",
 		Cached:   false,
 	}, nil
+}
+
+func TestPrepareMCPServer_PassesPythonSourceOptions(t *testing.T) {
+	builder := &MockBuilder{}
+	orchestrator := NewOrchestrator(nil, builder)
+	server := &config.MCPServer{
+		Name: "python",
+		Source: &config.Source{
+			Type: "local", Path: "/source", ProjectPath: "services/demo", Runtime: "python",
+			Python: "3.12", Extras: []string{"http"}, With: []string{"httpx>=0.27"}, Packages: []string{"curl"},
+		},
+		Command: []string{"demo"},
+	}
+	image, err := orchestrator.PrepareMCPServer(context.Background(), "stack", server, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if image == "" || len(builder.BuildOptions) != 1 {
+		t.Fatalf("image = %q, build calls = %d", image, len(builder.BuildOptions))
+	}
+	opts := builder.BuildOptions[0]
+	if opts.Runtime != "python" || opts.ProjectPath != "services/demo" || opts.Python != "3.12" || len(opts.Extras) != 1 || len(opts.With) != 1 || len(opts.Packages) != 1 || !opts.NoCache {
+		t.Fatalf("Python build options = %+v", opts)
+	}
+}
+
+func TestPrepareMCPServer_PreservesBuildErrorText(t *testing.T) {
+	const message = "No PyPI project named missing."
+	orchestrator := NewOrchestrator(nil, &MockBuilder{BuildError: errors.New(message)})
+	_, err := orchestrator.PrepareMCPServer(context.Background(), "stack", &config.MCPServer{
+		Name: "python", Source: &config.Source{Type: "pypi", Package: "missing", Ref: "1.0"},
+	}, false)
+	if err == nil || err.Error() != message {
+		t.Fatalf("PrepareMCPServer error = %q, want %q", err, message)
+	}
 }
 
 // Ensure MockBuilder implements Builder

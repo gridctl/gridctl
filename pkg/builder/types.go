@@ -13,10 +13,17 @@ type BuildOptions struct {
 	ServerName string // Logical MCP server name used in image identity
 
 	// Source configuration
-	SourceType string // "git" or "local"
-	URL        string // Git URL (for git source)
-	Ref        string // Git ref/branch (for git source)
-	Path       string // Local path (for local source)
+	SourceType  string // "git" or "local"
+	URL         string // Git URL (for git source)
+	Ref         string // Git ref/branch (for git source)
+	Path        string // Local path (for local source)
+	ProjectPath string // Python project subdirectory below a local root
+	Runtime     string // Empty for Dockerfile builds, "python" for generated builds
+	Package     string // Public PyPI project name
+	Python      string // Explicit Python minor version
+	Extras      []string
+	With        []string
+	Packages    []string
 
 	// Build configuration
 	Dockerfile string            // Path to Dockerfile within context
@@ -43,6 +50,7 @@ type SourceIdentity struct {
 	URL            string `json:"url,omitempty"`
 	Ref            string `json:"ref,omitempty"`
 	Path           string `json:"path,omitempty"`
+	ProjectPath    string `json:"projectPath,omitempty"`
 	Dockerfile     string `json:"dockerfile,omitempty"`
 	Commit         string `json:"commit,omitempty"`
 	Package        string `json:"package,omitempty"`
@@ -65,6 +73,7 @@ type ResolvedBuildPlan struct {
 	DeclaredIdentity     SourceIdentity  `json:"declaredIdentity"`
 	ResolvedIdentity     SourceIdentity  `json:"resolvedIdentity"`
 	EffectiveProjectRoot string          `json:"effectiveProjectRoot"`
+	Python               string          `json:"python,omitempty"`
 	Command              []string        `json:"command,omitempty"`
 	Dockerfile           string          `json:"dockerfile"`
 	GeneratedDockerfile  string          `json:"generatedDockerfile,omitempty"`

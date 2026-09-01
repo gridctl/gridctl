@@ -110,7 +110,7 @@ func TestValidate_GatewayCodeMode(t *testing.T) {
 			}(),
 		},
 		{
-			name: "no gateway config is valid",
+			name:  "no gateway config is valid",
 			stack: base(),
 		},
 	}
@@ -198,7 +198,7 @@ func TestValidate_GatewayOutputFormat(t *testing.T) {
 			errMsg:  "gateway.output_format",
 		},
 		{
-			name: "no gateway config is valid",
+			name:  "no gateway config is valid",
 			stack: base(),
 		},
 		// Per-server output_format
@@ -1004,8 +1004,8 @@ func TestMCPServer_ResolvedReadyTimeout(t *testing.T) {
 		{"0s", 0},
 		{"30s", 30 * time.Second},
 		{"2m", 2 * time.Minute},
-		{"garbage", 0},   // graceful fallback (pre-validated anyway)
-		{"-5s", 0},       // graceful fallback (pre-validated anyway)
+		{"garbage", 0}, // graceful fallback (pre-validated anyway)
+		{"-5s", 0},     // graceful fallback (pre-validated anyway)
 	}
 	for _, tc := range cases {
 		t.Run(tc.in, func(t *testing.T) {
@@ -1143,7 +1143,6 @@ func TestValidate_Resource(t *testing.T) {
 	}
 }
 
-
 func TestValidateSource(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -1185,7 +1184,7 @@ func TestValidateSource(t *testing.T) {
 			name:    "unknown type",
 			source:  &Source{Type: "s3"},
 			wantErr: true,
-			errMsg:  "must be 'git' or 'local'",
+			errMsg:  "must be 'git', 'local', or 'pypi'",
 		},
 		{
 			name:   "valid git source",
@@ -1194,6 +1193,54 @@ func TestValidateSource(t *testing.T) {
 		{
 			name:   "valid local source",
 			source: &Source{Type: "local", Path: "/app/src"},
+		},
+		{
+			name:   "valid PyPI source",
+			source: &Source{Type: "pypi", Package: "mcp-server-fetch", Ref: "0.6.0"},
+		},
+		{
+			name:   "valid generated git subproject",
+			source: &Source{Type: "git", URL: "https://github.com/example/repo", Runtime: "python", Path: "servers/fetch", Python: "3.12", Extras: []string{"http"}, With: []string{"httpx>=0.27"}, Packages: []string{"curl"}},
+		},
+		{
+			name:    "git rejects local project path",
+			source:  &Source{Type: "git", URL: "https://github.com/example/repo", Runtime: "python", ProjectPath: "servers/fetch"},
+			wantErr: true,
+			errMsg:  "is only valid for a Python local source",
+		},
+		{
+			name:   "valid generated local subproject",
+			source: &Source{Type: "local", Path: "/app/src", ProjectPath: "servers/fetch", Runtime: "python"},
+		},
+		{
+			name:    "PyPI requires exact version",
+			source:  &Source{Type: "pypi", Package: "demo", Ref: ">=1.0"},
+			wantErr: true,
+			errMsg:  "exact published PEP 440 version",
+		},
+		{
+			name:    "PyPI rejects private index",
+			source:  &Source{Type: "pypi", Package: "demo", Ref: "1.0", URL: "https://packages.example.com/simple"},
+			wantErr: true,
+			errMsg:  "Private PyPI indexes are not supported",
+		},
+		{
+			name:    "git subproject rejects traversal",
+			source:  &Source{Type: "git", URL: "https://github.com/example/repo", Runtime: "python", Path: "../escape"},
+			wantErr: true,
+			errMsg:  "clean relative path",
+		},
+		{
+			name:    "Python fields require runtime",
+			source:  &Source{Type: "local", Path: "/app/src", Python: "3.12"},
+			wantErr: true,
+			errMsg:  "must be 'python' when Python build fields are set",
+		},
+		{
+			name:    "invalid Python option values",
+			source:  &Source{Type: "local", Path: "/app/src", Runtime: "python", Python: "3.9", Extras: []string{"Bad Extra"}, With: []string{"safe; touch /tmp/x"}, Packages: []string{"curl;id"}},
+			wantErr: true,
+			errMsg:  "must be one of 3.10, 3.11, 3.12, or 3.13",
 		},
 	}
 
@@ -1603,10 +1650,10 @@ func TestValidate_Autoscale(t *testing.T) {
 
 func TestAutoscaleConfig_Resolved(t *testing.T) {
 	tests := []struct {
-		name       string
-		cfg        *AutoscaleConfig
-		wantUp     time.Duration
-		wantDown   time.Duration
+		name     string
+		cfg      *AutoscaleConfig
+		wantUp   time.Duration
+		wantDown time.Duration
 	}{
 		{name: "nil returns defaults", cfg: nil, wantUp: 30 * time.Second, wantDown: 5 * time.Minute},
 		{name: "empty returns defaults", cfg: &AutoscaleConfig{}, wantUp: 30 * time.Second, wantDown: 5 * time.Minute},

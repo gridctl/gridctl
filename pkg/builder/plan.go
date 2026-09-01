@@ -18,6 +18,11 @@ import (
 )
 
 const buildIdentityVersion = "dockerfile-v1"
+const generatedDockerfileName = ".gridctl.Dockerfile"
+
+type pypiReleaseResolver interface {
+	Resolve(ctx context.Context, project, version, explicitPython string) (*PyPIRelease, error)
+}
 
 var imagePartPattern = regexp.MustCompile(`[^a-z0-9._-]+`)
 
@@ -32,14 +37,21 @@ func (b *Builder) Resolve(ctx context.Context, opts BuildOptions) (*ResolvedBuil
 		opts.Logger = logging.NewDiscardLogger()
 	}
 
+	projectPath := ""
+	if opts.SourceType == "local" {
+		projectPath = opts.ProjectPath
+	}
 	declared := SourceIdentity{
 		Type: opts.SourceType, URL: opts.URL, Ref: opts.Ref,
-		Path: opts.Path, Dockerfile: opts.Dockerfile,
+		Path: opts.Path, ProjectPath: projectPath, Dockerfile: opts.Dockerfile,
+		Package: opts.Package,
 	}
 	resolved := declared
 	projectRoot := opts.Path
 	var cleanup func() error
 	mutableRef := false
+	pythonVersion := ""
+	generatedDockerfile := ""
 
 	switch opts.SourceType {
 	case "git":
@@ -100,16 +112,105 @@ func (b *Builder) Resolve(ctx context.Context, opts BuildOptions) (*ResolvedBuil
 		if !info.IsDir() {
 			return nil, fmt.Errorf("source path is not a directory: %s", opts.Path)
 		}
+	case "pypi":
+		if b.pypiResolver == nil {
+			return nil, fmt.Errorf("PyPI resolver is not configured")
+		}
+		release, err := b.pypiResolver.Resolve(ctx, opts.Package, opts.Ref, opts.Python)
+		if err != nil {
+			return nil, err
+		}
+		command, err := ResolveConsoleCommand(opts.Command, release.Package, release.Metadata.ConsoleScripts)
+		if err != nil {
+			return nil, err
+		}
+		pythonVersion = release.Python
+		generatedDockerfile, err = GeneratePythonDockerfile(ctx, PythonBuildSpec{
+			Python: pythonVersion, Package: release.Package, Version: release.Version,
+			Extras: opts.Extras, With: opts.With, Packages: opts.Packages, Command: command,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("generating Python Dockerfile: %w", err)
+		}
+		projectRoot, cleanup, err = materializePythonContext(ctx, "", generatedDockerfile)
+		if err != nil {
+			return nil, err
+		}
+		opts.Command = command
+		resolved.Package = release.Package
+		resolved.Ref = release.Version
+		resolved.Version = release.Version
+		resolved.Artifact = release.Artifact.Filename
+		resolved.ArtifactSHA256 = release.Artifact.SHA256
 	default:
 		return nil, fmt.Errorf("unknown source type: %s", opts.SourceType)
 	}
 
-	dockerfile, err := resolveDockerfile(projectRoot, opts.Dockerfile)
-	if err != nil {
-		if cleanup != nil {
-			_ = cleanup()
+	dockerfile := generatedDockerfileName
+	if opts.SourceType != "pypi" {
+		if opts.Runtime == "python" && opts.Dockerfile == "" {
+			subproject := opts.ProjectPath
+			if opts.SourceType == "git" {
+				subproject = opts.Path
+			}
+			selectedRoot, err := resolveSubprojectRoot(projectRoot, subproject)
+			if err != nil {
+				return nil, closePlanSource(cleanup, err)
+			}
+			metadata, err := ParsePythonProject(ctx, selectedRoot)
+			if err != nil {
+				return nil, closePlanSource(cleanup, err)
+			}
+			pythonVersion, err = SelectPythonVersion(metadata.RequiresPython, opts.Python)
+			if err != nil {
+				return nil, closePlanSource(cleanup, err)
+			}
+			command, err := ResolveConsoleCommand(opts.Command, metadata.Name, metadata.ConsoleScripts)
+			if err != nil {
+				return nil, closePlanSource(cleanup, err)
+			}
+			generatedDockerfile, err = GeneratePythonDockerfile(ctx, PythonBuildSpec{
+				Python: pythonVersion, Extras: opts.Extras, With: opts.With, Packages: opts.Packages,
+				Command: command, Local: true, Locked: metadata.HasUVLock,
+			})
+			if err != nil {
+				return nil, closePlanSource(cleanup, fmt.Errorf("generating Python Dockerfile: %w", err))
+			}
+			generatedRoot, generatedCleanup, err := materializePythonContext(ctx, selectedRoot, generatedDockerfile)
+			if err != nil {
+				return nil, closePlanSource(cleanup, err)
+			}
+			if cleanup != nil {
+				if err := cleanup(); err != nil {
+					_ = generatedCleanup()
+					return nil, fmt.Errorf("cleaning source worktree: %w", err)
+				}
+			}
+			projectRoot = generatedRoot
+			cleanup = generatedCleanup
+			opts.Command = command
+			resolved.Package = metadata.Name
+			resolved.Version = metadata.Version
+		} else {
+			explicitPythonDockerfile := opts.Runtime == "python" && opts.Dockerfile != ""
+			if explicitPythonDockerfile {
+				if opts.SourceType == "git" && opts.Path != "" {
+					selectedRoot, err := resolveSubprojectRoot(projectRoot, opts.Path)
+					if err != nil {
+						return nil, closePlanSource(cleanup, err)
+					}
+					projectRoot = selectedRoot
+				}
+			}
+			var err error
+			dockerfile, err = resolveDockerfile(projectRoot, opts.Dockerfile)
+			if err != nil {
+				return nil, closePlanSource(cleanup, err)
+			}
+			if explicitPythonDockerfile {
+				opts.Logger.Info("Found configured Dockerfile; building from it.")
+			}
 		}
-		return nil, err
 	}
 	resolved.Dockerfile = dockerfile
 
@@ -136,7 +237,8 @@ func (b *Builder) Resolve(ctx context.Context, opts BuildOptions) (*ResolvedBuil
 		BuildArgs     map[string]string
 		Command       []string
 		Platform      string
-	}{buildIdentityVersion, resolved, contentDigest, dockerfile, buildArgs, command, opts.Platform}
+		Python        string
+	}{buildIdentityVersion, resolved, contentDigest, dockerfile, buildArgs, command, opts.Platform, pythonVersion}
 	encoded, err := json.Marshal(identityInput)
 	if err != nil {
 		if cleanup != nil {
@@ -149,18 +251,29 @@ func (b *Builder) Resolve(ctx context.Context, opts BuildOptions) (*ResolvedBuil
 	pin := "local"
 	if resolved.Commit != "" {
 		pin = resolved.Commit[:12]
+	} else if resolved.Version != "" {
+		pin = resolved.Version
+	}
+	provenance := BuildProvenance{SourceContentDigest: contentDigest, TargetPlatform: opts.Platform}
+	if generatedDockerfile != "" {
+		template := DefaultPythonTemplate()
+		provenance.GeneratorVersion = template.Version
+		provenance.BaseImage = template.PythonImages[pythonVersion]
+		provenance.UVImage = template.UVImage
 	}
 
 	return &ResolvedBuildPlan{
 		DeclaredIdentity:     declared,
 		ResolvedIdentity:     resolved,
 		EffectiveProjectRoot: projectRoot,
+		Python:               pythonVersion,
 		Command:              command,
 		Dockerfile:           dockerfile,
+		GeneratedDockerfile:  generatedDockerfile,
 		BuildInputDigest:     buildDigest,
 		ImageTag:             GenerateImageTag(opts.Stack, opts.ServerName, pin, buildDigest),
 		MutableRef:           mutableRef,
-		Provenance:           BuildProvenance{SourceContentDigest: contentDigest, TargetPlatform: opts.Platform},
+		Provenance:           provenance,
 		cleanup:              cleanup,
 	}, nil
 }
@@ -198,6 +311,8 @@ func resolveDockerfile(contextPath, configured string) (string, error) {
 	if configured != "" {
 		if _, err := os.Stat(filepath.Join(contextPath, configured)); err == nil {
 			return configured, nil
+		} else {
+			return "", fmt.Errorf("configured Dockerfile %s was not found: %w", configured, err)
 		}
 	}
 	for _, candidate := range []string{"Dockerfile", "dockerfile", "Containerfile"} {
@@ -206,6 +321,148 @@ func resolveDockerfile(contextPath, configured string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("no Dockerfile found in %s", contextPath)
+}
+
+func resolveSubprojectRoot(sourceRoot, subproject string) (string, error) {
+	root, err := filepath.EvalSymlinks(sourceRoot)
+	if err != nil {
+		return "", fmt.Errorf("resolving source root: %w", err)
+	}
+	if subproject == "" {
+		return root, nil
+	}
+	if filepath.IsAbs(subproject) || filepath.Clean(subproject) != subproject || subproject == "." || strings.HasPrefix(subproject, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("python project path must be a clean relative path within the source root")
+	}
+	candidate, err := filepath.EvalSymlinks(filepath.Join(root, subproject))
+	if err != nil {
+		return "", fmt.Errorf("resolving Python project path: %w", err)
+	}
+	rel, err := filepath.Rel(root, candidate)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("python project path escapes the source root")
+	}
+	info, err := os.Stat(candidate)
+	if err != nil || !info.IsDir() {
+		return "", fmt.Errorf("python project path is not a directory: %s", subproject)
+	}
+	return candidate, nil
+}
+
+func materializePythonContext(ctx context.Context, sourceRoot, dockerfile string) (string, func() error, error) {
+	worktreesDir, err := BuilderWorktreesDir()
+	if err != nil {
+		return "", nil, fmt.Errorf("getting builder worktree directory: %w", err)
+	}
+	if err := os.MkdirAll(worktreesDir, 0755); err != nil {
+		return "", nil, fmt.Errorf("creating builder worktree directory: %w", err)
+	}
+	destination, err := os.MkdirTemp(worktreesDir, "python-")
+	if err != nil {
+		return "", nil, fmt.Errorf("creating generated Python context: %w", err)
+	}
+	cleanup := func() error { return os.RemoveAll(destination) }
+	if sourceRoot != "" {
+		if err := copyPythonContext(ctx, sourceRoot, destination); err != nil {
+			_ = cleanup()
+			return "", nil, err
+		}
+	}
+	if err := os.WriteFile(filepath.Join(destination, generatedDockerfileName), []byte(dockerfile), 0600); err != nil {
+		_ = cleanup()
+		return "", nil, fmt.Errorf("writing generated Python Dockerfile: %w", err)
+	}
+	ignore := ".git\n.gridctl\n__pycache__\n*.pyc\n.venv\nvenv\nbuild\ndist\n*.egg-info\n"
+	if err := os.WriteFile(filepath.Join(destination, ".dockerignore"), []byte(ignore), 0600); err != nil {
+		_ = cleanup()
+		return "", nil, fmt.Errorf("writing generated Python .dockerignore: %w", err)
+	}
+	return destination, cleanup, nil
+}
+
+func copyPythonContext(ctx context.Context, sourceRoot, destination string) error {
+	resolvedRoot, err := filepath.EvalSymlinks(sourceRoot)
+	if err != nil {
+		return fmt.Errorf("resolving Python source context: %w", err)
+	}
+	return filepath.Walk(sourceRoot, func(sourcePath string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(sourceRoot, sourcePath)
+		if err != nil || rel == "." {
+			return err
+		}
+		if info.IsDir() && isExcludedPythonContextDir(info.Name()) {
+			return filepath.SkipDir
+		}
+		if !info.IsDir() && strings.HasSuffix(info.Name(), ".pyc") {
+			return nil
+		}
+		targetPath := filepath.Join(destination, rel)
+		if info.Mode()&os.ModeSymlink != 0 {
+			linkTarget, err := os.Readlink(sourcePath)
+			if err != nil {
+				return err
+			}
+			resolvedTarget, err := filepath.EvalSymlinks(sourcePath)
+			if err != nil {
+				return err
+			}
+			targetRel, err := filepath.Rel(resolvedRoot, resolvedTarget)
+			if filepath.IsAbs(linkTarget) || err != nil || targetRel == ".." || strings.HasPrefix(targetRel, ".."+string(filepath.Separator)) {
+				return fmt.Errorf("python source symlink escapes project root: %s", rel)
+			}
+			return os.Symlink(linkTarget, targetPath)
+		}
+		if info.IsDir() {
+			return os.MkdirAll(targetPath, info.Mode().Perm())
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("unsupported file in Python source context: %s", rel)
+		}
+		source, err := os.Open(sourcePath)
+		if err != nil {
+			return err
+		}
+		target, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode().Perm())
+		if err != nil {
+			_ = source.Close()
+			return err
+		}
+		_, copyErr := io.Copy(target, source)
+		closeTargetErr := target.Close()
+		closeSourceErr := source.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeTargetErr != nil {
+			return closeTargetErr
+		}
+		return closeSourceErr
+	})
+}
+
+func isExcludedPythonContextDir(name string) bool {
+	switch name {
+	case ".git", ".gridctl", "__pycache__", ".venv", "venv", "build", "dist":
+		return true
+	default:
+		return strings.HasSuffix(name, ".egg-info")
+	}
+}
+
+func closePlanSource(cleanup func() error, cause error) error {
+	if cleanup == nil {
+		return cause
+	}
+	if err := cleanup(); err != nil {
+		return fmt.Errorf("%w (also cleaning source: %v)", cause, err)
+	}
+	return cause
 }
 
 func digestBuildContext(ctx context.Context, contextPath string) (string, error) {

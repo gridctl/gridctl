@@ -80,9 +80,6 @@ func GeneratePythonDockerfile(ctx context.Context, spec PythonBuildSpec) (string
 	if err != nil {
 		return "", err
 	}
-	if spec.Local && (len(extras) > 0 || len(dependencies) > 0) {
-		return "", fmt.Errorf("extras and with dependencies are not supported for local Python projects")
-	}
 	packages, err := normalizeDebianPackages(spec.Packages)
 	if err != nil {
 		return "", err
@@ -108,9 +105,30 @@ func GeneratePythonDockerfile(ctx context.Context, spec PythonBuildSpec) (string
 	if spec.Local {
 		out.WriteString("WORKDIR /app\nCOPY . /app\n")
 		if spec.Locked {
-			out.WriteString("RUN uv sync --locked --no-dev --no-editable\n")
+			out.WriteString("RUN uv sync --locked --no-dev --no-editable")
+			for _, extra := range extras {
+				out.WriteString(" --extra " + extra)
+			}
+			out.WriteByte('\n')
+			if len(dependencies) > 0 {
+				out.WriteString("RUN uv pip install --python /app/.venv/bin/python")
+				for _, dependency := range dependencies {
+					out.WriteString(" " + shellQuote(dependency))
+				}
+				out.WriteByte('\n')
+			}
 		} else {
-			out.WriteString("RUN uv tool install /app\n")
+			install := "/app"
+			installArg := install
+			if len(extras) > 0 {
+				install += "[" + strings.Join(extras, ",") + "]"
+				installArg = shellQuote(install)
+			}
+			out.WriteString("RUN uv tool install " + installArg)
+			for _, dependency := range dependencies {
+				out.WriteString(" --with " + shellQuote(dependency))
+			}
+			out.WriteByte('\n')
 		}
 	} else {
 		install := spec.Package
@@ -124,7 +142,11 @@ func GeneratePythonDockerfile(ctx context.Context, spec PythonBuildSpec) (string
 		}
 		out.WriteByte('\n')
 	}
-	out.WriteString("RUN chown -R gridctl:gridctl /opt/gridctl\n")
+	if spec.Local {
+		out.WriteString("RUN chown -R gridctl:gridctl /app /opt/gridctl\n")
+	} else {
+		out.WriteString("RUN chown -R gridctl:gridctl /opt/gridctl\n")
+	}
 	out.WriteString("USER gridctl\n")
 	if len(spec.Command) > 0 {
 		encoded, err := json.Marshal(spec.Command)
