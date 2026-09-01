@@ -13,12 +13,13 @@ import (
 
 // Builder handles building images from source.
 type Builder struct {
-	cli dockerclient.DockerClient
+	cli          dockerclient.DockerClient
+	pypiResolver pypiReleaseResolver
 }
 
 // New creates a new Builder instance.
 func New(cli dockerclient.DockerClient) *Builder {
-	return &Builder{cli: cli}
+	return &Builder{cli: cli, pypiResolver: NewPyPIResolver(nil)}
 }
 
 // Build builds an image from the given options.

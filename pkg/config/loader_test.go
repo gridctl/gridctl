@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestLoadStack_Valid(t *testing.T) {
@@ -49,6 +51,38 @@ resources:
 	}
 }
 
+func TestLoadStack_PythonSourceDefaultsAndRoundTrip(t *testing.T) {
+	content := `
+name: python
+mcp-servers:
+  - name: package
+    source:
+      type: pypi
+      package: mcp-server-fetch
+      ref: 0.6.0
+      python: "3.12"
+      extras: [http]
+      with: ["httpx>=0.27"]
+      packages: [curl]
+`
+	stack, err := LoadStack(writeTempFile(t, content))
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := stack.MCPServers[0].Source
+	if source.Runtime != "python" || stack.MCPServers[0].Transport != "stdio" || source.Dockerfile != "" {
+		t.Fatalf("Python defaults = source %+v transport %q", source, stack.MCPServers[0].Transport)
+	}
+	encoded, err := yaml.Marshal(stack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(encoded)
+	if strings.Contains(text, "dockerfile:") || !strings.Contains(text, "runtime: python") || !strings.Contains(text, "package: mcp-server-fetch") {
+		t.Fatalf("serialized Python source lost omission or fields:\n%s", text)
+	}
+}
+
 func TestLoadStack_Defaults(t *testing.T) {
 	content := `
 name: test-lab
@@ -76,8 +110,8 @@ mcp-servers:
 	if topo.Network.Name != "test-lab-net" {
 		t.Errorf("expected default network name 'test-lab-net', got '%s'", topo.Network.Name)
 	}
-	if topo.MCPServers[0].Source.Dockerfile != "Dockerfile" {
-		t.Errorf("expected default dockerfile 'Dockerfile', got '%s'", topo.MCPServers[0].Source.Dockerfile)
+	if topo.MCPServers[0].Source.Dockerfile != "" {
+		t.Errorf("expected omitted dockerfile to remain empty, got '%s'", topo.MCPServers[0].Source.Dockerfile)
 	}
 	if topo.MCPServers[0].Source.Ref != "main" {
 		t.Errorf("expected default ref 'main', got '%s'", topo.MCPServers[0].Source.Ref)

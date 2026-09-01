@@ -48,14 +48,20 @@ func TestGeneratePythonDockerfile_LocalLockModes(t *testing.T) {
 	}
 }
 
-func TestGeneratePythonDockerfile_LocalRejectsUnsupportedPackageOptions(t *testing.T) {
-	for _, spec := range []PythonBuildSpec{
-		{Python: "3.11", Local: true, Extras: []string{"sse"}},
-		{Python: "3.11", Local: true, With: []string{"httpx>=0.27"}},
-	} {
-		if _, err := GeneratePythonDockerfile(context.Background(), spec); err == nil || !strings.Contains(err.Error(), "not supported for local") {
-			t.Errorf("unsupported local options error = %v", err)
-		}
+func TestGeneratePythonDockerfile_LocalPackageOptions(t *testing.T) {
+	unlocked, err := GeneratePythonDockerfile(context.Background(), PythonBuildSpec{Python: "3.11", Local: true, Extras: []string{"sse"}, With: []string{"httpx>=0.27"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(unlocked, "uv tool install '/app[sse]' --with 'httpx>=0.27'") {
+		t.Fatalf("unlocked project options missing:\n%s", unlocked)
+	}
+	locked, err := GeneratePythonDockerfile(context.Background(), PythonBuildSpec{Python: "3.11", Local: true, Locked: true, Extras: []string{"sse"}, With: []string{"httpx>=0.27"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(locked, "uv sync --locked --no-dev --no-editable --extra sse") || !strings.Contains(locked, "uv pip install --python /app/.venv/bin/python 'httpx>=0.27'") {
+		t.Fatalf("locked project options missing:\n%s", locked)
 	}
 }
 

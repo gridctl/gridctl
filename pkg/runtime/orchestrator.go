@@ -40,19 +40,26 @@ type Builder interface {
 
 // BuildOptions for the Builder interface.
 type BuildOptions struct {
-	Stack      string               // Stack name used in image identity
-	ServerName string               // Logical server name used in image identity
-	SourceType string               // "git" or "local"
-	URL        string               // Git URL
-	Ref        string               // Git ref/branch
-	Path       string               // Local path
-	Dockerfile string               // Dockerfile path within context
-	BuildArgs  map[string]string    // Build arguments
-	Command    []string             // Runtime command included in build identity
-	Platform   string               // Target OCI platform
-	NoCache    bool                 // Force rebuild
-	Auth       transport.AuthMethod // Resolved git auth (nil = unauthenticated)
-	Logger     *slog.Logger         // Logger for build operations (optional)
+	Stack       string               // Stack name used in image identity
+	ServerName  string               // Logical server name used in image identity
+	SourceType  string               // "git" or "local"
+	URL         string               // Git URL
+	Ref         string               // Git ref/branch
+	Path        string               // Local path
+	ProjectPath string               // Python project subdirectory below a local root
+	Runtime     string               // Generated source runtime
+	Package     string               // Public package name
+	Python      string               // Python minor version
+	Extras      []string             // Python package extras
+	With        []string             // Additional Python dependencies
+	Packages    []string             // Debian runtime packages
+	Dockerfile  string               // Dockerfile path within context
+	BuildArgs   map[string]string    // Build arguments
+	Command     []string             // Runtime command included in build identity
+	Platform    string               // Target OCI platform
+	NoCache     bool                 // Force rebuild
+	Auth        transport.AuthMethod // Resolved git auth (nil = unauthenticated)
+	Logger      *slog.Logger         // Logger for build operations (optional)
 }
 
 // BuildResult from a build operation.
@@ -373,17 +380,24 @@ func (o *Orchestrator) PrepareMCPServer(ctx context.Context, stackName string, s
 
 	o.logger.Info("building MCP server from source", "name", server.Name, "sourceType", server.Source.Type)
 	buildOpts := BuildOptions{
-		Stack:      stackName,
-		ServerName: server.Name,
-		SourceType: server.Source.Type,
-		URL:        server.Source.URL,
-		Ref:        server.Source.Ref,
-		Path:       server.Source.Path,
-		Dockerfile: server.Source.Dockerfile,
-		BuildArgs:  server.BuildArgs,
-		Command:    server.Command,
-		NoCache:    noCache,
-		Logger:     o.logger,
+		Stack:       stackName,
+		ServerName:  server.Name,
+		SourceType:  server.Source.Type,
+		URL:         server.Source.URL,
+		Ref:         server.Source.Ref,
+		Path:        server.Source.Path,
+		ProjectPath: server.Source.ProjectPath,
+		Runtime:     server.Source.Runtime,
+		Package:     server.Source.Package,
+		Python:      server.Source.Python,
+		Extras:      server.Source.Extras,
+		With:        server.Source.With,
+		Packages:    server.Source.Packages,
+		Dockerfile:  server.Source.Dockerfile,
+		BuildArgs:   server.BuildArgs,
+		Command:     server.Command,
+		NoCache:     noCache,
+		Logger:      o.logger,
 	}
 	if server.Source.Auth != nil {
 		authMethod, err := AuthForSource(server.Source.Auth, server.Source.URL, o.credentialResolver)

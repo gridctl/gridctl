@@ -765,12 +765,19 @@ func (s *MCPServer) PersistTraces(stack *Stack) bool {
 
 // Source defines how to build an MCP server from source code.
 type Source struct {
-	Type       string      `yaml:"type"` // "git" or "local"
-	URL        string      `yaml:"url,omitempty"`
-	Ref        string      `yaml:"ref,omitempty"`
-	Path       string      `yaml:"path,omitempty"`
-	Dockerfile string      `yaml:"dockerfile,omitempty"`
-	Auth       *SourceAuth `yaml:"auth,omitempty"`
+	Type        string      `yaml:"type"` // "git", "local", or "pypi"
+	URL         string      `yaml:"url,omitempty"`
+	Ref         string      `yaml:"ref,omitempty"`
+	Path        string      `yaml:"path,omitempty"`
+	ProjectPath string      `yaml:"project_path,omitempty"`
+	Dockerfile  string      `yaml:"dockerfile,omitempty"`
+	Runtime     string      `yaml:"runtime,omitempty"`
+	Package     string      `yaml:"package,omitempty"`
+	Python      string      `yaml:"python,omitempty"`
+	Extras      []string    `yaml:"extras,omitempty"`
+	With        []string    `yaml:"with,omitempty"`
+	Packages    []string    `yaml:"packages,omitempty"`
+	Auth        *SourceAuth `yaml:"auth,omitempty"`
 }
 
 // SourceAuth is the declarative auth block on an MCP server git source. Raw
@@ -881,11 +888,14 @@ func (s *Stack) SetDefaults() {
 
 	for i := range s.MCPServers {
 		if s.MCPServers[i].Source != nil {
-			if s.MCPServers[i].Source.Dockerfile == "" {
-				s.MCPServers[i].Source.Dockerfile = "Dockerfile"
-			}
 			if s.MCPServers[i].Source.Type == "git" && s.MCPServers[i].Source.Ref == "" {
 				s.MCPServers[i].Source.Ref = "main"
+			}
+			if s.MCPServers[i].Source.Type == "pypi" && s.MCPServers[i].Source.Runtime == "" {
+				s.MCPServers[i].Source.Runtime = "python"
+			}
+			if s.MCPServers[i].Source.Runtime == "python" && s.MCPServers[i].Transport == "" {
+				s.MCPServers[i].Transport = "stdio"
 			}
 		}
 		// When autoscale is configured the scaler owns replica count — leave

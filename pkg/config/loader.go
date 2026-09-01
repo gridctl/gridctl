@@ -249,7 +249,20 @@ func expandStackVarsResolved(s *Stack, resolve referenceResolver) (unresolvedVau
 		if srv.Source != nil {
 			srv.Source.URL = expandField(site("source.url"), srv.Source.URL)
 			srv.Source.Path = expandField(site("source.path"), srv.Source.Path)
+			srv.Source.ProjectPath = expandField(site("source.project_path"), srv.Source.ProjectPath)
 			srv.Source.Ref = expandField(site("source.ref"), srv.Source.Ref)
+			srv.Source.Dockerfile = expandField(site("source.dockerfile"), srv.Source.Dockerfile)
+			srv.Source.Package = expandField(site("source.package"), srv.Source.Package)
+			srv.Source.Python = expandField(site("source.python"), srv.Source.Python)
+			for j := range srv.Source.Extras {
+				srv.Source.Extras[j] = expandField(site(fmt.Sprintf("source.extras[%d]", j)), srv.Source.Extras[j])
+			}
+			for j := range srv.Source.With {
+				srv.Source.With[j] = expandField(site(fmt.Sprintf("source.with[%d]", j)), srv.Source.With[j])
+			}
+			for j := range srv.Source.Packages {
+				srv.Source.Packages[j] = expandField(site(fmt.Sprintf("source.packages[%d]", j)), srv.Source.Packages[j])
+			}
 			// Source.Auth.CredentialRef intentionally NOT expanded here:
 			// vault references stay literal until clone time so the
 			// orchestrator can resolve them against the live vault.

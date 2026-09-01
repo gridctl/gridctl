@@ -1,7 +1,9 @@
 package builder
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +13,15 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
+
+type stubPyPIResolver struct {
+	release *PyPIRelease
+	err     error
+}
+
+func (s stubPyPIResolver) Resolve(context.Context, string, string, string) (*PyPIRelease, error) {
+	return s.release, s.err
+}
 
 func TestResolve_LocalContentDeterminesIdentity(t *testing.T) {
 	dir := t.TempDir()
@@ -105,6 +116,104 @@ func TestResolve_EmptyBuildInputsHaveCanonicalIdentity(t *testing.T) {
 	defer empty.Close()
 	if omitted.BuildInputDigest != empty.BuildInputDigest || omitted.ImageTag != empty.ImageTag {
 		t.Fatal("omitted and empty build inputs produced different identities")
+	}
+}
+
+func TestResolve_PyPIGeneratesImmutablePythonPlan(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	b := New(&mockDockerClient{})
+	b.pypiResolver = stubPyPIResolver{release: &PyPIRelease{
+		Package: "mcp-demo", Version: "1.2.3", Python: "3.12",
+		Artifact: PyPIArtifact{Filename: "mcp_demo-1.2.3-py3-none-any.whl", SHA256: strings.Repeat("a", 64)},
+		Metadata: PythonPackageMetadata{Name: "mcp-demo", Version: "1.2.3", ConsoleScripts: []string{"mcp-demo"}},
+	}}
+	plan, err := b.Resolve(context.Background(), BuildOptions{
+		Stack: "demo", ServerName: "package", SourceType: "pypi", Package: "mcp-demo", Ref: "1.2.3",
+		Extras: []string{"http"}, With: []string{"httpx>=0.27"}, Packages: []string{"curl"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer plan.Close()
+	if plan.Python != "3.12" || plan.Command[0] != "mcp-demo" || plan.GeneratedDockerfile == "" {
+		t.Fatalf("resolved plan = %+v", plan)
+	}
+	if plan.ResolvedIdentity.ArtifactSHA256 == "" || !strings.Contains(plan.ImageTag, ":1.2.3-") {
+		t.Fatalf("PyPI identity = %+v, tag = %s", plan.ResolvedIdentity, plan.ImageTag)
+	}
+	if plan.Provenance.GeneratorVersion != PythonTemplateVersion || plan.Provenance.BaseImage == "" || plan.Provenance.UVImage == "" {
+		t.Fatalf("Python provenance = %+v", plan.Provenance)
+	}
+	builtDockerfile, err := os.ReadFile(filepath.Join(plan.EffectiveProjectRoot, plan.Dockerfile))
+	if err != nil || string(builtDockerfile) != plan.GeneratedDockerfile {
+		t.Fatalf("built Dockerfile differs from preview: %v", err)
+	}
+}
+
+func TestResolve_LocalPythonUsesSubprojectAndIgnoresDefaultDockerfile(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "Dockerfile"), []byte("FROM should-not-win\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	project := filepath.Join(root, "servers", "demo")
+	if err := os.MkdirAll(project, 0755); err != nil {
+		t.Fatal(err)
+	}
+	metadata := "[project]\nname = \"demo\"\nversion = \"1.0\"\nrequires-python = \">=3.11\"\n[project.scripts]\ndemo = \"demo:main\"\n"
+	if err := os.WriteFile(filepath.Join(project, "pyproject.toml"), []byte(metadata), 0644); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := New(&mockDockerClient{}).Resolve(context.Background(), BuildOptions{
+		Stack: "demo", ServerName: "local", SourceType: "local", Path: root,
+		ProjectPath: "servers/demo", Runtime: "python", Extras: []string{"cli"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer plan.Close()
+	if plan.Python != "3.11" || plan.Command[0] != "demo" || !strings.Contains(plan.GeneratedDockerfile, "uv tool install '/app[cli]'") {
+		t.Fatalf("generated local plan = %+v\n%s", plan, plan.GeneratedDockerfile)
+	}
+	if _, err := os.Stat(filepath.Join(project, generatedDockerfileName)); !os.IsNotExist(err) {
+		t.Fatalf("generated file modified user source: %v", err)
+	}
+}
+
+func TestResolve_PythonExplicitDockerfileTakesPrecedence(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Containerfile"), []byte("FROM alpine\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	plan, err := New(&mockDockerClient{}).Resolve(context.Background(), BuildOptions{
+		Stack: "demo", ServerName: "custom", SourceType: "local", Path: dir,
+		Runtime: "python", Dockerfile: "Containerfile", Logger: logger,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer plan.Close()
+	if plan.GeneratedDockerfile != "" || plan.Dockerfile != "Containerfile" {
+		t.Fatalf("explicit Dockerfile plan = %+v", plan)
+	}
+	if !strings.Contains(logs.String(), "Found configured Dockerfile; building from it.") {
+		t.Fatalf("precedence log missing: %s", logs.String())
+	}
+}
+
+func TestResolve_LocalPythonRejectsSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "project")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := New(&mockDockerClient{}).Resolve(context.Background(), BuildOptions{
+		SourceType: "local", Path: root, ProjectPath: "project", Runtime: "python",
+	})
+	if err == nil || !strings.Contains(err.Error(), "escapes the source root") {
+		t.Fatalf("symlink escape error = %v", err)
 	}
 }
 
@@ -259,5 +368,56 @@ func TestResolve_GitUsesFreshRefAndIsolatedWorktrees(t *testing.T) {
 	}
 	if string(firstDockerfile) != "FROM alpine\n" {
 		t.Fatalf("first worktree mutated after second resolve: %q", firstDockerfile)
+	}
+}
+
+func TestResolve_GitPythonUsesCheckoutSubproject(t *testing.T) {
+	remote := t.TempDir()
+	repo, err := gogit.PlainInit(remote, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName("main"))); err != nil {
+		t.Fatal(err)
+	}
+	project := filepath.Join(remote, "services", "demo")
+	if err := os.MkdirAll(project, 0755); err != nil {
+		t.Fatal(err)
+	}
+	metadata := "[project]\nname = \"git-demo\"\nversion = \"2.0\"\n[project.scripts]\ngit-demo = \"demo:main\"\n"
+	if err := os.WriteFile(filepath.Join(project, "pyproject.toml"), []byte(metadata), 0644); err != nil {
+		t.Fatal(err)
+	}
+	worktree, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := worktree.Add("services/demo/pyproject.toml"); err != nil {
+		t.Fatal(err)
+	}
+	commit, err := worktree.Commit("python project", &gogit.CommitOptions{Author: &object.Signature{Name: "test", Email: "test@example.com"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", t.TempDir())
+	plan, err := New(&mockDockerClient{}).Resolve(context.Background(), BuildOptions{
+		Stack: "demo", ServerName: "git-python", SourceType: "git", URL: remote,
+		Ref: commit.String(), Path: "services/demo", Runtime: "python",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer plan.Close()
+	if plan.ResolvedIdentity.Commit != commit.String() || plan.ResolvedIdentity.Path != "services/demo" {
+		t.Fatalf("resolved git identity = %+v", plan.ResolvedIdentity)
+	}
+	if plan.Command[0] != "git-demo" || plan.GeneratedDockerfile == "" {
+		t.Fatalf("generated git plan = %+v", plan)
+	}
+	if _, err := os.Stat(filepath.Join(plan.EffectiveProjectRoot, "pyproject.toml")); err != nil {
+		t.Fatalf("selected subproject was not materialized: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(plan.EffectiveProjectRoot, "services")); !os.IsNotExist(err) {
+		t.Fatalf("clone root was copied instead of selected subproject: %v", err)
 	}
 }
