@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/go-git/go-git/v5/plumbing"
 	gitpkg "github.com/gridctl/gridctl/pkg/git"
 	"github.com/gridctl/gridctl/pkg/logging"
 )
@@ -38,6 +39,7 @@ func (b *Builder) Resolve(ctx context.Context, opts BuildOptions) (*ResolvedBuil
 	resolved := declared
 	projectRoot := opts.Path
 	var cleanup func() error
+	mutableRef := false
 
 	switch opts.SourceType {
 	case "git":
@@ -81,6 +83,12 @@ func (b *Builder) Resolve(ctx context.Context, opts BuildOptions) (*ResolvedBuil
 			_ = cleanup()
 			return nil, fmt.Errorf("checking out resolved ref: %w", err)
 		}
+		head, err := repo.Reference(plumbing.HEAD, false)
+		if err != nil {
+			_ = cleanup()
+			return nil, fmt.Errorf("reading resolved ref state: %w", err)
+		}
+		mutableRef = head.Type() == plumbing.SymbolicReference
 	case "local":
 		if opts.Path == "" {
 			return nil, fmt.Errorf("local path is required")
@@ -112,6 +120,14 @@ func (b *Builder) Resolve(ctx context.Context, opts BuildOptions) (*ResolvedBuil
 		}
 		return nil, fmt.Errorf("digesting build context: %w", err)
 	}
+	buildArgs := opts.BuildArgs
+	if len(buildArgs) == 0 {
+		buildArgs = nil
+	}
+	command := opts.Command
+	if len(command) == 0 {
+		command = nil
+	}
 	identityInput := struct {
 		Version       string
 		Source        SourceIdentity
@@ -120,7 +136,7 @@ func (b *Builder) Resolve(ctx context.Context, opts BuildOptions) (*ResolvedBuil
 		BuildArgs     map[string]string
 		Command       []string
 		Platform      string
-	}{buildIdentityVersion, resolved, contentDigest, dockerfile, opts.BuildArgs, opts.Command, opts.Platform}
+	}{buildIdentityVersion, resolved, contentDigest, dockerfile, buildArgs, command, opts.Platform}
 	encoded, err := json.Marshal(identityInput)
 	if err != nil {
 		if cleanup != nil {
@@ -139,10 +155,11 @@ func (b *Builder) Resolve(ctx context.Context, opts BuildOptions) (*ResolvedBuil
 		DeclaredIdentity:     declared,
 		ResolvedIdentity:     resolved,
 		EffectiveProjectRoot: projectRoot,
-		Command:              opts.Command,
+		Command:              command,
 		Dockerfile:           dockerfile,
 		BuildInputDigest:     buildDigest,
 		ImageTag:             GenerateImageTag(opts.Stack, opts.ServerName, pin, buildDigest),
+		MutableRef:           mutableRef,
 		Provenance:           BuildProvenance{SourceContentDigest: contentDigest, TargetPlatform: opts.Platform},
 		cleanup:              cleanup,
 	}, nil

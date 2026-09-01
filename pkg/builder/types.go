@@ -63,6 +63,7 @@ type ResolvedBuildPlan struct {
 	BuildInputDigest     string          `json:"buildInputDigest"`
 	ImageTag             string          `json:"imageTag"`
 	Cached               bool            `json:"cached"`
+	MutableRef           bool            `json:"mutableRef"`
 	Provenance           BuildProvenance `json:"provenance"`
 
 	cleanup func() error

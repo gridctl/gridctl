@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	gogit "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
@@ -81,6 +82,32 @@ func TestResolve_BuildInputsInvalidateIdentity(t *testing.T) {
 	}
 }
 
+func TestResolve_EmptyBuildInputsHaveCanonicalIdentity(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM alpine\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	b := New(&mockDockerClient{})
+	omitted, err := b.Resolve(context.Background(), BuildOptions{
+		Stack: "demo", ServerName: "server", SourceType: "local", Path: dir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer omitted.Close()
+	empty, err := b.Resolve(context.Background(), BuildOptions{
+		Stack: "demo", ServerName: "server", SourceType: "local", Path: dir,
+		BuildArgs: map[string]string{}, Command: []string{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer empty.Close()
+	if omitted.BuildInputDigest != empty.BuildInputDigest || omitted.ImageTag != empty.ImageTag {
+		t.Fatal("omitted and empty build inputs produced different identities")
+	}
+}
+
 func TestGenerateImageTag_SanitizationCannotAlias(t *testing.T) {
 	first := GenerateImageTag("demo", "a b", "v1", strings.Repeat("a", 64))
 	second := GenerateImageTag("demo", "a-b", "v1", strings.Repeat("a", 64))
@@ -120,6 +147,11 @@ func TestResolve_GitUsesFreshRefAndIsolatedWorktrees(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := repo.Storer.SetReference(plumbing.NewSymbolicReference(
+		plumbing.HEAD, plumbing.NewBranchReferenceName("main"),
+	)); err != nil {
+		t.Fatal(err)
+	}
 	wt, err := repo.Worktree()
 	if err != nil {
 		t.Fatal(err)
@@ -140,9 +172,12 @@ func TestResolve_GitUsesFreshRefAndIsolatedWorktrees(t *testing.T) {
 	}
 
 	firstSHA := commit("FROM alpine\n")
+	if _, err := repo.CreateTag("v1.0.0", plumbing.NewHash(firstSHA), nil); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("HOME", t.TempDir())
 	b := New(&mockDockerClient{})
-	opts := BuildOptions{Stack: "demo", ServerName: "git", SourceType: "git", URL: remote, Ref: "master"}
+	opts := BuildOptions{Stack: "demo", ServerName: "git", SourceType: "git", URL: remote}
 	first, err := b.Resolve(context.Background(), opts)
 	if err != nil {
 		t.Fatalf("first Resolve: %v", err)
@@ -150,6 +185,39 @@ func TestResolve_GitUsesFreshRefAndIsolatedWorktrees(t *testing.T) {
 	defer first.Close()
 	if first.ResolvedIdentity.Commit != firstSHA {
 		t.Fatalf("first commit = %s, want %s", first.ResolvedIdentity.Commit, firstSHA)
+	}
+	if first.DeclaredIdentity.Ref != "" || first.ResolvedIdentity.Ref != "main" {
+		t.Fatalf("declared ref = %q, resolved ref = %q", first.DeclaredIdentity.Ref, first.ResolvedIdentity.Ref)
+	}
+	if !first.MutableRef {
+		t.Fatal("branch ref was not reported as mutable")
+	}
+
+	unchanged, err := b.Resolve(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("unchanged Resolve: %v", err)
+	}
+	defer unchanged.Close()
+	if unchanged.EffectiveProjectRoot == first.EffectiveProjectRoot {
+		t.Fatal("unchanged resolves share a mutable worktree")
+	}
+	if unchanged.BuildInputDigest != first.BuildInputDigest || unchanged.ImageTag != first.ImageTag {
+		t.Fatal("isolated worktrees at the same commit produced different identities")
+	}
+	for _, ref := range []string{"v1.0.0", firstSHA} {
+		pinnedOpts := opts
+		pinnedOpts.Ref = ref
+		pinned, err := b.Resolve(context.Background(), pinnedOpts)
+		if err != nil {
+			t.Fatalf("Resolve pinned ref %q: %v", ref, err)
+		}
+		if pinned.MutableRef {
+			t.Errorf("pinned ref %q was reported as mutable", ref)
+		}
+		if pinned.ResolvedIdentity.Commit != firstSHA {
+			t.Errorf("pinned ref %q resolved to %s, want %s", ref, pinned.ResolvedIdentity.Commit, firstSHA)
+		}
+		_ = pinned.Close()
 	}
 
 	secondSHA := commit("FROM alpine:3.20\n")
