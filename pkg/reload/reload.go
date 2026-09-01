@@ -295,7 +295,9 @@ func (h *Handler) applyMCPServerChanges(ctx context.Context, diff MCPServerDiff,
 		desiredImage, err := h.prepareMCPServer(ctx, change.New, newCfg)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("failed to reload %s: %v", change.Name, err))
-			h.gateway.RecordRegistrationFailure(change.Name, err)
+			// Preparation happens before replacement. Keep the old declaration
+			// applied so the unchanged desired file is diffed and retried later.
+			replaceMCPServer(newCfg, change.Old)
 			continue
 		}
 
@@ -336,6 +338,7 @@ func (h *Handler) applyMCPServerChanges(ctx context.Context, diff MCPServerDiff,
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("failed to add %s: %v", server.Name, err))
 			h.gateway.RecordRegistrationFailure(server.Name, err)
+			removeMCPServer(newCfg, server.Name)
 			continue
 		}
 
@@ -349,6 +352,24 @@ func (h *Handler) applyMCPServerChanges(ctx context.Context, diff MCPServerDiff,
 	}
 
 	return nil
+}
+
+func replaceMCPServer(stack *config.Stack, server config.MCPServer) {
+	for i := range stack.MCPServers {
+		if stack.MCPServers[i].Name == server.Name {
+			stack.MCPServers[i] = server
+			return
+		}
+	}
+}
+
+func removeMCPServer(stack *config.Stack, name string) {
+	for i := range stack.MCPServers {
+		if stack.MCPServers[i].Name == name {
+			stack.MCPServers = append(stack.MCPServers[:i], stack.MCPServers[i+1:]...)
+			return
+		}
+	}
 }
 
 func (h *Handler) applyResourceChanges(ctx context.Context, diff ResourceDiff, newCfg *config.Stack, result *ReloadResult) error {
