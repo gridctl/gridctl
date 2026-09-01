@@ -1,0 +1,74 @@
+package config
+
+import "testing"
+
+func TestSourceEqual_AllFields(t *testing.T) {
+	base := &Source{Type: "git", URL: "https://example.com/repo", Ref: "main", Path: "subdir", Dockerfile: "Containerfile",
+		Auth: &SourceAuth{Method: "ssh-key", CredentialRef: "${var:GIT_KEY}", SSHUser: "git", SSHKeyPath: "/key"}}
+	if !SourceEqual(base, base) {
+		t.Fatal("identical sources must be equal")
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*Source)
+	}{
+		{"type", func(s *Source) { s.Type = "local" }},
+		{"url", func(s *Source) { s.URL += "-other" }},
+		{"ref", func(s *Source) { s.Ref = "v2" }},
+		{"path", func(s *Source) { s.Path = "other" }},
+		{"dockerfile", func(s *Source) { s.Dockerfile = "Dockerfile" }},
+		{"auth method", func(s *Source) { s.Auth.Method = "token" }},
+		{"credential", func(s *Source) { s.Auth.CredentialRef = "${var:OTHER}" }},
+		{"ssh user", func(s *Source) { s.Auth.SSHUser = "builder" }},
+		{"ssh key", func(s *Source) { s.Auth.SSHKeyPath = "/other" }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			changed := *base
+			auth := *base.Auth
+			changed.Auth = &auth
+			tt.mutate(&changed)
+			if SourceEqual(base, &changed) {
+				t.Fatal("changed source must not be equal")
+			}
+		})
+	}
+}
+
+func TestSourceEqual_NormalizesLegacyDefaults(t *testing.T) {
+	omitted := &Source{Type: "git", URL: "https://example.com/repo"}
+	defaulted := &Source{Type: "git", URL: "https://example.com/repo", Ref: "main", Dockerfile: "Dockerfile"}
+	if !SourceEqual(omitted, defaulted) {
+		t.Fatal("omitted and explicit legacy defaults must be equal")
+	}
+}
+
+func TestMCPServerEqual_EffectiveCollectionsAndDurations(t *testing.T) {
+	a := MCPServer{Name: "server", Image: "image", Autoscale: &AutoscaleConfig{Min: 1, Max: 2, TargetInFlight: 1}}
+	b := a
+	b.Command = []string{}
+	b.Env = map[string]string{}
+	b.BuildArgs = map[string]string{}
+	b.Tools = []string{}
+	b.Autoscale = &AutoscaleConfig{Min: 1, Max: 2, TargetInFlight: 1, ScaleUpAfter: "30000ms", ScaleDownAfter: "300s"}
+	if !MCPServerEqual(a, b) {
+		t.Fatal("effectively identical servers must be equal")
+	}
+}
+
+func TestMCPServerEqual_DetectsBuildAndReplicaChanges(t *testing.T) {
+	base := MCPServer{Name: "server", Source: &Source{Type: "git", URL: "https://example.com/repo"},
+		BuildArgs: map[string]string{"VERSION": "1"}, Replicas: 2, ReplicaPolicy: "round-robin"}
+	tests := []MCPServer{
+		{Name: "server", Source: &Source{Type: "git", URL: "https://example.com/other"}, BuildArgs: base.BuildArgs, Replicas: 2, ReplicaPolicy: "round-robin"},
+		{Name: "server", Source: base.Source, BuildArgs: map[string]string{"VERSION": "2"}, Replicas: 2, ReplicaPolicy: "round-robin"},
+		{Name: "server", Source: base.Source, BuildArgs: base.BuildArgs, Replicas: 3, ReplicaPolicy: "round-robin"},
+		{Name: "server", Source: base.Source, BuildArgs: base.BuildArgs, Replicas: 2, ReplicaPolicy: "least-connections"},
+	}
+	for i, changed := range tests {
+		if MCPServerEqual(base, changed) {
+			t.Fatalf("change %d was not detected", i)
+		}
+	}
+}

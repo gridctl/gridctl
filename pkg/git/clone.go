@@ -8,6 +8,7 @@
 package git
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -44,7 +45,10 @@ type FetchOptions struct {
 // removes destPath and retries with a full clone. Callers are responsible for
 // a subsequent Checkout when they need to land on a non-branch ref (tag,
 // commit, remote branch) after the full-clone fallback.
-func Clone(destPath string, opts CloneOptions, logger *slog.Logger) (*gogit.Repository, error) {
+func Clone(ctx context.Context, destPath string, opts CloneOptions, logger *slog.Logger) (*gogit.Repository, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	logger.Info("cloning repository", "url", RedactURL(opts.URL))
 
 	cloneOpts := &gogit.CloneOptions{
@@ -60,20 +64,23 @@ func Clone(destPath string, opts CloneOptions, logger *slog.Logger) (*gogit.Repo
 		cloneOpts.SingleBranch = true
 	}
 
-	repo, err := gogit.PlainClone(destPath, false, cloneOpts)
+	repo, err := gogit.PlainCloneContext(ctx, destPath, false, cloneOpts)
 	if err != nil && opts.Ref != "" {
 		// Ref may not be a branch; retry with a full clone.
 		_ = os.RemoveAll(destPath)
 		cloneOpts.SingleBranch = false
 		cloneOpts.ReferenceName = ""
-		repo, err = gogit.PlainClone(destPath, false, cloneOpts)
+		repo, err = gogit.PlainCloneContext(ctx, destPath, false, cloneOpts)
 	}
 	return repo, err
 }
 
 // Fetch updates the cached repository at repoPath from its remote.
 // Returns nil if the remote had no new refs.
-func Fetch(repoPath string, opts FetchOptions, logger *slog.Logger) error {
+func Fetch(ctx context.Context, repoPath string, opts FetchOptions, logger *slog.Logger) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	r, err := gogit.PlainOpen(repoPath)
 	if err != nil {
 		return fmt.Errorf("opening repository: %w", err)
@@ -88,7 +95,7 @@ func Fetch(repoPath string, opts FetchOptions, logger *slog.Logger) error {
 	if opts.AllBranches {
 		fetchOpts.RefSpecs = []config.RefSpec{"+refs/heads/*:refs/remotes/origin/*"}
 	}
-	if err := r.Fetch(fetchOpts); err != nil && err != gogit.NoErrAlreadyUpToDate {
+	if err := r.FetchContext(ctx, fetchOpts); err != nil && err != gogit.NoErrAlreadyUpToDate {
 		return err
 	}
 	return nil
@@ -97,7 +104,10 @@ func Fetch(repoPath string, opts FetchOptions, logger *slog.Logger) error {
 // Checkout lands the worktree on ref, trying in order: tag, local branch,
 // remote branch (origin), commit hash. Force is used so uncommitted changes
 // in the worktree (unlikely in a cache) are discarded.
-func Checkout(repo *gogit.Repository, ref string) error {
+func Checkout(ctx context.Context, repo *gogit.Repository, ref string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	wt, err := repo.Worktree()
 	if err != nil {
 		return fmt.Errorf("getting worktree: %w", err)
@@ -107,19 +117,19 @@ func Checkout(repo *gogit.Repository, ref string) error {
 		Branch: plumbing.NewTagReferenceName(ref),
 		Force:  true,
 	}); err == nil {
-		return nil
+		return ctx.Err()
 	}
 	if err := wt.Checkout(&gogit.CheckoutOptions{
 		Branch: plumbing.NewBranchReferenceName(ref),
 		Force:  true,
 	}); err == nil {
-		return nil
+		return ctx.Err()
 	}
 	if err := wt.Checkout(&gogit.CheckoutOptions{
 		Branch: plumbing.NewRemoteReferenceName("origin", ref),
 		Force:  true,
 	}); err == nil {
-		return nil
+		return ctx.Err()
 	}
 
 	hash := plumbing.NewHash(ref)
@@ -128,7 +138,7 @@ func Checkout(repo *gogit.Repository, ref string) error {
 			Hash:  hash,
 			Force: true,
 		}); err == nil {
-			return nil
+			return ctx.Err()
 		}
 	}
 
@@ -235,7 +245,10 @@ func peelToCommit(repo *gogit.Repository, h plumbing.Hash) plumbing.Hash {
 // branch and keep HEAD attached (the equivalent of `git checkout -B <branch>
 // <sha>`) so default-branch resolution keeps working on later syncs; tag and
 // raw-hash targets leave HEAD detached. Repeated syncs are idempotent.
-func SyncWorktree(repo *gogit.Repository, ref string) (string, error) {
+func SyncWorktree(ctx context.Context, repo *gogit.Repository, ref string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	sha, branch, err := resolveRemote(repo, ref)
 	if err != nil {
 		return "", err
@@ -253,6 +266,9 @@ func SyncWorktree(repo *gogit.Repository, ref string) (string, error) {
 		if err := wt.Checkout(&gogit.CheckoutOptions{Branch: branchRef, Force: true}); err != nil {
 			return "", fmt.Errorf("checking out %s at %s: %w", branch, sha, err)
 		}
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		return sha, nil
 	}
 
@@ -261,6 +277,9 @@ func SyncWorktree(repo *gogit.Repository, ref string) (string, error) {
 		Force: true,
 	}); err != nil {
 		return "", fmt.Errorf("checking out %s: %w", sha, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
 	return sha, nil
 }

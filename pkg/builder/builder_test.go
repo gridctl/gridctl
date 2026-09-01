@@ -88,7 +88,7 @@ func (m *mockDockerClient) ImagePull(context.Context, string, image.PullOptions)
 	return nil, nil
 }
 func (m *mockDockerClient) Ping(context.Context) (types.Ping, error) { return types.Ping{}, nil }
-func (m *mockDockerClient) Close() error                              { return nil }
+func (m *mockDockerClient) Close() error                             { return nil }
 
 var _ dockerclient.DockerClient = &mockDockerClient{}
 
@@ -121,7 +121,8 @@ func TestBuild_LocalSource(t *testing.T) {
 	result, err := b.Build(context.Background(), BuildOptions{
 		SourceType: "local",
 		Path:       dir,
-		Tag:        "test:latest",
+		Stack:      "test",
+		ServerName: "local",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -129,8 +130,8 @@ func TestBuild_LocalSource(t *testing.T) {
 	if result.ImageID != "sha256:mock123" {
 		t.Errorf("expected image ID 'sha256:mock123', got %q", result.ImageID)
 	}
-	if result.ImageTag != "test:latest" {
-		t.Errorf("expected tag 'test:latest', got %q", result.ImageTag)
+	if strings.Contains(result.ImageTag, ":latest") {
+		t.Errorf("expected content-addressed tag, got %q", result.ImageTag)
 	}
 	if result.Cached {
 		t.Error("expected Cached to be false")
@@ -147,7 +148,6 @@ func TestBuild_LocalSource_MissingDockerfile(t *testing.T) {
 	_, err := b.Build(context.Background(), BuildOptions{
 		SourceType: "local",
 		Path:       dir,
-		Tag:        "test:latest",
 	})
 	if err == nil {
 		t.Fatal("expected error for missing Dockerfile")
@@ -170,7 +170,6 @@ func TestBuild_LocalSource_AlternativeDockerfile(t *testing.T) {
 	result, err := b.Build(context.Background(), BuildOptions{
 		SourceType: "local",
 		Path:       dir,
-		Tag:        "test:latest",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -193,7 +192,6 @@ func TestBuild_LocalSource_CustomDockerfile(t *testing.T) {
 		SourceType: "local",
 		Path:       dir,
 		Dockerfile: "custom.Dockerfile",
-		Tag:        "test:latest",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -209,7 +207,6 @@ func TestBuild_UnknownSourceType(t *testing.T) {
 
 	_, err := b.Build(context.Background(), BuildOptions{
 		SourceType: "unknown",
-		Tag:        "test:latest",
 	})
 	if err == nil {
 		t.Fatal("expected error for unknown source type")
@@ -226,7 +223,6 @@ func TestBuild_LocalSource_PathNotExist(t *testing.T) {
 	_, err := b.Build(context.Background(), BuildOptions{
 		SourceType: "local",
 		Path:       "/nonexistent/path",
-		Tag:        "test:latest",
 	})
 	if err == nil {
 		t.Fatal("expected error for nonexistent path")
@@ -246,7 +242,6 @@ func TestBuild_LocalSource_PathIsFile(t *testing.T) {
 	_, err := b.Build(context.Background(), BuildOptions{
 		SourceType: "local",
 		Path:       tmpFile,
-		Tag:        "test:latest",
 	})
 	if err == nil {
 		t.Fatal("expected error when path is a file")
@@ -262,7 +257,6 @@ func TestBuild_GitSource_MissingURL(t *testing.T) {
 
 	_, err := b.Build(context.Background(), BuildOptions{
 		SourceType: "git",
-		Tag:        "test:latest",
 	})
 	if err == nil {
 		t.Fatal("expected error for missing git URL")
@@ -279,7 +273,6 @@ func TestBuild_LocalSource_EmptyPath(t *testing.T) {
 	_, err := b.Build(context.Background(), BuildOptions{
 		SourceType: "local",
 		Path:       "",
-		Tag:        "test:latest",
 	})
 	if err == nil {
 		t.Fatal("expected error for empty path")
@@ -302,7 +295,6 @@ func TestBuild_NilLogger(t *testing.T) {
 	result, err := b.Build(context.Background(), BuildOptions{
 		SourceType: "local",
 		Path:       dir,
-		Tag:        "test:latest",
 		Logger:     nil,
 	})
 	if err != nil {
@@ -334,7 +326,6 @@ func TestBuild_WithBuildArgs(t *testing.T) {
 	_, err := b.Build(context.Background(), BuildOptions{
 		SourceType: "local",
 		Path:       dir,
-		Tag:        "test:latest",
 		BuildArgs:  map[string]string{"DEBUG": "true", "VERSION": "1.0"},
 	})
 	if err != nil {
@@ -373,7 +364,6 @@ func TestBuild_NoCache(t *testing.T) {
 	_, err := b.Build(context.Background(), BuildOptions{
 		SourceType: "local",
 		Path:       dir,
-		Tag:        "test:latest",
 		NoCache:    true,
 	})
 	if err != nil {
@@ -383,25 +373,3 @@ func TestBuild_NoCache(t *testing.T) {
 		t.Error("expected NoCache to be true in build options")
 	}
 }
-
-func TestGenerateTag(t *testing.T) {
-	tests := []struct {
-		stack string
-		agent string
-		want  string
-	}{
-		{"my-stack", "server", "gridctl-my-stack-server:latest"},
-		{"test", "agent-1", "gridctl-test-agent-1:latest"},
-		{"prod", "mcp", "gridctl-prod-mcp:latest"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.stack+"_"+tt.agent, func(t *testing.T) {
-			got := GenerateTag(tt.stack, tt.agent)
-			if got != tt.want {
-				t.Errorf("GenerateTag(%q, %q) = %q, want %q", tt.stack, tt.agent, got, tt.want)
-			}
-		})
-	}
-}
-

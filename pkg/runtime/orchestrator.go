@@ -40,13 +40,16 @@ type Builder interface {
 
 // BuildOptions for the Builder interface.
 type BuildOptions struct {
+	Stack      string               // Stack name used in image identity
+	ServerName string               // Logical server name used in image identity
 	SourceType string               // "git" or "local"
 	URL        string               // Git URL
 	Ref        string               // Git ref/branch
 	Path       string               // Local path
 	Dockerfile string               // Dockerfile path within context
-	Tag        string               // Image tag
 	BuildArgs  map[string]string    // Build arguments
+	Command    []string             // Runtime command included in build identity
+	Platform   string               // Target OCI platform
 	NoCache    bool                 // Force rebuild
 	Auth       transport.AuthMethod // Resolved git auth (nil = unauthenticated)
 	Logger     *slog.Logger         // Logger for build operations (optional)
@@ -394,13 +397,15 @@ func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, 
 		o.logger.Info("building MCP server from source", "name", server.Name, "sourceType", server.Source.Type)
 
 		buildOpts := BuildOptions{
+			Stack:      stack.Name,
+			ServerName: server.Name,
 			SourceType: server.Source.Type,
 			URL:        server.Source.URL,
 			Ref:        server.Source.Ref,
 			Path:       server.Source.Path,
 			Dockerfile: server.Source.Dockerfile,
-			Tag:        generateTag(stack.Name, server.Name),
 			BuildArgs:  server.BuildArgs,
+			Command:    server.Command,
 			NoCache:    opts.NoCache,
 			Logger:     o.logger,
 		}
@@ -601,10 +606,6 @@ func ReplicaContainerName(stack, name string, replicaID, totalReplicas int) stri
 		return base
 	}
 	return fmt.Sprintf("%s-replica-%d", base, replicaID)
-}
-
-func generateTag(stack, name string) string {
-	return fmt.Sprintf("gridctl-%s-%s:latest", stack, name)
 }
 
 func managedLabels(stack, name string, isMCPServer bool) map[string]string {

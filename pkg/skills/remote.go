@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -152,7 +153,7 @@ func FetchAndCompare(repo, ref, currentSHA string, auth AuthConfig, logger *slog
 		return currentSHA, false, gitpkg.RedactError(err)
 	}
 
-	if err := gitpkg.Fetch(repoPath, gitpkg.FetchOptions{AllTags: true, AllBranches: true, Auth: authMethod}, logger); err != nil {
+	if err := gitpkg.Fetch(context.Background(), repoPath, gitpkg.FetchOptions{AllTags: true, AllBranches: true, Auth: authMethod}, logger); err != nil {
 		logger.Warn("fetch failed", "error", gitpkg.RedactError(err))
 		return currentSHA, false, nil
 	}
@@ -228,7 +229,7 @@ func cloneFresh(repoPath, url, ref string, auth AuthConfig, logger *slog.Logger)
 		// Semver constraints require a full clone so tags are available.
 		cloneRef = ""
 	}
-	r, err := gitpkg.Clone(repoPath, gitpkg.CloneOptions{
+	r, err := gitpkg.Clone(context.Background(), repoPath, gitpkg.CloneOptions{
 		URL:     url,
 		Ref:     cloneRef,
 		Depth:   1,
@@ -249,11 +250,11 @@ func cloneFresh(repoPath, url, ref string, auth AuthConfig, logger *slog.Logger)
 			if err != nil {
 				return "", err
 			}
-			if err := gitpkg.Checkout(r, resolvedTag); err != nil {
+			if err := gitpkg.Checkout(context.Background(), r, resolvedTag); err != nil {
 				return "", err
 			}
 		} else {
-			if err := gitpkg.Checkout(r, ref); err != nil {
+			if err := gitpkg.Checkout(context.Background(), r, ref); err != nil {
 				return "", err
 			}
 		}
@@ -277,7 +278,7 @@ func updateExisting(repoPath, url, ref string, auth AuthConfig, logger *slog.Log
 		return "", err
 	}
 
-	if err := gitpkg.Fetch(repoPath, gitpkg.FetchOptions{AllTags: true, AllBranches: true, Auth: authMethod}, logger); err != nil {
+	if err := gitpkg.Fetch(context.Background(), repoPath, gitpkg.FetchOptions{AllTags: true, AllBranches: true, Auth: authMethod}, logger); err != nil {
 		// Offline or unreachable remote: serve the cached content rather
 		// than failing. The worktree cannot have anything newer to land.
 		logger.Warn("fetch failed, using cached", "error", gitpkg.RedactError(err))
@@ -293,7 +294,7 @@ func updateExisting(repoPath, url, ref string, auth AuthConfig, logger *slog.Log
 		logger.Warn("failed to resolve constraint, using cached", "constraint", ref, "error", err)
 		return repoPath, nil
 	}
-	if _, err := gitpkg.SyncWorktree(r, target); err != nil {
+	if _, err := gitpkg.SyncWorktree(context.Background(), r, target); err != nil {
 		// go-git can advance remote-tracking refs without transferring the
 		// backing objects (observed with local-path remotes), leaving the
 		// resolved commit un-checkoutable. The fetch above succeeded, so the

@@ -119,6 +119,9 @@ func resourceMap(s *Stack) map[string]Resource {
 // Comparison functions
 
 func compareMCPServers(a, b MCPServer) []string {
+	if MCPServerEqual(a, b) {
+		return nil
+	}
 	var details []string
 	if a.Image != b.Image {
 		details = append(details, fmt.Sprintf("image: %s → %s", b.Image, a.Image))
@@ -141,11 +144,14 @@ func compareMCPServers(a, b MCPServer) []string {
 	if !envEqual(a.Env, b.Env) {
 		details = append(details, "env changed")
 	}
-	if compareSource(a.Source, b.Source) {
+	if !SourceEqual(a.Source, b.Source) {
 		details = append(details, "source changed")
 	}
 	if compareSSH(a.SSH, b.SSH) {
 		details = append(details, "ssh config changed")
+	}
+	if len(details) == 0 {
+		details = append(details, "configuration changed")
 	}
 	return details
 }
@@ -263,16 +269,6 @@ func stringSliceEqual(a, b []string) bool {
 		}
 	}
 	return true
-}
-
-func compareSource(a, b *Source) bool {
-	if a == nil && b == nil {
-		return false
-	}
-	if a == nil || b == nil {
-		return true
-	}
-	return a.Type != b.Type || a.URL != b.URL || a.Ref != b.Ref || a.Path != b.Path || a.Dockerfile != b.Dockerfile
 }
 
 func compareSSH(a, b *SSHConfig) bool {

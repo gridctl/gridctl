@@ -30,7 +30,7 @@ func (m *MockBuilder) Build(ctx context.Context, opts BuildOptions) (*BuildResul
 		return m.BuildResult, nil
 	}
 	return &BuildResult{
-		ImageTag: opts.Tag,
+		ImageTag: "gridctl-test-source:resolved-123456789abc",
 		Cached:   false,
 	}, nil
 }
@@ -586,12 +586,11 @@ func TestOrchestrator_Up_SourceBasedServer(t *testing.T) {
 	if len(tracker.startedWorkloads) != 1 {
 		t.Errorf("expected 1 workload started, got %d", len(tracker.startedWorkloads))
 	}
-	// Source-based server should use generated image tag
-	if tracker.startedWorkloads[0].Image != "gridctl-test-topo-src-server:latest" {
+	// Source-based server should use the builder's resolved image tag.
+	if tracker.startedWorkloads[0].Image != "gridctl-test-source:resolved-123456789abc" {
 		t.Errorf("expected generated image tag, got %q", tracker.startedWorkloads[0].Image)
 	}
 }
-
 
 func TestOrchestrator_Up_ServerStartError(t *testing.T) {
 	ctrl := gomock.NewController(t)
@@ -619,7 +618,6 @@ func TestOrchestrator_Up_ServerStartError(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 }
-
 
 func TestOrchestrator_SetRuntimeInfo(t *testing.T) {
 	ctrl := gomock.NewController(t)
@@ -720,13 +718,6 @@ func TestContainerName(t *testing.T) {
 	}
 }
 
-func TestGenerateTag(t *testing.T) {
-	tag := generateTag("mystack", "myserver")
-	if tag != "gridctl-mystack-myserver:latest" {
-		t.Errorf("expected 'gridctl-mystack-myserver:latest', got %q", tag)
-	}
-}
-
 func TestManagedLabels(t *testing.T) {
 	labels := managedLabels("stack1", "server1", true)
 	if labels["gridctl.managed"] != "true" {
@@ -748,7 +739,6 @@ func TestManagedLabels(t *testing.T) {
 		t.Error("expected gridctl.resource=postgres")
 	}
 }
-
 
 func TestRuntimeRequiredError(t *testing.T) {
 	stack := &config.Stack{

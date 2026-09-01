@@ -47,13 +47,16 @@ type dockerBuilderAdapter struct {
 
 func (a *dockerBuilderAdapter) Build(ctx context.Context, opts runtime.BuildOptions) (*runtime.BuildResult, error) {
 	result, err := a.inner.Build(ctx, builder.BuildOptions{
+		Stack:      opts.Stack,
+		ServerName: opts.ServerName,
 		SourceType: opts.SourceType,
 		URL:        opts.URL,
 		Ref:        opts.Ref,
 		Path:       opts.Path,
 		Dockerfile: opts.Dockerfile,
-		Tag:        opts.Tag,
 		BuildArgs:  opts.BuildArgs,
+		Command:    opts.Command,
+		Platform:   opts.Platform,
 		NoCache:    opts.NoCache,
 		Auth:       opts.Auth,
 		Logger:     opts.Logger,

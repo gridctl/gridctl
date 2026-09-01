@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -76,7 +77,7 @@ func TestClone_NoRef(t *testing.T) {
 	bare := initBareRepo(t)
 	dest := filepath.Join(t.TempDir(), "clone")
 
-	_, err := Clone(dest, CloneOptions{URL: bare}, testLogger())
+	_, err := Clone(context.Background(), dest, CloneOptions{URL: bare}, testLogger())
 	if err != nil {
 		t.Fatalf("Clone: %v", err)
 	}
@@ -93,7 +94,7 @@ func TestClone_WithBranchRef(t *testing.T) {
 	bare := initBareRepo(t)
 	dest := filepath.Join(t.TempDir(), "clone")
 
-	_, err := Clone(dest, CloneOptions{URL: bare, Ref: "master"}, testLogger())
+	_, err := Clone(context.Background(), dest, CloneOptions{URL: bare, Ref: "master"}, testLogger())
 	if err != nil {
 		t.Fatalf("Clone: %v", err)
 	}
@@ -110,7 +111,7 @@ func TestClone_WithTagRefFallsBack(t *testing.T) {
 	bare := initBareRepo(t)
 	dest := filepath.Join(t.TempDir(), "clone")
 
-	_, err := Clone(dest, CloneOptions{URL: bare, Ref: "v1.0.0", AllTags: true}, testLogger())
+	_, err := Clone(context.Background(), dest, CloneOptions{URL: bare, Ref: "v1.0.0", AllTags: true}, testLogger())
 	if err != nil {
 		t.Fatalf("Clone with tag ref: %v", err)
 	}
@@ -122,9 +123,26 @@ func TestClone_InvalidURL(t *testing.T) {
 	}
 
 	dest := filepath.Join(t.TempDir(), "clone")
-	_, err := Clone(dest, CloneOptions{URL: "/nonexistent/path"}, testLogger())
+	_, err := Clone(context.Background(), dest, CloneOptions{URL: "/nonexistent/path"}, testLogger())
 	if err == nil {
 		t.Fatal("expected error for invalid URL")
+	}
+}
+
+func TestClone_CanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := Clone(ctx, filepath.Join(t.TempDir(), "clone"), CloneOptions{URL: "https://example.com/repo"}, testLogger())
+	if err == nil || !strings.Contains(err.Error(), context.Canceled.Error()) {
+		t.Fatalf("Clone error = %v, want context canceled", err)
+	}
+}
+
+func TestFetch_CanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := Fetch(ctx, t.TempDir(), FetchOptions{}, testLogger()); err != context.Canceled {
+		t.Fatalf("Fetch error = %v, want context canceled", err)
 	}
 }
 
@@ -139,7 +157,7 @@ func TestClone_RedactsURLUserinfoInLog(t *testing.T) {
 
 	// Error is expected — we're only asserting on the log line the Clone
 	// helper emits before attempting the clone.
-	_, _ = Clone(dest, CloneOptions{URL: url}, logger)
+	_, _ = Clone(context.Background(), dest, CloneOptions{URL: url}, logger)
 
 	got := buf.String()
 	if strings.Contains(got, "ghp_") {
@@ -160,11 +178,11 @@ func TestFetch(t *testing.T) {
 
 	bare := initBareRepo(t)
 	dest := filepath.Join(t.TempDir(), "clone")
-	if _, err := Clone(dest, CloneOptions{URL: bare}, testLogger()); err != nil {
+	if _, err := Clone(context.Background(), dest, CloneOptions{URL: bare}, testLogger()); err != nil {
 		t.Fatalf("Clone: %v", err)
 	}
 
-	if err := Fetch(dest, FetchOptions{AllTags: true}, testLogger()); err != nil {
+	if err := Fetch(context.Background(), dest, FetchOptions{AllTags: true}, testLogger()); err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
 }
@@ -174,7 +192,7 @@ func TestFetch_InvalidRepo(t *testing.T) {
 		t.Skip("skipping git test in short mode")
 	}
 
-	err := Fetch(t.TempDir(), FetchOptions{}, testLogger())
+	err := Fetch(context.Background(), t.TempDir(), FetchOptions{}, testLogger())
 	if err == nil {
 		t.Fatal("expected error fetching from a non-repo directory")
 	}
@@ -187,7 +205,7 @@ func TestCheckout_Tag(t *testing.T) {
 
 	bare := initBareRepo(t)
 	dest := filepath.Join(t.TempDir(), "clone")
-	if _, err := Clone(dest, CloneOptions{URL: bare, AllTags: true}, testLogger()); err != nil {
+	if _, err := Clone(context.Background(), dest, CloneOptions{URL: bare, AllTags: true}, testLogger()); err != nil {
 		t.Fatalf("Clone: %v", err)
 	}
 
@@ -195,7 +213,7 @@ func TestCheckout_Tag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	if err := Checkout(repo, "v1.0.0"); err != nil {
+	if err := Checkout(context.Background(), repo, "v1.0.0"); err != nil {
 		t.Fatalf("Checkout tag: %v", err)
 	}
 }
@@ -207,14 +225,14 @@ func TestCheckout_InvalidRef(t *testing.T) {
 
 	bare := initBareRepo(t)
 	dest := filepath.Join(t.TempDir(), "clone")
-	if _, err := Clone(dest, CloneOptions{URL: bare}, testLogger()); err != nil {
+	if _, err := Clone(context.Background(), dest, CloneOptions{URL: bare}, testLogger()); err != nil {
 		t.Fatalf("Clone: %v", err)
 	}
 	repo, err := gogit.PlainOpen(dest)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	if err := Checkout(repo, "does-not-exist-xyz"); err == nil {
+	if err := Checkout(context.Background(), repo, "does-not-exist-xyz"); err == nil {
 		t.Fatal("expected error for nonexistent ref")
 	}
 }
@@ -226,7 +244,7 @@ func TestResolveRemoteRef_Tag(t *testing.T) {
 
 	bare := initBareRepo(t)
 	dest := filepath.Join(t.TempDir(), "clone")
-	if _, err := Clone(dest, CloneOptions{URL: bare, AllTags: true}, testLogger()); err != nil {
+	if _, err := Clone(context.Background(), dest, CloneOptions{URL: bare, AllTags: true}, testLogger()); err != nil {
 		t.Fatalf("Clone: %v", err)
 	}
 	repo, err := gogit.PlainOpen(dest)
@@ -249,7 +267,7 @@ func TestResolveRemoteRef_Unknown(t *testing.T) {
 
 	bare := initBareRepo(t)
 	dest := filepath.Join(t.TempDir(), "clone")
-	if _, err := Clone(dest, CloneOptions{URL: bare}, testLogger()); err != nil {
+	if _, err := Clone(context.Background(), dest, CloneOptions{URL: bare}, testLogger()); err != nil {
 		t.Fatalf("Clone: %v", err)
 	}
 	repo, err := gogit.PlainOpen(dest)
@@ -268,7 +286,7 @@ func TestHeadCommit(t *testing.T) {
 
 	bare := initBareRepo(t)
 	dest := filepath.Join(t.TempDir(), "clone")
-	if _, err := Clone(dest, CloneOptions{URL: bare}, testLogger()); err != nil {
+	if _, err := Clone(context.Background(), dest, CloneOptions{URL: bare}, testLogger()); err != nil {
 		t.Fatalf("Clone: %v", err)
 	}
 	sha, err := HeadCommit(dest)
@@ -297,7 +315,7 @@ func TestListTags(t *testing.T) {
 
 	bare := initBareRepo(t)
 	dest := filepath.Join(t.TempDir(), "clone")
-	if _, err := Clone(dest, CloneOptions{URL: bare, AllTags: true}, testLogger()); err != nil {
+	if _, err := Clone(context.Background(), dest, CloneOptions{URL: bare, AllTags: true}, testLogger()); err != nil {
 		t.Fatalf("Clone: %v", err)
 	}
 	tags, err := ListTags(dest)
@@ -325,4 +343,3 @@ func TestListTags_InvalidRepo(t *testing.T) {
 		t.Fatal("expected error for non-repo directory")
 	}
 }
-

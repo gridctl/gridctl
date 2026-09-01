@@ -164,7 +164,6 @@ func limitsChanged(old, new *config.Stack) bool {
 	return !reflect.DeepEqual(old.Limits, new.Limits)
 }
 
-
 // clientsChanged reports whether the per-client access (`clients:`) block
 // differs between two stacks. A change here requires the gateway's in-memory
 // ClientAccessPolicy to be rebuilt (via the reload's onConfigApplied hook) but
@@ -329,71 +328,7 @@ func diffResources(oldResources, newResources []config.Resource) ResourceDiff {
 
 // mcpServerEqual checks if two MCP server configs are equivalent.
 func mcpServerEqual(a, b config.MCPServer) bool {
-	// Compare basic fields
-	if a.Name != b.Name || a.Image != b.Image || a.Port != b.Port ||
-		a.Transport != b.Transport || a.URL != b.URL || a.Network != b.Network {
-		return false
-	}
-	// Compare the autoscale block so transitions between static replicas and
-	// autoscale (or field changes inside an existing autoscale block) surface
-	// here. Static replicas count / policy are intentionally NOT compared to
-	// preserve pre-existing hot-reload behavior.
-	if !autoscaleEqual(a.Autoscale, b.Autoscale) {
-		return false
-	}
-
-	// Compare commands
-	if !stringSliceEqual(a.Command, b.Command) {
-		return false
-	}
-
-	// Compare tools whitelist
-	if !stringSliceEqual(a.Tools, b.Tools) {
-		return false
-	}
-
-	// Compare env maps
-	if !stringMapEqual(a.Env, b.Env) {
-		return false
-	}
-
-	// Compare source configs
-	if !sourceEqual(a.Source, b.Source) {
-		return false
-	}
-
-	// Compare SSH config
-	if !sshEqual(a.SSH, b.SSH) {
-		return false
-	}
-
-	// Compare OpenAPI config
-	if !openAPIEqual(a.OpenAPI, b.OpenAPI) {
-		return false
-	}
-
-	// Compare downstream auth config so a rotated token or an added/removed
-	// auth block reconnects the server with fresh credentials. Runtime token
-	// state lives outside the config struct, so refreshes never diff.
-	if !serverAuthEqual(a.Auth, b.Auth) {
-		return false
-	}
-
-	return true
-}
-
-// serverAuthEqual checks if two downstream auth configs are equivalent.
-func serverAuthEqual(a, b *config.ServerAuth) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-	return a.Type == b.Type &&
-		a.Token == b.Token &&
-		a.Header == b.Header &&
-		a.Value == b.Value &&
-		a.ClientID == b.ClientID &&
-		a.ClientSecret == b.ClientSecret &&
-		stringSliceEqual(a.Scopes, b.Scopes)
+	return config.MCPServerEqual(a, b)
 }
 
 // resourceEqual checks if two resource configs are equivalent.
@@ -431,61 +366,6 @@ func stringMapEqual(a, b map[string]string) bool {
 	}
 	for k, v := range a {
 		if b[k] != v {
-			return false
-		}
-	}
-	return true
-}
-
-func sourceEqual(a, b *config.Source) bool {
-	if a == nil && b == nil {
-		return true
-	}
-	if a == nil || b == nil {
-		return false
-	}
-	return a.Type == b.Type && a.URL == b.URL && a.Ref == b.Ref &&
-		a.Path == b.Path && a.Dockerfile == b.Dockerfile
-}
-
-func sshEqual(a, b *config.SSHConfig) bool {
-	if a == nil && b == nil {
-		return true
-	}
-	if a == nil || b == nil {
-		return false
-	}
-	return a.Host == b.Host && a.User == b.User &&
-		a.Port == b.Port && a.IdentityFile == b.IdentityFile
-}
-
-func openAPIEqual(a, b *config.OpenAPIConfig) bool {
-	if a == nil && b == nil {
-		return true
-	}
-	if a == nil || b == nil {
-		return false
-	}
-	if a.Spec != b.Spec || a.BaseURL != b.BaseURL {
-		return false
-	}
-	// Compare auth
-	if (a.Auth == nil) != (b.Auth == nil) {
-		return false
-	}
-	if a.Auth != nil && b.Auth != nil {
-		if a.Auth.Type != b.Auth.Type || a.Auth.TokenEnv != b.Auth.TokenEnv ||
-			a.Auth.Header != b.Auth.Header || a.Auth.ValueEnv != b.Auth.ValueEnv {
-			return false
-		}
-	}
-	// Compare operations
-	if (a.Operations == nil) != (b.Operations == nil) {
-		return false
-	}
-	if a.Operations != nil && b.Operations != nil {
-		if !stringSliceEqual(a.Operations.Include, b.Operations.Include) ||
-			!stringSliceEqual(a.Operations.Exclude, b.Operations.Exclude) {
 			return false
 		}
 	}
