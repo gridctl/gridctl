@@ -762,8 +762,10 @@ build. Preview output never includes source credentials or runtime secrets.
 Apply and reload emit INFO records with `server` and `phase` fields. Python
 source builds use `resolving_source`, `preparing_context`,
 `generating_dockerfile`, and `building_image`; runtime startup and MCP
-registration use `starting_container` and `connecting_server`. Filter build
-diagnostics with `gridctl logs --server <name>`.
+registration use `starting_container` and `connecting_server`. Inspect these
+records in the gateway daemon log with `gridctl logs [stack] -f`.
+`gridctl logs --server <name>` instead switches to the started container's
+stdout and stderr.
 
 Generated Python sources support the official public PyPI index only. They do
 not accept private indexes, custom package CAs, unpackaged scripts, or guessed
