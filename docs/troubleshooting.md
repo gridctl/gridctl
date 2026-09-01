@@ -697,7 +697,9 @@ Static heuristics are one layer. Published benchmarks put signature-only detecti
 
 ### Where imported skill sources are cached
 
-`gridctl skill add` clones each source repo into `~/.gridctl/cache/repos/<hash>/`, where `<hash>` is derived from the repo URL. The cache holds only clones; everything user-facing lives elsewhere (installed skills in `~/.gridctl/registry/skills/`, tracking in `~/.gridctl/skills.lock.yaml`). Deleting the cache directory is always safe: the next `skill add`, `skill update`, or `gridctl apply` that needs a repo re-clones it. The same cache is shared with git-sourced MCP server image builds, so a wholesale delete costs one re-clone per git source on the next apply.
+`gridctl skill add` clones each source repo into `~/.gridctl/cache/repos/<hash>/`, where `<hash>` is derived from the repo URL. The cache holds only clones; everything user-facing lives elsewhere (installed skills in `~/.gridctl/registry/skills/`, tracking in `~/.gridctl/skills.lock.yaml`). Deleting the cache directory is always safe: the next `skill add` or `skill update` that needs a repo re-clones it.
+
+Git-sourced MCP server image builds use a separate builder namespace. Each active build plan gets an isolated checkout under `~/.gridctl/cache/builder/worktrees/`, resolved to the fetched commit, and removes that checkout when the plan closes. Deleting leftover builder worktrees is safe when no build is running; the next apply creates a fresh checkout.
 
 ### `skill update` does not pick up an upstream change
 

@@ -56,7 +56,8 @@ pkg/catalog/        MCP server catalog behind `gridctl search` / `gridctl add`: 
 pkg/config/         stack.yaml schema, loader, variable/env expansion, plan diffing, health-check parsing.
 pkg/runtime/        Container orchestration. Orchestrator is the WorkloadRuntime + Builder front; pkg/runtime/docker is the
                     Docker implementation. Runtime auto-detected (docker → podman) unless --runtime is set.
-pkg/builder/        Image building from git or local Dockerfiles, with a content-addressed cache.
+pkg/builder/        Image building from git or local Dockerfiles, with resolved build plans, isolated Git worktrees,
+                    and content-addressed image tags.
 pkg/mcp/            MCP protocol: gateway (router + tool aggregation), stdio/SSE/streamable transports, OpenAPI-as-MCP,
                     autoscaler, code mode sandbox (goja), replica sets, schema pinning hooks.
 pkg/mcpauth/        Downstream OAuth 2.1 brokering for external servers (discovery, dynamic client registration,

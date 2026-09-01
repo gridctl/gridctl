@@ -662,6 +662,20 @@ Build configuration for container images from source code.
 | `dockerfile` | string | No | `"Dockerfile"` | Dockerfile path relative to source root |
 | `auth` | object | No | - | Authentication block for private git repositories (see [Source Auth](#source-auth)) |
 
+Before building a Git source, gridctl fetches current remote refs, resolves the
+configured branch, tag, or commit to a full commit SHA, and checks out that
+commit in an isolated builder worktree. Concurrent source builds therefore do
+not mutate one another or the skill-import cache.
+
+Git and local Dockerfile builds receive content-addressed image tags rather
+than `latest`. The tag contains a readable source pin plus a short digest of
+the effective build inputs. The digest covers the selected source content and
+Dockerfile, build arguments, server command, and target platform, so changing
+any of those inputs produces a different image identity. Stack planning and
+hot reload use the same complete effective MCP-server comparison; source auth,
+build arguments, commands, replica settings, and other server fields are not
+silently ignored.
+
 ### Source Auth
 
 Declares how gridctl authenticates when cloning a private git repository at build time. Raw tokens must **never** appear in `stack.yaml` - use `credential_ref` to point at a variable-store key, which is resolved against the live store on every clone.
