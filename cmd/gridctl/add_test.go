@@ -16,18 +16,108 @@ import (
 // withAddFlags resets the add command's flag globals around a test.
 func withAddFlags(t *testing.T) {
 	t.Helper()
-	origYes, origDryRun, origNoVault := addYes, addDryRun, addNoVault
+	origYes, origDryRun, origNoVault, origContainer := addYes, addDryRun, addNoVault, addContainer
 	origFile, origName := addFile, addName
 	origLookup := addRegistryLookup
 	t.Cleanup(func() {
-		addYes, addDryRun, addNoVault = origYes, origDryRun, origNoVault
+		addYes, addDryRun, addNoVault, addContainer = origYes, origDryRun, origNoVault, origContainer
 		addFile, addName = origFile, origName
 		addRegistryLookup = origLookup
 	})
-	addYes, addDryRun, addNoVault = false, false, false
+	addYes, addDryRun, addNoVault, addContainer = false, false, false, false
 	addFile, addName = "", ""
 	addRegistryLookup = func(ctx context.Context, arg string) (*catalog.Entry, []catalog.Entry, error) {
 		return nil, nil, catalog.ErrNotFound
+	}
+}
+
+func TestParseDirectContainerInput(t *testing.T) {
+	withAddFlags(t)
+	addContainer = true
+	commit := strings.Repeat("a", 40)
+	tests := []struct {
+		name, input, sourceType, packageName, ref string
+		wantErr                                   string
+	}{
+		{name: "package", input: "mcp-server-fetch==0.6.0", sourceType: "pypi", packageName: "mcp-server-fetch", ref: "0.6.0"},
+		{name: "raw uvx", input: "uvx mcp-server-fetch==0.6.0", sourceType: "pypi", packageName: "mcp-server-fetch", ref: "0.6.0"},
+		{name: "pinned github", input: "https://github.com/acme/weather.git#" + commit, sourceType: "git", ref: commit},
+		{name: "unpinned github", input: "https://github.com/acme/weather.git", wantErr: "40-character-commit"},
+		{name: "ambiguous uvx", input: "uvx mcp-server-fetch==0.6.0 --with foo", wantErr: "exactly 'uvx package==version'"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, recognized, err := parseDirectContainerInput(tt.input)
+			if !recognized {
+				t.Fatal("container input was not recognized")
+			}
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("err = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.source.Type != tt.sourceType || got.source.Package != tt.packageName || got.source.Ref != tt.ref {
+				t.Fatalf("source = %+v", got.source)
+			}
+		})
+	}
+}
+
+func TestContainerizeCatalogEntry_ExactPyPIOnly(t *testing.T) {
+	entry := catalog.Entry{
+		Name:    "io.github.acme/fetch",
+		Install: catalog.Install{Type: catalog.InstallCommand, Transport: "stdio", Command: []string{"uvx", "mcp-server-fetch==0.6.0"}, RegistryType: "pypi", Identifier: "mcp-server-fetch", Version: "0.6.0"},
+	}
+	server, _, err := entry.Server("fetch", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	container, err := containerizeCatalogEntry(entry, server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if container.Source == nil || container.Source.Package != "mcp-server-fetch" || container.Source.Ref != "0.6.0" || len(container.Command) != 0 {
+		t.Fatalf("container = %+v", container)
+	}
+
+	entry.Install.Version = ""
+	if _, err := containerizeCatalogEntry(entry, server); err == nil || !strings.Contains(err.Error(), "exact PyPI") {
+		t.Fatalf("err = %v, want exact-version refusal", err)
+	}
+}
+
+func TestRunAdd_ContainerWritesStructuredSource(t *testing.T) {
+	withAddFlags(t)
+	stackPath := writeTestStack(t)
+	addFile, addYes, addContainer = stackPath, true, true
+
+	out := captureStdout(t, func() {
+		if err := runAdd(context.Background(), "mcp-server-fetch==0.6.0", "json"); err != nil {
+			t.Error(err)
+		}
+	})
+	text, err := os.ReadFile(stackPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"type: pypi", "package: mcp-server-fetch", "ref: 0.6.0"} {
+		if !strings.Contains(string(text), want) {
+			t.Errorf("stack missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(string(text), "uvx") {
+		t.Errorf("container add persisted a host uvx command:\n%s", text)
+	}
+	var doc addDoc
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Server.Source == nil || doc.Server.Source.Package != "mcp-server-fetch" || doc.Server.ImageIntent == "" {
+		t.Fatalf("doc = %+v", doc)
 	}
 }
 

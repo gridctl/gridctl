@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -110,6 +111,7 @@ func runDoctorChecks(ctx context.Context) doctorReport {
 	checkRuntimeVersion(&checks, info)
 	checkGatewayPort(ctx, &checks)
 	checkNpx(&checks)
+	checkUvx(&checks)
 	checkStateDir(ctx, &checks)
 	checkStaleState(ctx, &checks)
 	checkProjectLockfile(ctx, &checks)
@@ -118,6 +120,20 @@ func runDoctorChecks(ctx context.Context) doctorReport {
 	checkVault(ctx, &checks)
 
 	return summarizeDoctor(checks)
+}
+
+var doctorLookPath = exec.LookPath
+
+func checkUvx(checks *[]doctorCheck) {
+	if _, err := doctorLookPath("uvx"); err == nil {
+		*checks = append(*checks, doctorCheck{ID: "uvx", Status: doctorStatusOK, Message: "uvx found (host PyPI MCP servers available)"})
+		return
+	}
+	*checks = append(*checks, doctorCheck{
+		ID:      "uvx",
+		Status:  doctorStatusWarn,
+		Message: "uvx not found; host PyPI MCP servers need uv (generated Python containers do not)",
+	})
 }
 
 // summarizeDoctor folds check statuses into the report counters.

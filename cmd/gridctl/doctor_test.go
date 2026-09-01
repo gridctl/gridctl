@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -91,5 +92,24 @@ func TestDoctorStatusLabelPlainWhenNoColor(t *testing.T) {
 	}
 	if strings.Contains(label, "\033") {
 		t.Error("label must be colorless when color is off")
+	}
+}
+
+func TestCheckUvx(t *testing.T) {
+	original := doctorLookPath
+	t.Cleanup(func() { doctorLookPath = original })
+
+	doctorLookPath = func(file string) (string, error) { return "/usr/bin/uvx", nil }
+	var checks []doctorCheck
+	checkUvx(&checks)
+	if len(checks) != 1 || checks[0].Status != doctorStatusOK {
+		t.Fatalf("checks = %+v", checks)
+	}
+
+	doctorLookPath = func(file string) (string, error) { return "", os.ErrNotExist }
+	checks = nil
+	checkUvx(&checks)
+	if len(checks) != 1 || checks[0].Status != doctorStatusWarn || !strings.Contains(checks[0].Message, "containers do not") {
+		t.Fatalf("checks = %+v", checks)
 	}
 }

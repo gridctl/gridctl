@@ -246,6 +246,11 @@ func TestFromRegistry_PackageShapes(t *testing.T) {
 			if tt.wantCommand != nil && !reflect.DeepEqual(entry.Install.Command, tt.wantCommand) {
 				t.Errorf("command = %v, want %v", entry.Install.Command, tt.wantCommand)
 			}
+			if tt.name == "pypi package pins exact version" {
+				if entry.Install.RegistryType != "pypi" || entry.Install.Identifier != "acme-server" || entry.Install.Version != "0.5.0" {
+					t.Errorf("package provenance = %+v", entry.Install)
+				}
+			}
 			if tt.wantURL != "" && entry.Install.URL != tt.wantURL {
 				t.Errorf("url = %q, want %q", entry.Install.URL, tt.wantURL)
 			}
