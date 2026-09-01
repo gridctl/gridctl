@@ -54,8 +54,9 @@ internal/probe/     Ephemeral MCP tool-list probe for the "add server" wizard (n
 pkg/catalog/        MCP server catalog behind `gridctl search` / `gridctl add`: curated embedded entries plus the
                     official MCP Registry, with install-shape mapping into stack.yaml server blocks.
 pkg/config/         stack.yaml schema, loader, variable/env expansion, plan diffing, health-check parsing.
-pkg/runtime/        Container orchestration. Orchestrator is the WorkloadRuntime + Builder front; pkg/runtime/docker is the
-                    Docker implementation. Runtime auto-detected (docker → podman) unless --runtime is set.
+pkg/runtime/        Container orchestration. Orchestrator is the WorkloadRuntime + Builder front; it prepares one desired
+                    source image per logical MCP server before reconciling replicas. pkg/runtime/docker is the Docker
+                    implementation. Runtime auto-detected (docker → podman) unless --runtime is set.
 pkg/builder/        Image building from git or local Dockerfiles, with resolved build plans, isolated Git worktrees,
                     and content-addressed image tags.
 pkg/mcp/            MCP protocol: gateway (router + tool aggregation), stdio/SSE/streamable transports, OpenAPI-as-MCP,
