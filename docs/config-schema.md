@@ -693,7 +693,9 @@ Generated git and local builds require static package metadata in
 imports project code on the host. Git `path` and local `project_path` must stay
 inside their source roots and may not traverse through an escaping symlink.
 The selected project is copied into a gridctl-owned temporary build context,
-so generation does not modify the checkout or local source tree.
+so generation does not modify the checkout or local source tree. Host virtual
+environments, Python caches, and package build outputs are excluded from that
+context and its build identity.
 
 Command selection uses the server-level `command` first. Without an explicit
 command, gridctl selects the package's only console script, or the one whose
