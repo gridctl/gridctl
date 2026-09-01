@@ -685,8 +685,10 @@ checking existing containers or creating replicas. Static replicas and
 autoscaled spawns all use that image. An existing container whose image does
 not match is replaced. Hot reload prepares a changed source before stopping
 the running server, so a resolution or build failure leaves the old workload
-in place. Git and local sources still require their configured Dockerfile, with
-`Dockerfile` remaining the default when `source.dockerfile` is omitted.
+and its applied declaration in place. A later reload retries the unchanged
+desired declaration. Git and local sources still require their configured
+Dockerfile, with `Dockerfile` remaining the default when
+`source.dockerfile` is omitted.
 
 ### Source Auth
 
