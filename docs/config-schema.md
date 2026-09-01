@@ -500,7 +500,7 @@ mcp-servers:
     source:
       type: pypi
       package: mcp-server-fetch
-      ref: 0.6.0
+      ref: 2026.8.18
 ```
 
 `type: pypi` implies `runtime: python`, and generated Python servers default to
@@ -751,6 +751,24 @@ without changing the declarative image tag. Built images also carry
 `io.gridctl.source-digest` and, when available, sanitized OCI source/revision
 and generator/base-image provenance labels. URL credentials, query strings,
 fragments, and secret values are never included in those labels.
+
+`gridctl plan` resolves each source into a first-class build action. Text and
+JSON output include the declared and resolved source identity, desired image
+tag, mutable Git-ref state, and cache expectation. Cache state is `unknown`
+when no Docker or Podman daemon is reachable; source resolution still works.
+Pass `--show-dockerfile` to include the exact generated Dockerfile used by the
+build. Preview output never includes source credentials or runtime secrets.
+
+Apply and reload emit INFO records with `server` and `phase` fields. Python
+source builds use `resolving_source`, `preparing_context`,
+`generating_dockerfile`, and `building_image`; runtime startup and MCP
+registration use `starting_container` and `connecting_server`. Filter build
+diagnostics with `gridctl logs --server <name>`.
+
+Generated Python sources support the official public PyPI index only. They do
+not accept private indexes, custom package CAs, unpackaged scripts, or guessed
+`python -m` commands. Use an explicit Dockerfile for those cases and for native
+dependencies that cannot be satisfied through declared `source.packages`.
 
 ### Source Auth
 

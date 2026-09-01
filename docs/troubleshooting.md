@@ -225,6 +225,12 @@ come from the existing server log path: `gridctl logs --server <name>`. When
 the custom Dockerfile instead of generation; a missing configured file fails
 before the image build.
 
+Use `gridctl plan <stack.yaml> --show-dockerfile` to inspect the generated file
+before applying. Plan output also names the exact resolved source, desired
+image tag, and whether the image is cached. During apply, structured INFO logs
+name the current phase in the `phase` field, ending with `starting_container`
+and `connecting_server`.
+
 ### Image pull failures
 
 **Symptoms:**
