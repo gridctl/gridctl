@@ -23,11 +23,11 @@ func (b *recordingSourceBuilder) Build(_ context.Context, opts BuildOptions) (*B
 }
 
 type sourceLifecycleRuntime struct {
-	WorkloadRuntime
-	statuses map[string]*WorkloadStatus
-	started  []WorkloadConfig
-	stopped  []WorkloadID
-	removed  []WorkloadID
+	statuses      map[string]*WorkloadStatus
+	started       []WorkloadConfig
+	stopped       []WorkloadID
+	removed       []WorkloadID
+	ensuredImages []string
 }
 
 func newSourceLifecycleRuntime() *sourceLifecycleRuntime {
@@ -36,7 +36,24 @@ func newSourceLifecycleRuntime() *sourceLifecycleRuntime {
 
 func (r *sourceLifecycleRuntime) Ping(context.Context) error { return nil }
 
+func (r *sourceLifecycleRuntime) Close() error { return nil }
+
 func (r *sourceLifecycleRuntime) EnsureNetwork(context.Context, string, NetworkOptions) error {
+	return nil
+}
+
+func (r *sourceLifecycleRuntime) List(context.Context, WorkloadFilter) ([]WorkloadStatus, error) {
+	return nil, nil
+}
+
+func (r *sourceLifecycleRuntime) ListNetworks(context.Context, string) ([]string, error) {
+	return nil, nil
+}
+
+func (r *sourceLifecycleRuntime) RemoveNetwork(context.Context, string) error { return nil }
+
+func (r *sourceLifecycleRuntime) EnsureImage(_ context.Context, image string) error {
+	r.ensuredImages = append(r.ensuredImages, image)
 	return nil
 }
 
@@ -110,6 +127,87 @@ func sourceLifecycleStack(ref string, replicas int, autoscale *config.AutoscaleC
 	}
 }
 
+func TestOrchestrator_Up_CurrentSourceRefChangeReusesStaleContainer(t *testing.T) {
+	rt := newSourceLifecycleRuntime()
+	builder := &recordingSourceBuilder{}
+	orch := NewOrchestrator(rt, builder)
+
+	stack := sourceLifecycleStack("commit-a", 0, nil)
+	if _, err := orch.Up(context.Background(), stack, UpOptions{BasePort: 9000}); err != nil {
+		t.Fatalf("first Up: %v", err)
+	}
+	stack.MCPServers[0].Source.Ref = "commit-b"
+	if _, err := orch.Up(context.Background(), stack, UpOptions{BasePort: 9000}); err != nil {
+		t.Fatalf("second Up: %v", err)
+	}
+
+	if len(builder.calls) != 1 {
+		t.Fatalf("Build calls = %d, want current stale count 1", len(builder.calls))
+	}
+	if len(rt.started) != 1 {
+		t.Fatalf("Start calls = %d, want current stale count 1", len(rt.started))
+	}
+	if len(rt.removed) != 0 {
+		t.Fatalf("Remove calls = %d, want current stale count 0", len(rt.removed))
+	}
+}
+
+func TestOrchestrator_Up_CurrentExistingSourceSkipsBuild(t *testing.T) {
+	rt := newSourceLifecycleRuntime()
+	rt.statuses["gridctl-demo-source"] = &WorkloadStatus{
+		ID:       "existing-source",
+		State:    WorkloadStateRunning,
+		HostPort: 9000,
+		Image:    "gridctl-source:commit-a",
+	}
+	builder := &recordingSourceBuilder{}
+	orch := NewOrchestrator(rt, builder)
+
+	if _, err := orch.Up(context.Background(), sourceLifecycleStack("commit-a", 0, nil), UpOptions{BasePort: 9000}); err != nil {
+		t.Fatalf("Up: %v", err)
+	}
+
+	if len(builder.calls) != 0 {
+		t.Fatalf("Build calls = %d, want current stale count 0", len(builder.calls))
+	}
+}
+
+func TestOrchestrator_Up_CurrentSourceReplicasBuildPerReplica(t *testing.T) {
+	rt := newSourceLifecycleRuntime()
+	builder := &recordingSourceBuilder{}
+	orch := NewOrchestrator(rt, builder)
+
+	if _, err := orch.Up(context.Background(), sourceLifecycleStack("commit-a", 2, nil), UpOptions{BasePort: 9000}); err != nil {
+		t.Fatalf("Up: %v", err)
+	}
+
+	if len(builder.calls) != 2 {
+		t.Fatalf("Build calls = %d, want current stale count 2", len(builder.calls))
+	}
+	if len(rt.started) != 2 {
+		t.Fatalf("Start calls = %d, want 2 replicas", len(rt.started))
+	}
+}
+
+func TestOrchestrator_Up_CurrentAutoscaledSourceSkipsBuild(t *testing.T) {
+	rt := newSourceLifecycleRuntime()
+	builder := &recordingSourceBuilder{}
+	orch := NewOrchestrator(rt, builder)
+	stack := sourceLifecycleStack("commit-a", 0, &config.AutoscaleConfig{
+		Min:            0,
+		Max:            2,
+		TargetInFlight: 1,
+	})
+
+	if _, err := orch.Up(context.Background(), stack, UpOptions{BasePort: 9000}); err != nil {
+		t.Fatalf("Up: %v", err)
+	}
+
+	if len(builder.calls) != 0 {
+		t.Fatalf("Build calls = %d, want current stale count 0", len(builder.calls))
+	}
+}
+
 func TestOrchestrator_Up_SourceRefChangeReplacesStaleContainer(t *testing.T) {
 	t.Skip(pendingSourceLifecycle)
 
@@ -132,8 +230,14 @@ func TestOrchestrator_Up_SourceRefChangeReplacesStaleContainer(t *testing.T) {
 	if len(rt.started) != 2 {
 		t.Fatalf("Start calls = %d, want 2", len(rt.started))
 	}
-	if rt.started[0].Image == rt.started[1].Image {
-		t.Fatalf("ref change reused image %q", rt.started[0].Image)
+	if builder.calls[1].Ref != "commit-b" {
+		t.Fatalf("second Build ref = %q, want commit-b", builder.calls[1].Ref)
+	}
+	if rt.started[1].Image != "gridctl-source:commit-b" {
+		t.Fatalf("second Start image = %q, want second build result", rt.started[1].Image)
+	}
+	if rt.started[1].Image == generateTag("demo", "source") {
+		t.Fatalf("second Start reused mutable image %q", rt.started[1].Image)
 	}
 	if len(rt.removed) != 1 {
 		t.Errorf("Remove calls = %d, want 1 stale container", len(rt.removed))
