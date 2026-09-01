@@ -18,6 +18,10 @@ import (
 
 // BuildImage builds a Docker image from a context directory.
 func BuildImage(ctx context.Context, cli dockerclient.DockerClient, contextPath, dockerfile, tag string, buildArgs map[string]string, noCache bool, logger *slog.Logger) (string, error) {
+	return buildImage(ctx, cli, contextPath, dockerfile, tag, buildArgs, nil, noCache, logger)
+}
+
+func buildImage(ctx context.Context, cli dockerclient.DockerClient, contextPath, dockerfile, tag string, buildArgs, labels map[string]string, noCache bool, logger *slog.Logger) (string, error) {
 	logger.Info("building image", "tag", tag)
 
 	// Verify Dockerfile exists
@@ -45,6 +49,7 @@ func BuildImage(ctx context.Context, cli dockerclient.DockerClient, contextPath,
 		Dockerfile: dockerfile,
 		Tags:       []string{tag},
 		BuildArgs:  dockerBuildArgs,
+		Labels:     labels,
 		Remove:     true, // Remove intermediate containers
 		NoCache:    noCache,
 	})

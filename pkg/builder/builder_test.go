@@ -23,6 +23,7 @@ import (
 // mockDockerClient is a mock implementation of DockerClient for builder tests.
 type mockDockerClient struct {
 	imageBuildFn    func(ctx context.Context, buildContext io.Reader, options build.ImageBuildOptions) (build.ImageBuildResponse, error)
+	imageListFn     func(ctx context.Context, options image.ListOptions) ([]image.Summary, error)
 	imageBuildError error
 	calls           []string
 }
@@ -81,7 +82,10 @@ func (m *mockDockerClient) NetworkCreate(context.Context, string, network.Create
 	return network.CreateResponse{}, nil
 }
 func (m *mockDockerClient) NetworkRemove(context.Context, string) error { return nil }
-func (m *mockDockerClient) ImageList(context.Context, image.ListOptions) ([]image.Summary, error) {
+func (m *mockDockerClient) ImageList(ctx context.Context, options image.ListOptions) ([]image.Summary, error) {
+	if m.imageListFn != nil {
+		return m.imageListFn(ctx, options)
+	}
 	return nil, nil
 }
 func (m *mockDockerClient) ImagePull(context.Context, string, image.PullOptions) (io.ReadCloser, error) {
@@ -371,5 +375,52 @@ func TestBuild_NoCache(t *testing.T) {
 	}
 	if !capturedOptions.NoCache {
 		t.Error("expected NoCache to be true in build options")
+	}
+}
+
+func TestBuild_ReusesImageWithMatchingDigestLabel(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM alpine\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	imageBuildCalled := false
+	mock := &mockDockerClient{
+		imageListFn: func(_ context.Context, options image.ListOptions) ([]image.Summary, error) {
+			labels := options.Filters.Get("label")
+			if len(labels) != 1 || !strings.HasPrefix(labels[0], LabelBuildInputDigest+"=") {
+				t.Fatalf("cache label filter = %v", labels)
+			}
+			digest := strings.TrimPrefix(labels[0], LabelBuildInputDigest+"=")
+			return []image.Summary{{ID: "sha256:cached", Labels: map[string]string{LabelBuildInputDigest: digest}}}, nil
+		},
+		imageBuildFn: func(context.Context, io.Reader, build.ImageBuildOptions) (build.ImageBuildResponse, error) {
+			imageBuildCalled = true
+			return build.ImageBuildResponse{}, nil
+		},
+	}
+	result, err := New(mock).Build(context.Background(), BuildOptions{SourceType: "local", Path: dir, Stack: "test", ServerName: "demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Cached || result.ImageID != "sha256:cached" || imageBuildCalled {
+		t.Fatalf("result = %+v, imageBuildCalled = %v", result, imageBuildCalled)
+	}
+}
+
+func TestBuild_SetsProvenanceLabels(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM alpine\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	var labels map[string]string
+	mock := &mockDockerClient{imageBuildFn: func(_ context.Context, _ io.Reader, options build.ImageBuildOptions) (build.ImageBuildResponse, error) {
+		labels = options.Labels
+		return build.ImageBuildResponse{Body: io.NopCloser(strings.NewReader(`{"aux":{"ID":"sha256:new"}}`))}, nil
+	}}
+	if _, err := New(mock).Build(context.Background(), BuildOptions{SourceType: "local", Path: dir, Stack: "test", ServerName: "demo"}); err != nil {
+		t.Fatal(err)
+	}
+	if labels[LabelBuildInputDigest] == "" || labels[LabelSourceDigest] == "" {
+		t.Fatalf("labels = %v", labels)
 	}
 }

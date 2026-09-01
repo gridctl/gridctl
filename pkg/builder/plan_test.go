@@ -141,6 +141,27 @@ func TestResolvedBuildPlan_CloseRemovesOwnedWorktree(t *testing.T) {
 	}
 }
 
+func TestResolvedBuildPlan_ImageLabelsExcludeCredentials(t *testing.T) {
+	plan := &ResolvedBuildPlan{
+		DeclaredIdentity: SourceIdentity{URL: "https://secret@github.com/example/repo?token=hidden"},
+		ResolvedIdentity: SourceIdentity{Commit: strings.Repeat("a", 40)},
+		BuildInputDigest: strings.Repeat("b", 64),
+		Provenance:       BuildProvenance{SourceContentDigest: strings.Repeat("c", 64), GeneratorVersion: PythonTemplateVersion},
+	}
+	labels := plan.ImageLabels()
+	if labels[LabelBuildInputDigest] != plan.BuildInputDigest || labels["org.opencontainers.image.revision"] != plan.ResolvedIdentity.Commit || labels[LabelGeneratorVersion] != PythonTemplateVersion {
+		t.Fatalf("labels = %v", labels)
+	}
+	if labels["org.opencontainers.image.source"] != "https://github.com/example/repo" {
+		t.Fatalf("source label leaked URL credentials: %q", labels["org.opencontainers.image.source"])
+	}
+	for key, value := range labels {
+		if strings.Contains(strings.ToLower(key+value), "credential") || strings.Contains(value, "token") {
+			t.Fatalf("sensitive label %s=%s", key, value)
+		}
+	}
+}
+
 func TestResolve_GitUsesFreshRefAndIsolatedWorktrees(t *testing.T) {
 	remote := t.TempDir()
 	repo, err := gogit.PlainInit(remote, false)

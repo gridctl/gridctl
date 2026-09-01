@@ -58,7 +58,9 @@ pkg/runtime/        Container orchestration. Orchestrator is the WorkloadRuntime
                     source image per logical MCP server before reconciling replicas. pkg/runtime/docker is the Docker
                     implementation. Runtime auto-detected (docker → podman) unless --runtime is set.
 pkg/builder/        Image building from git or local Dockerfiles, with resolved build plans, isolated Git worktrees,
-                    and content-addressed image tags.
+                    content-addressed image tags, label-verified cache reuse, and non-secret provenance labels. Also owns
+                    bounded public-PyPI resolution, static Python package/project metadata inspection, supported-interpreter
+                    selection, console-script resolution, and deterministic digest-pinned uv Dockerfile generation APIs.
 pkg/mcp/            MCP protocol: gateway (router + tool aggregation), stdio/SSE/streamable transports, OpenAPI-as-MCP,
                     autoscaler, code mode sandbox (goja), replica sets, schema pinning hooks.
 pkg/mcpauth/        Downstream OAuth 2.1 brokering for external servers (discovery, dynamic client registration,
