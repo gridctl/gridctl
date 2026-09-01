@@ -422,6 +422,29 @@ mcp-servers:
 	}
 }
 
+func TestLoadStack_VolumeVariableExpansion(t *testing.T) {
+	vault := &mockVault{secrets: map[string]string{
+		"MOUNT_ROOT": "/srv/mcp-data",
+	}}
+	content := `
+name: test-volume-expansion
+mcp-servers:
+  - name: server1
+    image: alpine:latest
+    transport: stdio
+    volumes:
+      - "${var:MOUNT_ROOT}:/data:ro"
+`
+
+	stack, err := LoadStack(writeTempFile(t, content), WithVault(vault))
+	if err != nil {
+		t.Fatalf("LoadStack: %v", err)
+	}
+	if got := stack.MCPServers[0].Volumes; len(got) != 1 || got[0] != "/srv/mcp-data:/data:ro" {
+		t.Fatalf("Volumes = %v, want expanded mount", got)
+	}
+}
+
 func TestLoadStack_VaultMissing(t *testing.T) {
 	vault := &mockVault{secrets: map[string]string{}}
 
