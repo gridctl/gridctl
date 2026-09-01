@@ -75,6 +75,7 @@ type UpResult struct {
 // MCPServerResult is the runtime-agnostic result for an MCP server.
 type MCPServerResult struct {
 	Name       string     // Logical name
+	Image      string     // Desired image resolved before reconciliation
 	WorkloadID WorkloadID // Runtime ID (empty for external/local/SSH/OpenAPI). Mirrors Replicas[0].WorkloadID.
 	Endpoint   string     // How to reach it (URL or host:port). Mirrors Replicas[0].Endpoint.
 	HostPort   int        // Host port if applicable. Mirrors Replicas[0].HostPort.
@@ -210,6 +211,14 @@ func (o *Orchestrator) Up(ctx context.Context, stack *config.Stack, opts UpOptio
 	containerIndex := 0 // Track container-based servers for port allocation
 	for _, server := range stack.MCPServers {
 		replicas := replicaCount(&server)
+		desiredImage := ""
+		if server.IsContainerBased() {
+			var err error
+			desiredImage, err = o.PrepareMCPServer(ctx, stack.Name, &server, opts.NoCache)
+			if err != nil {
+				return nil, fmt.Errorf("preparing MCP server %s: %w", server.Name, err)
+			}
+		}
 
 		// Autoscaled servers defer all replica provisioning to the Spawner.
 		// Emit a placeholder result entry so the registrar sees the server
@@ -223,6 +232,7 @@ func (o *Orchestrator) Up(ctx context.Context, stack *config.Stack, opts UpOptio
 			)
 			result.MCPServers = append(result.MCPServers, MCPServerResult{
 				Name:         server.Name,
+				Image:        desiredImage,
 				External:     server.IsExternal(),
 				LocalProcess: server.IsLocalProcess(),
 				SSH:          server.IsSSH(),
@@ -296,7 +306,7 @@ func (o *Orchestrator) Up(ctx context.Context, stack *config.Stack, opts UpOptio
 		for replicaID := 0; replicaID < replicas; replicaID++ {
 			hostPort := opts.BasePort + containerIndex
 			containerIndex++
-			info, err := o.startMCPServer(ctx, stack, &server, opts, hostPort, replicaID, replicas)
+			info, err := o.startMCPServer(ctx, stack, &server, desiredImage, hostPort, replicaID, replicas)
 			if err != nil {
 				return nil, fmt.Errorf("starting MCP server %s replica %d: %w", server.Name, replicaID, err)
 			}
@@ -309,6 +319,7 @@ func (o *Orchestrator) Up(ctx context.Context, stack *config.Stack, opts UpOptio
 		}
 		result.MCPServers = append(result.MCPServers, MCPServerResult{
 			Name:       server.Name,
+			Image:      desiredImage,
 			WorkloadID: replicaHandles[0].WorkloadID,
 			Endpoint:   replicaHandles[0].Endpoint,
 			HostPort:   replicaHandles[0].HostPort,
@@ -349,7 +360,46 @@ func nReplicaPlaceholders(n int) []MCPServerReplica {
 	return out
 }
 
-func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, server *config.MCPServer, opts UpOptions, hostPort, replicaID, totalReplicas int) (*MCPServerResult, error) {
+// PrepareMCPServer resolves or builds the desired image for one logical MCP server.
+// Callers must pass the returned image through every replica path rather than
+// deriving a source tag independently.
+func (o *Orchestrator) PrepareMCPServer(ctx context.Context, stackName string, server *config.MCPServer, noCache bool) (string, error) {
+	if server == nil || !server.IsContainerBased() {
+		return "", nil
+	}
+	if server.Source == nil {
+		return server.Image, nil
+	}
+
+	o.logger.Info("building MCP server from source", "name", server.Name, "sourceType", server.Source.Type)
+	buildOpts := BuildOptions{
+		Stack:      stackName,
+		ServerName: server.Name,
+		SourceType: server.Source.Type,
+		URL:        server.Source.URL,
+		Ref:        server.Source.Ref,
+		Path:       server.Source.Path,
+		Dockerfile: server.Source.Dockerfile,
+		BuildArgs:  server.BuildArgs,
+		Command:    server.Command,
+		NoCache:    noCache,
+		Logger:     o.logger,
+	}
+	if server.Source.Auth != nil {
+		authMethod, err := AuthForSource(server.Source.Auth, server.Source.URL, o.credentialResolver)
+		if err != nil {
+			return "", fmt.Errorf("resolving source auth for %q: %w", server.Name, err)
+		}
+		buildOpts.Auth = authMethod
+	}
+	result, err := o.builder.Build(ctx, buildOpts)
+	if err != nil {
+		return "", fmt.Errorf("building image: %w", err)
+	}
+	return result.ImageTag, nil
+}
+
+func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, server *config.MCPServer, desiredImage string, hostPort, replicaID, totalReplicas int) (*MCPServerResult, error) {
 	runtimeName := ReplicaContainerName(stack.Name, server.Name, replicaID, totalReplicas)
 
 	// Name drives both container name and DNS alias; for multi-replica
@@ -366,70 +416,36 @@ func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, 
 	}
 
 	if exists {
-		o.logger.Info("MCP server already exists, starting", "name", server.Name, "replica", replicaID)
-
 		status, err := o.runtime.Status(ctx, workloadID)
 		if err != nil {
 			return nil, err
 		}
-		if status.State != WorkloadStateRunning {
-			// A previous shutdown left this container stopped; restart it
-			// rather than handing a dead container to the MCP client.
-			if _, err := o.runtime.Start(ctx, WorkloadConfig{Name: workloadName, Stack: stack.Name}); err != nil {
-				return nil, err
+		if status.Image != desiredImage {
+			o.logger.Info("replacing MCP server with desired image", "name", server.Name, "replica", replicaID, "current_image", status.Image, "desired_image", desiredImage)
+			if err := o.runtime.Stop(ctx, workloadID); err != nil {
+				return nil, fmt.Errorf("stopping stale workload: %w", err)
 			}
-		}
-
-		// Get actual host port
-		actualHostPort, _ := o.runtime.GetHostPort(ctx, workloadID, server.Port)
-		return &MCPServerResult{
-			Name:       server.Name,
-			WorkloadID: workloadID,
-			Endpoint:   fmt.Sprintf("localhost:%d", actualHostPort),
-			HostPort:   actualHostPort,
-		}, nil
-	}
-
-	// Determine image
-	var imageName string
-	if server.Source != nil {
-		// Build from source
-		o.logger.Info("building MCP server from source", "name", server.Name, "sourceType", server.Source.Type)
-
-		buildOpts := BuildOptions{
-			Stack:      stack.Name,
-			ServerName: server.Name,
-			SourceType: server.Source.Type,
-			URL:        server.Source.URL,
-			Ref:        server.Source.Ref,
-			Path:       server.Source.Path,
-			Dockerfile: server.Source.Dockerfile,
-			BuildArgs:  server.BuildArgs,
-			Command:    server.Command,
-			NoCache:    opts.NoCache,
-			Logger:     o.logger,
-		}
-
-		if server.Source.Auth != nil {
-			authMethod, err := AuthForSource(server.Source.Auth, server.Source.URL, o.credentialResolver)
-			if err != nil {
-				return nil, fmt.Errorf("resolving source auth for %q: %w", server.Name, err)
+			if err := o.runtime.Remove(ctx, workloadID); err != nil {
+				return nil, fmt.Errorf("removing stale workload: %w", err)
 			}
-			buildOpts.Auth = authMethod
-		}
+		} else {
+			o.logger.Info("MCP server already exists, starting", "name", server.Name, "replica", replicaID)
+			if status.State != WorkloadStateRunning {
+				// A previous shutdown left this container stopped; restart it
+				// rather than handing a dead container to the MCP client.
+				if _, err := o.runtime.Start(ctx, WorkloadConfig{Name: workloadName, Stack: stack.Name}); err != nil {
+					return nil, err
+				}
+			}
 
-		result, err := o.builder.Build(ctx, buildOpts)
-		if err != nil {
-			return nil, fmt.Errorf("building image: %w", err)
-		}
-		imageName = result.ImageTag
-	} else {
-		imageName = server.Image
-		o.logger.Info("starting MCP server", "name", server.Name, "image", imageName)
-
-		// Pull image if needed
-		if err := o.runtime.EnsureImage(ctx, imageName); err != nil {
-			return nil, err
+			// Get actual host port
+			actualHostPort, _ := o.runtime.GetHostPort(ctx, workloadID, server.Port)
+			return &MCPServerResult{
+				Name:       server.Name,
+				WorkloadID: workloadID,
+				Endpoint:   fmt.Sprintf("localhost:%d", actualHostPort),
+				HostPort:   actualHostPort,
+			}, nil
 		}
 	}
 
@@ -438,6 +454,12 @@ func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, 
 	if len(stack.Networks) > 0 && server.Network != "" {
 		networkName = server.Network
 	}
+	if server.Source == nil {
+		o.logger.Info("starting MCP server", "name", server.Name, "image", desiredImage)
+		if err := o.runtime.EnsureImage(ctx, desiredImage); err != nil {
+			return nil, err
+		}
+	}
 
 	// Create workload config. Labels still carry the logical server name so
 	// Down/List filters by stack work.
@@ -445,12 +467,13 @@ func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, 
 		Name:        workloadName,
 		Stack:       stack.Name,
 		Type:        WorkloadTypeMCPServer,
-		Image:       imageName,
+		Image:       desiredImage,
 		Command:     server.Command,
 		Env:         server.Env,
 		NetworkName: networkName,
 		ExposedPort: server.Port,
 		HostPort:    hostPort,
+		Volumes:     server.Volumes,
 		Transport:   server.Transport,
 		Labels:      managedLabels(stack.Name, server.Name, true),
 	}

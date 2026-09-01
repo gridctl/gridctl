@@ -410,6 +410,17 @@ func Validate(s *Stack) error {
 					errs = append(errs, ValidationError{prefix + ".network", fmt.Sprintf("network '%s' not found in networks list", server.Network)})
 				}
 			}
+			for volumeIndex, volume := range server.Volumes {
+				if err := validateVolume(volume); err != nil {
+					errs = append(errs, ValidationError{
+						fmt.Sprintf("%s.volumes[%d]", prefix, volumeIndex),
+						err.Error(),
+					})
+				}
+			}
+		}
+		if !server.IsContainerBased() && len(server.Volumes) > 0 {
+			errs = append(errs, ValidationError{prefix + ".volumes", "only valid for container-based servers"})
 		}
 		// Per-server output_format validation
 		if server.OutputFormat != "" && !validOutputFormats[server.OutputFormat] {
@@ -522,6 +533,26 @@ func Validate(s *Stack) error {
 
 	if len(errs) > 0 {
 		return errs
+	}
+	return nil
+}
+
+func validateVolume(volume string) error {
+	parts := strings.Split(volume, ":")
+	if len(parts) != 2 && len(parts) != 3 {
+		return fmt.Errorf("must use host:container[:mode] format")
+	}
+	if parts[0] == "" {
+		return fmt.Errorf("host path or volume name is required")
+	}
+	if !path.IsAbs(parts[1]) {
+		return fmt.Errorf("container path must be absolute")
+	}
+	if path.Clean(parts[1]) != parts[1] {
+		return fmt.Errorf("container path must be clean and must not contain traversal")
+	}
+	if len(parts) == 3 && parts[2] != "ro" && parts[2] != "rw" {
+		return fmt.Errorf("mode must be 'ro' or 'rw'")
 	}
 	return nil
 }

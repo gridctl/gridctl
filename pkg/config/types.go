@@ -505,6 +505,7 @@ type MCPServer struct {
 	Command      []string          `yaml:"command,omitempty"`   // Override container command or remote command for SSH
 	Env          map[string]string `yaml:"env,omitempty"`
 	BuildArgs    map[string]string `yaml:"build_args,omitempty"`
+	Volumes      []string          `yaml:"volumes,omitempty"`       // Container mounts: host:container[:mode]
 	Network      string            `yaml:"network,omitempty"`       // Network to join (for multi-network mode)
 	SSH          *SSHConfig        `yaml:"ssh,omitempty"`           // SSH connection config for remote servers
 	OpenAPI      *OpenAPIConfig    `yaml:"openapi,omitempty"`       // OpenAPI spec config for API-backed servers

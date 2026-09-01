@@ -32,6 +32,7 @@ func TestOrchestrator_Up_MCPServer_RestartsStoppedContainer(t *testing.T) {
 	mockRT.EXPECT().Status(gomock.Any(), existingID).Return(&WorkloadStatus{
 		ID:    existingID,
 		State: WorkloadStateStopped,
+		Image: "ghcr.io/github/github-mcp-server:latest",
 	}, nil).Times(1)
 
 	mockRT.EXPECT().Start(gomock.Any(), gomock.Any()).Return(&WorkloadStatus{

@@ -28,6 +28,11 @@ Skip replicas when the downstream tool already holds a single shared resource (o
 
 Setting `replicas > 1` on `external` or `openapi` servers fails validation with the path `mcp-servers[N].replicas` so the error is unambiguous.
 
+For a source-based container server, gridctl resolves and builds the desired
+image once before creating the replica set. Every static replica and later
+autoscaled spawn uses that same image. Per-server `volumes` mounts are also
+copied to every container replica.
+
 ---
 
 ## Configuration
@@ -282,4 +287,3 @@ least **60s** or keep a permanent warm replica (`min: 0, warm_pool: 1`).
   an `autoscale` object per server: `{min, max, current, target, targetInFlight,
   medianInFlight, lastDecision, lastScaleUpAt, lastScaleDownAt, warmPool,
   idleToZero}`.
-

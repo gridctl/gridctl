@@ -431,8 +431,9 @@ Some servers reload successfully while others fail. The reload result shows erro
 **Resolution:**
 
 1. If the failure was transient (the backend was briefly unreachable), no action is needed: failed registrations are retried automatically by the health monitor and the server joins once it is reachable.
-2. If the failure is a configuration problem, fix the server's configuration in `stack.yaml` and run `gridctl reload`. Reload is diff-driven, so re-running it against an unchanged file is a no-op.
-3. Servers that reloaded successfully are unaffected.
+2. If source preparation or an image build failed before replacement, resolve the cause and run `gridctl reload` again. The failed declaration remains pending, so an unchanged file is retried while the old workload stays active.
+3. For other configuration problems, fix the server's configuration in `stack.yaml` and run `gridctl reload`.
+4. Servers that reloaded successfully are unaffected.
 
 ---
 

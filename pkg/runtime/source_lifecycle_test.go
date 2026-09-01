@@ -7,8 +7,6 @@ import (
 	"github.com/gridctl/gridctl/pkg/config"
 )
 
-const pendingSourceLifecycle = "pending source lifecycle reconciliation"
-
 type recordingSourceBuilder struct {
 	calls []BuildOptions
 }
@@ -127,90 +125,7 @@ func sourceLifecycleStack(ref string, replicas int, autoscale *config.AutoscaleC
 	}
 }
 
-func TestOrchestrator_Up_CurrentSourceRefChangeReusesStaleContainer(t *testing.T) {
-	rt := newSourceLifecycleRuntime()
-	builder := &recordingSourceBuilder{}
-	orch := NewOrchestrator(rt, builder)
-
-	stack := sourceLifecycleStack("commit-a", 0, nil)
-	if _, err := orch.Up(context.Background(), stack, UpOptions{BasePort: 9000}); err != nil {
-		t.Fatalf("first Up: %v", err)
-	}
-	stack.MCPServers[0].Source.Ref = "commit-b"
-	if _, err := orch.Up(context.Background(), stack, UpOptions{BasePort: 9000}); err != nil {
-		t.Fatalf("second Up: %v", err)
-	}
-
-	if len(builder.calls) != 1 {
-		t.Fatalf("Build calls = %d, want current stale count 1", len(builder.calls))
-	}
-	if len(rt.started) != 1 {
-		t.Fatalf("Start calls = %d, want current stale count 1", len(rt.started))
-	}
-	if len(rt.removed) != 0 {
-		t.Fatalf("Remove calls = %d, want current stale count 0", len(rt.removed))
-	}
-}
-
-func TestOrchestrator_Up_CurrentExistingSourceSkipsBuild(t *testing.T) {
-	rt := newSourceLifecycleRuntime()
-	rt.statuses["gridctl-demo-source"] = &WorkloadStatus{
-		ID:       "existing-source",
-		State:    WorkloadStateRunning,
-		HostPort: 9000,
-		Image:    "gridctl-source:commit-a",
-	}
-	builder := &recordingSourceBuilder{}
-	orch := NewOrchestrator(rt, builder)
-
-	if _, err := orch.Up(context.Background(), sourceLifecycleStack("commit-a", 0, nil), UpOptions{BasePort: 9000}); err != nil {
-		t.Fatalf("Up: %v", err)
-	}
-
-	if len(builder.calls) != 0 {
-		t.Fatalf("Build calls = %d, want current stale count 0", len(builder.calls))
-	}
-}
-
-func TestOrchestrator_Up_CurrentSourceReplicasBuildPerReplica(t *testing.T) {
-	rt := newSourceLifecycleRuntime()
-	builder := &recordingSourceBuilder{}
-	orch := NewOrchestrator(rt, builder)
-
-	if _, err := orch.Up(context.Background(), sourceLifecycleStack("commit-a", 2, nil), UpOptions{BasePort: 9000}); err != nil {
-		t.Fatalf("Up: %v", err)
-	}
-
-	if len(builder.calls) != 2 {
-		t.Fatalf("Build calls = %d, want current stale count 2", len(builder.calls))
-	}
-	if len(rt.started) != 2 {
-		t.Fatalf("Start calls = %d, want 2 replicas", len(rt.started))
-	}
-}
-
-func TestOrchestrator_Up_CurrentAutoscaledSourceSkipsBuild(t *testing.T) {
-	rt := newSourceLifecycleRuntime()
-	builder := &recordingSourceBuilder{}
-	orch := NewOrchestrator(rt, builder)
-	stack := sourceLifecycleStack("commit-a", 0, &config.AutoscaleConfig{
-		Min:            0,
-		Max:            2,
-		TargetInFlight: 1,
-	})
-
-	if _, err := orch.Up(context.Background(), stack, UpOptions{BasePort: 9000}); err != nil {
-		t.Fatalf("Up: %v", err)
-	}
-
-	if len(builder.calls) != 0 {
-		t.Fatalf("Build calls = %d, want current stale count 0", len(builder.calls))
-	}
-}
-
 func TestOrchestrator_Up_SourceRefChangeReplacesStaleContainer(t *testing.T) {
-	t.Skip(pendingSourceLifecycle)
-
 	rt := newSourceLifecycleRuntime()
 	builder := &recordingSourceBuilder{}
 	orch := NewOrchestrator(rt, builder)
@@ -245,8 +160,6 @@ func TestOrchestrator_Up_SourceRefChangeReplacesStaleContainer(t *testing.T) {
 }
 
 func TestOrchestrator_Up_ResolvesSourceBeforeExistingContainerReuse(t *testing.T) {
-	t.Skip(pendingSourceLifecycle)
-
 	rt := newSourceLifecycleRuntime()
 	rt.statuses["gridctl-demo-source"] = &WorkloadStatus{
 		ID:       "existing-source",
@@ -270,13 +183,13 @@ func TestOrchestrator_Up_ResolvesSourceBeforeExistingContainerReuse(t *testing.T
 }
 
 func TestOrchestrator_Up_TwoSourceReplicasBuildOnce(t *testing.T) {
-	t.Skip(pendingSourceLifecycle)
-
 	rt := newSourceLifecycleRuntime()
 	builder := &recordingSourceBuilder{}
 	orch := NewOrchestrator(rt, builder)
+	stack := sourceLifecycleStack("commit-a", 2, nil)
+	stack.MCPServers[0].Volumes = []string{"/host/data:/data:ro"}
 
-	if _, err := orch.Up(context.Background(), sourceLifecycleStack("commit-a", 2, nil), UpOptions{BasePort: 9000}); err != nil {
+	if _, err := orch.Up(context.Background(), stack, UpOptions{BasePort: 9000}); err != nil {
 		t.Fatalf("Up: %v", err)
 	}
 
@@ -289,11 +202,14 @@ func TestOrchestrator_Up_TwoSourceReplicasBuildOnce(t *testing.T) {
 	if rt.started[0].Image != rt.started[1].Image {
 		t.Errorf("replica images differ: %q and %q", rt.started[0].Image, rt.started[1].Image)
 	}
+	for i, started := range rt.started {
+		if len(started.Volumes) != 1 || started.Volumes[0] != "/host/data:/data:ro" {
+			t.Errorf("replica %d volumes = %v", i, started.Volumes)
+		}
+	}
 }
 
 func TestOrchestrator_Up_AutoscaledSourceBuildsBeforeRegistration(t *testing.T) {
-	t.Skip(pendingSourceLifecycle)
-
 	rt := newSourceLifecycleRuntime()
 	builder := &recordingSourceBuilder{}
 	orch := NewOrchestrator(rt, builder)
@@ -315,5 +231,8 @@ func TestOrchestrator_Up_AutoscaledSourceBuildsBeforeRegistration(t *testing.T) 
 	}
 	if len(result.MCPServers) != 1 {
 		t.Fatalf("result servers = %d, want 1", len(result.MCPServers))
+	}
+	if result.MCPServers[0].Image != "gridctl-source:commit-a" {
+		t.Fatalf("result image = %q, want resolved source image", result.MCPServers[0].Image)
 	}
 }

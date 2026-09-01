@@ -158,6 +158,24 @@ func TestComputePlan_ChangeEnv(t *testing.T) {
 	assert.Contains(t, diff.Items[0].Details, "env changed")
 }
 
+func TestComputePlan_ChangeVolumes(t *testing.T) {
+	current := &Stack{
+		Name:       "test",
+		Network:    Network{Name: "test-net"},
+		MCPServers: []MCPServer{{Name: "s1", Image: "alpine", Volumes: []string{"/old:/data:ro"}}},
+	}
+	proposed := &Stack{
+		Name:       "test",
+		Network:    Network{Name: "test-net"},
+		MCPServers: []MCPServer{{Name: "s1", Image: "alpine", Volumes: []string{"/new:/data:ro"}}},
+	}
+
+	diff := ComputePlan(proposed, current)
+	assert.True(t, diff.HasChanges)
+	assert.Contains(t, diff.Items[0].Details, "volumes changed")
+	assert.NotContains(t, diff.Items[0].Details, "configuration changed")
+}
+
 func TestComputePlan_GatewayAdd(t *testing.T) {
 	current := &Stack{Name: "test", Network: Network{Name: "test-net"}}
 	proposed := &Stack{
@@ -339,4 +357,3 @@ func TestStringSliceEqual(t *testing.T) {
 	assert.False(t, stringSliceEqual([]string{"a"}, []string{"b"}))
 	assert.False(t, stringSliceEqual([]string{"a"}, []string{"a", "b"}))
 }
-

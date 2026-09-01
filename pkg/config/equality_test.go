@@ -51,6 +51,7 @@ func TestMCPServerEqual_EffectiveCollectionsAndDurations(t *testing.T) {
 	b.Env = map[string]string{}
 	b.BuildArgs = map[string]string{}
 	b.Tools = []string{}
+	b.Volumes = []string{}
 	b.Autoscale = &AutoscaleConfig{Min: 1, Max: 2, TargetInFlight: 1, ScaleUpAfter: "30000ms", ScaleDownAfter: "300s"}
 	if !MCPServerEqual(a, b) {
 		t.Fatal("effectively identical servers must be equal")
@@ -65,6 +66,7 @@ func TestMCPServerEqual_DetectsBuildAndReplicaChanges(t *testing.T) {
 		{Name: "server", Source: base.Source, BuildArgs: map[string]string{"VERSION": "2"}, Replicas: 2, ReplicaPolicy: "round-robin"},
 		{Name: "server", Source: base.Source, BuildArgs: base.BuildArgs, Replicas: 3, ReplicaPolicy: "round-robin"},
 		{Name: "server", Source: base.Source, BuildArgs: base.BuildArgs, Replicas: 2, ReplicaPolicy: "least-connections"},
+		{Name: "server", Source: base.Source, BuildArgs: base.BuildArgs, Volumes: []string{"data:/data:ro"}, Replicas: 2, ReplicaPolicy: "round-robin"},
 	}
 	for i, changed := range tests {
 		if MCPServerEqual(base, changed) {

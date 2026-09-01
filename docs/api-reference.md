@@ -822,6 +822,13 @@ Returns `404` when the trace ID is not in the buffer or tracing is disabled.
 
 Triggers a configuration reload from the stack file. Requires the gateway to have been started with `--watch`.
 
+When a source-based server changes, reload resolves and builds its desired
+image before unregistering or stopping the running server. A resolution or
+build failure is reported for that server while its old workload remains in
+place. The failed declaration remains unapplied, so another reload of the same
+stack file retries preparation. A successful build is passed to every
+replacement or autoscaled replica.
+
 **Auth:** Yes
 
 ```bash

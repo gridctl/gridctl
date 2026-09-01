@@ -470,6 +470,8 @@ mcp-servers:
   - name: github
     image: ghcr.io/github/github-mcp-server:latest
     transport: stdio
+    volumes:
+      - /path/to/workspace:/workspace:ro
     env:
       GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_PERSONAL_ACCESS_TOKEN}"
 ```
@@ -620,6 +622,7 @@ In the web wizard, the OpenAPI Configuration section's Operations Filter loads t
 | `command` | []string | Conditional | - | Container entrypoint override, local process command, or SSH remote command |
 | `env` | map | No | - | Environment variables |
 | `build_args` | map | No | - | Docker build-time arguments (container servers only) |
+| `volumes` | []string | No | - | Container mounts in `host:container[:mode]` form. The host path or volume name must be non-empty, the container destination must be a clean absolute path, and mode may be `ro` or `rw`. Valid only for image and source containers; every static, reloaded, and autoscaled replica receives the mounts |
 | `network` | string | Conditional | - | Network to join (required in advanced network mode) |
 | `ssh` | object | Conditional | - | SSH connection config (see [SSH](#ssh)) |
 | `openapi` | object | Conditional | - | OpenAPI spec config (see [OpenAPI](#openapi)) |
@@ -676,6 +679,16 @@ and target platform, so changing any of those inputs produces a different
 image identity. Stack planning and hot reload use the same complete effective
 MCP-server comparison; source auth, build arguments, commands, replica
 settings, and other server fields are not silently ignored.
+
+Apply resolves and builds one desired source image per logical server before
+checking existing containers or creating replicas. Static replicas and
+autoscaled spawns all use that image. An existing container whose image does
+not match is replaced. Hot reload prepares a changed source before stopping
+the running server, so a resolution or build failure leaves the old workload
+and its applied declaration in place. A later reload retries the unchanged
+desired declaration. Git and local sources still require their configured
+Dockerfile, with `Dockerfile` remaining the default when
+`source.dockerfile` is omitted.
 
 ### Source Auth
 
@@ -1290,7 +1303,7 @@ String values in the configuration support variable expansion:
 | `${var:KEY}` | Variable store reference (error if key not found). Canonical syntax. |
 | `${vault:KEY}` | Deprecated alias for `${var:KEY}`. Logs a one-shot warning per process. Removed at v1.0. |
 
-Variable expansion is applied to string values across all configuration sections including `env`, `token`, and `url` fields.
+Variable expansion is applied to string values across all configuration sections including `env`, `token`, `url`, and MCP-server `volumes` entries.
 
 ### Variables vs Secrets
 

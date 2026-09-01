@@ -144,6 +144,9 @@ func compareMCPServers(a, b MCPServer) []string {
 	if !envEqual(a.Env, b.Env) {
 		details = append(details, "env changed")
 	}
+	if !stringSliceEqual(a.Volumes, b.Volumes) {
+		details = append(details, "volumes changed")
+	}
 	if !SourceEqual(a.Source, b.Source) {
 		details = append(details, "source changed")
 	}
