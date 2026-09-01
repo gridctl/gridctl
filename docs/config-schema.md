@@ -690,6 +690,15 @@ desired declaration. Git and local sources still require their configured
 Dockerfile, with `Dockerfile` remaining the default when
 `source.dockerfile` is omitted.
 
+An unchanged source build is reused only when the image tag and its
+`io.gridctl.build-input-digest` label match the resolved plan. Images created
+before this label existed rebuild once; the readable tag alone is not accepted
+as cache identity. `gridctl apply --no-cache` skips this lookup and rebuilds
+without changing the declarative image tag. Built images also carry
+`io.gridctl.source-digest` and, when available, sanitized OCI source/revision
+and generator/base-image provenance labels. URL credentials, query strings,
+fragments, and secret values are never included in those labels.
+
 ### Source Auth
 
 Declares how gridctl authenticates when cloning a private git repository at build time. Raw tokens must **never** appear in `stack.yaml` - use `credential_ref` to point at a variable-store key, which is resolved against the live store on every clone.
