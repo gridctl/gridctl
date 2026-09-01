@@ -1203,6 +1203,12 @@ func TestValidateSource(t *testing.T) {
 			source: &Source{Type: "git", URL: "https://github.com/example/repo", Runtime: "python", Path: "servers/fetch", Python: "3.12", Extras: []string{"http"}, With: []string{"httpx>=0.27"}, Packages: []string{"curl"}},
 		},
 		{
+			name:    "git rejects local project path",
+			source:  &Source{Type: "git", URL: "https://github.com/example/repo", Runtime: "python", ProjectPath: "servers/fetch"},
+			wantErr: true,
+			errMsg:  "is only valid for a Python local source",
+		},
+		{
 			name:   "valid generated local subproject",
 			source: &Source{Type: "local", Path: "/app/src", ProjectPath: "servers/fetch", Runtime: "python"},
 		},

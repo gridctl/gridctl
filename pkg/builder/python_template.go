@@ -142,7 +142,11 @@ func GeneratePythonDockerfile(ctx context.Context, spec PythonBuildSpec) (string
 		}
 		out.WriteByte('\n')
 	}
-	out.WriteString("RUN chown -R gridctl:gridctl /opt/gridctl\n")
+	if spec.Local {
+		out.WriteString("RUN chown -R gridctl:gridctl /app /opt/gridctl\n")
+	} else {
+		out.WriteString("RUN chown -R gridctl:gridctl /opt/gridctl\n")
+	}
 	out.WriteString("USER gridctl\n")
 	if len(spec.Command) > 0 {
 		encoded, err := json.Marshal(spec.Command)

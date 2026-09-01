@@ -1087,6 +1087,9 @@ func validateSource(s *Source, prefix string) ValidationErrors {
 		} else if s.Path != "" && !isCleanRelativeSourcePath(s.Path) {
 			errs = append(errs, ValidationError{prefix + ".path", "must be a clean relative path within the git checkout"})
 		}
+		if s.ProjectPath != "" {
+			errs = append(errs, ValidationError{prefix + ".project_path", "is only valid for a Python local source"})
+		}
 	case "local":
 		if s.Path == "" {
 			errs = append(errs, ValidationError{prefix + ".path", "is required for local source"})

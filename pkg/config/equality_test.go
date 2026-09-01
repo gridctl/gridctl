@@ -60,6 +60,15 @@ func TestMCPServerEqual_NormalizesPythonDefaults(t *testing.T) {
 	}
 }
 
+func TestMCPServerEqual_DoesNotDefaultCustomPythonDockerfileToStdio(t *testing.T) {
+	omitted := MCPServer{Name: "custom", Source: &Source{Type: "local", Path: ".", Runtime: "python", Dockerfile: "Dockerfile"}}
+	stdio := omitted
+	stdio.Transport = "stdio"
+	if MCPServerEqual(omitted, stdio) {
+		t.Fatal("custom Dockerfile transport omission must retain the legacy HTTP default")
+	}
+}
+
 func TestSourceEqual_NormalizesLegacyDefaults(t *testing.T) {
 	omitted := &Source{Type: "git", URL: "https://example.com/repo"}
 	defaulted := &Source{Type: "git", URL: "https://example.com/repo", Ref: "main", Dockerfile: "Dockerfile"}

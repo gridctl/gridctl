@@ -39,6 +39,9 @@ func TestGeneratePythonDockerfile_LocalLockModes(t *testing.T) {
 	if !strings.Contains(locked, "uv sync --locked --no-dev --no-editable") {
 		t.Fatal("locked project does not use uv sync")
 	}
+	if !strings.Contains(locked, "chown -R gridctl:gridctl /app /opt/gridctl") {
+		t.Fatal("locked project does not give the runtime user ownership of /app")
+	}
 	unlocked, err := GeneratePythonDockerfile(context.Background(), PythonBuildSpec{Python: "3.11", Local: true})
 	if err != nil {
 		t.Fatal(err)

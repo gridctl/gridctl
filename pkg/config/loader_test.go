@@ -83,6 +83,27 @@ mcp-servers:
 	}
 }
 
+func TestLoadStack_CustomPythonDockerfileKeepsHTTPDefault(t *testing.T) {
+	content := `
+name: python
+mcp-servers:
+  - name: custom
+    source:
+      type: local
+      path: .
+      runtime: python
+      dockerfile: Dockerfile
+    port: 8080
+`
+	stack, err := LoadStack(writeTempFile(t, content))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stack.MCPServers[0].Transport != "" {
+		t.Fatalf("custom Dockerfile transport = %q, want legacy HTTP default", stack.MCPServers[0].Transport)
+	}
+}
+
 func TestLoadStack_Defaults(t *testing.T) {
 	content := `
 name: test-lab

@@ -3,6 +3,7 @@ package builder
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -150,6 +151,29 @@ func TestResolve_PyPIGeneratesImmutablePythonPlan(t *testing.T) {
 	}
 }
 
+func TestResolve_PyPIErrorsKeepContractText(t *testing.T) {
+	tests := []string{
+		"No PyPI project named missing.",
+		"1.0 is not a published version of demo. Latest is 2.0.",
+		"1.0 of demo is yanked on PyPI. Choose a non-yanked version.",
+		"Package requires Python >=3.14, which is incompatible with image selection 3.10 through 3.13. Set source.python to a compatible version from 3.10 through 3.13, or use a custom Dockerfile.",
+	}
+	for _, message := range tests {
+		t.Run(message, func(t *testing.T) {
+			b := New(&mockDockerClient{})
+			b.pypiResolver = stubPyPIResolver{err: errors.New(message)}
+			_, err := b.Resolve(context.Background(), BuildOptions{SourceType: "pypi", Package: "demo", Ref: "1.0"})
+			if err == nil || err.Error() != message {
+				t.Fatalf("Resolve error = %q, want %q", err, message)
+			}
+			_, err = b.Build(context.Background(), BuildOptions{SourceType: "pypi", Package: "demo", Ref: "1.0"})
+			if err == nil || err.Error() != message {
+				t.Fatalf("Build error = %q, want %q", err, message)
+			}
+		})
+	}
+}
+
 func TestResolve_LocalPythonUsesSubprojectAndIgnoresDefaultDockerfile(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	root := t.TempDir()
@@ -180,6 +204,44 @@ func TestResolve_LocalPythonUsesSubprojectAndIgnoresDefaultDockerfile(t *testing
 	}
 }
 
+func TestResolve_LocalPythonExcludesHostBuildArtifacts(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := t.TempDir()
+	metadata := "[project]\nname = \"demo\"\nversion = \"1.0\"\n[project.scripts]\ndemo = \"demo:main\"\n"
+	if err := os.WriteFile(filepath.Join(root, "pyproject.toml"), []byte(metadata), 0644); err != nil {
+		t.Fatal(err)
+	}
+	venv := filepath.Join(root, ".venv")
+	if err := os.MkdirAll(venv, 0755); err != nil {
+		t.Fatal(err)
+	}
+	venvFile := filepath.Join(venv, "host-python")
+	if err := os.WriteFile(venvFile, []byte("macOS interpreter"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	b := New(&mockDockerClient{})
+	opts := BuildOptions{Stack: "demo", ServerName: "local", SourceType: "local", Path: root, Runtime: "python"}
+	first, err := b.Resolve(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	if _, err := os.Stat(filepath.Join(first.EffectiveProjectRoot, ".venv")); !os.IsNotExist(err) {
+		t.Fatalf("host virtualenv was copied into generated context: %v", err)
+	}
+	if err := os.WriteFile(venvFile, []byte("changed host interpreter"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	second, err := b.Resolve(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	if second.BuildInputDigest != first.BuildInputDigest {
+		t.Fatal("host virtualenv changed generated build identity")
+	}
+}
+
 func TestResolve_PythonExplicitDockerfileTakesPrecedence(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "Containerfile"), []byte("FROM alpine\n"), 0644); err != nil {
@@ -200,6 +262,21 @@ func TestResolve_PythonExplicitDockerfileTakesPrecedence(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "Found configured Dockerfile; building from it.") {
 		t.Fatalf("precedence log missing: %s", logs.String())
+	}
+}
+
+func TestResolve_MissingPythonDockerfileDoesNotLogPrecedence(t *testing.T) {
+	dir := t.TempDir()
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	_, err := New(&mockDockerClient{}).Resolve(context.Background(), BuildOptions{
+		SourceType: "local", Path: dir, Runtime: "python", Dockerfile: "Containerfile", Logger: logger,
+	})
+	if err == nil || !strings.Contains(err.Error(), "configured Dockerfile Containerfile was not found") {
+		t.Fatalf("missing Dockerfile error = %v", err)
+	}
+	if strings.Contains(logs.String(), "Found configured Dockerfile; building from it.") {
+		t.Fatalf("missing Dockerfile was logged as found: %s", logs.String())
 	}
 }
 
@@ -402,7 +479,7 @@ func TestResolve_GitPythonUsesCheckoutSubproject(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	plan, err := New(&mockDockerClient{}).Resolve(context.Background(), BuildOptions{
 		Stack: "demo", ServerName: "git-python", SourceType: "git", URL: remote,
-		Ref: commit.String(), Path: "services/demo", Runtime: "python",
+		Ref: commit.String(), Path: "services/demo", ProjectPath: "ignored", Runtime: "python",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -410,6 +487,9 @@ func TestResolve_GitPythonUsesCheckoutSubproject(t *testing.T) {
 	defer plan.Close()
 	if plan.ResolvedIdentity.Commit != commit.String() || plan.ResolvedIdentity.Path != "services/demo" {
 		t.Fatalf("resolved git identity = %+v", plan.ResolvedIdentity)
+	}
+	if plan.DeclaredIdentity.ProjectPath != "" || plan.ResolvedIdentity.ProjectPath != "" {
+		t.Fatalf("unused git project_path leaked into identity: %+v", plan.ResolvedIdentity)
 	}
 	if plan.Command[0] != "git-demo" || plan.GeneratedDockerfile == "" {
 		t.Fatalf("generated git plan = %+v", plan)

@@ -894,7 +894,7 @@ func (s *Stack) SetDefaults() {
 			if s.MCPServers[i].Source.Type == "pypi" && s.MCPServers[i].Source.Runtime == "" {
 				s.MCPServers[i].Source.Runtime = "python"
 			}
-			if s.MCPServers[i].Source.Runtime == "python" && s.MCPServers[i].Transport == "" {
+			if isGeneratedPythonSource(s.MCPServers[i].Source) && s.MCPServers[i].Transport == "" {
 				s.MCPServers[i].Transport = "stdio"
 			}
 		}
@@ -925,4 +925,8 @@ func (s *Stack) SetDefaults() {
 			s.Telemetry.Retention.MaxAgeDays = 7
 		}
 	}
+}
+
+func isGeneratedPythonSource(source *Source) bool {
+	return source != nil && (source.Type == "pypi" || source.Runtime == "python" && source.Dockerfile == "")
 }

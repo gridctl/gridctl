@@ -61,6 +61,17 @@ func TestPrepareMCPServer_PassesPythonSourceOptions(t *testing.T) {
 	}
 }
 
+func TestPrepareMCPServer_PreservesBuildErrorText(t *testing.T) {
+	const message = "No PyPI project named missing."
+	orchestrator := NewOrchestrator(nil, &MockBuilder{BuildError: errors.New(message)})
+	_, err := orchestrator.PrepareMCPServer(context.Background(), "stack", &config.MCPServer{
+		Name: "python", Source: &config.Source{Type: "pypi", Package: "missing", Ref: "1.0"},
+	}, false)
+	if err == nil || err.Error() != message {
+		t.Fatalf("PrepareMCPServer error = %q, want %q", err, message)
+	}
+}
+
 // Ensure MockBuilder implements Builder
 var _ Builder = (*MockBuilder)(nil)
 

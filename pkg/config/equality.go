@@ -17,7 +17,7 @@ func MCPServerEqual(a, b MCPServer) bool {
 func canonicalizeMCPServer(server *MCPServer) {
 	if server.Source != nil {
 		server.Source = canonicalSource(server.Source)
-		if server.Source.Runtime == "python" && server.Transport == "" {
+		if isGeneratedPythonSource(server.Source) && server.Transport == "" {
 			server.Transport = "stdio"
 		}
 	}

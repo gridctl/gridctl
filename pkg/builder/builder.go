@@ -32,7 +32,7 @@ func (b *Builder) Build(ctx context.Context, opts BuildOptions) (*BuildResult, e
 	opts.Logger = logger
 	plan, err := b.Resolve(ctx, opts)
 	if err != nil {
-		return nil, fmt.Errorf("preparing source: %w", err)
+		return nil, err
 	}
 	defer func() { _ = plan.Close() }()
 	if !opts.NoCache {

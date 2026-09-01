@@ -408,7 +408,7 @@ func (o *Orchestrator) PrepareMCPServer(ctx context.Context, stackName string, s
 	}
 	result, err := o.builder.Build(ctx, buildOpts)
 	if err != nil {
-		return "", fmt.Errorf("building image: %w", err)
+		return "", err
 	}
 	return result.ImageTag, nil
 }

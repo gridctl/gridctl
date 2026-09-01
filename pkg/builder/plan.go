@@ -37,9 +37,13 @@ func (b *Builder) Resolve(ctx context.Context, opts BuildOptions) (*ResolvedBuil
 		opts.Logger = logging.NewDiscardLogger()
 	}
 
+	projectPath := ""
+	if opts.SourceType == "local" {
+		projectPath = opts.ProjectPath
+	}
 	declared := SourceIdentity{
 		Type: opts.SourceType, URL: opts.URL, Ref: opts.Ref,
-		Path: opts.Path, ProjectPath: opts.ProjectPath, Dockerfile: opts.Dockerfile,
+		Path: opts.Path, ProjectPath: projectPath, Dockerfile: opts.Dockerfile,
 		Package: opts.Package,
 	}
 	resolved := declared
@@ -114,7 +118,7 @@ func (b *Builder) Resolve(ctx context.Context, opts BuildOptions) (*ResolvedBuil
 		}
 		release, err := b.pypiResolver.Resolve(ctx, opts.Package, opts.Ref, opts.Python)
 		if err != nil {
-			return nil, fmt.Errorf("resolving PyPI package: %w", err)
+			return nil, err
 		}
 		command, err := ResolveConsoleCommand(opts.Command, release.Package, release.Metadata.ConsoleScripts)
 		if err != nil {
@@ -188,8 +192,8 @@ func (b *Builder) Resolve(ctx context.Context, opts BuildOptions) (*ResolvedBuil
 			resolved.Package = metadata.Name
 			resolved.Version = metadata.Version
 		} else {
-			if opts.Runtime == "python" && opts.Dockerfile != "" {
-				opts.Logger.Info("Found configured Dockerfile; building from it.")
+			explicitPythonDockerfile := opts.Runtime == "python" && opts.Dockerfile != ""
+			if explicitPythonDockerfile {
 				if opts.SourceType == "git" && opts.Path != "" {
 					selectedRoot, err := resolveSubprojectRoot(projectRoot, opts.Path)
 					if err != nil {
@@ -202,6 +206,9 @@ func (b *Builder) Resolve(ctx context.Context, opts BuildOptions) (*ResolvedBuil
 			dockerfile, err = resolveDockerfile(projectRoot, opts.Dockerfile)
 			if err != nil {
 				return nil, closePlanSource(cleanup, err)
+			}
+			if explicitPythonDockerfile {
+				opts.Logger.Info("Found configured Dockerfile; building from it.")
 			}
 		}
 	}
@@ -365,7 +372,7 @@ func materializePythonContext(ctx context.Context, sourceRoot, dockerfile string
 		_ = cleanup()
 		return "", nil, fmt.Errorf("writing generated Python Dockerfile: %w", err)
 	}
-	ignore := ".git\n.gridctl\n__pycache__\n*.pyc\n"
+	ignore := ".git\n.gridctl\n__pycache__\n*.pyc\n.venv\nvenv\nbuild\ndist\n*.egg-info\n"
 	if err := os.WriteFile(filepath.Join(destination, ".dockerignore"), []byte(ignore), 0600); err != nil {
 		_ = cleanup()
 		return "", nil, fmt.Errorf("writing generated Python .dockerignore: %w", err)
@@ -388,6 +395,12 @@ func copyPythonContext(ctx context.Context, sourceRoot, destination string) erro
 		rel, err := filepath.Rel(sourceRoot, sourcePath)
 		if err != nil || rel == "." {
 			return err
+		}
+		if info.IsDir() && isExcludedPythonContextDir(info.Name()) {
+			return filepath.SkipDir
+		}
+		if !info.IsDir() && strings.HasSuffix(info.Name(), ".pyc") {
+			return nil
 		}
 		targetPath := filepath.Join(destination, rel)
 		if info.Mode()&os.ModeSymlink != 0 {
@@ -431,6 +444,15 @@ func copyPythonContext(ctx context.Context, sourceRoot, destination string) erro
 		}
 		return closeSourceErr
 	})
+}
+
+func isExcludedPythonContextDir(name string) bool {
+	switch name {
+	case ".git", ".gridctl", "__pycache__", ".venv", "venv", "build", "dist":
+		return true
+	default:
+		return strings.HasSuffix(name, ".egg-info")
+	}
 }
 
 func closePlanSource(cleanup func() error, cause error) error {
