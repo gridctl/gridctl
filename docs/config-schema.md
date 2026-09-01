@@ -667,14 +667,15 @@ configured branch, tag, or commit to a full commit SHA, and checks out that
 commit in an isolated builder worktree. Concurrent source builds therefore do
 not mutate one another or the skill-import cache.
 
-Git and local Dockerfile builds receive content-addressed image tags rather
-than `latest`. The tag contains a readable source pin plus a short digest of
-the effective build inputs. The digest covers the selected source content and
-Dockerfile, build arguments, server command, and target platform, so changing
-any of those inputs produces a different image identity. Stack planning and
-hot reload use the same complete effective MCP-server comparison; source auth,
-build arguments, commands, replica settings, and other server fields are not
-silently ignored.
+Resolved build plans mark branch refs as mutable while recording the immutable
+commit used by the build. Git and local Dockerfile builds receive
+content-addressed image tags rather than `latest`. The tag contains a readable
+source pin plus a short digest of the effective build inputs. The digest covers
+the selected source content and Dockerfile, build arguments, server command,
+and target platform, so changing any of those inputs produces a different
+image identity. Stack planning and hot reload use the same complete effective
+MCP-server comparison; source auth, build arguments, commands, replica
+settings, and other server fields are not silently ignored.
 
 ### Source Auth
 
