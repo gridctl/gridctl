@@ -470,6 +470,8 @@ mcp-servers:
   - name: github
     image: ghcr.io/github/github-mcp-server:latest
     transport: stdio
+    volumes:
+      - /path/to/workspace:/workspace:ro
     env:
       GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_PERSONAL_ACCESS_TOKEN}"
 ```
@@ -620,6 +622,7 @@ In the web wizard, the OpenAPI Configuration section's Operations Filter loads t
 | `command` | []string | Conditional | - | Container entrypoint override, local process command, or SSH remote command |
 | `env` | map | No | - | Environment variables |
 | `build_args` | map | No | - | Docker build-time arguments (container servers only) |
+| `volumes` | []string | No | - | Container mounts in `host:container[:mode]` form. The container destination must be a clean absolute path; mode may be `ro` or `rw`. Applies to image and source containers, including static replicas and autoscaled containers |
 | `network` | string | Conditional | - | Network to join (required in advanced network mode) |
 | `ssh` | object | Conditional | - | SSH connection config (see [SSH](#ssh)) |
 | `openapi` | object | Conditional | - | OpenAPI spec config (see [OpenAPI](#openapi)) |
