@@ -80,6 +80,9 @@ func GeneratePythonDockerfile(ctx context.Context, spec PythonBuildSpec) (string
 	if err != nil {
 		return "", err
 	}
+	if spec.Local && (len(extras) > 0 || len(dependencies) > 0) {
+		return "", fmt.Errorf("extras and with dependencies are not supported for local Python projects")
+	}
 	packages, err := normalizeDebianPackages(spec.Packages)
 	if err != nil {
 		return "", err

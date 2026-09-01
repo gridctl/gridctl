@@ -48,6 +48,17 @@ func TestGeneratePythonDockerfile_LocalLockModes(t *testing.T) {
 	}
 }
 
+func TestGeneratePythonDockerfile_LocalRejectsUnsupportedPackageOptions(t *testing.T) {
+	for _, spec := range []PythonBuildSpec{
+		{Python: "3.11", Local: true, Extras: []string{"sse"}},
+		{Python: "3.11", Local: true, With: []string{"httpx>=0.27"}},
+	} {
+		if _, err := GeneratePythonDockerfile(context.Background(), spec); err == nil || !strings.Contains(err.Error(), "not supported for local") {
+			t.Errorf("unsupported local options error = %v", err)
+		}
+	}
+}
+
 func TestGeneratePythonDockerfile_RejectsInjection(t *testing.T) {
 	_, err := GeneratePythonDockerfile(context.Background(), PythonBuildSpec{Python: "3.12", Package: "demo", Version: "1.0", Packages: []string{"curl;id"}})
 	if err == nil {

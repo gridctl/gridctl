@@ -86,14 +86,14 @@ func (r *PyPIResolver) Resolve(ctx context.Context, project, version, explicitPy
 		return nil, fmt.Errorf("PyPI version must be an exact published PEP 440 version")
 	}
 
-	endpoint := strings.TrimRight(r.baseURL, "/") + "/" + url.PathEscape(project) + "/json"
+	baseEndpoint := strings.TrimRight(r.baseURL, "/") + "/" + url.PathEscape(project)
 	var payload struct {
 		Info struct {
 			Name           string `json:"name"`
 			Version        string `json:"version"`
 			RequiresPython string `json:"requires_python"`
 		} `json:"info"`
-		Releases map[string][]struct {
+		URLs []struct {
 			Filename       string `json:"filename"`
 			Packagetype    string `json:"packagetype"`
 			URL            string `json:"url"`
@@ -103,15 +103,35 @@ func (r *PyPIResolver) Resolve(ctx context.Context, project, version, explicitPy
 			Digests        struct {
 				SHA256 string `json:"sha256"`
 			} `json:"digests"`
-		} `json:"releases"`
+		} `json:"urls"`
 	}
-	status, err := r.getJSON(ctx, endpoint, &payload)
+	status, err := r.getJSON(ctx, baseEndpoint+"/"+url.PathEscape(version)+"/json", &payload)
 	if err != nil {
 		return nil, err
 	}
 	if status == http.StatusNotFound {
+		var projectPayload struct {
+			Info struct {
+				Name    string `json:"name"`
+				Version string `json:"version"`
+			} `json:"info"`
+		}
+		projectStatus, projectErr := r.getJSON(ctx, baseEndpoint+"/json", &projectPayload)
+		if projectErr != nil {
+			return nil, projectErr
+		}
+		if projectStatus == http.StatusNotFound {
+			//nolint:staticcheck // The public Error Contract requires this punctuation.
+			return nil, fmt.Errorf("No PyPI project named %s.", project)
+		}
+		if projectStatus != http.StatusOK {
+			return nil, fmt.Errorf("PyPI returned HTTP %d for %s", projectStatus, project)
+		}
+		if canonicalDistributionName(projectPayload.Info.Name) != canonicalDistributionName(project) {
+			return nil, fmt.Errorf("PyPI returned project %q for %q", projectPayload.Info.Name, project)
+		}
 		//nolint:staticcheck // The public Error Contract requires this punctuation.
-		return nil, fmt.Errorf("No PyPI project named %s.", project)
+		return nil, fmt.Errorf("%s is not a published version of %s. Latest is %s.", version, projectPayload.Info.Name, projectPayload.Info.Version)
 	}
 	if status != http.StatusOK {
 		return nil, fmt.Errorf("PyPI returned HTTP %d for %s", status, project)
@@ -119,14 +139,12 @@ func (r *PyPIResolver) Resolve(ctx context.Context, project, version, explicitPy
 	if canonicalDistributionName(payload.Info.Name) != canonicalDistributionName(project) {
 		return nil, fmt.Errorf("PyPI returned project %q for %q", payload.Info.Name, project)
 	}
-	files, ok := payload.Releases[version]
-	if !ok || len(files) == 0 {
-		//nolint:staticcheck // The public Error Contract requires this punctuation.
-		return nil, fmt.Errorf("%s is not a published version of %s. Latest is %s.", version, payload.Info.Name, payload.Info.Version)
+	if payload.Info.Version != version {
+		return nil, fmt.Errorf("PyPI returned version %q for %s==%s", payload.Info.Version, payload.Info.Name, version)
 	}
-	allYanked := true
-	artifacts := make([]PyPIArtifact, 0, len(files))
-	for _, file := range files {
+	allYanked := len(payload.URLs) > 0
+	artifacts := make([]PyPIArtifact, 0, len(payload.URLs))
+	for _, file := range payload.URLs {
 		if file.Yanked {
 			continue
 		}
@@ -166,6 +184,13 @@ func (r *PyPIResolver) Resolve(ctx context.Context, project, version, explicitPy
 		}
 		if canonicalDistributionName(metadata.Name) != canonicalDistributionName(payload.Info.Name) || metadata.Version != version {
 			return nil, fmt.Errorf("wheel metadata identity does not match %s==%s", payload.Info.Name, version)
+		}
+		if metadata.RequiresPython != "" {
+			requiresPython = metadata.RequiresPython
+			python, err = SelectPythonVersion(requiresPython, explicitPython)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	return &PyPIRelease{Package: payload.Info.Name, Version: version, RequiresPython: requiresPython, Python: python, Artifact: artifact, Metadata: metadata}, nil
@@ -287,15 +312,12 @@ func InspectWheelMetadata(ctx context.Context, data []byte) (PythonPackageMetada
 			return PythonPackageMetadata{}, err
 		}
 		clean := path.Clean(file.Name)
+		base := path.Base(clean)
+		if !strings.Contains(clean, ".dist-info/") || base != "METADATA" && base != "entry_points.txt" {
+			continue
+		}
 		if clean != file.Name || strings.HasPrefix(clean, "../") || file.UncompressedSize64 > 1<<20 {
 			return PythonPackageMetadata{}, fmt.Errorf("unsafe wheel metadata path or size: %s", file.Name)
-		}
-		if !strings.Contains(clean, ".dist-info/") {
-			continue
-		}
-		base := path.Base(clean)
-		if base != "METADATA" && base != "entry_points.txt" {
-			continue
 		}
 		rc, err := file.Open()
 		if err != nil {
@@ -308,6 +330,9 @@ func InspectWheelMetadata(ctx context.Context, data []byte) (PythonPackageMetada
 		}
 		if closeErr != nil {
 			return PythonPackageMetadata{}, closeErr
+		}
+		if len(content) > 1<<20 {
+			return PythonPackageMetadata{}, fmt.Errorf("wheel metadata exceeds %d bytes: %s", 1<<20, file.Name)
 		}
 		if base == "METADATA" {
 			metadataFiles++
