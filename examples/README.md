@@ -15,6 +15,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | [🎯 getting-started/](getting-started/) | Basic examples to get up and running |
 | [🔌 transports/](transports/) | MCP transport types: local process, SSH, HTTP, SSE, and external-server auth |
 | [📦 platforms/](platforms/) | Third-party MCP servers: remote OAuth endpoints, containers, and host processes |
+| [Python sources](python-sources/) | Generate Python containers from exact PyPI releases or packaged source projects |
 | [🔗 openapi/](openapi/) | Turn REST APIs into MCP tools via OpenAPI specs |
 | [🔐 access-control/](access-control/) | Tool filtering and per-client scoping |
 | [⚡ code-mode/](code-mode/) | Reduce context window with search + execute meta-tools |
@@ -35,9 +36,10 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 2. **Real MCP servers**: `transports/local-mcp.yaml` - actual MCP server logic via stdio transport
 3. **Platforms**: `platforms/github-mcp.yaml` - third-party MCP servers
 4. **OpenAPI**: `openapi/openapi-basic.yaml` - turn any REST API into MCP tools
-5. **Registry**: `registry/registry-basic.yaml` - Skills as MCP prompts (imports also discover agents)
-6. **Packs**: `portable-pack/` - one manifest importing skills, agents, and rules as a unit
-7. **Scaling**: `autoscale/autoscale-basic.yaml` - reactive autoscaling of MCP replicas
+5. **Python sources**: `python-sources/pypi.yaml` - build an exact package into a container
+6. **Registry**: `registry/registry-basic.yaml` - Skills as MCP prompts (imports also discover agents)
+7. **Packs**: `portable-pack/` - one manifest importing skills, agents, and rules as a unit
+8. **Scaling**: `autoscale/autoscale-basic.yaml` - reactive autoscaling of MCP replicas
 
 > **Note:** Getting-started examples use placeholder containers to focus on infrastructure concepts.
 > Transport and platform examples include real MCP server implementations.
@@ -56,6 +58,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | chrome-devtools-mcp | stdio (host process) | Browser automation via npx |
 | context7-mcp | stdio (host process) | Library docs via npx |
 | github-mcp | stdio (container) | Official containerized platform server |
+| pypi | stdio (generated container) | Exact public PyPI release, automatic console command, pinned Python/uv bases |
 | zapier-mcp | http (remote URL) | Hosted platform server with OAuth brokering |
 | openapi-basic | openapi | REST API as MCP tools, operation filtering |
 | openapi-auth | openapi | Bearer, header, query, OAuth2, basic auth, and mTLS |

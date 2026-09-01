@@ -478,7 +478,7 @@ mcp-servers:
 
 ### Container Server (source)
 
-Builds and runs an MCP server from source code.
+Builds and runs an MCP server from a Dockerfile or a generated Python build.
 
 ```yaml
 mcp-servers:
@@ -490,6 +490,22 @@ mcp-servers:
       dockerfile: Dockerfile
     port: 8080
 ```
+
+For an exact public PyPI release, gridctl can generate a digest-pinned,
+non-root Python image without a Dockerfile:
+
+```yaml
+mcp-servers:
+  - name: fetch
+    source:
+      type: pypi
+      package: mcp-server-fetch
+      ref: 0.6.0
+```
+
+`type: pypi` implies `runtime: python`, and generated Python servers default to
+stdio. See [`examples/python-sources/`](../examples/python-sources/) for a
+copy-paste stack.
 
 ### External URL Server
 
@@ -618,7 +634,7 @@ In the web wizard, the OpenAPI Configuration section's Operations Filter loads t
 | `source` | object | Conditional | - | Build from source (see [Source](#source)) |
 | `url` | string | Conditional | - | External server URL |
 | `port` | int | Conditional | - | Container port for HTTP/SSE transport. Required for non-stdio container servers |
-| `transport` | string | No | `"http"` | Transport mode: `"http"`, `"stdio"`, or `"sse"` |
+| `transport` | string | No | `"http"` | Transport mode: `"http"`, `"stdio"`, or `"sse"`. Generated Python sources default to `"stdio"` |
 | `command` | []string | Conditional | - | Container entrypoint override, local process command, or SSH remote command |
 | `env` | map | No | - | Environment variables |
 | `build_args` | map | No | - | Docker build-time arguments (container servers only) |
@@ -658,12 +674,47 @@ Build configuration for container images from source code.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `type` | string | **Yes** | - | Source type: `"git"` or `"local"` |
-| `url` | string | Conditional | - | Git repository URL (required for `git`, not allowed for `local`) |
-| `ref` | string | No | `"main"` | Git ref - branch, tag, or commit (git sources only) |
-| `path` | string | Conditional | - | Local path (required for `local`, not allowed for `git`). Relative paths are resolved from the stack file |
-| `dockerfile` | string | No | `"Dockerfile"` | Dockerfile path relative to source root |
-| `auth` | object | No | - | Authentication block for private git repositories (see [Source Auth](#source-auth)) |
+| `type` | string | **Yes** | - | Source type: `"git"`, `"local"`, or `"pypi"` |
+| `url` | string | Conditional | - | Git repository URL (required for `git`). PyPI always uses the official public index and rejects this field |
+| `ref` | string | Conditional | `"main"` for git | Git branch, tag, or commit. For PyPI, required and must be an exact published PEP 440 version; `latest` and ranges are rejected |
+| `path` | string | Conditional | - | Local source root (required for `local`, resolved from the stack file). For git sources with `runtime: python`, a clean checkout-relative source or project subdirectory |
+| `project_path` | string | No | - | Clean relative Python project subdirectory below a local source root. Valid only for local sources with `runtime: python`, and used when gridctl generates the Dockerfile |
+| `dockerfile` | string | No | - | Explicit Dockerfile path relative to the effective source root. Omission selects generated Python when `runtime: python`; otherwise legacy Dockerfile discovery checks `Dockerfile`, `dockerfile`, then `Containerfile` |
+| `runtime` | string | No | - | Set to `"python"` to generate a Python image when `dockerfile` is omitted. Implied for `type: pypi`; no other value is accepted |
+| `package` | string | Conditional | - | Public PyPI distribution name, required and valid only for `type: pypi` |
+| `python` | string | No | compatible version | Python minor version: `3.10`, `3.11`, `3.12`, or `3.13`. Omission selects the lowest compatible version, or `3.12` when metadata has no usable constraint |
+| `extras` | []string | No | - | Normalized Python extras to install, such as `[http, cli]` |
+| `with` | []string | No | - | Additional validated PEP 508 dependency specifiers passed to uv |
+| `packages` | []string | No | - | Conservative Debian package names installed with `apt-get`; values are sorted and deduplicated |
+| `auth` | object | No | - | Authentication block for private git repositories (see [Source Auth](#source-auth)). Not accepted for PyPI |
+
+Generated git and local builds require static package metadata in
+`pyproject.toml` or `setup.py`; gridctl reads the files as data and never
+imports project code on the host. Git `path` and local `project_path` must stay
+inside their source roots and may not traverse through an escaping symlink.
+The selected project is copied into a gridctl-owned temporary build context,
+so generation does not modify the checkout or local source tree.
+
+Command selection uses the server-level `command` first. Without an explicit
+command, gridctl selects the package's only console script, or the one whose
+normalized name matches the package. Zero or ambiguous scripts fail before the
+image build and ask for an explicit command. A PyPI release whose selected
+metadata artifact does not expose console scripts likewise needs `command`.
+
+Generated Dockerfiles use digest-pinned Python slim and Astral uv images and
+run as a dedicated non-root user. PyPI installs use the exact `package==ref`.
+Git and local projects use `uv sync --locked --no-dev --no-editable` when an
+`uv.lock` exists; without one, uv installs the local package and transitive
+dependencies are not locked. Host Python and uv are not required.
+
+Before generation, gridctl normalizes, sorts, and deduplicates extras,
+additional dependencies, and Debian packages. Invalid values fail validation
+before any Dockerfile instruction is generated.
+
+An explicitly non-empty `dockerfile` always selects the custom Dockerfile path,
+even when `runtime: python` is present. A default-named Dockerfile merely
+appearing in the source tree does not override generated Python. Python-only
+installation fields apply to generated builds, not custom Dockerfiles.
 
 Before building a Git source, gridctl fetches current remote refs, resolves the
 configured branch, tag, or commit to a full commit SHA, and checks out that
@@ -671,14 +722,15 @@ commit in an isolated builder worktree. Concurrent source builds therefore do
 not mutate one another or the skill-import cache.
 
 Resolved build plans mark branch refs as mutable while recording the immutable
-commit used by the build. Git and local Dockerfile builds receive
+commit used by the build. Git, local, and PyPI builds receive
 content-addressed image tags rather than `latest`. The tag contains a readable
 source pin plus a short digest of the effective build inputs. The digest covers
-the selected source content and Dockerfile, build arguments, server command,
-and target platform, so changing any of those inputs produces a different
-image identity. Stack planning and hot reload use the same complete effective
-MCP-server comparison; source auth, build arguments, commands, replica
-settings, and other server fields are not silently ignored.
+the selected source or artifact identity, Dockerfile, Python selection,
+build arguments, server command, and target platform, so changing an
+output-affecting input produces a different image identity. Stack planning and
+hot reload use the same complete effective MCP-server comparison; Python
+options, source auth, build arguments, commands, replica settings, and other
+server fields are not silently ignored.
 
 Apply resolves and builds one desired source image per logical server before
 checking existing containers or creating replicas. Static replicas and
@@ -686,9 +738,8 @@ autoscaled spawns all use that image. An existing container whose image does
 not match is replaced. Hot reload prepares a changed source before stopping
 the running server, so a resolution or build failure leaves the old workload
 and its applied declaration in place. A later reload retries the unchanged
-desired declaration. Git and local sources still require their configured
-Dockerfile, with `Dockerfile` remaining the default when
-`source.dockerfile` is omitted.
+desired declaration. Existing git and local stacks that omit `runtime` keep
+legacy Dockerfile discovery behavior.
 
 An unchanged source build is reused only when the image tag and its
 `io.gridctl.build-input-digest` label match the resolved plan. Images created

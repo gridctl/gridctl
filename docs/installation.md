@@ -113,7 +113,7 @@ The scan is read-only on client configs; the only file modified is your stack fi
 
 ## Container runtime
 
-Gridctl requires a container runtime for workloads that run in containers (MCP servers with `image` and resources). Docker is detected by default; [Podman](https://podman.io) is also fully supported.
+Gridctl requires a container runtime for workloads that run in containers (MCP servers with `image` or `source`, and resources). Generated Python source builds run entirely through Docker or Podman and do not require host Python or uv. Docker is detected by default; [Podman](https://podman.io) is also fully supported.
 
 ### Runtime detection
 

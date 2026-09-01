@@ -53,14 +53,15 @@ internal/api/       REST handlers backing the web UI (one file per resource: sta
 internal/probe/     Ephemeral MCP tool-list probe for the "add server" wizard (not registered with the gateway).
 pkg/catalog/        MCP server catalog behind `gridctl search` / `gridctl add`: curated embedded entries plus the
                     official MCP Registry, with install-shape mapping into stack.yaml server blocks.
-pkg/config/         stack.yaml schema, loader, variable/env expansion, plan diffing, health-check parsing.
+pkg/config/         stack.yaml schema, defaults and validation, variable/env expansion, plan diffing, health-check parsing.
 pkg/runtime/        Container orchestration. Orchestrator is the WorkloadRuntime + Builder front; it prepares one desired
                     source image per logical MCP server before reconciling replicas. pkg/runtime/docker is the Docker
                     implementation. Runtime auto-detected (docker → podman) unless --runtime is set.
-pkg/builder/        Image building from git or local Dockerfiles, with resolved build plans, isolated Git worktrees,
-                    content-addressed image tags, label-verified cache reuse, and non-secret provenance labels. Also owns
-                    bounded public-PyPI resolution, static Python package/project metadata inspection, supported-interpreter
-                    selection, console-script resolution, and deterministic digest-pinned uv Dockerfile generation APIs.
+pkg/builder/        Image building from git or local Dockerfiles and generated Python builds for exact public PyPI releases
+                    or packaged git/local projects, with resolved build plans, isolated Git worktrees, content-addressed
+                    image tags, label-verified cache reuse, and non-secret provenance labels. Also owns bounded public-PyPI
+                    resolution, static Python package/project metadata inspection, supported-interpreter selection,
+                    console-script resolution, and deterministic digest-pinned uv Dockerfile generation.
 pkg/mcp/            MCP protocol: gateway (router + tool aggregation), stdio/SSE/streamable transports, OpenAPI-as-MCP,
                     autoscaler, code mode sandbox (goja), replica sets, schema pinning hooks.
 pkg/mcpauth/        Downstream OAuth 2.1 brokering for external servers (discovery, dynamic client registration,
@@ -104,7 +105,7 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
                     replicas, transports (incl. Podman), private git auth, optimize heuristics.
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
-                    portable-pack, model-policy). examples/_mock-servers/ is the source for `task mock:servers`.
+                    portable-pack, model-policy, python-sources). examples/_mock-servers/ is the source for `task mock:servers`.
 docs/               User-facing documentation (cli-reference, config-schema, api-reference, skills, packs, tools-workspace,
                     global-context, model-policy, scaling, usage-observability, installation, project-status, troubleshooting).
 ```
