@@ -292,6 +292,12 @@ func (h *Handler) applyMCPServerChanges(ctx context.Context, diff MCPServerDiff,
 	// Handle modified servers (stop old, start new)
 	for _, change := range diff.Modified {
 		h.logger.Info("reloading MCP server", "name", change.Name)
+		desiredImage, err := h.prepareMCPServer(ctx, change.New, newCfg)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("failed to reload %s: %v", change.Name, err))
+			h.gateway.RecordRegistrationFailure(change.Name, err)
+			continue
+		}
 
 		// Unregister from gateway
 		h.gateway.UnregisterMCPServer(change.Name)
@@ -312,7 +318,7 @@ func (h *Handler) applyMCPServerChanges(ctx context.Context, diff MCPServerDiff,
 		}
 
 		// Start new server
-		if err := h.startMCPServer(ctx, change.New, newCfg); err != nil {
+		if err := h.startMCPServer(ctx, change.New, newCfg, desiredImage); err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("failed to reload %s: %v", change.Name, err))
 			// The old server was already unregistered; record the failure so
 			// the server surfaces as failed instead of silently vanishing.
@@ -326,8 +332,14 @@ func (h *Handler) applyMCPServerChanges(ctx context.Context, diff MCPServerDiff,
 	// Add new servers
 	for _, server := range diff.Added {
 		h.logger.Info("adding MCP server", "name", server.Name)
+		desiredImage, err := h.prepareMCPServer(ctx, server, newCfg)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("failed to add %s: %v", server.Name, err))
+			h.gateway.RecordRegistrationFailure(server.Name, err)
+			continue
+		}
 
-		if err := h.startMCPServer(ctx, server, newCfg); err != nil {
+		if err := h.startMCPServer(ctx, server, newCfg, desiredImage); err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("failed to add %s: %v", server.Name, err))
 			h.gateway.RecordRegistrationFailure(server.Name, err)
 			continue
@@ -438,7 +450,17 @@ func (h *Handler) stopAndRemoveContainer(ctx context.Context, containerName stri
 	return rt.Remove(ctx, id)
 }
 
-func (h *Handler) startMCPServer(ctx context.Context, server config.MCPServer, stack *config.Stack) error {
+func (h *Handler) prepareMCPServer(ctx context.Context, server config.MCPServer, stack *config.Stack) (string, error) {
+	if !server.IsContainerBased() {
+		return "", nil
+	}
+	if h.runtime == nil {
+		return "", fmt.Errorf("container runtime unavailable (Docker/Podman not detected); load the stack via 'gridctl apply' instead")
+	}
+	return h.runtime.PrepareMCPServer(ctx, stack.Name, &server, false)
+}
+
+func (h *Handler) startMCPServer(ctx context.Context, server config.MCPServer, stack *config.Stack, desiredImage string) error {
 	replicas := effectiveReplicas(&server)
 
 	// Skip container creation for non-container servers. Still produce N
@@ -458,17 +480,10 @@ func (h *Handler) startMCPServer(ctx context.Context, server config.MCPServer, s
 	if rt == nil {
 		return fmt.Errorf("container runtime unavailable (Docker/Podman not detected); load the stack via 'gridctl apply' instead")
 	}
-
-	// Pull image if needed
-	imageName := server.Image
-	if server.Source != nil {
-		// Source-based servers need to be built - for now, assume image is already built
-		// Full build support during reload would require the Builder interface
-		imageName = fmt.Sprintf("gridctl-%s-%s:latest", stack.Name, server.Name)
-	}
-
-	if err := rt.EnsureImage(ctx, imageName); err != nil {
-		return fmt.Errorf("ensuring image: %w", err)
+	if server.Source == nil {
+		if err := rt.EnsureImage(ctx, desiredImage); err != nil {
+			return fmt.Errorf("ensuring image: %w", err)
+		}
 	}
 
 	// Determine network name
@@ -491,12 +506,13 @@ func (h *Handler) startMCPServer(ctx context.Context, server config.MCPServer, s
 			Name:        workloadName,
 			Stack:       stack.Name,
 			Type:        runtime.WorkloadTypeMCPServer,
-			Image:       imageName,
+			Image:       desiredImage,
 			Command:     server.Command,
 			Env:         server.Env,
 			NetworkName: networkName,
 			ExposedPort: server.Port,
 			HostPort:    hostPort,
+			Volumes:     server.Volumes,
 			Transport:   server.Transport,
 			Labels: map[string]string{
 				"gridctl.managed":    "true",
@@ -518,6 +534,7 @@ func (h *Handler) startMCPServer(ctx context.Context, server config.MCPServer, s
 	}
 
 	if h.registerServer != nil {
+		server.Image = desiredImage
 		return h.registerServer(ctx, server, runtimes, h.stackPath)
 	}
 

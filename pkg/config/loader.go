@@ -265,6 +265,9 @@ func expandStackVarsResolved(s *Stack, resolve referenceResolver) (unresolvedVau
 		for k, v := range srv.BuildArgs {
 			srv.BuildArgs[k] = expandField(site("build_args."+k), v)
 		}
+		for j := range srv.Volumes {
+			srv.Volumes[j] = expandField(site(fmt.Sprintf("volumes[%d]", j)), srv.Volumes[j])
+		}
 
 		if srv.SSH != nil {
 			srv.SSH.Host = expandField(site("ssh.host"), srv.SSH.Host)

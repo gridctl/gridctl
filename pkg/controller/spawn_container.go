@@ -73,7 +73,7 @@ type ContainerSpawnerOptions struct {
 	Stack     string             // stack.Name
 	Server    config.MCPServer   // full server config (command, env, port, etc.)
 	Network   string             // resolved network name
-	Image     string             // pre-built image (source-based workloads pre-tag as gridctl-<stack>-<server>:latest)
+	Image     string             // image prepared before autoscaler registration
 	Transport string             // "http" | "stdio" | "sse"
 	Ports     PortAllocator
 	Logger    *slog.Logger
@@ -124,6 +124,7 @@ func (c *ContainerSpawner) Spawn(ctx context.Context) (mcp.AgentClient, error) {
 		NetworkName: c.network,
 		ExposedPort: c.server.Port,
 		HostPort:    hostPort,
+		Volumes:     c.server.Volumes,
 		Transport:   c.transport,
 		Labels: map[string]string{
 			"gridctl.managed":    "true",

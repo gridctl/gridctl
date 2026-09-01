@@ -115,6 +115,9 @@ func (r *ServerRegistrar) RegisterAll(ctx context.Context, result *runtime.UpRes
 		serverCfg := serverConfigs[server.Name]
 
 		if serverCfg.Autoscale != nil {
+			if server.Image != "" {
+				serverCfg.Image = server.Image
+			}
 			err := r.registerAutoscaled(ctx, serverCfg, stack, stackPath, nextHostPort)
 			if err != nil {
 				r.logger.Warn("failed to register autoscaled MCP server", "name", server.Name, "error", err)
@@ -223,9 +226,6 @@ func (r *ServerRegistrar) registerAutoscaled(ctx context.Context, server config.
 			}
 		}
 		imageName = server.Image
-		if server.Source != nil && stack != nil {
-			imageName = fmt.Sprintf("gridctl-%s-%s:latest", stack.Name, server.Name)
-		}
 		transport := server.Transport
 		if transport == "" {
 			transport = "http"

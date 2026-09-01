@@ -58,6 +58,7 @@ func sourceRefChange() (config.MCPServer, config.MCPServer) {
 	}
 	newServer := oldServer
 	newServer.Source = &config.Source{Type: "git", URL: "https://example.com/source.git", Ref: "commit-b"}
+	newServer.Volumes = []string{"/host/data:/data:ro"}
 	return oldServer, newServer
 }
 
@@ -106,8 +107,6 @@ func TestComputeDiff_SourceRefChangeRestartsServer(t *testing.T) {
 }
 
 func TestHandler_ReloadBuildsChangedSourceBeforeReplacement(t *testing.T) {
-	t.Skip("pending source lifecycle reconciliation during reload")
-
 	rt, builder := runSourceRefReload(t)
 	if len(builder.calls) != 1 {
 		t.Fatalf("Build calls = %d, want 1 before replacement start", len(builder.calls))
@@ -124,24 +123,13 @@ func TestHandler_ReloadBuildsChangedSourceBeforeReplacement(t *testing.T) {
 	if rt.started[0].Image == "gridctl-demo-source:latest" {
 		t.Fatalf("Start used mutable source image %q", rt.started[0].Image)
 	}
+	if len(rt.started[0].Volumes) != 1 || rt.started[0].Volumes[0] != "/host/data:/data:ro" {
+		t.Fatalf("Start volumes = %v, want source server mount", rt.started[0].Volumes)
+	}
 	if len(rt.ensured) != 0 {
 		t.Fatalf("EnsureImage calls = %v, want none for source build", rt.ensured)
 	}
 	if len(rt.stopped) != 1 || len(rt.removed) != 1 {
 		t.Fatalf("replacement did not stop and remove existing container: stopped=%v removed=%v", rt.stopped, rt.removed)
-	}
-}
-
-func TestHandler_CurrentReloadReusesMutableSourceImage(t *testing.T) {
-	rt, builder := runSourceRefReload(t)
-
-	if len(builder.calls) != 0 {
-		t.Fatalf("Build calls = %d, want current stale count 0", len(builder.calls))
-	}
-	if len(rt.ensured) != 1 || rt.ensured[0] != "gridctl-demo-source:latest" {
-		t.Fatalf("EnsureImage calls = %v, want current mutable source image", rt.ensured)
-	}
-	if len(rt.started) != 1 || rt.started[0].Image != "gridctl-demo-source:latest" {
-		t.Fatalf("Start calls = %+v, want current mutable source image", rt.started)
 	}
 }

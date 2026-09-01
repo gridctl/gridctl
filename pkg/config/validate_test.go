@@ -1736,3 +1736,34 @@ func TestValidate_SchemaPinningScanIgnore(t *testing.T) {
 		t.Errorf("expected scan_ignore in error, got %q", err.Error())
 	}
 }
+
+func TestValidate_MCPServerVolumes(t *testing.T) {
+	tests := []struct {
+		name    string
+		server  MCPServer
+		wantErr string
+	}{
+		{name: "bind mount", server: MCPServer{Name: "server", Image: "alpine", Port: 3000, Volumes: []string{"/host/data:/data"}}},
+		{name: "named read only volume", server: MCPServer{Name: "server", Image: "alpine", Port: 3000, Volumes: []string{"data:/data:ro"}}},
+		{name: "missing destination", server: MCPServer{Name: "server", Image: "alpine", Port: 3000, Volumes: []string{"data"}}, wantErr: "host:container[:mode]"},
+		{name: "relative destination", server: MCPServer{Name: "server", Image: "alpine", Port: 3000, Volumes: []string{"data:relative"}}, wantErr: "must be absolute"},
+		{name: "root destination", server: MCPServer{Name: "server", Image: "alpine", Port: 3000, Volumes: []string{"data:/"}}},
+		{name: "unclean destination", server: MCPServer{Name: "server", Image: "alpine", Port: 3000, Volumes: []string{"data:/data/../etc"}}, wantErr: "traversal"},
+		{name: "invalid mode", server: MCPServer{Name: "server", Image: "alpine", Port: 3000, Volumes: []string{"data:/data:shared"}}, wantErr: "mode must be"},
+		{name: "host process", server: MCPServer{Name: "server", Command: []string{"server"}, Volumes: []string{"data:/data"}}, wantErr: "only valid for container-based servers"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := Validate(&Stack{Name: "test", Network: Network{Name: "test-net"}, MCPServers: []MCPServer{tt.server}})
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("Validate error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}

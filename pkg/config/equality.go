@@ -36,6 +36,9 @@ func canonicalizeMCPServer(server *MCPServer) {
 	if len(server.Tools) == 0 {
 		server.Tools = nil
 	}
+	if len(server.Volumes) == 0 {
+		server.Volumes = nil
+	}
 	if server.Auth != nil && len(server.Auth.Scopes) == 0 {
 		copy := *server.Auth
 		copy.Scopes = nil
