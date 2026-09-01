@@ -2,6 +2,7 @@ package builder
 
 import (
 	"log/slog"
+	"net/url"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 )
@@ -38,18 +39,25 @@ type BuildOptions struct {
 
 // SourceIdentity records the declared and immutable identities of a build source.
 type SourceIdentity struct {
-	Type       string `json:"type"`
-	URL        string `json:"url,omitempty"`
-	Ref        string `json:"ref,omitempty"`
-	Path       string `json:"path,omitempty"`
-	Dockerfile string `json:"dockerfile,omitempty"`
-	Commit     string `json:"commit,omitempty"`
+	Type           string `json:"type"`
+	URL            string `json:"url,omitempty"`
+	Ref            string `json:"ref,omitempty"`
+	Path           string `json:"path,omitempty"`
+	Dockerfile     string `json:"dockerfile,omitempty"`
+	Commit         string `json:"commit,omitempty"`
+	Package        string `json:"package,omitempty"`
+	Version        string `json:"version,omitempty"`
+	Artifact       string `json:"artifact,omitempty"`
+	ArtifactSHA256 string `json:"artifactSha256,omitempty"`
 }
 
 // BuildProvenance identifies the inputs used to produce a resolved build plan.
 type BuildProvenance struct {
 	SourceContentDigest string `json:"sourceContentDigest"`
 	TargetPlatform      string `json:"targetPlatform,omitempty"`
+	GeneratorVersion    string `json:"generatorVersion,omitempty"`
+	BaseImage           string `json:"baseImage,omitempty"`
+	UVImage             string `json:"uvImage,omitempty"`
 }
 
 // ResolvedBuildPlan is the immutable input to an image build.
@@ -77,6 +85,51 @@ func (p *ResolvedBuildPlan) Close() error {
 	err := p.cleanup()
 	p.cleanup = nil
 	return err
+}
+
+const (
+	LabelBuildInputDigest = "io.gridctl.build-input-digest"
+	LabelGeneratorVersion = "io.gridctl.generator-version"
+	LabelSourceDigest     = "io.gridctl.source-digest"
+	LabelBaseImage        = "io.gridctl.base-image"
+	LabelUVImage          = "io.gridctl.uv-image"
+)
+
+// ImageLabels returns the non-secret provenance labels for the built image.
+func (p *ResolvedBuildPlan) ImageLabels() map[string]string {
+	labels := map[string]string{
+		LabelBuildInputDigest: p.BuildInputDigest,
+		LabelSourceDigest:     p.Provenance.SourceContentDigest,
+	}
+	if p.Provenance.GeneratorVersion != "" {
+		labels[LabelGeneratorVersion] = p.Provenance.GeneratorVersion
+	}
+	if p.Provenance.BaseImage != "" {
+		labels[LabelBaseImage] = p.Provenance.BaseImage
+	}
+	if p.Provenance.UVImage != "" {
+		labels[LabelUVImage] = p.Provenance.UVImage
+	}
+	if p.DeclaredIdentity.URL != "" {
+		if source := provenanceSourceURL(p.DeclaredIdentity.URL); source != "" {
+			labels["org.opencontainers.image.source"] = source
+		}
+	}
+	if p.ResolvedIdentity.Commit != "" {
+		labels["org.opencontainers.image.revision"] = p.ResolvedIdentity.Commit
+	}
+	return labels
+}
+
+func provenanceSourceURL(value string) string {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme == "" {
+		return ""
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
 }
 
 // BuildResult contains the result of a build operation.
