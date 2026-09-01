@@ -74,7 +74,7 @@ func (m *mockWorkloadRuntime) Close() error                   { return nil }
 type mockBuilder struct{}
 
 func (m *mockBuilder) Build(ctx context.Context, opts runtime.BuildOptions) (*runtime.BuildResult, error) {
-	return &runtime.BuildResult{ImageTag: opts.Tag}, nil
+	return &runtime.BuildResult{ImageTag: "gridctl-test-source:resolved-123456789abc"}, nil
 }
 
 func writeStackFile(t *testing.T, content string) string {
@@ -449,7 +449,6 @@ resources:
 	assertContains(t, result.Added, "resource:redis")
 }
 
-
 func TestHandler_Reload_PartialFailure(t *testing.T) {
 	content := `
 name: test
@@ -734,7 +733,6 @@ resources:
 	}
 	assertContains(t, result.Modified, "resource:postgres")
 }
-
 
 // mockVault implements config.VaultLookup for testing.
 type mockVault struct {
