@@ -36,6 +36,7 @@ func (b *Builder) Resolve(ctx context.Context, opts BuildOptions) (*ResolvedBuil
 	if opts.Logger == nil {
 		opts.Logger = logging.NewDiscardLogger()
 	}
+	logBuildPhase(opts, "resolving_source")
 
 	projectPath := ""
 	if opts.SourceType == "local" {
@@ -64,6 +65,7 @@ func (b *Builder) Resolve(ctx context.Context, opts BuildOptions) (*ResolvedBuil
 		}
 		resolved.Ref = ref
 
+		logBuildPhase(opts, "preparing_context")
 		worktreesDir, err := BuilderWorktreesDir()
 		if err != nil {
 			return nil, fmt.Errorf("getting builder worktree directory: %w", err)
@@ -112,6 +114,7 @@ func (b *Builder) Resolve(ctx context.Context, opts BuildOptions) (*ResolvedBuil
 		if !info.IsDir() {
 			return nil, fmt.Errorf("source path is not a directory: %s", opts.Path)
 		}
+		logBuildPhase(opts, "preparing_context")
 	case "pypi":
 		if b.pypiResolver == nil {
 			return nil, fmt.Errorf("PyPI resolver is not configured")
@@ -125,6 +128,8 @@ func (b *Builder) Resolve(ctx context.Context, opts BuildOptions) (*ResolvedBuil
 			return nil, err
 		}
 		pythonVersion = release.Python
+		logBuildPhase(opts, "preparing_context")
+		logBuildPhase(opts, "generating_dockerfile")
 		generatedDockerfile, err = GeneratePythonDockerfile(ctx, PythonBuildSpec{
 			Python: pythonVersion, Package: release.Package, Version: release.Version,
 			Extras: opts.Extras, With: opts.With, Packages: opts.Packages, Command: command,
@@ -169,6 +174,7 @@ func (b *Builder) Resolve(ctx context.Context, opts BuildOptions) (*ResolvedBuil
 			if err != nil {
 				return nil, closePlanSource(cleanup, err)
 			}
+			logBuildPhase(opts, "generating_dockerfile")
 			generatedDockerfile, err = GeneratePythonDockerfile(ctx, PythonBuildSpec{
 				Python: pythonVersion, Extras: opts.Extras, With: opts.With, Packages: opts.Packages,
 				Command: command, Local: true, Locked: metadata.HasUVLock,
@@ -276,6 +282,10 @@ func (b *Builder) Resolve(ctx context.Context, opts BuildOptions) (*ResolvedBuil
 		Provenance:           provenance,
 		cleanup:              cleanup,
 	}, nil
+}
+
+func logBuildPhase(opts BuildOptions, phase string) {
+	opts.Logger.Info("MCP server build phase", "server", opts.ServerName, "phase", phase)
 }
 
 // GenerateImageTag creates an OCI-compatible tag that cannot alias distinct build inputs.

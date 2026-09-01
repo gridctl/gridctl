@@ -22,6 +22,26 @@ func New(cli dockerclient.DockerClient) *Builder {
 	return &Builder{cli: cli, pypiResolver: NewPyPIResolver(nil)}
 }
 
+// Plan resolves build inputs and checks whether the resulting image is
+// already cached. A nil Docker client leaves Cached false, allowing callers
+// to preview resolution on hosts without a running container runtime.
+func (b *Builder) Plan(ctx context.Context, opts BuildOptions) (*ResolvedBuildPlan, error) {
+	plan, err := b.Resolve(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	if opts.NoCache || b.cli == nil {
+		return plan, nil
+	}
+	cachedID, err := b.cachedImage(ctx, plan)
+	if err != nil {
+		_ = plan.Close()
+		return nil, fmt.Errorf("checking image cache: %w", err)
+	}
+	plan.Cached = cachedID != ""
+	return plan, nil
+}
+
 // Build builds an image from the given options.
 func (b *Builder) Build(ctx context.Context, opts BuildOptions) (*BuildResult, error) {
 	logger := opts.Logger
@@ -41,11 +61,13 @@ func (b *Builder) Build(ctx context.Context, opts BuildOptions) (*BuildResult, e
 			return nil, fmt.Errorf("checking image cache: %w", err)
 		}
 		if cachedID != "" {
+			logger.Info("MCP server build phase", "server", opts.ServerName, "phase", "building_image", "cached", true)
 			return &BuildResult{ImageID: cachedID, ImageTag: plan.ImageTag, Cached: true}, nil
 		}
 	}
 
 	// Build the image
+	logger.Info("MCP server build phase", "server", opts.ServerName, "phase", "building_image", "cached", false)
 	imageID, err := buildImage(ctx, b.cli, plan.EffectiveProjectRoot, plan.Dockerfile, plan.ImageTag, opts.BuildArgs, plan.ImageLabels(), opts.NoCache, logger)
 	if err != nil {
 		return nil, fmt.Errorf("building image: %w", err)

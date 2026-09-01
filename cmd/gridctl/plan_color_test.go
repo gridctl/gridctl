@@ -40,3 +40,19 @@ func TestPrintPlanDiffNoChanges(t *testing.T) {
 		t.Errorf("expected no-changes message, got %q", buf.String())
 	}
 }
+
+func TestPrintPlanBuilds(t *testing.T) {
+	builds := []config.BuildAction{{
+		Server: "fetch", SourceType: "pypi", ImageTag: "gridctl-demo-fetch:0.6.0-a1b2c3d4",
+		ResolvedIdentity: config.BuildIdentity{Package: "mcp-server-fetch", Version: "0.6.0"},
+		CacheState:       "cached", GeneratedDockerfile: "FROM python\n",
+	}}
+	var buf bytes.Buffer
+	printPlanBuilds(&buf, builds, true)
+	out := buf.String()
+	for _, want := range []string{"build pypi:mcp-server-fetch==0.6.0", "cache: cached", "FROM python"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("build output missing %q in %q", want, out)
+		}
+	}
+}

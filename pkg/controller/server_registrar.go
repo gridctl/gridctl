@@ -113,6 +113,7 @@ func (r *ServerRegistrar) RegisterAll(ctx context.Context, result *runtime.UpRes
 
 	for _, server := range result.MCPServers {
 		serverCfg := serverConfigs[server.Name]
+		r.logger.Info("MCP server phase", "server", server.Name, "phase", "connecting_server")
 
 		if serverCfg.Autoscale != nil {
 			if server.Image != "" {
@@ -176,6 +177,7 @@ type ReplicaRuntime struct {
 // slice for the single-replica case).
 func (r *ServerRegistrar) RegisterOne(ctx context.Context, server config.MCPServer, replicas []ReplicaRuntime, stackPath string) (err error) {
 	defer func() { r.recordOutcome(server.Name, err) }()
+	r.logger.Info("MCP server phase", "server", server.Name, "phase", "connecting_server")
 
 	// Autoscaled servers ignore the caller's replica slice — the Spawner
 	// owns provisioning. This path runs for hot-reload adds of autoscaled
