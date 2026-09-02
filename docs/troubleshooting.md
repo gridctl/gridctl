@@ -219,9 +219,11 @@ No PyPI project named <package>.
    `source.python` from 3.10 through 3.13, or provide a custom Dockerfile.
 
 Generated contexts are temporary and do not modify the source tree. Build
-phases are tagged with `server` and `phase` in the gateway daemon log; follow it
-with `gridctl logs [stack] -f`. The `--server <name>` form switches to the
-started container's stdout and stderr instead. When `source.dockerfile` is
+phases and image-build diagnostics are logged at INFO with `server` and `phase`
+fields in the gateway daemon log; follow it with `gridctl logs [stack] -f` and
+filter the structured `server` field when diagnosing one build. The
+`--server <name>` form switches to the started container's stdout and stderr
+instead. When `source.dockerfile` is
 non-empty, the INFO log
 `Found configured Dockerfile; building from it.` confirms that gridctl selected
 the custom Dockerfile instead of generation; a missing configured file fails

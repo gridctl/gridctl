@@ -42,7 +42,7 @@ Plain tables: `status`, `search`, `skill list`, `pins list`, `optimize`, `teleme
 | `gridctl serve` | Start the web UI and API without managing a stack (stackless mode). Flags: `-f` foreground, `-p` port, and the same listen flags as `apply` (`--bind`, `--bind-all`, `--insecure-allow-unauthenticated`). |
 | `gridctl stop` | Stop the stackless gridctl daemon. `--force` is only for orphans: when no state file exists but a gridctl process is still listening on the gateway port, `--force` terminates it; a normal stop never needs the flag. |
 | `gridctl status` | Show running stacks; `-s` / `--stack` filters to one stack, `--replicas` expands to one row per replica, `--json` for machine-readable output. |
-| `gridctl logs [stack]` | Tail the gateway daemon log (`~/.gridctl/logs/<stack>.log`), including source-build phase records tagged with `server` and `phase`. `-f` / `--follow` streams, `-n` / `--tail <N>` picks the line count (default 100), `--server <name>` switches to that containerized MCP server's stdout/stderr instead, and `-s` / `--stack <name>` names the stack explicitly. Stack auto-detected when exactly one is running. |
+| `gridctl logs [stack]` | Tail the gateway daemon log (`~/.gridctl/logs/<stack>.log`), including INFO source-build phases and image-build diagnostics tagged with `server` and `phase` for filtering. `-f` / `--follow` streams, `-n` / `--tail <N>` picks the line count (default 100), `--server <name>` switches to that containerized MCP server's stdout/stderr instead, and `-s` / `--stack <name>` names the stack explicitly. Stack auto-detected when exactly one is running. |
 
 ## Catalog
 

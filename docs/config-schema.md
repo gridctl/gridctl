@@ -763,7 +763,9 @@ Apply and reload emit INFO records with `server` and `phase` fields. Python
 source builds use `resolving_source`, `preparing_context`,
 `generating_dockerfile`, and `building_image`; runtime startup and MCP
 registration use `starting_container` and `connecting_server`. Inspect these
-records in the gateway daemon log with `gridctl logs [stack] -f`.
+records and INFO-level image-build diagnostics in the gateway daemon log with
+`gridctl logs [stack] -f`; each build line carries the server name and
+`building_image` phase so structured log consumers can filter it per server.
 `gridctl logs --server <name>` instead switches to the started container's
 stdout and stderr.
 
