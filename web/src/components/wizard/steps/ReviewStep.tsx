@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   CheckCircle2,
   AlertCircle,
@@ -9,12 +9,14 @@ import {
   Loader2,
   FileCode2,
   Library,
+  ExternalLink,
 } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { Button } from '../../ui/Button';
 import { showToast } from '../../ui/Toast';
-import { validateStackSpec, appendToStack, saveStack, initializeStack, StackAlreadyActiveError } from '../../../lib/api';
+import { validateStackSpec, validateStackResource, appendToStack, saveStack, initializeStack, StackAlreadyActiveError, resolvePythonSource, fetchStatus, type PythonResolution } from '../../../lib/api';
 import type { ValidationIssue } from '../../../types';
+import type { MCPServerFormData } from '../../../lib/yaml-builder';
 
 interface ReviewStepProps {
   yaml: string;
@@ -25,6 +27,7 @@ interface ReviewStepProps {
   // Passed in rather than parsed back out of the YAML, which would have to
   // re-derive a count the generated document deliberately does not carry.
   operationsSummary?: string | null;
+  server?: MCPServerFormData;
 }
 
 export function ReviewStep({
@@ -33,11 +36,29 @@ export function ReviewStep({
   resourceName,
   onDeploy,
   operationsSummary,
+  server,
 }: ReviewStepProps) {
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [validating, setValidating] = useState(true);
   const [copied, setCopied] = useState(false);
   const [deploying, setDeploying] = useState(false);
+  const [resolutionState, setResolutionState] = useState<{
+    key: string;
+    resolution: PythonResolution | null;
+    error: string;
+  }>({ key: '', resolution: null, error: '' });
+  const [buildState, setBuildState] = useState<'idle' | 'waiting' | 'pending' | 'failed' | 'complete'>('idle');
+  const [appendedResourceName, setAppendedResourceName] = useState('');
+  const [deployError, setDeployError] = useState('');
+  const [failurePhase, setFailurePhase] = useState('');
+  const resolutionErrorRef = useRef<HTMLParagraphElement>(null);
+  const pythonSource = server?.source &&
+    (server.source.type === 'pypi' || server.source.runtime === 'python') &&
+    !server.source.dockerfile;
+  const sourceKey = pythonSource && server ? JSON.stringify(server) : '';
+  const currentResolution = resolutionState.key === sourceKey ? resolutionState.resolution : null;
+  const resolutionError = resolutionState.key === sourceKey ? resolutionState.error : '';
+  const resolutionPending = Boolean(sourceKey && resolutionState.key !== sourceKey);
 
   // Flag validation pending when the YAML changes (state adjustment during
   // render, so the spinner commits together with the change). Runs on first
@@ -52,7 +73,9 @@ export function ReviewStep({
   const validate = useCallback(async () => {
     if (!yaml.trim()) return;
     try {
-      const result = await validateStackSpec(yaml);
+      const result = resourceType === 'mcp-server' || resourceType === 'resource'
+        ? await validateStackResource(yaml, resourceType)
+        : await validateStackSpec(yaml);
       setIssues(result.issues || []);
     } catch {
       setIssues([
@@ -61,12 +84,35 @@ export function ReviewStep({
     } finally {
       setValidating(false);
     }
-  }, [yaml]);
+  }, [resourceType, yaml]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- async callback; state is set only after await, not synchronously
     validate();
   }, [validate]);
+
+  useEffect(() => {
+    if (!sourceKey) return;
+    let active = true;
+    resolvePythonSource(JSON.parse(sourceKey) as Record<string, unknown>)
+      .then((result) => {
+        if (!active) return;
+        setResolutionState({ key: sourceKey, resolution: result, error: '' });
+      })
+      .catch((error) => {
+        if (!active) return;
+        setResolutionState({
+          key: sourceKey,
+          resolution: null,
+          error: error instanceof Error ? error.message : 'Source resolution failed',
+        });
+      });
+    return () => { active = false; };
+  }, [sourceKey]);
+
+  useEffect(() => {
+    if (resolutionError || deployError) resolutionErrorRef.current?.focus();
+  }, [resolutionError, deployError]);
 
   const errorCount = issues.filter((i) => i.severity === 'error').length;
   const warningCount = issues.filter((i) => i.severity === 'warning').length;
@@ -100,12 +146,48 @@ export function ReviewStep({
 
   const handleDeploy = async () => {
     setDeploying(true);
+    setBuildState('waiting');
+    setDeployError('');
+    setFailurePhase('');
+    let activePhase = appendedResourceName
+      ? 'Building image, starting container, or connecting server'
+      : 'Updating stack';
     try {
-      const result = await appendToStack(yaml, resourceType);
-      showToast('success', `${result.resourceType} '${result.resourceName}' deployed to stack`);
-      onDeploy?.();
+      let deployedName = appendedResourceName;
+      if (!deployedName) {
+        const result = await appendToStack(yaml, resourceType);
+        if (resourceType !== 'mcp-server') {
+          showToast('success', `${result.resourceType} '${result.resourceName}' added to stack`);
+          onDeploy?.();
+          return;
+        }
+        deployedName = result.resourceName;
+        setAppendedResourceName(deployedName);
+      }
+      activePhase = 'Building image, starting container, or connecting server';
+      for (let attempt = 0; attempt < 300; attempt += 1) {
+        const status = await fetchStatus();
+        const deployed = status['mcp-servers']?.find((item) => item.name === deployedName);
+        if (deployed?.registrationFailed || deployed?.healthy === false) {
+          activePhase = 'Connecting server';
+          throw new Error(deployed.healthError || 'Server registration failed');
+        }
+        if (deployed?.initialized) {
+          showToast('success', `${deployedName} deployed${currentResolution?.cached ? ' with a reused image' : currentResolution ? ' with a built image' : ''}`);
+          setBuildState('complete');
+          onDeploy?.();
+          return;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      }
+      setBuildState('pending');
+      showToast('warning', `${deployedName} was added to the stack; deployment is still in progress`);
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Deploy failed');
+      setBuildState('failed');
+      const message = err instanceof Error ? err.message : 'Deploy failed';
+      setFailurePhase(activePhase);
+      setDeployError(message);
+      showToast('error', message);
     } finally {
       setDeploying(false);
     }
@@ -289,6 +371,55 @@ export function ReviewStep({
         </div>
       </div>
 
+      {pythonSource && (
+        <div className="rounded-xl border border-primary/20 bg-primary/[0.03] p-4 space-y-3" aria-live="polite">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs font-medium text-text-primary">Python container build</span>
+            {resolutionPending && <span className="text-[10px] text-primary">Resolving package/ref...</span>}
+            {buildState === 'waiting' && <span className="text-[10px] text-primary">Building image, starting container, and connecting server...</span>}
+            {buildState === 'pending' && <span className="text-[10px] text-status-pending">Deployment is still in progress</span>}
+            {buildState === 'complete' && <span className="text-[10px] text-status-running">Connected</span>}
+          </div>
+          {(resolutionError || deployError) && (
+            <p ref={resolutionErrorRef} tabIndex={-1} className="text-xs text-status-error focus:outline-none" role="alert">
+              {deployError && failurePhase ? `${failurePhase} failed: ${deployError}` : resolutionError}
+            </p>
+          )}
+          {currentResolution && (
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div><span className="text-text-muted">Declared source</span><div className="font-mono text-text-primary mt-0.5">{currentResolution.declaredIdentity.package ? `${currentResolution.declaredIdentity.package}==${currentResolution.declaredIdentity.version}` : `${currentResolution.declaredIdentity.type}:${currentResolution.declaredIdentity.ref ?? ''}`}</div></div>
+              <div><span className="text-text-muted">Resolved source</span><div className="font-mono text-text-primary mt-0.5 break-all">{currentResolution.resolvedIdentity.commit ?? currentResolution.resolvedIdentity.artifact ?? currentResolution.resolvedIdentity.version}</div></div>
+              <div><span className="text-text-muted">Command</span><div className="font-mono text-text-primary mt-0.5">{(server?.command?.length ? server.command : currentResolution.command)?.join(' ') || 'Detected during resolution'}</div></div>
+              <div><span className="text-text-muted">Python</span><div className="font-mono text-text-primary mt-0.5">{currentResolution.python || 'Selected during resolution'}</div></div>
+              <div><span className="text-text-muted">Transport</span><div className="font-mono text-text-primary mt-0.5">{server?.transport || 'stdio'}</div></div>
+              <div><span className="text-text-muted">Expected image</span><div className="font-mono text-text-primary mt-0.5 break-all">{currentResolution.imageTag}</div></div>
+              {currentResolution.mutableRef && <div className="col-span-2 text-status-pending">This source uses a mutable Git ref. The resolved commit is pinned for this build.</div>}
+              <div className="col-span-2 text-text-muted">{currentResolution.cached ? 'The matching image is already cached and will be reused.' : 'The first apply builds this image. Unchanged later applies reuse it.'}</div>
+            </div>
+          )}
+          <ol className="grid grid-cols-2 gap-1 text-[10px] text-text-muted" aria-label="Build phases">
+            {['Resolving package/ref', 'Cloning/preparing context', 'Generating Dockerfile', 'Building image', 'Starting container', 'Connecting server'].map((phase) => <li key={phase}>{phase}</li>)}
+          </ol>
+          {(buildState === 'waiting' || buildState === 'pending' || buildState === 'failed') && (
+            <a href={`/logs?source=${encodeURIComponent(appendedResourceName || resourceName)}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">View filtered logs <ExternalLink size={11} /></a>
+          )}
+        </div>
+      )}
+
+      {resourceType === 'mcp-server' && (
+        <details className="rounded-xl border border-border/30 bg-background/30">
+          <summary className="cursor-pointer px-4 py-3 text-xs font-medium text-text-secondary">Exact server YAML</summary>
+          <pre className="overflow-x-auto border-t border-border/20 p-4 text-[11px] text-text-secondary"><code>{yaml}</code></pre>
+        </details>
+      )}
+
+      {currentResolution?.generatedFile && (
+        <details className="rounded-xl border border-border/30 bg-background/30">
+          <summary className="cursor-pointer px-4 py-3 text-xs font-medium text-text-secondary">Generated Dockerfile</summary>
+          <pre className="overflow-x-auto border-t border-border/20 p-4 text-[11px] text-text-secondary"><code>{currentResolution.generatedFile.content}</code></pre>
+        </details>
+      )}
+
       {/* Output Actions */}
       <div className="flex items-center gap-3">
         <Button onClick={handleDownload} variant="secondary" size="sm">
@@ -304,7 +435,7 @@ export function ReviewStep({
             variant="primary"
             size="sm"
             onClick={handleSaveAndLoad}
-            disabled={hasErrors || validating || deploying}
+            disabled={hasErrors || validating || deploying || Boolean(pythonSource && (!currentResolution || resolutionError))}
             className="ml-auto"
           >
             {deploying ? <Loader2 size={14} className="animate-spin" /> : <Library size={14} />}
@@ -315,11 +446,11 @@ export function ReviewStep({
             variant="primary"
             size="sm"
             onClick={handleDeploy}
-            disabled={hasErrors || validating || deploying}
+            disabled={hasErrors || validating || deploying || Boolean(pythonSource && (!currentResolution || resolutionError))}
             className="ml-auto"
           >
             {deploying ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />}
-            {deploying ? 'Deploying...' : 'Deploy'}
+            {deploying ? 'Checking...' : appendedResourceName ? 'Check deployment' : 'Deploy'}
           </Button>
         )}
       </div>

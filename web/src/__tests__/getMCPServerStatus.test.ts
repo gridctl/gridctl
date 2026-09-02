@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { getMCPServerStatus } from '../lib/graph/nodes';
+import { createMCPServerNodes, getMCPServerStatus } from '../lib/graph/nodes';
 import type { AutoscaleStatus, MCPServerStatus, ReplicaStatus } from '../types';
 
 function makeServer(overrides: Partial<MCPServerStatus> = {}): MCPServerStatus {
@@ -76,5 +76,21 @@ describe('getMCPServerStatus', () => {
     ],
   ])('%s → %s', (_label, input, expected) => {
     expect(getMCPServerStatus(input)).toBe(expected);
+  });
+});
+
+describe('createMCPServerNodes', () => {
+  it('preserves Python container provenance for the attached sidebar', () => {
+    const server = makeServer({
+      kind: 'Python container',
+      image: 'gridctl-demo-fetch:0.6.0-a1b2c3d4',
+      source: { type: 'pypi', package: 'mcp-server-fetch', version: '0.6.0' },
+    });
+
+    expect(createMCPServerNodes([server])[0].data).toMatchObject({
+      kind: server.kind,
+      image: server.image,
+      source: server.source,
+    });
   });
 });

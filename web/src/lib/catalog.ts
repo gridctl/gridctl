@@ -30,7 +30,32 @@ function inputValue(input: CatalogInput): string {
  * full replacement (unused fields explicitly undefined) so a previously
  * edited form never leaks stale fields into the new selection.
  */
-export function catalogEntryToFormData(entry: CatalogEntry): Partial<MCPServerFormData> {
+export interface CatalogContainerOptions {
+  enabled?: boolean;
+  hostPath?: string;
+  containerPath?: string;
+  readOnly?: boolean;
+  command?: string[];
+}
+
+export function isContainerEligible(entry: CatalogEntry): boolean {
+  if (
+    entry.install.type !== 'command' ||
+    entry.install.transport !== 'stdio' ||
+    entry.install.registry_type !== 'pypi' ||
+    !entry.install.identifier ||
+    !entry.install.version ||
+    entry.install.command?.[0] !== 'uvx'
+  ) {
+    return false;
+  }
+  return !(entry.inputs ?? []).some((input) => input.arg && input.format !== 'filepath');
+}
+
+export function catalogEntryToFormData(
+  entry: CatalogEntry,
+  container: CatalogContainerOptions = {},
+): Partial<MCPServerFormData> {
   const base: Partial<MCPServerFormData> = {
     name: catalogServerName(entry),
     image: undefined,
@@ -55,6 +80,26 @@ export function catalogEntryToFormData(entry: CatalogEntry): Partial<MCPServerFo
     if (value || input.required) env[input.name] = value;
   }
   const envOrUndefined = Object.keys(env).length > 0 ? env : undefined;
+
+  if (container.enabled && isContainerEligible(entry)) {
+    const volume = container.hostPath && container.containerPath
+      ? `${container.hostPath}:${container.containerPath}${container.readOnly === false ? '' : ':ro'}`
+      : undefined;
+    return {
+      ...base,
+      serverType: 'source',
+      source: {
+        type: 'pypi',
+        package: entry.install.identifier,
+        ref: entry.install.version,
+        runtime: 'python',
+      },
+      command: container.command,
+      transport: 'stdio',
+      env: envOrUndefined,
+      volumes: volume ? [volume] : undefined,
+    };
+  }
 
   switch (entry.install.type) {
     case 'image':

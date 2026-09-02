@@ -91,6 +91,83 @@ describe('MCPServerForm', () => {
     render(<MCPServerForm data={defaultData({ serverType: 'source' })} onChange={onChange} />);
     expect(screen.getByText('Git')).toBeInTheDocument();
     expect(screen.getByText('Local')).toBeInTheDocument();
+    expect(screen.getByText('Package')).toBeInTheDocument();
+  });
+
+  it('defaults Package sources to generated Python over stdio', () => {
+    render(<MCPServerForm data={defaultData({ serverType: 'source', transport: 'http' })} onChange={onChange} />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Package' }));
+    expect(onChange).toHaveBeenCalledWith({
+      source: { type: 'pypi', runtime: 'python' },
+      transport: 'stdio',
+    });
+  });
+
+  it('defaults generated Git Python sources to stdio', () => {
+    render(<MCPServerForm data={defaultData({
+      serverType: 'source',
+      transport: 'http',
+      source: { type: 'git', url: 'https://github.com/example/server.git', ref: 'main', dockerfile: 'Dockerfile' },
+    })} onChange={onChange} />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Generated Python' }));
+    expect(onChange).toHaveBeenCalledWith({
+      source: {
+        type: 'git',
+        url: 'https://github.com/example/server.git',
+        ref: 'main',
+        runtime: 'python',
+        dockerfile: undefined,
+      },
+      transport: 'stdio',
+    });
+  });
+
+  it('shows generated Python advanced fields and warns for an omitted Git ref', () => {
+    render(<MCPServerForm data={defaultData({
+      serverType: 'source',
+      source: { type: 'git', url: 'https://github.com/example/server.git', runtime: 'python' },
+    })} onChange={onChange} />);
+    expect(screen.getByText(/ref resembles a mutable branch/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Advanced Python options'));
+    expect(screen.getByLabelText('Python version')).toBeInTheDocument();
+    expect(screen.getByLabelText('Python extras')).toBeInTheDocument();
+    expect(screen.getByLabelText('Python extra dependencies')).toBeInTheDocument();
+    expect(screen.getByLabelText('Python OS packages')).toBeInTheDocument();
+  });
+
+  it('clears hidden Python-only fields when selecting a custom Dockerfile', () => {
+    render(<MCPServerForm data={defaultData({
+      serverType: 'source',
+      transport: 'stdio',
+      source: {
+        type: 'git',
+        url: 'https://github.com/example/server.git',
+        ref: 'main',
+        path: 'packages/server',
+        projectPath: 'stale-local-path',
+        runtime: 'python',
+        python: '3.12',
+        extras: ['cli'],
+        with: ['httpx>=0.27'],
+        packages: ['libpq5'],
+      },
+    })} onChange={onChange} />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Custom Dockerfile' }));
+    expect(onChange).toHaveBeenCalledWith({
+      source: expect.objectContaining({
+        type: 'git',
+        url: 'https://github.com/example/server.git',
+        ref: 'main',
+        runtime: undefined,
+        dockerfile: 'Dockerfile',
+        path: undefined,
+        projectPath: undefined,
+        python: undefined,
+        extras: undefined,
+        with: undefined,
+        packages: undefined,
+      }),
+    });
   });
 
   it('hides port when transport is stdio', () => {
@@ -1284,5 +1361,74 @@ describe('parseYAMLToForm — server type detection', () => {
     const rebuilt = buildYAML({ type: 'mcp-server', data: merged });
     expect(rebuilt).toContain('operations:');
     expect(rebuilt).toContain('- getPetById');
+  });
+
+  it('round-trips every generated Python source field and server command', () => {
+    const original: MCPServerFormData = {
+      name: 'fetch',
+      serverType: 'source',
+      source: {
+        type: 'git',
+        url: 'https://github.com/example/fetch.git',
+        ref: 'main',
+        path: 'packages/server',
+        runtime: 'python',
+        python: '3.12',
+        extras: ['cli', 'speedups'],
+        with: ['httpx>=0.27'],
+        packages: ['libpq5'],
+        auth: { method: 'token', credentialRef: '${var:GIT_TOKEN}' },
+      },
+      command: ['fetch-mcp', '123'],
+      transport: 'stdio',
+      volumes: ['./data:/data:ro'],
+      buildArgs: { MODE: 'release' },
+    };
+
+    const yaml = buildYAML({ type: 'mcp-server', data: original });
+    const parsed = parseYAMLToForm(yaml, 'mcp-server');
+    expect('error' in parsed).toBe(false);
+    if ('error' in parsed) return;
+
+    expect(parsed.data).toMatchObject(original);
+    expect(buildYAML(parsed)).toBe(yaml);
+  });
+
+  it('rejects an expert document that is not a mapping', () => {
+    expect(parseYAMLToForm('- one\n- two\n', 'mcp-server')).toEqual({
+      error: 'YAML must contain a mapping',
+    });
+  });
+
+  it('round-trips PyPI identity and local project paths', () => {
+    const pypi = parseYAMLToForm(`name: fetch
+source:
+  type: pypi
+  package: mcp-server-fetch
+  ref: 0.6.0
+  runtime: python
+transport: stdio
+`, 'mcp-server');
+    expect('error' in pypi).toBe(false);
+    if (!('error' in pypi)) {
+      expect((pypi.data as MCPServerFormData).source).toMatchObject({
+        type: 'pypi',
+        package: 'mcp-server-fetch',
+        ref: '0.6.0',
+        runtime: 'python',
+      });
+    }
+
+    const local = parseYAMLToForm(`name: local
+source:
+  type: local
+  path: ./repo
+  project_path: packages/server
+  runtime: python
+`, 'mcp-server');
+    expect('error' in local).toBe(false);
+    if (!('error' in local)) {
+      expect((local.data as MCPServerFormData).source?.projectPath).toBe('packages/server');
+    }
   });
 });

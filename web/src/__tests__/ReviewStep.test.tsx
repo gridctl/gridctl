@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { ReviewStep } from '../components/wizard/steps/ReviewStep';
-import { saveStack, initializeStack, StackAlreadyActiveError, validateStackSpec } from '../lib/api';
+import { appendToStack, fetchStatus, initializeStack, resolvePythonSource, saveStack, StackAlreadyActiveError, validateStackResource, validateStackSpec } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
 
 vi.mock('../lib/api', async () => {
@@ -18,6 +18,9 @@ vi.mock('../lib/api', async () => {
     saveStack: vi.fn(),
     initializeStack: vi.fn(),
     appendToStack: vi.fn(),
+    fetchStatus: vi.fn(),
+    resolvePythonSource: vi.fn(),
+    validateStackResource: vi.fn(),
     validateStackSpec: vi.fn(),
     StackAlreadyActiveError,
   };
@@ -132,6 +135,7 @@ describe('ReviewStep operations summary', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (validateStackSpec as ReturnType<typeof vi.fn>).mockResolvedValue({ issues: [] });
+    (validateStackResource as ReturnType<typeof vi.fn>).mockResolvedValue({ issues: [] });
   });
 
   function renderWith(operationsSummary?: string | null) {
@@ -158,5 +162,151 @@ describe('ReviewStep operations summary', () => {
   it('omits the row entirely for resources that have no operations filter', () => {
     renderWith(null);
     expect(screen.queryByText('Operations')).not.toBeInTheDocument();
+  });
+});
+
+describe('ReviewStep Python container review', () => {
+  const server = {
+    name: 'fetch',
+    serverType: 'source' as const,
+    source: { type: 'pypi', package: 'mcp-server-fetch', ref: '0.6.0', runtime: 'python' as const },
+    transport: 'stdio',
+  };
+  const resolution = {
+    declaredIdentity: { type: 'pypi', package: 'mcp-server-fetch', version: '0.6.0' },
+    resolvedIdentity: { type: 'pypi', package: 'mcp-server-fetch', version: '0.6.0', artifact: 'fetch.whl' },
+    python: '3.12',
+    command: ['mcp-server-fetch'],
+    buildInputDigest: 'abc',
+    imageTag: 'gridctl-preview-fetch:0.6.0-abc',
+    cached: false,
+    mutableRef: false,
+    generatedFile: { name: '.gridctl.Dockerfile', mediaType: 'text/x-dockerfile', content: 'FROM python@sha256:abc\n' },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (validateStackResource as ReturnType<typeof vi.fn>).mockResolvedValue({ issues: [] });
+    (resolvePythonSource as ReturnType<typeof vi.fn>).mockResolvedValue(resolution);
+  });
+
+  it('shows exact build intent and the backend-generated Dockerfile', async () => {
+    render(
+      <ReviewStep
+        yaml={'name: fetch\nsource:\n  type: pypi\n  package: mcp-server-fetch\n  ref: 0.6.0\n'}
+        resourceType="mcp-server"
+        resourceName="fetch"
+        server={server}
+      />,
+    );
+
+    expect(await screen.findByText('mcp-server-fetch==0.6.0')).toBeInTheDocument();
+    expect(screen.getByText('gridctl-preview-fetch:0.6.0-abc')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Generated Dockerfile'));
+    expect(screen.getByText(/FROM python@sha256:abc/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Deploy' })).not.toBeDisabled();
+  });
+
+  it('waits for registration before reporting deployment success', async () => {
+    const onDeploy = vi.fn();
+    (appendToStack as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: true,
+      resourceType: 'mcp-server',
+      resourceName: 'fetch',
+    });
+    (fetchStatus as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ 'mcp-servers': [] })
+      .mockResolvedValueOnce({ 'mcp-servers': [{ name: 'fetch', initialized: true }] });
+    render(
+      <ReviewStep
+        yaml={'name: fetch\nsource:\n  type: pypi\n  package: mcp-server-fetch\n  ref: 0.6.0\n'}
+        resourceType="mcp-server"
+        resourceName="fetch"
+        server={server}
+        onDeploy={onDeploy}
+      />,
+    );
+
+    const deploy = await screen.findByRole('button', { name: 'Deploy' });
+    await waitFor(() => expect(deploy).not.toBeDisabled());
+    fireEvent.click(deploy);
+
+    await waitFor(() => expect(fetchStatus).toHaveBeenCalledTimes(1));
+    expect(showToast).not.toHaveBeenCalledWith('success', expect.anything());
+    await waitFor(() => expect(onDeploy).toHaveBeenCalledTimes(1), { timeout: 2500 });
+    expect(showToast).toHaveBeenCalledWith('success', 'fetch deployed with a built image');
+  });
+
+  it('polls the appended YAML name instead of the form name', async () => {
+    (appendToStack as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: true,
+      resourceType: 'mcp-server',
+      resourceName: 'fetch-server',
+    });
+    (fetchStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      'mcp-servers': [{ name: 'fetch-server', initialized: true }],
+    });
+    render(
+      <ReviewStep
+        yaml={'name: fetch-server\nsource:\n  type: pypi\n  package: mcp-server-fetch\n  ref: 0.6.0\n'}
+        resourceType="mcp-server"
+        resourceName="fetch"
+        server={server}
+      />,
+    );
+
+    const deploy = await screen.findByRole('button', { name: 'Deploy' });
+    await waitFor(() => expect(deploy).not.toBeDisabled());
+    fireEvent.click(deploy);
+
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('success', 'fetch-server deployed with a built image'));
+    expect(fetchStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries registration polling without appending the server twice', async () => {
+    (appendToStack as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: true,
+      resourceType: 'mcp-server',
+      resourceName: 'fetch',
+    });
+    (fetchStatus as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        'mcp-servers': [{ name: 'fetch', initialized: false, registrationFailed: true, healthError: 'registration failed' }],
+      })
+      .mockResolvedValueOnce({
+        'mcp-servers': [{ name: 'fetch', initialized: true }],
+      });
+    render(
+      <ReviewStep
+        yaml={'name: fetch\nsource:\n  type: pypi\n  package: mcp-server-fetch\n  ref: 0.6.0\n'}
+        resourceType="mcp-server"
+        resourceName="fetch"
+        server={server}
+      />,
+    );
+
+    const deploy = await screen.findByRole('button', { name: 'Deploy' });
+    await waitFor(() => expect(deploy).not.toBeDisabled());
+    fireEvent.click(deploy);
+    const retry = await screen.findByRole('button', { name: 'Check deployment' });
+    fireEvent.click(retry);
+
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('success', 'fetch deployed with a built image'));
+    expect(appendToStack).toHaveBeenCalledTimes(1);
+    expect(fetchStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows the backend mutable-ref warning', async () => {
+    (resolvePythonSource as ReturnType<typeof vi.fn>).mockResolvedValue({ ...resolution, mutableRef: true });
+    render(
+      <ReviewStep
+        yaml={'name: fetch\nsource:\n  type: git\n  url: https://github.com/example/fetch.git\n  runtime: python\n'}
+        resourceType="mcp-server"
+        resourceName="fetch"
+        server={{ ...server, source: { type: 'git', url: 'https://github.com/example/fetch.git', runtime: 'python' } }}
+      />,
+    );
+
+    expect(await screen.findByText(/source uses a mutable Git ref/i)).toBeInTheDocument();
   });
 });

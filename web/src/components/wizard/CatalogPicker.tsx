@@ -14,10 +14,10 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { fetchCatalog, type CatalogEntry } from '../../lib/api';
-import { catalogInstallLabel, catalogServerName } from '../../lib/catalog';
+import { catalogInstallLabel, catalogServerName, isContainerEligible, type CatalogContainerOptions } from '../../lib/catalog';
 
 interface CatalogPickerProps {
-  onSelect: (entry: CatalogEntry) => void;
+  onSelect: (entry: CatalogEntry, container?: CatalogContainerOptions) => void;
 }
 
 const INSTALL_ICONS: Record<string, LucideIcon> = {
@@ -57,6 +57,11 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
   const [registryError, setRegistryError] = useState('');
   const [failed, setFailed] = useState(false);
   const [selectedName, setSelectedName] = useState<string | null>(null);
+  const [runInContainer, setRunInContainer] = useState(false);
+  const [hostPath, setHostPath] = useState('');
+  const [containerPath, setContainerPath] = useState('');
+  const [containerCommand, setContainerCommand] = useState('');
+  const [readOnly, setReadOnly] = useState(true);
   // Generation counter so a slow earlier response never overwrites the
   // results of a newer query.
   const generation = useRef(0);
@@ -85,6 +90,37 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
   }, [query]);
 
   const selected = entries.find((e) => e.name === selectedName);
+  const filepathInput = selected?.inputs?.find((input) => input.format === 'filepath');
+  const commandArguments = containerCommand.trim().split(/\s+/).filter(Boolean);
+  const containerReady = !filepathInput || Boolean(
+    hostPath.trim() &&
+    containerPath.trim() &&
+    commandArguments.includes(containerPath.trim()),
+  );
+
+  const selectEntry = (name: string) => {
+    setSelectedName(name);
+    setRunInContainer(false);
+    setHostPath('');
+    setContainerPath('');
+    setContainerCommand('');
+    setReadOnly(true);
+  };
+
+  const useSelectedEntry = () => {
+    if (!selected) return;
+    if (!runInContainer) {
+      onSelect(selected);
+      return;
+    }
+    onSelect(selected, {
+      enabled: true,
+      hostPath: hostPath.trim() || undefined,
+      containerPath: containerPath.trim() || undefined,
+      readOnly,
+      command: commandArguments.length ? commandArguments : undefined,
+    });
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -139,7 +175,7 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
               return (
                 <button
                   key={entry.name}
-                  onClick={() => setSelectedName(entry.name)}
+                  onClick={() => selectEntry(entry.name)}
                   className={cn(
                     'w-full text-left px-4 py-3 border-b border-border/10 transition-all',
                     isSelected ? 'bg-primary/5 border-l-2 border-l-primary' : 'hover:bg-white/[0.02]',
@@ -201,12 +237,54 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
                     <span className="text-[10px] text-text-secondary">{catalogInstallLabel(selected)}</span>
                   </div>
                   <div className="text-[10px] font-mono text-text-muted break-all">
-                    {selected.install.image || selected.install.url || selected.install.command?.join(' ')}
+                    {runInContainer
+                      ? `${selected.install.identifier}==${selected.install.version}`
+                      : selected.install.image || selected.install.url || selected.install.command?.join(' ')}
                   </div>
                   <div className="text-[10px] text-text-muted">
                     Adds server <span className="font-mono text-text-secondary">{catalogServerName(selected)}</span>
                   </div>
                 </div>
+
+                {isContainerEligible(selected) && (
+                  <div className="rounded-lg bg-primary/[0.04] border border-primary/15 px-3 py-2.5 space-y-2.5">
+                    <label className="flex items-center justify-between gap-3 text-xs text-text-primary">
+                      <span>Run in a container</span>
+                      <input
+                        type="checkbox"
+                        checked={runInContainer}
+                        onChange={(event) => setRunInContainer(event.target.checked)}
+                        className="accent-primary"
+                      />
+                    </label>
+                    <p className="text-[10px] text-text-muted leading-relaxed">
+                      Off uses today&apos;s host uvx command. On builds an isolated Python image on first apply and reuses it while inputs stay unchanged.
+                    </p>
+                    {runInContainer && filepathInput && (
+                      <div className="space-y-2 border-t border-primary/10 pt-2">
+                        <p className="text-[10px] text-status-pending">
+                          This package needs an explicit mount and command path before containerization is available.
+                        </p>
+                        <label className="block text-[10px] text-text-secondary">
+                          Host path
+                          <input value={hostPath} onChange={(event) => setHostPath(event.target.value)} className="mt-1 w-full rounded bg-background/60 border border-border/40 px-2 py-1.5 font-mono" />
+                        </label>
+                        <label className="block text-[10px] text-text-secondary">
+                          Container path
+                          <input value={containerPath} onChange={(event) => setContainerPath(event.target.value)} placeholder="/data" className="mt-1 w-full rounded bg-background/60 border border-border/40 px-2 py-1.5 font-mono" />
+                        </label>
+                        <label className="block text-[10px] text-text-secondary">
+                          Command, including container path
+                          <input value={containerCommand} onChange={(event) => setContainerCommand(event.target.value)} placeholder="server-command /data" className="mt-1 w-full rounded bg-background/60 border border-border/40 px-2 py-1.5 font-mono" />
+                        </label>
+                        <label className="flex items-center gap-2 text-[10px] text-text-secondary">
+                          <input type="checkbox" checked={readOnly} onChange={(event) => setReadOnly(event.target.checked)} className="accent-primary" />
+                          Mount read-only
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Inputs */}
                 {(selected.inputs?.length ?? 0) > 0 && (
@@ -265,11 +343,12 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
                   </p>
                 ) : (
                   <button
-                    onClick={() => onSelect(selected)}
+                    onClick={useSelectedEntry}
+                    disabled={runInContainer && !containerReady}
                     className={cn(
                       'w-full px-3 py-1.5 rounded-lg text-xs font-medium',
                       'bg-primary/20 text-primary hover:bg-primary/30 border border-primary/30',
-                      'transition-all duration-200',
+                      'transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed',
                     )}
                   >
                     Use this server

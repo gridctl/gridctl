@@ -1,3 +1,5 @@
+import { parse as parseYAML } from 'yaml';
+
 // yaml-builder.ts — Form state to YAML serialization
 // Converts structured wizard form data into valid YAML strings.
 // Never includes raw secrets — only ${var:KEY} references.
@@ -21,6 +23,13 @@ export interface MCPServerFormData {
     ref?: string;
     path?: string;
     dockerfile?: string;
+    projectPath?: string;
+    runtime?: 'python';
+    package?: string;
+    python?: string;
+    extras?: string[];
+    with?: string[];
+    packages?: string[];
     // Optional auth block for private git sources. Only accepts a vault
     // reference (no raw tokens) since this block is persisted to YAML.
     auth?: {
@@ -75,6 +84,7 @@ export interface MCPServerFormData {
   // Common
   env?: Record<string, string>;
   buildArgs?: Record<string, string>;
+  volumes?: string[];
   tools?: string[];
   outputFormat?: string;
   network?: string;
@@ -163,7 +173,11 @@ export type WizardFormData =
 function yamlValue(val: string | number | boolean): string {
   if (typeof val === 'number' || typeof val === 'boolean') return String(val);
   if (/^\$\{(vault|var):/.test(val)) return `"${val}"`;
-  if (/[:#{}[\],&*?|>!%@`]/.test(val) || val === '' || val === 'true' || val === 'false') {
+  if (
+    /[:#{}[\],&*?|>!%@`]/.test(val) ||
+    /^(?:null|~|true|false|[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?|[-+]?\.inf|\.nan)$/i.test(val) ||
+    val === ''
+  ) {
     return `"${val.replace(/"/g, '\\"')}"`;
   }
   return val;
@@ -202,9 +216,23 @@ function buildMCPServer(data: MCPServerFormData, indentLevel = 2): string {
         lines.push(`${inner}source:`);
         lines.push(`${inner}  type: ${data.source.type}`);
         if (data.source.url) lines.push(`${inner}  url: ${yamlValue(data.source.url)}`);
-        if (data.source.ref) lines.push(`${inner}  ref: ${data.source.ref}`);
-        if (data.source.path) lines.push(`${inner}  path: ${data.source.path}`);
-        if (data.source.dockerfile) lines.push(`${inner}  dockerfile: ${data.source.dockerfile}`);
+        if (data.source.ref) lines.push(`${inner}  ref: ${yamlValue(data.source.ref)}`);
+        if (data.source.path) lines.push(`${inner}  path: ${yamlValue(data.source.path)}`);
+        if (data.source.projectPath) lines.push(`${inner}  project_path: ${yamlValue(data.source.projectPath)}`);
+        if (data.source.dockerfile) lines.push(`${inner}  dockerfile: ${yamlValue(data.source.dockerfile)}`);
+        if (data.source.runtime) lines.push(`${inner}  runtime: ${data.source.runtime}`);
+        if (data.source.package) lines.push(`${inner}  package: ${yamlValue(data.source.package)}`);
+        if (data.source.python) lines.push(`${inner}  python: ${yamlValue(data.source.python)}`);
+        for (const [key, values] of [
+          ['extras', data.source.extras],
+          ['with', data.source.with],
+          ['packages', data.source.packages],
+        ] as const) {
+          if (values?.length) {
+            lines.push(`${inner}  ${key}:`);
+            lines.push(serializeArray(values, indentLevel + 6));
+          }
+        }
         // Auth block: persisted as a vault reference. The resolver runs
         // server-side at clone time; no raw credentials ever hit YAML.
         if (data.source.auth?.credentialRef) {
@@ -219,6 +247,10 @@ function buildMCPServer(data: MCPServerFormData, indentLevel = 2): string {
       }
       if (data.port) lines.push(`${inner}port: ${data.port}`);
       if (data.transport) lines.push(`${inner}transport: ${data.transport}`);
+      if (data.command?.length) {
+        lines.push(`${inner}command:`);
+        lines.push(serializeArray(data.command, indentLevel + 4));
+      }
       break;
     case 'external':
       if (data.url) lines.push(`${inner}url: ${yamlValue(data.url)}`);
@@ -318,6 +350,10 @@ function buildMCPServer(data: MCPServerFormData, indentLevel = 2): string {
   if (data.buildArgs && Object.keys(data.buildArgs).length > 0) {
     lines.push(`${inner}build_args:`);
     lines.push(serializeMap(data.buildArgs, indentLevel + 4));
+  }
+  if (data.volumes?.length) {
+    lines.push(`${inner}volumes:`);
+    lines.push(serializeArray(data.volumes, indentLevel + 4));
   }
   if (data.tools?.length) {
     lines.push(`${inner}tools:`);
@@ -482,82 +518,57 @@ function buildStack(data: StackFormData): string {
   return lines.join('\n') + '\n';
 }
 
-// Infer the server type from the YAML rather than assuming container.
-// Block headers (openapi:, ssh:, source:, command:) carry no inline value, so
-// the flat parser below never records them — match those against the raw text.
-// Order matters: a source server nests `url:` under `source:`, which the flat
-// parser records as a top-level `url`, so `source:` must be checked first.
-function detectServerType(yaml: string, result: Record<string, unknown>): ServerType {
-  if (/^\s*openapi:\s*$/m.test(yaml)) return 'openapi';
-  if (/^\s*ssh:\s*$/m.test(yaml)) return 'ssh';
-  if (/^\s*source:\s*$/m.test(yaml)) return 'source';
+function detectServerType(result: Record<string, unknown>): ServerType {
+  if (result.openapi) return 'openapi';
+  if (result.ssh) return 'ssh';
+  if (result.source) return 'source';
   if (result.url) return 'external';
-  if (/^\s*command:\s*$/m.test(yaml) && !result.image) return 'local';
+  if (result.command && !result.image) return 'local';
   return 'container';
 }
 
-// Parse YAML string back to form data (best-effort for expert mode)
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function strings(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
+function stringMap(value: unknown): Record<string, string> | undefined {
+  const entries = Object.entries(asRecord(value)).filter((entry): entry is [string, string] => typeof entry[1] === 'string');
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
+// Parse YAML string back to form data. The YAML AST decoder preserves nested
+// source, auth, command, and list data across expert-mode transitions.
 export function parseYAMLToForm(yaml: string, resourceType: ResourceType): WizardFormData | { error: string } {
   try {
-    // Simple line-based YAML parser for the form data we generate
-    // This is best-effort — complex YAML structures may not round-trip perfectly
-    const lines = yaml.split('\n');
-    const result: Record<string, unknown> = {};
-
-    // Collect the `autoscale:` sub-block separately so nested keys (min, max,
-    // target_in_flight, ...) do not collide with top-level keys of the same
-    // name on other resources. Everything else stays flat — a pre-existing
-    // limitation of this best-effort parser.
-    let autoscaleIndent: number | null = null;
-    let autoscaleBlock: Record<string, string> | null = null;
-
-    for (const line of lines) {
-      const match = line.match(/^(\s*)(\w[\w-]*):\s*(.*)/);
-      if (!match) continue;
-      const [, indentStr, key, value] = match;
-      const indent = indentStr.length;
-
-      if (autoscaleBlock !== null && autoscaleIndent !== null) {
-        if (indent > autoscaleIndent) {
-          if (value) autoscaleBlock[key] = value.replace(/^["']|["']$/g, '');
-          continue;
-        }
-        // Outer-level key again — commit the block and resume flat parsing.
-        result.__autoscale = autoscaleBlock;
-        autoscaleBlock = null;
-        autoscaleIndent = null;
-      }
-
-      if (key === 'autoscale') {
-        autoscaleBlock = {};
-        autoscaleIndent = indent;
-        continue;
-      }
-
-      if (value) {
-        result[key] = value.replace(/^["']|["']$/g, '');
-      }
+    const document = parseYAML(yaml);
+    if (!document || typeof document !== 'object' || Array.isArray(document)) {
+      return { error: 'YAML must contain a mapping' };
     }
-    if (autoscaleBlock !== null) {
-      result.__autoscale = autoscaleBlock;
-    }
+    const result = asRecord(document);
 
     // Return minimal parsed data based on type
     switch (resourceType) {
       case 'mcp-server': {
-        const autoRaw = result.__autoscale as Record<string, string> | undefined;
+        const autoRaw = result.autoscale ? asRecord(result.autoscale) : undefined;
         const autoscale: AutoscaleFormData | undefined = autoRaw
           ? {
               min: Number(autoRaw.min ?? 1),
               max: Number(autoRaw.max ?? 5),
               targetInFlight: Number(autoRaw.target_in_flight ?? 10),
-              scaleUpAfter: autoRaw.scale_up_after,
-              scaleDownAfter: autoRaw.scale_down_after,
+              scaleUpAfter: typeof autoRaw.scale_up_after === 'string' ? autoRaw.scale_up_after : undefined,
+              scaleDownAfter: typeof autoRaw.scale_down_after === 'string' ? autoRaw.scale_down_after : undefined,
               warmPool:
                 autoRaw.warm_pool !== undefined && Number(autoRaw.warm_pool) > 0
                   ? Number(autoRaw.warm_pool)
                   : undefined,
-              idleToZero: autoRaw.idle_to_zero === 'true' ? true : undefined,
+              idleToZero: autoRaw.idle_to_zero === true ? true : undefined,
             }
           : undefined;
 
@@ -569,7 +580,7 @@ export function parseYAMLToForm(yaml: string, resourceType: ResourceType): Wizar
             : undefined;
         const data: MCPServerFormData = {
           name: (result.name as string) || '',
-          serverType: detectServerType(yaml, result),
+          serverType: detectServerType(result),
           // autoscale and replicas are mutually exclusive at the backend —
           // don't surface stale replica fields if autoscale is present.
           replicas: autoscale
@@ -580,27 +591,60 @@ export function parseYAMLToForm(yaml: string, resourceType: ResourceType): Wizar
           replicaPolicy: autoscale ? undefined : replicaPolicy,
           autoscale,
         };
-        // Only carry through fields the flat parser actually saw. The caller
-        // merges this over existing form state, so assigning undefined here
-        // would clobber configuration this parser cannot represent.
-        if (result.image) data.image = result.image as string;
-        if (result.transport) data.transport = result.transport as string;
+        if (typeof result.image === 'string') data.image = result.image;
+        if (typeof result.port === 'number') data.port = result.port;
+        if (typeof result.transport === 'string') data.transport = result.transport;
+        if (typeof result.url === 'string') data.url = result.url;
+        data.command = strings(result.command);
+        data.env = stringMap(result.env);
+        data.buildArgs = stringMap(result.build_args);
+        data.volumes = strings(result.volumes);
+        data.tools = strings(result.tools);
+        if (typeof result.output_format === 'string') data.outputFormat = result.output_format;
+        if (typeof result.network === 'string') data.network = result.network;
+        if (typeof result.pin_schemas === 'boolean') data.pinSchemas = result.pin_schemas;
+
+        if (result.source) {
+          const source = asRecord(result.source);
+          const auth = asRecord(source.auth);
+          data.source = {
+            type: typeof source.type === 'string' ? source.type : 'git',
+            url: typeof source.url === 'string' ? source.url : undefined,
+            ref: typeof source.ref === 'string' ? source.ref : undefined,
+            path: typeof source.path === 'string' ? source.path : undefined,
+            projectPath: typeof source.project_path === 'string' ? source.project_path : undefined,
+            dockerfile: typeof source.dockerfile === 'string' ? source.dockerfile : undefined,
+            runtime: source.runtime === 'python' ? 'python' : undefined,
+            package: typeof source.package === 'string' ? source.package : undefined,
+            python: typeof source.python === 'string' ? source.python : undefined,
+            extras: strings(source.extras),
+            with: strings(source.with),
+            packages: strings(source.packages),
+            auth: typeof auth.credential_ref === 'string'
+              ? { method: auth.method === 'token' ? 'token' : undefined, credentialRef: auth.credential_ref }
+              : undefined,
+          };
+        }
         return { type: 'mcp-server', data };
       }
       case 'resource':
         return {
           type: 'resource',
           data: {
-            name: (result.name as string) || '',
-            image: (result.image as string) || '',
+            name: typeof result.name === 'string' ? result.name : '',
+            image: typeof result.image === 'string' ? result.image : '',
+            env: stringMap(result.env),
+            ports: strings(result.ports),
+            volumes: strings(result.volumes),
+            network: typeof result.network === 'string' ? result.network : undefined,
           },
         };
       case 'stack':
         return {
           type: 'stack',
           data: {
-            name: (result.name as string) || '',
-            version: (result.version as string) || '1',
+            name: typeof result.name === 'string' ? result.name : '',
+            version: typeof result.version === 'string' || typeof result.version === 'number' ? String(result.version) : '1',
           },
         };
       default:

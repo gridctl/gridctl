@@ -44,8 +44,14 @@ const templatesByType: Record<string, Template[]> = {
     {
       id: 'from-source',
       name: 'Build from Source',
-      description: 'Build from a Git repository',
+      description: 'Build from a Git repository or local path with a custom Dockerfile',
       preview: 'name: my-server\nsource:\n  type: git',
+    },
+    {
+      id: 'python-package',
+      name: 'Python Package',
+      description: 'Build an exact PyPI release into an isolated container',
+      preview: 'source:\n  type: pypi\n  package: my-server',
     },
   ],
   stack: [

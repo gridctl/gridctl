@@ -210,7 +210,9 @@ Learn more → [Configuration Reference](docs/config-schema.md)
 Build an exact public PyPI release, or a packaged Python project from git or a
 local directory, without maintaining a Dockerfile. Generated images use pinned
 Python and uv bases, run as a non-root user, and keep existing host `uvx`
-workflows unchanged.
+workflows unchanged. In the web UI, choose the Python Package template or the
+Generated Python source strategy; eligible catalog packages also offer a
+`Run in a container` toggle that is off by default.
 
 ```yaml
 mcp-servers:

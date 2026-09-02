@@ -25,7 +25,7 @@ import { useStackStore } from '../../stores/useStackStore';
 import { useRegistryStore } from '../../stores/useRegistryStore';
 import { buildYAML, parseYAMLToForm, type ResourceType, type WizardFormData, type MCPServerFormData } from '../../lib/yaml-builder';
 import { formatOperationsSummary } from '../../lib/openapiOperations';
-import { catalogEntryToFormData } from '../../lib/catalog';
+import { catalogEntryToFormData, type CatalogContainerOptions } from '../../lib/catalog';
 import type { CatalogEntry } from '../../lib/api';
 import { TemplateGrid } from './TemplateGrid';
 import { CatalogPicker } from './CatalogPicker';
@@ -203,7 +203,8 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
     'container-stdio':{ serverType: 'container', transport: 'stdio' },
     'external-url':   { serverType: 'external',  transport: 'sse' },
     'local-process':  { serverType: 'local',     transport: 'stdio' },
-    'from-source':    { serverType: 'source',    transport: 'http' },
+    'from-source':    { serverType: 'source',    transport: 'http', source: { type: 'git', dockerfile: 'Dockerfile' } },
+    'python-package': { serverType: 'source',    transport: 'stdio', source: { type: 'pypi', runtime: 'python' } },
   };
 
   const handleTemplateSelect = useCallback((templateId: string | null) => {
@@ -216,8 +217,8 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
   // Catalog entries pre-fill the mcp-server form through the same
   // updateFormData mechanism templates use, so the form, YAML preview,
   // and review step work unchanged.
-  const handleCatalogSelect = useCallback((entry: CatalogEntry) => {
-    updateFormData('mcp-server', catalogEntryToFormData(entry) as Record<string, unknown>);
+  const handleCatalogSelect = useCallback((entry: CatalogEntry, container?: CatalogContainerOptions) => {
+    updateFormData('mcp-server', catalogEntryToFormData(entry, container) as Record<string, unknown>);
     setSelectedTemplate(`catalog:${entry.name}`);
   }, [updateFormData, setSelectedTemplate]);
 
@@ -547,7 +548,7 @@ function renderStepContent(
   generatedYaml: string,
   counts: Record<ResourceType, number>,
   onDeploy: () => void,
-  onCatalogSelect: (entry: CatalogEntry) => void,
+  onCatalogSelect: (entry: CatalogEntry, container?: CatalogContainerOptions) => void,
   operationsSummary: string | null,
 ) {
   switch (step) {
@@ -601,9 +602,17 @@ function renderStepContent(
           }
           onDeploy={onDeploy}
           operationsSummary={operationsSummary}
+          server={selectedType === 'mcp-server'
+            ? reviewServerData(expertMode ? yamlContent : generatedYaml, formData['mcp-server'])
+            : undefined}
         />
       );
   }
+}
+
+function reviewServerData(yaml: string, fallback: MCPServerFormData): MCPServerFormData {
+  const parsed = parseYAMLToForm(yaml, 'mcp-server');
+  return 'error' in parsed ? fallback : parsed.data as MCPServerFormData;
 }
 
 // MCP-server template step: local templates or the server catalog
@@ -615,7 +624,7 @@ function MCPTemplateStep({
 }: {
   selected: string | null;
   onTemplateSelect: (id: string | null) => void;
-  onCatalogSelect: (entry: CatalogEntry) => void;
+  onCatalogSelect: (entry: CatalogEntry, container?: CatalogContainerOptions) => void;
 }) {
   const [mode, setMode] = useState<'templates' | 'catalog'>('templates');
 
@@ -824,9 +833,8 @@ function ExpertEditor({
       <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-background/40 border border-border/40 text-text-muted text-[11px]">
         <AlertCircle size={12} className="mt-0.5 shrink-0" />
         <span>
-          Edits to nested configuration — spec, auth, TLS, and operation filters — may not
-          carry back to the form view when you switch out of YAML mode. Deploy from here to
-          keep them.
+          Python source fields, commands, mounts, and common settings return to the form when
+          you leave YAML mode. Other nested settings may remain YAML-only.
         </span>
       </div>
       <textarea

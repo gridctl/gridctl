@@ -774,6 +774,26 @@ not accept private indexes, custom package CAs, unpackaged scripts, or guessed
 `python -m` commands. Use an explicit Dockerfile for those cases and for native
 dependencies that cannot be satisfied through declared `source.packages`.
 
+The web create-server wizard includes a Python Package template and exposes
+generated Python as an explicit source strategy for Git and local sources.
+Package version choices come from the bounded backend resolver, and the
+Advanced disclosure contains Python, extras, additional dependencies, and OS
+packages. Expert YAML mode preserves the complete Python source block, source
+credentials reference, server command, and mounts when returning to the form.
+Review uses the backend build plan to show the exact pin, resolved identity,
+command, Python version, expected image, cache expectation, and generated
+Dockerfile before writing the server.
+
+Catalog entries retain host `uvx` behavior by default. Confirmed exact PyPI
+entries offer a `Run in a container` toggle. A catalog input marked as a file
+path requires an explicit host path, container path, mount mode, and command
+that uses the container path before the wizard enables selection. After the
+wizard appends a server to the active stack, review polls registration for up
+to five minutes. It reports unresolved deployment as pending rather than
+success and links to server-filtered logs for detailed build phases. Attached
+and detached server sidebars both show `Python container`, the declared package
+or Git pin, resolved artifact or commit, and the actual versioned image.
+
 ### Source Auth
 
 Declares how gridctl authenticates when cloning a private git repository at build time. Raw tokens must **never** appear in `stack.yaml` - use `credential_ref` to point at a variable-store key, which is resolved against the live store on every clone.
