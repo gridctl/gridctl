@@ -247,6 +247,29 @@ func TestOrchestrator_Up_MultipleServers(t *testing.T) {
 	}
 }
 
+func TestOrchestrator_Up_StdioDoesNotAllocateHostPort(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockRT, tracker := setupDefaultRuntime(ctrl)
+	orch := NewOrchestrator(mockRT, &MockBuilder{})
+
+	result, err := orch.Up(context.Background(), &config.Stack{
+		Name:    "test-topo",
+		Network: config.Network{Name: "test-net", Driver: "bridge"},
+		MCPServers: []config.MCPServer{{
+			Name: "python", Source: &config.Source{Type: "pypi", Package: "demo", Ref: "1.0"}, Transport: "stdio",
+		}},
+	}, UpOptions{BasePort: 9000})
+	if err != nil {
+		t.Fatalf("Up() error = %v", err)
+	}
+	if got := tracker.startedWorkloads[0].HostPort; got != 0 {
+		t.Fatalf("stdio workload host port = %d, want 0", got)
+	}
+	if got := result.MCPServers[0].HostPort; got != 0 {
+		t.Fatalf("stdio result host port = %d, want 0", got)
+	}
+}
+
 func TestOrchestrator_Up_WithResources(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockRT, tracker := setupDefaultRuntime(ctrl)
