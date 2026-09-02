@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   Container,
   GitBranch,
@@ -23,6 +23,7 @@ import { VariablesPopover } from '../VariablesPopover';
 import { TransportAdvisor } from '../TransportAdvisor';
 import { ToolsPicker } from './ToolsPicker';
 import { OperationsPicker } from './OperationsPicker';
+import { fetchPythonPackageVersions } from '../../../lib/api';
 
 // --- Server type definitions ---
 
@@ -48,7 +49,7 @@ const SERVER_TYPES: ServerTypeOption[] = [
     type: 'source',
     icon: GitBranch,
     label: 'Source',
-    description: 'Build from a Git repository or local path',
+    description: 'Build from a Git repository, local path, or Python package',
     transportDefault: 'http',
   },
   {
@@ -129,7 +130,7 @@ function getFieldVisibility(serverType: ServerType): FieldVisibility {
     case 'container':
       return { image: true, port: true, transport: true, command: true, source: false, url: false, ssh: false, openapi: false, buildArgs: false, network: true, replicas: true, autoscale: true };
     case 'source':
-      return { image: false, port: true, transport: true, command: false, source: true, url: false, ssh: false, openapi: false, buildArgs: true, network: true, replicas: true, autoscale: true };
+      return { image: false, port: true, transport: true, command: true, source: true, url: false, ssh: false, openapi: false, buildArgs: true, network: true, replicas: true, autoscale: true };
     case 'external':
       return { image: false, port: false, transport: true, command: false, source: false, url: true, ssh: false, openapi: false, buildArgs: false, network: false, replicas: false, autoscale: false };
     case 'local':
@@ -425,6 +426,174 @@ function CommandArrayBuilder({
   );
 }
 
+function splitValues(value: string): string[] | undefined {
+  const values = value.split(',').map((item) => item.trim()).filter(Boolean);
+  return values.length ? values : undefined;
+}
+
+function PythonSourceFields({
+  data,
+  onChange,
+  errors,
+}: MCPServerFormProps) {
+  const source = data.source ?? { type: 'git' };
+  const [versionResult, setVersionResult] = useState<{
+    project: string;
+    versions: string[];
+    error: string;
+    loading: boolean;
+  }>({ project: '', versions: [], error: '', loading: false });
+  const generated = source.type === 'pypi' || (source.runtime === 'python' && !source.dockerfile);
+  const project = source.type === 'pypi' ? source.package?.trim() ?? '' : '';
+  const currentVersionResult = versionResult.project === project ? versionResult : undefined;
+
+  useEffect(() => {
+    if (!project) return;
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      setVersionResult({ project, versions: [], error: '', loading: true });
+      try {
+        const result = await fetchPythonPackageVersions(project);
+        if (!active) return;
+        setVersionResult({ project, versions: result.versions, error: '', loading: false });
+        if (!source.ref && result.latest) {
+          onChange({ source: { ...source, ref: result.latest } });
+        }
+      } catch (error) {
+        if (active) setVersionResult({
+          project,
+          versions: [],
+          error: error instanceof Error ? error.message : 'Could not resolve package versions',
+          loading: false,
+        });
+      }
+    }, 350);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [project, source.ref]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const updateSource = (patch: Partial<NonNullable<MCPServerFormData['source']>>) => {
+    onChange({ source: { ...source, ...patch } as MCPServerFormData['source'] });
+  };
+
+  return (
+    <div className="space-y-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+      <div>
+        <label className={labelClass}>Source Type</label>
+        <div className="flex gap-2" role="radiogroup" aria-label="Source type">
+          {[
+            ['git', 'Git'],
+            ['local', 'Local'],
+            ['pypi', 'Package'],
+          ].map(([type, label]) => (
+            <button
+              key={type}
+              type="button"
+              role="radio"
+              aria-checked={source.type === type}
+              onClick={() => onChange({
+                source: {
+                  type,
+                  runtime: type === 'pypi' ? 'python' : source.runtime,
+                } as MCPServerFormData['source'],
+                transport: type === 'pypi' ? 'stdio' : data.transport,
+              })}
+              className={cn(
+                'px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
+                source.type === type ? 'bg-primary/10 border-primary/30 text-primary' : 'border-white/[0.06] text-text-muted',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {source.type === 'pypi' ? (
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label htmlFor="python-package" className={labelClass}>Project name <span className="text-status-error">*</span></label>
+            <input id="python-package" value={source.package ?? ''} onChange={(event) => updateSource({ package: event.target.value })} placeholder="mcp-server-fetch" className={cn(inputClass, 'font-mono')} />
+            <FieldError error={errors?.['source.package']} />
+          </div>
+          <div>
+            <label htmlFor="python-version" className={labelClass}>Exact version <span className="text-status-error">*</span></label>
+            <input id="python-version" value={source.ref ?? ''} onChange={(event) => updateSource({ ref: event.target.value })} list="python-package-versions" placeholder={!currentVersionResult || currentVersionResult.loading ? 'Resolving...' : '1.0.0'} className={cn(inputClass, 'font-mono')} />
+            <datalist id="python-package-versions">{currentVersionResult?.versions.map((version) => <option key={version} value={version} />)}</datalist>
+            <FieldError error={errors?.['source.ref'] ?? currentVersionResult?.error} />
+          </div>
+        </div>
+      ) : (
+        <>
+          {source.type === 'git' ? (
+            <>
+              <div>
+                <label htmlFor="source-url" className={labelClass}>Repository URL <span className="text-status-error">*</span></label>
+                <input id="source-url" type="url" value={source.url ?? ''} onChange={(event) => updateSource({ url: event.target.value })} placeholder="https://github.com/org/repo.git" className={cn(inputClass, errors?.['source.url'] && 'border-status-error/50')} />
+                <FieldError error={errors?.['source.url']} />
+              </div>
+              <div>
+                <label htmlFor="source-ref" className={labelClass}>Ref</label>
+                <input id="source-ref" value={source.ref ?? ''} onChange={(event) => updateSource({ ref: event.target.value })} placeholder="main" className={cn(inputClass, 'font-mono')} />
+                {source.ref && !/^[0-9a-f]{40}$/i.test(source.ref) && <p className="text-[10px] text-status-pending mt-1">This ref resembles a mutable branch. Review will show the resolved commit.</p>}
+              </div>
+              <SourceAuthField value={source.auth?.credentialRef} onChange={(credentialRef) => updateSource({ auth: credentialRef ? { method: 'token', credentialRef } : undefined })} />
+            </>
+          ) : (
+            <div>
+              <label htmlFor="source-path" className={labelClass}>Local root <span className="text-status-error">*</span></label>
+              <input id="source-path" value={source.path ?? ''} onChange={(event) => updateSource({ path: event.target.value })} placeholder="./path/to/server" className={cn(inputClass, 'font-mono')} />
+              <FieldError error={errors?.['source.path']} />
+            </div>
+          )}
+
+          <div>
+            <label className={labelClass}>Build strategy</label>
+            <div className="flex gap-2" role="radiogroup" aria-label="Build strategy">
+              <button type="button" role="radio" aria-checked={!generated} onClick={() => updateSource({ runtime: undefined, dockerfile: source.dockerfile || 'Dockerfile' })} className={cn('px-3 py-1.5 rounded-lg text-xs border', !generated ? 'border-primary/30 text-primary' : 'border-white/[0.06] text-text-muted')}>Custom Dockerfile</button>
+              <button type="button" role="radio" aria-checked={generated} onClick={() => updateSource({ runtime: 'python', dockerfile: undefined })} className={cn('px-3 py-1.5 rounded-lg text-xs border', generated ? 'border-primary/30 text-primary' : 'border-white/[0.06] text-text-muted')}>Generated Python</button>
+            </div>
+          </div>
+          <div className={cn('grid gap-2', generated && 'grid-cols-2')}>
+            {generated && <div>
+              <label htmlFor="project-path" className={labelClass}>Project subdirectory</label>
+              <input
+                id="project-path"
+                value={(source.type === 'git' ? source.path : source.projectPath) ?? ''}
+                onChange={(event) => updateSource(source.type === 'git'
+                  ? { path: event.target.value, projectPath: undefined }
+                  : { projectPath: event.target.value })}
+                placeholder="packages/server"
+                className={cn(inputClass, 'font-mono')}
+              />
+            </div>}
+            <div>
+              <label htmlFor="source-dockerfile" className={labelClass}>Dockerfile</label>
+              <input id="source-dockerfile" value={source.dockerfile ?? ''} onChange={(event) => updateSource({ dockerfile: event.target.value || undefined, runtime: event.target.value ? undefined : 'python' })} placeholder={generated ? 'Empty uses generated Python' : 'Dockerfile'} className={cn(inputClass, 'font-mono')} />
+            </div>
+          </div>
+        </>
+      )}
+
+      {generated && (
+        <details className="rounded-lg border border-border/30 px-3 py-2">
+          <summary className="cursor-pointer text-xs text-text-secondary">Advanced Python options</summary>
+          <div className="grid grid-cols-2 gap-2 pt-3">
+            <label className={labelClass}>Python version<input aria-label="Python version" value={source.python ?? ''} onChange={(event) => updateSource({ python: event.target.value })} placeholder="3.12" className={cn(inputClass, 'mt-1 font-mono')} /></label>
+            <label className={labelClass}>Extras<input aria-label="Python extras" value={source.extras?.join(', ') ?? ''} onChange={(event) => updateSource({ extras: splitValues(event.target.value) })} placeholder="cli, speedups" className={cn(inputClass, 'mt-1 font-mono')} /></label>
+            <label className={labelClass}>Extra dependencies<input aria-label="Python extra dependencies" value={source.with?.join(', ') ?? ''} onChange={(event) => updateSource({ with: splitValues(event.target.value) })} placeholder="httpx>=0.27" className={cn(inputClass, 'mt-1 font-mono')} /></label>
+            <label className={labelClass}>OS packages<input aria-label="Python OS packages" value={source.packages?.join(', ') ?? ''} onChange={(event) => updateSource({ packages: splitValues(event.target.value) })} placeholder="libpq5" className={cn(inputClass, 'mt-1 font-mono')} /></label>
+          </div>
+        </details>
+      )}
+
+      {generated && <p className="text-[10px] text-text-muted">The first apply builds an image. Later applies reuse it while all build inputs stay unchanged.</p>}
+    </div>
+  );
+}
+
 // --- Main MCPServerForm ---
 
 interface MCPServerFormProps {
@@ -596,124 +765,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
 
           {/* Source config */}
           {visibility.source && (
-            <div className="space-y-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
-              <div>
-                <label className={labelClass}>Source Type</label>
-                <div className="flex gap-2">
-                  {['git', 'local'].map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() =>
-                        onChange({
-                          source: {
-                            ...data.source,
-                            type: t,
-                            url: t === 'git' ? (data.source?.url ?? '') : undefined,
-                            path: t === 'local' ? (data.source?.path ?? '') : undefined,
-                          } as MCPServerFormData['source'],
-                        })
-                      }
-                      className={cn(
-                        'px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 border',
-                        (data.source?.type ?? 'git') === t
-                          ? 'bg-primary/10 border-primary/30 text-primary'
-                          : 'bg-white/[0.02] border-white/[0.06] text-text-muted hover:text-text-secondary',
-                      )}
-                    >
-                      {t === 'git' ? 'Git' : 'Local'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {(data.source?.type ?? 'git') === 'git' ? (
-                <>
-                  <div>
-                    <label className={labelClass}>
-                      Repository URL <span className="text-status-error">*</span>
-                    </label>
-                    <input
-                      type="url"
-                      value={data.source?.url ?? ''}
-                      onChange={(e) =>
-                        onChange({ source: { ...data.source, type: 'git', url: e.target.value } as MCPServerFormData['source'] })
-                      }
-                      placeholder="https://github.com/org/repo.git"
-                      className={cn(inputClass, errors?.['source.url'] && 'border-status-error/50')}
-                    />
-                    <FieldError error={errors?.['source.url']} />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className={labelClass}>Ref</label>
-                      <input
-                        type="text"
-                        value={data.source?.ref ?? ''}
-                        onChange={(e) =>
-                          onChange({ source: { ...data.source, type: 'git', ref: e.target.value } as MCPServerFormData['source'] })
-                        }
-                        placeholder="main"
-                        className={cn(inputClass, 'font-mono')}
-                      />
-                    </div>
-                    <div>
-                      <label className={labelClass}>Dockerfile</label>
-                      <input
-                        type="text"
-                        value={data.source?.dockerfile ?? ''}
-                        onChange={(e) =>
-                          onChange({ source: { ...data.source, type: 'git', dockerfile: e.target.value } as MCPServerFormData['source'] })
-                        }
-                        placeholder="Dockerfile"
-                        className={cn(inputClass, 'font-mono')}
-                      />
-                    </div>
-                  </div>
-                  <SourceAuthField
-                    value={data.source?.auth?.credentialRef}
-                    onChange={(credentialRef) =>
-                      onChange({
-                        source: {
-                          ...data.source,
-                          type: 'git',
-                          auth: credentialRef
-                            ? { method: 'token', credentialRef }
-                            : undefined,
-                        } as MCPServerFormData['source'],
-                      })
-                    }
-                  />
-                </>
-              ) : (
-                <div>
-                  <label className={labelClass}>
-                    Local Path <span className="text-status-error">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={data.source?.path ?? ''}
-                    onChange={(e) =>
-                      onChange({ source: { ...data.source, type: 'local', path: e.target.value } as MCPServerFormData['source'] })
-                    }
-                    placeholder="./path/to/server"
-                    className={cn(inputClass, 'font-mono', errors?.['source.path'] && 'border-status-error/50')}
-                  />
-                  <FieldError error={errors?.['source.path']} />
-                  <div className="mt-2">
-                    <label className={labelClass}>Dockerfile</label>
-                    <input
-                      type="text"
-                      value={data.source?.dockerfile ?? ''}
-                      onChange={(e) =>
-                        onChange({ source: { ...data.source, type: 'local', dockerfile: e.target.value } as MCPServerFormData['source'] })
-                      }
-                      placeholder="Dockerfile"
-                      className={cn(inputClass, 'font-mono')}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
+            <PythonSourceFields data={data} onChange={onChange} errors={errors} />
           )}
 
           {/* SSH config */}
@@ -1371,6 +1423,20 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
           </div>
         )}
 
+        {(data.serverType === 'container' || data.serverType === 'source') && (
+          <div>
+            <label htmlFor="server-volumes" className={labelClass}>Volumes</label>
+            <input
+              id="server-volumes"
+              value={data.volumes?.join(', ') ?? ''}
+              onChange={(event) => onChange({ volumes: splitValues(event.target.value) })}
+              placeholder="./data:/data:ro"
+              className={cn(inputClass, 'font-mono')}
+            />
+            <p className="text-[10px] text-text-muted mt-1">Comma-separated host:container[:mode] mounts</p>
+          </div>
+        )}
+
         <div>
           <label className={labelClass}>Schema Pinning</label>
           <select
@@ -1898,4 +1964,3 @@ function SourceAuthField({
     </div>
   );
 }
-

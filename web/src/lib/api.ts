@@ -1313,6 +1313,13 @@ export async function validateStackSpec(yamlContent: string): Promise<Validation
   return response.json();
 }
 
+export async function validateStackResource(
+  yaml: string,
+  resourceType: 'mcp-server' | 'resource',
+): Promise<ValidationResult> {
+  return mutateJSON<ValidationResult>('/api/stack/resource/validate', 'POST', { yaml, resourceType });
+}
+
 /**
  * Append a resource to the current stack.yaml
  * POST /api/stack/append
@@ -1545,6 +1552,9 @@ export interface CatalogInstall {
   url?: string;
   auth_type?: string;
   auth_header?: string;
+  registry_type?: string;
+  identifier?: string;
+  version?: string;
 }
 
 export interface CatalogEntry {
@@ -1580,6 +1590,63 @@ export async function fetchCatalog(query = '', source = 'all'): Promise<CatalogR
   if (source !== 'all') params.set('source', source);
   const qs = params.toString();
   return fetchJSON<CatalogResponse>(`/api/catalog${qs ? `?${qs}` : ''}`);
+}
+
+export interface PythonSourceIdentity {
+  type: string;
+  url?: string;
+  ref?: string;
+  path?: string;
+  projectPath?: string;
+  dockerfile?: string;
+  commit?: string;
+  package?: string;
+  version?: string;
+  artifact?: string;
+  artifactSha256?: string;
+}
+
+export interface PythonGeneratedFile {
+  name: string;
+  mediaType: string;
+  content: string;
+}
+
+export interface PythonResolution {
+  declaredIdentity: PythonSourceIdentity;
+  resolvedIdentity: PythonSourceIdentity;
+  python?: string;
+  command?: string[];
+  buildInputDigest: string;
+  imageTag: string;
+  cached: boolean;
+  mutableRef: boolean;
+  generatedFile?: PythonGeneratedFile;
+}
+
+export interface PythonPackageVersions {
+  package: string;
+  latest: string;
+  versions: string[];
+}
+
+export async function fetchPythonPackageVersions(project: string): Promise<PythonPackageVersions> {
+  const endpoint = `/api/python/packages/${encodeURIComponent(project)}/versions`;
+  const response = await fetch(`${API_BASE}${endpoint}`, { headers: buildHeaders() });
+  if (response.status === 401) throw new AuthError('Authentication required');
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new HTTPError(response.status, data.error || `GET ${endpoint} failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function resolvePythonSource(
+  server: Record<string, unknown>,
+  stackName = 'preview',
+): Promise<PythonResolution> {
+  const { serverType: _serverType, ...requestServer } = server;
+  return mutateJSON<PythonResolution>('/api/python/resolve', 'POST', { stackName, server: requestServer });
 }
 
 // === Wizard Draft API ===

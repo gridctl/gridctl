@@ -1285,4 +1285,73 @@ describe('parseYAMLToForm — server type detection', () => {
     expect(rebuilt).toContain('operations:');
     expect(rebuilt).toContain('- getPetById');
   });
+
+  it('round-trips every generated Python source field and server command', () => {
+    const original: MCPServerFormData = {
+      name: 'fetch',
+      serverType: 'source',
+      source: {
+        type: 'git',
+        url: 'https://github.com/example/fetch.git',
+        ref: 'main',
+        path: 'packages/server',
+        runtime: 'python',
+        python: '3.12',
+        extras: ['cli', 'speedups'],
+        with: ['httpx>=0.27'],
+        packages: ['libpq5'],
+        auth: { method: 'token', credentialRef: '${var:GIT_TOKEN}' },
+      },
+      command: ['fetch-mcp', '123'],
+      transport: 'stdio',
+      volumes: ['./data:/data:ro'],
+      buildArgs: { MODE: 'release' },
+    };
+
+    const yaml = buildYAML({ type: 'mcp-server', data: original });
+    const parsed = parseYAMLToForm(yaml, 'mcp-server');
+    expect('error' in parsed).toBe(false);
+    if ('error' in parsed) return;
+
+    expect(parsed.data).toMatchObject(original);
+    expect(buildYAML(parsed)).toBe(yaml);
+  });
+
+  it('rejects an expert document that is not a mapping', () => {
+    expect(parseYAMLToForm('- one\n- two\n', 'mcp-server')).toEqual({
+      error: 'YAML must contain a mapping',
+    });
+  });
+
+  it('round-trips PyPI identity and local project paths', () => {
+    const pypi = parseYAMLToForm(`name: fetch
+source:
+  type: pypi
+  package: mcp-server-fetch
+  ref: 0.6.0
+  runtime: python
+transport: stdio
+`, 'mcp-server');
+    expect('error' in pypi).toBe(false);
+    if (!('error' in pypi)) {
+      expect((pypi.data as MCPServerFormData).source).toMatchObject({
+        type: 'pypi',
+        package: 'mcp-server-fetch',
+        ref: '0.6.0',
+        runtime: 'python',
+      });
+    }
+
+    const local = parseYAMLToForm(`name: local
+source:
+  type: local
+  path: ./repo
+  project_path: packages/server
+  runtime: python
+`, 'mcp-server');
+    expect('error' in local).toBe(false);
+    if (!('error' in local)) {
+      expect((local.data as MCPServerFormData).source?.projectPath).toBe('packages/server');
+    }
+  });
 });

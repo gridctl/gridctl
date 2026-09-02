@@ -3,7 +3,7 @@ import '@testing-library/jest-dom';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { CatalogPicker } from '../components/wizard/CatalogPicker';
 import { fetchCatalog, type CatalogEntry, type CatalogResponse } from '../lib/api';
-import { catalogEntryToFormData, catalogServerName } from '../lib/catalog';
+import { catalogEntryToFormData, catalogServerName, isContainerEligible } from '../lib/catalog';
 
 vi.mock('../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api');
@@ -39,6 +39,21 @@ const unsupportedEntry: CatalogEntry = {
   status: 'active',
   install: { type: 'command', transport: 'stdio' },
   unsupported: 'mcpb',
+};
+
+const pypiEntry: CatalogEntry = {
+  name: 'io.example/fetch',
+  description: 'Fetch URLs',
+  tier: 'registry',
+  status: 'active',
+  install: {
+    type: 'command',
+    transport: 'stdio',
+    command: ['uvx', 'mcp-server-fetch==0.6.0'],
+    registry_type: 'pypi',
+    identifier: 'mcp-server-fetch',
+    version: '0.6.0',
+  },
 };
 
 function respond(servers: CatalogEntry[], extra: Partial<CatalogResponse> = {}): CatalogResponse {
@@ -105,6 +120,51 @@ describe('CatalogPicker', () => {
     fireEvent.click(await screen.findByText('io.example/desktop-ext'));
     expect(screen.queryByText('Use this server')).not.toBeInTheDocument();
     expect(screen.getByText(/Unsupported package type \(mcpb\)/)).toBeInTheDocument();
+  });
+
+  it('offers an off-by-default container toggle only for exact PyPI entries', async () => {
+    mockFetchCatalog.mockResolvedValue(respond([pypiEntry, registryEntry]));
+    const onSelect = vi.fn();
+    render(<CatalogPicker onSelect={onSelect} />);
+
+    fireEvent.click(await screen.findByText('io.example/fetch'));
+    const toggle = screen.getByRole('checkbox', { name: 'Run in a container' });
+    expect(toggle).not.toBeChecked();
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByText('Use this server'));
+
+    expect(onSelect).toHaveBeenCalledWith(pypiEntry, { enabled: true, readOnly: true });
+
+    fireEvent.click(screen.getByText('io.example/weather'));
+    expect(screen.queryByRole('checkbox', { name: 'Run in a container' })).not.toBeInTheDocument();
+  });
+
+  it('requires a mount and explicit command for a filepath package', async () => {
+    const filepathEntry = {
+      ...pypiEntry,
+      inputs: [{ name: 'ROOT', arg: true, format: 'filepath', required: true }],
+    };
+    mockFetchCatalog.mockResolvedValue(respond([filepathEntry]));
+    const onSelect = vi.fn();
+    render(<CatalogPicker onSelect={onSelect} />);
+
+    fireEvent.click(await screen.findByText('io.example/fetch'));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Run in a container' }));
+    expect(screen.getByText('Use this server')).toBeDisabled();
+
+    fireEvent.change(screen.getByText('Host path').querySelector('input')!, { target: { value: './data' } });
+    fireEvent.change(screen.getByPlaceholderText('/data'), { target: { value: '/data' } });
+    fireEvent.change(screen.getByPlaceholderText('server-command /data'), { target: { value: 'fetch /data' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Mount read-only' }));
+    fireEvent.click(screen.getByText('Use this server'));
+
+    expect(onSelect).toHaveBeenCalledWith(filepathEntry, {
+      enabled: true,
+      hostPath: './data',
+      containerPath: '/data',
+      readOnly: false,
+      command: ['fetch', '/data'],
+    });
   });
 });
 
@@ -181,5 +241,26 @@ describe('catalogEntryToFormData', () => {
     expect(data).toHaveProperty('image', undefined);
     expect(data).toHaveProperty('url', undefined);
     expect(data).toHaveProperty('auth', undefined);
+  });
+
+  it('maps an eligible PyPI entry to an exact container source', () => {
+    expect(isContainerEligible(pypiEntry)).toBe(true);
+    expect(catalogEntryToFormData(pypiEntry, { enabled: true })).toMatchObject({
+      serverType: 'source',
+      source: {
+        type: 'pypi',
+        package: 'mcp-server-fetch',
+        ref: '0.6.0',
+        runtime: 'python',
+      },
+      transport: 'stdio',
+    });
+  });
+
+  it('requires explicit mapping for non-file positional arguments', () => {
+    expect(isContainerEligible({
+      ...pypiEntry,
+      inputs: [{ name: 'MODE', arg: true, format: 'string' }],
+    })).toBe(false);
   });
 });

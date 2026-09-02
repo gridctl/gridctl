@@ -16,6 +16,7 @@ describe('MCP server template selection pre-populates form data', () => {
     { templateId: 'from-source',     serverType: 'source',    transport: 'http' },
     { templateId: 'container-stdio', serverType: 'container', transport: 'stdio' },
     { templateId: 'container-http',  serverType: 'container', transport: 'http' },
+    { templateId: 'python-package',  serverType: 'source',    transport: 'stdio' },
   ];
 
   it.each(cases)(
@@ -24,13 +25,14 @@ describe('MCP server template selection pre-populates form data', () => {
       const { updateFormData, setSelectedTemplate } = useWizardStore.getState();
 
       // Simulate what handleTemplateSelect does in CreationWizard
-      const mapping: Record<string, { serverType: string; transport?: string }> = {
+      const mapping: Record<string, { serverType: string; transport?: string; source?: { type: string; runtime?: string; dockerfile?: string } }> = {
         'blank':          { serverType: 'container' },
         'container-http': { serverType: 'container', transport: 'http' },
         'container-stdio':{ serverType: 'container', transport: 'stdio' },
         'external-url':   { serverType: 'external',  transport: 'sse' },
         'local-process':  { serverType: 'local',     transport: 'stdio' },
-        'from-source':    { serverType: 'source',    transport: 'http' },
+        'from-source':    { serverType: 'source',    transport: 'http', source: { type: 'git', dockerfile: 'Dockerfile' } },
+        'python-package': { serverType: 'source',    transport: 'stdio', source: { type: 'pypi', runtime: 'python' } },
       };
       updateFormData('mcp-server', mapping[templateId] as Record<string, unknown>);
       setSelectedTemplate(templateId);
