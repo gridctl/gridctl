@@ -102,6 +102,9 @@ const (
 	LabelSourceDigest     = "io.gridctl.source-digest"
 	LabelBaseImage        = "io.gridctl.base-image"
 	LabelUVImage          = "io.gridctl.uv-image"
+	LabelSourcePackage    = "io.gridctl.source-package"
+	LabelSourceVersion    = "io.gridctl.source-version"
+	LabelSourceArtifact   = "io.gridctl.source-artifact"
 )
 
 // ImageLabels returns the non-secret provenance labels for the built image.
@@ -126,6 +129,15 @@ func (p *ResolvedBuildPlan) ImageLabels() map[string]string {
 	}
 	if p.ResolvedIdentity.Commit != "" {
 		labels["org.opencontainers.image.revision"] = p.ResolvedIdentity.Commit
+	}
+	if p.ResolvedIdentity.Package != "" {
+		labels[LabelSourcePackage] = p.ResolvedIdentity.Package
+	}
+	if p.ResolvedIdentity.Version != "" {
+		labels[LabelSourceVersion] = p.ResolvedIdentity.Version
+	}
+	if p.ResolvedIdentity.Artifact != "" {
+		labels[LabelSourceArtifact] = p.ResolvedIdentity.Artifact
 	}
 	return labels
 }

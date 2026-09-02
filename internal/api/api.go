@@ -15,6 +15,7 @@ import (
 	"github.com/gridctl/gridctl/internal/openapipreview"
 	"github.com/gridctl/gridctl/internal/probe"
 	"github.com/gridctl/gridctl/pkg/agentsync"
+	"github.com/gridctl/gridctl/pkg/builder"
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/contexts"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
@@ -161,6 +162,8 @@ type Server struct {
 	resetTokenStore resetTokens
 	resetRunning    atomic.Bool
 	resetExit       func(int)
+
+	pythonSources pythonSourcePlanner
 }
 
 // SetWiringManager injects the wiring ownership manager. Tests use it
@@ -189,12 +192,14 @@ func NewServer(gateway *mcp.Gateway, staticFS fs.FS) *Server {
 		streamableServer: mcp.NewStreamableHTTPServer(gateway, nil),
 		sseServer:        mcp.NewSSEServer(gateway),
 		staticFS:         staticFS,
+		pythonSources:    builder.New(nil),
 	}
 }
 
 // SetDockerClient sets the Docker client for container operations.
 func (s *Server) SetDockerClient(cli dockerclient.DockerClient) {
 	s.dockerClient = cli
+	s.pythonSources = builder.New(cli)
 }
 
 // SetStackName sets the stack name for container lookups.
@@ -497,6 +502,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Stack spec endpoints
 	mux.HandleFunc("POST /api/stack/validate", s.handleStackValidate)
+	mux.HandleFunc("POST /api/stack/resource/validate", s.handleStackResourceValidate)
 	mux.HandleFunc("GET /api/stack/plan", s.handleStackPlan)
 	mux.HandleFunc("GET /api/stack/health", s.handleStackHealth)
 	mux.HandleFunc("GET /api/stack/spec", s.handleStackSpec)
@@ -507,6 +513,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/groups", s.handleGroups)
 	mux.HandleFunc("POST /api/stack/append", s.handleStackAppend)
 	mux.HandleFunc("POST /api/stack/initialize", s.handleStackInitialize)
+	mux.HandleFunc("GET /api/python/packages/{package}/versions", s.handlePythonPackageVersions)
+	mux.HandleFunc("POST /api/python/resolve", s.handlePythonSourceResolve)
+	mux.HandleFunc("POST /api/python/generated-file", s.handlePythonGeneratedFile)
 	mux.HandleFunc("PATCH /api/stack/telemetry", s.handlePatchStackTelemetry)
 
 	// Telemetry persistence endpoints — opt-in disk persistence inventory
@@ -703,7 +712,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			Version:   s.gateway.ServerInfo().Version,
 			Tokenizer: s.tokenizerName,
 		},
-		MCPServers: s.getMCPServerStatuses(),
+		MCPServers: s.getMCPServerStatuses(r.Context()),
 		Resources:  s.getResourceStatuses(r.Context()),
 		Sessions:   s.gateway.SessionCount(),
 	}
@@ -771,7 +780,7 @@ func (s *Server) handleMCPServers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, s.gateway.Status())
+	writeJSON(w, s.getMCPServerStatuses(r.Context()))
 }
 
 // handleTools returns all aggregated tools.
@@ -859,9 +868,25 @@ type MCPServerStatus struct {
 	AuthStatus string     `json:"authStatus,omitempty"`
 	AuthIssuer string     `json:"authIssuer,omitempty"`
 	AuthExpiry *time.Time `json:"authExpiry,omitempty"`
+
+	Kind   string                 `json:"kind,omitempty"`
+	Image  string                 `json:"image,omitempty"`
+	Source *MCPServerSourceStatus `json:"source,omitempty"`
 }
 
-func (s *Server) getMCPServerStatuses() []MCPServerStatus {
+// MCPServerSourceStatus reports declared source identity plus immutable
+// provenance read from the actual image's labels.
+type MCPServerSourceStatus struct {
+	Type     string `json:"type"`
+	URL      string `json:"url,omitempty"`
+	Ref      string `json:"ref,omitempty"`
+	Package  string `json:"package,omitempty"`
+	Version  string `json:"version,omitempty"`
+	Commit   string `json:"commit,omitempty"`
+	Artifact string `json:"artifact,omitempty"`
+}
+
+func (s *Server) getMCPServerStatuses(ctx context.Context) []MCPServerStatus {
 	mcpStatuses := s.gateway.Status()
 	statuses := make([]MCPServerStatus, len(mcpStatuses))
 	for i, ms := range mcpStatuses {
@@ -897,6 +922,7 @@ func (s *Server) getMCPServerStatuses() []MCPServerStatus {
 		}
 		statuses[i] = status
 	}
+	s.enrichMCPServerStatuses(ctx, statuses)
 	return statuses
 }
 

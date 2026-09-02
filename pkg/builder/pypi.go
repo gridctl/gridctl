@@ -14,18 +14,22 @@ import (
 	"path"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 const (
 	defaultPyPIURL    = "https://pypi.org/pypi"
-	maxPyPIMetadata   = 4 << 20
+	maxPyPIMetadata   = 16 << 20
 	maxPythonArtifact = 32 << 20
+	pypiVersionsTTL   = 5 * time.Minute
 )
 
 var distributionNamePattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$`)
 var exactPEP440Pattern = regexp.MustCompile(`(?i)^v?(?:[0-9]+!)?[0-9]+(?:\.[0-9]+)*(?:(?:a|b|rc)[0-9]+)?(?:[._-]?post[0-9]+)?(?:[._-]?dev[0-9]+)?(?:\+[a-z0-9]+(?:[._-][a-z0-9]+)*)?$`)
+var unstablePEP440Pattern = regexp.MustCompile(`(?:^|[0-9._-])(a|b|rc|dev)[0-9]*`)
 
 // PyPIArtifact records the immutable release file selected for safe metadata
 // inspection. uv remains free to choose its compatible install artifact.
@@ -56,10 +60,25 @@ type PyPIRelease struct {
 	Metadata       PythonPackageMetadata `json:"metadata"`
 }
 
+// PyPIVersions is the selectable, non-yanked release inventory for a public
+// PyPI project. Latest is the highest stable release.
+type PyPIVersions struct {
+	Package  string   `json:"package"`
+	Latest   string   `json:"latest"`
+	Versions []string `json:"versions"`
+}
+
+type cachedPyPIVersions struct {
+	value     PyPIVersions
+	expiresAt time.Time
+}
+
 // PyPIResolver performs bounded requests against the public PyPI JSON API.
 type PyPIResolver struct {
 	client  *http.Client
 	baseURL string
+	mu      sync.Mutex
+	cache   map[string]cachedPyPIVersions
 }
 
 // NewPyPIResolver creates a resolver. A nil client uses a bounded default.
@@ -71,7 +90,150 @@ func NewPyPIResolver(client *http.Client) *PyPIResolver {
 		copy.Timeout = 15 * time.Second
 		client = &copy
 	}
-	return &PyPIResolver{client: client, baseURL: defaultPyPIURL}
+	return &PyPIResolver{client: client, baseURL: defaultPyPIURL, cache: make(map[string]cachedPyPIVersions)}
+}
+
+// Versions returns exact, non-yanked releases for a public PyPI project.
+func (r *PyPIResolver) Versions(ctx context.Context, project string) (*PyPIVersions, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if !distributionNamePattern.MatchString(project) {
+		return nil, fmt.Errorf("invalid PyPI project name %q", project)
+	}
+	cacheKey := canonicalDistributionName(project)
+	r.mu.Lock()
+	if cached, ok := r.cache[cacheKey]; ok && time.Now().Before(cached.expiresAt) {
+		value := clonePyPIVersions(cached.value)
+		r.mu.Unlock()
+		return &value, nil
+	}
+	r.mu.Unlock()
+
+	var payload struct {
+		Info struct {
+			Name    string `json:"name"`
+			Version string `json:"version"`
+		} `json:"info"`
+		Releases map[string][]struct {
+			Yanked  bool  `json:"yanked"`
+			Size    int64 `json:"size"`
+			Digests struct {
+				SHA256 string `json:"sha256"`
+			} `json:"digests"`
+		} `json:"releases"`
+	}
+	endpoint := strings.TrimRight(r.baseURL, "/") + "/" + url.PathEscape(project) + "/json"
+	status, err := r.getJSON(ctx, endpoint, &payload)
+	if err != nil {
+		return nil, err
+	}
+	if status == http.StatusNotFound {
+		//nolint:staticcheck // The public Error Contract requires this punctuation.
+		return nil, fmt.Errorf("No PyPI project named %s.", project)
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("PyPI returned HTTP %d for %s", status, project)
+	}
+	if canonicalDistributionName(payload.Info.Name) != cacheKey {
+		return nil, fmt.Errorf("PyPI returned project %q for %q", payload.Info.Name, project)
+	}
+
+	versions := make([]string, 0, len(payload.Releases))
+	for version, files := range payload.Releases {
+		if !exactPEP440Pattern.MatchString(version) || !hasUsableReleaseFile(files) {
+			continue
+		}
+		versions = append(versions, version)
+	}
+	sort.Slice(versions, func(i, j int) bool { return compareStableVersions(versions[i], versions[j]) > 0 })
+	latest := ""
+	if isStableVersion(payload.Info.Version) {
+		for _, version := range versions {
+			if version == payload.Info.Version {
+				latest = version
+				break
+			}
+		}
+	}
+	for _, version := range versions {
+		if latest != "" {
+			break
+		}
+		if isStableVersion(version) {
+			latest = version
+			break
+		}
+	}
+	result := PyPIVersions{Package: payload.Info.Name, Latest: latest, Versions: versions}
+	r.mu.Lock()
+	r.cache[cacheKey] = cachedPyPIVersions{value: clonePyPIVersions(result), expiresAt: time.Now().Add(pypiVersionsTTL)}
+	r.mu.Unlock()
+	return &result, nil
+}
+
+func clonePyPIVersions(value PyPIVersions) PyPIVersions {
+	value.Versions = append([]string(nil), value.Versions...)
+	return value
+}
+
+func hasUsableReleaseFile(files []struct {
+	Yanked  bool  `json:"yanked"`
+	Size    int64 `json:"size"`
+	Digests struct {
+		SHA256 string `json:"sha256"`
+	} `json:"digests"`
+}) bool {
+	for _, file := range files {
+		if !file.Yanked && file.Size >= 0 && file.Size <= maxPythonArtifact && len(file.Digests.SHA256) == sha256.Size*2 {
+			return true
+		}
+	}
+	return false
+}
+
+func isStableVersion(version string) bool {
+	lower := strings.ToLower(version)
+	return version != "" && !unstablePEP440Pattern.MatchString(lower)
+}
+
+func compareStableVersions(left, right string) int {
+	leftParts := numericVersionParts(left)
+	rightParts := numericVersionParts(right)
+	for i := 0; i < len(leftParts) || i < len(rightParts); i++ {
+		var l, r int
+		if i < len(leftParts) {
+			l = leftParts[i]
+		}
+		if i < len(rightParts) {
+			r = rightParts[i]
+		}
+		if l < r {
+			return -1
+		}
+		if l > r {
+			return 1
+		}
+	}
+	return strings.Compare(left, right)
+}
+
+func numericVersionParts(version string) []int {
+	version = strings.TrimPrefix(strings.ToLower(version), "v")
+	release := version
+	if index := strings.IndexAny(release, "abrdp+!_-"); index >= 0 {
+		release = release[:index]
+	}
+	parts := strings.Split(release, ".")
+	result := make([]int, 0, len(parts))
+	for _, part := range parts {
+		value, err := strconv.Atoi(part)
+		if err != nil {
+			break
+		}
+		result = append(result, value)
+	}
+	return result
 }
 
 // Resolve resolves and inspects one exact public PyPI release.

@@ -113,6 +113,14 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func TestBuilder_VersionsRequiresPublicResolver(t *testing.T) {
+	b := New(nil)
+	b.pypiVersionIndex = nil
+	if _, err := b.Versions(context.Background(), "demo"); err == nil {
+		t.Fatal("Versions should reject a resolver without project inventory support")
+	}
+}
+
 func TestBuild_LogsDiagnosticsWithServer(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM scratch\n"), 0o644); err != nil {
