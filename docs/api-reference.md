@@ -158,7 +158,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
 | `per_client` | map | Token counts keyed by normalized MCP client name (omitted when no per-client traffic has been observed) |
 | `format_savings` | object | Savings from output format conversion (`original_tokens`, `formatted_tokens`, `saved_tokens`, `savings_percent`) |
 
-**MCP server status** includes `outputFormat` (string, omitted when unset) showing the configured output format for each server and `autoscale` (object, omitted when the server has no autoscale block) described under [`/api/mcp-servers`](#get-apimcp-servers). Each registered server also reports `protocolVersion` (string, omitted when the server did not report one or has no MCP handshake, as with OpenAPI adapters) carrying the MCP protocol version negotiated at initialize, and `protocolGeneration` (string, `"handshake"` or `"stateless"`, omitted for OpenAPI adapters) carrying the resolved MCP protocol generation. `/api/sessions` responses carry `entries`, one `{id, generation, protocolVersion}` object per active session, alongside the legacy bare `sessions` ID list. A server that failed gateway registration (unreachable endpoint, initialize failure, or unsupported protocol version) still appears in the list with `registrationFailed: true`, `healthy: false`, the failure reason in `healthError`, `initialized: false`, and no replicas, so declared servers are never silently absent. A retryable failure (the server was not reachable) is not terminal: the gateway re-attempts registration on the health-monitor cadence with exponential backoff, `healthError` carries a `retrying in Ns` hint while the loop runs, and the row flips to a normal registered server once the backend becomes reachable. Authorization failures and configuration errors are not retried, and `POST /api/mcp-servers/{name}/restart` on a retrying server forces an immediate attempt instead of returning 404.
+**MCP server status** includes `outputFormat` (string, omitted when unset) showing the configured output format for each server and `autoscale` (object, omitted when the server has no autoscale block) described under [`/api/mcp-servers`](#get-apimcp-servers). Container servers also report `kind` and `image`. Generated Python sources use kind `Python container`, remain `localProcess: false`, and include a `source` object with the declared type, package or Git ref, and immutable commit or artifact provenance when the built image records it. `image` is the actual managed-container image tag, not a tag recomputed from the declaration. Each registered server also reports `protocolVersion` (string, omitted when the server did not report one or has no MCP handshake, as with OpenAPI adapters) carrying the MCP protocol version negotiated at initialize, and `protocolGeneration` (string, `"handshake"` or `"stateless"`, omitted for OpenAPI adapters) carrying the resolved MCP protocol generation. `/api/sessions` responses carry `entries`, one `{id, generation, protocolVersion}` object per active session, alongside the legacy bare `sessions` ID list. A server that failed gateway registration (unreachable endpoint, initialize failure, or unsupported protocol version) still appears in the list with `registrationFailed: true`, `healthy: false`, the failure reason in `healthError`, `initialized: false`, and no replicas, so declared servers are never silently absent. A retryable failure (the server was not reachable) is not terminal: the gateway re-attempts registration on the health-monitor cadence with exponential backoff, `healthError` carries a `retrying in Ns` hint while the loop runs, and the row flips to a normal registered server once the backend becomes reachable. Authorization failures and configuration errors are not retried, and `POST /api/mcp-servers/{name}/restart` on a retrying server forces an immediate attempt instead of returning 404.
 
 **Experimental flag fields** appear at the top level when any experimental flag is enabled (via the stack's `experimental:` block or a `GRIDCTL_EXPERIMENTAL_*` env override), and are omitted otherwise:
 
@@ -938,6 +938,22 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 ```
 
 **Response:** `ValidationResult` JSON (`valid`, `errorCount`, `warningCount`, `issues[]`).
+
+#### `POST /api/stack/resource/validate`
+
+Validates one wizard resource without requiring a synthetic complete stack. The JSON body is `{ "resourceType": "mcp-server" | "resource", "yaml": "..." }`; `yaml` contains the single unindented resource block. The response is the same `ValidationResult` shape as stack validation, including field-level Python-source errors. The body is limited to 1 MiB.
+
+#### `GET /api/python/packages/{package}/versions`
+
+Returns exact, non-yanked public PyPI releases for package selection as `{package, latest, versions}`. `latest` is the latest stable exact release. PyPI requests have a 15-second deadline and a 16 MiB metadata limit; successful inventories are cached in the daemon and advertised to the browser as private cacheable for five minutes. Resolution uses only official PyPI and returns `422` for missing or invalid projects.
+
+#### `POST /api/python/resolve`
+
+Resolves a generated Python MCP server into the same immutable build plan used by apply and CLI plan. The JSON body is `{ "stackName": "preview", "server": {...} }`, where `server` uses the `MCPServer` field names in lower camel case. The response includes declared and resolved identities, selected Python and command, build-input digest, image tag, cache state, mutable-ref state, provenance, and `generatedFile` when gridctl generated a Dockerfile. Host build-context paths and credentials are never returned. The body is limited to 1 MiB; invalid declarations and resolution failures return `422`.
+
+#### `POST /api/python/generated-file`
+
+Accepts the same request as `/api/python/resolve` and returns `{name, mediaType, content}` for the exact generated Dockerfile. It returns `422` when the declaration selects a custom Dockerfile. This endpoint and the `generatedFile` field above call the shared builder planner rather than maintaining an API template.
 
 #### `GET /api/stack/plan`
 
