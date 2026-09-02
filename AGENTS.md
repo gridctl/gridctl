@@ -17,7 +17,7 @@ Task (https://taskfile.dev) is the entry point for everything; tasks live in `Ta
 | `task build:web` | Frontend only (`cd web && npm run build`). |
 | `task dev` | Runs the Vite dev server (`web/`) against a separately-running backend. |
 | `task test` | `go test -race ./...` (unit tests only, same race detector CI runs). |
-| `task test:integration` | `go test -tags=integration -race -timeout 5m ./tests/integration/...`. Requires Docker (or Podman). These tests hit real container runtimes per Article IV of `CONSTITUTION.md`; mocks are disallowed in `tests/integration/`. |
+| `task test:integration` | `go test -tags=integration -race -timeout 15m ./tests/integration/...`. Requires Docker (or Podman). These tests hit real container runtimes per Article IV of `CONSTITUTION.md`; mocks are disallowed in `tests/integration/`. |
 | `task test:frontend` | `cd web && npm test` (Vitest). |
 | `task lint` | `golangci-lint run` plus `npm run lint` in `web/` (both CI-gated). |
 | `task generate` | Regenerates `go.uber.org/mock` mocks under `pkg/mcp/` and `pkg/runtime/`. Required after touching the interfaces they're generated from. |

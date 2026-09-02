@@ -70,10 +70,10 @@ func TestPythonContainers_RealRuntime(t *testing.T) {
 	}
 	defer orchestrator.Close() //nolint:errcheck
 
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
-	defer cancel()
-
 	t.Run("public PyPI package builds and serves stdio", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
+		defer cancel()
+
 		stack := pythonStack("inttest-python-pypi", config.MCPServer{
 			Name: "fetch",
 			Source: &config.Source{
@@ -107,6 +107,9 @@ func TestPythonContainers_RealRuntime(t *testing.T) {
 	})
 
 	t.Run("pinned Git source covers lifecycle paths", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
+		defer cancel()
+
 		repository, firstCommit := newPythonGitFixture(t)
 		stackName := "inttest-python-git"
 		server := gitPythonServer(repository, firstCommit.String())
@@ -168,6 +171,14 @@ func TestPythonContainers_RealRuntime(t *testing.T) {
 		thirdCommit := updatePythonGitFixture(t, repository, "0.3.0")
 		reloadedServer := gitPythonServer(repository, thirdCommit.String())
 		reloadedStack := pythonStack(stackName, reloadedServer)
+		thirdPlan, err := imageBuilder.Plan(ctx, pythonBuildOptions(stackName, reloadedServer))
+		if err != nil {
+			t.Fatalf("plan third Git commit: %v", err)
+		}
+		expectedReloadImage := thirdPlan.ImageTag
+		if err := thirdPlan.Close(); err != nil {
+			t.Fatalf("close third Git plan: %v", err)
+		}
 		stackPath := filepath.Join(t.TempDir(), "stack.yaml")
 		writeStackYAML(t, stackPath, updatedStack)
 		gateway := mcp.NewGateway()
@@ -186,11 +197,20 @@ func TestPythonContainers_RealRuntime(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Status(after reload): %v", err)
 		}
-		if len(statuses) != 2 || statuses[0].Image == updatedResult.Image {
-			t.Fatalf("reload statuses = %+v, want two containers on a new image", statuses)
+		if len(statuses) != 2 {
+			t.Fatalf("reload statuses = %+v, want two containers", statuses)
+		}
+		for _, listed := range statuses {
+			status, err := orchestrator.Runtime().Status(ctx, listed.ID)
+			if err != nil {
+				t.Fatalf("Status(%s after reload): %v", listed.ID, err)
+			}
+			if status.Image != expectedReloadImage || status.HostPort != 0 {
+				t.Errorf("reloaded workload = %+v, want image %q and host port 0", status, expectedReloadImage)
+			}
 		}
 
-		testPythonAutoscaler(t, ctx, orchestrator, statuses[0].Image)
+		testPythonAutoscaler(t, ctx, orchestrator, expectedReloadImage)
 	})
 }
 
@@ -378,5 +398,19 @@ func testPythonAutoscaler(t *testing.T, ctx context.Context, orchestrator *runti
 	}
 	if result.IsError || len(result.Content) != 1 || result.Content[0].Text != "cold start" {
 		t.Fatalf("autoscaler tool result = %+v", result)
+	}
+	statuses, err := orchestrator.Status(ctx, stackName)
+	if err != nil {
+		t.Fatalf("autoscaler status: %v", err)
+	}
+	if len(statuses) != 1 {
+		t.Fatalf("autoscaler workloads = %+v, want one", statuses)
+	}
+	status, err := orchestrator.Runtime().Status(ctx, statuses[0].ID)
+	if err != nil {
+		t.Fatalf("autoscaler workload status: %v", err)
+	}
+	if status.Image != image || status.HostPort != 0 {
+		t.Errorf("autoscaler workload = %+v, want image %q and host port 0", status, image)
 	}
 }
