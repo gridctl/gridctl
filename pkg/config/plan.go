@@ -22,12 +22,44 @@ type DiffItem struct {
 	Details []string   `json:"details,omitempty"` // human-readable change descriptions
 }
 
+// BuildAction describes the resolved image work associated with a source
+// server. CLI and API planners may populate these after resolving external
+// source identity; ComputePlan itself remains a pure config comparison.
+type BuildAction struct {
+	Server              string        `json:"server"`
+	SourceType          string        `json:"sourceType"`
+	DeclaredIdentity    BuildIdentity `json:"declaredIdentity"`
+	ResolvedIdentity    BuildIdentity `json:"resolvedIdentity,omitempty"`
+	ImageTag            string        `json:"imageTag"`
+	Cached              bool          `json:"cached"`
+	CacheState          string        `json:"cacheState"`
+	Error               string        `json:"error,omitempty"`
+	MutableRef          bool          `json:"mutableRef,omitempty"`
+	GeneratedDockerfile string        `json:"generatedDockerfile,omitempty"`
+}
+
+// BuildIdentity is the non-secret source identity exposed by stack plans.
+type BuildIdentity struct {
+	Type           string `json:"type"`
+	URL            string `json:"url,omitempty"`
+	Ref            string `json:"ref,omitempty"`
+	Path           string `json:"path,omitempty"`
+	ProjectPath    string `json:"projectPath,omitempty"`
+	Dockerfile     string `json:"dockerfile,omitempty"`
+	Commit         string `json:"commit,omitempty"`
+	Package        string `json:"package,omitempty"`
+	Version        string `json:"version,omitempty"`
+	Artifact       string `json:"artifact,omitempty"`
+	ArtifactSHA256 string `json:"artifactSha256,omitempty"`
+}
+
 // PlanDiff is the complete diff between two stack specs.
 type PlanDiff struct {
 	HasChanges          bool                    `json:"hasChanges"`
 	Items               []DiffItem              `json:"items"`
 	Summary             string                  `json:"summary"`
 	VariableDiagnostics []DeclarationDiagnostic `json:"variableDiagnostics,omitempty"`
+	Builds              []BuildAction           `json:"builds,omitempty"`
 }
 
 // ComputePlan compares a new spec against the currently running spec and returns a structured diff.

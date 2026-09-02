@@ -6,6 +6,7 @@
 #
 # Usage:
 #   gridctl validate examples/python-sources/pypi.yaml
+#   gridctl plan examples/python-sources/pypi.yaml --show-dockerfile
 #   gridctl apply examples/python-sources/pypi.yaml
 #   gridctl logs --server fetch
 #   gridctl destroy examples/python-sources/pypi.yaml
@@ -18,7 +19,7 @@ mcp-servers:
     source:
       type: pypi
       package: mcp-server-fetch
-      ref: 0.6.0
+      ref: 2026.8.18
 
     # type: pypi implies runtime: python. Generated Python servers default to
     # stdio, and this package's single console script is selected automatically.

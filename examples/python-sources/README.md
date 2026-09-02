@@ -6,13 +6,14 @@ build; host Python and uv are not required.
 
 ## PyPI example
 
-`pypi.yaml` builds `mcp-server-fetch==0.6.0` from the official public PyPI
+`pypi.yaml` builds `mcp-server-fetch==2026.8.18` from the official public PyPI
 index. The package exposes one console script, so the server-level `command` can
 be omitted. Generated Python servers default to stdio and do not publish a
 port.
 
 ```bash
 gridctl validate examples/python-sources/pypi.yaml
+gridctl plan examples/python-sources/pypi.yaml --show-dockerfile
 gridctl apply examples/python-sources/pypi.yaml
 gridctl logs --server fetch
 gridctl destroy examples/python-sources/pypi.yaml
@@ -20,6 +21,8 @@ gridctl destroy examples/python-sources/pypi.yaml
 
 The first apply resolves package metadata and builds a content-addressed image.
 Later unchanged applies reuse the image when its build-input label matches.
+The plan resolves the exact artifact, previews the generated Dockerfile, and
+reports whether the resulting image is already cached.
 
 ## Packaged git and local projects
 

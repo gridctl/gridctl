@@ -2,7 +2,7 @@
 
 Common issues and resolutions for gridctl.
 
-Start with `gridctl doctor`: it runs most of the environment checks below automatically (runtime detection, socket reachability, version floor, gateway port, `npx` availability, state hygiene, and vault status) and prints a verdict with a remediation hint for each.
+Start with `gridctl doctor`: it runs most of the environment checks below automatically (runtime detection, socket reachability, version floor, gateway port, `npx` and `uvx` availability, state hygiene, and vault status) and prints a verdict with a remediation hint for each.
 
 ---
 
@@ -218,12 +218,22 @@ No PyPI project named <package>.
 4. If package metadata requires an unsupported interpreter, choose a compatible
    `source.python` from 3.10 through 3.13, or provide a custom Dockerfile.
 
-Generated contexts are temporary and do not modify the source tree. Build logs
-come from the existing server log path: `gridctl logs --server <name>`. When
-`source.dockerfile` is non-empty, the INFO log
+Generated contexts are temporary and do not modify the source tree. Build
+phases and image-build diagnostics are logged at INFO with `server` and `phase`
+fields in the gateway daemon log; follow it with `gridctl logs [stack] -f` and
+filter the structured `server` field when diagnosing one build. The
+`--server <name>` form switches to the started container's stdout and stderr
+instead. When `source.dockerfile` is
+non-empty, the INFO log
 `Found configured Dockerfile; building from it.` confirms that gridctl selected
 the custom Dockerfile instead of generation; a missing configured file fails
 before the image build.
+
+Use `gridctl plan <stack.yaml> --show-dockerfile` to inspect the generated file
+before applying. Plan output also names the exact resolved source, desired
+image tag, and whether the image is cached. During apply, structured INFO logs
+name the current phase in the `phase` field, ending with `starting_container`
+and `connecting_server`.
 
 ### Image pull failures
 

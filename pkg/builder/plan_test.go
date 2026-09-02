@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/docker/docker/api/types/image"
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -22,6 +23,53 @@ type stubPyPIResolver struct {
 
 func (s stubPyPIResolver) Resolve(context.Context, string, string, string) (*PyPIRelease, error) {
 	return s.release, s.err
+}
+
+func TestBuilderPlan_ReportsCacheState(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM alpine\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	opts := BuildOptions{Stack: "demo", ServerName: "source", SourceType: "local", Path: dir}
+	resolved, err := New(nil).Resolve(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := resolved.BuildInputDigest
+	_ = resolved.Close()
+
+	mock := &mockDockerClient{imageListFn: func(context.Context, image.ListOptions) ([]image.Summary, error) {
+		return []image.Summary{{ID: "sha256:cached", Labels: map[string]string{LabelBuildInputDigest: digest}}}, nil
+	}}
+	plan, err := New(mock).Plan(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer plan.Close()
+	if !plan.Cached {
+		t.Fatal("Plan did not report the matching cached image")
+	}
+}
+
+func TestResolve_EmitsStructuredPhases(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[project]\nname='demo'\nversion='1.0'\n[project.scripts]\ndemo='demo:main'\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	plan, err := New(nil).Resolve(context.Background(), BuildOptions{
+		Stack: "demo", ServerName: "python", SourceType: "local", Path: dir, Runtime: "python", Logger: logger,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer plan.Close()
+	for _, phase := range []string{"resolving_source", "preparing_context", "generating_dockerfile"} {
+		if !strings.Contains(logs.String(), "server=python") || !strings.Contains(logs.String(), "phase="+phase) {
+			t.Errorf("logs missing structured phase %q:\n%s", phase, logs.String())
+		}
+	}
 }
 
 func TestResolve_LocalContentDeterminesIdentity(t *testing.T) {

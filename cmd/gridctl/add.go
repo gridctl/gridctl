@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
+	"path"
+	"regexp"
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/catalog"
@@ -22,13 +25,14 @@ const addExitInfrastructure = 2
 const addJSONSchemaVersion = 1
 
 var (
-	addYes     bool
-	addDryRun  bool
-	addNoVault bool
-	addFile    string
-	addName    string
-	addFormat  string
-	addAsJSON  *bool
+	addYes       bool
+	addDryRun    bool
+	addNoVault   bool
+	addFile      string
+	addName      string
+	addFormat    string
+	addAsJSON    *bool
+	addContainer bool
 )
 
 var addCmd = &cobra.Command{
@@ -53,7 +57,11 @@ Exit codes:
 	Example: `  gridctl add github                Add the curated GitHub server
   gridctl add postgres --dry-run    Preview without writing
   gridctl add fetch --yes           Non-interactive, defaults applied
-  gridctl add io.github.user/tool   Add a registry server by full name`,
+  gridctl add io.github.user/tool   Add a registry server by full name
+  gridctl add io.github.user/tool --container
+                                    Build an exact registry PyPI package
+  gridctl add 'mcp-server-fetch==2026.8.18' --container
+                                    Build an exact public PyPI release`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		format, err := resolveFormat(addFormat, cmd.Flags().Changed("format"), *addAsJSON)
@@ -72,6 +80,7 @@ func init() {
 	addCmd.Flags().StringVarP(&addName, "name", "n", "", "Server name to use in the stack (default: the catalog name)")
 	addCmd.Flags().BoolVar(&addNoVault, "no-vault", false, "Write secret inputs as literals instead of vault references (a warning is printed per secret)")
 	addCmd.Flags().StringVar(&addFormat, "format", "", "Output format: 'json' for machine-readable output (default: text)")
+	addCmd.Flags().BoolVar(&addContainer, "container", false, "Run an exact PyPI package or pinned GitHub source in a generated Python container")
 	addAsJSON = addJSONAlias(addCmd)
 }
 
@@ -86,6 +95,16 @@ type addServerDoc struct {
 	Warnings    []string          `json:"warnings,omitempty"`
 	Secrets     []importSecretDoc `json:"secrets,omitempty"`
 	UnsetVars   []string          `json:"unset_vars,omitempty"`
+	Source      *addSourceDoc     `json:"source,omitempty"`
+	ImageIntent string            `json:"image_intent,omitempty"`
+}
+
+type addSourceDoc struct {
+	Type    string `json:"type"`
+	URL     string `json:"url,omitempty"`
+	Ref     string `json:"ref"`
+	Runtime string `json:"runtime,omitempty"`
+	Package string `json:"package,omitempty"`
 }
 
 type addDoc struct {
@@ -193,9 +212,18 @@ func runAdd(ctx context.Context, arg, format string) error {
 		os.Exit(addExitInfrastructure)
 	}
 
-	entry, err := resolveCatalogEntry(ctx, printer, arg)
+	direct, directInput, err := parseDirectContainerInput(arg)
 	if err != nil {
 		return err
+	}
+	var entry catalog.Entry
+	if addContainer && directInput {
+		entry = catalog.Entry{Name: direct.name, Title: direct.name, Tier: "direct", Install: catalog.Install{Type: catalog.InstallCommand, Transport: "stdio"}}
+	} else {
+		entry, err = resolveCatalogEntry(ctx, printer, arg)
+		if err != nil {
+			return err
+		}
 	}
 	if entry.Unsupported != "" {
 		return &catalog.UnsupportedInstallError{Kind: entry.Unsupported}
@@ -221,7 +249,11 @@ func runAdd(ctx context.Context, arg, format string) error {
 
 	target := addName
 	if target == "" {
-		target = entry.ServerName()
+		if directInput {
+			target = direct.name
+		} else {
+			target = entry.ServerName()
+		}
 	}
 	if target == "" {
 		return fmt.Errorf("cannot derive a server name from %q; pass --name", entry.Name)
@@ -275,6 +307,16 @@ func runAdd(ctx context.Context, arg, format string) error {
 	if err != nil {
 		return err
 	}
+	if addContainer {
+		if directInput {
+			server = config.MCPServer{Name: target, Source: direct.source, Transport: "stdio"}
+		} else {
+			server, err = containerizeCatalogEntry(entry, server)
+			if err != nil {
+				return err
+			}
+		}
+	}
 	warnings = append(warnings, mapWarnings...)
 
 	doc := addDoc{
@@ -287,6 +329,13 @@ func runAdd(ctx context.Context, arg, format string) error {
 			Secrets: secretDocs, UnsetVars: unsetVars,
 		},
 	}
+	if server.Source != nil {
+		doc.Server.Source = &addSourceDoc{
+			Type: server.Source.Type, URL: server.Source.URL, Ref: server.Source.Ref,
+			Runtime: server.Source.Runtime, Package: server.Source.Package,
+		}
+		doc.Server.ImageIntent = "content-addressed image resolved from exact source and build inputs"
+	}
 
 	// Plan block, in import's vocabulary.
 	symbol, label := "+", "add"
@@ -294,7 +343,15 @@ func runAdd(ctx context.Context, arg, format string) error {
 		symbol, label = "~", "replace"
 	}
 	printer.Print("\nPlan: 1 server to %s\n\n", label)
-	printer.Print("  %s mcp-server %q (%s, %s)\n", symbol, target, entry.Tier, entry.InstallLabel())
+	installLabel := entry.InstallLabel()
+	if server.Source != nil {
+		installLabel = "python container"
+	}
+	printer.Print("  %s mcp-server %q (%s, %s)\n", symbol, target, entry.Tier, installLabel)
+	if server.Source != nil {
+		printer.Print("      source: %s\n", formatContainerSource(server.Source))
+		printer.Print("      image: content-addressed tag resolved during apply\n")
+	}
 	for _, w := range warnings {
 		printer.Print("      warning: %s\n", w)
 	}
@@ -340,6 +397,113 @@ func runAdd(ctx context.Context, arg, format string) error {
 	printer.Print("  First deploy pins the server's tool schemas; review with 'gridctl pins'.\n")
 	printer.Print("  Run 'gridctl apply %s' to deploy.\n", stackPath)
 	return finishAdd(doc, format, nil)
+}
+
+type directContainerInput struct {
+	name   string
+	source *config.Source
+}
+
+var fullGitCommitPattern = regexp.MustCompile(`^[0-9a-fA-F]{40}$`)
+
+func parseDirectContainerInput(arg string) (directContainerInput, bool, error) {
+	if !addContainer {
+		return directContainerInput{}, false, nil
+	}
+	value := strings.TrimSpace(arg)
+	fields := strings.Fields(value)
+	if len(fields) > 0 && fields[0] == "uvx" {
+		if len(fields) != 2 {
+			return directContainerInput{}, true, fmt.Errorf("--container accepts a raw uvx command only when it is exactly 'uvx package==version'")
+		}
+		value = fields[1]
+	}
+	if packageName, version, ok := strings.Cut(value, "=="); ok {
+		if packageName == "" || version == "" || strings.Contains(version, "=") {
+			return directContainerInput{}, true, fmt.Errorf("--container requires an exact PyPI package version in package==version form")
+		}
+		source := &config.Source{Type: "pypi", Package: packageName, Ref: version}
+		if err := validateContainerSource(source); err != nil {
+			return directContainerInput{}, true, err
+		}
+		return directContainerInput{name: sanitizeDirectServerName(packageName), source: source}, true, nil
+	}
+
+	parsed, err := url.Parse(value)
+	if err == nil && strings.EqualFold(parsed.Hostname(), "github.com") {
+		if parsed.User != nil || parsed.RawQuery != "" {
+			return directContainerInput{}, true, fmt.Errorf("--container GitHub URLs must not contain credentials or query parameters; use source.auth.credential_ref for authentication")
+		}
+		commit := parsed.Fragment
+		parsed.Fragment = ""
+		if commit == "" {
+			base := parsed.String()
+			if marker := strings.LastIndex(base, "@"); marker > strings.LastIndex(base, "/") {
+				commit = base[marker+1:]
+				parsed, err = url.Parse(base[:marker])
+			}
+		}
+		if err != nil || !fullGitCommitPattern.MatchString(commit) {
+			return directContainerInput{}, true, fmt.Errorf("--container requires a GitHub URL pinned with #<40-character-commit> or @<40-character-commit>")
+		}
+		repo := strings.TrimSuffix(path.Base(parsed.Path), ".git")
+		parsed.User = nil
+		parsed.RawQuery = ""
+		parsed.Fragment = ""
+		source := &config.Source{Type: "git", URL: parsed.String(), Ref: strings.ToLower(commit), Runtime: "python"}
+		if err := validateContainerSource(source); err != nil {
+			return directContainerInput{}, true, err
+		}
+		return directContainerInput{name: sanitizeDirectServerName(repo), source: source}, true, nil
+	}
+	return directContainerInput{}, false, nil
+}
+
+func containerizeCatalogEntry(entry catalog.Entry, server config.MCPServer) (config.MCPServer, error) {
+	if entry.Install.RegistryType != "pypi" || entry.Install.Identifier == "" || entry.Install.Version == "" {
+		return config.MCPServer{}, fmt.Errorf("%q cannot run with --container; choose a catalog entry with an exact PyPI package version", entry.Name)
+	}
+	for _, input := range entry.Inputs {
+		if input.Format == "filepath" {
+			return config.MCPServer{}, fmt.Errorf("%q needs a filesystem path; declare an explicit volume before containerizing it", entry.Name)
+		}
+	}
+	if len(server.Command) != 2 || server.Command[0] != "uvx" {
+		return config.MCPServer{}, fmt.Errorf("%q has package arguments that cannot be mapped unambiguously to a container command", entry.Name)
+	}
+	server.Command = nil
+	server.Source = &config.Source{Type: "pypi", Package: entry.Install.Identifier, Ref: entry.Install.Version}
+	server.Transport = "stdio"
+	if err := validateContainerSource(server.Source); err != nil {
+		return config.MCPServer{}, err
+	}
+	return server, nil
+}
+
+func validateContainerSource(source *config.Source) error {
+	stack := &config.Stack{Name: "container-preview", MCPServers: []config.MCPServer{{Name: "preview", Source: source, Transport: "stdio"}}}
+	stack.SetDefaults()
+	result := config.ValidateWithIssues(stack)
+	if result.Valid {
+		return nil
+	}
+	if len(result.Issues) == 0 {
+		return fmt.Errorf("invalid container source")
+	}
+	return fmt.Errorf("invalid container source: %s", result.Issues[0].Message)
+}
+
+func sanitizeDirectServerName(value string) string {
+	return strings.Trim(serverNameSanitizer.ReplaceAllString(value, "-"), "-")
+}
+
+var serverNameSanitizer = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
+
+func formatContainerSource(source *config.Source) string {
+	if source.Type == "pypi" {
+		return "pypi:" + source.Package + "==" + source.Ref
+	}
+	return "git:" + source.URL + "@" + source.Ref
 }
 
 // resolveCatalogEntry resolves the argument: curated catalog first, then

@@ -218,7 +218,7 @@ mcp-servers:
     source:
       type: pypi
       package: mcp-server-fetch
-      ref: 0.6.0
+      ref: 2026.8.18
 ```
 
 Learn more → [Source configuration](docs/config-schema.md#source) · [Runnable example](examples/python-sources/)

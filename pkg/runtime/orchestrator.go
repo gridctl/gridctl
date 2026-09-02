@@ -414,6 +414,7 @@ func (o *Orchestrator) PrepareMCPServer(ctx context.Context, stackName string, s
 }
 
 func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, server *config.MCPServer, desiredImage string, hostPort, replicaID, totalReplicas int) (*MCPServerResult, error) {
+	o.logger.Info("MCP server phase", "server", server.Name, "phase", "starting_container", "replica", replicaID)
 	runtimeName := ReplicaContainerName(stack.Name, server.Name, replicaID, totalReplicas)
 
 	// Name drives both container name and DNS alias; for multi-replica

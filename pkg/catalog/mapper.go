@@ -186,13 +186,17 @@ func installFromPackage(pkg registryPackage) (Install, []Input, string) {
 		if pkg.Version != "" {
 			spec += "@" + pkg.Version
 		}
-		return commandInstall([]string{"npx", "-y", spec}, pkg)
+		install, inputs, reason := commandInstall([]string{"npx", "-y", spec}, pkg)
+		install.RegistryType, install.Identifier, install.Version = "npm", pkg.Identifier, pkg.Version
+		return install, inputs, reason
 	case "pypi":
 		spec := pkg.Identifier
 		if pkg.Version != "" {
 			spec += "==" + pkg.Version
 		}
-		return commandInstall([]string{"uvx", spec}, pkg)
+		install, inputs, reason := commandInstall([]string{"uvx", spec}, pkg)
+		install.RegistryType, install.Identifier, install.Version = "pypi", pkg.Identifier, pkg.Version
+		return install, inputs, reason
 	default:
 		return Install{}, nil, strings.ToLower(pkg.RegistryType)
 	}

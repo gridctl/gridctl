@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -67,9 +68,10 @@ var doctorCmd = &cobra.Command{
 	Short: "Check the environment and report actionable problems",
 	Long: `Runs opinionated health checks against the local environment: container
 runtime, socket reachability, gateway port, Node.js availability for client
-bridges, state directory hygiene, vault status, projection lockfile
-generation, wiring ownership, and per-server MCP protocol generation. Each
-check renders a verdict with a remediation hint.
+bridges, advisory uvx availability for host package workflows, state directory
+hygiene, vault status, projection lockfile generation, wiring ownership, and
+per-server MCP protocol generation. Each check renders a verdict with a
+remediation hint.
 
 Where 'gridctl info' reports facts and always exits 0, doctor judges and
 exits non-zero when something needs fixing.
@@ -110,6 +112,7 @@ func runDoctorChecks(ctx context.Context) doctorReport {
 	checkRuntimeVersion(&checks, info)
 	checkGatewayPort(ctx, &checks)
 	checkNpx(&checks)
+	checkUvx(&checks)
 	checkStateDir(ctx, &checks)
 	checkStaleState(ctx, &checks)
 	checkProjectLockfile(ctx, &checks)
@@ -118,6 +121,20 @@ func runDoctorChecks(ctx context.Context) doctorReport {
 	checkVault(ctx, &checks)
 
 	return summarizeDoctor(checks)
+}
+
+var doctorLookPath = exec.LookPath
+
+func checkUvx(checks *[]doctorCheck) {
+	if _, err := doctorLookPath("uvx"); err == nil {
+		*checks = append(*checks, doctorCheck{ID: "uvx", Status: doctorStatusOK, Message: "uvx found (host PyPI MCP servers available)"})
+		return
+	}
+	*checks = append(*checks, doctorCheck{
+		ID:      "uvx",
+		Status:  doctorStatusWarn,
+		Message: "uvx not found; host PyPI MCP servers need uv (generated Python containers do not)",
+	})
 }
 
 // summarizeDoctor folds check statuses into the report counters.

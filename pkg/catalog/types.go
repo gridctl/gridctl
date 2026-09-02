@@ -77,6 +77,11 @@ type Install struct {
 	// Local process (type: command). Positional inputs (Input.Arg) are
 	// appended to this base command in input order.
 	Command []string `json:"command,omitempty"`
+	// RegistryType, Identifier, and Version preserve package provenance for
+	// callers that can offer an alternate execution strategy.
+	RegistryType string `json:"registry_type,omitempty"`
+	Identifier   string `json:"identifier,omitempty"`
+	Version      string `json:"version,omitempty"`
 
 	// External remote (type: url).
 	URL string `json:"url,omitempty"`
