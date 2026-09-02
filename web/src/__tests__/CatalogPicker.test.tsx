@@ -154,7 +154,10 @@ describe('CatalogPicker', () => {
 
     fireEvent.change(screen.getByText('Host path').querySelector('input')!, { target: { value: './data' } });
     fireEvent.change(screen.getByPlaceholderText('/data'), { target: { value: '/data' } });
+    fireEvent.change(screen.getByPlaceholderText('server-command /data'), { target: { value: 'fetch' } });
+    expect(screen.getByText('Use this server')).toBeDisabled();
     fireEvent.change(screen.getByPlaceholderText('server-command /data'), { target: { value: 'fetch /data' } });
+    expect(screen.getByText('Use this server')).not.toBeDisabled();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Mount read-only' }));
     fireEvent.click(screen.getByText('Use this server'));
 

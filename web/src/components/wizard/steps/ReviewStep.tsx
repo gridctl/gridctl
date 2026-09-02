@@ -48,6 +48,7 @@ export function ReviewStep({
     error: string;
   }>({ key: '', resolution: null, error: '' });
   const [buildState, setBuildState] = useState<'idle' | 'waiting' | 'pending' | 'failed' | 'complete'>('idle');
+  const [appendedResourceName, setAppendedResourceName] = useState('');
   const [deployError, setDeployError] = useState('');
   const [failurePhase, setFailurePhase] = useState('');
   const resolutionErrorRef = useRef<HTMLParagraphElement>(null);
@@ -148,24 +149,31 @@ export function ReviewStep({
     setBuildState('waiting');
     setDeployError('');
     setFailurePhase('');
-    let activePhase = 'Updating stack';
+    let activePhase = appendedResourceName
+      ? 'Building image, starting container, or connecting server'
+      : 'Updating stack';
     try {
-      const result = await appendToStack(yaml, resourceType);
-      if (resourceType !== 'mcp-server') {
-        showToast('success', `${result.resourceType} '${result.resourceName}' added to stack`);
-        onDeploy?.();
-        return;
+      let deployedName = appendedResourceName;
+      if (!deployedName) {
+        const result = await appendToStack(yaml, resourceType);
+        if (resourceType !== 'mcp-server') {
+          showToast('success', `${result.resourceType} '${result.resourceName}' added to stack`);
+          onDeploy?.();
+          return;
+        }
+        deployedName = result.resourceName;
+        setAppendedResourceName(deployedName);
       }
       activePhase = 'Building image, starting container, or connecting server';
       for (let attempt = 0; attempt < 300; attempt += 1) {
         const status = await fetchStatus();
-        const deployed = status['mcp-servers']?.find((item) => item.name === resourceName);
+        const deployed = status['mcp-servers']?.find((item) => item.name === deployedName);
         if (deployed?.registrationFailed || deployed?.healthy === false) {
           activePhase = 'Connecting server';
           throw new Error(deployed.healthError || 'Server registration failed');
         }
         if (deployed?.initialized) {
-          showToast('success', `${result.resourceName} deployed${currentResolution?.cached ? ' with a reused image' : currentResolution ? ' with a built image' : ''}`);
+          showToast('success', `${deployedName} deployed${currentResolution?.cached ? ' with a reused image' : currentResolution ? ' with a built image' : ''}`);
           setBuildState('complete');
           onDeploy?.();
           return;
@@ -173,7 +181,7 @@ export function ReviewStep({
         await new Promise((resolve) => window.setTimeout(resolve, 1000));
       }
       setBuildState('pending');
-      showToast('warning', `${result.resourceName} was added to the stack; deployment is still in progress`);
+      showToast('warning', `${deployedName} was added to the stack; deployment is still in progress`);
     } catch (err) {
       setBuildState('failed');
       const message = err instanceof Error ? err.message : 'Deploy failed';
@@ -385,6 +393,7 @@ export function ReviewStep({
               <div><span className="text-text-muted">Python</span><div className="font-mono text-text-primary mt-0.5">{currentResolution.python || 'Selected during resolution'}</div></div>
               <div><span className="text-text-muted">Transport</span><div className="font-mono text-text-primary mt-0.5">{server?.transport || 'stdio'}</div></div>
               <div><span className="text-text-muted">Expected image</span><div className="font-mono text-text-primary mt-0.5 break-all">{currentResolution.imageTag}</div></div>
+              {currentResolution.mutableRef && <div className="col-span-2 text-status-pending">This source uses a mutable Git ref. The resolved commit is pinned for this build.</div>}
               <div className="col-span-2 text-text-muted">{currentResolution.cached ? 'The matching image is already cached and will be reused.' : 'The first apply builds this image. Unchanged later applies reuse it.'}</div>
             </div>
           )}
@@ -392,7 +401,7 @@ export function ReviewStep({
             {['Resolving package/ref', 'Cloning/preparing context', 'Generating Dockerfile', 'Building image', 'Starting container', 'Connecting server'].map((phase) => <li key={phase}>{phase}</li>)}
           </ol>
           {(buildState === 'waiting' || buildState === 'pending' || buildState === 'failed') && (
-            <a href={`/logs?source=${encodeURIComponent(resourceName)}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">View filtered logs <ExternalLink size={11} /></a>
+            <a href={`/logs?source=${encodeURIComponent(appendedResourceName || resourceName)}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">View filtered logs <ExternalLink size={11} /></a>
           )}
         </div>
       )}
@@ -437,11 +446,11 @@ export function ReviewStep({
             variant="primary"
             size="sm"
             onClick={handleDeploy}
-            disabled={hasErrors || validating || deploying || buildState === 'pending' || Boolean(pythonSource && (!currentResolution || resolutionError))}
+            disabled={hasErrors || validating || deploying || Boolean(pythonSource && (!currentResolution || resolutionError))}
             className="ml-auto"
           >
             {deploying ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />}
-            {deploying ? 'Deploying...' : 'Deploy'}
+            {deploying ? 'Checking...' : appendedResourceName ? 'Check deployment' : 'Deploy'}
           </Button>
         )}
       </div>

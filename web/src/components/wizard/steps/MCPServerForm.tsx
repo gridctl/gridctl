@@ -478,6 +478,22 @@ function PythonSourceFields({
     onChange({ source: { ...source, ...patch } as MCPServerFormData['source'] });
   };
 
+  const selectCustomDockerfile = (dockerfile: string) => updateSource({
+    runtime: undefined,
+    dockerfile,
+    path: source.type === 'git' ? undefined : source.path,
+    projectPath: undefined,
+    python: undefined,
+    extras: undefined,
+    with: undefined,
+    packages: undefined,
+  });
+
+  const selectGeneratedPython = () => onChange({
+    source: { ...source, runtime: 'python', dockerfile: undefined },
+    transport: 'stdio',
+  });
+
   return (
     <div className="space-y-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
       <div>
@@ -537,7 +553,7 @@ function PythonSourceFields({
               <div>
                 <label htmlFor="source-ref" className={labelClass}>Ref</label>
                 <input id="source-ref" value={source.ref ?? ''} onChange={(event) => updateSource({ ref: event.target.value })} placeholder="main" className={cn(inputClass, 'font-mono')} />
-                {source.ref && !/^[0-9a-f]{40}$/i.test(source.ref) && <p className="text-[10px] text-status-pending mt-1">This ref resembles a mutable branch. Review will show the resolved commit.</p>}
+                {(!source.ref || !/^[0-9a-f]{40}$/i.test(source.ref)) && <p className="text-[10px] text-status-pending mt-1">This ref resembles a mutable branch. Review will show the resolved commit.</p>}
               </div>
               <SourceAuthField value={source.auth?.credentialRef} onChange={(credentialRef) => updateSource({ auth: credentialRef ? { method: 'token', credentialRef } : undefined })} />
             </>
@@ -552,8 +568,20 @@ function PythonSourceFields({
           <div>
             <label className={labelClass}>Build strategy</label>
             <div className="flex gap-2" role="radiogroup" aria-label="Build strategy">
-              <button type="button" role="radio" aria-checked={!generated} onClick={() => updateSource({ runtime: undefined, dockerfile: source.dockerfile || 'Dockerfile' })} className={cn('px-3 py-1.5 rounded-lg text-xs border', !generated ? 'border-primary/30 text-primary' : 'border-white/[0.06] text-text-muted')}>Custom Dockerfile</button>
-              <button type="button" role="radio" aria-checked={generated} onClick={() => updateSource({ runtime: 'python', dockerfile: undefined })} className={cn('px-3 py-1.5 rounded-lg text-xs border', generated ? 'border-primary/30 text-primary' : 'border-white/[0.06] text-text-muted')}>Generated Python</button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={!generated}
+                onClick={() => selectCustomDockerfile(source.dockerfile || 'Dockerfile')}
+                className={cn('px-3 py-1.5 rounded-lg text-xs border', !generated ? 'border-primary/30 text-primary' : 'border-white/[0.06] text-text-muted')}
+              >Custom Dockerfile</button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={generated}
+                onClick={selectGeneratedPython}
+                className={cn('px-3 py-1.5 rounded-lg text-xs border', generated ? 'border-primary/30 text-primary' : 'border-white/[0.06] text-text-muted')}
+              >Generated Python</button>
             </div>
           </div>
           <div className={cn('grid gap-2', generated && 'grid-cols-2')}>
@@ -571,7 +599,15 @@ function PythonSourceFields({
             </div>}
             <div>
               <label htmlFor="source-dockerfile" className={labelClass}>Dockerfile</label>
-              <input id="source-dockerfile" value={source.dockerfile ?? ''} onChange={(event) => updateSource({ dockerfile: event.target.value || undefined, runtime: event.target.value ? undefined : 'python' })} placeholder={generated ? 'Empty uses generated Python' : 'Dockerfile'} className={cn(inputClass, 'font-mono')} />
+              <input
+                id="source-dockerfile"
+                value={source.dockerfile ?? ''}
+                onChange={(event) => event.target.value
+                  ? selectCustomDockerfile(event.target.value)
+                  : selectGeneratedPython()}
+                placeholder={generated ? 'Empty uses generated Python' : 'Dockerfile'}
+                className={cn(inputClass, 'font-mono')}
+              />
             </div>
           </div>
         </>

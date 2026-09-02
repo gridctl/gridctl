@@ -236,4 +236,77 @@ describe('ReviewStep Python container review', () => {
     await waitFor(() => expect(onDeploy).toHaveBeenCalledTimes(1), { timeout: 2500 });
     expect(showToast).toHaveBeenCalledWith('success', 'fetch deployed with a built image');
   });
+
+  it('polls the appended YAML name instead of the form name', async () => {
+    (appendToStack as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: true,
+      resourceType: 'mcp-server',
+      resourceName: 'fetch-server',
+    });
+    (fetchStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      'mcp-servers': [{ name: 'fetch-server', initialized: true }],
+    });
+    render(
+      <ReviewStep
+        yaml={'name: fetch-server\nsource:\n  type: pypi\n  package: mcp-server-fetch\n  ref: 0.6.0\n'}
+        resourceType="mcp-server"
+        resourceName="fetch"
+        server={server}
+      />,
+    );
+
+    const deploy = await screen.findByRole('button', { name: 'Deploy' });
+    await waitFor(() => expect(deploy).not.toBeDisabled());
+    fireEvent.click(deploy);
+
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('success', 'fetch-server deployed with a built image'));
+    expect(fetchStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries registration polling without appending the server twice', async () => {
+    (appendToStack as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: true,
+      resourceType: 'mcp-server',
+      resourceName: 'fetch',
+    });
+    (fetchStatus as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        'mcp-servers': [{ name: 'fetch', initialized: false, registrationFailed: true, healthError: 'registration failed' }],
+      })
+      .mockResolvedValueOnce({
+        'mcp-servers': [{ name: 'fetch', initialized: true }],
+      });
+    render(
+      <ReviewStep
+        yaml={'name: fetch\nsource:\n  type: pypi\n  package: mcp-server-fetch\n  ref: 0.6.0\n'}
+        resourceType="mcp-server"
+        resourceName="fetch"
+        server={server}
+      />,
+    );
+
+    const deploy = await screen.findByRole('button', { name: 'Deploy' });
+    await waitFor(() => expect(deploy).not.toBeDisabled());
+    fireEvent.click(deploy);
+    const retry = await screen.findByRole('button', { name: 'Check deployment' });
+    fireEvent.click(retry);
+
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('success', 'fetch deployed with a built image'));
+    expect(appendToStack).toHaveBeenCalledTimes(1);
+    expect(fetchStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows the backend mutable-ref warning', async () => {
+    (resolvePythonSource as ReturnType<typeof vi.fn>).mockResolvedValue({ ...resolution, mutableRef: true });
+    render(
+      <ReviewStep
+        yaml={'name: fetch\nsource:\n  type: git\n  url: https://github.com/example/fetch.git\n  runtime: python\n'}
+        resourceType="mcp-server"
+        resourceName="fetch"
+        server={{ ...server, source: { type: 'git', url: 'https://github.com/example/fetch.git', runtime: 'python' } }}
+      />,
+    );
+
+    expect(await screen.findByText(/source uses a mutable Git ref/i)).toBeInTheDocument();
+  });
 });

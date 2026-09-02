@@ -91,7 +91,12 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
 
   const selected = entries.find((e) => e.name === selectedName);
   const filepathInput = selected?.inputs?.find((input) => input.format === 'filepath');
-  const containerReady = !filepathInput || (hostPath.trim() && containerPath.trim() && containerCommand.trim());
+  const commandArguments = containerCommand.trim().split(/\s+/).filter(Boolean);
+  const containerReady = !filepathInput || Boolean(
+    hostPath.trim() &&
+    containerPath.trim() &&
+    commandArguments.includes(containerPath.trim()),
+  );
 
   const selectEntry = (name: string) => {
     setSelectedName(name);
@@ -113,7 +118,7 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
       hostPath: hostPath.trim() || undefined,
       containerPath: containerPath.trim() || undefined,
       readOnly,
-      command: containerCommand.trim() ? containerCommand.trim().split(/\s+/) : undefined,
+      command: commandArguments.length ? commandArguments : undefined,
     });
   };
 
