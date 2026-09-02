@@ -12,7 +12,7 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md). We expect all 
 
 - **Go** 1.26 or later (the version in `go.mod`)
 - **Node.js** 22 or later (the frontend is pinned to 22 via `.nvmrc` and `web/package.json` engines; tests do not start on 20)
-- **Docker** (for running containers and integration tests)
+- **Docker or Podman** (for running containers and integration tests)
 - **Git** with commit signing configured
 - **Task** (`brew install go-task/tap/go-task`, `npm install -g @go-task/cli`, or another [install method](https://taskfile.dev/docs/installation))
 
@@ -62,7 +62,7 @@ Tasks live in `Taskfile.yml`; `task --list` shows the full catalog. The most com
 | `task test` | Run unit tests (race detector on, matching CI) |
 | `task test:coverage` | Run tests with coverage report |
 | `task test:frontend` | Run frontend tests (Vitest) |
-| `task test:integration` | Run integration tests (requires Docker) |
+| `task test:integration` | Run integration tests (requires Docker or Podman) |
 | `task lint` | Lint backend (golangci-lint) and frontend (ESLint) |
 | `task generate` | Regenerate mocks under `pkg/mcp/` and `pkg/runtime/` |
 | `task clean` | Remove build artifacts |
@@ -113,7 +113,7 @@ Run tests before submitting:
 
 ```bash
 task test                  # Unit tests
-task test:integration      # Integration tests (requires Docker)
+task test:integration      # Integration tests (requires Docker or Podman)
 ```
 
 ### Experimental Feature Flags

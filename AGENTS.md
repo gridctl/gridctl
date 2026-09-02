@@ -103,7 +103,8 @@ web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). 
                     files are popout windows that mirror specific panels.
 
 tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway lifecycle, hot reload, autoscaler,
-                    replicas, transports (incl. Podman), private git auth, optimize heuristics.
+                    replicas, transports (incl. Podman), private git auth, generated Python source builds, and
+                    optimize heuristics.
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
                     portable-pack, model-policy, python-sources). examples/_mock-servers/ is the source for `task mock:servers`.
