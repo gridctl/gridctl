@@ -836,6 +836,7 @@ type MCPServerStatus struct {
 	Name          string   `json:"name"`
 	Transport     string   `json:"transport"`
 	Endpoint      string   `json:"endpoint"`
+	ContainerID   string   `json:"containerId,omitempty"`
 	Initialized   bool     `json:"initialized"`
 	ToolCount     int      `json:"toolCount"`
 	Tools         []string `json:"tools"`
@@ -894,6 +895,7 @@ func (s *Server) getMCPServerStatuses(ctx context.Context) []MCPServerStatus {
 			Name:               ms.Name,
 			Transport:          string(ms.Transport),
 			Endpoint:           ms.Endpoint,
+			ContainerID:        ms.ContainerID,
 			Initialized:        ms.Initialized,
 			ToolCount:          ms.ToolCount,
 			Tools:              ms.Tools,

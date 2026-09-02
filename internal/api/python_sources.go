@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -27,8 +28,68 @@ type pythonSourcePlanner interface {
 }
 
 type pythonResolveRequest struct {
-	StackName string           `json:"stackName"`
-	Server    config.MCPServer `json:"server"`
+	StackName string                 `json:"stackName"`
+	Server    pythonMCPServerRequest `json:"server"`
+}
+
+type pythonMCPServerRequest struct {
+	Name               string                     `json:"name"`
+	Image              string                     `json:"image,omitempty"`
+	Source             *pythonSourceRequest       `json:"source,omitempty"`
+	URL                string                     `json:"url,omitempty"`
+	Port               int                        `json:"port,omitempty"`
+	Transport          string                     `json:"transport,omitempty"`
+	Command            []string                   `json:"command,omitempty"`
+	Env                map[string]string          `json:"env,omitempty"`
+	BuildArgs          map[string]string          `json:"buildArgs,omitempty"`
+	Volumes            []string                   `json:"volumes,omitempty"`
+	Network            string                     `json:"network,omitempty"`
+	SSH                *config.SSHConfig          `json:"ssh,omitempty"`
+	OpenAPI            *config.OpenAPIConfig      `json:"openapi,omitempty"`
+	Tools              []string                   `json:"tools,omitempty"`
+	OutputFormat       string                     `json:"outputFormat,omitempty"`
+	PinSchemas         *bool                      `json:"pinSchemas,omitempty"`
+	ReadyTimeout       string                     `json:"readyTimeout,omitempty"`
+	PingTimeout        string                     `json:"pingTimeout,omitempty"`
+	ProtocolGeneration string                     `json:"protocolGeneration,omitempty"`
+	Replicas           int                        `json:"replicas,omitempty"`
+	ReplicaPolicy      string                     `json:"replicaPolicy,omitempty"`
+	Autoscale          *pythonAutoscaleRequest    `json:"autoscale,omitempty"`
+	Telemetry          *config.MCPServerTelemetry `json:"telemetry,omitempty"`
+	Auth               *config.ServerAuth         `json:"auth,omitempty"`
+}
+
+type pythonSourceRequest struct {
+	Type        string                   `json:"type"`
+	URL         string                   `json:"url,omitempty"`
+	Ref         string                   `json:"ref,omitempty"`
+	Path        string                   `json:"path,omitempty"`
+	ProjectPath string                   `json:"projectPath,omitempty"`
+	Dockerfile  string                   `json:"dockerfile,omitempty"`
+	Runtime     string                   `json:"runtime,omitempty"`
+	Package     string                   `json:"package,omitempty"`
+	Python      string                   `json:"python,omitempty"`
+	Extras      []string                 `json:"extras,omitempty"`
+	With        []string                 `json:"with,omitempty"`
+	Packages    []string                 `json:"packages,omitempty"`
+	Auth        *pythonSourceAuthRequest `json:"auth,omitempty"`
+}
+
+type pythonSourceAuthRequest struct {
+	Method        string `json:"method,omitempty"`
+	CredentialRef string `json:"credentialRef,omitempty"`
+	SSHUser       string `json:"sshUser,omitempty"`
+	SSHKeyPath    string `json:"sshKeyPath,omitempty"`
+}
+
+type pythonAutoscaleRequest struct {
+	Min            int    `json:"min"`
+	Max            int    `json:"max"`
+	TargetInFlight int    `json:"targetInFlight"`
+	ScaleUpAfter   string `json:"scaleUpAfter,omitempty"`
+	ScaleDownAfter string `json:"scaleDownAfter,omitempty"`
+	WarmPool       int    `json:"warmPool,omitempty"`
+	IdleToZero     bool   `json:"idleToZero,omitempty"`
 }
 
 type generatedFileResponse struct {
@@ -85,7 +146,22 @@ func (s *Server) handleStackResourceValidate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	stack.SetDefaults()
-	writeJSON(w, config.ValidateWithIssues(&stack))
+	result := config.ValidateWithIssues(&stack)
+	trimValidationIssuePrefix(result, req.ResourceType)
+	writeJSON(w, result)
+}
+
+func trimValidationIssuePrefix(result *config.ValidationResult, resourceType string) {
+	prefix := "resources[0]"
+	if resourceType == "mcp-server" {
+		prefix = "mcp-servers[0]"
+	}
+	for i := range result.Issues {
+		result.Issues[i].Field = strings.TrimPrefix(result.Issues[i].Field, prefix+".")
+		if result.Issues[i].Field == prefix {
+			result.Issues[i].Field = ""
+		}
+	}
 }
 
 func writeResourceYAMLError(w http.ResponseWriter, err error) {
@@ -138,7 +214,7 @@ func (s *Server) resolvePythonSource(r *http.Request) (*pythonResolutionResponse
 	if req.StackName == "" {
 		req.StackName = "preview"
 	}
-	stack := config.Stack{Name: req.StackName, Network: config.Network{Name: "preview"}, MCPServers: []config.MCPServer{req.Server}}
+	stack := config.Stack{Name: req.StackName, Network: config.Network{Name: "preview"}, MCPServers: []config.MCPServer{req.Server.config()}}
 	stack.SetDefaults()
 	if result := config.ValidateWithIssues(&stack); !result.Valid {
 		return nil, fmt.Errorf("invalid MCP server: %s", formatValidationIssues(result.Issues))
@@ -149,7 +225,7 @@ func (s *Server) resolvePythonSource(r *http.Request) (*pythonResolutionResponse
 	}
 	opts := pythonBuildOptions(req.StackName, server)
 	if server.Source.Auth != nil {
-		auth, err := runtime.AuthForSource(server.Source.Auth, server.Source.URL, s.sourceCredentialResolver)
+		auth, err := runtime.AuthForSource(server.Source.Auth, server.Source.URL, runtime.CredentialResolver(s.credentialResolver()))
 		if err != nil {
 			return nil, fmt.Errorf("resolving source auth: %w", err)
 		}
@@ -196,22 +272,41 @@ func pythonBuildOptions(stackName string, server *config.MCPServer) builder.Buil
 	}
 }
 
-func (s *Server) sourceCredentialResolver(ref string) (string, error) {
-	if s.vaultStore == nil {
-		return "", fmt.Errorf("variable store is not configured")
+func (r pythonMCPServerRequest) config() config.MCPServer {
+	server := config.MCPServer{
+		Name: r.Name, Image: r.Image, URL: r.URL, Port: r.Port, Transport: r.Transport,
+		Command: r.Command, Env: r.Env, BuildArgs: r.BuildArgs, Volumes: r.Volumes,
+		Network: r.Network, SSH: r.SSH, OpenAPI: r.OpenAPI, Tools: r.Tools,
+		OutputFormat: r.OutputFormat, PinSchemas: r.PinSchemas, ReadyTimeout: r.ReadyTimeout,
+		PingTimeout: r.PingTimeout, ProtocolGeneration: r.ProtocolGeneration,
+		Replicas: r.Replicas, ReplicaPolicy: r.ReplicaPolicy, Telemetry: r.Telemetry, Auth: r.Auth,
 	}
-	key := strings.TrimSuffix(strings.TrimPrefix(ref, "${var:"), "}")
-	if key == ref {
-		key = strings.TrimSuffix(strings.TrimPrefix(ref, "${vault:"), "}")
+	if r.Source != nil {
+		server.Source = r.Source.config()
 	}
-	if key == ref || key == "" {
-		return "", fmt.Errorf("credential reference must use ${var:KEY}")
+	if r.Autoscale != nil {
+		server.Autoscale = &config.AutoscaleConfig{
+			Min: r.Autoscale.Min, Max: r.Autoscale.Max, TargetInFlight: r.Autoscale.TargetInFlight,
+			ScaleUpAfter: r.Autoscale.ScaleUpAfter, ScaleDownAfter: r.Autoscale.ScaleDownAfter,
+			WarmPool: r.Autoscale.WarmPool, IdleToZero: r.Autoscale.IdleToZero,
+		}
 	}
-	value, ok := s.vaultStore.Get(key)
-	if !ok {
-		return "", fmt.Errorf("variable %q was not found", key)
+	return server
+}
+
+func (r pythonSourceRequest) config() *config.Source {
+	source := &config.Source{
+		Type: r.Type, URL: r.URL, Ref: r.Ref, Path: r.Path, ProjectPath: r.ProjectPath,
+		Dockerfile: r.Dockerfile, Runtime: r.Runtime, Package: r.Package, Python: r.Python,
+		Extras: r.Extras, With: r.With, Packages: r.Packages,
 	}
-	return value, nil
+	if r.Auth != nil {
+		source.Auth = &config.SourceAuth{
+			Method: r.Auth.Method, CredentialRef: r.Auth.CredentialRef,
+			SSHUser: r.Auth.SSHUser, SSHKeyPath: r.Auth.SSHKeyPath,
+		}
+	}
+	return source
 }
 
 func decodeBoundedJSON(r *http.Request, dst any) error {
@@ -262,10 +357,12 @@ func (s *Server) enrichMCPServerStatuses(ctx context.Context, statuses []MCPServ
 	}
 	data, err := os.ReadFile(s.stackFile)
 	if err != nil {
+		slog.Warn("status: failed to read stack for MCP server provenance", "path", s.stackFile, "error", err)
 		return
 	}
 	var stack config.Stack
 	if err := yaml.Unmarshal(data, &stack); err != nil {
+		slog.Warn("status: failed to parse stack for MCP server provenance", "path", s.stackFile, "error", err)
 		return
 	}
 	declared := make(map[string]config.MCPServer, len(stack.MCPServers))
@@ -275,7 +372,9 @@ func (s *Server) enrichMCPServerStatuses(ctx context.Context, statuses []MCPServ
 	images := make(map[string]string)
 	if s.dockerClient != nil && s.stackName != "" {
 		containers, listErr := runtimedocker.ListManagedContainers(ctx, s.dockerClient, s.stackName)
-		if listErr == nil {
+		if listErr != nil {
+			slog.Warn("status: failed to list MCP server containers; omitting image provenance", "stack", s.stackName, "error", listErr)
+		} else {
 			for _, container := range containers {
 				if name := container.Labels[runtimedocker.LabelMCPServer]; name != "" && images[name] == "" {
 					images[name] = container.Image
@@ -318,6 +417,7 @@ func (s *Server) enrichMCPServerStatuses(ctx context.Context, statuses []MCPServ
 func (s *Server) enrichSourceFromImage(ctx context.Context, imageTag string, source *MCPServerSourceStatus) {
 	images, err := s.dockerClient.ImageList(ctx, image.ListOptions{Filters: filters.NewArgs(filters.Arg("reference", imageTag))})
 	if err != nil {
+		slog.Warn("status: failed to inspect MCP server image provenance", "error", err)
 		return
 	}
 	for _, candidate := range images {
