@@ -102,13 +102,12 @@ func streamBuildOutput(reader io.Reader, logger *slog.Logger) (string, error) {
 			imageID = output.Aux.ID
 		}
 
-		// Log build steps (filter noise)
+		// Build output is diagnostic data and must remain available at the
+		// default daemon log level for long-running and failed builds.
 		if output.Stream != "" {
 			stream := strings.TrimSpace(output.Stream)
-			if stream != "" && (strings.HasPrefix(stream, "Step") ||
-				strings.HasPrefix(stream, "Successfully") ||
-				strings.HasPrefix(stream, "---")) {
-				logger.Debug("build output", "line", stream)
+			if stream != "" {
+				logger.Info("build output", "line", stream)
 			}
 		}
 	}

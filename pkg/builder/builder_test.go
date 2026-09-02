@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
@@ -109,6 +110,31 @@ func TestNew(t *testing.T) {
 	}
 	if b.cli != mock {
 		t.Error("expected Builder to use provided client")
+	}
+}
+
+func TestBuild_LogsDiagnosticsWithServer(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM scratch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	docker := &mockDockerClient{imageBuildFn: func(context.Context, io.Reader, build.ImageBuildOptions) (build.ImageBuildResponse, error) {
+		return build.ImageBuildResponse{Body: io.NopCloser(strings.NewReader(`{"stream":"transferring build context\n"}
+{"aux":{"ID":"sha256:mock123"}}`))}, nil
+	}}
+	_, err := New(docker).Build(context.Background(), BuildOptions{
+		Stack: "demo", ServerName: "fetch", SourceType: "local", Path: dir, Logger: logger,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := logs.String()
+	for _, want := range []string{"msg=\"build output\"", "line=\"transferring build context\"", "server=fetch", "phase=building_image", "level=INFO"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("build diagnostics missing %q: %s", want, output)
+		}
 	}
 }
 

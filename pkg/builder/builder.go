@@ -68,7 +68,8 @@ func (b *Builder) Build(ctx context.Context, opts BuildOptions) (*BuildResult, e
 
 	// Build the image
 	logger.Info("MCP server build phase", "server", opts.ServerName, "phase", "building_image", "cached", false)
-	imageID, err := buildImage(ctx, b.cli, plan.EffectiveProjectRoot, plan.Dockerfile, plan.ImageTag, opts.BuildArgs, plan.ImageLabels(), opts.NoCache, logger)
+	buildLogger := logger.With("server", opts.ServerName, "phase", "building_image")
+	imageID, err := buildImage(ctx, b.cli, plan.EffectiveProjectRoot, plan.Dockerfile, plan.ImageTag, opts.BuildArgs, plan.ImageLabels(), opts.NoCache, buildLogger)
 	if err != nil {
 		return nil, fmt.Errorf("building image: %w", err)
 	}
