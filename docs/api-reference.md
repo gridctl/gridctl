@@ -158,7 +158,26 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
 | `per_client` | map | Token counts keyed by normalized MCP client name (omitted when no per-client traffic has been observed) |
 | `format_savings` | object | Savings from output format conversion (`original_tokens`, `formatted_tokens`, `saved_tokens`, `savings_percent`) |
 
-**MCP server status** includes `outputFormat` (string, omitted when unset) showing the configured output format for each server and `autoscale` (object, omitted when the server has no autoscale block) described under [`/api/mcp-servers`](#get-apimcp-servers). Container servers also report `kind` and `image`. Generated Python sources use kind `Python container`, remain `localProcess: false`, and include a `source` object with the declared type, package or Git ref, and immutable commit or artifact provenance when the built image records it. `image` is the actual managed-container image tag, not a tag recomputed from the declaration. Each registered server also reports `protocolVersion` (string, omitted when the server did not report one or has no MCP handshake, as with OpenAPI adapters) carrying the MCP protocol version negotiated at initialize, and `protocolGeneration` (string, `"handshake"` or `"stateless"`, omitted for OpenAPI adapters) carrying the resolved MCP protocol generation. `/api/sessions` responses carry `entries`, one `{id, generation, protocolVersion}` object per active session, alongside the legacy bare `sessions` ID list. A server that failed gateway registration (unreachable endpoint, initialize failure, or unsupported protocol version) still appears in the list with `registrationFailed: true`, `healthy: false`, the failure reason in `healthError`, `initialized: false`, and no replicas, so declared servers are never silently absent. A retryable failure (the server was not reachable) is not terminal: the gateway re-attempts registration on the health-monitor cadence with exponential backoff, `healthError` carries a `retrying in Ns` hint while the loop runs, and the row flips to a normal registered server once the backend becomes reachable. Authorization failures and configuration errors are not retried, and `POST /api/mcp-servers/{name}/restart` on a retrying server forces an immediate attempt instead of returning 404.
+**MCP server status** includes `outputFormat` (string, omitted when unset) showing the configured output format for each server and `autoscale` (object, omitted when the server has no autoscale block) described under [`/api/mcp-servers`](#get-apimcp-servers). Container servers also report `kind` and `image`. Generated Python sources use kind `Python container`, remain `localProcess: false`, and include a `source` object with the declared type, package or Git ref, and immutable commit or artifact provenance when the built image records it. `image` is the actual managed-container image tag, not a tag recomputed from the declaration:
+
+```json
+{
+  "name": "fetch",
+  "kind": "Python container",
+  "image": "gridctl-demo-fetch:0.6.0-a1b2c3d4e5f6",
+  "localProcess": false,
+  "source": {
+    "type": "pypi",
+    "package": "mcp-server-fetch",
+    "version": "0.6.0",
+    "artifact": "mcp_server_fetch-0.6.0-py3-none-any.whl"
+  }
+}
+```
+
+The `source` object can contain `type`, redacted `url`, declared `ref`, `package`, resolved `version`, immutable Git `commit`, and selected PyPI `artifact`. Empty fields are omitted. When an older image has no provenance labels, the API falls back to the declared PyPI package and version but does not guess a commit or artifact.
+
+Each registered server also reports `protocolVersion` (string, omitted when the server did not report one or has no MCP handshake, as with OpenAPI adapters) carrying the MCP protocol version negotiated at initialize, and `protocolGeneration` (string, `"handshake"` or `"stateless"`, omitted for OpenAPI adapters) carrying the resolved MCP protocol generation. `/api/sessions` responses carry `entries`, one `{id, generation, protocolVersion}` object per active session, alongside the legacy bare `sessions` ID list. A server that failed gateway registration (unreachable endpoint, initialize failure, or unsupported protocol version) still appears in the list with `registrationFailed: true`, `healthy: false`, the failure reason in `healthError`, `initialized: false`, and no replicas, so declared servers are never silently absent. A retryable failure (the server was not reachable) is not terminal: the gateway re-attempts registration on the health-monitor cadence with exponential backoff, `healthError` carries a `retrying in Ns` hint while the loop runs, and the row flips to a normal registered server once the backend becomes reachable. Authorization failures and configuration errors are not retried, and `POST /api/mcp-servers/{name}/restart` on a retrying server forces an immediate attempt instead of returning 404.
 
 **Experimental flag fields** appear at the top level when any experimental flag is enabled (via the stack's `experimental:` block or a `GRIDCTL_EXPERIMENTAL_*` env override), and are omitted otherwise:
 
@@ -941,19 +960,125 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 #### `POST /api/stack/resource/validate`
 
-Validates one wizard resource without requiring a synthetic complete stack. The JSON body is `{ "resourceType": "mcp-server" | "resource", "yaml": "..." }`; `yaml` contains the single unindented resource block. The response is the same `ValidationResult` shape as stack validation, including field-level Python-source errors. The body is limited to 1 MiB.
+Validates one resource without requiring a complete stack. `resourceType` must be `mcp-server` or `resource`, and `yaml` contains one unindented resource block. The endpoint expands variables, applies defaults, and runs the same validation rules as full-stack validation. The JSON body is limited to 1 MiB and rejects unknown fields.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"resourceType":"mcp-server","yaml":"name: fetch\nsource:\n  type: pypi\n  package: mcp-server-fetch\n  ref: 0.6.0\n"}' \
+  http://localhost:8180/api/stack/resource/validate
+```
+
+**Response (200):**
+```json
+{
+  "valid": true,
+  "errorCount": 0,
+  "warningCount": 0,
+  "issues": []
+}
+```
+
+Invalid YAML, unresolved variables, and invalid resource fields also return `200` with `valid: false` and one or more `{field, message, severity}` issues. Malformed JSON, an oversized body, or an unsupported `resourceType` returns `400`.
 
 #### `GET /api/python/packages/{package}/versions`
 
 Returns exact, non-yanked public PyPI releases for package selection as `{package, latest, versions}`. `latest` is the latest stable exact release. PyPI requests have a 15-second deadline and a 16 MiB metadata limit; successful inventories are cached in the daemon and advertised to the browser as private cacheable for five minutes. Resolution uses only official PyPI and returns `422` for missing or invalid projects.
 
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8180/api/python/packages/mcp-server-fetch/versions
+```
+
+**Response (200):**
+```json
+{
+  "package": "mcp-server-fetch",
+  "latest": "0.6.0",
+  "versions": ["0.6.0", "0.5.1", "0.5.0"]
+}
+```
+
+Successful responses include `Cache-Control: private, max-age=300`. A missing or invalid project, an upstream failure, or metadata over the response limit returns `422` as `{ "error": "..." }`.
+
 #### `POST /api/python/resolve`
 
-Resolves a generated Python MCP server into the same immutable build plan used by apply and CLI plan. The JSON body is `{ "stackName": "preview", "server": {...} }`, where `server` uses the `MCPServer` field names in lower camel case. The response includes declared and resolved identities, selected Python and command, build-input digest, image tag, cache state, mutable-ref state, provenance, and `generatedFile` when gridctl generated a Dockerfile. Host build-context paths and credentials are never returned. The body is limited to 1 MiB; invalid declarations and resolution failures return `422`.
+Resolves a generated Python MCP server into the same immutable build plan used by apply and CLI plan. The `server` object uses lower-camel versions of the stack's MCP server fields. `stackName` defaults to `preview` when omitted. The body is limited to 1 MiB and rejects unknown fields.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"stackName":"preview","server":{"name":"fetch","source":{"type":"pypi","package":"mcp-server-fetch","ref":"0.6.0"}}}' \
+  http://localhost:8180/api/python/resolve
+```
+
+**Response (200):**
+```json
+{
+  "declaredIdentity": {
+    "type": "pypi",
+    "ref": "0.6.0",
+    "package": "mcp-server-fetch"
+  },
+  "resolvedIdentity": {
+    "type": "pypi",
+    "ref": "0.6.0",
+    "package": "mcp-server-fetch",
+    "version": "0.6.0",
+    "artifact": "mcp_server_fetch-0.6.0-py3-none-any.whl",
+    "artifactSha256": "<sha256>"
+  },
+  "python": "3.12",
+  "command": ["mcp-server-fetch"],
+  "buildInputDigest": "<sha256>",
+  "imageTag": "gridctl-preview-fetch:0.6.0-a1b2c3d4e5f6",
+  "cached": false,
+  "mutableRef": false,
+  "provenance": {
+    "sourceContentDigest": "<sha256>",
+    "generatorVersion": "<version>",
+    "baseImage": "python@sha256:<digest>",
+    "uvImage": "ghcr.io/astral-sh/uv@sha256:<digest>"
+  },
+  "generatedFile": {
+    "name": ".gridctl.Dockerfile",
+    "mediaType": "text/x-dockerfile",
+    "content": "FROM python@sha256:<digest>\n..."
+  }
+}
+```
+
+The response includes declared and immutable source identities, selected Python and command, build-input digest, image tag, cache state, mutable-ref state, and non-secret provenance. `generatedFile` is present only when gridctl generates the Dockerfile. Temporary host build-context paths and credentials are never returned, and source URLs are redacted. Malformed JSON or an oversized body returns `422`; invalid declarations, non-Python sources, credential-resolution failures, and source-resolution failures also return `422` as `{ "error": "..." }`.
 
 #### `POST /api/python/generated-file`
 
-Accepts the same request as `/api/python/resolve` and returns `{name, mediaType, content}` for the exact generated Dockerfile. It returns `422` when the declaration selects a custom Dockerfile. This endpoint and the `generatedFile` field above call the shared builder planner rather than maintaining an API template.
+Accepts the same request as `/api/python/resolve` and returns the exact generated Dockerfile. This endpoint and the `generatedFile` field above call the shared builder planner rather than maintaining a separate API template.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"stackName":"preview","server":{"name":"fetch","source":{"type":"pypi","package":"mcp-server-fetch","ref":"0.6.0"}}}' \
+  http://localhost:8180/api/python/generated-file
+```
+
+**Response (200):**
+```json
+{
+  "name": ".gridctl.Dockerfile",
+  "mediaType": "text/x-dockerfile",
+  "content": "FROM python@sha256:<digest>\n..."
+}
+```
+
+Malformed requests and resolution failures return `422` as described for `/api/python/resolve`. A valid Python source that selects a custom Dockerfile returns `422` because gridctl did not generate a file.
 
 #### `GET /api/stack/plan`
 

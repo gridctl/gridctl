@@ -49,7 +49,8 @@ The shape of the codebase from the outside in:
 cmd/gridctl/        Cobra CLI entry points, one file per subcommand (apply, serve, link, var, skill, ctx, pack, project, optimize, …).
                     embed.go pulls in cmd/gridctl/web/dist via go:embed under the embed_web build tag.
 internal/api/       REST handlers backing the web UI (one file per resource: stack, skills, vault, pins, telemetry, traces, …).
-                    The Server struct in api.go wires together every pkg/* subsystem the UI needs to talk to.
+                    Python source validation, resolution previews, generated files, and status provenance live in
+                    python_sources.go. The Server struct in api.go wires together every pkg/* subsystem the UI needs.
 internal/probe/     Ephemeral MCP tool-list probe for the "add server" wizard (not registered with the gateway).
 pkg/catalog/        MCP server catalog behind `gridctl search` / `gridctl add`: curated embedded entries plus the
                     official MCP Registry, with install-shape mapping into stack.yaml server blocks.
