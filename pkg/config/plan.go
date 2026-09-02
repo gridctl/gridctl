@@ -33,6 +33,7 @@ type BuildAction struct {
 	ImageTag            string        `json:"imageTag"`
 	Cached              bool          `json:"cached"`
 	CacheState          string        `json:"cacheState"`
+	Error               string        `json:"error,omitempty"`
 	MutableRef          bool          `json:"mutableRef,omitempty"`
 	GeneratedDockerfile string        `json:"generatedDockerfile,omitempty"`
 }

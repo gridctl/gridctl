@@ -113,3 +113,9 @@ func TestCheckUvx(t *testing.T) {
 		t.Fatalf("checks = %+v", checks)
 	}
 }
+
+func TestDoctorHelpMentionsUvx(t *testing.T) {
+	if !strings.Contains(doctorCmd.Long, "uvx") {
+		t.Fatalf("doctor help does not describe the uvx check: %q", doctorCmd.Long)
+	}
+}

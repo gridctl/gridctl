@@ -68,9 +68,10 @@ var doctorCmd = &cobra.Command{
 	Short: "Check the environment and report actionable problems",
 	Long: `Runs opinionated health checks against the local environment: container
 runtime, socket reachability, gateway port, Node.js availability for client
-bridges, state directory hygiene, vault status, projection lockfile
-generation, wiring ownership, and per-server MCP protocol generation. Each
-check renders a verdict with a remediation hint.
+bridges, advisory uvx availability for host package workflows, state directory
+hygiene, vault status, projection lockfile generation, wiring ownership, and
+per-server MCP protocol generation. Each check renders a verdict with a
+remediation hint.
 
 Where 'gridctl info' reports facts and always exits 0, doctor judges and
 exits non-zero when something needs fixing.

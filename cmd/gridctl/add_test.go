@@ -36,13 +36,16 @@ func TestParseDirectContainerInput(t *testing.T) {
 	addContainer = true
 	commit := strings.Repeat("a", 40)
 	tests := []struct {
-		name, input, sourceType, packageName, ref string
-		wantErr                                   string
+		name, input, sourceType, packageName, ref, sourceURL string
+		wantErr                                              string
 	}{
 		{name: "package", input: "mcp-server-fetch==0.6.0", sourceType: "pypi", packageName: "mcp-server-fetch", ref: "0.6.0"},
 		{name: "raw uvx", input: "uvx mcp-server-fetch==0.6.0", sourceType: "pypi", packageName: "mcp-server-fetch", ref: "0.6.0"},
-		{name: "pinned github", input: "https://github.com/acme/weather.git#" + commit, sourceType: "git", ref: commit},
+		{name: "pinned github", input: "https://github.com/acme/weather.git#" + commit, sourceType: "git", ref: commit, sourceURL: "https://github.com/acme/weather.git"},
+		{name: "pinned github suffix", input: "https://github.com/acme/weather.git@" + commit, sourceType: "git", ref: commit, sourceURL: "https://github.com/acme/weather.git"},
 		{name: "unpinned github", input: "https://github.com/acme/weather.git", wantErr: "40-character-commit"},
+		{name: "github userinfo", input: "https://token@github.com/acme/weather.git#" + commit, wantErr: "must not contain credentials"},
+		{name: "github query", input: "https://github.com/acme/weather.git?token=secret#" + commit, wantErr: "must not contain credentials"},
 		{name: "ambiguous uvx", input: "uvx mcp-server-fetch==0.6.0 --with foo", wantErr: "exactly 'uvx package==version'"},
 	}
 	for _, tt := range tests {
@@ -62,6 +65,9 @@ func TestParseDirectContainerInput(t *testing.T) {
 			}
 			if got.source.Type != tt.sourceType || got.source.Package != tt.packageName || got.source.Ref != tt.ref {
 				t.Fatalf("source = %+v", got.source)
+			}
+			if got.source.URL != tt.sourceURL {
+				t.Fatalf("source URL = %q, want %q", got.source.URL, tt.sourceURL)
 			}
 		})
 	}
@@ -87,6 +93,18 @@ func TestContainerizeCatalogEntry_ExactPyPIOnly(t *testing.T) {
 	entry.Install.Version = ""
 	if _, err := containerizeCatalogEntry(entry, server); err == nil || !strings.Contains(err.Error(), "exact PyPI") {
 		t.Fatalf("err = %v, want exact-version refusal", err)
+	}
+
+	entry.Install.Version = "0.6.0"
+	entry.Inputs = []catalog.Input{{Name: "ROOT", Format: "filepath"}}
+	if _, err := containerizeCatalogEntry(entry, server); err == nil || !strings.Contains(err.Error(), "explicit volume") {
+		t.Fatalf("err = %v, want filepath refusal", err)
+	}
+
+	entry.Inputs = nil
+	server.Command = []string{"uvx", "mcp-server-fetch==0.6.0", "--verbose"}
+	if _, err := containerizeCatalogEntry(entry, server); err == nil || !strings.Contains(err.Error(), "cannot be mapped") {
+		t.Fatalf("err = %v, want extra-argument refusal", err)
 	}
 }
 

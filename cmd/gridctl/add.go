@@ -431,6 +431,9 @@ func parseDirectContainerInput(arg string) (directContainerInput, bool, error) {
 
 	parsed, err := url.Parse(value)
 	if err == nil && strings.EqualFold(parsed.Hostname(), "github.com") {
+		if parsed.User != nil || parsed.RawQuery != "" {
+			return directContainerInput{}, true, fmt.Errorf("--container GitHub URLs must not contain credentials or query parameters; use source.auth.credential_ref for authentication")
+		}
 		commit := parsed.Fragment
 		parsed.Fragment = ""
 		if commit == "" {
@@ -444,7 +447,13 @@ func parseDirectContainerInput(arg string) (directContainerInput, bool, error) {
 			return directContainerInput{}, true, fmt.Errorf("--container requires a GitHub URL pinned with #<40-character-commit> or @<40-character-commit>")
 		}
 		repo := strings.TrimSuffix(path.Base(parsed.Path), ".git")
+		parsed.User = nil
+		parsed.RawQuery = ""
+		parsed.Fragment = ""
 		source := &config.Source{Type: "git", URL: parsed.String(), Ref: strings.ToLower(commit), Runtime: "python"}
+		if err := validateContainerSource(source); err != nil {
+			return directContainerInput{}, true, err
+		}
 		return directContainerInput{name: sanitizeDirectServerName(repo), source: source}, true, nil
 	}
 	return directContainerInput{}, false, nil

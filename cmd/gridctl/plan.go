@@ -3,8 +3,10 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -13,6 +15,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/builder"
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/controller"
+	gitpkg "github.com/gridctl/gridctl/pkg/git"
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/runtime"
@@ -87,9 +90,7 @@ func runPlan(ctx context.Context, stackPath string) error {
 	diff := config.ComputePlan(proposed, current)
 	diff.VariableDiagnostics = diagnostics
 	diff.Builds, err = resolvePlanBuilds(ctx, proposed, planShowDockerfile)
-	if err != nil {
-		return fmt.Errorf("resolving source build plan: %w", err)
-	}
+	buildErr := err
 
 	// Declared client links are host-only work, kept out of PlanDiff.Items
 	// so the container/gateway summary never claims link changes.
@@ -99,10 +100,16 @@ func runPlan(ctx context.Context, stackPath string) error {
 	}
 
 	if planFormat == "json" {
-		return output.EncodeJSON(os.Stdout, struct {
+		if err := output.EncodeJSON(os.Stdout, struct {
 			*config.PlanDiff
 			ClientLinks []linkAction `json:"clientLinks,omitempty"`
-		}{diff, links})
+		}{diff, links}); err != nil {
+			return err
+		}
+		if buildErr != nil {
+			return fmt.Errorf("resolving source build plan: %w", buildErr)
+		}
+		return nil
 	}
 
 	printPlanDiff(os.Stdout, diff)
@@ -111,6 +118,9 @@ func runPlan(ctx context.Context, stackPath string) error {
 		fmt.Printf("! variable %s: %s\n", diagnostic.Key, diagnostic.Message)
 	}
 	printLinkActions(os.Stdout, links)
+	if buildErr != nil {
+		return fmt.Errorf("resolving source build plan: %w", buildErr)
+	}
 
 	if !diff.HasChanges {
 		return nil
@@ -168,16 +178,25 @@ func resolvePlanBuilds(ctx context.Context, stack *config.Stack, showDockerfile 
 	}
 
 	var actions []config.BuildAction
+	var resolutionErrors []error
 	for i := range stack.MCPServers {
 		server := &stack.MCPServers[i]
 		if server.Source == nil {
 			continue
 		}
 		opts := buildOptionsForServer(stack.Name, server)
+		action := config.BuildAction{
+			Server: server.Name, SourceType: server.Source.Type,
+			DeclaredIdentity: declaredPlanIdentity(server.Source),
+			CacheState:       "unknown",
+		}
 		if server.Source.Auth != nil {
 			auth, err := runtime.AuthForSource(server.Source.Auth, server.Source.URL, cliCredentialResolver)
 			if err != nil {
-				return nil, fmt.Errorf("%s: %w", server.Name, err)
+				action.Error = redactPlanError(err, server.Source.URL)
+				actions = append(actions, action)
+				resolutionErrors = append(resolutionErrors, fmt.Errorf("%s: %s", server.Name, action.Error))
+				continue
 			}
 			opts.Auth = auth
 		}
@@ -189,15 +208,16 @@ func resolvePlanBuilds(ctx context.Context, stack *config.Stack, showDockerfile 
 			plan, err = b.Resolve(ctx, opts)
 		}
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", server.Name, err)
+			action.Error = redactPlanError(err, server.Source.URL)
+			actions = append(actions, action)
+			resolutionErrors = append(resolutionErrors, fmt.Errorf("%s: %s", server.Name, action.Error))
+			continue
 		}
-		action := config.BuildAction{
-			Server: server.Name, SourceType: server.Source.Type,
-			DeclaredIdentity: planIdentity(plan.DeclaredIdentity),
-			ResolvedIdentity: planIdentity(plan.ResolvedIdentity),
-			ImageTag:         plan.ImageTag, Cached: plan.Cached,
-			CacheState: "unknown", MutableRef: plan.MutableRef,
-		}
+		action.DeclaredIdentity = planIdentity(plan.DeclaredIdentity)
+		action.ResolvedIdentity = planIdentity(plan.ResolvedIdentity)
+		action.ImageTag = plan.ImageTag
+		action.Cached = plan.Cached
+		action.MutableRef = plan.MutableRef
 		if cacheAvailable {
 			action.CacheState = "build"
 			if plan.Cached {
@@ -208,11 +228,12 @@ func resolvePlanBuilds(ctx context.Context, stack *config.Stack, showDockerfile 
 			action.GeneratedDockerfile = plan.GeneratedDockerfile
 		}
 		if err := plan.Close(); err != nil {
-			return nil, fmt.Errorf("%s: cleaning build plan: %w", server.Name, err)
+			action.Error = fmt.Sprintf("cleaning build plan: %v", err)
+			resolutionErrors = append(resolutionErrors, fmt.Errorf("%s: cleaning build plan: %w", server.Name, err))
 		}
 		actions = append(actions, action)
 	}
-	return actions, nil
+	return actions, errors.Join(resolutionErrors...)
 }
 
 func buildOptionsForServer(stackName string, server *config.MCPServer) builder.BuildOptions {
@@ -228,11 +249,38 @@ func buildOptionsForServer(stackName string, server *config.MCPServer) builder.B
 
 func planIdentity(identity builder.SourceIdentity) config.BuildIdentity {
 	return config.BuildIdentity{
-		Type: identity.Type, URL: identity.URL, Ref: identity.Ref, Path: identity.Path,
+		Type: identity.Type, URL: sanitizePlanURL(identity.URL), Ref: identity.Ref, Path: identity.Path,
 		ProjectPath: identity.ProjectPath, Dockerfile: identity.Dockerfile, Commit: identity.Commit,
 		Package: identity.Package, Version: identity.Version, Artifact: identity.Artifact,
 		ArtifactSHA256: identity.ArtifactSHA256,
 	}
+}
+
+func declaredPlanIdentity(source *config.Source) config.BuildIdentity {
+	return config.BuildIdentity{
+		Type: source.Type, URL: sanitizePlanURL(source.URL), Ref: source.Ref,
+		Path: source.Path, ProjectPath: source.ProjectPath, Dockerfile: source.Dockerfile,
+		Package: source.Package,
+	}
+}
+
+func sanitizePlanURL(value string) string {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme == "" {
+		return gitpkg.RedactURL(value)
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
+}
+
+func redactPlanError(err error, sourceURL string) string {
+	message := err.Error()
+	if sourceURL != "" {
+		message = strings.ReplaceAll(message, sourceURL, sanitizePlanURL(sourceURL))
+	}
+	return gitpkg.RedactString(message)
 }
 
 func printPlanBuilds(w io.Writer, builds []config.BuildAction, showDockerfile bool) {
@@ -241,15 +289,31 @@ func printPlanBuilds(w io.Writer, builds []config.BuildAction, showDockerfile bo
 	}
 	fmt.Fprintln(w, "\nSource builds:")
 	for _, build := range builds {
-		identity := build.SourceType
-		if build.ResolvedIdentity.Package != "" {
-			identity += ":" + build.ResolvedIdentity.Package + "==" + build.ResolvedIdentity.Version
-		} else if build.ResolvedIdentity.Commit != "" {
-			identity += ":" + build.ResolvedIdentity.Commit
-		} else if build.ResolvedIdentity.Path != "" {
-			identity += ":" + build.ResolvedIdentity.Path
+		resolved := build.ResolvedIdentity
+		if resolved.Type == "" && resolved.URL == "" && resolved.Ref == "" && resolved.Path == "" &&
+			resolved.Commit == "" && resolved.Package == "" && resolved.Version == "" {
+			resolved = build.DeclaredIdentity
 		}
-		fmt.Fprintf(w, "  + %s (build %s -> %s, cache: %s)\n", build.Server, identity, build.ImageTag, build.CacheState)
+		identity := build.SourceType
+		if resolved.Package != "" {
+			version := resolved.Version
+			if version == "" {
+				version = resolved.Ref
+			}
+			identity += ":" + resolved.Package + "==" + version
+		} else if resolved.Commit != "" {
+			identity += ":" + resolved.Commit
+		} else if resolved.Path != "" {
+			identity += ":" + resolved.Path
+		}
+		if build.ImageTag == "" {
+			fmt.Fprintf(w, "  + %s (build %s, cache: %s)\n", build.Server, identity, build.CacheState)
+		} else {
+			fmt.Fprintf(w, "  + %s (build %s -> %s, cache: %s)\n", build.Server, identity, build.ImageTag, build.CacheState)
+		}
+		if build.Error != "" {
+			fmt.Fprintf(w, "      error: %s\n", build.Error)
+		}
 		if build.MutableRef {
 			fmt.Fprintln(w, "      warning: declared git ref is mutable")
 		}
