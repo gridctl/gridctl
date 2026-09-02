@@ -129,6 +129,9 @@ export function createMCPServerNodes(mcpServers: MCPServerStatus[]): Node[] {
       authStatus: server.authStatus,
       authIssuer: server.authIssuer,
       authExpiry: server.authExpiry,
+      kind: server.kind,
+      image: server.image,
+      source: server.source,
     },
     draggable: true,
   }));

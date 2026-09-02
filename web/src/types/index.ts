@@ -52,6 +52,16 @@ export interface AutoscaleStatus {
   idleToZero?: boolean;
 }
 
+export interface MCPServerSourceStatus {
+  type: string;
+  url?: string;
+  ref?: string;
+  package?: string;
+  version?: string;
+  commit?: string;
+  artifact?: string;
+}
+
 // MCP Server status matching mcp.MCPServerStatus
 export interface MCPServerStatus {
   name: string;
@@ -94,6 +104,9 @@ export interface MCPServerStatus {
   authStatus?: 'authorized' | 'needs_auth';
   authIssuer?: string; // Authorization server issuer, when known
   authExpiry?: string; // RFC3339 access token expiry, when known
+  kind?: string;
+  image?: string;
+  source?: MCPServerSourceStatus;
 }
 
 // Per-server downstream authorization detail from GET /api/auth/servers.
@@ -376,6 +389,9 @@ export interface MCPServerNodeData extends NodeDataBase {
   authStatus?: 'authorized' | 'needs_auth';
   authIssuer?: string;
   authExpiry?: string;
+  kind?: string;
+  image?: string;
+  source?: MCPServerSourceStatus;
 }
 
 export interface ResourceNodeData extends NodeDataBase {

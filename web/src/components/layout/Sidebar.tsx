@@ -29,6 +29,7 @@ import { TokenUsageSection } from '../sidebar/TokenUsageSection';
 import { ToolsEditor } from '../sidebar/ToolsEditor';
 import { AutoscalePanel } from '../status/AutoscalePanel';
 import { SidebarTelemetrySection } from '../telemetry/SidebarTelemetrySection';
+import { SourceProvenance } from '../sidebar/SourceProvenance';
 import { getTransportIcon, getTransportColorClasses } from '../../lib/transport';
 import { getClientIcon } from '../../lib/clientIcons';
 import { summarizeClientReach } from '../../lib/clientScope';
@@ -212,6 +213,10 @@ export function Sidebar() {
                   {serverData.protocolVersion}
                 </span>
               </div>
+            )}
+
+            {isServer && (
+              <SourceProvenance kind={serverData?.kind} image={serverData?.image} source={serverData?.source} />
             )}
 
             {/* Generation renders only on mixed fleets: when every server
@@ -524,4 +529,3 @@ export function Sidebar() {
     </div>
   );
 }
-

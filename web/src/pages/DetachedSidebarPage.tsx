@@ -30,6 +30,7 @@ import type {
 } from '../types';
 import { InspectorSection } from '../components/inspector';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
+import { SourceProvenance } from '../components/sidebar/SourceProvenance';
 
 interface NodeOption {
   name: string;
@@ -351,6 +352,15 @@ function NodeDetails({ node }: { node: NodeOption }) {
             </div>
           )}
 
+          {isServer && (
+            <SourceProvenance
+              kind={serverData?.kind}
+              image={serverData?.image}
+              source={serverData?.source}
+              labelClassName="log-text"
+            />
+          )}
+
           {resourceData?.image && (
             <div className="flex justify-between items-center gap-4">
               <span className="log-text text-text-muted">Image</span>
@@ -389,4 +399,3 @@ function NodeDetails({ node }: { node: NodeOption }) {
     </div>
   );
 }
-
