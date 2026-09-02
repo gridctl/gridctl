@@ -205,7 +205,7 @@ func TestPythonContainers_RealRuntime(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Status(%s after reload): %v", listed.ID, err)
 			}
-			if status.Image != expectedReloadImage || status.HostPort != 0 {
+			if !sameRuntimeImage(status.Image, expectedReloadImage) || status.HostPort != 0 {
 				t.Errorf("reloaded workload = %+v, want image %q and host port 0", status, expectedReloadImage)
 			}
 		}
@@ -369,6 +369,10 @@ func hasTool(tools []mcp.Tool, name string) bool {
 	return false
 }
 
+func sameRuntimeImage(actual, expected string) bool {
+	return actual == expected || strings.TrimPrefix(actual, "docker.io/library/") == expected
+}
+
 func testPythonAutoscaler(t *testing.T, ctx context.Context, orchestrator *runtime.Orchestrator, image string) {
 	t.Helper()
 	const stackName = "inttest-python-autoscale"
@@ -410,7 +414,7 @@ func testPythonAutoscaler(t *testing.T, ctx context.Context, orchestrator *runti
 	if err != nil {
 		t.Fatalf("autoscaler workload status: %v", err)
 	}
-	if status.Image != image || status.HostPort != 0 {
+	if !sameRuntimeImage(status.Image, image) || status.HostPort != 0 {
 		t.Errorf("autoscaler workload = %+v, want image %q and host port 0", status, image)
 	}
 }
