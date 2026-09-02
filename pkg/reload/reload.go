@@ -518,7 +518,10 @@ func (h *Handler) startMCPServer(ctx context.Context, server config.MCPServer, s
 	// suffix so container names don't collide.
 	runtimes := make([]ReplicaRuntime, 0, replicas)
 	for replicaID := 0; replicaID < replicas; replicaID++ {
-		hostPort := h.allocatePort(ctx)
+		hostPort := 0
+		if server.Transport != "stdio" {
+			hostPort = h.allocatePort(ctx)
+		}
 		workloadName := server.Name
 		if replicas > 1 {
 			workloadName = fmt.Sprintf("%s-replica-%d", server.Name, replicaID)
@@ -548,7 +551,7 @@ func (h *Handler) startMCPServer(ctx context.Context, server config.MCPServer, s
 		}
 
 		actualHostPort := status.HostPort
-		if actualHostPort == 0 {
+		if actualHostPort == 0 && server.Transport != "stdio" {
 			actualHostPort = hostPort
 		}
 		runtimes = append(runtimes, ReplicaRuntime{HostPort: actualHostPort, ContainerID: string(status.ID)})

@@ -112,7 +112,10 @@ func (c *ContainerSpawner) Spawn(ctx context.Context) (mcp.AgentClient, error) {
 	}
 	replicaID := int(c.idCounter.Add(1) - 1)
 	name := runtime.ReplicaContainerName(c.stack, c.server.Name, replicaID, 2) // >1 to force suffix
-	hostPort := c.ports.Allocate()
+	hostPort := 0
+	if c.transport != "stdio" {
+		hostPort = c.ports.Allocate()
+	}
 
 	cfg := runtime.WorkloadConfig{
 		Name:        name,
@@ -141,7 +144,7 @@ func (c *ContainerSpawner) Spawn(ctx context.Context) (mcp.AgentClient, error) {
 		return nil, fmt.Errorf("start container %s: %w", name, err)
 	}
 	actualHostPort := status.HostPort
-	if actualHostPort == 0 {
+	if actualHostPort == 0 && c.transport != "stdio" {
 		actualHostPort = hostPort
 	}
 

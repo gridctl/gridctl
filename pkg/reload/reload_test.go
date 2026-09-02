@@ -650,6 +650,34 @@ func TestHandler_AllocatePort(t *testing.T) {
 	}
 }
 
+func TestHandler_StartMCPServer_StdioDoesNotAllocateHostPort(t *testing.T) {
+	mockRT := newMockWorkloadRuntime()
+	var started runtime.WorkloadConfig
+	mockRT.startFn = func(_ context.Context, cfg runtime.WorkloadConfig) (*runtime.WorkloadStatus, error) {
+		started = cfg
+		return &runtime.WorkloadStatus{ID: "stdio-1"}, nil
+	}
+	orch := runtime.NewOrchestrator(mockRT, &mockBuilder{})
+	h := NewHandler("/path", &config.Stack{Name: "test"}, mcp.NewGateway(), orch, 8180, 9000, nil, nil)
+	var registered []ReplicaRuntime
+	h.SetRegisterServerFunc(func(_ context.Context, _ config.MCPServer, replicas []ReplicaRuntime, _ string) error {
+		registered = replicas
+		return nil
+	})
+
+	server := config.MCPServer{Name: "stdio", Image: "example:latest", Transport: "stdio"}
+	stack := &config.Stack{Name: "test", Network: config.Network{Name: "test-net"}}
+	if err := h.startMCPServer(context.Background(), server, stack, server.Image); err != nil {
+		t.Fatalf("startMCPServer() error = %v", err)
+	}
+	if started.HostPort != 0 {
+		t.Errorf("stdio workload host port = %d, want 0", started.HostPort)
+	}
+	if len(registered) != 1 || registered[0].HostPort != 0 {
+		t.Errorf("registered stdio replicas = %+v, want one replica with host port 0", registered)
+	}
+}
+
 func TestContainerName(t *testing.T) {
 	name := containerName("mystack", "myserver")
 	if name != "gridctl-mystack-myserver" {
