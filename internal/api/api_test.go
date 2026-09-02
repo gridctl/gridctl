@@ -1247,20 +1247,21 @@ func newMockAgentClient(name string, tools []mcp.Tool) *mockAgentClient {
 	return &mockAgentClient{name: name, tools: tools, initialized: true}
 }
 
-func (m *mockAgentClient) Name() string                       { return m.name }
-func (m *mockAgentClient) Initialize(_ context.Context) error { return nil }
+func (m *mockAgentClient) Name() string                         { return m.name }
+func (m *mockAgentClient) Initialize(_ context.Context) error   { return nil }
 func (m *mockAgentClient) RefreshTools(_ context.Context) error { return nil }
-func (m *mockAgentClient) Tools() []mcp.Tool                  { return m.tools }
+func (m *mockAgentClient) Tools() []mcp.Tool                    { return m.tools }
 func (m *mockAgentClient) CallTool(_ context.Context, _ string, _ map[string]any) (*mcp.ToolCallResult, error) {
 	return &mcp.ToolCallResult{Content: []mcp.Content{mcp.NewTextContent("mock")}}, nil
 }
 func (m *mockAgentClient) IsInitialized() bool        { return m.initialized }
-func (m *mockAgentClient) ServerInfo() mcp.ServerInfo  { return mcp.ServerInfo{Name: m.name} }
+func (m *mockAgentClient) ServerInfo() mcp.ServerInfo { return mcp.ServerInfo{Name: m.name} }
 
 // mockDockerClient is a minimal Docker client mock for API tests.
 // It only implements the methods used by the API handlers.
 type mockDockerClient struct {
 	containers     []container.Summary
+	images         []image.Summary
 	logOutput      string
 	lastLogOptions container.LogsOptions
 	restartCalled  bool
@@ -1320,7 +1321,7 @@ func (m *mockDockerClient) NetworkCreate(_ context.Context, _ string, _ network.
 }
 func (m *mockDockerClient) NetworkRemove(_ context.Context, _ string) error { return nil }
 func (m *mockDockerClient) ImageList(_ context.Context, _ image.ListOptions) ([]image.Summary, error) {
-	return nil, nil
+	return m.images, nil
 }
 func (m *mockDockerClient) ImagePull(_ context.Context, _ string, _ image.PullOptions) (io.ReadCloser, error) {
 	return nil, nil

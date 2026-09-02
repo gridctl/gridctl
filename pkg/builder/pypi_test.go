@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -176,6 +177,36 @@ func TestPyPIResolver_RejectsNonExactVersion(t *testing.T) {
 		if _, err := resolver.Resolve(context.Background(), "demo", version, ""); err == nil {
 			t.Errorf("version %q accepted", version)
 		}
+	}
+}
+
+func TestPyPIResolver_VersionsFiltersAndCaches(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		_, _ = io.WriteString(w, `{"info":{"name":"Demo_Server","version":"1.10.0"},"releases":{"1.9.0":[{"size":10,"digests":{"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}],"1.10.0":[{"size":10,"digests":{"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}],"2.0.0rc1":[{"size":10,"digests":{"sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}}],"1.11.0":[{"yanked":true,"size":10,"digests":{"sha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}}]}}`)
+	}))
+	defer server.Close()
+
+	resolver := NewPyPIResolver(server.Client())
+	resolver.baseURL = server.URL
+	first, err := resolver.Versions(context.Background(), "demo-server")
+	if err != nil {
+		t.Fatalf("Versions: %v", err)
+	}
+	second, err := resolver.Versions(context.Background(), "demo_server")
+	if err != nil {
+		t.Fatalf("cached Versions: %v", err)
+	}
+	if first.Package != "Demo_Server" || first.Latest != "1.10.0" {
+		t.Fatalf("versions = %+v", first)
+	}
+	want := []string{"2.0.0rc1", "1.10.0", "1.9.0"}
+	if !reflect.DeepEqual(first.Versions, want) || !reflect.DeepEqual(second.Versions, want) {
+		t.Fatalf("version lists = %v and %v, want %v", first.Versions, second.Versions, want)
+	}
+	if requests != 1 {
+		t.Fatalf("requests = %d, want cache hit after first request", requests)
 	}
 }
 

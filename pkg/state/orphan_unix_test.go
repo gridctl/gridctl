@@ -33,22 +33,24 @@ func stubExecutableForPID(t *testing.T, fn func(int) (string, error)) {
 }
 
 func TestFindOrphan_ForegroundProcess(t *testing.T) {
+	candidatePID := os.Getpid() + 1
 	stubProbeHealth(t, func(int) bool { return true })
-	stubListenerForPort(t, func(int) ([]int, error) { return []int{4242}, nil })
+	stubListenerForPort(t, func(int) ([]int, error) { return []int{candidatePID}, nil })
 	stubExecutableForPID(t, func(int) (string, error) { return "gridctl", nil })
 
 	pid, ok, err := FindOrphan(8180)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !ok || pid != 4242 {
-		t.Errorf("expected (4242, true, nil); got (%d, %v, %v)", pid, ok, err)
+	if !ok || pid != candidatePID {
+		t.Errorf("expected (%d, true, nil); got (%d, %v, %v)", candidatePID, pid, ok, err)
 	}
 }
 
 func TestFindOrphan_NonGridctlListener(t *testing.T) {
+	candidatePID := os.Getpid() + 1
 	stubProbeHealth(t, func(int) bool { return true })
-	stubListenerForPort(t, func(int) ([]int, error) { return []int{4242}, nil })
+	stubListenerForPort(t, func(int) ([]int, error) { return []int{candidatePID}, nil })
 	stubExecutableForPID(t, func(int) (string, error) { return "nginx", nil })
 
 	pid, ok, err := FindOrphan(8180)
@@ -91,8 +93,9 @@ func TestFindOrphan_NoListener(t *testing.T) {
 }
 
 func TestFindOrphan_MultipleListeners(t *testing.T) {
+	self := os.Getpid()
 	stubProbeHealth(t, func(int) bool { return true })
-	stubListenerForPort(t, func(int) ([]int, error) { return []int{4242, 5151}, nil })
+	stubListenerForPort(t, func(int) ([]int, error) { return []int{self + 1, self + 2}, nil })
 	stubExecutableForPID(t, func(int) (string, error) {
 		t.Fatal("executable lookup should not run when listeners are ambiguous")
 		return "", nil
@@ -137,8 +140,9 @@ func TestFindOrphan_ListenerLookupError(t *testing.T) {
 }
 
 func TestFindOrphan_ExecutableLookupError(t *testing.T) {
+	candidatePID := os.Getpid() + 1
 	stubProbeHealth(t, func(int) bool { return true })
-	stubListenerForPort(t, func(int) ([]int, error) { return []int{4242}, nil })
+	stubListenerForPort(t, func(int) ([]int, error) { return []int{candidatePID}, nil })
 	stubExecutableForPID(t, func(int) (string, error) { return "", errors.New("nope") })
 
 	pid, ok, err := FindOrphan(8180)

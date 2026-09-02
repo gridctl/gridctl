@@ -13,13 +13,23 @@ import (
 
 // Builder handles building images from source.
 type Builder struct {
-	cli          dockerclient.DockerClient
-	pypiResolver pypiReleaseResolver
+	cli              dockerclient.DockerClient
+	pypiResolver     pypiReleaseResolver
+	pypiVersionIndex pypiVersionResolver
 }
 
 // New creates a new Builder instance.
 func New(cli dockerclient.DockerClient) *Builder {
-	return &Builder{cli: cli, pypiResolver: NewPyPIResolver(nil)}
+	resolver := NewPyPIResolver(nil)
+	return &Builder{cli: cli, pypiResolver: resolver, pypiVersionIndex: resolver}
+}
+
+// Versions returns selectable public PyPI releases for package-source UIs.
+func (b *Builder) Versions(ctx context.Context, project string) (*PyPIVersions, error) {
+	if b.pypiVersionIndex == nil {
+		return nil, fmt.Errorf("PyPI version resolver is not configured")
+	}
+	return b.pypiVersionIndex.Versions(ctx, project)
 }
 
 // Plan resolves build inputs and checks whether the resulting image is

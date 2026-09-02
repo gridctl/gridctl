@@ -378,7 +378,9 @@ func TestResolvedBuildPlan_CloseRemovesOwnedWorktree(t *testing.T) {
 func TestResolvedBuildPlan_ImageLabelsExcludeCredentials(t *testing.T) {
 	plan := &ResolvedBuildPlan{
 		DeclaredIdentity: SourceIdentity{URL: "https://secret@github.com/example/repo?token=hidden"},
-		ResolvedIdentity: SourceIdentity{Commit: strings.Repeat("a", 40)},
+		ResolvedIdentity: SourceIdentity{
+			Commit: strings.Repeat("a", 40), Package: "demo", Version: "1.2.3", Artifact: "demo.whl",
+		},
 		BuildInputDigest: strings.Repeat("b", 64),
 		Provenance:       BuildProvenance{SourceContentDigest: strings.Repeat("c", 64), GeneratorVersion: PythonTemplateVersion},
 	}
@@ -388,6 +390,9 @@ func TestResolvedBuildPlan_ImageLabelsExcludeCredentials(t *testing.T) {
 	}
 	if labels["org.opencontainers.image.source"] != "https://github.com/example/repo" {
 		t.Fatalf("source label leaked URL credentials: %q", labels["org.opencontainers.image.source"])
+	}
+	if labels[LabelSourcePackage] != "demo" || labels[LabelSourceVersion] != "1.2.3" || labels[LabelSourceArtifact] != "demo.whl" {
+		t.Fatalf("source provenance labels = %v", labels)
 	}
 	for key, value := range labels {
 		if strings.Contains(strings.ToLower(key+value), "credential") || strings.Contains(value, "token") {

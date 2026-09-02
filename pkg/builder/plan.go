@@ -24,6 +24,10 @@ type pypiReleaseResolver interface {
 	Resolve(ctx context.Context, project, version, explicitPython string) (*PyPIRelease, error)
 }
 
+type pypiVersionResolver interface {
+	Versions(ctx context.Context, project string) (*PyPIVersions, error)
+}
+
 var imagePartPattern = regexp.MustCompile(`[^a-z0-9._-]+`)
 
 const maxImagePartLength = 48
