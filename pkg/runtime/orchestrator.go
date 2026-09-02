@@ -311,8 +311,11 @@ func (o *Orchestrator) Up(ctx context.Context, stack *config.Stack, opts UpOptio
 		// Container-based server: start one container per replica.
 		replicaHandles := make([]MCPServerReplica, 0, replicas)
 		for replicaID := 0; replicaID < replicas; replicaID++ {
-			hostPort := opts.BasePort + containerIndex
-			containerIndex++
+			hostPort := 0
+			if server.Transport != "stdio" {
+				hostPort = opts.BasePort + containerIndex
+				containerIndex++
+			}
 			info, err := o.startMCPServer(ctx, stack, &server, desiredImage, hostPort, replicaID, replicas)
 			if err != nil {
 				return nil, fmt.Errorf("starting MCP server %s replica %d: %w", server.Name, replicaID, err)
@@ -500,7 +503,7 @@ func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, 
 
 	// Get actual host port (in case it was auto-assigned)
 	actualHostPort := status.HostPort
-	if actualHostPort == 0 {
+	if actualHostPort == 0 && server.Transport != "stdio" {
 		actualHostPort = hostPort
 	}
 

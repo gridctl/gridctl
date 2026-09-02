@@ -108,7 +108,7 @@ tasks:
   test:integration:
     desc: Run integration tests (requires Docker or Podman, matches CI flags)
     cmds:
-      - go test -tags=integration -race -timeout 5m ./tests/integration/...
+      - go test -tags=integration -race -timeout 15m ./tests/integration/...
 
   test:litellm:
     desc: Run the LiteLLM contract test against the pinned proxy image (multi-GB pull)

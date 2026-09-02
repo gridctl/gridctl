@@ -301,7 +301,6 @@ func TestContainerSpawner_Spawn_Stdio_UsesContainerID(t *testing.T) {
 		Runtime:   rt,
 		Server:    config.MCPServer{Name: "stdio-svc"},
 		Transport: "stdio",
-		Ports:     NewAtomicPortAllocator(9000),
 	})
 
 	if _, err := sp.Spawn(context.Background()); err != nil {
@@ -315,6 +314,9 @@ func TestContainerSpawner_Spawn_Stdio_UsesContainerID(t *testing.T) {
 	}
 	if b.lastCfg.Endpoint != "" {
 		t.Errorf("stdio replica should not set Endpoint, got %q", b.lastCfg.Endpoint)
+	}
+	if got := rt.startCalls[0].HostPort; got != 0 {
+		t.Errorf("stdio workload host port = %d, want 0", got)
 	}
 }
 

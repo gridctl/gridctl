@@ -17,7 +17,7 @@ Task (https://taskfile.dev) is the entry point for everything; tasks live in `Ta
 | `task build:web` | Frontend only (`cd web && npm run build`). |
 | `task dev` | Runs the Vite dev server (`web/`) against a separately-running backend. |
 | `task test` | `go test -race ./...` (unit tests only, same race detector CI runs). |
-| `task test:integration` | `go test -tags=integration -race -timeout 5m ./tests/integration/...`. Requires Docker (or Podman). These tests hit real container runtimes per Article IV of `CONSTITUTION.md`; mocks are disallowed in `tests/integration/`. |
+| `task test:integration` | `go test -tags=integration -race -timeout 15m ./tests/integration/...`. Requires Docker (or Podman). These tests hit real container runtimes per Article IV of `CONSTITUTION.md`; mocks are disallowed in `tests/integration/`. |
 | `task test:frontend` | `cd web && npm test` (Vitest). |
 | `task lint` | `golangci-lint run` plus `npm run lint` in `web/` (both CI-gated). |
 | `task generate` | Regenerates `go.uber.org/mock` mocks under `pkg/mcp/` and `pkg/runtime/`. Required after touching the interfaces they're generated from. |
@@ -103,7 +103,8 @@ web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). 
                     files are popout windows that mirror specific panels.
 
 tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway lifecycle, hot reload, autoscaler,
-                    replicas, transports (incl. Podman), private git auth, optimize heuristics.
+                    replicas, transports (incl. Podman), private git auth, generated Python source builds, and
+                    optimize heuristics.
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
                     portable-pack, model-policy, python-sources). examples/_mock-servers/ is the source for `task mock:servers`.

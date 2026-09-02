@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { ReviewStep } from '../components/wizard/steps/ReviewStep';
 import { appendToStack, fetchStatus, initializeStack, resolvePythonSource, saveStack, StackAlreadyActiveError, validateStackResource, validateStackSpec } from '../lib/api';
@@ -202,6 +202,10 @@ describe('ReviewStep Python container review', () => {
 
     expect(await screen.findByText('mcp-server-fetch==0.6.0')).toBeInTheDocument();
     expect(screen.getByText('gridctl-preview-fetch:0.6.0-abc')).toBeInTheDocument();
+    const phases = screen.getByRole('list', { name: 'Build phases' });
+    for (const phase of ['Resolving package/ref', 'Cloning/preparing context', 'Generating Dockerfile', 'Building image', 'Starting container', 'Connecting server']) {
+      expect(within(phases).getByText(phase)).toBeInTheDocument();
+    }
     fireEvent.click(screen.getByText('Generated Dockerfile'));
     expect(screen.getByText(/FROM python@sha256:abc/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Deploy' })).not.toBeDisabled();
