@@ -1007,7 +1007,7 @@ Successful responses include `Cache-Control: private, max-age=300`. A missing or
 
 #### `POST /api/python/resolve`
 
-Resolves a generated Python MCP server into the same immutable build plan used by apply and CLI plan. The `server` object uses lower-camel versions of the stack's MCP server fields. `stackName` defaults to `preview` when omitted. The body is limited to 1 MiB and rejects unknown fields.
+Resolves a generated Python MCP server into the same immutable build plan used by apply and CLI plan. The `server` object uses lower-camel versions of the stack's MCP server fields, including `buildArgs`, `replicaPolicy`, and `source.projectPath`. Source auth uses `credentialRef`, `sshUser`, and `sshKeyPath`. Autoscale fields are also lower camel, such as `targetInFlight` and `scaleUpAfter`. `stackName` defaults to `preview` when omitted. The body is limited to 1 MiB and rejects unknown fields.
 
 **Auth:** Yes
 
