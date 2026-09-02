@@ -1177,7 +1177,7 @@ Searches the server catalog: the curated set embedded in the binary merged with 
 curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/catalog?q=postgres"
 ```
 
-**Response:** `{query, source, stale?, registry_error?, servers: [...]}` where each server is a full catalog entry (`name`, `title`, `description`, `tier`, `status`, `install`, `inputs`, ...). Secret input defaults are always empty.
+**Response:** `{query, source, stale?, registry_error?, servers: [...]}` where each server is a full catalog entry (`name`, `title`, `description`, `tier`, `status`, `install`, `inputs`, ...). For Registry packages, `install` preserves `registry_type`, `identifier`, and exact `version` alongside the mapped image, command, or URL. The create-server wizard uses that provenance, rather than parsing an arbitrary command, to offer `Run in a container` only for eligible PyPI installs. Secret input defaults are always empty.
 
 #### `POST /api/stack/append`
 
