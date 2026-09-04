@@ -1,0 +1,37 @@
+# Build two useful stdio MCP servers from pinned Python sources.
+#
+# Prerequisites:
+#   - Docker or Podman
+#   - Network access to PyPI, GitHub, and container registries for the first build
+#
+# Usage:
+#   gridctl validate examples/python-sources/daily.yaml
+#   gridctl plan examples/python-sources/daily.yaml --show-dockerfile
+#   gridctl apply examples/python-sources/daily.yaml
+#   gridctl destroy examples/python-sources/daily.yaml
+
+version: "1"
+name: daily
+
+network:
+  name: daily-net
+  driver: bridge
+
+mcp-servers:
+  # Exact public PyPI release. PyPI implies runtime: python, and the package's
+  # single console script is selected automatically.
+  - name: fetch
+    source:
+      type: pypi
+      package: mcp-server-fetch
+      ref: 2026.8.18
+
+  # Commit-pinned Python project inside the official MCP servers monorepo.
+  # runtime: python selects Dockerfile generation instead of Dockerfile lookup.
+  - name: time
+    source:
+      type: git
+      url: https://github.com/modelcontextprotocol/servers.git
+      ref: d73f99efbfd40c3aa1b61e88728b3d49fb52608f
+      path: src/time
+      runtime: python
