@@ -1,8 +1,13 @@
 # Python source containers
 
 Gridctl can generate a container image for an exact public PyPI release or a
-packaged Python project in a git or local source. Docker or Podman performs the
+packaged Python project in a Git or local source. Docker or Podman performs the
 build; host Python and uv are not required.
+
+| Example | Use it to |
+|---------|-----------|
+| [`pypi.yaml`](pypi.yaml) | Try one generated server with the smallest useful stack |
+| [`daily.yaml`](daily.yaml) | Run pinned PyPI and Git sources together |
 
 ## PyPI example
 
@@ -24,9 +29,34 @@ Later unchanged applies reuse the image when its build-input label matches.
 The plan resolves the exact artifact, previews the generated Dockerfile, and
 reports whether the resulting image is already cached.
 
+## Daily topology
+
+`daily.yaml` is a practical agent setup with two credential-free tools:
+
+| Server | Source | Pin | Runtime behavior |
+|--------|--------|-----|------------------|
+| `fetch` | Public `mcp-server-fetch` release on PyPI | Exact package version | Fetches web content over the network |
+| `time` | `src/time` in the official MCP servers Git repository | Full commit SHA | Answers time and timezone queries locally |
+
+Both packages expose one console script, so neither server needs an explicit
+`command`. Gridctl builds both as non-root stdio containers and publishes no
+host ports.
+
+```bash
+gridctl validate examples/python-sources/daily.yaml
+gridctl plan examples/python-sources/daily.yaml --show-dockerfile
+gridctl apply examples/python-sources/daily.yaml
+gridctl logs --server fetch
+gridctl logs --server time
+gridctl destroy examples/python-sources/daily.yaml
+```
+
+The first plan or apply needs network access to PyPI, GitHub, and the configured
+container registry; later unchanged operations can reuse verified local images.
+
 ## Packaged git and local projects
 
-For a packaged project in git, set `runtime: python` and use `path` for a clean
+For a packaged project in Git, set `runtime: python` and use `path` for a clean
 subdirectory below the checkout:
 
 ```yaml

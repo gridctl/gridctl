@@ -221,6 +221,14 @@ mcp-servers:
       type: pypi
       package: mcp-server-fetch
       ref: 2026.8.18
+
+  - name: time
+    source:
+      type: git
+      url: https://github.com/modelcontextprotocol/servers.git
+      ref: d73f99efbfd40c3aa1b61e88728b3d49fb52608f
+      path: src/time
+      runtime: python
 ```
 
 Learn more → [Source configuration](docs/config-schema.md#source) · [Runnable example](examples/python-sources/)
@@ -391,7 +399,7 @@ Learn more → [Packs guide](docs/packs.md)
 | [`per-client-scoping.yaml`](examples/access-control/per-client-scoping.yaml) | Restrict which servers and tools each linked client may touch |
 | [`declarative-link/stack.yaml`](examples/declarative-link/stack.yaml) | Auto-link LLM clients on apply with a `link:` block |
 | [`autoscale-basic.yaml`](examples/autoscale/autoscale-basic.yaml) | Reactive replica autoscaling for a stdio server |
-| [`pypi.yaml`](examples/python-sources/pypi.yaml) | Generate a non-root Python container from an exact PyPI release |
+| [`python-sources/`](examples/python-sources/) | Generate non-root Python containers from exact PyPI and Git sources |
 | [`otlp-jaeger.yaml`](examples/tracing/otlp-jaeger.yaml) | Export traces to Jaeger via OTLP |
 | [`portable-pack/`](examples/portable-pack) | Team pack: skills, agents, and wiring from one manifest |
 
