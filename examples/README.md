@@ -36,7 +36,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 2. **Real MCP servers**: `transports/local-mcp.yaml` - actual MCP server logic via stdio transport
 3. **Platforms**: `platforms/github-mcp.yaml` - third-party MCP servers
 4. **OpenAPI**: `openapi/openapi-basic.yaml` - turn any REST API into MCP tools
-5. **Python sources**: `python-sources/pypi.yaml` - build an exact package into a container
+5. **Python sources**: `python-sources/pypi.yaml` - start with one exact package, then try `daily.yaml` for PyPI and Git together
 6. **Registry**: `registry/registry-basic.yaml` - Skills as MCP prompts (imports also discover agents)
 7. **Packs**: `portable-pack/` - one manifest importing skills, agents, and rules as a unit
 8. **Scaling**: `autoscale/autoscale-basic.yaml` - reactive autoscaling of MCP replicas
@@ -59,6 +59,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | context7-mcp | stdio (host process) | Library docs via npx |
 | github-mcp | stdio (container) | Official containerized platform server |
 | pypi | stdio (generated container) | Exact public PyPI release, automatic console command, pinned Python/uv bases |
+| daily | stdio (generated containers) | Exact PyPI release and commit-pinned Git project in one stack |
 | zapier-mcp | http (remote URL) | Hosted platform server with OAuth brokering |
 | openapi-basic | openapi | REST API as MCP tools, operation filtering |
 | openapi-auth | openapi | Bearer, header, query, OAuth2, basic auth, and mTLS |
