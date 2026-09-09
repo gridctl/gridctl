@@ -4,6 +4,8 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.0-rc.1] - 2026-09-09
+
 ### Documentation
 
 - Link external release verification from installation and CLI guidance, clarify verifier diagnostics and immutable-mode prerequisites, and document separate release-policy tests (#1220).
