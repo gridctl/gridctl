@@ -20,6 +20,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Bug Fixes
 
+- Release source binding explicitly peels annotated tags to commits, and the backend release gate has a 15-minute timeout to accommodate policy tests (#1220).
 - The Stack spec view preserves the export API's value-free field path and corrective action on failure instead of showing only a generic HTTP status. Failed exports still produce no download (#1222).
 - The Library no longer claims that intentionally external `scripts/`, `references/`, or `assets/` paths are missing from a complete imported skill package. New imports record that all managed supporting-file trees were evaluated, while legacy and local skills retain the missing-file warning.
 - Container stdio MCP servers no longer report a phantom allocated host port during apply, reload, or autoscaling. Stdio workloads publish no ports, while HTTP/SSE workloads continue to receive sequential published ports among themselves.

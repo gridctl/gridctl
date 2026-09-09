@@ -14,6 +14,8 @@ Use GitHub CLI 2.87.3 or later, obtained through an independently trusted packag
 
 Select a tag and independently obtain its full 40-character source SHA from reviewed release announcements and source history. Do not derive expected identities solely from an unverified bundle or inventory. Replace both placeholders below; the example does not select a production release.
 
+For a signed annotated tag, use the peeled commit SHA (`git rev-parse "$tag^{commit}"` in an independently trusted source checkout), not the tag object's SHA. Release validation compares the checked-out commit, peeled event object, and tag target; publication also rechecks the remote tag against that validated commit.
+
 ```bash
 tag='REPLACE_WITH_RELEASE_TAG'
 sha='REPLACE_WITH_FULL_SOURCE_COMMIT_SHA'

@@ -44,6 +44,20 @@ def check_source(ref, expected, actual):
         raise ValueError("release tag/source mismatch; refuse publication")
 
 
+def checkout_source():
+    revisions = ["HEAD", os.environ["GITHUB_SHA"]]
+    if os.environ["GITHUB_REF"].startswith("refs/tags/"):
+        revisions.append(os.environ["GITHUB_REF"])
+    commits = [subprocess.check_output(
+        ["git", "rev-parse", "--verify", revision + "^{commit}"],
+        text=True, timeout=30).strip() for revision in revisions]
+    if not re.fullmatch(r"[0-9a-f]{40}", commits[0]) or len(set(commits)) != 1:
+        raise ValueError("release checkout/source mismatch; refuse publication")
+    if os.environ.get("RELEASE_SOURCE_SHA", commits[0]) != commits[0]:
+        raise ValueError("release validated source mismatch; refuse publication")
+    return commits[0]
+
+
 def check_immutable(mode, settings):
     if mode == "mutable":
         return
@@ -335,10 +349,13 @@ def main():
     if sys.argv[1:] == ["gates"]:
         check_gates(json.loads(os.environ["RELEASE_GATES"]))
         return
+    if sys.argv[1:] == ["checkout"]:
+        print(checkout_source())
+        return
     command = sys.argv[1]
     repository = os.environ["GITHUB_REPOSITORY"]
     ref = os.environ.get("RELEASE_REF", os.environ["GITHUB_REF"])
-    sha = os.environ["GITHUB_SHA"]
+    sha = checkout_source()
     tag = ref.removeprefix("refs/tags/")
     directory = Path(os.environ.get("RELEASE_DIST", "dist"))
     if command == "preflight":

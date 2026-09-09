@@ -1,11 +1,15 @@
 """Hosted release acceptance. Mutations are confined to the named sandbox."""
 
 import copy
+from datetime import datetime, timezone
+import hashlib
 import io
 import json
 import os
 from pathlib import Path
 import sys
+import subprocess
+import tempfile
 import time
 import urllib.request
 import urllib.error
@@ -24,7 +28,34 @@ def dispatch():
         raise ValueError("acceptance publication is sandbox-only")
     tag = f"v0.0.0-sandbox-{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}"
     sha = os.environ["GITHUB_SHA"]
-    release.api(repository, "git/refs", "POST", {"ref": f"refs/tags/{tag}", "sha": sha})
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    name, email = "Release acceptance", "release-acceptance@example.invalid"
+    message = "Signed annotated sandbox release\n"
+    payload = (f"object {sha}\ntype commit\ntag {tag}\n"
+               f"tagger {name} <{email}> {int(now.timestamp())} +0000\n\n{message}").encode()
+    # The disposable signing key proves tag-object behavior, not maintainer identity.
+    with tempfile.TemporaryDirectory(prefix="sandbox-tag-") as temporary:
+        gpg = ["gpg", "--homedir", temporary, "--batch", "--pinentry-mode", "loopback", "--passphrase", ""]
+        subprocess.run([*gpg, "--quick-generate-key", f"{name} <{email}>", "ed25519", "sign", "0"],
+                       check=True, capture_output=True, timeout=60)
+        signature = subprocess.check_output([*gpg, "--armor", "--detach-sign"], input=payload, timeout=60)
+        signed = Path(temporary) / "signature.asc"
+        signed.write_bytes(signature)
+        unsigned = Path(temporary) / "tag.txt"
+        unsigned.write_bytes(payload)
+        subprocess.run([*gpg, "--verify", str(signed), str(unsigned)], check=True, timeout=60)
+    annotated = release.api(repository, "git/tags", "POST", {
+        "tag": tag, "message": message + signature.decode(), "object": sha, "type": "commit",
+        "tagger": {"name": name, "email": email, "date": now.isoformat()},
+    })
+    raw = payload + signature
+    expected = hashlib.sha1(b"tag " + str(len(raw)).encode() + b"\0" + raw).hexdigest()
+    if annotated["sha"] != expected or annotated["object"] != {"type": "commit", "sha": sha,
+            "url": f"https://api.github.com/repos/{repository}/git/commits/{sha}"}:
+        raise ValueError("signed annotated tag object differs from verified payload")
+    release.api(repository, "git/refs", "POST", {"ref": f"refs/tags/{tag}", "sha": annotated["sha"]})
+    release.source(repository, f"refs/tags/{tag}", sha)
+    print(f"Signed annotated tag object {annotated['sha']} resolves to source commit {sha}")
     release.api(repository, "actions/workflows/release.yaml/dispatches", "POST", {"ref": tag})
     with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
         output.write(f"tag={tag}\n")

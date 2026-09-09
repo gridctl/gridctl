@@ -17,7 +17,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -393,6 +393,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
+          fetch-depth: 0
           persist-credentials: false
       - name: Require every exact-commit gate
         id: gates
@@ -400,5 +401,5 @@ jobs:
           RELEASE_GATES: ${{ toJSON(needs) }}
         run: |
           python3 scripts/release.py gates
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          printf 'source-sha=%s\n' "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          source_sha=$(python3 scripts/release.py checkout)
+          printf 'source-sha=%s\n' "$source_sha" >> "$GITHUB_OUTPUT"

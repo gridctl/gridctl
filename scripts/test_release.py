@@ -136,6 +136,25 @@ class ReleasePolicyTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     release.check_source(ref, expected, actual)
 
+    def test_checkout_source_peels_tag_objects(self):
+        commit, tag_object = "a" * 40, "b" * 40
+        environment = {"GITHUB_SHA": tag_object, "GITHUB_REF": "refs/tags/v1.2.3",
+                       "RELEASE_SOURCE_SHA": commit}
+        with patch.dict(os.environ, environment), patch.object(
+                release.subprocess, "check_output", side_effect=[commit + "\n"] * 3) as git:
+            self.assertEqual(commit, release.checkout_source())
+            self.assertEqual([call.args[0][-1] for call in git.call_args_list],
+                             ["HEAD^{commit}", tag_object + "^{commit}", "refs/tags/v1.2.3^{commit}"])
+        for values in ([commit, tag_object, commit], [commit, commit, tag_object]):
+            with patch.dict(os.environ, environment), patch.object(
+                    release.subprocess, "check_output", side_effect=values):
+                with self.assertRaisesRegex(ValueError, "checkout/source mismatch"):
+                    release.checkout_source()
+        with patch.dict(os.environ, {**environment, "RELEASE_SOURCE_SHA": tag_object}), patch.object(
+                release.subprocess, "check_output", return_value=commit):
+            with self.assertRaisesRegex(ValueError, "validated source mismatch"):
+                release.checkout_source()
+
     def test_immutable_prerequisite(self):
         release.check_immutable("mutable", None)
         release.check_immutable("immutable", {"enabled": True})
