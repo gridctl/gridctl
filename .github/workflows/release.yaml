@@ -2,42 +2,150 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
+  workflow_dispatch:
 
-permissions:
-  contents: write
+permissions: {}
+
+concurrency:
+  group: binary-release
+  cancel-in-progress: false
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+  validation:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/gatekeeper.yaml
 
+  assemble:
+    needs: validation
+    if: ${{ needs.validation.result == 'success' && needs.validation.outputs.source-sha == github.sha && startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_MODE: ${{ vars.RELEASE_MODE || 'mutable' }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
-          cache: true
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: web/package-lock.json
-
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+          node-version: '22'
+      - uses: ./.github/actions/release-tools
         with:
-          distribution: goreleaser
-          version: latest
-          args: release --clean
+          build: 'true'
+      - name: Validate source and publication prerequisites
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 scripts/release.py preflight
+          goreleaser check
+      - name: Build final archives and assemble draft
+        run: goreleaser release --clean
+        env:
+          GORELEASER_TOKEN: ''
+      - name: Validate inventory and enumerate exact subjects
+        run: python3 scripts/release.py prepare
+      - name: Authenticate final archives and inventory evidence
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-checksums: dist/attestation-subjects.txt
+          push-to-registry: false
+          create-storage-record: false
+      - name: Complete the draft with verification evidence
+        env:
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          test -s "$BUNDLE"
+          cp "$BUNDLE" dist/provenance.sigstore.json
+          python3 scripts/release.py upload
+      - name: Read back the complete draft for independent verification
+        run: python3 scripts/release.py download
+        env:
+          RELEASE_DIST: verified-draft
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: verified-draft
+          path: verified-draft/
+          if-no-files-found: error
+          retention-days: 7
+
+  verify-linux:
+    needs: assemble
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/release-tools
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: verified-draft
+          path: dist
+      - name: Account-free verification and identity rejection tests
+        run: python3 scripts/release.py verify
+
+  verify-macos:
+    needs: assemble
+    runs-on: macos-15
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/release-tools
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: verified-draft
+          path: dist
+      - name: Account-free verification and identity rejection tests
+        run: python3 scripts/release.py verify
+
+  publish:
+    needs: [validation, assemble, verify-linux, verify-macos]
+    if: ${{ needs.validation.result == 'success' && needs.assemble.result == 'success' && needs.verify-linux.result == 'success' && needs.verify-macos.result == 'success' && needs.validation.outputs.source-sha == github.sha }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_MODE: ${{ vars.RELEASE_MODE || 'mutable' }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/release-tools
+      - name: Reverify draft bytes, publish, and check public downloads
+        run: python3 scripts/release.py publish
+
+  homebrew:
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/release-tools
+      - name: Advance the authenticated cask after public availability
+        run: python3 scripts/release.py tap
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_TOKEN: ${{ secrets.GORELEASER_TOKEN }}

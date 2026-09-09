@@ -1,0 +1,24 @@
+name: Release tools
+description: Install digest-pinned release executables and scoped validation dependencies
+inputs:
+  build:
+    description: Install Linux build and inventory generators
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        BUILD_TOOLS: ${{ inputs.build }}
+      run: |
+        set -euo pipefail
+        tools=(gh)
+        if [[ "$BUILD_TOOLS" == true ]]; then
+          tools+=(goreleaser syft)
+          npm install --global npm@11.10.1
+        fi
+        python3 scripts/release-tools.py "$RUNNER_TEMP/release-tools" "${tools[@]}"
+        python3 -m venv "$RUNNER_TEMP/release-venv"
+        "$RUNNER_TEMP/release-venv/bin/pip" install jsonschema==4.23.0 PyYAML==6.0.3
+        printf '%s\n' "$RUNNER_TEMP/release-tools" "$RUNNER_TEMP/release-venv/bin" >> "$GITHUB_PATH"
+        printf 'SPDX_SCHEMA=%s/release-tools/spdx-schema.json\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"

@@ -7,6 +7,7 @@ before:
     # Build frontend before Go compilation
     - npm ci --prefix web
     - npm run build --prefix web
+    - rm -rf cmd/gridctl/web/dist
     - mkdir -p cmd/gridctl/web
     - cp -r web/dist cmd/gridctl/web/
 
@@ -48,6 +49,22 @@ checksum:
   # in both consumers.
   name_template: "checksums.txt"
 
+sboms:
+  - id: go-artifacts
+    artifacts: archive
+    documents:
+      - "${artifact}.spdx.json"
+    cmd: syft
+    args: ["$artifact", "--output", "spdx-json=$document"]
+  - id: frontend-build
+    artifacts: any
+    documents:
+      - frontend-build.spdx.json
+    cmd: sh
+    args:
+      - -c
+      - npm sbom --prefix ../web --sbom-format=spdx --include=dev --legacy-peer-deps > "$document"
+
 changelog:
   sort: asc
   filters:
@@ -81,7 +98,7 @@ release:
   github:
     owner: gridctl
     name: gridctl
-  draft: false
+  draft: true
   prerelease: auto
   name_template: "{{.Tag}}"
   header: |
@@ -106,10 +123,14 @@ release:
 
     **Binary Download**: See assets below for your platform.
 
+    **Authenticate before installation**: Follow the [release verification procedure](https://github.com/gridctl/gridctl/blob/{{ .Tag }}/docs/release-verification.md) with the archive and `provenance.sigstore.json`. Check the expected full source SHA independently. The installer and updater verify checksums, not attestations.
+
     **Full Changelog**: https://github.com/gridctl/gridctl/compare/{{ .PreviousTag }}...{{ .Tag }}
 
 homebrew_casks:
   - name: gridctl
+    # The release workflow advances the generated cask only after public checks.
+    skip_upload: true
     repository:
       owner: gridctl
       name: homebrew-tap
