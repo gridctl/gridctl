@@ -40,7 +40,7 @@ Update with `brew upgrade gridctl/tap/gridctl`.
 <details>
 <summary><strong>Pre-built binaries</strong></summary>
 
-Download the tarball for your platform from the [releases page](https://github.com/gridctl/gridctl/releases), verify it against `checksums.txt`, extract, and place `gridctl` on your `PATH`.
+Download the tarball for your platform from the [releases page](https://github.com/gridctl/gridctl/releases). For a provenance-covered release, [authenticate the archive](release-verification.md#verify-before-installing) before extracting it, then install those same local bytes. `checksums.txt` remains available for corruption checks but does not independently authenticate origin. The verification guide describes legacy-release coverage and Linux/macOS architecture selection.
 
 </details>
 
@@ -67,6 +67,8 @@ gridctl upgrade --version v0.1.0-beta.14   # install a specific version
 ```
 
 If gridctl was installed via Homebrew, `gridctl upgrade` detects that and recommends `brew upgrade gridctl/tap/gridctl` instead.
+
+Updating does not automatically verify attestations. To require origin verification for a standalone update, follow [Release Verification](release-verification.md) and install the verified local archive instead of asking `gridctl upgrade` to download it again.
 
 ## Uninstalling
 

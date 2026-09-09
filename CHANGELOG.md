@@ -6,6 +6,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Documentation
 
+- Link external release verification from installation and CLI guidance, clarify verifier diagnostics and immutable-mode prerequisites, and document separate release-policy tests (#1220).
 - Correct stack export's README and stability claims, add migration and output-failure guidance, and demonstrate YAML, JSON, and directory exports with the local-process example (#1222).
 - Correct the API reference's grouped-auth exemptions and remote gateway setup guidance, and clarify credential requirements in group and client-linking documentation (#1223).
 - Python source examples now include a practical daily stack that builds the Fetch server from an exact PyPI release and the Time server from a commit-pinned project in the official MCP servers monorepo. The guide explains source pins, generated command selection, and build and runtime network behavior.

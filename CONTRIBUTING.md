@@ -207,6 +207,14 @@ Your pull request should:
 
 Binary releases reuse these exact-commit gates before draft verification and publication. See [release verification and maintainer operations](docs/release-verification.md) for inventory scopes, credential boundaries, pin ownership, and recovery.
 
+Release-tooling changes also require the Python policy and scanner regressions, separate from `task test`. With Python 3.11+, `jsonschema==4.23.0`, `PyYAML==6.0.3`, Bash, and jq available, run from the repository root:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_*.py' -v
+```
+
+These fixtures do not replace hosted release acceptance. The backend CI job runs them before the binary build and example validation.
+
 Pull requests are automatically checked for:
 - Go linting (`golangci-lint` with `gosec`)
 - Vulnerability scanning (`govulncheck`, `npm audit`)

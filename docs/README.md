@@ -19,6 +19,7 @@ New to gridctl? Read in this order:
 | Document | Description |
 |----------|-------------|
 | [Installation](installation.md) | One-liner install, package managers, container runtime detection, Podman setup, updating, uninstalling |
+| [Release Verification](release-verification.md) | Authenticate archives before installation, inspect scoped inventories, and understand release coverage and maintainer recovery |
 | [Quick Start](../README.md#-quick-start) | Apply your first stack in three commands |
 
 ## References

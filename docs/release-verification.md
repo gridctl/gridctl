@@ -10,7 +10,7 @@ The installer and `gridctl upgrade` still check SHA256 against the release's che
 
 ## Verify Before Installing
 
-Use GitHub CLI 2.87.3 or later, obtained through an independently trusted package manager or the CLI project's authenticated distribution. Do not bootstrap the verifier or trusted roots solely from the Gridctl bundle being checked. Release tooling pins CLI 2.87.3 and its platform download digests in `scripts/release-tools.py`.
+Use GitHub CLI 2.87.3 or later, obtained through an independently trusted package manager or the CLI project's authenticated distribution. Version 2.87.3 is the tested minimum on Linux and macOS. Do not bootstrap the verifier or trusted roots solely from the Gridctl bundle being checked. Release tooling pins CLI 2.87.3 and its platform download digests in `scripts/release-tools.py`.
 
 Select a tag and independently obtain its full 40-character source SHA from reviewed release announcements and source history. Do not derive expected identities solely from an unverified bundle or inventory. Replace both placeholders below; the example does not select a production release.
 
@@ -57,6 +57,8 @@ Do not invoke the installer or updater to download again. Do not overwrite Homeb
 - Unavailable verifier: install an independently trusted verifier first. Do not execute Gridctl to verify itself.
 - Network, trust-root, or authentication error: verification infrastructure failed. Preserve the diagnostic and resolve it before retrying; this is not a successful cryptographic check. Local bundle mode should not require login.
 
+Require exit status `0` before installation; any nonzero status stops the procedure. If CLI 2.87.3 hides diagnostic detail in redirected output, rerun verification with `GH_FORCE_TTY=120 NO_COLOR=1` to expose the failure stage without colored output. This does not change the verification policy.
+
 ## Inventory Assets
 
 `release-inventory.json` is the readable index recording inventory scope, generator version, archive relationships, and digests. Each archive has a Syft 1.42.0 SPDX 2.3 document named `<archive>.spdx.json`, describing Go components cataloged from its final bytes.
@@ -73,7 +75,7 @@ GoReleaser OSS 2.14.3 builds archives and inventories into a draft. Its tap uplo
 
 GitHub draft assets require write-capable repository access. The assembly job reads them back and supplies a same-run Actions artifact to read-only Linux/macOS verifier jobs. These jobs authenticate every expected file independently against the repository/workflow/tag/SHA policy, so the transport is not their origin trust anchor. No PR artifacts are reused. The publisher separately downloads and verifies the current draft before publication.
 
-`RELEASE_MODE` defaults to `mutable`, preserving the repository's current setting. To declare `immutable`, a maintainer must separately enable GitHub immutable releases and arrange Administration read access for the settings preflight. Workflows never change repository settings. Absent, disabled, unreadable, or malformed prerequisites stop immutable publication. The default workflow token may lack Administration read; never broaden or repurpose the tap-only token to solve this.
+The repository Actions variable `RELEASE_MODE` defaults to `mutable`; this skips the immutable-settings requirement and does not change or assert the repository's actual setting. To declare `immutable`, a maintainer must separately enable GitHub immutable releases and arrange Administration read access for the settings preflight. Workflows never change repository settings. Absent, disabled, unreadable, or malformed prerequisites stop immutable publication. The default workflow token may lack Administration read; never broaden or repurpose the tap-only token to solve this.
 
 Before publication, an authorized maintainer may repair or remove an unpublished draft after reviewing its source and assets, then rerun complete validation. After publication, never replace assets or move the tag; issue a new version. If only the tap update fails, reverify public assets before retrying the authenticated cask update. Do not rebuild the release.
 
