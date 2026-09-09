@@ -56,7 +56,7 @@ Export is semantic, not byte-for-byte: comments and formatting are not preserved
 
 `-o <dir>` writes `stack.yaml` or `stack.json`, leaving stdout empty and reporting written filenames on stderr. YAML directory exports also write `skills.yaml` when the local skills lockfile records sources; that sidecar contains only each source's name, repository, and ref, not its authentication settings or installed skill content. JSON, stdout, and REST exports have no sidecar. Every artifact is prepared and checked before creating the output directory. Unreadable skills metadata and explicit URL userinfo in sidecar repository metadata block the directory export. Output cannot overwrite the source stack or a parsed ancestor, including symlink and hard-link aliases. These checks apply to `-o`, not shell redirection: never redirect stdout onto a source file, because the shell truncates it before gridctl runs. Other existing destination files can be overwritten. Filesystem writes are not a multi-file transaction: failures report completed artifacts and identify an attempted file that may be incomplete.
 
-This is a breaking security correction under Article VIII and must not ship in a patch or minor release. No version is assigned here, and no resolved-export fallback is provided. Verbose apply diagnostics now show counts and transport/auth configuration summaries rather than resolved JSON.
+This breaking security correction is included in v1.0.0-rc.1, with a major-version increment under Article VIII. No resolved-export fallback is provided. Verbose apply diagnostics now show counts and transport/auth configuration summaries rather than resolved JSON.
 
 ## Catalog
 

@@ -1,15 +1,15 @@
 # Project Status
 
-Gridctl is pre-1.0 software. This page tracks the stability tier of each feature surface and lists currently known limitations.
+Gridctl is preparing its 1.0 release. This page tracks the stability tier of each feature surface and lists currently known limitations.
 
 **Stability tiers**:
 
-- **Stable** - production-ready. Backward-compatible changes only within the `0.x` line; breaking changes ride a clearly-labeled release.
+- **Stable** - production-ready. Breaking public CLI, stack YAML, and MCP protocol changes require a major-version increment under Constitution Article VIII. The compatibility table records the prior `0.x` baseline; see the release notes for the 1.0 migration.
 - **Experimental** - usable but the API, CLI surface, or output shape may change without notice. Pin a version if you build automation on top of it.
 
 Nearly every shipped feature surface is Stable as of the release candidate; the table below marks the exceptions. The Experimental tier also covers features that ship dark behind the `experimental:` feature-flag registry (see [Config Schema](config-schema.md#experimental-feature-flags)), though a surface can be Experimental for stability reasons without being flag-gated (the model routing policy is: its CLI is on by default, but the upstream LiteLLM schema it renders is still evolving).
 
-Current as of **v0.1.0-rc.3 plus `[Unreleased]`** (see [CHANGELOG.md](../CHANGELOG.md) for release-by-release detail).
+Current as of **v1.0.0-rc.1** (see [CHANGELOG.md](../CHANGELOG.md) for release-by-release detail).
 
 ## Feature stability
 
@@ -33,7 +33,7 @@ Current as of **v0.1.0-rc.3 plus `[Unreleased]`** (see [CHANGELOG.md](../CHANGEL
 | Podman runtime | Stable | Backward compatible in 0.x |
 | Skills registry (prompt-only) | Stable | Backward compatible in 0.x |
 | Library workspace (UI) | Stable | No API guarantee (internal) |
-| Stack export (export) | Stable | Breaking security correction in `[Unreleased]`: references stay unresolved, and recognized inline credentials reject export. Requires a major release under Article VIII; see [migration guidance](cli-reference.md#export-semantics) |
+| Stack export (export) | Stable | Breaking security correction in v1.0.0-rc.1: references stay unresolved, and recognized inline credentials reject export. See [migration guidance](cli-reference.md#export-semantics) |
 | Spec drift detection | Stable | No API guarantee (internal) |
 | Visual spec builder | Stable | No API guarantee (internal) |
 | Skills import (skill add) | Stable | Backward compatible in 0.x |
