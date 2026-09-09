@@ -1,21 +1,29 @@
 name: Gatekeeper
 
 on:
+  workflow_call:
+    outputs:
+      source-sha:
+        description: Exact source commit whose required gates succeeded
+        value: ${{ jobs.required.outputs.source-sha }}
   pull_request:
     branches: [main]
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
           cache: true
@@ -24,7 +32,7 @@ jobs:
         run: go mod download
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa # v7
         with:
           version: v2.11.3
           args: --timeout=3m
@@ -48,13 +56,19 @@ jobs:
 
       - name: Go vulnerability check
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
           bash scripts/govulncheck.sh
 
+      - name: Release policy regressions
+        run: |
+          python3 -m venv "$RUNNER_TEMP/policy-tests"
+          "$RUNNER_TEMP/policy-tests/bin/pip" install jsonschema==4.23.0 PyYAML==6.0.3
+          PYTHONDONTWRITEBYTECODE=1 "$RUNNER_TEMP/policy-tests/bin/python" -m unittest discover -s scripts -p 'test_*.py' -v
+
       - name: Set up Task
-        uses: go-task/setup-task@v2
+        uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2
         with:
-          version: 3.x
+          version: 3.52.0
 
       - name: Build Go binary
         run: task build:go
@@ -75,7 +89,7 @@ jobs:
           # examples/model-policy holds a gridctl models policy and a LiteLLM
           # proxy config (different schemas) — neither is a stack.
           mapfile -t files < <(find examples -name "*.yaml" -not -name "skills.yaml" -not -name "gridctl-pack.yaml" -not -name "gateway-remote.yaml" -not -path "examples/model-policy/*" | sort)
-          if [ ${#files[@]} -eq 0 ]; then
+          if [ "${#files[@]}" -eq 0 ]; then
             echo "No example stacks found, skipping validation"
             exit 0
           fi
@@ -83,12 +97,12 @@ jobs:
           for f in "${files[@]}"; do
             echo "Validating $f..."
             ./gridctl validate "$f" && rc=0 || rc=$?
-            if [ $rc -eq 1 ]; then
+            if [ "$rc" -eq 1 ]; then
               echo "  FAILED: $f"
               failed=1
             fi
           done
-          exit $failed
+          exit "$failed"
 
   integration:
     runs-on: ubuntu-latest
@@ -96,10 +110,10 @@ jobs:
     needs: test
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
           cache: true
@@ -116,10 +130,10 @@ jobs:
     needs: test
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
           cache: true
@@ -142,10 +156,10 @@ jobs:
     needs: test
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
           cache: true
@@ -153,7 +167,7 @@ jobs:
       # The conformance suite is npx-run and requires Node 22+
       # (fs.globSync); the test skips without it rather than failing.
       - name: Set up Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "22"
 
@@ -181,10 +195,10 @@ jobs:
       AARDVARK_DNS_VERSION: v1.17.1
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
           cache: true
@@ -323,6 +337,8 @@ jobs:
           echo "--- networks ---"
           podman network ls
           echo "--- aardvark-dns state ---"
+          # Human-readable diagnostics, not a parsed file list.
+          # shellcheck disable=SC2012
           ls -la "${XDG_RUNTIME_DIR}/containers/networks/aardvark-dns/" 2>&1 | head -20
           head -n 40 "${XDG_RUNTIME_DIR}"/containers/networks/aardvark-dns/* 2>&1
           echo "--- podman user service log ---"
@@ -334,10 +350,10 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "22"
           cache: "npm"
@@ -366,3 +382,24 @@ jobs:
       - name: Build
         run: npm run build
         working-directory: web
+
+  required:
+    if: ${{ always() }}
+    needs: [test, integration, litellm-contract, conformance, podman-integration, frontend]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      source-sha: ${{ steps.gates.outputs.source-sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require every exact-commit gate
+        id: gates
+        env:
+          RELEASE_GATES: ${{ toJSON(needs) }}
+        run: |
+          python3 scripts/release.py gates
+          source_sha=$(python3 scripts/release.py checkout)
+          printf 'source-sha=%s\n' "$source_sha" >> "$GITHUB_OUTPUT"

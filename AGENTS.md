@@ -8,13 +8,13 @@ Gridctl is an MCP (Model Context Protocol) gateway with a built-in skills and ag
 
 ## Build and run
 
-Task (https://taskfile.dev) is the entry point for everything; tasks live in `Taskfile.yml`. Run `task --list` for the full catalog and `task --summary <name>` for per-task notes. Install with `brew install go-task/tap/go-task` (or `npm install -g @go-task/cli`, or `go install github.com/go-task/task/v3/cmd/task@latest`). A transitional Makefile shim forwards the old `make <target>` names. Common tasks:
+Task (https://taskfile.dev) is the entry point for development builds and Go/frontend checks; tasks live in `Taskfile.yml`. Run `task --list` for the full catalog and `task --summary <name>` for per-task notes. Install with `brew install go-task/tap/go-task` (or `npm install -g @go-task/cli`, or `go install github.com/go-task/task/v3/cmd/task@latest`). A transitional Makefile shim forwards the old `make <target>` names. Common tasks:
 
 | Task | Notes |
 |---|---|
 | `task build` | Builds the web frontend (`web/dist` → `cmd/gridctl/web/dist`), then builds the Go binary with `-tags embed_web` so the UI is embedded. Produces `./gridctl` in the repo root. |
 | `task build:go` | Backend only. Skips the embed tag if `cmd/gridctl/web/dist` is absent (UI 404s in that case). |
-| `task build:web` | Frontend only (`cd web && npm run build`). |
+| `task build:web` | Builds the frontend and stages `web/dist` in `cmd/gridctl/web/dist` for embedding; does not compile Go. |
 | `task dev` | Runs the Vite dev server (`web/`) against a separately-running backend. |
 | `task test` | `go test -race ./...` (unit tests only, same race detector CI runs). |
 | `task test:integration` | `go test -tags=integration -race -timeout 15m ./tests/integration/...`. The full suite requires Docker (or Podman); selected HTTP/subprocess suites need no container runtime. All use real dependencies per Article IV of `CONSTITUTION.md`; mocks are disallowed in `tests/integration/`. |
@@ -40,6 +40,8 @@ Lint:
 golangci-lint run                # backend (gosec is enabled; see .golangci.yml for the curated exclusions)
 cd web && npm run lint           # frontend; zero-error baseline, enforced by the gatekeeper frontend CI job
 ```
+
+Release tooling has separate Python policy/scanner tests: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_*.py' -v` (Python 3.11+, jsonschema 4.23.0, PyYAML 6.0.3, Bash, and jq). These are not included in `task test`. `.github/workflows/release.yaml` reuses all six exact-commit Gatekeeper jobs, assembles and authenticates a draft with GoReleaser, verifies it on Linux/macOS, publishes, and only then advances Homebrew. See `docs/release-verification.md` for external verification, immutable-mode prerequisites, and recovery; local fixtures do not replace hosted acceptance.
 
 ## Code architecture
 
@@ -113,8 +115,12 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
                     portable-pack, model-policy, python-sources). examples/_mock-servers/ is the source for `task mock:servers`.
+scripts/            Build/test helpers and release tooling: release.py owns gate, inventory, verification, draft/public,
+                    and tap policy; release-tools.py pins executables and the SPDX schema; release-acceptance.py exercises
+                    authorized sandbox releases. test_release.py and test_govulncheck.py cover local policy regressions.
 docs/               User-facing documentation (cli-reference, config-schema, api-reference, skills, packs, tools-workspace,
-                    global-context, model-policy, scaling, usage-observability, installation, project-status, troubleshooting).
+                    global-context, model-policy, scaling, usage-observability, installation, release-verification,
+                    project-status, troubleshooting).
 ```
 
 End-to-end request flow for an upstream HTTP MCP tool call: client → HTTP listener built by `pkg/controller` (gateway_builder.go) → `internal/api.Server.Handler` (CORS, Host validation, configured auth, and route/group selection) → `pkg/mcp` Streamable HTTP transport (Host/Origin checks and protocol handling) → `mcp.Gateway` router → per-server `mcp.Client` (process/stdio/SSE/HTTP/OpenAPI) → response, with telemetry, tracing, schema pinning, and (optional) output-format conversion attached on the way back. Legacy SSE routes return a negotiation hint rather than dispatching tools.

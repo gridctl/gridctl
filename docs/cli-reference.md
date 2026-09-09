@@ -292,6 +292,8 @@ Inspect and manage opt-in telemetry persistence under `~/.gridctl/telemetry/`. O
 | `gridctl version` | Print version information. |
 | `gridctl upgrade` | Check + prompt + upgrade (standalone install). `--check` only checks; `--yes` non-interactive (CI / cron); `--version <tag>` installs a specific release tag (allows downgrades); `--force` bypasses Homebrew detection and the up-to-date short-circuit. |
 
+`gridctl upgrade` verifies release checksums, not authenticated provenance. To authenticate a covered release before installing it, use [Release Verification](release-verification.md) and install the same verified local bytes. `gridctl version` does not provide self-verification.
+
 ## Home directory override
 
 Every gridctl path derives from one resolved home: `--home <dir>` > `GRIDCTL_HOME` > the OS home. The override is a home replacement, not a data-dir move: it relocates `~/.gridctl` AND the client projection targets (`~/.claude`, `~/.gemini`, and the rest), so `GRIDCTL_HOME=/tmp/demo gridctl apply` runs a fully isolated instance whose projections land under `/tmp/demo/.claude` and never touch the real client directories. That is the point: a demo, test, or CI home cannot damage real state, and `gridctl reset --purge` under it is confined by construction. To exercise real clients, run without the override. Two paths deliberately stay on the real home: `~` expansion inside user-authored `stack.yaml` values, and `~/.docker` runtime detection. State-mutating commands print `home: <dir> (GRIDCTL_HOME)` on stderr when the override is active; `status` and `doctor` always show the active home, and `status` warns when a daemon on the default port was started under a different home.

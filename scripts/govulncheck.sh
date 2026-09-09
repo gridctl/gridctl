@@ -57,7 +57,28 @@ SUPPRESSED=(
 # ---------------------------------------------------------------------------
 # Run govulncheck (JSON format always exits 0; we parse findings ourselves)
 # ---------------------------------------------------------------------------
-JSON_OUTPUT=$(govulncheck -format json ./... 2>&1)
+if ! JSON_OUTPUT=$(govulncheck -format json ./... 2>&1); then
+  echo "govulncheck: scanner execution failed" >&2
+  printf '%s\n' "$JSON_OUTPUT" >&2
+  exit 1
+fi
+
+# A truncated/empty stream is not a clean scan. Validate its envelope before
+# applying the existing reachability and suppression policy.
+if ! printf '%s\n' "$JSON_OUTPUT" | jq -es '
+  length > 0 and
+  any(.[]; .config.scanner_name? == "govulncheck") and
+  all(.[];
+    type == "object" and
+    (if has("finding") then
+      (.finding.osv | type == "string") and
+      (.finding.trace | type == "array" and length > 0) and
+      all(.finding.trace[]; type == "object")
+    else true end))
+' >/dev/null; then
+  echo "govulncheck: malformed or incomplete scanner output" >&2
+  exit 1
+fi
 
 # Extract unique vuln IDs that have at least one function-level trace entry
 # (symbol-reachable — not merely imported)

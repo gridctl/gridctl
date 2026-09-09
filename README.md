@@ -106,6 +106,8 @@ curl -fsSL https://raw.githubusercontent.com/gridctl/gridctl/main/install.sh | s
 
 Installs the latest release to `~/.local/bin/gridctl`. Full instructions for Homebrew, pre-built binaries, building from source, container runtime setup, and updating/uninstalling are in the [Installation guide](docs/installation.md).
 
+The installer checks SHA256, not release origin. For covered releases, follow [Release Verification](docs/release-verification.md) before extraction or installation, then install the same verified local archive. The guide explains coverage, expected signer and source identity, and the published inventories.
+
 ## 🚦 Quick Start
 
 ```bash
