@@ -10,6 +10,8 @@ curl -fsSL https://raw.githubusercontent.com/gridctl/gridctl/main/install.sh | s
 
 Installs the latest release to `~/.local/bin/gridctl`. The script verifies the release checksum and prints the install path and next steps.
 
+A checksum downloaded with an archive detects corruption but does not independently authenticate its origin. To authenticate a covered release before extraction or installation, use the [external verification procedure](release-verification.md). The installer, updater, and Homebrew do not automatically enforce attestation verification.
+
 The script can be inspected before running:
 
 ```bash

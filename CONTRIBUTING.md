@@ -205,6 +205,8 @@ Your pull request should:
 
 ### CI Checks
 
+Binary releases reuse these exact-commit gates before draft verification and publication. See [release verification and maintainer operations](docs/release-verification.md) for inventory scopes, credential boundaries, pin ownership, and recovery.
+
 Pull requests are automatically checked for:
 - Go linting (`golangci-lint` with `gosec`)
 - Vulnerability scanning (`govulncheck`, `npm audit`)
