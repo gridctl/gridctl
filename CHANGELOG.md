@@ -4,6 +4,10 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Maintenance
+
+- Add a manually triggered, read-only Homebrew authentication diagnostic that compares the release Python helper with GitHub CLI and reports sanitized results without exposing credentials.
+
 ## [1.0.0-rc.1] - 2026-09-09
 
 ### Documentation
