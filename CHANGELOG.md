@@ -4,6 +4,10 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Limit the Homebrew cask's quarantine removal to macOS so Linuxbrew installations no longer fail by invoking the unavailable `/usr/bin/xattr`.
+
 ### Maintenance
 
 - Add a manually triggered, read-only Homebrew authentication diagnostic that compares the release Python helper with GitHub CLI and reports sanitized results without exposing credentials.
