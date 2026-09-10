@@ -1,0 +1,26 @@
+name: Tap authentication diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    if: github.repository == 'gridctl/gridctl' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Install reviewed GitHub CLI
+        run: |
+          python3 scripts/release-tools.py "$RUNNER_TEMP/tap-diagnostic-tools" gh
+          printf '%s\n' "$RUNNER_TEMP/tap-diagnostic-tools" >> "$GITHUB_PATH"
+      - name: Compare read-only tap authentication
+        env:
+          GORELEASER_TOKEN: ${{ secrets.GORELEASER_TOKEN }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 scripts/tap-auth-diagnostic.py
