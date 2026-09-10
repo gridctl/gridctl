@@ -41,6 +41,19 @@ class ReleasePolicyTests(unittest.TestCase):
                          set(publisher["publish"]["needs"]))
         self.assertEqual("publish", publisher["homebrew"]["needs"])
 
+    def test_homebrew_xattr_hook_is_macos_only(self):
+        import yaml
+
+        cask = yaml.safe_load(Path(".goreleaser.yaml").read_text())["homebrew_casks"][0]
+        self.assertEqual(
+            'if OS.mac?\n'
+            '  system_command "/usr/bin/xattr",\n'
+            '                 args: ["-dr", "com.apple.quarantine", "#{staged_path}/gridctl"]\n'
+            'end\n',
+            cask["hooks"]["post"]["install"],
+        )
+        self.assertNotIn("custom_block", cask)
+
     def test_prepare_requires_complete_inventories(self):
         import jsonschema
 
