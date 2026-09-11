@@ -36,4 +36,6 @@ Coordinated disclosure is preferred. Reporters are credited in the advisory unle
 
 ## Security Design
 
-Gridctl is built with security as a constitutional principle. [Article XII](CONSTITUTION.md#article-xii--secure-defaults) requires that all security-sensitive configuration defaults to the most restrictive safe option. [Article XIII](CONSTITUTION.md#article-xiii--minimal-attack-surface) requires that gridctl not expose functionality beyond its stated purpose and that every network-facing endpoint has a documented purpose and ownership. These commitments apply to every release.
+The [security threat model](docs/security/threat-model.md) documents current trust boundaries, control defaults, source/test evidence, and residual risks at a named source revision. It also distinguishes constitutional requirements from current implementation behavior.
+
+Gridctl is built with security as a constitutional principle. [Article XII](CONSTITUTION.md#article-xii---secure-defaults) requires that all security-sensitive configuration defaults to the most restrictive safe option. [Article XIII](CONSTITUTION.md#article-xiii---minimal-attack-surface) requires that gridctl not expose functionality beyond its stated purpose and that every network-facing endpoint has a documented purpose and ownership. These commitments apply to every release.

@@ -4,6 +4,10 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Documentation
+
+- Publish a source-verified security threat model covering trust boundaries, current controls and defaults, credential custody, release evidence, and residual risks (#1218).
+
 ### Bug Fixes
 
 - Limit the Homebrew cask's quarantine removal to macOS so Linuxbrew installations no longer fail by invoking the unavailable `/usr/bin/xattr`.
