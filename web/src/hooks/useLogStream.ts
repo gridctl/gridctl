@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { DEFAULT_LOG_WINDOW, parseLogEntry, type ParsedLog } from '../components/log/logTypes';
 import { fetchGatewayLogs } from '../lib/api';
 import { POLLING } from '../lib/constants';
+import { useAuthStore } from '../stores/useAuthStore';
 
 interface UseLogStreamOptions {
   /** Fetch + poll only while true (workspace mounted, tab visible, ...). */
@@ -37,6 +38,8 @@ interface UseLogStreamResult {
  * Entries at or before the newest cleared timestamp stay hidden.
  */
 export function useLogStream({ active, paused = false, lines = DEFAULT_LOG_WINDOW }: UseLogStreamOptions): UseLogStreamResult {
+  const generation = useAuthStore(s => s.generation);
+  const authRequired = useAuthStore(s => s.authRequired);
   const [logs, setLogs] = useState<ParsedLog[]>([]);
   const [isLoading, setIsLoading] = useState(active);
   const [error, setError] = useState<string | null>(null);
@@ -46,8 +49,11 @@ export function useLogStream({ active, paused = false, lines = DEFAULT_LOG_WINDO
   const clearedBeforeRef = useRef<number | null>(null);
 
   const fetchLogs = useCallback(async () => {
+    const current = () => useAuthStore.getState().generation === generation && !useAuthStore.getState().authRequired;
+    if (!current()) return;
     try {
       const envelope = await fetchGatewayLogs(lines);
+      if (!current()) return;
       let parsed = (envelope.logs ?? []).map(parseLogEntry);
       const clearedBefore = clearedBeforeRef.current;
       if (clearedBefore != null) {
@@ -62,20 +68,20 @@ export function useLogStream({ active, paused = false, lines = DEFAULT_LOG_WINDO
       setLastLoadedAt(Date.now());
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch logs');
+      if (current()) setError(err instanceof Error ? err.message : 'Failed to fetch logs');
     } finally {
-      setIsLoading(false);
+      if (current()) setIsLoading(false);
     }
-  }, [lines]);
+  }, [lines, generation]);
 
   // Fetch on activation, then poll while active and not paused.
   useEffect(() => {
-    if (!active) return;
+    if (!active || authRequired) return;
     fetchLogs();
     if (paused) return;
     const interval = window.setInterval(fetchLogs, POLLING.LOGS);
     return () => clearInterval(interval);
-  }, [active, paused, fetchLogs]);
+  }, [active, paused, fetchLogs, authRequired]);
 
   const clear = useCallback(() => {
     setLogs((prev) => {

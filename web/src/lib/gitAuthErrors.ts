@@ -40,17 +40,14 @@ export function httpsEquivalentOf(err: unknown): string | undefined {
 /**
  * Classify a failure to decide whether to auto-open the auth card.
  *
- * The status check alone is not enough. The fetch layer converts every 401
- * into an AuthError, which carries no status, so a private repository's
- * "authentication required" arrives as a bare message and would otherwise
- * slip past — leaving the card shut on the single case it exists for. The
- * message fallback is what actually catches 401 today; keep both.
+ * Gateway AuthError belongs to the gateway prompt. Downstream HTTP statuses
+ * and older message-only repository failures belong to this credential card.
  */
 export function shouldOpenAuthCard(err: unknown): boolean {
   // A missing agent is auth-shaped but not token-fixable.
   if (isSSHAgentError(err)) return false;
   if (err instanceof HTTPError && (err.status === 401 || err.status === 404)) return true;
-  if (err instanceof AuthError) return true;
+  if (err instanceof AuthError) return false;
   const msg = err instanceof Error ? err.message.toLowerCase() : '';
   return (
     msg.includes('authentication required') ||

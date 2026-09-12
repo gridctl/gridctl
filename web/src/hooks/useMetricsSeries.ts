@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchTokenMetrics, clearTokenMetrics } from '../lib/api';
 import { POLLING } from '../lib/constants';
 import type { TokenMetricsResponse } from '../types';
+import { useAuthStore } from '../stores/useAuthStore';
 
 export type MetricsTimeRange = 'live' | '1h' | '6h' | '24h' | '7d';
 
@@ -58,6 +59,8 @@ export function useMetricsSeries({
   enabled = true,
   paused = false,
 }: UseMetricsSeriesArgs): UseMetricsSeriesResult {
+  const generation = useAuthStore(s => s.generation);
+  const authRequired = useAuthStore(s => s.authRequired);
   const [metricsData, setMetricsData] = useState<TokenMetricsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -70,28 +73,31 @@ export function useMetricsSeries({
   // skeleton is gated on `!metricsData`, so once data lands it never reappears
   // on a background refresh anyway; explicit reloads flip the flag themselves.
   const loadMetrics = useCallback(async () => {
+    const current = () => useAuthStore.getState().generation === generation && !useAuthStore.getState().authRequired;
+    if (!current()) return;
     try {
       const data = await fetchTokenMetrics(apiRange);
+      if (!current()) return;
       setMetricsData(data);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch metrics');
+      if (current()) setError(err instanceof Error ? err.message : 'Failed to fetch metrics');
     } finally {
-      setIsLoading(false);
+      if (current()) setIsLoading(false);
     }
-  }, [apiRange]);
+  }, [apiRange, generation]);
 
   // Fetch on mount/enable and whenever the range changes. loadMetrics flips the
   // loading flag itself, so the effect body stays free of synchronous setState.
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || authRequired) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- async callback; state is set only after await, not synchronously
     void loadMetrics();
-  }, [enabled, loadMetrics]);
+  }, [enabled, loadMetrics, authRequired]);
 
   // Auto-refresh while live and not paused.
   useEffect(() => {
-    if (!enabled || paused || timeRange !== 'live') {
+    if (!enabled || authRequired || paused || timeRange !== 'live') {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
@@ -105,7 +111,7 @@ export function useMetricsSeries({
         intervalRef.current = null;
       }
     };
-  }, [enabled, paused, timeRange, loadMetrics]);
+  }, [enabled, paused, timeRange, loadMetrics, authRequired]);
 
   const reload = useCallback(() => {
     void loadMetrics();
@@ -113,10 +119,11 @@ export function useMetricsSeries({
 
   const clear = useCallback(async () => {
     await clearTokenMetrics();
+    if (useAuthStore.getState().generation !== generation) return;
     setMetricsData(null);
     setIsLoading(true);
     void loadMetrics();
-  }, [loadMetrics]);
+  }, [loadMetrics, generation]);
 
   // The API echoes the requested range, so a response held over from a
   // previous range is never handed to consumers under the new label — the

@@ -27,7 +27,7 @@ describe('fetchToolUsage', () => {
     const result = await fetchToolUsage();
 
     expect(result).toEqual(payload);
-    expect(fetchMock).toHaveBeenCalledWith('/api/tools/usage', expect.anything());
+    expect(fetchMock).toHaveBeenCalledWith(new URL('/api/tools/usage', window.location.origin).href, expect.anything());
   });
 
   it('throws on a non-ok response so callers can surface the failure', async () => {

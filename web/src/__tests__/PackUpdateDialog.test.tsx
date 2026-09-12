@@ -16,7 +16,7 @@ vi.mock('../lib/api', async () => {
 
 vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn() }));
 
-import { previewPack, addPack, AuthError, HTTPError } from '../lib/api';
+import { previewPack, addPack, HTTPError } from '../lib/api';
 
 const mockPreview = vi.mocked(previewPack);
 const mockAdd = vi.mocked(addPack);
@@ -78,7 +78,7 @@ describe('PackUpdateDialog', () => {
   });
 
   it('offers a credentials recovery path when the stored reference cannot cover it', async () => {
-    mockPreview.mockRejectedValueOnce(new AuthError('Authentication required'));
+    mockPreview.mockRejectedValueOnce(new HTTPError(401, 'Authentication required'));
     renderDialog();
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/authentication/i));
@@ -89,7 +89,7 @@ describe('PackUpdateDialog', () => {
 
   it('retries the preview with the credential the user supplied', async () => {
     mockPreview
-      .mockRejectedValueOnce(new AuthError('Authentication required'))
+      .mockRejectedValueOnce(new HTTPError(401, 'Authentication required'))
       .mockResolvedValueOnce(resolved);
     renderDialog();
 
@@ -113,7 +113,7 @@ describe('PackUpdateDialog', () => {
 
   it('carries the supplied credential into the update request', async () => {
     mockPreview
-      .mockRejectedValueOnce(new AuthError('Authentication required'))
+      .mockRejectedValueOnce(new HTTPError(401, 'Authentication required'))
       .mockResolvedValueOnce(resolved);
     mockAdd.mockResolvedValueOnce({ doc: { pack: 'team-pack' }, notes: [] } as never);
     renderDialog();
@@ -196,7 +196,7 @@ describe('PackUpdateDialog — vault picker keyboard handling', () => {
   });
 
   async function openVaultPicker(onClose = vi.fn()) {
-    mockPreview.mockRejectedValueOnce(new AuthError('Authentication required'));
+    mockPreview.mockRejectedValueOnce(new HTTPError(401, 'Authentication required'));
     render(
       <PackUpdateDialog
         packName="team-pack"

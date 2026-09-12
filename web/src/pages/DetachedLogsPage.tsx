@@ -15,6 +15,7 @@ import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
 import { POLLING } from '../lib/constants';
 import type { GatewayStatus } from '../types';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
+import { useAuthStore } from '../stores/useAuthStore';
 
 interface NodeOption {
   name: string;
@@ -28,6 +29,8 @@ interface NodeOption {
 // chrome: source dropdown, fullscreen, and the footer. Trace pivots open the
 // Traces workspace in a full app tab since the popout has no other workspaces.
 function DetachedLogsPageContent() {
+  const generation = useAuthStore(s => s.generation);
+  const authRequired = useAuthStore(s => s.authRequired);
   const view = useLogsView();
   const { source } = view;
 
@@ -42,9 +45,12 @@ function DetachedLogsPageContent() {
 
   // Fetch available nodes for the source picker
   useEffect(() => {
+    if (authRequired) return;
+    let active = true;
     const fetchNodes = async () => {
       try {
         const status: GatewayStatus = await fetchStatus();
+        if (!active || useAuthStore.getState().generation !== generation) return;
         const nodeList: NodeOption[] = [
           ...(status['mcp-servers'] ?? []).map((s) => ({ name: s.name, type: 'mcp-server' as const })),
           ...(status.resources ?? []).map((r) => ({ name: r.name, type: 'resource' as const })),
@@ -58,8 +64,8 @@ function DetachedLogsPageContent() {
     fetchNodes();
     const nodeInterval = window.setInterval(fetchNodes, POLLING.STATUS);
 
-    return () => clearInterval(nodeInterval);
-  }, []);
+    return () => { active = false; clearInterval(nodeInterval); };
+  }, [authRequired, generation]);
 
   // Close dropdown when clicking outside
   useEffect(() => {

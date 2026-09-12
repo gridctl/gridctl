@@ -31,6 +31,7 @@ import type {
 import { InspectorSection } from '../components/inspector';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { SourceProvenance } from '../components/sidebar/SourceProvenance';
+import { useAuthStore } from '../stores/useAuthStore';
 
 interface NodeOption {
   name: string;
@@ -39,6 +40,8 @@ interface NodeOption {
 }
 
 function DetachedSidebarPageContent() {
+  const generation = useAuthStore(s => s.generation);
+  const authRequired = useAuthStore(s => s.authRequired);
   const [searchParams, setSearchParams] = useSearchParams();
   const initialNode = searchParams.get('node');
 
@@ -57,12 +60,15 @@ function DetachedSidebarPageContent() {
 
   // Fetch data
   const fetchData = useCallback(async () => {
+    const current = () => useAuthStore.getState().generation === generation && !useAuthStore.getState().authRequired;
+    if (!current()) return;
     try {
       const [status, toolsResult, catalogResult] = await Promise.all([
         fetchStatus(),
         fetchTools(),
         fetchToolCatalog(),
       ]);
+      if (!current()) return;
 
       const nodeList: NodeOption[] = [
         ...(status['mcp-servers'] ?? []).map((s) => ({
@@ -85,11 +91,12 @@ function DetachedSidebarPageContent() {
       useStackStore.getState().setToolCatalog(catalogResult.tools ?? []);
       setIsLoading(false);
     } catch {
-      setIsLoading(false);
+      if (current()) setIsLoading(false);
     }
-  }, []);
+  }, [generation]);
 
   useEffect(() => {
+    if (authRequired) return;
     // Async wrapper to avoid synchronous setState
     const initFetch = async () => {
       await fetchData();
@@ -97,7 +104,7 @@ function DetachedSidebarPageContent() {
     initFetch();
     const interval = window.setInterval(fetchData, POLLING.STATUS);
     return () => clearInterval(interval);
-  }, [fetchData]);
+  }, [fetchData, authRequired]);
 
   // Update URL when selection changes
   useEffect(() => {

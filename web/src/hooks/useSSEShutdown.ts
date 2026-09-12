@@ -1,28 +1,40 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
+import { gatewayRequest } from '../lib/gatewayRequest';
+import { useAuthStore } from '../stores/useAuthStore';
 
-/**
- * Lightweight SSE connection that only listens for shutdown events.
- * Does NOT replace polling — just provides early shutdown notification.
- */
-export function useSSEShutdown(onShutdown: () => void) {
-  const eventSourceRef = useRef<EventSource | null>(null);
-
+// The legacy endpoint negotiates an MCP endpoint and then closes. EOF does
+// not signal shutdown; polling remains the disconnect fallback.
+export function useSSEShutdown(_onShutdown: () => void) {
+  const generation = useAuthStore(s => s.generation);
+  const authRequired = useAuthStore(s => s.authRequired);
   useEffect(() => {
-    const es = new EventSource('/sse');
-    eventSourceRef.current = es;
-
-    es.addEventListener('close', () => {
-      onShutdown();
-    });
-
-    es.onerror = () => {
-      // SSE connection failed — this is expected when gateway is down
-      // Don't take action here; polling handles disconnection
-      es.close();
-    };
-
+    if (authRequired) return;
+    const controller = new AbortController();
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    void (async () => {
+      try {
+        const response = await gatewayRequest('/sse', { headers: { Accept: 'text/event-stream' }, signal: controller.signal });
+        if (!response.ok || controller.signal.aborted || useAuthStore.getState().generation !== generation) {
+          await response.body?.cancel();
+          return;
+        }
+        reader = response.body?.getReader();
+        if (reader) {
+          while (!controller.signal.aborted && useAuthStore.getState().generation === generation) {
+            const { done } = await reader.read();
+            if (done) break;
+          }
+        }
+      } catch {
+        // Shared policy handles gateway rejection. Other failures are left to
+        // status polling; negotiation failures are not shutdown evidence.
+      } finally {
+        reader?.releaseLock();
+      }
+    })();
     return () => {
-      es.close();
+      controller.abort();
+      void reader?.cancel().catch(() => { /* Abort may have already closed it. */ });
     };
-  }, [onShutdown]);
+  }, [generation, authRequired]);
 }

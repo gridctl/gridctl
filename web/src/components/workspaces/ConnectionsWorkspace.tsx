@@ -5,6 +5,7 @@ import { Bot, Plug, Radio } from 'lucide-react';
 import {
   ClientLinkError,
   fetchClients,
+  fetchGlobalContext,
   fetchModelsStatus,
   fetchSessions,
   fetchWiringStatus,
@@ -16,6 +17,7 @@ import { POLLING } from '../../lib/constants';
 import { useContextStore } from '../../stores/useContextStore';
 import { useRegistryStore } from '../../stores/useRegistryStore';
 import { useStackStore } from '../../stores/useStackStore';
+import { useAuthStore } from '../../stores/useAuthStore';
 import { useListNav } from '../../hooks/useListNav';
 import type { AgentProjectionStatus, ClientStatus, ModelsStatusDoc, SessionEntry, WiringRow } from '../../types';
 import { showToast } from '../ui/Toast';
@@ -76,18 +78,44 @@ export default function ConnectionsWorkspace() {
 
   // ---- Data: wiring + agent projections + context, refreshed together. ----
   const resetDialogOpen = useUIStore((s) => s.resetDialogOpen);
+  const authRequired = useAuthStore((s) => s.authRequired);
+  const generation = useAuthStore((s) => s.generation);
+  const lifetime = useRef<symbol | null>(null);
+  const healthRequest = useRef<symbol | null>(null);
+
+  useEffect(() => {
+    lifetime.current = Symbol();
+    return () => { lifetime.current = null; };
+  }, []);
+
+  const captureCurrent = useCallback(() => {
+    const owner = lifetime.current;
+    const credential = useAuthStore.getState().generation;
+    return () => owner !== null && lifetime.current === owner &&
+      useAuthStore.getState().generation === credential && !useAuthStore.getState().authRequired;
+  }, []);
 
   const refreshHealth = useCallback(async () => {
+    const current = captureCurrent();
+    if (!current()) return;
+    const request = Symbol();
+    healthRequest.current = request;
     const results = await Promise.allSettled([
       fetchWiringStatus(),
       fetchAgentProjectionStatus(),
-      useContextStore.getState().refresh(),
+      fetchGlobalContext(),
       fetchClients(),
       fetchModelsStatus(),
     ]);
+    if (!current() || healthRequest.current !== request) return;
     if (results[0].status === 'fulfilled') setWiringRows(results[0].value);
     if (results[1].status === 'fulfilled') {
       useRegistryStore.getState().setAgentStatuses(results[1].value);
+    }
+    if (results[2].status === 'fulfilled') {
+      useContextStore.getState().setDoc(results[2].value);
+    } else {
+      useContextStore.setState({ error: 'Failed to load context' });
     }
     if (results[3].status === 'fulfilled') {
       useStackStore.getState().setClients(results[3].value);
@@ -98,23 +126,26 @@ export default function ConnectionsWorkspace() {
     } else {
       setModelsFailed(true);
     }
-  }, []);
+  }, [captureCurrent]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- all state writes happen after awaited fetches resolve; nothing sets state synchronously in this effect
     void refreshHealth();
-  }, [refreshHealth]);
+  }, [refreshHealth, authRequired, generation]);
 
   // Sessions poll into the shared store slice; StatusBar reads the same
   // array while it is loaded, so the two counts cannot diverge. Cleared
   // on unmount so the status bar falls back to the status-poll count
   // (the backend keeps the two equal by construction).
   useEffect(() => {
+    if (authRequired) return;
     let cancelled = false;
+    const current = captureCurrent();
     const load = async () => {
+      if (cancelled || !current()) return;
       try {
         const res = await fetchSessions();
-        if (!cancelled) {
+        if (!cancelled && current()) {
           setSessionsFailed(false);
           useStackStore
             .getState()
@@ -126,7 +157,7 @@ export default function ConnectionsWorkspace() {
         // A failed fetch is its own fact, distinct from "still loading":
         // the pane says unavailable, and the store slice stays null so
         // the status bar keeps its honest status-poll fallback.
-        if (!cancelled) setSessionsFailed(true);
+        if (!cancelled && current()) setSessionsFailed(true);
       }
     };
     void load();
@@ -136,7 +167,7 @@ export default function ConnectionsWorkspace() {
       window.clearInterval(timer);
       useStackStore.getState().setSessionEntries(null);
     };
-  }, []);
+  }, [authRequired, generation, captureCurrent]);
 
   // ---- Health join + ordering. ----
   const contextClients = contextDoc?.clients ?? null;
@@ -280,38 +311,46 @@ export default function ConnectionsWorkspace() {
   }, []);
 
   const apply = useCallback(async () => {
+    const current = captureCurrent();
+    if (!current()) return;
+    const owner = lifetime.current;
     setApplying(true);
     const failed = new Set<string>();
-    for (const { client, enable } of changes) {
-      try {
-        if (enable) {
-          await linkClient(client.slug);
-        } else {
-          await unlinkClient(client.slug);
+    try {
+      for (const { client, enable } of changes) {
+        try {
+          if (enable) {
+            await linkClient(client.slug);
+          } else {
+            await unlinkClient(client.slug);
+          }
+        } catch (err) {
+          if (!current()) return;
+          failed.add(client.slug);
+          const detail =
+            err instanceof ClientLinkError && err.hint
+              ? `${err.message} ${err.hint}`
+              : err instanceof Error
+                ? err.message
+                : String(err);
+          showToast('error', `${client.name}: ${detail}`);
         }
-      } catch (err) {
-        failed.add(client.slug);
-        const detail =
-          err instanceof ClientLinkError && err.hint
-            ? `${err.message} ${err.hint}`
-            : err instanceof Error
-              ? err.message
-              : String(err);
-        showToast('error', `${client.name}: ${detail}`);
+        if (!current()) return;
       }
+      if (failed.size === 0) {
+        showToast('success', `Applied ${changes.length} connection change${changes.length === 1 ? '' : 's'}`);
+      }
+      // Failed changes stay staged so they remain visible for retry; applied
+      // ones clear (the refresh below picks up their new server state).
+      setStaged((prev) =>
+        Object.fromEntries(Object.entries(prev).filter(([slug]) => failed.has(slug))),
+      );
+      setReviewing(false);
+      await refreshHealth();
+    } finally {
+      if (lifetime.current === owner) setApplying(false);
     }
-    if (failed.size === 0) {
-      showToast('success', `Applied ${changes.length} connection change${changes.length === 1 ? '' : 's'}`);
-    }
-    // Failed changes stay staged so they remain visible for retry; applied
-    // ones clear (the refresh below picks up their new server state).
-    setStaged((prev) =>
-      Object.fromEntries(Object.entries(prev).filter(([slug]) => failed.has(slug))),
-    );
-    setReviewing(false);
-    setApplying(false);
-    await refreshHealth();
-  }, [changes, refreshHealth]);
+  }, [changes, refreshHealth, captureCurrent]);
 
   // ---- Session attribution + agent-slug join accounting. ----
   const slugSet = useMemo(() => new Set(clients.map((c) => c.slug)), [clients]);

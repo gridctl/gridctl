@@ -22,7 +22,7 @@ describe('drift-safe sync api', () => {
     const fetchMock = mockJSON({ source: 'src', results: [] });
     await updateSkillSource('my source');
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('/api/skills/sources/my%20source/update');
+    expect(url).toBe(new URL('/api/skills/sources/my%20source/update', window.location.origin).href);
     expect(init.method).toBe('POST');
     expect(init.body).toBeUndefined();
   });
@@ -49,7 +49,7 @@ describe('drift-safe sync api', () => {
     const fetchMock = mockJSON(payload);
     const res = await fetchSkillDiff('src', 'a');
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('/api/skills/sources/src/skills/a/diff');
+    expect(url).toBe(new URL('/api/skills/sources/src/skills/a/diff', window.location.origin).href);
     // GET requests carry no method override body
     expect(init?.method ?? 'GET').toBe('GET');
     expect(res).toEqual(payload);
@@ -59,7 +59,7 @@ describe('drift-safe sync api', () => {
     const fetchMock = mockJSON({ detached: 'a' });
     const res = await detachSkill('src', 'a');
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('/api/skills/sources/src/skills/a/detach');
+    expect(url).toBe(new URL('/api/skills/sources/src/skills/a/detach', window.location.origin).href);
     expect(init.method).toBe('POST');
     expect(res.detached).toBe('a');
   });
@@ -68,7 +68,7 @@ describe('drift-safe sync api', () => {
     const fetchMock = mockJSON({ skill: 'a', imported: 1, backup: 'SKILL.md.pre-abc' });
     const res = await resetSkill('src', 'a');
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('/api/skills/sources/src/skills/a/reset');
+    expect(url).toBe(new URL('/api/skills/sources/src/skills/a/reset', window.location.origin).href);
     expect(init.method).toBe('POST');
     expect(res.backup).toBe('SKILL.md.pre-abc');
   });

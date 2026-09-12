@@ -1,16 +1,45 @@
 import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, SessionsResponse, RegistryAgent, AgentProjectionStatus, AgentSyncResult, AgentUnsyncResult, AgentAdoptResult, SecurityFinding, WiringRow, WiringAdoptResult, ModelsStatusDoc, ModelsSyncResult, ModelsAdoptResult, ModelsValidateDoc } from '../types';
 
+import { gatewayRequest, AuthError, GatewayRequestError } from './gatewayRequest';
+import { useAuthStore } from '../stores/useAuthStore';
+export { AuthError } from './gatewayRequest';
 // Base URL for API calls - empty for same origin
 const API_BASE = '';
 
 // === Auth Token Management ===
 
-const AUTH_STORAGE_KEY = 'gridctl-auth-token';
+// Every endpoint parser below uses the same destination and credential policy.
+async function fetch(input: string, init?: RequestInit): Promise<Response> {
+  const generation = useAuthStore.getState().generation;
+  const response = await gatewayRequest(input, init);
+  const current = () => {
+    if (useAuthStore.getState().generation !== generation) throw new GatewayRequestError('stale', 'Superseded credential request.');
+  };
+  current();
+  if (response.status === 401) {
+    throw new HTTPError(401, 'The downstream operation requires authentication.');
+  }
+  if (!response.ok && response.headers?.get('Content-Type')?.includes('application/json')) {
+    const data = await response.clone().json().catch(() => null);
+    current();
+    if (data?.code === 'restart_required') {
+      throw new RestartRequiredError(Array.isArray(data.changed_fields) ? data.changed_fields.filter((f: unknown) => typeof f === 'string') : []);
+    }
+    if (data?.code === 'invalid_candidate') {
+      throw new HTTPError(response.status, 'Candidate configuration could not be resolved or validated; active configuration is unchanged.', { code: 'invalid_candidate' });
+    }
+  }
+  return response;
+}
 
-export class AuthError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'AuthError';
+export class RestartRequiredError extends Error {
+  code = 'restart_required';
+  changedFields: string[];
+  constructor(fields: string[]) {
+    const safe = fields.filter(field => /^gateway\.(auth\.(enabled|type|token|header)|bind|allowed_hosts|allowed_origins|insecure_allow_unauthenticated)$/.test(field));
+    super(`Restart required. The saved file differs from active startup security. Restart the gateway with the original startup options; the saved file and running workloads have been preserved.${safe.length ? ` Changed fields: ${safe.join(', ')}.` : ''}`);
+    this.name = 'RestartRequiredError';
+    this.changedFields = safe;
   }
 }
 
@@ -71,37 +100,8 @@ export interface SkillAuth {
   sshKeyPath?: string;
 }
 
-export function getStoredToken(): string | null {
-  try {
-    return localStorage.getItem(AUTH_STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function storeToken(token: string): void {
-  try {
-    localStorage.setItem(AUTH_STORAGE_KEY, token);
-  } catch {
-    // localStorage may be unavailable
-  }
-}
-
-export function clearToken(): void {
-  try {
-    localStorage.removeItem(AUTH_STORAGE_KEY);
-  } catch {
-    // localStorage may be unavailable
-  }
-}
-
 function buildHeaders(extra?: Record<string, string>): Record<string, string> {
-  const headers: Record<string, string> = { ...extra };
-  const token = getStoredToken();
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  return headers;
+  return { ...extra };
 }
 
 // === Generic Fetch Wrapper ===
@@ -752,6 +752,8 @@ export async function fetchOptimizeReport(opts?: {
 // === Reload API ===
 
 export interface ReloadResult {
+  code?: string;
+  changed_fields?: string[];
   success: boolean;
   message: string;
   added?: string[];
@@ -1999,13 +2001,6 @@ export async function sendPlaygroundChat(req: PlaygroundChatRequest): Promise<Pl
     throw new Error((data as { error?: string }).error || `Chat failed: ${response.status}`);
   }
   return response.json();
-}
-
-/**
- * Returns headers needed for streaming fetch (SSE with auth)
- */
-export function buildStreamHeaders(): Record<string, string> {
-  return buildHeaders();
 }
 
 // === Pins API ===
