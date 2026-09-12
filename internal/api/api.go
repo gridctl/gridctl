@@ -1233,7 +1233,7 @@ func (s *Server) handleReload(w http.ResponseWriter, r *http.Request) {
 
 	handler := s.ReloadHandler()
 	if handler == nil {
-		writeJSONError(w, "Reload not enabled (start with --watch flag)", http.StatusServiceUnavailable)
+		writeJSONError(w, "Reload is not ready; startup security preflight is unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
