@@ -28,6 +28,7 @@ import {
 import { POLLING } from '../lib/constants';
 import type { AgentSkill, RegistryStatus, ItemState } from '../types';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
+import { useAuthStore } from '../stores/useAuthStore';
 
 type FilterTab = 'all' | ItemState;
 
@@ -39,6 +40,8 @@ const TABS: { key: FilterTab; label: string }[] = [
 ];
 
 function DetachedRegistryContent() {
+  const generation = useAuthStore(s => s.generation);
+  const authRequired = useAuthStore(s => s.authRequired);
   const [skills, setSkills] = useState<AgentSkill[] | null>(null);
   const [status, setStatus] = useState<RegistryStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -61,27 +64,31 @@ function DetachedRegistryContent() {
   useDetachedWindowSync('registry');
 
   const fetchData = useCallback(async () => {
+    const current = () => useAuthStore.getState().generation === generation && !useAuthStore.getState().authRequired;
+    if (!current()) return;
     try {
       const [regStatus, regSkills] = await Promise.all([
         fetchRegistryStatus(),
         fetchRegistrySkills(),
       ]);
+      if (!current()) return;
       setStatus(regStatus);
       setSkills(regSkills);
       setIsLoading(false);
     } catch {
-      setIsLoading(false);
+      if (current()) setIsLoading(false);
     }
-  }, []);
+  }, [generation]);
 
   useEffect(() => {
+    if (authRequired) return;
     const initFetch = async () => {
       await fetchData();
     };
     initFetch();
     const interval = window.setInterval(fetchData, POLLING.STATUS);
     return () => clearInterval(interval);
-  }, [fetchData]);
+  }, [fetchData, authRequired]);
 
   // Fuzzy search runs on all skills; tab filter narrows the result
   const searchResults = useFuzzySearch(skills ?? [], searchQuery);

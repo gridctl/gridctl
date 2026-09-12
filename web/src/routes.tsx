@@ -10,6 +10,7 @@ import { DetachedRegistryPage } from './pages/DetachedRegistryPage';
 import { DetachedMetricsPage } from './pages/DetachedMetricsPage';
 import { DetachedTracesPage } from './pages/DetachedTracesPage';
 import { useThemeSync } from './themes/useThemeSync';
+import { AuthBoundary } from './components/auth/AuthBoundary';
 
 // Each workspace is code-split into its own chunk.
 const StackWorkspace = lazy(() => import('./components/workspaces/StackWorkspace'));
@@ -28,7 +29,7 @@ export function AppRoutes() {
   useThemeSync();
 
   return (
-    <Routes>
+    <AuthBoundary><Routes>
       {/* Unified shell parent route. Workspaces render as children inside
           <AppShell>'s <Outlet />. */}
       <Route element={<AppShell />}>
@@ -149,6 +150,6 @@ export function AppRoutes() {
           redirects to the root, where RootRedirect resolves the landing
           workspace. Keeps unknown paths from rendering a blank page. */}
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    </Routes></AuthBoundary>
   );
 }

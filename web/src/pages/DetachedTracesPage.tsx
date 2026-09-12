@@ -5,12 +5,15 @@ import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
 import { fetchMCPServers } from '../lib/api';
 import { TracesView } from '../components/traces/TracesView';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
+import { useAuthStore } from '../stores/useAuthStore';
 
 // Frameless traces popout. The trace surface itself is the shared TracesView;
 // this page only adds the window chrome (title bar, fullscreen, footer). The
 // detached window runs its own store instance, so nothing here bleeds into
 // the main shell's traces state.
 function DetachedTracesPageContent() {
+  const generation = useAuthStore(s => s.generation);
+  const authRequired = useAuthStore(s => s.authRequired);
   const [servers, setServers] = useState<string[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -19,10 +22,13 @@ function DetachedTracesPageContent() {
   // Load deployed server names for the filter dropdown. The detached window
   // has no stack-store poller, so fetch directly.
   useEffect(() => {
+    if (authRequired) return;
+    let cancelled = false;
     fetchMCPServers()
-      .then((list) => setServers(list.map((s) => s.name).sort()))
+      .then((list) => { if (!cancelled && useAuthStore.getState().generation === generation) setServers(list.map((s) => s.name).sort()); })
       .catch(() => {});
-  }, []);
+    return () => { cancelled = true; };
+  }, [generation, authRequired]);
 
   const toggleFullscreen = async () => {
     if (!document.fullscreenElement) {
@@ -74,7 +80,7 @@ function DetachedTracesPageContent() {
 
       {/* Content — shared trace surface (filters, list, waterfall) */}
       <main className="flex-1 min-h-0">
-        <TracesView active servers={servers} />
+        <TracesView active={!authRequired} servers={servers} />
       </main>
 
       {/* Footer */}

@@ -3,14 +3,12 @@ import { Outlet, useLocation, useNavigate } from 'react-router';
 import { ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import { Header } from '../layout/Header';
 import { StatusBar } from '../layout/StatusBar';
-import { AuthPrompt } from '../auth/AuthPrompt';
 import { CommandPalette } from '../palette/CommandPalette';
 import { ToastContainer } from '../ui/Toast';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { useStackStore } from '../../stores/useStackStore';
 import { useToolsDirtyStore } from '../../stores/useToolsDirtyStore';
 import { useUIStore } from '../../stores/useUIStore';
-import { useAuthStore } from '../../stores/useAuthStore';
 import { usePolling } from '../../hooks/usePolling';
 import { useSSEShutdown } from '../../hooks/useSSEShutdown';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
@@ -55,8 +53,6 @@ function AppShellInner() {
   const setActiveWorkspace = useUIStore((s) => s.setActiveWorkspace);
   const activeWorkspace = useUIStore((s) => s.activeWorkspace);
   const toggleCompactMode = useUIStore((s) => s.toggleCompactMode);
-
-  const authRequired = useAuthStore((s) => s.authRequired);
 
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -125,8 +121,6 @@ function AppShellInner() {
         gridTemplateColumns: '1fr',
       }}
     >
-      {authRequired && <AuthPrompt />}
-
       {isShuttingDown && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-lg bg-primary/10 border border-primary/20 text-primary text-sm font-medium backdrop-blur-xl animate-fade-in-scale">
           Gateway is shutting down...

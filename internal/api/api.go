@@ -52,6 +52,7 @@ type Server struct {
 	stackName          string
 	logBuffer          *logging.LogBuffer
 	reloadHandler      *reload.Handler
+	reloadMu           sync.RWMutex
 	modelPolicies      func() (skillPolicy, agentPolicy *registry.ModelPolicy)
 	provisioners       *provisioner.Registry
 	linkServerName     string
@@ -219,11 +220,15 @@ func (s *Server) LogBuffer() *logging.LogBuffer {
 
 // SetReloadHandler sets the reload handler for hot reload support.
 func (s *Server) SetReloadHandler(h *reload.Handler) {
+	s.reloadMu.Lock()
+	defer s.reloadMu.Unlock()
 	s.reloadHandler = h
 }
 
 // ReloadHandler returns the reload handler.
 func (s *Server) ReloadHandler() *reload.Handler {
+	s.reloadMu.RLock()
+	defer s.reloadMu.RUnlock()
 	return s.reloadHandler
 }
 
@@ -1226,18 +1231,22 @@ func (s *Server) handleReload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.reloadHandler == nil {
-		writeJSONError(w, "Reload not enabled (start with --watch flag)", http.StatusServiceUnavailable)
+	handler := s.ReloadHandler()
+	if handler == nil {
+		writeJSONError(w, "Reload is not ready; startup security preflight is unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
-	result, err := s.reloadHandler.Reload(r.Context())
+	result, err := handler.Reload(r.Context())
 	if err != nil {
 		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	if !result.Success {
+		if writePreflightFailure(w, result) {
+			return
+		}
 		w.WriteHeader(http.StatusBadRequest)
 	}
 	writeJSON(w, result)

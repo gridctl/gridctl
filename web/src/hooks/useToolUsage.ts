@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { fetchToolUsage } from '../lib/api';
 import type { ToolUsageResponse } from '../types';
+import { useAuthStore } from '../stores/useAuthStore';
 
 // Poll cadence for Audit Mode usage. Slower than status polling — usage shifts
 // over hours/days, so a tight loop buys nothing and the Fuse/classification
@@ -23,12 +24,14 @@ export interface ToolUsageState {
 // rather than throwing — the workspace renders usage as best-effort overlay
 // data and must not crash the editor if it's unavailable.
 export function useToolUsage(enabled: boolean): ToolUsageState {
+  const generation = useAuthStore(s => s.generation);
+  const authRequired = useAuthStore(s => s.authRequired);
   const [usage, setUsage] = useState<ToolUsageResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fetchedAt, setFetchedAt] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || authRequired) return;
     let active = true;
 
     // State writes happen only inside this async loader (after an await
@@ -38,12 +41,12 @@ export function useToolUsage(enabled: boolean): ToolUsageState {
     const load = async () => {
       try {
         const data = await fetchToolUsage();
-        if (!active) return;
+        if (!active || useAuthStore.getState().generation !== generation) return;
         setUsage(data);
         setFetchedAt(Date.now());
         setError(null);
       } catch (err) {
-        if (!active) return;
+        if (!active || useAuthStore.getState().generation !== generation) return;
         setError(err instanceof Error ? err.message : 'Failed to load tool usage');
       }
     };
@@ -54,7 +57,7 @@ export function useToolUsage(enabled: boolean): ToolUsageState {
       active = false;
       clearInterval(id);
     };
-  }, [enabled]);
+  }, [enabled, generation, authRequired]);
 
   return { usage, error, fetchedAt };
 }

@@ -495,9 +495,9 @@ func TestHandleStackInitialize_NoReloadHandler(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
-func TestHandleStackInitialize_SuccessNoReloadHandler(t *testing.T) {
-	// Full initialize flow with no reloadHandler (stackless mode without
-	// --watch), against an injected stacks dir.
+func TestHandleStackInitialize_RejectsWithoutPreflight(t *testing.T) {
+	// An early startup request must not accept a path without comparing the
+	// candidate against the running listener's startup security.
 	stacksDir := t.TempDir()
 
 	stackName := "gridctl-test-init-stack"
@@ -515,13 +515,9 @@ func TestHandleStackInitialize_SuccessNoReloadHandler(t *testing.T) {
 
 	s.handleStackInitialize(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), `"success":true`)
-	assert.Contains(t, w.Body.String(), `"watching":false`)
-
-	// Verify server state was updated
-	assert.Equal(t, stackPath, s.stackFile)
-	assert.Equal(t, stackName, s.stackName)
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Empty(t, s.stackFile)
+	assert.Empty(t, s.stackName)
 }
 
 // TestHandleStackInitialize_SurfacesPerServerErrors verifies that when the

@@ -6,10 +6,15 @@ All notable changes to gridctl will be documented in this file.
 
 ### Documentation
 
+- Align gateway-auth lifecycle guidance across the threat model, restart troubleshooting, API/CLI references, browser recovery, examples, and architecture map (#1228).
 - Publish a source-verified security threat model covering trust boundaries, current controls and defaults, credential custody, release evidence, and residual risks (#1218).
 
 ### Bug Fixes
 
+- Report unavailable startup security preflight when manual reload is not ready, without incorrectly requiring `--watch` (#1228).
+- Breaking: reject reload and stackless initialization when effective gateway authentication, bind, Host/Origin allowlists, or insecure override differs from startup. Mixed edits are rejected before application; saved YAML remains on disk. Restart the gateway with its original startup options to activate the change. This correction requires maintainer-owned major-release scheduling under Articles VIII/IX and must not ship in a patch or minor release (#1228).
+- Support Bearer and API-key browser credentials, including supported custom headers. Verify drafts before persistence, retain usable credentials on non-auth failures, pause protected requests on gateway rejection, and refuse redirects. Versioned localStorage and explicit window-only notices cover detached windows; scripts on the gateway origin can read stored credentials (#1228).
+- Discard Connections health results after navigation or credential replacement, pause session polling during credential re-entry, and stop interrupted connection changes without automatically replaying them (#1228).
 - Limit the Homebrew cask's quarantine removal to macOS so Linuxbrew installations no longer fail by invoking the unavailable `/usr/bin/xattr`.
 
 ### Maintenance

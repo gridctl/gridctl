@@ -13,12 +13,18 @@ import (
 
 // loadConfig holds options for LoadStack.
 type loadConfig struct {
+	quiet    bool
 	vault    VaultLookup
 	vaultSet VaultSetLookup
 }
 
 // LoadOption configures LoadStack behavior.
 type LoadOption func(*loadConfig)
+
+// WithQuietLoad suppresses optional variable hints for value-free callers.
+func WithQuietLoad() LoadOption {
+	return func(c *loadConfig) { c.quiet = true }
+}
 
 // WithVault enables ${vault:KEY} resolution during stack loading.
 func WithVault(v VaultLookup) LoadOption {
@@ -72,7 +78,7 @@ func LoadStack(path string, opts ...LoadOption) (*Stack, error) {
 	}
 
 	// Hint about empty env vars that could use the variable store
-	if cfg.vault == nil {
+	if cfg.vault == nil && !cfg.quiet {
 		for _, v := range emptyVars {
 			slog.Info("hint: "+v+" resolved to empty — use 'gridctl var set "+v+"' to store it securely", "var", v)
 		}

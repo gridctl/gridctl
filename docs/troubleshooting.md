@@ -6,6 +6,16 @@ Start with `gridctl doctor`: it runs most of the environment checks below automa
 
 ---
 
+## Gateway security requires a restart
+
+`restart_required` means the saved candidate differs from the listener's effective startup authentication, bind, Host/Origin allowlists, or insecure override. The active credential and accepted configuration remain unchanged, including when ordinary edits were saved alongside security changes. The edited file is not rolled back. Repeating reload cannot activate it.
+
+For a foreground gateway, stop the process using its normal signal handling, then run `apply` on the saved stack with the same original startup options. For a daemon managed by a service manager, stop that gateway service and start it again with the original options. A daemon's graceful SIGTERM shutdown followed by `apply` on the same saved stack activates new credentials and ends old process-owned sessions and streams. Existing external downstream processes remain running. `gridctl stop` applies only to stackless `serve`; `destroy` and `apply --replace` can remove workloads and are not generic authentication-recovery commands. Do not overwrite edited YAML or reconstruct secret-bearing command lines. Preserve bind and insecure CLI overrides when restarting because they take precedence over YAML.
+
+In the browser, select the configured mode and header. API-key mode defaults to raw `Authorization`, without a Bearer prefix. A verified-window-only notice means refresh and new detached windows need credential re-entry; other windows may still use the previous saved credential. Origin scripts can read localStorage. A downstream repository 401 needs repository credentials, while a gateway rejection requests gateway re-verification. Connection, TLS/CORS, server, abort, malformed-response, and redirect failures are not evidence of an invalid token.
+
+Remote authentication still requires HTTPS or an encrypted tunnel with a private backend. A shared token does not encrypt remote HTTP, bind a group/client selector to an identity, or implement the full MCP OAuth profile.
+
 ## Container Runtime
 
 ### Docker socket not found
@@ -392,7 +402,7 @@ Tool calls fail with `connection lost` after working initially.
    ```bash
    curl -X POST http://localhost:8180/api/mcp-servers/<name>/restart
    ```
-   (`gridctl reload` only applies stack.yaml changes; with an unchanged file it is a no-op.)
+   (`gridctl reload` applies resolved stack changes; it does not force a connection restart. A rotated stored gateway token can require a gateway restart even when the file text is unchanged.)
 
 ### Server was not running when gridctl started
 
@@ -433,7 +443,7 @@ The entry key written by `gridctl link --name` / `--group` is a client-local ali
 
 2. Group endpoints (`/groups/<name>/mcp`) automatically announce a suffixed identity such as `acme-stack/<group>`, so linked groups are distinguishable without configuration.
 
-3. Restart the stack (`gridctl apply`); connected clients pick up the new name on their next initialize.
+3. Stop the gateway process and start it again with `gridctl apply` and the original startup options; connected clients pick up the new name on their next initialize. Applying while the daemon is still running is not a process restart. See [gateway restart recovery](#gateway-security-requires-a-restart).
 
 ---
 
@@ -694,12 +704,13 @@ The UI keeps showing the authentication prompt after entering a valid token.
 
 **Causes:**
 
-- Token is incorrect or expired
-- Auth configuration mismatch between `stack.yaml` and the token being used
+- The credential or selected mode/header does not match the running gateway
+- Saved security edits have not been activated by a gateway process restart
+- Another window changed saved credentials, requiring verification in this window
 
 **Resolution:**
 
-1. Verify your auth configuration in `stack.yaml`:
+1. Check the configured mode and header, and whether those settings have been activated by a restart. For example, this stack uses Bearer mode:
    ```yaml
    gateway:
      auth:
@@ -707,12 +718,11 @@ The UI keeps showing the authentication prompt after entering a valid token.
        token: ${AUTH_TOKEN}
    ```
 
-2. Ensure the environment variable is set:
-   ```bash
-   echo $AUTH_TOKEN
-   ```
+2. Enter the credential without a `Bearer ` prefix; the prompt adds it only in Bearer mode. For API-key mode, select API key and enter the configured Credential header (default: `Authorization`). Mode/header changes preserve your draft. Check variable availability in the gateway's startup environment without printing its value; changing another shell's environment does not change a running daemon.
+3. If reload reports `restart_required`, follow [restart recovery](#gateway-security-requires-a-restart). The old credential remains active until restart. Repeated reloads and clearing browser storage cannot activate the saved credential.
+4. Read the verification error before replacing credentials. HTTP 403, server errors, connection/TLS/CORS failures, malformed responses, and redirect refusal do not mean the gateway rejected the token. Open the final gateway URL directly if a proxy redirects requests. Do not put credentials in the URL.
 
-3. Try clearing browser storage and re-entering the token.
+Unsupported or corrupt saved metadata is not interpreted as a credential. Re-enter and verify; if the entry cannot be replaced safely, the visible window-only notice explains refresh and detached-window limits. Protected reads resume after verification, but saves and other mutations are not automatically repeated. See [browser credentials](config-schema.md#browser-credentials).
 
 ---
 

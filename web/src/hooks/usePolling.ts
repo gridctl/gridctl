@@ -9,6 +9,7 @@ import { fetchStatus, fetchTools, fetchToolCatalog, fetchClients, fetchRegistryS
 import { showToast } from '../components/ui/Toast';
 import { POLLING } from '../lib/constants';
 import { skillPinsUrl } from '../lib/skillGovernance';
+import { GatewayRequestError } from '../lib/gatewayRequest';
 
 let _prevDriftCount = 0;
 let _prevFindingCount = 0;
@@ -32,12 +33,16 @@ export function usePolling() {
   const setAuthRequired = useAuthStore((s) => s.setAuthRequired);
 
   const poll = useCallback(async () => {
+    const generation = useAuthStore.getState().generation;
+    const current = () => useAuthStore.getState().generation === generation && !useAuthStore.getState().authRequired;
+    if (!current()) return;
     try {
       const [status, toolsResult, catalogResult] = await Promise.all([
         fetchStatus(),
         fetchTools(),
         fetchToolCatalog(),
       ]);
+      if (!current()) return;
 
       setGatewayStatus(status);
       // Coalesce to []: these endpoints serialize an empty inventory as null
@@ -50,6 +55,7 @@ export function usePolling() {
       // Fetch clients separately — failure should not block core updates
       try {
         const clients = await fetchClients();
+        if (!current()) return;
         setClients(clients);
       } catch {
         // Client endpoint may not be available; ignore gracefully
@@ -58,6 +64,7 @@ export function usePolling() {
       // Fetch pins — progressive disclosure, never blocks main cycle
       try {
         const pins = await fetchServerPins();
+        if (!current()) return;
         usePinsStore.getState().setPins(pins);
         // Re-apply pin state to nodes built from the status fetch above
         useStackStore.getState().refreshNodesAndEdges();
@@ -99,6 +106,7 @@ export function usePolling() {
       // block, with rising-edge toasts guarded like the server sentinels.
       try {
         const skillPins = await fetchSkillPins();
+        if (!current()) return;
         usePinsStore.getState().setSkillPins(skillPins);
 
         const skillDriftCount = countDriftedSkills(skillPins);
@@ -134,6 +142,7 @@ export function usePolling() {
       // without surfacing a global error.
       try {
         const records = await getTelemetryInventory();
+        if (!current()) return;
         useTelemetryStore.getState().setInventory(records);
       } catch {
         // Telemetry endpoint may be unreachable (stackless mode, older
@@ -141,11 +150,12 @@ export function usePolling() {
       }
       try {
         const spec = await fetchStackSpec();
+        if (!current()) return;
         useTelemetryStore.getState().setRawSpec(spec.content);
       } catch {
         // Stackless mode returns 503; clear so the UI does not show
         // stale telemetry config from a previous stack.
-        useTelemetryStore.getState().setRawSpec(null);
+        if (current()) useTelemetryStore.getState().setRawSpec(null);
       }
 
       // Fetch registry data — progressive disclosure, never blocks main cycle
@@ -154,6 +164,7 @@ export function usePolling() {
           fetchRegistryStatus(),
           fetchRegistrySkills(),
         ]);
+        if (!current()) return;
         const prevSkills = useRegistryStore.getState().skills;
         useRegistryStore.getState().setStatus(regStatus);
         useRegistryStore.getState().setSkills(regSkills);
@@ -174,11 +185,13 @@ export function usePolling() {
       // category grouping with no source headers/badges.
       try {
         const sources = await fetchSkillSources();
+        if (!current()) return;
         useRegistryStore.getState().setSources(sources);
       } catch {
         // Sources unavailable — progressive disclosure, not an error.
       }
     } catch (error) {
+      if (!current()) return;
       if (error instanceof AuthError) {
         setAuthRequired(true);
         setLoading(false);
@@ -186,9 +199,9 @@ export function usePolling() {
       }
 
       // Differentiate network errors from HTTP errors
-      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+      if (error instanceof GatewayRequestError && error.kind === 'connection') {
         // Network error: gateway unreachable (shutdown, crash, or network issue)
-        setError('Gateway unavailable — connection refused');
+        setError('Gateway connection unavailable');
         setConnectionStatus('disconnected');
       } else {
         // HTTP error: gateway is running but returned an error

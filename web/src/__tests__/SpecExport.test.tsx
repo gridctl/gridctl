@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { SpecTab } from '../components/spec/SpecTab';
 import { useSpecStore } from '../stores/useSpecStore';
 import { AuthError, fetchStackExport, HTTPError } from '../lib/api';
+import { useAuthStore } from '../stores/useAuthStore';
 
 vi.mock('../lib/api', async (importOriginal) => ({
   ...await importOriginal<typeof import('../lib/api')>(),
@@ -13,6 +14,7 @@ vi.mock('../lib/api', async (importOriginal) => ({
 }));
 
 beforeEach(() => {
+  useAuthStore.setState({ authRequired: false, generation: Symbol(), credential: null });
   vi.stubGlobal('fetch', vi.fn());
   useSpecStore.setState({ spec: null, specError: null, specLoading: false, validation: null });
   vi.stubGlobal('URL', Object.assign(URL, {
@@ -53,7 +55,7 @@ it('prevents repeated actions and downloads on failure, then permits retry', asy
   expect(pending).toBeDisabled();
   fireEvent.click(pending);
   expect(fetch).toHaveBeenCalledOnce();
-  expect(fetch).toHaveBeenCalledWith('/api/stack/export', expect.objectContaining({ headers: expect.any(Object) }));
+  expect(fetch).toHaveBeenCalledWith(new URL('/api/stack/export', window.location.origin).href, expect.objectContaining({ headers: expect.any(Object), redirect: 'manual' }));
   const message = 'Failed to load stack: export: gateway.auth.token: recognized sensitive field contains an inline literal; use an authored variable reference';
   resolveExport(Response.json({ error: message }, { status: 500, statusText: 'Internal Server Error' }));
   expect(await screen.findByRole('alert')).toHaveTextContent(message);
@@ -64,7 +66,7 @@ it('prevents repeated actions and downloads on failure, then permits retry', asy
 });
 
 it('preserves authentication errors', async () => {
-  vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 401 }));
+  vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 401, headers: { 'Gridctl-Auth-Rejected': '1' } }));
   await expect(fetchStackExport()).rejects.toBeInstanceOf(AuthError);
 });
 

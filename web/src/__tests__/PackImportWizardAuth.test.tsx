@@ -18,7 +18,7 @@ vi.mock('../lib/api', async () => {
 
 vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn() }));
 
-import { previewPack, addPack, AuthError, HTTPError } from '../lib/api';
+import { previewPack, addPack, HTTPError } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
 
 const mockPreview = vi.mocked(previewPack);
@@ -72,14 +72,9 @@ describe('PackImportWizard — credentials', () => {
     expect(mockPreview.mock.calls[0][0].auth).toBeUndefined();
   });
 
-  /**
-   * The fetch layer turns every 401 into an AuthError, which carries no status.
-   * That is the real shape a private pack produces, and asserting it here is
-   * what keeps the discovery path from silently dying: a status-only check
-   * would leave the card shut on the one case it exists for.
-   */
-  it('auto-opens the card on a 401, which arrives as an AuthError with no status', async () => {
-    mockPreview.mockRejectedValueOnce(new AuthError('Authentication required'));
+  // Repository 401s retain their status; gateway denials use the shared prompt.
+  it('auto-opens the card on a downstream 401', async () => {
+    mockPreview.mockRejectedValueOnce(new HTTPError(401, 'Authentication required'));
     renderWizard();
     enterRepo('https://github.com/acme/private-pack');
     clickPreview();
@@ -108,7 +103,7 @@ describe('PackImportWizard — credentials', () => {
 
   it('sends the credential on retry through the same submit button', async () => {
     mockPreview
-      .mockRejectedValueOnce(new AuthError('Authentication required'))
+      .mockRejectedValueOnce(new HTTPError(401, 'Authentication required'))
       .mockResolvedValueOnce(emptyPreview);
 
     renderWizard();
@@ -217,7 +212,7 @@ describe('PackImportWizard — unreachable ssh-agent', () => {
 
   it('returns to the source step when the install itself hits an auth failure', async () => {
     mockPreview.mockResolvedValueOnce(emptyPreview);
-    mockAdd.mockRejectedValueOnce(new AuthError('Authentication required'));
+    mockAdd.mockRejectedValueOnce(new HTTPError(401, 'Authentication required'));
 
     renderWizard();
     enterRepo('https://github.com/acme/private-pack');

@@ -26,8 +26,11 @@ import {
   type SortDirection,
 } from '../components/metrics/metricsData';
 import type { GatewayStatus, TokenUsage } from '../types';
+import { useAuthStore } from '../stores/useAuthStore';
 
 function DetachedMetricsPageContent() {
+  const generation = useAuthStore(s => s.generation);
+  const authRequired = useAuthStore(s => s.authRequired);
   // Real-time status snapshot — the detached window lives outside the app
   // shell, so it owns its own status poll (the in-shell surfaces read the app
   // store instead). The time-series come from the shared useMetricsSeries hook.
@@ -56,9 +59,12 @@ function DetachedMetricsPageContent() {
 
   // Poll status for real-time token usage
   useEffect(() => {
+    if (authRequired) return;
+    let active = true;
     const pollStatus = async () => {
       try {
         const status: GatewayStatus = await fetchStatus();
+        if (!active || useAuthStore.getState().generation !== generation) return;
         setTokenUsage(status.token_usage ?? null);
         setServerNames((status['mcp-servers'] ?? []).map((s) => s.name));
       } catch {
@@ -68,8 +74,8 @@ function DetachedMetricsPageContent() {
 
     pollStatus();
     const interval = window.setInterval(pollStatus, POLLING.STATUS);
-    return () => clearInterval(interval);
-  }, []);
+    return () => { active = false; clearInterval(interval); };
+  }, [authRequired, generation]);
 
   const handleSort = (column: BreakdownSortColumn) => {
     if (sortColumn === column) setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'));

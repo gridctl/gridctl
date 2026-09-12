@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { fetchTraces, fetchTraceDetail } from '../lib/api';
 import type { TraceSummary, TraceDetail } from '../lib/api';
+import { useAuthStore } from './useAuthStore';
 
 export type { TraceSummary, TraceDetail };
 
@@ -96,6 +97,8 @@ export const useTracesStore = create<TracesState>()((set, get) => ({
   },
 
   loadTraces: async () => {
+    const generation = useAuthStore.getState().generation;
+    if (useAuthStore.getState().authRequired) return;
     const { filters } = get();
     set({ isLoading: true, error: null });
     try {
@@ -105,6 +108,7 @@ export const useTracesStore = create<TracesState>()((set, get) => ({
         minDuration: filters.minDuration ?? undefined,
         limit: 100,
       });
+      if (useAuthStore.getState().generation !== generation) return;
       set({
         traces: result.traces,
         total: result.total,
@@ -115,6 +119,7 @@ export const useTracesStore = create<TracesState>()((set, get) => ({
         lastLoadedAt: Date.now(),
       });
     } catch (err) {
+      if (useAuthStore.getState().generation !== generation) return;
       set({
         error: err instanceof Error ? err.message : 'Failed to fetch traces',
         isLoading: false,
@@ -123,11 +128,15 @@ export const useTracesStore = create<TracesState>()((set, get) => ({
   },
 
   loadTraceDetail: async (traceId) => {
+    const generation = useAuthStore.getState().generation;
+    if (useAuthStore.getState().authRequired) return;
     set({ isLoadingDetail: true, detailError: null });
     try {
       const detail = await fetchTraceDetail(traceId);
+      if (useAuthStore.getState().generation !== generation) return;
       set({ traceDetail: detail, isLoadingDetail: false });
     } catch (err) {
+      if (useAuthStore.getState().generation !== generation) return;
       set({
         detailError: err instanceof Error ? err.message : 'Failed to fetch trace detail',
         isLoadingDetail: false,

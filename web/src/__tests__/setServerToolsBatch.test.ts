@@ -19,7 +19,7 @@ describe('setServerToolsBatch', () => {
 
     expect(result).toEqual(payload);
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('/api/mcp-servers/tools');
+    expect(url).toBe(new URL('/api/mcp-servers/tools', window.location.origin).href);
     expect(init.method).toBe('PUT');
     expect(JSON.parse(init.body)).toEqual({ servers: [{ name: 'github', tools: ['a'] }] });
   });

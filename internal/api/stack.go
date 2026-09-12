@@ -163,13 +163,16 @@ func (s *Server) handleStackInitialize(w http.ResponseWriter, r *http.Request) {
 
 	watching := false
 
-	if s.reloadHandler != nil {
-		result, err := s.reloadHandler.Initialize(r.Context(), stackPath)
+	if handler := s.ReloadHandler(); handler != nil {
+		result, err := handler.Initialize(r.Context(), stackPath)
 		if err != nil {
 			writeJSONError(w, "Failed to initialize stack: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		if !result.Success {
+			if writePreflightFailure(w, result) {
+				return
+			}
 			// Include per-item errors in the body so the wizard can surface
 			// individual server registration failures instead of a single
 			// opaque message.
@@ -187,6 +190,9 @@ func (s *Server) handleStackInitialize(w http.ResponseWriter, r *http.Request) {
 			s.startWatcher(stackPath)
 			watching = true
 		}
+	} else {
+		writeJSONError(w, "Stack initialization is not ready; startup security preflight is unavailable", http.StatusServiceUnavailable)
+		return
 	}
 
 	// Persist stack file and name on the server so /ready and other endpoints work

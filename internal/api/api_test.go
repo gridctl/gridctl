@@ -988,7 +988,7 @@ func TestHandleMCPServerLogs_MethodNotAllowed(t *testing.T) {
 
 // --- Reload endpoint tests ---
 
-func TestHandleReload_NotEnabled(t *testing.T) {
+func TestHandleReload_NotReady(t *testing.T) {
 	srv := newTestServer(t)
 	// reloadHandler is nil by default
 	handler := srv.Handler()
@@ -1005,8 +1005,8 @@ func TestHandleReload_NotEnabled(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if errMsg, ok := result["error"]; !ok || !strings.Contains(errMsg, "--watch") {
-		t.Errorf("expected error mentioning --watch flag, got %v", result)
+	if got, want := result["error"], "Reload is not ready; startup security preflight is unavailable"; got != want {
+		t.Errorf("expected error %q, got %q", want, got)
 	}
 }
 

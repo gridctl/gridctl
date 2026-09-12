@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { fetchLimits, type LimitsReport } from '../lib/api';
+import { useAuthStore } from '../stores/useAuthStore';
 
 // Poll cadence for limit state. Rate limits move at tool-call speed, not
 // render speed; 15s matches the tool-usage poll and is fast enough for the
@@ -18,11 +19,13 @@ export interface LimitsState {
 // next poll. Failures surface as an error string; limits are best-effort
 // overlay data and must never crash a metrics surface.
 export function useLimits(enabled: boolean): LimitsState {
+  const generation = useAuthStore(s => s.generation);
+  const authRequired = useAuthStore(s => s.authRequired);
   const [report, setReport] = useState<LimitsReport | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || authRequired) return;
     let active = true;
 
     // State writes happen only inside this async loader (after an await
@@ -30,11 +33,11 @@ export function useLimits(enabled: boolean): LimitsState {
     const load = async () => {
       try {
         const data = await fetchLimits();
-        if (!active) return;
+        if (!active || useAuthStore.getState().generation !== generation) return;
         setReport(data);
         setError(null);
       } catch (err) {
-        if (!active) return;
+        if (!active || useAuthStore.getState().generation !== generation) return;
         setError(err instanceof Error ? err.message : 'Failed to load limits');
       }
     };
@@ -45,7 +48,7 @@ export function useLimits(enabled: boolean): LimitsState {
       active = false;
       clearInterval(id);
     };
-  }, [enabled]);
+  }, [enabled, generation, authRequired]);
 
   return { report, error };
 }

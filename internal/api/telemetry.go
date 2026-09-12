@@ -97,17 +97,20 @@ func (s *Server) handlePatchStackTelemetry(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if s.reloadHandler != nil {
+	if handler := s.ReloadHandler(); handler != nil {
 		// Fire-and-forget: the watcher will also see this change and trigger a
 		// reload, but invoking it here makes the UI feel snappy when watching
 		// is disabled or temporarily blocked. Errors here surface as 502 with
 		// the same code handleSetServerTools uses.
-		if result, err := s.reloadHandler.Reload(r.Context()); err != nil {
+		if result, err := handler.Reload(r.Context()); err != nil {
 			writeStructuredError(w, http.StatusBadGateway, errCodeReloadFailed,
 				err.Error(),
 				"The stack file was saved but the hot reload failed. Check gridctl logs.")
 			return
 		} else if !result.Success {
+			if writePreflightFailure(w, result) {
+				return
+			}
 			writeStructuredError(w, http.StatusBadGateway, errCodeReloadFailed,
 				result.Message,
 				"The stack file was saved but the hot reload failed. Check gridctl logs.")
@@ -204,13 +207,16 @@ func (s *Server) handlePatchServerTelemetry(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if s.reloadHandler != nil {
-		if result, err := s.reloadHandler.Reload(r.Context()); err != nil {
+	if handler := s.ReloadHandler(); handler != nil {
+		if result, err := handler.Reload(r.Context()); err != nil {
 			writeStructuredError(w, http.StatusBadGateway, errCodeReloadFailed,
 				err.Error(),
 				"The stack file was saved but the hot reload failed. Check gridctl logs.")
 			return
 		} else if !result.Success {
+			if writePreflightFailure(w, result) {
+				return
+			}
 			writeStructuredError(w, http.StatusBadGateway, errCodeReloadFailed,
 				result.Message,
 				"The stack file was saved but the hot reload failed. Check gridctl logs.")

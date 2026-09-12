@@ -296,7 +296,7 @@ function AcceptanceCriteriaEditor({
 interface SkillEditorProps {
   isOpen: boolean;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: () => boolean | void | Promise<boolean | void>;
   skill?: AgentSkill;
   /** Owning git source, when this skill was imported. Drives the provenance
    *  strip and reconciliation actions (compare/reset/detach/fork). */
@@ -603,8 +603,7 @@ export function SkillEditor({
           }
         }
       }
-      onSaved();
-      onClose();
+      if (await onSaved() !== false) onClose();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Save failed';
       setError(msg);
@@ -651,8 +650,7 @@ export function SkillEditor({
     try {
       await resetSkill(source.name, skill.name);
       showToast('success', `"${skill.name}" reset to upstream`);
-      onSaved();
-      onClose();
+      if (await onSaved() !== false) onClose();
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Reset failed');
     } finally {
@@ -667,8 +665,7 @@ export function SkillEditor({
     try {
       await detachSkill(source.name, skill.name);
       showToast('success', `"${skill.name}" detached; now a local skill`);
-      onSaved();
-      onClose();
+      if (await onSaved() !== false) onClose();
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Detach failed');
     } finally {
@@ -706,8 +703,7 @@ export function SkillEditor({
       };
       await createRegistrySkill(copy);
       showToast('success', `Forked as "${newName}"`);
-      onSaved();
-      onClose();
+      if (await onSaved() !== false) onClose();
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Fork failed (name may already exist)');
     } finally {
@@ -1118,7 +1114,7 @@ export function SkillEditor({
           sourceName={source.name}
           skillName={skill.name}
           onClose={() => setShowCompare(false)}
-          onTookUpstream={() => { setShowCompare(false); onSaved(); onClose(); }}
+          onTookUpstream={async () => { setShowCompare(false); if (await onSaved() !== false) onClose(); }}
         />
       )}
 

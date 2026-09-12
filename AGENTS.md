@@ -34,6 +34,8 @@ go test -v -run TestFunctionName ./pkg/runtime/...
 go test -v -race -tags=integration -run TestToolGroups_Authentication ./tests/integration/...
 ```
 
+Gateway authentication lifecycle changes also require `go test -race -tags=integration -run 'TestGatewayAuth_RealRestart|TestToolGroups_Authentication' -count=1 -timeout 3m ./tests/integration` (Docker, non-Windows; the restart fixture builds child binaries with `-race`). Real-browser acceptance lives in `web/gateway-auth.browser.mjs`: run `node web/gateway-auth.browser.mjs <path-to-playwright/index.mjs>` from the repository root with Playwright and its Chromium installed separately. Set `PLAYWRIGHT_BROWSERS_PATH` when using a non-default browser cache. It uses isolated local fixtures and is separate from Vitest and `task test`.
+
 Lint:
 
 ```bash
@@ -56,6 +58,8 @@ internal/api/       REST handlers backing the web UI (one file per resource: sta
                     Server.Handler assembles HTTP routes and CORS/Host/auth middleware; auth.go protects operational
                     namespaces, including grouped MCP/SSE. UI files, probes, terminal preflight, and the exact
                     state-validated downstream OAuth callback do not require the gateway token.
+                    Gateway credential denials carry Gridctl-Auth-Rejected: 1; reload_errors.go supplies shared
+                    restart_required (409) and invalid_candidate (400) envelopes, including save-first callers.
 internal/probe/     Ephemeral MCP tool-list probe for the "add server" wizard (not registered with the gateway).
 pkg/catalog/        MCP server catalog behind `gridctl search` / `gridctl add`: curated embedded entries plus the
                     official MCP Registry, with install-shape mapping into stack.yaml server blocks.
@@ -99,19 +103,27 @@ pkg/pins/           TOFU schema pinning for tool definitions; drift surfaces in 
 pkg/optimize/       Usage analysis: feeds `gridctl optimize` and the UI's findings panel with token-denominated findings.
 pkg/telemetry/      Tool-call accounting (counts, latency, tokens). Buffered in-memory; surfaced via /api/telemetry.
 pkg/tracing/        OTLP exporter + in-memory trace buffer for `gridctl traces` and the UI traces panel.
-pkg/reload/         Stack hot-reload (file watcher + diff-and-apply path).
+pkg/reload/         Stack hot-reload (file watcher + diff-and-apply path). security.go owns effective bind/insecure
+                    precedence and immutable startup-security comparison. Reload and stackless Initialize run
+                    preflight before no-op detection or mutation; rejected saved YAML is retained on disk.
 pkg/controller/     Application composition root: builds the gateway, mounts the API server, embedded UI, and MCP transports
                     (gateway_builder.go), and owns deploy/daemonize orchestration for `gridctl apply` and `gridctl serve`.
+                    Supplies the startup security snapshot and installs manual reload independently of --watch.
 pkg/metrics/, pkg/token/, pkg/format/, pkg/output/, pkg/logging/, pkg/jsonrpc/, pkg/state/, pkg/git/, pkg/dockerclient/   Supporting libs.
 
 web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). Zustand stores in src/stores/, route map in
                     src/routes.tsx, feature components grouped under src/components/<workspace>/. Nine workspaces:
                     Stack, Library, Vault (Variables), Tools, Metrics, Pins, Logs, Traces, Connections. The Detached*Page
                     files are popout windows that mirror specific panels.
+                    src/lib/gatewayRequest.ts owns same-origin, no-redirect credential-bearing fetch, including
+                    legacy SSE negotiation. credentials.ts owns versioned storage and Fetch header validation;
+                    AuthBoundary covers the shell and all six detached routes with generation-guarded re-entry.
 
 tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway lifecycle, hot reload, autoscaler,
                     replicas, transports (incl. Podman), private git auth, generated Python source builds, and
                     optimize heuristics. Grouped auth tests use real HTTP and a subprocess MCP backend.
+                    auth_restart_test.go verifies actual process restart, saved/live-state rejection, CLI exits,
+                    sessions/streams, and preserved Docker identities with race-built child binaries.
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
                     portable-pack, model-policy, python-sources). examples/_mock-servers/ is the source for `task mock:servers`.
@@ -120,12 +132,12 @@ scripts/            Build/test helpers and release tooling: release.py owns gate
                     authorized sandbox releases. test_release.py and test_govulncheck.py cover local policy regressions.
 docs/               User-facing documentation (cli-reference, config-schema, api-reference, skills, packs, tools-workspace,
                     global-context, model-policy, scaling, usage-observability, installation, release-verification,
-                    project-status, troubleshooting).
+                    project-status, troubleshooting, security/threat-model).
 ```
 
 End-to-end request flow for an upstream HTTP MCP tool call: client → HTTP listener built by `pkg/controller` (gateway_builder.go) → `internal/api.Server.Handler` (CORS, Host validation, configured auth, and route/group selection) → `pkg/mcp` Streamable HTTP transport (Host/Origin checks and protocol handling) → `mcp.Gateway` router → per-server `mcp.Client` (process/stdio/SSE/HTTP/OpenAPI) → response, with telemetry, tracing, schema pinning, and (optional) output-format conversion attached on the way back. Legacy SSE routes return a negotiation hint rather than dispatching tools.
 
-End-to-end for the web UI: component or React store action → `/api/...` handler in `internal/api/` → method on `Server` → call into the relevant `pkg/*` subsystem → JSON response → component or store state update → component re-render. The Stack spec view's Export YAML action calls `/api/stack/export` and downloads the non-resolving projection; raw spec retrieval and editing remain separate and may contain authored credentials. Verbose apply uses bounded controller diagnostic summaries, not resolved stack JSON.
+End-to-end for the web UI: component or React store action → shared gatewayRequest transport beneath endpoint parsers in `src/lib/api.ts` → `/api/...` handler in `internal/api/` → method on `Server` → call into the relevant `pkg/*` subsystem → JSON response → current-generation component or store state update → component re-render. Credential drafts verify against protected `/api/status` before active replacement/persistence. Gateway rejection pauses protected reads; verification resumes eligible reads without replaying mutations. The Stack spec view's Export YAML action calls `/api/stack/export` and downloads the non-resolving projection; raw spec retrieval and editing remain separate and may contain authored credentials. Verbose apply uses bounded controller diagnostic summaries, not resolved stack JSON.
 
 ## Constitution
 

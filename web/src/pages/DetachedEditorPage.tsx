@@ -1,8 +1,8 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router';
 import { AlertCircle, Wrench } from 'lucide-react';
 import { SkillEditor } from '../components/registry/SkillEditor';
-import { ToastContainer } from '../components/ui/Toast';
+import { ToastContainer, showToast } from '../components/ui/Toast';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
 import {
@@ -12,8 +12,11 @@ import {
 } from '../lib/api';
 import { useRegistryStore } from '../stores/useRegistryStore';
 import type { AgentSkill } from '../types';
+import { useAuthStore } from '../stores/useAuthStore';
 
 function DetachedEditorContent() {
+  const generation = useAuthStore(s => s.generation);
+  const authRequired = useAuthStore(s => s.authRequired);
   const [searchParams] = useSearchParams();
   const rawType = searchParams.get('type');
   // Always treat as skill editor (gracefully handle legacy "prompt" type)
@@ -23,20 +26,24 @@ function DetachedEditorContent() {
   const [skill, setSkill] = useState<AgentSkill | undefined>();
   const [loading, setLoading] = useState(!!itemName);
   const [error, setError] = useState<string | null>(null);
+  const refreshPending = useRef(false);
 
   // Register with main window
   useDetachedWindowSync('editor');
 
   const refreshRegistry = useCallback(async () => {
+    const started = useAuthStore.getState().generation;
     try {
       const [regStatus, regSkills] = await Promise.all([
         fetchRegistryStatus(),
         fetchRegistrySkills(),
       ]);
+      if (useAuthStore.getState().generation !== started) return false;
       useRegistryStore.getState().setStatus(regStatus);
       useRegistryStore.getState().setSkills(regSkills);
+      return true;
     } catch {
-      // Ignore - store updates are best-effort from detached window
+      return false;
     }
   }, []);
 
@@ -46,33 +53,45 @@ function DetachedEditorContent() {
 
   // Load the item being edited
   useEffect(() => {
-    if (!itemName) return;
+    if (!itemName || authRequired || skill?.name === itemName) return;
+    let cancelled = false;
+    const current = () => !cancelled && useAuthStore.getState().generation === generation;
 
     const loadItem = async () => {
       try {
         if (editorType === 'skill') {
           const s = await fetchRegistrySkill(itemName);
+          if (!current()) return;
           setSkill(s);
+          setError(null);
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load item');
+        if (current()) setError(err instanceof Error ? err.message : 'Failed to load item');
       } finally {
-        setLoading(false);
+        if (current()) setLoading(false);
       }
     };
 
     loadItem();
-  }, [editorType, itemName]);
+    return () => { cancelled = true; };
+  }, [editorType, itemName, generation, authRequired, skill]);
 
   const handleClose = useCallback(() => {
     window.close();
   }, []);
 
   const handleSaved = useCallback(async () => {
-    await refreshRegistry();
-    // Close after a brief delay to show toast
-    setTimeout(() => window.close(), 600);
+    refreshPending.current = true;
+    const refreshed = await refreshRegistry();
+    refreshPending.current = !refreshed;
+    if (!refreshed) showToast('warning', 'Saved successfully, but the registry refresh did not complete. The editor remains open.');
+    return refreshed;
   }, [refreshRegistry]);
+
+  useEffect(() => {
+    if (authRequired || !refreshPending.current) return;
+    void refreshRegistry().then(refreshed => { if (refreshed) refreshPending.current = false; });
+  }, [generation, authRequired, refreshRegistry]);
 
   if (!editorType) {
     return (

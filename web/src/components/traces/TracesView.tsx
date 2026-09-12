@@ -26,6 +26,7 @@ import {
   TRACES_TIME_RANGES,
   TRACES_TIME_RANGE_MS,
 } from '../../stores/useTracesStore';
+import { useAuthStore } from '../../stores/useAuthStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useTextZoom } from '../../hooks/useTextZoom';
 import { useListNav } from '../../hooks/useListNav';
@@ -71,6 +72,8 @@ interface TracesViewProps {
 // (each browser window gets its own store instance, so detached state never
 // bleeds into the main shell).
 export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbarExtra }: TracesViewProps) {
+  const generation = useAuthStore(s => s.generation);
+  const authRequired = useAuthStore(s => s.authRequired);
   const traces = useTracesStore((s) => s.traces);
   const tracingEnabled = useTracesStore((s) => s.tracingEnabled);
   const bufferSize = useTracesStore((s) => s.bufferSize);
@@ -159,21 +162,28 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
   );
 
   const load = useCallback(() => {
+    if (useAuthStore.getState().generation !== generation) return;
     loadTraces();
-  }, [loadTraces]);
+  }, [loadTraces, generation]);
+
+  useEffect(() => {
+    if (authRequired) return;
+    const store = useTracesStore.getState();
+    if (store.selectedTraceId) void store.loadTraceDetail(store.selectedTraceId);
+  }, [generation, authRequired]);
 
   // Initial load + reload when activated or a server-side filter changes.
   // filters.search is deliberately excluded: it only filters client-side, so
   // reloading per keystroke would hammer the API and flash the skeleton.
   useEffect(() => {
-    if (!active) return;
+    if (!active || authRequired) return;
     load();
-  }, [active, filters.server, filters.errorsOnly, filters.minDuration, load]);
+  }, [active, filters.server, filters.errorsOnly, filters.minDuration, load, authRequired]);
 
   // Auto-refresh while active and not paused. Pause freezes the display
   // only — the gateway keeps collecting; resuming just reloads.
   useEffect(() => {
-    if (!active || isPaused) {
+    if (!active || authRequired || isPaused) {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
@@ -187,7 +197,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
         intervalRef.current = null;
       }
     };
-  }, [active, isPaused, load]);
+  }, [active, isPaused, load, authRequired]);
 
   // Client-side filter pipeline: time range and search first, then the
   // tool-call segment (so the "infra hidden" count reflects the same window

@@ -33,8 +33,8 @@ describe('isSSHUrl', () => {
 });
 
 describe('classifiers', () => {
-  it('treats a 401 AuthError as auth-fixable even with no status', () => {
-    expect(shouldOpenAuthCard(new AuthError('Authentication required'))).toBe(true);
+  it('keeps gateway rejection out of downstream credential recovery', () => {
+    expect(shouldOpenAuthCard(new AuthError('Authentication required'))).toBe(false);
   });
 
   it('treats 401 and 404 HTTPErrors as auth-fixable', () => {
@@ -98,11 +98,7 @@ describe('pack fetch error contract', () => {
   function mockResponse(status: number, body: unknown) {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        ok: status >= 200 && status < 300,
-        status,
-        json: async () => body,
-      }),
+      vi.fn().mockResolvedValue(Response.json(body, { status })),
     );
   }
 
@@ -135,13 +131,12 @@ describe('pack fetch error contract', () => {
     expect(shouldOpenAuthCard(err)).toBe(false);
   });
 
-  it('turns a 401 into an AuthError, which carries no status', async () => {
+  it('retains downstream 401 as a status-bearing error', async () => {
     mockResponse(401, { error: 'Authentication required' });
 
     const err = await previewPack({ repo: 'https://github.com/acme/pack' }).catch((e) => e);
-    expect(err).toBeInstanceOf(AuthError);
-    expect((err as { status?: number }).status).toBeUndefined();
-    // Which is exactly why the classifier cannot rely on status alone.
+    expect(err).toBeInstanceOf(HTTPError);
+    expect((err as HTTPError).status).toBe(401);
     expect(shouldOpenAuthCard(err)).toBe(true);
   });
 

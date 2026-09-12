@@ -14,27 +14,30 @@ import (
 
 // ReloadResult contains the result of a reload operation.
 type ReloadResult struct {
-	Success  bool     `json:"success"`
-	Message  string   `json:"message"`
-	Added    []string `json:"added,omitempty"`
-	Removed  []string `json:"removed,omitempty"`
-	Modified []string `json:"modified,omitempty"`
-	Errors   []string `json:"errors,omitempty"`
+	Code          string   `json:"code,omitempty"`
+	ChangedFields []string `json:"changed_fields,omitempty"`
+	Success       bool     `json:"success"`
+	Message       string   `json:"message"`
+	Added         []string `json:"added,omitempty"`
+	Removed       []string `json:"removed,omitempty"`
+	Modified      []string `json:"modified,omitempty"`
+	Errors        []string `json:"errors,omitempty"`
 }
 
 // Handler manages hot reload for a running stack.
 type Handler struct {
-	mu          sync.Mutex
-	stackPath   string
-	currentCfg  *config.Stack
-	gateway     *mcp.Gateway
-	runtime     *runtime.Orchestrator
-	port        int
-	basePort    int
-	logger      *slog.Logger
-	noExpand    bool
-	vault       config.VaultLookup
-	vaultSet    config.VaultSetLookup
+	mu                sync.Mutex
+	stackPath         string
+	currentCfg        *config.Stack
+	gateway           *mcp.Gateway
+	runtime           *runtime.Orchestrator
+	port              int
+	basePort          int
+	logger            *slog.Logger
+	noExpand          bool
+	vault             config.VaultLookup
+	vaultSet          config.VaultSetLookup
+	securityPreflight func(*config.Stack) []string
 
 	// Callback for registering new MCP servers with gateway. replicas carries
 	// one entry per replica in replica-id order (ContainerID and HostPort per
@@ -105,26 +108,37 @@ func (h *Handler) CurrentConfig() *config.Stack {
 	return h.currentCfg
 }
 
+// SetSecurityPreflight installs the startup-owned static security comparison.
+func (h *Handler) SetSecurityPreflight(fn func(*config.Stack) []string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.securityPreflight = fn
+}
+
 // Initialize cold-loads a stack into a running stackless daemon.
-// It sets the stack path, resets currentCfg to nil so that ComputeDiff treats
-// every server and resource as newly added, then calls Reload.
+// Candidate preparation and preflight preserve accepted state on rejection.
 func (h *Handler) Initialize(ctx context.Context, stackPath string) (*ReloadResult, error) {
 	h.mu.Lock()
-	h.stackPath = stackPath
-	h.currentCfg = nil
-	h.mu.Unlock()
-	return h.Reload(ctx)
+	defer h.mu.Unlock()
+	return h.reload(ctx, stackPath, true)
 }
 
 // Reload reloads the configuration from disk and applies changes.
 func (h *Handler) Reload(ctx context.Context) (*ReloadResult, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	return h.reload(ctx, h.stackPath, false)
+}
+
+func (h *Handler) reload(ctx context.Context, stackPath string, initialize bool) (*ReloadResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	h.logger.Info("reloading configuration", "path", h.stackPath)
 
 	// Build load options
-	var loadOpts []config.LoadOption
+	loadOpts := []config.LoadOption{config.WithQuietLoad()}
 	if h.vault != nil {
 		loadOpts = append(loadOpts, config.WithVault(h.vault))
 	}
@@ -133,16 +147,29 @@ func (h *Handler) Reload(ctx context.Context) (*ReloadResult, error) {
 	}
 
 	// Load new config
-	newCfg, err := config.LoadStack(h.stackPath, loadOpts...)
+	newCfg, err := config.LoadStack(stackPath, loadOpts...)
 	if err != nil {
 		return &ReloadResult{
 			Success: false,
-			Message: fmt.Sprintf("failed to load config: %v", err),
+			Code:    "invalid_candidate",
+			Message: "candidate configuration could not be resolved or validated; active configuration is unchanged",
 		}, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if h.securityPreflight != nil {
+		if fields := h.securityPreflight(newCfg); len(fields) != 0 {
+			return &ReloadResult{
+				Code:          "restart_required",
+				ChangedFields: fields,
+				Message:       "restart required: saved configuration differs from active startup security; restart the gateway with the original startup options to activate it; the saved file is retained and running workloads are unchanged",
+			}, nil
+		}
 	}
 
 	// Compute diff; treat a nil currentCfg as an empty stack (initial load).
-	isInitial := h.currentCfg == nil
+	isInitial := initialize || h.currentCfg == nil
 	prevCfg := h.currentCfg
 	if isInitial {
 		prevCfg = &config.Stack{}
@@ -150,6 +177,10 @@ func (h *Handler) Reload(ctx context.Context) (*ReloadResult, error) {
 	diff := ComputeDiff(prevCfg, newCfg)
 
 	if diff.IsEmpty() {
+		if initialize {
+			h.stackPath = stackPath
+			h.currentCfg = newCfg
+		}
 		h.logger.Info("no configuration changes detected")
 		return &ReloadResult{
 			Success: true,
@@ -167,6 +198,13 @@ func (h *Handler) Reload(ctx context.Context) (*ReloadResult, error) {
 	}
 
 	result := &ReloadResult{Success: true}
+	// Preparation and security validation have completed before accepting the
+	// initialization path needed by server registration. Ordinary apply failures
+	// retain the existing partial-application semantics.
+	if initialize {
+		h.stackPath = stackPath
+		h.currentCfg = nil
+	}
 
 	// On initial load (stackless serve → /api/stack/initialize), the daemon
 	// started without running orchestrator.Up, so the stack's network(s) have
