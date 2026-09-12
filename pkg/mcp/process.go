@@ -4,10 +4,13 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -15,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/execution"
 	"github.com/gridctl/gridctl/pkg/jsonrpc"
 	"github.com/gridctl/gridctl/pkg/vault"
 )
@@ -24,18 +28,28 @@ const processKillGracePeriod = 5 * time.Second
 // ProcessClient communicates with an MCP server via a local process stdin/stdout.
 type ProcessClient struct {
 	RPCClient
-	command   []string
-	workDir   string
-	env       []string
-	requestID atomic.Int64
+	command     []string
+	workDir     string
+	env         []string
+	execution   *execution.ExecutionContract
+	remote      bool
+	envConflict bool
+	requestID   atomic.Int64
 
 	// Process state
-	procMu  sync.Mutex
-	cmd     *exec.Cmd
-	stdin   io.WriteCloser
-	stdout  io.Reader
-	started bool
-	cancel  context.CancelFunc
+	procMu      sync.Mutex
+	cmd         *exec.Cmd
+	stdin       io.WriteCloser
+	stdout      io.Reader
+	started     bool
+	exited      bool
+	cancel      context.CancelFunc
+	ownerCancel context.CancelFunc
+	retired     bool
+	done        chan struct{}
+	readDone    chan struct{}
+	writeMu     sync.Mutex
+	closeMu     sync.Mutex
 
 	// Reconnection serialization
 	reconnMu sync.Mutex
@@ -57,18 +71,38 @@ func (c *ProcessClient) SetPingTimeout(d time.Duration) {
 // The command is executed with the given working directory and environment.
 // Environment variables are merged with the current process environment.
 func NewProcessClient(name string, command []string, workDir string, env map[string]string) *ProcessClient {
+	return newProcessClient(name, command, workDir, env, nil)
+}
+
+func newProcessClient(name string, command []string, workDir string, env map[string]string, execution *execution.ExecutionContract) *ProcessClient {
 	// Normalize the inherited environment so configured values replace rather
 	// than duplicate ambient entries. Internal credentials never cross this
 	// downstream process boundary.
 	merged := make(map[string]string)
+	allowed := map[string]bool{}
+	if execution != nil && execution.Inherit != nil {
+		for _, name := range *execution.Inherit {
+			allowed[processEnvKey(name, execution != nil, runtime.GOOS)] = true
+		}
+	}
 	for _, entry := range os.Environ() {
 		key, value, ok := strings.Cut(entry, "=")
+		key = processEnvKey(key, execution != nil, runtime.GOOS)
 		if !ok || vault.IsInternalCredential(key) {
+			continue
+		}
+		if execution != nil && execution.Inherit != nil && !allowed[key] {
 			continue
 		}
 		merged[key] = value
 	}
-	for k, v := range env {
+	seenExplicit, envConflict := map[string]bool{}, false
+	for key, v := range env {
+		k := processEnvKey(key, execution != nil, runtime.GOOS)
+		if seenExplicit[k] && execution != nil {
+			envConflict = true
+		}
+		seenExplicit[k] = true
 		if vault.IsInternalCredential(k) {
 			continue
 		}
@@ -85,10 +119,12 @@ func NewProcessClient(name string, command []string, workDir string, env map[str
 	}
 
 	c := &ProcessClient{
-		command:   command,
-		workDir:   workDir,
-		env:       envList,
-		responses: make(map[int64]chan *jsonrpc.Response),
+		envConflict: envConflict,
+		execution:   execution,
+		command:     command,
+		workDir:     workDir,
+		env:         envList,
+		responses:   make(map[int64]chan *jsonrpc.Response),
 	}
 	initRPCClient(&c.RPCClient, name, c)
 	return c
@@ -96,19 +132,41 @@ func NewProcessClient(name string, command []string, workDir string, env map[str
 
 // Connect starts the process and attaches to its stdin/stdout.
 func (c *ProcessClient) Connect(ctx context.Context) error {
+	c.closeMu.Lock()
+	defer c.closeMu.Unlock()
 	c.procMu.Lock()
 	defer c.procMu.Unlock()
+	if c.retired {
+		return fmt.Errorf("process client retired")
+	}
 
 	if c.started {
 		return nil
+	}
+	if c.readDone != nil {
+		select {
+		case <-c.readDone:
+		default:
+			return fmt.Errorf("previous process output cleanup pending; close before reconnecting")
+		}
 	}
 
 	if len(c.command) == 0 {
 		return fmt.Errorf("no command specified")
 	}
+	if c.envConflict {
+		return fmt.Errorf("execution.environment: duplicate platform-equivalent names; use one canonical name for explicit and scoped delivery")
+	}
 
 	// Create the command
+	if c.execution != nil && c.execution.Lookup == "absolute" && !filepath.IsAbs(c.command[0]) {
+		return fmt.Errorf("execution.lookup: absolute executable required")
+	}
 	c.cmd = exec.CommandContext(ctx, c.command[0], c.command[1:]...)
+	if c.execution != nil && c.cmd.Err == nil && !strings.ContainsAny(c.command[0], "/\\") && !filepath.IsAbs(c.cmd.Path) {
+		c.cmd.Err = exec.ErrDot
+	}
+	configureProcessGroup(c.cmd, !c.remote && c.execution != nil)
 	c.cmd.Dir = c.workDir
 	c.cmd.Env = c.env
 
@@ -119,37 +177,115 @@ func (c *ProcessClient) Connect(ctx context.Context) error {
 	}
 	c.stdin = stdin
 
-	// Get stdout pipe
-	stdout, err := c.cmd.StdoutPipe()
+	// Own the output pipes so Wait cannot close them ahead of the readers.
+	stdout, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		stdin.Close()
 		return fmt.Errorf("creating stdout pipe: %w", err)
 	}
+	c.cmd.Stdout = stdoutWriter
 	c.stdout = stdout
 
 	// Capture stderr and log output at WARN level
-	stderr, err := c.cmd.StderrPipe()
+	stderr, stderrWriter, err := os.Pipe()
 	if err != nil {
-		c.cmd.Stderr = nil // fall back to discard on pipe error
+		stdin.Close()
+		stdout.Close()
+		stdoutWriter.Close()
+		return fmt.Errorf("creating stderr pipe: %w", err)
 	}
+	c.cmd.Stderr = stderrWriter
 
 	// Start the process
 	if err := c.cmd.Start(); err != nil {
 		stdin.Close()
+		stdout.Close()
+		stdoutWriter.Close()
+		stderr.Close()
+		stderrWriter.Close()
+		if c.execution != nil && !errors.Is(err, exec.ErrDot) {
+			return fmt.Errorf("execution.start: local command failed; check executable access and required bootstrap caches or networking")
+		}
 		return fmt.Errorf("starting process: %w", err)
 	}
+	stdoutWriter.Close()
+	stderrWriter.Close()
 
 	c.started = true
+	c.exited = false
 
 	// Start reading responses and stderr with cancellation
 	readerCtx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
-	go c.readResponses(readerCtx, c.stdout)
-	if stderr != nil {
-		go c.readStderr(readerCtx, stderr)
-	}
+	readDone := make(chan struct{})
+	c.readDone = readDone
+	var readers sync.WaitGroup
+	readers.Add(2)
+	go func() {
+		defer readers.Done()
+		defer stdout.Close()
+		c.readResponses(readerCtx, stdout)
+	}()
+	go func() {
+		defer readers.Done()
+		defer stderr.Close()
+		c.readStderr(readerCtx, stderr)
+	}()
+	go func() { readers.Wait(); close(readDone) }()
+	done := make(chan struct{})
+	c.done = done
+	cmd := c.cmd
+	go func() {
+		err := cmd.Wait()
+		c.procMu.Lock()
+		if c.cmd == cmd {
+			c.started = false
+			c.exited = true
+		}
+		c.procMu.Unlock()
+		if err != nil {
+			c.logger.Debug("process exited", "success", false)
+		}
+		close(done)
+		// Descendants may retain output descriptors after the child exits.
+		timer := time.NewTimer(processKillGracePeriod)
+		defer timer.Stop()
+		select {
+		case <-readDone:
+		case <-timer.C:
+			cancel()
+			stdout.Close()
+			stderr.Close()
+		}
+	}()
 
 	return nil
+}
+
+func (c *ProcessClient) retire() error {
+	c.procMu.Lock()
+	c.retired = true
+	c.procMu.Unlock()
+	return c.Close()
+}
+
+func processEnvKey(key string, selected bool, platform string) string {
+	if selected && platform == "windows" {
+		return strings.ToUpper(key)
+	}
+	return key
+}
+
+func (c *ProcessClient) connectOwned(ctx context.Context) (func() bool, error) {
+	childCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	c.procMu.Lock()
+	c.ownerCancel = cancel
+	c.procMu.Unlock()
+	stopCancellation := context.AfterFunc(ctx, cancel)
+	if err := ctx.Err(); err != nil {
+		return stopCancellation, err
+	}
+	return stopCancellation, c.Connect(childCtx)
 }
 
 // readResponses reads JSON-RPC responses from stdout.
@@ -266,7 +402,7 @@ func (c *ProcessClient) call(ctx context.Context, method string, params any, res
 	c.logger.Debug("sending request", "method", method, "id", id)
 
 	// Send request
-	if err := c.sendStdio(req); err != nil {
+	if err := c.sendStdioContext(ctx, req); err != nil {
 		c.responsesMu.Lock()
 		delete(c.responses, id)
 		c.responsesMu.Unlock()
@@ -306,50 +442,91 @@ func (c *ProcessClient) call(ctx context.Context, method string, params any, res
 }
 
 // send sends a JSON-RPC notification via stdin (no response expected).
-func (c *ProcessClient) send(_ context.Context, method string, params any) error {
+func (c *ProcessClient) send(ctx context.Context, method string, params any) error {
 	req, err := buildNotification(method, params)
 	if err != nil {
 		return err
 	}
 
-	return c.sendStdio(req)
+	return c.sendStdioContext(ctx, req)
 }
 
 // sendStdio writes a request to stdin.
 func (c *ProcessClient) sendStdio(req jsonrpc.Request) error {
-	c.procMu.Lock()
-	defer c.procMu.Unlock()
+	return c.sendStdioContext(context.Background(), req)
+}
 
+func (c *ProcessClient) sendStdioContext(ctx context.Context, req jsonrpc.Request) error {
+	ctx, cancel := context.WithTimeout(ctx, DefaultRequestTimeout)
+	defer cancel()
+	c.procMu.Lock()
 	if !c.started || c.stdin == nil {
+		c.procMu.Unlock()
 		return fmt.Errorf("not connected")
 	}
+	stdin := c.stdin
+	c.procMu.Unlock()
 
 	data, err := json.Marshal(req)
 	if err != nil {
 		return fmt.Errorf("marshaling request: %w", err)
 	}
 
-	// Write JSON followed by newline
-	if _, err := c.stdin.Write(append(data, '\n')); err != nil {
-		return fmt.Errorf("writing to stdin: %w", err)
+	written := make(chan error, 1)
+	go func() {
+		c.writeMu.Lock()
+		defer c.writeMu.Unlock()
+		if err := ctx.Err(); err != nil {
+			written <- err
+			return
+		}
+		_, err := stdin.Write(append(data, '\n'))
+		written <- err
+	}()
+	select {
+	case err := <-written:
+		if err != nil {
+			return fmt.Errorf("writing to stdin: %w", err)
+		}
+		return nil
+	case <-ctx.Done():
+		// A partial JSON frame cannot safely be retried on this stream.
+		if err := stdin.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
+			c.logger.Debug("closing interrupted process input failed")
+		}
+		return ctx.Err()
 	}
-
-	return nil
 }
 
 // Reconnect terminates the existing process and starts a new one, including the
 // MCP handshake and tool refresh. Thread-safe: concurrent callers will block until
 // reconnection completes.
-func (c *ProcessClient) Reconnect(ctx context.Context) error {
+func (c *ProcessClient) Reconnect(ctx context.Context) (reconnectErr error) {
 	c.reconnMu.Lock()
 	defer c.reconnMu.Unlock()
+	c.procMu.Lock()
+	owned := c.ownerCancel != nil
+	c.procMu.Unlock()
+	var stopCancellation func() bool
+	defer func() {
+		if stopCancellation != nil {
+			if !stopCancellation() && reconnectErr == nil {
+				reconnectErr = ctx.Err()
+			}
+			if reconnectErr != nil {
+				reconnectErr = errors.Join(reconnectErr, c.Close())
+			}
+		}
+	}()
 
 	c.logger.Info("reconnecting process")
 
 	// Close existing process (cancels goroutines, sends SIGTERM/SIGKILL).
 	// The deferred drainPendingRequests in readResponses will clear the
 	// response map, so no explicit reset is needed here.
-	c.Close()
+	if err := c.Close(); err != nil {
+		return fmt.Errorf("close previous process: %w", err)
+	}
 
 	// Reset process state for fresh connection
 	c.procMu.Lock()
@@ -359,18 +536,24 @@ func (c *ProcessClient) Reconnect(ctx context.Context) error {
 	c.procMu.Unlock()
 
 	// Re-start the process
-	if err := c.Connect(ctx); err != nil {
+	var connectErr error
+	if owned {
+		stopCancellation, connectErr = c.connectOwned(ctx)
+	} else {
+		connectErr = c.Connect(ctx)
+	}
+	if err := connectErr; err != nil {
 		return fmt.Errorf("reconnect: %w", err)
 	}
 
 	// Re-do MCP handshake
 	if err := c.Initialize(ctx); err != nil {
-		return fmt.Errorf("reinitialize: %w", err)
+		return errors.Join(fmt.Errorf("reinitialize: %w", err), c.Close())
 	}
 
 	// Refresh tool list
 	if err := c.RefreshTools(ctx); err != nil {
-		return fmt.Errorf("refresh tools: %w", err)
+		return errors.Join(fmt.Errorf("refresh tools: %w", err), c.Close())
 	}
 
 	c.logger.Info("reconnected process")
@@ -382,7 +565,7 @@ func (c *ProcessClient) Reconnect(ctx context.Context) error {
 func (c *ProcessClient) PID() int {
 	c.procMu.Lock()
 	defer c.procMu.Unlock()
-	if c.cmd == nil || c.cmd.Process == nil {
+	if c.exited || c.cmd == nil || c.cmd.Process == nil {
 		return 0
 	}
 	return c.cmd.Process.Pid
@@ -426,44 +609,56 @@ func (c *ProcessClient) Ping(ctx context.Context) error {
 // Close terminates the process gracefully.
 // Sends SIGTERM, waits up to 5 seconds, then sends SIGKILL if still running.
 func (c *ProcessClient) Close() error {
+	c.closeMu.Lock()
+	defer c.closeMu.Unlock()
 	c.procMu.Lock()
-	defer c.procMu.Unlock()
-
-	// Cancel reader goroutines
+	cmd, stdin, done, readDone := c.cmd, c.stdin, c.done, c.readDone
+	if c.ownerCancel != nil {
+		defer c.ownerCancel()
+	}
+	c.started = false
 	if c.cancel != nil {
 		c.cancel()
 	}
-
-	if c.cmd == nil || c.cmd.Process == nil {
-		c.started = false
+	c.procMu.Unlock()
+	if cmd == nil || cmd.Process == nil || done == nil {
 		return nil
 	}
-
-	// Close stdin first to signal EOF
-	if c.stdin != nil {
-		c.stdin.Close()
+	var cleanupErrors []error
+	if stdin != nil {
+		if err := stdin.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("closing process input: %w", err))
+		}
 	}
-
-	// Send SIGTERM for graceful shutdown
-	if err := c.cmd.Process.Signal(syscall.SIGTERM); err != nil {
-		// Process might have already exited
-		return nil
-	}
-
-	// Wait with timeout
-	done := make(chan error, 1)
-	go func() {
-		done <- c.cmd.Wait()
-	}()
-
 	select {
 	case <-done:
-		// Process exited gracefully
-		return nil
-	case <-time.After(processKillGracePeriod):
-		// Force kill - ignore error since process may have already exited
-		_ = c.cmd.Process.Kill()
-		<-done
-		return nil
+	default:
+		if err := signalProcess(cmd, !c.remote && c.execution != nil, false); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("terminating process: %w", err))
+		}
 	}
+	timer := time.NewTimer(processKillGracePeriod)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
+		if err := signalProcess(cmd, !c.remote && c.execution != nil, true); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("killing process: %w", err))
+		}
+		timer.Reset(processKillGracePeriod)
+		select {
+		case <-done:
+		case <-timer.C:
+			return errors.Join(append(cleanupErrors, fmt.Errorf("process reap deadline exceeded"))...)
+		}
+	}
+	// Old response readers must drain before Reconnect installs new requests.
+	if readDone != nil {
+		select {
+		case <-readDone:
+		case <-time.After(processKillGracePeriod + time.Second):
+			return errors.Join(append(cleanupErrors, fmt.Errorf("process output cleanup deadline exceeded"))...)
+		}
+	}
+	return errors.Join(cleanupErrors...)
 }

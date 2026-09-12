@@ -1,4 +1,4 @@
-import { parse as parseYAML } from 'yaml';
+import { parse as parseYAML, stringify as stringifyYAML } from 'yaml';
 
 // yaml-builder.ts — Form state to YAML serialization
 // Converts structured wizard form data into valid YAML strings.
@@ -9,6 +9,8 @@ export type ResourceType = 'stack' | 'mcp-server' | 'resource' | 'skill' | 'pack
 export type ServerType = 'container' | 'source' | 'external' | 'local' | 'ssh' | 'openapi';
 
 export interface MCPServerFormData {
+  // Preserve the complete execution mapping, including false and empty lists.
+  execution?: Record<string, unknown>;
   name: string;
   serverType: ServerType;
   // Container
@@ -200,6 +202,10 @@ function buildMCPServer(data: MCPServerFormData, indentLevel = 2): string {
   const lines: string[] = [];
   lines.push(`${pad}- name: ${yamlValue(data.name)}`);
   const inner = ' '.repeat(indentLevel + 2);
+  if (data.execution !== undefined) {
+    lines.push(`${inner}execution:`);
+    lines.push(stringifyYAML(data.execution).trimEnd().split('\n').map((line) => `${inner}  ${line}`).join('\n'));
+  }
 
   switch (data.serverType) {
     case 'container':
@@ -556,6 +562,9 @@ export function parseYAMLToForm(yaml: string, resourceType: ResourceType): Wizar
     // Return minimal parsed data based on type
     switch (resourceType) {
       case 'mcp-server': {
+        if (result.execution !== undefined && (result.execution === null || typeof result.execution !== 'object' || Array.isArray(result.execution))) {
+          return { error: 'Execution must be a mapping. Correct it in YAML mode before switching to the form.' };
+        }
         const autoRaw = result.autoscale ? asRecord(result.autoscale) : undefined;
         const autoscale: AutoscaleFormData | undefined = autoRaw
           ? {
@@ -579,6 +588,7 @@ export function parseYAMLToForm(yaml: string, resourceType: ResourceType): Wizar
             ? rawPolicy
             : undefined;
         const data: MCPServerFormData = {
+          ...(result.execution !== undefined ? { execution: asRecord(result.execution) } : {}),
           name: (result.name as string) || '',
           serverType: detectServerType(result),
           // autoscale and replicas are mutually exclusive at the backend —
@@ -640,6 +650,9 @@ export function parseYAMLToForm(yaml: string, resourceType: ResourceType): Wizar
           },
         };
       case 'stack':
+        if (Array.isArray(result['mcp-servers']) && result['mcp-servers'].some((server) => asRecord(server).execution !== undefined)) {
+          return { error: 'Keep this stack in YAML mode to preserve execution controls. Edit individual server forms instead.' };
+        }
         return {
           type: 'stack',
           data: {

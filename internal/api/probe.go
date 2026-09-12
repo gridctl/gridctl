@@ -177,23 +177,24 @@ func probeFailureStatus(e *probe.Error) int {
 // Converting here (rather than adding JSON tags to config.MCPServer) keeps the
 // wire contract local to the handler.
 type probeRequest struct {
-	Name         string            `json:"name,omitempty"`
-	Image        string            `json:"image,omitempty"`
-	Source       *config.Source    `json:"source,omitempty"`
-	URL          string            `json:"url,omitempty"`
-	Port         int               `json:"port,omitempty"`
-	Transport    string            `json:"transport,omitempty"`
-	Command      []string          `json:"command,omitempty"`
-	Env          map[string]string `json:"env,omitempty"`
-	BuildArgs    map[string]string `json:"build_args,omitempty"`
-	Network      string            `json:"network,omitempty"`
-	SSH          *config.SSHConfig `json:"ssh,omitempty"`
-	OpenAPI      *config.OpenAPIConfig `json:"openapi,omitempty"`
-	Tools        []string          `json:"tools,omitempty"`
-	OutputFormat string            `json:"output_format,omitempty"`
-	ReadyTimeout string            `json:"ready_timeout,omitempty"`
-	Replicas     int               `json:"replicas,omitempty"`
-	Auth         *serverAuthWire   `json:"auth,omitempty"`
+	Execution    *config.ExecutionConfig `json:"execution,omitempty"`
+	Name         string                  `json:"name,omitempty"`
+	Image        string                  `json:"image,omitempty"`
+	Source       *config.Source          `json:"source,omitempty"`
+	URL          string                  `json:"url,omitempty"`
+	Port         int                     `json:"port,omitempty"`
+	Transport    string                  `json:"transport,omitempty"`
+	Command      []string                `json:"command,omitempty"`
+	Env          map[string]string       `json:"env,omitempty"`
+	BuildArgs    map[string]string       `json:"build_args,omitempty"`
+	Network      string                  `json:"network,omitempty"`
+	SSH          *config.SSHConfig       `json:"ssh,omitempty"`
+	OpenAPI      *config.OpenAPIConfig   `json:"openapi,omitempty"`
+	Tools        []string                `json:"tools,omitempty"`
+	OutputFormat string                  `json:"output_format,omitempty"`
+	ReadyTimeout string                  `json:"ready_timeout,omitempty"`
+	Replicas     int                     `json:"replicas,omitempty"`
+	Auth         *serverAuthWire         `json:"auth,omitempty"`
 }
 
 // serverAuthWire mirrors config.ServerAuth with snake_case JSON tags so the
@@ -222,6 +223,7 @@ func (r probeRequest) toMCPServer() config.MCPServer {
 		}
 	}
 	return config.MCPServer{
+		Execution:    r.Execution,
 		Name:         r.Name,
 		Image:        r.Image,
 		Source:       r.Source,

@@ -3,6 +3,8 @@ package runtime
 import (
 	"context"
 	"errors"
+
+	"github.com/gridctl/gridctl/pkg/execution"
 )
 
 // WorkloadID uniquely identifies a workload across runtimes.
@@ -31,6 +33,7 @@ const (
 
 // WorkloadConfig is the runtime-agnostic configuration for starting a workload.
 type WorkloadConfig struct {
+	Execution *execution.ExecutionContract
 	// Identity
 	Name  string       // Logical name (e.g., "postgres", "weather-server")
 	Stack string       // Stack this workload belongs to
@@ -60,6 +63,7 @@ type WorkloadConfig struct {
 
 // WorkloadStatus is the runtime-agnostic status of a running workload.
 type WorkloadStatus struct {
+	Execution *execution.Report `json:"execution,omitempty"`
 	// Identity
 	ID    WorkloadID   // Runtime-assigned unique identifier
 	Name  string       // Logical name from config

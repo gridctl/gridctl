@@ -4,6 +4,11 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Add opt-in per-MCP-server execution declarations, container control admission and instance-bound evidence, local environment inheritance and executable lookup, lossless execution form/YAML preservation, and per-replica reporting. Omitted execution declarations retain compatibility behavior; selected profiles refuse unavailable required evidence. Supporting resources and remote execution remain outside the enforcement scope (#1221).
+- Breaking output change: existing local-process and resource status gains execution metadata, and human replica rows distinguish execution state. Under Article VIII, schedule this output change for a maintainer-owned major release, not a patch or minor release (#1221).
+
 ### Documentation
 
 - Align gateway-auth lifecycle guidance across the threat model, restart troubleshooting, API/CLI references, browser recovery, examples, and architecture map (#1228).
@@ -11,6 +16,8 @@ All notable changes to gridctl will be documented in this file.
 
 ### Bug Fixes
 
+- Reap exited MCP child processes promptly, clear their reported PID, and allow shutdown and request cancellation to interrupt blocked stdin writes. Failed process reinitialization closes the replacement child (#1221).
+- Interrupt blocked container stdin writes during cancellation and teardown. Keep successfully initialized gateway-owned processes alive beyond the initiating request, retire every client on unregistration, and reap late spawns from retired autoscalers (#1221).
 - Report unavailable startup security preflight when manual reload is not ready, without incorrectly requiring `--watch` (#1228).
 - Breaking: reject reload and stackless initialization when effective gateway authentication, bind, Host/Origin allowlists, or insecure override differs from startup. Mixed edits are rejected before application; saved YAML remains on disk. Restart the gateway with its original startup options to activate the change. This correction requires maintainer-owned major-release scheduling under Articles VIII/IX and must not ship in a patch or minor release (#1228).
 - Support Bearer and API-key browser credentials, including supported custom headers. Verify drafts before persistence, retain usable credentials on non-auth failures, pause protected requests on gateway rejection, and refuse redirects. Versioned localStorage and explicit window-only notices cover detached windows; scripts on the gateway origin can read stored credentials (#1228).

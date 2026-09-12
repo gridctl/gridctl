@@ -33,6 +33,7 @@ type pythonResolveRequest struct {
 }
 
 type pythonMCPServerRequest struct {
+	Execution          *config.ExecutionConfig    `json:"execution,omitempty"`
 	Name               string                     `json:"name"`
 	Image              string                     `json:"image,omitempty"`
 	Source             *pythonSourceRequest       `json:"source,omitempty"`
@@ -277,7 +278,7 @@ func (r pythonMCPServerRequest) config() config.MCPServer {
 		Name: r.Name, Image: r.Image, URL: r.URL, Port: r.Port, Transport: r.Transport,
 		Command: r.Command, Env: r.Env, BuildArgs: r.BuildArgs, Volumes: r.Volumes,
 		Network: r.Network, SSH: r.SSH, OpenAPI: r.OpenAPI, Tools: r.Tools,
-		OutputFormat: r.OutputFormat, PinSchemas: r.PinSchemas, ReadyTimeout: r.ReadyTimeout,
+		Execution: r.Execution, OutputFormat: r.OutputFormat, PinSchemas: r.PinSchemas, ReadyTimeout: r.ReadyTimeout,
 		PingTimeout: r.PingTimeout, ProtocolGeneration: r.ProtocolGeneration,
 		Replicas: r.Replicas, ReplicaPolicy: r.ReplicaPolicy, Telemetry: r.Telemetry, Auth: r.Auth,
 	}
