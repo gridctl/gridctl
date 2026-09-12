@@ -26,6 +26,12 @@ Supply `GATEWAY_TOKEN` in the shell environment. API-key mode sends the raw toke
 
 ## Endpoints
 
+### Reload security results
+
+Unsupported static-security changes return HTTP `409`, `success: false`, `code: "restart_required"`, a value-free `message`, and `changed_fields` containing field names only. This applies to `/api/reload`, `/api/stack/initialize`, and save-first tool-scope, client-scope, and telemetry mutations. Save-first responses also carry the structured `error` envelope with the same code and fields. The saved file is preserved; it may differ from active startup settings. No reload side effects occur on this rejection. Resolution or validation failure returns `invalid_candidate` with HTTP `400` and preserves active state. Initialization's existing already-loaded conflict remains distinct from restart-required.
+
+The authentication middleware marks its own credential denials with `Gridctl-Auth-Rejected: 1`, retaining the plain-text 401 body. Downstream 401 responses do not carry this marker. This is rejection provenance, not authentication discovery or a login protocol. Browser verification uses the existing protected status response. The legacy `/sse` endpoint only sends a negotiation event and finishes; normal completion is not shutdown notification. Browser streaming uses credential-aware fetch, with polling as the disconnect fallback.
+
 ### Health & Readiness
 
 #### `GET /health`

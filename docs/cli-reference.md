@@ -8,6 +8,8 @@ Machine-readable output: commands whose `--format` flag is a binary table-vs-JSO
 
 Plain tables: `status`, `search`, `skill list`, `pins list`, `optimize`, `telemetry status`, and the table-rendering `pack`, `project`, `ctx`, and `skill project` commands accept `--plain` to render tables without box-drawing (2+-space column separation, one record per line) for `grep`/`awk` pipelines. Piped table output degrades to plain automatically; the flag forces it on a terminal. `--plain` cannot be combined with `--json`. The `var` family keeps `--plain` as its pre-existing "show unmasked value" flag (`var get`, `var export`); `var list` therefore has no `--plain`, though it does accept `--format json` / `--json` and its piped table output still degrades to the plain style.
 
+`gridctl reload [stack-name] --format json` emits one JSON object per returned reload result, including `stack`, `success`, `message`, and, for preflight rejection, `code` and `changed_fields`. Without a stack name, it attempts all running stacks and exits nonzero if any reload fails. Transport errors go to stderr with a nonzero exit; no running stacks produces no JSON records. Human output remains the default. Unsupported startup-security changes return `restart_required` and a nonzero exit; they require [gateway restart recovery](troubleshooting.md#gateway-security-requires-a-restart), not repeated reloads or workload destruction.
+
 ## Contents
 
 - [Stack lifecycle](#stack-lifecycle)

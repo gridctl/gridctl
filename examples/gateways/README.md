@@ -60,6 +60,10 @@ For SSH-only access, change `gateway.bind` in the example to `127.0.0.1` before 
 
 ### Client Configuration
 
+Gateway security settings are restart-only. A reload that changes authentication, bind, Host/Origin allowlists, or the insecure override returns `restart_required`, including mixed edits. The saved file stays on disk and the active credential stays in force until the gateway process is restarted with the original startup options. See [recovery](../../docs/troubleshooting.md#gateway-security-requires-a-restart); do not use workload destruction as an authentication recovery step.
+
+For the web UI, select Bearer for this example. An API-key stack instead uses raw `Authorization` by default or its configured browser-supported custom header. Verification precedes saving. localStorage is readable by origin scripts; a window-only notice means refresh and new detached windows require re-entry. Keep the proxy backend private and connect through HTTPS or an encrypted tunnel.
+
 Configure your MCP client's Streamable HTTP connection using the following values (replace `gateway.example.com` with your proxy's HTTPS hostname):
 
 | Setting | Value |

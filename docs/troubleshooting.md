@@ -6,6 +6,16 @@ Start with `gridctl doctor`: it runs most of the environment checks below automa
 
 ---
 
+## Gateway security requires a restart
+
+`restart_required` means the saved candidate differs from the listener's effective startup authentication, bind, Host/Origin allowlists, or insecure override. The active credential and accepted configuration remain unchanged, including when ordinary edits were saved alongside security changes. The edited file is not rolled back. Repeating reload cannot activate it.
+
+For a foreground gateway, stop the process using its normal signal handling, then run `apply` on the saved stack with the same original startup options. For a daemon managed by a service manager, stop that gateway service and start it again with the original options. A daemon's graceful SIGTERM shutdown followed by `apply` on the same saved stack activates new credentials and ends old process-owned sessions and streams. Existing external downstream processes remain running. `gridctl stop` applies only to stackless `serve`; `destroy` and `apply --replace` can remove workloads and are not generic authentication-recovery commands. Do not overwrite edited YAML or reconstruct secret-bearing command lines. Preserve bind and insecure CLI overrides when restarting because they take precedence over YAML.
+
+In the browser, select the configured mode and header. API-key mode defaults to raw `Authorization`, without a Bearer prefix. A verified-window-only notice means refresh and new detached windows need credential re-entry; other windows may still use the previous saved credential. Origin scripts can read localStorage. A downstream repository 401 needs repository credentials, while a gateway rejection requests gateway re-verification. Connection, TLS/CORS, server, abort, malformed-response, and redirect failures are not evidence of an invalid token.
+
+Remote authentication still requires HTTPS or an encrypted tunnel with a private backend. A shared token does not encrypt remote HTTP, bind a group/client selector to an identity, or implement the full MCP OAuth profile.
+
 ## Container Runtime
 
 ### Docker socket not found

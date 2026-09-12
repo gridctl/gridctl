@@ -118,6 +118,20 @@ gateway:
 - `header` can only be set when `type` is `"api_key"`
 - Token comparison uses constant-time equality to prevent timing attacks
 
+#### Restart-only settings
+
+Authentication enablement, type, resolved token, header, bind address, allowed Hosts/Origins, and the insecure unauthenticated override are fixed for the listener's lifetime. Reload compares resolved candidate values against an immutable startup snapshot, using the original CLI overrides. Security-only changes and mixed security/ordinary edits return `restart_required` before applying any change. An observable variable-store rotation is detected even if the reference text is unchanged. A different invoking shell does not update the daemon's environment.
+
+Saved YAML may already differ from active settings. Repeated reloads remain rejected until you restore equivalent settings or restart the gateway. See [restart recovery](troubleshooting.md#gateway-security-requires-a-restart). No credential rotates in process, and no workload is automatically destroyed.
+
+#### Browser credentials
+
+Choose Bearer or API key in the prompt. API keys use the raw value with `Authorization` by default; enter the configured custom header when applicable. Browser Fetch cannot send certain headers, including Host, Cookie, `Sec-*`, and `Proxy-*`, or protocol-owned fields. These browser limitations do not change native-client configuration validity. Control characters and values Fetch cannot represent unchanged are refused without displaying the value.
+
+The prompt verifies the draft against protected `/api/status` before replacing active credentials. Gateway rejection pauses protected requests for re-entry; downstream authentication, forbidden responses, connection failures, malformed responses, and redirects do not erase usable credentials. Mutations are never automatically replayed. Requests stay on the gateway origin and refuse redirects, including same-origin redirects.
+
+Credentials use versioned localStorage for refresh and same-origin detached-window convenience. Legacy raw token strings remain Bearer tokens, including JSON-looking text. Scripts running on this origin can read this storage. If storage fails, verified credentials work only in the current window; refresh and new detached windows require re-entry, and other windows may retain an older saved credential. A storage change requests verification rather than authenticating another window automatically.
+
 ### Security
 
 Optional gateway-level security settings.

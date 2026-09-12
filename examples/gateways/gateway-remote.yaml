@@ -53,6 +53,14 @@
 #   4. Restart Claude Desktop on the remote machine
 #
 # Testing connectivity:
+#   Authentication, bind, Host/Origin allowlists, and insecure override are
+#   restart-only. Reload rejects mixed edits too; saved YAML is preserved.
+#   Restart the gateway process with the original startup options to activate
+#   changes. Do not destroy downstream workloads as auth recovery.
+#   In the browser select Bearer for this example. API-key mode uses raw
+#   Authorization by default, or the configured browser-supported custom header.
+#   Browser storage is readable by origin scripts; window-only verification
+#   requires re-entry after refresh or in a new detached window.
 #   From remote machine:
 #     curl https://gateway.example.com/health
 #     curl -H "Authorization: Bearer ${GATEWAY_TOKEN}" https://gateway.example.com/api/status
