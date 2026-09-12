@@ -7,10 +7,11 @@ All notable changes to gridctl will be documented in this file.
 ### Features
 
 - Add opt-in per-MCP-server execution declarations, container control admission and instance-bound evidence, local environment inheritance and executable lookup, lossless execution form/YAML preservation, and per-replica reporting. Omitted execution declarations retain compatibility behavior; selected profiles refuse unavailable required evidence. Supporting resources and remote execution remain outside the enforcement scope (#1221).
-- Breaking output change: existing local-process and resource status gains execution metadata, and human replica rows distinguish execution state. Under Article VIII, schedule this output change for a maintainer-owned major release, not a patch or minor release (#1221).
+- Breaking output change: existing process-replica and runtime resource status gains execution metadata, and human replica rows distinguish execution state. Migrate STATE-text consumers to `status --json` and evaluate per-replica evidence separately from MCP health. Under Article VIII, schedule this output change for a maintainer-owned major release, not a patch or minor release (#1221).
 
 ### Documentation
 
+- Document execution schema/defaults, CLI/API evidence, accepted reload failure recovery, runtime support limits, and local-process hygiene across references, examples, the threat model, and architecture guidance. Positive rootless Podman acceptance remains a required external gate (#1221).
 - Align gateway-auth lifecycle guidance across the threat model, restart troubleshooting, API/CLI references, browser recovery, examples, and architecture map (#1228).
 - Publish a source-verified security threat model covering trust boundaries, current controls and defaults, credential custody, release evidence, and residual risks (#1218).
 

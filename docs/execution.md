@@ -30,7 +30,9 @@ The profile requires nonprivileged operation, a private PID namespace, a nonzero
 
 The default envelope is exercised with third-party Python and Node images, MCP initialization, tool discovery, and repeated bounded JSON tool calls. These are small MCP workloads, not capacity guarantees for browsers, model weights, or every package. Override finite budgets explicitly for larger workloads. Memory accounts for charged tmpfs usage. Limits are per replica, not a fleet budget; CPU quota is not a latency guarantee.
 
-Keys inside `execution` are strict. Unknown fields, invalid enums, null fields, and transport conflicts are rejected. Empty lists and explicit false values are retained. `read_only: false`, `no_new_privileges: false`, a smaller capability-drop list, and `network: connected` are visible exceptions. There is no privileged, unconfined seccomp, or LSM-disable fallback after a failure.
+Keys inside `execution` are strict. Unknown fields, invalid enums, and transport conflicts are rejected. Omit optional fields rather than using null. Empty lists and explicit false values are retained. `read_only: false`, `no_new_privileges: false`, a smaller capability-drop list, and `network: connected` are visible exceptions. There is no privileged, unconfined seccomp, or LSM-disable fallback after a failure.
+
+Capability names are case-insensitive and accept an optional `CAP_` prefix. Supported drops are `ALL`, `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `KILL`, `SETGID`, `SETUID`, `SETPCAP`, `NET_BIND_SERVICE`, `NET_RAW`, `SYS_CHROOT`, `MKNOD`, `AUDIT_WRITE`, and `SETFCAP`. `drop_capabilities: []` drops none; `tmpfs: []` removes the default scratch mount. These are deliberate changes to the baseline.
 
 Memory must be between 6 MiB and 1 PiB, CPU between 10 and 1000000 milliseconds, and PID limits between one and 1048576. Memory and scratch sizes must be aligned to 4 KiB; scratch must be at least 4 KiB and no greater than memory. Schema ceilings do not promise available daemon capacity. Kernels with different page-size requirements must establish the exact requested limits or refuse admission.
 
@@ -50,7 +52,7 @@ execution:
       read_only: false
 ```
 
-Data mounts use explicit plain engine-local volume names. Host binds, engine sockets, host device grants, remote/plugin volumes, and local-driver volumes with host-mount options are rejected. Migrate existing `volumes` entries deliberately when selecting this profile. The volume must have permissions suitable for the chosen UID/GID; Gridctl does not fix ownership automatically.
+Data mounts use explicit plain engine-local volume names, two through 128 characters matching `[A-Za-z0-9][A-Za-z0-9_.-]{1,127}`. Mount `read_only` defaults to `true`; set `false` for writable data. Host binds, engine sockets, host device grants, remote/plugin volumes, and local-driver volumes with host-mount options are rejected. Migrate existing `volumes` entries deliberately when selecting this profile. The volume must have permissions suitable for the chosen UID/GID; Gridctl does not fix ownership automatically.
 
 Writable targets are `/tmp`, `/data`, `/state`, or descendants of `/data` and `/state`. Keep code and installed dependencies on the read-only root filesystem. Data volumes are persistent and not storage-bounded. A read-only volume can still expose secrets. Shared volumes can expose files or Unix sockets created by another workload; network settings do not revoke that authority.
 
@@ -60,7 +62,9 @@ Admission inventories image-declared volumes, engine mounts, and the kernel moun
 
 `none` requires stdio, no server port, and no explicitly selected server network. It removes Gridctl's automatic host-gateway alias and managed endpoint attachment. Stdio still uses the engine attachment API.
 
-`connected` explicitly permits the normal managed network. It is not destination filtering or host isolation. Removing an alias does not deny direct IPs, IPv6, runtime-generated aliases, peers, or mounted Unix sockets. Destination allowlists and an internal-network security contract are not implemented. Runtime restrictions do not constrain image pulls, Dockerfile build downloads, or information returned through MCP.
+`connected` explicitly permits the normal managed network. It is not destination filtering or host isolation. HTTP/SSE requires this exception and a server port; admission verifies the MCP endpoint against the replica's inspected `127.0.0.1` publication. Host networking and sharing another container's network namespace are refused. In advanced network mode, select a declared server network for connected operation; network-none servers omit that selection.
+
+Removing an alias does not deny direct IPs, IPv6, runtime-generated aliases, peers, or mounted Unix sockets. Destination allowlists and an internal-network security contract are not implemented. Runtime restrictions do not constrain image pulls, Dockerfile build downloads, or information returned through MCP.
 
 ## Evidence and lifecycle
 
@@ -99,4 +103,6 @@ SSH keeps its connection and argument semantics. Local SSH-client exit does not 
 
 Existing server details show Execution evidence separately from MCP health. Per-replica reports include revision, instance, timestamps, evidence source, and control outcomes. Mixed replicas are not uniformly eligible. Idle-to-zero has no current active evidence. `gridctl status --json` retains reports; `gridctl status --replicas` shows execution outcomes beside MCP state.
 
-The wizard retains the entire execution mapping across unrelated form edits. Lossy whole-stack transitions are blocked in YAML mode. Review and save use authoritative proposed YAML. A saved draft and syntax validation are not runtime enforcement.
+The wizard's Execution section selects compatibility, hardened containers, or local hygiene. Container forms expose UID/GID and networking; local forms expose inherited names and lookup. Use YAML mode for container budgets, mounts, and exceptions. The entire execution mapping survives unrelated form edits, including explicit empty lists and false values. Lossy whole-stack transitions are blocked in YAML mode. Review and save use authoritative proposed YAML. A saved draft and syntax validation are not runtime enforcement.
+
+The [configuration reference](config-schema.md#execution) inventories the fields, and the [API reference](api-reference.md#execution-reports) defines report shapes and outcome semantics. Unreleased status metadata and human replica output changes require maintainer-owned major-release scheduling under Article VIII. Migrate text-parsing consumers to `status --json`; inspect per-replica evidence rather than treating MCP health as protection. No release version or approval is assigned here.

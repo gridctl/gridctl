@@ -36,6 +36,8 @@ go test -v -race -tags=integration -run TestToolGroups_Authentication ./tests/in
 
 Gateway authentication lifecycle changes also require `go test -race -tags=integration -run 'TestGatewayAuth_RealRestart|TestToolGroups_Authentication' -count=1 -timeout 3m ./tests/integration` (Docker, non-Windows; the restart fixture builds child binaries with `-race`). Real-browser acceptance lives in `web/gateway-auth.browser.mjs`: run `node web/gateway-auth.browser.mjs <path-to-playwright/index.mjs>` from the repository root with Playwright and its Chromium installed separately. Set `PLAYWRIGHT_BROWSERS_PATH` when using a non-default browser cache. It uses isolated local fixtures and is separate from Vitest and `task test`.
 
+MCP execution changes require the real race-enabled `TestExecution_` integration suites on Docker and Podman. Hardened admission currently needs Linux, a local Unix daemon endpoint, and instance-bound `/proc` and cgroup v2 observations; missing required evidence must refuse routing. Rootless Podman acceptance must actually execute the positive fixtures. Run `node web/execution.browser.mjs <path-to-playwright/index.mjs>` from the repository root for the separate real-browser Execution checks, using an independently installed Chromium and `PLAYWRIGHT_BROWSERS_PATH` when needed.
+
 Lint:
 
 ```bash
@@ -109,9 +111,13 @@ pkg/tracing/        OTLP exporter + in-memory trace buffer for `gridctl traces` 
 pkg/reload/         Stack hot-reload (file watcher + diff-and-apply path). security.go owns effective bind/insecure
                     precedence and immutable startup-security comparison. Reload and stackless Initialize run
                     preflight before no-op detection or mutation; rejected saved YAML is retained on disk.
+                    Accepted execution transitions retire old routes before source preparation; failed replacement retains
+                    desired intent, and execution-only recreation preserves schema pins, including combined pool tuning.
 pkg/controller/     Application composition root: builds the gateway, mounts the API server, embedded UI, and MCP transports
                     (gateway_builder.go), and owns deploy/daemonize orchestration for `gridctl apply` and `gridctl serve`.
                     Supplies the startup security snapshot and installs manual reload independently of --watch.
+                    execution.go binds admission callbacks to the normalized contract, actual container ID, and inspected
+                    IPv4 loopback HTTP endpoint.
 pkg/metrics/, pkg/token/, pkg/format/, pkg/output/, pkg/logging/, pkg/jsonrpc/, pkg/state/, pkg/git/, pkg/dockerclient/   Supporting libs.
 
 web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). Zustand stores in src/stores/, route map in
@@ -129,13 +135,13 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
                     sessions/streams, and preserved Docker identities with race-built child binaries.
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
-                    portable-pack, model-policy, python-sources). examples/_mock-servers/ is the source for `task mock:servers`.
+                    portable-pack, model-policy, python-sources, execution). examples/_mock-servers/ is the source for `task mock:servers`.
 scripts/            Build/test helpers and release tooling: release.py owns gate, inventory, verification, draft/public,
                     and tap policy; release-tools.py pins executables and the SPDX schema; release-acceptance.py exercises
                     authorized sandbox releases. test_release.py and test_govulncheck.py cover local policy regressions.
 docs/               User-facing documentation (cli-reference, config-schema, api-reference, skills, packs, tools-workspace,
                     global-context, model-policy, scaling, usage-observability, installation, release-verification,
-                    project-status, troubleshooting, security/threat-model).
+                    project-status, troubleshooting, execution, security/threat-model).
 ```
 
 End-to-end request flow for an upstream HTTP MCP tool call: client → HTTP listener built by `pkg/controller` (gateway_builder.go) → `internal/api.Server.Handler` (CORS, Host validation, configured auth, and route/group selection) → `pkg/mcp` Streamable HTTP transport (Host/Origin checks and protocol handling) → `mcp.Gateway` router → per-server `mcp.Client` (process/stdio/SSE/HTTP/OpenAPI) → response, with telemetry, tracing, schema pinning, and (optional) output-format conversion attached on the way back. Legacy SSE routes return a negotiation hint rather than dispatching tools.

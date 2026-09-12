@@ -2,8 +2,6 @@
 
 This document describes every field in the gridctl stack YAML configuration.
 
-Per-MCP-server `execution` is an optional strict block. See [execution controls](execution.md) for `hardened` container settings, `local` inheritance and lookup, presence semantics, resource bounds, and evidence requirements. Omission retains compatibility behavior. Execution-only edits require workload recreation and preserve established schema pins.
-
 ## Stack
 
 The root configuration object.
@@ -478,7 +476,7 @@ networks:
 
 **Constraints:**
 - Cannot have both `network` and `networks` defined
-- In advanced mode, all container-based servers and resources must specify a `network` field referencing a name from this list
+- In advanced mode, container-based servers and resources must specify a `network` field referencing a name from this list, except hardened MCP servers using `execution.network: none`, which must omit the server-level network
 - Duplicate network names are rejected
 
 ---
@@ -663,6 +661,7 @@ In the web wizard, the OpenAPI Configuration section's Operations Filter loads t
 | `transport` | string | No | `"http"` | Transport mode: `"http"`, `"stdio"`, or `"sse"`. Generated Python sources default to `"stdio"` |
 | `command` | []string | Conditional | - | Container entrypoint override, local process command, or SSH remote command |
 | `env` | map | No | - | Environment variables |
+| `execution` | object | No | Omitted (compatibility) | Opt-in container controls or local environment hygiene (see [Execution](#execution)) |
 | `build_args` | map | No | - | Docker build-time arguments (container servers only) |
 | `volumes` | []string | No | - | Container mounts in `host:container[:mode]` form. The host path or volume name must be non-empty, the container destination must be a clean absolute path, and mode may be `ro` or `rw`. Valid only for image and source containers; every static, reloaded, and autoscaled replica receives the mounts |
 | `network` | string | Conditional | - | Network to join (required in advanced network mode) |
@@ -688,11 +687,42 @@ In the web wizard, the OpenAPI Configuration section's Operations Filter loads t
 
 | Server Type | Allowed Transports | Port | Network |
 |-------------|-------------------|------|---------|
-| Container (image/source) | `http`, `sse`, `stdio` | Required for http/sse | Required in advanced mode |
+| Container (image/source) | `http`, `sse`, `stdio` | Required for http/sse | Required in advanced mode, except hardened network-none servers |
 | External (url) | `http`, `sse` | Not allowed | Not allowed |
 | Local process (command) | `stdio` | Not allowed | Not allowed |
 | SSH (ssh + command) | `stdio` | Not allowed | Not allowed |
 | OpenAPI (openapi) | Not applicable | Not allowed | Not allowed |
+
+### Execution
+
+Optional per-MCP-server block. Omission preserves existing launch behavior. `mode: hardened` applies to image and source containers; `mode: local` applies to host processes. External URL, OpenAPI, and SSH servers reject execution declarations. Resources are not covered.
+
+```yaml
+execution:
+  mode: hardened
+  uid: 65534
+  gid: 65534
+```
+
+Place this block on a stdio container server with readable code for the selected identity, as in the [complete echo example](../examples/execution/stack.yaml). [Execution controls](execution.md#container-profile) lists every container default and numeric bound.
+
+| Field | Type | Applies to | Default and constraints |
+|-------|------|------------|-------------------------|
+| `mode` | string | Both | Required: `hardened` or `local` |
+| `uid`, `gid` | uint32 | Hardened | Required nonzero numeric container IDs |
+| `read_only`, `no_new_privileges` | bool | Hardened | Both `true`; explicit `false` is an exception |
+| `drop_capabilities` | []string | Hardened | `[ALL]`; explicit `[]` drops none; no capability additions |
+| `memory_bytes`, `cpu_millis`, `pids` | integer | Hardened | `268435456`, `1000`, and `128`; finite per-replica limits, swap disabled |
+| `network` | string | Hardened | `none` requires stdio without a port or selected server network; `connected` is an explicit exception |
+| `seccomp` | string | Hardened | Only `engine-default` |
+| `tmpfs` | []object | Hardened | One `/tmp` scratch mount, 64 MiB; entries require `target` and `size_bytes`; `[]` removes scratch |
+| `mounts` | []object | Hardened | Empty; entries require an engine-local volume `source` and data `target`; `read_only` defaults to `true`. Replaces server-level `volumes`, which must be empty |
+| `inherit` | []string | Local | Empty; names of ambient environment variables allowed into the child; reserved internal credentials remain denied |
+| `lookup` | string | Local | `absolute` requires an absolute first command argument; `ambient_path` explicitly selects through the gateway's PATH |
+
+Keys inside this block are strict, including nested mount/scratch keys. Preserve explicit empty lists and false values when editing or exporting. `extends` replaces a whole server by name; redefining it does not deep-merge execution fields. Normalized equivalent settings compare equal, but removing the block changes the contract and requires recreation. Execution-only changes, including simultaneous pool tuning, preserve schema pins.
+
+Validation reports desired settings, not enforcement. Required engine and kernel evidence must succeed before a hardened replica can serve. See [evidence and reload transitions](execution.md#evidence-and-lifecycle) and [local-process limits](execution.md#local-environment-hygiene).
 
 ### Source
 
@@ -764,10 +794,12 @@ Apply resolves and builds one desired source image per logical server before
 checking existing containers or creating replicas. Static replicas and
 autoscaled spawns all use that image. An existing container whose image does
 not match is replaced. Hot reload prepares a changed source before stopping
-the running server, so a resolution or build failure leaves the old workload
+the running server when its execution contract is unchanged, so a resolution or build failure leaves the old workload
 and its applied declaration in place. A later reload retries the unchanged
 desired declaration. Existing git and local stacks that omit `runtime` keep
 legacy Dockerfile discovery behavior.
+
+An execution transition has different failure semantics: after capability preflight accepts the new contract, old routes and replicas are retired before source preparation. A failed replacement retains the accepted desired revision without restoring weaker execution. See [execution lifecycle](execution.md#evidence-and-lifecycle).
 
 An unchanged source build is reused only when the image tag and its
 `io.gridctl.build-input-digest` label match the resolved plan. Images created
@@ -956,7 +988,7 @@ Full decision-rule walkthrough, cold-start trade-offs, and observability details
 
 ## Resources
 
-Supporting containers such as databases, caches, and other services.
+Supporting containers such as databases, caches, and other services. MCP `execution` controls do not apply to resources; hardening one MCP server does not harden the whole stack.
 
 ```yaml
 resources:

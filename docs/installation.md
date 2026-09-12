@@ -117,7 +117,9 @@ The scan is read-only on client configs; the only file modified is your stack fi
 
 ## Container runtime
 
-Gridctl requires a container runtime for workloads that run in containers (MCP servers with `image` or `source`, and resources). Generated Python source builds run entirely through Docker or Podman and do not require host Python or uv. Docker is detected by default; [Podman](https://podman.io) is also fully supported.
+Gridctl requires a container runtime for workloads that run in containers (MCP servers with `image` or `source`, and resources). Generated Python source builds run entirely through Docker or Podman and do not require host Python or uv. Docker is detected by default; [Podman](https://podman.io) is also supported.
+
+The opt-in hardened MCP execution profile has a narrower evidence requirement: a Linux client, a local Unix daemon endpoint, and safe access to the actual instance's `/proc` and cgroup v2 state. Runtime detection alone does not establish support. VM-backed and remote engines without that observation path are refused. Local Docker acceptance is recorded; positive rootless Podman acceptance remains a required hosted gate. See [execution controls](execution.md#evidence-and-lifecycle).
 
 ### Runtime detection
 
