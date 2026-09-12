@@ -32,6 +32,7 @@ func authMiddleware(authType, token, header string, next http.Handler) http.Hand
 		switch authType {
 		case "bearer":
 			if !strings.HasPrefix(val, "Bearer ") {
+				w.Header().Set("Gridctl-Auth-Rejected", "1")
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				return
 			}
@@ -41,6 +42,7 @@ func authMiddleware(authType, token, header string, next http.Handler) http.Hand
 		}
 
 		if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
+			w.Header().Set("Gridctl-Auth-Rejected", "1")
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}

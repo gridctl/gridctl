@@ -141,8 +141,8 @@ func (s *Server) handleSetServerTools(w http.ResponseWriter, r *http.Request) {
 	// Trigger reload when live-reload is enabled. In no-watch mode we
 	// respond with reloaded: false so the UI can show a hint to run
 	// `gridctl reload` manually.
-	if s.reloadHandler != nil {
-		result, err := s.reloadHandler.Reload(r.Context())
+	if handler := s.ReloadHandler(); handler != nil {
+		result, err := handler.Reload(r.Context())
 		if err != nil {
 			writeStructuredError(w, http.StatusBadGateway, errCodeReloadFailed,
 				err.Error(),
@@ -150,6 +150,9 @@ func (s *Server) handleSetServerTools(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !result.Success {
+			if writePreflightFailure(w, result) {
+				return
+			}
 			writeStructuredError(w, http.StatusBadGateway, errCodeReloadFailed,
 				result.Message,
 				"The stack file was saved but the hot reload failed. Check gridctl logs.")
@@ -285,8 +288,8 @@ func (s *Server) handleSetServerToolsBatch(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Exactly one reload for the whole batch.
-	if s.reloadHandler != nil {
-		result, err := s.reloadHandler.Reload(r.Context())
+	if handler := s.ReloadHandler(); handler != nil {
+		result, err := handler.Reload(r.Context())
 		if err != nil {
 			writeStructuredError(w, http.StatusBadGateway, errCodeReloadFailed,
 				err.Error(),
@@ -294,6 +297,9 @@ func (s *Server) handleSetServerToolsBatch(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		if !result.Success {
+			if writePreflightFailure(w, result) {
+				return
+			}
 			writeStructuredError(w, http.StatusBadGateway, errCodeReloadFailed,
 				result.Message,
 				"The stack file was saved but the hot reload failed. Check gridctl logs.")

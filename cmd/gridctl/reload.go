@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/config"
@@ -15,6 +16,12 @@ import (
 )
 
 const reloadHTTPTimeout = 60 * time.Second
+
+var reloadFormat string
+
+func init() {
+	reloadCmd.Flags().StringVar(&reloadFormat, "format", "text", "Output format: text or json (one object per stack)")
+}
 
 var reloadCmd = &cobra.Command{
 	Use:   "reload [stack-name]",
@@ -27,6 +34,9 @@ this command to manually trigger a reload.
 If no stack name is provided, reloads all running stacks.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if reloadFormat != "text" && reloadFormat != "json" {
+			return fmt.Errorf("output format must be text or json")
+		}
 		if len(args) == 1 {
 			return reloadStack(args[0])
 		}
@@ -64,7 +74,9 @@ func reloadAllStacks() error {
 	}
 
 	if len(states) == 0 {
-		fmt.Println("No running stacks found")
+		if reloadFormat != "json" {
+			fmt.Println("No running stacks found")
+		}
 		return nil
 	}
 
@@ -74,9 +86,13 @@ func reloadAllStacks() error {
 			continue
 		}
 
-		fmt.Printf("Reloading stack '%s'...\n", st.StackName)
+		if reloadFormat != "json" {
+			fmt.Printf("Reloading stack '%s'...\n", st.StackName)
+		}
 		if err := callReloadAPI(&st); err != nil {
-			fmt.Printf("  Error: %v\n", err)
+			if reloadFormat != "json" {
+				fmt.Printf("  Error: %v\n", err)
+			}
 			lastErr = err
 		}
 	}
@@ -103,13 +119,24 @@ func callReloadAPI(st *state.DaemonState) error {
 	if err := json.Unmarshal(body, &result); err != nil {
 		// Try to read as error message
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("reload failed: %s", string(body))
+			return fmt.Errorf("reload failed: HTTP %d", resp.StatusCode)
 		}
 		return fmt.Errorf("parsing response: %w", err)
 	}
 
-	if !result.Success {
+	if reloadFormat == "json" {
+		if err := json.NewEncoder(os.Stdout).Encode(struct {
+			Stack string `json:"stack"`
+			*reload.ReloadResult
+		}{st.StackName, &result}); err != nil {
+			return fmt.Errorf("writing reload result: %w", err)
+		}
+	}
+	if !result.Success || resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("reload failed: %s", result.Message)
+	}
+	if reloadFormat == "json" {
+		return nil
 	}
 
 	// Print results

@@ -680,13 +680,7 @@ func (b *GatewayBuilder) buildLogging(verbose bool) (*logging.LogBuffer, slog.Ha
 // effectiveBind resolves the listen address across both sources: the CLI
 // flag wins, then the stack's gateway.bind, then the loopback default.
 func (b *GatewayBuilder) effectiveBind() string {
-	if b.config.Bind != "" {
-		return b.config.Bind
-	}
-	if b.stack != nil && b.stack.Gateway != nil && b.stack.Gateway.Bind != "" {
-		return b.stack.Gateway.Bind
-	}
-	return DefaultBindAddress
+	return reload.EffectiveBind(b.stack, b.config.Bind)
 }
 
 // ErrUnauthenticatedExposure is returned when the gateway would listen
@@ -736,10 +730,7 @@ func (b *GatewayBuilder) checkExposure(log *slog.Logger) error {
 // whose arguments a user replaces), and losing the override silently turns
 // into a daemon that will not start.
 func (b *GatewayBuilder) allowUnauthenticated() bool {
-	if b.config.AllowUnauthenticated {
-		return true
-	}
-	return b.stack != nil && b.stack.Gateway != nil && b.stack.Gateway.InsecureAllowUnauthenticated
+	return reload.AllowUnauthenticated(b.stack, b.config.AllowUnauthenticated)
 }
 
 // buildAPIServer creates and configures the API server.
@@ -1354,6 +1345,7 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 	}
 
 	reloadHandler := reload.NewHandler(b.stackPath, b.stack, inst.Gateway, b.rt, b.config.Port, b.config.BasePort, vaultLookup, vaultSetLookup)
+	reloadHandler.SetSecurityPreflight(reload.NewSecurityPreflight(b.stack, b.config.Bind, b.config.AllowUnauthenticated))
 	reloadHandler.SetLogger(slog.New(handler))
 	reloadHandler.SetNoExpand(b.config.NoExpand)
 	// stackPath is threaded through the callback by the reload handler rather
@@ -1412,7 +1404,6 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 			reconcileSkillProjections(ctx, inst, projectionHome, slog.New(handler))
 		}
 	})
-	inst.APIServer.SetReloadHandler(reloadHandler)
 
 	// startWatcher starts a file watcher for the given stack path.
 	// It is called immediately when --watch is active, and exposed via SetStartWatcher
@@ -1426,6 +1417,9 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 				return err
 			}
 			if !result.Success {
+				if result.Code != "" {
+					slog.New(handler).Warn("reload preflight rejected", "code", result.Code, "changed_fields", result.ChangedFields)
+				}
 				return fmt.Errorf("%s", result.Message)
 			}
 			refreshRegistry(watchCtx, inst, projectionHome, slog.New(handler))
@@ -1442,6 +1436,9 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 
 	// Expose the watcher starter so initialize can activate it on demand.
 	inst.APIServer.SetStartWatcher(startWatcher)
+	// Publish only after the initialization callback is configured. The API's
+	// synchronized getter permits requests while startup registration runs.
+	inst.APIServer.SetReloadHandler(reloadHandler)
 
 	// Watch the registry skills directory so skills added to disk out-of-band
 	// (hand-authored, or written by `gridctl skill add/update/remove` while the
