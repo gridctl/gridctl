@@ -63,7 +63,7 @@ jobs:
           gridctl version
 
       - name: Set up Go (for upgrade subcommand smoke)
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
