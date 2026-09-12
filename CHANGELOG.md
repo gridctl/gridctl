@@ -6,6 +6,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Documentation
 
+- Align gateway-auth lifecycle guidance across the threat model, restart troubleshooting, API/CLI references, browser recovery, examples, and architecture map (#1228).
 - Publish a source-verified security threat model covering trust boundaries, current controls and defaults, credential custody, release evidence, and residual risks (#1218).
 
 ### Bug Fixes

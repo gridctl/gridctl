@@ -22,15 +22,17 @@ curl -H "X-API-Key: ${GATEWAY_TOKEN}" http://localhost:8180/api/status
 
 Supply `GATEWAY_TOKEN` in the shell environment. API-key mode sends the raw token, without a `Bearer ` prefix; its default header is `Authorization` when no custom header is set. Token comparison uses constant-time equality to prevent timing attacks. Throughout this reference, **Auth: Yes** means required when `gateway.auth` is configured.
 
+The authentication middleware marks its own credential denials with `Gridctl-Auth-Rejected: 1`, retaining the plain-text 401 body. Downstream 401 responses do not carry this marker. Browser verification uses protected `/api/status`; a current-credential gateway rejection pauses protected requests for re-entry. Other failures do not erase usable credentials, and mutations are not automatically replayed. This marker identifies rejection provenance; it is not authentication discovery or a login protocol.
+
 ---
 
 ## Endpoints
 
 ### Reload security results
 
-Unsupported static-security changes return HTTP `409`, `success: false`, `code: "restart_required"`, a value-free `message`, and `changed_fields` containing field names only. This applies to `/api/reload`, `/api/stack/initialize`, and save-first tool-scope, client-scope, and telemetry mutations. Save-first responses also carry the structured `error` envelope with the same code and fields. The saved file is preserved; it may differ from active startup settings. No reload side effects occur on this rejection. Resolution or validation failure returns `invalid_candidate` with HTTP `400` and preserves active state. Initialization's existing already-loaded conflict remains distinct from restart-required.
+Unsupported static-security changes return HTTP `409`, `success: false`, `code: "restart_required"`, a value-free `message`, and `changed_fields` containing field names only. This applies to `/api/reload`, `/api/stack/initialize`, and save-first tool-scope, client-scope, and telemetry mutations. All these preflight responses also carry the structured `error` envelope with the same code, message, and fields. The saved file is preserved; it may differ from active startup settings. No reload side effects occur on this rejection. Resolution or validation failure returns `invalid_candidate` with HTTP `400` and `changed_fields: null`, preserving active state. Initialization's existing already-loaded conflict remains distinct from restart-required.
 
-The authentication middleware marks its own credential denials with `Gridctl-Auth-Rejected: 1`, retaining the plain-text 401 body. Downstream 401 responses do not carry this marker. This is rejection provenance, not authentication discovery or a login protocol. Browser verification uses the existing protected status response. The legacy `/sse` endpoint only sends a negotiation event and finishes; normal completion is not shutdown notification. Browser streaming uses credential-aware fetch, with polling as the disconnect fallback.
+Changed field names are `gateway.auth.enabled` (a diagnostic name, not a YAML key), `gateway.auth.type`, `gateway.auth.token`, `gateway.auth.header`, `gateway.bind`, `gateway.allowed_hosts`, `gateway.allowed_origins`, and `gateway.insecure_allow_unauthenticated`. Only differing fields are listed, in that order. Compare `code`, not message text. Recovery uses a [gateway process restart](troubleshooting.md#gateway-security-requires-a-restart) with the original startup options.
 
 ### Health & Readiness
 
@@ -491,8 +493,9 @@ leaves the client unrestricted within its allowed servers.
 
 **Errors:** `422` (`unknown_server`/`unknown_tool`) when the scope references a
 server or tool the gateway does not know; `409` (`stack_modified`) when the
-stack file changed on disk since it was read; `502` (`reload_failed`) when the
-write succeeded but the hot reload failed.
+stack file changed on disk since it was read; `409 restart_required` or
+`400 invalid_candidate` for [reload preflight rejection](#reload-security-results)
+after saving; `502` (`reload_failed`) for other post-write reload failures.
 
 ---
 
@@ -849,7 +852,7 @@ Returns `404` when the trace ID is not in the buffer or tracing is disabled.
 
 #### `POST /api/reload`
 
-Triggers a configuration reload from the stack file. Requires the gateway to have been started with `--watch`.
+Triggers a configuration reload from the stack file. Manual reload does not require `--watch`; that flag enables automatic file watching. Security preflight runs before no-op detection, source preparation, or any other application step.
 
 When a source-based server changes, reload resolves and builds its desired
 image before unregistering or stopping the running server. A resolution or
@@ -868,10 +871,9 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/reload
 ```json
 {
   "success": true,
-  "message": "Reload complete",
-  "added": ["new-server"],
-  "removed": [],
-  "modified": ["existing-server"]
+  "message": "configuration reloaded successfully",
+  "added": ["mcp-server:new-server"],
+  "modified": ["mcp-server:existing-server"]
 }
 ```
 
@@ -879,19 +881,26 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/reload
 ```json
 {
   "success": true,
-  "message": "No changes detected"
+  "message": "no changes detected"
 }
 ```
 
-**Response (error):**
+**Response (invalid candidate, HTTP 400):**
 ```json
 {
   "success": false,
-  "message": "validation errors:\n  - mcp-servers[0].port: must be a positive integer"
+  "code": "invalid_candidate",
+  "message": "candidate configuration could not be resolved or validated; active configuration is unchanged",
+  "changed_fields": null,
+  "error": {
+    "code": "invalid_candidate",
+    "message": "candidate configuration could not be resolved or validated; active configuration is unchanged",
+    "changed_fields": null
+  }
 }
 ```
 
-Returns `503` if reload is not enabled (gateway started without `--watch`).
+Security differences return HTTP `409` with the [restart-required envelope](#reload-security-results), even if no ordinary configuration changed. Other application failures return `400` with `success: false`, a `message`, and optional per-item `errors`; they can leave partially applied ordinary changes. Returns `503` while the reload handler is unavailable, including early startup. Empty change/error lists are omitted.
 
 ---
 
@@ -951,7 +960,7 @@ Executes the reset. Requires a live preview token; purge additionally requires t
 
 ### Stack Management
 
-Endpoints for validating, inspecting, and editing the active stack spec. Most write paths use the same lock + hash + atomic-write pattern as the tool-whitelist editor: concurrent external edits surface as `409 stack_modified`, and a successful write may trigger a hot reload (`502 reload_failed` when the YAML saved but reload failed).
+Endpoints for validating, inspecting, and editing the active stack spec. Most write paths use the same lock + hash + atomic-write pattern as the tool-whitelist editor: concurrent external edits surface as `409 stack_modified`, and a successful write may trigger a hot reload. Reload preflight can return `409 restart_required` or `400 invalid_candidate` after saving; other post-write reload failures return `502 reload_failed`. See [reload security results](#reload-security-results).
 
 #### `POST /api/stack/validate`
 
@@ -1225,7 +1234,9 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8180/api/stack/initialize
 ```
 
-Loads `~/.gridctl/stacks/<name>.yaml`. Returns `409` when a stack is already loaded; `400` with per-server `errors[]` when initialization fails.
+Loads `~/.gridctl/stacks/<name>.yaml`. Success returns `{success: true, name, watching}`. The saved candidate must match the already-running listener's effective security, including when that listener has no configured authentication. Rejection preserves the accepted path/configuration and does not start a watcher.
+
+Returns `409` when a stack is already loaded, or `409 restart_required` for [security preflight rejection](#reload-security-results); `400 invalid_candidate` for candidate resolution/validation failure; `400` with per-server `errors[]` for ordinary application failure; `404` when the saved file is missing; and `503` when startup security preflight is not yet available. An auth-enabled saved stack cannot enable auth on a no-auth stackless listener through initialization: stop that process and start `gridctl apply` on the saved stack with the original startup options.
 
 #### `PATCH /api/stack/telemetry`
 
@@ -1241,6 +1252,8 @@ curl -X PATCH -H "Authorization: Bearer $TOKEN" \
 ```
 
 At least one `persist` or `retention` field must be set. Omitted sub-fields are left unchanged.
+
+**Errors after saving:** `409 restart_required` or `400 invalid_candidate` for [reload preflight rejection](#reload-security-results); `502 reload_failed` for other reload failures. The saved file is retained.
 
 ---
 
@@ -1391,13 +1404,14 @@ The body must be a JSON object with a `tools` field. An empty array (`[]`) clear
 }
 ```
 
-`reloaded` is `false` when the daemon is running without live-reload; the UI should hint the user to run `gridctl reload` manually. `reloadedAt` is omitted in that case.
+`reloaded` is `false` when no reload handler is available; `reloadedAt` is omitted in that case. Normal daemon startup installs the handler independently of `--watch`.
 
 **Errors:**
 - `400 unknown_tool` - Tool name not advertised by the server (whitelist is stale)
 - `400` - Body missing `tools` array, or contains an empty tool name
 - `404` - Server not found in the stack file
 - `409 stack_modified` - Stack file changed on disk between read and write
+- `409 restart_required` / `400 invalid_candidate` - YAML saved but [reload preflight rejected](#reload-security-results); active configuration unchanged
 - `502 reload_failed` - YAML written but hot reload failed
 - `503` - No stack file configured (stackless mode)
 
@@ -1405,7 +1419,7 @@ The body must be a JSON object with a `tools` field. An empty array (`[]`) clear
 
 Applies tool-whitelist changes to **multiple** servers in one atomic `stack.yaml` write and triggers a **single** hot reload, the fleet-bulk counterpart to the per-server endpoint above. Powers the Tools workspace Fleet actions (fleet-wide expose-all and hide-by-pattern), where applying N servers via N single-server calls would cost N reloads.
 
-**Transaction semantics: all-or-nothing.** Every server's tools are validated before anything is written; if any tool is unknown the whole batch is rejected (`400 unknown_tool`, naming the offending server) and the stack file is left untouched. This prevents a half-applied fleet edit. The reload runs once after the single write.
+**Write semantics: all-or-nothing.** Every server's tools are validated before anything is written; if any tool is unknown the whole batch is rejected (`400 unknown_tool`, naming the offending server) and the stack file is left untouched. The reload runs once after the single write. A subsequent reload rejection retains the saved file; the file write and live application are not one transaction.
 
 **Auth:** Yes
 
@@ -1441,6 +1455,7 @@ The body must be a JSON object with a non-empty `servers` array; each entry need
 - `400` - Body missing/empty `servers`, an entry missing `name`/`tools`, a duplicate server, or an empty tool name
 - `404` - A named server is not in the stack file; nothing written
 - `409 stack_modified` - Stack file changed on disk between read and write; nothing written
+- `409 restart_required` / `400 invalid_candidate` - YAML saved but [reload preflight rejected](#reload-security-results); active configuration unchanged
 - `502 reload_failed` - YAML written but hot reload failed
 - `503` - No stack file configured (stackless mode)
 
@@ -1566,7 +1581,7 @@ curl -X PATCH -H "Authorization: Bearer $TOKEN" \
 
 **Response:** `{success: true, inventory: [...]}` — same inventory shape as `GET /api/telemetry/inventory`.
 
-**Errors:** `404` when the server is not in the stack; `409 stack_modified`; `502 reload_failed`; `503` when no stack file is configured.
+**Errors:** `404` when the server is not in the stack; `409 stack_modified`; `409 restart_required` or `400 invalid_candidate` for [post-save reload preflight rejection](#reload-security-results); `502 reload_failed` for other reload failures; `503` when no stack file is configured.
 
 ---
 
@@ -3394,6 +3409,8 @@ data: POST /mcp
 
 **Auth:** Yes
 
+Normal completion is not shutdown notification. The browser consumes this negotiation through credential-aware fetch; polling remains its disconnect fallback.
+
 #### `POST /message` (retired)
 
 Always returns `410 Gone` with a message pointing at `POST /mcp`. The
@@ -3435,9 +3452,9 @@ HTTP middleware and routing errors can be plain text, including `401 Unauthorize
 | `403` | Host, MCP Origin, or endpoint-specific access check rejected the request |
 | `404` | Resource not found |
 | `405` | HTTP method not allowed |
-| `409` | Resource conflict (e.g., duplicate name) |
+| `409` | Resource conflict (e.g., duplicate name), or `restart_required` for gateway security changes |
 | `423` | Vault is locked |
-| `503` | Service unavailable (runtime not configured, reload not enabled) |
+| `503` | Service unavailable (runtime not configured, reload or initialization handler unavailable) |
 
 ## CORS
 

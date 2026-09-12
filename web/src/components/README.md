@@ -19,7 +19,8 @@ should follow.
 │   ├── <MetricsWorkspace>    /metrics
 │   ├── <PinsWorkspace>       /pins
 │   ├── <LogsWorkspace>       /logs
-│   └── <TracesWorkspace>     /traces
+│   ├── <TracesWorkspace>     /traces
+│   └── <ConnectionsWorkspace> /connections
 ├── <StatusBar>        connection · servers · sessions · tokens · spec
 ├── <CommandPalette>   workspace-scoped via the command registry
 └── <ToastContainer>
@@ -27,12 +28,17 @@ should follow.
 
 The shell is constant across workspaces; only the `<Outlet />` body and the
 right rail change. Workspace switching is done via React Router `NavLink`s
-in the header, the `⌘1`-`⌘8` shortcuts, or the command palette. `⌘J` jumps
+in the header, the `⌘1`-`⌘9` shortcuts, or the command palette. `⌘J` jumps
 to the Logs workspace.
 
 Detached windows (`/sidebar`, `/editor`, `/logs-window`, `/metrics-window`,
 `/traces-window`, `/registry` → `/library-window`) render *outside*
 AppShell - they're popout-friendly single-purpose pages.
+
+`AuthBoundary` wraps the router in `routes.tsx`, covering both the shell and
+all six detached routes. During credential re-entry, existing content stays
+mounted and inert behind `AuthPrompt`; verified window-only storage notices
+remain visible after the prompt closes.
 
 ## Store layout (Zustand slices pattern)
 
@@ -53,12 +59,26 @@ store:
 
 Several supporting stores (`useSpecStore`, `useAuthStore`, `usePinsStore`,
 `useTelemetryStore`, `useTracesStore`, `useVaultStore`, `useWizardStore`) sit
-alongside the workspace stores; they're feature-scoped and have no
-cross-store coupling.
+alongside the workspace stores. `useAuthStore` owns the credential, verification
+attempt, and credential generation shared by protected requests and their
+consumers. Data stores and polling hooks consult that generation to discard
+superseded results.
+
+Use the endpoint parsers in `lib/api.ts`; their shared transport is
+`lib/gatewayRequest.ts`. Streaming consumers use that transport directly. It
+enforces same-origin requests, manual redirect refusal, credential header
+validation, and gateway-rejection provenance. Component continuations must
+also guard mount lifetime and credential generation before updating state or
+starting another operation; Connections is a regression-tested example.
+Re-verification resumes eligible reads, never a save or other mutation.
+
+`useSSEShutdown` consumes `/sse` negotiation through cancellable fetch. The
+endpoint closes normally after the hint, so EOF does not signal shutdown;
+status polling remains the disconnect fallback.
 
 ## Shared primitives
 
-These primitives live under `web/src/components/` and are consumed by both
+These primitives live under `web/src/components/` and are consumed across
 workspaces. Reach for them before duplicating UI:
 
 | Primitive | Location | Used by |
@@ -105,6 +125,7 @@ workspace-specific props.
 
 ```
 web/src/components/
+├── auth/             AuthBoundary, AuthPrompt
 ├── shell/            AppShell, WorkspaceSwitcher, RootRedirect
 ├── workspaces/       StackWorkspace, LibraryWorkspace, … (one per top-level workspace)
 ├── layout/           Header, StatusBar, Sidebar (Stack inspector), WorkspaceShell

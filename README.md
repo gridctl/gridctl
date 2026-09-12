@@ -283,6 +283,8 @@ gridctl link cursor --group release
 
 With `gateway.auth` configured, grouped endpoints require the same bearer token or API-key header as `/mcp` on every request. Linking selects an endpoint but does not provision credentials; supply them through your client's authentication settings. Groups and self-declared client selectors are not authenticated identities. See [gateway authentication](docs/config-schema.md#auth), including HTTPS or encrypted-tunnel requirements for remote access.
 
+Gateway authentication and listener security settings are restart-only: reload rejects security changes, including mixed edits, while preserving the saved file and active settings. Follow [restart recovery](docs/troubleshooting.md#gateway-security-requires-a-restart). The web prompt supports Bearer and API-key modes and verifies credentials before saving; [browser credential guidance](docs/config-schema.md#browser-credentials) covers custom headers and storage limits.
+
 Learn more → [Tools Workspace](docs/tools-workspace.md)
 
 ### Rate Limits

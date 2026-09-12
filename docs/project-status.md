@@ -9,7 +9,7 @@ Gridctl is preparing its 1.0 release. This page tracks the stability tier of eac
 
 Nearly every shipped feature surface is Stable as of the release candidate; the table below marks the exceptions. The Experimental tier also covers features that ship dark behind the `experimental:` feature-flag registry (see [Config Schema](config-schema.md#experimental-feature-flags)), though a surface can be Experimental for stability reasons without being flag-gated (the model routing policy is: its CLI is on by default, but the upstream LiteLLM schema it renders is still evolving).
 
-Current as of **v1.0.0-rc.1** (see [CHANGELOG.md](../CHANGELOG.md) for release-by-release detail).
+Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked below (see [CHANGELOG.md](../CHANGELOG.md) for release-by-release detail).
 
 ## Feature stability
 
@@ -20,7 +20,7 @@ Current as of **v1.0.0-rc.1** (see [CHANGELOG.md](../CHANGELOG.md) for release-b
 | Generated Python source containers (PyPI, git, local) | Stable | Opt-in through `source.runtime: python` or `source.type: pypi`; existing Dockerfile sources are unchanged |
 | Config schema (servers, resources) | Stable | Backward compatible in 0.x |
 | Auth middleware (bearer, API key) | Stable | Credential formats unchanged; grouped MCP/SSE now require configured auth on every request (see [migration guidance](troubleshooting.md#grouped-mcp-requests-return-401)) |
-| Hot reload | Stable | Backward compatible in 0.x |
+| Hot reload | Stable | Unreleased breaking correction: effective gateway security changes reject the entire reload or stackless initialization with `restart_required`. See [restart recovery](troubleshooting.md#gateway-security-requires-a-restart); major-release scheduling/policy resolution remains required before merge under Articles VIII/IX |
 | Vault secrets | Stable | Backward compatible in 0.x |
 | Web UI | Stable | No API guarantee (internal) |
 | Output format conversion | Stable | Backward compatible in 0.x |
@@ -81,6 +81,7 @@ Current as of **v1.0.0-rc.1** (see [CHANGELOG.md](../CHANGELOG.md) for release-b
 - Global context sync covers 12 of 16 linkable clients; Claude Desktop, Cursor, AnythingLLM, and LM Studio expose no writable global context file, and Windsurf caps `global_rules.md` at 6,000 characters.
 - Antigravity's skills and global-context paths rest on unofficial sourcing rather than published documentation. Those targets are marked `unofficial` in `ctx status` and `skill project status`; the projection itself is supported, but the path may move without an upstream release note.
 - Web UI requires a modern browser (no IE11 support).
+- Unreleased browser authentication supports Bearer and API-key modes with browser-supported custom headers. Credentials remain readable by origin scripts in localStorage; storage failure requires re-entry after refresh or in new detached windows. Requests refuse redirects. See [browser credentials](config-schema.md#browser-credentials).
 
 ---
 

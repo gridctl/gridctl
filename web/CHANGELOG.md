@@ -54,6 +54,14 @@ All notable changes to gridctl will be documented in this file.
 
 ### Bug Fixes
 
+- Support Bearer and API-key gateway credentials with supported custom headers,
+  verification before persistence, versioned storage, and visible window-only
+  recovery. Pause protected reads on gateway rejection, discard stale results,
+  and refuse redirects across ordinary and streaming requests. All six detached
+  routes support re-entry without replaying mutations (#1228).
+- Surface `restart_required` and saved-file recovery for reload and initialization
+  instead of treating every conflict as an already-loaded stack. See the root
+  changelog's Unreleased breaking-change and major-release requirements (#1228).
 
 - Remove duplicate v prefix from gateway node version display
 - Prevent selection glow bleedthrough on agent badges

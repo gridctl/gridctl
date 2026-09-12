@@ -124,6 +124,8 @@ Authentication enablement, type, resolved token, header, bind address, allowed H
 
 Saved YAML may already differ from active settings. Repeated reloads remain rejected until you restore equivalent settings or restart the gateway. See [restart recovery](troubleshooting.md#gateway-security-requires-a-restart). No credential rotates in process, and no workload is automatically destroyed.
 
+This preflight also applies when loading a saved stack into a stackless `serve` process. That process already has listener settings; initialization cannot add authentication to a no-auth listener. Equivalent effective settings remain reloadable, including case-only header changes and reordered or duplicated allowlist entries. Failed candidate resolution or validation returns `invalid_candidate` without replacing active state. Ordinary post-preflight application failures can still partially apply reloadable changes.
+
 #### Browser credentials
 
 Choose Bearer or API key in the prompt. API keys use the raw value with `Authorization` by default; enter the configured custom header when applicable. Browser Fetch cannot send certain headers, including Host, Cookie, `Sec-*`, and `Proxy-*`, or protocol-owned fields. These browser limitations do not change native-client configuration validity. Control characters and values Fetch cannot represent unchanged are refused without displaying the value.
@@ -131,6 +133,8 @@ Choose Bearer or API key in the prompt. API keys use the raw value with `Authori
 The prompt verifies the draft against protected `/api/status` before replacing active credentials. Gateway rejection pauses protected requests for re-entry; downstream authentication, forbidden responses, connection failures, malformed responses, and redirects do not erase usable credentials. Mutations are never automatically replayed. Requests stay on the gateway origin and refuse redirects, including same-origin redirects.
 
 Credentials use versioned localStorage for refresh and same-origin detached-window convenience. Legacy raw token strings remain Bearer tokens, including JSON-looking text. Scripts running on this origin can read this storage. If storage fails, verified credentials work only in the current window; refresh and new detached windows require re-entry, and other windows may retain an older saved credential. A storage change requests verification rather than authenticating another window automatically.
+
+Mode, header, and token are saved together in the version-one `gridctl-auth-credential` entry. The old `gridctl-auth-token` key is read only when the new entry is absent. Unsupported versions and corrupt entries prompt re-entry rather than guessing; if they prevent safe replacement, verification still permits window-only use. Unknown fields in a supported version are preserved.
 
 ### Security
 

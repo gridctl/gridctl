@@ -64,7 +64,18 @@ Gateway security settings are restart-only. A reload that changes authentication
 
 For the web UI, select Bearer for this example. An API-key stack instead uses raw `Authorization` by default or its configured browser-supported custom header. Verification precedes saving. localStorage is readable by origin scripts; a window-only notice means refresh and new detached windows require re-entry. Keep the proxy backend private and connect through HTTPS or an encrypted tunnel.
 
-Configure your MCP client's Streamable HTTP connection using the following values (replace `gateway.example.com` with your proxy's HTTPS hostname):
+To use a custom-header API key, replace only `gateway.auth` in `gateway-remote.yaml` with this block, retaining the token stored in the prerequisites:
+
+```yaml
+  auth:
+    type: api_key
+    header: X-API-Key
+    token: "${var:GATEWAY_TOKEN}"
+```
+
+Apply the edited example on initial startup. If it is already running, first stop its gateway process and then apply with the original startup options, as described in recovery above. In the browser, select API key, set Credential header to `X-API-Key`, and enter the raw credential. Native MCP clients must likewise send the raw value in `X-API-Key`. Omitting `header` uses raw `Authorization` instead.
+
+For the original Bearer configuration, configure your MCP client's Streamable HTTP connection using the following values (replace `gateway.example.com` with your proxy's HTTPS hostname):
 
 | Setting | Value |
 |---------|-------|

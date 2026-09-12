@@ -17,6 +17,8 @@ A server with no `tools:` whitelist in `stack.yaml` exposes every tool it advert
 
 Saves write `stack.yaml` once and trigger a single reload. If the file changed on disk since the UI loaded it, the save is refused with a Reload file affordance instead of overwriting your edits.
 
+If that saved stack also changes effective gateway security, reload returns `restart_required`: the file retains the edit, but live tool and client scopes remain unchanged. Follow [gateway restart recovery](troubleshooting.md#gateway-security-requires-a-restart). Gateway credential re-entry resumes reads without automatically repeating a save or Fleet action.
+
 ## Audit Mode
 
 Audit classifies every tool against a lookback window (24 hours, 7 days, or 30 days; 7 days is the default and matches the `unused_tool` heuristic in `gridctl optimize`):
