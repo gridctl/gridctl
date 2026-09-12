@@ -4,6 +4,8 @@ The gridctl gateway exposes a REST API for managing stacks, secrets, skills, pac
 
 ## Authentication
 
+Execution reporting on `/api/mcp-servers` and `/api/status` is described in [execution controls](execution.md). A server's optional `execution` holds requested intent and an aggregate outcome. Each replica's optional `execution` report holds `mode`, `revision`, `instance`, `outcome`, `eligible`, `observed_at`, `runtime`, `runtime_context`, `daemon_rootless`, `user_namespace`, and `controls`. Each control has `field`, `requested`, optional `observed`, `outcome`, and `source`. Reports contain allowlisted metadata, not raw inspect output, commands, environment values, or host-source paths. Required pending, unknown, unsupported, or mismatched evidence is not routing eligibility. MCP health remains separate. No active replicas means no current active evidence.
+
 When `gateway.auth` is configured, authentication is required for `/api/`, `/groups/`, `/a2a/`, and `/.well-known/` namespaces, plus `/mcp`, `/sse`, and `/message`. This includes `/groups/{name}/mcp` and `/groups/{name}/sse`, as well as unknown paths within protected namespaces. Missing or incorrect credentials return HTTP `401` with a plain-text `Unauthorized` body before operational handling.
 
 The UI shell, assets, and deep links, `/health`, and `/ready` do not require the gateway token. `OPTIONS` terminates in the CORS layer without dispatching an operation. When downstream OAuth brokering is enabled, the exact `GET /oauth/callback` route validates single-use OAuth state instead of the gateway token; `/api/auth/` and `/api/servers/{name}/auth/` remain protected. Host checks and MCP Origin checks apply independently of authentication; native clients may omit Origin.

@@ -66,6 +66,9 @@ pkg/catalog/        MCP server catalog behind `gridctl search` / `gridctl add`: 
 pkg/config/         stack.yaml schema, defaults and validation, variable/env expansion, plan diffing, health-check parsing.
                     export.go owns the shared non-resolving ExportStack projection for CLI/API exports, with bounded
                     sensitive-literal rejection and source ancestry for CLI destination checks. Runtime loaders stay separate.
+pkg/execution/      Presence-aware MCP execution declarations, normalized per-replica contracts, and value-free reports.
+                    Docker-compatible admission and instance-bound Linux kernel observations live in pkg/runtime/docker/.
+                    MCP clients gate dispatch on evidence; retirement closes owned processes and cancels obsolete scaling.
 pkg/runtime/        Container orchestration. Orchestrator is the WorkloadRuntime + Builder front; it prepares one desired
                     source image per logical MCP server before reconciling replicas. pkg/runtime/docker is the Docker
                     implementation. Runtime auto-detected (docker → podman) unless --runtime is set.

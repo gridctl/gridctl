@@ -2,6 +2,8 @@
 
 This document describes every field in the gridctl stack YAML configuration.
 
+Per-MCP-server `execution` is an optional strict block. See [execution controls](execution.md) for `hardened` container settings, `local` inheritance and lookup, presence semantics, resource bounds, and evidence requirements. Omission retains compatibility behavior. Execution-only edits require workload recreation and preserve established schema pins.
+
 ## Stack
 
 The root configuration object.
