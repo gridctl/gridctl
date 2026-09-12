@@ -87,9 +87,30 @@ func (e *ExecutionConfig) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return fmt.Errorf("execution: expected mapping")
 	}
+	if fields == nil {
+		return fmt.Errorf("execution: expected mapping")
+	}
 	for _, value := range fields {
 		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
 			return fmt.Errorf("execution: null fields are not supported")
+		}
+	}
+	for _, key := range []string{"mounts", "tmpfs"} {
+		if value, ok := fields[key]; ok {
+			var items []map[string]json.RawMessage
+			if err := json.Unmarshal(value, &items); err != nil {
+				return fmt.Errorf("execution: expected mount mappings")
+			}
+			for _, item := range items {
+				if item == nil {
+					return fmt.Errorf("execution: expected mount mapping")
+				}
+				for _, value := range item {
+					if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+						return fmt.Errorf("execution: null fields are not supported; omit the field instead")
+					}
+				}
+			}
 		}
 	}
 	return nil

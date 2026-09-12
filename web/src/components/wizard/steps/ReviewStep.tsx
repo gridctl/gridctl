@@ -243,7 +243,7 @@ export function ReviewStep({
         <h3 className="text-sm font-medium">Requested execution: {name}</h3>
         <p className="text-sm break-all">Mode: {report.mode}; revision: {report.revision}</p>
         <p className="text-sm">Resolved from the proposed YAML. These settings are not runtime evidence. Changing or removing them requires recreation. Review explicit privilege, filesystem, capability, and connected-network exceptions before applying.</p>
-        <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">{report.controls.map((control) => <div key={control.field}><dt className="font-mono">{control.field}</dt><dd className="break-all">{control.requested || '(empty)'}</dd></div>)}</dl>
+        <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">{(report.controls ?? []).map((control) => <div key={control.field}><dt className="font-mono">{control.field}</dt><dd className="break-all">{control.requested || '(empty)'}</dd></div>)}</dl>
       </section>)}
       {/* Validation Status */}
       <div

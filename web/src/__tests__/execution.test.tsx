@@ -30,4 +30,12 @@ describe('execution preservation and reporting', () => {
     render(<ExecutionDetails server={{ name: 'fixture', replicas: [] } as unknown as MCPServerStatus} />);
     expect(screen.getByText(/No current active execution evidence/)).toBeTruthy();
   });
+
+  it.each([null, undefined])('renders failed evidence with controls %s', (controls) => {
+    const server = { name: 'fixture', replicas: [{ replicaId: 0, healthy: true, execution: { mode: 'hardened', outcome: 'mismatch', eligible: false, controls } }] } as unknown as MCPServerStatus;
+    render(<ExecutionDetails server={server} />);
+    expect(screen.getByText(/MCP healthy; execution mismatch/)).toBeTruthy();
+    expect(screen.getByText(/0 of 1 active replicas/)).toBeTruthy();
+    expect(screen.getByText('No per-control evidence available.')).toBeTruthy();
+  });
 });

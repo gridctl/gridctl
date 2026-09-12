@@ -17,6 +17,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Bug Fixes
 
+- Keep failed execution evidence visible in server details when per-control observations are unavailable. Reject nested null mount/tmpfs fields in execution JSON instead of treating them as omitted defaults (#1221).
 - Reap exited MCP child processes promptly, clear their reported PID, and allow shutdown and request cancellation to interrupt blocked stdin writes. Failed process reinitialization closes the replacement child (#1221).
 - Interrupt blocked container stdin writes during cancellation and teardown. Keep successfully initialized gateway-owned processes alive beyond the initiating request, retire every client on unregistration, and reap late spawns from retired autoscalers (#1221).
 - Report unavailable startup security preflight when manual reload is not ready, without incorrectly requiring `--watch` (#1228).

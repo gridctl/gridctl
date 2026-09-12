@@ -79,7 +79,7 @@ func TestExecutionConfig_Decoding(t *testing.T) {
 			t.Fatalf("unsafe decoding result: %v", err)
 		}
 	}
-	for _, input := range []string{`{"mode":"local","unknown":"secret-value"}`, `{"mode":"local","inherit":null}`, `{"uid":"secret-value"}`} {
+	for _, input := range []string{`null`, `{"mode":"local","unknown":"secret-value"}`, `{"mode":"local","inherit":null}`, `{"uid":"secret-value"}`} {
 		var cfg ExecutionConfig
 		err := json.Unmarshal([]byte(input), &cfg)
 		if err == nil || strings.Contains(err.Error(), "secret-value") {
@@ -89,5 +89,38 @@ func TestExecutionConfig_Decoding(t *testing.T) {
 	var cfg ExecutionConfig
 	if err := json.Unmarshal([]byte(`{"mode":"local","inherit":[]}`), &cfg); err != nil || cfg.Inherit == nil {
 		t.Fatal("empty inheritance lost")
+	}
+}
+
+func TestExecutionConfig_NestedJSONPresence(t *testing.T) {
+	for _, field := range []string{
+		`"mounts":[{"source":"vol","target":"/data","read_only":null}]`,
+		`"mounts":[{"source":null,"target":"/data"}]`,
+		`"mounts":[{"source":"vol","target":null}]`,
+		`"mounts":[null]`,
+		`"tmpfs":[{"target":null,"size_bytes":4096}]`,
+		`"tmpfs":[{"target":"/tmp","size_bytes":null}]`,
+		`"tmpfs":[null]`,
+	} {
+		t.Run(field, func(t *testing.T) {
+			var cfg ExecutionConfig
+			if err := json.Unmarshal([]byte(`{"mode":"hardened","uid":1,"gid":1,`+field+`}`), &cfg); err == nil {
+				t.Fatal("explicit nested null accepted")
+			}
+		})
+	}
+	for _, value := range []string{"", `,"read_only":false`, `,"read_only":true`} {
+		var cfg ExecutionConfig
+		if err := json.Unmarshal([]byte(`{"mode":"hardened","uid":1,"gid":1,"mounts":[{"source":"vol","target":"/data"`+value+`}]}`), &cfg); err != nil {
+			t.Fatal(err)
+		}
+		mount := (*cfg.Mounts)[0]
+		if (mount.ReadOnly == nil) != (value == "") {
+			t.Fatal("mount presence lost")
+		}
+		contract, err := ResolveExecution(Server{Execution: &cfg, Transport: "stdio"})
+		if err != nil || *contract.Mounts[0].ReadOnly != (value != `,"read_only":false`) {
+			t.Fatalf("incorrect mount default or exception: %v", err)
+		}
 	}
 }

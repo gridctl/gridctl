@@ -21,10 +21,11 @@ export function ExecutionDetails({ server, resource = false }: { server?: MCPSer
         <div className="overflow-auto"><table className="w-full text-left text-xs">
           <caption className="text-left">Requested controls and evidence</caption>
           <thead><tr><th scope="col">Control</th><th scope="col">Requested</th><th scope="col">Observed</th><th scope="col">Outcome/source</th></tr></thead>
-          <tbody>{replica.execution.controls.map((control, index) => <tr key={`${control.field}-${index}`}>
+          <tbody>{(replica.execution.controls ?? []).map((control, index) => <tr key={`${control.field}-${index}`}>
             <th scope="row" className="p-1 align-top">{control.field}</th><td className="p-1 align-top break-all">{control.requested}</td><td className="p-1 align-top">{control.observed ?? 'unknown'}</td><td className="p-1 align-top">{control.outcome}<br />{control.source}</td>
           </tr>)}</tbody>
         </table></div>
+        {!replica.execution.controls?.length && <p>No per-control evidence available.</p>}
       </>}
     </section>)}
     <p className="text-xs">Post-start observations leave a window before verification. Network none does not constrain image pulls, build downloads, or information returned through MCP.</p>

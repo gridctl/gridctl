@@ -44,7 +44,7 @@ export interface ExecutionReport {
   runtime: string;
   daemon_rootless: string;
   user_namespace: string;
-  controls: Array<{ field: string; requested: string; observed?: string; outcome: string; source: string }>;
+  controls?: Array<{ field: string; requested: string; observed?: string; outcome: string; source: string }> | null;
 }
 
 // Controller decision at the last autoscale tick.

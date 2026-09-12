@@ -216,6 +216,8 @@ Each registered server also reports `protocolVersion` (string, omitted when the 
 | `endpoint_port` | integer | Optional inspected loopback publication for container HTTP/SSE |
 | `controls` | []object | `field`, `requested`, optional `observed`, `outcome`, and `source`, all strings; when no controls are available, the array may be `null` |
 
+The Execution details UI keeps the replica outcome and eligibility visible when controls are null or absent and displays "No per-control evidence available." Missing controls do not establish eligibility.
+
 Control sources distinguish `normalized desired contract`, `engine-inspect`, and instance-bound kernel observations. The same field can appear more than once with different sources. The observation-only `memory_peak_bytes` control may be `unknown` without blocking eligibility; missing required evidence does block hardened routing. Seccomp profile identity can remain unknown while the required engine-default strategy and kernel filter state are verified.
 
 A hardened aggregate is `observed` and eligible only when every active replica has eligible evidence. Otherwise active replicas yield `mixed`, even when none is eligible. No active replicas yields `pending` without current evidence. Aggregates retain requested controls and are not instance snapshots. Local requested reports stay `configured`; compatibility local/SSH reports appear on replicas even without a server-level execution block. External URL/OpenAPI servers do not acquire local enforcement reports. Resource entries on `/api/status` remain `{name, image, status}`; the UI labels them not covered.

@@ -23,13 +23,16 @@ const server = await createServer({
         function App() {
           const [data, setData] = React.useState({name:'fixture',serverType:'container',image:'alpine',transport:'stdio',execution:{mode:'hardened',uid:1000,gid:1000,read_only:false,drop_capabilities:[],mounts:[]}});
           const [idle, setIdle] = React.useState(false);
+          const [missingControls, setMissingControls] = React.useState(false);
           const yaml = buildYAML({type:'mcp-server',data});
           const replica = {replicaId:0,healthy:true,execution:{mode:'hardened',revision:'fixture-revision',instance:'fixture-instance',outcome:'mismatch',eligible:false,runtime:'fixture',daemon_rootless:'unknown',user_namespace:'unknown',observed_at:'2026-09-12T00:00:00Z',controls:[{field:'memory_bytes',requested:'268435456',observed:'unknown',outcome:'mismatch',source:'fixture evidence'}]}};
+          if (missingControls) replica.execution.controls = null;
           return React.createElement(React.Fragment, {},
             React.createElement(ExecutionFields, {data,onChange:patch=>setData({...data,...patch})}),
             React.createElement('button',{onClick:()=>{const parsed=parseYAMLToForm(yaml,'mcp-server');if('error' in parsed)throw Error(parsed.error);setData(parsed.data)}},'Round trip YAML'),
             React.createElement('pre',{'aria-label':'Authoritative proposed YAML'},yaml),
             React.createElement('button',{onClick:()=>setIdle(true)},'Idle to zero'),
+            React.createElement('button',{onClick:()=>setMissingControls(true)},'Evidence unavailable'),
             React.createElement(ExecutionDetails,{server:{name:'fixture',execution:{mode:'hardened',revision:'fixture-revision',outcome:'pending',eligible:false},replicas:idle?[]:[replica]}})
           );
         }
@@ -63,11 +66,15 @@ try {
   assert.equal(await evidence.evaluate(node => node.parentElement.open), true);
   assert.equal(await page.getByText(/MCP healthy; execution mismatch/).isVisible(), true);
   assert.equal(await page.getByRole('table', { name: 'Requested controls and evidence' }).isVisible(), true);
+  await page.getByRole('button', { name: 'Evidence unavailable' }).click();
+  assert.equal(await page.getByText('No per-control evidence available.').isVisible(), true);
+  assert.equal(await page.getByText(/MCP healthy; execution mismatch/).isVisible(), true);
+  assert.equal(await page.getByText(/0 of 1 active replicas/).isVisible(), true);
   await page.getByRole('button', { name: 'Idle to zero' }).click();
   assert.equal(await page.getByText(/No current active execution evidence/).isVisible(), true);
   assert.equal(await page.getByRole('table').count(), 0);
   assert.deepEqual(failures, []);
-  console.log('Execution browser acceptance passed: keyboard disclosure, narrow layout, YAML presence preservation, health/evidence distinction, and idle evidence removal.');
+  console.log('Execution browser acceptance passed: keyboard disclosure, narrow layout, YAML presence preservation, health/evidence distinction, unavailable controls, and idle evidence removal.');
 } finally {
   await browser?.close();
   await server.close();
