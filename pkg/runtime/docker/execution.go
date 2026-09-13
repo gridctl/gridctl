@@ -17,6 +17,7 @@ import (
 	"github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/go-connections/nat"
+	"github.com/docker/go-units"
 	"github.com/gridctl/gridctl/pkg/execution"
 )
 
@@ -221,11 +222,13 @@ func (d *DockerRuntime) inspectExecution(ctx context.Context, id string, e *exec
 		return report, fmt.Errorf("execution.inspect: evidence unavailable")
 	}
 	h := i.HostConfig
+	var mismatches []string
 	check := func(field, requested, observed string, matches bool) {
 		outcome := "observed"
 		if !matches {
 			outcome = "mismatch"
 			report.Outcome = "mismatch"
+			mismatches = append(mismatches, field)
 		}
 		report.Controls = append(report.Controls, execution.Control{Field: field, Requested: requested, Observed: observed, Outcome: outcome, Source: "engine-inspect"})
 	}
@@ -254,7 +257,20 @@ func (d *DockerRuntime) inspectExecution(ctx context.Context, id string, e *exec
 		dropped[index] = strings.TrimPrefix(strings.ToUpper(cap), "CAP_")
 	}
 	slices.Sort(dropped)
-	check("capabilities", "declared drops; no additions", "capability set comparison", slices.Equal(dropped, e.DropCapabilities) && len(h.CapAdd) == 0)
+	capsMatch := slices.Equal(dropped, e.DropCapabilities) && len(h.CapAdd) == 0
+	var capsErr error
+	nativeCaps := !capsMatch && len(h.CapAdd) == 0 && slices.Equal(e.DropCapabilities, []string{"ALL"})
+	if nativeCaps {
+		capsMatch, capsErr = d.executionPodmanNoCapabilities(ctx, i.ID)
+	}
+	if capsErr != nil {
+		report.Controls = append(report.Controls, execution.Control{Field: "capabilities", Requested: "declared drops; no additions", Outcome: "unknown", Source: "engine-native-inspect"})
+	} else {
+		check("capabilities", "declared drops; no additions", "capability set comparison", capsMatch)
+		if nativeCaps {
+			report.Controls[len(report.Controls)-1].Source = "engine-native-inspect"
+		}
+	}
 	check("memory_bytes", strconv.FormatInt(e.MemoryBytes, 10), strconv.FormatInt(h.Memory, 10), h.Memory == e.MemoryBytes && h.MemorySwap == e.MemoryBytes)
 	check("cpu_millis", strconv.FormatInt(e.CPUMillis, 10), "quota comparison", h.CPUPeriod >= 1000 && h.CPUPeriod <= 1000000 && h.CPUQuota > 0 && h.CPUQuota <= 1000000000 && h.CPUQuota*1000 == e.CPUMillis*h.CPUPeriod)
 	check("pids", strconv.FormatInt(e.PIDs, 10), "limit comparison", h.PidsLimit != nil && *h.PidsLimit == e.PIDs)
@@ -335,11 +351,15 @@ func (d *DockerRuntime) inspectExecution(ctx context.Context, id string, e *exec
 		mountsMatch = false
 	}
 	for _, scratch := range e.Tmpfs {
-		mountsMatch = mountsMatch && h.Tmpfs[scratch.Target] == fmt.Sprintf("rw,nosuid,nodev,noexec,size=%d,mode=1777", scratch.SizeBytes)
+		mountsMatch = mountsMatch && executionTmpfsMatches(h.Tmpfs[scratch.Target], scratch.SizeBytes)
 	}
 	check("data_mounts", "declared bounded tmpfs and unbounded data volumes", "mount inventory comparison", mountsMatch)
 	if report.Outcome == "mismatch" {
-		return report, fmt.Errorf("execution.inspect: required control mismatch")
+		return report, fmt.Errorf("execution.inspect: required control mismatch (%s)", strings.Join(mismatches, ", "))
+	}
+	if capsErr != nil {
+		report.Outcome = "unknown"
+		return report, fmt.Errorf("execution.capabilities: %w", capsErr)
 	}
 	if !started {
 		return report, nil
@@ -362,4 +382,36 @@ func (d *DockerRuntime) inspectExecution(ctx context.Context, id string, e *exec
 	}
 	report.Outcome, report.Eligible = "observed", true
 	return report, nil
+}
+
+// Inspect may reorder OCI options or render sizes with binary suffixes.
+// Reject conflicting, duplicate, and unknown options rather than guess precedence.
+func executionTmpfsMatches(options string, size int64) bool {
+	seen := map[string]bool{}
+	for _, option := range strings.Split(options, ",") {
+		key, value, hasValue := strings.Cut(option, "=")
+		if seen[key] {
+			return false
+		}
+		seen[key] = true
+		switch key {
+		case "rw", "nosuid", "nodev", "noexec", "private", "rprivate":
+			if hasValue {
+				return false
+			}
+		case "size":
+			bytes, err := units.RAMInBytes(value)
+			if err != nil || bytes != size || size <= 0 {
+				return false
+			}
+		case "mode":
+			mode, err := strconv.ParseUint(value, 8, 32)
+			if err != nil || mode != 01777 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return seen["rw"] && seen["nosuid"] && seen["nodev"] && seen["noexec"] && seen["size"] && seen["mode"]
 }

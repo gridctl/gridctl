@@ -100,6 +100,40 @@ func TestExecution_CapabilityErrorsAreRedacted(t *testing.T) {
 	}
 }
 
+func TestExecution_InspectTmpfsOptions(t *testing.T) {
+	for _, tc := range []struct {
+		name, options string
+		wantError     bool
+	}{
+		{"original", "rw,nosuid,nodev,noexec,size=67108864,mode=1777", false},
+		{"reordered", "mode=1777,size=67108864,noexec,nodev,nosuid,rw", false},
+		{"binary units and private propagation", "rw,rprivate,nosuid,nodev,noexec,size=64m,mode=01777", false},
+		{"missing noexec", "rw,nosuid,nodev,size=64m,mode=1777", true},
+		{"conflicting exec", "rw,nosuid,nodev,noexec,exec,size=64m,mode=1777", true},
+		{"conflicting ro", "rw,ro,nosuid,nodev,noexec,size=64m,mode=1777", true},
+		{"unbounded", "rw,nosuid,nodev,noexec,mode=1777", true},
+		{"larger", "rw,nosuid,nodev,noexec,size=128m,mode=1777", true},
+		{"duplicate size", "rw,nosuid,nodev,noexec,size=64m,size=128m,mode=1777", true},
+		{"wrong mode", "rw,nosuid,nodev,noexec,size=64m,mode=0777", true},
+		{"unknown option", "rw,nosuid,nodev,noexec,size=64m,mode=1777,private-engine-detail", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			contract := executionTestContract(t)
+			c, h := &container.Config{}, &container.HostConfig{}
+			applyExecution(contract, c, h)
+			h.Tmpfs[contract.Tmpfs[0].Target] = tc.options
+			engine := &executionEngine{info: system.Info{CgroupVersion: "2", MemoryLimit: true, SwapLimit: true, CPUCfsQuota: true, PidsLimit: true, SecurityOptions: []string{"name=seccomp"}}, MockDockerClient: &MockDockerClient{ContainerDetails: map[string]container.InspectResponse{"fixture": {ContainerJSONBase: &container.ContainerJSONBase{HostConfig: h, State: &container.State{}}, Config: c}}}}
+			report, err := NewWithClient(engine).inspectExecution(t.Context(), "fixture", contract, false)
+			if (err != nil) != tc.wantError || report.Eligible {
+				t.Fatalf("tmpfs admission: %+v %v", report, err)
+			}
+			if err != nil && (!strings.Contains(err.Error(), "data_mounts") || strings.Contains(err.Error(), "private-engine-detail")) {
+				t.Fatalf("missing safe field diagnostic: %v", err)
+			}
+		})
+	}
+}
+
 func TestExecution_CanceledRequestDoesNotStopWorkload(t *testing.T) {
 	engine := &executionEngine{MockDockerClient: &MockDockerClient{}}
 	rt := NewWithClient(engine)

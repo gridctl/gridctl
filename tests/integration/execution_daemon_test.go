@@ -136,6 +136,11 @@ func TestExecution_RealDaemonReloadAndRecovery(t *testing.T) {
 		if strings.Contains(string(body), token) {
 			t.Fatal("status disclosed gateway credential")
 		}
+		if res.StatusCode >= http.StatusBadRequest {
+			// This fixture owns the stack and credentials; retain bounded API
+			// failure details so reload errors identify the failing control.
+			t.Logf("%s %s failed (%d): %s", method, path, res.StatusCode, body[:min(len(body), 4096)])
+		}
 		if into != nil {
 			if err := json.Unmarshal(body, into); err != nil {
 				t.Fatalf("invalid response: %v", err)

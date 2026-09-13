@@ -2,11 +2,13 @@ package docker
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"slices"
 	"time"
 )
@@ -15,29 +17,9 @@ import (
 // Native info reports the controllers available to the daemon instead.
 // This is preflight evidence only; instance-bound kernel limits still gate routing.
 func executionPodmanResources(ctx context.Context, socket string) error {
-	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
-	}}
-	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-		return http.ErrUseLastResponse
-	}}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost/v4.0.0/libpod/info", nil)
+	body, err := executionPodmanRead(ctx, socket, "/v4.0.0/libpod/info")
 	if err != nil {
-		return fmt.Errorf("execution.resources: %w", errExecutionUnknown)
-	}
-	res, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("execution.resources: %w", errExecutionUnknown)
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("execution.resources: native cgroup capability evidence unavailable")
-	}
-	const maxInfoBytes = 1 << 20
-	body, err := io.ReadAll(io.LimitReader(res.Body, maxInfoBytes+1))
-	if err != nil || len(body) > maxInfoBytes {
-		return fmt.Errorf("execution.resources: %w", errExecutionUnknown)
+		return fmt.Errorf("execution.resources: %w", err)
 	}
 	var info struct {
 		Host struct {
@@ -61,4 +43,62 @@ func executionPodmanResources(ctx context.Context, socket string) error {
 		}
 	}
 	return nil
+}
+
+// Podman's compatibility CapDrop is a difference against daemon defaults, not
+// the requested ALL sentinel. Verify native OCI-derived sets for the same ID;
+// the started workload must still pass all five kernel capability-set checks.
+func (d *DockerRuntime) executionPodmanNoCapabilities(ctx context.Context, id string) (bool, error) {
+	client, ok := d.cli.(executionInfoClient)
+	if !ok {
+		return false, errExecutionUnknown
+	}
+	endpoint, err := url.Parse(client.DaemonHost())
+	if err != nil || endpoint.Scheme != "unix" || len(id) != 64 {
+		return false, errExecutionUnknown
+	}
+	if _, err := hex.DecodeString(id); err != nil {
+		return false, errExecutionUnknown
+	}
+	body, err := executionPodmanRead(ctx, endpoint.Path, "/v4.0.0/libpod/containers/"+id+"/json")
+	if err != nil {
+		return false, errExecutionUnknown
+	}
+	var inspect struct {
+		ID            string   `json:"Id"`
+		EffectiveCaps []string `json:"EffectiveCaps"`
+		BoundingCaps  []string `json:"BoundingCaps"`
+	}
+	if json.Unmarshal(body, &inspect) != nil || inspect.ID != id || inspect.EffectiveCaps == nil || inspect.BoundingCaps == nil {
+		return false, errExecutionUnknown
+	}
+	return len(inspect.EffectiveCaps) == 0 && len(inspect.BoundingCaps) == 0, nil
+}
+
+func executionPodmanRead(ctx context.Context, socket, path string) ([]byte, error) {
+	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+	}}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost"+path, nil)
+	if err != nil {
+		return nil, errExecutionUnknown
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, errExecutionUnknown
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("native endpoint evidence unavailable")
+	}
+	const maxInfoBytes = 1 << 20
+	body, err := io.ReadAll(io.LimitReader(res.Body, maxInfoBytes+1))
+	if err != nil || len(body) > maxInfoBytes {
+		return nil, errExecutionUnknown
+	}
+	return body, nil
 }

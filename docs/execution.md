@@ -17,6 +17,8 @@ The profile requires nonprivileged operation, a private PID namespace, a nonzero
 
 Preflight checks the actual daemon's capabilities. When Docker-compatible resource flags are incomplete, Gridctl queries native Podman info over the same local Unix socket and requires cgroup v2 with CPU, memory, and PID controllers. Missing native evidence is refused. Capability evidence does not establish workload enforcement: engine inspection and instance-bound kernel checks, including disabled swap, remain mandatory before routing.
 
+Podman may expand an `ALL` capability drop into individual names. In that case, Gridctl requires native inspection of the same full container ID to report empty effective and bounding capability sets. Missing sets remain unknown, and capability additions remain refused. Tmpfs inspection compares required flags, size, and mode rather than option order or size spelling; conflicting and unknown options are refused. Inspection failures name safe control fields, such as `capabilities` or `data_mounts`, without returning raw engine values. These engine checks do not replace the started workload's kernel observations.
+
 | Field | Default | Meaning |
 |---|---|---|
 | `read_only` | `true` | Read-only root filesystem |
