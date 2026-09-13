@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, SessionsResponse, RegistryAgent, AgentProjectionStatus, AgentSyncResult, AgentUnsyncResult, AgentAdoptResult, SecurityFinding, WiringRow, WiringAdoptResult, ModelsStatusDoc, ModelsSyncResult, ModelsAdoptResult, ModelsValidateDoc } from '../types';
+import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, SessionsResponse, RegistryAgent, AgentProjectionStatus, AgentSyncResult, AgentUnsyncResult, AgentAdoptResult, SecurityFinding, WiringRow, WiringAdoptResult, ModelsStatusDoc, ModelsSyncResult, ModelsAdoptResult, ModelsValidateDoc, SecurityReport } from '../types';
 
 import { gatewayRequest, AuthError, GatewayRequestError } from './gatewayRequest';
 import { useAuthStore } from '../stores/useAuthStore';
@@ -130,6 +130,10 @@ async function fetchJSON<T>(endpoint: string): Promise<T> {
  */
 export async function fetchStatus(): Promise<GatewayStatus> {
   return fetchJSON<GatewayStatus>('/api/status');
+}
+
+export async function fetchSecurityReport(): Promise<SecurityReport> {
+  return fetchJSON<SecurityReport>('/api/security-report');
 }
 
 /**

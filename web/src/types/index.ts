@@ -47,6 +47,77 @@ export interface ExecutionReport {
   controls?: Array<{ field: string; requested: string; observed?: string; outcome: string; source: string }> | null;
 }
 
+export type SecurityOutcome = 'pass' | 'fail' | 'warn' | 'unknown' | 'not-applicable';
+
+export interface SecuritySourceIdentity {
+  kind: string;
+  display: string;
+  historical?: boolean;
+  stack_name?: string;
+}
+
+export interface SecurityCoverage {
+  status: string;
+  predicates_total: number;
+  predicates_evaluated: number;
+  predicates_unknown: number;
+  included_scopes: string[];
+  excluded_scopes: string[];
+  unknown_gaps: number;
+}
+
+export interface SecuritySubject {
+  kind: string;
+  name: string;
+}
+
+export interface SecurityEvidenceFacet {
+  basis: string;
+  availability: string;
+  freshness: string;
+  freshness_condition?: string;
+  observed_at?: string;
+  verified_at?: string;
+  scanned_at?: string;
+  producer?: string;
+  producer_version?: string;
+  ruleset?: string;
+  digest?: string;
+}
+
+export interface SecurityAction {
+  id: string;
+  label: string;
+  path: string;
+}
+
+export interface SecurityCheck {
+  id: string;
+  predicate: string;
+  subject: SecuritySubject;
+  outcome: SecurityOutcome;
+  reason_code: string;
+  explanation: string;
+  evidence: SecurityEvidenceFacet;
+  suppression?: { codes?: string[]; reason_code: string };
+  actions?: SecurityAction[];
+  limitations?: string[];
+}
+
+export interface SecurityReport {
+  schema_version: string;
+  generated_at: string;
+  source: SecuritySourceIdentity;
+  coverage: SecurityCoverage;
+  checks: SecurityCheck[];
+  limitations: string[];
+  fail_count: number;
+  warn_count: number;
+  unknown_count: number;
+  not_applicable_count: number;
+  pass_count: number;
+}
+
 // Controller decision at the last autoscale tick.
 export type AutoscaleDecisionKind = 'up' | 'down' | 'noop';
 

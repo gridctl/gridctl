@@ -40,4 +40,17 @@ describe('SourceProvenance', () => {
     expect(screen.getByText('https://github.com/example/server.git#main')).toBeInTheDocument();
     expect(screen.getByText('0123456789abcdef')).toBeInTheDocument();
   });
+
+  it('keeps full identifiers in the document without hover-only titles', () => {
+    render(
+      <SourceProvenance
+        kind="Python container"
+        image="gridctl-demo-fetch:0.6.0-a1b2c3d4"
+        source={{ type: 'pypi', package: 'mcp-server-fetch', version: '0.6.0' }}
+      />,
+    );
+    const value = screen.getByText('gridctl-demo-fetch:0.6.0-a1b2c3d4');
+    expect(value).toHaveAttribute('tabIndex', '0');
+    expect(value).not.toHaveAttribute('title');
+  });
 });
