@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gridctl/gridctl/pkg/secreport"
+	"github.com/gridctl/gridctl/pkg/state"
 )
 
 func TestValidateDoctorSecurityFlags(t *testing.T) {
@@ -95,3 +98,87 @@ func (c *countingDoer) Do(*http.Request) (*http.Response, error) {
 	c.n++
 	return nil, secreport.ErrGatewayRequest
 }
+
+func TestLocalControlPlaneOrigin(t *testing.T) {
+	if !localControlPlaneOrigin("http://localhost:8180") {
+		t.Fatal("localhost")
+	}
+	if !localControlPlaneOrigin("http://127.0.0.1:8180") {
+		t.Fatal("loopback")
+	}
+	if localControlPlaneOrigin("https://unrelated.example:8180") {
+		t.Fatal("foreign host")
+	}
+	if localControlPlaneOrigin("http://example.com") {
+		t.Fatal("example.com")
+	}
+	if localControlPlaneOrigin("not-a-url") {
+		t.Fatal("invalid")
+	}
+}
+
+func TestGatewaySecurityDoerDoesNotAttachForeignCredentials(t *testing.T) {
+	t.Cleanup(func() { securityHTTPDoer = nil })
+	home := t.TempDir()
+	t.Setenv("GRIDCTL_HOME", home)
+	st := &state.DaemonState{StackName: "demo", Port: 8180, AuthToken: "canary-local-token", AuthType: "bearer"}
+	if err := state.Save(st); err != nil {
+		t.Fatal(err)
+	}
+	securityHTTPDoer = nil
+	if _, ok := gatewaySecurityDoer("https://unrelated.example:8180").(authorizedDoer); ok {
+		t.Fatal("foreign host must not use authorized doer")
+	}
+	local, ok := gatewaySecurityDoer("http://127.0.0.1:8180").(authorizedDoer)
+	if !ok {
+		t.Fatal("loopback must use authorized doer")
+	}
+	lreq, err := http.NewRequest(http.MethodGet, "http://127.0.0.1:8180/api/security-report", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	local.api.authorize(lreq)
+	if lreq.Header.Get("Authorization") != "Bearer canary-local-token" {
+		t.Fatalf("local auth=%q", lreq.Header.Get("Authorization"))
+	}
+}
+
+func TestExecuteDoctorSecuritySkipsOrdinaryChecks(t *testing.T) {
+	t.Cleanup(func() {
+		doctorSecurity, doctorSource, doctorJSON, doctorQuiet = false, "", false, false
+		runOrdinaryDoctorChecks = runDoctorChecks
+	})
+	runOrdinaryDoctorChecks = func(context.Context) doctorReport {
+		t.Fatal("ordinary doctor checks must not run")
+		return doctorReport{}
+	}
+	path := filepath.Join(t.TempDir(), "stack.yaml")
+	if err := os.WriteFile(path, []byte("version: \"1\"\nname: demo\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	doctorSecurity, doctorSource, doctorJSON = true, "file:"+path, true
+	var buf bytes.Buffer
+	if exit := executeDoctor(context.Background(), &buf); exit != doctorExitOK && exit != doctorExitErrors {
+		t.Fatalf("exit=%d", exit)
+	}
+	if strings.Contains(buf.String(), `"ok"`) {
+		t.Fatal("security JSON must not be ordinary doctor schema")
+	}
+}
+
+func TestRenderSecurityReportWriteError(t *testing.T) {
+	report := secreport.Assemble(time.Now().UTC(), secreport.Inputs{Source: secreport.SourceIdentity{Kind: secreport.SourceFile, Display: "x"}})
+	if exit := renderSecurityReport(errWriter{}, report, false, false); exit != doctorExitFailed {
+		t.Fatalf("text exit=%d", exit)
+	}
+	if exit := renderSecurityReport(errWriter{}, report, false, true); exit != doctorExitFailed {
+		t.Fatalf("quiet exit=%d", exit)
+	}
+	if exit := renderSecurityReport(errWriter{}, report, true, false); exit != doctorExitFailed {
+		t.Fatalf("json exit=%d", exit)
+	}
+}
+
+type errWriter struct{}
+
+func (errWriter) Write([]byte) (int, error) { return 0, errors.New("sink closed") }

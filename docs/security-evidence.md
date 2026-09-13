@@ -17,8 +17,8 @@ gridctl doctor --security --source gateway:http://localhost:8180 --json
 | Kind | Behavior |
 |------|----------|
 | `file:` | Offline parse of authored stack YAML without environment expansion, secret resolution, builds, or registry lookups. Local `extends` may be followed. Optional producer snapshots (pins, execution, startup) are unknown. |
-| `snapshot:` | Offline re-render of a `gridctl.security-report.v1` DTO. Unknown fields are rejected. Original timestamps are preserved. The result is supplied historical evidence, not a fresh verification. |
-| `gateway:` | Authenticated GET of `/api/security-report` only. Redirects, credential-bearing URLs, and URL query or fragment values are rejected. CLI credentials come from recorded daemon state, not the URL. |
+| `snapshot:` | Offline re-render of a `gridctl.security-report.v1` DTO. Unknown fields, invalid enums, duplicate check IDs, and malformed verified claims are rejected. Original timestamps and typed facts are preserved. The result is supplied historical evidence, not a fresh verification. Imported `verified` claims are treated as declared source assertions. |
+| `gateway:` | Authenticated GET of `/api/security-report` only. Redirects, credential-bearing URLs, and URL query or fragment values are rejected. Recorded daemon credentials attach only when the selected base is a loopback control-plane origin; they are never sent to another host. |
 
 Unreadable, invalid, or unsupported primary input exits `2`. Missing optional evidence yields unknown checks and partial coverage, not an empty stack substitute.
 
@@ -35,7 +35,7 @@ Coverage "complete" refers only to this named inventory, not to complete securit
 | `pin.schema.continuity` | Stored pin status. Drift is a known negative observation |
 | `pin.schema.scheme` | Current versus legacy hash scheme coverage |
 | `pin.scan.coverage` | Declared scan configuration; scan time/ruleset may be unknown |
-| `pin.scan.findings` | Stored advisory findings. No findings without coverage is unknown, not a clean scan |
+| `pin.scan.findings` | Stored advisory findings, including historical rows when scanning is later disabled or findings are suppressed. No findings without coverage is unknown, not a clean scan |
 | `skill.pin.baseline` | Skill pin presence, scoped to skill subjects |
 | `skill.pin.continuity` | Skill pin drift |
 | `source.declared` | Authored source or image identity |
@@ -56,7 +56,7 @@ Fail predicates (exit `1`): `pin.schema.continuity` when stored status is drift,
 
 Every fact, message, location, and action is allowlisted. Bounded identifiers (subject names, tool names, package/version, producer names, digest/revision identifiers) may still contain operator-authored secrets; this report cannot detect them. Truncation bounds length; it is not redaction.
 
-Excluded from output and action links: raw config, credential fields and default operands, command arrays, scan snippets and decoded text, raw errors and free text, URL userinfo/query/fragment values, and arbitrary provenance URLs. Actions are links to existing review surfaces such as View pins. There is no approval, auto-fix, or generated secret-bearing command.
+Excluded from output and action links: raw config, credential fields and default operands, expansion-bearing source fields (the operand is omitted, not copied), command arrays, scan snippets and decoded text, raw errors and free text, URL userinfo/query/fragment values, and arbitrary provenance URLs. Limitation text is reconstructed from a known catalog. Actions are links to existing review surfaces such as View pins. There is no approval, auto-fix, or generated secret-bearing command.
 
 ## API and UI
 

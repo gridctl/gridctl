@@ -3,12 +3,15 @@ package config
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 
 	"gopkg.in/yaml.v3"
 )
+
+const maxIndexFileBytes = 1 << 20
 
 // ParseStackIndex parses typed stack YAML, resolves extends, and builds a
 // value-free reference index without environment or store expansion.
@@ -32,7 +35,7 @@ func parseStackIndex(ctx context.Context, path string, visited map[string]bool, 
 	}
 	visited[path] = true
 	defer delete(visited, path)
-	data, err := os.ReadFile(path)
+	data, err := readBoundedRegularFile(ctx, path, maxIndexFileBytes)
 	if err != nil {
 		return nil, fmt.Errorf("reading stack file: %w", err)
 	}
@@ -141,6 +144,39 @@ func DiagnoseDeclarations(stack *Stack, records map[string]VariableMetadata, loc
 		return out[i].Code < out[j].Code
 	})
 	return out
+}
+
+func readBoundedRegularFile(ctx context.Context, path string, limit int64) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("unsupported file type")
+	}
+	if info.Size() > limit {
+		return nil, fmt.Errorf("file exceeds %d bytes", limit)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	limited := io.LimitReader(f, limit+1)
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("file exceeds %d bytes", limit)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 // VariableMetadata is the value-free subset of a stored variable used by

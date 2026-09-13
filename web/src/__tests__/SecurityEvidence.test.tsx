@@ -92,9 +92,12 @@ describe('SecurityEvidence', () => {
       </MemoryRouter>,
     );
     const unknown = await screen.findByText(/unknown: source.declared/);
-    expect(unknown.closest('details')).not.toHaveAttribute('open');
+    const details = unknown.closest('details');
+    expect(details).not.toHaveAttribute('open');
+    unknown.focus();
+    fireEvent.keyDown(unknown, { key: 'Enter' });
     fireEvent.click(unknown);
-    expect(unknown.closest('details')).toHaveAttribute('open');
+    expect(details).toHaveAttribute('open');
   });
 
   it('ignores arbitrary action destinations and canary text from unused fields', async () => {
@@ -126,9 +129,13 @@ describe('SecurityEvidence', () => {
     );
     const button = await screen.findByRole('button', { name: 'Refresh report' });
     expect(screen.getByText(/does not re-observe/)).toBeInTheDocument();
+    button.focus();
+    expect(button).toHaveFocus();
+    fireEvent.keyDown(button, { key: 'Enter' });
     fireEvent.click(button);
     await waitFor(() => expect(fetchSecurityReport).toHaveBeenCalledTimes(2));
     expect(button).toBeInTheDocument();
+    expect(button).toHaveFocus();
   });
 
   it('surfaces source errors without an approval action', async () => {
@@ -140,5 +147,63 @@ describe('SecurityEvidence', () => {
     );
     expect(await screen.findByRole('alert')).toHaveTextContent('Security evidence report is unavailable.');
     expect(screen.queryByRole('button', { name: /approve/i })).not.toBeInTheDocument();
+  });
+
+  it('renders producer metadata, suppression codes, and wraps on a narrow layout', async () => {
+    fetchSecurityReport.mockResolvedValue({
+      ...report,
+      checks: [{
+        ...report.checks[0],
+        evidence: {
+          ...report.checks[0].evidence,
+          producer: 'pins.scan',
+          producer_version: '1',
+          ruleset: 'gridctl-pins',
+          digest: 'h2:abc',
+          verification_method: 'store-record',
+          subject_binding: 'fetch',
+          predicate_scope: 'pin.schema.continuity',
+          scanned_at: '2026-01-01T00:00:00Z',
+        },
+        facts: { instance: 'ctr-1', revision: 'rev-a', finding_codes: ['P001'] },
+        suppression: { reason_code: 'configured_scan_ignore', codes: ['P004'] },
+      }],
+    });
+    const { container } = render(
+      <MemoryRouter>
+        <div style={{ width: 280 }}>
+          <SecurityEvidence scope={{ server: 'fetch' }} />
+        </div>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText(/Producer pins.scan 1/)).toBeInTheDocument();
+    expect(screen.getByText(/Ruleset gridctl-pins/)).toBeInTheDocument();
+    expect(screen.getByText(/Digest h2:abc/)).toBeInTheDocument();
+    expect(screen.getByText(/Method store-record/)).toBeInTheDocument();
+    expect(screen.getByText(/Binding fetch/)).toBeInTheDocument();
+    expect(screen.getByText(/Scanned 2026-01-01T00:00:00Z/)).toBeInTheDocument();
+    expect(screen.getByText(/P004/)).toBeInTheDocument();
+    expect(screen.getByText(/Instance ctr-1/)).toBeInTheDocument();
+    const section = container.querySelector('section');
+    expect(section?.className).toMatch(/max-w-full/);
+    expect(section?.className).toMatch(/overflow-x-hidden/);
+  });
+
+  it('does not execute malicious identifier text', async () => {
+    fetchSecurityReport.mockResolvedValue({
+      ...report,
+      checks: [{
+        ...report.checks[0],
+        subject: { kind: 'server', name: '<img src=x onerror=alert(1)>' },
+        explanation: 'Stored pin status is drift for fetch.',
+      }],
+    });
+    render(
+      <MemoryRouter>
+        <SecurityEvidence scope={{ server: '<img src=x onerror=alert(1)>' }} />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText(/<img src=x onerror=alert\(1\)>/)).toBeInTheDocument();
+    expect(document.querySelector('img')).toBeNull();
   });
 });

@@ -83,6 +83,26 @@ export interface SecurityEvidenceFacet {
   producer_version?: string;
   ruleset?: string;
   digest?: string;
+  verification_method?: string;
+  subject_binding?: string;
+  predicate_scope?: string;
+}
+
+export interface SecurityCheckFacts {
+  declared_source?: string;
+  reference_sites?: number;
+  workload_consumers?: number;
+  unscoped_consumers?: number;
+  finding_codes?: string[];
+  finding_severities?: string[];
+  finding_confidences?: string[];
+  auth_type?: string;
+  bind?: string;
+  effective_bind?: string;
+  kind?: string;
+  recorded_outcome?: string;
+  instance?: string;
+  revision?: string;
 }
 
 export interface SecurityAction {
@@ -99,6 +119,7 @@ export interface SecurityCheck {
   reason_code: string;
   explanation: string;
   evidence: SecurityEvidenceFacet;
+  facts?: SecurityCheckFacts;
   suppression?: { codes?: string[]; reason_code: string };
   actions?: SecurityAction[];
   limitations?: string[];

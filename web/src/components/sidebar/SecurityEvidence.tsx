@@ -50,15 +50,15 @@ export function SecurityEvidence({ scope }: { scope: 'gateway' | { server: strin
   });
 
   return (
-    <section className="rounded-lg border border-border p-3 space-y-3" aria-labelledby={statusId}>
-      <div className="flex items-center justify-between gap-2">
-        <h3 id={statusId} className="text-sm font-medium">
+    <section className="rounded-lg border border-border p-3 space-y-3 max-w-full overflow-x-hidden" aria-labelledby={statusId}>
+      <div className="flex items-center justify-between gap-2 min-w-0">
+        <h3 id={statusId} className="text-sm font-medium break-words min-w-0">
           Security evidence
         </h3>
         <button
           type="button"
           onClick={refresh}
-          className="text-xs px-2 py-1 rounded-md border border-border hover:bg-surface-highlight"
+          className="text-xs px-2 py-1 rounded-md border border-border hover:bg-surface-highlight shrink-0"
         >
           Refresh report
         </button>
@@ -92,13 +92,25 @@ function CheckRow({ check }: { check: SecurityCheck }) {
         Basis {check.evidence.basis}; availability {check.evidence.availability}; freshness {check.evidence.freshness}
         {check.evidence.freshness_condition ? ` (${check.evidence.freshness_condition})` : ''}.
       </p>
+      {check.evidence.producer && <p className="text-xs break-all" tabIndex={0}>Producer {check.evidence.producer}{check.evidence.producer_version ? ` ${check.evidence.producer_version}` : ''}</p>}
+      {check.evidence.ruleset && <p className="text-xs break-all" tabIndex={0}>Ruleset {check.evidence.ruleset}</p>}
+      {check.evidence.digest && <p className="text-xs break-all" tabIndex={0}>Digest {check.evidence.digest}</p>}
+      {check.evidence.verification_method && <p className="text-xs break-all" tabIndex={0}>Method {check.evidence.verification_method}</p>}
+      {check.evidence.subject_binding && <p className="text-xs break-all" tabIndex={0}>Binding {check.evidence.subject_binding}</p>}
+      {check.evidence.predicate_scope && <p className="text-xs break-all" tabIndex={0}>Predicate scope {check.evidence.predicate_scope}</p>}
+      {check.facts?.instance && <p className="text-xs break-all" tabIndex={0}>Instance {check.facts.instance}</p>}
+      {check.facts?.revision && <p className="text-xs break-all" tabIndex={0}>Revision {check.facts.revision}</p>}
       {check.evidence.observed_at && <p className="text-xs">Observed {check.evidence.observed_at}</p>}
       {check.evidence.verified_at && <p className="text-xs">Verified {check.evidence.verified_at}</p>}
+      {check.evidence.scanned_at && <p className="text-xs">Scanned {check.evidence.scanned_at}</p>}
       {check.limitations?.map((item) => (
         <p key={item} className="text-xs break-words">{item}</p>
       ))}
       {check.suppression && (
-        <p className="text-xs break-words">Suppression metadata: {check.suppression.reason_code}. Not a pass.</p>
+        <p className="text-xs break-words">
+          Suppression metadata: {check.suppression.reason_code}
+          {check.suppression.codes?.length ? ` (${check.suppression.codes.join(', ')})` : ''}. Not a pass.
+        </p>
       )}
       {(check.actions ?? []).map((action) => {
         if (!action.path.startsWith(ALLOWED_ACTION_PREFIX) || action.path.includes('://')) return null;

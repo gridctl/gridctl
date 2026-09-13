@@ -9,8 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
+
+	"github.com/gridctl/gridctl/pkg/pins"
+	"github.com/gridctl/gridctl/pkg/skillpins"
 )
 
 func TestParseSource(t *testing.T) {
@@ -183,3 +187,300 @@ func reportString(report *Report) string {
 	_ = WriteJSON(&b, report)
 	return b.String()
 }
+
+func TestParseSnapshotRejectsInvalid(t *testing.T) {
+	now := time.Date(2026, 9, 13, 0, 0, 0, 0, time.UTC)
+	valid := Assemble(now, Inputs{Source: SourceIdentity{Kind: SourceFile, Display: "stack.yaml"}, Stack: &StackView{Name: "demo", Gateway: &GatewayDeclView{}, SetMembers: map[string][]string{}}})
+	raw, err := json.Marshal(valid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := ParseSnapshot(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.GeneratedAt.IsZero() {
+		t.Fatal("generated_at required")
+	}
+
+	missingTime := []byte(`{"schema_version":"gridctl.security-report.v1","source":{"kind":"file","display":"x"},"coverage":{"status":"none","predicates_total":0,"predicates_evaluated":0,"predicates_unknown":0,"included_scopes":[],"excluded_scopes":[],"unknown_gaps":0},"checks":[],"limitations":[],"fail_count":0,"warn_count":0,"unknown_count":0,"not_applicable_count":0,"pass_count":0}`)
+	if _, err := ParseSnapshot(missingTime); !errors.Is(err, ErrSourceInvalidFmt) {
+		t.Fatalf("missing generated_at err=%v", err)
+	}
+
+	dup := Assemble(now, Inputs{Source: SourceIdentity{Kind: SourceFile, Display: "stack.yaml"}, Stack: &StackView{Name: "demo", Gateway: &GatewayDeclView{}, SetMembers: map[string][]string{}}})
+	if len(dup.Checks) < 2 {
+		t.Fatal("need checks")
+	}
+	dup.Checks[1].ID = dup.Checks[0].ID
+	dupRaw, _ := json.Marshal(dup)
+	if _, err := ParseSnapshot(dupRaw); !errors.Is(err, ErrSourceInvalidFmt) {
+		t.Fatalf("duplicate id err=%v", err)
+	}
+
+	invalidEnum := Assemble(now, Inputs{Source: SourceIdentity{Kind: SourceFile, Display: "stack.yaml"}, Stack: &StackView{Name: "demo", Gateway: &GatewayDeclView{}, SetMembers: map[string][]string{}}})
+	invalidEnum.Checks[0].Outcome = "excellent"
+	enumRaw, _ := json.Marshal(invalidEnum)
+	if _, err := ParseSnapshot(enumRaw); !errors.Is(err, ErrSourceInvalidFmt) {
+		t.Fatalf("invalid outcome err=%v", err)
+	}
+
+	badFail := Assemble(now, Inputs{Source: SourceIdentity{Kind: SourceFile, Display: "stack.yaml"}, Stack: &StackView{Name: "demo", Gateway: &GatewayDeclView{}, SetMembers: map[string][]string{}}})
+	for i := range badFail.Checks {
+		if badFail.Checks[i].Predicate == PredVarCompleteness {
+			badFail.Checks[i].Outcome = OutcomeFail
+			break
+		}
+	}
+	failRaw, _ := json.Marshal(badFail)
+	if _, err := ParseSnapshot(failRaw); !errors.Is(err, ErrSourceInvalidFmt) {
+		t.Fatalf("invalid fail predicate err=%v", err)
+	}
+
+	malformed := Assemble(now, Inputs{Source: SourceIdentity{Kind: SourceFile, Display: "stack.yaml"}, Stack: &StackView{Name: "demo", Gateway: &GatewayDeclView{}, SetMembers: map[string][]string{}}})
+	malformed.Checks[0].Evidence.Basis = BasisVerified
+	malformed.Checks[0].Evidence.VerificationMethod = ""
+	malformed.Checks[0].Evidence.SubjectBinding = ""
+	malformed.Checks[0].Evidence.PredicateScope = ""
+	malRaw, _ := json.Marshal(malformed)
+	if _, err := ParseSnapshot(malRaw); !errors.Is(err, ErrSourceInvalidFmt) {
+		t.Fatalf("malformed verified err=%v", err)
+	}
+}
+
+func TestParseSnapshotSparseIsPartial(t *testing.T) {
+	payload := []byte(`{"schema_version":"gridctl.security-report.v1","generated_at":"2026-09-13T00:00:00Z","source":{"kind":"file","display":"x"},"coverage":{"status":"complete","predicates_total":19,"predicates_evaluated":1,"predicates_unknown":0,"included_scopes":[],"excluded_scopes":[],"unknown_gaps":0},"checks":[{"id":"pin.schema.store.gateway","predicate":"pin.schema.store","subject":{"kind":"gateway","name":"gateway"},"outcome":"pass","reason_code":"store_available","explanation":"x","evidence":{"basis":"declared","availability":"available","freshness":"unknown"}}],"limitations":[],"fail_count":0,"warn_count":0,"unknown_count":0,"not_applicable_count":0,"pass_count":1}`)
+	report, err := ParseSnapshot(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Coverage.Status != CoveragePartial && report.Coverage.Status != CoverageNone {
+		t.Fatalf("coverage=%s", report.Coverage.Status)
+	}
+	if len(report.Coverage.ExcludedScopes) == 0 {
+		t.Fatal("expected excluded scopes for sparse snapshot")
+	}
+}
+
+func TestImportedVerifiedIsDemoted(t *testing.T) {
+	payload := []byte(`{"schema_version":"gridctl.security-report.v1","generated_at":"2026-09-13T00:00:00Z","source":{"kind":"snapshot","display":"x","historical":true},"coverage":{"status":"partial","predicates_total":19,"predicates_evaluated":1,"predicates_unknown":0,"included_scopes":[],"excluded_scopes":[],"unknown_gaps":0},"checks":[{"id":"source.signature.fetch","predicate":"source.signature","subject":{"kind":"server","name":"fetch"},"outcome":"pass","reason_code":"signature_bound","explanation":"trusted","evidence":{"basis":"verified","availability":"available","freshness":"current","verification_method":"bound_producer","subject_binding":"fetch","predicate_scope":"source.signature"}}],"limitations":[],"fail_count":0,"warn_count":0,"unknown_count":0,"not_applicable_count":0,"pass_count":1}`)
+	report, err := ParseSnapshot(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Checks[0].Evidence.Basis == BasisVerified {
+		t.Fatal("imported snapshot must not keep verified")
+	}
+	if report.Checks[0].Evidence.Freshness == FreshnessCurrent {
+		t.Fatal("imported snapshot must not keep freshness current")
+	}
+	if strings.Contains(report.Checks[0].Explanation, "bound trusted producer") {
+		t.Fatalf("explanation=%s", report.Checks[0].Explanation)
+	}
+}
+
+func TestExpansionOperandsOmittedFromSource(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "stack.yaml")
+	body := "version: \"1\"\nname: demo\nmcp-servers:\n  - name: demo\n    image: \"${IMAGE:-canary-default-operand}\"\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report, err := Load(context.Background(), SourceRef{Kind: SourceFile, Value: path}, &countingDoer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := reportString(report)
+	if strings.Contains(raw, "canary-default-operand") {
+		t.Fatal("default operand leaked")
+	}
+}
+
+func TestSnapshotFreeTextLimitationsDropped(t *testing.T) {
+	now := time.Date(2026, 9, 13, 0, 0, 0, 0, time.UTC)
+	report := Assemble(now, Inputs{Source: SourceIdentity{Kind: SourceFile, Display: "stack.yaml"}, Stack: &StackView{Name: "demo", Gateway: &GatewayDeclView{}, SetMembers: map[string][]string{}}})
+	report.Checks[0].Limitations = append(report.Checks[0].Limitations, "canary-private-free-text")
+	report.Checks[0].ReasonCode = "findings_present"
+	data, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := ParseSnapshot(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := reportString(parsed)
+	if strings.Contains(raw, "canary-private-free-text") {
+		t.Fatal("free text limitation retained")
+	}
+}
+
+func TestSnapshotRoundTripPreservesFacts(t *testing.T) {
+	now := time.Date(2026, 9, 13, 0, 0, 0, 0, time.UTC)
+	original := Assemble(now, Inputs{
+		Source: SourceIdentity{Kind: SourceFile, Display: "stack.yaml"},
+		Stack: &StackView{
+			Name: "demo", Gateway: &GatewayDeclView{AuthDeclared: true, AuthType: "bearer", Bind: "127.0.0.1"}, SetMembers: map[string][]string{},
+			Servers:    []ServerView{{Name: "demo", Kind: "container", Image: "example/demo:1"}},
+			References: map[string][]ReferenceSite{"TOKEN": {{Kind: "mcp-server", Name: "demo"}, {Kind: "mcp-server", Name: "demo"}}},
+		},
+	})
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := ParseSnapshot(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var origSrc, parsedSrc string
+	var origSites, parsedSites int
+	for _, c := range original.Checks {
+		if c.Predicate == PredSourceDeclared && c.Facts.DeclaredSource != "" {
+			origSrc = c.Facts.DeclaredSource
+		}
+		if c.Predicate == PredVarReferences && c.Facts.ReferenceSites != nil {
+			origSites = *c.Facts.ReferenceSites
+		}
+	}
+	for _, c := range parsed.Checks {
+		if c.Predicate == PredSourceDeclared {
+			parsedSrc = c.Facts.DeclaredSource
+			if !strings.Contains(c.Explanation, "example/demo:1") {
+				t.Fatalf("explanation lost source identity: %s", c.Explanation)
+			}
+		}
+		if c.Predicate == PredVarReferences && c.Facts.ReferenceSites != nil {
+			parsedSites = *c.Facts.ReferenceSites
+			if !strings.Contains(c.Explanation, "Counted") {
+				t.Fatalf("explanation lost counts: %s", c.Explanation)
+			}
+		}
+	}
+	if origSrc != parsedSrc || origSrc == "" {
+		t.Fatalf("source facts orig=%q parsed=%q", origSrc, parsedSrc)
+	}
+	if origSites != parsedSites || origSites == 0 {
+		t.Fatalf("sites orig=%d parsed=%d", origSites, parsedSites)
+	}
+}
+
+func TestLoadSnapshotBoundsAndSpecialFiles(t *testing.T) {
+	dir := t.TempDir()
+	oversize := filepath.Join(dir, "big.json")
+	if err := os.WriteFile(oversize, []byte(strings.Repeat("a", maxSnapshotBytes+2)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadSnapshot(context.Background(), oversize); !errors.Is(err, ErrSourceInvalidFmt) {
+		t.Fatalf("oversize err=%v", err)
+	}
+	fifo := filepath.Join(dir, "fifo")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadSnapshot(context.Background(), fifo); !errors.Is(err, ErrSourceUnreadable) {
+		t.Fatalf("fifo err=%v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := LoadSnapshot(ctx, filepath.Join(dir, "missing.json")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled err=%v", err)
+	}
+}
+
+func TestPinViewFromStorePreservesFindingMetadata(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.json")
+	body := `{
+  "version": "2",
+  "stack": "demo",
+  "created_at": "2026-01-01T00:00:00Z",
+  "servers": {
+    "fetch": {
+      "server_hash": "h2:abc",
+      "pinned_at": "2026-01-01T00:00:00Z",
+      "last_verified_at": "2026-01-02T00:00:00Z",
+      "tool_count": 1,
+      "status": "pinned",
+      "tools": {
+        "get": {
+          "hash": "h2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "name": "get",
+          "pinned_at": "2026-01-01T00:00:00Z",
+          "findings": [
+            {"code": "P001", "severity": "warn", "confidence": "high", "field": "description", "message": "canary-finding-message", "snippet": "canary-snippet"}
+          ]
+        }
+      }
+    }
+  }
+}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ps := pins.NewWithPath(dir, "demo")
+	if err := ps.Load(); err != nil {
+		t.Fatal(err)
+	}
+	view := PinViewFromStore(ps, true, &ScanDeclView{Enabled: true})
+	if view == nil || view.Servers["fetch"].Findings[0].Code != "P001" {
+		t.Fatalf("%+v", view)
+	}
+	if view.Servers["fetch"].Findings[0].Severity != "warn" || view.Servers["fetch"].Findings[0].Confidence != "high" {
+		t.Fatal("expected severity and confidence")
+	}
+	raw, _ := json.Marshal(view)
+	if strings.Contains(string(raw), "canary-snippet") || strings.Contains(string(raw), "canary-finding-message") {
+		t.Fatal("snippet leaked")
+	}
+}
+
+func TestSkillPinViewFromStorePreservesStatus(t *testing.T) {
+	dir := t.TempDir()
+	body := `{
+  "version": "1",
+  "stack": "demo",
+  "created_at": "2026-01-01T00:00:00Z",
+  "skills": {
+    "notes": {
+      "skill_hash": "abc",
+      "source": "git",
+      "pinned_at": "2026-01-01T00:00:00Z",
+      "last_verified_at": "2026-01-02T00:00:00Z",
+      "status": "drift",
+      "findings": [{"code": "P001", "severity": "warn", "confidence": "low", "field": "body", "message": "canary-skill-message"}]
+    }
+  }
+}`
+	if err := os.WriteFile(filepath.Join(dir, "demo.skills.json"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ps := skillpins.NewWithPath(dir, "demo")
+	if err := ps.Load(); err != nil {
+		t.Fatal(err)
+	}
+	view := SkillPinViewFromStore(ps)
+	if view == nil || view.Skills["notes"].Status != "drift" {
+		t.Fatalf("%+v", view)
+	}
+	raw, _ := json.Marshal(view)
+	if strings.Contains(string(raw), "canary-skill-message") {
+		t.Fatal("skill finding message leaked")
+	}
+}
+
+func TestWriteTextPropagatesErrors(t *testing.T) {
+	report := Assemble(time.Date(2026, 9, 13, 0, 0, 0, 0, time.UTC), Inputs{Source: SourceIdentity{Kind: SourceFile, Display: "x"}, Stack: &StackView{Name: "demo", Gateway: &GatewayDeclView{}, SetMembers: map[string][]string{}}})
+	if err := WriteText(errWriter{}, report, false); err == nil {
+		t.Fatal("expected text write error")
+	}
+	if err := WriteText(errWriter{}, report, true); err == nil {
+		t.Fatal("expected quiet text write error")
+	}
+	if err := WriteJSON(errWriter{}, report); err == nil {
+		t.Fatal("expected json write error")
+	}
+}
+
+type errWriter struct{}
+
+func (errWriter) Write([]byte) (int, error) { return 0, errors.New("sink closed") }

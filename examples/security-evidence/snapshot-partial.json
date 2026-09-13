@@ -24,7 +24,7 @@
       "outcome": "fail",
       "reason_code": "pin_status_drift",
       "explanation": "Stored pin status is drift for fetch.",
-      "evidence": { "basis": "declared", "availability": "available", "freshness": "unknown" },
+      "evidence": { "basis": "declared", "availability": "available", "freshness": "stale", "freshness_condition": "producer_timestamp_present_without_current_binding", "verified_at": "2025-01-01T00:00:00Z" },
       "limitations": ["Known negative observation from the pin store."]
     },
     {

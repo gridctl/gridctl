@@ -11,9 +11,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
+	"github.com/gridctl/gridctl/pkg/execution"
 	"github.com/gridctl/gridctl/pkg/pins"
 	"github.com/gridctl/gridctl/pkg/secreport"
 	"github.com/gridctl/gridctl/pkg/vault"
@@ -118,6 +120,84 @@ func TestHandleSecurityReport_MethodNotAllowed(t *testing.T) {
 func TestIsProtectedPath_SecurityReport(t *testing.T) {
 	if !isProtectedPath("/api/security-report") {
 		t.Fatal("expected protected")
+	}
+}
+
+func TestHandleSecurityReport_FailedRegistration(t *testing.T) {
+	srv := newTestServer(t)
+	docker := &countingDocker{}
+	srv.SetDockerClient(docker)
+	srv.gateway.RecordExecutionFailure("hardened", &execution.Report{
+		Mode: "hardened", Outcome: "failed", Instance: "ctr-1", Revision: "rev-a",
+		ObservedAt: time.Now().UTC(), Runtime: "docker-compatible",
+	}, errors.New("replacement failed"))
+	handler := srv.Handler()
+	req := loopbackRequest(http.MethodGet, "/api/security-report", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d", rec.Code)
+	}
+	if docker.calls != 0 {
+		t.Fatalf("docker calls=%d", docker.calls)
+	}
+	var report secreport.Report
+	if err := json.Unmarshal(rec.Body.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, c := range report.Checks {
+		if c.Predicate == secreport.PredExecutionEnforcement && strings.Contains(c.Subject.Name, "hardened") {
+			found = true
+			if c.Outcome != secreport.OutcomeFail {
+				t.Fatalf("outcome=%s", c.Outcome)
+			}
+			if c.Facts.Instance != "ctr-1" || c.Facts.Revision != "rev-a" {
+				t.Fatalf("facts=%+v", c.Facts)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected failed-registration enforcement check")
+	}
+}
+
+func TestHandleSecurityReport_PrimaryInputErrorAndNoMutation(t *testing.T) {
+	srv := newTestServer(t)
+	docker := &countingDocker{}
+	srv.SetDockerClient(docker)
+	srv.SetStackFile(filepath.Join(t.TempDir(), "missing.yaml"))
+	dir := t.TempDir()
+	ps := pins.NewWithPath(dir, "demo")
+	if err := ps.Load(); err != nil {
+		t.Fatal(err)
+	}
+	srv.SetPinStore(ps)
+	pinPath := filepath.Join(dir, "demo.json")
+	if err := os.WriteFile(pinPath, []byte(`{"version":"2","stack":"demo","servers":{}}`), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	store := vault.NewStore(t.TempDir())
+	srv.SetVaultStore(store)
+	handler := srv.Handler()
+	req := loopbackRequest(http.MethodGet, "/api/security-report", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if docker.calls != 0 {
+		t.Fatalf("docker calls=%d", docker.calls)
+	}
+	src, err := os.ReadFile("security_report.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(src)
+	for _, forbidden := range []string{"VerifyOrPin", "GetSetSecrets", "vaultStore", "ImagePull", "ScanTool"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("security report path references %s", forbidden)
+		}
 	}
 }
 

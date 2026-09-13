@@ -138,9 +138,28 @@ type Check struct {
 	ReasonCode  string       `json:"reason_code"`
 	Explanation string       `json:"explanation"`
 	Evidence    Evidence     `json:"evidence"`
+	Facts       CheckFacts   `json:"facts,omitempty"`
 	Suppression *Suppression `json:"suppression,omitempty"`
 	Actions     []Action     `json:"actions,omitempty"`
 	Limitations []string     `json:"limitations,omitempty"`
+}
+
+// CheckFacts are typed, allowlisted values used to rebuild explanations.
+type CheckFacts struct {
+	DeclaredSource     string   `json:"declared_source,omitempty"`
+	ReferenceSites     *int     `json:"reference_sites,omitempty"`
+	WorkloadConsumers  *int     `json:"workload_consumers,omitempty"`
+	UnscopedConsumers  *int     `json:"unscoped_consumers,omitempty"`
+	FindingCodes       []string `json:"finding_codes,omitempty"`
+	FindingSeverities  []string `json:"finding_severities,omitempty"`
+	FindingConfidences []string `json:"finding_confidences,omitempty"`
+	AuthType           string   `json:"auth_type,omitempty"`
+	Bind               string   `json:"bind,omitempty"`
+	EffectiveBind      string   `json:"effective_bind,omitempty"`
+	Kind               string   `json:"kind,omitempty"`
+	RecordedOutcome    string   `json:"recorded_outcome,omitempty"`
+	Instance           string   `json:"instance,omitempty"`
+	Revision           string   `json:"revision,omitempty"`
 }
 
 // Subject is a bounded identity for the check.
@@ -166,6 +185,8 @@ type Evidence struct {
 	SubjectBinding     string     `json:"subject_binding,omitempty"`
 	PredicateScope     string     `json:"predicate_scope,omitempty"`
 }
+
+func intPtr(v int) *int { return &v }
 
 // Suppression is independent metadata and never a pass substitute.
 type Suppression struct {

@@ -94,27 +94,9 @@ Exit codes:
   gridctl doctor --security --source gateway:http://localhost:8180`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := validateDoctorSecurityFlags(); err != nil {
-			fmt.Fprintln(os.Stderr, securityDoctorMessage(err))
-			os.Exit(doctorExitFailed)
-		}
 		ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
 		defer cancel()
-		if doctorSecurity {
-			report, err := runSecurityDoctor(ctx)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, securityDoctorMessage(err))
-				os.Exit(doctorExitFailed)
-			}
-			exit := renderSecurityReport(os.Stdout, report, doctorJSON, doctorQuiet)
-			if exit != doctorExitOK {
-				os.Exit(exit)
-			}
-			return nil
-		}
-
-		report := runDoctorChecks(ctx)
-		exit := renderDoctorReport(os.Stdout, report, doctorJSON, doctorQuiet)
+		exit := executeDoctor(ctx, os.Stdout)
 		if exit != doctorExitOK {
 			os.Exit(exit)
 		}
@@ -127,6 +109,25 @@ func init() {
 	doctorCmd.Flags().BoolVarP(&doctorQuiet, "quiet", "q", false, "Only print failing and warning checks")
 	doctorCmd.Flags().BoolVar(&doctorSecurity, "security", false, "Emit a passive security evidence report instead of environment checks")
 	doctorCmd.Flags().StringVar(&doctorSource, "source", "", "Security report source: file:<path>, snapshot:<path>, or gateway:<base-url>")
+}
+
+var runOrdinaryDoctorChecks = runDoctorChecks
+
+func executeDoctor(ctx context.Context, stdout io.Writer) int {
+	if err := validateDoctorSecurityFlags(); err != nil {
+		fmt.Fprintln(os.Stderr, securityDoctorMessage(err))
+		return doctorExitFailed
+	}
+	if doctorSecurity {
+		report, err := runSecurityDoctor(ctx)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, securityDoctorMessage(err))
+			return doctorExitFailed
+		}
+		return renderSecurityReport(stdout, report, doctorJSON, doctorQuiet)
+	}
+	report := runOrdinaryDoctorChecks(ctx)
+	return renderDoctorReport(stdout, report, doctorJSON, doctorQuiet)
 }
 
 // runDoctorChecks executes every check and aggregates the report.

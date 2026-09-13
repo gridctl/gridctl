@@ -49,6 +49,8 @@ type ServerView struct {
 type ReferenceSite struct {
 	Kind       string
 	Name       string
+	Target     string
+	TargetKind string
 	Untargeted bool
 }
 

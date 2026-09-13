@@ -59,7 +59,9 @@ func summarize(report *Report) {
 	evaluated := map[string]bool{}
 	for i := range report.Checks {
 		c := &report.Checks[i]
-		evaluated[c.Predicate] = true
+		if knownPredicate(c.Predicate) {
+			evaluated[c.Predicate] = true
+		}
 		switch c.Outcome {
 		case OutcomeFail:
 			report.FailCount++
@@ -70,21 +72,32 @@ func summarize(report *Report) {
 			unknownPred[c.Predicate] = true
 		case OutcomeNotApplicable:
 			report.NotApplicableCount++
-		default:
+		case OutcomePass:
 			report.PassCount++
+		default:
+			report.UnknownCount++
+			unknownPred[c.Predicate] = true
 		}
 	}
-	included := append([]string{}, PredicateInventory...)
+	included := make([]string, 0, len(PredicateInventory))
+	excluded := make([]string, 0)
+	for _, pred := range PredicateInventory {
+		if evaluated[pred] {
+			included = append(included, pred)
+		} else {
+			excluded = append(excluded, pred)
+		}
+	}
 	report.Coverage = Coverage{
 		PredicatesTotal:     len(PredicateInventory),
-		PredicatesEvaluated: len(evaluated),
+		PredicatesEvaluated: len(included),
 		PredicatesUnknown:   len(unknownPred),
 		IncludedScopes:      included,
-		ExcludedScopes:      []string{},
+		ExcludedScopes:      excluded,
 		UnknownGaps:         report.UnknownCount,
 		Status:              CoverageComplete,
 	}
-	if report.UnknownCount > 0 {
+	if len(excluded) > 0 || report.UnknownCount > 0 {
 		report.Coverage.Status = CoveragePartial
 	}
 	if report.PassCount+report.FailCount+report.WarnCount == 0 {
@@ -247,36 +260,53 @@ func scanCoverageCheck(scan *ScanDeclView, servers map[string]ServerPinView) Che
 
 func scanFindingCheck(name string, rec ServerPinView, hasRecord bool, scan *ScanDeclView) Check {
 	lim := []string{"Heuristic findings remain warnings.", "Absence of findings is not a completed clean scan.", "Finding snippets are omitted."}
-	if scan != nil && !scan.Enabled {
-		return check("pin.scan.findings."+name, PredPinScanFindings, serverSubject(name), OutcomeNotApplicable, "scan_disabled", "Advisory findings are not applicable while scanning is disabled.", declaredEvidence(), []string{"Not applicable because scanning is disabled."})
-	}
 	if !hasRecord {
+		if scan != nil && !scan.Enabled {
+			return check("pin.scan.findings."+name, PredPinScanFindings, serverSubject(name), OutcomeNotApplicable, "scan_disabled", "Advisory findings are not applicable while scanning is disabled.", declaredEvidence(), []string{"Not applicable because scanning is disabled."})
+		}
 		return check("pin.scan.findings."+name, PredPinScanFindings, serverSubject(name), OutcomeUnknown, "findings_unavailable", "Stored advisory findings are unavailable without a pin record.", unknownEvidence(), lim)
 	}
-	active := 0
-	var codes []string
-	var suppression *Suppression
-	ignored := []string{}
+	var codes, severities, confidences, ignored []string
 	for _, f := range rec.Findings {
-		if f.Suppressed {
-			ignored = append(ignored, f.Code)
+		if f.Code == "" {
 			continue
 		}
-		active++
 		codes = append(codes, f.Code)
+		if f.Severity != "" {
+			severities = append(severities, f.Severity)
+		}
+		if f.Confidence != "" {
+			confidences = append(confidences, f.Confidence)
+		}
+		if f.Suppressed {
+			ignored = append(ignored, f.Code)
+		}
 	}
+	var suppression *Suppression
 	if len(ignored) > 0 {
 		suppression = &Suppression{Codes: unique(ignored), ReasonCode: "configured_scan_ignore"}
 	}
-	ev := declaredEvidence()
-	ev.Producer = "pins.scan"
-	if active == 0 {
+	if scan != nil && !scan.Enabled {
+		lim = append(lim, "Historical findings remain available independently of current scan enablement.")
+	}
+	facts := CheckFacts{FindingCodes: unique(codes), FindingSeverities: unique(severities), FindingConfidences: unique(confidences)}
+	if len(codes) == 0 {
 		item := check("pin.scan.findings."+name, PredPinScanFindings, serverSubject(name), OutcomeUnknown, "findings_absent_no_coverage", "No stored findings for "+name+" without scan time or ruleset; this is not a completed clean scan.", unknownEvidence(), lim, viewPinsAction(name))
 		item.Suppression = suppression
+		item.Facts = facts
 		return item
 	}
-	item := check("pin.scan.findings."+name, PredPinScanFindings, serverSubject(name), OutcomeWarn, "findings_present", "Stored advisory findings for "+name+": "+strings.Join(unique(codes), ", ")+".", ev, lim, viewPinsAction(name))
+	ev := declaredEvidence()
+	ev.Producer = "pins.scan"
+	reason := "findings_present"
+	text := "Stored advisory findings for " + name + ": " + strings.Join(unique(codes), ", ") + "."
+	if len(ignored) == len(unique(codes)) {
+		reason = "findings_present_suppressed"
+		text = "Stored advisory findings for " + name + " are present and suppressed: " + strings.Join(unique(codes), ", ") + "."
+	}
+	item := check("pin.scan.findings."+name, PredPinScanFindings, serverSubject(name), OutcomeWarn, reason, text, ev, lim, viewPinsAction(name))
 	item.Suppression = suppression
+	item.Facts = facts
 	return item
 }
 
@@ -338,7 +368,9 @@ func declaredSourceCheck(srv ServerView) Check {
 	name := srv.Name
 	lim := []string{"Declared source; running artifact verification unavailable."}
 	if srv.Kind != "container" {
-		return check("source.declared."+name, PredSourceDeclared, serverSubject(name), OutcomeNotApplicable, "noncontainer_subject", "Container source identity is not applicable for "+srv.Kind+" subjects.", declaredEvidence(), []string{"Not applicable for non-container subjects. This is not a claim that remote execution is secure."})
+		item := check("source.declared."+name, PredSourceDeclared, serverSubject(name), OutcomeNotApplicable, "noncontainer_subject", "Container source identity is not applicable for "+srv.Kind+" subjects.", declaredEvidence(), []string{"Not applicable for non-container subjects. This is not a claim that remote execution is secure."})
+		item.Facts = CheckFacts{Kind: srv.Kind}
+		return item
 	}
 	parts := []string{}
 	if srv.SourcePackage != "" {
@@ -359,7 +391,10 @@ func declaredSourceCheck(srv ServerView) Check {
 	if len(parts) == 0 {
 		return check("source.declared."+name, PredSourceDeclared, serverSubject(name), OutcomeUnknown, "source_undeclared", "Authored source identity for "+name+" is unavailable.", unknownEvidence(), lim)
 	}
-	return check("source.declared."+name, PredSourceDeclared, serverSubject(name), OutcomePass, "source_declared", "Declared source for "+name+": "+strings.Join(parts, " ")+".", declaredEvidence(), lim)
+	identity := strings.Join(parts, " ")
+	item := check("source.declared."+name, PredSourceDeclared, serverSubject(name), OutcomePass, "source_declared", "Declared source for "+name+": "+identity+".", declaredEvidence(), lim)
+	item.Facts = CheckFacts{DeclaredSource: identity}
+	return item
 }
 
 func digestCheck(srv ServerView) Check {
@@ -384,7 +419,9 @@ func imageObservedCheck(srv ServerView) Check {
 	}
 	if img := SanitizeIdentifier(srv.ObservedImage); img != "" {
 		ev := observedEvidence(time.Time{})
-		return check("source.image_observed."+name, PredSourceImageObserved, serverSubject(name), OutcomePass, "image_observed", "Observed image reference for "+name+": "+img+".", ev, lim)
+		item := check("source.image_observed."+name, PredSourceImageObserved, serverSubject(name), OutcomePass, "image_observed", "Observed image reference for "+name+": "+img+".", ev, lim)
+		item.Facts = CheckFacts{DeclaredSource: img}
+		return item
 	}
 	return check("source.image_observed."+name, PredSourceImageObserved, serverSubject(name), OutcomeUnknown, "image_unobserved", "Observed image reference for "+name+" is unavailable.", unknownEvidence(), lim)
 }
@@ -411,7 +448,8 @@ func signatureCheck(srv ServerView) Check {
 		ev.VerificationMethod = "bound_producer"
 		ev.SubjectBinding = name
 		ev.PredicateScope = PredSourceSignature
-		return check("source.signature."+name, PredSourceSignature, serverSubject(name), OutcomePass, "signature_bound", "A bound trusted producer supplied signature evidence for "+name+".", ev, lim)
+		item := check("source.signature."+name, PredSourceSignature, serverSubject(name), OutcomePass, "signature_bound", "A bound trusted producer supplied signature evidence for "+name+".", ev, lim)
+		return item
 	}
 	return check("source.signature."+name, PredSourceSignature, serverSubject(name), OutcomeUnknown, "signature_unavailable", "Downstream signature evidence for "+name+" is unavailable.", unknownEvidence(), lim)
 }
@@ -439,29 +477,55 @@ func varChecks(in Inputs) []Check {
 func referenceCheck(stack *StackView, complete bool) Check {
 	sites := 0
 	consumers := map[string]bool{}
-	untargeted := stack.UnscopedSetCount
+	untargeted := 0
 	for _, refs := range stack.References {
 		sites += len(refs)
 		for _, ref := range refs {
-			if ref.Untargeted {
-				untargeted++
+			if ref.Kind == "secrets-set" {
+				if ref.Untargeted || ref.Target == "" {
+					untargeted++
+					continue
+				}
+				if isWorkloadKind(ref.TargetKind) && ref.Target != "" {
+					consumers[ref.TargetKind+":"+ref.Target] = true
+				}
 				continue
 			}
-			if ref.Name != "" {
+			if isWorkloadKind(ref.Kind) && ref.Name != "" {
 				consumers[ref.Kind+":"+ref.Name] = true
 			}
 		}
 	}
+	if stack.UnscopedSetCount > untargeted {
+		untargeted = stack.UnscopedSetCount
+	}
 	text := "Counted " + strconv.Itoa(sites) + " variable reference sites and " + strconv.Itoa(len(consumers)) + " distinct declared workload consumers"
 	if untargeted > 0 {
 		text += ", plus " + strconv.Itoa(untargeted) + " unscoped set consumers"
+	}
+	if !complete {
+		text += "; membership is incomplete"
 	}
 	text += "."
 	reason := "references_counted"
 	if !complete {
 		reason = "references_partial"
 	}
-	return check("var.references.gateway", PredVarReferences, gatewaySubject(), OutcomePass, reason, text, declaredEvidence(), []string{"Reference count and workload breadth are different units."})
+	lim := []string{"Reference count and workload breadth are different units."}
+	if !complete && untargeted > 0 {
+		lim = append(lim, "Unscoped set expansion cannot name distinct workloads without membership.")
+	}
+	item := check("var.references.gateway", PredVarReferences, gatewaySubject(), OutcomePass, reason, text, declaredEvidence(), lim)
+	item.Facts = CheckFacts{
+		ReferenceSites:    intPtr(sites),
+		WorkloadConsumers: intPtr(len(consumers)),
+		UnscopedConsumers: intPtr(untargeted),
+	}
+	return item
+}
+
+func isWorkloadKind(kind string) bool {
+	return kind == "mcp-server" || kind == "resource"
 }
 
 func gatewayChecks(in Inputs) []Check {
@@ -483,7 +547,9 @@ func gatewayChecks(in Inputs) []Check {
 		if g.Bind != "" {
 			text += " Declared bind " + g.Bind + "."
 		}
-		out = append(out, check("gateway.auth.declared.gateway", PredGatewayAuthDeclared, gatewaySubject(), OutcomePass, reason, text, declaredEvidence(), []string{"A saved token presence does not prove route enforcement."}))
+		item := check("gateway.auth.declared.gateway", PredGatewayAuthDeclared, gatewaySubject(), OutcomePass, reason, text, declaredEvidence(), []string{"A saved token presence does not prove route enforcement."})
+		item.Facts = CheckFacts{AuthType: g.AuthType, Bind: g.Bind}
+		out = append(out, item)
 	}
 	if in.Startup == nil {
 		out = append(out, check("gateway.auth.startup.gateway", PredGatewayAuthStartup, gatewaySubject(), OutcomeUnknown, "startup_unavailable", "Active startup security snapshot is unavailable.", unknownEvidence(), []string{"Only declarations exist; enforcement remains unverified."}))
@@ -503,7 +569,9 @@ func gatewayChecks(in Inputs) []Check {
 		text += " Effective bind " + SanitizeIdentifier(in.Startup.Bind) + "."
 	}
 	ev := observedEvidence(time.Time{})
-	out = append(out, check("gateway.auth.startup.gateway", PredGatewayAuthStartup, gatewaySubject(), OutcomePass, reason, text, ev, []string{"Startup snapshot is not a proof of route correctness."}))
+	item := check("gateway.auth.startup.gateway", PredGatewayAuthStartup, gatewaySubject(), OutcomePass, reason, text, ev, []string{"Startup snapshot is not a proof of route correctness."})
+	item.Facts = CheckFacts{AuthType: SanitizeIdentifier(in.Startup.AuthType), EffectiveBind: SanitizeIdentifier(in.Startup.Bind)}
+	out = append(out, item)
 	return out
 }
 
@@ -558,24 +626,36 @@ func enforcementCheck(server string, replica ExecutionView) Check {
 	id := "execution.enforcement." + subject.Name
 	ev := observedEvidence(replica.ObservedAt)
 	ev.Producer = SanitizeIdentifier(replica.Runtime)
+	if replica.Instance != "" {
+		ev.SubjectBinding = SanitizeIdentifier(replica.Instance)
+	}
 	lim := []string{"Observed execution evidence is not continuous monitoring.", "A generated nonroot image does not substitute for verified runtime controls."}
-	if replica.Kind == "local-process" || replica.Mode == "local" || replica.Mode == "unsandboxed-local" {
-		return check(id, PredExecutionEnforcement, subject, OutcomePass, "execution_hygiene", "Local process hygiene is configured for "+subject.Name+". Environment hygiene does not confine filesystem or network access.", ev, lim)
+	facts := CheckFacts{
+		Kind:            SanitizeIdentifier(replica.Kind),
+		RecordedOutcome: SanitizeIdentifier(replica.Outcome),
+		Instance:        SanitizeIdentifier(replica.Instance),
+		Revision:        SanitizeIdentifier(replica.Revision),
+	}
+	withFacts := func(item Check) Check {
+		item.Facts = facts
+		return item
 	}
 	switch replica.Outcome {
 	case "failed", "refused", "ineligible":
-		return check(id, PredExecutionEnforcement, subject, OutcomeFail, "execution_failed", "Recorded execution outcome for "+subject.Name+" is "+SanitizeIdentifier(replica.Outcome)+".", ev, lim)
+		return withFacts(check(id, PredExecutionEnforcement, subject, OutcomeFail, "execution_failed", "Recorded execution outcome for "+subject.Name+" is "+SanitizeIdentifier(replica.Outcome)+".", ev, lim))
 	case "observed":
 		if replica.Eligible {
-			return check(id, PredExecutionEnforcement, subject, OutcomePass, "execution_observed", "Recorded execution outcome for "+subject.Name+" is observed and eligible.", ev, lim)
+			return withFacts(check(id, PredExecutionEnforcement, subject, OutcomePass, "execution_observed", "Recorded execution outcome for "+subject.Name+" is observed and eligible.", ev, lim))
 		}
-		return check(id, PredExecutionEnforcement, subject, OutcomeFail, "execution_ineligible", "Recorded execution outcome for "+subject.Name+" is observed but not eligible.", ev, lim)
-	default:
-		if replica.Eligible {
-			return check(id, PredExecutionEnforcement, subject, OutcomePass, "execution_eligible", "Recorded execution evidence for "+subject.Name+" is eligible.", ev, lim)
-		}
-		return check(id, PredExecutionEnforcement, subject, OutcomeUnknown, "execution_outcome_unknown", "Execution enforcement outcome for "+subject.Name+" is unknown.", unknownEvidence(), lim)
+		return withFacts(check(id, PredExecutionEnforcement, subject, OutcomeFail, "execution_ineligible", "Recorded execution outcome for "+subject.Name+" is observed but not eligible.", ev, lim))
 	}
+	if replica.Kind == "local-process" || replica.Mode == "local" || replica.Mode == "unsandboxed-local" {
+		return withFacts(check(id, PredExecutionEnforcement, subject, OutcomePass, "execution_hygiene", "Local process hygiene is configured for "+subject.Name+". Environment hygiene does not confine filesystem or network access.", ev, lim))
+	}
+	if replica.Eligible {
+		return withFacts(check(id, PredExecutionEnforcement, subject, OutcomePass, "execution_eligible", "Recorded execution evidence for "+subject.Name+" is eligible.", ev, lim))
+	}
+	return withFacts(check(id, PredExecutionEnforcement, subject, OutcomeUnknown, "execution_outcome_unknown", "Execution enforcement outcome for "+subject.Name+" is unknown.", unknownEvidence(), lim))
 }
 
 func serverNames(in Inputs) []string {
@@ -623,7 +703,7 @@ func unique(values []string) []string {
 	return out
 }
 
-func sanitizeReport(report *Report) *Report {
+func sanitizeReport(report *Report, untrusted bool) *Report {
 	if report == nil {
 		return nil
 	}
@@ -641,7 +721,7 @@ func sanitizeReport(report *Report) *Report {
 		item.Subject.Name = SanitizeIdentifier(c.Subject.Name)
 		item.Outcome = SanitizeIdentifier(c.Outcome)
 		item.ReasonCode = SanitizeIdentifier(c.ReasonCode)
-		item.Explanation = explanationFor(item.ReasonCode, item.Subject.Name)
+		item.Facts = sanitizeFacts(c.Facts)
 		item.Evidence.Basis = SanitizeIdentifier(c.Evidence.Basis)
 		item.Evidence.Availability = SanitizeIdentifier(c.Evidence.Availability)
 		item.Evidence.Freshness = SanitizeIdentifier(c.Evidence.Freshness)
@@ -656,6 +736,28 @@ func sanitizeReport(report *Report) *Report {
 		item.Evidence.ObservedAt = copyTime(c.Evidence.ObservedAt)
 		item.Evidence.VerifiedAt = copyTime(c.Evidence.VerifiedAt)
 		item.Evidence.ScannedAt = copyTime(c.Evidence.ScannedAt)
+		if item.Evidence.Basis == BasisVerified && (item.Evidence.VerificationMethod == "" || item.Evidence.SubjectBinding == "" || item.Evidence.PredicateScope == "") {
+			item.Evidence.Basis = BasisDeclared
+			item.Evidence.VerificationMethod = ""
+			item.Evidence.SubjectBinding = ""
+			item.Evidence.PredicateScope = ""
+		}
+		if untrusted && item.Evidence.Basis == BasisVerified {
+			item.Evidence.Basis = BasisDeclared
+			if item.ReasonCode == "signature_bound" {
+				item.ReasonCode = "signature_claimed"
+			}
+		}
+		if (item.Evidence.Freshness == FreshnessCurrent || item.Evidence.Freshness == FreshnessStale) && item.Evidence.FreshnessCondition == "" {
+			item.Evidence.Freshness = FreshnessUnknown
+		}
+		if untrusted && item.Evidence.Freshness == FreshnessCurrent {
+			item.Evidence.Freshness = FreshnessUnknown
+			if item.Evidence.FreshnessCondition == "" {
+				item.Evidence.FreshnessCondition = "imported_snapshot_is_historical"
+			}
+		}
+		item.Explanation = explanationFor(item.ReasonCode, item.Subject.Name, item.Facts)
 		item.Actions = nil
 		for _, action := range c.Actions {
 			if action.ID == ActionViewPins && action.Path != "" && strings.HasPrefix(action.Path, "/pins?") {
@@ -670,16 +772,16 @@ func sanitizeReport(report *Report) *Report {
 				}
 			}
 		}
-		item.Limitations = nil
-		for _, lim := range c.Limitations {
-			item.Limitations = append(item.Limitations, SanitizeIdentifier(lim))
+		item.Limitations = retainLimitations(c.Limitations)
+		if untrusted {
+			item.Limitations = retainLimitations(append(item.Limitations, "Imported snapshots cannot authenticate verification claims."))
 		}
 		if c.Suppression != nil {
 			item.Suppression = &Suppression{ReasonCode: SanitizeIdentifier(c.Suppression.ReasonCode), Codes: unique(c.Suppression.Codes)}
 		}
 		out.Checks = append(out.Checks, item)
 	}
-	out.Limitations = defaultLimitations(out.Source.Historical)
+	out.Limitations = defaultLimitations(out.Source.Historical || untrusted)
 	summarize(&out)
 	out.GeneratedAt = report.GeneratedAt.UTC()
 	out.GenerationOK = true

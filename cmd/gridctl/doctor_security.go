@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	neturl "net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/secreport"
@@ -44,10 +47,36 @@ func gatewaySecurityDoer(base string) secreport.HTTPDoer {
 	if securityHTTPDoer != nil {
 		return securityHTTPDoer
 	}
+	client := &http.Client{CheckRedirect: secreport.RedirectCheck, Timeout: 15 * time.Second}
+	if !localControlPlaneOrigin(base) {
+		return unauthenticatedDoer{client: client}
+	}
 	api := newDaemonAPIForBaseURL(base, 15*time.Second)
-	api.client.CheckRedirect = secreport.RedirectCheck
-	api.client.Timeout = 15 * time.Second
+	api.client = client
 	return authorizedDoer{api: api}
+}
+
+func localControlPlaneOrigin(base string) bool {
+	u, err := neturl.Parse(strings.TrimSpace(base))
+	if err != nil || u.Host == "" {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	switch host {
+	case "localhost", "localhost.", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1":
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+type unauthenticatedDoer struct{ client *http.Client }
+
+func (d unauthenticatedDoer) Do(req *http.Request) (*http.Response, error) {
+	return d.client.Do(req)
 }
 
 type authorizedDoer struct{ api *daemonAPI }
@@ -68,7 +97,10 @@ func renderSecurityReport(w io.Writer, report *secreport.Report, asJSON, quiet b
 		}
 		return secreport.ExitCode(report)
 	}
-	secreport.WriteText(w, report, quiet)
+	if err := secreport.WriteText(w, report, quiet); err != nil {
+		fmt.Fprintln(os.Stderr, "doctor: writing report failed")
+		return doctorExitFailed
+	}
 	return secreport.ExitCode(report)
 }
 

@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	neturl "net/url"
-	"os"
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/config"
@@ -93,14 +92,11 @@ func InputsFromStackFile(ctx context.Context, path string) (Inputs, error) {
 }
 
 func LoadSnapshot(ctx context.Context, path string) (*Report, error) {
-	if err := ctx.Err(); err != nil {
+	data, err := readBoundedFile(ctx, path, maxSnapshotBytes)
+	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, ErrSourceUnreadable
-	}
-	report, err := ParseSnapshot(data)
+	report, err := parseSnapshot(data, true)
 	if err != nil {
 		return nil, err
 	}
@@ -112,6 +108,10 @@ func LoadSnapshot(ctx context.Context, path string) (*Report, error) {
 }
 
 func ParseSnapshot(data []byte) (*Report, error) {
+	return parseSnapshot(data, true)
+}
+
+func parseSnapshot(data []byte, untrusted bool) (*Report, error) {
 	if len(data) == 0 || len(data) > maxSnapshotBytes {
 		return nil, ErrSourceInvalidFmt
 	}
@@ -128,7 +128,48 @@ func ParseSnapshot(data []byte) (*Report, error) {
 	if report.SchemaVersion != SchemaVersion {
 		return nil, ErrSourceInvalidFmt
 	}
-	return sanitizeReport(&report), nil
+	if err := validateImportedReport(&report); err != nil {
+		return nil, err
+	}
+	return sanitizeReport(&report, untrusted), nil
+}
+
+func validateImportedReport(report *Report) error {
+	if report.GeneratedAt.IsZero() {
+		return ErrSourceInvalidFmt
+	}
+	if report.Source.Kind == "" {
+		return ErrSourceInvalidFmt
+	}
+	seen := map[string]bool{}
+	for _, c := range report.Checks {
+		if c.ID == "" || seen[c.ID] {
+			return ErrSourceInvalidFmt
+		}
+		seen[c.ID] = true
+		if !knownPredicate(c.Predicate) || !knownOutcome(c.Outcome) || !knownReasonCode(c.ReasonCode) {
+			return ErrSourceInvalidFmt
+		}
+		if c.Subject.Kind != "" && !knownSubjectKind(c.Subject.Kind) {
+			return ErrSourceInvalidFmt
+		}
+		if c.Evidence.Basis != "" && !knownBasis(c.Evidence.Basis) {
+			return ErrSourceInvalidFmt
+		}
+		if c.Evidence.Availability != "" && !knownAvailability(c.Evidence.Availability) {
+			return ErrSourceInvalidFmt
+		}
+		if c.Evidence.Freshness != "" && !knownFreshness(c.Evidence.Freshness) {
+			return ErrSourceInvalidFmt
+		}
+		if c.Outcome == OutcomeFail && !failPredicateAllowed(c.Predicate) {
+			return ErrSourceInvalidFmt
+		}
+		if c.Evidence.Basis == BasisVerified && (c.Evidence.VerificationMethod == "" || c.Evidence.SubjectBinding == "" || c.Evidence.PredicateScope == "") {
+			return ErrSourceInvalidFmt
+		}
+	}
+	return nil
 }
 
 type HTTPDoer interface {
@@ -161,7 +202,7 @@ func FetchGatewayReport(ctx context.Context, base string, doer HTTPDoer) (*Repor
 	if err != nil || len(data) > maxSnapshotBytes {
 		return nil, ErrSourceInvalidFmt
 	}
-	report, err := ParseSnapshot(data)
+	report, err := parseSnapshot(data, false)
 	if err != nil {
 		return nil, err
 	}
@@ -200,11 +241,10 @@ func stackViewFromConfig(stack *config.Stack) *StackView {
 		return nil
 	}
 	view := &StackView{
-		Name:       SanitizeIdentifier(stack.Name),
-		References: referenceSites(stack),
-		Gateway:    gatewayDecl(stack),
-		Scan:       scanDecl(stack),
-		Pinning:    pinningDecl(stack),
+		Name:    SanitizeIdentifier(stack.Name),
+		Gateway: gatewayDecl(stack),
+		Scan:    scanDecl(stack),
+		Pinning: pinningDecl(stack),
 	}
 	for _, srv := range stack.MCPServers {
 		view.Servers = append(view.Servers, serverViewFromConfig(srv))
@@ -219,7 +259,19 @@ func stackViewFromConfig(stack *config.Stack) *StackView {
 	} else {
 		view.SetMembers = map[string][]string{}
 	}
+	usage, complete := config.BuildVariableUsage(stack, view.SetMembers)
+	view.References = referenceSitesFromUsage(usage)
+	if !complete {
+		view.SetMembers = nil
+	}
 	return view
+}
+
+func authoredIdentity(value string) string {
+	if value == "" || config.ContainsExpansion(value) {
+		return ""
+	}
+	return SanitizeIdentifier(value)
 }
 
 func serverViewFromConfig(srv config.MCPServer) ServerView {
@@ -227,14 +279,16 @@ func serverViewFromConfig(srv config.MCPServer) ServerView {
 		Name: SanitizeIdentifier(srv.Name),
 		Kind: serverKind(srv),
 	}
-	view.Image = SanitizeIdentifier(srv.Image)
+	view.Image = authoredIdentity(srv.Image)
 	if srv.Source != nil {
-		view.SourceType = SanitizeIdentifier(srv.Source.Type)
-		view.SourcePackage = SanitizeIdentifier(srv.Source.Package)
-		view.SourceVersion = SanitizeIdentifier(srv.Source.Ref)
-		view.SourceRef = SanitizeIdentifier(srv.Source.Ref)
-		if hostPath, ok := sourceURLIdentity(srv.Source.URL); ok {
-			view.SourceHostPath = hostPath
+		view.SourceType = authoredIdentity(srv.Source.Type)
+		view.SourcePackage = authoredIdentity(srv.Source.Package)
+		view.SourceVersion = authoredIdentity(srv.Source.Ref)
+		view.SourceRef = authoredIdentity(srv.Source.Ref)
+		if !config.ContainsExpansion(srv.Source.URL) {
+			if hostPath, ok := sourceURLIdentity(srv.Source.URL); ok {
+				view.SourceHostPath = hostPath
+			}
 		}
 	}
 	if srv.Execution != nil {
@@ -259,18 +313,20 @@ func serverKind(srv config.MCPServer) string {
 	}
 }
 
-func referenceSites(stack *config.Stack) map[string][]ReferenceSite {
+func referenceSitesFromUsage(usage config.ReferenceIndex) map[string][]ReferenceSite {
 	out := map[string][]ReferenceSite{}
-	if stack == nil {
-		return out
-	}
-	for key, consumers := range stack.References {
+	for key, consumers := range usage {
 		k := SanitizeIdentifier(key)
 		if k == "" {
 			continue
 		}
 		for _, c := range consumers {
-			site := ReferenceSite{Kind: SanitizeIdentifier(string(c.Kind)), Name: SanitizeIdentifier(c.Name)}
+			site := ReferenceSite{
+				Kind:       SanitizeIdentifier(string(c.Kind)),
+				Name:       SanitizeIdentifier(c.Name),
+				Target:     SanitizeIdentifier(c.Target),
+				TargetKind: SanitizeIdentifier(string(c.TargetKind)),
+			}
 			if c.Kind == config.RefKindSecretsSet && c.Target == "" {
 				site.Untargeted = true
 			}
@@ -285,7 +341,7 @@ func gatewayDecl(stack *config.Stack) *GatewayDeclView {
 		return &GatewayDeclView{}
 	}
 	decl := &GatewayDeclView{
-		Bind:     SanitizeIdentifier(stack.Gateway.Bind),
+		Bind:     authoredIdentity(stack.Gateway.Bind),
 		Insecure: stack.Gateway.InsecureAllowUnauthenticated,
 	}
 	if stack.Gateway.Auth != nil && stack.Gateway.Auth.Token != "" {

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/execution"
 	"github.com/gridctl/gridctl/pkg/secreport"
 )
 
@@ -41,8 +42,8 @@ func (s *Server) passiveSecurityReport(ctx context.Context) *secreport.Report {
 	}
 	in.Pins = secreport.PinViewFromStore(s.pinStore, enabled, scan)
 	in.SkillPins = secreport.SkillPinViewFromStore(s.skillPinStore)
-	if s.authType != "" || s.authToken != "" {
-		in.Startup = &secreport.StartupView{AuthEnabled: s.authToken != "", AuthType: s.authType}
+	if s.authType != "" || s.authToken != "" || s.gatewayAddr != "" {
+		in.Startup = &secreport.StartupView{AuthEnabled: s.authToken != "", AuthType: s.authType, Bind: secreportDisplayHost(s.gatewayAddr)}
 	}
 	in.Execution = s.passiveExecutionViews()
 	return secreport.Assemble(time.Now().UTC(), in)
@@ -65,25 +66,38 @@ func (s *Server) passiveExecutionViews() []secreport.ExecutionView {
 		case st.External:
 			kind = "external"
 		}
+		if st.RegistrationFailed {
+			if st.Execution != nil {
+				out = append(out, executionViewFromReport(st.Name, "", kind, st.Execution))
+			}
+			continue
+		}
 		for _, replica := range st.Replicas {
 			if replica.Execution == nil {
 				continue
 			}
-			out = append(out, secreport.ExecutionView{
-				Server:     st.Name,
-				Replica:    strconv.Itoa(replica.ReplicaID),
-				Kind:       kind,
-				Mode:       replica.Execution.Mode,
-				Outcome:    replica.Execution.Outcome,
-				Eligible:   replica.Execution.Eligible,
-				ObservedAt: replica.Execution.ObservedAt,
-				Runtime:    replica.Execution.Runtime,
-				Instance:   replica.Execution.Instance,
-				Revision:   replica.Execution.Revision,
-			})
+			out = append(out, executionViewFromReport(st.Name, strconv.Itoa(replica.ReplicaID), kind, replica.Execution))
 		}
 	}
 	return out
+}
+
+func executionViewFromReport(server, replica, kind string, rep *execution.Report) secreport.ExecutionView {
+	if rep == nil {
+		return secreport.ExecutionView{Server: server, Replica: replica, Kind: kind}
+	}
+	return secreport.ExecutionView{
+		Server:     server,
+		Replica:    replica,
+		Kind:       kind,
+		Mode:       rep.Mode,
+		Outcome:    rep.Outcome,
+		Eligible:   rep.Eligible,
+		ObservedAt: rep.ObservedAt,
+		Runtime:    rep.Runtime,
+		Instance:   rep.Instance,
+		Revision:   rep.Revision,
+	}
 }
 
 func secreportDisplayHost(addr string) string {
