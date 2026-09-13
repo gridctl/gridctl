@@ -1,0 +1,13 @@
+version: "1"
+name: security-evidence-demo
+
+gateway:
+  auth:
+    type: bearer
+    token: ${GATEWAY_TOKEN}
+
+mcp-servers:
+  - name: fetch
+    image: example/fetch:1
+  - name: remote
+    url: http://127.0.0.1:9000/mcp

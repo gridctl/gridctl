@@ -105,6 +105,7 @@ pkg/vault/          Encrypted variable store (XChaCha20-Poly1305 + Argon2id). Th
 pkg/varrun/         Explicit stored-variable delivery to child processes, including output redaction and signal forwarding.
 pkg/varscan/        Exact stored-secret scanning for working-tree files and staged Git blobs.
 pkg/pins/           TOFU schema pinning for tool definitions; drift surfaces in pkg/pins + `gridctl pins`.
+pkg/secreport/      Passive security evidence report DTO and assembler for `gridctl doctor --security` and GET /api/security-report.
 pkg/optimize/       Usage analysis: feeds `gridctl optimize` and the UI's findings panel with token-denominated findings.
 pkg/telemetry/      Tool-call accounting (counts, latency, tokens). Buffered in-memory; surfaced via /api/telemetry.
 pkg/tracing/        OTLP exporter + in-memory trace buffer for `gridctl traces` and the UI traces panel.

@@ -48,6 +48,7 @@ New to gridctl? Read in this order:
 |----------|-------------|
 | [Project Status](project-status.md) | Per-feature stability tiers and currently known limitations |
 | [Security Threat Model](security/threat-model.md) | Current trust boundaries, security defaults, source/test evidence, and residual risks |
+| [Security Evidence Report](security-evidence.md) | Passive `doctor --security` / `/api/security-report` scope, unknowns, and exit-zero limits |
 | [Troubleshooting](troubleshooting.md) | Common errors and resolutions - runtime, networking, vault, hot reload |
 
 ## Quick Links

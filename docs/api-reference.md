@@ -68,6 +68,18 @@ OK
 
 ### Status & Monitoring
 
+#### `GET /api/security-report`
+
+Returns the passive security evidence report for the running gateway. The payload is the versioned `gridctl.security-report.v1` DTO shared with `gridctl doctor --security`. Collection is value-free: the handler reads in-memory pin/skill-pin snapshots, authored stack identity without expansion, and already-recorded execution/startup facts. It does not inspect containers, run scanners, resolve secrets, or mutate pins. Missing optional producers yield unknown checks. Refreshing this endpoint re-reads the same passive report; it does not re-observe downstream evidence. Exit-zero limitations and predicate inventory are documented in [Security Evidence Report](security-evidence.md).
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/security-report
+```
+
+The response includes `schema_version`, `generated_at`, `source`, `coverage`, `checks`, `limitations`, and outcome counts. There is no `ok` field and no trust score. Actions are allowlisted paths such as `/pins?server=<name>`.
+
 #### `GET /api/status`
 
 Returns the overall gateway status including servers, resources, sessions, and optional features.
