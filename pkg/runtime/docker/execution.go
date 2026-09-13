@@ -182,8 +182,13 @@ func (d *DockerRuntime) executionPreflight(ctx context.Context, e *execution.Exe
 	if !seccomp {
 		return info, fmt.Errorf("execution.seccomp: engine-default enforcement unsupported")
 	}
-	if info.CgroupVersion != "2" || !info.MemoryLimit || !info.SwapLimit || !info.CPUCfsQuota || !info.PidsLimit {
+	if info.CgroupVersion != "2" {
 		return info, fmt.Errorf("execution.resources: required cgroup v2 controllers unavailable")
+	}
+	if !info.MemoryLimit || !info.SwapLimit || !info.CPUCfsQuota || !info.PidsLimit {
+		if err := executionPodmanResources(ctx, endpoint.Path); err != nil {
+			return info, err
+		}
 	}
 	if err := d.checkExecutionVolumes(ctx, e, true); err != nil {
 		return info, err

@@ -15,6 +15,8 @@ Choose a nonzero numeric UID and GID that can read the image's code and dependen
 
 The profile requires nonprivileged operation, a private PID namespace, a nonzero container identity, engine-default seccomp, and finite per-replica resource limits.
 
+Preflight checks the actual daemon's capabilities. When Docker-compatible resource flags are incomplete, Gridctl queries native Podman info over the same local Unix socket and requires cgroup v2 with CPU, memory, and PID controllers. Missing native evidence is refused. Capability evidence does not establish workload enforcement: engine inspection and instance-bound kernel checks, including disabled swap, remain mandatory before routing.
+
 | Field | Default | Meaning |
 |---|---|---|
 | `read_only` | `true` | Read-only root filesystem |
