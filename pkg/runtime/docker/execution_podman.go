@@ -66,14 +66,24 @@ func (d *DockerRuntime) executionPodmanNoCapabilities(ctx context.Context, id st
 		return false, errExecutionUnknown
 	}
 	var inspect struct {
-		ID            string   `json:"Id"`
-		EffectiveCaps []string `json:"EffectiveCaps"`
-		BoundingCaps  []string `json:"BoundingCaps"`
+		ID            string          `json:"Id"`
+		EffectiveCaps json.RawMessage `json:"EffectiveCaps"`
+		BoundingCaps  json.RawMessage `json:"BoundingCaps"`
 	}
 	if json.Unmarshal(body, &inspect) != nil || inspect.ID != id || inspect.EffectiveCaps == nil || inspect.BoundingCaps == nil {
 		return false, errExecutionUnknown
 	}
-	return len(inspect.EffectiveCaps) == 0 && len(inspect.BoundingCaps) == 0, nil
+	// Native inspect's Go slices can encode empty sets as null or []. Keep
+	// presence separate from length so an omitted field still refuses admission.
+	empty := true
+	for _, raw := range []json.RawMessage{inspect.EffectiveCaps, inspect.BoundingCaps} {
+		var caps []string
+		if json.Unmarshal(raw, &caps) != nil {
+			return false, errExecutionUnknown
+		}
+		empty = empty && len(caps) == 0
+	}
+	return empty, nil
 }
 
 func executionPodmanRead(ctx context.Context, socket, path string) ([]byte, error) {

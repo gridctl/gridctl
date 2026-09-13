@@ -17,6 +17,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Bug Fixes
 
+- Decode explicitly present null Podman capability lists as empty native sets while rejecting omitted or malformed fields. Full instance identity and all five kernel capability sets remain mandatory before routing (#1221).
 - Create hardened Podman workloads through its native API to disable undeclared automatic writable tmpfs mounts. Preserve explicit scratch inventories, accept bounded copy-up scratch semantics, and report value-free mount mismatch subconditions (#1221).
 - Verify native Podman capability sets when inspection expands an all-capabilities drop, compare equivalent tmpfs options semantically, and identify mismatched execution fields without exposing raw engine values. Instance-bound kernel evidence remains required before routing (#1221).
 - Use native Podman cgroup-v2 capability evidence when its Docker-compatible resource flags are incomplete; retain instance-bound kernel checks before protected workloads can route tools (#1221).
