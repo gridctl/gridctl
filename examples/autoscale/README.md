@@ -100,6 +100,8 @@ is a full restart at hot-reload time (different bookkeeping). Changes
 *inside* an existing `autoscale` block are applied as a policy update without
 dropping in-flight calls.
 
+If execution intent changes alongside autoscale settings, the server is recreated. Every hardened replica, including a cold start, needs fresh required evidence before routing. Idle-to-zero has no current active evidence, and finite execution limits apply per replica. See [execution controls](../../docs/execution.md).
+
 ## Not supported
 
 - External URL servers and OpenAPI servers - they're stateless from gridctl's

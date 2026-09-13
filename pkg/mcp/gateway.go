@@ -21,6 +21,7 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
+	"github.com/gridctl/gridctl/pkg/execution"
 	"github.com/gridctl/gridctl/pkg/format"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/token"
@@ -33,29 +34,33 @@ var ErrReadyTimeout = errors.New("ready timeout")
 
 // MCPServerConfig contains configuration for connecting to an MCP server.
 type MCPServerConfig struct {
-	Name              string
-	Transport         Transport
-	Endpoint          string               // For HTTP/SSE transport
-	ContainerID       string               // For Docker Stdio transport
-	External          bool                 // True for external URL servers (no container)
-	LocalProcess      bool                 // True for local process servers (no container)
-	SSH               bool                 // True for SSH servers (remote process over SSH)
-	OpenAPI           bool                 // True for OpenAPI-based servers
-	Command           []string             // For local process or SSH transport
-	WorkDir           string               // For local process transport
-	Env               map[string]string    // For local process or SSH transport
-	SSHHost           string               // SSH hostname (for SSH servers)
-	SSHUser           string               // SSH username (for SSH servers)
-	SSHPort           int                  // SSH port (for SSH servers, 0 = default 22)
-	SSHIdentityFile   string               // SSH identity file path (for SSH servers)
-	SSHKnownHostsFile string               // SSH known_hosts file path; enables StrictHostKeyChecking=yes
-	SSHJumpHost       string               // SSH jump/bastion host ([user@]host[:port])
-	OpenAPIConfig     *OpenAPIClientConfig // OpenAPI configuration (for OpenAPI servers)
-	Auth              *ServerAuthConfig    // Downstream auth for external URL servers (nil = none)
-	HeaderSource      HeaderSource         // Live auth header source (OAuth broker); overrides Auth's static mapping
-	Tools             []string             // Tool whitelist (empty = all tools)
-	OutputFormat      string               // Output format: "json", "toon", "csv", "text"
-	PinSchemas        *bool                // Override gateway schema pinning (nil = inherit gateway default)
+	ExecutionRequested   *execution.Report
+	ExecutionBeforeStart func(context.Context) error
+	ExecutionCheck       func(context.Context) (*execution.Report, error)
+	Execution            *execution.ExecutionConfig
+	Name                 string
+	Transport            Transport
+	Endpoint             string               // For HTTP/SSE transport
+	ContainerID          string               // For Docker Stdio transport
+	External             bool                 // True for external URL servers (no container)
+	LocalProcess         bool                 // True for local process servers (no container)
+	SSH                  bool                 // True for SSH servers (remote process over SSH)
+	OpenAPI              bool                 // True for OpenAPI-based servers
+	Command              []string             // For local process or SSH transport
+	WorkDir              string               // For local process transport
+	Env                  map[string]string    // For local process or SSH transport
+	SSHHost              string               // SSH hostname (for SSH servers)
+	SSHUser              string               // SSH username (for SSH servers)
+	SSHPort              int                  // SSH port (for SSH servers, 0 = default 22)
+	SSHIdentityFile      string               // SSH identity file path (for SSH servers)
+	SSHKnownHostsFile    string               // SSH known_hosts file path; enables StrictHostKeyChecking=yes
+	SSHJumpHost          string               // SSH jump/bastion host ([user@]host[:port])
+	OpenAPIConfig        *OpenAPIClientConfig // OpenAPI configuration (for OpenAPI servers)
+	Auth                 *ServerAuthConfig    // Downstream auth for external URL servers (nil = none)
+	HeaderSource         HeaderSource         // Live auth header source (OAuth broker); overrides Auth's static mapping
+	Tools                []string             // Tool whitelist (empty = all tools)
+	OutputFormat         string               // Output format: "json", "toon", "csv", "text"
+	PinSchemas           *bool                // Override gateway schema pinning (nil = inherit gateway default)
 
 	// ReadyTimeout overrides the HTTP/SSE readiness wait. Zero uses DefaultReadyTimeout.
 	// Applies only to HTTP and SSE transports; stdio and other paths ignore it.
@@ -181,6 +186,7 @@ type Gateway struct {
 
 	regFailMu            sync.RWMutex
 	registrationFailures map[string]string // name -> error message for servers that failed to register
+	executionFailures    map[string]*execution.Report
 
 	// pendingMu guards the never-connected retry bookkeeping: pending holds
 	// servers whose registration failed retryably (they have no serverMeta
@@ -346,7 +352,6 @@ func (g *Gateway) SetCallGates(gates []CallGate) {
 	defer g.mu.Unlock()
 	g.callGates = gates
 }
-
 
 // SetGroupPolicy installs the compiled tool-group policy. Passing nil
 // removes all groups (their endpoints 404 and bound sessions are denied).
@@ -747,6 +752,16 @@ func (g *Gateway) attemptPendingRegistration(ctx context.Context, name, policy s
 			c.ContainerID == "" || g.dockerCli == nil {
 			continue
 		}
+		if c.Execution != nil {
+			if c.ExecutionBeforeStart == nil {
+				g.advancePendingBackoff(name, fmt.Errorf("execution: recovery admission unavailable"))
+				return
+			}
+			if err := c.ExecutionBeforeStart(ctx); err != nil {
+				g.advancePendingBackoff(name, err)
+				return
+			}
+		}
 		timeout := 10
 		if err := g.dockerCli.ContainerRestart(ctx, c.ContainerID, container.StopOptions{Timeout: &timeout}); err != nil {
 			g.advancePendingBackoff(name, err)
@@ -1114,6 +1129,12 @@ func (g *Gateway) ReplicaStatuses(serverName string) []ReplicaStatus {
 			StartedAt: r.StartedAt(),
 		}
 		attempts := r.Restart().Attempts()
+		if source, ok := r.Client().(interface{ ExecutionReport() *execution.Report }); ok {
+			rs.Execution = source.ExecutionReport()
+			if rs.Execution != nil && rs.Execution.Mode == "hardened" {
+				rs.ContainerID = rs.Execution.Instance
+			}
+		}
 		rs.RestartAttempts = attempts
 		if nextAt := r.Restart().NextAt(); !nextAt.IsZero() {
 			t := nextAt
@@ -1270,15 +1291,6 @@ func (g *Gateway) Autoscalers() []*Autoscaler {
 		}
 	}
 	return out
-}
-
-// unregisterAutoscaler drops the autoscaler for a server (used during hot
-// reload when switching from autoscale back to static replicas, or when the
-// server is removed from the stack).
-func (g *Gateway) unregisterAutoscaler(serverName string) {
-	g.autoMu.Lock()
-	defer g.autoMu.Unlock()
-	delete(g.autoscalers, serverName)
 }
 
 // StartAutoscaler launches a background goroutine that ticks every registered
@@ -1444,6 +1456,8 @@ func (g *Gateway) registrationGenIs(name string, gen uint64) bool {
 // single MCPServerConfig. It does NOT touch serverMeta, pins, health, or the
 // router — callers compose that separately. Exported so Spawner implementations
 // in pkg/controller can reuse the transport switch rather than duplicating it.
+// Successful process clients outlive the operation context and must be closed
+// by their owner. Cancellation during construction terminates the child.
 func (g *Gateway) BuildAgentClient(ctx context.Context, cfg MCPServerConfig) (AgentClient, error) {
 	return g.buildAgentClient(ctx, cfg)
 }
@@ -1451,7 +1465,37 @@ func (g *Gateway) BuildAgentClient(ctx context.Context, cfg MCPServerConfig) (Ag
 // buildAgentClient creates, connects, and initializes an AgentClient from a
 // single MCPServerConfig. It does NOT touch serverMeta, pins, health, or the
 // router — callers compose that separately.
-func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (AgentClient, error) {
+func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (result AgentClient, buildErr error) {
+	defer func() {
+		if buildErr != nil && cfg.Execution != nil {
+			g.RecordExecutionFailure(cfg.Name, cfg.ExecutionRequested, buildErr)
+		}
+	}()
+	var ownedProcess *ProcessClient
+	var stopProcessCancellation func() bool
+	defer func() {
+		if ownedProcess == nil {
+			return
+		}
+		if stopProcessCancellation != nil && !stopProcessCancellation() && buildErr == nil {
+			buildErr = ctx.Err()
+		}
+		if buildErr != nil {
+			buildErr = errors.Join(buildErr, ownedProcess.Close())
+			result = nil
+		}
+	}()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if cfg.Execution != nil && !cfg.LocalProcess {
+		if cfg.External || cfg.SSH || cfg.OpenAPI || cfg.ExecutionCheck == nil {
+			return nil, terminalRegistration(fmt.Errorf("execution: required admission unavailable"))
+		}
+		if _, err := cfg.ExecutionCheck(ctx); err != nil {
+			return nil, err
+		}
+	}
 	g.logger.Info("connecting to MCP server", "name", cfg.Name, "transport", cfg.Transport)
 
 	var agentClient AgentClient
@@ -1476,24 +1520,35 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (Ag
 		// Handle SSH servers (they use stdio over SSH)
 		sshCommand := buildSSHCommand(cfg)
 		processClient := NewProcessClient(cfg.Name, sshCommand, cfg.WorkDir, cfg.Env)
+		processClient.remote = true
 		processClient.SetLogger(clientLogger)
 		processClient.SetPingTimeout(cfg.PingTimeout)
 		if len(cfg.Tools) > 0 {
 			processClient.SetToolWhitelist(cfg.Tools)
 		}
-		if err := processClient.Connect(ctx); err != nil {
+		ownedProcess = processClient
+		var connectErr error
+		stopProcessCancellation, connectErr = processClient.connectOwned(ctx)
+		if err := connectErr; err != nil {
 			return nil, fmt.Errorf("starting SSH process %s: %w", cfg.Name, err)
 		}
 		agentClient = processClient
 	} else if cfg.LocalProcess {
 		// Handle local process servers (they use stdio but not Docker)
-		processClient := NewProcessClient(cfg.Name, cfg.Command, cfg.WorkDir, cfg.Env)
+		contract, err := execution.ResolveExecution(execution.Server{Command: cfg.Command, Local: true, Execution: cfg.Execution})
+		if err != nil {
+			return nil, err
+		}
+		processClient := newProcessClient(cfg.Name, cfg.Command, cfg.WorkDir, cfg.Env, contract)
 		processClient.SetLogger(clientLogger)
 		processClient.SetPingTimeout(cfg.PingTimeout)
 		if len(cfg.Tools) > 0 {
 			processClient.SetToolWhitelist(cfg.Tools)
 		}
-		if err := processClient.Connect(ctx); err != nil {
+		ownedProcess = processClient
+		var connectErr error
+		stopProcessCancellation, connectErr = processClient.connectOwned(ctx)
+		if err := connectErr; err != nil {
 			return nil, fmt.Errorf("starting process %s: %w", cfg.Name, err)
 		}
 		agentClient = processClient
@@ -1578,15 +1633,29 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (Ag
 	// retry).
 	if err := agentClient.Initialize(ctx); err != nil {
 		closeAgentClient(agentClient)
+		if cfg.Execution != nil {
+			return nil, &executionPhaseError{phase: "initialize", cause: err}
+		}
 		return nil, fmt.Errorf("initializing MCP server %s: %w", cfg.Name, err)
 	}
 
 	// Fetch tools (will be filtered by whitelist if set)
 	if err := agentClient.RefreshTools(ctx); err != nil {
 		closeAgentClient(agentClient)
+		if cfg.Execution != nil {
+			return nil, &executionPhaseError{phase: "discovery", cause: err}
+		}
 		return nil, fmt.Errorf("fetching tools from %s: %w", cfg.Name, err)
 	}
 
+	if cfg.ExecutionCheck != nil {
+		guarded := &executionClient{AgentClient: agentClient, check: cfg.ExecutionCheck, config: cfg}
+		if err := guarded.admit(ctx); err != nil {
+			closeAgentClient(agentClient)
+			return nil, err
+		}
+		return guarded, nil
+	}
 	return agentClient, nil
 }
 
@@ -1609,6 +1678,16 @@ func (g *Gateway) SetServerMeta(cfg MCPServerConfig) {
 
 // UnregisterMCPServer removes an MCP server from the gateway.
 func (g *Gateway) UnregisterMCPServer(name string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := g.UnregisterMCPServerContext(ctx, name); err != nil {
+		g.logger.Warn("MCP server cleanup failed", "server", name, "error", err)
+	}
+}
+
+// UnregisterMCPServerContext withdraws routing, retires scaling, and closes every
+// owned client. A retired process client cannot be revived by stale recovery.
+func (g *Gateway) UnregisterMCPServerContext(ctx context.Context, name string) error {
 	// Take ownership before any teardown: bump the generation and drop
 	// retry state under pendingMu first. In this order an in-flight retry
 	// commit either finishes before this blocks on pendingMu (and its
@@ -1619,10 +1698,15 @@ func (g *Gateway) UnregisterMCPServer(name string) {
 	g.regGen[name]++
 	delete(g.pending, name)
 	delete(g.cleanupRan, name)
-	g.pendingMu.Unlock()
+	set := g.router.GetReplicaSet(name)
 	g.router.RemoveClient(name)
-	g.router.RefreshTools()
-	g.unregisterAutoscaler(name)
+	if set != nil {
+		set.retire()
+	}
+	g.autoMu.Lock()
+	scaler := g.autoscalers[name]
+	delete(g.autoscalers, name)
+	g.autoMu.Unlock()
 	g.mu.Lock()
 	delete(g.serverMeta, name)
 	g.mu.Unlock()
@@ -1632,6 +1716,45 @@ func (g *Gateway) UnregisterMCPServer(name string) {
 	// Status() (stored grants are unaffected; they are keyed by resource
 	// URL, not server name).
 	g.ClearServerAuthState(name)
+	g.pendingMu.Unlock()
+	g.router.RefreshTools()
+	var cleanupErrors []error
+	if scaler != nil {
+		if err := scaler.retire(ctx); err != nil {
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("autoscaler retirement: %w", err))
+		}
+		if set == nil {
+			set = scaler.Set()
+		}
+	}
+	if set != nil {
+		replicas := set.Replicas()
+		closed := make(chan error, len(replicas))
+		for _, replica := range replicas {
+			go func(client AgentClient) {
+				if retireable, ok := client.(interface{ retire() error }); ok {
+					closed <- retireable.retire()
+					return
+				}
+				if closer, ok := client.(io.Closer); ok {
+					closed <- closer.Close()
+					return
+				}
+				closed <- nil
+			}(replica.Client())
+		}
+		for range replicas {
+			select {
+			case err := <-closed:
+				if err != nil {
+					cleanupErrors = append(cleanupErrors, err)
+				}
+			case <-ctx.Done():
+				return errors.Join(append(cleanupErrors, ctx.Err())...)
+			}
+		}
+	}
+	return errors.Join(cleanupErrors...)
 }
 
 // RecordRegistrationFailure records why a server could not be registered so
@@ -1664,6 +1787,17 @@ func (g *Gateway) RecordRegistrationFailure(name string, err error) {
 	g.regFailMu.Lock()
 	g.registrationFailures[name] = msg
 	g.regFailMu.Unlock()
+}
+
+// RecordExecutionFailure retains accepted desired intent after failed replacement.
+func (g *Gateway) RecordExecutionFailure(name string, desired *execution.Report, err error) {
+	g.RecordRegistrationFailure(name, err)
+	g.regFailMu.Lock()
+	defer g.regFailMu.Unlock()
+	if g.executionFailures == nil {
+		g.executionFailures = map[string]*execution.Report{}
+	}
+	g.executionFailures[name] = desired
 }
 
 // isAuthError reports whether err (anywhere in its chain) is an auth
@@ -1716,6 +1850,7 @@ func (g *Gateway) ClearServerAuthState(name string) {
 func (g *Gateway) ClearRegistrationFailure(name string) {
 	g.regFailMu.Lock()
 	delete(g.registrationFailures, name)
+	delete(g.executionFailures, name)
 	g.regFailMu.Unlock()
 }
 
@@ -1744,6 +1879,18 @@ func (g *Gateway) RestartMCPServer(ctx context.Context, name string) error {
 	}
 
 	g.logger.Info("restarting MCP server", "name", name, "transport", cfg.Transport)
+	if cfg.LocalProcess || cfg.SSH {
+		if set := g.router.GetReplicaSet(name); set != nil {
+			return g.restartProcessReplicas(ctx, name, set)
+		}
+		return fmt.Errorf("execution: no current process revision to restart")
+	}
+	if cfg.Execution != nil && !cfg.LocalProcess {
+		if set := g.router.GetReplicaSet(name); set != nil {
+			return g.restartExecutionReplicas(ctx, name, set)
+		}
+		return fmt.Errorf("execution: no current replica revision to restart")
+	}
 
 	// Close the existing client connection
 	if client := g.router.GetClient(name); client != nil {
@@ -1759,6 +1906,15 @@ func (g *Gateway) RestartMCPServer(ctx context.Context, name string) error {
 
 	// For stdio (container) transport, restart the Docker container
 	if cfg.Transport == TransportStdio && !cfg.External && !cfg.LocalProcess && !cfg.SSH && !cfg.OpenAPI {
+		if cfg.Execution != nil {
+			if cfg.ExecutionBeforeStart == nil {
+				return fmt.Errorf("execution: recovery admission unavailable")
+			}
+			if err := cfg.ExecutionBeforeStart(ctx); err != nil {
+				g.RecordRegistrationFailure(name, err)
+				return err
+			}
+		}
 		if g.dockerCli != nil && cfg.ContainerID != "" {
 			timeout := 10
 			if err := g.dockerCli.ContainerRestart(ctx, cfg.ContainerID, container.StopOptions{Timeout: &timeout}); err != nil {
@@ -2690,23 +2846,24 @@ func (g *Gateway) RefreshAllTools(ctx context.Context) error {
 
 // MCPServerStatus returns status information about registered MCP servers.
 type MCPServerStatus struct {
-	Name         string     `json:"name"`
-	Transport    Transport  `json:"transport"`
-	Endpoint     string     `json:"endpoint,omitempty"`
-	ContainerID  string     `json:"containerId,omitempty"`
-	Initialized  bool       `json:"initialized"`
-	ToolCount    int        `json:"toolCount"`
-	Tools        []string   `json:"tools"`
-	External     bool       `json:"external"`               // True for external URL servers
-	LocalProcess bool       `json:"localProcess"`           // True for local process servers
-	SSH          bool       `json:"ssh"`                    // True for SSH servers
-	SSHHost      string     `json:"sshHost,omitempty"`      // SSH hostname
-	OpenAPI      bool       `json:"openapi"`                // True for OpenAPI servers
-	OpenAPISpec  string     `json:"openapiSpec,omitempty"`  // OpenAPI spec location
-	OutputFormat string     `json:"outputFormat,omitempty"` // Configured output format (empty = json default)
-	Healthy      *bool      `json:"healthy,omitempty"`      // Health check result (nil if not yet checked)
-	LastCheck    *time.Time `json:"lastCheck,omitempty"`    // When last health check ran
-	HealthError  string     `json:"healthError,omitempty"`  // Error message if unhealthy
+	Execution    *execution.Report `json:"execution,omitempty"`
+	Name         string            `json:"name"`
+	Transport    Transport         `json:"transport"`
+	Endpoint     string            `json:"endpoint,omitempty"`
+	ContainerID  string            `json:"containerId,omitempty"`
+	Initialized  bool              `json:"initialized"`
+	ToolCount    int               `json:"toolCount"`
+	Tools        []string          `json:"tools"`
+	External     bool              `json:"external"`               // True for external URL servers
+	LocalProcess bool              `json:"localProcess"`           // True for local process servers
+	SSH          bool              `json:"ssh"`                    // True for SSH servers
+	SSHHost      string            `json:"sshHost,omitempty"`      // SSH hostname
+	OpenAPI      bool              `json:"openapi"`                // True for OpenAPI servers
+	OpenAPISpec  string            `json:"openapiSpec,omitempty"`  // OpenAPI spec location
+	OutputFormat string            `json:"outputFormat,omitempty"` // Configured output format (empty = json default)
+	Healthy      *bool             `json:"healthy,omitempty"`      // Health check result (nil if not yet checked)
+	LastCheck    *time.Time        `json:"lastCheck,omitempty"`    // When last health check ran
+	HealthError  string            `json:"healthError,omitempty"`  // Error message if unhealthy
 
 	// ProtocolVersion is the MCP protocol version the downstream server
 	// reported at initialize. Empty for servers that omit it (lax pre-header
@@ -2753,18 +2910,19 @@ type MCPServerStatus struct {
 // ReplicaStatus reports the live state of a single replica within a
 // ReplicaSet. Uptime is derived from StartedAt at read time by the consumer.
 type ReplicaStatus struct {
-	ReplicaID       int        `json:"replicaId"`
-	State           string     `json:"state"` // "healthy" | "unhealthy" | "restarting"
-	Healthy         bool       `json:"healthy"`
-	InFlight        int64      `json:"inFlight"`
-	StartedAt       time.Time  `json:"startedAt,omitempty"`
-	LastCheck       *time.Time `json:"lastCheck,omitempty"`
-	LastHealthy     *time.Time `json:"lastHealthy,omitempty"`
-	LastError       string     `json:"lastError,omitempty"`
-	RestartAttempts uint32     `json:"restartAttempts,omitempty"`
-	NextRetryAt     *time.Time `json:"nextRetryAt,omitempty"`
-	PID             int        `json:"pid,omitempty"`
-	ContainerID     string     `json:"containerId,omitempty"`
+	Execution       *execution.Report `json:"execution,omitempty"`
+	ReplicaID       int               `json:"replicaId"`
+	State           string            `json:"state"` // "healthy" | "unhealthy" | "restarting"
+	Healthy         bool              `json:"healthy"`
+	InFlight        int64             `json:"inFlight"`
+	StartedAt       time.Time         `json:"startedAt,omitempty"`
+	LastCheck       *time.Time        `json:"lastCheck,omitempty"`
+	LastHealthy     *time.Time        `json:"lastHealthy,omitempty"`
+	LastError       string            `json:"lastError,omitempty"`
+	RestartAttempts uint32            `json:"restartAttempts,omitempty"`
+	NextRetryAt     *time.Time        `json:"nextRetryAt,omitempty"`
+	PID             int               `json:"pid,omitempty"`
+	ContainerID     string            `json:"containerId,omitempty"`
 }
 
 // resolveNetworkTransport returns the network.transport attribute value for a
@@ -2935,6 +3093,7 @@ func (g *Gateway) Status() []MCPServerStatus {
 		}
 
 		status := MCPServerStatus{
+			Execution:     meta.ExecutionRequested,
 			Name:          name,
 			Transport:     meta.Transport,
 			Endpoint:      meta.Endpoint,
@@ -2976,6 +3135,26 @@ func (g *Gateway) Status() []MCPServerStatus {
 		g.authStateMu.RUnlock()
 
 		status.Replicas = g.ReplicaStatuses(name)
+		if status.Execution != nil {
+			copy := *status.Execution
+			copy.Outcome = "pending"
+			if copy.Mode == "local" {
+				copy.Outcome = "configured"
+			} else if len(status.Replicas) > 0 {
+				copy.Outcome = "mixed"
+				eligible := 0
+				for _, replica := range status.Replicas {
+					if replica.Execution != nil && replica.Execution.Eligible {
+						eligible++
+					}
+				}
+				if eligible == len(status.Replicas) {
+					copy.Outcome = "observed"
+					copy.Eligible = true
+				}
+			}
+			status.Execution = &copy
+		}
 
 		if scaler := g.GetAutoscaler(name); scaler != nil {
 			st := scaler.Status()
@@ -3010,6 +3189,7 @@ func (g *Gateway) Status() []MCPServerStatus {
 		failed := false
 		statuses = append(statuses, MCPServerStatus{
 			Name:               name,
+			Execution:          g.executionFailures[name],
 			Tools:              []string{},
 			Healthy:            &failed,
 			HealthError:        msg + retryHints[name],

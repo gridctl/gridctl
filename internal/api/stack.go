@@ -367,6 +367,7 @@ func (s *Server) collectReplicaHealth() map[string][]config.ReplicaHealth {
 // config.ReplicaHealth shape.
 func toReplicaHealth(r mcp.ReplicaStatus, now time.Time) config.ReplicaHealth {
 	h := config.ReplicaHealth{
+		Execution:       r.Execution,
 		ReplicaID:       r.ReplicaID,
 		State:           r.State,
 		InFlight:        r.InFlight,

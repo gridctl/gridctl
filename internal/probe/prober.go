@@ -134,6 +134,9 @@ func (p *Prober) SetOAuthSource(fn func(url string) mcp.HeaderSource) {
 // It is safe to call concurrently; the caller is responsible for enforcing
 // concurrency caps.
 func (p *Prober) Probe(ctx context.Context, cfg config.MCPServer) (Result, *Error) {
+	if _, err := config.ResolveExecution(cfg); err != nil {
+		return Result{}, newErr(CodeInvalidConfig, err.Error(), "Remove inapplicable execution requirements before probing.")
+	}
 	if unsupported := unsupportedReason(cfg); unsupported != nil {
 		return Result{}, unsupported
 	}

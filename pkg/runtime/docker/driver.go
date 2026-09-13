@@ -2,10 +2,14 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 
+	"github.com/distribution/reference"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
+	"github.com/gridctl/gridctl/pkg/execution"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/runtime"
 
@@ -14,6 +18,8 @@ import (
 
 // DockerRuntime implements runtime.WorkloadRuntime using Docker.
 type DockerRuntime struct {
+	executionMu sync.Mutex
+	executions  map[string]*execution.ExecutionContract
 	cli         dockerclient.DockerClient
 	logger      *slog.Logger
 	runtimeInfo *runtime.RuntimeInfo
@@ -62,7 +68,16 @@ func (d *DockerRuntime) RuntimeInfo() *runtime.RuntimeInfo {
 
 // Start starts a workload and returns its status.
 func (d *DockerRuntime) Start(ctx context.Context, cfg runtime.WorkloadConfig) (*runtime.WorkloadStatus, error) {
+	if cfg.Execution != nil {
+		if cfg.Type != runtime.WorkloadTypeMCPServer || cfg.Execution.Mode != "hardened" {
+			return nil, fmt.Errorf("execution.mode: only managed MCP containers are covered")
+		}
+		if _, err := d.executionPreflight(ctx, cfg.Execution); err != nil {
+			return nil, err
+		}
+	}
 	containerName := ContainerName(cfg.Stack, cfg.Name)
+	wasRunning := false
 
 	// Check if already exists
 	exists, containerID, err := ContainerExists(ctx, d.cli, containerName)
@@ -71,14 +86,46 @@ func (d *DockerRuntime) Start(ctx context.Context, cfg runtime.WorkloadConfig) (
 	}
 
 	if exists {
+		if cfg.Execution != nil {
+			current, imageErr := d.cli.ContainerInspect(ctx, containerID)
+			if imageErr != nil {
+				return nil, fmt.Errorf("execution.reuse: image observation unavailable")
+			}
+			wasRunning = current.State != nil && current.State.Running
+			_, controlErr := d.inspectExecution(ctx, containerID, cfg.Execution, false)
+			if controlErr != nil || current.Config == nil || !executionImageMatches(current.Config.Image, cfg.Image) {
+				if err := StopContainer(ctx, d.cli, containerID, 5); err != nil {
+					return nil, fmt.Errorf("execution.cleanup: stop superseded instance failed")
+				}
+				if err := RemoveContainer(ctx, d.cli, containerID, false); err != nil {
+					return nil, fmt.Errorf("execution.cleanup: remove superseded instance failed")
+				}
+				exists = false
+				wasRunning = false
+			}
+		}
+	}
+	if exists {
 		if err := StartContainer(ctx, d.cli, containerID); err != nil {
+			if cfg.Execution != nil {
+				return nil, d.failedExecutionStart(ctx, containerID)
+			}
 			return nil, err
+		}
+		if cfg.Execution != nil {
+			if _, err := d.CheckExecution(ctx, containerID, cfg.Execution); err != nil {
+				if ctx.Err() != nil && !wasRunning {
+					return nil, errors.Join(err, d.removeExecutionInstance(ctx, containerID))
+				}
+				return nil, err
+			}
 		}
 		return d.Status(ctx, runtime.WorkloadID(containerID))
 	}
 
 	// Create container config from WorkloadConfig
 	dockerCfg := ContainerConfig{
+		Execution:   cfg.Execution,
 		Name:        containerName,
 		LogicalName: cfg.Name, // short name used as DNS alias on the network
 		Image:       cfg.Image,
@@ -97,12 +144,47 @@ func (d *DockerRuntime) Start(ctx context.Context, cfg runtime.WorkloadConfig) (
 	if err != nil {
 		return nil, err
 	}
+	if cfg.Execution != nil {
+		if _, err := d.inspectExecution(ctx, containerID, cfg.Execution, false); err != nil {
+			cleanupErr := RemoveContainer(ctx, d.cli, containerID, false)
+			if cleanupErr != nil {
+				return nil, errors.Join(err, fmt.Errorf("execution.cleanup: remove noncompliant instance failed"))
+			}
+			return nil, err
+		}
+	}
 
 	if err := StartContainer(ctx, d.cli, containerID); err != nil {
+		if cfg.Execution != nil {
+			return nil, d.failedExecutionStart(ctx, containerID)
+		}
 		return nil, err
+	}
+	if cfg.Execution != nil {
+		if _, err := d.CheckExecution(ctx, containerID, cfg.Execution); err != nil {
+			if ctx.Err() != nil {
+				return nil, errors.Join(err, d.removeExecutionInstance(ctx, containerID))
+			}
+			return nil, err
+		}
 	}
 
 	return d.Status(ctx, runtime.WorkloadID(containerID))
+}
+
+// Engines may expand Docker Hub names and default tags during creation.
+// Compare normalized references without treating different registries or tags
+// as aliases. Control inspection and fresh kernel evidence still gate reuse.
+func executionImageMatches(current, requested string) bool {
+	if current != "" && current == requested {
+		return true
+	}
+	a, err := reference.ParseNormalizedNamed(current)
+	if err != nil {
+		return false
+	}
+	b, err := reference.ParseNormalizedNamed(requested)
+	return err == nil && reference.TagNameOnly(a).String() == reference.TagNameOnly(b).String()
 }
 
 // Stop stops a running workload.
@@ -112,11 +194,28 @@ func (d *DockerRuntime) Stop(ctx context.Context, id runtime.WorkloadID) error {
 
 // Remove removes a stopped workload.
 func (d *DockerRuntime) Remove(ctx context.Context, id runtime.WorkloadID) error {
-	return RemoveContainer(ctx, d.cli, string(id), true)
+	if err := RemoveContainer(ctx, d.cli, string(id), true); err != nil {
+		return err
+	}
+	d.executionMu.Lock()
+	delete(d.executions, string(id))
+	d.executionMu.Unlock()
+	return nil
 }
 
 // Status returns the current status of a workload.
 func (d *DockerRuntime) Status(ctx context.Context, id runtime.WorkloadID) (*runtime.WorkloadStatus, error) {
+	d.executionMu.Lock()
+	contract := d.executions[string(id)]
+	d.executionMu.Unlock()
+	var report *execution.Report
+	if contract != nil {
+		var checkErr error
+		report, checkErr = d.CheckExecution(ctx, string(id), contract)
+		if checkErr != nil {
+			d.logger.Warn("execution eligibility withdrawn", "control", "runtime")
+		}
+	}
 	info, err := d.cli.ContainerInspect(ctx, string(id))
 	if err != nil {
 		return nil, fmt.Errorf("inspecting container: %w", err)
@@ -161,22 +260,26 @@ func (d *DockerRuntime) Status(ctx context.Context, id runtime.WorkloadID) (*run
 	}
 
 	// Build endpoint
+	if workloadType == runtime.WorkloadTypeResource && report == nil {
+		report = &execution.Report{Mode: "not-covered", Outcome: "not-covered", Runtime: "docker-compatible"}
+	}
 	endpoint := ""
 	if hostPort > 0 {
 		endpoint = fmt.Sprintf("localhost:%d", hostPort)
 	}
 
 	return &runtime.WorkloadStatus{
-		ID:       id,
-		Name:     name,
-		Stack:    info.Config.Labels[LabelStack],
-		Type:     workloadType,
-		State:    state,
-		Message:  info.State.Status,
-		Endpoint: endpoint,
-		HostPort: hostPort,
-		Image:    info.Config.Image,
-		Labels:   info.Config.Labels,
+		Execution: report,
+		ID:        id,
+		Name:      name,
+		Stack:     info.Config.Labels[LabelStack],
+		Type:      workloadType,
+		State:     state,
+		Message:   info.State.Status,
+		Endpoint:  endpoint,
+		HostPort:  hostPort,
+		Image:     info.Config.Image,
+		Labels:    info.Config.Labels,
 	}, nil
 }
 
@@ -234,6 +337,9 @@ func (d *DockerRuntime) List(ctx context.Context, filter runtime.WorkloadFilter)
 			Image:   c.Image,
 			Labels:  c.Labels,
 		})
+		if workloadType == runtime.WorkloadTypeResource {
+			statuses[len(statuses)-1].Execution = &execution.Report{Mode: "not-covered", Outcome: "not-covered", Runtime: "docker-compatible"}
+		}
 	}
 
 	return statuses, nil

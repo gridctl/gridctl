@@ -2298,6 +2298,7 @@ interface JSONRPCResponse<T = unknown> {
 // config.MCPServer relevant to tool discovery — snake_case fields match the
 // stack YAML schema.
 export interface ProbeServerConfig {
+  execution?: Record<string, unknown>;
   name?: string;
   image?: string;
   url?: string;

@@ -155,6 +155,9 @@ func compareMCPServers(a, b MCPServer) []string {
 		return nil
 	}
 	var details []string
+	if !ExecutionEqual(a, b) {
+		details = append(details, "execution changed: recreate; review resolved restrictions and relaxations")
+	}
 	if a.Image != b.Image {
 		details = append(details, fmt.Sprintf("image: %s → %s", b.Image, a.Image))
 	}

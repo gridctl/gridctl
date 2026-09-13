@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/gridctl/gridctl/pkg/config"
+	"github.com/gridctl/gridctl/pkg/execution"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/runtime"
@@ -305,7 +306,9 @@ func (h *Handler) applyMCPServerChanges(ctx context.Context, diff MCPServerDiff,
 		h.logger.Info("removing MCP server", "name", server.Name)
 
 		// Unregister from gateway
-		h.gateway.UnregisterMCPServer(server.Name)
+		if err := h.gateway.UnregisterMCPServerContext(ctx, server.Name); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("failed to retire %s: %v", server.Name, err))
+		}
 
 		// Clear stored pins so a future re-add of the same server name starts fresh.
 		if err := h.gateway.ResetServerPins(server.Name); err != nil {
@@ -330,17 +333,81 @@ func (h *Handler) applyMCPServerChanges(ctx context.Context, diff MCPServerDiff,
 	// Handle modified servers (stop old, start new)
 	for _, change := range diff.Modified {
 		h.logger.Info("reloading MCP server", "name", change.Name)
+		executionChanged := !config.ExecutionEqual(change.Old, change.New)
+		if executionChanged {
+			contract, preflightErr := config.ResolveExecution(change.New)
+			if preflightErr == nil && contract != nil && change.New.IsContainerBased() {
+				if h.runtime == nil {
+					preflightErr = fmt.Errorf("execution: runtime unavailable")
+				} else if checker, ok := h.runtime.Runtime().(interface {
+					PreflightExecution(context.Context, *config.ExecutionContract) error
+				}); ok {
+					preflightErr = checker.PreflightExecution(ctx, contract)
+				} else {
+					preflightErr = fmt.Errorf("execution: runtime preflight unavailable")
+				}
+			}
+			if preflightErr != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("execution preflight failed for %s: %v", change.Name, preflightErr))
+				replaceMCPServer(newCfg, change.Old)
+				continue
+			}
+			// Acceptance withdraws the old route before image preparation. A
+			// failed replacement must not restore weaker serving intent.
+			retireErr := h.gateway.UnregisterMCPServerContext(ctx, change.Name)
+			if retireErr != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("execution retirement failed for %s: %v", change.Name, retireErr))
+				h.recordExecutionFailure(change.New, retireErr)
+			}
+			if change.Old.IsContainerBased() && h.runtime != nil && h.runtime.Runtime() != nil {
+				workloads, cleanupErr := h.runtime.Runtime().List(ctx, runtime.WorkloadFilter{Stack: h.currentCfg.Name})
+				if cleanupErr == nil {
+					for _, workload := range workloads {
+						if workload.Labels[runtime.LabelMCPServer] != change.Name {
+							continue
+						}
+						if err := h.runtime.Runtime().Stop(ctx, workload.ID); err != nil {
+							cleanupErr = fmt.Errorf("execution.cleanup: superseded replica stop failed")
+							break
+						}
+						if err := h.runtime.Runtime().Remove(ctx, workload.ID); err != nil {
+							cleanupErr = fmt.Errorf("execution.cleanup: superseded replica removal failed")
+							break
+						}
+					}
+				}
+				if cleanupErr != nil {
+					failure := fmt.Errorf("execution.cleanup: accepted revision cannot replace superseded replicas")
+					result.Errors = append(result.Errors, failure.Error())
+					h.recordExecutionFailure(change.New, failure)
+					continue
+				}
+			}
+			if retireErr != nil {
+				continue
+			}
+		}
 		desiredImage, err := h.prepareMCPServer(ctx, change.New, newCfg)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("failed to reload %s: %v", change.Name, err))
 			// Preparation happens before replacement. Keep the old declaration
 			// applied so the unchanged desired file is diffed and retried later.
-			replaceMCPServer(newCfg, change.Old)
+			if executionChanged {
+				h.recordExecutionFailure(change.New, fmt.Errorf("execution replacement preparation failed"))
+			} else {
+				replaceMCPServer(newCfg, change.Old)
+			}
 			continue
 		}
 
 		// Unregister from gateway
-		h.gateway.UnregisterMCPServer(change.Name)
+		if !executionChanged {
+			if err := h.gateway.UnregisterMCPServerContext(ctx, change.Name); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("failed to retire %s: %v", change.Name, err))
+				h.recordExecutionFailure(change.New, err)
+				continue
+			}
+		}
 
 		// Stop old container(s) if it was container-based.
 		if !change.Old.IsExternal() && !change.Old.IsLocalProcess() && !change.Old.IsSSH() && !change.Old.IsOpenAPI() {
@@ -353,8 +420,10 @@ func (h *Handler) applyMCPServerChanges(ctx context.Context, diff MCPServerDiff,
 
 		// Clear stale pins: the server config changed, so existing pins are invalid.
 		// The next RegisterMCPServer call will re-pin the new tool definitions from scratch.
-		if err := h.gateway.ResetServerPins(change.Name); err != nil {
-			h.logger.Warn("failed to reset schema pins for modified server", "name", change.Name, "error", err)
+		if !config.ExecutionOnlyChange(change.Old, change.New) {
+			if err := h.gateway.ResetServerPins(change.Name); err != nil {
+				h.logger.Warn("failed to reset schema pins for modified server", "name", change.Name, "error", err)
+			}
 		}
 
 		// Start new server
@@ -362,7 +431,7 @@ func (h *Handler) applyMCPServerChanges(ctx context.Context, diff MCPServerDiff,
 			result.Errors = append(result.Errors, fmt.Sprintf("failed to reload %s: %v", change.Name, err))
 			// The old server was already unregistered; record the failure so
 			// the server surfaces as failed instead of silently vanishing.
-			h.gateway.RecordRegistrationFailure(change.Name, err)
+			h.recordExecutionFailure(change.New, err)
 			continue
 		}
 
@@ -519,7 +588,20 @@ func (h *Handler) prepareMCPServer(ctx context.Context, server config.MCPServer,
 	return h.runtime.PrepareMCPServer(ctx, stack.Name, &server, false)
 }
 
+func (h *Handler) recordExecutionFailure(server config.MCPServer, failure error) {
+	contract, err := config.ResolveExecution(server)
+	if err != nil {
+		h.gateway.RecordRegistrationFailure(server.Name, err)
+		return
+	}
+	h.gateway.RecordExecutionFailure(server.Name, execution.RequestedReport(contract), failure)
+}
+
 func (h *Handler) startMCPServer(ctx context.Context, server config.MCPServer, stack *config.Stack, desiredImage string) error {
+	contract, err := config.ResolveExecution(server)
+	if err != nil {
+		return err
+	}
 	replicas := effectiveReplicas(&server)
 
 	// Skip container creation for non-container servers. Still produce N
@@ -565,6 +647,7 @@ func (h *Handler) startMCPServer(ctx context.Context, server config.MCPServer, s
 			workloadName = fmt.Sprintf("%s-replica-%d", server.Name, replicaID)
 		}
 		cfg := runtime.WorkloadConfig{
+			Execution:   contract,
 			Name:        workloadName,
 			Stack:       stack.Name,
 			Type:        runtime.WorkloadTypeMCPServer,

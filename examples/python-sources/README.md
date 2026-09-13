@@ -42,6 +42,8 @@ Both packages expose one console script, so neither server needs an explicit
 `command`. Gridctl builds both as non-root stdio containers and publishes no
 host ports.
 
+These examples omit `execution`, so a generated non-root image does not imply read-only filesystems, finite cgroup limits, or denied networking. Opt into the [execution profile](../../docs/execution.md) separately with explicit numeric UID/GID. Fetch requires the visible `network: connected` exception for runtime web requests; runtime networking never restricts package downloads during the image build.
+
 ```bash
 gridctl validate examples/python-sources/daily.yaml
 gridctl plan examples/python-sources/daily.yaml --show-dockerfile

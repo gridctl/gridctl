@@ -61,6 +61,8 @@ Where they overlap: whitelists (this workspace) decide what the gateway exposes 
 
 These filters are separate from [gateway authentication](config-schema.md#auth). When configured, the gateway credential is required on every grouped MCP request, just as on `/mcp`. Client selectors are self-declared, and group names are not authenticated identities; the filters are guardrails for cooperating clients.
 
+A tool that survives exposure filters can still be blocked by required container execution evidence. Inspect the server's Execution evidence in the Stack sidebar; MCP health and an enabled tool checkbox do not establish eligibility. [Execution controls](execution.md) also cover code-mode inner tool calls through the same gateway dispatch path.
+
 ## Related
 
 - [Configuration Reference](config-schema.md) - `tools:`, `clients:`, and `groups:` blocks

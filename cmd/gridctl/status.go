@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/gridctl/gridctl/pkg/execution"
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/pins"
 	"github.com/gridctl/gridctl/pkg/runtime"
@@ -292,15 +293,16 @@ func queryTraceCount(port int) int {
 // to render rolled-up and per-replica views. Defined locally so the CLI does
 // not pull in the internal/api package.
 type mcpServerAPI struct {
-	Name         string `json:"name"`
-	Transport    string `json:"transport"`
-	External     bool   `json:"external"`
-	LocalProcess bool   `json:"localProcess"`
-	SSH          bool   `json:"ssh"`
-	OpenAPI      bool   `json:"openapi"`
-	Healthy      *bool  `json:"healthy,omitempty"`
-	HealthError  string `json:"healthError,omitempty"`
-	RegFailed    bool   `json:"registrationFailed,omitempty"`
+	Execution    *execution.Report `json:"execution,omitempty"`
+	Name         string            `json:"name"`
+	Transport    string            `json:"transport"`
+	External     bool              `json:"external"`
+	LocalProcess bool              `json:"localProcess"`
+	SSH          bool              `json:"ssh"`
+	OpenAPI      bool              `json:"openapi"`
+	Healthy      *bool             `json:"healthy,omitempty"`
+	HealthError  string            `json:"healthError,omitempty"`
+	RegFailed    bool              `json:"registrationFailed,omitempty"`
 	// ProtocolGeneration is the resolved MCP protocol era ("handshake"
 	// or "stateless"); empty for OpenAPI adapters.
 	ProtocolGeneration string          `json:"protocolGeneration,omitempty"`
@@ -323,15 +325,16 @@ type autoscaleAPI struct {
 
 // mcpReplicaAPI is the per-replica slice of mcpServerAPI.
 type mcpReplicaAPI struct {
-	ReplicaID       int        `json:"replicaId"`
-	State           string     `json:"state"`
-	Healthy         bool       `json:"healthy"`
-	InFlight        int64      `json:"inFlight"`
-	StartedAt       time.Time  `json:"startedAt,omitempty"`
-	RestartAttempts uint32     `json:"restartAttempts,omitempty"`
-	NextRetryAt     *time.Time `json:"nextRetryAt,omitempty"`
-	PID             int        `json:"pid,omitempty"`
-	ContainerID     string     `json:"containerId,omitempty"`
+	Execution       *execution.Report `json:"execution,omitempty"`
+	ReplicaID       int               `json:"replicaId"`
+	State           string            `json:"state"`
+	Healthy         bool              `json:"healthy"`
+	InFlight        int64             `json:"inFlight"`
+	StartedAt       time.Time         `json:"startedAt,omitempty"`
+	RestartAttempts uint32            `json:"restartAttempts,omitempty"`
+	NextRetryAt     *time.Time        `json:"nextRetryAt,omitempty"`
+	PID             int               `json:"pid,omitempty"`
+	ContainerID     string            `json:"containerId,omitempty"`
 }
 
 // queryMCPServers fetches the /api/mcp-servers payload from a running
@@ -486,6 +489,9 @@ func buildReplicaDetails(servers []mcpServerAPI) []output.ReplicaDetail {
 				row.Uptime = formatUptime(now.Sub(r.StartedAt))
 			} else {
 				row.Uptime = "—"
+			}
+			if r.Execution != nil {
+				row.State += "; execution " + r.Execution.Outcome + " (" + r.Execution.Mode + ")"
 			}
 			rows = append(rows, row)
 		}

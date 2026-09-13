@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,9 +28,13 @@ type StdioClient struct {
 
 	// Connection state
 	connMu   sync.Mutex
+	closeMu  sync.Mutex
+	writeMu  sync.Mutex
+	readDone chan struct{}
 	stdin    io.WriteCloser
 	stdout   io.Reader
 	attached bool
+	retired  bool
 	cancel   context.CancelFunc
 
 	// Reconnection serialization
@@ -65,11 +71,23 @@ func NewStdioClient(name, containerID string, cli dockerclient.DockerClient) *St
 
 // Connect attaches to the container's stdin/stdout.
 func (c *StdioClient) Connect(ctx context.Context) error {
+	c.closeMu.Lock()
+	defer c.closeMu.Unlock()
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
+	if c.retired {
+		return fmt.Errorf("container client retired")
+	}
 
 	if c.attached {
 		return nil
+	}
+	if c.readDone != nil {
+		select {
+		case <-c.readDone:
+		default:
+			return fmt.Errorf("previous container response cleanup pending")
+		}
 	}
 
 	// Attach to container
@@ -101,9 +119,18 @@ func (c *StdioClient) Connect(ctx context.Context) error {
 	// Start reading responses with cancellation
 	readerCtx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
-	go c.readResponses(readerCtx, c.stdout)
+	readDone := make(chan struct{})
+	c.readDone = readDone
+	go func() { defer close(readDone); c.readResponses(readerCtx, stdoutReader) }()
 
 	return nil
+}
+
+func (c *StdioClient) retire() error {
+	c.connMu.Lock()
+	c.retired = true
+	c.connMu.Unlock()
+	return c.Close()
 }
 
 // readResponses reads JSON-RPC responses from stdout.
@@ -207,7 +234,7 @@ func (c *StdioClient) call(ctx context.Context, method string, params any, resul
 	c.logger.Debug("sending request", "method", method, "id", id)
 
 	// Send request
-	if err := c.sendStdio(req); err != nil {
+	if err := c.sendStdioContext(ctx, req); err != nil {
 		c.responsesMu.Lock()
 		delete(c.responses, id)
 		c.responsesMu.Unlock()
@@ -247,35 +274,60 @@ func (c *StdioClient) call(ctx context.Context, method string, params any, resul
 }
 
 // send sends a JSON-RPC notification via stdin (no response expected).
-func (c *StdioClient) send(_ context.Context, method string, params any) error {
+func (c *StdioClient) send(ctx context.Context, method string, params any) error {
 	req, err := buildNotification(method, params)
 	if err != nil {
 		return err
 	}
 
-	return c.sendStdio(req)
+	return c.sendStdioContext(ctx, req)
 }
 
 // sendStdio writes a request to stdin.
 func (c *StdioClient) sendStdio(req jsonrpc.Request) error {
+	return c.sendStdioContext(context.Background(), req)
+}
+
+func (c *StdioClient) sendStdioContext(ctx context.Context, req jsonrpc.Request) error {
+	ctx, cancel := context.WithTimeout(ctx, DefaultRequestTimeout)
+	defer cancel()
 	c.connMu.Lock()
-	defer c.connMu.Unlock()
 
 	if !c.attached || c.stdin == nil {
+		c.connMu.Unlock()
 		return fmt.Errorf("not connected")
 	}
+	stdin := c.stdin
+	c.connMu.Unlock()
 
 	data, err := json.Marshal(req)
 	if err != nil {
 		return fmt.Errorf("marshaling request: %w", err)
 	}
 
-	// Write JSON followed by newline
-	if _, err := c.stdin.Write(append(data, '\n')); err != nil {
-		return fmt.Errorf("writing to stdin: %w", err)
+	written := make(chan error, 1)
+	go func() {
+		c.writeMu.Lock()
+		defer c.writeMu.Unlock()
+		if err := ctx.Err(); err != nil {
+			written <- err
+			return
+		}
+		_, err := stdin.Write(append(data, '\n'))
+		written <- err
+	}()
+	select {
+	case err := <-written:
+		if err != nil {
+			return fmt.Errorf("writing to stdin: %w", err)
+		}
+		return nil
+	case <-ctx.Done():
+		if err := stdin.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			c.logger.Debug("closing interrupted container input failed")
+		}
+		return ctx.Err()
 	}
-
-	return nil
 }
 
 // Reconnect closes the existing connection and re-establishes it, including the
@@ -290,7 +342,9 @@ func (c *StdioClient) Reconnect(ctx context.Context) error {
 	// Close existing connection (cancels goroutines, closes pipes).
 	// The deferred drainPendingRequests in readResponses will clear the
 	// response map, so no explicit reset is needed here.
-	c.Close()
+	if err := c.Close(); err != nil {
+		return fmt.Errorf("closing previous container connection: %w", err)
+	}
 
 	// Re-establish connection
 	if err := c.Connect(ctx); err != nil {
@@ -299,12 +353,12 @@ func (c *StdioClient) Reconnect(ctx context.Context) error {
 
 	// Re-do MCP handshake
 	if err := c.Initialize(ctx); err != nil {
-		return fmt.Errorf("reinitialize: %w", err)
+		return errors.Join(fmt.Errorf("reinitialize: %w", err), c.Close())
 	}
 
 	// Refresh tool list
 	if err := c.RefreshTools(ctx); err != nil {
-		return fmt.Errorf("refresh tools: %w", err)
+		return errors.Join(fmt.Errorf("refresh tools: %w", err), c.Close())
 	}
 
 	c.logger.Info("reconnected to container")
@@ -340,20 +394,35 @@ func (c *StdioClient) Ping(ctx context.Context) error {
 
 // Close closes the connection.
 func (c *StdioClient) Close() error {
+	c.closeMu.Lock()
+	defer c.closeMu.Unlock()
 	c.connMu.Lock()
-	defer c.connMu.Unlock()
 
 	if c.cancel != nil {
 		c.cancel()
 	}
-	if c.stdin != nil {
-		c.stdin.Close()
-	}
-	if c.stdout != nil {
-		if closer, ok := c.stdout.(io.Closer); ok {
-			closer.Close()
+	stdin, stdout, readDone := c.stdin, c.stdout, c.readDone
+	c.attached = false
+	c.connMu.Unlock()
+	var cleanupErrors []error
+	if stdin != nil {
+		if err := stdin.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("container input cleanup failed"))
 		}
 	}
-	c.attached = false
-	return nil
+	if stdout != nil {
+		if closer, ok := stdout.(io.Closer); ok {
+			if err := closer.Close(); err != nil {
+				cleanupErrors = append(cleanupErrors, fmt.Errorf("container output cleanup failed"))
+			}
+		}
+	}
+	if readDone != nil {
+		select {
+		case <-readDone:
+		case <-time.After(processKillGracePeriod):
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("container response cleanup deadline exceeded"))
+		}
+	}
+	return errors.Join(cleanupErrors...)
 }

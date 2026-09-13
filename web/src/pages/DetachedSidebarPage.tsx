@@ -31,6 +31,7 @@ import type {
 import { InspectorSection } from '../components/inspector';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { SourceProvenance } from '../components/sidebar/SourceProvenance';
+import { ExecutionDetails } from '../components/sidebar/ExecutionDetails';
 import { useAuthStore } from '../stores/useAuthStore';
 
 interface NodeOption {
@@ -329,6 +330,7 @@ function NodeDetails({ node }: { node: NodeOption }) {
             <Badge status={status as 'running' | 'stopped' | 'error'}>{status}</Badge>
           </div>
 
+          <ExecutionDetails server={serverData ?? undefined} resource={!isServer} />
           {isServer && serverData?.transport && (() => {
             const TransportIcon = getTransportIcon(serverData.transport);
             return (

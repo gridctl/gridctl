@@ -61,7 +61,7 @@ type ContainerSpawner struct {
 
 	idCounter atomic.Int64
 
-	mu       sync.Mutex
+	mu        sync.Mutex
 	workloads map[mcp.AgentClient]runtime.WorkloadID // client -> container id, for Reap
 }
 
@@ -70,11 +70,11 @@ type ContainerSpawner struct {
 type ContainerSpawnerOptions struct {
 	Builder   ClientBuilder
 	Runtime   runtime.WorkloadRuntime
-	Stack     string             // stack.Name
-	Server    config.MCPServer   // full server config (command, env, port, etc.)
-	Network   string             // resolved network name
-	Image     string             // image prepared before autoscaler registration
-	Transport string             // "http" | "stdio" | "sse"
+	Stack     string           // stack.Name
+	Server    config.MCPServer // full server config (command, env, port, etc.)
+	Network   string           // resolved network name
+	Image     string           // image prepared before autoscaler registration
+	Transport string           // "http" | "stdio" | "sse"
 	Ports     PortAllocator
 	Logger    *slog.Logger
 	InitialID int // next replica id to assign (typically set.Size() at register time)
@@ -107,6 +107,10 @@ func NewContainerSpawner(opts ContainerSpawnerOptions) *ContainerSpawner {
 // the spawned container is stopped and removed so no orphan containers
 // linger. Matches the "defer cleanup()" requirement in the spec.
 func (c *ContainerSpawner) Spawn(ctx context.Context) (mcp.AgentClient, error) {
+	contract, err := config.ResolveExecution(c.server)
+	if err != nil {
+		return nil, err
+	}
 	if c.rt == nil {
 		return nil, fmt.Errorf("container spawner %q: runtime unavailable", c.server.Name)
 	}
@@ -118,6 +122,7 @@ func (c *ContainerSpawner) Spawn(ctx context.Context) (mcp.AgentClient, error) {
 	}
 
 	cfg := runtime.WorkloadConfig{
+		Execution:   contract,
 		Name:        name,
 		Stack:       c.stack,
 		Type:        runtime.WorkloadTypeMCPServer,
@@ -222,13 +227,18 @@ func (c *ContainerSpawner) buildClientConfig(hostPort int, id runtime.WorkloadID
 		ReadyTimeout:       c.server.ResolvedReadyTimeout(),
 		ProtocolGeneration: c.server.ProtocolGeneration,
 	}
+	wireExecution(&cfg, c.server, c.rt, string(id))
 	if cfg.Transport == "" {
 		cfg.Transport = mcp.TransportHTTP
 	}
 	if cfg.Transport == mcp.TransportStdio {
 		cfg.ContainerID = string(id)
 	} else {
-		cfg.Endpoint = fmt.Sprintf("http://localhost:%d/mcp", hostPort)
+		host := "localhost"
+		if c.server.Execution != nil {
+			host = "127.0.0.1"
+		}
+		cfg.Endpoint = fmt.Sprintf("http://%s:%d/mcp", host, hostPort)
 	}
 	return cfg
 }

@@ -8,6 +8,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/gridctl/gridctl/pkg/execution"
 	"github.com/gridctl/gridctl/pkg/flags"
 	"github.com/gridctl/gridctl/pkg/registry"
 )
@@ -30,10 +31,11 @@ type ValidationIssue struct {
 
 // ValidationResult holds the complete output of spec validation.
 type ValidationResult struct {
-	Valid        bool              `json:"valid"`
-	ErrorCount   int               `json:"errorCount"`
-	WarningCount int               `json:"warningCount"`
-	Issues       []ValidationIssue `json:"issues"`
+	Execution    map[string]*execution.Report `json:"execution,omitempty"`
+	Valid        bool                         `json:"valid"`
+	ErrorCount   int                          `json:"errorCount"`
+	WarningCount int                          `json:"warningCount"`
+	Issues       []ValidationIssue            `json:"issues"`
 }
 
 // SpecHealth aggregates validation, drift, and dependency status.
@@ -53,15 +55,16 @@ type SpecHealth struct {
 // ReplicaSet. Durations use seconds so the JSON representation does not
 // depend on Go's time formatting.
 type ReplicaHealth struct {
-	ReplicaID        int    `json:"replicaId"`
-	State            string `json:"state"` // "healthy" | "unhealthy" | "restarting"
-	InFlight         int64  `json:"inFlight"`
-	UptimeSeconds    int64  `json:"uptimeSeconds,omitempty"`
-	LastError        string `json:"lastError,omitempty"`
-	NextRetrySeconds int64  `json:"nextRetrySeconds,omitempty"`
-	RestartAttempts  uint32 `json:"restartAttempts,omitempty"`
-	PID              int    `json:"pid,omitempty"`
-	ContainerID      string `json:"containerId,omitempty"`
+	Execution        *execution.Report `json:"execution,omitempty"`
+	ReplicaID        int               `json:"replicaId"`
+	State            string            `json:"state"` // "healthy" | "unhealthy" | "restarting"
+	InFlight         int64             `json:"inFlight"`
+	UptimeSeconds    int64             `json:"uptimeSeconds,omitempty"`
+	LastError        string            `json:"lastError,omitempty"`
+	NextRetrySeconds int64             `json:"nextRetrySeconds,omitempty"`
+	RestartAttempts  uint32            `json:"restartAttempts,omitempty"`
+	PID              int               `json:"pid,omitempty"`
+	ContainerID      string            `json:"containerId,omitempty"`
 }
 
 // ValidationStatus summarizes the spec validation state.
@@ -115,6 +118,19 @@ func ValidateWithIssues(s *Stack) *ValidationResult {
 
 	// Add warning-level checks
 	result.addWarnings(s)
+	for _, server := range s.MCPServers {
+		if server.Execution == nil {
+			continue
+		}
+		contract, err := ResolveExecution(server)
+		if err != nil {
+			continue
+		} // The field error is already included above.
+		if result.Execution == nil {
+			result.Execution = map[string]*execution.Report{}
+		}
+		result.Execution[server.Name] = execution.RequestedReport(contract)
+	}
 
 	return result
 }

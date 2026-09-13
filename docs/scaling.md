@@ -33,6 +33,8 @@ image once before creating the replica set. Every static replica and later
 autoscaled spawn uses that same image. Per-server `volumes` mounts are also
 copied to every container replica.
 
+Opt-in [execution controls](execution.md) propagate to every static replica, autoscaled spawn, and idle-to-zero wake-up. Hardened containers require fresh instance-bound evidence before serving; health alone does not establish eligibility. Resource limits apply per replica, not to the fleet. Named data volumes can be shared and are not storage-bounded.
+
 ---
 
 ## Configuration
@@ -89,7 +91,7 @@ Every replica is pinged independently on the gateway's health-check interval. A 
 
 1. Marked unhealthy and excluded from dispatch immediately.
 2. Scheduled for reconnection with exponential backoff: **1s → 2s → 4s → 8s → 16s → 30s cap**, with ±25% jitter to prevent a fleet of replicas from resynchronizing their retries.
-3. Returned to rotation on the first successful reconnect. The backoff resets - the next failure starts at 1s again.
+3. Returned to rotation on the first successful reconnect, with fresh required execution evidence for hardened containers. The backoff resets, so the next failure starts at 1s again.
 
 If **every** replica is unhealthy, tool calls return a structured error naming the server and including the per-replica failure reason. Clients see `no healthy replicas` instead of a hanging call.
 
@@ -120,8 +122,8 @@ Per-replica state is surfaced through every existing gridctl observability surfa
   junos  local-process    3/3        healthy
   junos  local-process    2/3        degraded (replica-1 restarting, next in 4s)
   ```
-  `gridctl status --replicas` expands to one row per replica with PID/container-id, uptime, and in-flight count.
-- **REST API.** `/api/stack/health` includes a `replicas` array for every server with a replica set, each entry carrying `replicaId`, `state`, `inFlight`, `restartAttempts`, `nextRetryAt`, and the transport-specific handle (`pid` or `containerId`).
+  `gridctl status --replicas` expands to one row per replica with PID/container-id, uptime, and in-flight count. STATE also includes execution outcome and mode when a report exists; use `--json` for structured evidence.
+- **REST API.** `/api/stack/health` includes a `replicas` map keyed by server name, each array entry carrying `replicaId`, `state`, `inFlight`, optional `restartAttempts`, `nextRetrySeconds`, and the transport-specific handle (`pid` or `containerId`). Optional `execution` carries the per-replica report. `/api/mcp-servers` uses `nextRetryAt` timestamps instead. See the [report schema](api-reference.md#execution-reports).
 - **Metrics.** `pkg/metrics/accumulator.go` tracks per-replica counters. Per-server aggregates remain (they sum across replicas).
 
 ---
@@ -273,6 +275,9 @@ least **60s** or keep a permanent warm replica (`min: 0, warm_pool: 1`).
   in-flight tool calls are disrupted.
 - Switching between `replicas: N` and `autoscale:` (or vice versa) is a
   full server restart, same as any other structural change.
+- Simultaneous execution and pool edits require recreation rather than an in-place policy update. Execution-only recreation preserves schema pins. Retirement cancels obsolete scaling operations and cleans up late spawns; a failed accepted replacement does not resume weaker replicas.
+
+At idle-to-zero there is no current active container evidence. The next spawn must establish its own eligibility; an earlier replica's observation does not cover it.
 
 ### Observability
 

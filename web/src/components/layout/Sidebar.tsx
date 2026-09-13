@@ -30,6 +30,7 @@ import { ToolsEditor } from '../sidebar/ToolsEditor';
 import { AutoscalePanel } from '../status/AutoscalePanel';
 import { SidebarTelemetrySection } from '../telemetry/SidebarTelemetrySection';
 import { SourceProvenance } from '../sidebar/SourceProvenance';
+import { ExecutionDetails } from '../sidebar/ExecutionDetails';
 import { getTransportIcon, getTransportColorClasses } from '../../lib/transport';
 import { getClientIcon } from '../../lib/clientIcons';
 import { summarizeClientReach } from '../../lib/clientScope';
@@ -218,6 +219,7 @@ export function Sidebar() {
             {isServer && (
               <SourceProvenance kind={serverData?.kind} image={serverData?.image} source={serverData?.source} />
             )}
+            {!isClient && <ExecutionDetails server={mcpServers.find((server) => server.name === data.name)} resource={!isServer} />}
 
             {/* Generation renders only on mixed fleets: when every server
                 speaks the same generation the label carries no signal

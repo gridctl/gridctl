@@ -237,6 +237,14 @@ mcp-servers:
 
 Learn more → [Source configuration](docs/config-schema.md#source) · [Runnable example](examples/python-sources/)
 
+### MCP Execution Controls
+
+Opt into `execution.mode: hardened` for managed MCP containers, with explicit numeric UID/GID, finite per-replica limits, read-only root, bounded scratch, and no network by default. Required engine and kernel evidence gates routing. Existing server details show execution evidence separately from MCP health.
+
+Local processes can select `execution.mode: local` for explicit environment inheritance and executable lookup; they remain unsandboxed. Omission retains compatibility behavior. Container observation requires a supported Linux daemon environment; see the guide for runtime limits and acceptance status.
+
+Learn more → [Execution controls](docs/execution.md) · [Runnable example](examples/execution/)
+
 ### `gridctl optimize` & Usage Observability
 
 Every tool call's arguments and results are token-counted per server, replica, client, and tool, and the Metrics workspace charts throughput, call counts, and the savings from output format conversion (measured from the gateway's own before/after counts). `gridctl optimize` scans the running gateway and surfaces actionable findings with projected weekly token impact (unused servers, unused tools, schema overhead, and format-conversion shortfalls), plus a paste-ready YAML remediation for each.
@@ -408,6 +416,7 @@ Learn more → [Packs guide](docs/packs.md)
 | [`declarative-link/stack.yaml`](examples/declarative-link/stack.yaml) | Auto-link LLM clients on apply with a `link:` block |
 | [`autoscale-basic.yaml`](examples/autoscale/autoscale-basic.yaml) | Reactive replica autoscaling for a stdio server |
 | [`python-sources/`](examples/python-sources/) | Generate non-root Python containers from exact PyPI and Git sources |
+| [`execution/`](examples/execution/) | Opt-in container restrictions and instance-bound execution evidence |
 | [`otlp-jaeger.yaml`](examples/tracing/otlp-jaeger.yaml) | Export traces to Jaeger via OTLP |
 | [`portable-pack/`](examples/portable-pack) | Team pack: skills, agents, and wiring from one manifest |
 

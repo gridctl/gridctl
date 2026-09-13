@@ -312,7 +312,8 @@ func (r *ServerRegistrar) buildReplicaConfigs(server runtime.MCPServerResult, se
 // buildServerConfig constructs an MCPServerConfig from an UpResult server entry
 // and its corresponding stack config. This handles all transport types:
 // external, local process, SSH, OpenAPI, container stdio, and container HTTP/SSE.
-func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serverCfg config.MCPServer, stackPath string) mcp.MCPServerConfig {
+func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serverCfg config.MCPServer, stackPath string) (cfg mcp.MCPServerConfig) {
+	defer func() { wireExecution(&cfg, serverCfg, r.runtime, string(server.WorkloadID)) }()
 	transport := resolveTransport(serverCfg.Transport)
 
 	if server.External {
@@ -332,6 +333,7 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 	}
 	if server.LocalProcess {
 		return mcp.MCPServerConfig{
+			Execution:          serverCfg.Execution,
 			Name:               server.Name,
 			LocalProcess:       true,
 			Command:            server.Command,
@@ -391,9 +393,10 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 
 // buildConfigFromMCPServer constructs an MCPServerConfig from a config.MCPServer.
 // This is the single-server registration path used by the reload handler.
-// containerID is consumed only by the stdio container branch; other branches
-// ignore it.
-func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, hostPort int, containerID, stackPath string) mcp.MCPServerConfig {
+// containerID identifies stdio transport and binds selected HTTP execution
+// evidence to the inspected replica.
+func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, hostPort int, containerID, stackPath string) (cfg mcp.MCPServerConfig) {
+	defer func() { wireExecution(&cfg, server, r.runtime, containerID) }()
 	transport := resolveTransport(server.Transport)
 
 	if server.IsExternal() {
@@ -413,6 +416,7 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 	}
 	if server.IsLocalProcess() {
 		return mcp.MCPServerConfig{
+			Execution:          server.Execution,
 			Name:               server.Name,
 			LocalProcess:       true,
 			Command:            server.Command,
@@ -472,10 +476,14 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 // ReadyTimeout / CleanupOnReadyFailure propagation in one place so future fields
 // only need to be added once.
 func (r *ServerRegistrar) buildContainerHTTPConfig(name string, transport mcp.Transport, hostPort int, serverCfg config.MCPServer, id runtime.WorkloadID) mcp.MCPServerConfig {
+	host := "localhost"
+	if serverCfg.Execution != nil {
+		host = "127.0.0.1"
+	}
 	return mcp.MCPServerConfig{
 		Name:                  name,
 		Transport:             transport,
-		Endpoint:              fmt.Sprintf("http://localhost:%d/mcp", hostPort),
+		Endpoint:              fmt.Sprintf("http://%s:%d/mcp", host, hostPort),
 		Tools:                 serverCfg.Tools,
 		OutputFormat:          serverCfg.OutputFormat,
 		PinSchemas:            serverCfg.PinSchemas,

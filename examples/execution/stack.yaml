@@ -1,0 +1,33 @@
+name: execution-example
+
+mcp-servers:
+  - name: echo
+    image: python:3.13-alpine
+    transport: stdio
+    command:
+      - python
+      - -u
+      - -c
+      - |
+        import json, sys
+        for line in sys.stdin:
+            request = json.loads(line)
+            if "id" not in request:
+                continue
+            method = request["method"]
+            result = {}
+            if method == "initialize":
+                result = {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}}, "serverInfo": {"name": "echo", "version": "1"}}
+            elif method == "tools/list":
+                result = {"tools": [{"name": "echo", "inputSchema": {"type": "object", "properties": {"message": {"type": "string"}}}}]}
+            elif method == "tools/call":
+                result = {"content": [{"type": "text", "text": request["params"]["arguments"].get("message", "")}]}
+            elif method == "server/discover":
+                print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "error": {"code": -32601, "message": "Use initialize"}}))
+                continue
+            print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": result}))
+    execution:
+      mode: hardened
+      uid: 65534
+      gid: 65534
+      network: none

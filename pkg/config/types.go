@@ -496,6 +496,7 @@ type Network struct {
 
 // MCPServer defines an MCP server (container-based or external).
 type MCPServer struct {
+	Execution    *ExecutionConfig  `yaml:"execution,omitempty" json:"execution,omitempty"`
 	Name         string            `yaml:"name"`
 	Image        string            `yaml:"image,omitempty"`
 	Source       *Source           `yaml:"source,omitempty"`

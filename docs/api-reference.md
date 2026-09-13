@@ -198,6 +198,32 @@ Each registered server also reports `protocolVersion` (string, omitted when the 
 | `features` | map | Each enabled flag name mapped to `true` — the capability-bit view for UI gating |
 | `feature_details` | array | `{name, stage, description}` display metadata for the same flags, sorted by name. Read-only: flags are configured in `stack.yaml`, never toggled over the API |
 
+#### Execution reports
+
+`/api/mcp-servers` and `/api/status` server entries carry optional `execution` requested intent with an aggregate outcome; `replicas[].execution` carries the actual instance report. `/api/stack/health` retains the same report under `replicas[serverName][].execution`. Reports contain allowlisted metadata, not raw engine inspection, command arrays, environment values, or mount sources.
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `mode` | string | Desired `hardened` or `local`; process replicas report `unsandboxed-local` or `external-ssh; remote cleanup unverified` |
+| `revision` | string | Digest of normalized desired execution intent; empty for compatibility process launches |
+| `instance` | string | Container ID or direct-child PID; empty when there is no current instance |
+| `outcome` | string | `pending`, `configured`, `observed`, `mixed`, `unknown`, or `unsupported`, or a detected `mismatch` |
+| `eligible` | bool | Required container evidence established; process reports do not claim container eligibility |
+| `observed_at` | string | RFC3339 report timestamp; desired-only reports carry the zero timestamp, not an observation time |
+| `runtime` | string | `docker-compatible`, `process`, or `unknown` for desired-only reports |
+| `runtime_context` | string | Optional digest of daemon identity when available |
+| `daemon_rootless`, `user_namespace` | string | Context metadata; `unknown` when unavailable and `not-applicable` for process reports. The container user-namespace summary remains `unknown` even when per-control ID mapping checks succeed |
+| `endpoint_port` | integer | Optional inspected loopback publication for container HTTP/SSE |
+| `controls` | []object | `field`, `requested`, optional `observed`, `outcome`, and `source`, all strings; when no controls are available, the array may be `null` |
+
+The Execution details UI keeps the replica outcome and eligibility visible when controls are null or absent and displays "No per-control evidence available." Missing controls do not establish eligibility.
+
+Control sources distinguish `normalized desired contract`, `engine-inspect`, and instance-bound kernel observations. The same field can appear more than once with different sources. The observation-only `memory_peak_bytes` control may be `unknown` without blocking eligibility; missing required evidence does block hardened routing. Seccomp profile identity can remain unknown while the required engine-default strategy and kernel filter state are verified.
+
+A hardened aggregate is `observed` and eligible only when every active replica has eligible evidence. Otherwise active replicas yield `mixed`, even when none is eligible. No active replicas yields `pending` without current evidence. Aggregates retain requested controls and are not instance snapshots. Local requested reports stay `configured`; compatibility local/SSH reports appear on replicas even without a server-level execution block. External URL/OpenAPI servers do not acquire local enforcement reports. Resource entries on `/api/status` remain `{name, image, status}`; the UI labels them not covered.
+
+MCP health is independent of these reports. A healthy status or saved draft is not enforcement evidence. Snapshots refresh at admission, health checks, and dispatch, with a residual post-start verification window; see [execution controls](execution.md#evidence-and-lifecycle).
+
 #### `GET /api/sessions`
 
 Returns the active Streamable HTTP MCP sessions. The count agrees with the `sessions` field of [`/api/status`](#get-apistatus) by construction: both surfaces report the gateway's session manager, and transport records for sessions the manager has expired (idle past the cleanup cutoff; clients that crash never send the graceful `DELETE /mcp`) are excluded and torn down rather than accumulating.
@@ -854,12 +880,14 @@ Returns `404` when the trace ID is not in the buffer or tracing is disabled.
 
 Triggers a configuration reload from the stack file. Manual reload does not require `--watch`; that flag enables automatic file watching. Security preflight runs before no-op detection, source preparation, or any other application step.
 
-When a source-based server changes, reload resolves and builds its desired
+When a source-based server changes without an execution transition, reload resolves and builds its desired
 image before unregistering or stopping the running server. A resolution or
 build failure is reported for that server while its old workload remains in
 place. The failed declaration remains unapplied, so another reload of the same
 stack file retries preparation. A successful build is passed to every
 replacement or autoscaled replica.
+
+Changed execution intent gets per-server capability preflight. Failure before acceptance keeps the old applied declaration; after acceptance, old routes and replicas retire before image preparation, and a failed replacement keeps the new desired revision visible without a weaker fallback. Execution-only changes preserve schema pins, including simultaneous pool tuning. Gateway startup-security rejection still precedes these operations.
 
 **Auth:** Yes
 
@@ -975,7 +1003,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8180/api/stack/validate
 ```
 
-**Response:** `ValidationResult` JSON (`valid`, `errorCount`, `warningCount`, `issues[]`).
+**Response:** `ValidationResult` JSON (`valid`, `errorCount`, `warningCount`, `issues[]`, and optional `execution`). The `execution` map is keyed by server name and contains normalized requested reports with `outcome: "pending"`, configured controls, and `eligible: false`; it does not establish runtime enforcement.
 
 #### `POST /api/stack/resource/validate`
 
@@ -1002,6 +1030,8 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 Invalid YAML, unresolved variables, and invalid resource fields also return `200` with `valid: false` and one or more `{field, message, severity}` issues. Malformed JSON, an oversized body, or an unsupported `resourceType` returns `400`.
 
+For MCP servers with valid execution declarations, this response includes the same desired-only `execution` map as full-stack validation. Review uses these backend-normalized settings from the proposed YAML.
+
 #### `GET /api/python/packages/{package}/versions`
 
 Returns exact, non-yanked public PyPI releases for package selection as `{package, latest, versions}`. `latest` is the latest stable exact release. PyPI requests have a 15-second deadline and a 16 MiB metadata limit; successful inventories are cached in the daemon and advertised to the browser as private cacheable for five minutes. Resolution uses only official PyPI and returns `422` for missing or invalid projects.
@@ -1027,6 +1057,8 @@ Successful responses include `Cache-Control: private, max-age=300`. A missing or
 #### `POST /api/python/resolve`
 
 Resolves a generated Python MCP server into the same immutable build plan used by apply and CLI plan. The `server` object uses lower-camel versions of the stack's MCP server fields, including `buildArgs`, `replicaPolicy`, and `source.projectPath`. Source auth uses `credentialRef`, `sshUser`, and `sshKeyPath`. Autoscale fields are also lower camel, such as `targetInFlight` and `scaleUpAfter`. `stackName` defaults to `preview` when omitted. The body is limited to 1 MiB and rejects unknown fields.
+
+The optional `server.execution` block uses the same snake_case keys as YAML, including `memory_bytes`, `read_only`, and nested `size_bytes`. Resolving a build does not establish execution eligibility.
 
 **Auth:** Yes
 
@@ -1344,6 +1376,8 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/wizar
 
 Restarts an individual MCP server connection. For container-based servers (stdio transport), this restarts the Docker container and re-establishes the MCP session. For external servers (HTTP/SSE), this re-initializes the MCP handshake and refreshes tools. For process-based servers (local, SSH), this kills and restarts the process.
 
+Hardened container replicas, including HTTP/SSE, recheck engine settings before restart and require fresh instance-bound evidence before returning to rotation. Local and SSH restarts retain their replica pool. Stopping a local SSH client does not prove remote descendant cleanup.
+
 **Auth:** Yes
 
 ```bash
@@ -1477,6 +1511,8 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 The body mirrors the MCP server config (`name`, `image`, `source`, `url`, `port`, `transport`, `command`, `env`, `build_args`, `network`, `ssh`, `openapi`, `tools`, `output_format`, `ready_timeout`, `replicas`, `auth`). The `auth` block uses the stack YAML shape (`type`, `token`, `header`, `value`, `scopes`, `client_id`, `client_secret`) so Test Connection can probe protected external servers; a `type: oauth` server with no stored broker tokens returns the `needs_auth` code. The body is capped at 64 KiB.
 
 `X-Session-ID` is optional; when absent, the remote address is used for per-session accounting. Concurrency is capped at **3 in-flight probes per session** and **10 globally** - excess requests get `429` (session) or `503` (global) with `Retry-After: 3`.
+
+The optional `execution` object uses the strict stack execution schema with snake_case keys. Inapplicable declarations are rejected as `invalid_config` before contacting the server. A probe is not container enforcement acceptance.
 
 **Response:**
 ```json
