@@ -126,7 +126,13 @@ func CreateContainer(ctx context.Context, cli dockerclient.DockerClient, cfg Con
 		}
 	}
 
-	resp, err := cli.ContainerCreate(ctx, containerConfig, hostConfig, networkConfig, nil, cfg.Name)
+	var resp container.CreateResponse
+	var err error
+	if cfg.Execution != nil && cfg.RuntimeInfo != nil && cfg.RuntimeInfo.Type == runtime.RuntimePodman {
+		resp, err = executionPodmanCreate(ctx, cli, cfg, containerConfig, hostConfig, aliases)
+	} else {
+		resp, err = cli.ContainerCreate(ctx, containerConfig, hostConfig, networkConfig, nil, cfg.Name)
+	}
 	if err != nil {
 		if cfg.Execution != nil {
 			return "", fmt.Errorf("execution.create: engine rejected workload; review runtime configuration")

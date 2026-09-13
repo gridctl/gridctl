@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -76,6 +77,10 @@ func (d *DockerRuntime) executionPodmanNoCapabilities(ctx context.Context, id st
 }
 
 func executionPodmanRead(ctx context.Context, socket, path string) ([]byte, error) {
+	return executionPodmanRequest(ctx, socket, path, http.MethodGet, nil, http.StatusOK)
+}
+
+func executionPodmanRequest(ctx context.Context, socket, path, method string, payload []byte, status int) ([]byte, error) {
 	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
 	}}
@@ -83,16 +88,19 @@ func executionPodmanRead(ctx context.Context, socket, path string) ([]byte, erro
 	client := &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse
 	}}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost"+path, nil)
+	req, err := http.NewRequestWithContext(ctx, method, "http://localhost"+path, bytes.NewReader(payload))
 	if err != nil {
 		return nil, errExecutionUnknown
+	}
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	res, err := client.Do(req)
 	if err != nil {
 		return nil, errExecutionUnknown
 	}
 	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
+	if res.StatusCode != status {
 		return nil, fmt.Errorf("native endpoint evidence unavailable")
 	}
 	const maxInfoBytes = 1 << 20

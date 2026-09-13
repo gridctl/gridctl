@@ -108,6 +108,9 @@ func TestExecution_InspectTmpfsOptions(t *testing.T) {
 		{"original", "rw,nosuid,nodev,noexec,size=67108864,mode=1777", false},
 		{"reordered", "mode=1777,size=67108864,noexec,nodev,nosuid,rw", false},
 		{"binary units and private propagation", "rw,rprivate,nosuid,nodev,noexec,size=64m,mode=01777", false},
+		{"Podman copy-up", "rw,rprivate,nosuid,nodev,noexec,size=64m,mode=1777,tmpcopyup", false},
+		{"copy-up cannot replace noexec", "rw,nosuid,nodev,size=64m,mode=1777,tmpcopyup", true},
+		{"copy-up value", "rw,nosuid,nodev,noexec,size=64m,mode=1777,tmpcopyup=true", true},
 		{"missing noexec", "rw,nosuid,nodev,size=64m,mode=1777", true},
 		{"conflicting exec", "rw,nosuid,nodev,noexec,exec,size=64m,mode=1777", true},
 		{"conflicting ro", "rw,ro,nosuid,nodev,noexec,size=64m,mode=1777", true},
@@ -129,6 +132,38 @@ func TestExecution_InspectTmpfsOptions(t *testing.T) {
 			}
 			if err != nil && (!strings.Contains(err.Error(), "data_mounts") || strings.Contains(err.Error(), "private-engine-detail")) {
 				t.Fatalf("missing safe field diagnostic: %v", err)
+			}
+		})
+	}
+}
+
+func TestExecution_MountInventoryDiagnostics(t *testing.T) {
+	for _, tc := range []struct {
+		name, field string
+		mutate      func(*container.InspectResponse)
+	}{
+		{"automatic scratch", "scratch_inventory", func(i *container.InspectResponse) {
+			i.HostConfig.Tmpfs["/private-detail"] = "rw,nosuid,nodev,tmpcopyup"
+		}},
+		{"undeclared actual scratch", "scratch_inventory", func(i *container.InspectResponse) {
+			i.Mounts = []container.MountPoint{{Type: "tmpfs", Destination: "/private-detail", RW: true}}
+		}},
+		{"duplicate actual scratch", "scratch_inventory", func(i *container.InspectResponse) {
+			i.Mounts = []container.MountPoint{{Type: "tmpfs", Destination: "/tmp", RW: true}, {Type: "tmpfs", Destination: "/tmp", RW: true}}
+		}},
+		{"image volume", "image_inventory", func(i *container.InspectResponse) { i.Config.Volumes = map[string]struct{}{"/private-detail": {}} }},
+		{"weak scratch", "scratch_options", func(i *container.InspectResponse) { i.HostConfig.Tmpfs["/tmp"] = "rw,size=64m,mode=1777,tmpcopyup" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			contract := executionTestContract(t)
+			c, h := &container.Config{}, &container.HostConfig{}
+			applyExecution(contract, c, h)
+			i := container.InspectResponse{ContainerJSONBase: &container.ContainerJSONBase{HostConfig: h, State: &container.State{}}, Config: c}
+			tc.mutate(&i)
+			engine := &executionEngine{info: system.Info{CgroupVersion: "2", MemoryLimit: true, SwapLimit: true, CPUCfsQuota: true, PidsLimit: true, SecurityOptions: []string{"name=seccomp"}}, MockDockerClient: &MockDockerClient{ContainerDetails: map[string]container.InspectResponse{"fixture": i}}}
+			report, err := NewWithClient(engine).inspectExecution(t.Context(), "fixture", contract, false)
+			if err == nil || report.Eligible || !strings.Contains(err.Error(), "data_mounts."+tc.field) || strings.Contains(err.Error(), "private-detail") {
+				t.Fatalf("mount boundary/diagnostic: %+v %v", report, err)
 			}
 		})
 	}

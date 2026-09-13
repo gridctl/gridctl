@@ -316,7 +316,9 @@ func (d *DockerRuntime) inspectExecution(ctx context.Context, id string, e *exec
 		check("network", "connected exception; no destination filtering", "private network and loopback publication comparison", connected)
 	}
 	// Engine-created image volumes must not silently add writable state.
-	mountsMatch := len(h.Binds) == len(e.Mounts) && len(h.Mounts) == 0 && len(h.Tmpfs) == len(e.Tmpfs)
+	mountFailures := map[string]bool{}
+	mountFailures["engine_inventory"] = len(h.Binds) != len(e.Mounts) || len(h.Mounts) != 0
+	mountFailures["scratch_inventory"] = len(h.Tmpfs) != len(e.Tmpfs)
 	declared := map[string]execution.ExecutionMount{}
 	for _, mount := range e.Mounts {
 		declared[mount.Target] = mount
@@ -332,28 +334,43 @@ func (d *DockerRuntime) inspectExecution(ctx context.Context, id string, e *exec
 			}
 		}
 		if !declaredScratch {
-			mountsMatch = false
+			mountFailures["image_inventory"] = true
 		}
 	}
 	seen := map[string]bool{}
+	seenScratch := map[string]bool{}
 	for _, mount := range i.Mounts {
 		if mount.Type == "tmpfs" {
+			declaredScratch := slices.ContainsFunc(e.Tmpfs, func(s execution.ExecutionTmpfs) bool { return s.Target == mount.Destination })
+			if !declaredScratch || seenScratch[mount.Destination] || !mount.RW {
+				mountFailures["scratch_inventory"] = true
+			}
+			seenScratch[mount.Destination] = true
 			continue
 		}
 		want, ok := declared[mount.Destination]
 		if !ok || mount.Type != "volume" || mount.Name != want.Source || mount.RW != (want.ReadOnly != nil && !*want.ReadOnly) || seen[mount.Destination] {
-			mountsMatch = false
+			mountFailures["volume_inventory"] = true
 		}
 		seen[mount.Destination] = true
 	}
-	mountsMatch = mountsMatch && len(seen) == len(declared)
+	mountFailures["volume_inventory"] = mountFailures["volume_inventory"] || len(seen) != len(declared)
 	if err := d.checkExecutionVolumes(ctx, e, false); err != nil {
-		mountsMatch = false
+		mountFailures["volume_authority"] = true
 	}
 	for _, scratch := range e.Tmpfs {
-		mountsMatch = mountsMatch && executionTmpfsMatches(h.Tmpfs[scratch.Target], scratch.SizeBytes)
+		if !executionTmpfsMatches(h.Tmpfs[scratch.Target], scratch.SizeBytes) {
+			mountFailures["scratch_options"] = true
+		}
 	}
-	check("data_mounts", "declared bounded tmpfs and unbounded data volumes", "mount inventory comparison", mountsMatch)
+	var mountReasons []string
+	for _, field := range []string{"engine_inventory", "scratch_inventory", "image_inventory", "volume_inventory", "volume_authority", "scratch_options"} {
+		if mountFailures[field] {
+			mountReasons = append(mountReasons, "data_mounts."+field)
+		}
+	}
+	check("data_mounts", "declared bounded tmpfs and unbounded data volumes", "mount inventory comparison", len(mountReasons) == 0)
+	mismatches = append(mismatches, mountReasons...)
 	if report.Outcome == "mismatch" {
 		return report, fmt.Errorf("execution.inspect: required control mismatch (%s)", strings.Join(mismatches, ", "))
 	}
@@ -395,7 +412,7 @@ func executionTmpfsMatches(options string, size int64) bool {
 		}
 		seen[key] = true
 		switch key {
-		case "rw", "nosuid", "nodev", "noexec", "private", "rprivate":
+		case "rw", "nosuid", "nodev", "noexec", "private", "rprivate", "tmpcopyup":
 			if hasValue {
 				return false
 			}

@@ -83,6 +83,21 @@ func TestExecution_RealRuntimeAdmission(t *testing.T) {
 	if !restarted.Execution.Eligible || !restarted.Execution.ObservedAt.After(status.Execution.ObservedAt) {
 		t.Fatal("restart reused stale evidence")
 	}
+	// An explicit empty inventory must not acquire Podman's automatic /tmp,
+	// /var/tmp, or /run scratch mounts. Kernel admission checks the full inventory.
+	emptyScratch := []execution.ExecutionTmpfs{}
+	server.Execution.Tmpfs = &emptyScratch
+	cfg.Execution, err = config.ResolveExecution(server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withoutScratch, err := rt.Start(ctx, cfg)
+	if err != nil {
+		t.Fatalf("required positive empty-scratch admission: %v", err)
+	}
+	if withoutScratch.ID == restarted.ID || withoutScratch.Execution == nil || !withoutScratch.Execution.Eligible || withoutScratch.Execution.Revision != cfg.Execution.Revision {
+		t.Fatal("empty scratch did not recreate with current kernel evidence")
+	}
 }
 
 func TestExecution_RepresentativeMCPAndMismatch(t *testing.T) {
