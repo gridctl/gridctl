@@ -12,13 +12,13 @@ gridctl doctor --security --source snapshot:security-report.json --json
 gridctl doctor --security --source gateway:http://localhost:8180 --json
 ```
 
-`--source` is rejected unless `--security` is set. Ordinary `gridctl doctor` flags, text, quiet behavior, and JSON schema are unchanged.
+`--source` is rejected unless `--security` is set. Ordinary `gridctl doctor` flags, text, quiet behavior, and JSON schema are unchanged. `--security --json` uses `schema_version: gridctl.security-report.v1` and has no `ok` field.
 
 | Kind | Behavior |
 |------|----------|
 | `file:` | Offline parse of authored stack YAML without environment expansion, secret resolution, builds, or registry lookups. Local `extends` may be followed. Optional producer snapshots (pins, execution, startup) are unknown. |
-| `snapshot:` | Offline re-render of a versioned report DTO from this feature. Unknown fields are rejected. Original timestamps are preserved. The result is supplied historical evidence, not a fresh verification. |
-| `gateway:` | Authenticated GET of `/api/security-report` only. Redirects and credential-bearing URLs are rejected. CLI credentials come from recorded daemon state, not the URL. |
+| `snapshot:` | Offline re-render of a `gridctl.security-report.v1` DTO. Unknown fields are rejected. Original timestamps are preserved. The result is supplied historical evidence, not a fresh verification. |
+| `gateway:` | Authenticated GET of `/api/security-report` only. Redirects, credential-bearing URLs, and URL query or fragment values are rejected. CLI credentials come from recorded daemon state, not the URL. |
 
 Unreadable, invalid, or unsupported primary input exits `2`. Missing optional evidence yields unknown checks and partial coverage, not an empty stack substitute.
 
@@ -60,6 +60,6 @@ Excluded from output and action links: raw config, credential fields and default
 
 ## API and UI
 
-`GET /api/security-report` is protected by configured gateway authentication and Host rules. It assembles in-memory and stored snapshots without container inspect, scanners, secret getters, or pin mutation. The UI shows the report on existing gateway and server detail surfaces, including SourceProvenance. Refresh re-reads this passive report and does not imply evidence was re-observed.
+`GET /api/security-report` is protected by configured gateway authentication and Host rules. It assembles in-memory and stored snapshots without container inspect, scanners, secret getters, or pin mutation. The UI shows the report on existing gateway and server detail surfaces, including SourceProvenance. Unknown and N/A rows stay visible with details collapsed. Full identifiers wrap and are keyboard-accessible. Refresh re-reads this passive report and does not imply evidence was re-observed.
 
 See the [partial-state examples](../examples/security-evidence/).

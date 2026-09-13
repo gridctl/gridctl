@@ -417,6 +417,7 @@ Learn more → [Packs guide](docs/packs.md)
 | [`autoscale-basic.yaml`](examples/autoscale/autoscale-basic.yaml) | Reactive replica autoscaling for a stdio server |
 | [`python-sources/`](examples/python-sources/) | Generate non-root Python containers from exact PyPI and Git sources |
 | [`execution/`](examples/execution/) | Opt-in container restrictions and instance-bound execution evidence |
+| [`security-evidence/`](examples/security-evidence/) | Partial, unknown, and N/A states for `gridctl doctor --security` |
 | [`otlp-jaeger.yaml`](examples/tracing/otlp-jaeger.yaml) | Export traces to Jaeger via OTLP |
 | [`portable-pack/`](examples/portable-pack) | Team pack: skills, agents, and wiring from one manifest |
 
