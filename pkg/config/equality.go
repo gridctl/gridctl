@@ -9,9 +9,36 @@ func SourceEqual(a, b *Source) bool {
 
 // MCPServerEqual reports whether two MCP server declarations have the same effective configuration.
 func MCPServerEqual(a, b MCPServer) bool {
+	if !ExecutionEqual(a, b) {
+		return false
+	}
+	a.Execution, b.Execution = nil, nil
 	canonicalizeMCPServer(&a)
 	canonicalizeMCPServer(&b)
 	return reflect.DeepEqual(a, b)
+}
+
+// ExecutionEqual compares normalized execution intent without losing omission.
+func ExecutionEqual(a, b MCPServer) bool {
+	left, leftErr := ResolveExecution(a)
+	right, rightErr := ResolveExecution(b)
+	if leftErr != nil || rightErr != nil {
+		return reflect.DeepEqual(a.Execution, b.Execution)
+	}
+	return reflect.DeepEqual(left, right)
+}
+
+// ExecutionOnlyChange identifies boundary/pool recreation without changed tool
+// launch inputs. Pool tuning must not turn a boundary change into a trust reset.
+func ExecutionOnlyChange(a, b MCPServer) bool {
+	if ExecutionEqual(a, b) {
+		return false
+	}
+	a.Execution, b.Execution = nil, nil
+	a.Autoscale, b.Autoscale = nil, nil
+	a.Replicas, b.Replicas = 0, 0
+	a.ReplicaPolicy, b.ReplicaPolicy = "", ""
+	return MCPServerEqual(a, b)
 }
 
 func canonicalizeMCPServer(server *MCPServer) {

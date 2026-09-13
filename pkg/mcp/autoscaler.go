@@ -20,13 +20,13 @@ import (
 // Values are a snapshot; use Autoscaler.UpdatePolicy to swap in a new one
 // without restarting the scaler loop.
 type AutoscalePolicy struct {
-	Min             int           // Minimum healthy replica count (>= 0; 0 only when IdleToZero).
-	Max             int           // Upper bound on replica count (>= 1).
-	TargetInFlight  int           // Per-replica in-flight request the scaler holds the median at or below.
-	ScaleUpAfter    time.Duration // Window median must exceed target for at least this long.
-	ScaleDownAfter  time.Duration // Window median must be below the target for at least this long.
-	WarmPool        int           // Extra replicas kept above the load-derived target.
-	IdleToZero      bool          // When true, Min may be 0; zero-scale reaps happen after ScaleDownAfter of no traffic.
+	Min            int           // Minimum healthy replica count (>= 0; 0 only when IdleToZero).
+	Max            int           // Upper bound on replica count (>= 1).
+	TargetInFlight int           // Per-replica in-flight request the scaler holds the median at or below.
+	ScaleUpAfter   time.Duration // Window median must exceed target for at least this long.
+	ScaleDownAfter time.Duration // Window median must be below the target for at least this long.
+	WarmPool       int           // Extra replicas kept above the load-derived target.
+	IdleToZero     bool          // When true, Min may be 0; zero-scale reaps happen after ScaleDownAfter of no traffic.
 }
 
 // DefaultAutoscalerInterval is the tick cadence Gateway.StartAutoscaler uses
@@ -205,11 +205,16 @@ func (w *inFlightWindow) oldestAt() time.Time {
 // The ReplicaSet and Spawner are both injected so the decision logic can be
 // tested against in-memory fakes.
 type Autoscaler struct {
-	name    string
-	set     *ReplicaSet
-	spawner Spawner
-	policy  atomic.Pointer[AutoscalePolicy] // swapped atomically on hot reload
-	logger  *slog.Logger
+	lifeMu     sync.Mutex
+	lifeCtx    context.Context
+	lifeCancel context.CancelFunc
+	retired    bool
+	operations sync.WaitGroup
+	name       string
+	set        *ReplicaSet
+	spawner    Spawner
+	policy     atomic.Pointer[AutoscalePolicy] // swapped atomically on hot reload
+	logger     *slog.Logger
 
 	mu              sync.Mutex
 	lastScaleUpAt   time.Time
@@ -239,9 +244,53 @@ func NewAutoscaler(name string, set *ReplicaSet, spawner Spawner, policy Autosca
 		logger:  logger,
 		window:  newInFlightWindow(windowSizeFor(policy.ScaleUpAfter)),
 	}
+	a.lifeCtx, a.lifeCancel = context.WithCancel(context.Background()) //nolint:gosec // retire owns this lifetime cancellation.
 	p := policy
 	a.policy.Store(&p)
 	return a
+}
+
+func (a *Autoscaler) operation(ctx context.Context) (context.Context, func(), error) {
+	a.lifeMu.Lock()
+	if a.retired {
+		a.lifeMu.Unlock()
+		return nil, nil, context.Canceled
+	}
+	a.operations.Add(1)
+	a.lifeMu.Unlock()
+	opCtx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(a.lifeCtx, cancel)
+	if a.lifeCtx.Err() != nil {
+		cancel()
+	}
+	finish := func() { stop(); cancel(); a.operations.Done() }
+	if err := opCtx.Err(); err != nil {
+		finish()
+		return nil, nil, err
+	}
+	return opCtx, finish, nil
+}
+
+func (a *Autoscaler) retire(ctx context.Context) error {
+	a.lifeMu.Lock()
+	a.retired = true
+	a.set.retire()
+	a.lifeCancel()
+	a.lifeMu.Unlock()
+	done := make(chan struct{})
+	go func() { a.operations.Wait(); close(done) }()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (a *Autoscaler) reapRetired(ctx context.Context, client AgentClient) error {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	return a.spawner.Reap(cleanupCtx, &Replica{id: -1, client: client})
 }
 
 // Name returns the logical server name this scaler manages.
@@ -319,6 +368,11 @@ func windowSizeFor(scaleUpAfter time.Duration) time.Duration {
 // Returns the decision and any spawn/reap error. Errors are also logged at
 // WARN so operators see them in the structured log stream.
 func (a *Autoscaler) Tick(ctx context.Context, now time.Time) (Decision, error) {
+	ctx, finish, err := a.operation(ctx)
+	if err != nil {
+		return DecisionNoop, err
+	}
+	defer finish()
 	p := a.Policy()
 
 	// 1. Sample median in-flight and feed the rolling window.
@@ -357,8 +411,16 @@ func (a *Autoscaler) Tick(ctx context.Context, now time.Time) (Decision, error) 
 // been added (including concurrently by another caller that won the race).
 // Holds a.spawnMu so a racing periodic Tick cannot spawn in parallel.
 func (a *Autoscaler) TriggerColdStart(ctx context.Context) error {
+	ctx, finish, err := a.operation(ctx)
+	if err != nil {
+		return err
+	}
+	defer finish()
 	a.spawnMu.Lock()
 	defer a.spawnMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	if a.set.HealthyCount() > 0 {
 		return nil
@@ -394,6 +456,9 @@ func (a *Autoscaler) TriggerColdStart(ctx context.Context) error {
 	a.lastDecision = DecisionScaleUp
 	a.mu.Unlock()
 	id := a.set.AddReplica(client)
+	if id < 0 {
+		return errors.Join(fmt.Errorf("autoscaler retired during spawn"), a.reapRetired(ctx, client))
+	}
 	a.logger.Info("autoscale decision",
 		"server", a.name,
 		"direction", "up",
@@ -496,6 +561,10 @@ func (a *Autoscaler) scaleUp(ctx context.Context, now time.Time, current, target
 			break
 		}
 		id := a.set.AddReplica(client)
+		if id < 0 {
+			span.End()
+			return DecisionScaleUp, errors.Join(fmt.Errorf("autoscaler retired during spawn"), a.reapRetired(ctx, client))
+		}
 		added++
 		span.SetAttributes(attribute.Int("mcp.replica.id", id))
 		span.End()
@@ -591,7 +660,9 @@ func (a *Autoscaler) scaleDown(ctx context.Context, now time.Time, current, targ
 		// On any drain failure — deadline exceeded or ctx cancelled — put
 		// the original *Replica pointer back so in-flight counters and
 		// restart bookkeeping stay consistent. Next tick may retry.
-		a.set.ReinsertReplica(victim)
+		if !a.set.reinsertReplica(victim) {
+			err = errors.Join(err, a.reapRetired(ctx, victim.Client()))
+		}
 		// Do not update lastScaleDownAt on failure — next tick may retry.
 		return DecisionScaleDown, err
 	}

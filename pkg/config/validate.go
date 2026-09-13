@@ -189,6 +189,9 @@ func Validate(s *Stack) error {
 	serverNames := make(map[string]bool)
 	for i, server := range s.MCPServers {
 		prefix := fmt.Sprintf("mcp-servers[%d]", i)
+		if _, err := ResolveExecution(server); err != nil {
+			errs = append(errs, ValidationError{prefix + ".execution", err.Error()})
+		}
 
 		if server.Name == "" {
 			errs = append(errs, ValidationError{prefix + ".name", "is required"})
@@ -409,7 +412,8 @@ func Validate(s *Stack) error {
 			}
 
 			// Network validation (only in advanced mode for container servers)
-			if hasNetworks {
+			isolated := server.Execution != nil && server.Execution.Mode == "hardened" && (server.Execution.Network == "" || server.Execution.Network == "none")
+			if hasNetworks && !isolated {
 				if server.Network == "" {
 					errs = append(errs, ValidationError{prefix + ".network", "required when 'networks' is defined"})
 				} else if !networkNames[server.Network] {

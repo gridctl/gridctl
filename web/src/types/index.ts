@@ -19,6 +19,7 @@ export interface ServerInfo {
 // Present only when a server has a replica set; single-replica servers may
 // still populate a single-element array.
 export interface ReplicaStatus {
+  execution?: ExecutionReport;
   replicaId: number;
   state: 'healthy' | 'unhealthy' | 'restarting' | string;
   healthy: boolean;
@@ -31,6 +32,19 @@ export interface ReplicaStatus {
   nextRetryAt?: string;
   pid?: number;
   containerId?: string;
+}
+
+export interface ExecutionReport {
+  mode: string;
+  revision: string;
+  instance: string;
+  outcome: string;
+  eligible: boolean;
+  observed_at: string;
+  runtime: string;
+  daemon_rootless: string;
+  user_namespace: string;
+  controls?: Array<{ field: string; requested: string; observed?: string; outcome: string; source: string }> | null;
 }
 
 // Controller decision at the last autoscale tick.
@@ -64,6 +78,7 @@ export interface MCPServerSourceStatus {
 
 // MCP Server status matching mcp.MCPServerStatus
 export interface MCPServerStatus {
+  execution?: ExecutionReport;
   name: string;
   transport: Transport;
   endpoint?: string;
@@ -633,6 +648,7 @@ export interface ValidationIssue {
 }
 
 export interface ValidationResult {
+  execution?: Record<string, ExecutionReport>;
   valid: boolean;
   errorCount: number;
   warningCount: number;

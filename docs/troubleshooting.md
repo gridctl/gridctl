@@ -201,6 +201,23 @@ Importing a skill, agent, or pack from an SSH URL when the gridctl process has n
 
 ## Container Startup
 
+### MCP execution admission
+
+An execution failure is separate from an MCP application failure. Inspect `gridctl status --replicas`, `gridctl status --json`, or the server's Execution evidence disclosure for the requested revision and per-control sources. `gridctl doctor` checks runtime availability, not enforcement for a particular replica.
+
+| Diagnostic | Resolution |
+|------------|------------|
+| `execution.runtime: daemon-host observation requires a local Unix endpoint` | Run Gridctl in a supported Linux environment with safe access to the actual daemon workload's kernel state. A TCP/SSH endpoint or VM socket does not supply instance-bound local evidence |
+| `execution.resources: required cgroup v2 controllers unavailable` | Check the actual daemon's cgroup v2/controller support and rootless delegation. An accepted engine resource flag does not establish enforcement |
+| `execution.runtime: trusted kernel field unavailable` | Check whether the actual workload's `/proc` and cgroup files are safely observable. Gridctl refuses missing evidence rather than requesting extra privileges |
+| `execution.inspect: required control mismatch` | Compare per-control evidence with desired settings. Correct the declaration or runtime drift, then reconcile using the recovery procedure below; matching names and labels do not establish compliance |
+| `execution.mounts: declare mounts here instead of volumes` | Replace legacy mounts with explicit plain engine-local data volumes in `execution.mounts`; host binds and engine sockets are not supported |
+| `execution.lookup: absolute executable required` | Use an absolute first command argument, or explicitly select `lookup: ambient_path` to permit the gateway's PATH |
+
+Read-only or permission failures require declared writable data/scratch and permissions appropriate for the selected UID/GID. Keep code and dependencies read-only. `npx`/`uvx` may need explicitly supplied cache, HOME, or PATH settings; bootstrap gets no automatic relaxation. Local execution still has the operator's filesystem and network authority.
+
+After an execution transition is accepted, replacement failure leaves the new desired revision visible and old routes retired. An unchanged reload is not guaranteed to retry an already accepted failed revision. To rerun reconciliation, correct the failure, stop the gateway process using normal foreground signal handling or its service manager, and run `gridctl apply stack.yaml` on the saved stack with the original startup options. A second apply while that gateway is running is refused. Restoring weaker execution requires an explicit configuration change. Execution-only recreation does not require resetting schema pins. See [execution controls](execution.md) for supported environments and the post-start observation window.
+
 ### Generated Python source fails before build
 
 **Symptoms:**
@@ -485,7 +502,7 @@ Some servers reload successfully while others fail. The reload result shows erro
 **Resolution:**
 
 1. If the failure was transient (the backend was briefly unreachable), no action is needed: failed registrations are retried automatically by the health monitor and the server joins once it is reachable.
-2. If source preparation or an image build failed before replacement, resolve the cause and run `gridctl reload` again. The failed declaration remains pending, so an unchanged file is retried while the old workload stays active.
+2. If source preparation or an image build failed without an execution transition, resolve the cause and run `gridctl reload` again. The failed declaration remains pending, so an unchanged file is retried while the old workload stays active. An accepted execution transition instead retires old workloads before preparation; follow [execution recovery](#mcp-execution-admission).
 3. For other configuration problems, fix the server's configuration in `stack.yaml` and run `gridctl reload`.
 4. Servers that reloaded successfully are unaffected.
 
@@ -658,7 +675,7 @@ Gridctl auto-detects SELinux and appends the `:Z` label to volume mounts. If you
 
 ### Host alias differences
 
-Podman uses `host.containers.internal` (Podman 4.7+) instead of Docker's `host.docker.internal`. Gridctl handles this automatically - no action needed. If you see connection errors between agents and the gateway, ensure you are on Podman 4.7 or later:
+Podman uses `host.containers.internal` (Podman 4.7+) instead of Docker's `host.docker.internal`. Gridctl handles this automatically for connected workloads. Hardened `execution.network: none` deliberately omits Gridctl's host alias and network attachment. If a connected workload cannot reach the gateway, ensure you are on Podman 4.7 or later:
 
 ```bash
 podman --version

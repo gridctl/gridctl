@@ -15,7 +15,7 @@ import { cn } from '../../../lib/cn';
 import { Button } from '../../ui/Button';
 import { showToast } from '../../ui/Toast';
 import { validateStackSpec, validateStackResource, appendToStack, saveStack, initializeStack, StackAlreadyActiveError, resolvePythonSource, fetchStatus, type PythonResolution } from '../../../lib/api';
-import type { ValidationIssue } from '../../../types';
+import type { ValidationIssue, ExecutionReport } from '../../../types';
 import type { MCPServerFormData } from '../../../lib/yaml-builder';
 
 interface ReviewStepProps {
@@ -39,6 +39,7 @@ export function ReviewStep({
   server,
 }: ReviewStepProps) {
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
+  const [executionPreview, setExecutionPreview] = useState<{ yaml: string; reports: Record<string, ExecutionReport> }>({ yaml: '', reports: {} });
   const [validating, setValidating] = useState(true);
   const [copied, setCopied] = useState(false);
   const [deploying, setDeploying] = useState(false);
@@ -77,6 +78,7 @@ export function ReviewStep({
         ? await validateStackResource(yaml, resourceType)
         : await validateStackSpec(yaml);
       setIssues(result.issues || []);
+      setExecutionPreview({ yaml, reports: result.execution ?? {} });
     } catch {
       setIssues([
         { field: 'yaml', message: 'Validation unavailable', severity: 'warning' },
@@ -237,6 +239,12 @@ export function ReviewStep({
 
   return (
     <div className="space-y-6">
+      {executionPreview.yaml === yaml && Object.entries(executionPreview.reports).map(([name, report]) => <section key={name} className="rounded-lg border border-border p-3 space-y-2" aria-label={`Requested execution for ${name}`}>
+        <h3 className="text-sm font-medium">Requested execution: {name}</h3>
+        <p className="text-sm break-all">Mode: {report.mode}; revision: {report.revision}</p>
+        <p className="text-sm">Resolved from the proposed YAML. These settings are not runtime evidence. Changing or removing them requires recreation. Review explicit privilege, filesystem, capability, and connected-network exceptions before applying.</p>
+        <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">{(report.controls ?? []).map((control) => <div key={control.field}><dt className="font-mono">{control.field}</dt><dd className="break-all">{control.requested || '(empty)'}</dd></div>)}</dl>
+      </section>)}
       {/* Validation Status */}
       <div
         className={cn(

@@ -4,13 +4,27 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Add opt-in per-MCP-server execution declarations, container control admission and instance-bound evidence, local environment inheritance and executable lookup, lossless execution form/YAML preservation, and per-replica reporting. Omitted execution declarations retain compatibility behavior; selected profiles refuse unavailable required evidence. Supporting resources and remote execution remain outside the enforcement scope (#1221).
+- Breaking output change: existing process-replica and runtime resource status gains execution metadata, and human replica rows distinguish execution state. Migrate STATE-text consumers to `status --json` and evaluate per-replica evidence separately from MCP health. Under Article VIII, schedule this output change for a maintainer-owned major release, not a patch or minor release (#1221).
+
 ### Documentation
 
+- Document execution schema/defaults, CLI/API evidence, accepted reload failure recovery, runtime support limits, and local-process hygiene across references, examples, the threat model, and architecture guidance. Positive rootless Podman acceptance remains a required external gate (#1221).
 - Align gateway-auth lifecycle guidance across the threat model, restart troubleshooting, API/CLI references, browser recovery, examples, and architecture map (#1228).
 - Publish a source-verified security threat model covering trust boundaries, current controls and defaults, credential custody, release evidence, and residual risks (#1218).
 
 ### Bug Fixes
 
+- Reconcile equivalent image references during hardened container reuse and verify Podman's bridge-mode network membership separately from its namespace mode. Keep exact network inventories, loopback publication, and fresh kernel evidence mandatory (#1221).
+- Decode explicitly present null Podman capability lists as empty native sets while rejecting omitted or malformed fields. Full instance identity and all five kernel capability sets remain mandatory before routing (#1221).
+- Create hardened Podman workloads through its native API to disable undeclared automatic writable tmpfs mounts. Preserve explicit scratch inventories, accept bounded copy-up scratch semantics, and report value-free mount mismatch subconditions (#1221).
+- Verify native Podman capability sets when inspection expands an all-capabilities drop, compare equivalent tmpfs options semantically, and identify mismatched execution fields without exposing raw engine values. Instance-bound kernel evidence remains required before routing (#1221).
+- Use native Podman cgroup-v2 capability evidence when its Docker-compatible resource flags are incomplete; retain instance-bound kernel checks before protected workloads can route tools (#1221).
+- Keep failed execution evidence visible in server details when per-control observations are unavailable. Reject nested null mount/tmpfs fields in execution JSON instead of treating them as omitted defaults (#1221).
+- Reap exited MCP child processes promptly, clear their reported PID, and allow shutdown and request cancellation to interrupt blocked stdin writes. Failed process reinitialization closes the replacement child (#1221).
+- Interrupt blocked container stdin writes during cancellation and teardown. Keep successfully initialized gateway-owned processes alive beyond the initiating request, retire every client on unregistration, and reap late spawns from retired autoscalers (#1221).
 - Report unavailable startup security preflight when manual reload is not ready, without incorrectly requiring `--watch` (#1228).
 - Breaking: reject reload and stackless initialization when effective gateway authentication, bind, Host/Origin allowlists, or insecure override differs from startup. Mixed edits are rejected before application; saved YAML remains on disk. Restart the gateway with its original startup options to activate the change. This correction requires maintainer-owned major-release scheduling under Articles VIII/IX and must not ship in a patch or minor release (#1228).
 - Support Bearer and API-key browser credentials, including supported custom headers. Verify drafts before persistence, retain usable credentials on non-auth failures, pause protected requests on gateway rejection, and refuse redirects. Versioned localStorage and explicit window-only notices cover detached windows; scripts on the gateway origin can read stored credentials (#1228).

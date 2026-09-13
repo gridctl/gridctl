@@ -2,9 +2,12 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/gridctl/gridctl/pkg/dockerclient"
+	"github.com/gridctl/gridctl/pkg/execution"
 	"github.com/gridctl/gridctl/pkg/runtime"
 
 	"github.com/docker/docker/api/types/container"
@@ -15,18 +18,19 @@ import (
 
 // ContainerConfig holds the configuration for creating a container.
 type ContainerConfig struct {
+	Execution   *execution.ExecutionContract
 	Name        string
 	LogicalName string // Short logical name used as DNS alias (e.g. "my-server"); Name is the full prefixed name
 	Image       string
 	Command     []string // Override container command
 	Env         map[string]string
-	Port        int // Container port
+	Port        int    // Container port
 	HostPort    int    // Host port to publish (0 = auto-assign)
 	HostIP      string // Host address to publish on (empty = 127.0.0.1)
 	NetworkName string
 	Labels      map[string]string
-	Transport   string   // "http" or "stdio"
-	Volumes     []string // Volume mounts in "host:container" or "host:container:mode" format
+	Transport   string               // "http" or "stdio"
+	Volumes     []string             // Volume mounts in "host:container" or "host:container:mode" format
 	RuntimeInfo *runtime.RuntimeInfo // Runtime info for host alias and volume labels
 }
 
@@ -111,10 +115,38 @@ func CreateContainer(ctx context.Context, cli dockerclient.DockerClient, cfg Con
 			},
 		},
 	}
+	if cfg.Execution != nil {
+		if containerConfig.Labels == nil {
+			containerConfig.Labels = map[string]string{}
+		}
+		containerConfig.Labels["gridctl.execution-revision"] = cfg.Execution.Revision
+		applyExecution(cfg.Execution, containerConfig, hostConfig)
+		if cfg.Execution.Network == "none" {
+			networkConfig = &network.NetworkingConfig{}
+		}
+	}
 
-	resp, err := cli.ContainerCreate(ctx, containerConfig, hostConfig, networkConfig, nil, cfg.Name)
+	var resp container.CreateResponse
+	var err error
+	if cfg.Execution != nil && cfg.RuntimeInfo != nil && cfg.RuntimeInfo.Type == runtime.RuntimePodman {
+		resp, err = executionPodmanCreate(ctx, cli, cfg, containerConfig, hostConfig, aliases)
+	} else {
+		resp, err = cli.ContainerCreate(ctx, containerConfig, hostConfig, networkConfig, nil, cfg.Name)
+	}
 	if err != nil {
+		if cfg.Execution != nil {
+			return "", fmt.Errorf("execution.create: engine rejected workload; review runtime configuration")
+		}
 		return "", fmt.Errorf("creating container %s: %w", cfg.Name, err)
+	}
+	if cfg.Execution != nil && len(resp.Warnings) != 0 {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		warning := fmt.Errorf("execution.create: engine warning prevents required admission")
+		if err := RemoveContainer(cleanupCtx, cli, resp.ID, true); err != nil {
+			return "", errors.Join(warning, fmt.Errorf("execution.cleanup: rejected create removal failed"))
+		}
+		return "", warning
 	}
 
 	return resp.ID, nil

@@ -16,6 +16,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | [🔌 transports/](transports/) | MCP transport types: local process, SSH, HTTP, SSE, and external-server auth |
 | [📦 platforms/](platforms/) | Third-party MCP servers: remote OAuth endpoints, containers, and host processes |
 | [Python sources](python-sources/) | Generate Python containers from exact PyPI releases or packaged source projects |
+| [Execution controls](execution/) | Opt-in container restrictions and per-replica enforcement evidence |
 | [🔗 openapi/](openapi/) | Turn REST APIs into MCP tools via OpenAPI specs |
 | [🔐 access-control/](access-control/) | Tool filtering and per-client scoping |
 | [⚡ code-mode/](code-mode/) | Reduce context window with search + execute meta-tools |
@@ -60,6 +61,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | github-mcp | stdio (container) | Official containerized platform server |
 | pypi | stdio (generated container) | Exact public PyPI release, automatic console command, pinned Python/uv bases |
 | daily | stdio (generated containers) | Exact PyPI release and commit-pinned Git project in one stack |
+| execution/stack | stdio (container) | Non-root echo server with finite resources, read-only root, bounded scratch, and network none |
 | zapier-mcp | http (remote URL) | Hosted platform server with OAuth brokering |
 | openapi-basic | openapi | REST API as MCP tools, operation filtering |
 | openapi-auth | openapi | Bearer, header, query, OAuth2, basic auth, and mTLS |

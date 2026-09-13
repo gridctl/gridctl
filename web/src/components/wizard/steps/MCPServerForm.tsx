@@ -24,6 +24,7 @@ import { TransportAdvisor } from '../TransportAdvisor';
 import { ToolsPicker } from './ToolsPicker';
 import { OperationsPicker } from './OperationsPicker';
 import { fetchPythonPackageVersions } from '../../../lib/api';
+import { ExecutionFields } from './ExecutionFields';
 
 // --- Server type definitions ---
 
@@ -172,6 +173,7 @@ function buildProbeConfig(data: MCPServerFormData): ProbeServerConfig | null {
   if (!data.url) return null;
   return {
     name: data.name,
+    execution: data.execution,
     url: data.url,
     transport: data.transport || '',
     env: data.env,
@@ -1407,6 +1409,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
       </Section>
 
       {/* Section 5: Advanced */}
+      <ExecutionFields data={data} onChange={onChange} />
       <Section
         title="Advanced"
         icon={FileCode2}

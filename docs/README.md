@@ -39,6 +39,7 @@ New to gridctl? Read in this order:
 | [Tools Workspace](tools-workspace.md) | Curate the exposed tool surface - whitelists, Audit Mode, annotation hints, fleet actions, per-client access, and groups |
 | [Global Context Sync](global-context.md) | Manage the global context (one canonical AGENTS.md, or an opt-in rule fragment library with per-client assembly) via `gridctl ctx`, the web UI, or the REST API |
 | [Scaling stdio servers](scaling.md) | Run multiple replicas of a single MCP server - policies, trade-offs, observability |
+| [MCP execution controls](execution.md) | Opt-in container restrictions, local environment hygiene, and per-replica evidence |
 | [Usage Observability](usage-observability.md) | Token and call metrics, tokenizer options, format savings, and the `gridctl optimize` heuristics |
 
 ## Operations

@@ -314,3 +314,18 @@ describe('ReviewStep Python container review', () => {
     expect(await screen.findByText(/source uses a mutable Git ref/i)).toBeInTheDocument();
   });
 });
+
+describe('ReviewStep execution intent', () => {
+  it('uses backend-normalized proposed YAML and hides stale previews', async () => {
+    vi.clearAllMocks();
+    vi.mocked(validateStackResource).mockResolvedValueOnce({ valid: true, errorCount: 0, warningCount: 0, issues: [], execution: {
+      fixture: { mode: 'hardened', revision: 'backend-revision', instance: '', eligible: false, outcome: 'pending', observed_at: '', runtime: 'unknown', daemon_rootless: 'unknown', user_namespace: 'unknown', controls: [{ field: 'memory_bytes', requested: '134217728', outcome: 'configured', source: 'normalized desired contract' }] },
+    } }).mockImplementationOnce(() => new Promise(() => {}));
+    const { rerender } = render(<ReviewStep yaml={'name: fixture\nimage: alpine\n'} resourceType="mcp-server" resourceName="fixture" />);
+    expect(await screen.findByText('134217728')).toBeInTheDocument();
+    expect(screen.getByText(/These settings are not runtime evidence/)).toBeInTheDocument();
+    rerender(<ReviewStep yaml={'name: changed\nimage: alpine\n'} resourceType="mcp-server" resourceName="changed" />);
+    expect(screen.queryByText('134217728')).not.toBeInTheDocument();
+    expect(validateStackResource).toHaveBeenLastCalledWith('name: changed\nimage: alpine\n', 'mcp-server');
+  });
+});

@@ -417,6 +417,10 @@ func (o *Orchestrator) PrepareMCPServer(ctx context.Context, stackName string, s
 }
 
 func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, server *config.MCPServer, desiredImage string, hostPort, replicaID, totalReplicas int) (*MCPServerResult, error) {
+	contract, err := config.ResolveExecution(*server)
+	if err != nil {
+		return nil, err
+	}
 	o.logger.Info("MCP server phase", "server", server.Name, "phase", "starting_container", "replica", replicaID)
 	runtimeName := ReplicaContainerName(stack.Name, server.Name, replicaID, totalReplicas)
 
@@ -433,12 +437,12 @@ func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, 
 		return nil, err
 	}
 
-	if exists {
+	if exists && contract == nil {
 		status, err := o.runtime.Status(ctx, workloadID)
 		if err != nil {
 			return nil, err
 		}
-		if status.Image != desiredImage {
+		if status.Image != desiredImage || status.Labels["gridctl.execution-revision"] != "" {
 			o.logger.Info("replacing MCP server with desired image", "name", server.Name, "replica", replicaID, "current_image", status.Image, "desired_image", desiredImage)
 			if err := o.runtime.Stop(ctx, workloadID); err != nil {
 				return nil, fmt.Errorf("stopping stale workload: %w", err)
@@ -482,6 +486,7 @@ func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, 
 	// Create workload config. Labels still carry the logical server name so
 	// Down/List filters by stack work.
 	cfg := WorkloadConfig{
+		Execution:   contract,
 		Name:        workloadName,
 		Stack:       stack.Name,
 		Type:        WorkloadTypeMCPServer,

@@ -191,6 +191,8 @@ The Variables workspace shows the result: a scoped set's variables list the
 workloads they actually reach, and each one links to that node on the Stack
 canvas.
 
+Set scoping controls store-derived delivery. Local processes in these examples still inherit the daemon's non-reserved ambient environment, so withholding a scoped set alone does not exclude an ambient token with the same name. Opt into [local execution hygiene](../../docs/execution.md#local-environment-hygiene) to restrict ambient inheritance. Explicit server environment values beat set injection, which beats permitted ambient values; internal credentials remain denied.
+
 ### Encryption
 
 Protect the store with passphrase-based encryption (XChaCha20-Poly1305 + Argon2id):

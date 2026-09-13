@@ -122,8 +122,15 @@ func (r *Replica) ID() int { return r.id }
 // Client returns the underlying AgentClient.
 func (r *Replica) Client() AgentClient { return r.client }
 
-// Healthy reports whether this replica is eligible for dispatch.
+// Healthy reports MCP health. Execution eligibility is checked separately.
 func (r *Replica) Healthy() bool { return r.healthy.Load() }
+
+func (r *Replica) executionEligible() bool {
+	if client, ok := r.client.(interface{ ExecutionEligible() bool }); ok {
+		return client.ExecutionEligible()
+	}
+	return true
+}
 
 // SetHealthy marks this replica healthy or unhealthy.
 func (r *Replica) SetHealthy(h bool) { r.healthy.Store(h) }
@@ -162,6 +169,7 @@ func (r *Replica) MarkStarted(now time.Time) {
 // identically to a direct AgentClient (its Pick always returns that one
 // replica when healthy).
 type ReplicaSet struct {
+	retired  bool // guarded by mu
 	name     string
 	policy   string
 	mu       sync.RWMutex
@@ -243,6 +251,9 @@ func (s *ReplicaSet) Replicas() []*Replica {
 func (s *ReplicaSet) Pick() (*Replica, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if s.retired {
+		return nil, ErrNoHealthyReplicas
+	}
 
 	n := len(s.replicas)
 	if n == 0 {
@@ -275,7 +286,7 @@ func (s *ReplicaSet) pickRoundRobinLocked() (*Replica, error) {
 	start := int(s.rrCursor.Add(1) - 1)
 	for i := 0; i < n; i++ {
 		r := s.replicas[((start+i)%n+n)%n]
-		if r.Healthy() {
+		if r.Healthy() && r.executionEligible() {
 			return r, nil
 		}
 	}
@@ -288,7 +299,7 @@ func (s *ReplicaSet) pickLeastConnectionsLocked() (*Replica, error) {
 	var chosen *Replica
 	var chosenInFlight int64
 	for _, r := range s.replicas {
-		if !r.Healthy() {
+		if !r.Healthy() || !r.executionEligible() {
 			continue
 		}
 		inFlight := r.InFlight()
@@ -308,8 +319,13 @@ func (s *ReplicaSet) pickLeastConnectionsLocked() (*Replica, error) {
 // marks it healthy. Returns the new replica's id. Ids are never reused so
 // handles stored by observers (health monitor, status endpoints) remain
 // stable across scale events.
+// A retired set returns -1; the caller must reap the unaccepted client.
 func (s *ReplicaSet) AddReplica(client AgentClient) int {
 	s.mu.Lock()
+	if s.retired {
+		s.mu.Unlock()
+		return -1
+	}
 	id := int(s.nextID.Add(1) - 1)
 	r := &Replica{
 		id:        id,
@@ -353,27 +369,44 @@ func (s *ReplicaSet) RemoveReplica(id int) (*Replica, error) {
 // the replica was detached are preserved. Idempotent: if a replica with
 // the same id is already present, this is a no-op.
 func (s *ReplicaSet) ReinsertReplica(r *Replica) {
+	s.reinsertReplica(r)
+}
+
+func (s *ReplicaSet) reinsertReplica(r *Replica) bool {
 	if r == nil {
-		return
+		return false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.retired {
+		return false
+	}
 	for _, existing := range s.replicas {
 		if existing.id == r.id {
-			return
+			return true
 		}
 	}
 	r.SetHealthy(true)
 	s.replicas = append(s.replicas, r)
+	return true
 }
 
-// HealthyCount returns the number of replicas currently marked healthy.
+func (s *ReplicaSet) retire() {
+	s.mu.Lock()
+	s.retired = true
+	s.mu.Unlock()
+}
+
+// HealthyCount returns the number of healthy, execution-eligible replicas.
 func (s *ReplicaSet) HealthyCount() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if s.retired {
+		return 0
+	}
 	n := 0
 	for _, r := range s.replicas {
-		if r.Healthy() {
+		if r.Healthy() && r.executionEligible() {
 			n++
 		}
 	}
@@ -389,7 +422,7 @@ func (s *ReplicaSet) MedianInFlight() float64 {
 	defer s.mu.RUnlock()
 	samples := make([]int64, 0, len(s.replicas))
 	for _, r := range s.replicas {
-		if r.Healthy() {
+		if r.Healthy() && r.executionEligible() {
 			samples = append(samples, r.InFlight())
 		}
 	}
