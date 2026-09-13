@@ -6,7 +6,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -231,8 +234,10 @@ finally:
 				}
 			}
 			if info.Type == runtime.RuntimePodman {
-				// Podman 4.9 has no Docker-compatible update endpoint. Target
-				// the same daemon and fixture ID through its supported native CLI.
+				// Podman has no Docker-compatible update endpoint. Target the
+				// same daemon and fixture ID through its native CLI. The change
+				// is live-cgroup only; compatibility inspect keeps create-time
+				// CPU fields and restart restores them.
 				cmd := exec.CommandContext(ctx, "podman", "--remote", "--url", info.DockerHost(), "update", "--cpu-period", "100000", "--cpu-quota", "200000", string(status.ID))
 				if output, err := cmd.CombinedOutput(); err != nil {
 					t.Fatalf("controlled Podman CPU update: %v: %s", err, output)
@@ -249,8 +254,16 @@ finally:
 				}
 			}
 			changed, err := rt.Client().ContainerInspect(ctx, string(status.ID))
-			if err != nil || changed.HostConfig == nil || changed.HostConfig.CPUPeriod != 100000 || changed.HostConfig.CPUQuota != 200000 {
+			if err != nil || changed.HostConfig == nil || changed.State == nil {
 				t.Fatalf("controlled update did not change the fixture CPU ceiling: %v", err)
+			}
+			if info.Type == runtime.RuntimePodman {
+				quota, period := fixtureCPUMax(t, changed.State.Pid, string(status.ID))
+				if period != 100000 || quota != 200000 {
+					t.Fatal("controlled update did not change the fixture CPU ceiling")
+				}
+			} else if changed.HostConfig.CPUPeriod != 100000 || changed.HostConfig.CPUQuota != 200000 {
+				t.Fatal("controlled update did not change the fixture CPU ceiling")
 			}
 			if _, err := client.CallTool(ctx, "echo", map[string]any{"message": "must not route"}); err == nil {
 				t.Fatal("required CPU mismatch routed")
@@ -266,7 +279,10 @@ finally:
 			if err != nil {
 				t.Fatal(err)
 			}
-			if replacement.ID == status.ID || replacement.Execution == nil || !replacement.Execution.Eligible {
+			if replacement.Execution == nil || !replacement.Execution.Eligible {
+				t.Fatal("retry did not restore eligible evidence")
+			}
+			if replacement.ID == status.ID && info.Type != runtime.RuntimePodman {
 				t.Fatal("retry retained the weaker instance")
 			}
 		})
@@ -307,4 +323,57 @@ func runExecutionProbe(t *testing.T, ctx context.Context, rt *dockerruntime.Dock
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
+}
+
+func fixtureCPUMax(t *testing.T, pid int, id string) (quota, period int64) {
+	t.Helper()
+	if pid <= 0 || len(id) != 64 {
+		t.Fatal("trusted process identity unavailable")
+	}
+	proc, err := os.OpenRoot(fmt.Sprintf("/proc/%d", pid))
+	if err != nil {
+		t.Fatal("daemon workload is not locally observable")
+	}
+	defer proc.Close()
+	var group string
+	for _, line := range strings.Split(fixtureKernelFile(t, proc, "cgroup"), "\n") {
+		if strings.HasPrefix(line, "0::/") && strings.Contains(line, id) {
+			group = strings.TrimPrefix(line, "0::/")
+		}
+	}
+	if group == "" {
+		t.Fatal("local cgroup identity cannot be bound to daemon instance")
+	}
+	root, err := os.OpenRoot("/sys/fs/cgroup")
+	if err != nil {
+		t.Fatal("cgroup v2 observation unavailable")
+	}
+	defer root.Close()
+	parts := strings.Fields(fixtureKernelFile(t, root, filepath.Join(group, "cpu.max")))
+	if len(parts) != 2 {
+		t.Fatal("cpu.max unavailable")
+	}
+	quota, err = strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		t.Fatal("cpu.max unavailable")
+	}
+	period, err = strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		t.Fatal("cpu.max unavailable")
+	}
+	return quota, period
+}
+
+func fixtureKernelFile(t *testing.T, root *os.Root, name string) string {
+	t.Helper()
+	file, err := root.Open(name)
+	if err != nil {
+		t.Fatal("trusted kernel field unavailable")
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, 65537))
+	if err != nil || len(data) > 65536 {
+		t.Fatal("trusted kernel field unreadable")
+	}
+	return string(data)
 }
