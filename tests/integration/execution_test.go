@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -70,8 +71,17 @@ func TestExecution_RealRuntimeAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reused.ID != status.ID || !reused.Execution.Eligible || !reused.Execution.ObservedAt.After(status.Execution.ObservedAt) {
-		t.Fatal("running reuse did not refresh instance-bound evidence")
+	if reused.ID != status.ID || reused.Execution == nil || !reused.Execution.Eligible || !reused.Execution.ObservedAt.After(status.Execution.ObservedAt) {
+		t.Fatalf("running reuse did not refresh instance-bound evidence: same_instance=%v evidence=%+v", reused.ID == status.ID, reused.Execution)
+	}
+	qualified := cfg
+	qualified.Image = "docker.io/library/alpine:3.22"
+	canonical, err := rt.Start(ctx, qualified)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if canonical.ID != status.ID || canonical.Execution == nil || !canonical.Execution.Eligible || !canonical.Execution.ObservedAt.After(reused.Execution.ObservedAt) {
+		t.Fatal("equivalent qualified image did not reuse with fresh evidence")
 	}
 	if err := rt.Stop(ctx, status.ID); err != nil {
 		t.Fatal(err)
@@ -80,7 +90,7 @@ func TestExecution_RealRuntimeAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !restarted.Execution.Eligible || !restarted.Execution.ObservedAt.After(status.Execution.ObservedAt) {
+	if restarted.ID != status.ID || restarted.Execution == nil || !restarted.Execution.Eligible || !restarted.Execution.ObservedAt.After(canonical.Execution.ObservedAt) {
 		t.Fatal("restart reused stale evidence")
 	}
 	// An explicit empty inventory must not acquire Podman's automatic /tmp,
@@ -220,14 +230,27 @@ finally:
 					t.Logf("%s memory peak: %s bytes", fixture.name, control.Observed)
 				}
 			}
-			updater, ok := rt.Client().(interface {
-				ContainerUpdate(context.Context, string, container.UpdateConfig) (container.UpdateResponse, error)
-			})
-			if !ok {
-				t.Fatal("runtime update test primitive unavailable")
+			if info.Type == runtime.RuntimePodman {
+				// Podman 4.9 has no Docker-compatible update endpoint. Target
+				// the same daemon and fixture ID through its supported native CLI.
+				cmd := exec.CommandContext(ctx, "podman", "--remote", "--url", info.DockerHost(), "update", "--cpu-period", "100000", "--cpu-quota", "200000", string(status.ID))
+				if output, err := cmd.CombinedOutput(); err != nil {
+					t.Fatalf("controlled Podman CPU update: %v: %s", err, output)
+				}
+			} else {
+				updater, ok := rt.Client().(interface {
+					ContainerUpdate(context.Context, string, container.UpdateConfig) (container.UpdateResponse, error)
+				})
+				if !ok {
+					t.Fatal("runtime update test primitive unavailable")
+				}
+				if _, err := updater.ContainerUpdate(ctx, string(status.ID), container.UpdateConfig{Resources: container.Resources{CPUPeriod: 100000, CPUQuota: 200000}}); err != nil {
+					t.Fatal(err)
+				}
 			}
-			if _, err := updater.ContainerUpdate(ctx, string(status.ID), container.UpdateConfig{Resources: container.Resources{CPUPeriod: 100000, CPUQuota: 200000}}); err != nil {
-				t.Fatal(err)
+			changed, err := rt.Client().ContainerInspect(ctx, string(status.ID))
+			if err != nil || changed.HostConfig == nil || changed.HostConfig.CPUPeriod != 100000 || changed.HostConfig.CPUQuota != 200000 {
+				t.Fatalf("controlled update did not change the fixture CPU ceiling: %v", err)
 			}
 			if _, err := client.CallTool(ctx, "echo", map[string]any{"message": "must not route"}); err == nil {
 				t.Fatal("required CPU mismatch routed")

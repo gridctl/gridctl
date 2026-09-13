@@ -8,8 +8,10 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/api/types/volume"
+	"github.com/docker/go-connections/nat"
 	"github.com/gridctl/gridctl/pkg/execution"
 	"github.com/gridctl/gridctl/pkg/runtime"
 )
@@ -97,6 +99,78 @@ func TestExecution_CapabilityErrorsAreRedacted(t *testing.T) {
 	rt := NewWithClient(&executionEngine{MockDockerClient: &MockDockerClient{}, err: errors.New("credential-bearing engine error")})
 	if err := rt.PreflightExecution(context.Background(), executionTestContract(t)); err == nil || strings.Contains(err.Error(), "credential-bearing") {
 		t.Fatalf("unsafe preflight error: %v", err)
+	}
+}
+
+func TestExecution_ConnectedNetworkInventory(t *testing.T) {
+	for _, tc := range []struct {
+		name, mode, requested string
+		networks              []string
+		public                bool
+		wantError             bool
+	}{
+		{name: "Docker named", mode: "fixture-net", requested: "fixture-net", networks: []string{"fixture-net"}},
+		{name: "Podman bridge", mode: "bridge", requested: "fixture-net", networks: []string{"fixture-net"}},
+		{name: "Podman resolved network", mode: "bridge", networks: []string{"fixture-net"}},
+		{name: "wrong network", mode: "bridge", requested: "fixture-net", networks: []string{"other"}, wantError: true},
+		{name: "extra network", mode: "bridge", networks: []string{"fixture-net", "other"}, wantError: true},
+		{name: "missing network", mode: "bridge", wantError: true},
+		{name: "host", mode: "host", networks: []string{"fixture-net"}, wantError: true},
+		{name: "shared namespace", mode: "container:other", networks: []string{"fixture-net"}, wantError: true},
+		{name: "public binding", mode: "bridge", networks: []string{"fixture-net"}, public: true, wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			contract := executionTestContract(t)
+			contract.Network, contract.NetworkName, contract.Transport, contract.Port = "connected", tc.requested, "http", 8080
+			c, h := &container.Config{}, &container.HostConfig{}
+			applyExecution(contract, c, h)
+			h.NetworkMode = container.NetworkMode(tc.mode)
+			ip := "127.0.0.1"
+			if tc.public {
+				ip = "0.0.0.0"
+			}
+			h.PortBindings = nat.PortMap{"8080/tcp": {{HostIP: ip, HostPort: "12345"}}}
+			n := &container.NetworkSettings{Networks: map[string]*network.EndpointSettings{}}
+			n.Ports = h.PortBindings
+			for _, name := range tc.networks {
+				n.Networks[name] = &network.EndpointSettings{}
+			}
+			engine := &executionEngine{info: system.Info{CgroupVersion: "2", MemoryLimit: true, SwapLimit: true, CPUCfsQuota: true, PidsLimit: true, SecurityOptions: []string{"name=seccomp"}}, MockDockerClient: &MockDockerClient{ContainerDetails: map[string]container.InspectResponse{"fixture": {ContainerJSONBase: &container.ContainerJSONBase{HostConfig: h, State: &container.State{Running: true}}, Config: c, NetworkSettings: n}}}}
+			for _, started := range []bool{false, true} {
+				report, err := NewWithClient(engine).inspectExecution(t.Context(), "fixture", contract, started)
+				mismatch := false
+				for _, control := range report.Controls {
+					if control.Field == "network" {
+						mismatch = control.Outcome == "mismatch"
+					}
+				}
+				if mismatch != tc.wantError || report.Eligible || (started && err == nil) {
+					t.Fatalf("network comparison or missing-kernel refusal: %+v %v", report, err)
+				}
+			}
+		})
+	}
+}
+
+func TestExecution_ImageReferenceEquality(t *testing.T) {
+	for _, tc := range []struct {
+		current, requested string
+		equal              bool
+	}{
+		{"docker.io/library/alpine:3.22", "alpine:3.22", true},
+		{"docker.io/library/alpine:latest", "alpine", true},
+		{"ghcr.io/example/alpine:3.22", "alpine:3.22", false},
+		{"docker.io/library/alpine:3.21", "alpine:3.22", false},
+		{"docker.io/library/alpine:latest", "alpine:3.22", false},
+		{"invalid reference", "alpine:3.22", false},
+		{strings.Repeat("a", 64), strings.Repeat("a", 64), true},
+		{"alpine@sha256:" + strings.Repeat("a", 64), "docker.io/library/alpine@sha256:" + strings.Repeat("a", 64), true},
+		{"alpine@sha256:" + strings.Repeat("a", 64), "alpine@sha256:" + strings.Repeat("b", 64), false},
+		{"", "", false},
+	} {
+		if got := executionImageMatches(tc.current, tc.requested); got != tc.equal {
+			t.Errorf("image equality for %q and %q: %v", tc.current, tc.requested, got)
+		}
 	}
 }
 

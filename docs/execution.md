@@ -70,6 +70,8 @@ Admission inventories image-declared volumes, engine mounts, and the kernel moun
 
 `connected` explicitly permits the normal managed network. It is not destination filtering or host isolation. HTTP/SSE requires this exception and a server port; admission verifies the MCP endpoint against the replica's inspected `127.0.0.1` publication. Host networking and sharing another container's network namespace are refused. In advanced network mode, select a declared server network for connected operation; network-none servers omit that selection.
 
+Podman reports the `bridge` namespace mode separately from the named network attachment. Admission requires exactly one inspected attachment, matches an explicitly requested network name, and retains the loopback publication checks. The namespace mode alone is insufficient evidence.
+
 Removing an alias does not deny direct IPs, IPv6, runtime-generated aliases, peers, or mounted Unix sockets. Destination allowlists and an internal-network security contract are not implemented. Runtime restrictions do not constrain image pulls, Dockerfile build downloads, or information returned through MCP.
 
 ## Evidence and lifecycle
@@ -81,6 +83,8 @@ The current observation path requires a Linux client with safe access to the act
 Some observations require a started process. That process may act before verification completes. It cannot become MCP-ready until admission succeeds; rejected instances are stopped, and cleanup failures are reported. This does not retroactively prevent actions during that window.
 
 Initial starts, reuse, restart, and replica growth carry the same desired contract. Reuse checks engine controls and collects fresh evidence. MCP clients check eligibility at registration, health checks, and dispatch, including raw relay. Detected mismatches reject dispatch and stop the container. These are snapshots, not continuous monitoring or protection against an administrator changing the runtime between checks. In-flight work may have started before detection.
+
+Reuse compares normalized image references so an engine's expansion of `alpine:3.22` to `docker.io/library/alpine:3.22` does not cause unnecessary recreation. Different registries, tags, and digests remain distinct. This comparison is a reconciliation check, not image provenance or enforcement evidence.
 
 Reload performs capability preflight before accepting an execution transition. Once accepted, superseded routes are withdrawn, and old replicas are stopped. Failed preparation or replacement does not restore weaker execution. Accepted desired intent remains visible separately from runtime evidence. Relaxation requires explicit configuration. Execution-only recreation preserves schema pins; combined autoscale and execution edits cannot take the autoscale-only update path.
 

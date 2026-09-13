@@ -17,6 +17,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Bug Fixes
 
+- Reconcile equivalent image references during hardened container reuse and verify Podman's bridge-mode network membership separately from its namespace mode. Keep exact network inventories, loopback publication, and fresh kernel evidence mandatory (#1221).
 - Decode explicitly present null Podman capability lists as empty native sets while rejecting omitted or malformed fields. Full instance identity and all five kernel capability sets remain mandatory before routing (#1221).
 - Create hardened Podman workloads through its native API to disable undeclared automatic writable tmpfs mounts. Preserve explicit scratch inventories, accept bounded copy-up scratch semantics, and report value-free mount mismatch subconditions (#1221).
 - Verify native Podman capability sets when inspection expands an all-capabilities drop, compare equivalent tmpfs options semantically, and identify mismatched execution fields without exposing raw engine values. Instance-bound kernel evidence remains required before routing (#1221).

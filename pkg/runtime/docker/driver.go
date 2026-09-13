@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/distribution/reference"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/execution"
 	"github.com/gridctl/gridctl/pkg/logging"
@@ -92,7 +93,7 @@ func (d *DockerRuntime) Start(ctx context.Context, cfg runtime.WorkloadConfig) (
 			}
 			wasRunning = current.State != nil && current.State.Running
 			_, controlErr := d.inspectExecution(ctx, containerID, cfg.Execution, false)
-			if controlErr != nil || current.Config == nil || current.Config.Image != cfg.Image {
+			if controlErr != nil || current.Config == nil || !executionImageMatches(current.Config.Image, cfg.Image) {
 				if err := StopContainer(ctx, d.cli, containerID, 5); err != nil {
 					return nil, fmt.Errorf("execution.cleanup: stop superseded instance failed")
 				}
@@ -169,6 +170,21 @@ func (d *DockerRuntime) Start(ctx context.Context, cfg runtime.WorkloadConfig) (
 	}
 
 	return d.Status(ctx, runtime.WorkloadID(containerID))
+}
+
+// Engines may expand Docker Hub names and default tags during creation.
+// Compare normalized references without treating different registries or tags
+// as aliases. Control inspection and fresh kernel evidence still gate reuse.
+func executionImageMatches(current, requested string) bool {
+	if current != "" && current == requested {
+		return true
+	}
+	a, err := reference.ParseNormalizedNamed(current)
+	if err != nil {
+		return false
+	}
+	b, err := reference.ParseNormalizedNamed(requested)
+	return err == nil && reference.TagNameOnly(a).String() == reference.TagNameOnly(b).String()
 }
 
 // Stop stops a running workload.

@@ -287,11 +287,24 @@ func (d *DockerRuntime) inspectExecution(ctx context.Context, id string, e *exec
 	} else {
 		mode := string(h.NetworkMode)
 		connected := mode != "" && mode != "host" && mode != "none" && !strings.HasPrefix(mode, "container:") && !h.PublishAllPorts
+		// Podman reports the namespace mode (bridge), separately from the
+		// named network attachment. Require its exact single-network inventory
+		// even before start; the mode alone cannot establish membership.
+		networkName := mode
+		if mode == "bridge" {
+			connected = connected && i.NetworkSettings != nil && len(i.NetworkSettings.Networks) == 1
+			if connected {
+				for name, endpoint := range i.NetworkSettings.Networks {
+					networkName = name
+					connected = name != "" && endpoint != nil
+				}
+			}
+		}
 		if e.NetworkName != "" {
-			connected = connected && mode == e.NetworkName
+			connected = connected && networkName == e.NetworkName
 		}
 		if started {
-			connected = connected && i.NetworkSettings != nil && len(i.NetworkSettings.Networks) == 1 && i.NetworkSettings.Networks[mode] != nil
+			connected = connected && i.NetworkSettings != nil && len(i.NetworkSettings.Networks) == 1 && i.NetworkSettings.Networks[networkName] != nil
 		}
 		if e.Transport != "stdio" {
 			port := nat.Port(fmt.Sprintf("%d/tcp", e.Port))
