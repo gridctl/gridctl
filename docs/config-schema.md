@@ -500,6 +500,8 @@ mcp-servers:
       GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_PERSONAL_ACCESS_TOKEN}"
 ```
 
+Default schema validation does not require a digest. `gridctl validate --check-mutable-refs` reports version tags and unpinned `npx`/`uvx` selectors as advisory warnings; REST validation is unchanged. See [mutable reference diagnostics](cli-reference.md#mutable-reference-diagnostics).
+
 ### Container Server (source)
 
 Builds and runs an MCP server from a Dockerfile or a generated Python build.
@@ -654,7 +656,7 @@ In the web wizard, the OpenAPI Configuration section's Operations Filter loads t
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `name` | string | **Yes** | - | Unique server identifier |
-| `image` | string | Conditional | - | Docker image (container servers) |
+| `image` | string | Conditional | - | Docker image (container servers). Tags without a digest are mutable; pinning is not a schema requirement |
 | `source` | object | Conditional | - | Build from source (see [Source](#source)) |
 | `url` | string | Conditional | - | External server URL |
 | `port` | int | Conditional | - | Container port for HTTP/SSE transport. Required for non-stdio container servers |
@@ -1005,7 +1007,7 @@ resources:
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `name` | string | **Yes** | - | Unique resource identifier |
-| `image` | string | **Yes** | - | Docker image |
+| `image` | string | **Yes** | - | Docker image. Tags without a digest are mutable; pinning is not a schema requirement |
 | `env` | map | No | - | Environment variables |
 | `ports` | []string | No | - | Port mappings (e.g., `"5432:5432"`) |
 | `volumes` | []string | No | - | Volume mounts (e.g., `"data:/var/lib/postgres"`) |

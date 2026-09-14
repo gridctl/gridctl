@@ -291,6 +291,8 @@ pulling image gcr.io/private/image:tag: unauthorized
 
 3. Check your `stack.yaml` for typos in image names.
 
+Digest and tag-plus-digest references match locally cached `RepoDigests`, including familiar names such as `alpine` versus `docker.io/library/alpine`. Tag-only lookup is unchanged. A cache hit is not publisher verification.
+
 ### Container fails to start
 
 **Symptoms:**

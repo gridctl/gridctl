@@ -1019,7 +1019,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 #### `POST /api/stack/resource/validate`
 
-Validates one resource without requiring a complete stack. `resourceType` must be `mcp-server` or `resource`, and `yaml` contains one unindented resource block. The endpoint expands variables, applies defaults, and runs the same validation rules as full-stack validation. The JSON body is limited to 1 MiB and rejects unknown fields.
+Validates one resource without requiring a complete stack. `resourceType` must be `mcp-server` or `resource`, and `yaml` contains one unindented resource block. The endpoint expands variables, applies defaults, and runs the same validation rules as full-stack validation. The CLI-only `--check-mutable-refs` diagnostic is not applied here. The JSON body is limited to 1 MiB and rejects unknown fields.
 
 **Auth:** Yes
 

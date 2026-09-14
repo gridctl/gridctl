@@ -34,7 +34,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 
 ## 🎬 Recommended Path
 
-1. **Start here**: `getting-started/mcp-basic.yaml` - stack, networking, tool filtering (placeholder containers)
+1. **Start here**: `getting-started/mcp-basic.yaml` - stack, networking, tool filtering (digest-pinned alpine placeholders)
 2. **Real MCP servers**: `transports/local-mcp.yaml` - actual MCP server logic via stdio transport
 3. **Platforms**: `platforms/github-mcp.yaml` - third-party MCP servers
 4. **OpenAPI**: `openapi/openapi-basic.yaml` - turn any REST API into MCP tools
@@ -43,7 +43,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 7. **Packs**: `portable-pack/` - one manifest importing skills, agents, and rules as a unit
 8. **Scaling**: `autoscale/autoscale-basic.yaml` - reactive autoscaling of MCP replicas
 
-> **Note:** Getting-started examples use placeholder containers to focus on infrastructure concepts.
+> **Note:** Getting-started examples use digest-pinned `alpine:3.22` placeholders (`sleep`) to focus on infrastructure concepts, not MCP server logic.
 > Transport and platform examples include real MCP server implementations.
 
 ## 📊 Feature Matrix

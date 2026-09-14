@@ -19,6 +19,7 @@ Task (https://taskfile.dev) is the entry point for development builds and Go/fro
 | `task test` | `go test -race ./...` (unit tests only, same race detector CI runs). |
 | `task test:integration` | `go test -tags=integration -race -timeout 15m ./tests/integration/...`. The full suite requires Docker (or Podman); selected HTTP/subprocess suites need no container runtime. All use real dependencies per Article IV of `CONSTITUTION.md`; mocks are disallowed in `tests/integration/`. |
 | `task test:frontend` | `cd web && npm test` (Vitest). |
+| `task examples:refs` | Checks example stacks for unpinned image and package selectors (`scripts/check-example-refs.sh`). Requires `./gridctl`. |
 | `task lint` | `golangci-lint run` plus `npm run lint` in `web/` (both CI-gated). |
 | `task generate` | Regenerates `go.uber.org/mock` mocks under `pkg/mcp/` and `pkg/runtime/`. Required after touching the interfaces they're generated from. |
 | `task mock:servers` | Builds and runs the example mock MCP servers in `examples/_mock-servers/` (HTTP on PORT, SSE on PORT+1; `PORT=9001` default). Pair with `task mock:clean`. |
@@ -68,12 +69,17 @@ pkg/catalog/        MCP server catalog behind `gridctl search` / `gridctl add`: 
 pkg/config/         stack.yaml schema, defaults and validation, variable/env expansion, plan diffing, health-check parsing.
                     export.go owns the shared non-resolving ExportStack projection for CLI/API exports, with bounded
                     sensitive-literal rejection and source ancestry for CLI destination checks. Runtime loaders stay separate.
+                    mutablerefs.go is the CLI-only advisory path for literal image and npx/uvx selectors; default
+                    ValidateWithIssues is unchanged.
+pkg/depcheck/       Pure literal image and npx/uvx classifier used by advisory mutable-ref diagnostics. No I/O,
+                    expansion, secret substitution, or rewriting.
 pkg/execution/      Presence-aware MCP execution declarations, normalized per-replica contracts, and value-free reports.
                     Docker-compatible admission and instance-bound Linux kernel observations live in pkg/runtime/docker/.
                     MCP clients gate dispatch on evidence; retirement closes owned processes and cancels obsolete scaling.
 pkg/runtime/        Container orchestration. Orchestrator is the WorkloadRuntime + Builder front; it prepares one desired
                     source image per logical MCP server before reconciling replicas. pkg/runtime/docker is the Docker
-                    implementation. Runtime auto-detected (docker → podman) unless --runtime is set.
+                    implementation. Local image cache matches digest and tag-plus-digest references against RepoDigests;
+                    tag lookup is unchanged. Runtime auto-detected (docker → podman) unless --runtime is set.
 pkg/builder/        Image building from git or local Dockerfiles and generated Python builds for exact public PyPI releases
                     or packaged git/local projects, with resolved build plans, isolated Git worktrees, content-addressed
                     image tags, label-verified cache reuse, and non-secret provenance labels. Also owns bounded public-PyPI
@@ -130,8 +136,8 @@ web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). 
                     AuthBoundary covers the shell and all six detached routes with generation-guarded re-entry.
 
 tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway lifecycle, hot reload, autoscaler,
-                    replicas, transports (incl. Podman), private git auth, generated Python source builds, and
-                    optimize heuristics. Grouped auth tests use real HTTP and a subprocess MCP backend.
+                    replicas, transports (incl. Podman), private git auth, generated Python source builds,
+                    digest-cache lookup, and optimize heuristics. Grouped auth tests use real HTTP and a subprocess MCP backend.
                     auth_restart_test.go verifies actual process restart, saved/live-state rejection, CLI exits,
                     sessions/streams, and preserved Docker identities with race-built child binaries.
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, registry, secrets-vault,
@@ -140,6 +146,7 @@ examples/           Example stack YAMLs grouped by surface (getting-started, tra
 scripts/            Build/test helpers and release tooling: release.py owns gate, inventory, verification, draft/public,
                     and tap policy; release-tools.py pins executables and the SPDX schema; release-acceptance.py exercises
                     authorized sandbox releases. test_release.py and test_govulncheck.py cover local policy regressions.
+                    check-example-refs.sh enforces pinned example image and package selectors after task build:go.
 docs/               User-facing documentation (cli-reference, config-schema, api-reference, skills, packs, tools-workspace,
                     global-context, model-policy, scaling, usage-observability, installation, release-verification,
                     project-status, troubleshooting, execution, security/threat-model, security-evidence).
