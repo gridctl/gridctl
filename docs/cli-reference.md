@@ -66,15 +66,15 @@ The check covers MCP-server and resource `image` fields plus documented `npx`/`u
 
 ### Stack declaration policy
 
-`gridctl validate stack.yaml --policy ./policies/production.yaml` is a separate offline evaluator. It reads only the selected policy, the entry stack, and bounded local `extends` files under the entry stack directory. It does not expand environment or stored values, open referenced source/spec/key files, or consult vault, registry, or runtime state.
+`gridctl validate stack.yaml --policy ./policies/production.yaml` is a separate offline evaluator. It reads only the selected policy, the entry stack, and bounded local `extends` files under the entry stack directory. It does not expand environment or stored values, open referenced source/spec/key files, or consult vault, registry, or runtime state. Passing `--policy` replaces ordinary validation for that invocation; `--check-mutable-refs` does not run alongside it.
 
 ```bash
 gridctl validate stack.yaml --policy ./policies/production.yaml --format json
 ```
 
-The policy document requires `version: "1"` and a nonempty `enabled` list of known rule IDs. Candidate YAML cannot select rules or supply exemptions. Acceptance means the captured declarations satisfy those requirements. It does not authorize deployment or prove runtime safety. Empty selections and evaluations with no applicable checks are errors. Unknowns stay distinct from violations. Source-built servers are excluded from digest claims rather than counted as immutable artifacts.
+The policy document requires `version: "1"` and a nonempty `enabled` list of known rule IDs. Candidate YAML cannot select rules or supply exemptions. JSON is the versioned policy report (`schema_version`, `checker_version`, `policy`, `accepted`, `evaluation_complete`, `status`, `coverage`, `results`, `warnings`, `diagnostics`), not the ordinary validate schema. Text prints a headline and coverage, then errors, violations, unknowns, and warnings. Acceptance means the captured declarations satisfy those requirements. It does not authorize deployment or prove runtime safety. Empty selections and evaluations with no applicable checks are errors. Unknowns stay distinct from violations. Source-built servers are excluded from digest claims rather than counted as immutable artifacts.
 
-Literal tool names that contain `*` still pass `nonempty-server-tool-lists` and emit a `literal-tool-name-not-pattern` warning (exit `2` when that is the only issue). Client, group, and operation-filter lists are not substitutes. See [stack declaration policy](stack-declaration-policy.md) for the six-rule inventory, source-root limits, CI trust split, and identifier-sensitivity limits.
+Literal tool names that contain `*` still pass `nonempty-server-tool-lists` and emit a `literal-tool-name-not-pattern` warning (exit `2` when that is the only issue): "Tool names are exact literals, not wildcard patterns; existence and authorization were not checked." Client, group, and operation-filter lists are not substitutes. See [stack declaration policy](stack-declaration-policy.md) for the six-rule inventory, source-root limits, CI trust split, and identifier-sensitivity limits.
 
 ### Execution Results
 

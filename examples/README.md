@@ -114,7 +114,7 @@ Owner: repository maintainers. Cadence: when adding or changing runnable example
 
 ## 💻 Usage Pattern
 
-All examples follow the same deployment pattern:
+Most examples follow the same deployment pattern. The [stack declaration policy](stack-declaration-policy/) fixture is evaluated with `gridctl validate --policy` and is not a deploy demo.
 
 ```bash
 # Deploy a stack
