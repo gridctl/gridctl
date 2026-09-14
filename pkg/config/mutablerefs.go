@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/gridctl/gridctl/pkg/depcheck"
 )
@@ -37,8 +38,7 @@ func DiagnoseMutableRefs(stack *Stack) []ValidationIssue {
 		}
 		if len(srv.Command) > 0 {
 			result := depcheck.ClassifyCommand(srv.Command)
-			emit := result.Kind == depcheck.KindNPM || result.Kind == depcheck.KindPyPI || depcheck.IsPackageLauncher(srv.Command) || result.Reason == "variable"
-			issues = appendFinding(issues, fmt.Sprintf("mcp-servers[%d].command", i), result, emit)
+			issues = appendFinding(issues, fmt.Sprintf("mcp-servers[%d].command", i), result, true)
 		}
 	}
 	for i, res := range stack.Resources {
@@ -98,11 +98,35 @@ func notAssessedDetail(reason string) string {
 		return "digest syntax is invalid; it was not classified."
 	case "unsupported-option":
 		return "launcher options are unsupported; it was not classified."
+	case "unsupported-launcher":
+		return "launcher is unsupported; it was not classified."
+	case "unknown-wrapper":
+		return "command wrapper is unsupported; it was not classified."
 	case "local-path":
 		return "local paths are not classified."
 	case "empty":
 		return "selector is empty; it was not classified."
 	default:
 		return "selector is unsupported or dynamic; it was not classified."
+	}
+}
+
+// MaintenanceRefFinding reports whether an advisory finding must be pinned
+// or excepted by example CI. Local-development command wrappers and local
+// paths are inventoried separately and do not fail the gate.
+func MaintenanceRefFinding(issue ValidationIssue) bool {
+	if strings.HasPrefix(issue.Message, prefixMutableImage) || strings.HasPrefix(issue.Message, prefixMutablePkg) {
+		return true
+	}
+	if !strings.HasPrefix(issue.Message, prefixNotAssessed) {
+		return false
+	}
+	detail := strings.TrimPrefix(issue.Message, prefixNotAssessed)
+	switch {
+	case strings.HasPrefix(detail, "command wrapper is unsupported"),
+		strings.HasPrefix(detail, "local paths are not classified"):
+		return false
+	default:
+		return true
 	}
 }

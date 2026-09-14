@@ -23,6 +23,7 @@ func TestDiagnoseMutableRefs_Table(t *testing.T) {
 			{Name: "variable", Image: "${var:IMAGE}"},
 			{Name: "npx-exact", Command: []string{"npx", "-y", "@scope/pkg@1.2.3"}},
 			{Name: "npx-float", Command: []string{"npx", "-y", "pkg@latest"}},
+			{Name: "npx-partial", Command: []string{"npx", "-y", "@scope/pkg@1.2.x"}},
 			{Name: "npx-missing", Command: []string{"npx", "pkg"}},
 			{Name: "uvx-from", Command: []string{"uvx", "--from", "pkg==1.2.3", "pkg"}},
 			{Name: "uvx-range", Command: []string{"uvx", "pkg>=1.0"}},
@@ -31,6 +32,8 @@ func TestDiagnoseMutableRefs_Table(t *testing.T) {
 			{Name: "unknown-opt", Command: []string{"npx", "--prefix", "/tmp", "pkg@1.0.0"}},
 			{Name: "host", Command: []string{"sh", "-c", "echo s3cret-token"}},
 			{Name: "dynamic", Command: []string{"${var:CMD}", "pkg"}},
+			{Name: "local-bin", Command: []string{"../_mock-servers/local-stdio-server/mock-stdio-server"}},
+			{Name: "npx-multi", Command: []string{"npx", "--package=unpinned", "--package=pkg@1.2.3", "pkg"}},
 		},
 		Resources: []Resource{
 			{Name: "db", Image: "postgres:16"},
@@ -51,7 +54,9 @@ func TestDiagnoseMutableRefs_Table(t *testing.T) {
 		"mcp-servers[2].image",
 		"mcp-servers[7].command",
 		"mcp-servers[8].command",
-		"mcp-servers[10].command",
+		"mcp-servers[9].command",
+		"mcp-servers[11].command",
+		"mcp-servers[18].command",
 		"resources[0].image",
 	}
 	for _, field := range wantWarn {
@@ -70,10 +75,12 @@ func TestDiagnoseMutableRefs_Table(t *testing.T) {
 	wantInfo := []string{
 		"mcp-servers[4].image",
 		"mcp-servers[5].image",
-		"mcp-servers[11].command",
 		"mcp-servers[12].command",
 		"mcp-servers[13].command",
+		"mcp-servers[14].command",
 		"mcp-servers[15].command",
+		"mcp-servers[16].command",
+		"mcp-servers[17].command",
 	}
 	for _, field := range wantInfo {
 		issue, ok := byField[field]
@@ -88,13 +95,16 @@ func TestDiagnoseMutableRefs_Table(t *testing.T) {
 			t.Errorf("%s message = %q", field, issue.Message)
 		}
 	}
-	for _, field := range []string{"mcp-servers[1].image", "mcp-servers[3].image", "mcp-servers[6].command", "mcp-servers[9].command", "resources[1].image"} {
+	for _, field := range []string{"mcp-servers[1].image", "mcp-servers[3].image", "mcp-servers[6].command", "mcp-servers[10].command", "resources[1].image"} {
 		if _, ok := byField[field]; ok {
 			t.Errorf("pinned selector %s should not emit a finding", field)
 		}
 	}
-	if _, ok := byField["mcp-servers[14].command"]; ok {
-		t.Error("host command should not emit a finding")
+	if issue := byField["mcp-servers[15].command"]; !strings.Contains(issue.Message, "command wrapper is unsupported") {
+		t.Errorf("host wrapper message = %q", issue.Message)
+	}
+	if issue := byField["mcp-servers[12].command"]; !strings.Contains(issue.Message, "launcher is unsupported") {
+		t.Errorf("npm wrapper message = %q", issue.Message)
 	}
 
 	again := DiagnoseMutableRefs(stack)
