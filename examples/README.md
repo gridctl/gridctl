@@ -34,7 +34,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 
 ## 🎬 Recommended Path
 
-1. **Start here**: `getting-started/mcp-basic.yaml` - stack, networking, tool filtering (placeholder containers)
+1. **Start here**: `getting-started/mcp-basic.yaml` - stack, networking, tool filtering (digest-pinned alpine placeholders)
 2. **Real MCP servers**: `transports/local-mcp.yaml` - actual MCP server logic via stdio transport
 3. **Platforms**: `platforms/github-mcp.yaml` - third-party MCP servers
 4. **OpenAPI**: `openapi/openapi-basic.yaml` - turn any REST API into MCP tools
@@ -43,7 +43,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 7. **Packs**: `portable-pack/` - one manifest importing skills, agents, and rules as a unit
 8. **Scaling**: `autoscale/autoscale-basic.yaml` - reactive autoscaling of MCP replicas
 
-> **Note:** Getting-started examples use placeholder containers to focus on infrastructure concepts.
+> **Note:** Getting-started examples use digest-pinned `alpine:3.22` placeholders (`sleep`) to focus on infrastructure concepts, not MCP server logic.
 > Transport and platform examples include real MCP server implementations.
 
 ## 📊 Feature Matrix
@@ -86,6 +86,29 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | portable-stack | http (containers) | Committable stack, all values from the variable store |
 | portable-pack | - (pack manifest) | Skills, agents, rules, and wiring from one manifest |
 | model-policy | - (models policy) | Router-only LiteLLM fragment, include line, OpenCode provider |
+
+## Dependency references
+
+Runnable public images in these stacks are pinned to a reviewed multi-platform index digest with a version tag. Direct `npx` selectors use an exact release. Exact versions are not a transitive lock, and a digest is content-addressed, not publisher-verified.
+
+Reviewed on 2026-09-14 (linux/amd64 and linux/arm64 unless noted):
+
+| Selector | Pin | Notes |
+|---|---|---|
+| alpine:3.22 | sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce | Official index; also linux/arm/v6, arm/v7, 386, ppc64le, riscv64, s390x |
+| python:3.13-alpine | sha256:7415fbc3c9e4979cc717d92377ab2bc7b2b4a2af1ac03cc52b5f3f88efedaf3a | Official index |
+| postgres:16 | sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94 | Official index |
+| ghcr.io/github/github-mcp-server:v1.12.1 | sha256:0ba840c46a237879c8300e7fddb0b6347f20e029ccb9cbe2ce4a943daa1ff560 | linux/amd64, linux/arm64 |
+| chrome-devtools-mcp | 1.9.0 | npm latest at review |
+| @upstash/context7-mcp | 4.1.0 | npm latest at review |
+| @playwright/mcp | 0.0.80 | npm latest at review |
+| mcp-remote | 0.14.2 | npm latest at review; README Claude Desktop setup snippet |
+
+Placeholder private or fake images stay as authored (`ghcr.io/org/...`, `example/fetch:1`, `my-mcp:latest`, `my/filesystem-mcp:latest`, `my-image:latest`). They are listed in `examples/reference-exceptions.txt` and must not be swapped for unrelated public software.
+
+Excluded from this pin policy: commented sketches, local mock-server paths, host `sleep` commands, variable-only selectors, schematic `npx some-stdio-mcp-server` forms, API status payloads, and runtime-generated `gridctl link` client wiring. Public setup snippets, including the README Claude Desktop `npx` bridge, are pinned.
+
+Owner: repository maintainers. Cadence: when adding or changing runnable examples or public setup snippets; review pins when promoting a new upstream release, and at least quarterly. Check with `task examples:refs` (requires `./gridctl`).
 
 ## 💻 Usage Pattern
 

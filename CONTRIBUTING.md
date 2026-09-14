@@ -114,7 +114,16 @@ Run tests before submitting:
 ```bash
 task test                  # Unit tests
 task test:integration      # Integration tests (requires Docker or Podman)
+task examples:refs         # Example image and package pin check (needs ./gridctl)
 ```
+
+### Example dependency references
+
+Runnable example stacks and public setup snippets pin real container images to a reviewed multi-platform index digest (preferably with a readable version tag) and pin direct `npx`/`uvx` selectors to an exact release. Do not invent digests or replace illustrative private-image placeholders with unrelated software.
+
+`gridctl validate --check-mutable-refs` is an opt-in local diagnostic. Default `validate`, REST validation, health counts, and apply stay unchanged. Exact package versions are not a transitive lock, and a digest is content-addressed, not publisher-verified.
+
+Maintenance owner: repository maintainers. Cadence: when adding or changing runnable examples or public setup snippets; review pins when promoting a new upstream release, and at least quarterly. Documented placeholder exceptions live in `examples/reference-exceptions.txt`. CI runs `scripts/check-example-refs.sh` after building `./gridctl`; unexpected exits and validation errors fail. Unpinned selectors and unassessed in-scope image or package references fail unless listed in `examples/reference-exceptions.txt`. Local-development command wrappers and local paths are permitted. Unrelated existing example warnings stay non-fatal. The CLI diagnostic itself remains informational for unassessed selectors.
 
 ### Experimental Feature Flags
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/gridctl/gridctl/pkg/config"
@@ -13,12 +14,17 @@ import (
 )
 
 var validateFormat string
+var validateCheckMutableRefs bool
 
 var validateCmd = &cobra.Command{
 	Use:   "validate [stack.yaml]",
 	Short: "Validate a stack specification without deploying",
 	Long: `Validates the full Stack Spec including config schema, transport rules,
 and field-level constraints without deploying any containers.
+
+--check-mutable-refs is an opt-in, local, deterministic diagnostic of
+literal image and package selectors. It is off by default and does not
+change REST validation, health counts, apply, or stack schema semantics.
 
 Exit codes:
   0  Valid (no errors or warnings)
@@ -30,7 +36,11 @@ Exit codes:
 		if validateFormat, err = resolveFormat(validateFormat, cmd.Flags().Changed("format"), *validateJSON); err != nil {
 			return err
 		}
-		return runValidate(cmd.Context(), args[0])
+		checkMutable, err := cmd.Flags().GetBool("check-mutable-refs")
+		if err != nil {
+			return err
+		}
+		return runValidate(cmd.Context(), args[0], checkMutable)
 	},
 }
 
@@ -38,10 +48,11 @@ var validateJSON *bool
 
 func init() {
 	validateCmd.Flags().StringVar(&validateFormat, "format", "", "Output format: json for machine-readable output")
+	validateCmd.Flags().BoolVar(&validateCheckMutableRefs, "check-mutable-refs", false, "Report mutable image tags and unpinned package selectors (advisory, off by default)")
 	validateJSON = addJSONAlias(validateCmd)
 }
 
-func runValidate(ctx context.Context, stackPath string) error {
+func runValidate(ctx context.Context, stackPath string, checkMutableRefs bool) error {
 	stack, result, err := config.ValidateStackFile(stackPath)
 	if err != nil {
 		// File read or YAML parse error — not a validation issue
@@ -88,13 +99,16 @@ func runValidate(ctx context.Context, stackPath string) error {
 		return fmt.Errorf("indexing stack declarations: %w", err)
 	}
 	appendDeclarationValidationIssues(result, declarationDiagnostics(indexed))
+	if checkMutableRefs {
+		config.AppendMutableRefIssues(result, config.DiagnoseMutableRefs(indexed))
+	}
 
 	if validateFormat == "json" {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		_ = enc.Encode(result)
 	} else {
-		printValidationResult(stackPath, result)
+		printValidationResultMode(os.Stdout, stackPath, result, checkMutableRefs)
 	}
 
 	// Exit codes: 0=valid, 1=errors, 2=warnings only
@@ -143,32 +157,49 @@ func appendDeclarationValidationIssues(result *config.ValidationResult, diagnost
 }
 
 func printValidationResult(path string, result *config.ValidationResult) {
-	if result.Valid && result.WarningCount == 0 {
-		fmt.Printf("✓ %s is valid\n", path)
-		return
+	printValidationResultMode(os.Stdout, path, result, false)
+}
+
+func printValidationResultMode(w io.Writer, path string, result *config.ValidationResult, showInfoWithoutWarnings bool) {
+	okMark, warnMark, errMark, infoMark := "✓", "⚠", "✗", "ℹ"
+	if showInfoWithoutWarnings && os.Getenv("NO_COLOR") != "" {
+		okMark, warnMark, errMark, infoMark = "OK", "warning", "error", "info"
 	}
 
-	if result.Valid && result.WarningCount > 0 {
-		fmt.Printf("⚠ %s is valid with %d warning(s)\n", path, result.WarningCount)
-	} else {
-		fmt.Printf("✗ %s has %d error(s)", path, result.ErrorCount)
-		if result.WarningCount > 0 {
-			fmt.Printf(" and %d warning(s)", result.WarningCount)
+	switch {
+	case result.Valid && result.WarningCount == 0:
+		fmt.Fprintf(w, "%s %s is valid\n", okMark, path)
+		if !showInfoWithoutWarnings {
+			return
 		}
-		fmt.Println()
+	case result.Valid:
+		fmt.Fprintf(w, "%s %s is valid with %d warning(s)\n", warnMark, path, result.WarningCount)
+	default:
+		fmt.Fprintf(w, "%s %s has %d error(s)", errMark, path, result.ErrorCount)
+		if result.WarningCount > 0 {
+			fmt.Fprintf(w, " and %d warning(s)", result.WarningCount)
+		}
+		fmt.Fprintln(w)
 	}
 
-	fmt.Println()
+	fmt.Fprintln(w)
+	infoOnly := showInfoWithoutWarnings && result.Valid && result.WarningCount == 0
 	for _, issue := range result.Issues {
-		var prefix string
+		if infoOnly && issue.Severity != config.SeverityInfo {
+			continue
+		}
+		mark := ""
 		switch issue.Severity {
 		case config.SeverityError:
-			prefix = "  ✗"
+			mark = errMark
 		case config.SeverityWarning:
-			prefix = "  ⚠"
+			mark = warnMark
 		case config.SeverityInfo:
-			prefix = "  ℹ"
+			mark = infoMark
 		}
-		fmt.Printf("%s %s: %s\n", prefix, issue.Field, issue.Message)
+		fmt.Fprintf(w, "  %s %s: %s\n", mark, issue.Field, issue.Message)
+	}
+	if showInfoWithoutWarnings {
+		fmt.Fprintf(w, "  %s coverage: %s\n", infoMark, config.CoverageLimitationMessage())
 	}
 }

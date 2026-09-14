@@ -21,7 +21,7 @@ network:
 mcp-servers:
   # No filtering — all tools exposed
   - name: unrestricted-server
-    image: alpine:latest
+    image: alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
     port: 8080
     command: ["sh", "-c", "while true; do sleep 3600; done"]
 
@@ -29,7 +29,7 @@ mcp-servers:
   # Even if the underlying server supports "delete" or "modify",
   # those tools never reach the gateway or the LLM client.
   - name: restricted-server
-    image: alpine:latest
+    image: alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
     port: 8081
     tools: ["read", "list"]
     command: ["sh", "-c", "while true; do sleep 3600; done"]

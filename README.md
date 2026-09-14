@@ -79,7 +79,7 @@ mcp-servers:
 
   # GitHub repos, issues, and PRs (containerized stdio server)
   - name: github
-    image: ghcr.io/github/github-mcp-server:latest
+    image: ghcr.io/github/github-mcp-server:v1.12.1@sha256:0ba840c46a237879c8300e7fddb0b6347f20e029ccb9cbe2ce4a943daa1ff560
     transport: stdio
     env:
       GITHUB_PERSONAL_ACCESS_TOKEN: ${var:GITHUB_PERSONAL_ACCESS_TOKEN}
@@ -88,7 +88,7 @@ mcp-servers:
   - name: playwright
     command:
       - npx
-      - '@playwright/mcp@latest'
+      - '@playwright/mcp@0.0.80'
 
   # SaaS app actions through Zapier's hosted MCP endpoint.
   # Same flow: `gridctl auth login zapier` after apply.
@@ -167,7 +167,7 @@ Supported clients: Claude Desktop, Claude Code, Cursor, Windsurf, VS Code, Gemin
   "mcpServers": {
     "gridctl": {
       "command": "npx",
-      "args": ["-y", "mcp-remote", "http://localhost:8180/mcp", "--allow-http"]
+      "args": ["-y", "mcp-remote@0.14.2", "http://localhost:8180/mcp", "--allow-http"]
     }
   }
 }

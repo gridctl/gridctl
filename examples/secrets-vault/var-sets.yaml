@@ -28,6 +28,7 @@ secrets:
 
 mcp-servers:
   - name: backend
+    # Placeholder private image; not a reviewed upstream pin.
     image: ghcr.io/org/backend-mcp:latest
     port: 3000
     env:

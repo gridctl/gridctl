@@ -20,6 +20,6 @@ name: context7-mcp
 
 mcp-servers:
   - name: context7
-    command: ["npx", "-y", "@upstash/context7-mcp"]
+    command: ["npx", "-y", "@upstash/context7-mcp@4.1.0"]
     env:
       CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"

@@ -134,6 +134,19 @@ tasks:
     cmds:
       - go test -tags=integration -race -timeout 10m -run TestConformance ./tests/integration/...
 
+  examples:refs:
+    desc: Check example stacks for unpinned image and package selectors
+    summary: |
+      Runs gridctl validate --check-mutable-refs --format json against
+      example stacks. Unpinned public image tags and package selectors,
+      plus unassessed in-scope image/package references, fail unless
+      listed in examples/reference-exceptions.txt. Local-development
+      command wrappers and local paths are permitted. Validation errors
+      and unexpected exits fail. Unrelated example warnings stay
+      non-fatal. Requires ./gridctl (task build:go).
+    cmds:
+      - bash scripts/check-example-refs.sh ./gridctl
+
   lint:
     desc: Lint backend and frontend
     cmds:

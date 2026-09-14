@@ -6,12 +6,14 @@ All notable changes to gridctl will be documented in this file.
 
 ### Features
 
+- Add opt-in `gridctl validate --check-mutable-refs` for local, deterministic diagnostics of literal image tags and `npx`/`uvx` selectors. Default CLI output and exits, REST validation, health counts, apply, and stack schema are unchanged. Informational `reference-not-assessed` findings and a coverage note are shown even when there are no warnings, including unknown wrappers; exit zero is not complete coverage. npm partial versions and wildcards are mutable; additional `npx --package` and `uvx --with` selectors are assessed conservatively. Digests are content-addressed, not publisher-verified, and an exact package version is not a transitive lock (#1229).
 - Add a passive security evidence report on `gridctl doctor --security`, `GET /api/security-report`, and existing gateway/server detail surfaces. Source selection is explicit (`file:`, `snapshot:`, or `gateway:`) with no fallback, probes, scans, or pin mutation. Gateway credentials attach only to loopback origins. Imported snapshots cannot authenticate verification claims. Exit zero means no established failures among documented fail predicates, not that the stack is secure (#1224).
 - Add opt-in per-MCP-server execution declarations, container control admission and instance-bound evidence, local environment inheritance and executable lookup, lossless execution form/YAML preservation, and per-replica reporting. Omitted execution declarations retain compatibility behavior; selected profiles refuse unavailable required evidence. Supporting resources and remote execution remain outside the enforcement scope (#1221).
 - Breaking output change: existing process-replica and runtime resource status gains execution metadata, and human replica rows distinguish execution state. Migrate STATE-text consumers to `status --json` and evaluate per-replica evidence separately from MCP health. Under Article VIII, schedule this output change for a maintainer-owned major release, not a patch or minor release (#1221).
 
 ### Documentation
 
+- Pin runnable example stacks and public setup snippets to reviewed image digests and exact package versions, including the README Claude Desktop `mcp-remote@0.14.2` bridge. Document placeholder exceptions and quarterly pin review, and add `task examples:refs` plus Gatekeeper enforcement that fails unpinned or unassessed in-scope selectors without making unrelated example warnings fatal (#1229).
 - Document the passive security evidence report, including no-fallback source selection, unknown/partial/N/A states, allowlisted identifiers, and exit-zero limits. No completeness or certification claims (#1224).
 - Make the security-evidence example stack valid for `gridctl validate` by giving the container server a port and using a store reference for the gateway token instead of an unset environment interpolation (#1224).
 - Document execution schema/defaults, CLI/API evidence, accepted reload failure recovery, runtime support limits, and local-process hygiene across references, examples, the threat model, and architecture guidance. Positive rootless Podman acceptance remains a required external gate (#1221).
@@ -20,6 +22,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Bug Fixes
 
+- Match locally cached images by RepoDigests so digest and tag-plus-digest references hit the cache instead of comparing RepoTags only (#1229).
 - Reconcile equivalent image references during hardened container reuse and verify Podman's bridge-mode network membership separately from its namespace mode. Keep exact network inventories, loopback publication, and fresh kernel evidence mandatory (#1221).
 - Decode explicitly present null Podman capability lists as empty native sets while rejecting omitted or malformed fields. Full instance identity and all five kernel capability sets remain mandatory before routing (#1221).
 - Create hardened Podman workloads through its native API to disable undeclared automatic writable tmpfs mounts. Preserve explicit scratch inventories, accept bounded copy-up scratch semantics, and report value-free mount mismatch subconditions (#1221).

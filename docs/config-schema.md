@@ -299,12 +299,12 @@ telemetry:
 
 mcp-servers:
   - name: github
-    image: ghcr.io/github/github-mcp-server:latest
+    image: ghcr.io/github/github-mcp-server:v1.12.1@sha256:0ba840c46a237879c8300e7fddb0b6347f20e029ccb9cbe2ce4a943daa1ff560
     telemetry:
       persist:
         traces: false   # noisy server: keep logs+metrics, drop traces
   - name: filesystem
-    image: my/filesystem-mcp:latest
+    image: my/filesystem-mcp:latest  # placeholder private image
     telemetry:
       persist:
         logs: false     # PII risk: never persist logs for this server
@@ -492,13 +492,15 @@ Runs an MCP server inside a Docker/Podman container from a pre-built image.
 ```yaml
 mcp-servers:
   - name: github
-    image: ghcr.io/github/github-mcp-server:latest
+    image: ghcr.io/github/github-mcp-server:v1.12.1@sha256:0ba840c46a237879c8300e7fddb0b6347f20e029ccb9cbe2ce4a943daa1ff560
     transport: stdio
     volumes:
       - /path/to/workspace:/workspace:ro
     env:
       GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_PERSONAL_ACCESS_TOKEN}"
 ```
+
+Default schema validation does not require a digest. `gridctl validate --check-mutable-refs` reports version tags and unpinned `npx`/`uvx` selectors as advisory warnings; REST validation is unchanged. See [mutable reference diagnostics](cli-reference.md#mutable-reference-diagnostics).
 
 ### Container Server (source)
 
@@ -654,7 +656,7 @@ In the web wizard, the OpenAPI Configuration section's Operations Filter loads t
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `name` | string | **Yes** | - | Unique server identifier |
-| `image` | string | Conditional | - | Docker image (container servers) |
+| `image` | string | Conditional | - | Docker image (container servers). Tags without a digest are mutable; pinning is not a schema requirement |
 | `source` | object | Conditional | - | Build from source (see [Source](#source)) |
 | `url` | string | Conditional | - | External server URL |
 | `port` | int | Conditional | - | Container port for HTTP/SSE transport. Required for non-stdio container servers |
@@ -993,7 +995,7 @@ Supporting containers such as databases, caches, and other services. MCP `execut
 ```yaml
 resources:
   - name: postgres
-    image: postgres:16
+    image: postgres:16@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94
     env:
       POSTGRES_PASSWORD: "${DB_PASSWORD}"
     ports:
@@ -1005,7 +1007,7 @@ resources:
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `name` | string | **Yes** | - | Unique resource identifier |
-| `image` | string | **Yes** | - | Docker image |
+| `image` | string | **Yes** | - | Docker image. Tags without a digest are mutable; pinning is not a schema requirement |
 | `env` | map | No | - | Environment variables |
 | `ports` | []string | No | - | Port mappings (e.g., `"5432:5432"`) |
 | `volumes` | []string | No | - | Volume mounts (e.g., `"data:/var/lib/postgres"`) |

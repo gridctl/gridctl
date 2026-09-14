@@ -29,7 +29,7 @@ Containerized servers use `image:` (`github-mcp.yaml`):
 ```yaml
 mcp-servers:
   - name: github
-    image: ghcr.io/github/github-mcp-server:latest
+    image: ghcr.io/github/github-mcp-server:v1.12.1@sha256:0ba840c46a237879c8300e7fddb0b6347f20e029ccb9cbe2ce4a943daa1ff560
     transport: stdio
 ```
 
@@ -38,7 +38,7 @@ Host processes use `command:` (`chrome-devtools-mcp.yaml`, `context7-mcp.yaml`):
 ```yaml
 mcp-servers:
   - name: context7
-    command: ["npx", "-y", "@upstash/context7-mcp"]
+    command: ["npx", "-y", "@upstash/context7-mcp@4.1.0"]
 ```
 
 For connecting to **existing** MCP servers, see [🔒 gateways/](../gateways/).
