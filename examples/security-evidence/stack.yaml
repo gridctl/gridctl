@@ -8,6 +8,7 @@ gateway:
 
 mcp-servers:
   - name: fetch
+    # Placeholder image for evidence-report states; not a reviewed upstream pin.
     image: example/fetch:1
     port: 8080
   - name: remote

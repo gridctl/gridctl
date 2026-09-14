@@ -147,7 +147,7 @@ mcp-servers:
 ```yaml
 mcp-servers:
   - name: github
-    image: ghcr.io/github/github-mcp-server:latest
+    image: ghcr.io/github/github-mcp-server:v1.12.1@sha256:0ba840c46a237879c8300e7fddb0b6347f20e029ccb9cbe2ce4a943daa1ff560
     transport: stdio
     replicas: 3
     env:

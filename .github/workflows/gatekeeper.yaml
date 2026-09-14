@@ -104,6 +104,9 @@ jobs:
           done
           exit "$failed"
 
+      - name: Check example dependency references
+        run: bash scripts/check-example-refs.sh ./gridctl
+
   integration:
     runs-on: ubuntu-latest
     timeout-minutes: 20

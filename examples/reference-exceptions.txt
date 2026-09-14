@@ -1,0 +1,22 @@
+# Placeholder exceptions for example-reference CI.
+#
+# These selectors are illustrative private or fake images. Do not replace
+# them with unrelated public software. Runnable public images and package
+# selectors must be pinned instead of listed here.
+#
+# Format: <path> [field]
+# Path is relative to the repository root. Omitting field allows every
+# mutable-image-reference and mutable-package-reference finding in that
+# file. A field limits the exception to that finding path.
+#
+# Owner: repository maintainers
+# Cadence: when adding or changing runnable examples or public setup
+# snippets; review pins when promoting a new upstream release, and at
+# least quarterly.
+
+examples/security-evidence/stack.yaml
+examples/portable-stack/stack.yaml
+examples/secrets-vault/var-sets.yaml
+examples/secrets-vault/vault-sets.yaml
+examples/secrets-vault/var-basic.yaml mcp-servers[1].image
+examples/secrets-vault/vault-basic.yaml mcp-servers[1].image

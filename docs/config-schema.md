@@ -299,12 +299,12 @@ telemetry:
 
 mcp-servers:
   - name: github
-    image: ghcr.io/github/github-mcp-server:latest
+    image: ghcr.io/github/github-mcp-server:v1.12.1@sha256:0ba840c46a237879c8300e7fddb0b6347f20e029ccb9cbe2ce4a943daa1ff560
     telemetry:
       persist:
         traces: false   # noisy server: keep logs+metrics, drop traces
   - name: filesystem
-    image: my/filesystem-mcp:latest
+    image: my/filesystem-mcp:latest  # placeholder private image
     telemetry:
       persist:
         logs: false     # PII risk: never persist logs for this server
@@ -492,7 +492,7 @@ Runs an MCP server inside a Docker/Podman container from a pre-built image.
 ```yaml
 mcp-servers:
   - name: github
-    image: ghcr.io/github/github-mcp-server:latest
+    image: ghcr.io/github/github-mcp-server:v1.12.1@sha256:0ba840c46a237879c8300e7fddb0b6347f20e029ccb9cbe2ce4a943daa1ff560
     transport: stdio
     volumes:
       - /path/to/workspace:/workspace:ro
@@ -993,7 +993,7 @@ Supporting containers such as databases, caches, and other services. MCP `execut
 ```yaml
 resources:
   - name: postgres
-    image: postgres:16
+    image: postgres:16@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94
     env:
       POSTGRES_PASSWORD: "${DB_PASSWORD}"
     ports:

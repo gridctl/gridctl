@@ -43,7 +43,7 @@ secrets:
 
 mcp-servers:
   - name: github
-    image: ghcr.io/github/github-mcp-server:latest
+    image: ghcr.io/github/github-mcp-server:v1.12.1@sha256:0ba840c46a237879c8300e7fddb0b6347f20e029ccb9cbe2ce4a943daa1ff560
     transport: stdio
 
   # Needs no credentials at all, and with scoping it receives none beyond the
@@ -51,10 +51,10 @@ mcp-servers:
   - name: playwright
     command:
       - npx
-      - "@playwright/mcp@latest"
+      - "@playwright/mcp@0.0.80"
 
 resources:
   # Reached by the MCP servers over the stack network as "postgres:5432";
   # no host port publishing is involved.
   - name: postgres
-    image: postgres:16
+    image: postgres:16@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94

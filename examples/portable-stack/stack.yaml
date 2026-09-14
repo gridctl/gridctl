@@ -29,6 +29,7 @@ name: portable-stack
 
 mcp-servers:
   - name: data-api
+    # Placeholder private image; not a reviewed upstream pin.
     image: ghcr.io/org/data-mcp:latest
     port: 3000
     env:
@@ -38,6 +39,7 @@ mcp-servers:
       CLUSTER_ID: "${var:CLUSTER_ID}"
 
   - name: db-proxy
+    # Placeholder private image; not a reviewed upstream pin.
     image: ghcr.io/org/db-proxy-mcp:latest
     port: 3001
     env:

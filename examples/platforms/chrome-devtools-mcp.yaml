@@ -24,6 +24,6 @@ name: chrome-devtools-mcp
 
 mcp-servers:
   - name: chrome-devtools
-    command: ["npx", "-y", "chrome-devtools-mcp@latest"]
+    command: ["npx", "-y", "chrome-devtools-mcp@1.9.0"]
     env:
       CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: "true"
