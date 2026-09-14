@@ -13,6 +13,7 @@ All notable changes to gridctl will be documented in this file.
 ### Documentation
 
 - Document the passive security evidence report, including no-fallback source selection, unknown/partial/N/A states, allowlisted identifiers, and exit-zero limits. No completeness or certification claims (#1224).
+- Make the security-evidence example stack valid for `gridctl validate` by giving the container server a port and using a store reference for the gateway token instead of an unset environment interpolation (#1224).
 - Document execution schema/defaults, CLI/API evidence, accepted reload failure recovery, runtime support limits, and local-process hygiene across references, examples, the threat model, and architecture guidance. Positive rootless Podman acceptance remains a required external gate (#1221).
 - Align gateway-auth lifecycle guidance across the threat model, restart troubleshooting, API/CLI references, browser recovery, examples, and architecture map (#1228).
 - Publish a source-verified security threat model covering trust boundaries, current controls and defaults, credential custody, release evidence, and residual risks (#1218).

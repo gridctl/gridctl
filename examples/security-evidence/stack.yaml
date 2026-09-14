@@ -4,10 +4,11 @@ name: security-evidence-demo
 gateway:
   auth:
     type: bearer
-    token: ${GATEWAY_TOKEN}
+    token: ${var:GATEWAY_TOKEN}
 
 mcp-servers:
   - name: fetch
     image: example/fetch:1
+    port: 8080
   - name: remote
     url: http://127.0.0.1:9000/mcp
