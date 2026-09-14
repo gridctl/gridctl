@@ -1004,7 +1004,7 @@ Endpoints for validating, inspecting, and editing the active stack spec. Most wr
 
 #### `POST /api/stack/validate`
 
-Validates a stack YAML body without saving. Matches `gridctl validate` semantics (env expansion, defaults, full rule set).
+Validates a stack YAML body without saving. Matches default `gridctl validate` semantics (env expansion, defaults, full rule set). The CLI-only `--check-mutable-refs` diagnostic is not applied here.
 
 **Auth:** Yes
 
