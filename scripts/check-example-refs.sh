@@ -65,7 +65,8 @@ mapfile -t files < <(find "$CHECK_ROOT/examples" -name "*.yaml" \
   -not -name "skills.yaml" \
   -not -name "gridctl-pack.yaml" \
   -not -name "gateway-remote.yaml" \
-  -not -path "*/model-policy/*" | sort)
+  -not -path "*/model-policy/*" \
+  -not -path "*/stack-declaration-policy/policy.yaml" | sort)
 
 if [ "${#files[@]}" -eq 0 ]; then
   echo "No example stacks found" >&2
