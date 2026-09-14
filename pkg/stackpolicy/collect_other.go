@@ -1,4 +1,4 @@
-//go:build !unix
+//go:build !unix && !windows
 
 package stackpolicy
 
@@ -14,5 +14,10 @@ func identOf(fi os.FileInfo) (fileID, bool) {
 	if fi == nil {
 		return fileID{}, false
 	}
+	return fileID{}, false
+}
+
+func identFromFile(f *os.File) (fileID, bool) {
+	_ = f
 	return fileID{}, false
 }

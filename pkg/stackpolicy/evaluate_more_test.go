@@ -139,7 +139,8 @@ func TestEvaluate_CandidateCannotReadPolicy(t *testing.T) {
 
 func TestEvaluate_ExtendsDepth(t *testing.T) {
 	dir := t.TempDir()
-	write(t, dir, "level-10.yaml", "name: n\nmcp-servers: []\n")
+	server := "mcp-servers:\n  - name: a\n    image: " + pinnedAlpine + "\n    port: 1\n"
+	write(t, dir, "level-10.yaml", "name: n\n"+server)
 	for i := 9; i >= 0; i-- {
 		parent := "level-10.yaml"
 		if i < 9 {
@@ -149,17 +150,18 @@ func TestEvaluate_ExtendsDepth(t *testing.T) {
 		if i == 0 {
 			name = "stack.yaml"
 		}
-		write(t, dir, name, "name: n\nextends: ./"+parent+"\nmcp-servers: []\n")
+		write(t, dir, name, "name: n\nextends: ./"+parent+"\n"+server)
 	}
 	policy := write(t, dir, "policy.yaml", policyYAML(RuleDenySSHServers))
 	ok := Evaluate(t.Context(), filepath.Join(dir, "stack.yaml"), policy)
-	if !ok.Accepted && ok.Status != StatusError {
-		if hasDiag(ok, "extends-depth") {
-			t.Fatalf("depth 10 should be allowed: %+v", ok.Diagnostics)
-		}
+	if hasDiag(ok, "extends-depth") {
+		t.Fatalf("depth 10 should be allowed: %+v", ok.Diagnostics)
 	}
-	write(t, dir, "level-11.yaml", "name: n\nmcp-servers: []\n")
-	write(t, dir, "level-10.yaml", "name: n\nextends: ./level-11.yaml\nmcp-servers: []\n")
+	if !ok.Accepted {
+		t.Fatalf("depth 10 status=%s diags=%+v results=%+v", ok.Status, ok.Diagnostics, ok.Results)
+	}
+	write(t, dir, "level-11.yaml", "name: n\n"+server)
+	write(t, dir, "level-10.yaml", "name: n\nextends: ./level-11.yaml\n"+server)
 	over := Evaluate(t.Context(), filepath.Join(dir, "stack.yaml"), policy)
 	if !hasDiag(over, "extends-depth") {
 		t.Fatalf("expected depth error, diags=%+v status=%s", over.Diagnostics, over.Status)

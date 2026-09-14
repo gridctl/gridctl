@@ -276,6 +276,11 @@ func FormatText(w io.Writer, r *Report) error {
 	if _, err := fmt.Fprintf(w, "  selected_rules: %d\n", r.Coverage.RulesSelected); err != nil {
 		return err
 	}
+	if len(r.Policy.Enabled) > 0 {
+		if _, err := fmt.Fprintf(w, "  enabled: %s\n", strings.Join(r.Policy.Enabled, " ")); err != nil {
+			return err
+		}
+	}
 	if _, err := fmt.Fprintf(w, "  applicable_checks: %d\n", r.Coverage.ApplicableChecks); err != nil {
 		return err
 	}
@@ -329,6 +334,11 @@ func FormatText(w io.Writer, r *Report) error {
 				return err
 			}
 		}
+		if res.ReasonCode != "" {
+			if _, err := fmt.Fprintf(w, "  reason: %s\n", res.ReasonCode); err != nil {
+				return err
+			}
+		}
 		if _, err := fmt.Fprintf(w, "  %s\n", res.Message); err != nil {
 			return err
 		}
@@ -365,16 +375,28 @@ func FormatText(w io.Writer, r *Report) error {
 }
 
 func formatLocation(loc Location) string {
-	if loc.Source == "" && loc.Path == "" {
+	if loc.Source == "" && loc.Path == "" && loc.Line == 0 {
 		return ""
 	}
-	if loc.Path == "" {
-		return loc.Source
+	var b strings.Builder
+	if loc.Source != "" {
+		b.WriteString(loc.Source)
 	}
-	if loc.Source == "" {
-		return loc.Path
+	if loc.Path != "" {
+		if b.Len() > 0 {
+			b.WriteString(": ")
+		}
+		b.WriteString(loc.Path)
 	}
-	return loc.Source + ": " + loc.Path
+	if loc.Line > 0 {
+		b.WriteByte(':')
+		b.WriteString(itoa(loc.Line))
+		if loc.Column > 0 {
+			b.WriteByte(':')
+			b.WriteString(itoa(loc.Column))
+		}
+	}
+	return b.String()
 }
 
 func sanitizeExclusionLabel(code string) string {

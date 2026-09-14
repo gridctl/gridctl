@@ -28,13 +28,17 @@ var knownServerKeys = map[string]struct{}{
 	"replicas": {}, "replica_policy": {}, "autoscale": {}, "telemetry": {}, "auth": {},
 }
 
+var knownTransports = map[string]struct{}{
+	"": {}, "http": {}, "stdio": {}, "sse": {},
+}
+
 var knownPinningKeys = map[string]struct{}{
 	"enabled": {}, "action": {}, "scan": {}, "scan_ignore": {},
 }
 
 var securityAliasKeys = map[string]struct{}{
 	"pin-schemas": {}, "schema_pinning": {}, "schema-pinning": {}, "pinning": {},
-	"privileged": {}, "privilege": {}, "security": {},
+	"pin_schema": {}, "privileged": {}, "privilege": {}, "security": {},
 }
 
 type declaredStack struct {
@@ -49,23 +53,24 @@ type declaredStack struct {
 }
 
 type mcpSubject struct {
-	loc            Location
-	index          int
-	kind           serverKind
-	kindUnknown    bool
-	image          string
-	imagePresent   bool
-	imageDynamic   bool
-	imageInvalid   bool
-	sourcePresent  bool
-	sourceDynamic  bool
-	sourceType     string
-	toolsPresent   bool
-	toolsDynamic   bool
-	toolsInvalid   bool
-	tools          []toolItem
-	pinSchemas     *bool
-	pinUnknown     bool
+	loc           Location
+	imageLoc      Location
+	index         int
+	kind          serverKind
+	kindUnknown   bool
+	image         string
+	imagePresent  bool
+	imageDynamic  bool
+	imageInvalid  bool
+	sourcePresent bool
+	sourceDynamic bool
+	sourceType    string
+	toolsPresent  bool
+	toolsDynamic  bool
+	toolsInvalid  bool
+	tools         []toolItem
+	pinSchemas    *bool
+	pinUnknown    bool
 }
 
 type toolItem struct {
@@ -77,6 +82,7 @@ type toolItem struct {
 
 type resourceSubject struct {
 	loc          Location
+	imageLoc     Location
 	index        int
 	nameDynamic  bool
 	image        string
@@ -113,7 +119,10 @@ func interpretSnapshot(snap *snapshot) (*declaredStack, []Diagnostic) {
 	if len(diags) > 0 {
 		return nil, diags
 	}
-	out := mergeDecls(decls)
+	out, mergeDiags := mergeDecls(decls)
+	if len(mergeDiags) > 0 {
+		return nil, mergeDiags
+	}
 	return out, nil
 }
 
@@ -139,12 +148,12 @@ func interpretFile(f capturedFile) (fileDecl, []Diagnostic) {
 				diags = append(diags, Diagnostic{Code: "input-invalid", Location: locOf(n, f.alias, "mcp-servers"), Message: diagnosticMessage("input-invalid")})
 			}
 		} else {
-			for i, item := range n.Content {
+			for _, item := range n.Content {
 				node := resolveAlias(item)
 				d.servers = append(d.servers, node)
 				d.serverNames = append(d.serverNames, mappingName(node))
-				_ = i
 			}
+			diags = append(diags, duplicateNameDiags(f.alias, "mcp-servers", d.serverNames)...)
 		}
 	}
 	if n := mappingValue(root, "resources"); n != nil && !isNull(n) {
@@ -160,9 +169,30 @@ func interpretFile(f capturedFile) (fileDecl, []Diagnostic) {
 				d.resources = append(d.resources, node)
 				d.resourceNames = append(d.resourceNames, mappingName(node))
 			}
+			diags = append(diags, duplicateNameDiags(f.alias, "resources", d.resourceNames)...)
 		}
 	}
 	return d, diags
+}
+
+func duplicateNameDiags(alias, list string, names []nameField) []Diagnostic {
+	seen := make(map[string]struct{}, len(names))
+	var diags []Diagnostic
+	for i, n := range names {
+		if n.dynamic || n.value == "" {
+			continue
+		}
+		if _, ok := seen[n.value]; ok {
+			diags = append(diags, Diagnostic{
+				Code:     "duplicate-name",
+				Location: Location{Source: alias, Path: list + "[" + itoa(i) + "].name"},
+				Message:  diagnosticMessage("duplicate-name"),
+			})
+			continue
+		}
+		seen[n.value] = struct{}{}
+	}
+	return diags
 }
 
 func mappingName(n *yaml.Node) nameField {
@@ -182,29 +212,32 @@ func mappingName(n *yaml.Node) nameField {
 type mappedItem struct {
 	alias string
 	node  *yaml.Node
+	index int
 }
 
-func mergeDecls(decls []fileDecl) *declaredStack {
+func mergeDecls(decls []fileDecl) (*declaredStack, []Diagnostic) {
 	out := &declaredStack{}
 	if namesUncertain(decls, true) {
 		out.membershipUnknown = true
 	}
 	for _, d := range decls {
 		if d.gateway != nil {
-			applyGateway(out, d.gateway, d.alias)
+			if diags := applyGateway(out, d.gateway, d.alias); len(diags) > 0 {
+				return nil, diags
+			}
 			break
 		}
 	}
 	if out.membershipUnknown {
-		return out
+		return out, nil
 	}
-	for i, item := range mergeNamed(decls, func(d fileDecl) []*yaml.Node { return d.servers }) {
-		out.servers = append(out.servers, interpretServer(item.node, item.alias, i))
+	for _, item := range mergeNamed(decls, func(d fileDecl) []*yaml.Node { return d.servers }) {
+		out.servers = append(out.servers, interpretServer(item.node, item.alias, item.index))
 	}
-	for i, item := range mergeNamed(decls, func(d fileDecl) []*yaml.Node { return d.resources }) {
-		out.resources = append(out.resources, interpretResource(item.node, item.alias, i))
+	for _, item := range mergeNamed(decls, func(d fileDecl) []*yaml.Node { return d.resources }) {
+		out.resources = append(out.resources, interpretResource(item.node, item.alias, item.index))
 	}
-	return out
+	return out, nil
 }
 
 func mergeNamed(decls []fileDecl, get func(fileDecl) []*yaml.Node) []mappedItem {
@@ -212,7 +245,7 @@ func mergeNamed(decls []fileDecl, get func(fileDecl) []*yaml.Node) []mappedItem 
 	var items []mappedItem
 	anon := 0
 	for _, d := range decls {
-		for _, node := range get(d) {
+		for i, node := range get(d) {
 			nf := mappingName(node)
 			key := nf.value
 			if key == "" {
@@ -223,7 +256,7 @@ func mergeNamed(decls []fileDecl, get func(fileDecl) []*yaml.Node) []mappedItem 
 				continue
 			}
 			seen[key] = struct{}{}
-			items = append(items, mappedItem{alias: d.alias, node: node})
+			items = append(items, mappedItem{alias: d.alias, node: node, index: i})
 		}
 	}
 	return items
@@ -245,22 +278,41 @@ func namesUncertain(decls []fileDecl, _ bool) bool {
 	return false
 }
 
-func applyGateway(out *declaredStack, gateway *yaml.Node, alias string) {
+func applyGateway(out *declaredStack, gateway *yaml.Node, alias string) []Diagnostic {
 	if gateway.Kind != yaml.MappingNode {
 		if nodeDynamic(gateway) {
 			out.pinningUnknown = true
 			out.globalEnabledUnk = true
 			out.globalActionUnk = true
+			return nil
 		}
-		return
+		return []Diagnostic{{
+			Code:     "input-invalid",
+			Location: locOf(gateway, alias, "gateway"),
+			Message:  diagnosticMessage("input-invalid"),
+		}}
+	}
+	for _, key := range mappingKeys(gateway) {
+		if _, ok := securityAliasKeys[key]; ok && key != "security" {
+			out.pinningUnknown = true
+		}
 	}
 	sec := mappingValue(gateway, "security")
 	if sec == nil || isNull(sec) {
-		return
+		return nil
 	}
 	if sec.Kind != yaml.MappingNode {
-		out.pinningUnknown = true
-		return
+		if nodeDynamic(sec) {
+			out.pinningUnknown = true
+			out.globalEnabledUnk = true
+			out.globalActionUnk = true
+			return nil
+		}
+		return []Diagnostic{{
+			Code:     "input-invalid",
+			Location: locOf(sec, alias, "gateway.security"),
+			Message:  diagnosticMessage("input-invalid"),
+		}}
 	}
 	for _, key := range mappingKeys(sec) {
 		if key != "schema_pinning" {
@@ -269,17 +321,20 @@ func applyGateway(out *declaredStack, gateway *yaml.Node, alias string) {
 	}
 	pin := mappingValue(sec, "schema_pinning")
 	if pin == nil || isNull(pin) {
-		return
+		return nil
 	}
 	if pin.Kind != yaml.MappingNode {
 		if nodeDynamic(pin) {
 			out.pinningUnknown = true
 			out.globalEnabledUnk = true
 			out.globalActionUnk = true
-		} else {
-			out.pinningUnknown = true
+			return nil
 		}
-		return
+		return []Diagnostic{{
+			Code:     "input-invalid",
+			Location: locOf(pin, alias, "gateway.security.schema_pinning"),
+			Message:  diagnosticMessage("input-invalid"),
+		}}
 	}
 	for _, key := range mappingKeys(pin) {
 		if _, ok := knownPinningKeys[key]; !ok {
@@ -309,7 +364,7 @@ func applyGateway(out *declaredStack, gateway *yaml.Node, alias string) {
 			out.globalActionUnk = true
 		}
 	}
-	_ = alias
+	return nil
 }
 
 func interpretServer(node *yaml.Node, alias string, index int) mcpSubject {
@@ -327,20 +382,40 @@ func interpretServer(node *yaml.Node, alias string, index int) mcpSubject {
 		if _, ok := securityAliasKeys[key]; ok {
 			subj.pinUnknown = true
 			subj.kindUnknown = true
+			continue
+		}
+		if unknownKeyAffectsPinning(key) {
+			subj.pinUnknown = true
+		}
+	}
+	if t := mappingValue(node, "transport"); t != nil && !isNull(t) {
+		if nodeDynamic(t) {
+			subj.pinUnknown = true
+		} else if s, ok := scalarString(t); ok {
+			if _, ok := knownTransports[s]; !ok {
+				subj.pinUnknown = true
+			}
+		} else {
+			subj.pinUnknown = true
 		}
 	}
 	imageNode := mappingValue(node, "image")
 	if imageNode != nil && !isNull(imageNode) {
-		subj.imagePresent = true
+		subj.imageLoc = locOf(imageNode, alias, path+".image")
 		if nodeDynamic(imageNode) {
+			subj.imagePresent = true
 			subj.imageDynamic = true
-		}
-		if s, ok := scalarString(imageNode); ok {
-			subj.image = s
-			if s == "" {
-				subj.imagePresent = false
+			subj.kindUnknown = true
+			if s, ok := scalarString(imageNode); ok {
+				subj.image = s
+			} else {
+				subj.imageInvalid = true
 			}
+		} else if s, ok := scalarString(imageNode); ok {
+			subj.image = s
+			subj.imagePresent = s != ""
 		} else {
+			subj.imagePresent = true
 			subj.imageInvalid = true
 		}
 	}
@@ -369,21 +444,28 @@ func interpretServer(node *yaml.Node, alias string, index int) mcpSubject {
 	}
 	urlPresent := false
 	if u := mappingValue(node, "url"); u != nil && !isNull(u) {
-		if s, ok := scalarString(u); ok && s != "" {
-			urlPresent = true
-		} else if nodeDynamic(u) {
+		if nodeDynamic(u) {
 			urlPresent = true
 			subj.kindUnknown = true
-		} else if !isNull(u) {
+		} else if s, ok := scalarString(u); ok && s != "" {
 			urlPresent = true
+		} else if !isNull(u) && (u.Kind != yaml.ScalarNode || u.Tag != "!!null") {
+			if s, ok := scalarString(u); !ok || s != "" {
+				urlPresent = true
+			}
 		}
 	}
 	cmdNode := mappingValue(node, "command")
-	cmdPresent := commandPresent(cmdNode)
+	cmdPresent, cmdDynamic := commandPresence(cmdNode)
 	sshNode := mappingValue(node, "ssh")
 	sshPresent := sshNode != nil && !isNull(sshNode)
+	sshDynamic := sshPresent && nodeDynamic(sshNode) && sshNode.Kind != yaml.MappingNode
 	openAPINode := mappingValue(node, "openapi")
 	openAPIPresent := openAPINode != nil && !isNull(openAPINode)
+	openAPIDynamic := openAPIPresent && nodeDynamic(openAPINode) && openAPINode.Kind != yaml.MappingNode
+	if sshDynamic || openAPIDynamic {
+		subj.kindUnknown = true
+	}
 
 	hasImage := subj.imagePresent
 	hasSource := subj.sourcePresent
@@ -391,6 +473,9 @@ func interpretServer(node *yaml.Node, alias string, index int) mcpSubject {
 	hasSSH := sshPresent && cmdPresent
 	hasCommand := cmdPresent && !hasImage && !hasSource && !hasURL && !hasSSH
 	hasOpenAPI := openAPIPresent
+	if cmdDynamic && !hasImage && !hasSource && !hasURL && !sshPresent {
+		subj.kindUnknown = true
+	}
 
 	count := 0
 	if hasImage {
@@ -454,6 +539,10 @@ func interpretServer(node *yaml.Node, alias string, index int) mcpSubject {
 			for ti, item := range toolsNode.Content {
 				n := resolveAlias(item)
 				itemLoc := locOf(n, alias, path+".tools["+itoa(ti)+"]")
+				if isNull(n) {
+					subj.tools = append(subj.tools, toolItem{empty: true, loc: itemLoc})
+					continue
+				}
 				if n.Kind != yaml.ScalarNode {
 					if nodeDynamic(n) {
 						subj.toolsDynamic = true
@@ -475,20 +564,25 @@ func interpretServer(node *yaml.Node, alias string, index int) mcpSubject {
 	return subj
 }
 
-func commandPresent(n *yaml.Node) bool {
+func commandPresence(n *yaml.Node) (present bool, dynamic bool) {
 	if n == nil || isNull(n) {
-		return false
+		return false, false
 	}
 	if n.Kind == yaml.SequenceNode {
-		return len(n.Content) > 0
+		return len(n.Content) > 0, false
 	}
 	if nodeDynamic(n) {
-		return true
+		return true, true
 	}
 	if s, ok := scalarString(n); ok {
-		return s != ""
+		return s != "", false
 	}
-	return true
+	return true, false
+}
+
+func unknownKeyAffectsPinning(key string) bool {
+	lower := strings.ToLower(strings.ReplaceAll(key, "-", "_"))
+	return strings.Contains(lower, "pin") || strings.Contains(lower, "schema") || strings.Contains(lower, "privileg")
 }
 
 func interpretResource(node *yaml.Node, alias string, index int) resourceSubject {
@@ -502,16 +596,20 @@ func interpretResource(node *yaml.Node, alias string, index int) resourceSubject
 	subj.nameDynamic = nf.dynamic
 	imageNode := mappingValue(node, "image")
 	if imageNode != nil && !isNull(imageNode) {
-		subj.imagePresent = true
+		subj.imageLoc = locOf(imageNode, alias, path+".image")
 		if nodeDynamic(imageNode) {
+			subj.imagePresent = true
 			subj.imageDynamic = true
-		}
-		if s, ok := scalarString(imageNode); ok {
-			subj.image = s
-			if s == "" {
-				subj.imagePresent = false
+			if s, ok := scalarString(imageNode); ok {
+				subj.image = s
+			} else {
+				subj.imageInvalid = true
 			}
+		} else if s, ok := scalarString(imageNode); ok {
+			subj.image = s
+			subj.imagePresent = s != ""
 		} else {
+			subj.imagePresent = true
 			subj.imageInvalid = true
 		}
 	}

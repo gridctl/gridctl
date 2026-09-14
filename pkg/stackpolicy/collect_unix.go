@@ -23,3 +23,14 @@ func identOf(fi os.FileInfo) (fileID, bool) {
 	}
 	return fileID{dev: uint64(st.Dev), ino: st.Ino}, true
 }
+
+func identFromFile(f *os.File) (fileID, bool) {
+	if f == nil {
+		return fileID{}, false
+	}
+	st, err := f.Stat()
+	if err != nil {
+		return fileID{}, false
+	}
+	return identOf(st)
+}

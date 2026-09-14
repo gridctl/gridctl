@@ -56,8 +56,12 @@ func Evaluate(ctx context.Context, stackPath, policyPath string) *Report {
 		report.finalize()
 		return report
 	}
-	ident, hasIdent := policyIdent(policyPath)
-	snap, err := collectCandidate(ctx, stackPath, ident, hasIdent)
+	if !policy.HasIdent {
+		attachPolicyError(report, codeErr("policy-identity"))
+		report.finalize()
+		return report
+	}
+	snap, err := collectCandidate(ctx, stackPath, policy.Ident, true)
 	if err != nil {
 		attachInputError(report, err, "entry")
 		report.finalize()
@@ -112,6 +116,15 @@ func evalExplicitImageDigests(report *Report, stack *declaredStack) {
 			report.addDiagnostic(reasonMalformedServer, srv.loc.Source, srv.loc.Path, diagnosticMessage("malformed-server-kind"))
 			continue
 		}
+		if srv.imagePresent || srv.imageDynamic || srv.kind == kindImage {
+			loc := srv.imageLoc
+			if loc.Path == "" {
+				loc = srv.loc
+				loc.Path = srv.loc.Path + ".image"
+			}
+			evalImageField(report, loc, srv.image, srv.imagePresent, srv.imageDynamic, srv.imageInvalid)
+			continue
+		}
 		if srv.kindUnknown {
 			report.Results = append(report.Results, unknownResult(RuleExplicitImageDigests, srv.loc, reasonUnknownApplicability, "Image applicability cannot be determined for this server.", "Declare a single supported server kind with a literal image or an excluded category."))
 			continue
@@ -123,15 +136,16 @@ func evalExplicitImageDigests(report *Report, stack *declaredStack) {
 		case kindLocal, kindSSH, kindURL, kindOpenAPI:
 			excluded[reasonNonImage]++
 			report.Results = append(report.Results, naResult(RuleExplicitImageDigests, srv.loc, reasonNonImage, "This server kind has no explicit image field."))
-		case kindImage:
-			evalImageField(report, srv.loc, srv.loc.Path+".image", srv.image, srv.imagePresent, srv.imageDynamic, srv.imageInvalid)
 		default:
 			report.Results = append(report.Results, unknownResult(RuleExplicitImageDigests, srv.loc, reasonUnknownApplicability, "Image applicability cannot be determined for this server.", "Declare a single supported server kind with a literal image or an excluded category."))
 		}
 	}
 	for _, res := range stack.resources {
-		loc := res.loc
-		loc.Path = res.loc.Path + ".image"
+		loc := res.imageLoc
+		if loc.Path == "" {
+			loc = res.loc
+			loc.Path = res.loc.Path + ".image"
+		}
 		if res.imageInvalid && !res.imageDynamic {
 			report.addDiagnostic("malformed-resource", res.loc.Source, res.loc.Path, diagnosticMessage("malformed-resource"))
 			continue
@@ -140,7 +154,7 @@ func evalExplicitImageDigests(report *Report, stack *declaredStack) {
 			report.addDiagnostic("malformed-resource", res.loc.Source, res.loc.Path, diagnosticMessage("malformed-resource"))
 			continue
 		}
-		evalImageField(report, loc, loc.Path, res.image, res.imagePresent, res.imageDynamic, res.imageInvalid)
+		evalImageField(report, loc, res.image, res.imagePresent, res.imageDynamic, res.imageInvalid)
 	}
 	for reason, count := range excluded {
 		report.Coverage.Exclusions = append(report.Coverage.Exclusions, Exclusion{
@@ -151,10 +165,9 @@ func evalExplicitImageDigests(report *Report, stack *declaredStack) {
 	}
 }
 
-func evalImageField(report *Report, loc Location, path, image string, present, dynamic, invalid bool) {
-	loc.Path = path
+func evalImageField(report *Report, loc Location, image string, present, dynamic, invalid bool) {
 	if invalid {
-		report.addDiagnostic("invalid-image", loc.Source, path, "Image declaration is not a string.")
+		report.addDiagnostic("invalid-image", loc.Source, loc.Path, "Image declaration is not a string.")
 		return
 	}
 	if !present {
@@ -205,7 +218,7 @@ func evalImageField(report *Report, loc Location, path, image string, present, d
 				Remediation: "Provide a literal digest-qualified declaration for this check.",
 			})
 		default:
-			report.addDiagnostic("invalid-image", loc.Source, path, "Image declaration is not a supported digest reference.")
+			report.addDiagnostic("invalid-image", loc.Source, loc.Path, "Image declaration is not a supported digest reference.")
 		}
 	}
 }

@@ -79,6 +79,9 @@ set from a git repo as a pack.`,
 		// --home is sugar over GRIDCTL_HOME: set it in-process before any
 		// path resolves, so the daemon child inherits it via os.Environ()
 		// (a new argv flag would be dropped by the rebuilt daemon argv).
+		if skipHomeForPolicyValidate(cmd) {
+			return nil
+		}
 		if homeFlag != "" {
 			abs, err := filepath.Abs(homeFlag)
 			if err != nil {

@@ -108,4 +108,46 @@ func TestValidatePolicyCLI(t *testing.T) {
 			t.Fatalf("fell back: %s", out)
 		}
 	})
+	t.Run("policy json without home", func(t *testing.T) {
+		out, stderr, code := runValidateBinEnv(t, bin, withoutHomeEnv(t), stack, "--policy", policy, "--json")
+		if code != 2 {
+			t.Fatalf("exit=%d stderr=%s stdout=%s", code, stderr, out)
+		}
+		var report stackpolicy.Report
+		if err := json.Unmarshal([]byte(out), &report); err != nil {
+			t.Fatalf("json: %v\n%s", err, out)
+		}
+		if !report.Accepted {
+			t.Fatalf("%+v", report)
+		}
+		if strings.Count(out, `"schema_version"`) != 1 {
+			t.Fatalf("want one json document: %s", out)
+		}
+		if strings.Contains(stderr, "HOME") || strings.Contains(out, "HOME") {
+			t.Fatalf("home leaked into policy path: stdout=%s stderr=%s", out, stderr)
+		}
+	})
+	t.Run("policy json with invalid home override", func(t *testing.T) {
+		env := append(withoutHomeEnv(t), "GRIDCTL_HOME=not-absolute")
+		out, stderr, code := runValidateBinEnv(t, bin, env, stack, "--policy", policy, "--json")
+		if code != 2 {
+			t.Fatalf("exit=%d stderr=%s stdout=%s", code, stderr, out)
+		}
+		var report stackpolicy.Report
+		if err := json.Unmarshal([]byte(out), &report); err != nil {
+			t.Fatalf("json: %v\n%s", err, out)
+		}
+		if !report.Accepted {
+			t.Fatalf("%+v", report)
+		}
+	})
+	t.Run("ordinary validate still requires home", func(t *testing.T) {
+		out, stderr, code := runValidateBinEnv(t, bin, withoutHomeEnv(t), mutable)
+		if code == 0 {
+			t.Fatalf("ordinary validate succeeded without home: stdout=%s stderr=%s", out, stderr)
+		}
+		if strings.Contains(out, "Declared-stack policy") {
+			t.Fatalf("policy path taken: %s", out)
+		}
+	})
 }

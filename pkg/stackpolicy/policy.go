@@ -20,10 +20,12 @@ var knownRules = map[string]struct{}{
 }
 
 type parsedPolicy struct {
-	Version string
-	Enabled []string
-	Digest  string
-	Bytes   []byte
+	Version  string
+	Enabled  []string
+	Digest   string
+	Bytes    []byte
+	Ident    fileID
+	HasIdent bool
 }
 
 type policyWire struct {
@@ -59,6 +61,17 @@ func readPolicy(ctx context.Context, path string) (*parsedPolicy, error) {
 		return nil, codeErr("policy-unreadable")
 	}
 	defer func() { _ = f.Close() }()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, codeErr("policy-unreadable")
+	}
+	if !st.Mode().IsRegular() {
+		return nil, codeErr("policy-unreadable")
+	}
+	ident, identOK := identFromFile(f)
+	if !identOK {
+		ident, identOK = identOf(st)
+	}
 	data, err := io.ReadAll(io.LimitReader(f, maxFileBytes+1))
 	if err != nil {
 		return nil, codeErr("policy-unreadable")
@@ -69,7 +82,12 @@ func readPolicy(ctx context.Context, path string) (*parsedPolicy, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return parsePolicyBytes(data)
+	parsed, err := parsePolicyBytes(data)
+	if parsed != nil {
+		parsed.Ident = ident
+		parsed.HasIdent = identOK
+	}
+	return parsed, err
 }
 
 func parsePolicyBytes(data []byte) (*parsedPolicy, error) {
@@ -172,8 +190,14 @@ func diagnosticMessage(code string) string {
 		return "Multiple YAML documents are not allowed."
 	case "duplicate-key":
 		return "Duplicate YAML keys are not allowed."
+	case "yaml-merge":
+		return "YAML merge keys are not allowed."
 	case "yaml-invalid":
 		return "YAML structure is invalid."
+	case "duplicate-name":
+		return "Duplicate workload names are not allowed in the same file."
+	case "policy-identity":
+		return "Policy file identity could not be established for candidate exclusion."
 	case "yaml-depth":
 		return "YAML nesting exceeds the parser depth limit."
 	case "yaml-nodes":

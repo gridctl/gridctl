@@ -62,6 +62,14 @@ func init() {
 	validateJSON = addJSONAlias(validateCmd)
 }
 
+func skipHomeForPolicyValidate(cmd *cobra.Command) bool {
+	if cmd == nil || cmd.Name() != "validate" {
+		return false
+	}
+	f := cmd.Flags().Lookup("policy")
+	return f != nil && f.Changed
+}
+
 func runValidate(ctx context.Context, stackPath string, checkMutableRefs, policySet bool, policyPath string) error {
 	if policySet {
 		return runValidatePolicy(ctx, stackPath, policyPath)

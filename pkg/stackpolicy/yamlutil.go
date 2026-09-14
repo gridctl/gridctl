@@ -68,6 +68,9 @@ func decodeSingleDocument(data []byte) (*yaml.Node, error) {
 	if err := rejectDuplicateKeys(&doc); err != nil {
 		return nil, err
 	}
+	if err := rejectMergeKeys(&doc); err != nil {
+		return nil, err
+	}
 	return &doc, nil
 }
 
@@ -123,6 +126,45 @@ func walkLimitsCounted(n *yaml.Node, depth int, seen *int) error {
 		}
 	}
 	return nil
+}
+
+func rejectMergeKeys(n *yaml.Node) error {
+	if n == nil {
+		return nil
+	}
+	cur := resolveAlias(n)
+	switch cur.Kind {
+	case yaml.DocumentNode, yaml.SequenceNode:
+		for _, c := range cur.Content {
+			if err := rejectMergeKeys(c); err != nil {
+				return err
+			}
+		}
+	case yaml.MappingNode:
+		if len(cur.Content)%2 != 0 {
+			return codeErr("yaml-invalid")
+		}
+		for i := 0; i+1 < len(cur.Content); i += 2 {
+			key := resolveAlias(cur.Content[i])
+			if isMergeKey(key) {
+				return codeErr("yaml-merge")
+			}
+			if err := rejectMergeKeys(cur.Content[i+1]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func isMergeKey(n *yaml.Node) bool {
+	if n == nil || n.Kind != yaml.ScalarNode {
+		return false
+	}
+	if n.Tag == "!!merge" {
+		return true
+	}
+	return n.Value == "<<"
 }
 
 func rejectDuplicateKeys(n *yaml.Node) error {

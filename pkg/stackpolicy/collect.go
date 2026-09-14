@@ -82,12 +82,9 @@ func (s *snapshot) readChain(ctx context.Context, root *os.Root, rel string, vis
 	if len(s.files) >= maxGraphFiles {
 		return codeErr("extends-limit")
 	}
-	data, ident, err := readRootRegular(ctx, root, rel, len(s.files) == 0)
+	data, ident, err := s.readRootRegular(ctx, root, rel, len(s.files) == 0)
 	if err != nil {
 		return err
-	}
-	if s.hasPolicy && ident == s.policyID {
-		return codeErr("extends-policy")
 	}
 	var total int
 	for _, f := range s.files {
@@ -121,11 +118,11 @@ func (s *snapshot) readChain(ctx context.Context, root *os.Root, rel string, vis
 	return s.readChain(ctx, root, parentRel, visited, depth+1)
 }
 
-func readRootRegular(ctx context.Context, root *os.Root, rel string, entry bool) ([]byte, fileID, error) {
+func (s *snapshot) readRootRegular(ctx context.Context, root *os.Root, rel string, entry bool) ([]byte, fileID, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fileID{}, err
 	}
-	info, err := root.Lstat(rel)
+	f, err := openThrough(root, rel)
 	if err != nil {
 		if os.IsNotExist(err) {
 			if entry {
@@ -133,21 +130,14 @@ func readRootRegular(ctx context.Context, root *os.Root, rel string, entry bool)
 			}
 			return nil, fileID{}, codeErr("extends-missing")
 		}
-		return nil, fileID{}, mapOpenError(err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return nil, fileID{}, codeErr("extends-symlink")
-	}
-	if !info.Mode().IsRegular() {
-		return nil, fileID{}, codeErr("extends-nonregular")
-	}
-	if info.Size() > maxFileBytes {
-		return nil, fileID{}, codeErr("extends-limit")
-	}
-	ident, _ := identOf(info)
-	f, err := root.OpenFile(rel, os.O_RDONLY|openNoFollow, 0)
-	if err != nil {
-		return nil, fileID{}, mapOpenError(err)
+		if coded := errorCode(err); coded != "input-invalid" && strings.HasPrefix(coded, "extends-") {
+			return nil, fileID{}, err
+		}
+		mapped := mapOpenError(err)
+		if errorCode(mapped) == "extends-missing" && entry {
+			return nil, fileID{}, codeErr("input-unreadable")
+		}
+		return nil, fileID{}, mapped
 	}
 	defer func() { _ = f.Close() }()
 	st, err := f.Stat()
@@ -157,6 +147,16 @@ func readRootRegular(ctx context.Context, root *os.Root, rel string, entry bool)
 	if !st.Mode().IsRegular() {
 		return nil, fileID{}, codeErr("extends-nonregular")
 	}
+	if st.Size() > maxFileBytes {
+		return nil, fileID{}, codeErr("extends-limit")
+	}
+	ident, identOK := identFromFile(f)
+	if !identOK {
+		ident, identOK = identOf(st)
+	}
+	if err := rejectPolicyReuse(s.hasPolicy, identOK, s.policyID, ident); err != nil {
+		return nil, fileID{}, err
+	}
 	data, err := io.ReadAll(io.LimitReader(f, maxFileBytes+1))
 	if err != nil {
 		return nil, fileID{}, codeErr("input-unreadable")
@@ -164,13 +164,72 @@ func readRootRegular(ctx context.Context, root *os.Root, rel string, entry bool)
 	if int64(len(data)) > maxFileBytes {
 		return nil, fileID{}, codeErr("extends-limit")
 	}
-	if opened, ok := identOf(st); ok {
-		ident = opened
-	}
 	if err := ctx.Err(); err != nil {
 		return nil, fileID{}, err
 	}
 	return append([]byte(nil), data...), ident, nil
+}
+
+func rejectPolicyReuse(hasPolicy, identOK bool, policyID, candidateID fileID) error {
+	if !hasPolicy {
+		return nil
+	}
+	if !identOK || candidateID == policyID {
+		return codeErr("extends-policy")
+	}
+	return nil
+}
+
+func openThrough(root *os.Root, rel string) (*os.File, error) {
+	rel = filepath.ToSlash(filepath.Clean(rel))
+	if rel == "." || rel == "" {
+		return nil, codeErr("input-unreadable")
+	}
+	parts := strings.Split(rel, "/")
+	filtered := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part != "" && part != "." {
+			filtered = append(filtered, part)
+		}
+	}
+	if len(filtered) == 0 {
+		return nil, codeErr("input-unreadable")
+	}
+	var opened []*os.Root
+	defer func() {
+		for i := len(opened) - 1; i >= 0; i-- {
+			_ = opened[i].Close()
+		}
+	}()
+	cur := root
+	for i, part := range filtered {
+		info, err := cur.Lstat(part)
+		if err != nil {
+			return nil, err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil, codeErr("extends-symlink")
+		}
+		if i == len(filtered)-1 {
+			if !info.Mode().IsRegular() {
+				return nil, codeErr("extends-nonregular")
+			}
+			if info.Size() > maxFileBytes {
+				return nil, codeErr("extends-limit")
+			}
+			return cur.OpenFile(part, os.O_RDONLY|openNoFollow, 0)
+		}
+		if !info.IsDir() {
+			return nil, codeErr("extends-nonregular")
+		}
+		next, err := cur.OpenRoot(part)
+		if err != nil {
+			return nil, err
+		}
+		opened = append(opened, next)
+		cur = next
+	}
+	return nil, codeErr("input-unreadable")
 }
 
 func mapOpenError(err error) error {
@@ -270,10 +329,4 @@ func itoa(n int) string {
 	return string(buf[i:])
 }
 
-func policyIdent(path string) (fileID, bool) {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return fileID{}, false
-	}
-	return identOf(info)
-}
+
