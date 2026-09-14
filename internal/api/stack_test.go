@@ -70,6 +70,8 @@ mcp-servers:
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), `"valid":true`)
+	assert.NotContains(t, w.Body.String(), "mutable-image-reference")
+	assert.NotContains(t, w.Body.String(), "reference-not-assessed")
 }
 
 func TestHandleStackValidate_InvalidYAML(t *testing.T) {
