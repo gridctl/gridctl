@@ -47,11 +47,11 @@ Policy mode reads only:
 
 It does not read source directories, Dockerfiles, OpenAPI specs, credential files, runtime sockets, user home configuration, or vault/registry state. Referenced paths are parsed as data.
 
-The entry stack directory is the candidate root. Absolute, remote, home-relative, and interpolating `extends` paths are rejected. Escapes from the root, symbolic links, cycles, non-regular files, missing parents, multiple YAML documents, duplicate keys, and exceeded byte or depth limits fail the whole request. There is no partial child-only result. A candidate `extends` path must not open the selected policy file. Maximum inheritance depth is 10, matching ordinary stack load.
+The entry stack directory is the candidate root. Absolute, remote, home-relative, and interpolating `extends` paths are rejected. Escapes from the root, symbolic links (including intermediate path components), cycles, non-regular files, missing parents, multiple YAML documents, duplicate keys, YAML merge keys (`<<`), same-file duplicate workload names, and exceeded byte or depth limits fail the whole request. There is no partial child-only result. A candidate `extends` path must not open the selected policy file; exclusion uses identity from the opened descriptors (Unix device/inode, Windows file index) before candidate bytes are read. Platforms that cannot establish that identity refuse evaluation instead of skipping the check. Maximum inheritance depth is 10, matching ordinary stack load. Policy mode does not consult user home or `GRIDCTL_HOME`.
 
 Each permitted file is captured once into bounded immutable bytes and evaluated from those bytes. That is not an atomic snapshot of a concurrently mutating directory. Authoritative CI should pin a revision-backed input tree.
 
-Inheritance follows existing child-wins whole-server and whole-resource merge, plus whole-block top-level `gateway` inheritance when the child omits it. There is no security-specific deep merge. Dynamic names that make membership or override collisions uncertain make the relevant rules indeterminate. Unfamiliar or alias security field names make pinning and server-kind checks unknown rather than pass. Other unknown stack keys remain ignored, matching ordinary loader tolerance.
+Inheritance follows existing child-wins whole-server and whole-resource merge, plus whole-block top-level `gateway` inheritance when the child omits it. There is no security-specific deep merge. Winning subjects keep their original source index and field line/column. Dynamic names that make membership or override collisions uncertain make the relevant rules indeterminate. Dynamic image or URL values that can change execution class make local and SSH prohibitions unknown. Unfamiliar or alias security field names, including `pin_schema` typos, make pinning checks unknown rather than pass. Known invalid gateway or security types are input errors. Other unknown stack keys remain ignored, matching ordinary loader tolerance. Unknown `transport` values make pinning applicability unknown.
 
 ## Rules
 
@@ -85,7 +85,7 @@ Requires a nonempty `tools` list of nonempty literal exact names for applicable 
 
 Each result is `pass`, `violation`, `unknown`, or `not_applicable` with a reason code. Input errors are separate diagnostics. Applicable unknowns and unknown applicability prevent acceptance. Known violations stay distinct from unknowns even though both use exit `1`.
 
-Text prints a headline, checker and policy identity, and coverage counts, then errors, violations, unknowns, and warnings. Pass and not-applicable rows appear only in JSON.
+Text prints a headline, checker and policy identity, selected rule IDs, and coverage counts, then errors, violations, unknowns, and warnings. Each finding includes source alias, structural path, line/column, and reason code. Pass and not-applicable rows appear only in JSON.
 
 ```text
 Declared-stack policy accepted
@@ -97,7 +97,8 @@ Declared-stack policy accepted
 
 ```text
 UNKNOWN explicit-image-digests
-  input-0: mcp-servers[0].image
+  input-0: mcp-servers[0].image:20:5
+  reason: unresolved-image
   Policy-relevant image reference is unresolved.
   Provide a literal digest-qualified declaration for this check.
 ```
@@ -110,9 +111,9 @@ Findings use generated source aliases (`input-0` is the entry stack) and structu
 
 Treat the checker binary, workflow, and policy as independently trusted from candidate stack data. Do not build or execute the checker from untrusted pull-request code, run pull-request scripts or local actions, mount runtime sockets, or supply secrets to this check.
 
-Do not use `pull_request_target` or `workflow_run` to execute untrusted candidates. Pin reviewed actions and checker artifacts, and use least permissions. Policy, workflow, and tool updates need independent review or protected sources.
+Do not use `pull_request_target` or `workflow_run` to execute untrusted candidates. Pin reviewed actions and checker artifacts, and use least permissions. Policy, workflow, and tool updates need independent review or protected sources. Keep the workflow invocation on a protected reusable-workflow SHA or equivalent required check that candidate branches cannot rewrite.
 
-A policy file in the same pull request is not automatically trusted. Copy or restore the reviewed policy from a protected ref if the workflow must not honor a PR-supplied policy.
+A policy file in the same pull request is not automatically trusted. Restore the reviewed policy from a protected immutable revision into a directory outside the candidate checkout. Download the checker into a trusted staging directory, verify its digest (and authenticity when available) before execution, and fail closed on mismatch.
 
 Strict CI should accept exit `0` only. If warning exit `2` is deliberately allowed, fail on every other status; do not use `|| true` or unconditional `continue-on-error`. Report-only rollout can be a nonrequired workflow. There is no evaluator bypass flag.
 
