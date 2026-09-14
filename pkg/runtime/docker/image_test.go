@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/docker/docker/api/types/image"
@@ -142,6 +143,133 @@ func TestEnsureImage_ListError(t *testing.T) {
 	err := EnsureImage(context.Background(), mock, "test:latest", logger)
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestImageExists_DigestUsesRepoDigests(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	mock := &MockDockerClient{
+		Images: []image.Summary{
+			{
+				ID:          "sha256:" + strings.Repeat("b", 64),
+				RepoTags:    []string{"nginx:1.21.0"},
+				RepoDigests: []string{"nginx@" + digest},
+			},
+		},
+	}
+	exists, err := ImageExists(context.Background(), mock, "nginx@"+digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists {
+		t.Fatal("digest reference should match RepoDigests")
+	}
+	exists, err = ImageExists(context.Background(), mock, "nginx:1.21.0@"+digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists {
+		t.Fatal("tag+digest reference should match RepoDigests")
+	}
+}
+
+func TestImageExists_DigestDoesNotMatchTagAlone(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	wrong := "sha256:" + strings.Repeat("c", 64)
+	mock := &MockDockerClient{
+		Images: []image.Summary{
+			{
+				RepoTags:    []string{"nginx:1.21.0"},
+				RepoDigests: []string{"nginx@" + digest},
+			},
+		},
+	}
+	exists, err := ImageExists(context.Background(), mock, "nginx:1.21.0@"+wrong)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists {
+		t.Fatal("wrong digest must not match on tag alone")
+	}
+}
+
+func TestImageExists_DigestOnlyMatchesImageID(t *testing.T) {
+	id := "sha256:" + strings.Repeat("d", 64)
+	mock := &MockDockerClient{
+		Images: []image.Summary{
+			{ID: id, RepoTags: []string{"<none>:<none>"}},
+		},
+	}
+	exists, err := ImageExists(context.Background(), mock, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists {
+		t.Fatal("bare digest should match image ID")
+	}
+}
+
+func TestEnsureImage_SkipsPullWhenDigestCached(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	mock := &MockDockerClient{
+		Images: []image.Summary{
+			{RepoDigests: []string{"alpine@" + digest}},
+		},
+	}
+	err := EnsureImage(context.Background(), mock, "alpine:3.22@"+digest, logging.NewDiscardLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mock.PulledImages) != 0 {
+		t.Errorf("pulled %v, want none", mock.PulledImages)
+	}
+}
+
+func TestImageExists_TagBehaviorUnchanged(t *testing.T) {
+	mock := &MockDockerClient{
+		Images: []image.Summary{
+			{RepoTags: []string{"test:latest"}},
+		},
+	}
+	exists, err := ImageExists(context.Background(), mock, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists {
+		t.Fatal("implicit latest")
+	}
+}
+
+func TestImageExists_FamiliarNameMatchesRepoDigest(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	mock := &MockDockerClient{
+		Images: []image.Summary{
+			{RepoDigests: []string{"docker.io/library/alpine@" + digest}},
+		},
+	}
+	exists, err := ImageExists(context.Background(), mock, "alpine:3.22@"+digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists {
+		t.Fatal("familiar alpine name should match docker.io/library RepoDigest")
+	}
+}
+
+func TestImageExists_CancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	mock := &MockDockerClient{
+		Images: []image.Summary{{RepoTags: []string{"test:latest"}}},
+	}
+	if _, err := ImageExists(ctx, mock, "test:latest"); err == nil {
+		t.Fatal("expected canceled context error")
+	}
+	if err := EnsureImage(ctx, mock, "test:latest", logging.NewDiscardLogger()); err == nil {
+		t.Fatal("expected canceled context error")
+	}
+	if len(mock.PulledImages) != 0 {
+		t.Fatalf("pulled %v", mock.PulledImages)
 	}
 }
 

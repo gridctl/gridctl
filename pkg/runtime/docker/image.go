@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/distribution/reference"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 
 	"github.com/docker/docker/api/types/image"
@@ -15,17 +16,17 @@ import (
 
 // EnsureImage pulls the image if it doesn't exist locally.
 func EnsureImage(ctx context.Context, cli dockerclient.DockerClient, imageName string, logger *slog.Logger) error {
-	// Check if image exists locally
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	images, err := cli.ImageList(ctx, image.ListOptions{})
 	if err != nil {
 		return fmt.Errorf("listing images: %w", err)
 	}
 
 	for _, img := range images {
-		for _, tag := range img.RepoTags {
-			if tag == imageName || tag == imageName+":latest" {
-				return nil // Image exists
-			}
+		if imageCached(img, imageName) {
+			return nil
 		}
 	}
 
@@ -95,17 +96,71 @@ func streamPullProgress(reader io.Reader, logger *slog.Logger) error {
 
 // ImageExists checks if an image exists locally.
 func ImageExists(ctx context.Context, cli dockerclient.DockerClient, imageName string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	images, err := cli.ImageList(ctx, image.ListOptions{})
 	if err != nil {
 		return false, fmt.Errorf("listing images: %w", err)
 	}
 
 	for _, img := range images {
-		for _, tag := range img.RepoTags {
-			if tag == imageName || tag == imageName+":latest" {
-				return true, nil
-			}
+		if imageCached(img, imageName) {
+			return true, nil
 		}
 	}
 	return false, nil
+}
+
+func imageCached(img image.Summary, imageName string) bool {
+	ref, err := reference.ParseAnyReference(imageName)
+	if err != nil {
+		return tagCached(img, imageName)
+	}
+	digested, hasDigest := ref.(reference.Digested)
+	if hasDigest {
+		want := digested.Digest().String()
+		named, hasName := ref.(reference.Named)
+		if !hasName && imageIDMatches(img.ID, want) {
+			return true
+		}
+		for _, rd := range img.RepoDigests {
+			got, parseErr := reference.ParseAnyReference(rd)
+			if parseErr != nil {
+				if rd == imageName {
+					return true
+				}
+				continue
+			}
+			gotDigest, ok := got.(reference.Digested)
+			if !ok || gotDigest.Digest().String() != want {
+				continue
+			}
+			if !hasName {
+				return true
+			}
+			gotNamed, ok := got.(reference.Named)
+			if !ok {
+				continue
+			}
+			if named.Name() == gotNamed.Name() || reference.FamiliarName(named) == reference.FamiliarName(gotNamed) {
+				return true
+			}
+		}
+		return false
+	}
+	return tagCached(img, imageName)
+}
+
+func tagCached(img image.Summary, imageName string) bool {
+	for _, tag := range img.RepoTags {
+		if tag == imageName || tag == imageName+":latest" {
+			return true
+		}
+	}
+	return false
+}
+
+func imageIDMatches(id, digest string) bool {
+	return id != "" && (id == digest || strings.EqualFold(id, digest))
 }
