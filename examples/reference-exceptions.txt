@@ -1,8 +1,11 @@
 # Placeholder exceptions for example-reference CI.
 #
 # These selectors are illustrative private or fake images. Do not replace
-# them with unrelated public software. Runnable public images and package
-# selectors must be pinned instead of listed here.
+# them with unrelated public software. Runnable public images, package
+# selectors, and public setup snippets must be pinned instead of listed
+# here. Local-development command wrappers and local paths are permitted
+# without an exception; invalid or unassessed in-scope image/package
+# selectors are not.
 #
 # Format: <path> [field]
 # Path is relative to the repository root. Omitting field allows every

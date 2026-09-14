@@ -1,21 +1,25 @@
 #!/usr/bin/env bash
-# Fail when runnable example stacks have unpinned image or package selectors.
+# Fail when runnable example stacks have unpinned or unassessed in-scope
+# image or package selectors.
 #
 # Exit handling:
 #   gridctl validate --check-mutable-refs --format json
-#     0  valid (info-only findings allowed)
+#     0  valid (info-only findings allowed on the CLI)
 #     1  validation errors -> fail this check
-#     2  warnings only -> fail only for mutable-image-reference or
-#        mutable-package-reference findings that are not excepted
+#     2  warnings only -> fail for unexcepted mutable-image-reference or
+#        mutable-package-reference findings
 #     other -> fail (unexpected exit)
 # Unrelated existing example warnings stay non-fatal.
-# Informational reference-not-assessed findings never fail this check.
+# Informational reference-not-assessed findings fail this check unless
+# excepted, except local-development command wrappers and local paths.
+# Keep this policy in sync with config.MaintenanceRefFinding.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BIN="${1:-"$ROOT/gridctl"}"
-EXCEPTIONS_FILE="${ROOT}/examples/reference-exceptions.txt"
+CHECK_ROOT="${GRIDCTL_CHECK_ROOT:-$ROOT}"
+BIN="${1:-"$CHECK_ROOT/gridctl"}"
+EXCEPTIONS_FILE="${CHECK_ROOT}/examples/reference-exceptions.txt"
 
 if [ ! -x "$BIN" ]; then
   echo "gridctl binary not found or not executable: $BIN" >&2
@@ -57,7 +61,7 @@ is_excepted() {
   return 1
 }
 
-mapfile -t files < <(find "$ROOT/examples" -name "*.yaml" \
+mapfile -t files < <(find "$CHECK_ROOT/examples" -name "*.yaml" \
   -not -name "skills.yaml" \
   -not -name "gridctl-pack.yaml" \
   -not -name "gateway-remote.yaml" \
@@ -70,7 +74,7 @@ fi
 
 failed=0
 for abs in "${files[@]}"; do
-  rel="${abs#"$ROOT"/}"
+  rel="${abs#"$CHECK_ROOT"/}"
   echo "Checking $rel..."
   out="$(mktemp)"
   set +e
@@ -96,9 +100,21 @@ try:
 except Exception as exc:
     print("JSON_ERROR:" + str(exc), file=sys.stderr)
     sys.exit(3)
+
+def enforced(msg):
+    if msg.startswith("mutable-image-reference:") or msg.startswith("mutable-package-reference:"):
+        return True
+    prefix = "reference-not-assessed:"
+    if not msg.startswith(prefix):
+        return False
+    detail = msg[len(prefix):].lstrip()
+    if detail.startswith("command wrapper is unsupported") or detail.startswith("local paths are not classified"):
+        return False
+    return True
+
 for issue in data.get("issues") or []:
     msg = issue.get("message") or ""
-    if msg.startswith("mutable-image-reference:") or msg.startswith("mutable-package-reference:"):
+    if enforced(msg):
         print(issue.get("field") or "")
 ' <"$out")" || py_rc=$?
   py_rc="${py_rc:-0}"
@@ -114,7 +130,7 @@ for issue in data.get("issues") or []:
       echo "  excepted $field"
       continue
     fi
-    echo "  FAILED: unpinned selector at $field" >&2
+    echo "  FAILED: unpinned or unassessed selector at $field" >&2
     failed=1
   done <<<"$fields"
 done
