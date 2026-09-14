@@ -1,0 +1,42 @@
+# Example design only. Do not copy this into .github/workflows without an
+# independent review of permissions, pinned actions, and policy origin.
+# This file is not a repository required check.
+#
+# Trust split:
+#   - Workflow, pinned checker tag, and policy come from a protected ref.
+#   - Candidate stack YAML comes from the pull request and is data only.
+# A policy file in the same pull request is not automatically trusted.
+
+name: stack-declaration-policy
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  declared-stack-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the pull request for candidate data
+        uses: actions/checkout@0000000000000000000000000000000000000000 # replace with a reviewed commit SHA
+        with:
+          persist-credentials: false
+
+      - name: Restore reviewed policy from the base ref
+        run: |
+          git fetch --depth 1 origin "${GITHUB_BASE_REF}"
+          git show "origin/${GITHUB_BASE_REF}:policies/production.yaml" > "${RUNNER_TEMP}/policy.yaml"
+
+      - name: Install a pinned gridctl release
+        run: |
+          # Replace TAG with a reviewed release. Do not build gridctl from the PR.
+          curl -fsSL "https://github.com/gridctl/gridctl/releases/download/TAG/gridctl_linux_amd64.tar.gz" | tar -xz
+          chmod 0755 gridctl
+
+      - name: Evaluate captured declarations
+        run: |
+          ./gridctl validate stack.yaml --policy "${RUNNER_TEMP}/policy.yaml" --format json
+          # Strict CI accepts exit 0 only. Do not add || true.
+          # To allow warning exit 2, capture the status and fail on 1 or other values.

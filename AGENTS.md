@@ -73,6 +73,8 @@ pkg/config/         stack.yaml schema, defaults and validation, variable/env exp
                     ValidateWithIssues is unchanged.
 pkg/depcheck/       Pure literal image and npx/uvx classifier used by advisory mutable-ref diagnostics. No I/O,
                     expansion, secret substitution, or rewriting.
+pkg/stackpolicy/    Offline declaration-policy evaluator for `gridctl validate --policy`. Strict versioned policy
+                    parsing, root-confined candidate capture, and pure structural rules. No API/UI/runtime hooks.
 pkg/execution/      Presence-aware MCP execution declarations, normalized per-replica contracts, and value-free reports.
                     Docker-compatible admission and instance-bound Linux kernel observations live in pkg/runtime/docker/.
                     MCP clients gate dispatch on evidence; retirement closes owned processes and cancels obsolete scaling.

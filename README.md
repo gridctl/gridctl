@@ -200,6 +200,7 @@ Declarative, version-controlled MCP environments. Validate before you commit, pl
 gridctl search postgres        # Find servers in the catalog and the MCP Registry
 gridctl add github             # Append a catalog server to stack.yaml by name
 gridctl validate stack.yaml    # Lint and schema-check the spec (exit 0/1/2)
+gridctl validate stack.yaml --policy policy.yaml  # Offline declaration-policy check
 gridctl plan stack.yaml        # Diff against running state
 gridctl apply stack.yaml       # Apply the spec
 gridctl export                 # Export authored config with references preserved

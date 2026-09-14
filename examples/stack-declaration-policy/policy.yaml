@@ -1,0 +1,7 @@
+version: "1"
+enabled:
+  - explicit-image-digests
+  - deny-local-command-servers
+  - deny-ssh-servers
+  - schema-pinning-block
+  - nonempty-server-tool-lists

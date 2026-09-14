@@ -18,6 +18,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | [Python sources](python-sources/) | Generate Python containers from exact PyPI releases or packaged source projects |
 | [Execution controls](execution/) | Opt-in container restrictions and per-replica enforcement evidence |
 | [Security evidence](security-evidence/) | Partial, stale, suppressed, unknown, and N/A states for `gridctl doctor --security` |
+| [Stack declaration policy](stack-declaration-policy/) | Offline `validate --policy` fixture, policy file, and CI workflow design |
 | [🔗 openapi/](openapi/) | Turn REST APIs into MCP tools via OpenAPI specs |
 | [🔐 access-control/](access-control/) | Tool filtering and per-client scoping |
 | [⚡ code-mode/](code-mode/) | Reduce context window with search + execute meta-tools |
@@ -86,6 +87,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | portable-stack | http (containers) | Committable stack, all values from the variable store |
 | portable-pack | - (pack manifest) | Skills, agents, rules, and wiring from one manifest |
 | model-policy | - (models policy) | Router-only LiteLLM fragment, include line, OpenCode provider |
+| declaration-policy-demo | http (container) | Offline `validate --policy` against digest-pinned images and pinning block |
 
 ## Dependency references
 
