@@ -102,10 +102,11 @@ Reviewed on 2026-09-14 (linux/amd64 and linux/arm64 unless noted):
 | chrome-devtools-mcp | 1.9.0 | npm latest at review |
 | @upstash/context7-mcp | 4.1.0 | npm latest at review |
 | @playwright/mcp | 0.0.80 | npm latest at review |
+| mcp-remote | 0.14.2 | npm latest at review; README Claude Desktop setup snippet |
 
 Placeholder private or fake images stay as authored (`ghcr.io/org/...`, `example/fetch:1`, `my-mcp:latest`, `my/filesystem-mcp:latest`, `my-image:latest`). They are listed in `examples/reference-exceptions.txt` and must not be swapped for unrelated public software.
 
-Excluded from this pin policy: commented sketches, local mock-server paths, host `sleep` commands, variable-only selectors, client-config `npx mcp-remote` snippets, schematic `npx some-stdio-mcp-server` forms, and API status payloads.
+Excluded from this pin policy: commented sketches, local mock-server paths, host `sleep` commands, variable-only selectors, schematic `npx some-stdio-mcp-server` forms, API status payloads, and runtime-generated `gridctl link` client wiring. Public setup snippets, including the README Claude Desktop `npx` bridge, are pinned.
 
 Owner: repository maintainers. Cadence: when adding or changing runnable examples or public setup snippets; review pins when promoting a new upstream release, and at least quarterly. Check with `task examples:refs` (requires `./gridctl`).
 

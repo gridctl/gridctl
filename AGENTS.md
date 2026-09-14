@@ -19,7 +19,7 @@ Task (https://taskfile.dev) is the entry point for development builds and Go/fro
 | `task test` | `go test -race ./...` (unit tests only, same race detector CI runs). |
 | `task test:integration` | `go test -tags=integration -race -timeout 15m ./tests/integration/...`. The full suite requires Docker (or Podman); selected HTTP/subprocess suites need no container runtime. All use real dependencies per Article IV of `CONSTITUTION.md`; mocks are disallowed in `tests/integration/`. |
 | `task test:frontend` | `cd web && npm test` (Vitest). |
-| `task examples:refs` | Checks example stacks for unpinned image and package selectors (`scripts/check-example-refs.sh`). Requires `./gridctl`. |
+| `task examples:refs` | Checks example stacks for unpinned or unassessed in-scope image and package selectors (`scripts/check-example-refs.sh`). Requires `./gridctl`. |
 | `task lint` | `golangci-lint run` plus `npm run lint` in `web/` (both CI-gated). |
 | `task generate` | Regenerates `go.uber.org/mock` mocks under `pkg/mcp/` and `pkg/runtime/`. Required after touching the interfaces they're generated from. |
 | `task mock:servers` | Builds and runs the example mock MCP servers in `examples/_mock-servers/` (HTTP on PORT, SSE on PORT+1; `PORT=9001` default). Pair with `task mock:clean`. |
@@ -146,7 +146,7 @@ examples/           Example stack YAMLs grouped by surface (getting-started, tra
 scripts/            Build/test helpers and release tooling: release.py owns gate, inventory, verification, draft/public,
                     and tap policy; release-tools.py pins executables and the SPDX schema; release-acceptance.py exercises
                     authorized sandbox releases. test_release.py and test_govulncheck.py cover local policy regressions.
-                    check-example-refs.sh enforces pinned example image and package selectors after task build:go.
+                    check-example-refs.sh enforces pinned or excepted example image and package selectors after task build:go, including unassessed in-scope references.
 docs/               User-facing documentation (cli-reference, config-schema, api-reference, skills, packs, tools-workspace,
                     global-context, model-policy, scaling, usage-observability, installation, release-verification,
                     project-status, troubleshooting, execution, security/threat-model, security-evidence).

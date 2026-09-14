@@ -167,7 +167,7 @@ Supported clients: Claude Desktop, Claude Code, Cursor, Windsurf, VS Code, Gemin
   "mcpServers": {
     "gridctl": {
       "command": "npx",
-      "args": ["-y", "mcp-remote", "http://localhost:8180/mcp", "--allow-http"]
+      "args": ["-y", "mcp-remote@0.14.2", "http://localhost:8180/mcp", "--allow-http"]
     }
   }
 }

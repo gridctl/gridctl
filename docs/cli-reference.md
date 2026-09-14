@@ -62,7 +62,7 @@ gridctl validate stack.yaml --check-mutable-refs --format json
 
 Unsupported or dynamic selectors emit `reference-not-assessed` informational findings, visible in human and JSON output even when there are no warnings. Human output also prints a `reference-coverage` note. JSON includes those info issues in `issues` but not the coverage sentence. Exit codes stay errors-first: `1` for errors, `2` for warnings only, `0` when there are no errors or warnings. Exit zero is not proof of complete coverage or publisher authentication.
 
-The check covers MCP-server and resource `image` fields plus documented `npx`/`uvx` command forms. Variable-containing, invalid-digest, unsupported-option, local-path, and unknown wrappers are not assessed. Findings never include selector text, command arguments, or credential-bearing values. Digests, including tag-plus-digest forms, are content-addressed rather than publisher-verified. With `NO_COLOR` set, opt-in marks render as `OK`, `warning`, `error`, and `info`.
+The check covers MCP-server and resource `image` fields plus documented `npx`/`uvx` command forms, including repeated `npx --package` and `uvx --with` / `--with-editable` selectors. npm pins require a complete `major.minor.patch` version; partial versions and wildcards are mutable. Variable-containing, invalid-digest, unsupported-option, local-path, and unknown wrappers are not assessed. Findings never include selector text, command arguments, or credential-bearing values. Digests, including tag-plus-digest forms, are content-addressed rather than publisher-verified. With `NO_COLOR` set, opt-in marks render as `OK`, `warning`, `error`, and `info`.
 
 ### Execution Results
 

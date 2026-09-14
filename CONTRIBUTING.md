@@ -123,7 +123,7 @@ Runnable example stacks and public setup snippets pin real container images to a
 
 `gridctl validate --check-mutable-refs` is an opt-in local diagnostic. Default `validate`, REST validation, health counts, and apply stay unchanged. Exact package versions are not a transitive lock, and a digest is content-addressed, not publisher-verified.
 
-Maintenance owner: repository maintainers. Cadence: when adding or changing runnable examples or public setup snippets; review pins when promoting a new upstream release, and at least quarterly. Documented placeholder exceptions live in `examples/reference-exceptions.txt`. CI runs `scripts/check-example-refs.sh` after building `./gridctl`; unexpected exits and validation errors fail, while unrelated existing example warnings stay non-fatal.
+Maintenance owner: repository maintainers. Cadence: when adding or changing runnable examples or public setup snippets; review pins when promoting a new upstream release, and at least quarterly. Documented placeholder exceptions live in `examples/reference-exceptions.txt`. CI runs `scripts/check-example-refs.sh` after building `./gridctl`; unexpected exits and validation errors fail. Unpinned selectors and unassessed in-scope image or package references fail unless listed in `examples/reference-exceptions.txt`. Local-development command wrappers and local paths are permitted. Unrelated existing example warnings stay non-fatal. The CLI diagnostic itself remains informational for unassessed selectors.
 
 ### Experimental Feature Flags
 
