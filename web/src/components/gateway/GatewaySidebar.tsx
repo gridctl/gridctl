@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { ArrowRight, ChevronDown, ChevronRight, KeyRound, Library, Lightbulb, X } from 'lucide-react';
 import { MCP } from '@lobehub/icons';
 import { OptimizeSection } from '../sidebar/OptimizeSection';
+import { SecurityEvidence } from '../sidebar/SecurityEvidence';
 import { cn } from '../../lib/cn';
 import { useStackStore, useSelectedNodeData } from '../../stores/useStackStore';
 import { useRegistryStore } from '../../stores/useRegistryStore';
@@ -79,6 +80,10 @@ const GatewaySidebar = memo(({ onClose }: GatewaySidebarProps) => {
         )}
         <CollapsibleSection title="Optimize" icon={Lightbulb}>
           <OptimizeSection />
+        </CollapsibleSection>
+
+        <CollapsibleSection title="Security evidence" icon={KeyRound}>
+          <SecurityEvidence scope="gateway" />
         </CollapsibleSection>
 
         <div className="p-4 border-b border-border/30">

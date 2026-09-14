@@ -18,6 +18,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 | MCP gateway (stdio, SSE, HTTP) | Stable | Backward compatible in 0.x |
 | Container orchestration (Docker) | Stable | Backward compatible in 0.x |
 | MCP execution controls | Implemented, Unreleased | Opt-in container admission/evidence and unsandboxed local hygiene. Local Docker checks pass; positive rootless Podman acceptance remains required. Status output changes require maintainer-owned major-release scheduling under Article VIII |
+| Security evidence report (`doctor --security`, `GET /api/security-report`) | Implemented, Unreleased | Passive, value-free snapshots with explicit `file:`, `snapshot:`, or `gateway:` selection. Ordinary `doctor` JSON and exits are unchanged. Exit zero is not a secure verdict. See [Security Evidence Report](security-evidence.md) |
 | Generated Python source containers (PyPI, git, local) | Stable | Opt-in through `source.runtime: python` or `source.type: pypi`; existing Dockerfile sources are unchanged |
 | Config schema (servers, resources) | Stable | Backward compatible in 0.x |
 | Auth middleware (bearer, API key) | Stable | Credential formats unchanged; grouped MCP/SSE now require configured auth on every request (see [migration guidance](troubleshooting.md#grouped-mcp-requests-return-401)) |
@@ -74,6 +75,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 ## Known limitations
 
 - Hardened MCP execution needs locally instance-bound Linux `/proc` and cgroup v2 observations. Remote/VM-backed engines without this path and non-Linux clients are unsupported for the profile. Resources are not covered, local processes remain unsandboxed, and SSH remote confinement and descendant cleanup are unverified. See [execution controls](execution.md).
+- Passive security evidence reports do not scan, probe, or certify a stack. Exit zero is not a secure verdict. See [Security Evidence Report](security-evidence.md).
 - Podman rootless multi-container networking requires `netavark` and `aardvark-dns` (Podman 4.0+); `pasta`/`slirp4netns` are egress-only transports and are not used for inter-container communication.
 - Generated Python package sources support the official public PyPI index only. Private indexes require a custom Dockerfile.
 - Code mode sandbox has no filesystem access (by design).

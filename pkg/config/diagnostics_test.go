@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -57,5 +59,28 @@ mcp-servers:
 	}
 	if len(stack.References["TOKEN"]) != 1 {
 		t.Fatalf("TOKEN references = %#v", stack.References["TOKEN"])
+	}
+}
+
+func TestParseStackIndex_RejectsSpecialAndOversizeFiles(t *testing.T) {
+	dir := t.TempDir()
+	fifo := filepath.Join(dir, "stack.yaml")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseStackIndex(context.Background(), fifo); err == nil {
+		t.Fatal("expected fifo rejection")
+	}
+	big := filepath.Join(dir, "big.yaml")
+	if err := os.WriteFile(big, []byte(strings.Repeat("a", maxIndexFileBytes+2)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseStackIndex(context.Background(), big); err == nil {
+		t.Fatal("expected oversize rejection")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := ParseStackIndex(ctx, filepath.Join(dir, "missing.yaml")); err == nil {
+		t.Fatal("expected cancellation")
 	}
 }

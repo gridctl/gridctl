@@ -413,6 +413,7 @@ func (s *Server) Handler() http.Handler {
 
 	// API endpoints
 	mux.HandleFunc("/api/status", s.handleStatus)
+	mux.HandleFunc("GET /api/security-report", s.handleSecurityReport)
 	mux.HandleFunc("/api/sessions", s.handleSessions)
 
 	mux.HandleFunc("GET /api/mcp-servers/{name}/logs", s.handleMCPServerLogs)

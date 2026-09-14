@@ -2,7 +2,7 @@
 
 Common issues and resolutions for gridctl.
 
-Start with `gridctl doctor`: it runs most of the environment checks below automatically (runtime detection, socket reachability, version floor, gateway port, `npx` and `uvx` availability, state hygiene, and vault status) and prints a verdict with a remediation hint for each.
+Start with `gridctl doctor`: it runs most of the environment checks below automatically (runtime detection, socket reachability, version floor, gateway port, `npx` and `uvx` availability, state hygiene, and vault status) and prints a verdict with a remediation hint for each. For a passive configuration and pin evidence report, use `gridctl doctor --security --source …` as described in [Security Evidence Report](security-evidence.md); that mode does not run these environment probes and exit zero is not a secure verdict.
 
 ---
 

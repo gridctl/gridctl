@@ -119,3 +119,12 @@ func TestDoctorHelpMentionsUvx(t *testing.T) {
 		t.Fatalf("doctor help does not describe the uvx check: %q", doctorCmd.Long)
 	}
 }
+
+func TestDoctorHelpMentionsSecurity(t *testing.T) {
+	if !strings.Contains(doctorCmd.Long, "--security") {
+		t.Fatalf("doctor help does not describe security mode: %q", doctorCmd.Long)
+	}
+	if !strings.Contains(doctorCmd.Example, "--source") {
+		t.Fatalf("doctor examples omit --source: %q", doctorCmd.Example)
+	}
+}

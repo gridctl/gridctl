@@ -73,23 +73,30 @@ hygiene, vault status, projection lockfile generation, wiring ownership, and
 per-server MCP protocol generation. Each check renders a verdict with a
 remediation hint.
 
-Where 'gridctl info' reports facts and always exits 0, doctor judges and
-exits non-zero when something needs fixing.
+--security emits a separate passive security evidence report. It does not run
+these environment probes. Source selection is explicit and has no fallback:
+file:<path>, snapshot:<path>, or gateway:<base-url>. Exit zero means no
+established failures among documented fail predicates, not that the stack is
+secure.
+
+Where 'gridctl info' reports facts and always exits 0, ordinary doctor judges
+and exits non-zero when something needs fixing.
 
 Exit codes:
-  0  no errors (warnings allowed)
-  1  one or more errors
+  0  no errors (warnings and unknowns allowed)
+  1  one or more established failures
   2  doctor itself failed to run`,
 	Example: `  gridctl doctor               Run all checks
   gridctl doctor --json        Machine-readable report
-  gridctl doctor -q            Only print failures and warnings`,
+  gridctl doctor -q            Only print failures and warnings
+  gridctl doctor --security --source file:stack.yaml --json
+  gridctl doctor --security --source snapshot:security-report.json
+  gridctl doctor --security --source gateway:http://localhost:8180`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
 		defer cancel()
-
-		report := runDoctorChecks(ctx)
-		exit := renderDoctorReport(os.Stdout, report, doctorJSON, doctorQuiet)
+		exit := executeDoctor(ctx, os.Stdout)
 		if exit != doctorExitOK {
 			os.Exit(exit)
 		}
@@ -100,6 +107,27 @@ Exit codes:
 func init() {
 	doctorCmd.Flags().BoolVar(&doctorJSON, "json", false, "Output the report as JSON")
 	doctorCmd.Flags().BoolVarP(&doctorQuiet, "quiet", "q", false, "Only print failing and warning checks")
+	doctorCmd.Flags().BoolVar(&doctorSecurity, "security", false, "Emit a passive security evidence report instead of environment checks")
+	doctorCmd.Flags().StringVar(&doctorSource, "source", "", "Security report source: file:<path>, snapshot:<path>, or gateway:<base-url>")
+}
+
+var runOrdinaryDoctorChecks = runDoctorChecks
+
+func executeDoctor(ctx context.Context, stdout io.Writer) int {
+	if err := validateDoctorSecurityFlags(); err != nil {
+		fmt.Fprintln(os.Stderr, securityDoctorMessage(err))
+		return doctorExitFailed
+	}
+	if doctorSecurity {
+		report, err := runSecurityDoctor(ctx)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, securityDoctorMessage(err))
+			return doctorExitFailed
+		}
+		return renderSecurityReport(stdout, report, doctorJSON, doctorQuiet)
+	}
+	report := runOrdinaryDoctorChecks(ctx)
+	return renderDoctorReport(stdout, report, doctorJSON, doctorQuiet)
 }
 
 // runDoctorChecks executes every check and aggregates the report.

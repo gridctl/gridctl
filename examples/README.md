@@ -17,6 +17,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | [📦 platforms/](platforms/) | Third-party MCP servers: remote OAuth endpoints, containers, and host processes |
 | [Python sources](python-sources/) | Generate Python containers from exact PyPI releases or packaged source projects |
 | [Execution controls](execution/) | Opt-in container restrictions and per-replica enforcement evidence |
+| [Security evidence](security-evidence/) | Partial, stale, suppressed, unknown, and N/A states for `gridctl doctor --security` |
 | [🔗 openapi/](openapi/) | Turn REST APIs into MCP tools via OpenAPI specs |
 | [🔐 access-control/](access-control/) | Tool filtering and per-client scoping |
 | [⚡ code-mode/](code-mode/) | Reduce context window with search + execute meta-tools |

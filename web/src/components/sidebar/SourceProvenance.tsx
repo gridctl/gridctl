@@ -34,9 +34,12 @@ export function SourceProvenance({
 
 function StatusRow({ label, value, labelClassName }: { label: string; value: string; labelClassName: string }) {
   return (
-    <div className="flex justify-between items-center gap-4">
+    <div className="flex justify-between items-start gap-4">
       <span className={`${labelClassName} text-text-muted`}>{label}</span>
-      <span className="text-xs text-text-secondary font-mono truncate max-w-[200px] bg-background/50 px-2 py-1 rounded-md" title={value}>
+      <span
+        tabIndex={0}
+        className="text-xs text-text-secondary font-mono break-all max-w-[200px] bg-background/50 px-2 py-1 rounded-md"
+      >
         {value}
       </span>
     </div>

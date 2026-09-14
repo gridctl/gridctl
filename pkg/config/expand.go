@@ -123,6 +123,12 @@ var expandRegex = regexp.MustCompile(
 		`\$([a-zA-Z_][a-zA-Z0-9_]*)`, // $VAR form
 )
 
+// ContainsExpansion reports whether s includes a recognized $VAR or ${...} form,
+// including default and replacement operands.
+func ContainsExpansion(s string) bool {
+	return expandRegex.MatchString(s)
+}
+
 // ExpandString expands variable references in a string using the given resolver.
 // All patterns are matched in a single pass to prevent double-expansion of values
 // that contain dollar signs.

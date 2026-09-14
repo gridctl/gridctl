@@ -32,6 +32,7 @@ import { InspectorSection } from '../components/inspector';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { SourceProvenance } from '../components/sidebar/SourceProvenance';
 import { ExecutionDetails } from '../components/sidebar/ExecutionDetails';
+import { SecurityEvidence } from '../components/sidebar/SecurityEvidence';
 import { useAuthStore } from '../stores/useAuthStore';
 
 interface NodeOption {
@@ -369,6 +370,7 @@ function NodeDetails({ node }: { node: NodeOption }) {
               labelClassName="log-text"
             />
           )}
+          {isServer && serverData?.name && <SecurityEvidence scope={{ server: serverData.name }} />}
 
           {resourceData?.image && (
             <div className="flex justify-between items-center gap-4">

@@ -1,0 +1,68 @@
+{
+  "schema_version": "gridctl.security-report.v1",
+  "generated_at": "2026-01-02T03:04:05Z",
+  "source": {
+    "kind": "snapshot",
+    "display": "snapshot-partial.json",
+    "historical": true,
+    "stack_name": "security-evidence-demo"
+  },
+  "coverage": {
+    "status": "partial",
+    "predicates_total": 19,
+    "predicates_evaluated": 4,
+    "predicates_unknown": 1,
+    "included_scopes": [],
+    "excluded_scopes": [],
+    "unknown_gaps": 1
+  },
+  "checks": [
+    {
+      "id": "pin.schema.continuity.fetch",
+      "predicate": "pin.schema.continuity",
+      "subject": { "kind": "server", "name": "fetch" },
+      "outcome": "fail",
+      "reason_code": "pin_status_drift",
+      "explanation": "Stored pin status is drift for fetch.",
+      "evidence": { "basis": "declared", "availability": "available", "freshness": "stale", "freshness_condition": "producer_timestamp_present_without_current_binding", "verified_at": "2025-01-01T00:00:00Z" },
+      "limitations": ["Known negative observation from the pin store."]
+    },
+    {
+      "id": "pin.scan.findings.fetch",
+      "predicate": "pin.scan.findings",
+      "subject": { "kind": "server", "name": "fetch" },
+      "outcome": "warn",
+      "reason_code": "findings_present",
+      "explanation": "Stored advisory findings are present for fetch.",
+      "evidence": { "basis": "declared", "availability": "available", "freshness": "unknown" },
+      "suppression": { "codes": ["P004"], "reason_code": "configured_scan_ignore" }
+    },
+    {
+      "id": "source.signature.fetch",
+      "predicate": "source.signature",
+      "subject": { "kind": "server", "name": "fetch" },
+      "outcome": "unknown",
+      "reason_code": "signature_unavailable",
+      "explanation": "Downstream signature evidence for fetch is unavailable.",
+      "evidence": { "basis": "declared", "availability": "unavailable", "freshness": "unknown" }
+    },
+    {
+      "id": "execution.enforcement.remote",
+      "predicate": "execution.enforcement",
+      "subject": { "kind": "server", "name": "remote" },
+      "outcome": "not-applicable",
+      "reason_code": "noncontainer_subject",
+      "explanation": "Container-specific evidence is not applicable for this subject.",
+      "evidence": { "basis": "declared", "availability": "available", "freshness": "unknown" }
+    }
+  ],
+  "limitations": [
+    "This report is not a certification, trust score, or complete security assessment.",
+    "Exit zero means no established failures among documented fail predicates, not that the stack is secure."
+  ],
+  "fail_count": 1,
+  "warn_count": 1,
+  "unknown_count": 1,
+  "not_applicable_count": 1,
+  "pass_count": 0
+}

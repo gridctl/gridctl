@@ -6,11 +6,14 @@ All notable changes to gridctl will be documented in this file.
 
 ### Features
 
+- Add a passive security evidence report on `gridctl doctor --security`, `GET /api/security-report`, and existing gateway/server detail surfaces. Source selection is explicit (`file:`, `snapshot:`, or `gateway:`) with no fallback, probes, scans, or pin mutation. Gateway credentials attach only to loopback origins. Imported snapshots cannot authenticate verification claims. Exit zero means no established failures among documented fail predicates, not that the stack is secure (#1224).
 - Add opt-in per-MCP-server execution declarations, container control admission and instance-bound evidence, local environment inheritance and executable lookup, lossless execution form/YAML preservation, and per-replica reporting. Omitted execution declarations retain compatibility behavior; selected profiles refuse unavailable required evidence. Supporting resources and remote execution remain outside the enforcement scope (#1221).
 - Breaking output change: existing process-replica and runtime resource status gains execution metadata, and human replica rows distinguish execution state. Migrate STATE-text consumers to `status --json` and evaluate per-replica evidence separately from MCP health. Under Article VIII, schedule this output change for a maintainer-owned major release, not a patch or minor release (#1221).
 
 ### Documentation
 
+- Document the passive security evidence report, including no-fallback source selection, unknown/partial/N/A states, allowlisted identifiers, and exit-zero limits. No completeness or certification claims (#1224).
+- Make the security-evidence example stack valid for `gridctl validate` by giving the container server a port and using a store reference for the gateway token instead of an unset environment interpolation (#1224).
 - Document execution schema/defaults, CLI/API evidence, accepted reload failure recovery, runtime support limits, and local-process hygiene across references, examples, the threat model, and architecture guidance. Positive rootless Podman acceptance remains a required external gate (#1221).
 - Align gateway-auth lifecycle guidance across the threat model, restart troubleshooting, API/CLI references, browser recovery, examples, and architecture map (#1228).
 - Publish a source-verified security threat model covering trust boundaries, current controls and defaults, credential custody, release evidence, and residual risks (#1218).
