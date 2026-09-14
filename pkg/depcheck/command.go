@@ -6,7 +6,9 @@ import (
 	"strings"
 )
 
-var exactVersion = regexp.MustCompile(`^[0-9]+(\.[0-9]+)*([.-][0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`)
+var exactNpmVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`)
+
+var exactPyPIVersion = regexp.MustCompile(`^[0-9]+(\.[0-9]+)*([.-][0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`)
 
 var packageLaunchers = map[string]bool{
 	"npx":  true,
@@ -43,18 +45,22 @@ func ClassifyCommand(argv []string) Result {
 	if ContainsVariable(argv[0]) {
 		return notAssessed(KindNone, "variable")
 	}
-	switch launcherName(argv[0]) {
+	name := launcherName(argv[0])
+	switch name {
 	case "npx":
 		return classifyNpx(argv[1:])
 	case "uvx":
 		return classifyUvx(argv[1:])
 	default:
+		if packageLaunchers[name] {
+			return notAssessed(KindNone, "unsupported-launcher")
+		}
 		return notAssessed(KindNone, "unknown-wrapper")
 	}
 }
 
 func classifyNpx(args []string) Result {
-	spec := ""
+	var specs []string
 	fromPackageFlag := false
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -76,13 +82,14 @@ func classifyNpx(args []string) Result {
 				if ContainsVariable(next) {
 					return notAssessed(KindNPM, "variable")
 				}
-				spec = next
+				specs = append(specs, next)
 				fromPackageFlag = true
 			case strings.HasPrefix(a, "--package="):
-				spec = strings.TrimPrefix(a, "--package=")
+				spec := strings.TrimPrefix(a, "--package=")
 				if ContainsVariable(spec) {
 					return notAssessed(KindNPM, "variable")
 				}
+				specs = append(specs, spec)
 				fromPackageFlag = true
 			default:
 				return notAssessed(KindNPM, "unsupported-option")
@@ -93,19 +100,24 @@ func classifyNpx(args []string) Result {
 			return notAssessed(KindNPM, "variable")
 		}
 		if !fromPackageFlag {
-			spec = a
+			specs = append(specs, a)
 		}
 		break
 	}
-	if spec == "" {
+	if len(specs) == 0 {
 		return notAssessed(KindNPM, "unknown-form")
 	}
-	return classifyNpmSpec(spec)
+	results := make([]Result, 0, len(specs))
+	for _, spec := range specs {
+		results = append(results, classifyNpmSpec(spec))
+	}
+	return combineResults(results)
 }
 
 func classifyUvx(args []string) Result {
 	fromSpec := ""
 	positional := ""
+	var extras []Result
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if a == "--" {
@@ -128,13 +140,35 @@ func classifyUvx(args []string) Result {
 				if ContainsVariable(fromSpec) {
 					return notAssessed(KindPyPI, "variable")
 				}
-			case a == "--python" || a == "-p" || a == "--with" || a == "--with-editable":
-				if i+1 >= len(args) {
+			case a == "--python" || a == "-p":
+				if _, ok := peekArg(args, i); !ok {
 					return notAssessed(KindPyPI, "unknown-form")
 				}
 				i++
-			case strings.HasPrefix(a, "--python=") || strings.HasPrefix(a, "--with=") || strings.HasPrefix(a, "--with-editable="):
-				// skip
+			case strings.HasPrefix(a, "--python="):
+				// interpreter, not a package selector
+			case a == "--with" || a == "--with-editable":
+				next, ok := peekArg(args, i)
+				if !ok {
+					return notAssessed(KindPyPI, "unknown-form")
+				}
+				i++
+				if ContainsVariable(next) {
+					return notAssessed(KindPyPI, "variable")
+				}
+				extras = append(extras, classifyPyPISpec(next))
+			case strings.HasPrefix(a, "--with="):
+				spec := strings.TrimPrefix(a, "--with=")
+				if ContainsVariable(spec) {
+					return notAssessed(KindPyPI, "variable")
+				}
+				extras = append(extras, classifyPyPISpec(spec))
+			case strings.HasPrefix(a, "--with-editable="):
+				spec := strings.TrimPrefix(a, "--with-editable=")
+				if ContainsVariable(spec) {
+					return notAssessed(KindPyPI, "variable")
+				}
+				extras = append(extras, classifyPyPISpec(spec))
 			case a == "--isolated" || a == "--no-cache" || a == "--refresh" || a == "-q" || a == "--quiet":
 				// skip
 			default:
@@ -147,9 +181,6 @@ func classifyUvx(args []string) Result {
 				return notAssessed(KindPyPI, "variable")
 			}
 			positional = a
-			if fromSpec != "" {
-				break
-			}
 			break
 		}
 	}
@@ -157,10 +188,15 @@ func classifyUvx(args []string) Result {
 	if spec == "" {
 		spec = positional
 	}
-	if spec == "" {
+	var results []Result
+	if spec != "" {
+		results = append(results, classifyPyPISpec(spec))
+	}
+	results = append(results, extras...)
+	if len(results) == 0 {
 		return notAssessed(KindPyPI, "unknown-form")
 	}
-	return classifyPyPISpec(spec)
+	return combineResults(results)
 }
 
 func classifyNpmSpec(spec string) Result {
@@ -179,7 +215,7 @@ func classifyNpmSpec(spec string) Result {
 	if version == "" {
 		return Result{Kind: KindNPM, Status: StatusMutable, Reason: "missing-version"}
 	}
-	if exactVersion.MatchString(version) {
+	if exactNpmVersion.MatchString(version) {
 		return Result{Kind: KindNPM, Status: StatusPinned, Reason: "exact-version"}
 	}
 	return Result{Kind: KindNPM, Status: StatusMutable, Reason: "floating-range"}
@@ -222,7 +258,7 @@ func classifyPyPISpec(spec string) Result {
 	if op == "" {
 		return Result{Kind: KindPyPI, Status: StatusMutable, Reason: "missing-version"}
 	}
-	if op == "==" && exactVersion.MatchString(version) {
+	if op == "==" && exactPyPIVersion.MatchString(version) {
 		return Result{Kind: KindPyPI, Status: StatusPinned, Reason: "exact-version"}
 	}
 	return Result{Kind: KindPyPI, Status: StatusMutable, Reason: "floating-range"}
@@ -243,6 +279,33 @@ func splitPEP508(spec string) (name, op, version string) {
 		}
 	}
 	return strings.TrimSpace(spec), "", ""
+}
+
+func combineResults(results []Result) Result {
+	if len(results) == 0 {
+		return notAssessed(KindNone, "unknown-form")
+	}
+	var mutable, unassessed *Result
+	for i := range results {
+		r := &results[i]
+		switch r.Status {
+		case StatusMutable:
+			if mutable == nil {
+				mutable = r
+			}
+		case StatusNotAssessed:
+			if unassessed == nil {
+				unassessed = r
+			}
+		}
+	}
+	if mutable != nil {
+		return *mutable
+	}
+	if unassessed != nil {
+		return *unassessed
+	}
+	return results[0]
 }
 
 func peekArg(args []string, i int) (string, bool) {
