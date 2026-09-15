@@ -4,6 +4,7 @@ import { cn } from '../../lib/cn';
 import { useUIStore } from '../../stores/useUIStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { useTracesStore } from '../../stores/useTracesStore';
+import { useRunsStore } from '../../stores/useRunsStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { PopoutButton } from '../ui/PopoutButton';
 import { TracesView } from '../traces/TracesView';
@@ -28,6 +29,8 @@ export function TracesWorkspace() {
   const view = searchParams.get('view') === 'runs' ? 'runs' : 'traces';
   const selectedTraceId = useTracesStore((s) => s.selectedTraceId);
   const filters = useTracesStore((s) => s.filters);
+  const runCount = useRunsStore((s) => s.records.length);
+  const runPartial = useRunsStore((s) => s.partial);
   const selectTrace = useTracesStore((s) => s.selectTrace);
   const setFilters = useTracesStore((s) => s.setFilters);
 
@@ -128,11 +131,13 @@ export function TracesWorkspace() {
           </button>
         </div>
         <div className="font-mono text-[10px] text-text-muted truncate">
-          {selectedTraceId
-            ? selectedTraceId.slice(0, 16)
-            : filters.segment === 'all'
-              ? 'all traces'
-              : 'tool calls'}
+          {view === 'runs'
+            ? `${runCount} dispatch record${runCount === 1 ? '' : 's'}${runPartial ? ' (partial)' : ''}`
+            : selectedTraceId
+              ? selectedTraceId.slice(0, 16)
+              : filters.segment === 'all'
+                ? 'all traces'
+                : 'tool calls'}
         </div>
       </header>
       <div className="flex-1 min-h-0">

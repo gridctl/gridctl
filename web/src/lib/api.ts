@@ -1981,17 +1981,27 @@ export interface RunWarning {
   message: string;
 }
 
+export interface RunCursor {
+  wipe_epoch: number;
+  source_token?: string;
+  returned_at: string;
+  sequence: number;
+  attempt_id: string;
+}
+
 export interface RunListResponse {
   records: RunRecord[];
   warnings: RunWarning[];
   partial: boolean;
-  nextCursor?: string;
+  nextCursor?: RunCursor;
   wipeEpoch: number;
+  source?: { kind: string; stack?: string; path?: string };
 }
 
 export interface RunStatusResponse {
   enabled: boolean;
   effective: boolean;
+  known?: boolean;
   writer_health: string;
   queue_depth: number;
   queue_capacity: number;
@@ -1999,6 +2009,10 @@ export interface RunStatusResponse {
   failures: Record<string, number>;
   historical_loss: string;
   wipe_epoch: number;
+  omit_labels?: boolean;
+  retention_max_bytes?: number;
+  retention_max_age_days?: number;
+  logical_bytes?: number;
   recordingNote: string;
   privacyNote: string;
   retentionNote: string;
@@ -2011,13 +2025,77 @@ export interface RunStatusResponse {
   };
 }
 
+interface SnakeRunRecord {
+  schema_version: number;
+  recorder_instance_id: string;
+  sequence: number;
+  attempt_id: string;
+  parent_attempt_id?: string;
+  root_attempt_id?: string;
+  previous_attempt_id?: string;
+  started_at: string;
+  returned_at: string;
+  duration_ms: number;
+  downstream_duration_ms?: number;
+  requested_name?: string;
+  requested_name_omitted?: string;
+  resolved_server?: string;
+  resolved_server_omitted?: string;
+  resolved_tool?: string;
+  resolved_tool_omitted?: string;
+  disposition: string;
+  stage: string;
+  reason: string;
+  replica_id?: number;
+  trace_id?: string;
+  client_label?: string;
+  access_label?: string;
+}
+
+function mapRunRecord(r: SnakeRunRecord): RunRecord {
+  return {
+    schemaVersion: r.schema_version,
+    recorderInstanceId: r.recorder_instance_id,
+    sequence: r.sequence,
+    attemptId: r.attempt_id,
+    parentAttemptId: r.parent_attempt_id,
+    rootAttemptId: r.root_attempt_id,
+    previousAttemptId: r.previous_attempt_id,
+    startedAt: r.started_at,
+    returnedAt: r.returned_at,
+    durationMs: r.duration_ms,
+    downstreamDurationMs: r.downstream_duration_ms,
+    requestedName: r.requested_name,
+    requestedNameOmitted: r.requested_name_omitted,
+    resolvedServer: r.resolved_server,
+    resolvedServerOmitted: r.resolved_server_omitted,
+    resolvedTool: r.resolved_tool,
+    resolvedToolOmitted: r.resolved_tool_omitted,
+    disposition: r.disposition,
+    stage: r.stage,
+    reason: r.reason,
+    replicaId: r.replica_id,
+    traceId: r.trace_id,
+    clientLabel: r.client_label,
+    accessLabel: r.access_label,
+  };
+}
+
 export async function fetchRuns(params?: {
   server?: string;
   tool?: string;
   disposition?: string;
   requested?: string;
   client?: string;
+  access?: string;
   attempt?: string;
+  parent?: string;
+  root?: string;
+  previous?: string;
+  trace?: string;
+  since?: string;
+  until?: string;
+  cursor?: string;
   limit?: number;
 }): Promise<RunListResponse> {
   const query = new URLSearchParams();
@@ -2026,14 +2104,64 @@ export async function fetchRuns(params?: {
   if (params?.disposition) query.set('disposition', params.disposition);
   if (params?.requested) query.set('requested', params.requested);
   if (params?.client) query.set('client', params.client);
+  if (params?.access) query.set('access', params.access);
   if (params?.attempt) query.set('attempt', params.attempt);
+  if (params?.parent) query.set('parent', params.parent);
+  if (params?.root) query.set('root', params.root);
+  if (params?.previous) query.set('previous', params.previous);
+  if (params?.trace) query.set('trace', params.trace);
+  if (params?.since) query.set('since', params.since);
+  if (params?.until) query.set('until', params.until);
+  if (params?.cursor) query.set('cursor', params.cursor);
   if (params?.limit != null) query.set('limit', String(params.limit));
   const qs = query.toString();
-  return fetchJSON<RunListResponse>(`/api/runs${qs ? `?${qs}` : ''}`);
+  const raw = await fetchJSON<{
+    records?: SnakeRunRecord[];
+    warnings?: RunWarning[];
+    partial?: boolean;
+    next_cursor?: RunCursor;
+    wipe_epoch?: number;
+    source?: { kind: string; stack?: string; path?: string };
+  }>(`/api/runs${qs ? `?${qs}` : ''}`);
+  return {
+    records: (raw.records ?? []).map(mapRunRecord),
+    warnings: raw.warnings ?? [],
+    partial: Boolean(raw.partial),
+    nextCursor: raw.next_cursor,
+    wipeEpoch: raw.wipe_epoch ?? 0,
+    source: raw.source,
+  };
 }
 
 export async function fetchRunsStatus(): Promise<RunStatusResponse> {
   return fetchJSON<RunStatusResponse>('/api/runs/status');
+}
+
+export async function exportRuns(params?: Parameters<typeof fetchRuns>[0]): Promise<Blob> {
+  const query = new URLSearchParams();
+  if (params?.server) query.set('server', params.server);
+  if (params?.tool) query.set('tool', params.tool);
+  if (params?.disposition) query.set('disposition', params.disposition);
+  if (params?.requested) query.set('requested', params.requested);
+  if (params?.client) query.set('client', params.client);
+  if (params?.access) query.set('access', params.access);
+  if (params?.attempt) query.set('attempt', params.attempt);
+  if (params?.parent) query.set('parent', params.parent);
+  if (params?.root) query.set('root', params.root);
+  if (params?.previous) query.set('previous', params.previous);
+  if (params?.trace) query.set('trace', params.trace);
+  if (params?.since) query.set('since', params.since);
+  if (params?.until) query.set('until', params.until);
+  if (params?.limit != null) query.set('limit', String(params.limit));
+  const qs = query.toString();
+  const response = await fetch(`${API_BASE}/api/runs/export${qs ? `?${qs}` : ''}`, {
+    headers: buildHeaders(),
+  });
+  if (response.status === 401) throw new AuthError('Authentication required');
+  if (!response.ok) {
+    throw new HTTPError(response.status, 'Failed to export run history');
+  }
+  return response.blob();
 }
 
 export async function wipeRuns(): Promise<{ success: boolean; partial: boolean; recordingEnabled: boolean; scope: string }> {
@@ -2046,7 +2174,12 @@ export async function wipeRuns(): Promise<{ success: boolean; partial: boolean; 
   if (!response.ok) {
     throw new HTTPError(response.status, 'Failed to wipe run history');
   }
-  return data;
+  return {
+    success: Boolean(data?.success),
+    partial: Boolean(data?.partial),
+    recordingEnabled: Boolean(data?.recording_enabled ?? data?.recordingEnabled),
+    scope: String(data?.scope ?? ''),
+  };
 }
 
 export async function updateStackRuns(body: {

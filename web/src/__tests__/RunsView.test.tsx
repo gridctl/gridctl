@@ -14,10 +14,11 @@ vi.mock('../lib/api', async () => {
     fetchRunsStatus: vi.fn(),
     updateStackRuns: vi.fn(),
     wipeRuns: vi.fn(),
+    exportRuns: vi.fn(),
   };
 });
 
-import { fetchRuns, fetchRunsStatus, updateStackRuns } from '../lib/api';
+import { fetchRuns, fetchRunsStatus, updateStackRuns, wipeRuns } from '../lib/api';
 
 const record: RunRecord = {
   schemaVersion: 1,
@@ -54,6 +55,18 @@ const status = (over: Partial<RunStatusResponse> = {}): RunStatusResponse => ({
 
 describe('RunsView', () => {
   beforeEach(() => {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: (query: string) => ({
+        matches: false,
+        media: query,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => false,
+      }),
+    });
     useRunsStore.setState({
       records: [],
       warnings: [],
@@ -62,7 +75,11 @@ describe('RunsView', () => {
       isLoading: false,
       error: null,
       selectedId: null,
-      filters: { server: '', disposition: '' },
+      filters: { server: '', tool: '', disposition: '', requested: '', client: '', access: '', attempt: '', parent: '', root: '', previous: '', trace: '', since: '', until: '' },
+      nextCursor: null,
+      statusError: null,
+      mutationError: null,
+      loadSeq: 0,
     });
     vi.mocked(fetchRuns).mockResolvedValue({ records: [record], warnings: [], partial: false, wipeEpoch: 0 });
     vi.mocked(fetchRunsStatus).mockResolvedValue(status());
@@ -112,6 +129,19 @@ describe('RunsView', () => {
     await waitFor(() => expect(updateStackRuns).toHaveBeenCalledWith({ enabled: true }));
   });
 
+  it('shows drop counts and wipe partial errors', async () => {
+    vi.mocked(fetchRunsStatus).mockResolvedValue(status({ drops: { queue_full: 3 }, writer_health: 'ok' }));
+    vi.mocked(wipeRuns).mockResolvedValue({ success: false, partial: true, recordingEnabled: true, scope: 'demo' });
+    render(
+      <MemoryRouter>
+        <RunsView servers={['github']} />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByText(/Loss queue_full: 3/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /wipe history/i }));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/partial/i));
+  });
+
   it('supports keyboard selection', async () => {
     render(
       <MemoryRouter>
@@ -121,6 +151,6 @@ describe('RunsView', () => {
     await waitFor(() => expect(screen.getByRole('grid')).toBeInTheDocument());
     const row = screen.getByRole('row', { name: /github/i });
     fireEvent.keyDown(row, { key: 'Enter' });
-    expect(screen.getByText(/Attempt/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Run detail')).toBeInTheDocument();
   });
 });
