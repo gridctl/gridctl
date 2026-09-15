@@ -55,8 +55,12 @@ GO_TEST_CMD=${GO_TEST_CMD:-go test}
 VERIFIER_CMD=${VERIFIER_CMD:-go run "${ROOT}/cmd/scenarioverify"}
 
 cleanup() {
-  [[ -n "${CAPTURE_TEMP:-}" ]] && rm -f "$CAPTURE_TEMP"
-  [[ -n "${SUMMARY_TEMP:-}" ]] && rm -f "$SUMMARY_TEMP"
+  if [[ -n "${CAPTURE_TEMP:-}" ]]; then
+    rm -f "$CAPTURE_TEMP"
+  fi
+  if [[ -n "${SUMMARY_TEMP:-}" ]]; then
+    rm -f "$SUMMARY_TEMP"
+  fi
 }
 trap cleanup EXIT
 

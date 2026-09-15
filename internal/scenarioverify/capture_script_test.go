@@ -167,6 +167,22 @@ func TestRunVerifiedTests_RealVerifierPass(t *testing.T) {
 	}
 }
 
+func TestRunVerifiedTests_SummaryPathKeepsSuccess(t *testing.T) {
+	index, goTest := passingCaptureIndex(t)
+	summary := filepath.Join(t.TempDir(), "unit-scenarios.json")
+	out, cmd := runVerifiedScript(t, []string{"GO_TEST_CMD=" + goTest},
+		"--lane", "unit", "--index", index, "--summary", summary, "--", "-coverprofile=coverage.out", "./...")
+	if cmd.ProcessState == nil || cmd.ProcessState.ExitCode() != 0 {
+		t.Fatalf("caller-supplied summary changed exit: exit=%v output=%s", cmd.ProcessState, out)
+	}
+	if !strings.Contains(string(out), "Required scenarios: PASS") {
+		t.Fatalf("missing pass summary: %s", out)
+	}
+	if _, err := os.Stat(summary); err != nil {
+		t.Fatalf("summary was not written: %v", err)
+	}
+}
+
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	dir, err := os.Getwd()
