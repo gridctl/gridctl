@@ -28,13 +28,15 @@ List identities and focused reproduction commands:
 task scenarios
 ```
 
-Focused commands escape each `/`-separated name segment. They do not replace whole-suite acceptance.
+Focused commands escape each `/`-separated name segment and include the lane's test tags, timeout, and runtime selection. They do not replace whole-suite acceptance.
 
 ## Verifier
 
 `cmd/scenarioverify` is a repository test utility, not a `gridctl` subcommand. It reads an explicit lane, the index, and a completed `go test -json` capture. It does not execute tests.
 
-Designated Gatekeeper jobs (`test`, `integration`, `podman-integration`) invoke `scripts/run-verified-tests.sh` with lanes `unit`, `integration`, and `podman-integration`. The script adds `-json -count=1 -race` while preserving coverage, tags, suite scope, and current timeouts. Go, capture/tee, and verifier statuses are recorded separately; a successful verifier cannot mask a failed suite. Raw JSON captures stay on the runner; they are not uploaded as a new public artifact. LiteLLM and conformance jobs use `-count=1` but are not verifier lanes.
+Designated Gatekeeper jobs (`test`, `integration`, `podman-integration`) invoke `scripts/run-verified-tests.sh` with lanes `unit`, `integration`, and `podman-integration`. The script adds `-json -count=1 -race` while preserving coverage, tags, suite scope, and current timeouts. The general integration job sets `GRIDCTL_RUNTIME=docker` and fails a bounded `docker info` check when Docker is missing or is the wrong engine; the Podman job keeps its own engine setup. JSON events do not identify the runtime. Go, capture/tee, and verifier statuses are recorded separately; a successful verifier cannot mask a failed suite. Raw JSON captures stay on the runner; they are not uploaded as a new public artifact. LiteLLM and conformance jobs use `-count=1` but are not verifier lanes.
+
+The verifier decodes events incrementally, discards output payloads, and rejects null or non-object records, missing actions, unfinished observed packages or tests, test events after a package terminal, parent completion before a required child runs, and Go `build-fail` events. Input, record, event, and identity counts are bounded. Unknown JSON fields remain allowed.
 
 Reason codes: `SELECTOR_ABSENT`, `REQUIRED_SKIP`, `INCOMPLETE_EVIDENCE`, `TEST_FAILURE`, `PACKAGE_FAILURE`, `MALFORMED_INDEX`, `UNKNOWN_LANE`, `EMPTY_REQUIRED_SET`. Missing prerequisites never shrink the required set.
 
@@ -60,4 +62,4 @@ task test:integration
 task test:verify
 ```
 
-`task test` stays human-readable. `task test:verify` is the unit-lane capture path. Integration and Podman whole-suite runs with `-race` remain the runtime acceptance path; hosted Podman execution is still required for Podman-assigned cases.
+`task test` stays human-readable. `task test:verify` is the unit-lane capture path. Local Docker whole-suite runs with `-race` remain the general integration acceptance path; hosted Podman execution is still required for Podman-assigned cases.
