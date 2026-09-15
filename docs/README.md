@@ -47,6 +47,7 @@ New to gridctl? Read in this order:
 | Document | Description |
 |----------|-------------|
 | [Project Status](project-status.md) | Per-feature stability tiers and currently known limitations |
+| [Practical Security Guide](security/practical-guide.md) | Operator workflow for verified installation, private deployment, credentials, execution, content review, and diagnostic privacy |
 | [Security Threat Model](security/threat-model.md) | Current trust boundaries, security defaults, source/test evidence, and residual risks |
 | [Security Evidence Report](security-evidence.md) | Passive `doctor --security` / `/api/security-report` scope, unknowns, and exit-zero limits |
 | [Stack Declaration Policy](stack-declaration-policy.md) | Offline `validate --policy` checks for captured declarations; not runtime admission |
