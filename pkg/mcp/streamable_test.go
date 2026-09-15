@@ -339,6 +339,9 @@ func TestStreamableHTTPServer_Post_InvalidJSON(t *testing.T) {
 	if resp.Error.Code != jsonrpc.ParseError {
 		t.Errorf("expected ParseError code %d, got %d", jsonrpc.ParseError, resp.Error.Code)
 	}
+	if w.Header().Get("Mcp-Session-Id") != "" {
+		t.Fatal("invalid JSON created a session")
+	}
 }
 
 func TestStreamableHTTPServer_Ping(t *testing.T) {
@@ -848,7 +851,6 @@ func TestStreamableHTTPServer_MethodNotAllowed(t *testing.T) {
 		t.Errorf("expected 405 for PUT, got %d", w.Code)
 	}
 }
-
 
 func TestStreamableHTTPServer_SessionCount(t *testing.T) {
 	srv := NewStreamableHTTPServer(NewGateway(), nil)

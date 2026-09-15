@@ -12,6 +12,14 @@ import (
 )
 
 func TestExportStack_CredentialInventory(t *testing.T) {
+	t.Run("inline_literal_token", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "stack.yaml")
+		source := "name: test\ngateway:\n  auth:\n    token: synthetic-literal-canary\n"
+		require.NoError(t, os.WriteFile(path, []byte(source), 0600))
+		_, _, err := ExportStack(context.Background(), path)
+		require.Error(t, err)
+		require.NotContains(t, err.Error(), "canary")
+	})
 	for _, field := range []string{
 		"gateway:\n  auth:\n    token: ",
 		"gateway:\n  tokenizer_api_key: ",

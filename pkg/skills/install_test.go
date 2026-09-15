@@ -313,6 +313,7 @@ func TestImport_DangerousScriptGatedLeavesNoPartialInstall(t *testing.T) {
 	require.Empty(t, result.Imported, "a danger-severity script must block the import")
 	require.Len(t, result.Skipped, 1)
 	assert.Contains(t, result.Skipped[0].Reason, "--trust")
+	assert.Contains(t, result.Skipped[0].Reason, "piped curl to shell execution")
 
 	assert.NoDirExists(t, filepath.Join(regDir, "skills", "test-skill"),
 		"a gated skill must leave no partial install behind")
@@ -568,12 +569,20 @@ func TestImport_GatedReimportLeavesExistingInstallIntact(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, second.Imported, "hostile content must not be installed")
 	require.Len(t, second.Skipped, 1)
+	assert.Contains(t, second.Skipped[0].Reason, "piped curl to shell execution")
 
 	// The good install is untouched: original content, and the reference file
 	// the hostile source dropped is still present because nothing was pruned.
-	body, err := os.ReadFile(filepath.Join(skillDir, "scripts", "run.sh"))
+	scriptPath := filepath.Join(skillDir, "scripts", "run.sh")
+	body, err := os.ReadFile(scriptPath)
 	require.NoError(t, err)
 	assert.Equal(t, "echo run\n", string(body), "existing script must not be overwritten by refused content")
-	assert.FileExists(t, filepath.Join(skillDir, "references", "api.md"),
-		"a refused re-import must not prune the previous install")
+	info, err := os.Stat(scriptPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o755), info.Mode().Perm(), "existing script mode must be preserved")
+	refPath := filepath.Join(skillDir, "references", "api.md")
+	assert.FileExists(t, refPath, "a refused re-import must not prune the previous install")
+	ref, err := os.ReadFile(refPath)
+	require.NoError(t, err)
+	assert.Equal(t, "# api\n", string(ref), "existing reference bytes must be preserved")
 }

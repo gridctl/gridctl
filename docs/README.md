@@ -50,6 +50,7 @@ New to gridctl? Read in this order:
 | [Security Threat Model](security/threat-model.md) | Current trust boundaries, security defaults, source/test evidence, and residual risks |
 | [Security Evidence Report](security-evidence.md) | Passive `doctor --security` / `/api/security-report` scope, unknowns, and exit-zero limits |
 | [Stack Declaration Policy](stack-declaration-policy.md) | Offline `validate --policy` checks for captured declarations; not runtime admission |
+| [Adversarial Regression Gates](adversarial-regression-gates.md) | Scenario index and post-suite execution accounting; not comprehensive security testing |
 | [Troubleshooting](troubleshooting.md) | Common errors and resolutions - runtime, networking, vault, hot reload |
 
 ## Quick Links

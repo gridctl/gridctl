@@ -39,7 +39,13 @@ jobs:
 
       - name: Go tests with coverage
         run: |
-          go test -race -coverprofile=coverage.out ./...
+          bash scripts/run-verified-tests.sh \
+            --lane unit \
+            --index tests/adversarial/index.yaml \
+            --revision "${GITHUB_SHA}" \
+            --summary "${RUNNER_TEMP}/unit-scenarios.json" \
+            -- \
+            -coverprofile=coverage.out ./...
           go tool cover -func=coverage.out | tail -1
 
       - name: Check coverage threshold
@@ -114,6 +120,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: test
+    env:
+      GRIDCTL_RUNTIME: docker
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -127,8 +135,32 @@ jobs:
       - name: Install Go dependencies
         run: go mod download
 
+      - name: Verify Docker runtime
+        run: |
+          set -euo pipefail
+          if [[ "${GRIDCTL_RUNTIME}" != "docker" ]]; then
+            echo "GRIDCTL_RUNTIME=${GRIDCTL_RUNTIME}, want docker"
+            exit 1
+          fi
+          if ! command -v docker >/dev/null; then
+            echo "docker is required for the general integration lane"
+            exit 1
+          fi
+          docker info --format '{{.ServerVersion}}'
+          if docker info 2>&1 | grep -qi podman; then
+            echo "expected Docker engine, found Podman"
+            exit 1
+          fi
+
       - name: Integration tests
-        run: go test -tags=integration -race -timeout 15m ./tests/integration/...
+        run: |
+          bash scripts/run-verified-tests.sh \
+            --lane integration \
+            --index tests/adversarial/index.yaml \
+            --revision "${GITHUB_SHA}" \
+            --summary "${RUNNER_TEMP}/integration-scenarios.json" \
+            -- \
+            -tags=integration -timeout 15m ./tests/integration/...
 
   litellm-contract:
     runs-on: ubuntu-latest
@@ -154,7 +186,7 @@ jobs:
         run: docker pull ghcr.io/berriai/litellm:v1.97.0@sha256:468c25f35f3e5ec4e414974f00deab93337b1b4d9953cabcfd3722e59415f834
 
       - name: LiteLLM config contract test
-        run: go test -tags=integration -race -timeout 10m -run TestLiteLLMBootsRenderedFragment -v ./tests/integration/...
+        run: go test -count=1 -tags=integration -race -timeout 10m -run TestLiteLLMBootsRenderedFragment -v ./tests/integration/...
 
   conformance:
     runs-on: ubuntu-latest
@@ -181,7 +213,7 @@ jobs:
         run: go mod download
 
       - name: MCP conformance suite
-        run: go test -tags=integration -race -timeout 10m -run TestConformance ./tests/integration/...
+        run: go test -count=1 -tags=integration -race -timeout 10m -run TestConformance ./tests/integration/...
 
   podman-integration:
     # Pinned to a specific Ubuntu major rather than ubuntu-latest so a future
@@ -325,7 +357,14 @@ jobs:
       - name: Integration tests (Podman)
         env:
           GRIDCTL_RUNTIME: podman
-        run: go test -tags=integration -race -timeout 15m ./tests/integration/...
+        run: |
+          bash scripts/run-verified-tests.sh \
+            --lane podman-integration \
+            --index tests/adversarial/index.yaml \
+            --revision "${GITHUB_SHA}" \
+            --summary "${RUNNER_TEMP}/podman-scenarios.json" \
+            -- \
+            -tags=integration -timeout 15m ./tests/integration/...
 
       - name: Podman network diagnostics
         # This job has failed on image drift several times, and each round trip

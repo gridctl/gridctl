@@ -1,0 +1,349 @@
+version: 1
+lanes:
+  - unit
+  - integration
+  - podman-integration
+scenarios:
+  - id: mcp-correlation
+    owner_package: pkg/mcp
+    owner_issue: "1227"
+    package: github.com/gridctl/gridctl/pkg/mcp
+    test: TestProcessClient_ReadResponses_Correlation
+    lanes: [unit]
+    expected_boundary: a JSON-RPC response completes only the pending request with the matching id
+    nonclaims:
+      - does not prove transport allocation bounds
+      - does not introduce stricter JSON parsing than the current decoder
+    budgets:
+      max_payload_bytes: 4096
+      max_duration: 5s
+  - id: mcp-stdio-scanner-below
+    owner_package: pkg/mcp
+    owner_issue: "1227"
+    package: github.com/gridctl/gridctl/pkg/mcp
+    test: TestProcessClient_ReadResponses_ScannerLimit/below
+    lanes: [unit]
+    expected_boundary: a finite stdio JSON line below the scanner max is routed to the pending request
+    nonclaims:
+      - not a denial-of-service bound
+      - not an aggregate output limit
+    budgets:
+      max_payload_bytes: 8192
+      max_duration: 5s
+  - id: mcp-stdio-scanner-at
+    owner_package: pkg/mcp
+    owner_issue: "1227"
+    package: github.com/gridctl/gridctl/pkg/mcp
+    test: TestProcessClient_ReadResponses_ScannerLimit/at
+    lanes: [unit]
+    expected_boundary: a finite stdio JSON line whose bytes including the newline equal the scanner max is routed to the pending request
+    nonclaims:
+      - not a denial-of-service bound
+      - not an aggregate output limit
+    budgets:
+      max_payload_bytes: 1100000
+      max_duration: 5s
+  - id: mcp-stdio-scanner-above
+    owner_package: pkg/mcp
+    owner_issue: "1227"
+    package: github.com/gridctl/gridctl/pkg/mcp
+    test: TestProcessClient_ReadResponses_ScannerLimit/above
+    lanes: [unit]
+    expected_boundary: a stdio line above the scanner max fails the scan and drains the pending request
+    nonclaims:
+      - not proof of bounded transport allocation
+      - not an HTTP body limit
+    budgets:
+      max_payload_bytes: 1100000
+      max_duration: 5s
+  - id: mcp-streamable-invalid-json
+    owner_package: pkg/mcp
+    owner_issue: "1227"
+    package: github.com/gridctl/gridctl/pkg/mcp
+    test: TestStreamableHTTPServer_Post_InvalidJSON
+    lanes: [unit]
+    expected_boundary: malformed JSON-RPC envelopes return a parse error and do not start a session
+    nonclaims:
+      - does not claim strict parsing of every tolerated field
+    budgets:
+      max_payload_bytes: 1024
+      max_duration: 2s
+  - id: mcp-streamable-body-limit
+    owner_package: pkg/mcp
+    owner_issue: "1227"
+    package: github.com/gridctl/gridctl/pkg/mcp
+    test: TestStreamableHTTPServer_Post_RequestBodyLimit
+    lanes: [unit]
+    expected_boundary: a single Streamable HTTP JSON value larger than MaxRequestBodySize is rejected before session creation
+    nonclaims:
+      - not stdio scanner failure
+      - not post-receipt truncation
+      - not denial-of-service resistance
+      - trailing bytes after a complete JSON value are not this case
+    budgets:
+      max_payload_bytes: 1100000
+      max_duration: 5s
+  - id: mcp-result-truncation
+    owner_package: pkg/mcp
+    owner_issue: "1227"
+    package: github.com/gridctl/gridctl/pkg/mcp
+    test: TestGateway_HandleToolsCall_Truncation
+    lanes: [unit]
+    expected_boundary: oversized tool result text is truncated after receipt
+    nonclaims:
+      - not a transport ingestion bound
+      - not an aggregate memory guarantee
+    budgets:
+      max_payload_bytes: 1024
+      max_duration: 2s
+  - id: mcp-result-truncation-under
+    owner_package: pkg/mcp
+    owner_issue: "1227"
+    package: github.com/gridctl/gridctl/pkg/mcp
+    test: TestGateway_HandleToolsCall_Truncation_UnderLimit
+    lanes: [unit]
+    expected_boundary: tool results under the configured byte limit are unchanged
+    nonclaims:
+      - not a transport ingestion bound
+    budgets:
+      max_payload_bytes: 1024
+      max_duration: 2s
+  - id: mcp-result-truncation-at
+    owner_package: pkg/mcp
+    owner_issue: "1227"
+    package: github.com/gridctl/gridctl/pkg/mcp
+    test: TestGateway_HandleToolsCall_Truncation_AtLimit
+    lanes: [unit]
+    expected_boundary: tool results at the configured byte limit are unchanged
+    nonclaims:
+      - not a transport ingestion bound
+    budgets:
+      max_payload_bytes: 1024
+      max_duration: 2s
+  - id: mcp-cancel-same-client
+    owner_package: pkg/mcp
+    owner_issue: "1227"
+    package: github.com/gridctl/gridctl/pkg/mcp
+    test: TestProcessClient_CallCancel_SameClientRecovers
+    lanes: [unit]
+    expected_boundary: cancelling a received in-flight call returns to the caller, drops the pending id, and the same client can complete a later call
+    nonclaims:
+      - not a substitute for a new client
+      - not a container isolation proof
+    budgets:
+      max_payload_bytes: 4096
+      max_duration: 5s
+  - id: mcp-dispatch-named
+    owner_package: pkg/mcp
+    owner_issue: "1227"
+    package: github.com/gridctl/gridctl/pkg/mcp
+    test: TestGateway_HandleToolsCall_DispatchCounts/named_receiver
+    lanes: [unit]
+    expected_boundary: a valid prefixed call invokes the named receiver exactly once and no other receiver
+    nonclaims:
+      - heuristic shadowing findings are not execution authorization
+    budgets:
+      max_payload_bytes: 1024
+      max_duration: 2s
+  - id: mcp-dispatch-denied
+    owner_package: pkg/mcp
+    owner_issue: "1227"
+    package: github.com/gridctl/gridctl/pkg/mcp
+    test: TestGateway_HandleToolsCall_DispatchCounts/denied_gate
+    lanes: [unit]
+    expected_boundary: a denied call observes zero downstream tool invocations
+    nonclaims:
+      - not a rate-limit fairness proof
+    budgets:
+      max_payload_bytes: 1024
+      max_duration: 2s
+  - id: mcp-callgate-deny
+    owner_package: pkg/mcp
+    owner_issue: "1227"
+    package: github.com/gridctl/gridctl/pkg/mcp
+    test: TestCallGates_DenyShortCircuitsBeforeDownstream
+    lanes: [unit]
+    expected_boundary: call-gate denial short-circuits before downstream CallTool
+    nonclaims:
+      - not a group-membership or auth proof
+    budgets:
+      max_payload_bytes: 1024
+      max_duration: 2s
+  - id: skills-import-benign
+    owner_package: pkg/skills
+    owner_issue: "1225"
+    package: github.com/gridctl/gridctl/pkg/skills
+    test: TestImport_CopiesSupportingFiles
+    lanes: [unit]
+    expected_boundary: a benign skill package is installed with supporting files intact
+    nonclaims:
+      - not an Update or pack/API lifecycle proof
+    budgets:
+      max_payload_bytes: 65536
+      max_duration: 10s
+  - id: skills-import-gated
+    owner_package: pkg/skills
+    owner_issue: "995"
+    package: github.com/gridctl/gridctl/pkg/skills
+    test: TestImport_DangerousScriptGatedLeavesNoPartialInstall
+    lanes: [unit]
+    expected_boundary: a danger-severity inert script is refused before write, with the named piped-curl finding
+    nonclaims:
+      - does not execute imported scripts
+      - not concurrent symlink-swap resistance
+    budgets:
+      max_payload_bytes: 65536
+      max_duration: 10s
+  - id: skills-import-reimport
+    owner_package: pkg/skills
+    owner_issue: "995"
+    package: github.com/gridctl/gridctl/pkg/skills
+    test: TestImport_GatedReimportLeavesExistingInstallIntact
+    lanes: [unit]
+    expected_boundary: a refused hostile reimport preserves exact prior bytes and metadata
+    nonclaims:
+      - source symlink refusal is a separate case
+      - not an Update-entry-point proof by itself
+    budgets:
+      max_payload_bytes: 65536
+      max_duration: 10s
+  - id: skills-import-symlink
+    owner_package: pkg/skills
+    owner_issue: "995"
+    package: github.com/gridctl/gridctl/pkg/skills
+    test: TestImport_SkipsSymlinks
+    lanes: [unit]
+    expected_boundary: imported source symlinks are skipped rather than followed
+    nonclaims:
+      - does not establish concurrent symlink-swap resistance
+    budgets:
+      max_payload_bytes: 65536
+      max_duration: 10s
+  - id: pins-scan-p001
+    owner_package: pkg/pins
+    owner_issue: "1227"
+    package: github.com/gridctl/gridctl/pkg/pins
+    test: TestScanTool_HiddenInstructions/plain
+    lanes: [unit]
+    expected_boundary: hidden-instruction text produces finding code P001
+    nonclaims:
+      - detection is not blocking or dispatch prevention
+    budgets:
+      max_payload_bytes: 4096
+      max_duration: 2s
+  - id: pins-scan-benign
+    owner_package: pkg/pins
+    owner_issue: "1227"
+    package: github.com/gridctl/gridctl/pkg/pins
+    test: TestScanTool_CleanToolHasNoFindings
+    lanes: [unit]
+    expected_boundary: a clean tool description produces no findings
+    nonclaims:
+      - passing detection does not imply blocking
+    budgets:
+      max_payload_bytes: 4096
+      max_duration: 2s
+  - id: execution-admission
+    owner_package: pkg/mcp
+    owner_issue: "1221"
+    package: github.com/gridctl/gridctl/pkg/mcp
+    test: TestExecutionClient_AdmissionBlocksDispatch
+    lanes: [unit]
+    expected_boundary: unknown execution evidence cannot route tools
+    nonclaims:
+      - not a substitute for hosted Podman admission
+    budgets:
+      max_payload_bytes: 4096
+      max_duration: 2s
+  - id: export-credentials
+    owner_package: pkg/config
+    owner_issue: "1222"
+    package: github.com/gridctl/gridctl/pkg/config
+    test: TestExportStack_CredentialInventory/inline_literal_token
+    lanes: [unit]
+    expected_boundary: recognized inline credentials are rejected from export
+    nonclaims:
+      - unclassified literals still need review
+    budgets:
+      max_payload_bytes: 16384
+      max_duration: 2s
+  - id: auth-grouped-routes
+    owner_package: internal/api
+    owner_issue: "1223"
+    package: github.com/gridctl/gridctl/internal/api
+    test: TestAuthHandler_RegisteredRoutes/grouped_mcp
+    lanes: [unit]
+    expected_boundary: grouped MCP routes require configured gateway authentication
+    nonclaims:
+      - not a full auth-lifecycle restart proof
+    budgets:
+      max_payload_bytes: 16384
+      max_duration: 2s
+  - id: limits-dispatch-rate
+    owner_package: tests/integration
+    owner_issue: "1227"
+    package: github.com/gridctl/gridctl/tests/integration
+    test: TestLimits_EnforcedAtDispatch/rate_limit_burst_then_deny
+    lanes: [integration, podman-integration]
+    prerequisites: [subprocess]
+    expected_boundary: a third call after burst 2 is denied at dispatch on a real mock server
+    nonclaims:
+      - Docker success does not satisfy a Podman-only requirement
+    budgets:
+      max_payload_bytes: 65536
+      max_duration: 60s
+  - id: transport-http
+    owner_package: tests/integration
+    owner_issue: "1227"
+    package: github.com/gridctl/gridctl/tests/integration
+    test: TestHTTPTransportConnect
+    lanes: [integration, podman-integration]
+    prerequisites: [subprocess]
+    expected_boundary: a real HTTP MCP helper initializes, lists tools, and completes a call
+    nonclaims:
+      - a successful handshake is not isolation verification
+    budgets:
+      max_payload_bytes: 65536
+      max_duration: 60s
+  - id: schema-pin-poisoned
+    owner_package: tests/integration
+    owner_issue: "1227"
+    package: github.com/gridctl/gridctl/tests/integration
+    test: TestSchemaPinningPoisonedDriftFindings
+    lanes: [integration, podman-integration]
+    prerequisites: [subprocess]
+    expected_boundary: a poisoned schema produces pin findings and drift under warn mode
+    nonclaims:
+      - detection is not proof that dispatch is blocked
+      - not prevented exfiltration
+    budgets:
+      max_payload_bytes: 65536
+      max_duration: 60s
+  - id: docker-stack-lifecycle
+    owner_package: tests/integration
+    owner_issue: "1227"
+    package: github.com/gridctl/gridctl/tests/integration
+    test: TestFullStackLifecycle
+    lanes: [integration]
+    prerequisites: [docker]
+    expected_boundary: the general integration lane executes a real Docker stack up/status/down
+    nonclaims:
+      - a Docker pass cannot satisfy a Podman-only requirement
+      - JSON events do not identify the runtime engine
+    budgets:
+      max_payload_bytes: 65536
+      max_duration: 120s
+  - id: podman-rootless-network
+    owner_package: tests/integration
+    owner_issue: "1221"
+    package: github.com/gridctl/gridctl/tests/integration
+    test: TestPodmanRootless_MultiContainerNetworking
+    lanes: [podman-integration]
+    prerequisites: [podman]
+    expected_boundary: rootless Podman runs the multi-container networking fixture
+    nonclaims:
+      - a Docker pass cannot satisfy this requirement
+      - JSON events do not identify the runtime engine
+    budgets:
+      max_payload_bytes: 65536
+      max_duration: 120s

@@ -60,6 +60,8 @@ Tasks live in `Taskfile.yml`; `task --list` shows the full catalog. The most com
 | `task build:go` | Build Go binary only |
 | `task dev` | Run Vite dev server for frontend development |
 | `task test` | Run unit tests (race detector on, matching CI) |
+| `task test:verify` | Unit-lane JSON capture and scenario verification (same path Gatekeeper uses) |
+| `task scenarios` | Print designated scenario IDs and focused `-run` commands |
 | `task test:coverage` | Run tests with coverage report |
 | `task test:frontend` | Run frontend tests (Vitest) |
 | `task test:integration` | Run integration tests (requires Docker or Podman) |
@@ -113,9 +115,12 @@ Run tests before submitting:
 
 ```bash
 task test                  # Unit tests
+task test:verify           # Unit-lane JSON capture and scenario verification
 task test:integration      # Integration tests (requires Docker or Podman)
 task examples:refs         # Example image and package pin check (needs ./gridctl)
 ```
+
+Designated Gatekeeper jobs capture `go test -json -count=1 -race` and check identities in `tests/adversarial/index.yaml`. `task scenarios` prints focused reproduction commands. Those reruns are diagnostic; whole-suite CI remains acceptance. See [adversarial regression gates](docs/adversarial-regression-gates.md). Rename a required test in the same change as its index entry.
 
 ### Example dependency references
 
