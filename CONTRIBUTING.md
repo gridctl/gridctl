@@ -117,6 +117,8 @@ task test:integration      # Integration tests (requires Docker or Podman)
 task examples:refs         # Example image and package pin check (needs ./gridctl)
 ```
 
+Designated Gatekeeper lanes capture `go test -json -count=1 -race` and check identities in `tests/adversarial/index.yaml`. `task scenarios` prints focused reproduction commands. Those reruns are diagnostic; whole-suite CI remains acceptance. See [adversarial regression gates](docs/adversarial-regression-gates.md). Rename a required test in the same change as its index entry.
+
 ### Example dependency references
 
 Runnable example stacks and public setup snippets pin real container images to a reviewed multi-platform index digest (preferably with a readable version tag) and pin direct `npx`/`uvx` selectors to an exact release. Do not invent digests or replace illustrative private-image placeholders with unrelated software.

@@ -14,6 +14,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Documentation
 
+- Document the adversarial scenario index and post-suite Go JSON execution verifier, including what a passing case proves and does not prove. This is test accounting, not comprehensive security testing (#1227).
 - Document offline stack declaration policy: source-root limits, unknown and N/A handling, declaration-versus-runtime scope, warning exit handling, trusted checker/policy selection, descriptor identity for policy exclusion, and a CI workflow design that pins actions, verifies checker digests outside the candidate tree, and does not execute pull-request code as the checker (#1226).
 - Pin runnable example stacks and public setup snippets to reviewed image digests and exact package versions, including the README Claude Desktop `mcp-remote@0.14.2` bridge. Document placeholder exceptions and quarterly pin review, and add `task examples:refs` plus Gatekeeper enforcement that fails unpinned or unassessed in-scope selectors without making unrelated example warnings fatal (#1229).
 - Document the passive security evidence report, including no-fallback source selection, unknown/partial/N/A states, allowlisted identifiers, and exit-zero limits. No completeness or certification claims (#1224).
@@ -41,6 +42,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Maintenance
 
+- Add a declarative adversarial scenario index and a post-suite Go JSON execution verifier on Gatekeeper unit, integration, and Podman lanes. Designated invocations use `-json -count=1 -race`. The verifier checks that required identities ran and passed; it does not prove the security properties those tests assert. Hosted Podman execution remains required for Podman-assigned cases. Not a comprehensive security test suite (#1227).
 - Add a manually triggered, read-only Homebrew authentication diagnostic that compares the release Python helper with GitHub CLI and reports sanitized results without exposing credentials.
 
 ## [1.0.0-rc.1] - 2026-09-09
