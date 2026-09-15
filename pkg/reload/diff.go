@@ -38,6 +38,10 @@ type ConfigDiff struct {
 	// model policy swapped via the onConfigApplied hook (the next
 	// projection reconcile applies it); no containers are touched.
 	ModelPreferencesChanged bool
+	// RunsChanged indicates the `runs:` block changed. Like ClientsChanged
+	// it needs only the in-process recorder swapped via onConfigApplied;
+	// no containers are touched.
+	RunsChanged bool
 }
 
 // MCPServerDiff contains changes to MCP servers.
@@ -87,7 +91,8 @@ func (d *ConfigDiff) IsEmpty() bool {
 		!d.GroupsChanged &&
 		!d.ExperimentalChanged &&
 		!d.SkillsPolicyChanged &&
-		!d.ModelPreferencesChanged
+		!d.ModelPreferencesChanged &&
+		!d.RunsChanged
 }
 
 // ComputeDiff computes the differences between two stack configurations.
@@ -121,7 +126,13 @@ func ComputeDiff(old, new *config.Stack) *ConfigDiff {
 	// Detect projection model preference (`model_preferences:`) changes
 	diff.ModelPreferencesChanged = modelPreferencesChanged(old, new)
 
+	diff.RunsChanged = runsChanged(old, new)
+
 	return diff
+}
+
+func runsChanged(old, new *config.Stack) bool {
+	return !reflect.DeepEqual(old.Runs, new.Runs)
 }
 
 // modelPreferencesChanged reports whether the `model_preferences:` block
