@@ -19,11 +19,11 @@ const (
 )
 
 type Index struct {
-	Version    int        `yaml:"version"`
-	Lanes      []string   `yaml:"lanes"`
-	Scenarios  []Scenario `yaml:"scenarios"`
-	laneSet    map[string]struct{}
-	byLane     map[string][]Scenario
+	Version   int        `yaml:"version"`
+	Lanes     []string   `yaml:"lanes"`
+	Scenarios []Scenario `yaml:"scenarios"`
+	laneSet   map[string]struct{}
+	byLane    map[string][]Scenario
 }
 
 type Scenario struct {
@@ -132,9 +132,6 @@ func (idx *Index) validate() error {
 		}
 		if sc.Package == "" || sc.Test == "" {
 			return fmt.Errorf("%s: scenario %q missing package or test", ReasonMalformedIndex, sc.ID)
-		}
-		if strings.ContainsAny(sc.Test, ".*+?()[]{}|\\") {
-			return fmt.Errorf("%s: scenario %q test identity must be exact, not a regex", ReasonMalformedIndex, sc.ID)
 		}
 		key := sc.Package + "\x00" + sc.Test
 		if _, dup := selectors[key]; dup {

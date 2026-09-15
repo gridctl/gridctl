@@ -104,18 +104,6 @@ scenarios:
     expected_boundary: x
     command: go test
 `,
-		"regex selector": `
-version: 1
-lanes: [unit]
-scenarios:
-  - id: sample-case
-    owner_package: pkg/mcp
-    owner_issue: "1227"
-    package: github.com/gridctl/gridctl/pkg/mcp
-    test: TestFoo.*
-    lanes: [unit]
-    expected_boundary: x
-`,
 		"duplicate selector": `
 version: 1
 lanes: [unit]
@@ -146,6 +134,28 @@ scenarios:
 				t.Fatalf("error %q missing malformed/empty reason", err)
 			}
 		})
+	}
+}
+
+func TestParseIndex_AcceptsLiteralPunctuation(t *testing.T) {
+	idx, err := ParseIndex(context.Background(), []byte(`
+version: 1
+lanes: [unit]
+scenarios:
+  - id: braced-route
+    owner_package: internal/api
+    owner_issue: "1223"
+    package: github.com/gridctl/gridctl/internal/api
+    test: 'TestAuthHandler_RegisteredRoutes/POST /groups/{name}/mcp'
+    lanes: [unit]
+    expected_boundary: grouped MCP routes require configured gateway authentication
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := idx.Required("unit")
+	if err != nil || len(got) != 1 || got[0].Test != "TestAuthHandler_RegisteredRoutes/POST /groups/{name}/mcp" {
+		t.Fatalf("required = %+v err=%v", got, err)
 	}
 }
 

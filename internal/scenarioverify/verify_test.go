@@ -2,6 +2,7 @@ package scenarioverify
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -16,7 +17,7 @@ scenarios:
     owner_package: pkg/mcp
     owner_issue: "1227"
     package: example.com/mcp
-    test: `+testName+`
+    test: `+strconv.Quote(testName)+`
     lanes: [unit]
     expected_boundary: denied before dispatch
 `))
@@ -253,11 +254,146 @@ func TestFocusedCommandEscapes(t *testing.T) {
 	cmd := FocusedCommand(Scenario{
 		Package: "github.com/gridctl/gridctl/pkg/mcp",
 		Test:    "TestFoo/name.with+meta",
-	})
+	}, "unit")
 	if !strings.Contains(cmd, `^TestFoo$/^name\.with\+meta$`) {
 		t.Fatalf("command = %q", cmd)
 	}
 	if !strings.Contains(cmd, "./pkg/mcp") {
 		t.Fatalf("package dir missing: %q", cmd)
 	}
+	if strings.Contains(cmd, "-tags=integration") || strings.Contains(cmd, "GRIDCTL_RUNTIME") {
+		t.Fatalf("unit command included another lane: %q", cmd)
+	}
+
+	integ := FocusedCommand(Scenario{
+		Package: "github.com/gridctl/gridctl/tests/integration",
+		Test:    "TestHTTPTransportConnect",
+	}, "integration")
+	if !strings.Contains(integ, "-tags=integration") || !strings.Contains(integ, "-timeout 15m") {
+		t.Fatalf("integration command = %q", integ)
+	}
+	if !strings.Contains(integ, "./tests/integration") {
+		t.Fatalf("integration package dir missing: %q", integ)
+	}
+
+	podman := FocusedCommand(Scenario{
+		Package: "github.com/gridctl/gridctl/tests/integration",
+		Test:    "TestPodmanRootless_MultiContainerNetworking",
+	}, "podman-integration")
+	if !strings.HasPrefix(podman, "GRIDCTL_RUNTIME=podman ") {
+		t.Fatalf("podman command = %q", podman)
+	}
+	if !strings.Contains(podman, "-tags=integration") || !strings.Contains(podman, "-timeout 15m") {
+		t.Fatalf("podman command missing suite flags: %q", podman)
+	}
+}
+
+func TestVerify_RejectsInvalidAndIncompleteCapture(t *testing.T) {
+	idx := sampleIndex(t, "TestFoo")
+	required := `
+{"Action":"run","Package":"example.com/mcp","Test":"TestFoo"}
+{"Action":"pass","Package":"example.com/mcp","Test":"TestFoo"}
+{"Action":"pass","Package":"example.com/mcp"}
+`
+
+	t.Run("unfinished unrelated package", func(t *testing.T) {
+		events := required + `{"Action":"start","Package":"example.com/other"}` + "\n"
+		events += `{"Action":"run","Package":"example.com/other","Test":"TestNoise"}` + "\n"
+		rep := verifyString(t, idx, events, VerifyOptions{GoStatusSet: true})
+		if !rep.Failed() || rep.LaneReason != ReasonIncompleteEvidence {
+			t.Fatalf("unfinished unrelated package accepted: %+v", rep)
+		}
+	})
+
+	t.Run("build-fail", func(t *testing.T) {
+		events := required + `{"Action":"build-fail","ImportPath":"example.com/broken"}` + "\n"
+		rep := verifyString(t, idx, events, VerifyOptions{GoStatusSet: true})
+		if !rep.Failed() || !rep.ObservedFail || rep.LaneReason != ReasonTestFailure {
+			t.Fatalf("build-fail accepted: %+v", rep)
+		}
+	})
+
+	t.Run("null event", func(t *testing.T) {
+		events := required + "null\n"
+		rep := verifyString(t, idx, events, VerifyOptions{GoStatusSet: true})
+		if !rep.Failed() || rep.LaneReason != ReasonIncompleteEvidence {
+			t.Fatalf("null event accepted: %+v", rep)
+		}
+	})
+
+	t.Run("test after package complete", func(t *testing.T) {
+		events := required + `{"Action":"run","Package":"example.com/mcp","Test":"TestLate"}` + "\n"
+		rep := verifyString(t, idx, events, VerifyOptions{GoStatusSet: true})
+		if !rep.Failed() || rep.LaneReason != ReasonIncompleteEvidence {
+			t.Fatalf("test after package complete accepted: %+v", rep)
+		}
+	})
+
+	t.Run("parent pass before child run", func(t *testing.T) {
+		childIdx := sampleIndex(t, "TestFoo/bar")
+		events := `
+{"Action":"run","Package":"example.com/mcp","Test":"TestFoo"}
+{"Action":"pass","Package":"example.com/mcp","Test":"TestFoo"}
+{"Action":"run","Package":"example.com/mcp","Test":"TestFoo/bar"}
+{"Action":"pass","Package":"example.com/mcp","Test":"TestFoo/bar"}
+{"Action":"pass","Package":"example.com/mcp"}
+`
+		rep := verifyString(t, childIdx, events, VerifyOptions{GoStatusSet: true})
+		if !rep.Failed() || rep.LaneReason != ReasonIncompleteEvidence {
+			t.Fatalf("parent-before-child accepted: %+v", rep)
+		}
+	})
+
+	t.Run("missing action package", func(t *testing.T) {
+		events := `{"Action":"run","Test":"TestFoo"}` + "\n" + required
+		rep := verifyString(t, idx, events, VerifyOptions{GoStatusSet: true})
+		if !rep.Failed() || rep.LaneReason != ReasonIncompleteEvidence {
+			t.Fatalf("event without package accepted: %+v", rep)
+		}
+	})
+}
+
+func TestVerify_ChildSkipFailsWhenParentPasses(t *testing.T) {
+	idx := sampleIndex(t, "TestAuth/{name}")
+	events := `
+{"Action":"run","Package":"example.com/mcp","Test":"TestAuth"}
+{"Action":"run","Package":"example.com/mcp","Test":"TestAuth/{name}"}
+{"Action":"skip","Package":"example.com/mcp","Test":"TestAuth/{name}"}
+{"Action":"pass","Package":"example.com/mcp","Test":"TestAuth"}
+{"Action":"pass","Package":"example.com/mcp"}
+`
+	rep := verifyString(t, idx, events, VerifyOptions{GoStatusSet: true})
+	if !rep.Failed() || rep.Scenarios[0].Reason != ReasonRequiredSkip {
+		t.Fatalf("skipped designated child was accepted: %+v", rep.Scenarios[0])
+	}
+}
+
+func TestVerify_DecoderBounds(t *testing.T) {
+	idx := sampleIndex(t, "TestFoo")
+	required := `
+{"Action":"run","Package":"example.com/mcp","Test":"TestFoo"}
+{"Action":"pass","Package":"example.com/mcp","Test":"TestFoo"}
+{"Action":"pass","Package":"example.com/mcp"}
+`
+	t.Run("oversize record", func(t *testing.T) {
+		pad := strings.Repeat("x", 64)
+		events := `{"Action":"output","Package":"example.com/noise","Output":"` + pad + `"}` + "\n" + required
+		rep := verifyString(t, idx, events, VerifyOptions{
+			GoStatusSet: true,
+			Limits:      DecodeLimits{MaxRecordBytes: 32},
+		})
+		if !rep.Failed() || rep.LaneReason != ReasonIncompleteEvidence {
+			t.Fatalf("oversize record accepted: %+v", rep)
+		}
+	})
+	t.Run("event volume", func(t *testing.T) {
+		events := required + `{"Action":"pass","Package":"example.com/other"}` + "\n"
+		rep := verifyString(t, idx, events, VerifyOptions{
+			GoStatusSet: true,
+			Limits:      DecodeLimits{MaxEvents: 3},
+		})
+		if !rep.Failed() || rep.LaneReason != ReasonIncompleteEvidence {
+			t.Fatalf("event volume accepted: %+v", rep)
+		}
+	})
 }

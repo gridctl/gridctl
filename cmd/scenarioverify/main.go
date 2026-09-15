@@ -48,7 +48,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return 2
 		}
 		for _, sc := range required {
-			fmt.Fprintf(stdout, "%s\t%s\t%s\n", sc.ID, sc.Test, scenarioverify.FocusedCommand(sc))
+			fmt.Fprintf(stdout, "%s\t%s\t%s\n", sc.ID, sc.Test, scenarioverify.FocusedCommand(sc, *lane))
 		}
 		return 0
 	}

@@ -30,6 +30,19 @@ scenarios:
     budgets:
       max_payload_bytes: 8192
       max_duration: 5s
+  - id: mcp-stdio-scanner-at
+    owner_package: pkg/mcp
+    owner_issue: "1227"
+    package: github.com/gridctl/gridctl/pkg/mcp
+    test: TestProcessClient_ReadResponses_ScannerLimit/at
+    lanes: [unit]
+    expected_boundary: a finite stdio JSON line whose bytes including the newline equal the scanner max is routed to the pending request
+    nonclaims:
+      - not a denial-of-service bound
+      - not an aggregate output limit
+    budgets:
+      max_payload_bytes: 1100000
+      max_duration: 5s
   - id: mcp-stdio-scanner-above
     owner_package: pkg/mcp
     owner_issue: "1227"
@@ -61,11 +74,12 @@ scenarios:
     package: github.com/gridctl/gridctl/pkg/mcp
     test: TestStreamableHTTPServer_Post_RequestBodyLimit
     lanes: [unit]
-    expected_boundary: incoming Streamable HTTP bodies above MaxRequestBodySize are rejected before session creation
+    expected_boundary: a single Streamable HTTP JSON value larger than MaxRequestBodySize is rejected before session creation
     nonclaims:
       - not stdio scanner failure
       - not post-receipt truncation
       - not denial-of-service resistance
+      - trailing bytes after a complete JSON value are not this case
     budgets:
       max_payload_bytes: 1100000
       max_duration: 5s
@@ -245,7 +259,7 @@ scenarios:
     owner_package: pkg/config
     owner_issue: "1222"
     package: github.com/gridctl/gridctl/pkg/config
-    test: TestExportStack_CredentialInventory
+    test: TestExportStack_CredentialInventory/inline_literal_token
     lanes: [unit]
     expected_boundary: recognized inline credentials are rejected from export
     nonclaims:
@@ -257,7 +271,7 @@ scenarios:
     owner_package: internal/api
     owner_issue: "1223"
     package: github.com/gridctl/gridctl/internal/api
-    test: TestAuthHandler_RegisteredRoutes
+    test: TestAuthHandler_RegisteredRoutes/grouped_mcp
     lanes: [unit]
     expected_boundary: grouped MCP routes require configured gateway authentication
     nonclaims:
@@ -271,7 +285,7 @@ scenarios:
     package: github.com/gridctl/gridctl/tests/integration
     test: TestLimits_EnforcedAtDispatch/rate_limit_burst_then_deny
     lanes: [integration, podman-integration]
-    prerequisites: [container-runtime]
+    prerequisites: [subprocess]
     expected_boundary: a third call after burst 2 is denied at dispatch on a real mock server
     nonclaims:
       - Docker success does not satisfy a Podman-only requirement
@@ -284,7 +298,7 @@ scenarios:
     package: github.com/gridctl/gridctl/tests/integration
     test: TestHTTPTransportConnect
     lanes: [integration, podman-integration]
-    prerequisites: [container-runtime]
+    prerequisites: [subprocess]
     expected_boundary: a real HTTP MCP helper initializes, lists tools, and completes a call
     nonclaims:
       - a successful handshake is not isolation verification
@@ -297,7 +311,7 @@ scenarios:
     package: github.com/gridctl/gridctl/tests/integration
     test: TestSchemaPinningPoisonedDriftFindings
     lanes: [integration, podman-integration]
-    prerequisites: [container-runtime]
+    prerequisites: [subprocess]
     expected_boundary: a poisoned schema produces pin findings and drift under warn mode
     nonclaims:
       - detection is not proof that dispatch is blocked
@@ -305,6 +319,20 @@ scenarios:
     budgets:
       max_payload_bytes: 65536
       max_duration: 60s
+  - id: docker-stack-lifecycle
+    owner_package: tests/integration
+    owner_issue: "1227"
+    package: github.com/gridctl/gridctl/tests/integration
+    test: TestFullStackLifecycle
+    lanes: [integration]
+    prerequisites: [docker]
+    expected_boundary: the general integration lane executes a real Docker stack up/status/down
+    nonclaims:
+      - a Docker pass cannot satisfy a Podman-only requirement
+      - JSON events do not identify the runtime engine
+    budgets:
+      max_payload_bytes: 65536
+      max_duration: 120s
   - id: podman-rootless-network
     owner_package: tests/integration
     owner_issue: "1221"

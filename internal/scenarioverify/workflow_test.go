@@ -43,6 +43,63 @@ func TestWorkflowDesignatedInvocations(t *testing.T) {
 	if !strings.Contains(text, "timeout-minutes: 25") {
 		t.Fatal("podman job budget dropped")
 	}
+
+	integ := workflowJob(text, "integration")
+	if integ == "" {
+		t.Fatal("integration job body not found")
+	}
+	if !strings.Contains(integ, "GRIDCTL_RUNTIME: docker") {
+		t.Fatal("integration job does not select Docker")
+	}
+	if !strings.Contains(integ, "docker info") {
+		t.Fatal("integration job does not validate the Docker engine")
+	}
+	if strings.Contains(integ, "GRIDCTL_RUNTIME: podman") {
+		t.Fatal("integration job selected Podman")
+	}
+	if !strings.Contains(integ, "-tags=integration") {
+		t.Fatal("integration suite tag dropped")
+	}
+	if !strings.Contains(integ, "-timeout 15m") {
+		t.Fatal("integration timeout dropped from the integration job")
+	}
+	if !strings.Contains(integ, "./tests/integration/...") {
+		t.Fatal("integration suite scope dropped")
+	}
+
+	podman := workflowJob(text, "podman-integration")
+	if podman == "" {
+		t.Fatal("podman-integration job body not found")
+	}
+	if !strings.Contains(podman, "GRIDCTL_RUNTIME: podman") {
+		t.Fatal("podman job does not select Podman")
+	}
+	if !strings.Contains(podman, "-tags=integration") || !strings.Contains(podman, "-timeout 15m") {
+		t.Fatal("podman job dropped suite tag or timeout")
+	}
+}
+
+func workflowJob(text, name string) string {
+	marker := "\n  " + name + ":\n"
+	start := strings.Index(text, marker)
+	if start < 0 {
+		return ""
+	}
+	body := text[start+1:]
+	lines := strings.Split(body, "\n")
+	var b strings.Builder
+	b.WriteString(lines[0])
+	b.WriteByte('\n')
+	for i := 1; i < len(lines); i++ {
+		line := lines[i]
+		rest := strings.TrimPrefix(line, "  ")
+		if rest != line && !strings.HasPrefix(rest, " ") && strings.HasSuffix(rest, ":") && !strings.Contains(strings.TrimSuffix(rest, ":"), " ") {
+			break
+		}
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 func TestScriptRequiresJSONCountRace(t *testing.T) {

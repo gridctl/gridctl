@@ -2,6 +2,7 @@ package scenarioverify
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
 )
@@ -12,6 +13,7 @@ type VerifyOptions struct {
 	GoStatus      int
 	CaptureStatus int
 	GoStatusSet   bool
+	Limits        DecodeLimits
 }
 
 type Report struct {
@@ -62,16 +64,24 @@ func Verify(ctx context.Context, idx *Index, events io.Reader, opts VerifyOption
 		Required:      "FAIL",
 	}
 
-	decoded, err := DecodeEvents(events)
+	pkgs, captureReason, failed, err := collectLifecycles(ctx, events, opts.Limits)
 	if err != nil {
 		rep.LaneReason = ReasonIncompleteEvidence
 		rep.VerifierStatus = 1
+		observed := "capture could not be decoded through EOF"
+		if errors.Is(err, errInputLimit) || errors.Is(err, errRecordLimit) || errors.Is(err, errEventLimit) || errors.Is(err, errIdentityLimit) {
+			observed = "capture exceeded bounded decoder limits"
+		} else if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			observed = "capture processing was cancelled before EOF"
+		} else if errors.Is(err, errNotObject) || errors.Is(err, errMissingAction) || errors.Is(err, errInvalidEvent) {
+			observed = "capture contained an invalid event record"
+		}
 		for _, sc := range required {
-			rep.Scenarios = append(rep.Scenarios, failResult(sc, ReasonIncompleteEvidence, "capture could not be decoded through EOF"))
+			rep.Scenarios = append(rep.Scenarios, failResult(sc, ReasonIncompleteEvidence, observed))
 		}
 		return rep, nil
 	}
-	if len(decoded) == 0 {
+	if len(pkgs) == 0 && !failed && captureReason == "" {
 		rep.LaneReason = ReasonIncompleteEvidence
 		rep.VerifierStatus = 1
 		for _, sc := range required {
@@ -79,8 +89,6 @@ func Verify(ctx context.Context, idx *Index, events io.Reader, opts VerifyOption
 		}
 		return rep, nil
 	}
-
-	pkgs, captureReason, failed := collectLifecycles(decoded)
 	if captureReason != "" {
 		rep.LaneReason = captureReason
 		rep.ObservedFail = failed
@@ -161,63 +169,136 @@ func Verify(ctx context.Context, idx *Index, events io.Reader, opts VerifyOption
 	return rep, nil
 }
 
-func collectLifecycles(events []Event) (map[string]*pkgLife, string, bool) {
+func collectLifecycles(ctx context.Context, events io.Reader, limits DecodeLimits) (map[string]*pkgLife, string, bool, error) {
+	limits = limits.withDefaults()
 	pkgs := make(map[string]*pkgLife)
 	failed := false
-	for _, ev := range events {
-		if ev.Package == "" {
-			continue
+	identities := 0
+	reason := ""
+	err := forEachEvent(ctx, events, limits, func(ev Event) error {
+		if reason != "" {
+			return errCaptureDone
 		}
-		pkg := pkgs[ev.Package]
+		if ev.Action == "build-fail" || ev.FailedBuild != "" {
+			failed = true
+			reason = ReasonTestFailure
+			return errCaptureDone
+		}
+		pkgName := ev.Package
+		if pkgName == "" {
+			pkgName = ev.ImportPath
+		}
+		switch ev.Action {
+		case "start", "run", "pause", "cont", "pass", "fail", "skip", "output", "attr", "bench", "build-output":
+		default:
+			if pkgName == "" {
+				return errInvalidEvent
+			}
+			return nil
+		}
+		if pkgName == "" {
+			return errInvalidEvent
+		}
+		pkg := pkgs[pkgName]
 		if pkg == nil {
+			identities++
+			if identities > limits.MaxIdentities {
+				return errIdentityLimit
+			}
 			pkg = &pkgLife{tests: make(map[string]*testLife)}
-			pkgs[ev.Package] = pkg
+			pkgs[pkgName] = pkg
 		}
 		if ev.Test == "" {
 			switch ev.Action {
 			case "fail":
-				if pkg.terminal != "" && pkg.terminal != ev.Action {
-					return nil, ReasonIncompleteEvidence, true
-				}
-				if pkg.terminal == "fail" {
-					return nil, ReasonIncompleteEvidence, true
+				if pkg.terminal != "" {
+					reason = ReasonIncompleteEvidence
+					failed = true
+					return errCaptureDone
 				}
 				pkg.terminal = "fail"
 				failed = true
 			case "pass", "skip":
 				if pkg.terminal != "" {
-					return nil, ReasonIncompleteEvidence, true
+					reason = ReasonIncompleteEvidence
+					failed = true
+					return errCaptureDone
 				}
 				pkg.terminal = ev.Action
 			}
-			continue
+			return nil
+		}
+		if pkg.terminal != "" {
+			reason = ReasonIncompleteEvidence
+			return errCaptureDone
 		}
 		tl := pkg.tests[ev.Test]
 		if tl == nil {
+			identities++
+			if identities > limits.MaxIdentities {
+				return errIdentityLimit
+			}
 			tl = &testLife{}
 			pkg.tests[ev.Test] = tl
 		}
 		switch ev.Action {
 		case "run":
 			if tl.ran || len(tl.terminals) > 0 {
-				return nil, ReasonIncompleteEvidence, failed
+				reason = ReasonIncompleteEvidence
+				return errCaptureDone
+			}
+			for _, anc := range ancestorNames(ev.Test) {
+				if anc == ev.Test {
+					continue
+				}
+				if at := pkg.tests[anc]; at != nil && len(at.terminals) > 0 {
+					reason = ReasonIncompleteEvidence
+					return errCaptureDone
+				}
 			}
 			tl.ran = true
-		case "pause", "cont", "output", "attr", "start":
+		case "pause", "cont", "output", "attr", "start", "bench":
 		case "pass", "fail", "skip":
 			if !tl.ran {
-				return nil, ReasonIncompleteEvidence, failed
+				reason = ReasonIncompleteEvidence
+				return errCaptureDone
 			}
 			if len(tl.terminals) > 0 {
-				return nil, ReasonIncompleteEvidence, true
+				reason = ReasonIncompleteEvidence
+				failed = true
+				return errCaptureDone
+			}
+			prefix := ev.Test + "/"
+			for name, child := range pkg.tests {
+				if strings.HasPrefix(name, prefix) && child.ran && last(child.terminals) == "" {
+					reason = ReasonIncompleteEvidence
+					return errCaptureDone
+				}
 			}
 			tl.terminals = append(tl.terminals, ev.Action)
 			if ev.Action == "fail" {
 				failed = true
 			}
 		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, errCaptureDone) {
+		return nil, "", failed, err
 	}
-	return pkgs, "", failed
+	if reason != "" {
+		return nil, reason, failed, nil
+	}
+	for _, pkg := range pkgs {
+		if pkg.terminal == "" {
+			return nil, ReasonIncompleteEvidence, failed, nil
+		}
+		for _, tl := range pkg.tests {
+			if tl.ran && last(tl.terminals) == "" {
+				return nil, ReasonIncompleteEvidence, failed, nil
+			}
+		}
+	}
+	return pkgs, "", failed, nil
 }
 
 func evaluateScenario(sc Scenario, pkgs map[string]*pkgLife) ScenarioResult {

@@ -9,14 +9,14 @@ import (
 )
 
 type summaryFile struct {
-	Lane           string              `json:"lane"`
-	Revision       string              `json:"revision"`
-	GoStatus       int                 `json:"go_status"`
-	CaptureStatus  int                 `json:"capture_status"`
-	VerifierStatus int                 `json:"verifier_status"`
-	Required       string              `json:"required"`
-	LaneReason     string              `json:"lane_reason,omitempty"`
-	Scenarios      []summaryScenario   `json:"scenarios"`
+	Lane           string            `json:"lane"`
+	Revision       string            `json:"revision"`
+	GoStatus       int               `json:"go_status"`
+	CaptureStatus  int               `json:"capture_status"`
+	VerifierStatus int               `json:"verifier_status"`
+	Required       string            `json:"required"`
+	LaneReason     string            `json:"lane_reason,omitempty"`
+	Scenarios      []summaryScenario `json:"scenarios"`
 }
 
 type summaryScenario struct {
@@ -89,7 +89,7 @@ func WriteJSON(w io.Writer, r *Report) error {
 	return enc.Encode(out)
 }
 
-func FocusedCommand(sc Scenario) string {
+func FocusedCommand(sc Scenario, lane string) string {
 	parts := strings.Split(sc.Test, "/")
 	escaped := make([]string, 0, len(parts))
 	for _, part := range parts {
@@ -101,7 +101,50 @@ func FocusedCommand(sc Scenario) string {
 	} else {
 		pkgDir = "./" + pkgDir
 	}
-	return "go test -race -count=1 -run '" + strings.Join(escaped, "/") + "' " + pkgDir
+	run := strings.Join(escaped, "/")
+	args := []string{"go", "test"}
+	switch lane {
+	case "integration", "podman-integration":
+		args = append(args, "-tags=integration", "-race", "-count=1", "-timeout", "15m", "-run", run, pkgDir)
+	default:
+		args = append(args, "-race", "-count=1", "-run", run, pkgDir)
+	}
+	cmd := shellJoin(args)
+	if lane == "podman-integration" {
+		return "GRIDCTL_RUNTIME=podman " + cmd
+	}
+	return cmd
 }
 
+func shellJoin(args []string) string {
+	out := make([]string, len(args))
+	for i, a := range args {
+		out[i] = shellQuote(a)
+	}
+	return strings.Join(out, " ")
+}
 
+func shellQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	if safeShellArg(s) {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
+}
+
+func safeShellArg(s string) bool {
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			continue
+		}
+		switch r {
+		case '.', '/', '_', '-', '=', ':', '@', '+':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
+}
