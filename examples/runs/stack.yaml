@@ -1,0 +1,25 @@
+# Metadata-only persisted run records
+#
+# Records one final disposition per returning tools/call while enabled.
+# Recording is best-effort and does not capture argument or result values.
+#
+#   gridctl apply -f examples/runs/stack.yaml
+#   gridctl runs list --stack runs-example --format json
+#   gridctl runs wipe --stack runs-example -y
+#
+# Open the web UI Traces workspace and select the Runs tab.
+
+version: "1"
+name: runs-example
+
+runs:
+  enabled: true
+  retention:
+    max_size_mb: 100
+    max_age_days: 7
+
+network:
+  name: runs-example-net
+  driver: bridge
+
+mcp-servers: []

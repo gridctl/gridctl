@@ -886,6 +886,34 @@ Returns `404` when the trace ID is not in the buffer or tracing is disabled.
 
 ---
 
+### Runs
+
+Metadata-only records of returning tool-dispatch attempts. Protected by gateway auth. Records are untrusted input for rendering. Live queries read successfully appended files, not the in-memory queue. Partial results set `partial: true` with warnings that do not echo malformed contents. Remote APIs do not accept arbitrary filesystem paths; offline path selection is a local CLI operation.
+
+#### `GET /api/runs`
+
+**Auth:** Yes
+
+Query parameters: `since`, `until` (RFC3339), `requested`, `server`, `tool`, `disposition`, `client`, `access`, `attempt`, `parent`, `root`, `trace`, `limit`, `cursor`.
+
+#### `GET /api/runs/status`
+
+Recorder health independent of the JSONL destination, plus inventory, privacy, retention, and recording notes. Historical loss after restart is `unknown`.
+
+#### `GET /api/runs/export`
+
+Same body as `GET /api/runs` with `Content-Disposition: attachment`.
+
+#### `POST /api/runs/wipe`
+
+Stack-wide coordinated wipe. `?server=` is rejected. Not secure erasure.
+
+#### `PATCH /api/stack/runs`
+
+Enablement and retention. Enabling should be preceded by the privacy and retention notes from `/api/runs/status`.
+
+---
+
 ### Hot Reload
 
 #### `POST /api/reload`

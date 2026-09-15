@@ -109,6 +109,7 @@ pkg/modelsync/      Model routing policy projection (`gridctl models`): a router
 pkg/wiring/         Key-level ownership of gateway entries merged into client MCP configs (`gridctl project`, link/unlink).
 pkg/pack/           gridctl-pack.yaml manifest schema; pkg/packops owns orchestration shared by the CLI and REST handlers.
 pkg/skillpins/      TOFU pins over skill documents (per-file digests, findings); the `gridctl skill pins` store.
+pkg/runs/           Metadata-only persisted dispatch records (`gridctl runs`). Opt-in stack-level JSONL with a bounded queue, single writer, retention, and coordinated wipe.
 pkg/limits/         Enforces the `limits:` block: token-bucket rate limits on the tool-call dispatch path.
 pkg/provisioner/    LLM-client config writers (claude, claudecode, cursor, windsurf, gemini, antigravity, opencode, grok, goose,
                     cline, anythingllm, lmstudio, roo, zed, continue, vscode). JSON and TOML helpers in json.go / toml.go.
@@ -135,7 +136,7 @@ pkg/metrics/, pkg/token/, pkg/format/, pkg/output/, pkg/logging/, pkg/jsonrpc/, 
 
 web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). Zustand stores in src/stores/, route map in
                     src/routes.tsx, feature components grouped under src/components/<workspace>/. Nine workspaces:
-                    Stack, Library, Vault (Variables), Tools, Metrics, Pins, Logs, Traces, Connections. The Detached*Page
+                    Stack, Library, Vault (Variables), Tools, Metrics, Pins, Logs, Traces (Runs tab), Connections. The Detached*Page
                     files are popout windows that mirror specific panels.
                     src/lib/gatewayRequest.ts owns same-origin, no-redirect credential-bearing fetch, including
                     legacy SSE negotiation. credentials.ts owns versioned storage and Fetch header validation;
@@ -147,9 +148,9 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
                     digest-cache lookup, and optimize heuristics. Grouped auth tests use real HTTP and a subprocess MCP backend.
                     auth_restart_test.go verifies actual process restart, saved/live-state rejection, CLI exits,
                     sessions/streams, and preserved Docker identities with race-built child binaries.
-examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, registry, secrets-vault,
+                    examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
-                    portable-pack, model-policy, python-sources, execution, security-evidence, stack-declaration-policy).
+                    portable-pack, model-policy, python-sources, execution, security-evidence, stack-declaration-policy, runs).
                     examples/_mock-servers/ is the source for `task mock:servers`.
 scripts/            Build/test helpers and release tooling: release.py owns gate, inventory, verification, draft/public,
                     and tap policy; release-tools.py pins executables and the SPDX schema; release-acceptance.py exercises
