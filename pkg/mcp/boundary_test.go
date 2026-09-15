@@ -93,54 +93,95 @@ func paddedResultLine(t *testing.T, id int64, tokenLen int) []byte {
 	return append(line, '\n')
 }
 
-func TestProcessClient_ReadResponses_Correlation(t *testing.T) {
+type nopCloseWriter struct {
+	io.Writer
+}
+
+func (nopCloseWriter) Close() error { return nil }
+
+type processPipe struct {
+	t         *testing.T
+	client    *ProcessClient
+	respCh    chan *jsonrpc.Response
+	pr        *io.PipeReader
+	pw        *io.PipeWriter
+	cancel    context.CancelFunc
+	readDone  chan struct{}
+	writeDone chan struct{}
+}
+
+func startProcessReader(t *testing.T) *processPipe {
+	t.Helper()
 	client := newTestProcessClient("test-process", logging.NewDiscardLogger())
 	respCh := make(chan *jsonrpc.Response, 1)
 	client.responsesMu.Lock()
 	client.responses[1] = respCh
 	client.responsesMu.Unlock()
-
 	pr, pw := io.Pipe()
-	t.Cleanup(func() {
-		_ = pr.Close()
-		_ = pw.Close()
-	})
-	client.stdout = pr
-
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	done := make(chan struct{})
+	fx := &processPipe{
+		t:        t,
+		client:   client,
+		respCh:   respCh,
+		pr:       pr,
+		pw:       pw,
+		cancel:   cancel,
+		readDone: make(chan struct{}),
+	}
+	client.stdout = pr
 	go func() {
-		client.readResponses(ctx, client.stdout)
-		close(done)
+		client.readResponses(ctx, pr)
+		close(fx.readDone)
 	}()
-	t.Cleanup(func() {
-		cancel()
-		_ = pw.Close()
-		select {
-		case <-done:
-		case <-time.After(2 * time.Second):
-			t.Error("readResponses did not exit")
-		}
-	})
+	t.Cleanup(fx.cleanup)
+	return fx
+}
 
+func (fx *processPipe) cleanup() {
+	fx.cancel()
+	_ = fx.pr.Close()
+	_ = fx.pw.Close()
+	select {
+	case <-fx.readDone:
+	case <-time.After(2 * time.Second):
+		fx.t.Error("readResponses did not exit")
+	}
+	if fx.writeDone != nil {
+		select {
+		case <-fx.writeDone:
+		case <-time.After(2 * time.Second):
+			fx.t.Error("pipe writer did not finish")
+		}
+	}
+}
+
+func (fx *processPipe) write(payloads ...[]byte) {
+	fx.t.Helper()
+	if fx.writeDone != nil {
+		fx.t.Fatal("pipe writer already started")
+	}
+	done := make(chan struct{})
+	fx.writeDone = done
+	go func() {
+		defer close(done)
+		for _, p := range payloads {
+			if _, err := fx.pw.Write(p); err != nil {
+				return
+			}
+		}
+	}()
+}
+
+func TestProcessClient_ReadResponses_Correlation(t *testing.T) {
+	fx := startProcessReader(t)
+	watchdog, stopWatchdog := context.WithTimeout(context.Background(), 2*time.Second)
+	defer stopWatchdog()
 	malformed := []byte("{not-json\n")
 	mismatch := jsonRPCResponseLine(t, 99, map[string]string{"token": "mismatch-sentinel"})
 	matched := jsonRPCResponseLine(t, 1, map[string]string{"token": "intended-sentinel"})
-	if _, err := pw.Write(malformed); err != nil {
-		t.Fatalf("write malformed: %v", err)
-	}
-	if _, err := pw.Write(mismatch); err != nil {
-		t.Fatalf("write mismatch: %v", err)
-	}
-	if _, err := pw.Write(matched); err != nil {
-		t.Fatalf("write matched: %v", err)
-	}
-
-	watchdog, stopWatchdog := context.WithTimeout(context.Background(), 2*time.Second)
-	defer stopWatchdog()
+	fx.write(malformed, mismatch, matched)
 	select {
-	case got := <-respCh:
+	case got := <-fx.respCh:
 		if got.Error != nil {
 			t.Fatalf("matched id completed with error: %v", got.Error)
 		}
@@ -155,88 +196,58 @@ func TestProcessClient_ReadResponses_Correlation(t *testing.T) {
 		t.Fatal("timed out waiting for matched response")
 	}
 
-	client.responsesMu.Lock()
-	_, stillPending := client.responses[1]
-	client.responsesMu.Unlock()
+	fx.client.responsesMu.Lock()
+	_, stillPending := fx.client.responses[1]
+	fx.client.responsesMu.Unlock()
 	if stillPending {
 		t.Fatal("matched request remained registered after completion")
 	}
-}
-
-func startProcessReader(t *testing.T) (*ProcessClient, chan *jsonrpc.Response, *io.PipeWriter) {
-	t.Helper()
-	client := newTestProcessClient("test-process", logging.NewDiscardLogger())
-	respCh := make(chan *jsonrpc.Response, 1)
-	client.responsesMu.Lock()
-	client.responses[1] = respCh
-	client.responsesMu.Unlock()
-	pr, pw := io.Pipe()
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		client.readResponses(ctx, pr)
-		close(done)
-	}()
-	t.Cleanup(func() {
-		cancel()
-		_ = pw.Close()
-		_ = pr.Close()
-		select {
-		case <-done:
-		case <-time.After(2 * time.Second):
-			t.Error("readResponses did not exit")
-		}
-	})
-	return client, respCh, pw
-}
-
-func writePipeAsync(t *testing.T, pw *io.PipeWriter, payload []byte) {
-	t.Helper()
-	go func() {
-		_, _ = pw.Write(payload)
-		_ = pw.Close()
-	}()
 }
 
 func TestProcessClient_ReadResponses_ScannerLimit(t *testing.T) {
 	const maxToken = 1024 * 1024
 
 	t.Run("below", func(t *testing.T) {
-		_, respCh, pw := startProcessReader(t)
-		writePipeAsync(t, pw, jsonRPCResponseLine(t, 1, map[string]string{"token": "small"}))
+		fx := startProcessReader(t)
+		watchdog, stopWatchdog := context.WithTimeout(context.Background(), 2*time.Second)
+		defer stopWatchdog()
+		fx.write(jsonRPCResponseLine(t, 1, map[string]string{"token": "small"}))
 		select {
-		case got := <-respCh:
+		case got := <-fx.respCh:
 			if got.Error != nil {
 				t.Fatalf("below-limit line failed: %v", got.Error)
 			}
-		case <-time.After(2 * time.Second):
+		case <-watchdog.Done():
 			t.Fatal("below-limit line was not routed")
 		}
 	})
 
 	t.Run("at", func(t *testing.T) {
-		_, respCh, pw := startProcessReader(t)
-		// Leave room for the newline inside the scanner max token.
-		writePipeAsync(t, pw, paddedResultLine(t, 1, maxToken-2))
+		fx := startProcessReader(t)
+		watchdog, stopWatchdog := context.WithTimeout(context.Background(), 2*time.Second)
+		defer stopWatchdog()
+		fx.write(paddedResultLine(t, 1, maxToken-1))
 		select {
-		case got := <-respCh:
+		case got := <-fx.respCh:
 			if got.Error != nil {
 				t.Fatalf("at-limit line failed: %v", got.Error)
 			}
-		case <-time.After(2 * time.Second):
+		case <-watchdog.Done():
 			t.Fatal("at-limit line was not routed")
 		}
 	})
 
 	t.Run("above", func(t *testing.T) {
-		_, respCh, pw := startProcessReader(t)
-		writePipeAsync(t, pw, append(bytes.Repeat([]byte{'x'}, maxToken+16), '\n'))
+		fx := startProcessReader(t)
+		watchdog, stopWatchdog := context.WithTimeout(context.Background(), 2*time.Second)
+		defer stopWatchdog()
+		fx.write(paddedResultLine(t, 1, maxToken))
 		select {
-		case got := <-respCh:
+		case got := <-fx.respCh:
 			if got.Error == nil || got.Error.Message != "connection lost" {
 				t.Fatalf("over-limit line completed pending request: %+v", got)
 			}
-		case <-time.After(2 * time.Second):
+		case <-watchdog.Done():
 			t.Fatal("over-limit scanner failure did not drain pending request")
 		}
 	})
@@ -254,7 +265,7 @@ func TestProcessClient_CallCancel_SameClientRecovers(t *testing.T) {
 
 	client := newTestProcessClient("test", logging.NewDiscardLogger())
 	client.started = true
-	client.stdin = stdinW
+	client.stdin = nopCloseWriter{Writer: stdinW}
 	client.stdout = stdoutR
 
 	received := make(chan struct{}, 2)
@@ -279,6 +290,7 @@ func TestProcessClient_CallCancel_SameClientRecovers(t *testing.T) {
 	readerCtx, readerCancel := context.WithCancel(context.Background())
 	client.cancel = readerCancel
 	readerDone := make(chan struct{})
+	var writeDone chan struct{}
 	go func() {
 		client.readResponses(readerCtx, client.stdout)
 		close(readerDone)
@@ -298,9 +310,17 @@ func TestProcessClient_CallCancel_SameClientRecovers(t *testing.T) {
 		case <-time.After(2 * time.Second):
 			t.Error("stdin drain did not exit")
 		}
+		if writeDone != nil {
+			select {
+			case <-writeDone:
+			case <-time.After(2 * time.Second):
+				t.Error("stdout writer did not finish")
+			}
+		}
 	})
 
 	callCtx, cancelCall := context.WithCancel(context.Background())
+	t.Cleanup(cancelCall)
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- client.call(callCtx, "tools/list", nil, nil)
@@ -341,9 +361,11 @@ func TestProcessClient_CallCancel_SameClientRecovers(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("recovery call did not write a request")
 	}
-	if _, err := stdoutW.Write(jsonRPCResponseLine(t, 2, map[string]any{"ok": true})); err != nil {
-		t.Fatalf("write recovery response: %v", err)
-	}
+	writeDone = make(chan struct{})
+	go func() {
+		defer close(writeDone)
+		_, _ = stdoutW.Write(jsonRPCResponseLine(t, 2, map[string]any{"ok": true}))
+	}()
 	select {
 	case err := <-recoverErr:
 		if err != nil {

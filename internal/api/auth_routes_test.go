@@ -78,6 +78,11 @@ func TestAuthHandler_RegisteredRoutes(t *testing.T) {
 	t.Cleanup(s.Close)
 	s.SetAuth("bearer", rand.Text(), "")
 	handler := s.Handler()
+	t.Run("grouped_mcp", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, loopbackRequest(http.MethodPost, "/groups/release/mcp", nil))
+		require.Equal(t, http.StatusUnauthorized, w.Code)
+	})
 	for _, pattern := range patterns {
 		method, path, found := strings.Cut(pattern, " ")
 		if !found {
