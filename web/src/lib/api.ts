@@ -1948,6 +1948,125 @@ export async function fetchTraceOTLP(traceId: string): Promise<unknown> {
   return fetchJSON<unknown>(`/api/traces/${encodeURIComponent(traceId)}/otlp`);
 }
 
+export interface RunRecord {
+  schemaVersion: number;
+  recorderInstanceId: string;
+  sequence: number;
+  attemptId: string;
+  parentAttemptId?: string;
+  rootAttemptId?: string;
+  previousAttemptId?: string;
+  startedAt: string;
+  returnedAt: string;
+  durationMs: number;
+  downstreamDurationMs?: number;
+  requestedName?: string;
+  requestedNameOmitted?: string;
+  resolvedServer?: string;
+  resolvedServerOmitted?: string;
+  resolvedTool?: string;
+  resolvedToolOmitted?: string;
+  disposition: string;
+  stage: string;
+  reason: string;
+  replicaId?: number;
+  traceId?: string;
+  clientLabel?: string;
+  accessLabel?: string;
+}
+
+export interface RunWarning {
+  code: string;
+  count: number;
+  message: string;
+}
+
+export interface RunListResponse {
+  records: RunRecord[];
+  warnings: RunWarning[];
+  partial: boolean;
+  nextCursor?: string;
+  wipeEpoch: number;
+}
+
+export interface RunStatusResponse {
+  enabled: boolean;
+  effective: boolean;
+  writer_health: string;
+  queue_depth: number;
+  queue_capacity: number;
+  drops: Record<string, number>;
+  failures: Record<string, number>;
+  historical_loss: string;
+  wipe_epoch: number;
+  recordingNote: string;
+  privacyNote: string;
+  retentionNote: string;
+  inventory: {
+    stack: string;
+    signal: string;
+    path: string;
+    sizeBytes: number;
+    fileCount: number;
+  };
+}
+
+export async function fetchRuns(params?: {
+  server?: string;
+  tool?: string;
+  disposition?: string;
+  requested?: string;
+  client?: string;
+  attempt?: string;
+  limit?: number;
+}): Promise<RunListResponse> {
+  const query = new URLSearchParams();
+  if (params?.server) query.set('server', params.server);
+  if (params?.tool) query.set('tool', params.tool);
+  if (params?.disposition) query.set('disposition', params.disposition);
+  if (params?.requested) query.set('requested', params.requested);
+  if (params?.client) query.set('client', params.client);
+  if (params?.attempt) query.set('attempt', params.attempt);
+  if (params?.limit != null) query.set('limit', String(params.limit));
+  const qs = query.toString();
+  return fetchJSON<RunListResponse>(`/api/runs${qs ? `?${qs}` : ''}`);
+}
+
+export async function fetchRunsStatus(): Promise<RunStatusResponse> {
+  return fetchJSON<RunStatusResponse>('/api/runs/status');
+}
+
+export async function wipeRuns(): Promise<{ success: boolean; partial: boolean; recordingEnabled: boolean; scope: string }> {
+  const response = await fetch(`${API_BASE}/api/runs/wipe`, {
+    method: 'POST',
+    headers: buildHeaders({ 'Content-Type': 'application/json' }),
+  });
+  if (response.status === 401) throw new AuthError('Authentication required');
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new HTTPError(response.status, 'Failed to wipe run history');
+  }
+  return data;
+}
+
+export async function updateStackRuns(body: {
+  enabled?: boolean;
+  omit_labels?: boolean;
+  retention?: { max_size_mb?: number; max_age_days?: number };
+}): Promise<{ success: boolean }> {
+  const response = await fetch(`${API_BASE}/api/stack/runs`, {
+    method: 'PATCH',
+    headers: buildHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+  });
+  if (response.status === 401) throw new AuthError('Authentication required');
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new HTTPError(response.status, 'Failed to update runs configuration');
+  }
+  return data;
+}
+
 // === Playground API ===
 
 export interface PlaygroundProviderAuth {

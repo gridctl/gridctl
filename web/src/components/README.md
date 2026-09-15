@@ -19,7 +19,7 @@ should follow.
 │   ├── <MetricsWorkspace>    /metrics
 │   ├── <PinsWorkspace>       /pins
 │   ├── <LogsWorkspace>       /logs
-│   ├── <TracesWorkspace>     /traces
+│   ├── <TracesWorkspace>     /traces (Runs tab at ?view=runs)
 │   └── <ConnectionsWorkspace> /connections
 ├── <StatusBar>        connection · servers · sessions · tokens · spec
 ├── <CommandPalette>   workspace-scoped via the command registry

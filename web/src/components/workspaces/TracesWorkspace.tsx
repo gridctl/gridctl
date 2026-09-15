@@ -7,6 +7,7 @@ import { useTracesStore } from '../../stores/useTracesStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { PopoutButton } from '../ui/PopoutButton';
 import { TracesView } from '../traces/TracesView';
+import { RunsView } from '../runs/RunsView';
 
 // TracesWorkspace is the first-class trace surface: the global trace list,
 // waterfall, and span detail from TracesView, with the selection and filters
@@ -24,6 +25,7 @@ export function TracesWorkspace() {
   const mcpServers = useStackStore((s) => s.mcpServers);
   const servers = useMemo(() => mcpServers.map((s) => s.name).sort(), [mcpServers]);
 
+  const view = searchParams.get('view') === 'runs' ? 'runs' : 'traces';
   const selectedTraceId = useTracesStore((s) => s.selectedTraceId);
   const filters = useTracesStore((s) => s.filters);
   const selectTrace = useTracesStore((s) => s.selectTrace);
@@ -83,7 +85,48 @@ export function TracesWorkspace() {
           compact ? 'py-2' : 'py-3',
         )}
       >
-        <div className="font-sans text-text-muted/60 text-[10px] uppercase tracking-[0.4em]">traces</div>
+        <div
+          role="tablist"
+          aria-label="Observability view"
+          className="flex items-center gap-1"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === 'traces'}
+            className={cn(
+              'font-sans text-[10px] uppercase tracking-[0.4em] px-2 py-1 rounded',
+              view === 'traces' ? 'text-primary' : 'text-text-muted/60',
+            )}
+            onClick={() => {
+              setSearchParams((prev) => {
+                const next = new URLSearchParams(prev);
+                next.delete('view');
+                return next;
+              }, { replace: true });
+            }}
+          >
+            traces
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === 'runs'}
+            className={cn(
+              'font-sans text-[10px] uppercase tracking-[0.4em] px-2 py-1 rounded',
+              view === 'runs' ? 'text-primary' : 'text-text-muted/60',
+            )}
+            onClick={() => {
+              setSearchParams((prev) => {
+                const next = new URLSearchParams(prev);
+                next.set('view', 'runs');
+                return next;
+              }, { replace: true });
+            }}
+          >
+            runs
+          </button>
+        </div>
         <div className="font-mono text-[10px] text-text-muted truncate">
           {selectedTraceId
             ? selectedTraceId.slice(0, 16)
@@ -93,19 +136,23 @@ export function TracesWorkspace() {
         </div>
       </header>
       <div className="flex-1 min-h-0">
-        <TracesView
-          active
-          servers={servers}
-          onViewLogs={(traceId) => navigate(`/logs?trace=${encodeURIComponent(traceId)}`)}
-          onViewMetrics={(server) => navigate(`/metrics?scope=servers&selected=${encodeURIComponent(server)}`)}
-          toolbarExtra={
-            <PopoutButton
-              onClick={() => openDetachedWindow('traces')}
-              tooltip="Open in separate window"
-              disabled={tracesDetached}
-            />
-          }
-        />
+        {view === 'runs' ? (
+          <RunsView servers={servers} />
+        ) : (
+          <TracesView
+            active
+            servers={servers}
+            onViewLogs={(traceId) => navigate(`/logs?trace=${encodeURIComponent(traceId)}`)}
+            onViewMetrics={(server) => navigate(`/metrics?scope=servers&selected=${encodeURIComponent(server)}`)}
+            toolbarExtra={
+              <PopoutButton
+                onClick={() => openDetachedWindow('traces')}
+                tooltip="Open in separate window"
+                disabled={tracesDetached}
+              />
+            }
+          />
+        )}
       </div>
     </div>
   );

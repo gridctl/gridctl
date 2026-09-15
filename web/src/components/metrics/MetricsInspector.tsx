@@ -1,4 +1,5 @@
 import { X } from 'lucide-react';
+import { Link } from 'react-router';
 import { formatCompactNumber } from '../../lib/format';
 import { AreaChart } from '../chart/AreaChart';
 import { InspectorStat } from './metricsShared';
@@ -62,6 +63,23 @@ export function MetricsInspector({ scope, row, onClose, tokenPoints }: MetricsIn
           <InspectorStat label="Output" value={formatCompactNumber(row.output)} className="text-primary" />
           <InspectorStat label="Total" value={formatCompactNumber(row.total)} className="text-text-primary" />
         </section>
+        <p className="text-xs text-text-muted">
+          Metrics are aggregate usage. <Link className="underline" to="/traces">Traces</Link> show timing.
+          {' '}
+          <Link
+            className="underline"
+            to={
+              scope === 'servers'
+                ? `/traces?view=runs&server=${encodeURIComponent(row.name)}`
+                : scope === 'tools' && row.server
+                  ? `/traces?view=runs&server=${encodeURIComponent(row.server)}`
+                  : '/traces?view=runs'
+            }
+          >
+            Runs
+          </Link>
+          {' '}are retained dispositions.
+        </p>
 
         {/* Token sparkline */}
         {tokenSeries.length > 0 && (
