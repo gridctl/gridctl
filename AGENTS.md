@@ -73,6 +73,8 @@ pkg/config/         stack.yaml schema, defaults and validation, variable/env exp
                     ValidateWithIssues is unchanged.
 pkg/depcheck/       Pure literal image and npx/uvx classifier used by advisory mutable-ref diagnostics. No I/O,
                     expansion, secret substitution, or rewriting.
+pkg/stackpolicy/    Offline declaration-policy evaluator for `gridctl validate --policy`. Strict versioned policy
+                    parsing, root-confined candidate capture, and pure structural rules. No API/UI/runtime hooks.
 pkg/execution/      Presence-aware MCP execution declarations, normalized per-replica contracts, and value-free reports.
                     Docker-compatible admission and instance-bound Linux kernel observations live in pkg/runtime/docker/.
                     MCP clients gate dispatch on evidence; retirement closes owned processes and cancels obsolete scaling.
@@ -142,14 +144,16 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
                     sessions/streams, and preserved Docker identities with race-built child binaries.
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
-                    portable-pack, model-policy, python-sources, execution, security-evidence). examples/_mock-servers/ is the source for `task mock:servers`.
+                    portable-pack, model-policy, python-sources, execution, security-evidence, stack-declaration-policy).
+                    examples/_mock-servers/ is the source for `task mock:servers`.
 scripts/            Build/test helpers and release tooling: release.py owns gate, inventory, verification, draft/public,
                     and tap policy; release-tools.py pins executables and the SPDX schema; release-acceptance.py exercises
                     authorized sandbox releases. test_release.py and test_govulncheck.py cover local policy regressions.
                     check-example-refs.sh enforces pinned or excepted example image and package selectors after task build:go, including unassessed in-scope references.
 docs/               User-facing documentation (cli-reference, config-schema, api-reference, skills, packs, tools-workspace,
                     global-context, model-policy, scaling, usage-observability, installation, release-verification,
-                    project-status, troubleshooting, execution, security/threat-model, security-evidence).
+                    project-status, troubleshooting, execution, security/threat-model, security-evidence,
+                    stack-declaration-policy).
 ```
 
 End-to-end request flow for an upstream HTTP MCP tool call: client → HTTP listener built by `pkg/controller` (gateway_builder.go) → `internal/api.Server.Handler` (CORS, Host validation, configured auth, and route/group selection) → `pkg/mcp` Streamable HTTP transport (Host/Origin checks and protocol handling) → `mcp.Gateway` router → per-server `mcp.Client` (process/stdio/SSE/HTTP/OpenAPI) → response, with telemetry, tracing, schema pinning, and (optional) output-format conversion attached on the way back. Legacy SSE routes return a negotiation hint rather than dispatching tools.

@@ -49,6 +49,7 @@ experimental: ...
 | `skills` | object | No | - | Global skill exposure policy: allow/deny name globs (see [Skills](#skills-exposure-policy)) |
 | `model_preferences` | object | No | - | Model preference defaults and overrides for skill and agent projections (see [Model Preferences](#model-preferences)) |
 | `experimental` | object | No | - | Feature flags for experimental behavior (see [Experimental](#experimental-feature-flags)) |
+| `policy` | object | No | - | Reserved. Not interpreted by stack load, validate, apply, or reload. Offline declaration checks use a separate file with `gridctl validate --policy` (see [Stack declaration policy](stack-declaration-policy.md)) |
 
 ---
 

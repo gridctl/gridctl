@@ -230,9 +230,29 @@ func writeValidateStack(t *testing.T, content string) string {
 
 func runValidateBin(t *testing.T, bin, stack string, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
+	return runValidateBinEnv(t, bin, nil, stack, args...)
+}
+
+func withoutHomeEnv(t *testing.T) []string {
+	t.Helper()
+	var env []string
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "HOME=") || strings.HasPrefix(kv, "GRIDCTL_HOME=") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	return env
+}
+
+func runValidateBinEnv(t *testing.T, bin string, env []string, stack string, args ...string) (stdout, stderr string, code int) {
+	t.Helper()
 	cmdArgs := append([]string{"validate"}, args...)
 	cmdArgs = append(cmdArgs, stack)
 	cmd := exec.Command(bin, cmdArgs...)
+	if env != nil {
+		cmd.Env = env
+	}
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf

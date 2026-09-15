@@ -1,0 +1,107 @@
+# Example design only. Do not copy this into .github/workflows without an
+# independent review of permissions, pinned actions, and policy origin.
+# This file is not a repository required check and does not change
+# repository settings.
+#
+# External setup (operators, not this implementation):
+#   1. Keep the workflow invocation outside candidate control. Typical
+#      pattern: a reusable workflow in a separately protected repository
+#      or protected default-branch path, called by full commit SHA:
+#        jobs:
+#          declared-stack-policy:
+#            uses: example/protected-workflows/.github/workflows/stack-policy.yml@<full-sha>
+#      Mark that reusable job as a required status check. Do not enable
+#      pull_request_target or workflow_run for this check.
+#   2. Supply policy from a protected immutable revision, not from the
+#      pull request. A policy file in the same PR is not trusted.
+#   3. Stage a reviewed checker artifact in a directory outside the
+#      candidate checkout. Verify digest (and authenticity when a
+#      release signature exists) before execution. Fail closed on
+#      mismatch. Do not build or execute checker code from the PR.
+#
+# Until a reviewed gridctl release exists, replace the checker inputs
+# with the trusted version, asset name, and SHA-256 of that artifact.
+# Leave the sha256sum -c step in place; do not skip verification.
+
+name: stack-declaration-policy
+
+on:
+  workflow_call:
+    inputs:
+      candidate-ref:
+        description: Git ref of the untrusted candidate tree
+        required: true
+        type: string
+      policy-ref:
+        description: Protected immutable revision that owns the policy file
+        required: true
+        type: string
+      policy-path:
+        description: Path of the policy file inside policy-ref
+        required: true
+        type: string
+      stack-path:
+        description: Path of the candidate stack file inside the candidate tree
+        required: false
+        type: string
+        default: stack.yaml
+      checker-version:
+        description: Reviewed release tag for the checker artifact (for example v1.2.3)
+        required: true
+        type: string
+      checker-asset:
+        description: Artifact filename under that release
+        required: true
+        type: string
+      checker-sha256:
+        description: Hex SHA-256 of checker-asset; verification fails closed
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  declared-stack-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out candidate data only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.candidate-ref }}
+          persist-credentials: false
+          path: candidate
+
+      - name: Fetch reviewed policy from a protected revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.policy-ref }}
+          persist-credentials: false
+          sparse-checkout: ${{ inputs.policy-path }}
+          path: trusted-policy
+
+      - name: Stage independently verified checker outside the candidate tree
+        env:
+          CHECKER_VERSION: ${{ inputs.checker-version }}
+          CHECKER_ASSET: ${{ inputs.checker-asset }}
+          CHECKER_SHA256: ${{ inputs.checker-sha256 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/gridctl-checker"
+          cd "${RUNNER_TEMP}/gridctl-checker"
+          url="https://github.com/gridctl/gridctl/releases/download/${CHECKER_VERSION}/${CHECKER_ASSET}"
+          curl -fsSL "$url" -o checker.tgz
+          echo "${CHECKER_SHA256}  checker.tgz" | sha256sum -c -
+          tar -xzf checker.tgz
+          chmod 0755 gridctl
+          test -x gridctl
+
+      - name: Evaluate captured declarations
+        run: |
+          set -euo pipefail
+          "${RUNNER_TEMP}/gridctl-checker/gridctl" validate \
+            "candidate/${{ inputs.stack-path }}" \
+            --policy "${GITHUB_WORKSPACE}/trusted-policy/${{ inputs.policy-path }}" \
+            --format json
+          # Strict CI accepts exit 0 only. Do not add || true.
+          # To allow warning exit 2, capture the status and fail on 1 or other values.

@@ -27,7 +27,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 | Web UI | Stable | No API guarantee (internal) |
 | Output format conversion | Stable | Backward compatible in 0.x |
 | Token usage metrics | Stable | Backward compatible in 0.x |
-| Stack validation (validate) | Stable | Backward compatible in 0.x. Unreleased opt-in `--check-mutable-refs` is CLI-only and does not change default validate, REST, health, or apply |
+| Stack validation (validate) | Stable | Backward compatible in 0.x. Unreleased opt-in `--check-mutable-refs` is CLI-only and does not change default validate, REST, health, or apply. Unreleased opt-in `--policy` is a separate offline declaration evaluator; ordinary validate, apply, REST, and reload stay unchanged |
 | Stack planning (plan) | Stable | Backward compatible in 0.x |
 | Static replicas | Stable | Backward compatible in 0.x |
 | Reactive autoscaling | Stable | Backward compatible in 0.x |
@@ -77,6 +77,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 - Hardened MCP execution needs locally instance-bound Linux `/proc` and cgroup v2 observations. Remote/VM-backed engines without this path and non-Linux clients are unsupported for the profile. Resources are not covered, local processes remain unsandboxed, and SSH remote confinement and descendant cleanup are unverified. See [execution controls](execution.md).
 - Passive security evidence reports do not scan, probe, or certify a stack. Exit zero is not a secure verdict. See [Security Evidence Report](security-evidence.md).
 - Opt-in `gridctl validate --check-mutable-refs` inspects literal selectors only. Exit zero is not complete coverage, a digest is not publisher-verified, and an exact package version is not a transitive lock. See [mutable reference diagnostics](cli-reference.md#mutable-reference-diagnostics).
+- Opt-in `gridctl validate --policy` evaluates captured declarations only. Exit zero is not deployment admission or runtime safety. Identifiers in reports may themselves be sensitive. See [stack declaration policy](stack-declaration-policy.md).
 - Podman rootless multi-container networking requires `netavark` and `aardvark-dns` (Podman 4.0+); `pasta`/`slirp4netns` are egress-only transports and are not used for inter-container communication.
 - Generated Python package sources support the official public PyPI index only. Private indexes require a custom Dockerfile.
 - Code mode sandbox has no filesystem access (by design).

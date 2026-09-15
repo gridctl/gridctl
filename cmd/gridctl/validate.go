@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,12 +10,14 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/controller"
+	"github.com/gridctl/gridctl/pkg/stackpolicy"
 
 	"github.com/spf13/cobra"
 )
 
 var validateFormat string
 var validateCheckMutableRefs bool
+var validatePolicy string
 
 var validateCmd = &cobra.Command{
 	Use:   "validate [stack.yaml]",
@@ -26,9 +29,14 @@ and field-level constraints without deploying any containers.
 literal image and package selectors. It is off by default and does not
 change REST validation, health counts, apply, or stack schema semantics.
 
+--policy evaluates captured declarations against a versioned offline
+policy file without environment, secret, registry, or runtime resolution.
+Flag absence preserves ordinary validation. An explicit empty, missing,
+or invalid policy fails and does not fall back to ordinary validation.
+
 Exit codes:
-  0  Valid (no errors or warnings)
-  1  Validation errors found
+  0  Valid (no errors or warnings), or declared-stack policy accepted
+  1  Validation errors found, or policy input/evaluation not accepted
   2  Warnings only (no errors)`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -40,7 +48,8 @@ Exit codes:
 		if err != nil {
 			return err
 		}
-		return runValidate(cmd.Context(), args[0], checkMutable)
+		policySet := cmd.Flags().Changed("policy")
+		return runValidate(cmd.Context(), args[0], checkMutable, policySet, validatePolicy)
 	},
 }
 
@@ -49,10 +58,22 @@ var validateJSON *bool
 func init() {
 	validateCmd.Flags().StringVar(&validateFormat, "format", "", "Output format: json for machine-readable output")
 	validateCmd.Flags().BoolVar(&validateCheckMutableRefs, "check-mutable-refs", false, "Report mutable image tags and unpinned package selectors (advisory, off by default)")
+	validateCmd.Flags().StringVar(&validatePolicy, "policy", "", "Evaluate captured declarations against a versioned offline policy file")
 	validateJSON = addJSONAlias(validateCmd)
 }
 
-func runValidate(ctx context.Context, stackPath string, checkMutableRefs bool) error {
+func skipHomeForPolicyValidate(cmd *cobra.Command) bool {
+	if cmd == nil || cmd.Name() != "validate" {
+		return false
+	}
+	f := cmd.Flags().Lookup("policy")
+	return f != nil && f.Changed
+}
+
+func runValidate(ctx context.Context, stackPath string, checkMutableRefs, policySet bool, policyPath string) error {
+	if policySet {
+		return runValidatePolicy(ctx, stackPath, policyPath)
+	}
 	stack, result, err := config.ValidateStackFile(stackPath)
 	if err != nil {
 		// File read or YAML parse error — not a validation issue
@@ -119,6 +140,35 @@ func runValidate(ctx context.Context, stackPath string, checkMutableRefs bool) e
 		os.Exit(2)
 	}
 
+	return nil
+}
+
+func runValidatePolicy(ctx context.Context, stackPath, policyPath string) error {
+	if policyPath == "" {
+		report := stackpolicy.Evaluate(ctx, stackPath, "")
+		return writePolicyReport(report)
+	}
+	report := stackpolicy.Evaluate(ctx, stackPath, policyPath)
+	return writePolicyReport(report)
+}
+
+func writePolicyReport(report *stackpolicy.Report) error {
+	var buf bytes.Buffer
+	var err error
+	if validateFormat == "json" {
+		err = stackpolicy.FormatJSON(&buf, report)
+	} else {
+		err = stackpolicy.FormatText(&buf, report)
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(os.Stdout, &buf); err != nil {
+		return err
+	}
+	if code := stackpolicy.ExitCode(report); code != 0 {
+		os.Exit(code)
+	}
 	return nil
 }
 
