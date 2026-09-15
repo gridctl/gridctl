@@ -24,6 +24,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/execution"
 	"github.com/gridctl/gridctl/pkg/format"
 	"github.com/gridctl/gridctl/pkg/logging"
+	"github.com/gridctl/gridctl/pkg/runs"
 	"github.com/gridctl/gridctl/pkg/token"
 )
 
@@ -206,6 +207,7 @@ type Gateway struct {
 
 	toolCallObserver  ToolCallObserver  // optional observer for tool call metrics
 	promptGetObserver PromptGetObserver // optional observer for prompt-get (skill usage) metrics
+	runSink           RunSink           // optional metadata-only dispatch recorder
 
 	defaultOutputFormat   string                // gateway-level default output format
 	tokenCounter          token.Counter         // token counter for format savings calculation
@@ -292,6 +294,14 @@ func (g *Gateway) SetToolCallObserver(obs ToolCallObserver) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.toolCallObserver = obs
+}
+
+// SetRunSink installs the metadata-only run recorder. Passing nil disables
+// recording without affecting dispatch.
+func (g *Gateway) SetRunSink(sink RunSink) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.runSink = sink
 }
 
 // SetPromptGetObserver sets an observer that is notified after every
@@ -2201,6 +2211,9 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	tracer := otel.Tracer("gridctl.gateway")
 	ctx, rootSpan := tracer.Start(ctx, "mcp.tools.call")
 	defer rootSpan.End()
+	attempt := g.startRunAttempt(ctx, params.Name)
+	ctx = attempt.Context()
+	defer attempt.Finish()
 	// Strip the server prefix for the tool attribute so early-exit paths
 	// (denials, routing failures) still surface the bare tool name; the
 	// post-routing re-stamp below uses the resolved name.
@@ -2228,6 +2241,7 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 		if !ok {
 			g.logger.Debug("tool call denied by group membership",
 				"group", group, "tool", params.Name)
+			attempt.SetOutcome(runs.DispositionDenied, runs.StageGroup, runs.ReasonGroupMembership)
 			return &ToolCallResult{
 				Content: []Content{NewTextContent(g.groupDenialMessage(ctx, group, params.Name))},
 				IsError: true,
@@ -2253,7 +2267,17 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 		if group := GroupFromContext(ctx); group != "" {
 			allTools = g.CurrentGroupPolicy().FilterAndRewritePrefixed(group, allTools)
 		}
-		return cm.HandleCall(ctx, params, g, allTools)
+		result, err := cm.HandleCall(ctx, params, g, allTools)
+		if err != nil {
+			attempt.SetOutcome(runs.DispositionToolError, runs.StageCodeMode, runs.ReasonToolError)
+		} else if result != nil && (result.RequestState != "" || result.ResultType == ResultTypeInputRequired) {
+			attempt.SetOutcome(runs.DispositionInputRequired, runs.StageCodeMode, runs.ReasonInputRequired)
+		} else if result != nil && result.IsError {
+			attempt.SetOutcome(runs.DispositionToolError, runs.StageCodeMode, runs.ReasonToolError)
+		} else {
+			attempt.SetOutcome(runs.DispositionCompleted, runs.StageCodeMode, runs.ReasonCodeMode)
+		}
+		return result, err
 	}
 
 	// Enforce the per-client access scope on the direct tools/call path. A
@@ -2261,6 +2285,7 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	if !g.clientAllowsToolCall(ctx, params.Name) {
 		g.logger.Debug("tool call denied by client access policy",
 			"client", ClientAccessIDFromContext(ctx), "tool", params.Name)
+		attempt.SetOutcome(runs.DispositionDenied, runs.StageScope, runs.ReasonClientScope)
 		return &ToolCallResult{
 			Content: []Content{NewTextContent(fmt.Sprintf("Error: tool %q is not in this client's access scope", params.Name))},
 			IsError: true,
@@ -2274,6 +2299,7 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	if gateCall, gate, decision := g.checkCallGates(ctx, params.Name); gate != "" {
 		g.logger.Debug("tool call denied by gate",
 			"gate", gate, "client", gateCall.ClientAccessID, "tool", params.Name)
+		attempt.SetOutcome(runs.DispositionDenied, runs.StageGate, runs.ReasonGateDenied)
 		return &ToolCallResult{
 			Content: []Content{NewTextContent(decision.Message)},
 			IsError: true,
@@ -2289,12 +2315,14 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 		// at zero healthy replicas, synchronously spawn one before retrying.
 		// Bounded here by the caller's context (tool-call timeout) rather than
 		// by a hard-coded deadline so long-spin containers can complete.
+		coldStartFailed := false
 		if serverName, _, parseErr := ParsePrefixedTool(params.Name); parseErr == nil {
 			if scaler := g.GetAutoscaler(serverName); scaler != nil {
 				if cs := scaler.TriggerColdStart(ctx); cs == nil {
 					replica, toolName, err = g.router.RouteToolCallReplica(params.Name)
 				} else if err == nil {
 					err = cs
+					coldStartFailed = true
 				}
 			}
 		}
@@ -2307,10 +2335,19 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 			// unknown-tool error; the handshake path keeps the in-band
 			// isError result either way.
 			serverName, _, parseErr := ParsePrefixedTool(params.Name)
+			unknown := parseErr != nil || g.router.GetReplicaSet(serverName) == nil
+			switch {
+			case coldStartFailed:
+				attempt.SetOutcome(runs.DispositionRoutingFailed, runs.StageColdStart, runs.ReasonColdStart)
+			case unknown:
+				attempt.SetOutcome(runs.DispositionRoutingFailed, runs.StageRouting, runs.ReasonUnknownTool)
+			default:
+				attempt.SetOutcome(runs.DispositionRoutingFailed, runs.StageRouting, runs.ReasonNoReplica)
+			}
 			return &ToolCallResult{
 				Content:     []Content{NewTextContent(fmt.Sprintf("Error: %v", err))},
 				IsError:     true,
-				unknownTool: parseErr != nil || g.router.GetReplicaSet(serverName) == nil,
+				unknownTool: unknown,
 			}, nil
 		}
 	}
@@ -2327,6 +2364,8 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	isBlocked := g.blockedServers[client.Name()]
 	g.blockedMu.RUnlock()
 	if isBlocked {
+		attempt.SetResolved(client.Name(), toolName, replicaID)
+		attempt.SetOutcome(runs.DispositionDenied, runs.StagePin, runs.ReasonSchemaPin)
 		return &ToolCallResult{
 			Content: []Content{NewTextContent(fmt.Sprintf(
 				"server %q is blocked pending schema approval; run 'gridctl pins approve %s' to resume",
@@ -2342,6 +2381,8 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	// would hand one server another server's opaque blob; fail loudly
 	// instead.
 	if relay := mrtrRelayFromContext(ctx); relay != nil && relay.ExpectedServer != "" && relay.ExpectedServer != client.Name() {
+		attempt.SetResolved(client.Name(), toolName, replicaID)
+		attempt.SetOutcome(runs.DispositionRetryRejected, runs.StageMRTR, runs.ReasonMRTRMismatch)
 		return &ToolCallResult{
 			Content: []Content{NewTextContent(fmt.Sprintf(
 				"MRTR retry routed to server %q but its requestState originates from %q; re-issue the original call",
@@ -2402,11 +2443,14 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	result, err := client.CallTool(ctx, toolName, params.Arguments)
 	replica.DecInFlight()
 	duration := time.Since(start)
+	attempt.SetResolved(client.Name(), toolName, replicaID)
+	attempt.SetDownstreamDuration(duration)
 
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		logger.Warn("tool call failed", "server", client.Name(), "tool", toolName, "duration", duration, "error", err)
+		classifyDownstream(attempt, nil, err, ctx)
 		return &ToolCallResult{
 			Content: []Content{NewTextContent(fmt.Sprintf("Error calling tool: %v", err))},
 			IsError: true,
@@ -2424,7 +2468,7 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	// inspected. MRTR interim results are not cacheable and carry no
 	// cache metadata.
 	if result.RequestState != "" {
-		result.RequestState = wrapRequestState(client.Name(), result.RequestState)
+		result.RequestState = wrapRequestState(client.Name(), result.RequestState, runs.ParentAttemptID(attempt.Context()))
 	}
 
 	// Truncation: clamp oversized results before logging or format conversion
@@ -2457,6 +2501,7 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 		}
 	}
 
+	classifyDownstream(attempt, result, nil, ctx)
 	return result, nil
 }
 

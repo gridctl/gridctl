@@ -68,6 +68,7 @@ type mrtrRelay struct {
 	ExpectedServer string
 	RequestState   string
 	InputResponses json.RawMessage
+	AttemptID      string
 }
 
 type mrtrRelayKey struct{}
@@ -324,7 +325,7 @@ func (s *StreamableHTTPServer) handleStatelessToolsCall(ctx context.Context, w h
 	// from the gridctl envelope. A value gridctl did not mint cannot be
 	// routed and is rejected rather than guessed at.
 	if params.RequestState != "" {
-		server, originState, ok := unwrapRequestState(params.RequestState)
+		server, originState, attemptID, ok := unwrapRequestStateFull(params.RequestState)
 		if !ok {
 			writeStatelessResponse(w, http.StatusOK, jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "requestState was not issued by this gateway"))
 			return
@@ -333,6 +334,7 @@ func (s *StreamableHTTPServer) handleStatelessToolsCall(ctx context.Context, w h
 			ExpectedServer: server,
 			RequestState:   originState,
 			InputResponses: params.InputResponses,
+			AttemptID:      attemptID,
 		})
 		params.RequestState = ""
 		params.InputResponses = nil

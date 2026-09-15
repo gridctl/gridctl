@@ -36,14 +36,19 @@ type mrtrEnvelope struct {
 	// value is base64-wrapped to guarantee byte-exactness regardless
 	// of what encoding the origin chose.
 	State string `json:"state"`
+	// AttemptID is the internal run-record identifier of the round that
+	// minted this envelope. It is routing correlation only and is never
+	// copied into persisted records as requestState.
+	AttemptID string `json:"attempt,omitempty"`
 }
 
 // wrapRequestState wraps an origin server's requestState in the gridctl
 // routing envelope.
-func wrapRequestState(server, originState string) string {
+func wrapRequestState(server, originState, attemptID string) string {
 	env := mrtrEnvelope{
-		Server: server,
-		State:  base64.StdEncoding.EncodeToString([]byte(originState)),
+		Server:    server,
+		State:     base64.StdEncoding.EncodeToString([]byte(originState)),
+		AttemptID: attemptID,
 	}
 	payload, err := json.Marshal(env)
 	if err != nil {
@@ -58,21 +63,26 @@ func wrapRequestState(server, originState string) string {
 // not a gridctl envelope (including client-corrupted ones); callers
 // reject the retry rather than forwarding unroutable state.
 func unwrapRequestState(wrapped string) (server, originState string, ok bool) {
+	server, originState, _, ok = unwrapRequestStateFull(wrapped)
+	return server, originState, ok
+}
+
+func unwrapRequestStateFull(wrapped string) (server, originState, attemptID string, ok bool) {
 	rest, found := strings.CutPrefix(wrapped, mrtrEnvelopePrefix)
 	if !found {
-		return "", "", false
+		return "", "", "", false
 	}
 	decoded, err := base64.StdEncoding.DecodeString(rest)
 	if err != nil {
-		return "", "", false
+		return "", "", "", false
 	}
 	var env mrtrEnvelope
 	if err := json.Unmarshal(decoded, &env); err != nil || env.Server == "" {
-		return "", "", false
+		return "", "", "", false
 	}
 	stateBytes, err := base64.StdEncoding.DecodeString(env.State)
 	if err != nil {
-		return "", "", false
+		return "", "", "", false
 	}
-	return env.Server, string(stateBytes), true
+	return env.Server, string(stateBytes), env.AttemptID, true
 }
