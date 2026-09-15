@@ -30,7 +30,7 @@ Records are saved after dispatch returns. Recording is best-effort. Attempts int
 
 The allowlist is generated IDs, timestamps, total dispatch duration, bounded target names, disposition/stage/reason, optional replica and sampled trace IDs, and optional caller-declared labels. Argument and result values, hashes, code, raw errors, tokens, headers, URLs, and host paths are excluded. Names and labels may still be sensitive. Labels are not authenticated principals.
 
-Default retention is seven days and 100 MiB of logical record bytes per stack, including rotated files. Physical filesystem overhead is extra. Wipe is stack-wide, is not secure erasure, and does not remove exports or backups. Disabling recording does not delete retained history.
+Default retention is seven days and 100 MiB of logical record bytes per stack, including the active file and rotated segments. Age pruning runs at writer start and hourly while the process is up, compacting old records out of the active file. Physical filesystem overhead is extra. Wipe is stack-wide, is not secure erasure, and does not remove exports or backups. Disabling recording does not delete retained history. A stalled disk syscall can outlive the two-second shutdown drain; remaining queued events are counted as dropped.
 
 Query with `gridctl runs list`, `GET /api/runs`, or the Runs tab beside Traces. Live and offline sources are explicit; a failed live request never falls back to disk. See [Run records](config-schema.md#run-records) and [CLI runs](cli-reference.md#runs).
 

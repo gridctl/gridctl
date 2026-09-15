@@ -315,11 +315,11 @@ Exit codes: `0` success, `1` failure (including an unreadable or missing `--file
 | Command | Purpose |
 |---|---|
 | `gridctl runs list` | List retained records. `--stack` selects the live daemon; `--file PATH` reads an explicit offline file or directory; `--offline --stack` reads the stack's on-disk files without contacting the daemon. |
-| `gridctl runs list --format json` | Machine-readable records plus warnings and `partial`. `--json` is an alias. Live JSON is the camelCase API envelope; offline JSON is the snake_case `QueryResult`. |
-| `gridctl runs status` | Recorder health (live) or offline Unknown writer state. `--file PATH` and `--offline --stack` inspect disk only. |
-| `gridctl runs wipe --stack NAME -y` | Stack-wide wipe. Uses the live daemon when it is running; otherwise wipes offline files. Offline wipe refuses if a daemon owns the stack. Not secure erasure. Recording remains enabled if it was already on. |
+| `gridctl runs list --format json` | Shared snake_case query envelope (`schema_version`, `source`, `filters`, `records`, `warnings`, `partial`, `next_cursor`, `wipe_epoch`). `--json` is an alias. Live and offline JSON use the same schema. |
+| `gridctl runs status` | Recorder health (live) or offline unknown writer state (`writer_health: unknown`, `known: false`). `--file PATH` and `--offline --stack` inspect disk only. |
+| `gridctl runs wipe --stack NAME -y` | Stack-wide wipe. Uses the live daemon when it is running; otherwise wipes offline files. Offline wipe refuses if a daemon owns the stack. Not secure erasure. Recording remains enabled if it was already on. `--format json` prints `{success, partial, scope, recording_enabled, note}` on stdout. |
 
-Filters on `list`: `--since`, `--until` (RFC3339 on `returned_at`), `--requested`, `--server`, `--tool`, `--disposition`, `--client`, `--access`, `--attempt`, `--limit` (default 100, capped at 1000). Disposition values: `completed`, `tool_error`, `denied`, `routing_failed`, `transport_error`, `cancelled`, `timeout`, `input_required`, `retry_rejected`. Parent, root, previous-round, and trace filters are API-only.
+Filters on `list`: `--since`, `--until` (RFC3339 on `returned_at`), `--requested`, `--server`, `--tool`, `--disposition`, `--client`, `--access`, `--attempt`, `--parent`, `--root`, `--previous`, `--trace`, `--cursor`, `--limit` (default 100, capped at 1000). Disposition values: `completed`, `tool_error`, `denied`, `routing_failed`, `transport_error`, `cancelled`, `timeout`, `input_required`, `retry_rejected`. A cursor whose wipe epoch or on-disk source token no longer matches fails rather than skipping history.
 
 ## Optimize
 

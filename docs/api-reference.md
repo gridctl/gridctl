@@ -916,7 +916,7 @@ Metadata-only records of returning tool-dispatch attempts. Protected by gateway 
 curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/runs?disposition=denied&limit=20"
 ```
 
-**Response:** `{records, warnings, partial, nextCursor?, wipeEpoch}`. Record fields are camelCase (`attemptId`, `returnedAt`, `durationMs`, `disposition`, `stage`, `reason`). Unparseable `since`/`until` return `400`. An invalid cursor returns `400`; a cursor invalidated by wipe returns `409`.
+**Response:** shared query envelope `{schema_version, source, filters, records, warnings, partial, next_cursor?, wipe_epoch}`. Record fields are snake_case (`attempt_id`, `returned_at`, `duration_ms`, `disposition`, `stage`, `reason`). `source` names the live stack and path. Unparseable `since`/`until` return `400`. An invalid cursor returns `400`; a cursor invalidated by wipe, rotation, or pruning returns `409`.
 
 #### `GET /api/runs/status`
 
@@ -928,7 +928,7 @@ Recorder health independent of the JSONL destination, plus inventory and the rec
 
 **Auth:** Yes
 
-Same query parameters and body as `GET /api/runs`, with `Content-Disposition: attachment; filename="runs.json"`.
+Same query parameters and shared envelope as `GET /api/runs`, including `source` and `filters`, with `Content-Disposition: attachment; filename="runs.json"`.
 
 #### `POST /api/runs/wipe`
 
@@ -936,7 +936,7 @@ Same query parameters and body as `GET /api/runs`, with `Content-Disposition: at
 
 Stack-wide coordinated wipe. `?server=` is rejected with `400`. Not secure erasure and does not remove exports or backups.
 
-**Response:** `{success, partial, recordingEnabled, scope, note?}`. A partial wipe still returns HTTP 200 with `success: false`, `partial: true`, and `error`.
+**Response:** `{success, partial, recording_enabled, scope, note?}`. A partial wipe still returns HTTP 200 with `success: false`, `partial: true`, and `error`.
 
 #### `PATCH /api/stack/runs`
 

@@ -362,10 +362,10 @@ runs:
 |-------|------|----------|---------|-------------|
 | `enabled` | bool | No | `false` | Record one final disposition per returning `tools/call` while enabled |
 | `omit_labels` | bool | No | `false` | Drop caller-declared client and access labels from stored records |
-| `retention.max_size_mb` | int | No | `100` | Total logical record-byte budget per stack, including rotated files |
-| `retention.max_age_days` | int | No | `7` | Age policy for closed segments. No exact deletion while the process is offline |
+| `retention.max_size_mb` | int | No | `100` | Total logical record-byte budget per stack, including the active file and rotated segments |
+| `retention.max_age_days` | int | No | `7` | Age policy for the active file and closed segments at startup and hourly. No exact deletion while the process is offline |
 
-Records are saved after dispatch returns. Recording is best-effort: a crash may leave no record. The writer queue holds 1024 records (8 KiB maximum each). Queue overflow, write failure, and capacity exhaustion leave tool results unchanged and increment independent drop counters. A successful append is not a sync; the writer fsyncs about every two seconds, and a synced watermark requires an actual `fsync`. Disabling recording does not delete retained history.
+Records are saved after dispatch returns. Recording is best-effort: a crash may leave no record. The writer queue holds 1024 records (8 KiB maximum each). Queue overflow, write failure, and capacity exhaustion leave tool results unchanged and increment independent drop counters. Saturation warnings are asynchronous and do not block dispatch. A successful append is not a sync; the writer fsyncs about every two seconds, and a synced watermark requires an actual `fsync`. Shutdown drain is two seconds; a blocked `write`/`fsync` syscall may outlive that bound and remaining queued events are counted as dropped. An unopenable destination keeps recording enabled and reports writer health `degraded`. Disabling recording does not delete retained history.
 
 The allowlist is generated IDs, timestamps, total dispatch duration, bounded target names, disposition/stage/reason, optional replica and sampled trace IDs, and optional caller-declared labels. Argument and result values, hashes, code, raw errors, tokens, headers, URLs, and host paths are excluded. Names and labels may still be sensitive. Labels are not authenticated principals.
 
