@@ -329,18 +329,22 @@ func TestVerify_RejectsInvalidAndIncompleteCapture(t *testing.T) {
 		}
 	})
 
-	t.Run("parent pass before child run", func(t *testing.T) {
-		childIdx := sampleIndex(t, "TestFoo/bar")
+	t.Run("slash prefix sibling names", func(t *testing.T) {
+		childIdx := sampleIndex(t, "TestAuthHandler_RegisteredRoutes/grouped_mcp")
 		events := `
-{"Action":"run","Package":"example.com/mcp","Test":"TestFoo"}
-{"Action":"pass","Package":"example.com/mcp","Test":"TestFoo"}
-{"Action":"run","Package":"example.com/mcp","Test":"TestFoo/bar"}
-{"Action":"pass","Package":"example.com/mcp","Test":"TestFoo/bar"}
+{"Action":"run","Package":"example.com/mcp","Test":"TestAuthHandler_RegisteredRoutes"}
+{"Action":"run","Package":"example.com/mcp","Test":"TestAuthHandler_RegisteredRoutes/grouped_mcp"}
+{"Action":"pass","Package":"example.com/mcp","Test":"TestAuthHandler_RegisteredRoutes/grouped_mcp"}
+{"Action":"run","Package":"example.com/mcp","Test":"TestAuthHandler_RegisteredRoutes/GET_/api/traces"}
+{"Action":"pass","Package":"example.com/mcp","Test":"TestAuthHandler_RegisteredRoutes/GET_/api/traces"}
+{"Action":"run","Package":"example.com/mcp","Test":"TestAuthHandler_RegisteredRoutes/GET_/api/traces/{traceId}"}
+{"Action":"pass","Package":"example.com/mcp","Test":"TestAuthHandler_RegisteredRoutes/GET_/api/traces/{traceId}"}
+{"Action":"pass","Package":"example.com/mcp","Test":"TestAuthHandler_RegisteredRoutes"}
 {"Action":"pass","Package":"example.com/mcp"}
 `
 		rep := verifyString(t, childIdx, events, VerifyOptions{GoStatusSet: true})
-		if !rep.Failed() || rep.LaneReason != ReasonIncompleteEvidence {
-			t.Fatalf("parent-before-child accepted: %+v", rep)
+		if rep.Failed() || rep.Scenarios[0].Status != "pass" {
+			t.Fatalf("slash-prefix siblings rejected: %+v", rep)
 		}
 	})
 

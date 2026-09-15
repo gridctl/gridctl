@@ -25,6 +25,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Bug Fixes
 
+- Count Go test JSON identities exactly, so sibling subtests whose names share a slash prefix (HTTP route cases such as `/api/traces` and `/api/traces/{traceId}`) do not fail the unit-lane scenario verifier (#1227).
 - Match locally cached images by RepoDigests so digest and tag-plus-digest references hit the cache instead of comparing RepoTags only (#1229).
 - Reconcile equivalent image references during hardened container reuse and verify Podman's bridge-mode network membership separately from its namespace mode. Keep exact network inventories, loopback publication, and fresh kernel evidence mandatory (#1221).
 - Decode explicitly present null Podman capability lists as empty native sets while rejecting omitted or malformed fields. Full instance identity and all five kernel capability sets remain mandatory before routing (#1221).

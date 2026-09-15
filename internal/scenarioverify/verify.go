@@ -247,15 +247,6 @@ func collectLifecycles(ctx context.Context, events io.Reader, limits DecodeLimit
 				reason = ReasonIncompleteEvidence
 				return errCaptureDone
 			}
-			for _, anc := range ancestorNames(ev.Test) {
-				if anc == ev.Test {
-					continue
-				}
-				if at := pkg.tests[anc]; at != nil && len(at.terminals) > 0 {
-					reason = ReasonIncompleteEvidence
-					return errCaptureDone
-				}
-			}
 			tl.ran = true
 		case "pause", "cont", "output", "attr", "start", "bench":
 		case "pass", "fail", "skip":
@@ -267,13 +258,6 @@ func collectLifecycles(ctx context.Context, events io.Reader, limits DecodeLimit
 				reason = ReasonIncompleteEvidence
 				failed = true
 				return errCaptureDone
-			}
-			prefix := ev.Test + "/"
-			for name, child := range pkg.tests {
-				if strings.HasPrefix(name, prefix) && child.ran && last(child.terminals) == "" {
-					reason = ReasonIncompleteEvidence
-					return errCaptureDone
-				}
 			}
 			tl.terminals = append(tl.terminals, ev.Action)
 			if ev.Action == "fail" {
