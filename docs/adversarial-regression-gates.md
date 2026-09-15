@@ -34,9 +34,23 @@ Focused commands escape each `/`-separated name segment. They do not replace who
 
 `cmd/scenarioverify` is a repository test utility, not a `gridctl` subcommand. It reads an explicit lane, the index, and a completed `go test -json` capture. It does not execute tests.
 
-Designated Gatekeeper lanes (`test`, `integration`, `podman-integration`) invoke `scripts/run-verified-tests.sh`, which adds `-json -count=1 -race` while preserving coverage, tags, suite scope, and current timeouts. Go, capture/tee, and verifier statuses are recorded separately; a successful verifier cannot mask a failed suite. Raw JSON captures stay on the runner; they are not uploaded as a new public artifact.
+Designated Gatekeeper jobs (`test`, `integration`, `podman-integration`) invoke `scripts/run-verified-tests.sh` with lanes `unit`, `integration`, and `podman-integration`. The script adds `-json -count=1 -race` while preserving coverage, tags, suite scope, and current timeouts. Go, capture/tee, and verifier statuses are recorded separately; a successful verifier cannot mask a failed suite. Raw JSON captures stay on the runner; they are not uploaded as a new public artifact. LiteLLM and conformance jobs use `-count=1` but are not verifier lanes.
 
-Reason codes: `SELECTOR_ABSENT`, `REQUIRED_SKIP`, `INCOMPLETE_EVIDENCE`, `TEST_FAILURE`, `PACKAGE_FAILURE`, `MALFORMED_INDEX`. Missing prerequisites never shrink the required set.
+Reason codes: `SELECTOR_ABSENT`, `REQUIRED_SKIP`, `INCOMPLETE_EVIDENCE`, `TEST_FAILURE`, `PACKAGE_FAILURE`, `MALFORMED_INDEX`, `UNKNOWN_LANE`, `EMPTY_REQUIRED_SET`. Missing prerequisites never shrink the required set.
+
+A failed required identity looks like:
+
+```text
+Required scenarios: FAIL
+Lane: podman-integration
+Go status: 0
+Capture status: 0
+Verifier status: 1
+FAIL podman-rootless-network reason=SELECTOR_ABSENT
+Expected boundary: rootless Podman runs the multi-container networking fixture
+Observed: required package/test run and pass not observed
+Next: inspect earlier suite failure, build tags, and selector drift
+```
 
 ## Local workflow
 

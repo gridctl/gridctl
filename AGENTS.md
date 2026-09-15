@@ -57,6 +57,7 @@ The shape of the codebase from the outside in:
 ```
 cmd/gridctl/        Cobra CLI entry points, one file per subcommand (apply, serve, link, var, skill, ctx, pack, project, optimize, …).
                     embed.go pulls in cmd/gridctl/web/dist via go:embed under the embed_web build tag.
+cmd/scenarioverify/ Repository test utility that checks designated Go test identities against a completed `go test -json` capture. Not a gridctl subcommand.
 internal/api/       REST handlers backing the web UI (one file per resource: stack, skills, vault, pins, telemetry, traces, …).
                     Python source validation, resolution previews, generated files, and status provenance live in
                     python_sources.go. The Server struct in api.go wires together every pkg/* subsystem the UI needs.
@@ -66,6 +67,7 @@ internal/api/       REST handlers backing the web UI (one file per resource: sta
                     Gateway credential denials carry Gridctl-Auth-Rejected: 1; reload_errors.go supplies shared
                     restart_required (409) and invalid_candidate (400) envelopes, including save-first callers.
 internal/probe/     Ephemeral MCP tool-list probe for the "add server" wizard (not registered with the gateway).
+internal/scenarioverify/ Post-suite Go JSON execution verifier for tests/adversarial/index.yaml. Not a product API.
 pkg/catalog/        MCP server catalog behind `gridctl search` / `gridctl add`: curated embedded entries plus the
                     official MCP Registry, with install-shape mapping into stack.yaml server blocks.
 pkg/config/         stack.yaml schema, defaults and validation, variable/env expansion, plan diffing, health-check parsing.
@@ -139,6 +141,7 @@ web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). 
                     legacy SSE negotiation. credentials.ts owns versioned storage and Fetch header validation;
                     AuthBoundary covers the shell and all six detached routes with generation-guarded re-entry.
 
+tests/adversarial/  Declarative scenario index (`index.yaml`) for mandatory-execution accounting. Not a runner.
 tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway lifecycle, hot reload, autoscaler,
                     replicas, transports (incl. Podman), private git auth, generated Python source builds,
                     digest-cache lookup, and optimize heuristics. Grouped auth tests use real HTTP and a subprocess MCP backend.
@@ -152,10 +155,11 @@ scripts/            Build/test helpers and release tooling: release.py owns gate
                     and tap policy; release-tools.py pins executables and the SPDX schema; release-acceptance.py exercises
                     authorized sandbox releases. test_release.py and test_govulncheck.py cover local policy regressions.
                     check-example-refs.sh enforces pinned or excepted example image and package selectors after task build:go, including unassessed in-scope references.
+                    run-verified-tests.sh captures go test JSON and runs cmd/scenarioverify for designated Gatekeeper lanes.
 docs/               User-facing documentation (cli-reference, config-schema, api-reference, skills, packs, tools-workspace,
                     global-context, model-policy, scaling, usage-observability, installation, release-verification,
                     project-status, troubleshooting, execution, security/threat-model, security-evidence,
-                    stack-declaration-policy).
+                    stack-declaration-policy, adversarial-regression-gates).
 ```
 
 End-to-end request flow for an upstream HTTP MCP tool call: client → HTTP listener built by `pkg/controller` (gateway_builder.go) → `internal/api.Server.Handler` (CORS, Host validation, configured auth, and route/group selection) → `pkg/mcp` Streamable HTTP transport (Host/Origin checks and protocol handling) → `mcp.Gateway` router → per-server `mcp.Client` (process/stdio/SSE/HTTP/OpenAPI) → response, with telemetry, tracing, schema pinning, and (optional) output-format conversion attached on the way back. Legacy SSE routes return a negotiation hint rather than dispatching tools.
