@@ -120,6 +120,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: test
+    env:
+      GRIDCTL_RUNTIME: docker
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -132,6 +134,23 @@ jobs:
 
       - name: Install Go dependencies
         run: go mod download
+
+      - name: Verify Docker runtime
+        run: |
+          set -euo pipefail
+          if [[ "${GRIDCTL_RUNTIME}" != "docker" ]]; then
+            echo "GRIDCTL_RUNTIME=${GRIDCTL_RUNTIME}, want docker"
+            exit 1
+          fi
+          if ! command -v docker >/dev/null; then
+            echo "docker is required for the general integration lane"
+            exit 1
+          fi
+          docker info --format '{{.ServerVersion}}'
+          if docker info 2>&1 | grep -qi podman; then
+            echo "expected Docker engine, found Podman"
+            exit 1
+          fi
 
       - name: Integration tests
         run: |
