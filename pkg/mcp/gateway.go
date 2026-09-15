@@ -2320,7 +2320,7 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 			if scaler := g.GetAutoscaler(serverName); scaler != nil {
 				if cs := scaler.TriggerColdStart(ctx); cs == nil {
 					replica, toolName, err = g.router.RouteToolCallReplica(params.Name)
-				} else if err == nil {
+				} else {
 					err = cs
 					coldStartFailed = true
 				}

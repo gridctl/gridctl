@@ -1,9 +1,15 @@
 package mcp
 
 import (
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"strings"
+
+	"github.com/gridctl/gridctl/pkg/runs"
 )
 
 // MRTR (Multi Round-Trip Requests, 2026-07-28) relay support.
@@ -29,6 +35,12 @@ import (
 // expectations.
 const mrtrEnvelopePrefix = "gridctl-mrtr-v1:"
 
+var mrtrAttemptKey = func() []byte {
+	b := make([]byte, 32)
+	_, _ = rand.Read(b)
+	return b
+}()
+
 type mrtrEnvelope struct {
 	Server string `json:"server"`
 	// State is base64 of the origin server's exact requestState bytes.
@@ -40,15 +52,31 @@ type mrtrEnvelope struct {
 	// minted this envelope. It is routing correlation only and is never
 	// copied into persisted records as requestState.
 	AttemptID string `json:"attempt,omitempty"`
+	// AttemptMAC authenticates AttemptID with a process-local key so a
+	// caller cannot inject arbitrary previous-round correlation.
+	AttemptMAC string `json:"attempt_mac,omitempty"`
 }
 
 // wrapRequestState wraps an origin server's requestState in the gridctl
 // routing envelope.
+func macAttemptID(id string) string {
+	if id == "" {
+		return ""
+	}
+	mac := hmac.New(sha256.New, mrtrAttemptKey)
+	mac.Write([]byte(id))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
 func wrapRequestState(server, originState, attemptID string) string {
+	if !runs.ValidGeneratedID(attemptID) {
+		attemptID = ""
+	}
 	env := mrtrEnvelope{
-		Server:    server,
-		State:     base64.StdEncoding.EncodeToString([]byte(originState)),
-		AttemptID: attemptID,
+		Server:     server,
+		State:      base64.StdEncoding.EncodeToString([]byte(originState)),
+		AttemptID:  attemptID,
+		AttemptMAC: macAttemptID(attemptID),
 	}
 	payload, err := json.Marshal(env)
 	if err != nil {
@@ -84,5 +112,13 @@ func unwrapRequestStateFull(wrapped string) (server, originState, attemptID stri
 	if err != nil {
 		return "", "", "", false
 	}
-	return env.Server, string(stateBytes), env.AttemptID, true
+	attemptID = ""
+	if runs.ValidGeneratedID(env.AttemptID) && env.AttemptMAC != "" {
+		expected, err := hex.DecodeString(macAttemptID(env.AttemptID))
+		got, gotErr := hex.DecodeString(env.AttemptMAC)
+		if err == nil && gotErr == nil && hmac.Equal(expected, got) {
+			attemptID = env.AttemptID
+		}
+	}
+	return env.Server, string(stateBytes), attemptID, true
 }

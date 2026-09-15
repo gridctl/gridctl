@@ -2,6 +2,9 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -10,6 +13,12 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/runs"
 )
+
+type recSink struct{ rec *runs.Recorder }
+
+func (s recSink) Begin(ctx context.Context, name string) RunAttempt {
+	return s.rec.Begin(ctx, name)
+}
 
 type capturingSink struct {
 	mu       sync.Mutex
@@ -156,6 +165,48 @@ func TestHandleToolsCall_DoesNotRecordPayloads(t *testing.T) {
 	if a.disposition != runs.DispositionToolError {
 		t.Fatalf("disposition = %s", a.disposition)
 	}
+	if a.requested == "secret-arg" || a.server == "secret-arg" || a.tool == "secret-arg" {
+		t.Fatal("payload leaked into attempt metadata")
+	}
+}
+
+func TestHandleToolsCall_RealRecorderOmitsPayloads(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	dir := t.TempDir()
+	rec, err := runs.NewRecorder(runs.Config{
+		Enabled: true, Dir: dir, MaxBytes: 1 << 20, MaxAge: time.Hour,
+		QueueSize: 8, SyncInterval: 20 * time.Millisecond, ShutdownDrain: time.Second,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rec.Close()
+	g := NewGateway()
+	g.SetRunSink(recSink{rec: rec})
+	client := setupMockAgentClient(ctrl, "agent1", []Tool{{Name: "echo"}})
+	client.EXPECT().CallTool(gomock.Any(), "echo", gomock.Any()).Return(&ToolCallResult{
+		Content: []Content{NewTextContent("secret-result")},
+		IsError: true,
+	}, nil)
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+	_, _ = g.HandleToolsCall(context.Background(), ToolCallParams{
+		Name:      "agent1__echo",
+		Arguments: map[string]any{"token": "secret-arg"},
+	})
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		res, err := runs.Query(context.Background(), dir, runs.Filter{}, 10, nil, rec.WipeEpoch())
+		if err == nil && len(res.Records) == 1 {
+			raw, _ := json.Marshal(res.Records[0])
+			if strings.Contains(string(raw), "secret-arg") || strings.Contains(string(raw), "secret-result") {
+				t.Fatalf("secret leaked: %s", raw)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("record not written")
 }
 
 func TestHandleToolsCall_InputRequired(t *testing.T) {
@@ -253,6 +304,56 @@ func TestHandleToolsCall_RecordsClientScopeDenial(t *testing.T) {
 	}
 	a := sink.last()
 	if a.disposition != runs.DispositionDenied || a.stage != runs.StageScope {
+		t.Fatalf("attempt = %+v", a)
+	}
+}
+
+func TestHandleToolsCall_RecordsColdStartFailure(t *testing.T) {
+	g := NewGateway()
+	t.Cleanup(g.Close)
+	sink := &capturingSink{}
+	g.SetRunSink(sink)
+	sp := newGatewayFakeSpawner(t)
+	sp.failErr = errors.New("spawn failed")
+	if err := g.RegisterAutoscaler(context.Background(),
+		MCPServerConfig{Name: "svc", LocalProcess: true, Command: []string{"true"}},
+		ReplicaPolicyRoundRobin, sp,
+		AutoscalePolicy{Min: 0, Max: 2, TargetInFlight: 1, IdleToZero: true},
+	); err != nil {
+		t.Fatal(err)
+	}
+	result, err := g.HandleToolsCall(context.Background(), ToolCallParams{Name: "svc__echo"})
+	if err != nil || !result.IsError {
+		t.Fatalf("expected in-band error, got %v %+v", err, result)
+	}
+	a := sink.last()
+	if a == nil || a.stage != runs.StageColdStart || a.reason != runs.ReasonColdStart {
+		t.Fatalf("attempt = %+v", a)
+	}
+}
+
+func TestHandleToolsCall_RecordsCanceledColdStart(t *testing.T) {
+	g := NewGateway()
+	t.Cleanup(g.Close)
+	sink := &capturingSink{}
+	g.SetRunSink(sink)
+	sp := newGatewayFakeSpawner(t)
+	sp.failErr = context.Canceled
+	if err := g.RegisterAutoscaler(context.Background(),
+		MCPServerConfig{Name: "svc", LocalProcess: true, Command: []string{"true"}},
+		ReplicaPolicyRoundRobin, sp,
+		AutoscalePolicy{Min: 0, Max: 2, TargetInFlight: 1, IdleToZero: true},
+	); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	result, err := g.HandleToolsCall(ctx, ToolCallParams{Name: "svc__echo"})
+	if err != nil || !result.IsError {
+		t.Fatalf("expected in-band error, got %v %+v", err, result)
+	}
+	a := sink.last()
+	if a == nil || a.stage != runs.StageColdStart {
 		t.Fatalf("attempt = %+v", a)
 	}
 }
