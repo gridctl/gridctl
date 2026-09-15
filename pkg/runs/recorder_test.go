@@ -7,8 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/gridctl/gridctl/pkg/state"
 )
 
 func discardLogger() *slog.Logger {
@@ -121,6 +124,8 @@ func TestRecorder_SecretsNeverQueued(t *testing.T) {
 	defer r.Close()
 	secret := "s3cret-token-value"
 	a := r.Begin(context.Background(), "s__t")
+	a.SetPreviousAttemptID(secret)
+	a.SetTraceID("https://" + secret)
 	a.SetOutcome(DispositionToolError, StageDownstream, ReasonToolError)
 	a.Finish()
 	res := waitRecords(t, dir, 1)
@@ -276,5 +281,139 @@ func TestOfflineWipeRefusesActiveWriter(t *testing.T) {
 	defer UnregisterActive("live-stack")
 	if err := WipeStack(context.Background(), "live-stack"); err != nil {
 		t.Fatalf("live wipe via registry should succeed: %v", err)
+	}
+}
+
+func TestOfflineWipeRefusesForeignDaemon(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("GRIDCTL_HOME", "")
+	if err := state.Save(&state.DaemonState{
+		StackName: "foreign",
+		PID:       os.Getpid(),
+		Port:      1,
+		StartedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := WipeStack(context.Background(), "foreign"); err != ErrActiveWriter {
+		t.Fatalf("got %v, want ErrActiveWriter", err)
+	}
+}
+
+func TestNewRecorder_OpenFailureStaysEnabledDegraded(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r, err := NewRecorder(Config{
+		Enabled: true, Dir: path, MaxBytes: 1 << 20, MaxAge: time.Hour,
+		QueueSize: 4, SyncInterval: time.Second, ShutdownDrain: time.Millisecond,
+	}, discardLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	st := r.Status()
+	if !st.Enabled || st.Effective || st.WriterHealth != HealthDegraded {
+		t.Fatalf("status = %+v", st)
+	}
+	if st.Failures[DropOpenError] == 0 && st.Drops[DropOpenError] == 0 {
+		t.Fatal("expected open failure accounting")
+	}
+}
+
+func TestRecorder_WipeConcurrentWithFinish(t *testing.T) {
+	dir := t.TempDir()
+	r, err := NewRecorder(Config{
+		Enabled: true, Dir: dir, MaxBytes: 1 << 20, MaxAge: time.Hour,
+		QueueSize: 64, SyncInterval: 20 * time.Millisecond, ShutdownDrain: time.Second,
+	}, discardLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			a := r.Begin(context.Background(), "pre__wipe")
+			a.SetOutcome(DispositionCompleted, StageDownstream, ReasonOK)
+			a.Finish()
+		}()
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_ = r.Wipe(context.Background())
+	}()
+	wg.Wait()
+	post := r.Begin(context.Background(), "post__wipe")
+	post.SetOutcome(DispositionCompleted, StageDownstream, ReasonOK)
+	post.Finish()
+	res := waitRecords(t, dir, 1)
+	for _, rec := range res.Records {
+		if rec.RequestedName == "pre__wipe" && rec.ReturnedAt.Before(time.Now().Add(-time.Second)) {
+			t.Fatal("unexpected pre-wipe record")
+		}
+	}
+	found := false
+	for _, rec := range res.Records {
+		if rec.RequestedName == "post__wipe" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("missing post-wipe record")
+	}
+}
+
+func TestDeleteOwnedRefusesSymlinkedStackDir(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(root, "outside")
+	if err := os.Mkdir(outside, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(outside, activeFileName)
+	if err := os.WriteFile(victim, []byte("keep\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	base := filepath.Join(root, "runs")
+	if err := os.Mkdir(base, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "demo")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := deleteOwned(link); err == nil {
+		t.Fatal("expected symlink directory refusal")
+	}
+	body, err := os.ReadFile(victim)
+	if err != nil || string(body) != "keep\n" {
+		t.Fatalf("unrelated file modified: %v %q", err, body)
+	}
+}
+
+func TestRecorder_EntryTimeOmitLabels(t *testing.T) {
+	dir := t.TempDir()
+	r, err := NewRecorder(Config{
+		Enabled: true, Dir: dir, MaxBytes: 1 << 20, MaxAge: time.Hour,
+		QueueSize: 8, SyncInterval: 20 * time.Millisecond, ShutdownDrain: time.Second,
+	}, discardLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	a := r.Begin(context.Background(), "s__t")
+	a.SetLabels("keep-me", "keep-me")
+	if err := r.Apply(Config{Enabled: true, Dir: dir, OmitLabels: true, MaxBytes: 1 << 20, MaxAge: time.Hour}); err != nil {
+		t.Fatal(err)
+	}
+	a.SetOutcome(DispositionCompleted, StageDownstream, ReasonOK)
+	a.Finish()
+	res := waitRecords(t, dir, 1)
+	if res.Records[0].ClientLabel != "keep-me" {
+		t.Fatalf("entry-time labels lost: %+v", res.Records[0])
 	}
 }

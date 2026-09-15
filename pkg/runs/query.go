@@ -4,28 +4,49 @@ import "time"
 
 // Filter selects persisted records. Empty fields are unconstrained.
 type Filter struct {
-	Since             time.Time
-	Until             time.Time
-	RequestedName     string
-	ResolvedServer    string
-	ResolvedTool      string
-	Disposition       string
-	ClientLabel       string
-	AccessLabel       string
-	AttemptID         string
-	ParentAttemptID   string
-	RootAttemptID     string
-	PreviousAttemptID string
-	TraceID           string
+	Since             time.Time `json:"since,omitempty"`
+	Until             time.Time `json:"until,omitempty"`
+	RequestedName     string    `json:"requested,omitempty"`
+	ResolvedServer    string    `json:"server,omitempty"`
+	ResolvedTool      string    `json:"tool,omitempty"`
+	Disposition       string    `json:"disposition,omitempty"`
+	ClientLabel       string    `json:"client,omitempty"`
+	AccessLabel       string    `json:"access,omitempty"`
+	AttemptID         string    `json:"attempt,omitempty"`
+	ParentAttemptID   string    `json:"parent,omitempty"`
+	RootAttemptID     string    `json:"root,omitempty"`
+	PreviousAttemptID string    `json:"previous,omitempty"`
+	TraceID           string    `json:"trace,omitempty"`
 }
 
-// Cursor identifies a pagination position. WipeEpoch must match the
-// current writer generation or the cursor is invalid.
+// Cursor identifies a pagination position. WipeEpoch and SourceToken must
+// match the current writer generation and on-disk file set or the cursor
+// is invalid.
 type Cursor struct {
-	WipeEpoch  uint64    `json:"wipe_epoch"`
-	ReturnedAt time.Time `json:"returned_at"`
-	Sequence   uint64    `json:"sequence"`
-	AttemptID  string    `json:"attempt_id"`
+	WipeEpoch   uint64    `json:"wipe_epoch"`
+	SourceToken string    `json:"source_token,omitempty"`
+	ReturnedAt  time.Time `json:"returned_at"`
+	Sequence    uint64    `json:"sequence"`
+	AttemptID   string    `json:"attempt_id"`
+}
+
+// QuerySource names the stack or path a query read.
+type QuerySource struct {
+	Kind  string `json:"kind"`
+	Stack string `json:"stack,omitempty"`
+	Path  string `json:"path,omitempty"`
+}
+
+// QueryEnvelope is the shared live/offline/export query contract.
+type QueryEnvelope struct {
+	SchemaVersion int         `json:"schema_version"`
+	Source        QuerySource `json:"source"`
+	Filters       Filter      `json:"filters"`
+	Records       []Record    `json:"records"`
+	Warnings      []Warning   `json:"warnings"`
+	NextCursor    *Cursor     `json:"next_cursor,omitempty"`
+	Partial       bool        `json:"partial"`
+	WipeEpoch     uint64      `json:"wipe_epoch"`
 }
 
 const (
@@ -94,4 +115,26 @@ func clampLimit(limit int) int {
 		return MaxQueryLimit
 	}
 	return limit
+}
+
+// EnvelopeFromResult builds the shared query/export envelope.
+func EnvelopeFromResult(res QueryResult, source QuerySource, filter Filter) QueryEnvelope {
+	warnings := res.Warnings
+	if warnings == nil {
+		warnings = []Warning{}
+	}
+	records := res.Records
+	if records == nil {
+		records = []Record{}
+	}
+	return QueryEnvelope{
+		SchemaVersion: SchemaVersion,
+		Source:        source,
+		Filters:       filter,
+		Records:       records,
+		Warnings:      warnings,
+		NextCursor:    res.NextCursor,
+		Partial:       res.Partial,
+		WipeEpoch:     res.WipeEpoch,
+	}
 }

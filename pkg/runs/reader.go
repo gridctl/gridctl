@@ -2,52 +2,77 @@ package runs
 
 import (
 	"bufio"
-	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
-	"sort"
+	"path/filepath"
 )
 
 // Query reads owned JSONL files newest-first and returns a bounded page.
 // Partial tails and unknown schemas are reported as warnings without
-// echoing their contents. ctx cancellation is honored between records.
+// echoing their contents. ctx cancellation is honored and always marked
+// partial.
 func Query(ctx context.Context, dir string, filter Filter, limit int, cursor *Cursor, wipeEpoch uint64) (QueryResult, error) {
 	limit = clampLimit(limit)
 	out := QueryResult{Records: []Record{}, Warnings: []Warning{}, WipeEpoch: wipeEpoch}
+	if err := ctx.Err(); err != nil {
+		out.Partial = true
+		out.Warnings = append(out.Warnings, Warning{Code: WarnTruncatedQuery, Count: 1, Message: "query canceled"})
+		return out, err
+	}
 	if cursor != nil && cursor.WipeEpoch != wipeEpoch {
 		return out, fmt.Errorf("cursor invalidated by wipe")
-	}
-	if err := ctx.Err(); err != nil {
-		return out, err
 	}
 	files, err := listOwnedFiles(dir)
 	if err != nil {
 		return out, err
 	}
 	if len(files) == 0 {
+		if cursor != nil && cursor.SourceToken != "" {
+			return out, fmt.Errorf("cursor invalidated by wipe")
+		}
 		return out, nil
+	}
+	token := sourceToken(files)
+	if cursor != nil && cursor.SourceToken != "" && cursor.SourceToken != token {
+		return out, fmt.Errorf("cursor invalidated by wipe")
+	}
+	return queryFromFiles(ctx, files, filter, limit, cursor, wipeEpoch, token)
+}
+
+func queryFromFiles(ctx context.Context, files []string, filter Filter, limit int, cursor *Cursor, wipeEpoch uint64, token string) (QueryResult, error) {
+	limit = clampLimit(limit)
+	out := QueryResult{Records: []Record{}, Warnings: []Warning{}, WipeEpoch: wipeEpoch}
+	newestFirst := make([]string, len(files))
+	copy(newestFirst, files)
+	for i, j := 0, len(newestFirst)-1; i < j; i, j = i+1, j-1 {
+		newestFirst[i], newestFirst[j] = newestFirst[j], newestFirst[i]
 	}
 
 	var (
 		malformed int
 		unknown   int
 		partial   int
-		matched   []Record
+		page      []Record
+		canceled  bool
 	)
 
-	// Read oldest-to-newest then reverse so ordering is returned_at desc,
-	// sequence desc, attempt_id desc.
-	for _, path := range files {
+	for _, path := range newestFirst {
 		if err := ctx.Err(); err != nil {
-			out.Partial = true
-			out.Warnings = append(out.Warnings, Warning{Code: WarnTruncatedQuery, Count: 1, Message: "query canceled"})
+			canceled = true
 			break
 		}
 		recs, p, m, u, err := readFile(ctx, path)
 		if err != nil {
+			if err == context.Canceled || err == context.DeadlineExceeded {
+				canceled = true
+				break
+			}
 			out.Partial = true
 			out.Warnings = append(out.Warnings, Warning{Code: WarnUnreadable, Count: 1, Message: "history file unreadable"})
 			continue
@@ -55,39 +80,34 @@ func Query(ctx context.Context, dir string, filter Filter, limit int, cursor *Cu
 		partial += p
 		malformed += m
 		unknown += u
-		matched = append(matched, recs...)
-	}
-
-	sort.SliceStable(matched, func(i, j int) bool {
-		if !matched[i].ReturnedAt.Equal(matched[j].ReturnedAt) {
-			return matched[i].ReturnedAt.After(matched[j].ReturnedAt)
-		}
-		if matched[i].Sequence != matched[j].Sequence {
-			return matched[i].Sequence > matched[j].Sequence
-		}
-		return matched[i].AttemptID > matched[j].AttemptID
-	})
-
-	var page []Record
-	for _, rec := range matched {
-		if cursor != nil && !olderThanCursor(rec, *cursor) {
-			continue
-		}
-		if !filter.match(rec) {
-			continue
-		}
-		page = append(page, rec)
-		if len(page) == limit {
-			if hasMore(matched, rec, filter, cursor) {
-				out.NextCursor = &Cursor{
-					WipeEpoch:  wipeEpoch,
-					ReturnedAt: rec.ReturnedAt,
-					Sequence:   rec.Sequence,
-					AttemptID:  rec.AttemptID,
-				}
+		for i := len(recs) - 1; i >= 0; i-- {
+			rec := recs[i]
+			if cursor != nil && !olderThanCursor(rec, *cursor) {
+				continue
 			}
+			if !filter.match(rec) {
+				continue
+			}
+			page = append(page, rec)
+			if len(page) == limit+1 {
+				break
+			}
+		}
+		if len(page) == limit+1 {
 			break
 		}
+	}
+
+	if len(page) > limit {
+		last := page[limit-1]
+		out.NextCursor = &Cursor{
+			WipeEpoch:   wipeEpoch,
+			SourceToken: token,
+			ReturnedAt:  last.ReturnedAt,
+			Sequence:    last.Sequence,
+			AttemptID:   last.AttemptID,
+		}
+		page = page[:limit]
 	}
 	out.Records = page
 	if partial > 0 {
@@ -101,6 +121,11 @@ func Query(ctx context.Context, dir string, filter Filter, limit int, cursor *Cu
 	if unknown > 0 {
 		out.Partial = true
 		out.Warnings = append(out.Warnings, Warning{Code: WarnUnsupportedSchema, Count: unknown, Message: "unsupported schema versions omitted"})
+	}
+	if canceled {
+		out.Partial = true
+		out.Warnings = append(out.Warnings, Warning{Code: WarnTruncatedQuery, Count: 1, Message: "query canceled"})
+		return out, ctx.Err()
 	}
 	return out, nil
 }
@@ -121,23 +146,17 @@ func olderThanCursor(rec Record, c Cursor) bool {
 	return rec.AttemptID < c.AttemptID
 }
 
-func hasMore(matched []Record, last Record, filter Filter, cursor *Cursor) bool {
-	seenLast := false
-	for _, rec := range matched {
-		if !seenLast {
-			if rec.AttemptID == last.AttemptID && rec.Sequence == last.Sequence {
-				seenLast = true
-			}
+func sourceToken(files []string) string {
+	h := sha256.New()
+	for _, f := range files {
+		info, err := os.Lstat(f)
+		if err != nil {
+			fmt.Fprintf(h, "%s:missing\n", filepath.Base(f))
 			continue
 		}
-		if cursor != nil && !olderThanCursor(rec, *cursor) {
-			continue
-		}
-		if filter.match(rec) {
-			return true
-		}
+		fmt.Fprintf(h, "%s:%d:%d\n", filepath.Base(f), info.Size(), info.ModTime().UnixNano())
 	}
-	return false
+	return hex.EncodeToString(h.Sum(nil)[:16])
 }
 
 func readFile(ctx context.Context, path string) (recs []Record, partial, malformed, unknown int, err error) {
@@ -157,18 +176,30 @@ func readFile(ctx context.Context, path string) (recs []Record, partial, malform
 	var offset int64
 	for {
 		if err := ctx.Err(); err != nil {
-			return recs, partial, malformed, unknown, nil
+			return recs, partial, malformed, unknown, err
 		}
-		line, readErr := r.ReadBytes('\n')
+		line, tooLong, hadNewline, readErr := readBoundedLine(r, MaxLineBytes)
 		offset += int64(len(line))
+		if tooLong {
+			malformed++
+			if readErr == io.EOF {
+				if offset >= info.Size() && !hadNewline {
+					partial++
+					malformed--
+				}
+				break
+			}
+			if readErr != nil && readErr != io.EOF {
+				return recs, partial, malformed, unknown, readErr
+			}
+			continue
+		}
 		if len(line) == 0 && readErr != nil {
 			if readErr == io.EOF {
 				break
 			}
 			return recs, partial, malformed, unknown, readErr
 		}
-		hadNewline := bytes.HasSuffix(line, []byte("\n"))
-		line = bytes.TrimRight(line, "\r\n")
 		if !hadNewline {
 			if offset >= info.Size() || readErr == io.EOF {
 				if len(line) > 0 {
@@ -178,13 +209,6 @@ func readFile(ctx context.Context, path string) (recs []Record, partial, malform
 			}
 		}
 		if len(line) == 0 {
-			if readErr == io.EOF {
-				break
-			}
-			continue
-		}
-		if len(line) > MaxLineBytes {
-			malformed++
 			if readErr == io.EOF {
 				break
 			}
@@ -211,6 +235,30 @@ func readFile(ctx context.Context, path string) (recs []Record, partial, malform
 	return recs, partial, malformed, unknown, nil
 }
 
+func readBoundedLine(r *bufio.Reader, max int) (line []byte, tooLong, hadNewline bool, err error) {
+	var buf []byte
+	for {
+		b, readErr := r.ReadByte()
+		if readErr != nil {
+			return buf, tooLong, hadNewline, readErr
+		}
+		if b == '\n' {
+			if len(buf) > 0 && buf[len(buf)-1] == '\r' {
+				buf = buf[:len(buf)-1]
+			}
+			return buf, tooLong, true, nil
+		}
+		if !tooLong {
+			if len(buf) >= max {
+				tooLong = true
+				buf = nil
+				continue
+			}
+			buf = append(buf, b)
+		}
+	}
+}
+
 func parseRecord(line []byte) (Record, string, bool) {
 	var probe struct {
 		SchemaVersion int `json:"schema_version"`
@@ -234,6 +282,9 @@ func parseRecord(line []byte) (Record, string, bool) {
 // QueryPath is an explicit offline file or directory query. It never
 // consults a live recorder.
 func QueryPath(ctx context.Context, path string, filter Filter, limit int, cursor *Cursor) (QueryResult, error) {
+	if err := refuseSymlinkParents(path); err != nil && !os.IsNotExist(err) {
+		return QueryResult{}, err
+	}
 	info, err := os.Lstat(path)
 	if err != nil {
 		return QueryResult{}, err
@@ -242,62 +293,40 @@ func QueryPath(ctx context.Context, path string, filter Filter, limit int, curso
 		return QueryResult{}, fmt.Errorf("refusing symlink path")
 	}
 	if !info.IsDir() {
-		return queryFiles(ctx, []string{path}, filter, limit, cursor, 0)
+		token := sourceToken([]string{path})
+		if cursor != nil && cursor.WipeEpoch != 0 {
+			return QueryResult{}, fmt.Errorf("cursor invalidated by wipe")
+		}
+		if cursor != nil && cursor.SourceToken != "" && cursor.SourceToken != token {
+			return QueryResult{}, fmt.Errorf("cursor invalidated by wipe")
+		}
+		return queryFromFiles(ctx, []string{path}, filter, limit, cursor, 0, token)
 	}
 	return Query(ctx, path, filter, limit, cursor, 0)
 }
 
-func queryFiles(ctx context.Context, files []string, filter Filter, limit int, cursor *Cursor, wipeEpoch uint64) (QueryResult, error) {
-	limit = clampLimit(limit)
-	out := QueryResult{Records: []Record{}, Warnings: []Warning{}, WipeEpoch: wipeEpoch}
-	if cursor != nil && cursor.WipeEpoch != wipeEpoch {
-		return out, fmt.Errorf("cursor invalidated by wipe")
+// EncodeCursor serializes a cursor as unpadded URL-safe base64 JSON.
+func EncodeCursor(c Cursor) string {
+	raw, err := json.Marshal(c)
+	if err != nil {
+		return ""
 	}
-	var matched []Record
-	var partial, malformed, unknown int
-	for _, path := range files {
-		recs, p, m, u, err := readFile(ctx, path)
-		if err != nil {
-			out.Partial = true
-			out.Warnings = append(out.Warnings, Warning{Code: WarnUnreadable, Count: 1, Message: "history file unreadable"})
-			continue
-		}
-		partial += p
-		malformed += m
-		unknown += u
-		matched = append(matched, recs...)
+	return base64.RawURLEncoding.EncodeToString(raw)
+}
+
+// DecodeCursor parses a cursor from unpadded URL-safe base64 JSON or raw JSON.
+func DecodeCursor(s string) (Cursor, error) {
+	var c Cursor
+	if s == "" {
+		return c, fmt.Errorf("empty cursor")
 	}
-	sort.SliceStable(matched, func(i, j int) bool {
-		if !matched[i].ReturnedAt.Equal(matched[j].ReturnedAt) {
-			return matched[i].ReturnedAt.After(matched[j].ReturnedAt)
-		}
-		if matched[i].Sequence != matched[j].Sequence {
-			return matched[i].Sequence > matched[j].Sequence
-		}
-		return matched[i].AttemptID > matched[j].AttemptID
-	})
-	var page []Record
-	for _, rec := range matched {
-		if !filter.match(rec) {
-			continue
-		}
-		page = append(page, rec)
-		if len(page) == limit {
-			break
+	if raw, err := base64.RawURLEncoding.DecodeString(s); err == nil {
+		if json.Unmarshal(raw, &c) == nil && (c.AttemptID != "" || c.Sequence != 0 || !c.ReturnedAt.IsZero() || c.SourceToken != "") {
+			return c, nil
 		}
 	}
-	out.Records = page
-	if partial > 0 {
-		out.Partial = true
-		out.Warnings = append(out.Warnings, Warning{Code: WarnPartialTail, Count: partial, Message: "incomplete final line omitted"})
+	if err := json.Unmarshal([]byte(s), &c); err != nil {
+		return Cursor{}, err
 	}
-	if malformed > 0 {
-		out.Partial = true
-		out.Warnings = append(out.Warnings, Warning{Code: WarnMalformed, Count: malformed, Message: "malformed records omitted"})
-	}
-	if unknown > 0 {
-		out.Partial = true
-		out.Warnings = append(out.Warnings, Warning{Code: WarnUnsupportedSchema, Count: unknown, Message: "unsupported schema versions omitted"})
-	}
-	return out, nil
+	return c, nil
 }

@@ -3,6 +3,7 @@ package runs
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -17,6 +18,11 @@ type attemptRef struct {
 	ParentID string
 }
 
+type warnEvent struct {
+	reason string
+	msg    string
+}
+
 // Recorder is one stack-owned, single-writer run recorder.
 type Recorder struct {
 	cfg Config
@@ -24,13 +30,15 @@ type Recorder struct {
 	instanceID string
 	logger     *slog.Logger
 
-	gen       atomic.Uint64
-	seq       atomic.Uint64
-	wipeEpoch atomic.Uint64
-	enabled   atomic.Bool
-	closed    atomic.Bool
+	gen        atomic.Uint64
+	seq        atomic.Uint64
+	wipeEpoch  atomic.Uint64
+	enabled    atomic.Bool
+	closed     atomic.Bool
+	openFailed atomic.Bool
 
-	queue chan queuedEvent
+	queue  chan queuedEvent
+	warnCh chan warnEvent
 
 	drops struct {
 		queueFull     atomic.Uint64
@@ -41,6 +49,8 @@ type Recorder struct {
 		writeError    atomic.Uint64
 		syncError     atomic.Uint64
 		shutdownLimit atomic.Uint64
+		discarded     atomic.Uint64
+		openError     atomic.Uint64
 	}
 
 	lastAppend atomic.Value // time.Time
@@ -63,9 +73,9 @@ type queuedEvent struct {
 	payload []byte
 }
 
-// NewRecorder starts a single writer goroutine. The recorder is disabled
-// until cfg.Enabled is true; a disabled recorder still exists only when
-// the caller constructs one.
+// NewRecorder starts a single writer goroutine. Enablement is requested
+// independently of destination health: an unopenable destination yields a
+// degraded recorder rather than a nil one.
 func NewRecorder(cfg Config, logger *slog.Logger) (*Recorder, error) {
 	if logger == nil {
 		logger = slog.Default()
@@ -87,16 +97,16 @@ func NewRecorder(cfg Config, logger *slog.Logger) (*Recorder, error) {
 	}
 	if cfg.Dir == "" && cfg.StackName != "" {
 		dir, err := Dir(cfg.StackName)
-		if err != nil {
-			return nil, err
+		if err == nil {
+			cfg.Dir = dir
 		}
-		cfg.Dir = dir
 	}
 	r := &Recorder{
 		cfg:        cfg,
 		instanceID: newID(),
 		logger:     logger,
 		queue:      make(chan queuedEvent, cfg.QueueSize),
+		warnCh:     make(chan warnEvent, 8),
 		lastWarn:   make(map[string]time.Time),
 		omit:       cfg.OmitLabels,
 		processAt:  time.Now().UTC(),
@@ -104,21 +114,31 @@ func NewRecorder(cfg Config, logger *slog.Logger) (*Recorder, error) {
 	r.gen.Store(1)
 	r.enabled.Store(cfg.Enabled)
 	if cfg.Enabled {
-		w, err := newWriter(WriterConfig{
-			Dir:         cfg.Dir,
-			MaxBytes:    cfg.MaxBytes,
-			MaxAge:      cfg.MaxAge,
-			SegmentSize: cfg.SegmentSize,
-		})
-		if err != nil {
-			return nil, err
+		if cfg.Dir == "" {
+			r.openFailed.Store(true)
+			r.drops.openError.Add(1)
+		} else {
+			w, err := newWriter(WriterConfig{
+				Dir:         cfg.Dir,
+				MaxBytes:    cfg.MaxBytes,
+				MaxAge:      cfg.MaxAge,
+				SegmentSize: cfg.SegmentSize,
+			})
+			if err != nil {
+				r.openFailed.Store(true)
+				r.drops.openError.Add(1)
+			} else {
+				r.writer = w
+			}
 		}
-		r.writer = w
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	r.cancel = cancel
 	r.wg.Add(1)
 	go r.loop(ctx)
+	if r.openFailed.Load() {
+		r.warn(DropOpenError, "run recorder failed to open destination")
+	}
 	return r, nil
 }
 
@@ -140,6 +160,8 @@ func (r *Recorder) loop(ctx context.Context) {
 			return
 		case ev := <-r.queue:
 			r.writeOne(ctx, ev)
+		case ev := <-r.warnCh:
+			r.emitWarn(ev)
 		case <-syncTick.C:
 			r.sync(ctx)
 		case <-pruneTick.C:
@@ -149,13 +171,13 @@ func (r *Recorder) loop(ctx context.Context) {
 }
 
 func (r *Recorder) writeOne(ctx context.Context, ev queuedEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if ev.gen != r.gen.Load() || ev.epoch != r.wipeEpoch.Load() {
 		r.drops.generation.Add(1)
 		return
 	}
-	r.mu.Lock()
 	w := r.writer
-	r.mu.Unlock()
 	if w == nil {
 		r.drops.closed.Add(1)
 		return
@@ -163,11 +185,15 @@ func (r *Recorder) writeOne(ctx context.Context, ev queuedEvent) {
 	if err := w.Append(ctx, ev.payload); err != nil {
 		if err == errCapExhausted {
 			r.drops.capExhausted.Add(1)
-			r.warn(DropCapExhausted, "run recorder stopped appending; capacity exhausted")
+			r.warnLocked(DropCapExhausted, "run recorder stopped appending; capacity exhausted")
+			return
+		}
+		if err == context.Canceled || err == context.DeadlineExceeded {
+			r.drops.shutdownLimit.Add(1)
 			return
 		}
 		r.drops.writeError.Add(1)
-		r.warn(DropWriteError, "run recorder append failed")
+		r.warnLocked(DropWriteError, "run recorder append failed")
 		return
 	}
 	now := time.Now().UTC()
@@ -182,6 +208,9 @@ func (r *Recorder) sync(ctx context.Context) {
 		return
 	}
 	if err := w.Sync(ctx); err != nil {
+		if err == context.Canceled || err == context.DeadlineExceeded {
+			return
+		}
 		r.drops.syncError.Add(1)
 		r.warn(DropSyncError, "run recorder sync failed")
 	}
@@ -194,35 +223,75 @@ func (r *Recorder) prune() {
 	if w == nil {
 		return
 	}
-	_ = w.Prune(time.Now())
+	if err := w.Prune(time.Now()); err != nil {
+		r.drops.writeError.Add(1)
+		r.warn(DropWriteError, "run recorder prune failed")
+	}
 }
 
 func (r *Recorder) drain(limit time.Duration) {
 	deadline := time.Now().Add(limit)
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
 	for {
+		if time.Now().After(deadline) {
+			r.abandonQueue()
+			return
+		}
 		select {
 		case ev := <-r.queue:
 			if time.Now().After(deadline) {
 				r.drops.shutdownLimit.Add(1)
+				r.abandonQueue()
 				return
 			}
-			r.writeOne(context.Background(), ev)
+			r.writeOne(ctx, ev)
 		default:
-			r.sync(context.Background())
+			r.sync(ctx)
+			return
+		}
+	}
+}
+
+func (r *Recorder) abandonQueue() {
+	var n uint64
+	for {
+		select {
+		case <-r.queue:
+			n++
+		default:
+			if n > 0 {
+				r.drops.shutdownLimit.Add(n)
+			}
 			return
 		}
 	}
 }
 
 func (r *Recorder) warn(reason, msg string) {
-	r.warnMu.Lock()
-	defer r.warnMu.Unlock()
-	now := time.Now()
-	if last, ok := r.lastWarn[reason]; ok && now.Sub(last) < 10*time.Second {
+	if r.warnCh == nil {
 		return
 	}
-	r.lastWarn[reason] = now
-	r.logger.Warn(msg, "reason", reason)
+	select {
+	case r.warnCh <- warnEvent{reason: reason, msg: msg}:
+	default:
+	}
+}
+
+func (r *Recorder) warnLocked(reason, msg string) {
+	r.warn(reason, msg)
+}
+
+func (r *Recorder) emitWarn(ev warnEvent) {
+	r.warnMu.Lock()
+	now := time.Now()
+	if last, ok := r.lastWarn[ev.reason]; ok && now.Sub(last) < 10*time.Second {
+		r.warnMu.Unlock()
+		return
+	}
+	r.lastWarn[ev.reason] = now
+	r.warnMu.Unlock()
+	r.logger.Warn(ev.msg, "reason", ev.reason)
 }
 
 // Begin starts one attempt bound to the recorder generation active at entry.
@@ -236,6 +305,9 @@ func (r *Recorder) Begin(ctx context.Context, requestedName string) *Attempt {
 	if r == nil || !r.enabled.Load() || r.closed.Load() {
 		return a
 	}
+	r.mu.Lock()
+	a.omitLabels = r.omit
+	r.mu.Unlock()
 	a.gen = r.gen.Load()
 	a.epoch = r.wipeEpoch.Load()
 	a.id = newID()
@@ -262,18 +334,19 @@ func (r *Recorder) Begin(ctx context.Context, requestedName string) *Attempt {
 // Attempt is the per-invocation builder. Metadata is immutable once Finish
 // materializes the record.
 type Attempt struct {
-	ctx       context.Context
-	rec       *Recorder
-	active    bool
-	finished  atomic.Bool
-	gen       uint64
-	epoch     uint64
-	id        string
-	parentID  string
-	rootID    string
-	prevID    string
-	started   time.Time
-	startedAt time.Time
+	ctx        context.Context
+	rec        *Recorder
+	active     bool
+	finished   atomic.Bool
+	gen        uint64
+	epoch      uint64
+	id         string
+	parentID   string
+	rootID     string
+	prevID     string
+	started    time.Time
+	startedAt  time.Time
+	omitLabels bool
 
 	requested     string
 	requestedOmit string
@@ -350,7 +423,7 @@ func (a *Attempt) SetLabels(client, access string) {
 
 // SetPreviousAttemptID links a resumed round when trusted internal correlation exists.
 func (a *Attempt) SetPreviousAttemptID(id string) {
-	if a == nil || id == "" {
+	if a == nil || !ValidGeneratedID(id) {
 		return
 	}
 	a.prevID = id
@@ -368,7 +441,12 @@ func (a *Attempt) Finish() {
 		return
 	}
 	r := a.rec
-	if !r.enabled.Load() || r.closed.Load() {
+	if r.closed.Load() {
+		r.drops.closed.Add(1)
+		return
+	}
+	if !r.enabled.Load() {
+		r.drops.discarded.Add(1)
 		return
 	}
 	if a.gen != r.gen.Load() || a.epoch != r.wipeEpoch.Load() {
@@ -418,7 +496,7 @@ func (a *Attempt) materialize() Record {
 	if a.downstream > 0 {
 		rec.DownstreamMS = a.downstream.Milliseconds()
 	}
-	if !a.rec.omit {
+	if !a.omitLabels {
 		rec.ClientLabel = a.clientLabel
 		rec.AccessLabel = a.accessLabel
 	}
@@ -431,20 +509,30 @@ func (a *Attempt) materialize() Record {
 // Status returns independent recorder health.
 func (r *Recorder) Status() Status {
 	if r == nil {
-		return Status{Enabled: false, Effective: false, WriterHealth: HealthStopped, HistoricalLoss: LossUnknown}
+		return Status{Enabled: false, Effective: false, WriterHealth: HealthUnknown, HistoricalLoss: LossUnknown, Known: false, Drops: map[string]uint64{}, Failures: map[string]uint64{}}
 	}
+	r.mu.Lock()
+	omit := r.omit
+	maxBytes := r.cfg.MaxBytes
+	maxAge := r.cfg.MaxAge
+	w := r.writer
+	r.mu.Unlock()
 	st := Status{
-		Enabled:            r.enabled.Load(),
-		Effective:          r.enabled.Load() && !r.closed.Load(),
-		QueueDepth:         len(r.queue),
-		QueueCapacity:      cap(r.queue),
-		Drops:              map[string]uint64{},
-		Failures:           map[string]uint64{},
-		ProcessStartedAt:   r.processAt,
-		HistoricalLoss:     LossUnknown,
-		WipeEpoch:          r.wipeEpoch.Load(),
-		Generation:         r.gen.Load(),
-		RecorderInstanceID: r.instanceID,
+		Enabled:             r.enabled.Load(),
+		Effective:           r.enabled.Load() && !r.closed.Load() && w != nil && !r.openFailed.Load(),
+		QueueDepth:          len(r.queue),
+		QueueCapacity:       cap(r.queue),
+		Drops:               map[string]uint64{},
+		Failures:            map[string]uint64{},
+		ProcessStartedAt:    r.processAt,
+		HistoricalLoss:      LossUnknown,
+		WipeEpoch:           r.wipeEpoch.Load(),
+		Generation:          r.gen.Load(),
+		RecorderInstanceID:  r.instanceID,
+		Known:               true,
+		OmitLabels:          omit,
+		RetentionMaxBytes:   maxBytes,
+		RetentionMaxAgeDays: int(maxAge / (24 * time.Hour)),
 	}
 	if n := r.drops.queueFull.Load(); n > 0 {
 		st.Drops[DropQueueFull] = n
@@ -464,6 +552,13 @@ func (r *Recorder) Status() Status {
 	if n := r.drops.shutdownLimit.Load(); n > 0 {
 		st.Drops[DropShutdownLimit] = n
 	}
+	if n := r.drops.discarded.Load(); n > 0 {
+		st.Drops[DropDiscarded] = n
+	}
+	if n := r.drops.openError.Load(); n > 0 {
+		st.Failures[DropOpenError] = n
+		st.Drops[DropOpenError] = n
+	}
 	if n := r.drops.writeError.Load(); n > 0 {
 		st.Failures[DropWriteError] = n
 		st.Drops[DropWriteError] = n
@@ -476,11 +571,12 @@ func (r *Recorder) Status() Status {
 		t := v.(time.Time)
 		st.LastSuccessfulAppend = &t
 	}
-	r.mu.Lock()
-	w := r.writer
-	r.mu.Unlock()
 	if w == nil {
-		st.WriterHealth = HealthStopped
+		if r.openFailed.Load() || r.enabled.Load() {
+			st.WriterHealth = HealthDegraded
+		} else {
+			st.WriterHealth = HealthStopped
+		}
 		st.Effective = false
 		return st
 	}
@@ -498,6 +594,16 @@ func (r *Recorder) Status() Status {
 	if snap.SyncErrs > 0 {
 		st.Failures[DropSyncError] = snap.SyncErrs
 	}
+	if snap.TailRecovered {
+		st.Failures["partial_tail"] = 1
+	}
+	if snap.PruneFailures > 0 {
+		st.Failures[DropWriteError] = snap.PruneFailures
+	}
+	if r.openFailed.Load() {
+		st.WriterHealth = HealthDegraded
+		st.Effective = false
+	}
 	if !st.Enabled {
 		st.Effective = false
 	}
@@ -512,25 +618,45 @@ func (r *Recorder) Apply(cfg Config) error {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.omit = cfg.OmitLabels
-	r.cfg.OmitLabels = cfg.OmitLabels
-	r.cfg.MaxBytes = cfg.MaxBytes
-	r.cfg.MaxAge = cfg.MaxAge
-	enabled := cfg.Enabled
-	r.enabled.Store(enabled)
-	if !enabled {
-		return nil
-	}
 	dir := cfg.Dir
 	if dir == "" && cfg.StackName != "" {
 		d, err := Dir(cfg.StackName)
-		if err != nil {
-			return err
+		if err == nil {
+			dir = d
 		}
-		dir = d
 	}
-	if r.writer != nil && r.cfg.Dir == dir {
-		r.writer.setRetention(cfg.MaxBytes, cfg.MaxAge)
+	oldDir := r.cfg.Dir
+	if dir != "" {
+		r.cfg.Dir = dir
+	}
+	if cfg.StackName != "" {
+		r.cfg.StackName = cfg.StackName
+	}
+	r.omit = cfg.OmitLabels
+	r.cfg.OmitLabels = cfg.OmitLabels
+	if cfg.MaxBytes > 0 {
+		r.cfg.MaxBytes = cfg.MaxBytes
+	}
+	if cfg.MaxAge > 0 {
+		r.cfg.MaxAge = cfg.MaxAge
+	}
+	enabled := cfg.Enabled
+	wasEnabled := r.enabled.Load()
+	r.enabled.Store(enabled)
+	if !enabled {
+		if wasEnabled {
+			r.gen.Add(1)
+		}
+		if r.writer != nil {
+			_ = r.writer.Close()
+			r.writer = nil
+		}
+		r.openFailed.Store(false)
+		return nil
+	}
+	if r.writer != nil && oldDir == dir && dir != "" {
+		r.writer.setRetention(r.cfg.MaxBytes, r.cfg.MaxAge)
+		r.openFailed.Store(false)
 		return nil
 	}
 	if r.writer != nil {
@@ -538,18 +664,25 @@ func (r *Recorder) Apply(cfg Config) error {
 		r.writer = nil
 	}
 	r.gen.Add(1)
-	r.cfg.Dir = dir
-	r.cfg.StackName = cfg.StackName
+	if dir == "" {
+		r.openFailed.Store(true)
+		r.drops.openError.Add(1)
+		r.warnLocked(DropOpenError, "run recorder failed to open destination")
+		return fmt.Errorf("runs recorder: directory is required")
+	}
 	w, err := newWriter(WriterConfig{
 		Dir:         dir,
-		MaxBytes:    cfg.MaxBytes,
-		MaxAge:      cfg.MaxAge,
+		MaxBytes:    r.cfg.MaxBytes,
+		MaxAge:      r.cfg.MaxAge,
 		SegmentSize: cfg.SegmentSize,
 	})
 	if err != nil {
-		r.enabled.Store(false)
+		r.openFailed.Store(true)
+		r.drops.openError.Add(1)
+		r.warnLocked(DropOpenError, "run recorder failed to open destination")
 		return err
 	}
+	r.openFailed.Store(false)
 	r.writer = w
 	return nil
 }
@@ -569,7 +702,17 @@ func (r *Recorder) Close() {
 	}
 	r.enabled.Store(false)
 	r.cancel()
-	r.wg.Wait()
+	done := make(chan struct{})
+	go func() {
+		r.wg.Wait()
+		close(done)
+	}()
+	grace := r.cfg.ShutdownDrain + 250*time.Millisecond
+	select {
+	case <-done:
+	case <-time.After(grace):
+		r.drops.shutdownLimit.Add(1)
+	}
 }
 
 // Wipe is a writer-coordinated barrier. Pre-wipe queued events are dropped
@@ -578,17 +721,17 @@ func (r *Recorder) Wipe(ctx context.Context) error {
 	if r == nil {
 		return nil
 	}
-	r.wipeEpoch.Add(1)
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.wipeEpoch.Add(1)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if r.writer == nil {
 		if r.cfg.Dir == "" {
 			return nil
 		}
 		return deleteOwned(r.cfg.Dir)
-	}
-	if err := ctx.Err(); err != nil {
-		return err
 	}
 	return r.writer.wipeAndReopen()
 }
@@ -598,6 +741,8 @@ func (r *Recorder) DirPath() string {
 	if r == nil {
 		return ""
 	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	return r.cfg.Dir
 }
 

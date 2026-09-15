@@ -71,6 +71,8 @@ const (
 	DropWriteError    = "write_error"
 	DropSyncError     = "sync_error"
 	DropShutdownLimit = "shutdown_limit"
+	DropOpenError     = "open_error"
+	DropDiscarded     = "discarded"
 )
 
 // Writer health values reported independently of the destination file.
@@ -78,6 +80,7 @@ const (
 	HealthOK       = "ok"
 	HealthDegraded = "degraded"
 	HealthStopped  = "stopped"
+	HealthUnknown  = "unknown"
 )
 
 // LossUnknown is the post-restart / offline historical-loss value.

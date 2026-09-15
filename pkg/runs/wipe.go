@@ -89,21 +89,37 @@ func daemonRunning(stackName string) (bool, error) {
 }
 
 func deleteOwned(dir string) error {
-	ents, err := os.ReadDir(dir)
+	if err := refuseSymlinkParents(dir); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	f, err := openDirNoFollow(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
 		return err
 	}
+	defer f.Close()
+	names, err := f.Readdirnames(-1)
+	if err != nil {
+		return err
+	}
 	var errs []error
-	for _, ent := range ents {
-		if ent.IsDir() || !isOwnedName(ent.Name()) {
+	for _, name := range names {
+		if !isOwnedName(name) {
 			continue
 		}
-		path := filepath.Join(dir, ent.Name())
-		if err := refuseSymlink(path); err != nil && !os.IsNotExist(err) {
+		path := filepath.Join(dir, name)
+		info, err := os.Lstat(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
 			errs = append(errs, err)
+			continue
+		}
+		if info.Mode()&os.ModeSymlink != 0 || info.IsDir() {
+			errs = append(errs, fmt.Errorf("refusing to delete non-regular owned path %s", name))
 			continue
 		}
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {

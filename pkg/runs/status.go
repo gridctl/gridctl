@@ -21,6 +21,10 @@ type Status struct {
 	RecorderInstanceID   string            `json:"recorder_instance_id"`
 	LogicalBytes         int64             `json:"logical_bytes"`
 	Synced               bool              `json:"synced"`
+	Known                bool              `json:"known"`
+	OmitLabels           bool              `json:"omit_labels"`
+	RetentionMaxBytes    int64             `json:"retention_max_bytes"`
+	RetentionMaxAgeDays  int               `json:"retention_max_age_days"`
 }
 
 // Config is the runtime recorder configuration.

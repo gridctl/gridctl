@@ -8,7 +8,7 @@ import (
 )
 
 func openAppendFile(path string) (*os.File, error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, filePerm)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, filePerm)
 	if err != nil {
 		return nil, err
 	}

@@ -1,17 +1,23 @@
 package runs
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
 const defaultSegmentBytes = 8 << 20
+
+const rotatedStampLayout = "2006-01-02T15-04-05.000"
 
 // Writer appends schema-versioned JSONL records with rotation, a total
 // logical-byte budget, periodic sync, and coordinated reopen for wipe.
@@ -32,9 +38,12 @@ type Writer struct {
 	syncedSeq  uint64
 	lastSync   time.Time
 
-	capStopped bool
-	writeErrs  uint64
-	syncErrs   uint64
+	capStopped    bool
+	writeErrs     uint64
+	syncErrs      uint64
+	tailRecovered bool
+	pruneFailures uint64
+	rotateSeq     uint64
 }
 
 // WriterConfig bounds on-disk retention. MaxBytes is the total logical
@@ -102,23 +111,63 @@ func (w *Writer) openLocked() error {
 		_ = f.Close()
 		return err
 	}
+	size, recovered, err := recoverJSONLTail(f, info.Size())
+	if err != nil {
+		_ = f.Close()
+		return err
+	}
 	w.file = f
-	w.currentBytes = info.Size()
+	w.currentBytes = size
 	w.totalBytes = inventoryBytes(w.dir)
+	if recovered {
+		w.tailRecovered = true
+	}
 	w.capStopped = w.totalBytes >= w.maxBytes && !w.canReclaimLocked()
 	return nil
 }
 
-func (w *Writer) Append(_ context.Context, payload []byte) error {
+func recoverJSONLTail(f *os.File, size int64) (int64, bool, error) {
+	if size == 0 {
+		return 0, false, nil
+	}
+	const maxScan = 1 << 20
+	scan := size
+	if scan > maxScan {
+		scan = maxScan
+	}
+	buf := make([]byte, scan)
+	if _, err := f.ReadAt(buf, size-scan); err != nil && err != io.EOF {
+		return size, false, err
+	}
+	idx := bytes.LastIndexByte(buf, '\n')
+	var newSize int64
+	if idx < 0 {
+		newSize = size - scan
+	} else {
+		newSize = size - scan + int64(idx) + 1
+	}
+	if newSize == size {
+		return size, false, nil
+	}
+	if err := f.Truncate(newSize); err != nil {
+		return size, false, err
+	}
+	return newSize, true, nil
+}
+
+func (w *Writer) Append(ctx context.Context, payload []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.file == nil {
 		return fmt.Errorf("runs writer: closed")
 	}
 	need := int64(len(payload) + 1)
-	if err := w.ensureCapacityLocked(need); err != nil {
+	if need > w.maxBytes {
 		w.capStopped = true
-		return err
+		return errCapExhausted
 	}
 	if w.currentBytes+need > w.segmentSize && w.currentBytes > 0 {
 		if err := w.rotateLocked(); err != nil {
@@ -126,13 +175,30 @@ func (w *Writer) Append(_ context.Context, payload []byte) error {
 			return err
 		}
 	}
-	n, err := w.file.Write(append(payload, '\n'))
-	if err != nil {
-		w.writeErrs++
+	if err := w.ensureCapacityLocked(need); err != nil {
+		w.capStopped = true
 		return err
 	}
+	n, err := w.file.Write(append(payload, '\n'))
 	w.currentBytes += int64(n)
 	w.totalBytes += int64(n)
+	if err != nil {
+		w.writeErrs++
+		if info, stErr := w.file.Stat(); stErr == nil {
+			if size, recovered, recErr := recoverJSONLTail(w.file, info.Size()); recErr == nil {
+				delta := w.currentBytes - size
+				w.currentBytes = size
+				w.totalBytes -= delta
+				if w.totalBytes < 0 {
+					w.totalBytes = 0
+				}
+				if recovered {
+					w.tailRecovered = true
+				}
+			}
+		}
+		return err
+	}
 	w.writtenSeq++
 	return nil
 }
@@ -155,15 +221,12 @@ func (w *Writer) ensureCapacityLocked(need int64) error {
 var errCapExhausted = fmt.Errorf("runs writer: capacity exhausted")
 
 func (w *Writer) canReclaimLocked() bool {
-	ents, err := os.ReadDir(w.dir)
+	ents, err := confinedReadDir(w.dir)
 	if err != nil {
 		return false
 	}
-	for _, ent := range ents {
-		if ent.IsDir() {
-			continue
-		}
-		if isRotatedName(ent.Name()) {
+	for _, name := range ents {
+		if isRotatedName(name) {
 			return true
 		}
 	}
@@ -176,20 +239,25 @@ func (w *Writer) reclaimLocked(need int64) error {
 		mod  time.Time
 		size int64
 	}
-	ents, err := os.ReadDir(w.dir)
+	ents, err := confinedReadDir(w.dir)
 	if err != nil {
 		return err
 	}
 	var segs []seg
-	for _, ent := range ents {
-		if ent.IsDir() || !isRotatedName(ent.Name()) {
+	for _, name := range ents {
+		if !isRotatedName(name) {
 			continue
 		}
-		info, err := ent.Info()
+		path := filepath.Join(w.dir, name)
+		info, err := os.Lstat(path)
 		if err != nil {
 			continue
 		}
-		segs = append(segs, seg{name: ent.Name(), mod: info.ModTime(), size: info.Size()})
+		mod := info.ModTime()
+		if ts, ok := rotatedStamp(name); ok && ts.Before(mod) {
+			mod = ts
+		}
+		segs = append(segs, seg{name: name, mod: mod, size: info.Size()})
 	}
 	sort.Slice(segs, func(i, j int) bool { return segs[i].mod.Before(segs[j].mod) })
 	for _, s := range segs {
@@ -222,8 +290,10 @@ func (w *Writer) rotateLocked() error {
 		return err
 	}
 	w.file = nil
-	stamp := time.Now().UTC().Format("2006-01-02T15-04-05.000")
-	dest := filepath.Join(w.dir, "runs-"+stamp+".jsonl")
+	dest, err := w.uniqueRotatedPathLocked()
+	if err != nil {
+		return err
+	}
 	if err := os.Rename(w.path, dest); err != nil {
 		return err
 	}
@@ -232,7 +302,23 @@ func (w *Writer) rotateLocked() error {
 	return w.openLocked()
 }
 
-func (w *Writer) Sync(_ context.Context) error {
+func (w *Writer) uniqueRotatedPathLocked() (string, error) {
+	stamp := time.Now().UTC().Format(rotatedStampLayout)
+	for i := 0; i < 10000; i++ {
+		w.rotateSeq++
+		name := fmt.Sprintf("runs-%s-%d.jsonl", stamp, w.rotateSeq)
+		dest := filepath.Join(w.dir, name)
+		if _, err := os.Lstat(dest); os.IsNotExist(err) {
+			return dest, nil
+		}
+	}
+	return "", fmt.Errorf("runs writer: rotation name collision")
+}
+
+func (w *Writer) Sync(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.file == nil {
@@ -250,7 +336,20 @@ func (w *Writer) Sync(_ context.Context) error {
 func (w *Writer) Prune(now time.Time) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.pruneLocked(now)
+	wasOpen := w.file != nil
+	err := w.pruneLocked(now)
+	if err != nil {
+		w.pruneFailures++
+	}
+	if wasOpen && w.file == nil {
+		if openErr := w.openLocked(); openErr != nil {
+			w.writeErrs++
+			if err == nil {
+				err = openErr
+			}
+		}
+	}
+	return err
 }
 
 func (w *Writer) pruneLocked(now time.Time) error {
@@ -259,7 +358,10 @@ func (w *Writer) pruneLocked(now time.Time) error {
 		return nil
 	}
 	cutoff := now.Add(-w.maxAge)
-	ents, err := os.ReadDir(w.dir)
+	if err := w.ageActiveLocked(cutoff); err != nil {
+		return err
+	}
+	ents, err := confinedReadDir(w.dir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			w.totalBytes = 0
@@ -267,22 +369,95 @@ func (w *Writer) pruneLocked(now time.Time) error {
 		}
 		return err
 	}
-	for _, ent := range ents {
-		if ent.IsDir() || !isRotatedName(ent.Name()) {
+	for _, name := range ents {
+		if !isRotatedName(name) {
 			continue
 		}
-		info, err := ent.Info()
+		path := filepath.Join(w.dir, name)
+		info, err := os.Lstat(path)
 		if err != nil {
 			continue
 		}
-		if info.ModTime().Before(cutoff) {
-			path := filepath.Join(w.dir, ent.Name())
+		mod := info.ModTime()
+		if ts, ok := rotatedStamp(name); ok && ts.Before(mod) {
+			mod = ts
+		}
+		if mod.Before(cutoff) {
 			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 				return err
 			}
 		}
 	}
 	w.totalBytes = inventoryBytes(w.dir)
+	return nil
+}
+
+func (w *Writer) ageActiveLocked(cutoff time.Time) error {
+	path := w.path
+	if path == "" {
+		path = filepath.Join(w.dir, activeFileName)
+		w.path = path
+	}
+	if err := refuseSymlink(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	recs, _, _, _, err := readFile(context.Background(), path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return nil
+	}
+	var keep []Record
+	for _, rec := range recs {
+		if rec.ReturnedAt.After(cutoff) || rec.ReturnedAt.Equal(cutoff) {
+			keep = append(keep, rec)
+		}
+	}
+	if len(keep) == len(recs) {
+		return nil
+	}
+	if w.file != nil {
+		_ = w.file.Sync()
+		_ = w.file.Close()
+		w.file = nil
+	}
+	tmp := path + ".tmp"
+	if err := refuseSymlink(tmp); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	tf, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, filePerm)
+	if err != nil {
+		return err
+	}
+	encOK := true
+	for _, rec := range keep {
+		raw, err := json.Marshal(rec)
+		if err != nil {
+			encOK = false
+			break
+		}
+		if _, err := tf.Write(append(raw, '\n')); err != nil {
+			encOK = false
+			break
+		}
+	}
+	_ = tf.Chmod(filePerm)
+	if err := tf.Close(); err != nil {
+		encOK = false
+	}
+	if !encOK {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("runs writer: active age compact failed")
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	_ = os.Chmod(path, filePerm)
 	return nil
 }
 
@@ -305,31 +480,15 @@ func (w *Writer) wipeAndReopen() error {
 		_ = w.file.Close()
 		w.file = nil
 	}
-	ents, err := os.ReadDir(w.dir)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	var errs []error
-	for _, ent := range ents {
-		if ent.IsDir() {
-			continue
-		}
-		if !isOwnedName(ent.Name()) {
-			continue
-		}
-		path := filepath.Join(w.dir, ent.Name())
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			errs = append(errs, err)
-		}
+	if err := deleteOwned(w.dir); err != nil {
+		return fmt.Errorf("runs wipe incomplete: %w", err)
 	}
 	w.currentBytes = 0
 	w.totalBytes = 0
 	w.capStopped = false
 	w.writtenSeq = 0
 	w.syncedSeq = 0
-	if len(errs) > 0 {
-		return fmt.Errorf("runs wipe incomplete: %v", errs)
-	}
+	w.tailRecovered = false
 	return w.openLocked()
 }
 
@@ -348,14 +507,16 @@ func (w *Writer) snapshot() writerSnapshot {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return writerSnapshot{
-		Health:     w.healthLocked(),
-		TotalBytes: w.totalBytes,
-		CapStopped: w.capStopped,
-		WriteErrs:  w.writeErrs,
-		SyncErrs:   w.syncErrs,
-		LastSync:   w.lastSync,
-		SyncedSeq:  w.syncedSeq,
-		WrittenSeq: w.writtenSeq,
+		Health:        w.healthLocked(),
+		TotalBytes:    w.totalBytes,
+		CapStopped:    w.capStopped,
+		WriteErrs:     w.writeErrs,
+		SyncErrs:      w.syncErrs,
+		LastSync:      w.lastSync,
+		SyncedSeq:     w.syncedSeq,
+		WrittenSeq:    w.writtenSeq,
+		TailRecovered: w.tailRecovered,
+		PruneFailures: w.pruneFailures,
 	}
 }
 
@@ -363,51 +524,86 @@ func (w *Writer) healthLocked() string {
 	if w.file == nil {
 		return HealthStopped
 	}
-	if w.capStopped || w.writeErrs > 0 || w.syncErrs > 0 {
+	if w.capStopped || w.writeErrs > 0 || w.syncErrs > 0 || w.pruneFailures > 0 {
 		return HealthDegraded
 	}
 	return HealthOK
 }
 
 type writerSnapshot struct {
-	Health     string
-	TotalBytes int64
-	CapStopped bool
-	WriteErrs  uint64
-	SyncErrs   uint64
-	LastSync   time.Time
-	SyncedSeq  uint64
-	WrittenSeq uint64
+	Health        string
+	TotalBytes    int64
+	CapStopped    bool
+	WriteErrs     uint64
+	SyncErrs      uint64
+	LastSync      time.Time
+	SyncedSeq     uint64
+	WrittenSeq    uint64
+	TailRecovered bool
+	PruneFailures uint64
+}
+
+func rotatedStamp(name string) (time.Time, bool) {
+	if name == activeFileName || !strings.HasPrefix(name, "runs-") || !strings.HasSuffix(name, ".jsonl") {
+		return time.Time{}, false
+	}
+	rest := strings.TrimSuffix(strings.TrimPrefix(name, "runs-"), ".jsonl")
+	if len(rest) < len(rotatedStampLayout) {
+		return time.Time{}, false
+	}
+	ts, err := time.Parse(rotatedStampLayout, rest[:len(rotatedStampLayout)])
+	if err != nil {
+		return time.Time{}, false
+	}
+	leftover := rest[len(rotatedStampLayout):]
+	if leftover == "" {
+		return ts, true
+	}
+	if !strings.HasPrefix(leftover, "-") {
+		return time.Time{}, false
+	}
+	if _, err := strconv.ParseUint(leftover[1:], 10, 64); err != nil {
+		return time.Time{}, false
+	}
+	return ts, true
 }
 
 func isRotatedName(name string) bool {
-	if name == activeFileName {
-		return false
-	}
-	if !strings.HasPrefix(name, "runs-") || !strings.HasSuffix(name, ".jsonl") {
-		return false
-	}
-	ts := strings.TrimSuffix(strings.TrimPrefix(name, "runs-"), ".jsonl")
-	_, err := time.Parse("2006-01-02T15-04-05.000", ts)
-	return err == nil
+	_, ok := rotatedStamp(name)
+	return ok
 }
 
 func isOwnedName(name string) bool {
 	return name == activeFileName || isRotatedName(name) || strings.HasPrefix(name, "runs-") && strings.HasSuffix(name, ".tmp")
 }
 
+func confinedReadDir(dir string) ([]string, error) {
+	if err := refuseSymlinkParents(dir); err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	f, err := openDirNoFollow(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return f.Readdirnames(-1)
+}
+
 func inventoryBytes(dir string) int64 {
-	ents, err := os.ReadDir(dir)
+	ents, err := confinedReadDir(dir)
 	if err != nil {
 		return 0
 	}
 	var total int64
-	for _, ent := range ents {
-		if ent.IsDir() || !isOwnedName(ent.Name()) {
+	for _, name := range ents {
+		if !isOwnedName(name) {
 			continue
 		}
-		info, err := ent.Info()
+		info, err := os.Lstat(filepath.Join(dir, name))
 		if err != nil {
+			continue
+		}
+		if info.Mode()&os.ModeSymlink != 0 || info.IsDir() {
 			continue
 		}
 		total += info.Size()
@@ -434,7 +630,7 @@ func StackInventory(stackName string) (Inventory, error) {
 		return Inventory{}, err
 	}
 	path := filepath.Join(dir, activeFileName)
-	ents, err := os.ReadDir(dir)
+	ents, err := confinedReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return Inventory{Stack: stackName, Signal: "runs", Path: path}, nil
@@ -442,12 +638,15 @@ func StackInventory(stackName string) (Inventory, error) {
 		return Inventory{}, err
 	}
 	inv := Inventory{Stack: stackName, Signal: "runs", Path: path}
-	for _, ent := range ents {
-		if ent.IsDir() || !isOwnedName(ent.Name()) {
+	for _, name := range ents {
+		if !isOwnedName(name) {
 			continue
 		}
-		info, err := ent.Info()
+		info, err := os.Lstat(filepath.Join(dir, name))
 		if err != nil {
+			continue
+		}
+		if info.Mode()&os.ModeSymlink != 0 || info.IsDir() {
 			continue
 		}
 		inv.SizeBytes += info.Size()
@@ -464,7 +663,7 @@ func StackInventory(stackName string) (Inventory, error) {
 }
 
 func listOwnedFiles(dir string) ([]string, error) {
-	ents, err := os.ReadDir(dir)
+	ents, err := confinedReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -472,14 +671,21 @@ func listOwnedFiles(dir string) ([]string, error) {
 		return nil, err
 	}
 	var names []string
-	for _, ent := range ents {
-		if ent.IsDir() || !isOwnedName(ent.Name()) {
+	for _, name := range ents {
+		if !isOwnedName(name) {
 			continue
 		}
-		names = append(names, filepath.Join(dir, ent.Name()))
+		path := filepath.Join(dir, name)
+		info, err := os.Lstat(path)
+		if err != nil {
+			continue
+		}
+		if info.Mode()&os.ModeSymlink != 0 || info.IsDir() {
+			continue
+		}
+		names = append(names, path)
 	}
 	sort.Slice(names, func(i, j int) bool {
-		// Oldest closed segments first; active file last.
 		ai := filepath.Base(names[i]) == activeFileName
 		aj := filepath.Base(names[j]) == activeFileName
 		if ai != aj {
