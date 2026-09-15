@@ -90,8 +90,32 @@ tasks:
 
   test:
     desc: Run unit tests with the race detector (matches CI)
+    summary: |
+      Human-readable unit tests with -race. Designated CI also captures
+      go test JSON and checks tests/adversarial/index.yaml identities.
+      Discover cases with `task scenarios`. Focused reruns do not replace
+      whole-suite acceptance. Example: go test -race -count=1 -run '^TestName$' ./pkg/mcp
     cmds:
       - go test -race ./...
+
+  test:verify:
+    desc: Run unit tests with JSON capture and scenario verification
+    summary: |
+      Thin wrapper over the same capture and verifier path Gatekeeper uses
+      for the unit lane. Requires -json -count=1 -race, then scenarioverify.
+    cmds:
+      - bash scripts/run-verified-tests.sh --lane unit --index tests/adversarial/index.yaml -- ./...
+
+  scenarios:
+    desc: List designated adversarial scenarios and focused commands
+    summary: |
+      Prints stable scenario IDs, exact Go test identities, and escaped
+      -run commands from tests/adversarial/index.yaml. The index is not a
+      runner. Whole-suite CI remains the acceptance path.
+    cmds:
+      - go run ./cmd/scenarioverify -list -lane unit -index tests/adversarial/index.yaml
+      - go run ./cmd/scenarioverify -list -lane integration -index tests/adversarial/index.yaml
+      - go run ./cmd/scenarioverify -list -lane podman-integration -index tests/adversarial/index.yaml
 
   test:coverage:
     desc: Run unit tests with a coverage report
@@ -107,6 +131,11 @@ tasks:
 
   test:integration:
     desc: Run integration tests (requires Docker or Podman, matches CI flags)
+    summary: |
+      Whole integration suite with -race and -timeout 15m. CI additionally
+      captures JSON (-count=1) and verifies designated identities from
+      tests/adversarial/index.yaml. Docker results cannot satisfy
+      Podman-only scenarios. Focused -run reruns are diagnostic only.
     cmds:
       - go test -tags=integration -race -timeout 15m ./tests/integration/...
 

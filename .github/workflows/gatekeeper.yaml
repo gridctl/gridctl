@@ -39,7 +39,13 @@ jobs:
 
       - name: Go tests with coverage
         run: |
-          go test -race -coverprofile=coverage.out ./...
+          bash scripts/run-verified-tests.sh \
+            --lane unit \
+            --index tests/adversarial/index.yaml \
+            --revision "${GITHUB_SHA}" \
+            --summary "${RUNNER_TEMP}/unit-scenarios.json" \
+            -- \
+            -coverprofile=coverage.out ./...
           go tool cover -func=coverage.out | tail -1
 
       - name: Check coverage threshold
@@ -128,7 +134,14 @@ jobs:
         run: go mod download
 
       - name: Integration tests
-        run: go test -tags=integration -race -timeout 15m ./tests/integration/...
+        run: |
+          bash scripts/run-verified-tests.sh \
+            --lane integration \
+            --index tests/adversarial/index.yaml \
+            --revision "${GITHUB_SHA}" \
+            --summary "${RUNNER_TEMP}/integration-scenarios.json" \
+            -- \
+            -tags=integration -timeout 15m ./tests/integration/...
 
   litellm-contract:
     runs-on: ubuntu-latest
@@ -154,7 +167,7 @@ jobs:
         run: docker pull ghcr.io/berriai/litellm:v1.97.0@sha256:468c25f35f3e5ec4e414974f00deab93337b1b4d9953cabcfd3722e59415f834
 
       - name: LiteLLM config contract test
-        run: go test -tags=integration -race -timeout 10m -run TestLiteLLMBootsRenderedFragment -v ./tests/integration/...
+        run: go test -count=1 -tags=integration -race -timeout 10m -run TestLiteLLMBootsRenderedFragment -v ./tests/integration/...
 
   conformance:
     runs-on: ubuntu-latest
@@ -181,7 +194,7 @@ jobs:
         run: go mod download
 
       - name: MCP conformance suite
-        run: go test -tags=integration -race -timeout 10m -run TestConformance ./tests/integration/...
+        run: go test -count=1 -tags=integration -race -timeout 10m -run TestConformance ./tests/integration/...
 
   podman-integration:
     # Pinned to a specific Ubuntu major rather than ubuntu-latest so a future
@@ -325,7 +338,14 @@ jobs:
       - name: Integration tests (Podman)
         env:
           GRIDCTL_RUNTIME: podman
-        run: go test -tags=integration -race -timeout 15m ./tests/integration/...
+        run: |
+          bash scripts/run-verified-tests.sh \
+            --lane podman-integration \
+            --index tests/adversarial/index.yaml \
+            --revision "${GITHUB_SHA}" \
+            --summary "${RUNNER_TEMP}/podman-scenarios.json" \
+            -- \
+            -tags=integration -timeout 15m ./tests/integration/...
 
       - name: Podman network diagnostics
         # This job has failed on image drift several times, and each round trip
