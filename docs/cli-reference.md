@@ -308,16 +308,18 @@ Downstream authorization for external servers declared with `auth: {type: oauth}
 
 ## Runs
 
-Metadata-only persisted dispatch records. Recording is opt-in (`runs.enabled`) and best-effort. JSON stdout is structured only; warnings go to stderr. Partial history exits `2`. Live queries never fall back to disk; `--file` never falls back to the daemon.
+Metadata-only persisted dispatch records. Recording is opt-in (`runs.enabled`) and best-effort. JSON stdout is structured only; warnings go to stderr. Live queries never fall back to disk; `--file` never falls back to the daemon. `--file` and `--offline` cannot be combined.
+
+Exit codes: `0` success, `1` failure (including an unreadable or missing `--file`), `2` partial history or incomplete wipe. An empty matching set is success: the human table prints `No matching run records` on stderr.
 
 | Command | Purpose |
 |---|---|
 | `gridctl runs list` | List retained records. `--stack` selects the live daemon; `--file PATH` reads an explicit offline file or directory; `--offline --stack` reads the stack's on-disk files without contacting the daemon. |
-| `gridctl runs list --format json` | Machine-readable records plus warnings and `partial`. `--json` is an alias. |
-| `gridctl runs status` | Recorder health (live) or offline Unknown writer state. |
-| `gridctl runs wipe --stack NAME -y` | Stack-wide wipe. Refuses per-server deletion. Not secure erasure. Offline wipe refuses if a daemon owns the stack. |
+| `gridctl runs list --format json` | Machine-readable records plus warnings and `partial`. `--json` is an alias. Live JSON is the camelCase API envelope; offline JSON is the snake_case `QueryResult`. |
+| `gridctl runs status` | Recorder health (live) or offline Unknown writer state. `--file PATH` and `--offline --stack` inspect disk only. |
+| `gridctl runs wipe --stack NAME -y` | Stack-wide wipe. Uses the live daemon when it is running; otherwise wipes offline files. Offline wipe refuses if a daemon owns the stack. Not secure erasure. Recording remains enabled if it was already on. |
 
-Filters on `list`: `--since`, `--until`, `--requested`, `--server`, `--tool`, `--disposition`, `--client`, `--access`, `--attempt`, `--limit`.
+Filters on `list`: `--since`, `--until` (RFC3339 on `returned_at`), `--requested`, `--server`, `--tool`, `--disposition`, `--client`, `--access`, `--attempt`, `--limit` (default 100, capped at 1000). Disposition values: `completed`, `tool_error`, `denied`, `routing_failed`, `transport_error`, `cancelled`, `timeout`, `input_required`, `retry_rejected`. Parent, root, previous-round, and trace filters are API-only.
 
 ## Optimize
 
@@ -349,7 +351,7 @@ Inspect and manage opt-in telemetry persistence under `~/.gridctl/telemetry/`. O
 | Command | Purpose |
 |---|---|
 | `gridctl telemetry status [stack]` | List the on-disk telemetry inventory. Walks every stack when no argument is given; `--json` for machine-readable output. |
-| `gridctl telemetry wipe [stack]` | Delete persisted telemetry files. `--server <name>` and `--signal <logs\|metrics\|traces>` scope the wipe; `-y` / `--yes` skips the prompt. |
+| `gridctl telemetry wipe [stack]` | Delete persisted telemetry files. `--server <name>` and `--signal <logs\|metrics\|traces>` scope the wipe; `-y` / `--yes` skips the prompt. Does not delete run records; use `gridctl runs wipe`. |
 | `gridctl telemetry tail <stack> <server>` | Follow the active `<signal>.jsonl` file (lumberjack rotations detected automatically). `--signal <logs\|metrics\|traces>` is required. |
 
 ## System

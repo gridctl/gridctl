@@ -55,10 +55,10 @@ Release tooling has separate Python policy/scanner tests: `PYTHONDONTWRITEBYTECO
 The shape of the codebase from the outside in:
 
 ```
-cmd/gridctl/        Cobra CLI entry points, one file per subcommand (apply, serve, link, var, skill, ctx, pack, project, optimize, …).
+cmd/gridctl/        Cobra CLI entry points, one file per subcommand (apply, serve, link, var, skill, ctx, pack, project, optimize, runs, …).
                     embed.go pulls in cmd/gridctl/web/dist via go:embed under the embed_web build tag.
 cmd/scenarioverify/ Repository test utility that checks designated Go test identities against a completed `go test -json` capture. Not a gridctl subcommand.
-internal/api/       REST handlers backing the web UI (one file per resource: stack, skills, vault, pins, telemetry, traces, …).
+internal/api/       REST handlers backing the web UI (one file per resource: stack, skills, vault, pins, telemetry, traces, runs, …).
                     Python source validation, resolution previews, generated files, and status provenance live in
                     python_sources.go. The Server struct in api.go wires together every pkg/* subsystem the UI needs.
                     Server.Handler assembles HTTP routes and CORS/Host/auth middleware; auth.go protects operational
@@ -163,7 +163,7 @@ docs/               User-facing documentation (cli-reference, config-schema, api
                     stack-declaration-policy, adversarial-regression-gates).
 ```
 
-End-to-end request flow for an upstream HTTP MCP tool call: client → HTTP listener built by `pkg/controller` (gateway_builder.go) → `internal/api.Server.Handler` (CORS, Host validation, configured auth, and route/group selection) → `pkg/mcp` Streamable HTTP transport (Host/Origin checks and protocol handling) → `mcp.Gateway` router → per-server `mcp.Client` (process/stdio/SSE/HTTP/OpenAPI) → response, with telemetry, tracing, schema pinning, and (optional) output-format conversion attached on the way back. Legacy SSE routes return a negotiation hint rather than dispatching tools.
+End-to-end request flow for an upstream HTTP MCP tool call: client → HTTP listener built by `pkg/controller` (gateway_builder.go) → `internal/api.Server.Handler` (CORS, Host validation, configured auth, and route/group selection) → `pkg/mcp` Streamable HTTP transport (Host/Origin checks and protocol handling) → `mcp.Gateway` router → per-server `mcp.Client` (process/stdio/SSE/HTTP/OpenAPI) → response, with telemetry, tracing, optional run recording, schema pinning, and (optional) output-format conversion attached on the way back. Legacy SSE routes return a negotiation hint rather than dispatching tools.
 
 End-to-end for the web UI: component or React store action → shared gatewayRequest transport beneath endpoint parsers in `src/lib/api.ts` → `/api/...` handler in `internal/api/` → method on `Server` → call into the relevant `pkg/*` subsystem → JSON response → current-generation component or store state update → component re-render. Credential drafts verify against protected `/api/status` before active replacement/persistence. Gateway rejection pauses protected reads; verification resumes eligible reads without replaying mutations. The Stack spec view's Export YAML action calls `/api/stack/export` and downloads the non-resolving projection; raw spec retrieval and editing remain separate and may contain authored credentials. Verbose apply uses bounded controller diagnostic summaries, not resolved stack JSON.
 

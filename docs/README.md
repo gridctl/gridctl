@@ -40,7 +40,7 @@ New to gridctl? Read in this order:
 | [Global Context Sync](global-context.md) | Manage the global context (one canonical AGENTS.md, or an opt-in rule fragment library with per-client assembly) via `gridctl ctx`, the web UI, or the REST API |
 | [Scaling stdio servers](scaling.md) | Run multiple replicas of a single MCP server - policies, trade-offs, observability |
 | [MCP execution controls](execution.md) | Opt-in container restrictions, local environment hygiene, and per-replica evidence |
-| [Usage Observability](usage-observability.md) | Token and call metrics, tokenizer options, format savings, and the `gridctl optimize` heuristics |
+| [Usage Observability](usage-observability.md) | Token and call metrics, tokenizer options, format savings, `gridctl optimize` heuristics, and opt-in run records |
 
 ## Operations
 
@@ -56,6 +56,6 @@ New to gridctl? Read in this order:
 
 ## Quick Links
 
-- [Examples](../examples/) - example stacks and repos (transports, generated Python sources, OpenAPI, skills registry, portable pack, variables, tracing, autoscale, code mode, access control, declarative linking)
+- [Examples](../examples/) - example stacks and repos (transports, generated Python sources, OpenAPI, skills registry, portable pack, variables, tracing, run records, autoscale, code mode, access control, declarative linking)
 - [Contributing](../CONTRIBUTING.md) - development setup and conventions
 - [Changelog](../CHANGELOG.md) - release history
