@@ -53,8 +53,8 @@ func TestHandleRuns_ReadsAppendedRecords(t *testing.T) {
 		t.Fatalf("records = %v", payload["records"])
 	}
 	row := records[0].(map[string]any)
-	if row["attemptId"] != "a1" {
-		t.Fatalf("attemptId = %v", row["attemptId"])
+	if row["attempt_id"] != "a1" {
+		t.Fatalf("attempt_id = %v", row["attempt_id"])
 	}
 	if _, ok := row["arguments"]; ok {
 		t.Fatal("arguments leaked")
@@ -153,7 +153,7 @@ func TestPatchStackRuns_RoundTrip(t *testing.T) {
 
 func TestRunCursorRoundTrip(t *testing.T) {
 	c := runs.Cursor{WipeEpoch: 3, Sequence: 9, AttemptID: "a", ReturnedAt: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)}
-	got, err := decodeRunCursor(encodeRunCursor(c))
+	got, err := runs.DecodeCursor(runs.EncodeCursor(c))
 	if err != nil {
 		t.Fatal(err)
 	}

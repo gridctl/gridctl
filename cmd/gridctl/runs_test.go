@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,22 +34,14 @@ func TestEmitRunsResultJSON(t *testing.T) {
 }
 
 func TestEmitRunsResultPartialExit(t *testing.T) {
-	// Partial is reported on stderr; json stdout stays structured.
 	result := runs.QueryResult{
 		Records:  []runs.Record{},
 		Partial:  true,
 		Warnings: []runs.Warning{{Code: runs.WarnMalformed, Count: 1, Message: "malformed records omitted"}},
 	}
-	var stdout bytes.Buffer
-	orig := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-	err := json.NewEncoder(&stdout).Encode(result)
-	_ = w.Close()
-	os.Stdout = orig
-	_, _ = r.Read(make([]byte, 1))
-	if err != nil {
-		t.Fatal(err)
+	err := emitRunsResult("json", result)
+	if err != errRunsPartial {
+		t.Fatalf("err = %v, want errRunsPartial", err)
 	}
 	if strings.Contains(result.Warnings[0].Message, "{") {
 		t.Fatal("warning leaked contents")

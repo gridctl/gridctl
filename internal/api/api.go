@@ -64,6 +64,7 @@ type Server struct {
 	vaultStore         *vault.Store
 	metricsAccumulator *metrics.Accumulator
 	traceBuffer        *tracing.Buffer
+	runMu              sync.RWMutex
 	runRecorder        *runs.Recorder
 	stackFile          string
 	allowedOrigins     []string
@@ -218,7 +219,15 @@ func (s *Server) SetLogBuffer(buffer *logging.LogBuffer) {
 
 // SetRunRecorder installs the stack-owned run recorder. Nil disables live status.
 func (s *Server) SetRunRecorder(r *runs.Recorder) {
+	s.runMu.Lock()
 	s.runRecorder = r
+	s.runMu.Unlock()
+}
+
+func (s *Server) getRunRecorder() *runs.Recorder {
+	s.runMu.RLock()
+	defer s.runMu.RUnlock()
+	return s.runRecorder
 }
 
 // LogBuffer returns the log buffer for gateway logs.

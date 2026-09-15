@@ -1240,17 +1240,11 @@ func (b *GatewayBuilder) applyRuns(gateway *mcp.Gateway, server *api.Server, sta
 		rec, err := runs.NewRecorder(cfg, logger)
 		if err != nil {
 			logger.Warn("run recorder failed to start; dispatch continues without recording", "error", err)
-			if gateway != nil {
-				gateway.SetRunSink(nil)
-			}
-			if server != nil {
-				server.SetRunRecorder(nil)
-			}
-			return
+		} else {
+			b.runRecorder = rec
+			b.runStack = cfg.StackName
+			runs.RegisterActive(cfg.StackName, rec)
 		}
-		b.runRecorder = rec
-		b.runStack = cfg.StackName
-		runs.RegisterActive(cfg.StackName, rec)
 	} else if b.runRecorder != nil {
 		if b.runStack != cfg.StackName && b.runStack != "" {
 			runs.UnregisterActive(b.runStack)
@@ -1260,10 +1254,7 @@ func (b *GatewayBuilder) applyRuns(gateway *mcp.Gateway, server *api.Server, sta
 			}
 		}
 		if err := b.runRecorder.Apply(cfg); err != nil {
-			logger.Warn("run recorder apply failed", "error", err)
-		}
-		if !cfg.Enabled {
-			b.runRecorder.Disable()
+			logger.Warn("run recorder apply failed; recording remains enabled and degraded", "error", err)
 		}
 	}
 	if gateway != nil {

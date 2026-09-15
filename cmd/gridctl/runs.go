@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -32,9 +33,17 @@ var (
 	runsClient      string
 	runsAccess      string
 	runsAttempt     string
+	runsParent      string
+	runsRoot        string
+	runsPrevious    string
+	runsTrace       string
+	runsCursor      string
 	runsLimit       int
 	runsWipeYes     bool
+	runsWipeJSON    bool
 )
+
+var errRunsPartial = fmt.Errorf("partial history")
 
 var runsCmd = &cobra.Command{
 	Use:   "runs",
@@ -58,7 +67,11 @@ var runsListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return runRunsList(cmd.Context(), format)
+		err = runRunsList(cmd.Context(), format)
+		if errors.Is(err, errRunsPartial) {
+			os.Exit(2)
+		}
+		return err
 	},
 }
 
@@ -82,7 +95,15 @@ var runsWipeCmd = &cobra.Command{
 Wipe is not secure erasure and does not remove exports or backups.
 Recording remains enabled if it was already on; new post-wipe records may appear.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runRunsWipe(cmd.Context())
+		format, err := resolveFormat(runsFormat, cmd.Flags().Changed("format"), runsWipeJSON)
+		if err != nil {
+			return err
+		}
+		err = runRunsWipe(cmd.Context(), format)
+		if errors.Is(err, errRunsPartial) {
+			os.Exit(2)
+		}
+		return err
 	},
 }
 
@@ -103,6 +124,11 @@ func init() {
 	runsListCmd.Flags().StringVar(&runsClient, "client", "", "Filter by caller-declared client label")
 	runsListCmd.Flags().StringVar(&runsAccess, "access", "", "Filter by caller-declared access label")
 	runsListCmd.Flags().StringVar(&runsAttempt, "attempt", "", "Filter by attempt ID")
+	runsListCmd.Flags().StringVar(&runsParent, "parent", "", "Filter by parent attempt ID")
+	runsListCmd.Flags().StringVar(&runsRoot, "root", "", "Filter by root attempt ID")
+	runsListCmd.Flags().StringVar(&runsPrevious, "previous", "", "Filter by previous attempt ID")
+	runsListCmd.Flags().StringVar(&runsTrace, "trace", "", "Filter by trace ID")
+	runsListCmd.Flags().StringVar(&runsCursor, "cursor", "", "Continue from a previous page cursor")
 	runsListCmd.Flags().IntVar(&runsLimit, "limit", runs.DefaultQueryLimit, "Maximum records to return")
 
 	runsStatusCmd.Flags().StringVar(&runsFile, "file", "", "Inspect an explicit offline path")
@@ -111,6 +137,8 @@ func init() {
 	runsStatusCmd.Flags().BoolVar(&runsStatusJSON, "json", false, "Shorthand for --format json")
 
 	runsWipeCmd.Flags().BoolVarP(&runsWipeYes, "yes", "y", false, "Skip confirmation")
+	runsWipeCmd.Flags().StringVar(&runsFormat, "format", "", "Output format (json)")
+	runsWipeCmd.Flags().BoolVar(&runsWipeJSON, "json", false, "Shorthand for --format json")
 	runsWipeCmd.Flags().StringVar(&runsFile, "file", "", "unused")
 	_ = runsWipeCmd.Flags().MarkHidden("file")
 
@@ -121,13 +149,17 @@ func init() {
 
 func runsFilter() (runs.Filter, error) {
 	f := runs.Filter{
-		RequestedName:  runsRequested,
-		ResolvedServer: runsServer,
-		ResolvedTool:   runsTool,
-		Disposition:    runsDisposition,
-		ClientLabel:    runsClient,
-		AccessLabel:    runsAccess,
-		AttemptID:      runsAttempt,
+		RequestedName:     runsRequested,
+		ResolvedServer:    runsServer,
+		ResolvedTool:      runsTool,
+		Disposition:       runsDisposition,
+		ClientLabel:       runsClient,
+		AccessLabel:       runsAccess,
+		AttemptID:         runsAttempt,
+		ParentAttemptID:   runsParent,
+		RootAttemptID:     runsRoot,
+		PreviousAttemptID: runsPrevious,
+		TraceID:           runsTrace,
 	}
 	var err error
 	if runsSince != "" {
@@ -153,10 +185,17 @@ func runRunsList(ctx context.Context, format string) error {
 	if err != nil {
 		return err
 	}
+	cursor, err := parseRunsCursor()
+	if err != nil {
+		return err
+	}
 	var result runs.QueryResult
+	source := runs.QuerySource{Kind: "offline"}
 	if runsFile != "" {
-		result, err = runs.QueryPath(ctx, runsFile, filter, runsLimit, nil)
-		if err != nil {
+		source.Kind = "file"
+		source.Path = runsFile
+		result, err = runs.QueryPath(ctx, runsFile, filter, runsLimit, cursor)
+		if err != nil && !result.Partial {
 			return fmt.Errorf("runs: cannot read %s", runsFile)
 		}
 	} else if runsOffline {
@@ -167,17 +206,30 @@ func runRunsList(ctx context.Context, format string) error {
 		if err != nil {
 			return err
 		}
-		result, err = runs.Query(ctx, dir, filter, runsLimit, nil, 0)
-		if err != nil {
+		source.Stack = runsStack
+		source.Path = dir
+		result, err = runs.Query(ctx, dir, filter, runsLimit, cursor, 0)
+		if err != nil && !result.Partial {
 			return fmt.Errorf("runs: cannot read offline history")
 		}
 	} else {
-		return runRunsListLive(format, filter)
+		return runRunsListLive(format, filter, cursor)
 	}
-	return emitRunsResult(format, result)
+	return emitRunsEnvelope(format, runs.EnvelopeFromResult(result, source, filter))
 }
 
-func runRunsListLive(format string, filter runs.Filter) error {
+func parseRunsCursor() (*runs.Cursor, error) {
+	if runsCursor == "" {
+		return nil, nil
+	}
+	c, err := runs.DecodeCursor(runsCursor)
+	if err != nil {
+		return nil, fmt.Errorf("invalid --cursor")
+	}
+	return &c, nil
+}
+
+func runRunsListLive(format string, filter runs.Filter, cursor *runs.Cursor) error {
 	port, err := resolveRunningPort("runs", runsStack)
 	if err != nil {
 		return err
@@ -204,11 +256,26 @@ func runRunsListLive(format string, filter runs.Filter) error {
 	if filter.AttemptID != "" {
 		q.Set("attempt", filter.AttemptID)
 	}
+	if filter.ParentAttemptID != "" {
+		q.Set("parent", filter.ParentAttemptID)
+	}
+	if filter.RootAttemptID != "" {
+		q.Set("root", filter.RootAttemptID)
+	}
+	if filter.PreviousAttemptID != "" {
+		q.Set("previous", filter.PreviousAttemptID)
+	}
+	if filter.TraceID != "" {
+		q.Set("trace", filter.TraceID)
+	}
 	if !filter.Since.IsZero() {
 		q.Set("since", filter.Since.Format(time.RFC3339))
 	}
 	if !filter.Until.IsZero() {
 		q.Set("until", filter.Until.Format(time.RFC3339))
+	}
+	if cursor != nil {
+		q.Set("cursor", runs.EncodeCursor(*cursor))
 	}
 	if runsLimit > 0 {
 		q.Set("limit", fmt.Sprintf("%d", runsLimit))
@@ -230,54 +297,39 @@ func runRunsListLive(format string, filter runs.Filter) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("runs: live query failed (%s)", strings.TrimSpace(string(body)))
 	}
-	if format == "json" {
-		if _, err := os.Stdout.Write(body); err != nil {
-			return err
-		}
-		if len(body) > 0 && body[len(body)-1] != '\n' {
-			fmt.Fprintln(os.Stdout)
-		}
-		var probe struct {
-			Partial bool `json:"partial"`
-		}
-		_ = json.Unmarshal(body, &probe)
-		if probe.Partial {
-			fmt.Fprintln(os.Stderr, "runs: partial history")
-			os.Exit(2)
-		}
-		return nil
-	}
-	var dto struct {
-		Records  []map[string]any `json:"records"`
-		Warnings []runs.Warning   `json:"warnings"`
-		Partial  bool             `json:"partial"`
-	}
-	if err := json.Unmarshal(body, &dto); err != nil {
+	var env runs.QueryEnvelope
+	if err := json.Unmarshal(body, &env); err != nil {
 		return fmt.Errorf("runs: live query failed")
 	}
-	printRunsWarnings(dto.Warnings)
-	printRunsTable(dto.Records)
-	if dto.Partial {
-		os.Exit(2)
+	if env.Source.Kind == "" {
+		env.Source = runs.QuerySource{Kind: "live", Stack: runsStack}
 	}
-	return nil
+	if env.Records == nil {
+		env.Records = []runs.Record{}
+	}
+	return emitRunsEnvelope(format, env)
 }
 
 func emitRunsResult(format string, result runs.QueryResult) error {
-	printRunsWarnings(result.Warnings)
+	return emitRunsEnvelope(format, runs.EnvelopeFromResult(result, runs.QuerySource{Kind: "offline"}, runs.Filter{}))
+}
+
+func emitRunsEnvelope(format string, env runs.QueryEnvelope) error {
+	printRunsWarnings(env.Warnings)
 	if format == "json" {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		if err := enc.Encode(result); err != nil {
+		if err := enc.Encode(env); err != nil {
 			return err
 		}
-		if result.Partial {
-			os.Exit(2)
+		if env.Partial {
+			fmt.Fprintln(os.Stderr, "runs: partial history")
+			return errRunsPartial
 		}
 		return nil
 	}
-	rows := make([]map[string]any, 0, len(result.Records))
-	for _, rec := range result.Records {
+	rows := make([]map[string]any, 0, len(env.Records))
+	for _, rec := range env.Records {
 		rows = append(rows, map[string]any{
 			"returnedAt":     rec.ReturnedAt.Format(time.RFC3339),
 			"requestedName":  rec.RequestedName,
@@ -288,8 +340,8 @@ func emitRunsResult(format string, result runs.QueryResult) error {
 		})
 	}
 	printRunsTable(rows)
-	if result.Partial {
-		os.Exit(2)
+	if env.Partial {
+		return errRunsPartial
 	}
 	return nil
 }
@@ -326,13 +378,13 @@ func runRunsStatus(ctx context.Context, format string) error {
 		if err != nil {
 			return fmt.Errorf("runs: cannot read %s", runsFile)
 		}
-		st := runs.Status{Enabled: false, Effective: false, WriterHealth: runs.HealthStopped, HistoricalLoss: runs.LossUnknown}
-		payload := map[string]any{"status": st, "path": invPath, "dir": info.IsDir()}
+		st := runs.Status{WriterHealth: runs.HealthUnknown, HistoricalLoss: runs.LossUnknown, Known: false, Drops: map[string]uint64{}, Failures: map[string]uint64{}}
+		payload := map[string]any{"status": st, "path": invPath, "dir": info.IsDir(), "observation": "unknown"}
 		if format == "json" {
 			return json.NewEncoder(os.Stdout).Encode(payload)
 		}
 		fmt.Fprintf(os.Stderr, "Offline path %s (recorder state unknown)\n", runsFile)
-		fmt.Printf("writer: %s  historical_loss: %s\n", st.WriterHealth, st.HistoricalLoss)
+		fmt.Printf("writer: %s  historical_loss: %s  known: false\n", st.WriterHealth, st.HistoricalLoss)
 		return nil
 	}
 	if runsOffline {
@@ -343,12 +395,12 @@ func runRunsStatus(ctx context.Context, format string) error {
 		if err != nil {
 			return fmt.Errorf("runs: cannot read offline history")
 		}
-		st := runs.Status{Enabled: false, Effective: false, WriterHealth: runs.HealthStopped, HistoricalLoss: runs.LossUnknown}
+		st := runs.Status{WriterHealth: runs.HealthUnknown, HistoricalLoss: runs.LossUnknown, Known: false, Drops: map[string]uint64{}, Failures: map[string]uint64{}}
 		if format == "json" {
-			return json.NewEncoder(os.Stdout).Encode(map[string]any{"status": st, "inventory": inv})
+			return json.NewEncoder(os.Stdout).Encode(map[string]any{"status": st, "inventory": inv, "observation": "unknown"})
 		}
 		fmt.Fprintf(os.Stderr, "Offline inventory for %s (recorder state unknown)\n", runsStack)
-		fmt.Printf("files: %d  bytes: %d  writer: %s\n", inv.FileCount, inv.SizeBytes, st.WriterHealth)
+		fmt.Printf("files: %d  bytes: %d  writer: %s  known: false\n", inv.FileCount, inv.SizeBytes, st.WriterHealth)
 		return nil
 	}
 	port, err := resolveRunningPort("runs", runsStack)
@@ -388,7 +440,7 @@ func runRunsStatus(ctx context.Context, format string) error {
 	return nil
 }
 
-func runRunsWipe(ctx context.Context) error {
+func runRunsWipe(ctx context.Context, format string) error {
 	if runsStack == "" {
 		return fmt.Errorf("runs wipe requires --stack")
 	}
@@ -399,6 +451,13 @@ func runRunsWipe(ctx context.Context) error {
 		if strings.ToLower(strings.TrimSpace(reply)) != "y" {
 			return fmt.Errorf("aborted")
 		}
+	}
+	result := map[string]any{
+		"success":           false,
+		"partial":           false,
+		"scope":             runsStack,
+		"recording_enabled": false,
+		"note":              "Wipe is not secure erasure and does not remove exports or backups.",
 	}
 	port, err := resolveRunningPort("runs", runsStack)
 	if err == nil {
@@ -413,26 +472,54 @@ func runRunsWipe(ctx context.Context) error {
 			return fmt.Errorf("runs: live wipe failed")
 		}
 		var out struct {
-			Success          bool   `json:"success"`
-			Partial          bool   `json:"partial"`
-			RecordingEnabled bool   `json:"recordingEnabled"`
-			Scope            string `json:"scope"`
+			Success           bool   `json:"success"`
+			Partial           bool   `json:"partial"`
+			RecordingEnabled  bool   `json:"recording_enabled"`
+			RecordingEnabled2 bool   `json:"recordingEnabled"`
+			Scope             string `json:"scope"`
+			Note              string `json:"note"`
 		}
 		_ = json.Unmarshal(body, &out)
-		if !out.Success {
-			fmt.Fprintln(os.Stderr, "runs: wipe incomplete")
-			os.Exit(2)
+		enabled := out.RecordingEnabled || out.RecordingEnabled2
+		result["success"] = out.Success
+		result["partial"] = out.Partial
+		result["recording_enabled"] = enabled
+		if out.Scope != "" {
+			result["scope"] = out.Scope
 		}
-		fmt.Fprintf(os.Stderr, "Wiped run history for %s. Recording enabled: %v. Wipe is not secure erasure.\n", out.Scope, out.RecordingEnabled)
-		return nil
+		if out.Note != "" {
+			result["note"] = out.Note
+		}
+		return emitWipeResult(format, result, out.Success)
 	}
 	if err := runs.WipeStack(ctx, runsStack); err != nil {
 		if err == runs.ErrActiveWriter {
 			return err
 		}
-		fmt.Fprintln(os.Stderr, "runs: wipe incomplete")
-		os.Exit(2)
+		result["partial"] = true
+		return emitWipeResult(format, result, false)
 	}
-	fmt.Fprintf(os.Stderr, "Wiped offline run history for %s. Wipe is not secure erasure.\n", runsStack)
+	result["success"] = true
+	return emitWipeResult(format, result, true)
+}
+
+func emitWipeResult(format string, result map[string]any, success bool) error {
+	if format == "json" {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(result); err != nil {
+			return err
+		}
+		if !success {
+			fmt.Fprintln(os.Stderr, "runs: wipe incomplete")
+			return errRunsPartial
+		}
+		return nil
+	}
+	if !success {
+		fmt.Fprintln(os.Stderr, "runs: wipe incomplete")
+		return errRunsPartial
+	}
+	fmt.Fprintf(os.Stderr, "Wiped run history for %s. Recording enabled: %v. Wipe is not secure erasure.\n", result["scope"], result["recording_enabled"])
 	return nil
 }
