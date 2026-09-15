@@ -14,6 +14,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Documentation
 
+- Add a practical security guide covering verified installation, local and remote access, credentials, execution restrictions, content review, exports, diagnostic privacy, and declaration checks, with an explicit source baseline and release-availability distinctions (#1219).
 - Document the adversarial scenario index and post-suite Go JSON execution verifier, including what a passing case proves and does not prove. This is test accounting, not comprehensive security testing (#1227).
 - Document offline stack declaration policy: source-root limits, unknown and N/A handling, declaration-versus-runtime scope, warning exit handling, trusted checker/policy selection, descriptor identity for policy exclusion, and a CI workflow design that pins actions, verifies checker digests outside the candidate tree, and does not execute pull-request code as the checker (#1226).
 - Pin runnable example stacks and public setup snippets to reviewed image digests and exact package versions, including the README Claude Desktop `mcp-remote@0.14.2` bridge. Document placeholder exceptions and quarterly pin review, and add `task examples:refs` plus Gatekeeper enforcement that fails unpinned or unassessed in-scope selectors without making unrelated example warnings fatal (#1229).

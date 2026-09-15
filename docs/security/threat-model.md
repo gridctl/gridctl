@@ -4,6 +4,8 @@ Gridctl runs with the operator's authority over local files, client configuratio
 
 This document describes current controls and their limits. It is not a security certification or a promise that imported code or model instructions are safe. Report vulnerabilities through the [private reporting process](../../SECURITY.md#reporting-a-vulnerability).
 
+For operator setup and review workflows, use the [Practical Security Guide](practical-guide.md).
+
 ## Evidence Baseline
 
 Reviewed on September 10, 2026, against source revision [`569e1126c2283c4f8f9c82447439355b4dea1934`](https://github.com/gridctl/gridctl/tree/569e1126c2283c4f8f9c82447439355b4dea1934). Source and test links below identify the implementation evidence; use that revision when reproducing this snapshot. Test coverage establishes specific behavior, not the absence of other vulnerabilities.
