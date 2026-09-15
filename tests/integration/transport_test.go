@@ -4,6 +4,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -46,13 +47,27 @@ func runIntegrationTests(m *testing.M) int {
 		return 1
 	}
 
+	const fixtureBuildTimeout = 90 * time.Second
+
+	buildFixture := func(src, bin, name string) bool {
+		ctx, cancel := context.WithTimeout(context.Background(), fixtureBuildTimeout)
+		defer cancel()
+		buildCmd := exec.CommandContext(ctx, "go", "build", "-o", bin, ".")
+		buildCmd.Dir = src
+		if out, err := buildCmd.CombinedOutput(); err != nil {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				log.Printf("timed out building %s after %s", name, fixtureBuildTimeout)
+			}
+			log.Printf("failed to build %s: %v\n%s", name, err, out)
+			return false
+		}
+		return true
+	}
+
 	// Build mock HTTP/SSE server.
 	httpSrc := filepath.Join(cwd, "..", "..", "examples", "_mock-servers", "mock-mcp-server")
 	httpBin := filepath.Join(tmpDir, "mock-mcp-server")
-	buildCmd := exec.Command("go", "build", "-o", httpBin, ".")
-	buildCmd.Dir = httpSrc
-	if out, err := buildCmd.CombinedOutput(); err != nil {
-		log.Printf("failed to build mock-mcp-server: %v\n%s", err, out)
+	if !buildFixture(httpSrc, httpBin, "mock-mcp-server") {
 		return 1
 	}
 	mockHTTPServerBin = httpBin
@@ -60,10 +75,7 @@ func runIntegrationTests(m *testing.M) int {
 	// Build mock stdio server.
 	stdioSrc := filepath.Join(cwd, "..", "..", "examples", "_mock-servers", "local-stdio-server")
 	stdioBin := filepath.Join(tmpDir, "mock-stdio-server")
-	buildCmd = exec.Command("go", "build", "-o", stdioBin, ".")
-	buildCmd.Dir = stdioSrc
-	if out, err := buildCmd.CombinedOutput(); err != nil {
-		log.Printf("failed to build local-stdio-server: %v\n%s", err, out)
+	if !buildFixture(stdioSrc, stdioBin, "local-stdio-server") {
 		return 1
 	}
 	mockStdioBin = stdioBin

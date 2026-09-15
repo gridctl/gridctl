@@ -313,6 +313,7 @@ func TestImport_DangerousScriptGatedLeavesNoPartialInstall(t *testing.T) {
 	require.Empty(t, result.Imported, "a danger-severity script must block the import")
 	require.Len(t, result.Skipped, 1)
 	assert.Contains(t, result.Skipped[0].Reason, "--trust")
+	assert.Contains(t, result.Skipped[0].Reason, "piped curl to shell execution")
 
 	assert.NoDirExists(t, filepath.Join(regDir, "skills", "test-skill"),
 		"a gated skill must leave no partial install behind")
@@ -568,6 +569,7 @@ func TestImport_GatedReimportLeavesExistingInstallIntact(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, second.Imported, "hostile content must not be installed")
 	require.Len(t, second.Skipped, 1)
+	assert.Contains(t, second.Skipped[0].Reason, "piped curl to shell execution")
 
 	// The good install is untouched: original content, and the reference file
 	// the hostile source dropped is still present because nothing was pruned.
