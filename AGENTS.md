@@ -85,8 +85,9 @@ pkg/execution/      Presence-aware MCP execution declarations, normalized per-re
                     MCP clients gate dispatch on evidence; retirement closes owned processes and cancels obsolete scaling.
 pkg/runtime/        Container orchestration. Orchestrator is the WorkloadRuntime + Builder front; it prepares one desired
                     source image per logical MCP server before reconciling replicas. pkg/runtime/docker is the Docker
-                    implementation. Local image cache matches digest and tag-plus-digest references against RepoDigests;
-                    tag lookup is unchanged. Runtime auto-detected (docker → podman) unless --runtime is set.
+                    implementation. Local image cache matches digest and tag-plus-digest references against RepoDigests,
+                    and unqualified tags against exact RepoTags plus Podman's localhost-prefixed names. Runtime
+                    auto-detected (docker → podman) unless --runtime is set.
 pkg/builder/        Image building from git or local Dockerfiles and generated Python builds for exact public PyPI releases
                     or packaged git/local projects, with resolved build plans, isolated Git worktrees, content-addressed
                     image tags, label-verified cache reuse, and non-secret provenance labels. Also owns bounded public-PyPI

@@ -189,7 +189,33 @@ func buildDerivative(t *testing.T, ctx context.Context, cli, root, base, dockerf
 	if err != nil {
 		t.Fatalf("build %s: %v\n%s", tag, err, out)
 	}
-	return tag
+	return localImageIdentity(t, ctx, cli, tag)
+}
+
+func localImageIdentity(t *testing.T, ctx context.Context, cli, tag string) string {
+	t.Helper()
+	cmd := exec.CommandContext(ctx, cli, "image", "inspect", "--format", "{{json .}}", tag)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("inspect %s: %v\n%s", tag, err, out)
+	}
+	var inspected struct {
+		ID       string   `json:"Id"`
+		RepoTags []string `json:"RepoTags"`
+	}
+	if err := json.Unmarshal(out, &inspected); err != nil {
+		t.Fatalf("decode inspect %s: %v\n%s", tag, err, out)
+	}
+	for _, repoTag := range inspected.RepoTags {
+		if repoTag != "" && repoTag != "<none>:<none>" {
+			return repoTag
+		}
+	}
+	if inspected.ID != "" {
+		return inspected.ID
+	}
+	t.Fatalf("built image %s has no local identity", tag)
+	return ""
 }
 
 func runImage(t *testing.T, ctx context.Context, cli, image string, dockerArgs []string, cmdArgs ...string) string {

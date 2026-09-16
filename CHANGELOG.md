@@ -31,6 +31,7 @@ All notable changes to gridctl will be documented in this file.
 
 - Keep a successful verified-test run at exit 0 when Gatekeeper supplies `--summary` without `--capture`, so the EXIT trap cannot replace a passing verifier with a failed job (#1227).
 - Count Go test JSON identities exactly, so sibling subtests whose names share a slash prefix (HTTP route cases such as `/api/traces` and `/api/traces/{traceId}`) do not fail the unit-lane scenario verifier (#1227).
+- Match unqualified local image tags to Podman's `localhost/` RepoTags so a locally built image is not pulled from a remote registry (#1230).
 - Match locally cached images by RepoDigests so digest and tag-plus-digest references hit the cache instead of comparing RepoTags only (#1229).
 - Reconcile equivalent image references during hardened container reuse and verify Podman's bridge-mode network membership separately from its namespace mode. Keep exact network inventories, loopback publication, and fresh kernel evidence mandatory (#1221).
 - Decode explicitly present null Podman capability lists as empty native sets while rejecting omitted or malformed fields. Full instance identity and all five kernel capability sets remain mandatory before routing (#1221).
