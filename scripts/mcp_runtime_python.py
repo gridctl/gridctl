@@ -21,6 +21,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "mcp-runtime-python.yaml"
 GENERATOR = ROOT / "pkg" / "builder" / "python_template.go"
 PYPROJECT = RECIPE / "fixtures" / "echo-server" / "pyproject.toml"
 CONSTRAINTS = RECIPE / "fixtures" / "echo-server" / "constraints.txt"
+LOCKFILE = RECIPE / "fixtures" / "echo-server" / "uv.lock"
 
 TOOLS = {
     "syft": ("anchore/syft", "v1.42.0", {
@@ -108,6 +109,7 @@ def validate_recipe():
     setuptools = pins["build_system"]["setuptools"]
     pyproject = PYPROJECT.read_text()
     constraints = CONSTRAINTS.read_text()
+    lockfile = LOCKFILE.read_text()
 
     _require(python_image in base, "base Dockerfile must pin the reviewed Python image")
     _require(f"USER {uid}:{gid}" in base, "base image USER must be the numeric identity")
@@ -142,6 +144,11 @@ def validate_recipe():
     _require("hash_install.py" in hashed, "hashed derivative must run the hashed installer")
     _require(f'setuptools=={setuptools}' in pyproject, "build-system setuptools must be an exact reviewed pin")
     _require(f"setuptools=={setuptools}" in constraints, "constraints.txt must freeze setuptools")
+    _require("package = true" in pyproject, "fixture must be a packaged uv project")
+    _require("revision = 1\n" in lockfile, "fixture lockfile must stay at uv 0.8.14 revision 1")
+    _require('source = { editable = "." }' in lockfile, "locked fixture must package the project")
+    _require("virtual" not in lockfile, "locked fixture must not use a virtual project source")
+    _require("setuptools" not in lockfile, "build-system setuptools stays in constraints, not the lockfile")
     _require("mcp-runtime-python" not in generator, "generated Python Dockerfiles must not switch to this base")
     _require("python:3.10" in generator and "python:3.13" in generator, "generated Python 3.10-3.13 support must remain")
     _require("chown -R gridctl:gridctl" in generator, "generated images still chown application directories")

@@ -67,6 +67,25 @@ class MCPRuntimePythonPolicyTests(unittest.TestCase):
         finally:
             policy.PINS.write_text(original)
 
+    def test_virtual_lockfile_is_rejected(self):
+        original = policy.LOCKFILE.read_text()
+        try:
+            policy.LOCKFILE.write_text(original.replace(
+                'source = { editable = "." }', 'source = { virtual = "." }'))
+            with self.assertRaises(ValueError):
+                policy.validate_recipe()
+        finally:
+            policy.LOCKFILE.write_text(original)
+
+    def test_lockfile_revision_must_remain_1(self):
+        original = policy.LOCKFILE.read_text()
+        try:
+            policy.LOCKFILE.write_text(original.replace("revision = 1", "revision = 3"))
+            with self.assertRaises(ValueError):
+                policy.validate_recipe()
+        finally:
+            policy.LOCKFILE.write_text(original)
+
     def test_generator_is_not_migrated(self):
         generator = policy.GENERATOR.read_text()
         self.assertIn("python-uv-v1", generator)
