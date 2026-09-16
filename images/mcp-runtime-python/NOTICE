@@ -1,0 +1,26 @@
+gridctl MCP Python runtime base
+==============================
+
+This image and its recipe are provided by the gridctl project under the
+Apache License 2.0. See the LICENSE file in the gridctl repository.
+
+This base is a runtime foundation for derived MCP servers. It is not the
+Gridctl gateway, and it is not a ready-to-run MCP server.
+
+Third-party components
+----------------------
+
+The image starts from the CPython `python:3.12.11-slim-bookworm` distribution
+image and installs Debian `tini`. Those components keep their own licenses,
+including PSF, Debian package licenses, and tini's MIT license. An SBOM or
+`org.opencontainers.image.licenses` label records identifiers; it does not
+replace the license texts, notices, or source-offer obligations that apply
+when you redistribute this image or a derivative.
+
+Derived application images
+--------------------------
+
+Application code, Python packages, and native libraries you install later
+have separate licenses. Base-image evidence does not cover those components.
+Preserve their notices in your derivative and rebuild after a base revision;
+a patched base does not modify an already built derivative.

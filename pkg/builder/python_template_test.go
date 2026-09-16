@@ -68,6 +68,23 @@ func TestGeneratePythonDockerfile_LocalPackageOptions(t *testing.T) {
 	}
 }
 
+func TestGeneratePythonDockerfile_DoesNotUseRuntimeBase(t *testing.T) {
+	for _, version := range []string{"3.10", "3.11", "3.12", "3.13"} {
+		dockerfile, err := GeneratePythonDockerfile(context.Background(), PythonBuildSpec{
+			Python: version, Package: "demo", Version: "1.0",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(dockerfile, "mcp-runtime-python") {
+			t.Fatalf("generated Python %s switched to the runtime base:\n%s", version, dockerfile)
+		}
+		if !strings.Contains(dockerfile, "COPY --from=") || !strings.Contains(dockerfile, "/uv /uvx /bin/") {
+			t.Fatalf("generated Python %s dropped uv:\n%s", version, dockerfile)
+		}
+	}
+}
+
 func TestGeneratePythonDockerfile_RejectsInjection(t *testing.T) {
 	_, err := GeneratePythonDockerfile(context.Background(), PythonBuildSpec{Python: "3.12", Package: "demo", Version: "1.0", Packages: []string{"curl;id"}})
 	if err == nil {

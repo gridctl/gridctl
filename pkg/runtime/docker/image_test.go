@@ -240,6 +240,66 @@ func TestImageExists_TagBehaviorUnchanged(t *testing.T) {
 	}
 }
 
+func TestImageExists_UnqualifiedMatchesLocalhostPrefix(t *testing.T) {
+	mock := &MockDockerClient{
+		Images: []image.Summary{
+			{RepoTags: []string{"localhost/gridctl-mcp-runtime-override:local"}},
+		},
+	}
+	exists, err := ImageExists(context.Background(), mock, "gridctl-mcp-runtime-override:local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists {
+		t.Fatal("unqualified local tag should match Podman localhost prefix")
+	}
+}
+
+func TestImageExists_UnqualifiedDoesNotMatchOtherRegistry(t *testing.T) {
+	mock := &MockDockerClient{
+		Images: []image.Summary{
+			{RepoTags: []string{"ghcr.io/gridctl/mcp-runtime-python:local"}},
+		},
+	}
+	exists, err := ImageExists(context.Background(), mock, "gridctl-mcp-runtime-python:local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists {
+		t.Fatal("unqualified name must not match a different registry")
+	}
+}
+
+func TestImageExists_LocalhostRequestDoesNotMatchUnqualified(t *testing.T) {
+	mock := &MockDockerClient{
+		Images: []image.Summary{
+			{RepoTags: []string{"gridctl-mcp-runtime-override:local"}},
+		},
+	}
+	exists, err := ImageExists(context.Background(), mock, "localhost/gridctl-mcp-runtime-override:local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists {
+		t.Fatal("localhost-qualified request must not match an unqualified tag")
+	}
+}
+
+func TestEnsureImage_SkipsPullForLocalhostPrefixedTag(t *testing.T) {
+	mock := &MockDockerClient{
+		Images: []image.Summary{
+			{RepoTags: []string{"localhost/gridctl-mcp-runtime-override:local"}},
+		},
+	}
+	err := EnsureImage(context.Background(), mock, "gridctl-mcp-runtime-override:local", logging.NewDiscardLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mock.PulledImages) != 0 {
+		t.Errorf("pulled %v, want none", mock.PulledImages)
+	}
+}
+
 func TestImageExists_FamiliarNameMatchesRepoDigest(t *testing.T) {
 	digest := "sha256:" + strings.Repeat("a", 64)
 	mock := &MockDockerClient{

@@ -22,6 +22,7 @@ Task (https://taskfile.dev) is the entry point for development builds and Go/fro
 | `task test:integration` | `go test -tags=integration -race -timeout 15m ./tests/integration/...`. The full suite requires Docker (or Podman); selected HTTP/subprocess suites need no container runtime. All use real dependencies per Article IV of `CONSTITUTION.md`; mocks are disallowed in `tests/integration/`. |
 | `task test:frontend` | `cd web && npm test` (Vitest). |
 | `task examples:refs` | Checks example stacks for unpinned or unassessed in-scope image and package selectors (`scripts/check-example-refs.sh`). Requires `./gridctl`. |
+| `task images:python-runtime` | Validates the Python MCP runtime recipe, pins, and OCI workflow policy. Hosted amd64/arm64 image acceptance is separate. |
 | `task lint` | `golangci-lint run` plus `npm run lint` in `web/` (both CI-gated). |
 | `task generate` | Regenerates `go.uber.org/mock` mocks under `pkg/mcp/` and `pkg/runtime/`. Required after touching the interfaces they're generated from. |
 | `task mock:servers` | Builds and runs the example mock MCP servers in `examples/_mock-servers/` (HTTP on PORT, SSE on PORT+1; `PORT=9001` default). Pair with `task mock:clean`. |
@@ -48,7 +49,7 @@ golangci-lint run                # backend (gosec is enabled; see .golangci.yml 
 cd web && npm run lint           # frontend; zero-error baseline, enforced by the gatekeeper frontend CI job
 ```
 
-Release tooling has separate Python policy/scanner tests: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_*.py' -v` (Python 3.11+, jsonschema 4.23.0, PyYAML 6.0.3, Bash, and jq). These are not included in `task test`. `.github/workflows/release.yaml` reuses all six exact-commit Gatekeeper jobs, assembles and authenticates a draft with GoReleaser, verifies it on Linux/macOS, publishes, and only then advances Homebrew. See `docs/release-verification.md` for external verification, immutable-mode prerequisites, and recovery; local fixtures do not replace hosted acceptance.
+Release tooling has separate Python policy/scanner tests: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_*.py' -v` (Python 3.11+, jsonschema 4.23.0, PyYAML 6.0.3, Bash, and jq). These are not included in `task test`. `.github/workflows/release.yaml` reuses all six exact-commit Gatekeeper jobs, assembles and authenticates a draft with GoReleaser, verifies it on Linux/macOS, publishes, and only then advances Homebrew. See `docs/release-verification.md` for external verification, immutable-mode prerequisites, and recovery; local fixtures do not replace hosted acceptance. The Python runtime image recipe is validated by `task images:python-runtime`; hosted amd64/arm64 acceptance is `.github/workflows/mcp-runtime-python.yaml`.
 
 ## Code architecture
 
@@ -84,8 +85,9 @@ pkg/execution/      Presence-aware MCP execution declarations, normalized per-re
                     MCP clients gate dispatch on evidence; retirement closes owned processes and cancels obsolete scaling.
 pkg/runtime/        Container orchestration. Orchestrator is the WorkloadRuntime + Builder front; it prepares one desired
                     source image per logical MCP server before reconciling replicas. pkg/runtime/docker is the Docker
-                    implementation. Local image cache matches digest and tag-plus-digest references against RepoDigests;
-                    tag lookup is unchanged. Runtime auto-detected (docker → podman) unless --runtime is set.
+                    implementation. Local image cache matches digest and tag-plus-digest references against RepoDigests,
+                    and unqualified tags against exact RepoTags plus Podman's localhost-prefixed names. Runtime
+                    auto-detected (docker → podman) unless --runtime is set.
 pkg/builder/        Image building from git or local Dockerfiles and generated Python builds for exact public PyPI releases
                     or packaged git/local projects, with resolved build plans, isolated Git worktrees, content-addressed
                     image tags, label-verified cache reuse, and non-secret provenance labels. Also owns bounded public-PyPI
@@ -145,22 +147,24 @@ web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). 
 tests/adversarial/  Declarative scenario index (`index.yaml`) for mandatory-execution accounting. Not a runner.
 tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway lifecycle, hot reload, autoscaler,
                     replicas, transports (incl. Podman), private git auth, generated Python source builds,
-                    digest-cache lookup, and optimize heuristics. Grouped auth tests use real HTTP and a subprocess MCP backend.
+                    the Python MCP runtime base and its derivatives, digest-cache lookup, and optimize heuristics. Grouped auth tests use real HTTP and a subprocess MCP backend.
                     auth_restart_test.go verifies actual process restart, saved/live-state rejection, CLI exits,
                     sessions/streams, and preserved Docker identities with race-built child binaries.
                     examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
-                    portable-pack, model-policy, python-sources, execution, security-evidence, stack-declaration-policy, runs).
+                    portable-pack, model-policy, python-sources, python-runtime, execution, security-evidence, stack-declaration-policy, runs).
                     examples/_mock-servers/ is the source for `task mock:servers`.
 scripts/            Build/test helpers and release tooling: release.py owns gate, inventory, verification, draft/public,
                     and tap policy; release-tools.py pins executables and the SPDX schema; release-acceptance.py exercises
-                    authorized sandbox releases. test_release.py and test_govulncheck.py cover local policy regressions.
+                    authorized sandbox releases. mcp_runtime_python.py owns the Python runtime image recipe, tag, and
+                    evidence policy. test_release.py, test_govulncheck.py, and test_mcp_runtime_python.py cover local policy regressions.
                     check-example-refs.sh enforces pinned or excepted example image and package selectors after task build:go, including unassessed in-scope references.
                     run-verified-tests.sh captures go test JSON and runs cmd/scenarioverify for designated Gatekeeper lanes.
 docs/               User-facing documentation (cli-reference, config-schema, api-reference, skills, packs, tools-workspace,
                     global-context, model-policy, scaling, usage-observability, installation, release-verification,
-                    project-status, troubleshooting, execution, security/threat-model, security-evidence,
+                    project-status, troubleshooting, execution, mcp-runtime-python, security/threat-model, security-evidence,
                     stack-declaration-policy, adversarial-regression-gates).
+images/             OCI recipes that are not the gateway binary. images/mcp-runtime-python is the Python 3.12 runtime base.
 ```
 
 End-to-end request flow for an upstream HTTP MCP tool call: client → HTTP listener built by `pkg/controller` (gateway_builder.go) → `internal/api.Server.Handler` (CORS, Host validation, configured auth, and route/group selection) → `pkg/mcp` Streamable HTTP transport (Host/Origin checks and protocol handling) → `mcp.Gateway` router → per-server `mcp.Client` (process/stdio/SSE/HTTP/OpenAPI) → response, with telemetry, tracing, optional run recording, schema pinning, and (optional) output-format conversion attached on the way back. Legacy SSE routes return a negotiation hint rather than dispatching tools.

@@ -163,6 +163,17 @@ tasks:
     cmds:
       - go test -tags=integration -race -timeout 10m -run TestConformance ./tests/integration/...
 
+  images:python-runtime:
+    desc: Validate the MCP Python runtime recipe and workflow policy
+    summary: |
+      Checks pinned inputs, derivative Dockerfiles, generator non-migration,
+      tag/subject policy, and the dedicated OCI workflow. Does not build or
+      publish images. Hosted amd64/arm64 acceptance lives in
+      .github/workflows/mcp-runtime-python.yaml.
+    cmds:
+      - python3 scripts/mcp_runtime_python.py validate
+      - PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_mcp_runtime_python.py' -v
+
   examples:refs:
     desc: Check example stacks for unpinned image and package selectors
     summary: |

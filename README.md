@@ -236,7 +236,7 @@ mcp-servers:
       runtime: python
 ```
 
-Learn more → [Source configuration](docs/config-schema.md#source) · [Runnable example](examples/python-sources/)
+Learn more → [Source configuration](docs/config-schema.md#source) · [Runnable example](examples/python-sources/) · [Python runtime base](docs/mcp-runtime-python.md)
 
 ### MCP Execution Controls
 

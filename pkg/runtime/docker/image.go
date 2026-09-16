@@ -153,12 +153,23 @@ func imageCached(img image.Summary, imageName string) bool {
 }
 
 func tagCached(img image.Summary, imageName string) bool {
+	localhostTag := localUnqualifiedRepoTag(imageName)
 	for _, tag := range img.RepoTags {
-		if tag == imageName || tag == imageName+":latest" {
+		if tag == imageName || tag == imageName+":latest" || (localhostTag != "" && tag == localhostTag) {
 			return true
 		}
 	}
 	return false
+}
+
+func localUnqualifiedRepoTag(imageName string) string {
+	if imageName == "" || strings.ContainsAny(imageName, "@/") {
+		return ""
+	}
+	if !strings.Contains(imageName, ":") {
+		return "localhost/" + imageName + ":latest"
+	}
+	return "localhost/" + imageName
 }
 
 func imageIDMatches(id, digest string) bool {

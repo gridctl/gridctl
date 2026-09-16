@@ -585,6 +585,11 @@ function PythonSourceFields({
                 className={cn('px-3 py-1.5 rounded-lg text-xs border', generated ? 'border-primary/30 text-primary' : 'border-white/[0.06] text-text-muted')}
               >Generated Python</button>
             </div>
+            {!generated && (
+              <p className="text-[10px] text-text-muted mt-1">
+                Custom Dockerfiles can derive from Gridctl&apos;s Python runtime base. That image is a foundation, not a ready MCP server. Keep stdio explicit, pin a tested digest, and do not replace Generated Python 3.10-3.13 automatically. See docs/mcp-runtime-python.md.
+              </p>
+            )}
           </div>
           <div className={cn('grid gap-2', generated && 'grid-cols-2')}>
             {generated && <div>
