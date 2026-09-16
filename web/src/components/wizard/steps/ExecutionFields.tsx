@@ -33,6 +33,7 @@ export function ExecutionFields({ data, onChange }: {
           </select>
         </label>
         <p className="text-sm">Default limits: 256 MiB memory, no swap, one CPU ceiling, 128 PIDs, and 64 MiB nonexecutable /tmp. Data volumes are not storage-bounded. Use YAML mode for explicit limits, mounts, and exceptions.</p>
+        <p className="text-sm">Read-only or permission failures need declared scratch or data mounts for writable state. Do not use privileged mode, chmod 777, recursive code ownership changes, or automatic network access. Unsupported runtime controls, failed enforcement, application errors, and registry availability are separate diagnostics.</p>
       </>}
       {data.serverType === 'local' && <p className="text-sm">Unsandboxed local process. Filesystem and network access are not confined. npx/uvx bootstrap runs under the same environment contract.</p>}
       {execution?.mode === 'local' && <>

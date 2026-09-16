@@ -135,6 +135,27 @@ describe('MCPServerForm', () => {
     expect(screen.getByLabelText('Python OS packages')).toBeInTheDocument();
   });
 
+  it('explains the runtime base when a custom Dockerfile is selected', () => {
+    render(<MCPServerForm data={defaultData({
+      serverType: 'source',
+      source: { type: 'local', path: './server', dockerfile: 'Dockerfile' },
+    })} onChange={onChange} />);
+    expect(screen.getByText(/foundation, not a ready MCP server/i)).toBeInTheDocument();
+  });
+
+  it('does not offer the runtime base as a ready server preset', () => {
+    render(<MCPServerForm data={defaultData({ serverType: 'container' })} onChange={onChange} />);
+    expect(screen.queryByText(/mcp-runtime-python/)).not.toBeInTheDocument();
+  });
+
+  it('keeps generated Python help free of the runtime base preset', () => {
+    render(<MCPServerForm data={defaultData({
+      serverType: 'source',
+      source: { type: 'git', url: 'https://github.com/example/server.git', runtime: 'python' },
+    })} onChange={onChange} />);
+    expect(screen.queryByText(/foundation, not a ready MCP server/i)).not.toBeInTheDocument();
+  });
+
   it('clears hidden Python-only fields when selecting a custom Dockerfile', () => {
     render(<MCPServerForm data={defaultData({
       serverType: 'source',
