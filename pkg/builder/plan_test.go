@@ -112,6 +112,44 @@ func TestResolve_LocalContentDeterminesIdentity(t *testing.T) {
 	}
 }
 
+func TestResolve_LiteralBaseDigestChangeInvalidatesIdentity(t *testing.T) {
+	dir := t.TempDir()
+	write := func(from string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM "+from+"\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	firstBase := "python:3.12.11-slim-bookworm@sha256:519591d6871b7bc437060736b9f7456b8731f1499a57e22e6c285135ae657bf7"
+	changedBase := "python:3.12.11-slim-bookworm@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	write(firstBase)
+	b := New(&mockDockerClient{})
+	opts := BuildOptions{Stack: "demo", ServerName: "echo", SourceType: "local", Path: dir, Dockerfile: "Dockerfile"}
+	first, err := b.Resolve(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	write(firstBase)
+	repeat, err := b.Resolve(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repeat.Close()
+	if first.BuildInputDigest != repeat.BuildInputDigest {
+		t.Fatal("unchanged literal digest changed identity")
+	}
+	write(changedBase)
+	changed, err := b.Resolve(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer changed.Close()
+	if changed.BuildInputDigest == first.BuildInputDigest || changed.ImageTag == first.ImageTag {
+		t.Fatal("literal base digest change did not invalidate image identity")
+	}
+}
+
 func TestResolve_BuildInputsInvalidateIdentity(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM alpine\n"), 0644); err != nil {

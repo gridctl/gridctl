@@ -1,0 +1,258 @@
+name: MCP Python runtime
+
+on:
+  pull_request:
+    paths:
+      - "images/mcp-runtime-python/**"
+      - ".github/workflows/mcp-runtime-python.yaml"
+      - "scripts/mcp_runtime_python.py"
+      - "scripts/test_mcp_runtime_python.py"
+      - "tests/integration/mcp_runtime_python_test.go"
+      - "docs/mcp-runtime-python.md"
+  workflow_dispatch:
+    inputs:
+      publish_candidate:
+        description: Push immutable candidate tags after native architecture tests
+        type: boolean
+        default: false
+      verify_anonymous:
+        description: Pull the candidate without credentials after it is public
+        type: boolean
+        default: false
+      promote_supported:
+        description: Promote supported aliases after separate approval
+        type: boolean
+        default: false
+      candidate_sha:
+        description: Full source SHA whose candidate tags should be promoted or pulled
+        type: string
+        required: false
+
+permissions: {}
+
+concurrency:
+  group: mcp-runtime-python
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install policy dependencies
+        run: |
+          python3 -m venv "$RUNNER_TEMP/policy"
+          "$RUNNER_TEMP/policy/bin/pip" install PyYAML==6.0.3
+      - name: Validate recipe and workflow policy
+        run: |
+          "$RUNNER_TEMP/policy/bin/python" scripts/mcp_runtime_python.py validate
+      - name: Policy unit tests
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 "$RUNNER_TEMP/policy/bin/python" -m unittest discover -s scripts -p 'test_mcp_runtime_python.py' -v
+
+  test-amd64:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      GRIDCTL_RUNTIME: docker
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Record native architecture
+        run: python3 scripts/mcp_runtime_python.py native-mode "$(uname -m)" linux/amd64
+      - name: Native amd64 image acceptance
+        run: go test -count=1 -tags=integration -race -timeout 20m -run TestMCPRuntimePython ./tests/integration
+      - name: Export amd64 image
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_candidate }}
+        run: docker save gridctl-mcp-runtime-python:local | gzip > "$RUNNER_TEMP/mcp-runtime-python-amd64.tar.gz"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_candidate }}
+        with:
+          name: mcp-runtime-python-amd64
+          path: ${{ runner.temp }}/mcp-runtime-python-amd64.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  test-arm64:
+    needs: validate
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      GRIDCTL_RUNTIME: docker
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Record native architecture
+        run: python3 scripts/mcp_runtime_python.py native-mode "$(uname -m)" linux/arm64
+      - name: Native arm64 image acceptance
+        run: go test -count=1 -tags=integration -race -timeout 20m -run TestMCPRuntimePython ./tests/integration
+      - name: Export arm64 image
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_candidate }}
+        run: docker save gridctl-mcp-runtime-python:local | gzip > "$RUNNER_TEMP/mcp-runtime-python-arm64.tar.gz"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_candidate }}
+        with:
+          name: mcp-runtime-python-arm64
+          path: ${{ runner.temp }}/mcp-runtime-python-arm64.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-candidate:
+    needs: [validate, test-amd64, test-arm64]
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_candidate }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      GRIDCTL_RUNTIME: docker
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Bind the exact source commit
+        run: python3 scripts/mcp_runtime_python.py check-source "${{ github.sha }}" "$(git rev-parse HEAD)"
+      - name: Install pinned image evidence tools
+        run: python3 scripts/mcp_runtime_python.py install-tools "$RUNNER_TEMP/image-tools"
+      - name: Add image tools to PATH
+        run: printf '%s\n' "$RUNNER_TEMP/image-tools" >> "$GITHUB_PATH"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: mcp-runtime-python-amd64
+          path: ${{ runner.temp }}/images
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: mcp-runtime-python-arm64
+          path: ${{ runner.temp }}/images
+      - name: Login to GHCR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Push platform images, index, and refuse overwrites
+        id: push
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          gzip -dc "$RUNNER_TEMP/images/mcp-runtime-python-amd64.tar.gz" | docker load
+          image="ghcr.io/gridctl/mcp-runtime-python"
+          revision="$(python3 scripts/mcp_runtime_python.py revision-tag "${SOURCE_SHA}")"
+          candidate="$(python3 scripts/mcp_runtime_python.py candidate-tag "${SOURCE_SHA}")"
+          for tag in "$revision" "$candidate" "${revision}-amd64" "${revision}-arm64"; do
+            python3 scripts/mcp_runtime_python.py refuse-overwrite '[]' "$tag" >/dev/null || true
+            if docker manifest inspect "${image}:${tag}" >/dev/null 2>&1; then
+              echo "refusing to overwrite immutable tag ${tag}" >&2
+              exit 1
+            fi
+          done
+          docker tag gridctl-mcp-runtime-python:local "ghcr.io/gridctl/mcp-runtime-python:sha-${SOURCE_SHA}-amd64"
+          docker push "ghcr.io/gridctl/mcp-runtime-python:sha-${SOURCE_SHA}-amd64"
+          gzip -dc "$RUNNER_TEMP/images/mcp-runtime-python-arm64.tar.gz" | docker load
+          docker tag gridctl-mcp-runtime-python:local "ghcr.io/gridctl/mcp-runtime-python:sha-${SOURCE_SHA}-arm64"
+          docker push "ghcr.io/gridctl/mcp-runtime-python:sha-${SOURCE_SHA}-arm64"
+          docker buildx imagetools create \
+            -t "ghcr.io/gridctl/mcp-runtime-python:sha-${SOURCE_SHA}" \
+            -t "ghcr.io/gridctl/mcp-runtime-python:candidate-sha-${SOURCE_SHA}" \
+            "ghcr.io/gridctl/mcp-runtime-python:sha-${SOURCE_SHA}-amd64" \
+            "ghcr.io/gridctl/mcp-runtime-python:sha-${SOURCE_SHA}-arm64"
+          index="$(docker buildx imagetools inspect "ghcr.io/gridctl/mcp-runtime-python:sha-${SOURCE_SHA}" --format '{{json .Manifest}}')"
+          printf 'digest=%s\n' "$(python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])' <<<"$index")" >> "$GITHUB_OUTPUT"
+      - name: SBOM index and platform subjects
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/gridctl/mcp-runtime-python:sha-${SOURCE_SHA}"
+          syft "$image" -o spdx-json=mcp-runtime-python-index.spdx.json
+          syft "ghcr.io/gridctl/mcp-runtime-python:sha-${SOURCE_SHA}-amd64" -o spdx-json=mcp-runtime-python-amd64.spdx.json
+          syft "ghcr.io/gridctl/mcp-runtime-python:sha-${SOURCE_SHA}-arm64" -o spdx-json=mcp-runtime-python-arm64.spdx.json
+          grype sbom:mcp-runtime-python-index.spdx.json --fail-on critical
+          grype sbom:mcp-runtime-python-amd64.spdx.json --fail-on critical
+          grype sbom:mcp-runtime-python-arm64.spdx.json --fail-on critical
+      - name: Authenticate index provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ghcr.io/gridctl/mcp-runtime-python
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  anonymous-verify:
+    needs: publish-candidate
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_anonymous }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Anonymous pull of the candidate
+        env:
+          SOURCE_SHA: ${{ inputs.candidate_sha || github.sha }}
+        run: |
+          set -euo pipefail
+          tag="$(python3 scripts/mcp_runtime_python.py candidate-tag "$SOURCE_SHA")"
+          docker logout ghcr.io || true
+          docker pull "ghcr.io/gridctl/mcp-runtime-python:${tag}"
+
+  promote-supported:
+    needs: [validate, test-amd64, test-arm64]
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.promote_supported }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Login to GHCR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Promote reviewed aliases without rewriting revisions
+        env:
+          SOURCE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          test -n "${SOURCE_SHA}"
+          python3 scripts/mcp_runtime_python.py check-source "$SOURCE_SHA" "$SOURCE_SHA"
+          candidate="$(python3 scripts/mcp_runtime_python.py candidate-tag "${SOURCE_SHA}")"
+          source="ghcr.io/gridctl/mcp-runtime-python:${candidate}"
+          docker manifest inspect "$source"
+          docker buildx imagetools create \
+            -t ghcr.io/gridctl/mcp-runtime-python:3.12 \
+            -t ghcr.io/gridctl/mcp-runtime-python:3.12-bookworm \
+            "$source"
+          echo "Promoted convenience aliases 3.12 and 3.12-bookworm from ${candidate}."
+          echo "sha-* revision tags were not rewritten."
