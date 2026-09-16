@@ -17,8 +17,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 COPY NOTICE /usr/share/doc/gridctl-mcp-runtime-python/NOTICE
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends tini \
+ARG DEBIAN_SNAPSHOT=20250901T000000Z
+ARG TINI_VERSION=0.19.0-1
+RUN printf '%s\n' \
+        "Types: deb" \
+        "URIs: https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}" \
+        "Suites: bookworm" \
+        "Components: main" \
+        "Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg" \
+        "Check-Valid-Until: no" \
+        > /etc/apt/sources.list.d/debian.sources \
+    && rm -f /etc/apt/sources.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends tini=${TINI_VERSION} \
+    && test "$(dpkg-query -W -f='${Version}' tini)" = "${TINI_VERSION}" \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 gridctl \
     && useradd --uid 10001 --gid 10001 --home-dir /tmp --no-create-home --shell /usr/sbin/nologin gridctl \

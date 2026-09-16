@@ -10,7 +10,7 @@ authors = [{ name = "gridctl" }]
 mcp-echo-fixture = "mcp_echo_fixture.server:main"
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools==78.1.1"]
 build-backend = "setuptools.build_meta"
 
 [tool.uv]

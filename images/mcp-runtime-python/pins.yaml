@@ -19,8 +19,13 @@ identity:
 
 init:
   name: tini
+  version: "0.19.0-1"
+  debian_snapshot: "20250901T000000Z"
   path: /usr/bin/tini
   args: ["--"]
+
+build_system:
+  setuptools: "78.1.1"
 
 paths:
   app: /app
@@ -33,6 +38,7 @@ bytecode: PYTHONDONTWRITEBYTECODE=1
 
 tags:
   revision: '^sha-[0-9a-f]{40}$'
+  revision_platform: '^sha-[0-9a-f]{40}-(amd64|arm64)$'
   candidate: '^candidate-sha-[0-9a-f]{40}$'
   supported_aliases:
     - "3.12"

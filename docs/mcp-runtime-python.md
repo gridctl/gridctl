@@ -16,7 +16,7 @@ custom-Dockerfile or `image:` deployment.
 | Python | 3.12.11 on Debian Bookworm slim (glibc) |
 | Architectures | Linux amd64 and arm64 only after native hosted tests; untested combinations are unsupported |
 | Identity | UID/GID 10001 (numeric; a username is not evidence) |
-| Init | `tini` as `ENTRYPOINT`; Gridctl `command` replaces `CMD` only |
+| Init | Distro `tini` 0.19.0-1 from a pinned Debian snapshot, as `ENTRYPOINT`; Gridctl `command` replaces `CMD` only |
 | HOME | `/tmp` (the hardened profile's default scratch) |
 | Cache | `/tmp/cache` |
 | Data | `/data` (mount a volume when you need persistence) |
@@ -38,7 +38,9 @@ image by digest. Two complete recipes live in
 
 Both install during the build, copy a matching `/app/.venv` onto the runtime
 base, and execute the `mcp-echo-fixture` console script. Compilers, uv, and
-credentials stay out of the final image.
+credentials stay out of the final image. Build-system setuptools is pinned
+exactly; a hashed local wheel is an installation-integrity check, not a
+substitute for that reviewed input.
 
 ```bash
 docker build -t gridctl-mcp-runtime-python:local images/mcp-runtime-python
@@ -72,23 +74,34 @@ secure badge.
 | Execution reports | Instance-bound kernel and engine checks for the requested profile | Image signatures |
 
 Index and platform manifests are different subjects. Attesting an index is
-not a substitute for platform-specific SBOMs.
+not a substitute for platform-specific SBOMs. Publication scans local
+platform images and a local index before any push, then attests SPDX
+documents to the published index digest and both platform digests. The
+evidence inventory, including scan status, is attested to the index digest.
+Anonymous verification and alias promotion fetch that public evidence
+without rewriting tags.
 
 ## Publication and tags
 
 The dedicated workflow builds and tests on native `ubuntu-24.04` (amd64) and
-`ubuntu-24.04-arm` (arm64). Those hosted jobs, not this page, are architecture
-evidence. Candidate publication is an explicit dispatch after those tests.
-New GHCR packages default private; anonymous pulls and public evidence need
-an explicit visibility change. Grype scans the index and platform SBOMs and
-fails on Critical findings. High findings are recorded, not auto-excepted.
+`ubuntu-24.04-arm` (arm64). Those hosted jobs fail if the runner is emulated
+or if `TestMCPRuntimePython` is skipped. They are architecture evidence for
+Docker on those runners only; Podman and rootless combinations stay
+untested until they actually run. Candidate publication is an explicit
+dispatch after those tests. New GHCR packages default private; anonymous
+pulls and public evidence need an explicit visibility change. A later
+dispatch can verify an existing candidate without republishing. Grype scans
+the index and platform SBOMs and fails on Critical findings before tags are
+pushed. High findings are recorded, not auto-excepted. Immutable tag
+preflight treats only an authenticated missing manifest as absent; lookup
+errors fail closed.
 
 | Tag | Mutability |
 |-----|------------|
 | `sha-<40-char-source>` | Immutable revision index; never overwritten |
 | `sha-<40-char-source>-amd64`, `sha-<40-char-source>-arm64` | Immutable platform images used as SBOM subjects |
 | `candidate-sha-<40-char-source>` | Immutable candidate; never overwritten |
-| `3.12`, `3.12-bookworm` | Convenience aliases, promoted only after required evidence |
+| `3.12`, `3.12-bookworm` | Convenience aliases, promoted only from an attested candidate digest after provenance, SPDX, scan-status, and anonymous image/evidence checks for that digest |
 | `latest` | Not used as a supported alias |
 
 A private or partially tested package is not a supported public release.
