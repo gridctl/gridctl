@@ -564,7 +564,9 @@ mcp-servers:
 
 `type: pypi` implies `runtime: python`, and generated Python servers default to
 stdio. See [`examples/python-sources/`](../examples/python-sources/) for a
-copy-paste stack.
+copy-paste stack. Manual derivatives of the [Python MCP runtime base](mcp-runtime-python.md)
+use a custom Dockerfile or a digest-pinned `image:`; the base is not a ready
+server.
 
 ### External URL Server
 
@@ -808,6 +810,11 @@ An explicitly non-empty `dockerfile` always selects the custom Dockerfile path,
 even when `runtime: python` is present. A default-named Dockerfile merely
 appearing in the source tree does not override generated Python. Python-only
 installation fields apply to generated builds, not custom Dockerfiles.
+
+Custom Dockerfiles may derive from the [Python MCP runtime base](mcp-runtime-python.md).
+That image is a foundation, not a ready server, and is not added as a source
+type or generated-Python default. Generated Python 3.10-3.13 behavior stays
+unchanged until a separately tested template revision.
 
 Before building a Git source, gridctl fetches current remote refs, resolves the
 configured branch, tag, or commit to a full commit SHA, and checks out that

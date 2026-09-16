@@ -62,6 +62,8 @@ Data mounts use explicit plain engine-local volume names, two through 128 charac
 
 Writable targets are `/tmp`, `/data`, `/state`, or descendants of `/data` and `/state`. Keep code and installed dependencies on the read-only root filesystem. Data volumes are persistent and not storage-bounded. A read-only volume can still expose secrets. Shared volumes can expose files or Unix sockets created by another workload; network settings do not revoke that authority.
 
+The [Python MCP runtime base](mcp-runtime-python.md) sets `HOME=/tmp` so the default scratch mount is writable. Bind-mounting over `/app` hides the installed environment. Permission failures need declared writable state, not privileged mode or recursive ownership changes.
+
 Admission inventories image-declared volumes, engine mounts, and the kernel mount table. Undeclared image volumes are rejected before start. The inventory distinguishes declared data from engine virtual filesystems under `/proc` and `/dev` and engine-managed hostname/DNS metadata. Read-only root does not mean every virtual filesystem is read-only.
 
 ### Networking

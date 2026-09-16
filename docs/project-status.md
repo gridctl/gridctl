@@ -20,6 +20,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 | MCP execution controls | Implemented, Unreleased | Opt-in container admission/evidence and unsandboxed local hygiene. Local Docker checks pass; positive rootless Podman acceptance remains required. Status output changes require maintainer-owned major-release scheduling under Article VIII |
 | Security evidence report (`doctor --security`, `GET /api/security-report`) | Implemented, Unreleased | Passive, value-free snapshots with explicit `file:`, `snapshot:`, or `gateway:` selection. Ordinary `doctor` JSON and exits are unchanged. Exit zero is not a secure verdict. See [Security Evidence Report](security-evidence.md) |
 | Generated Python source containers (PyPI, git, local) | Stable | Opt-in through `source.runtime: python` or `source.type: pypi`; existing Dockerfile sources are unchanged |
+| Python MCP runtime base (`ghcr.io/gridctl/mcp-runtime-python`) | Implemented, Unreleased | Manual custom-Dockerfile or `image:` adoption only. Not a ready server. Supported tags wait on hosted amd64/arm64 acceptance, candidate publication, and anonymous evidence. See [Python MCP runtime base](mcp-runtime-python.md) |
 | Config schema (servers, resources) | Stable | Backward compatible in 0.x |
 | Auth middleware (bearer, API key) | Stable | Credential formats unchanged; grouped MCP/SSE now require configured auth on every request (see [migration guidance](troubleshooting.md#grouped-mcp-requests-return-401)) |
 | Hot reload | Stable | Unreleased breaking correction: effective gateway security changes reject the entire reload or stackless initialization with `restart_required`. See [restart recovery](troubleshooting.md#gateway-security-requires-a-restart); major-release scheduling/policy resolution remains required before merge under Articles VIII/IX |
@@ -82,6 +83,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 - Opt-in run records are best-effort metadata of returning dispatches. They are not a complete audit trail, crash-durable start journal, or secure deletion. Names and caller-declared labels may be sensitive. See [Usage Observability](usage-observability.md#run-records).
 - Podman rootless multi-container networking requires `netavark` and `aardvark-dns` (Podman 4.0+); `pasta`/`slirp4netns` are egress-only transports and are not used for inter-container communication.
 - Generated Python package sources support the official public PyPI index only. Private indexes require a custom Dockerfile.
+- The Python MCP runtime base is not a supported public release until hosted architecture tests, candidate publication, and anonymous evidence succeed. Convenience aliases are promoted separately. Untested runtimes are unsupported.
 - Code mode sandbox has no filesystem access (by design).
 - Skills registry is local-only with no remote discovery.
 - Agents and packs are first-class in the web UI: the Library's Agents segment covers catalog, editing, and per-client projection over the agents REST endpoints, and its Packs segment covers the full pack lifecycle (import, apply, status, remove) over the pack REST endpoints.

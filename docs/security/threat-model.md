@@ -163,6 +163,8 @@ A downstream tool can legitimately receive sensitive input and return it in anot
 
 The reviewed [release workflow](../../.github/workflows/release.yaml) requires exact-commit validation, draft assembly, authenticated archive/inventory subjects, independent Linux/macOS verification, and re-verification before publication. Homebrew advancement follows public-asset verification. [Release policy tests](../../scripts/test_release.py) and [scanner-wrapper tests](../../scripts/test_govulncheck.py) exercise rejection behavior; hosted acceptance and published evidence remain separate from local fixtures.
 
+The [Python MCP runtime base](../mcp-runtime-python.md) uses a dedicated OCI workflow with image-specific SBOMs and provenance. Base evidence does not cover application packages installed in derivatives, and a signed base is not runtime confinement. Binary-release inventories are not image evidence.
+
 Provenance binds artifacts to expected repository, workflow, tag, and source identities. It does not prove harmless code, reproducibility, complete dependency coverage, or a SLSA level. A compromised trusted workflow or dependency remains relevant. Repository release settings and permissions must be checked for the actual publication; workflow source alone cannot establish that immutable release settings are enabled.
 
 The installer, updater, and Homebrew checksum validate archive integrity but do not automatically enforce the provenance policy. An attacker controlling both an archive and its unauthenticated checksum is not defeated by that check. External verification is the current origin-authentication path. It would be inaccurate to label all release artifacts unsigned merely because installation does not verify attestations.

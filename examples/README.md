@@ -16,6 +16,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | [🔌 transports/](transports/) | MCP transport types: local process, SSH, HTTP, SSE, and external-server auth |
 | [📦 platforms/](platforms/) | Third-party MCP servers: remote OAuth endpoints, containers, and host processes |
 | [Python sources](python-sources/) | Generate Python containers from exact PyPI releases or packaged source projects |
+| [Python runtime base](python-runtime/) | Manual derivatives of the Python MCP runtime foundation image |
 | [Execution controls](execution/) | Opt-in container restrictions and per-replica enforcement evidence |
 | [Security evidence](security-evidence/) | Partial, stale, suppressed, unknown, and N/A states for `gridctl doctor --security` |
 | [Stack declaration policy](stack-declaration-policy/) | Offline `validate --policy` fixture, policy file, and CI workflow design |
@@ -64,6 +65,8 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | github-mcp | stdio (container) | Official containerized platform server |
 | pypi | stdio (generated container) | Exact public PyPI release, automatic console command, pinned Python/uv bases |
 | daily | stdio (generated containers) | Exact PyPI release and commit-pinned Git project in one stack |
+| python-runtime/locked | stdio (custom Dockerfile) | Locked-project derivative of the Python runtime base with UID 10001 |
+| python-runtime/hashed | stdio (custom Dockerfile) | Hashed-wheel derivative of the Python runtime base with UID 10001 |
 | execution/stack | stdio (container) | Non-root echo server with finite resources, read-only root, bounded scratch, and network none |
 | zapier-mcp | http (remote URL) | Hosted platform server with OAuth brokering |
 | openapi-basic | openapi | REST API as MCP tools, operation filtering |

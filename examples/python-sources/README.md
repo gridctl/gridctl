@@ -85,6 +85,12 @@ Both forms require static package metadata in `pyproject.toml` or `setup.py`.
 Omit `dockerfile` to generate the image. Setting a non-empty `dockerfile`
 explicitly selects that custom Dockerfile instead.
 
+To derive from Gridctl's Python runtime base instead of the generated
+template, use a custom Dockerfile or a digest-pinned `image:`. The base is
+not a ready MCP server and is not applied to these generated examples. See
+[Python MCP runtime base](../../docs/mcp-runtime-python.md) and
+[runtime examples](../python-runtime/).
+
 See the [Source schema](../../docs/config-schema.md#source) for Python version,
 extras, additional dependencies, OS packages, command selection, and path
 validation.
