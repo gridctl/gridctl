@@ -13,8 +13,8 @@ The finite baseline covers installation, listener access, workload authority, se
 | Availability at this baseline | Capabilities |
 |---|---|
 | Included in `v1.0.0-rc.1` | Grouped-route authentication, non-resolving stack export, scoped variable delivery, internal-credential filtering, and authenticated binary-release tooling |
-| Implemented after that tag; marked Unreleased | Restart-required authentication preflight and browser credential verification, opt-in execution profiles, passive security evidence reports, mutable-reference diagnostics, offline declaration policy, and opt-in persisted run records |
-| Outside this baseline | A published Gridctl Python MCP runtime base. This guide provides no commands or image tags for that proposal. |
+| Implemented after that tag; marked Unreleased | Restart-required authentication preflight and browser credential verification, opt-in execution profiles, passive security evidence reports, mutable-reference diagnostics, offline declaration policy, opt-in persisted run records, and the Python MCP runtime base recipe |
+| Outside this baseline | A published, supported Gridctl Python MCP runtime image. This guide provides no GHCR tags or pull commands for that image. See [Python MCP runtime base](../mcp-runtime-python.md). |
 
 Implementation in a checkout does not establish release publication or runtime support. Follow the [execution support requirements](../execution.md#evidence-and-lifecycle) for your actual host and daemon.
 

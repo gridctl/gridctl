@@ -14,7 +14,7 @@ custom-Dockerfile or `image:` deployment.
 | Item | Value |
 |------|-------|
 | Python | 3.12.11 on Debian Bookworm slim (glibc) |
-| Architectures | Linux amd64 and arm64 after native application tests |
+| Architectures | Linux amd64 and arm64 only after native hosted tests; untested combinations are unsupported |
 | Identity | UID/GID 10001 (numeric; a username is not evidence) |
 | Init | `tini` as `ENTRYPOINT`; Gridctl `command` replaces `CMD` only |
 | HOME | `/tmp` (the hardened profile's default scratch) |
@@ -42,6 +42,7 @@ credentials stay out of the final image.
 
 ```bash
 docker build -t gridctl-mcp-runtime-python:local images/mcp-runtime-python
+gridctl validate examples/python-runtime/locked.yaml
 gridctl apply examples/python-runtime/locked.yaml
 ```
 
@@ -76,13 +77,16 @@ not a substitute for platform-specific SBOMs.
 ## Publication and tags
 
 The dedicated workflow builds and tests on native `ubuntu-24.04` (amd64) and
-`ubuntu-24.04-arm` (arm64). Candidate publication is an explicit dispatch
-after those tests. New GHCR packages default private; anonymous pulls and
-public evidence need an explicit visibility change.
+`ubuntu-24.04-arm` (arm64). Those hosted jobs, not this page, are architecture
+evidence. Candidate publication is an explicit dispatch after those tests.
+New GHCR packages default private; anonymous pulls and public evidence need
+an explicit visibility change. Grype scans the index and platform SBOMs and
+fails on Critical findings. High findings are recorded, not auto-excepted.
 
 | Tag | Mutability |
 |-----|------------|
-| `sha-<40-char-source>` | Immutable revision; never overwritten |
+| `sha-<40-char-source>` | Immutable revision index; never overwritten |
+| `sha-<40-char-source>-amd64`, `sha-<40-char-source>-arm64` | Immutable platform images used as SBOM subjects |
 | `candidate-sha-<40-char-source>` | Immutable candidate; never overwritten |
 | `3.12`, `3.12-bookworm` | Convenience aliases, promoted only after required evidence |
 | `latest` | Not used as a supported alias |
