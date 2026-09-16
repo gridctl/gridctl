@@ -50,6 +50,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 | Model routing policy (gridctl models, LiteLLM + OpenCode projection) | Experimental | Renderer pinned to LiteLLM v1.94+ Auto Router v2; the upstream auto-router schema is still evolving. The web UI's Model routing dialog and `/api/project/models` endpoints inherit this tier |
 | Distributed tracing | Stable | Backward compatible in 0.x |
 | Usage observability (token metrics, optimize) | Stable | Backward compatible in 0.x |
+| Persisted run records (`gridctl runs`, `GET /api/runs`, Runs tab) | Implemented, Unreleased | Opt-in metadata-only final dispositions. Best-effort, not a complete audit trail. Wipe is not secure erasure. See [Usage Observability](usage-observability.md#run-records) |
 | Telemetry persistence | Stable | Backward compatible in 0.x |
 | Server catalog (search, add) | Stable | Backward compatible in 0.x |
 | Client config import (import) | Stable | Backward compatible in 0.x |
@@ -69,7 +70,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 | Go plugin skill loader | Removed in v0.1.x | Replaced by prompt-only skills |
 | Agent IDE (`gridctl agent dev`) | Removed in v0.1.x | Use the Library workspace instead |
 | Multi-agent orchestrator (A2A) | Removed in v0.1.x | Use an external agent runtime (LangGraph, CrewAI, AutoGen, OpenAI Agents SDK) over gridctl as the MCP gateway |
-| JSONL run ledger + resume | Removed in v0.1.x | - |
+| Agent IDE JSONL run ledger + resume | Removed in v0.1.x | Distinct from Unreleased metadata-only dispatch records above |
 | LLM provider abstraction | Removed in v0.1.x | Was internal to the playground |
 
 ## Known limitations
@@ -78,6 +79,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 - Passive security evidence reports do not scan, probe, or certify a stack. Exit zero is not a secure verdict. See [Security Evidence Report](security-evidence.md).
 - Opt-in `gridctl validate --check-mutable-refs` inspects literal selectors only. Exit zero is not complete coverage, a digest is not publisher-verified, and an exact package version is not a transitive lock. See [mutable reference diagnostics](cli-reference.md#mutable-reference-diagnostics).
 - Opt-in `gridctl validate --policy` evaluates captured declarations only. Exit zero is not deployment admission or runtime safety. Identifiers in reports may themselves be sensitive. See [stack declaration policy](stack-declaration-policy.md).
+- Opt-in run records are best-effort metadata of returning dispatches. They are not a complete audit trail, crash-durable start journal, or secure deletion. Names and caller-declared labels may be sensitive. See [Usage Observability](usage-observability.md#run-records).
 - Podman rootless multi-container networking requires `netavark` and `aardvark-dns` (Podman 4.0+); `pasta`/`slirp4netns` are egress-only transports and are not used for inter-container communication.
 - Generated Python package sources support the official public PyPI index only. Private indexes require a custom Dockerfile.
 - Code mode sandbox has no filesystem access (by design).

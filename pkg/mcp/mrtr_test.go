@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -19,6 +21,36 @@ func registerMRTRServer(t *testing.T, g *Gateway, ctrl *gomock.Controller, name,
 	}, nil).AnyTimes()
 	g.Router().AddClient(client)
 	g.Router().RefreshTools()
+}
+
+func TestUnwrapRequestStateIgnoresForgedAttempt(t *testing.T) {
+	env := mrtrEnvelope{
+		Server:     "srv",
+		State:      base64.StdEncoding.EncodeToString([]byte("inner")),
+		AttemptID:  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		AttemptMAC: "00",
+	}
+	payload, err := json.Marshal(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrapped := mrtrEnvelopePrefix + base64.StdEncoding.EncodeToString(payload)
+	server, origin, attempt, ok := unwrapRequestStateFull(wrapped)
+	if !ok || server != "srv" || origin != "inner" {
+		t.Fatalf("routing envelope should still unwrap: %q %q %v", server, origin, ok)
+	}
+	if attempt != "" {
+		t.Fatalf("forged attempt id leaked: %q", attempt)
+	}
+}
+
+func TestWrapRequestStateAuthenticatesAttempt(t *testing.T) {
+	id := "0123456789abcdef0123456789abcdef"
+	wrapped := wrapRequestState("srv", "st", id)
+	_, _, got, ok := unwrapRequestStateFull(wrapped)
+	if !ok || got != id {
+		t.Fatalf("authenticated attempt = %q ok=%v", got, ok)
+	}
 }
 
 func TestHandleToolsCall_WrapsMRTRRequestState(t *testing.T) {

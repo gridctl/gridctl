@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/gridctl/gridctl/pkg/config"
+	"github.com/gridctl/gridctl/pkg/runs"
 	"github.com/gridctl/gridctl/pkg/telemetry"
 )
 
@@ -243,6 +244,17 @@ func (s *Server) handleGetTelemetryInventory(w http.ResponseWriter, r *http.Requ
 	if records == nil {
 		records = []telemetry.InventoryRecord{}
 	}
+	if inv, err := runs.StackInventory(s.stackName); err == nil && inv.FileCount > 0 {
+		records = append(records, telemetry.InventoryRecord{
+			Server:     "",
+			Signal:     "runs",
+			Path:       inv.Path,
+			SizeBytes:  inv.SizeBytes,
+			OldestTime: inv.OldestTime,
+			NewestTime: inv.NewestTime,
+			FileCount:  inv.FileCount,
+		})
+	}
 	writeJSON(w, records)
 }
 
@@ -258,14 +270,35 @@ func (s *Server) handleDeleteTelemetry(w http.ResponseWriter, r *http.Request) {
 	}
 	server := r.URL.Query().Get("server")
 	signal := r.URL.Query().Get("signal")
+	if signal == "runs" {
+		if server != "" {
+			writeJSONError(w, runs.ErrPerServerRuns.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := runs.WipeStack(r.Context(), s.stackName); err != nil {
+			writeJSONError(w, "Failed to wipe runs: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, telemetryPatchResponse{
+			Success:   true,
+			Inventory: s.telemetryInventoryOrEmpty(),
+		})
+		return
+	}
 	if signal != "" && !telemetry.IsValidSignal(signal) {
-		writeJSONError(w, "Invalid signal: "+signal+" (expected logs, metrics, or traces)", http.StatusBadRequest)
+		writeJSONError(w, "Invalid signal: "+signal+" (expected logs, metrics, traces, or runs)", http.StatusBadRequest)
 		return
 	}
 
 	if err := telemetry.Wipe(s.stackName, server, signal); err != nil {
 		writeJSONError(w, "Failed to wipe telemetry: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if server == "" && signal == "" {
+		if err := runs.WipeStack(r.Context(), s.stackName); err != nil {
+			writeJSONError(w, "Failed to wipe runs: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	writeJSON(w, telemetryPatchResponse{

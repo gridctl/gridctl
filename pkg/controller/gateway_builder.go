@@ -35,6 +35,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/reload"
+	"github.com/gridctl/gridctl/pkg/runs"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	"github.com/gridctl/gridctl/pkg/skillpins"
 	"github.com/gridctl/gridctl/pkg/skills"
@@ -123,6 +124,10 @@ type GatewayBuilder struct {
 	// telemetry holds the opt-in disk-persistence writers wired at Build
 	// time. Nil when no server in the stack opts in.
 	telemetry *telemetryWiring
+
+	// runRecorder is the stack-owned metadata-only dispatch recorder.
+	runRecorder *runs.Recorder
+	runStack    string
 
 	// limitsPolicy is the compiled rate-limits policy (nil when no
 	// limits: block is configured). Guarded by limitsMu: it is swapped by
@@ -784,6 +789,7 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	b.wireExperimentalFlags(server, handler)
 	gateway.SetToolCallObserver(observer)
 	gateway.SetPromptGetObserver(observer)
+	b.applyRuns(gateway, server, b.stack, slog.New(handler))
 	gateway.SetTokenCounter(counter)
 	gateway.SetFormatSavingsRecorder(accumulator)
 	server.SetMetricsAccumulator(accumulator)
@@ -1190,6 +1196,79 @@ func telemetryRotationOpts(stack *config.Stack) telemetry.LogOpts {
 	}
 }
 
+type recorderSink struct {
+	rec *runs.Recorder
+}
+
+func (s recorderSink) Begin(ctx context.Context, name string) mcp.RunAttempt {
+	if s.rec == nil {
+		return nil
+	}
+	return s.rec.Begin(ctx, name)
+}
+
+func runsRuntimeConfig(stack *config.Stack) runs.Config {
+	cfg := runs.Config{Enabled: false}
+	if stack == nil || stack.Runs == nil || !stack.Runs.Enabled {
+		if stack != nil {
+			cfg.StackName = stack.Name
+		}
+		return cfg
+	}
+	cfg.Enabled = true
+	cfg.OmitLabels = stack.Runs.OmitLabels
+	cfg.StackName = stack.Name
+	cfg.MaxBytes = runs.DefaultMaxBytes
+	cfg.MaxAge = runs.DefaultMaxAge
+	if stack.Runs.Retention != nil {
+		if stack.Runs.Retention.MaxSizeMB > 0 {
+			cfg.MaxBytes = int64(stack.Runs.Retention.MaxSizeMB) * 1024 * 1024
+		}
+		if stack.Runs.Retention.MaxAgeDays > 0 {
+			cfg.MaxAge = time.Duration(stack.Runs.Retention.MaxAgeDays) * 24 * time.Hour
+		}
+	}
+	return cfg
+}
+
+func (b *GatewayBuilder) applyRuns(gateway *mcp.Gateway, server *api.Server, stack *config.Stack, logger *slog.Logger) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	cfg := runsRuntimeConfig(stack)
+	if b.runRecorder == nil && cfg.Enabled {
+		rec, err := runs.NewRecorder(cfg, logger)
+		if err != nil {
+			logger.Warn("run recorder failed to start; dispatch continues without recording", "error", err)
+		} else {
+			b.runRecorder = rec
+			b.runStack = cfg.StackName
+			runs.RegisterActive(cfg.StackName, rec)
+		}
+	} else if b.runRecorder != nil {
+		if b.runStack != cfg.StackName && b.runStack != "" {
+			runs.UnregisterActive(b.runStack)
+			b.runStack = cfg.StackName
+			if cfg.StackName != "" {
+				runs.RegisterActive(cfg.StackName, b.runRecorder)
+			}
+		}
+		if err := b.runRecorder.Apply(cfg); err != nil {
+			logger.Warn("run recorder apply failed; recording remains enabled and degraded", "error", err)
+		}
+	}
+	if gateway != nil {
+		if b.runRecorder != nil && cfg.Enabled {
+			gateway.SetRunSink(recorderSink{rec: b.runRecorder})
+		} else {
+			gateway.SetRunSink(nil)
+		}
+	}
+	if server != nil {
+		server.SetRunRecorder(b.runRecorder)
+	}
+}
+
 func stringSet(in []string) map[string]bool {
 	out := make(map[string]bool, len(in))
 	for _, s := range in {
@@ -1391,6 +1470,7 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 		// recompile, no carry-over.
 		inst.SetModelPolicies(newCfg.ModelPolicies())
 		b.applyTelemetryConfig(inst.APIServer, handler)
+		b.applyRuns(inst.Gateway, inst.APIServer, newCfg, slog.New(handler))
 		// Re-stamp projections so a `model_preferences:` edit reaches
 		// disk on EVERY successful reload path, not only under --watch:
 		// manual `gridctl reload` and POST /api/reload end here without
@@ -1655,6 +1735,12 @@ func (b *GatewayBuilder) waitForShutdown(ctx context.Context, inst *GatewayInsta
 
 		if b.telemetry != nil && b.telemetry.logRouter != nil {
 			b.telemetry.logRouter.Close()
+		}
+
+		if b.runRecorder != nil {
+			runs.UnregisterActive(b.runStack)
+			b.runRecorder.Close()
+			b.runRecorder = nil
 		}
 	case err := <-serverErr:
 		return fmt.Errorf("server error: %w", err)

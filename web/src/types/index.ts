@@ -989,7 +989,7 @@ export interface MCPServerTelemetryOverride {
 // the active jsonl plus rotated lumberjack siblings.
 export interface InventoryRecord {
   server: string;
-  signal: TelemetrySignal;
+  signal: TelemetrySignal | 'runs';
   path: string;
   sizeBytes: number;
   oldestTime: string; // RFC3339

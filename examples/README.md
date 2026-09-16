@@ -30,6 +30,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | [🎒 portable-pack/](portable-pack/) | Pack repo: skills, agents, and rules behind one `gridctl-pack.yaml` |
 | [🧭 model-policy/](model-policy/) | Model routing policy projected into LiteLLM and OpenCode config |
 | [🔭 tracing/](tracing/) | Distributed tracing and OTLP export |
+| [Run records](runs/) | Opt-in metadata-only persisted dispatch records |
 | [📋 registry/](registry/) | Skills and agents registry ([agentskills.io](https://agentskills.io) spec) |
 | [🧪 _mock-servers/](_mock-servers/) | Test servers for development |
 
@@ -79,6 +80,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | vault-sets | http (container) | Deprecated vault sets (regression fixture) |
 | autoscale-basic | stdio | Reactive autoscaling with `autoscale:` |
 | otlp-jaeger | - | Gateway OTLP trace export |
+| runs/stack | - | Opt-in metadata-only persisted dispatch records |
 | registry-basic | stdio | Skills as MCP prompts, single server |
 | registry-advanced | stdio | Two servers; comments show cross-server `allowed-tools` |
 | model-preferences | http | Model preference defaults for projected skills and agents |

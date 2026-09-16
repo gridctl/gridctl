@@ -87,6 +87,9 @@ export function summarize(inventory: InventoryRecord[]): TelemetrySummary {
   let newest: Date | undefined;
   for (const r of inventory) {
     seenServers.add(r.server);
+    if (r.signal === 'runs') {
+      continue;
+    }
     seenSignals.add(r.signal);
     totalBytes += r.sizeBytes;
     const o = new Date(r.oldestTime);

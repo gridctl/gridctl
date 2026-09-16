@@ -42,6 +42,25 @@ type Reconnectable interface {
 	Reconnect(ctx context.Context) error
 }
 
+// RunAttempt is one dispatch-bound recording session. Implementations must
+// not perform I/O on these methods; Finish enqueues a sanitized record.
+type RunAttempt interface {
+	Context() context.Context
+	SetOutcome(disposition, stage, reason string)
+	SetResolved(server, tool string, replicaID int)
+	SetDownstreamDuration(d time.Duration)
+	SetTraceID(id string)
+	SetLabels(client, access string)
+	SetPreviousAttemptID(id string)
+	Finish()
+}
+
+// RunSink starts metadata-only recording for a returning tools/call.
+// A nil sink, or a nil Begin result, means recording is disabled.
+type RunSink interface {
+	Begin(ctx context.Context, requestedName string) RunAttempt
+}
+
 // ToolCaller allows calling tools across the gateway's aggregated servers.
 // This interface decouples the registry from the gateway to avoid circular dependencies.
 // The gateway implements this interface and passes it to components that need

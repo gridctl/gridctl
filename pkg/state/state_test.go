@@ -101,6 +101,20 @@ func TestTelemetryDir(t *testing.T) {
 	}
 }
 
+func TestRunsDir(t *testing.T) {
+	setTempHome(t)
+
+	home := os.Getenv("HOME")
+	expected := filepath.Join(home, ".gridctl", "runs")
+	got, err := RunsDir()
+	if err != nil {
+		t.Fatalf("RunsDir: %v", err)
+	}
+	if got != expected {
+		t.Errorf("RunsDir() = %q, want %q", got, expected)
+	}
+}
+
 func TestTelemetryServerPath(t *testing.T) {
 	setTempHome(t)
 

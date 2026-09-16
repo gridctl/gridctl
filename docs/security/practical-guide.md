@@ -13,8 +13,8 @@ The finite baseline covers installation, listener access, workload authority, se
 | Availability at this baseline | Capabilities |
 |---|---|
 | Included in `v1.0.0-rc.1` | Grouped-route authentication, non-resolving stack export, scoped variable delivery, internal-credential filtering, and authenticated binary-release tooling |
-| Implemented after that tag; marked Unreleased | Restart-required authentication preflight and browser credential verification, opt-in execution profiles, passive security evidence reports, mutable-reference diagnostics, and offline declaration policy |
-| Outside this baseline | Persisted run records and a published Gridctl Python MCP runtime base. This guide provides no commands or image tags for those proposals. |
+| Implemented after that tag; marked Unreleased | Restart-required authentication preflight and browser credential verification, opt-in execution profiles, passive security evidence reports, mutable-reference diagnostics, offline declaration policy, and opt-in persisted run records |
+| Outside this baseline | A published Gridctl Python MCP runtime base. This guide provides no commands or image tags for that proposal. |
 
 Implementation in a checkout does not establish release publication or runtime support. Follow the [execution support requirements](../execution.md#evidence-and-lifecycle) for your actual host and daemon.
 
@@ -116,9 +116,9 @@ Read the [declaration policy](../stack-declaration-policy.md) and [security evid
 
 ## Protect operational evidence
 
-Logs, traces, metrics, exports, and screenshots can disclose operational data. Review tracing configuration and exporter destinations before enabling external collection. Apply access and retention controls at those destinations. Redaction of recognized patterns or registered values does not cover every transformed or unknown secret, and truncation limits size rather than sensitivity.
+Logs, traces, metrics, run records, exports, and screenshots can disclose operational data. Review tracing configuration and exporter destinations before enabling external collection. Apply access and retention controls at those destinations. Redaction of recognized patterns or registered values does not cover every transformed or unknown secret, and truncation limits size rather than sensitivity. Run records omit argument and result values, but names and caller-declared labels may still be sensitive.
 
-Security reports exclude raw credentials and payloads, but operator-authored identifiers may themselves contain sensitive text. Review reports before sharing. Logs and traces are not a complete or tamper-proof security audit trail; do not use them to claim every attempt was recorded or that a downstream real-world effect succeeded.
+Security reports exclude raw credentials and payloads, but operator-authored identifiers may themselves contain sensitive text. Review reports before sharing. Logs, traces, and run records are not a complete or tamper-proof security audit trail; do not use them to claim every attempt was recorded or that a downstream real-world effect succeeded.
 
 For a suspected compromise, restrict access to the affected gateway, revoke exposed credentials with their issuers, and review the server or imported content before resuming. Preserve only the diagnostic evidence needed for investigation under appropriate access controls. Send vulnerability details through [private reporting](../../SECURITY.md#reporting-a-vulnerability), not a public issue containing raw logs or secrets.
 

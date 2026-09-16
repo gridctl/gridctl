@@ -13,6 +13,7 @@ type Stack struct {
 	Gateway    *GatewayConfig         `yaml:"gateway,omitempty"`
 	Logging    *LoggingConfig         `yaml:"logging,omitempty"`
 	Telemetry  *TelemetryConfig       `yaml:"telemetry,omitempty"` // Opt-in disk persistence for logs/metrics/traces
+	Runs       *RunsConfig            `yaml:"runs,omitempty"`      // Opt-in metadata-only persisted dispatch records
 	Secrets    *Secrets               `yaml:"secrets,omitempty"`   // Variable set references
 	Network    Network                `yaml:"network"`             // Single network (simple mode)
 	Networks   []Network              `yaml:"networks,omitempty"`  // Multiple networks (advanced mode)
@@ -352,6 +353,24 @@ type MCPServerPersistence struct {
 	Logs    *bool `yaml:"logs,omitempty" json:"logs,omitempty"`
 	Metrics *bool `yaml:"metrics,omitempty" json:"metrics,omitempty"`
 	Traces  *bool `yaml:"traces,omitempty" json:"traces,omitempty"`
+}
+
+// RunsConfig enables metadata-only persisted records of returning tool
+// dispatch attempts. Omitted (the default) leaves recording disabled and
+// preserves existing stack behavior. Recording does not inherit tracing or
+// metrics persistence switches.
+type RunsConfig struct {
+	Enabled    bool           `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	OmitLabels bool           `yaml:"omit_labels,omitempty" json:"omit_labels,omitempty"`
+	Retention  *RunsRetention `yaml:"retention,omitempty" json:"retention,omitempty"`
+}
+
+// RunsRetention is the finite age and total logical-byte budget for one
+// stack's run records (active file plus rotated segments). Defaults apply
+// only when recording is enabled.
+type RunsRetention struct {
+	MaxSizeMB  int `yaml:"max_size_mb,omitempty" json:"max_size_mb,omitempty"`
+	MaxAgeDays int `yaml:"max_age_days,omitempty" json:"max_age_days,omitempty"`
 }
 
 // Secrets configures automatic secret injection from variable sets.
@@ -924,6 +943,20 @@ func (s *Stack) SetDefaults() {
 		}
 		if s.Telemetry.Retention.MaxAgeDays == 0 {
 			s.Telemetry.Retention.MaxAgeDays = 7
+		}
+	}
+
+	// Runs retention defaults. Never synthesize a Runs block on stacks
+	// that omit one; recording stays disabled when the block is absent.
+	if s.Runs != nil && s.Runs.Enabled {
+		if s.Runs.Retention == nil {
+			s.Runs.Retention = &RunsRetention{}
+		}
+		if s.Runs.Retention.MaxSizeMB == 0 {
+			s.Runs.Retention.MaxSizeMB = 100
+		}
+		if s.Runs.Retention.MaxAgeDays == 0 {
+			s.Runs.Retention.MaxAgeDays = 7
 		}
 	}
 }

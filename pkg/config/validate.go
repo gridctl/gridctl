@@ -133,6 +133,10 @@ func Validate(s *Stack) error {
 		errs = append(errs, validateTelemetryRetention(s.Telemetry.Retention)...)
 	}
 
+	if s.Runs != nil {
+		errs = append(errs, validateRunsConfig(s.Runs)...)
+	}
+
 	// Gateway auth validation
 	if s.Gateway != nil && s.Gateway.Auth != nil {
 		auth := s.Gateway.Auth
@@ -1070,6 +1074,25 @@ func validateTelemetryRetention(r *RetentionConfig) ValidationErrors {
 		}
 	}
 
+	return errs
+}
+
+func validateRunsConfig(r *RunsConfig) ValidationErrors {
+	var errs ValidationErrors
+	if r.Retention == nil {
+		return errs
+	}
+	const prefix = "runs.retention"
+	if r.Retention.MaxSizeMB < 1 {
+		errs = append(errs, ValidationError{prefix + ".max_size_mb", "must be >= 1"})
+	} else if r.Retention.MaxSizeMB > telemetryMaxSizeMBHardCap {
+		errs = append(errs, ValidationError{prefix + ".max_size_mb", fmt.Sprintf("must be <= %d", telemetryMaxSizeMBHardCap)})
+	}
+	if r.Retention.MaxAgeDays < 1 {
+		errs = append(errs, ValidationError{prefix + ".max_age_days", "must be >= 1"})
+	} else if r.Retention.MaxAgeDays > telemetryMaxAgeDaysHardCap {
+		errs = append(errs, ValidationError{prefix + ".max_age_days", fmt.Sprintf("must be <= %d", telemetryMaxAgeDaysHardCap)})
+	}
 	return errs
 }
 

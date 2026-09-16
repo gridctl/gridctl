@@ -22,6 +22,18 @@ The **Metrics workspace** in the web UI charts token throughput over time and br
 
 Rate limits (`limits.rate_limits` in `stack.yaml`) cap calls per minute per client, server, or tool, enforced at dispatch with no token accounting required. `gridctl limits` and `GET /api/limits` show every configured limit and its state.
 
+## Run records
+
+Opt-in `runs.enabled` stores one metadata-only final disposition per returning gateway `tools/call`. Metrics remain aggregate usage. Traces remain sampled timing detail. Runs remain retained dispositions and stay available when tracing is disabled.
+
+Records are saved after dispatch returns. Recording is best-effort. Attempts interrupted by a crash may leave no record, and older records may have been removed by retention or wipe. A transport failure does not prove the remote action did not execute. Input-required is the disposition of one round, not human approval.
+
+The allowlist is generated IDs, timestamps, total dispatch duration, bounded target names, disposition/stage/reason, optional replica and sampled trace IDs, and optional caller-declared labels. Argument and result values, hashes, code, raw errors, tokens, headers, URLs, and host paths are excluded. Names and labels may still be sensitive. Labels are not authenticated principals.
+
+Default retention is seven days and 100 MiB of logical record bytes per stack, including the active file and rotated segments. Age pruning runs at writer start and hourly while the process is up, compacting old records out of the active file. Physical filesystem overhead is extra. Wipe is stack-wide, is not secure erasure, and does not remove exports or backups. Disabling recording does not delete retained history. A stalled disk syscall can outlive the two-second shutdown drain; remaining queued events are counted as dropped.
+
+Query with `gridctl runs list`, `GET /api/runs`, or the Runs tab beside Traces. Live and offline sources are explicit; a failed live request never falls back to disk. See [Run records](config-schema.md#run-records) and [CLI runs](cli-reference.md#runs).
+
 ## Metrics persistence
 
 Opt-in metrics persistence is unchanged: with `telemetry.persist.metrics: true`, the gateway appends diff snapshots to `~/.gridctl/telemetry/<stack>/<server>/metrics.jsonl` and restores cumulative counters from disk on startup. Files written while the removed cost layer was active carry extra keys (`cost_diff`, `cost_total`, `model_cost`); the decoder is non-strict and ignores them, so old files load cleanly and lose nothing but the dollar figures.

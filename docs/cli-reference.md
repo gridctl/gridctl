@@ -4,7 +4,7 @@ Commands are grouped by domain, matching the groups in `gridctl --help`. Run `gr
 
 Global flags: `--home <dir>` (equivalent to `GRIDCTL_HOME`; see [Home directory override](#home-directory-override)) replaces the home directory every gridctl path derives from, `--runtime <docker|podman>` overrides runtime auto-detection, `--no-color` disables styled output, and `--log-level <debug|info|warn|error>` sets the minimum log level (logs go to stderr, so JSON stdout stays parseable). Color is also suppressed automatically when output is piped, when `NO_COLOR` is set ([no-color.org](https://no-color.org/)), or when `TERM=dumb`.
 
-Machine-readable output: commands whose `--format` flag is a binary table-vs-JSON choice (among them `validate`, `plan`, `optimize`, `activate`, `search`, `add`, `skill list`, `skill pins`, `var list`, `pins list`, `pins verify`, the `pack`, `project`, and `skill project` families, and `ctx status|sync|list`) also accept `--json` as a boolean alias, and `status`, `info`, `doctor`, `open`, `traces`, and `telemetry status` support `--json` directly. `export` and `var export` keep `--format` only, since their format is multi-valued (`yaml|json`, `env|json`). JSON always goes to stdout with human messages on stderr. Every JSON schema, including `status`, `info`, and `doctor`, is backward compatible within the `0.x` line: fields may be added, never removed or retyped without a clearly-labeled release. `doctor --security --json` emits the separate `gridctl.security-report.v1` DTO, not ordinary doctor's `ok` schema; see [Security Evidence Report](security-evidence.md).
+Machine-readable output: commands whose `--format` flag is a binary table-vs-JSON choice (among them `validate`, `plan`, `optimize`, `activate`, `search`, `add`, `skill list`, `skill pins`, `var list`, `pins list`, `pins verify`, the `pack`, `project`, and `skill project` families, and `ctx status|sync|list`) also accept `--json` as a boolean alias, and `status`, `info`, `doctor`, `open`, `traces`, `runs list`, `runs status`, and `telemetry status` support `--json` directly. `export` and `var export` keep `--format` only, since their format is multi-valued (`yaml|json`, `env|json`). JSON always goes to stdout with human messages on stderr. Every JSON schema, including `status`, `info`, and `doctor`, is backward compatible within the `0.x` line: fields may be added, never removed or retyped without a clearly-labeled release. `doctor --security --json` emits the separate `gridctl.security-report.v1` DTO, not ordinary doctor's `ok` schema; see [Security Evidence Report](security-evidence.md).
 
 Plain tables: `status`, `search`, `skill list`, `pins list`, `optimize`, `telemetry status`, and the table-rendering `pack`, `project`, `ctx`, and `skill project` commands accept `--plain` to render tables without box-drawing (2+-space column separation, one record per line) for `grep`/`awk` pipelines. Piped table output degrades to plain automatically; the flag forces it on a terminal. `--plain` cannot be combined with `--json`. The `var` family keeps `--plain` as its pre-existing "show unmasked value" flag (`var get`, `var export`); `var list` therefore has no `--plain`, though it does accept `--format json` / `--json` and its piped table output still degrades to the plain style.
 
@@ -23,6 +23,7 @@ Plain tables: `status`, `search`, `skill list`, `pins list`, `optimize`, `teleme
 - [Pins (TOFU schema pinning)](#pins-tofu-schema-pinning)
 - [Server authorization (OAuth)](#server-authorization-oauth)
 - [Traces](#traces)
+- [Runs](#runs)
 - [Optimize](#optimize)
 - [Limits](#limits)
 - [Telemetry](#telemetry)
@@ -305,6 +306,21 @@ Downstream authorization for external servers declared with `auth: {type: oauth}
 | `gridctl traces --min-duration 100ms` | Filter by minimum duration. |
 | `gridctl traces --json` | Output as JSON. The list form emits the API envelope (`{traces, total, tracingEnabled, bufferSize, bufferCapacity}` with camelCase trace fields), not a bare array. |
 
+## Runs
+
+Metadata-only persisted dispatch records. Recording is opt-in (`runs.enabled`) and best-effort. JSON stdout is structured only; warnings go to stderr. Live queries never fall back to disk; `--file` never falls back to the daemon. `--file` and `--offline` cannot be combined.
+
+Exit codes: `0` success, `1` failure (including an unreadable or missing `--file`), `2` partial history or incomplete wipe. An empty matching set is success: the human table prints `No matching run records` on stderr.
+
+| Command | Purpose |
+|---|---|
+| `gridctl runs list` | List retained records. `--stack` selects the live daemon; `--file PATH` reads an explicit offline file or directory; `--offline --stack` reads the stack's on-disk files without contacting the daemon. |
+| `gridctl runs list --format json` | Shared snake_case query envelope (`schema_version`, `source`, `filters`, `records`, `warnings`, `partial`, `next_cursor`, `wipe_epoch`). `--json` is an alias. Live and offline JSON use the same schema. |
+| `gridctl runs status` | Recorder health (live) or offline unknown writer state (`writer_health: unknown`, `known: false`). `--file PATH` and `--offline --stack` inspect disk only. |
+| `gridctl runs wipe --stack NAME -y` | Stack-wide wipe. Uses the live daemon when it is running; otherwise wipes offline files. Offline wipe refuses if a daemon owns the stack. Not secure erasure. Recording remains enabled if it was already on. `--format json` prints `{success, partial, scope, recording_enabled, note}` on stdout. |
+
+Filters on `list`: `--since`, `--until` (RFC3339 on `returned_at`), `--requested`, `--server`, `--tool`, `--disposition`, `--client`, `--access`, `--attempt`, `--parent`, `--root`, `--previous`, `--trace`, `--cursor`, `--limit` (default 100, capped at 1000). Disposition values: `completed`, `tool_error`, `denied`, `routing_failed`, `transport_error`, `cancelled`, `timeout`, `input_required`, `retry_rejected`. A cursor whose wipe epoch or on-disk source token no longer matches fails rather than skipping history.
+
 ## Optimize
 
 | Command | Purpose |
@@ -335,7 +351,7 @@ Inspect and manage opt-in telemetry persistence under `~/.gridctl/telemetry/`. O
 | Command | Purpose |
 |---|---|
 | `gridctl telemetry status [stack]` | List the on-disk telemetry inventory. Walks every stack when no argument is given; `--json` for machine-readable output. |
-| `gridctl telemetry wipe [stack]` | Delete persisted telemetry files. `--server <name>` and `--signal <logs\|metrics\|traces>` scope the wipe; `-y` / `--yes` skips the prompt. |
+| `gridctl telemetry wipe [stack]` | Delete persisted telemetry files. `--server <name>` and `--signal <logs\|metrics\|traces>` scope the wipe; `-y` / `--yes` skips the prompt. Does not delete run records; use `gridctl runs wipe`. |
 | `gridctl telemetry tail <stack> <server>` | Follow the active `<signal>.jsonl` file (lumberjack rotations detected automatically). `--signal <logs\|metrics\|traces>` is required. |
 
 ## System

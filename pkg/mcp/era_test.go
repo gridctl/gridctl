@@ -144,7 +144,7 @@ func TestRequestStateEnvelopeRoundTrip(t *testing.T) {
 		"\x00\x01\xffbinary",
 	}
 	for _, state := range states {
-		wrapped := wrapRequestState("github", state)
+		wrapped := wrapRequestState("github", state, "")
 		server, got, ok := unwrapRequestState(wrapped)
 		if !ok {
 			t.Fatalf("unwrap failed for state %q", state)

@@ -55,10 +55,10 @@ Release tooling has separate Python policy/scanner tests: `PYTHONDONTWRITEBYTECO
 The shape of the codebase from the outside in:
 
 ```
-cmd/gridctl/        Cobra CLI entry points, one file per subcommand (apply, serve, link, var, skill, ctx, pack, project, optimize, …).
+cmd/gridctl/        Cobra CLI entry points, one file per subcommand (apply, serve, link, var, skill, ctx, pack, project, optimize, runs, …).
                     embed.go pulls in cmd/gridctl/web/dist via go:embed under the embed_web build tag.
 cmd/scenarioverify/ Repository test utility that checks designated Go test identities against a completed `go test -json` capture. Not a gridctl subcommand.
-internal/api/       REST handlers backing the web UI (one file per resource: stack, skills, vault, pins, telemetry, traces, …).
+internal/api/       REST handlers backing the web UI (one file per resource: stack, skills, vault, pins, telemetry, traces, runs, …).
                     Python source validation, resolution previews, generated files, and status provenance live in
                     python_sources.go. The Server struct in api.go wires together every pkg/* subsystem the UI needs.
                     Server.Handler assembles HTTP routes and CORS/Host/auth middleware; auth.go protects operational
@@ -109,6 +109,7 @@ pkg/modelsync/      Model routing policy projection (`gridctl models`): a router
 pkg/wiring/         Key-level ownership of gateway entries merged into client MCP configs (`gridctl project`, link/unlink).
 pkg/pack/           gridctl-pack.yaml manifest schema; pkg/packops owns orchestration shared by the CLI and REST handlers.
 pkg/skillpins/      TOFU pins over skill documents (per-file digests, findings); the `gridctl skill pins` store.
+pkg/runs/           Metadata-only persisted dispatch records (`gridctl runs`). Opt-in stack-level JSONL with a bounded queue, single writer, retention, and coordinated wipe.
 pkg/limits/         Enforces the `limits:` block: token-bucket rate limits on the tool-call dispatch path.
 pkg/provisioner/    LLM-client config writers (claude, claudecode, cursor, windsurf, gemini, antigravity, opencode, grok, goose,
                     cline, anythingllm, lmstudio, roo, zed, continue, vscode). JSON and TOML helpers in json.go / toml.go.
@@ -135,7 +136,7 @@ pkg/metrics/, pkg/token/, pkg/format/, pkg/output/, pkg/logging/, pkg/jsonrpc/, 
 
 web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). Zustand stores in src/stores/, route map in
                     src/routes.tsx, feature components grouped under src/components/<workspace>/. Nine workspaces:
-                    Stack, Library, Vault (Variables), Tools, Metrics, Pins, Logs, Traces, Connections. The Detached*Page
+                    Stack, Library, Vault (Variables), Tools, Metrics, Pins, Logs, Traces (Runs tab), Connections. The Detached*Page
                     files are popout windows that mirror specific panels.
                     src/lib/gatewayRequest.ts owns same-origin, no-redirect credential-bearing fetch, including
                     legacy SSE negotiation. credentials.ts owns versioned storage and Fetch header validation;
@@ -147,9 +148,9 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
                     digest-cache lookup, and optimize heuristics. Grouped auth tests use real HTTP and a subprocess MCP backend.
                     auth_restart_test.go verifies actual process restart, saved/live-state rejection, CLI exits,
                     sessions/streams, and preserved Docker identities with race-built child binaries.
-examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, registry, secrets-vault,
+                    examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
-                    portable-pack, model-policy, python-sources, execution, security-evidence, stack-declaration-policy).
+                    portable-pack, model-policy, python-sources, execution, security-evidence, stack-declaration-policy, runs).
                     examples/_mock-servers/ is the source for `task mock:servers`.
 scripts/            Build/test helpers and release tooling: release.py owns gate, inventory, verification, draft/public,
                     and tap policy; release-tools.py pins executables and the SPDX schema; release-acceptance.py exercises
@@ -162,7 +163,7 @@ docs/               User-facing documentation (cli-reference, config-schema, api
                     stack-declaration-policy, adversarial-regression-gates).
 ```
 
-End-to-end request flow for an upstream HTTP MCP tool call: client → HTTP listener built by `pkg/controller` (gateway_builder.go) → `internal/api.Server.Handler` (CORS, Host validation, configured auth, and route/group selection) → `pkg/mcp` Streamable HTTP transport (Host/Origin checks and protocol handling) → `mcp.Gateway` router → per-server `mcp.Client` (process/stdio/SSE/HTTP/OpenAPI) → response, with telemetry, tracing, schema pinning, and (optional) output-format conversion attached on the way back. Legacy SSE routes return a negotiation hint rather than dispatching tools.
+End-to-end request flow for an upstream HTTP MCP tool call: client → HTTP listener built by `pkg/controller` (gateway_builder.go) → `internal/api.Server.Handler` (CORS, Host validation, configured auth, and route/group selection) → `pkg/mcp` Streamable HTTP transport (Host/Origin checks and protocol handling) → `mcp.Gateway` router → per-server `mcp.Client` (process/stdio/SSE/HTTP/OpenAPI) → response, with telemetry, tracing, optional run recording, schema pinning, and (optional) output-format conversion attached on the way back. Legacy SSE routes return a negotiation hint rather than dispatching tools.
 
 End-to-end for the web UI: component or React store action → shared gatewayRequest transport beneath endpoint parsers in `src/lib/api.ts` → `/api/...` handler in `internal/api/` → method on `Server` → call into the relevant `pkg/*` subsystem → JSON response → current-generation component or store state update → component re-render. Credential drafts verify against protected `/api/status` before active replacement/persistence. Gateway rejection pauses protected reads; verification resumes eligible reads without replaying mutations. The Stack spec view's Export YAML action calls `/api/stack/export` and downloads the non-resolving projection; raw spec retrieval and editing remain separate and may contain authored credentials. Verbose apply uses bounded controller diagnostic summaries, not resolved stack JSON.
 

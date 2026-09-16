@@ -13,6 +13,7 @@ extends: base-stack.yaml
 gateway: ...
 logging: ...
 telemetry: ...
+runs: ...
 secrets: ...
 variables: ...
 network: ...
@@ -36,6 +37,7 @@ experimental: ...
 | `gateway` | object | No | - | Gateway-level settings (auth, CORS, code mode) |
 | `logging` | object | No | - | Log file output with rotation (see [Logging](#logging)) |
 | `telemetry` | object | No | - | Opt-in disk persistence for logs/metrics/traces (see [Telemetry Persistence](#telemetry-persistence)) |
+| `runs` | object | No | - | Opt-in metadata-only persisted dispatch records (see [Run records](#run-records)) |
 | `secrets` | object | No | - | Variable set references for automatic secret injection |
 | `variables` | map | No | - | Value-free variable prerequisites (see [Variable declarations](#variable-declarations)) |
 | `network` | object | No | See below | Single network configuration (simple mode) |
@@ -334,12 +336,42 @@ The `gridctl telemetry` CLI operates directly on these files:
 | Command | Purpose |
 |---------|---------|
 | `gridctl telemetry status [stack] [--json]` | Inventory of on-disk telemetry across one or all stacks |
-| `gridctl telemetry wipe [stack] [--server X] [--signal Y] [-y]` | Delete persisted files; scopes to server/signal when provided |
+| `gridctl telemetry wipe [stack] [--server X] [--signal Y] [-y]` | Delete persisted logs, metrics, and traces; scopes to server/signal when provided. Does not delete run records |
 | `gridctl telemetry tail <stack> <server> --signal logs\|metrics\|traces` | `tail -f` the active signal file with lumberjack-rotation handling |
 
 The same operations are available over the REST API (`GET /api/telemetry/inventory`, `DELETE /api/telemetry`) and through the web UI's header Persistence pill, sidebar Telemetry section, and graph node dot indicator.
 
 **Default off in beta.** The feature stays opt-in until v0.2 stable - stacks without a `telemetry` block continue to behave exactly as today.
+
+---
+
+## Run records
+
+Opt-in metadata-only history of returning tool-dispatch attempts. Omitted `runs:` leaves recording disabled. Enablement does not inherit tracing or metrics persistence switches.
+
+```yaml
+runs:
+  enabled: true
+  omit_labels: false
+  retention:
+    max_size_mb: 100
+    max_age_days: 7
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `enabled` | bool | No | `false` | Record one final disposition per returning `tools/call` while enabled |
+| `omit_labels` | bool | No | `false` | Drop caller-declared client and access labels from stored records |
+| `retention.max_size_mb` | int | No | `100` | Total logical record-byte budget per stack, including the active file and rotated segments |
+| `retention.max_age_days` | int | No | `7` | Age policy for the active file and closed segments at startup and hourly. No exact deletion while the process is offline |
+
+Records are saved after dispatch returns. Recording is best-effort: a crash may leave no record. The writer queue holds 1024 records (8 KiB maximum each). Queue overflow, write failure, and capacity exhaustion leave tool results unchanged and increment independent drop counters. Saturation warnings are asynchronous and do not block dispatch. A successful append is not a sync; the writer fsyncs about every two seconds, and a synced watermark requires an actual `fsync`. Shutdown drain is two seconds; a blocked `write`/`fsync` syscall may outlive that bound and remaining queued events are counted as dropped. An unopenable destination keeps recording enabled and reports writer health `degraded`. Disabling recording does not delete retained history.
+
+The allowlist is generated IDs, timestamps, total dispatch duration, bounded target names, disposition/stage/reason, optional replica and sampled trace IDs, and optional caller-declared labels. Argument and result values, hashes, code, raw errors, tokens, headers, URLs, and host paths are excluded. Names and labels may still be sensitive. Labels are not authenticated principals.
+
+Storage is stack-level at `~/.gridctl/runs/<stack>/runs.jsonl` with owner-only directories and files (0700/0600 on Unix). Physical filesystem overhead and a bounded rotation temp file sit outside the logical budget. Retention values must be `>= 1` and within the same hard caps as telemetry (1 TiB, 10 years). Wipe is stack-wide, not per-server, is not secure erasure, and does not remove exports or backups. `gridctl telemetry wipe` does not delete run records; use `gridctl runs wipe`. `GET /api/telemetry/inventory` includes a stack-level `runs` row when files exist; the UI persistence pill still lists only logs, metrics, and traces.
+
+The recording boundary is gateway `tools/call` entry through its normal return. HTTP envelope failures, auth failures before dispatch, and wire delivery after return are out of scope. Query through `gridctl runs`, `GET /api/runs`, or the Runs tab beside Traces.
 
 ---
 

@@ -422,6 +422,7 @@ Learn more → [Packs guide](docs/packs.md)
 | [`execution/`](examples/execution/) | Opt-in container restrictions and instance-bound execution evidence |
 | [`security-evidence/`](examples/security-evidence/) | Partial, unknown, and N/A states for `gridctl doctor --security` |
 | [`otlp-jaeger.yaml`](examples/tracing/otlp-jaeger.yaml) | Export traces to Jaeger via OTLP |
+| [`runs/stack.yaml`](examples/runs/stack.yaml) | Opt-in metadata-only persisted dispatch records |
 | [`portable-pack/`](examples/portable-pack) | Team pack: skills, agents, and wiring from one manifest |
 
 ## 📖 Documentation

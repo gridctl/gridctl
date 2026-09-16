@@ -32,6 +32,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/reload"
 	"github.com/gridctl/gridctl/pkg/resetops"
+	"github.com/gridctl/gridctl/pkg/runs"
 	"github.com/gridctl/gridctl/pkg/runtime/docker"
 	"github.com/gridctl/gridctl/pkg/skillpins"
 	"github.com/gridctl/gridctl/pkg/state"
@@ -63,6 +64,8 @@ type Server struct {
 	vaultStore         *vault.Store
 	metricsAccumulator *metrics.Accumulator
 	traceBuffer        *tracing.Buffer
+	runMu              sync.RWMutex
+	runRecorder        *runs.Recorder
 	stackFile          string
 	allowedOrigins     []string
 	allowedHosts       []string
@@ -212,6 +215,19 @@ func (s *Server) SetStackName(name string) {
 // SetLogBuffer sets the log buffer for gateway logs.
 func (s *Server) SetLogBuffer(buffer *logging.LogBuffer) {
 	s.logBuffer = buffer
+}
+
+// SetRunRecorder installs the stack-owned run recorder. Nil disables live status.
+func (s *Server) SetRunRecorder(r *runs.Recorder) {
+	s.runMu.Lock()
+	s.runRecorder = r
+	s.runMu.Unlock()
+}
+
+func (s *Server) getRunRecorder() *runs.Recorder {
+	s.runMu.RLock()
+	defer s.runMu.RUnlock()
+	return s.runRecorder
 }
 
 // LogBuffer returns the log buffer for gateway logs.
@@ -437,6 +453,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/traces", s.handleTraces)
 	mux.HandleFunc("GET /api/traces/{traceId}", s.handleTraces)
 	mux.HandleFunc("GET /api/traces/{traceId}/otlp", s.handleTraceOTLP)
+	mux.HandleFunc("GET /api/runs", s.handleRuns)
+	mux.HandleFunc("GET /api/runs/status", s.handleRunsStatus)
+	mux.HandleFunc("GET /api/runs/export", s.handleRunsExport)
+	mux.HandleFunc("POST /api/runs/wipe", s.handleRunsWipe)
+	mux.HandleFunc("PATCH /api/stack/runs", s.handlePatchStackRuns)
 	mux.HandleFunc("POST /api/clients/{slug}/scope/preview", s.handleClientScopePreview)
 	mux.HandleFunc("PUT /api/clients/{slug}/scope", s.handleSetClientScope)
 	mux.HandleFunc("POST /api/clients/{slug}/link", s.handleLinkClient)

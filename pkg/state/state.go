@@ -382,6 +382,17 @@ func EnsureLogDir() error {
 	return os.MkdirAll(dir, 0755)
 }
 
+// RunsDir returns the root directory for opt-in run records
+// (<home>/.gridctl/runs). Subtree layout: <stack>/runs.jsonl plus rotated
+// segments. Stack-level, not per-server.
+func RunsDir() (string, error) {
+	base, err := BaseDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "runs"), nil
+}
+
 // TelemetryDir returns the root directory for opt-in telemetry persistence
 // (<home>/.gridctl/telemetry). Subtree layout: <stack>/<server>/{logs,metrics,traces}.jsonl.
 func TelemetryDir() (string, error) {

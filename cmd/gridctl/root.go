@@ -190,6 +190,7 @@ func init() {
 		pinsCmd:      groupConfig,
 		authCmd:      groupConfig,
 		tracesCmd:    groupObserve,
+		runsCmd:      groupObserve,
 		telemetryCmd: groupObserve,
 		optimizeCmd:  groupObserve,
 		limitsCmd:    groupObserve,

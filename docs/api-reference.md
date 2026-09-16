@@ -1,6 +1,6 @@
 # REST API Reference
 
-The gridctl gateway exposes a REST API for managing stacks, secrets, skills, packs, schema and skill pins, the global context (including rule fragments), agent projection and client wiring, usage telemetry and traces, optimize findings, daemon reset, and MCP protocol interactions. By default the gateway listens on port `8180`.
+The gridctl gateway exposes a REST API for managing stacks, secrets, skills, packs, schema and skill pins, the global context (including rule fragments), agent projection and client wiring, usage telemetry, traces, run records, optimize findings, daemon reset, and MCP protocol interactions. By default the gateway listens on port `8180`.
 
 ## Authentication
 
@@ -886,6 +886,75 @@ Returns `404` when the trace ID is not in the buffer or tracing is disabled.
 
 ---
 
+### Runs
+
+Metadata-only records of returning tool-dispatch attempts. Protected by gateway auth. Records are untrusted input for rendering. Live queries read successfully appended files, not the in-memory queue. Partial results set `partial: true` with warnings that do not echo malformed contents. Remote APIs do not accept arbitrary filesystem paths; offline path selection is a local CLI operation. `503` when no stack is loaded.
+
+#### `GET /api/runs`
+
+**Auth:** Yes
+
+| Query Param | Type | Default | Description |
+|-------------|------|---------|-------------|
+| `since` | RFC3339 | - | Lower bound on `returnedAt` |
+| `until` | RFC3339 | - | Upper bound on `returnedAt` |
+| `requested` | string | - | Requested tool name |
+| `server` | string | - | Resolved server |
+| `tool` | string | - | Resolved tool |
+| `disposition` | string | - | `completed`, `tool_error`, `denied`, `routing_failed`, `transport_error`, `cancelled`, `timeout`, `input_required`, or `retry_rejected` |
+| `client` | string | - | Caller-declared client label |
+| `access` | string | - | Caller-declared access label |
+| `attempt` | string | - | Attempt ID |
+| `parent` | string | - | Parent attempt ID |
+| `root` | string | - | Root attempt ID |
+| `previous` | string | - | Previous input-required round |
+| `trace` | string | - | Sampled trace ID when present |
+| `limit` | int | `100` | Maximum records (capped at 1000) |
+| `cursor` | string | - | Opaque page cursor from a previous response |
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/runs?disposition=denied&limit=20"
+```
+
+**Response:** shared query envelope `{schema_version, source, filters, records, warnings, partial, next_cursor?, wipe_epoch}`. Record fields are snake_case (`attempt_id`, `returned_at`, `duration_ms`, `disposition`, `stage`, `reason`). `source` names the live stack and path. Unparseable `since`/`until` return `400`. An invalid cursor returns `400`; a cursor invalidated by wipe, rotation, or pruning returns `409`.
+
+#### `GET /api/runs/status`
+
+**Auth:** Yes
+
+Recorder health independent of the JSONL destination, plus inventory and the recording, privacy, and retention notes. Historical loss after restart is `unknown`. Writer fields use the recorder's snake_case names (`writer_health`, `queue_depth`, `historical_loss`).
+
+#### `GET /api/runs/export`
+
+**Auth:** Yes
+
+Same query parameters and shared envelope as `GET /api/runs`, including `source` and `filters`, with `Content-Disposition: attachment; filename="runs.json"`.
+
+#### `POST /api/runs/wipe`
+
+**Auth:** Yes
+
+Stack-wide coordinated wipe. `?server=` is rejected with `400`. Not secure erasure and does not remove exports or backups.
+
+**Response:** `{success, partial, recording_enabled, scope, note?}`. A partial wipe still returns HTTP 200 with `success: false`, `partial: true`, and `error`.
+
+#### `PATCH /api/stack/runs`
+
+**Auth:** Yes
+
+Writes enablement, `omit_labels`, and retention into the live stack YAML and reloads.
+
+```bash
+curl -X PATCH -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true, "retention": {"max_size_mb": 100, "max_age_days": 7}}' \
+  http://localhost:8180/api/stack/runs
+```
+
+At least one of `enabled`, `omit_labels`, or `retention` is required. Enabling should be preceded by the privacy and retention notes from `/api/runs/status`. **Errors after saving:** `409 restart_required` or `400 invalid_candidate` for [reload preflight rejection](#reload-security-results); `502 reload_failed` for other reload failures. The saved file is retained.
+
+---
+
 ### Hot Reload
 
 #### `POST /api/reload`
@@ -1742,7 +1811,7 @@ Inspect and manage on-disk telemetry files under `~/.gridctl/telemetry/`. Comple
 
 #### `GET /api/telemetry/inventory`
 
-Returns one record per `(server, signal)` pair that has at least one file on disk.
+Returns one record per `(server, signal)` pair that has at least one file on disk. When run-record files exist, the list also includes a stack-level row with `signal: "runs"` and an empty `server`.
 
 **Auth:** Yes
 
@@ -1776,13 +1845,13 @@ Wipes persisted telemetry files for the active stack.
 | Query Param | Type | Description |
 |-------------|------|-------------|
 | `server` | string | Limit to one MCP server |
-| `signal` | string | Limit to `logs`, `metrics`, or `traces` |
+| `signal` | string | Limit to `logs`, `metrics`, `traces`, or `runs` |
 
 ```bash
 curl -X DELETE -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/telemetry?server=github&signal=logs"
 ```
 
-Both query params are optional; omitting both wipes every server and signal. **Response:** `{success: true, inventory: [...]}` with the post-wipe inventory.
+Both query params are optional; omitting both wipes every server and signal, including stack-level run records. `signal=runs` is stack-wide and rejects `server`. Per-server run deletion is not supported. `gridctl telemetry wipe` does not delete run records. **Response:** `{success: true, inventory: [...]}` with the post-wipe inventory.
 
 ---
 

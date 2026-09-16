@@ -120,6 +120,11 @@ linters:
           - gosec
         path: "pkg/mcp/process.go"
         text: "G118"
+      # G118: context cancel stored on Recorder and invoked from Close
+      - linters:
+          - gosec
+        path: "pkg/runs/recorder.go"
+        text: "G118"
 
 run:
   timeout: 3m
