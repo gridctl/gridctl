@@ -58,18 +58,21 @@ func init() {
 }
 
 func runToolsSearch(cmd *cobra.Command, query string) error {
-	format, err := resolveFormat(toolsFormat, cmd.Flags().Changed("format"), toolsJSON != nil && *toolsJSON)
+	jsonAlias := toolsJSON != nil && *toolsJSON
+	formatChanged := cmd.Flags().Changed("format")
+	format, err := resolveFormat(toolsFormat, formatChanged, jsonAlias)
+	asJSON := jsonAlias || (formatChanged && strings.EqualFold(toolsFormat, "json")) || commandRequestsJSON(cmd)
 	if err != nil {
-		return invalidCallErr(false, "", "", "input", reasonInvalidFlag, err.Error())
+		return invalidCallErr(asJSON, "", "", "input", reasonInvalidFlag, err.Error())
 	}
-	asJSON := strings.EqualFold(format, "json")
+	asJSON = strings.EqualFold(format, "json")
 	if toolsTimeout <= 0 {
 		return invalidCallErr(asJSON, "", "", "input", reasonInvalidTimeout, "timeout must be a positive duration")
 	}
 	if toolsLimit < 1 || toolsLimit > 200 {
 		return invalidCallErr(asJSON, "", "", "input", reasonInvalidLimit, "limit must be between 1 and 200")
 	}
-	client, err := normalizeCLIClient(toolsAs, cmd.Flags().Changed("as"))
+	client, err := declaredCLIClient(toolsAs, cmd.Flags().Changed("as"))
 	if err != nil {
 		return invalidCallErr(asJSON, "", "", "input", reasonInvalidIdentity, "invalid --as value")
 	}
@@ -90,14 +93,17 @@ func runToolsSearch(cmd *cobra.Command, query string) error {
 	}
 	body, err := readCappedResponse(resp)
 	if err != nil {
-		return invalidCallErr(asJSON, client, "", "daemon", reasonResponseTooLarge, "gateway response exceeds 16 MiB")
+		return mapResponseRead(asJSON, client, "", err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return classifyHTTPFailure(resp, body, asJSON, client, "")
 	}
+	if !isJSONContentType(resp.Header.Get("Content-Type")) {
+		return uncertainFailure(asJSON, client, "", "transport_error", reasonMalformedResponse, "malformed gateway response")
+	}
 	result, err := decodeDiscoverEnvelope(body)
 	if err != nil {
-		return invalidCallErr(asJSON, client, "", "daemon", reasonMalformedResponse, "malformed gateway response")
+		return uncertainFailure(asJSON, client, "", "transport_error", reasonMalformedResponse, "malformed gateway response")
 	}
 	if asJSON {
 		return output.EncodeJSON(cmd.OutOrStdout(), result)

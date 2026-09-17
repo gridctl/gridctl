@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 func runCallHelp(cmd *cobra.Command, args []string) error {
@@ -22,13 +24,13 @@ func runCallHelp(cmd *cobra.Command, args []string) error {
 	}
 	asJSON, err := callJSONMode(cmd)
 	if err != nil {
-		return invalidCallErr(false, "", "", "input", reasonInvalidFlag, err.Error())
+		return invalidCallErr(asJSON, "", "", "input", reasonInvalidFlag, err.Error())
 	}
 	if callTimeout <= 0 {
 		return invalidCallErr(asJSON, "", "", "input", reasonInvalidTimeout, "timeout must be a positive duration")
 	}
 	target := args[0]
-	client, err := normalizeCLIClient(callAs, cmd.Flags().Changed("as"))
+	client, err := declaredCLIClient(callAs, cmd.Flags().Changed("as"))
 	if err != nil {
 		return invalidCallErr(asJSON, "", "", "input", reasonInvalidIdentity, "invalid --as value")
 	}
@@ -102,14 +104,17 @@ func discoverRequest(ctx context.Context, asJSON bool, client, name string, q ur
 	}
 	body, err := readCappedResponse(resp)
 	if err != nil {
-		return mcp.ToolDiscoverResult{}, invalidCallErr(asJSON, client, name, "daemon", reasonResponseTooLarge, "gateway response exceeds 16 MiB")
+		return mcp.ToolDiscoverResult{}, mapResponseRead(asJSON, client, name, err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return mcp.ToolDiscoverResult{}, classifyHTTPFailure(resp, body, asJSON, client, name)
 	}
+	if !isJSONContentType(resp.Header.Get("Content-Type")) {
+		return mcp.ToolDiscoverResult{}, uncertainFailure(asJSON, client, name, "transport_error", reasonMalformedResponse, "malformed gateway response")
+	}
 	result, err := decodeDiscoverEnvelope(body)
 	if err != nil {
-		return mcp.ToolDiscoverResult{}, invalidCallErr(asJSON, client, name, "daemon", reasonMalformedResponse, "malformed gateway response")
+		return mcp.ToolDiscoverResult{}, uncertainFailure(asJSON, client, name, "transport_error", reasonMalformedResponse, "malformed gateway response")
 	}
 	return result, nil
 }
@@ -182,55 +187,70 @@ func summarizeSchema(raw []byte) ([]schemaProp, bool) {
 	if len(raw) == 0 {
 		return nil, false
 	}
-	var schema struct {
-		Properties map[string]map[string]any `json:"properties"`
-		Required   []string                  `json:"required"`
-		Ref        string                    `json:"$ref"`
-	}
-	if err := jsonUnmarshal(raw, &schema); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var schema map[string]any
+	if err := dec.Decode(&schema); err != nil {
 		return nil, true
 	}
-	partial := schema.Ref != ""
+	partial := schemaHasUnsupported(schema)
 	req := map[string]bool{}
-	for _, n := range schema.Required {
-		req[n] = true
-	}
-	names := make([]string, 0, len(schema.Properties))
-	for n, spec := range schema.Properties {
-		names = append(names, n)
-		if spec != nil {
-			if _, ok := spec["$ref"]; ok {
-				partial = true
+	if required, ok := schema["required"].([]any); ok {
+		for _, n := range required {
+			if s, ok := n.(string); ok {
+				req[s] = true
 			}
 		}
+	}
+	propsMap, _ := schema["properties"].(map[string]any)
+	names := make([]string, 0, len(propsMap))
+	for n := range propsMap {
+		names = append(names, n)
 	}
 	sort.Strings(names)
 	out := make([]schemaProp, 0, len(names))
 	for _, n := range names {
-		spec := schema.Properties[n]
 		p := schemaProp{name: n, required: req[n]}
+		spec, _ := propsMap[n].(map[string]any)
 		if spec != nil {
-			if t, ok := spec["type"].(string); ok {
+			if schemaHasUnsupported(spec) {
+				partial = true
+			}
+			switch t := spec["type"].(type) {
+			case string:
 				p.typ = t
+			case []any:
+				parts := make([]string, 0, len(t))
+				for _, item := range t {
+					s, ok := item.(string)
+					if !ok {
+						partial = true
+						continue
+					}
+					parts = append(parts, s)
+				}
+				p.typ = strings.Join(parts, "|")
+			default:
+				if spec["type"] != nil {
+					partial = true
+				}
 			}
 			if d, ok := spec["description"].(string); ok {
 				p.description = d
 			}
 			if e, ok := spec["enum"].([]any); ok {
 				for _, v := range e {
-					if s, ok := v.(string); ok {
-						p.enum = append(p.enum, s)
-					} else {
+					b, err := json.Marshal(v)
+					if err != nil {
 						partial = true
+						continue
 					}
+					p.enum = append(p.enum, string(b))
 				}
 			}
 			if def, ok := spec["default"]; ok {
 				p.def = def
 				p.hasDefault = true
-			}
-			if p.typ == "" && spec["type"] != nil {
-				partial = true
 			}
 		}
 		out = append(out, p)
@@ -238,8 +258,92 @@ func summarizeSchema(raw []byte) ([]schemaProp, bool) {
 	return out, partial
 }
 
-func jsonUnmarshal(raw []byte, v any) error {
-	return json.Unmarshal(raw, v)
+func schemaHasUnsupported(m map[string]any) bool {
+	if m == nil {
+		return false
+	}
+	for _, k := range []string{"$ref", "allOf", "oneOf", "anyOf", "if", "then", "else", "not", "$dynamicRef", "$recursiveRef"} {
+		if _, ok := m[k]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func callHelpPositionals(cmd *cobra.Command, args []string) []string {
+	if cmd != nil && cmd.Flags().Parsed() {
+		return append([]string(nil), cmd.Flags().Args()...)
+	}
+	return collectFlagAwarePositionals(cmd, args)
+}
+
+func collectFlagAwarePositionals(cmd *cobra.Command, args []string) []string {
+	i := 0
+	if len(args) > 0 && cmd != nil && (args[0] == cmd.Name() || args[0] == cmd.CalledAs()) {
+		i = 1
+	}
+	var pos []string
+	for i < len(args) {
+		a := args[i]
+		if a == "--" {
+			pos = append(pos, args[i+1:]...)
+			break
+		}
+		if a == "" || a == "-" || !strings.HasPrefix(a, "-") {
+			pos = append(pos, a)
+			i++
+			continue
+		}
+		name, inline := flagName(a)
+		f := lookupCallFlag(cmd, name)
+		if f != nil && flagTakesArg(f) && !inline {
+			i += 2
+			continue
+		}
+		i++
+	}
+	return pos
+}
+
+func flagName(a string) (name string, inline bool) {
+	if strings.HasPrefix(a, "--") {
+		body := strings.TrimPrefix(a, "--")
+		if eq := strings.IndexByte(body, '='); eq >= 0 {
+			return body[:eq], true
+		}
+		return body, false
+	}
+	body := strings.TrimPrefix(a, "-")
+	if eq := strings.IndexByte(body, '='); eq >= 0 {
+		return body[:eq], true
+	}
+	if len(body) > 1 {
+		return body[:1], false
+	}
+	return body, false
+}
+
+func lookupCallFlag(cmd *cobra.Command, name string) *pflag.Flag {
+	if cmd == nil || name == "" {
+		return nil
+	}
+	if f := cmd.Flags().Lookup(name); f != nil {
+		return f
+	}
+	if f := cmd.InheritedFlags().Lookup(name); f != nil {
+		return f
+	}
+	return rootCmd.PersistentFlags().Lookup(name)
+}
+
+func flagTakesArg(f *pflag.Flag) bool {
+	if f == nil {
+		return false
+	}
+	if bf, ok := f.Value.(interface{ IsBoolFlag() bool }); ok && bf.IsBoolFlag() {
+		return false
+	}
+	return f.Value.Type() != "bool"
 }
 
 func truncateHelp(s string, n int) string {
