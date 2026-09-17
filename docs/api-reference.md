@@ -325,6 +325,42 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/tools/catalog
 }
 ```
 
+#### `POST /api/tools/call`
+
+Invoke one canonical live tool through the same dispatch core as MCP `tools/call`, with strict catalog admission. The body is a single JSON object: `name` (required `server__tool`), `arguments` (object; omitted becomes `{}`; null is invalid), and optional `client` (caller-declared label, default `cli`). Unknown fields, trailing documents, arrays, and non-objects are rejected. Envelope limit is 2 MiB. The handler does not accept group, approval, retry, or execution-bypass options.
+
+`client` is a caller-declared scope and accounting label, not an authenticated principal. Empty, whitespace, control characters, values over 128 bytes, and labels that normalize to empty are invalid. The selected profile and its gates always apply. `cli` has no scope exemption.
+
+A valid dispatch returns HTTP `200` with a versioned envelope even when the outcome is a policy denial or tool error. Request validation is `400`, oversized bodies `413`, wrong content type `415`, and a missing gateway `503`. Authentication remains the existing middleware (`401` with `Gridctl-Auth-Rejected: 1` and a plain-text body). Endpoint errors use `schema_version`, typed `outcome`, `result: null`, and `error: {"code","message"}` rather than the legacy string-valued `{"error":"..."}` shape.
+
+```json
+{
+  "schema_version": 1,
+  "client": "cli",
+  "name": "echo__echo",
+  "outcome": {
+    "disposition": "completed",
+    "stage": "downstream",
+    "reason": "ok",
+    "completion": "complete"
+  },
+  "result": {"content": [{"type": "text", "text": "hello"}]},
+  "error": null
+}
+```
+
+`completion` is `complete` for a finished success or tool error, `not_started` when the tool was not invoked, `input_required` for an interim result, and `unknown` when timeout, cancellation, or transport loss makes completion uncertain. These are observations, not exactly-once guarantees. Adapter messages do not echo arguments, tokens, or raw bodies. Tool-returned content is user output. HTTP success is not proof that upstream MCP protocol negotiation succeeded. There is no automatic retry.
+
+**Auth:** Yes
+
+#### `GET /api/tools/discover`
+
+Read-only live tool search and targeted help. Query parameters: optional `client`, optional exact `server`, optional exact canonical `name`, optional `query`, optional `limit` (default 20, range 1-200). `name` cannot be combined with `server` or `query`. Duplicate scalar parameters are rejected. Code mode does not change membership. Matching uses the same generated descriptions as code-mode search, including the `MCP server:` prefix. Hidden tools are omitted from results and counts. Unknown or invisible exact server/name lookup is HTTP `404` with the typed endpoint-error envelope. An empty search is success with `tools: []`.
+
+Discovery does not dispatch tools, consume call gates, start replicas, or record runs.
+
+**Auth:** Yes
+
 #### `GET /api/tools/usage`
 
 Returns per-(server, tool) usage observed by the gateway: cumulative call count, last-called timestamp, and token counts. Powers the Tools workspace **Audit Mode** (which separates actively-used, configured-but-unused, and disabled tools), the Tools detail panel's Usage section, and the Metrics workspace's Tools scope.
