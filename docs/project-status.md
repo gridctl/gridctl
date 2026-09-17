@@ -54,6 +54,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 | Persisted run records (`gridctl runs`, `GET /api/runs`, Runs tab) | Implemented, Unreleased | Opt-in metadata-only final dispositions. Best-effort, not a complete audit trail. Wipe is not secure erasure. See [Usage Observability](usage-observability.md#run-records) |
 | Telemetry persistence | Stable | Backward compatible in 0.x |
 | Server catalog (search, add) | Stable | Backward compatible in 0.x |
+| Live tool invocation (`gridctl call`, `gridctl tools search`, `POST /api/tools/call`, `GET /api/tools/discover`) | Implemented, Unreleased | Talks to a selected running gateway. Default caller label `cli`; `--as` is not credential-bound authorization. REST success is not upstream MCP handshake proof. See [Live tools](cli-reference.md#live-tools) |
 | Client config import (import) | Stable | Backward compatible in 0.x |
 | Machine reset (`gridctl reset`, reset REST + web UI dialog) | Stable | Backward compatible in 0.x |
 | Home directory override (`GRIDCTL_HOME`, `--home`) | Stable | Backward compatible in 0.x |
@@ -81,6 +82,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 - Opt-in `gridctl validate --check-mutable-refs` inspects literal selectors only. Exit zero is not complete coverage, a digest is not publisher-verified, and an exact package version is not a transitive lock. See [mutable reference diagnostics](cli-reference.md#mutable-reference-diagnostics).
 - Opt-in `gridctl validate --policy` evaluates captured declarations only. Exit zero is not deployment admission or runtime safety. Identifiers in reports may themselves be sensitive. See [stack declaration policy](stack-declaration-policy.md).
 - Opt-in run records are best-effort metadata of returning dispatches. They are not a complete audit trail, crash-durable start journal, or secure deletion. Names and caller-declared labels may be sensitive. See [Usage Observability](usage-observability.md#run-records).
+- Live CLI/REST tool invocation uses a caller-declared label, default `cli`. `--as` can select a broader configured profile and does not authenticate as that client. A 200 call envelope is not proof of upstream MCP protocol negotiation, and lost calls are not retried. See [Live tools](cli-reference.md#live-tools).
 - Podman rootless multi-container networking requires `netavark` and `aardvark-dns` (Podman 4.0+); `pasta`/`slirp4netns` are egress-only transports and are not used for inter-container communication.
 - Generated Python package sources support the official public PyPI index only. Private indexes require a custom Dockerfile.
 - The Python MCP runtime base is not a supported public release until hosted architecture tests, candidate publication, and anonymous evidence succeed. Convenience aliases are promoted separately. Untested runtimes are unsupported.

@@ -13,7 +13,7 @@ The finite baseline covers installation, listener access, workload authority, se
 | Availability at this baseline | Capabilities |
 |---|---|
 | Included in `v1.0.0-rc.1` | Grouped-route authentication, non-resolving stack export, scoped variable delivery, internal-credential filtering, and authenticated binary-release tooling |
-| Implemented after that tag; marked Unreleased | Restart-required authentication preflight and browser credential verification, opt-in execution profiles, passive security evidence reports, mutable-reference diagnostics, offline declaration policy, opt-in persisted run records, and the Python MCP runtime base recipe |
+| Implemented after that tag; marked Unreleased | Restart-required authentication preflight and browser credential verification, opt-in execution profiles, passive security evidence reports, mutable-reference diagnostics, offline declaration policy, opt-in persisted run records, live CLI/REST tool invocation, and the Python MCP runtime base recipe |
 | Outside this baseline | A published, supported Gridctl Python MCP runtime image. This guide provides no GHCR tags or pull commands for that image. See [Python MCP runtime base](../mcp-runtime-python.md). |
 
 Implementation in a checkout does not establish release publication or runtime support. Follow the [execution support requirements](../execution.md#evidence-and-lifecycle) for your actual host and daemon.
@@ -65,7 +65,7 @@ The CLI's daemon state contains the resolved token in a `0600` file. Browser cre
 
 ## Restrict downstream authority
 
-Review the server's executable or image, credentials, writable state, network destinations, and exposed tools before applying a stack. Per-server tool lists, groups, and client policies reduce the tool surface. Client names and selectors are self-declared, so they are not authenticated user identities. Rate limits are opt-in call-rate controls, not workload memory or CPU limits.
+Review the server's executable or image, credentials, writable state, network destinations, and exposed tools before applying a stack. Per-server tool lists, groups, and client policies reduce the tool surface. Client names and selectors are self-declared, so they are not authenticated user identities. `gridctl call --as` and the REST `client` field are the same kind of label: they select a configured profile and do not authenticate as that client. Rate limits are opt-in call-rate controls, not workload memory or CPU limits.
 
 Execution profiles are Unreleased at this baseline. Omitting `execution` preserves compatibility behavior. Read the [execution guide](../execution.md) before selecting a profile:
 

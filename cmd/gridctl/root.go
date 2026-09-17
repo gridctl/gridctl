@@ -158,7 +158,11 @@ func init() {
 
 	// Flag mistakes keep a short usage pointer; runtime errors do not.
 	rootCmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
-		return fmt.Errorf("%w\nRun '%s --help' for usage", err, cmd.CommandPath())
+		wrapped := fmt.Errorf("%w\nRun '%s --help' for usage", err, cmd.CommandPath())
+		if isCallOrToolsCommand(cmd) && commandRequestsJSON(cmd) {
+			return newCommandError(true, localFailureEnvelope("", "", "input", reasonInvalidFlag, "invalid flag"), wrapped.Error(), false)
+		}
+		return wrapped
 	})
 
 	for cmd, group := range map[*cobra.Command]string{
@@ -175,6 +179,8 @@ func init() {
 		logsCmd:      groupStack,
 		searchCmd:    groupCatalog,
 		addCmd:       groupCatalog,
+		callCmd:      groupObserve,
+		toolsCmd:     groupObserve,
 		linkCmd:      groupClients,
 		groupsCmd:    groupClients,
 		unlinkCmd:    groupClients,
@@ -206,14 +212,47 @@ func init() {
 	}
 }
 
+type execSession struct {
+	helpErr error
+}
+
+var callOfflineHelp func(*cobra.Command, []string)
+
 func Execute() {
-	// ExecuteC returns the command that was (or would have been) executed,
-	// so help pointers name the right command path.
-	cmd, err := rootCmd.ExecuteC()
+	cmd, err := executeC()
 	if err != nil {
-		printCLIError(os.Stderr, cmd, err)
-		os.Exit(1)
+		if !renderCommandError(os.Stdout, os.Stderr, cmd, err) {
+			printCLIError(os.Stderr, cmd, err)
+		}
+		os.Exit(exitStatus(err))
 	}
+}
+
+func executeC() (*cobra.Command, error) {
+	if callOfflineHelp == nil {
+		callOfflineHelp = callCmd.HelpFunc()
+	}
+	sess := &execSession{}
+	callCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		positionals := callHelpPositionals(cmd, args)
+		if len(positionals) == 0 {
+			callOfflineHelp(cmd, args)
+			return
+		}
+		if len(positionals) != 1 {
+			asJSON := commandRequestsJSON(cmd)
+			sess.helpErr = invalidCallErr(asJSON, "", "", "input", reasonInvalidTarget, "targeted help accepts one server or server__tool")
+			return
+		}
+		if err := runCallHelp(cmd, positionals); err != nil {
+			sess.helpErr = err
+		}
+	})
+	cmd, err := rootCmd.ExecuteC()
+	if sess.helpErr != nil {
+		return cmd, sess.helpErr
+	}
+	return cmd, err
 }
 
 // printCLIError writes the single user-facing error line(s) for a failed

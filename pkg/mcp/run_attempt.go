@@ -5,8 +5,6 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/trace"
-
-	"github.com/gridctl/gridctl/pkg/runs"
 )
 
 type noopAttempt struct {
@@ -44,24 +42,6 @@ func (g *Gateway) startRunAttempt(ctx context.Context, requestedName string) Run
 }
 
 func classifyDownstream(a RunAttempt, result *ToolCallResult, callErr error, ctx context.Context) {
-	if callErr != nil {
-		switch ctx.Err() {
-		case context.Canceled:
-			a.SetOutcome(runs.DispositionCancelled, runs.StageDownstream, runs.ReasonContextCanceled)
-		case context.DeadlineExceeded:
-			a.SetOutcome(runs.DispositionTimeout, runs.StageDownstream, runs.ReasonDeadlineExceeded)
-		default:
-			a.SetOutcome(runs.DispositionTransportError, runs.StageDownstream, runs.ReasonTransportError)
-		}
-		return
-	}
-	if result != nil && (result.RequestState != "" || result.ResultType == ResultTypeInputRequired) {
-		a.SetOutcome(runs.DispositionInputRequired, runs.StageDownstream, runs.ReasonInputRequired)
-		return
-	}
-	if result != nil && result.IsError {
-		a.SetOutcome(runs.DispositionToolError, runs.StageDownstream, runs.ReasonToolError)
-		return
-	}
-	a.SetOutcome(runs.DispositionCompleted, runs.StageDownstream, runs.ReasonOK)
+	out := classifyCall(result, callErr, ctx)
+	a.SetOutcome(out.Disposition, out.Stage, out.Reason)
 }

@@ -445,6 +445,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/servers/{name}/auth/reset", s.handleAuthReset)
 	mux.HandleFunc("/api/tools", s.handleTools)
 	mux.HandleFunc("GET /api/tools/catalog", s.handleToolsCatalog)
+	mux.HandleFunc("POST /api/tools/call", s.handleToolsCall)
+	mux.HandleFunc("GET /api/tools/discover", s.handleToolsDiscover)
 	mux.HandleFunc("GET /api/tools/usage", s.handleToolsUsage)
 	mux.HandleFunc("GET /api/skills/usage", s.handleSkillsUsage)
 	mux.HandleFunc("/api/logs", s.handleGatewayLogs)

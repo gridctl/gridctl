@@ -4,7 +4,7 @@ Commands are grouped by domain, matching the groups in `gridctl --help`. Run `gr
 
 Global flags: `--home <dir>` (equivalent to `GRIDCTL_HOME`; see [Home directory override](#home-directory-override)) replaces the home directory every gridctl path derives from, `--runtime <docker|podman>` overrides runtime auto-detection, `--no-color` disables styled output, and `--log-level <debug|info|warn|error>` sets the minimum log level (logs go to stderr, so JSON stdout stays parseable). Color is also suppressed automatically when output is piped, when `NO_COLOR` is set ([no-color.org](https://no-color.org/)), or when `TERM=dumb`.
 
-Machine-readable output: commands whose `--format` flag is a binary table-vs-JSON choice (among them `validate`, `plan`, `optimize`, `activate`, `search`, `add`, `skill list`, `skill pins`, `var list`, `pins list`, `pins verify`, the `pack`, `project`, and `skill project` families, and `ctx status|sync|list`) also accept `--json` as a boolean alias, and `status`, `info`, `doctor`, `open`, `traces`, `runs list`, `runs status`, and `telemetry status` support `--json` directly. `export` and `var export` keep `--format` only, since their format is multi-valued (`yaml|json`, `env|json`). JSON always goes to stdout with human messages on stderr. Every JSON schema, including `status`, `info`, and `doctor`, is backward compatible within the `0.x` line: fields may be added, never removed or retyped without a clearly-labeled release. `doctor --security --json` emits the separate `gridctl.security-report.v1` DTO, not ordinary doctor's `ok` schema; see [Security Evidence Report](security-evidence.md).
+Machine-readable output: commands whose `--format` flag is a binary table-vs-JSON choice (among them `validate`, `plan`, `optimize`, `activate`, `search`, `add`, `call`, `tools search`, `skill list`, `skill pins`, `var list`, `pins list`, `pins verify`, the `pack`, `project`, and `skill project` families, and `ctx status|sync|list`) also accept `--json` as a boolean alias, and `status`, `info`, `doctor`, `open`, `traces`, `runs list`, `runs status`, and `telemetry status` support `--json` directly. `export` and `var export` keep `--format` only, since their format is multi-valued (`yaml|json`, `env|json`). JSON always goes to stdout with human messages on stderr. Every JSON schema, including `status`, `info`, and `doctor`, is backward compatible within the `0.x` line: fields may be added, never removed or retyped without a clearly-labeled release. `doctor --security --json` emits the separate `gridctl.security-report.v1` DTO, not ordinary doctor's `ok` schema; see [Security Evidence Report](security-evidence.md).
 
 Plain tables: `status`, `search`, `skill list`, `pins list`, `optimize`, `telemetry status`, and the table-rendering `pack`, `project`, `ctx`, and `skill project` commands accept `--plain` to render tables without box-drawing (2+-space column separation, one record per line) for `grep`/`awk` pipelines. Piped table output degrades to plain automatically; the flag forces it on a terminal. `--plain` cannot be combined with `--json`. The `var` family keeps `--plain` as its pre-existing "show unmasked value" flag (`var get`, `var export`); `var list` therefore has no `--plain`, though it does accept `--format json` / `--json` and its piped table output still degrades to the plain style.
 
@@ -12,6 +12,7 @@ Plain tables: `status`, `search`, `skill list`, `pins list`, `optimize`, `teleme
 
 - [Stack lifecycle](#stack-lifecycle)
 - [Catalog](#catalog)
+- [Live tools](#live-tools)
 - [LLM clients](#llm-clients)
 - [Packs](#packs)
 - [Wiring ownership (project)](#wiring-ownership-project)
@@ -118,12 +119,60 @@ This breaking security correction is included in v1.0.0-rc.1, with a major-versi
 
 ## Catalog
 
-Install MCP servers by name instead of hand-writing `command`/`args`/`env`. The catalog merges two sources: a curated set embedded in gridctl (vetted entries with correct inputs and secret flags) and the official [MCP Registry](https://registry.modelcontextprotocol.io) (community publications, not vetted by gridctl). Registry responses are cached for an hour under `~/.gridctl/cache/catalog`; when the registry is unreachable, commands fall back to cached or curated results with a warning. `gridctl search` searches this install catalog; the `search` meta-tool a code-mode gateway exposes to LLM clients searches the running gateway's tools and is unrelated.
+Install MCP servers by name instead of hand-writing `command`/`args`/`env`. The catalog merges two sources: a curated set embedded in gridctl (vetted entries with correct inputs and secret flags) and the official [MCP Registry](https://registry.modelcontextprotocol.io) (community publications, not vetted by gridctl). Registry responses are cached for an hour under `~/.gridctl/cache/catalog`; when the registry is unreachable, commands fall back to cached or curated results with a warning. `gridctl search` searches this install catalog. Live tools on a running gateway are `gridctl tools search` and `gridctl call`. The `search` meta-tool a code-mode gateway exposes to LLM clients is unrelated.
 
 | Command | Purpose |
 |---|---|
 | `gridctl search [query]` | Search the catalog. Without a query, lists the curated set (the registry is not contacted). `--source <curated\|registry\|all>` picks sources (default `all`), `--format json` or `--json`, `--plain`. Deprecated registry entries are marked in the SOURCE column; entries whose package type has no stack mapping (mcpb, nuget, cargo) show `unsupported`. Exit `0` success (including no matches), `2` infrastructure error. |
 | `gridctl add <name>` | Resolve a catalog entry (curated name like `github`, or a full registry name like `io.github.user/weather`) and append the matching server block to stack.yaml through the same backed-up, validated write path as `gridctl import`. Required inputs are prompted for; secret values are masked and stored in the variable store so the stack only carries `${var:KEY}` references, and unset required values are written as `${var:KEY}` placeholders with a `gridctl var set` hint. Supported install shapes: OCI images, npm (`npx`), pypi (`uvx`), and remote URLs with bearer/header auth. `--container` opts an eligible exact PyPI catalog package into a generated Python container instead of host `uvx`; it also accepts quoted `package==version`, quoted `uvx package==version`, or a GitHub URL suffixed by `#<40-character-commit>` or `@<40-character-commit>`. Unversioned packages, mutable Git refs, ambiguous uvx commands, and packages with unmappable arguments are refused. Catalog entries with filepath inputs are also refused because this command cannot declare the required host-to-container mount. The default remains host `uvx`. Other flags: `-y` / `--yes`, `--dry-run`, `-f` / `--file <stack.yaml>`, `-n` / `--name <name>`, `--no-vault`, `--format json` or `--json`. Exit `0` added, `1` cancelled, unknown name, or skipped collision, `2` infrastructure or validation error. |
+
+## Live tools
+
+These commands talk to a selected running gateway using state-recorded credentials. They never start a daemon, unlock the vault, or load stack YAML. `--as` sets a caller-declared scope and accounting label; it does not authenticate as that client and can select a broader configured profile than `cli`. A denied `cli` call does not fall back to another profile. File input, discovery, and JSON mode never prompt.
+
+Matching is lexical substring search against live names, generated descriptions, and property names, including the generated prefix `MCP server: <server>. Call using the exact tool name "<canonical-name>".`. Queries such as `mcp`, `server`, and `call` therefore match every scoped tool in the selected server subset, if any, before limits. This is not semantic search.
+
+Inline JSON may appear in shell history and process arguments. `@file.json` reads a local object of at most 1 MiB and does not encrypt it. There is no stdin shorthand, URL fetch, or environment interpolation. Arguments must be a single JSON object; omitted arguments are `{}`. An explicit empty or whitespace-only source, including an empty file, is invalid JSON and does not default to `{}`. Discovery and help never invoke a tool, consume call gates, start replicas, or record a run. Visibility is not a guarantee that a later call passes pins, rate limits, or execution admission.
+
+```bash
+gridctl tools search "message" --limit 20 --as automation
+gridctl call echo --help --match message --limit 20
+gridctl call echo__echo --help --format json
+gridctl call echo__echo '{"message":"hello"}' --format json
+gridctl call echo__echo @args.json --stack demo --timeout 30s
+```
+
+| Command | Purpose |
+|---|---|
+| `gridctl call <server__tool> [json\|@file]` | Invoke one canonical tool. `--stack`, `--as`, `--timeout` (default 60s, must be positive), `--format json` or `--json`. Bare server names are only valid with `--help`. |
+| `gridctl call <server> --help` | Live server help from the running gateway (`--match`, `--limit` 1-200). Failure is a nonzero error, not static help. |
+| `gridctl call <server__tool> --help` | Live leaf help: name, description, input schema, and a property summary. `--match`/`--limit` are rejected. |
+| `gridctl tools search <query>` | Search the scoped live inventory. `--limit` 1-200 (default 20), `--stack`, `--as`, `--timeout`, `--format json` or `--json`. |
+
+JSON stdout is one document, including recognized flag and argument errors; diagnostics go to stderr. Call JSON matches the [REST call envelope](api-reference.md#post-apitoolscall). Search JSON matches the [discovery envelope](api-reference.md#get-apitoolsdiscover). CLI responses larger than 16 MiB fail without retry. Redirects are refused before credentials can follow. HTTP success is not proof of upstream MCP protocol negotiation.
+
+| Exit | Situation | Classification |
+|---|---|---|
+| 0 | Completed successful tool result | `completed/downstream/ok` |
+| 0 | Successful discovery or help, including zero search matches | Discovery response |
+| 2 | Completed downstream result with `isError` | `tool_error/downstream/tool_error` |
+| 1 | Invalid flags, target, JSON, file, size, identity, or limits | `invalid_request`, stage `input`, reason `invalid_json`, `invalid_target`, `invalid_file`, `invalid_size`, `invalid_identity`, `invalid_limit`, `invalid_timeout`, or `invalid_flag` |
+| 1 | No daemon, stack ambiguity, or unreadable state | Stage `daemon`, reason `daemon_unavailable` |
+| 1 | Running daemon lacks the route | Stage `daemon`, reason `missing_endpoint` |
+| 1 | Gateway auth rejected | Stage `auth`, reason `gateway_auth_rejected` |
+| 1 | Host or Origin policy rejected the request | Stage `auth`, reason `host_rejected` |
+| 1 | Client scope or call gate denied | `denied/scope/client_scope` or `denied/gate/gate_denied` (`outcome.gate` names the denying gate) |
+| 1 | Schema pin blocked | `denied/pin/schema_pin` |
+| 1 | Unknown or whitelist-hidden target | `routing_failed/routing/unknown_tool` |
+| 1 | No replica or failed configured cold start | Existing routing disposition with `no_replica` or `cold_start` |
+| 1 | Execution wrapper refuses admission | Existing base outcome plus `detail: execution_admission` |
+| 1 | Downstream Go or protocol error | `transport_error/downstream/transport_error` unless typed cancellation or timeout |
+| 1 | Timeout, cancellation, lost, malformed, or oversized response | Typed timeout, cancellation, `redirect_refused`, `response_too_large`, or `malformed_response`; `completion` may be `unknown` if a call may have been sent |
+| 1 | Interim `input_required` result | `input_required/downstream/input_required` (takes precedence over `isError`) |
+
+Exit 2 is selected only for a completed downstream tool error. Do not treat HTTP status or `isError` alone as that exit. Lost calls are not retried.
+
+`gridctl call --help` and `gridctl tools --help` work offline.
 
 ## LLM clients
 

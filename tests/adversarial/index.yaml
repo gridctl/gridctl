@@ -333,6 +333,69 @@ scenarios:
     budgets:
       max_payload_bytes: 65536
       max_duration: 120s
+  - id: cli-call-scope-hidden
+    owner_package: pkg/mcp
+    owner_issue: "1154"
+    package: github.com/gridctl/gridctl/pkg/mcp
+    test: TestCallCanonicalTool_UnknownAndHidden
+    lanes: [unit]
+    expected_boundary: canonical dispatch denies out-of-scope tools before inventory disclosure and rejects unknown in-scope names without a downstream call
+    nonclaims:
+      - not credential-bound per-client authorization
+      - not a global repair of legacy MCP whitelist behavior
+    budgets:
+      max_payload_bytes: 4096
+      max_duration: 5s
+  - id: cli-call-legacy-error-shape
+    owner_package: internal/api
+    owner_issue: "1154"
+    package: github.com/gridctl/gridctl/internal/api
+    test: TestHandleToolsCall_DoesNotUseLegacyErrorShape
+    lanes: [unit]
+    expected_boundary: malformed JSON on POST /api/tools/call returns a versioned object-valued error rather than the legacy string error envelope
+    nonclaims:
+      - middleware 401 bodies remain plain text
+    budgets:
+      max_payload_bytes: 4096
+      max_duration: 2s
+  - id: cli-call-redirect-refused
+    owner_package: cmd/gridctl
+    owner_issue: "1154"
+    package: github.com/gridctl/gridctl/cmd/gridctl
+    test: TestOriginDo_RefusesRedirect
+    lanes: [unit]
+    expected_boundary: the call HTTP helper refuses redirects so a redirect target receives neither credentials nor a repeated call
+    nonclaims:
+      - not a proof that every other CLI command refuses redirects
+    budgets:
+      max_payload_bytes: 4096
+      max_duration: 5s
+  - id: cli-call-http-process
+    owner_package: tests/integration
+    owner_issue: "1154"
+    package: github.com/gridctl/gridctl/tests/integration
+    test: TestCLIToolsCall_HTTPAndProcess
+    lanes: [integration, podman-integration]
+    prerequisites: [subprocess]
+    expected_boundary: a built CLI binary and the real API handler call a real downstream MCP server, including auth rejection and stopped-home isolation
+    nonclaims:
+      - HTTP 200 is not proof of upstream MCP protocol negotiation
+    budgets:
+      max_payload_bytes: 65536
+      max_duration: 120s
+  - id: cli-call-execution-admission
+    owner_package: tests/integration
+    owner_issue: "1154"
+    package: github.com/gridctl/gridctl/tests/integration
+    test: TestExecution_CanonicalCallAdmission
+    lanes: [integration, podman-integration]
+    prerequisites: [docker]
+    expected_boundary: eligible execution-wrapped tools can be invoked through canonical dispatch and REST, and a closed instance cannot complete a later call
+    nonclaims:
+      - unit tests do not satisfy execution admission
+    budgets:
+      max_payload_bytes: 65536
+      max_duration: 240s
   - id: podman-rootless-network
     owner_package: tests/integration
     owner_issue: "1221"

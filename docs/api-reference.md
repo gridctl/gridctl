@@ -1,6 +1,6 @@
 # REST API Reference
 
-The gridctl gateway exposes a REST API for managing stacks, secrets, skills, packs, schema and skill pins, the global context (including rule fragments), agent projection and client wiring, usage telemetry, traces, run records, optimize findings, daemon reset, and MCP protocol interactions. By default the gateway listens on port `8180`.
+The gridctl gateway exposes a REST API for managing stacks, secrets, skills, packs, schema and skill pins, the global context (including rule fragments), agent projection and client wiring, usage telemetry, traces, run records, optimize findings, daemon reset, live tool invocation and discovery, and MCP protocol interactions. By default the gateway listens on port `8180`.
 
 ## Authentication
 
@@ -324,6 +324,75 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/tools/catalog
   ]
 }
 ```
+
+#### `POST /api/tools/call`
+
+Invoke one canonical live tool through the same dispatch core as MCP `tools/call`, with strict catalog admission. The body is a single JSON object: `name` (required `server__tool`), `arguments` (object; omitted becomes `{}`; null is invalid), and optional `client` (caller-declared label, default `cli`). Unknown fields, trailing documents, arrays, and non-objects are rejected. Envelope limit is 2 MiB. The handler does not accept group, approval, retry, or execution-bypass options.
+
+`client` is a caller-declared scope and accounting label, not an authenticated principal. Empty, whitespace, control characters, values over 128 bytes, and labels that normalize to empty are invalid. The selected profile and its gates always apply. `cli` has no scope exemption.
+
+A valid dispatch returns HTTP `200` with a versioned envelope even when the outcome is a policy denial or tool error. Request validation is `400`, oversized bodies `413`, wrong content type `415`, and a missing gateway `503`. Authentication remains the existing middleware (`401` with `Gridctl-Auth-Rejected: 1` and a plain-text body). Endpoint errors use `schema_version`, typed `outcome`, `result: null`, and `error: {"code","message"}` rather than the legacy string-valued `{"error":"..."}` shape. `name` and `client` appear only when valid and available.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"echo__echo","arguments":{"message":"hello"}}' \
+  http://localhost:8180/api/tools/call
+```
+
+**Response:**
+```json
+{
+  "schema_version": 1,
+  "client": "cli",
+  "name": "echo__echo",
+  "outcome": {
+    "disposition": "completed",
+    "stage": "downstream",
+    "reason": "ok",
+    "completion": "complete"
+  },
+  "result": {"content": [{"type": "text", "text": "hello"}]},
+  "error": null
+}
+```
+
+`result` is `null` when no result exists. `error` is `null` on success; otherwise it is `{"code":"<fixed-code>","message":"<safe-message>"}`. `outcome.reason` is the machine discriminator. Gate denials may set `outcome.gate`. Execution admission refusal sets `outcome.detail` to `execution_admission`. `completion` is `complete` for a finished success or tool error, `not_started` when the tool was not invoked, `input_required` for an interim result, and `unknown` when timeout, cancellation, or transport loss makes completion uncertain. These are observations, not exactly-once guarantees. Adapter messages do not echo arguments, tokens, or raw bodies. Tool-returned content is user output, including every serializable `ToolCallResult` field. HTTP success is not proof that upstream MCP protocol negotiation succeeded. There is no automatic retry.
+
+#### `GET /api/tools/discover`
+
+Read-only live tool search and targeted help. Query parameters: optional `client`, optional exact `server`, optional exact canonical `name`, optional `query`, optional `limit` (default 20, range 1-200). `name` cannot be combined with `server` or `query`. Duplicate scalar parameters are rejected. Code mode does not change membership. Matching uses the same generated descriptions as code-mode search, including the `MCP server:` prefix. Hidden tools are omitted from results and counts. Unknown or invisible exact server/name lookup is HTTP `404` with the typed endpoint-error envelope. An empty search is success with `tools: []`.
+
+Discovery does not dispatch tools, consume call gates, start replicas, or record runs.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8180/api/tools/discover?query=message&limit=20"
+```
+
+**Response:**
+```json
+{
+  "schema_version": 1,
+  "client": "cli",
+  "tools": [
+    {
+      "name": "echo__echo",
+      "description": "MCP server: echo. Call using the exact tool name \"echo__echo\". Echo a message.",
+      "inputSchema": {"type": "object", "properties": {"message": {"type": "string"}}}
+    }
+  ],
+  "total_visible": 1,
+  "matched": 1,
+  "returned": 1,
+  "truncated": false
+}
+```
+
+`total_visible` counts the scoped inventory after the optional exact server filter and before query or limit. `matched` is the count before limit. `returned` is the array length. `truncated` is true when `returned < matched`. Empty arrays are `[]`, never null. Count fields never include hidden tools.
 
 #### `GET /api/tools/usage`
 
@@ -3555,23 +3624,27 @@ REST handlers generally return errors as JSON:
 {"error": "error message"}
 ```
 
+`POST /api/tools/call` and `GET /api/tools/discover` use a dedicated versioned envelope instead: `schema_version`, typed `outcome`, `result: null`, and `error: {"code","message"}`. Do not parse those routes as the legacy string-valued `error` shape.
+
 HTTP middleware and routing errors can be plain text, including `401 Unauthorized` from gateway authentication and `403 Forbidden` from Host or MCP Origin checks.
 
 **Status codes:**
 
 | Code | Meaning |
 |------|---------|
-| `200` | Success |
+| `200` | Success. For `/api/tools/call`, also a valid dispatch whose typed outcome is a denial or tool error |
 | `201` | Resource created |
 | `204` | Success, no content |
 | `400` | Invalid input or request |
 | `401` | Missing or invalid authentication |
 | `403` | Host, MCP Origin, or endpoint-specific access check rejected the request |
-| `404` | Resource not found |
+| `404` | Resource not found, including exact live-tool lookup of an unknown or hidden target |
 | `405` | HTTP method not allowed |
 | `409` | Resource conflict (e.g., duplicate name), or `restart_required` for gateway security changes |
+| `413` | Request body exceeds the `/api/tools/call` 2 MiB envelope |
+| `415` | Unsupported content type on `/api/tools/call` (must be `application/json`) |
 | `423` | Vault is locked |
-| `503` | Service unavailable (runtime not configured, reload or initialization handler unavailable) |
+| `503` | Service unavailable (runtime not configured, reload or initialization handler unavailable, or tools call/discover with no gateway) |
 
 ## CORS
 

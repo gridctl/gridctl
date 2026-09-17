@@ -66,6 +66,22 @@ type executionClient struct {
 	operationGate chan struct{}
 }
 
+// ExecutionAdmissionError wraps a refusal from the execution wrapper so
+// dispatch can attach typed detail without parsing error text. Unwrap
+// preserves errors.Is for cancellation and other sentinel causes.
+type ExecutionAdmissionError struct {
+	err error
+}
+
+func (e *ExecutionAdmissionError) Error() string {
+	if e == nil || e.err == nil {
+		return "execution: admission refused"
+	}
+	return e.err.Error()
+}
+
+func (e *ExecutionAdmissionError) Unwrap() error { return e.err }
+
 type executionPhaseError struct {
 	phase string
 	cause error
@@ -276,7 +292,7 @@ func (c *executionClient) ExecutionEligible() bool {
 
 func (c *executionClient) CallTool(ctx context.Context, name string, arguments map[string]any) (*ToolCallResult, error) {
 	if err := c.admit(ctx); err != nil {
-		return nil, err
+		return nil, &ExecutionAdmissionError{err: err}
 	}
 	return c.AgentClient.CallTool(ctx, name, arguments)
 }
