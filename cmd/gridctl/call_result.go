@@ -4,10 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/output"
+	"github.com/gridctl/gridctl/pkg/runs"
 	"github.com/spf13/cobra"
 )
 
@@ -34,6 +36,9 @@ const (
 	reasonMalformedResponse   = "malformed_response"
 	reasonMissingEndpoint     = "missing_endpoint"
 	reasonUnexpectedStatus    = "unexpected_status"
+	reasonDeadlineExceeded    = "deadline_exceeded"
+	reasonContextCanceled     = "context_canceled"
+	reasonTransportError      = "transport_error"
 )
 
 type commandError struct {
@@ -71,7 +76,7 @@ func renderCommandError(stdout, stderr io.Writer, cmd *cobra.Command, err error)
 		fmt.Fprintln(stderr, sanitizeTerminal(ce.human))
 		return true
 	}
-	if isCallOrToolsCommand(cmd) && commandWantsJSON(cmd) {
+	if isCallOrToolsCommand(cmd) && commandRequestsJSON(cmd) {
 		_ = output.EncodeJSON(stdout, localFailureEnvelope("", "", "input", reasonInvalidFlag, "invalid request"))
 		return true
 	}
@@ -95,11 +100,49 @@ func commandWantsJSON(cmd *cobra.Command) bool {
 	if f := cmd.Flags().Lookup("json"); f != nil && f.Changed {
 		return true
 	}
-	if f := cmd.Flags().Lookup("format"); f != nil {
+	if f := cmd.Flags().Lookup("format"); f != nil && f.Changed {
 		v, _ := cmd.Flags().GetString("format")
 		return strings.EqualFold(v, "json")
 	}
 	return false
+}
+
+func commandRequestsJSON(cmd *cobra.Command) bool {
+	return commandWantsJSON(cmd) || argsWantJSON(osArgsForJSON())
+}
+
+func osArgsForJSON() []string {
+	if len(os.Args) > 1 {
+		return os.Args[1:]
+	}
+	return nil
+}
+
+func argsWantJSON(args []string) bool {
+	jsonSet := false
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			break
+		}
+		if a == "--json" {
+			jsonSet = true
+			continue
+		}
+		if strings.HasPrefix(a, "--format=") {
+			if strings.EqualFold(strings.TrimPrefix(a, "--format="), "json") {
+				return true
+			}
+			continue
+		}
+		if a == "--format" && i+1 < len(args) {
+			if strings.EqualFold(args[i+1], "json") {
+				return true
+			}
+			i++
+		}
+	}
+	return jsonSet
 }
 
 type cliCallEnvelope struct {
@@ -117,19 +160,43 @@ type cliErrorBody struct {
 }
 
 func localFailureEnvelope(client, name, stage, reason, message string) cliCallEnvelope {
+	return failureEnvelope(client, name, "invalid_request", stage, reason, mcp.CompletionNotStarted, message)
+}
+
+func failureEnvelope(client, name, disposition, stage, reason, completion, message string) cliCallEnvelope {
 	return cliCallEnvelope{
 		SchemaVersion: callSchemaVersion,
 		Client:        client,
 		Name:          name,
 		Outcome: mcp.CallOutcome{
-			Disposition: "invalid_request",
+			Disposition: disposition,
 			Stage:       stage,
 			Reason:      reason,
-			Completion:  mcp.CompletionNotStarted,
+			Completion:  completion,
 		},
 		Result: nil,
 		Error:  &cliErrorBody{Code: reason, Message: message},
 	}
+}
+
+func uncertainFailure(asJSON bool, client, name, disposition, reason, message string) *commandError {
+	return newCommandError(asJSON, failureEnvelope(client, name, disposition, "daemon", reason, mcp.CompletionUnknown, message), message, false)
+}
+
+func callEnvelopeSuccess(env cliCallEnvelope) bool {
+	return env.Outcome.Disposition == runs.DispositionCompleted &&
+		env.Outcome.Stage == runs.StageDownstream &&
+		env.Outcome.Reason == runs.ReasonOK &&
+		env.Outcome.Completion == mcp.CompletionComplete &&
+		env.Error == nil
+}
+
+func callEnvelopeCompletedToolError(env cliCallEnvelope) bool {
+	return env.Outcome.Disposition == runs.DispositionToolError &&
+		env.Outcome.Stage == runs.StageDownstream &&
+		env.Outcome.Reason == runs.ReasonToolError &&
+		env.Outcome.Completion == mcp.CompletionComplete &&
+		env.Result != nil && env.Result.IsError
 }
 
 func newCommandError(asJSON bool, env cliCallEnvelope, human string, exit2 bool) *commandError {

@@ -83,21 +83,22 @@ func runCall(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return invalidCallErr(asJSON, "", "", "input", reasonInvalidTarget, "target must be server__tool")
 	}
-	src := ""
+	var argsObj map[string]any
 	if len(args) > 1 {
-		src = args[1]
-	}
-	argsObj, err := parseCallArguments(src)
-	if err != nil {
-		reason := reasonInvalidJSON
-		if errors.Is(err, errArgsTooLarge) {
-			reason = reasonInvalidSize
-		} else if strings.Contains(err.Error(), "unreadable") || strings.Contains(err.Error(), "file path") {
-			reason = reasonInvalidFile
+		argsObj, err = parseCallArguments(args[1])
+		if err != nil {
+			reason := reasonInvalidJSON
+			if errors.Is(err, errArgsTooLarge) {
+				reason = reasonInvalidSize
+			} else if strings.Contains(err.Error(), "unreadable") || strings.Contains(err.Error(), "file path") {
+				reason = reasonInvalidFile
+			}
+			return invalidCallErr(asJSON, "", name, "input", reason, err.Error())
 		}
-		return invalidCallErr(asJSON, "", name, "input", reason, err.Error())
+	} else {
+		argsObj = map[string]any{}
 	}
-	client, err := normalizeCLIClient(callAs, cmd.Flags().Changed("as"))
+	client, err := declaredCLIClient(callAs, cmd.Flags().Changed("as"))
 	if err != nil {
 		return invalidCallErr(asJSON, "", name, "input", reasonInvalidIdentity, "invalid --as value")
 	}
@@ -121,27 +122,27 @@ func runCall(cmd *cobra.Command, args []string) error {
 	}
 	body, err := readCappedResponse(resp)
 	if err != nil {
-		return invalidCallErr(asJSON, client, name, "daemon", reasonResponseTooLarge, "gateway response exceeds 16 MiB")
+		return mapResponseRead(asJSON, client, name, err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return classifyHTTPFailure(resp, body, asJSON, client, name)
 	}
+	if !isJSONContentType(resp.Header.Get("Content-Type")) {
+		return uncertainFailure(asJSON, client, name, runs.DispositionTransportError, reasonMalformedResponse, "malformed gateway response")
+	}
 	env, err := decodeCallEnvelope(body)
 	if err != nil {
-		return invalidCallErr(asJSON, client, name, "daemon", reasonMalformedResponse, "malformed gateway response")
-	}
-	if env.Client == "" {
-		env.Client = client
+		return uncertainFailure(asJSON, client, name, runs.DispositionTransportError, reasonMalformedResponse, "malformed gateway response")
 	}
 	if env.Name == "" {
 		env.Name = name
 	}
-	exit2 := env.Outcome.Disposition == runs.DispositionToolError && env.Outcome.Stage == runs.StageDownstream && env.Outcome.Reason == runs.ReasonToolError
+	exit2 := callEnvelopeCompletedToolError(env)
 	if env.Outcome.Completion == mcp.CompletionInputRequired {
 		exit2 = false
 	}
 	if asJSON {
-		if env.Outcome.Reason == runs.ReasonOK && env.Error == nil {
+		if callEnvelopeSuccess(env) {
 			return output.EncodeJSON(cmd.OutOrStdout(), env)
 		}
 		human := "tool call failed"
@@ -150,7 +151,7 @@ func runCall(cmd *cobra.Command, args []string) error {
 		}
 		return &commandError{envelope: env, human: human, asJSON: true, exit2: exit2}
 	}
-	if env.Outcome.Reason == runs.ReasonOK && env.Error == nil {
+	if callEnvelopeSuccess(env) {
 		renderHumanCallResult(cmd, env)
 		return nil
 	}
@@ -162,9 +163,12 @@ func runCall(cmd *cobra.Command, args []string) error {
 }
 
 func callJSONMode(cmd *cobra.Command) (bool, error) {
-	format, err := resolveFormat(callFormat, cmd.Flags().Changed("format"), callJSON != nil && *callJSON)
+	jsonAlias := callJSON != nil && *callJSON
+	formatChanged := cmd.Flags().Changed("format")
+	format, err := resolveFormat(callFormat, formatChanged, jsonAlias)
+	wantJSON := jsonAlias || (formatChanged && strings.EqualFold(callFormat, "json")) || commandRequestsJSON(cmd)
 	if err != nil {
-		return false, err
+		return wantJSON, err
 	}
 	return strings.EqualFold(format, "json"), nil
 }
@@ -174,16 +178,19 @@ func invalidCallErr(asJSON bool, client, name, stage, reason, message string) *c
 }
 
 func mapCallTransport(asJSON bool, client, name string, err error, ctx context.Context) *commandError {
+	if errors.Is(err, errInvalidRequestPath) {
+		return invalidCallErr(asJSON, client, name, "input", reasonInvalidFlag, "invalid request path")
+	}
 	if errors.Is(err, errRedirectRefused) {
-		return invalidCallErr(asJSON, client, name, "daemon", reasonRedirectRefused, "refused to follow a redirect")
+		return uncertainFailure(asJSON, client, name, runs.DispositionTransportError, reasonRedirectRefused, "refused to follow a redirect")
 	}
-	if ctx.Err() == context.DeadlineExceeded {
-		return invalidCallErr(asJSON, client, name, "daemon", "deadline_exceeded", "tool call timed out")
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) {
+		return uncertainFailure(asJSON, client, name, runs.DispositionTimeout, reasonDeadlineExceeded, "tool call timed out")
 	}
-	if ctx.Err() == context.Canceled {
-		return invalidCallErr(asJSON, client, name, "daemon", "context_canceled", "tool call was canceled")
+	if errors.Is(ctx.Err(), context.Canceled) || errors.Is(err, context.Canceled) {
+		return uncertainFailure(asJSON, client, name, runs.DispositionCancelled, reasonContextCanceled, "tool call was canceled")
 	}
-	return invalidCallErr(asJSON, client, name, "daemon", reasonUnexpectedStatus, "gateway request failed")
+	return uncertainFailure(asJSON, client, name, runs.DispositionTransportError, reasonTransportError, "gateway request failed")
 }
 
 func renderHumanCallResult(cmd *cobra.Command, env cliCallEnvelope) {
