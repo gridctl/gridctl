@@ -5,6 +5,7 @@ package integration
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -103,11 +104,30 @@ func TestExecution_CanonicalCallAdmission(t *testing.T) {
 	if closer, ok := client.(io.Closer); ok {
 		_ = closer.Close()
 	}
-	denied, dout, err := gateway.CallCanonicalTool(ctx, mcp.ToolCallParams{Name: "fixture__echo", Arguments: map[string]any{"message": "no"}})
-	if err != nil {
+	deniedReq := httptest.NewRequest(http.MethodPost, "/api/tools/call", bytes.NewBufferString(`{"name":"fixture__echo","arguments":{"message":"no"}}`))
+	deniedReq.Host = "localhost:8180"
+	deniedReq.Header.Set("Content-Type", "application/json")
+	deniedRec := httptest.NewRecorder()
+	handler.ServeHTTP(deniedRec, deniedReq)
+	if deniedRec.Code != http.StatusOK {
+		t.Fatalf("denied rest status %d %s", deniedRec.Code, deniedRec.Body.String())
+	}
+	var deniedEnv struct {
+		Outcome mcp.CallOutcome `json:"outcome"`
+		Error   *struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(deniedRec.Body.Bytes(), &deniedEnv); err != nil {
 		t.Fatal(err)
 	}
-	if dout.Detail != mcp.DetailExecutionAdmission && dout.Reason != "unknown_tool" && (denied == nil || !denied.IsError) {
-		t.Fatalf("expected admission or routing failure after close: %+v %+v", denied, dout)
+	if deniedEnv.Outcome.Reason == "ok" || deniedEnv.Outcome.Disposition == "completed" {
+		t.Fatalf("call succeeded after close: %s", deniedRec.Body.String())
+	}
+	if deniedEnv.Outcome.Reason == "tool_error" && deniedEnv.Outcome.Completion == "complete" {
+		t.Fatalf("ordinary tool error is not admission refusal: %s", deniedRec.Body.String())
+	}
+	if deniedEnv.Outcome.Detail != mcp.DetailExecutionAdmission && deniedEnv.Outcome.Reason != "unknown_tool" && deniedEnv.Outcome.Reason != "transport_error" && deniedEnv.Outcome.Reason != "no_replica" {
+		t.Fatalf("expected admission, routing, or transport refusal after close: %s", deniedRec.Body.String())
 	}
 }
