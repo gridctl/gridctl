@@ -17,7 +17,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Documentation
 
-- Document `gridctl call`, `gridctl tools search`, live-tool versus catalog search, REST call/discover envelopes, typed exits, no-retry behavior, and the caller-label trust boundary (#1154).
+- Document `gridctl call`, `gridctl tools search`, live-tool versus catalog search, REST call/discover envelopes and limits, typed exits, no-retry behavior, lexical matching, REST-versus-MCP verification limits, and the caller-label trust boundary (#1154).
 - Document the Python MCP runtime base contract, writable-state mounts, evidence layers, tag policy, licensing notices, and maintenance ownership, and cross-link wizard help, Python source examples, and troubleshooting (#1230).
 - Add a practical security guide covering verified installation, local and remote access, credentials, execution restrictions, content review, exports, diagnostic privacy, and declaration checks, with an explicit source baseline and release-availability distinctions (#1219).
 - Document the adversarial scenario index and post-suite Go JSON execution verifier, including what a passing case proves and does not prove. This is test accounting, not comprehensive security testing (#1227).

@@ -298,6 +298,17 @@ Gateway authentication and listener security settings are restart-only: reload r
 
 Learn more → [Tools Workspace](docs/tools-workspace.md)
 
+### Live Tool Invocation
+
+Search and invoke tools on a selected running gateway without starting a daemon:
+
+```bash
+gridctl tools search "message"
+gridctl call echo__echo '{"message":"hello"}' --format json
+```
+
+`gridctl search` remains the install catalog. `--as` selects a caller-declared scope label and does not authenticate as that client. See [Live tools](docs/cli-reference.md#live-tools).
+
 ### Rate Limits
 
 Cap call rates per client, server, or tool, enforced at tool-call dispatch, so a runaway agent stops at the limit instead of hammering a server. Omitting the block limits nothing.

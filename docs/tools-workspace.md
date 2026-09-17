@@ -1,6 +1,6 @@
 # Tools Workspace
 
-The Tools workspace (`/tools` in the web UI on `:8180`) is the control plane for the tool surface your gateway exposes: what each MCP server advertises, which of those tools upstream clients can call, which exposed tools are actually used, and how to shrink the surface safely.
+The Tools workspace (`/tools` in the web UI on `:8180`) is the control plane for the tool surface your gateway exposes: what each MCP server advertises, which of those tools upstream clients can call, which exposed tools are actually used, and how to shrink the surface safely. To invoke or search that live surface from the CLI, see [Live tools](cli-reference.md#live-tools).
 
 ## Layout
 
