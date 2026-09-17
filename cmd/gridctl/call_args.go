@@ -27,9 +27,6 @@ func parseCallTarget(raw string) (string, error) {
 }
 
 func parseCallArguments(src string) (map[string]any, error) {
-	if src == "" {
-		return map[string]any{}, nil
-	}
 	var data []byte
 	if strings.HasPrefix(src, "@") {
 		path := strings.TrimPrefix(src, "@")
@@ -63,7 +60,7 @@ var errArgsTooLarge = fmt.Errorf("arguments exceed 1 MiB")
 func decodeArgumentObject(data []byte) (map[string]any, error) {
 	trimmed := bytes.TrimSpace(data)
 	if len(trimmed) == 0 {
-		return map[string]any{}, nil
+		return nil, fmt.Errorf("invalid JSON")
 	}
 	if trimmed[0] != '{' {
 		return nil, fmt.Errorf("arguments must be a JSON object")
@@ -83,7 +80,7 @@ func decodeArgumentObject(data []byte) (map[string]any, error) {
 	return args, nil
 }
 
-func normalizeCLIClient(raw string, present bool) (string, error) {
+func declaredCLIClient(raw string, present bool) (string, error) {
 	if !present {
 		return "cli", nil
 	}
@@ -98,9 +95,8 @@ func normalizeCLIClient(raw string, present bool) (string, error) {
 	if strings.TrimSpace(raw) == "" {
 		return "", fmt.Errorf("invalid client")
 	}
-	n := mcp.NormalizeClientID(raw)
-	if n == "" {
+	if mcp.NormalizeClientID(raw) == "" {
 		return "", fmt.Errorf("invalid client")
 	}
-	return n, nil
+	return raw, nil
 }

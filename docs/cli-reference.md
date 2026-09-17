@@ -132,7 +132,7 @@ These commands talk to a selected running gateway using state-recorded credentia
 
 Matching is lexical substring search against live names, generated descriptions, and property names, including the generated prefix `MCP server: <server>. Call using the exact tool name "<canonical-name>".`. Queries such as `mcp`, `server`, and `call` therefore match every scoped tool in the selected server subset, if any, before limits. This is not semantic search.
 
-Inline JSON may appear in shell history and process arguments. `@file.json` reads a local object of at most 1 MiB and does not encrypt it. There is no stdin shorthand, URL fetch, or environment interpolation. Arguments must be a single JSON object; omitted arguments are `{}`. Discovery and help never invoke a tool, consume call gates, start replicas, or record a run. Visibility is not a guarantee that a later call passes pins, rate limits, or execution admission.
+Inline JSON may appear in shell history and process arguments. `@file.json` reads a local object of at most 1 MiB and does not encrypt it. There is no stdin shorthand, URL fetch, or environment interpolation. Arguments must be a single JSON object; omitted arguments are `{}`. An explicit empty or whitespace-only source, including an empty file, is invalid JSON and does not default to `{}`. Discovery and help never invoke a tool, consume call gates, start replicas, or record a run. Visibility is not a guarantee that a later call passes pins, rate limits, or execution admission.
 
 ```bash
 gridctl tools search "message" --limit 20 --as automation
