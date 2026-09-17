@@ -159,7 +159,7 @@ func init() {
 	// Flag mistakes keep a short usage pointer; runtime errors do not.
 	rootCmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
 		wrapped := fmt.Errorf("%w\nRun '%s --help' for usage", err, cmd.CommandPath())
-		if isCallOrToolsCommand(cmd) && commandWantsJSON(cmd) {
+		if isCallOrToolsCommand(cmd) && commandRequestsJSON(cmd) {
 			return newCommandError(true, localFailureEnvelope("", "", "input", reasonInvalidFlag, "invalid flag"), wrapped.Error(), false)
 		}
 		return wrapped
@@ -228,34 +228,23 @@ func Execute() {
 	}
 }
 
-func firstPositionalArg(cmd *cobra.Command, args []string) string {
-	for _, a := range args {
-		if a == "" || strings.HasPrefix(a, "-") {
-			continue
-		}
-		if cmd != nil && (a == cmd.Name() || a == cmd.CalledAs()) {
-			continue
-		}
-		return a
-	}
-	return ""
-}
-
 func executeC() (*cobra.Command, error) {
 	if callOfflineHelp == nil {
 		callOfflineHelp = callCmd.HelpFunc()
 	}
 	sess := &execSession{}
 	callCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		target := firstPositionalArg(cmd, args)
-		if target == "" {
-			target = firstPositionalArg(cmd, cmd.Flags().Args())
-		}
-		if target == "" {
+		positionals := callHelpPositionals(cmd, args)
+		if len(positionals) == 0 {
 			callOfflineHelp(cmd, args)
 			return
 		}
-		if err := runCallHelp(cmd, []string{target}); err != nil {
+		if len(positionals) != 1 {
+			asJSON := commandRequestsJSON(cmd)
+			sess.helpErr = invalidCallErr(asJSON, "", "", "input", reasonInvalidTarget, "targeted help accepts one server or server__tool")
+			return
+		}
+		if err := runCallHelp(cmd, positionals); err != nil {
 			sess.helpErr = err
 		}
 	})

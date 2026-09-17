@@ -11,10 +11,24 @@ import (
 )
 
 func TestParseCallArguments(t *testing.T) {
-	t.Run("omitted", func(t *testing.T) {
-		got, err := parseCallArguments("")
-		if err != nil || len(got) != 0 {
-			t.Fatalf("got %#v err=%v", got, err)
+	t.Run("empty string", func(t *testing.T) {
+		if _, err := parseCallArguments(""); err == nil {
+			t.Fatal("expected error")
+		}
+	})
+	t.Run("whitespace", func(t *testing.T) {
+		if _, err := parseCallArguments("   "); err == nil {
+			t.Fatal("expected error")
+		}
+	})
+	t.Run("empty file", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "empty.json")
+		if err := os.WriteFile(path, []byte(" \n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := parseCallArguments("@" + path); err == nil {
+			t.Fatal("expected error")
 		}
 	})
 	t.Run("number precision", func(t *testing.T) {
@@ -164,5 +178,84 @@ func TestExecuteC_InvalidTargetNoDaemon(t *testing.T) {
 	var ce *commandError
 	if !errors.As(err, &ce) || ce.exit2 {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestArgsWantJSON(t *testing.T) {
+	if !argsWantJSON([]string{"call", "echo__echo", "--bad", "--json"}) {
+		t.Fatal("json after unknown flag")
+	}
+	if !argsWantJSON([]string{"call", "echo__echo", "--json", "--bad"}) {
+		t.Fatal("json before unknown flag")
+	}
+	if !argsWantJSON([]string{"call", "--format", "json", "echo__echo"}) {
+		t.Fatal("format json")
+	}
+	if argsWantJSON([]string{"call", "echo__echo", "--format", "invalid", `{"--json":true}`}) {
+		t.Fatal("payload must not enable json")
+	}
+	if !argsWantJSON([]string{"call", "echo__echo", "--json", "--format", "invalid"}) {
+		t.Fatal("json alias survives format conflict")
+	}
+}
+
+func TestDeclaredCLIClient(t *testing.T) {
+	got, err := declaredCLIClient("", false)
+	if err != nil || got != "cli" {
+		t.Fatalf("default = %q %v", got, err)
+	}
+	got, err = declaredCLIClient("cursor ide", true)
+	if err != nil || got != "cursor ide" {
+		t.Fatalf("raw label = %q %v", got, err)
+	}
+	if _, err := declaredCLIClient("  ", true); err == nil {
+		t.Fatal("whitespace")
+	}
+}
+
+func TestExecuteC_OfflineCallHelpWithFormatFlag(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("GRIDCTL_HOME", home)
+	outBuf, errBuf := &bytes.Buffer{}, &bytes.Buffer{}
+	rootCmd.SetOut(outBuf)
+	rootCmd.SetErr(errBuf)
+	rootCmd.SetArgs([]string{"call", "--format", "json", "--help"})
+	t.Cleanup(func() {
+		rootCmd.SetOut(nil)
+		rootCmd.SetErr(nil)
+		rootCmd.SetArgs(nil)
+	})
+	_, err := executeC()
+	if err != nil {
+		t.Fatalf("zero-target help must stay offline: %v stderr=%s", err, errBuf.String())
+	}
+	if !strings.Contains(outBuf.String(), "Invoke one canonical tool") {
+		t.Fatalf("help = %s", outBuf.String())
+	}
+}
+
+func TestExecuteC_HelpErrorClearedBetweenRuns(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("GRIDCTL_HOME", home)
+	outBuf, errBuf := &bytes.Buffer{}, &bytes.Buffer{}
+	rootCmd.SetOut(outBuf)
+	rootCmd.SetErr(errBuf)
+	t.Cleanup(func() {
+		rootCmd.SetOut(nil)
+		rootCmd.SetErr(nil)
+		rootCmd.SetArgs(nil)
+	})
+	rootCmd.SetArgs([]string{"call", "echo__echo", "--help"})
+	if _, err := executeC(); err == nil {
+		t.Fatal("expected targeted help failure without a daemon")
+	}
+	outBuf.Reset()
+	errBuf.Reset()
+	rootCmd.SetArgs([]string{"call", "--help"})
+	if _, err := executeC(); err != nil {
+		t.Fatalf("offline help after a failed live help: %v", err)
+	}
+	if !strings.Contains(outBuf.String(), "Invoke one canonical tool") {
+		t.Fatalf("help = %s", outBuf.String())
 	}
 }
