@@ -2204,6 +2204,18 @@ func (g *Gateway) HandleToolsCatalogAll() (*ToolsListResult, error) {
 // HandleToolsCall routes a tool call to the appropriate MCP server.
 // When code mode is active and the tool is a meta-tool, delegates to code mode.
 func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*ToolCallResult, error) {
+	result, _, err := g.dispatchToolsCall(ctx, params, dispatchOptions{})
+	return result, err
+}
+
+// CallCanonicalTool dispatches a strict canonical-only tool call for the
+// management REST/CLI surface. Membership, meta-tools, and aliases are
+// enforced inside dispatch after the run attempt starts.
+func (g *Gateway) CallCanonicalTool(ctx context.Context, params ToolCallParams) (*ToolCallResult, CallOutcome, error) {
+	return g.dispatchToolsCall(ctx, params, dispatchOptions{CanonicalOnly: true})
+}
+
+func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, opts dispatchOptions) (*ToolCallResult, CallOutcome, error) {
 	// Root span for the whole tool-call handle. Routing, cold start, the
 	// downstream client call, and format conversion all nest under it so the
 	// buffer finalises one multi-span trace per call. Code-mode inner calls
@@ -2214,6 +2226,7 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	attempt := g.startRunAttempt(ctx, params.Name)
 	ctx = attempt.Context()
 	defer attempt.Finish()
+	state := callState{attempt: attempt}
 	// Strip the server prefix for the tool attribute so early-exit paths
 	// (denials, routing failures) still surface the bare tool name; the
 	// post-routing re-stamp below uses the resolved name.
@@ -2235,22 +2248,26 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	// (scoping, gates, routing, telemetry) sees only canonical names. The
 	// code-mode meta-tools are exempt from membership (they are the group's
 	// window, not members of it); sandboxed inner calls re-enter here with
-	// the group still on ctx and are enforced normally.
-	if group := GroupFromContext(ctx); group != "" && (cm == nil || !cm.IsMetaTool(params.Name)) {
-		canonical, ok := g.CurrentGroupPolicy().ResolveAlias(group, params.Name, g.router.HasTool)
-		if !ok {
-			g.logger.Debug("tool call denied by group membership",
-				"group", group, "tool", params.Name)
-			attempt.SetOutcome(runs.DispositionDenied, runs.StageGroup, runs.ReasonGroupMembership)
-			return &ToolCallResult{
-				Content: []Content{NewTextContent(g.groupDenialMessage(ctx, group, params.Name))},
-				IsError: true,
-			}, nil
+	// the group still on ctx and are enforced normally. Canonical-only
+	// callers never establish a group and reject aliases by skipping
+	// resolution.
+	if !opts.CanonicalOnly {
+		if group := GroupFromContext(ctx); group != "" && (cm == nil || !cm.IsMetaTool(params.Name)) {
+			canonical, ok := g.CurrentGroupPolicy().ResolveAlias(group, params.Name, g.router.HasTool)
+			if !ok {
+				g.logger.Debug("tool call denied by group membership",
+					"group", group, "tool", params.Name)
+				state.set(runs.DispositionDenied, runs.StageGroup, runs.ReasonGroupMembership, CompletionNotStarted)
+				return &ToolCallResult{
+					Content: []Content{NewTextContent(g.groupDenialMessage(ctx, group, params.Name))},
+					IsError: true,
+				}, state.outcome, nil
+			}
+			params.Name = canonical
 		}
-		params.Name = canonical
 	}
 
-	if cm != nil && cm.IsMetaTool(params.Name) {
+	if !opts.CanonicalOnly && cm != nil && cm.IsMetaTool(params.Name) {
 		// Never let an MRTR retry relay leak into sandbox inner calls: the
 		// envelope was minted for one specific origin call, not for
 		// whatever tools the sandboxed code happens to invoke.
@@ -2269,27 +2286,42 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 		}
 		result, err := cm.HandleCall(ctx, params, g, allTools)
 		if err != nil {
-			attempt.SetOutcome(runs.DispositionToolError, runs.StageCodeMode, runs.ReasonToolError)
+			state.set(runs.DispositionToolError, runs.StageCodeMode, runs.ReasonToolError, CompletionUnknown)
 		} else if result != nil && (result.RequestState != "" || result.ResultType == ResultTypeInputRequired) {
-			attempt.SetOutcome(runs.DispositionInputRequired, runs.StageCodeMode, runs.ReasonInputRequired)
+			state.set(runs.DispositionInputRequired, runs.StageCodeMode, runs.ReasonInputRequired, CompletionInputRequired)
 		} else if result != nil && result.IsError {
-			attempt.SetOutcome(runs.DispositionToolError, runs.StageCodeMode, runs.ReasonToolError)
+			state.set(runs.DispositionToolError, runs.StageCodeMode, runs.ReasonToolError, CompletionComplete)
 		} else {
-			attempt.SetOutcome(runs.DispositionCompleted, runs.StageCodeMode, runs.ReasonCodeMode)
+			state.set(runs.DispositionCompleted, runs.StageCodeMode, runs.ReasonCodeMode, CompletionComplete)
 		}
-		return result, err
+		return result, state.outcome, err
 	}
 
 	// Enforce the per-client access scope on the direct tools/call path. A
 	// denied call is rejected before routing; denials are logged at debug.
+	// Canonical-only membership checks run after this so hidden targets
+	// are not disclosed as unknown tools.
 	if !g.clientAllowsToolCall(ctx, params.Name) {
 		g.logger.Debug("tool call denied by client access policy",
 			"client", ClientAccessIDFromContext(ctx), "tool", params.Name)
-		attempt.SetOutcome(runs.DispositionDenied, runs.StageScope, runs.ReasonClientScope)
+		state.set(runs.DispositionDenied, runs.StageScope, runs.ReasonClientScope, CompletionNotStarted)
 		return &ToolCallResult{
 			Content: []Content{NewTextContent(fmt.Sprintf("Error: tool %q is not in this client's access scope", params.Name))},
 			IsError: true,
-		}, nil
+		}, state.outcome, nil
+	}
+
+	if opts.CanonicalOnly {
+		if isMetaToolName(params.Name) || !g.canonicalInventoryHas(params.Name) {
+			g.logger.Debug("canonical tool call rejected: unknown or hidden tool",
+				"tool", params.Name)
+			state.set(runs.DispositionRoutingFailed, runs.StageRouting, runs.ReasonUnknownTool, CompletionNotStarted)
+			return &ToolCallResult{
+				Content:     []Content{NewTextContent("Error: unknown tool")},
+				IsError:     true,
+				unknownTool: true,
+			}, state.outcome, nil
+		}
 	}
 
 	// Run the pre-call policy gates (rate limits; see callGates).
@@ -2299,11 +2331,12 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	if gateCall, gate, decision := g.checkCallGates(ctx, params.Name); gate != "" {
 		g.logger.Debug("tool call denied by gate",
 			"gate", gate, "client", gateCall.ClientAccessID, "tool", params.Name)
-		attempt.SetOutcome(runs.DispositionDenied, runs.StageGate, runs.ReasonGateDenied)
+		state.setGate(gate)
+		state.set(runs.DispositionDenied, runs.StageGate, runs.ReasonGateDenied, CompletionNotStarted)
 		return &ToolCallResult{
 			Content: []Content{NewTextContent(decision.Message)},
 			IsError: true,
-		}, nil
+		}, state.outcome, nil
 	}
 
 	// Child span: routing decision.
@@ -2338,18 +2371,28 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 			unknown := parseErr != nil || g.router.GetReplicaSet(serverName) == nil
 			switch {
 			case coldStartFailed:
-				attempt.SetOutcome(runs.DispositionRoutingFailed, runs.StageColdStart, runs.ReasonColdStart)
+				state.set(runs.DispositionRoutingFailed, runs.StageColdStart, runs.ReasonColdStart, CompletionNotStarted)
 			case unknown:
-				attempt.SetOutcome(runs.DispositionRoutingFailed, runs.StageRouting, runs.ReasonUnknownTool)
+				state.set(runs.DispositionRoutingFailed, runs.StageRouting, runs.ReasonUnknownTool, CompletionNotStarted)
 			default:
-				attempt.SetOutcome(runs.DispositionRoutingFailed, runs.StageRouting, runs.ReasonNoReplica)
+				state.set(runs.DispositionRoutingFailed, runs.StageRouting, runs.ReasonNoReplica, CompletionNotStarted)
 			}
 			return &ToolCallResult{
 				Content:     []Content{NewTextContent(fmt.Sprintf("Error: %v", err))},
 				IsError:     true,
 				unknownTool: unknown,
-			}, nil
+			}, state.outcome, nil
 		}
+	}
+	if opts.CanonicalOnly && !replicaAdvertisesTool(replica, toolName) {
+		routeSpan.SetStatus(codes.Error, "replica does not advertise tool")
+		routeSpan.End()
+		state.set(runs.DispositionRoutingFailed, runs.StageRouting, runs.ReasonUnknownTool, CompletionNotStarted)
+		return &ToolCallResult{
+			Content:     []Content{NewTextContent("Error: unknown tool")},
+			IsError:     true,
+			unknownTool: true,
+		}, state.outcome, nil
 	}
 	client := replica.Client()
 	replicaID := replica.ID()
@@ -2365,14 +2408,14 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	g.blockedMu.RUnlock()
 	if isBlocked {
 		attempt.SetResolved(client.Name(), toolName, replicaID)
-		attempt.SetOutcome(runs.DispositionDenied, runs.StagePin, runs.ReasonSchemaPin)
+		state.set(runs.DispositionDenied, runs.StagePin, runs.ReasonSchemaPin, CompletionNotStarted)
 		return &ToolCallResult{
 			Content: []Content{NewTextContent(fmt.Sprintf(
 				"server %q is blocked pending schema approval; run 'gridctl pins approve %s' to resume",
 				client.Name(), client.Name(),
 			))},
 			IsError: true,
-		}, nil
+		}, state.outcome, nil
 	}
 
 	// MRTR retry cross-check: the requestState envelope recorded which
@@ -2382,14 +2425,14 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 	// instead.
 	if relay := mrtrRelayFromContext(ctx); relay != nil && relay.ExpectedServer != "" && relay.ExpectedServer != client.Name() {
 		attempt.SetResolved(client.Name(), toolName, replicaID)
-		attempt.SetOutcome(runs.DispositionRetryRejected, runs.StageMRTR, runs.ReasonMRTRMismatch)
+		state.set(runs.DispositionRetryRejected, runs.StageMRTR, runs.ReasonMRTRMismatch, CompletionNotStarted)
 		return &ToolCallResult{
 			Content: []Content{NewTextContent(fmt.Sprintf(
 				"MRTR retry routed to server %q but its requestState originates from %q; re-issue the original call",
 				client.Name(), relay.ExpectedServer,
 			))},
 			IsError: true,
-		}, nil
+		}, state.outcome, nil
 	}
 
 	// Propagate the resolved server and tool to the root span so the
@@ -2450,11 +2493,11 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		logger.Warn("tool call failed", "server", client.Name(), "tool", toolName, "duration", duration, "error", err)
-		classifyDownstream(attempt, nil, err, ctx)
+		state.classifyDownstream(nil, err, ctx)
 		return &ToolCallResult{
 			Content: []Content{NewTextContent(fmt.Sprintf("Error calling tool: %v", err))},
 			IsError: true,
-		}, nil
+		}, state.outcome, nil
 	}
 
 	if result.IsError {
@@ -2501,8 +2544,8 @@ func (g *Gateway) HandleToolsCall(ctx context.Context, params ToolCallParams) (*
 		}
 	}
 
-	classifyDownstream(attempt, result, nil, ctx)
-	return result, nil
+	state.classifyDownstream(result, nil, ctx)
+	return result, state.outcome, nil
 }
 
 // groupDenialMessage builds the model-readable rejection for a call outside
