@@ -158,7 +158,11 @@ func init() {
 
 	// Flag mistakes keep a short usage pointer; runtime errors do not.
 	rootCmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
-		return fmt.Errorf("%w\nRun '%s --help' for usage", err, cmd.CommandPath())
+		wrapped := fmt.Errorf("%w\nRun '%s --help' for usage", err, cmd.CommandPath())
+		if isCallOrToolsCommand(cmd) && commandWantsJSON(cmd) {
+			return newCommandError(true, localFailureEnvelope("", "", "input", reasonInvalidFlag, "invalid flag"), wrapped.Error(), false)
+		}
+		return wrapped
 	})
 
 	for cmd, group := range map[*cobra.Command]string{
@@ -175,6 +179,8 @@ func init() {
 		logsCmd:      groupStack,
 		searchCmd:    groupCatalog,
 		addCmd:       groupCatalog,
+		callCmd:      groupObserve,
+		toolsCmd:     groupObserve,
 		linkCmd:      groupClients,
 		groupsCmd:    groupClients,
 		unlinkCmd:    groupClients,
@@ -206,14 +212,58 @@ func init() {
 	}
 }
 
+type execSession struct {
+	helpErr error
+}
+
+var callOfflineHelp func(*cobra.Command, []string)
+
 func Execute() {
-	// ExecuteC returns the command that was (or would have been) executed,
-	// so help pointers name the right command path.
-	cmd, err := rootCmd.ExecuteC()
+	cmd, err := executeC()
 	if err != nil {
-		printCLIError(os.Stderr, cmd, err)
-		os.Exit(1)
+		if !renderCommandError(os.Stdout, os.Stderr, cmd, err) {
+			printCLIError(os.Stderr, cmd, err)
+		}
+		os.Exit(exitStatus(err))
 	}
+}
+
+func firstPositionalArg(cmd *cobra.Command, args []string) string {
+	for _, a := range args {
+		if a == "" || strings.HasPrefix(a, "-") {
+			continue
+		}
+		if cmd != nil && (a == cmd.Name() || a == cmd.CalledAs()) {
+			continue
+		}
+		return a
+	}
+	return ""
+}
+
+func executeC() (*cobra.Command, error) {
+	if callOfflineHelp == nil {
+		callOfflineHelp = callCmd.HelpFunc()
+	}
+	sess := &execSession{}
+	callCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		target := firstPositionalArg(cmd, args)
+		if target == "" {
+			target = firstPositionalArg(cmd, cmd.Flags().Args())
+		}
+		if target == "" {
+			callOfflineHelp(cmd, args)
+			return
+		}
+		if err := runCallHelp(cmd, []string{target}); err != nil {
+			sess.helpErr = err
+		}
+	})
+	cmd, err := rootCmd.ExecuteC()
+	if sess.helpErr != nil {
+		return cmd, sess.helpErr
+	}
+	return cmd, err
 }
 
 // printCLIError writes the single user-facing error line(s) for a failed
