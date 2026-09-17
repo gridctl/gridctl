@@ -243,6 +243,19 @@ func TestHandleToolsCall_DoesNotUseLegacyErrorShape(t *testing.T) {
 	}
 }
 
+func TestHandleToolsCall_ClientLabelSlugAlias(t *testing.T) {
+	stub := &callStubClient{name: "echo", tools: []mcp.Tool{{Name: "echo"}}}
+	handler := newCallServer(t, stub).Handler()
+	rec := postToolsCall(handler, `{"name":"echo__echo","client":"cursor ide"}`, "application/json")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
+	}
+	env := decodeCallEnvelope(t, rec)
+	if env.Client != "cursor-ide" {
+		t.Fatalf("client = %q, want cursor-ide from one NormalizeClientID pass", env.Client)
+	}
+}
+
 func TestNormalizeDeclaredClient(t *testing.T) {
 	got, err := normalizeDeclaredClient("", false)
 	if err != nil || got != "cli" {
