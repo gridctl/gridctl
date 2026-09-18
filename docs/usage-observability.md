@@ -15,9 +15,10 @@ For exact counts, set `gateway.tokenizer: api` to route counting through Anthrop
 ### Sensitive-call counting
 
 The internal sensitive-call classification uses trusted server construction
-metadata, with no stack setting or caller annotation. Existing sources use the
-ordinary path. Classified calls skip payload-bearing observer callbacks and the
-configured tokenizer, including API-backed counting. They retain local estimates
+metadata, with no stack setting or caller annotation. The experimental A2A adapter
+uses this path for every call; other sources retain ordinary counting. Classified
+calls skip payload-bearing observer callbacks and the configured tokenizer,
+including API-backed counting. They retain local estimates
 at four bytes per token, attributed to server, replica, and operation category
 (`send`, `task_get`, `task_cancel`, or `skill`), without client or individual skill
 attribution. Failures also contribute usage. Format conversion is skipped for
@@ -39,6 +40,10 @@ Rate limits (`limits.rate_limits` in `stack.yaml`) cap calls per minute per clie
 Opt-in `runs.enabled` stores one metadata-only final disposition per returning gateway `tools/call`. Metrics remain aggregate usage. Traces remain sampled timing detail. Runs remain retained dispositions and stay available when tracing is disabled.
 
 Records are saved after dispatch returns. Recording is best-effort. Attempts interrupted by a crash may leave no record, and older records may have been removed by retention or wipe. A transport failure does not prove the remote action did not execute. Input-required is the disposition of one round, not human approval.
+
+A2A `input-required` and `auth-required` are remote states inside an ordinary
+completed tool result, not the run's `input_required` disposition. Run records
+cannot recover task or context handles. See [A2A result delivery](config-schema.md#tools-and-capability-delivery).
 
 The allowlist is generated IDs, timestamps, total dispatch duration, bounded target names, disposition/stage/reason, optional replica and sampled trace IDs, and optional caller-declared labels. Argument and result values, hashes, code, raw errors, tokens, headers, URLs, and host paths are excluded. Names and labels may still be sensitive. Labels are not authenticated principals.
 

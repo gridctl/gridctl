@@ -4,6 +4,10 @@ Gridctl ships with a skill registry that delivers every active [`SKILL.md`](http
 
 Skills are prose. Author them as markdown with agentskills.io-compliant frontmatter and store them in the registry directory. Which channel reaches a given client depends on the client: prompt-rendering clients (Gemini CLI, Cursor, Windsurf) see skills as invocable prompts, file-based clients (Antigravity, Grok Build) only see projected files, and several clients support both. See the per-client matrix below.
 
+Agent Skills advertised by a remote [A2A Agent Card](config-schema.md#a2a) are
+separate: the adapter exposes advisory `skill-*` message tools, not registry
+documents, MCP prompts, or projected files.
+
 ## What a skill looks like
 
 A skill is one directory under `~/.gridctl/registry/skills/<name>/`. `SKILL.md` is the only required file (frontmatter on top, markdown body below), and a prose skill needs nothing else. A skill may also ship supporting content the body refers to, in `scripts/`, `references/`, and `assets/`, which gridctl installs alongside it.

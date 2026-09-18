@@ -25,9 +25,9 @@ tuning option. Diagnostic-output changes require maintainer-owned
 major-release scheduling under Article VIII; this is not release approval.
 
 A2A wire and card-trust evidence was updated on September 18, 2026, against
-implementation commits `7331b9f` and `a1090f8`. The Unreleased outbound adapter
-now uses these controls for MCP calls. It remains experimental and off by
-default. Real HTTP fixtures do not establish hosted-agent compatibility or
+implementation commits `7331b9f` and `a1090f8`; outbound adapter evidence was
+updated against `e16549e`. The Unreleased adapter uses these controls for MCP
+calls. It remains experimental and off by default. Real HTTP fixtures do not establish hosted-agent compatibility or
 downstream shared-memory isolation.
 
 | State | Evidence at this baseline |
@@ -57,7 +57,7 @@ Threat actors considered here include a malicious website, an unauthorized netwo
 Upstream MCP client / browser / CLI
   -> HTTP listener and management API
   -> MCP routing, exposure policies, and call gates
-  -> remote MCP/OpenAPI service, container, local process, or SSH process
+  -> remote MCP/OpenAPI/A2A service, container, local process, or SSH process
 
 Git repository / local skill source
   -> import
@@ -139,6 +139,14 @@ and result commit. Evidence: [adapter acceptance](../../tests/integration/a2a_ad
 [trust lifecycle tests](../../pkg/mcp/card_trust_test.go), and
 [independent store installation](../../pkg/controller/schema_pinning_test.go).
 
+A2A task/context handles authorize possession within current gateway policy,
+not an authenticated client identity. They expire and are invalidated by card
+drift, replacement, or restart. Remote agents remain a shared trust domain:
+known-ID collision checks cannot establish the provenance of unseen IDs or
+prevent shared-memory disclosure. See [capability bounds and isolation](../config-schema.md#bounds-uncertainty-and-downstream-isolation),
+[response-injection tests](../../tests/integration/a2a_injection_test.go), and
+[restart/reload tests](../../tests/integration/a2a_restart_test.go).
+
 Generated builds inspect Python metadata without executing it on the host and verify selected package metadata against recorded hashes. Building and running a package still executes publisher-controlled code in the build/runtime environment. Content-addressed images, commit pins, and provenance labels help identify inputs; they do not prove those inputs harmless. See [Python build examples and guidance](../../examples/python-sources/README.md) and [builder tests](../../pkg/builder/plan_test.go).
 
 ### Execution Evidence and Residual Authority
@@ -200,7 +208,9 @@ observer interfaces are skipped; the optional payload-free observer receives
 local numeric usage estimates without caller labels, payloads, or error objects.
 Configured counters and format conversion are bypassed for that path, and a
 shared execution context propagates sensitivity through code-mode inner calls.
-Ordinary sources retain payload-bearing observation. [Network disclosure tests](../../pkg/mcp/sensitive_network_test.go)
+The A2A adapter uses this path, including code-mode inner calls; other sources
+retain payload-bearing observation. [Adapter disclosure tests](../../tests/integration/a2a_diagnostics_test.go)
+and [network disclosure tests](../../pkg/mcp/sensitive_network_test.go)
 inspect file/UI logs, run records, traces, and an actual OTLP receiver while
 preserving successful caller delivery. Recognition alone cannot find encoded or
 split secrets, and these primitives do not prevent deliberate disclosure through

@@ -181,6 +181,15 @@ JSON stdout is one document, including recognized flag and argument errors; diag
 
 Exit 2 is selected only for a completed downstream tool error. Do not treat HTTP status or `isError` alone as that exit. Lost calls are not retried.
 
+For A2A, a successful tool invocation exits zero even when the inner envelope's
+remote task `state` is `input-required`, `auth-required`, or `failed`. These states
+do not use the MCP interim-result exit. Adapter errors such as
+`capability_unavailable` arrive as completed `isError` results and exit two.
+The default CLI timeout is 60 seconds, independent of the adapter's five-minute
+RPC timeout; use `--timeout 5m` for a longer blocking call or
+`return_immediately: true` for early task access. Local timeout does not cancel
+remote work. See [A2A tools](config-schema.md#tools-and-capability-delivery).
+
 `gridctl call --help` and `gridctl tools --help` work offline.
 
 ## LLM clients

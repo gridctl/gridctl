@@ -21,6 +21,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | [Security evidence](security-evidence/) | Partial, stale, suppressed, unknown, and N/A states for `gridctl doctor --security` |
 | [Stack declaration policy](stack-declaration-policy/) | Offline `validate --policy` fixture, policy file, and CI workflow design |
 | [🔗 openapi/](openapi/) | Turn REST APIs into MCP tools via OpenAPI specs |
+| [A2A](a2a/) | Experimental outbound Agent Card adapter with secret task/context handles |
 | [🔐 access-control/](access-control/) | Tool filtering and per-client scoping |
 | [⚡ code-mode/](code-mode/) | Reduce context window with search + execute meta-tools |
 | [🔒 gateways/](gateways/) | Bridge to existing infrastructure |
@@ -71,6 +72,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | zapier-mcp | http (remote URL) | Hosted platform server with OAuth brokering |
 | openapi-basic | openapi | REST API as MCP tools, operation filtering |
 | openapi-auth | openapi | Bearer, header, query, OAuth2, basic auth, and mTLS |
+| a2a/stack | A2A JSON-RPC | Off-by-default remote agent tools, card trust, and capability-based task access |
 | tool-filtering | http (containers) | Server-level tool whitelists |
 | per-client-scoping | http (containers) | `clients:` blocks restricting servers and tools per client |
 | code-mode-basic | http (containers) | Search + execute meta-tools |

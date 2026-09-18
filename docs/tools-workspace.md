@@ -31,6 +31,7 @@ Honesty rules to keep in mind when reading the overlay:
 
 - Counts cover activity since the gateway process began recording (`Tracking since ...`). With metrics persistence enabled, restored counts may predate it, so "no recorded calls" is not proof of a longer disuse history.
 - When optimize has findings, the header shows "Optimize suggests N unused tools (7d)" with a jump into Audit. Optimize skips servers with no traffic at all (they surface as `unused_server` findings instead) and always classifies against 7 days, so its count can be lower than the Audit overlay's.
+- A2A usage groups advisory skill calls under `skill`, without individual skill attribution. An absent per-skill count is not evidence that a generated skill tool was unused. See [sensitive-call counting](usage-observability.md#sensitive-call-counting).
 
 ### Filtering and sorting
 

@@ -84,6 +84,22 @@ Hardened containers default to network none, read-only root, all capabilities dr
 
 A saved declaration, successful container creation, or healthy MCP connection does not prove the requested controls are effective. Check per-replica execution reports through `gridctl status --json` or server details. Missing required evidence refuses routing. Observations are snapshots; a process can act before post-start verification, and checks cannot undo those actions. Do not remove restrictions merely to turn a refused or unknown state green.
 
+### Experimental remote A2A agents
+
+The Unreleased [A2A adapter](../config-schema.md#a2a) is off by default. Review
+the Agent Card destination and any explicit RPC endpoint before enabling it.
+Card-byte drift blocks calls even when ordinary schema pinning is disabled or
+set to warn. Review the complete pin diff and use hash-bound approval; approval
+never revives old task/context handles.
+
+Handles are bearer secrets within current gateway policy. Store handle-bearing
+arguments in user-managed mode-`0600` files, protect stdout and transcripts, and
+use a confidential channel for remote gateway access. `--as` cannot grant or
+recover task access. Replacement or restart invalidates handles without canceling
+remote work. Separate Bedrock sessions do not isolate an agent's shared external
+memory; tenant confidentiality requires downstream enforcement or separate
+deployments and credentials.
+
 ## Handle secrets and shared configuration deliberately
 
 The variable store supports plaintext operation. Enable encryption using the [variable commands](../cli-reference.md#variables) when you need encryption at rest, and check its lock state. An encrypted store loads locked; an unlocked daemon and an authorized recipient still hold plaintext values. Downstream OAuth grants use separate storage with a machine-local key; copying both key and ciphertext exposes the grants.

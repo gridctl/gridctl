@@ -87,7 +87,7 @@ gateway:
 | `code_mode` | string | No | `"off"` | Enable code mode: `"on"` or `"off"` |
 | `code_mode_timeout` | int | No | `30` | Code mode execution timeout in seconds. Must be >= 0 |
 | `output_format` | string | No | `"json"` | Default output format for tool call results: `"json"`, `"toon"`, `"csv"`, or `"text"`. Per-server `output_format` overrides this value |
-| `maxToolResultBytes` | int | No | `65536` | Maximum size of a tool result in bytes before truncation. Results over the limit are truncated with a suffix noting the original size. `0` uses the default (64 KB) |
+| `maxToolResultBytes` | int | No | `65536` | Maximum size of a tool result in bytes before truncation. Ordinary results over the limit are truncated with a suffix noting the original size; [A2A envelopes](#tools-and-capability-delivery) retain atomic JSON and mark omitted content. `0` uses the default (64 KB) |
 | `name` | string | No | `"gridctl-gateway"` | Identity announced to MCP clients in the initialize response (`serverInfo.name`). Some clients (VS Code / GitHub Copilot) display this instead of the entry key in their own config, so give distinct gateways distinct names. Group endpoints announce `<name>/<group>`. Requires a restart to propagate |
 | `security` | object | No | - | Security settings (see [Security](#security)) |
 | `tokenizer` | string | No | `"embedded"` | Token counting mode: `"embedded"` (cl100k_base approximation) or `"api"` (exact counts via Anthropic `count_tokens` endpoint) |
@@ -96,8 +96,9 @@ gateway:
 
 The internal sensitive-call classification bypasses the configured tokenizer and
 format conversion, using local numeric estimates without client attribution.
-It is trusted construction metadata, not a YAML option; existing sources retain
-the ordinary path. See [sensitive-call counting](usage-observability.md#sensitive-call-counting).
+The A2A adapter selects it through trusted construction metadata, not a separate
+YAML option; other sources retain the ordinary path. See
+[sensitive-call counting](usage-observability.md#sensitive-call-counting).
 
 ### Auth
 
@@ -1003,6 +1004,8 @@ tokens. Apply summaries and CLI status classify the source as `a2a`; server
 status JSON includes `a2a: true` and `a2aStatus` with negotiated dialect, card
 trust state, safe skill omission reasons, and aggregate live/expired/uncertain
 counts. It does not expose card/RPC destinations, sessions, or handles.
+Health checks report local card trust, not remote task progress or fresh remote
+liveness. They do not poll the card in the background.
 
 Destination validation rejects userinfo, fragments, file URLs, and non-loopback
 HTTP. Fixture HTTP requires a loopback dial destination, including `localhost`
@@ -1059,10 +1062,10 @@ The router prefixes each local tool with `server__`:
 
 | Local tool | Arguments | Authority |
 |------------|-----------|-----------|
-| `send` | Required string `message`; optional object `data`, `skill_id`, `context_handle`, `task_handle`, and boolean `return_immediately` | No handles starts a conversation; context alone starts new work; both matching handles resume an interrupted task |
+| `send` | Required string `message`; optional object `data`; optional strings `skill_id`, `context_handle`, and `task_handle`; optional boolean `return_immediately` (default false) | No handles starts a conversation; context alone starts new work; both matching handles resume an interrupted task |
 | `skill-<sanitized-id>` | Same as `send`, except no `skill_id` | Advisory entry point; sends the original skill ID in metadata, without restricting remote behavior |
-| `task_get` | Required `task_handle`; optional integer `history_length` (zero by default, 0–100) | Reads only the supplied task; never returns its context capability |
-| `task_cancel` | Required `task_handle` | Requests cancellation; only a remote canceled state confirms it |
+| `task_get` | Required string `task_handle`; optional integer `history_length` (zero by default, 0–100) | Reads only the supplied task; never returns its context capability |
+| `task_cancel` | Required string `task_handle` | Requests cancellation; only a remote canceled state confirms it |
 
 Unknown properties, raw task/context IDs, caller-selected sessions, and task-only
 continuation are rejected. Skills need compatible text input and text/JSON output;
@@ -1070,6 +1073,11 @@ optional `data` additionally requires JSON input. Missing or incompatible explic
 includes fail registration. Otherwise incompatible skills are omitted with safe
 reasons. Generic `send` also checks compatibility and any selected `skill_id`.
 The include list controls discovery, not semantic authorization inside the agent.
+
+Skill names preserve case and replace each run outside ASCII letters, digits,
+underscore, and hyphen with `-`. Empty or duplicate IDs, sanitized collisions,
+and generated names longer than 64 ASCII bytes including `server__skill-` fail
+registration. The same final name bound applies to send/get/cancel.
 
 ```bash
 gridctl call agent__send '{"message":"Hello","return_immediately":true}' --format json
@@ -1088,7 +1096,14 @@ Each result is one JSON envelope in MCP text content. `kind` is `message` or
 `task`; direct messages contain ordered `parts`, while tasks preserve separate
 `status_messages`, `artifacts`, and `history`. Accepted text and application JSON
 remain content, never routing authority. The envelope carries optional handles
-and UTC expiration timestamps, without raw routing IDs. States are `submitted`,
+(`task_handle`, `context_handle`) and UTC expiration timestamps
+(`task_expires_at`, `context_expires_at`), without raw routing IDs. Get and cancel
+echo only the verified task handle supplied by the caller, never the parent
+context handle. Parts are ordered objects with `type: text` and `text`, or
+`type: data` and an application JSON `data` object. Message entries retain
+`role` (`user` or `agent`) and `parts`; artifacts retain optional `name` and
+`description` alongside their `parts`. Absent collections are omitted.
+States are `submitted`,
 `working`, `input-required`, `auth-required`, `completed`, `failed`, `canceled`,
 or `rejected`. `input-required` and `auth-required` do not create MCP Tasks or
 MCP continuation requests: the REST/CLI invocation can complete while remote
@@ -1117,7 +1132,8 @@ same task being resumed has an independent control slot and may overlap that
 send. Other conflicting operations fail fast with retryable
 `operation_in_progress`. An overlapping cancel supersedes the send's state
 update; after both finish, an authorized get must reconcile an interrupted or
-terminal state before another mutation. A working/submitted read cannot clear
+terminal state before another new/resume send. Explicit cancellation remains
+available after active calls drain. A working/submitted read cannot clear
 uncertainty. An ambiguous context-only new turn cannot be recovered through a
 sibling task and blocks new/resume mutations until root expiry.
 
@@ -1595,8 +1611,8 @@ Semantics:
   and `gridctl validate` and is ignored; the warning lists the valid names
   when any experimental flags are registered, and says "no experimental
   flags are registered in this build" otherwise. A graduated or removed
-  flag name warns with a specific migration message. A stack.yaml written
-  against a newer gridctl still deploys on this one.
+  flag name warns with a specific migration message. Feature-specific validation
+  still applies: an `a2a:` declaration without effective `a2a` enablement is an error.
 - **Env override.** Each flag can be overridden per process with
   `GRIDCTL_EXPERIMENTAL_<NAME>` (upper snake_case), accepting the
   `strconv.ParseBool` vocabulary: `1`, `t`, `T`, `TRUE`, `true`, `True`,

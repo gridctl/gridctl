@@ -48,9 +48,13 @@ check uses a real MCP subprocess without Docker:
 `go test -race -tags=integration -run '^TestCapabilityDiagnostics_' -count=1 -timeout 3m ./tests/integration`.
 Focused checks supplement the required whole-suite gates.
 
-A2A wire codec and origin-policy acceptance uses real HTTP listeners without
-Docker: `go test -race -tags=integration -run '^TestA2AWire_' -count=1 -timeout 3m ./tests/integration`.
-These checks do not establish callable adapter or hosted-agent compatibility.
+A2A wire and adapter acceptance uses real HTTP listeners, pin storage, and CLI/daemon
+subprocesses without Docker:
+`go test -race -tags=integration -run '^TestA2A(Adapter|Wire)_' -count=1 -timeout 4m ./tests/integration`.
+After `task build`, set `GRIDCTL_A2A_FIXTURE_BINARY="$PWD/gridctl"` on this command
+to exercise the local binary in the CLI fixture; daemon fixtures still build
+race-enabled children. These checks do not establish hosted-agent compatibility
+or shared-agent isolation.
 
 Lint:
 
@@ -120,9 +124,8 @@ pkg/mcp/            MCP protocol: gateway (router + tool aggregation), stdio/SSE
                     payload-free observations, safe errors, and shared code-mode sensitivity. Trusted construction
                     metadata selects this path; raw observers, configured counters, and format conversion are skipped.
 pkg/a2aclient/      Bounded outbound A2A 1.0/0.3 JSON-RPC codecs, card compatibility, origin/redirect policy,
-                    and registration-local freshness with a 30-second cap. No AgentClient implementation or SDK dependency.
-                    The MCP adapter uses these codecs without an SDK dependency. Versioned SDK reference fixtures
-                    and attribution live in testdata/.
+                    and registration-local freshness with a 30-second cap. AgentClient lives in pkg/mcp; no SDK dependency.
+                    Versioned SDK reference fixtures and attribution live in testdata/.
 pkg/mcpauth/        Downstream OAuth 2.1 brokering for external servers (discovery, dynamic client registration,
                     token store, callback listener). Backed by `gridctl auth`.
 pkg/registry/       Skills registry: discovers SKILL.md files, parses frontmatter, validates, serves as MCP prompts.
@@ -191,7 +194,9 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
                     sessions/streams, and preserved Docker identities with race-built child binaries.
                     capability_diagnostics_test.go checks REST log/trace/usage/run observations with a real MCP subprocess.
                     a2a_wire_test.go checks both wire dialects, origin-bound credentials, sessions, and redirects with real HTTP.
-examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, registry, secrets-vault,
+                    a2a_*_test.go adapter suites cover authority, atomic delivery, policy, trust, observation sinks,
+                    overlapping cancel, and actual daemon restart/reload with real HTTP and subprocesses.
+examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, a2a, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
                     portable-pack, model-policy, python-sources, python-runtime, execution, security-evidence, stack-declaration-policy, runs).
                     examples/_mock-servers/ is the source for `task mock:servers`.
@@ -208,7 +213,7 @@ docs/               User-facing documentation (cli-reference, config-schema, api
 images/             OCI recipes that are not the gateway binary. images/mcp-runtime-python is the Python 3.12 runtime base.
 ```
 
-End-to-end request flow for an upstream HTTP MCP tool call: client → HTTP listener built by `pkg/controller` (gateway_builder.go) → `internal/api.Server.Handler` (CORS, Host validation, configured auth, and route/group selection) → `pkg/mcp` Streamable HTTP transport (Host/Origin checks and protocol handling) → `mcp.Gateway` router → per-server `mcp.Client` (process/stdio/SSE/HTTP/OpenAPI) → response, with telemetry, tracing, optional run recording, schema pinning, and (optional) output-format conversion attached on the way back. Legacy SSE routes return a negotiation hint rather than dispatching tools.
+End-to-end request flow for an upstream HTTP MCP tool call: client → HTTP listener built by `pkg/controller` (gateway_builder.go) → `internal/api.Server.Handler` (CORS, Host validation, configured auth, and route/group selection) → `pkg/mcp` Streamable HTTP transport (Host/Origin checks and protocol handling) → `mcp.Gateway` router → per-server `mcp.AgentClient` (process/stdio/SSE/HTTP/OpenAPI/A2A) → response, with telemetry, tracing, optional run recording, schema pinning, and (optional) output-format conversion attached on the way back. A2A dispatch additionally validates capabilities and card trust, uses payload-free observations, and bypasses format conversion for its atomic JSON envelope. Legacy SSE routes return a negotiation hint rather than dispatching tools.
 
 End-to-end for `gridctl call` and `gridctl tools search`: CLI → state-recorded credentials on the selected daemon origin (redirects refused) → `POST /api/tools/call` or `GET /api/tools/discover` on `internal/api.Server.Handler` → `mcp.Gateway` canonical dispatch or `DiscoverTools` → versioned envelope. Discovery does not dispatch tools. REST success is not proof of upstream MCP protocol negotiation.
 

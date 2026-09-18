@@ -260,7 +260,7 @@ Learn more → [Usage Observability](docs/usage-observability.md)
 
 ### Output Format Conversion
 
-Tool call results default to JSON. Set `output_format` at the gateway or per-server level to convert structured responses into `TOON` or `CSV` before they reach the client, reducing token consumption by **25–61%** for tabular and key-value data. Non-JSON responses and payloads over 1 MB are passed through unchanged.
+Tool call results default to JSON. Set `output_format` at the gateway or per-server level to convert structured responses into `TOON` or `CSV` before they reach the client, reducing token consumption by **25–61%** for tabular and key-value data. Non-JSON responses and payloads over 1 MB are passed through unchanged. A2A envelopes retain atomic JSON and bypass format conversion.
 
 ```yaml
 gateway:
@@ -308,6 +308,20 @@ gridctl call echo__echo '{"message":"hello"}' --format json
 ```
 
 `gridctl search` remains the install catalog. `--as` selects a caller-declared scope label and does not authenticate as that client. See [Live tools](docs/cli-reference.md#live-tools).
+
+### Outbound A2A (Experimental)
+
+Declare a remote Agent Card under `a2a:` and enable `experimental.a2a` to expose
+A2A 1.0/0.3 JSON-RPC send, task-get, task-cancel, and advisory skill tools to MCP
+clients. The adapter requires card-byte trust and needs no container runtime.
+It is off by default and Unreleased.
+
+Task and context handles are bearer secrets, expire after 24 hours, and become
+invalid on adapter replacement or restart. Use private argument files and protect
+call output. Handles authorize gateway routing within current policy; they do not
+isolate a remote agent's shared memory.
+
+Learn more → [A2A configuration](docs/config-schema.md#a2a) · [Example setup](examples/a2a/)
 
 ### Rate Limits
 
@@ -422,6 +436,7 @@ Learn more → [Packs guide](docs/packs.md)
 | [`local-mcp.yaml`](examples/transports/local-mcp.yaml) | Run MCP servers as local host processes over stdio |
 | [`ssh-mcp.yaml`](examples/transports/ssh-mcp.yaml) | Connect to MCP servers on remote machines via SSH |
 | [`openapi-basic.yaml`](examples/openapi/openapi-basic.yaml) | Turn a REST API into MCP tools via OpenAPI spec |
+| [`a2a/`](examples/a2a/) | Experimental outbound A2A tools with card trust and secret task/context handles |
 | [`code-mode-basic.yaml`](examples/code-mode/code-mode-basic.yaml) | Gateway code mode with search + execute meta-tools |
 | [`github-mcp.yaml`](examples/platforms/github-mcp.yaml) | GitHub MCP server integration |
 | [`registry-basic.yaml`](examples/registry/registry-basic.yaml) | Skills registry with a single server |
