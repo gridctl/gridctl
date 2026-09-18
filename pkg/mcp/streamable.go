@@ -322,6 +322,9 @@ func (s *StreamableHTTPServer) handlePost(w http.ResponseWriter, r *http.Request
 		_ = json.NewEncoder(w).Encode(jsonrpc.NewErrorResponse(nil, jsonrpc.ParseError, "Invalid JSON"))
 		return
 	}
+	if req.Method == "tools/call" {
+		w.Header().Set("Cache-Control", "no-store")
+	}
 	if req.JSONRPC != "2.0" {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidRequest, "Invalid JSON-RPC version"))
@@ -622,7 +625,7 @@ func (s *StreamableHTTPServer) handleToolsList(ctx context.Context, _ *Streamabl
 
 func (s *StreamableHTTPServer) handleToolsCall(ctx context.Context, _ *StreamableSession, req *jsonrpc.Request) jsonrpc.Response {
 	var params ToolCallParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeUpstreamToolCall(req.Params, &params); err != nil {
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "Invalid tools/call params")
 	}
 	result, err := s.gateway.HandleToolsCall(ctx, params)

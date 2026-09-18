@@ -16,6 +16,12 @@ type CardIdentity struct {
 	Card, Endpoint, Dialect, Profile string
 }
 
+// BuildCardSnapshot supplies the gateway adapter with the existing pin hashing
+// and immutable snapshot format, independently of legacy verifier settings.
+func (s *PinStore) BuildCardSnapshot(generation uint64, cardURL, endpoint, dialect, profile string, card []byte, tools []mcp.Tool) (mcp.PinSnapshot, error) {
+	return NewCardSnapshot(generation, CardIdentity{Card: cardURL, Endpoint: endpoint, Dialect: dialect, Profile: profile}, card, tools)
+}
+
 type cardSnapshot struct {
 	records    []mcp.Tool
 	hash       string

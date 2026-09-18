@@ -8,6 +8,23 @@ import (
 	"github.com/gridctl/gridctl/pkg/mcp"
 )
 
+func TestPinStore_BuildCardSnapshot(t *testing.T) {
+	store := NewWithPath(t.TempDir(), "test")
+	var builder mcp.CardSnapshotBuilder = store
+	tools := []mcp.Tool{{Name: "send", InputSchema: json.RawMessage(`{"type":"object"}`)}}
+	snapshot, err := builder.BuildCardSnapshot(1, "https://example.com/card", "", "auto", "", []byte(`{}`), tools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected, err := NewCardSnapshot(1, CardIdentity{Card: "https://example.com/card", Dialect: "auto"}, []byte(`{}`), tools)
+	if err != nil || snapshot.Hash() != expected.Hash() || snapshot.Generation() != 1 || len(snapshot.Records()) != 3 {
+		t.Fatal("adapter builder differs from the persisted snapshot contract")
+	}
+	if _, err := builder.BuildCardSnapshot(0, "https://example.com/card", "", "auto", "", []byte(`{}`), tools); err == nil {
+		t.Fatal("builder accepted an invalid registration")
+	}
+}
+
 func TestNewCardSnapshot_Immutable(t *testing.T) {
 	readOnly := true
 	tools := []mcp.Tool{{Name: "send", InputSchema: json.RawMessage(`{"type":"object"}`), OutputSchema: json.RawMessage(`{"type":"object"}`), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: &readOnly}}}
