@@ -8,6 +8,11 @@ This guide is for a single operator. A shared gateway token, tool group, or clie
 
 Initial guide revision: September 15, 2026, reviewed against source commit [`a146ddb877f145ab98a32a2b90b052a5548b39af`](https://github.com/gridctl/gridctl/tree/a146ddb877f145ab98a32a2b90b052a5548b39af).
 
+Diagnostic privacy guidance was updated on September 18, 2026, against
+implementation commit `f9a198b`. Capability sanitation and sensitive-observation
+primitives are implemented and Unreleased; this does not establish publication
+or approve the required major-release scheduling for diagnostic-output changes.
+
 The finite baseline covers installation, listener access, workload authority, secrets, content review, diagnostic privacy, and declaration checks implemented at that revision. It does not wait for every roadmap feature. Check `gridctl version`, the [changelog](../../CHANGELOG.md), and your release's documentation before using a command below.
 
 | Availability at this baseline | Capabilities |
@@ -117,6 +122,14 @@ Read the [declaration policy](../stack-declaration-policy.md) and [security evid
 ## Protect operational evidence
 
 Logs, traces, metrics, run records, exports, and screenshots can disclose operational data. Review tracing configuration and exporter destinations before enabling external collection. Apply access and retention controls at those destinations. Redaction of recognized patterns or registered values does not cover every transformed or unknown secret, and truncation limits size rather than sensitivity. Run records omit argument and result values, but names and caller-declared labels may still be sensitive.
+
+Recognizable typed capability strings are now masked in gateway diagnostic
+names, labels, and errors. Code-mode logs omit source excerpts and thrown values;
+the requesting client still receives execution errors and console output.
+Correlate by generated attempt/trace IDs and outcome categories. Internal
+sensitive-call handling excludes payloads from observers and API-backed token
+counting, but it is not a user-configurable privacy switch for existing sources.
+See [diagnostic privacy and migration](../usage-observability.md#diagnostic-privacy-and-migration).
 
 Security reports exclude raw credentials and payloads, but operator-authored identifiers may themselves contain sensitive text. Review reports before sharing. Logs, traces, and run records are not a complete or tamper-proof security audit trail; do not use them to claim every attempt was recorded or that a downstream real-world effect succeeded.
 

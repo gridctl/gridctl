@@ -18,6 +18,12 @@ Security evidence reports were updated on September 13, 2026, against implementa
 
 Python MCP runtime image evidence was updated on September 16, 2026, against implementation commits `420d8a5` and `ba9fd55`. The recipe, derivatives, and dedicated OCI workflow are implemented and Unreleased. Hosted amd64/arm64 acceptance, candidate publication, and anonymous evidence remain pending. This is not a supported public release.
 
+Capability and diagnostic privacy evidence was updated on September 18, 2026,
+against implementation commit `f9a198b`. The shared authority store and
+sensitive-observation primitives are internal and Unreleased, with no callable
+source or stack option. Diagnostic-output changes require maintainer-owned
+major-release scheduling under Article VIII; this is not release approval.
+
 | State | Evidence at this baseline |
 |-------|---------------------------|
 | Released as a prerelease | [`v1.0.0-rc.1`](https://github.com/gridctl/gridctl/releases/tag/v1.0.0-rc.1), published September 10, 2026, points to `2f6c00472c33304bcc560ecbe4be18497ec15c2e`. It contains grouped-route authentication, non-resolving stack export, reserved internal-credential filtering, scoped variable delivery, skill package completeness tracking, and authenticated binary-release tooling. The runtime controls credited at the original baseline are present in that tag; the Unreleased lifecycle additions are separate. |
@@ -161,6 +167,25 @@ Correcting the defect expanded the material crossing the publisher-to-host bound
 | Offline stack declaration policy | `gridctl validate --policy` evaluates captured YAML against a finite built-in rule list. Candidate reads are root-confined to the entry stack directory, reject symbolic-link components, and exclude the selected policy by opened-file identity. Ordinary validate, apply, REST, and reload stay unchanged. | [Evaluator](../../pkg/stackpolicy/evaluate.go), [CLI branch](../../cmd/gridctl/validate.go), and [policy tests](../../pkg/stackpolicy/evaluate_test.go) | Exit zero is not deployment admission or runtime safety. A policy digest is not a signature. Operator-selected identifiers may be sensitive. CI must keep checker, workflow, and policy independently trusted from candidate data. |
 
 A downstream tool can legitimately receive sensitive input and return it in another shape. No combination of pinning, token counting, and log redaction establishes end-to-end data-loss prevention. Review observability configuration, exporter destinations, and copied diagnostics as separate disclosure paths.
+
+Gateway instrumentation sanitizes recognizable typed capability strings in names,
+labels, and errors before logging, tracing, or run recording. Shared log redaction
+also covers field/group names and nested JSON-compatible attributes. Code-mode
+failure logs use local categories even for syntax errors before an inner call;
+caller-delivered errors and console output retain their debugging content.
+Evidence: [capability redaction tests](../../pkg/logging/capability_redact_test.go)
+and [real REST/subprocess diagnostic checks](../../tests/integration/capability_diagnostics_test.go).
+
+Trusted private construction metadata selects sensitive dispatch. Both raw
+observer interfaces are skipped; the optional payload-free observer receives
+local numeric usage estimates without caller labels, payloads, or error objects.
+Configured counters and format conversion are bypassed for that path, and a
+shared execution context propagates sensitivity through code-mode inner calls.
+Ordinary sources retain payload-bearing observation. [Network disclosure tests](../../pkg/mcp/sensitive_network_test.go)
+inspect file/UI logs, run records, traces, and an actual OTLP receiver while
+preserving successful caller delivery. Recognition alone cannot find encoded or
+split secrets, and these primitives do not prevent deliberate disclosure through
+application output or sandbox fetch. See [the primitives contract](../capability-primitives.md).
 
 ## Release and Dependency Boundary
 

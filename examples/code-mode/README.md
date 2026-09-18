@@ -41,6 +41,11 @@ Code runs in a [goja](https://github.com/dop251/goja) JavaScript runtime (ES5.1 
 - Max code size: 64 KB
 - Default timeout: 30 seconds (configurable via `code_mode_timeout`)
 
+Execution errors and console output are returned to the requesting client.
+Gateway failure logs contain a local category and timing, without parser source
+excerpts or thrown values. Use the returned error for debugging and generated
+trace/attempt IDs for diagnostic correlation. See [diagnostic privacy](../../docs/usage-observability.md#diagnostic-privacy-and-migration).
+
 ### ACL Enforcement
 
 Tool access is enforced inside the sandbox using the connecting client's allowed-tool set. A client restricted via `clients:` scoping or connected through a group endpoint can only reach its permitted tools, even through `mcp.callTool()`. See [access-control/](../access-control/) for scoping examples.

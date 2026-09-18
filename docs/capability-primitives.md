@@ -45,8 +45,8 @@ IDs are limited to 1024 UTF-8 bytes. Admission reserves root, task, and collisio
 protection capacity atomically before dispatch, including potential handles.
 Unused reservations are returned for direct-message responses. Exhaustion
 refuses work instead of evicting authority or collision protection. Invalid
-capability attempts have an aggregate budget of 100 per second with burst 100,
-independent of caller labels. All invalid, expired, mismatched, or exhausted
+capability attempts have a per-generation aggregate budget of 100 per second
+with burst 100, independent of caller labels. All invalid, expired, mismatched, or exhausted
 lookup attempts return `capability_unavailable` without revealing membership.
 
 Expiry is checked at admission, immediately before dispatch, and at commit.
@@ -66,8 +66,9 @@ with a resume of that same known task. Other overlaps fail immediately with
 Overlapping cancel admission advances a task revision. The older send must still
 validate response identities, but its result becomes `operation_superseded` and
 cannot publish state or authority. Once both operations drain, an authorized get
-must observe interrupted or terminal state before another mutation is permitted.
-A late result cannot revive terminal work.
+must observe interrupted or terminal state before another new/resume send is
+permitted. Explicit cancellation remains available after the slots drain. A late
+result cannot revive terminal work.
 
 A mutation that may have reached the remote but has an unknown outcome marks
 the task or root uncertain. Reads and explicit cancellation of known tasks remain
@@ -93,12 +94,18 @@ For sensitive calls, the gateway skips both `ToolCallObserver` and
 server name, replica number, local operation category, failure flag, duration,
 and numeric token usage. It receives no argument, result, error, context, caller
 label, session, handle, or digest reference. Failures also count as observations.
-The metrics observer supports this interface.
+The metrics observer supports this interface. Operation is `send`, `task_get`,
+or `task_cancel` for those exact local names, and `skill` otherwise. Usage is
+attributed to the server, replica, and operation category, without client or
+individual skill attribution.
 
 Counting occurs locally before observation using the heuristic of four bytes
 per token. The configured counter is not invoked because implementations may
-send content to external services. Usage is approximate. Sensitive calls also
-skip format conversion, whose accounting path can use that configured counter.
+send content to external services. Input estimates count serialized arguments;
+output estimates count result content text before ordinary truncation. A Go
+error contributes input usage with zero output tokens. Usage is approximate.
+Sensitive calls also skip format conversion, whose accounting path can use that
+configured counter.
 
 Gateway instrumentation receives locally authored error categories and sanitized
 name/label copies. Shared diagnostic sanitation recognizes typed capability
@@ -106,6 +113,12 @@ strings inside messages, keys, and nested JSON-compatible attributes. It does
 not register each minted handle in a growing secret list. Code-mode logs contain
 failure categories and timing, never parser source excerpts or thrown values;
 caller-delivered errors and console results remain available.
+
+Sensitive downstream Go errors are projected to a safe local category, preserving
+context cancellation/deadline identity without retaining an untrusted error
+chain. Ordinary downstream Go errors retain their caller-facing text. Shared log
+redaction can turn a nested structured attribute into a sanitized JSON string
+when a recognized secret occurs within it; log consumers must accept that shape.
 
 This changes diagnostic output, including recognizable secret-bearing names and
 labels in usage and run metadata. Consumers should correlate by generated

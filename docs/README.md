@@ -42,6 +42,7 @@ New to gridctl? Read in this order:
 | [MCP execution controls](execution.md) | Opt-in container restrictions, local environment hygiene, and per-replica evidence |
 | [Python MCP runtime base](mcp-runtime-python.md) | Downstream Python 3.12 foundation image, derived-image recipes, and publication policy |
 | [Usage Observability](usage-observability.md) | Token and call metrics, tokenizer options, format savings, `gridctl optimize` heuristics, and opt-in run records |
+| [Capability and sensitive-call primitives](capability-primitives.md) | Internal shared authority accounting, generation lifecycle, payload-free observations, and diagnostic privacy |
 
 ## Operations
 

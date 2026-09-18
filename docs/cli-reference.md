@@ -344,6 +344,10 @@ Downstream authorization for external servers declared with `auth: {type: oauth}
 
 ## Traces
 
+Recorded gateway names, attributes, and errors mask recognizable typed capability
+strings. Correlate by generated trace IDs rather than secret-bearing names. See
+[diagnostic privacy and migration](usage-observability.md#diagnostic-privacy-and-migration).
+
 | Command | Purpose |
 |---|---|
 | `gridctl traces` | Show recent distributed traces (table view). |
@@ -358,6 +362,11 @@ Downstream authorization for external servers declared with `auth: {type: oauth}
 ## Runs
 
 Metadata-only persisted dispatch records. Recording is opt-in (`runs.enabled`) and best-effort. JSON stdout is structured only; warnings go to stderr. Live queries never fall back to disk; `--file` never falls back to the daemon. `--file` and `--offline` cannot be combined.
+
+Recorded names and caller labels mask recognizable typed capability strings.
+Name/label filters match those recorded values, so use generated attempt/trace
+IDs for correlation. Other sensitive text may remain; review exports before
+sharing. See [diagnostic privacy](usage-observability.md#diagnostic-privacy-and-migration).
 
 Exit codes: `0` success, `1` failure (including an unreadable or missing `--file`), `2` partial history or incomplete wipe. An empty matching set is success: the human table prints `No matching run records` on stderr.
 

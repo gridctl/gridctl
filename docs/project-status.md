@@ -32,7 +32,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 | Stack planning (plan) | Stable | Backward compatible in 0.x |
 | Static replicas | Stable | Backward compatible in 0.x |
 | Reactive autoscaling | Stable | Backward compatible in 0.x |
-| Code mode | Stable | Backward compatible in 0.x |
+| Code mode | Stable | Unreleased failure logs use local categories without source excerpts or thrown values; caller-delivered errors remain available. See [diagnostic migration](usage-observability.md#diagnostic-privacy-and-migration); major-release scheduling is required under Article VIII |
 | Podman runtime | Stable | Backward compatible in 0.x |
 | Skills registry (prompt-only) | Stable | Backward compatible in 0.x |
 | Library workspace (UI) | Stable | No API guarantee (internal) |
@@ -49,10 +49,11 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 | Skill governance pins (skill pins, skills: policy) | Stable | Backward compatible in 0.x |
 | Model preferences (model_preferences: block, projection rewrite) | Stable | Backward compatible in 0.x |
 | Model routing policy (gridctl models, LiteLLM + OpenCode projection) | Experimental | Renderer pinned to LiteLLM v1.94+ Auto Router v2; the upstream auto-router schema is still evolving. The web UI's Model routing dialog and `/api/project/models` endpoints inherit this tier |
-| Distributed tracing | Stable | Backward compatible in 0.x |
+| Distributed tracing | Stable | Unreleased gateway name/attribute and error sanitation masks recognizable typed capability strings before recording or export. See [diagnostic migration](usage-observability.md#diagnostic-privacy-and-migration) |
 | Usage observability (token metrics, optimize) | Stable | Backward compatible in 0.x |
 | Persisted run records (`gridctl runs`, `GET /api/runs`, Runs tab) | Implemented, Unreleased | Opt-in metadata-only final dispositions. Best-effort, not a complete audit trail. Wipe is not secure erasure. See [Usage Observability](usage-observability.md#run-records) |
 | Telemetry persistence | Stable | Backward compatible in 0.x |
+| Capability and sensitive-call primitives | Implemented, Unreleased | Internal shared accounting and generation lifecycle, with payload-free observations and local usage estimates. No callable source or stack option. Diagnostic-output changes require maintainer-owned major-release scheduling under Article VIII. See [primitives](capability-primitives.md) |
 | Server catalog (search, add) | Stable | Backward compatible in 0.x |
 | Live tool invocation (`gridctl call`, `gridctl tools search`, `POST /api/tools/call`, `GET /api/tools/discover`) | Implemented, Unreleased | Talks to a selected running gateway. Default caller label `cli`; `--as` is not credential-bound authorization. REST success is not upstream MCP handshake proof. See [Live tools](cli-reference.md#live-tools) |
 | Client config import (import) | Stable | Backward compatible in 0.x |

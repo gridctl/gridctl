@@ -248,7 +248,7 @@ Learn more → [Execution controls](docs/execution.md) · [Runnable example](exa
 
 ### `gridctl optimize` & Usage Observability
 
-Every tool call's arguments and results are token-counted per server, replica, client, and tool, and the Metrics workspace charts throughput, call counts, and the savings from output format conversion (measured from the gateway's own before/after counts). `gridctl optimize` scans the running gateway and surfaces actionable findings with projected weekly token impact (unused servers, unused tools, schema overhead, and format-conversion shortfalls), plus a paste-ready YAML remediation for each.
+Ordinary successful tool dispatches count arguments and results per server, replica, client, and tool. The Metrics workspace charts throughput, call counts, and the savings from output format conversion (measured from the gateway's own before/after counts). Internal sensitive-call handling uses local estimates without payload-bearing observers or client attribution; see [counting boundaries](docs/usage-observability.md#sensitive-call-counting). `gridctl optimize` scans the running gateway and surfaces actionable findings with projected weekly token impact (unused servers, unused tools, schema overhead, and format-conversion shortfalls), plus a paste-ready YAML remediation for each.
 
 ```bash
 gridctl optimize                          # styled findings table
