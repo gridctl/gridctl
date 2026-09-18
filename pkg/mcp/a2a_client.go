@@ -357,7 +357,7 @@ func (c *A2AClient) call(ctx context.Context, name string, arguments map[string]
 	response, err := a2aclient.DecodeResponse(admitted.version, operation, request.ID, status, body)
 	if err != nil {
 		var remote *a2aclient.Error
-		known := errors.As(err, &remote) && (remote.Category == "rpc_failed" || remote.Category == "http_failed" && (status == 401 || status == 403 || status == 409 || status == 429))
+		known := errors.As(err, &remote) && (remote.Category == "rpc_failed" || remote.Category == "http_failed" && (status == 401 || status == 403 || status == 409 || status == 424 || status == 429))
 		op.fail(!known)
 		return nil, err
 	}

@@ -526,7 +526,7 @@ func TestA2AClient_RemoteErrorsAreLocalAndSingleAttempt(t *testing.T) {
 		message      string
 		retryable    bool
 	}{
-		{401, 0, "", false}, {403, 0, "", false}, {424, -32055, "remote failure", false},
+		{401, 0, "", false}, {403, 0, "", false}, {424, 0, "", false}, {424, -32055, "remote failure", false},
 		{409, -32054, "Session operation in progress, please retry", true}, {409, -32054, "Conflict", false},
 	} {
 		t.Run(fmt.Sprintf("%d/%s", tc.status, tc.message), func(t *testing.T) {
@@ -543,7 +543,11 @@ func TestA2AClient_RemoteErrorsAreLocalAndSingleAttempt(t *testing.T) {
 			}
 			fixture.mu.Unlock()
 			got := a2aUnitCall(t, c, "send", map[string]any{"message": "work"})
-			if got["error"] == nil || got["http_status"] != float64(tc.status) || got["retryable"] != tc.retryable || fixture.calls.Load() != 1 {
+			wantCategory := "http_failed"
+			if tc.code != 0 {
+				wantCategory = "rpc_failed"
+			}
+			if got["error"] != wantCategory || got["http_status"] != float64(tc.status) || got["retryable"] != tc.retryable || fixture.calls.Load() != 1 {
 				t.Fatal("remote failure lost safe status or retried")
 			}
 			if strings.Contains(fmt.Sprint(got), "private remote body") || tc.message != "" && strings.Contains(fmt.Sprint(got), tc.message) {
