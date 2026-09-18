@@ -78,6 +78,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 
 ## Known limitations
 
+- Experimental `a2a` declarations are off by default and supply configuration, bounded wire codecs, and card-trust primitives only. Registration fails with `a2a: adapter unavailable`; no callable tools, wizard, inbound listener, or hosted-agent compatibility is provided. See [A2A configuration](config-schema.md#a2a).
 - Hardened MCP execution needs locally instance-bound Linux `/proc` and cgroup v2 observations. Remote/VM-backed engines without this path and non-Linux clients are unsupported for the profile. Resources are not covered, local processes remain unsandboxed, and SSH remote confinement and descendant cleanup are unverified. See [execution controls](execution.md).
 - Passive security evidence reports do not scan, probe, or certify a stack. Exit zero is not a secure verdict. See [Security Evidence Report](security-evidence.md).
 - Opt-in `gridctl validate --check-mutable-refs` inspects literal selectors only. Exit zero is not complete coverage, a digest is not publisher-verified, and an exact package version is not a transitive lock. See [mutable reference diagnostics](cli-reference.md#mutable-reference-diagnostics).

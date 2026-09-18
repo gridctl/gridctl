@@ -203,6 +203,12 @@ The `source` object can contain `type`, redacted `url`, declared `ref`, `package
 
 Each registered server also reports `protocolVersion` (string, omitted when the server did not report one or has no MCP handshake, as with OpenAPI adapters) carrying the MCP protocol version negotiated at initialize, and `protocolGeneration` (string, `"handshake"` or `"stateless"`, omitted for OpenAPI adapters) carrying the resolved MCP protocol generation. `/api/sessions` responses carry `entries`, one `{id, generation, protocolVersion}` object per active session, alongside the legacy bare `sessions` ID list. A server that failed gateway registration (unreachable endpoint, initialize failure, or unsupported protocol version) still appears in the list with `registrationFailed: true`, `healthy: false`, the failure reason in `healthError`, `initialized: false`, and no replicas, so declared servers are never silently absent. A retryable failure (the server was not reachable) is not terminal: the gateway re-attempts registration on the health-monitor cadence with exponential backoff, `healthError` carries a `retrying in Ns` hint while the loop runs, and the row flips to a normal registered server once the backend becomes reachable. Authorization failures and configuration errors are not retried, and `POST /api/mcp-servers/{name}/restart` on a retrying server forces an immediate attempt instead of returning 404.
 
+A2A declarations add `a2a: true` to their server status row; the field is omitted
+for other sources. Registration currently fails terminally with
+`a2a: adapter unavailable`, before card discovery, and reports
+`registrationFailed: true`. No negotiated dialect, card/RPC URL, session, or
+capability inventory is exposed by this classification.
+
 **Experimental flag fields** appear at the top level when any experimental flag is enabled (via the stack's `experimental:` block or a `GRIDCTL_EXPERIMENTAL_*` env override), and are omitted otherwise:
 
 | Field | Type | Description |
@@ -232,7 +238,7 @@ The Execution details UI keeps the replica outcome and eligibility visible when 
 
 Control sources distinguish `normalized desired contract`, `engine-inspect`, and instance-bound kernel observations. The same field can appear more than once with different sources. The observation-only `memory_peak_bytes` control may be `unknown` without blocking eligibility; missing required evidence does block hardened routing. Seccomp profile identity can remain unknown while the required engine-default strategy and kernel filter state are verified.
 
-A hardened aggregate is `observed` and eligible only when every active replica has eligible evidence. Otherwise active replicas yield `mixed`, even when none is eligible. No active replicas yields `pending` without current evidence. Aggregates retain requested controls and are not instance snapshots. Local requested reports stay `configured`; compatibility local/SSH reports appear on replicas even without a server-level execution block. External URL/OpenAPI servers do not acquire local enforcement reports. Resource entries on `/api/status` remain `{name, image, status}`; the UI labels them not covered.
+A hardened aggregate is `observed` and eligible only when every active replica has eligible evidence. Otherwise active replicas yield `mixed`, even when none is eligible. No active replicas yields `pending` without current evidence. Aggregates retain requested controls and are not instance snapshots. Local requested reports stay `configured`; compatibility local/SSH reports appear on replicas even without a server-level execution block. External URL, OpenAPI, and A2A sources do not acquire local enforcement reports. Resource entries on `/api/status` remain `{name, image, status}`; the UI labels them not covered.
 
 MCP health is independent of these reports. A healthy status or saved draft is not enforcement evidence. Snapshots refresh at admission, health checks, and dispatch, with a residual post-start verification window; see [execution controls](execution.md#evidence-and-lifecycle).
 
@@ -1360,7 +1366,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/stack/spec
 
 Rereads the active stack configuration and returns semantic YAML without resolving environment or stored values. Authored references, including `$NAME`, `${NAME}`, `${var:KEY}`, and `${vault:KEY}`, retain their decoded content. The additive `notice` explains the authored-literal review requirement. The Stack spec view's Export YAML action uses this endpoint, displays its notice and value-free error message (including the field path and corrective action), and never downloads raw editor content as a substitute.
 
-Nonempty inline credentials in gateway auth, downstream token/value/client-secret, tokenizer API key, source credential reference, and recognized sensitive environment keys reject the entire export. Nonempty default/replacement operands in those fields also reject export. Client IDs are not classified as secrets. Errors use the existing `{"error":"..."}` shape with HTTP 500 and bounded indexed locations, never credential values. No `content` is returned on failure.
+Nonempty inline credentials in gateway auth, downstream token/value/client-secret, A2A bearer token (`a2a.auth.token`), tokenizer API key, source credential reference, and recognized sensitive environment keys reject the entire export. Nonempty default/replacement operands in those fields also reject export. Client IDs are not classified as secrets. Errors use the existing `{"error":"..."}` shape with HTTP 500 and bounded indexed locations, never credential values. No `content` is returned on failure.
 
 This policy does not detect arbitrary secrets in command arguments, encoded text, free-form strings, URL queries, or literal portions of mixed reference/literal strings. Review those before sharing. It never creates variables or rewrites the source. Recipients may need to supply variables and referenced files.
 
@@ -1685,6 +1691,9 @@ The body mirrors the MCP server config (`name`, `image`, `source`, `url`, `port`
 `X-Session-ID` is optional; when absent, the remote address is used for per-session accounting. Concurrency is capped at **3 in-flight probes per session** and **10 globally** - excess requests get `429` (session) or `503` (global) with `Retry-After: 3`.
 
 The optional `execution` object uses the strict stack execution schema with snake_case keys. Inapplicable declarations are rejected as `invalid_config` before contacting the server. A probe is not container enforcement acceptance.
+
+The probe request has no `a2a` field and provides no Agent Card discovery or
+A2A connectivity test.
 
 **Response:**
 ```json
@@ -2304,6 +2313,14 @@ When the vault is locked, all endpoints except `status`, `unlock`, and `lock` re
 
 Inspect and manage TOFU schema pins for MCP servers. Pins protect against rug pull attacks by detecting when an MCP server silently modifies its tool definitions. The pin store is automatically updated on deploy; these endpoints are for inspection and remediation.
 
+The mandatory card-trust store is installed separately from optional tool schema
+verification. Card records use the same file format, with hidden digest-only
+`_agent_card` and `_agent_identity` entries. They are pin evidence, not callable
+tools. A registered card-trust snapshot supplies the complete unfiltered records
+for diff and approval, including pending evidence without a callable router
+entry. A2A declarations currently fail registration with `a2a: adapter unavailable`,
+so declaring a source does not create such a live snapshot. See [A2A configuration](config-schema.md#a2a).
+
 #### `GET /api/pins`
 
 Returns pin records for all servers in the deployed stack.
@@ -2336,7 +2353,9 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/pins
 
 **Status values:** `"pinned"` | `"drift"` | `"approved_pending_redeploy"`
 
-Returns `503` if the pin store is not available (schema pinning disabled globally).
+Returns `200` with `{}` when no pin store is installed. With tool schema pinning
+disabled, returns only persisted card-trust records, or `{}` when none exist;
+ordinary tool pins remain hidden.
 
 #### `GET /api/pins/{server}`
 
@@ -2348,7 +2367,9 @@ Returns the pin record for a specific server.
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/pins/github
 ```
 
-Returns `404` if no pins exist for that server.
+Returns `404` if no pins exist for that server, or `503` if its applicable pin
+store is unavailable. Persisted card records remain readable when tool schema
+pinning is disabled.
 
 #### `GET /api/pins/{server}/diff`
 
@@ -2394,12 +2415,22 @@ Fields on each modified tool:
 
 **Errors:**
 - `404` - No pins found for that server, or server not found in gateway
+- `409` - Card pins exist but no current trust snapshot is registered (`A2A trust registration unavailable`)
 - `500` - Diff computation or live-tool fingerprinting failed
 - `503` - Pin store not available
 
 #### `POST /api/pins/{server}/approve`
 
-Re-pins the current live tool definitions for a server, clearing drift status. Fetches tools directly from the running gateway router.
+Re-pins the current live tool definitions for a server, clearing drift status.
+Ordinary servers supply tools through the running gateway router. Optional JSON
+body: `{"expected_server_hash":"<live_server_hash from diff>"}`. A mismatched
+hash returns `409`; an empty body retains ordinary unconditional approval.
+
+Card-trust approval requires a nonempty `expected_server_hash` and uses the
+service's immutable snapshot. It performs an unconditional bounded card refetch,
+checks the complete hash, registration generation, and candidate revision, and
+persists before publishing approval. Success clears only the matching card
+block, not another gateway block. Its `tool_count` includes hidden pin records.
 
 **Auth:** Yes
 
@@ -2417,12 +2448,17 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/pins/gi
 ```
 
 **Errors:**
+- `400` - Invalid JSON body, or card approval without `expected_server_hash`
 - `404` - No pins found for that server, or server not found in gateway
+- `409` - Reviewed hash changed; card registration unavailable; or card approval failed its refresh, generation, revision, or persistence check
+- `500` - Ordinary tool fingerprinting or persistence failed
 - `503` - Pin store not available
 
 #### `DELETE /api/pins/{server}`
 
-Deletes the pin record for a server. The server will be re-pinned on the next deploy.
+Deletes ordinary tool pins for a server, which will be re-pinned on the next
+deploy. Card-trust records cannot be reset through this endpoint: it returns
+`409` with `A2A card trust requires hash-bound approval`.
 
 **Auth:** Yes
 
@@ -2434,6 +2470,8 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/pins/
 
 **Errors:**
 - `404` - No pins found for that server
+- `409` - Card trust requires hash-bound approval
+- `503` - Pin store not available
 
 ---
 

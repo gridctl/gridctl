@@ -20,7 +20,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Documentation
 
-- Document A2A fields, flag lifecycle, credential origins, bounded card freshness, immutable card/identity pins, and the current unavailable-adapter boundary (#1185).
+- Document A2A fields, flag lifecycle, credential origins, bounded card freshness, immutable card/identity pins, and the current unavailable-adapter boundary. Align pins API/CLI guidance, external-source classification, scaling restrictions, and the architecture map with the installed card-trust service (#1185).
 - Document capability bounds, expiry, uncertainty, teardown accounting, and sensitive-observer behavior, including local token estimates and diagnostic-recognition limits. Align usage, configuration, API, CLI, security, examples, and architecture guidance with diagnostic migration and payload-free counting boundaries (#1185).
 - Document `gridctl call`, `gridctl tools search`, live-tool versus catalog search, REST call/discover envelopes and limits, typed exits, no-retry behavior, lexical matching, REST-versus-MCP verification limits, and the caller-label trust boundary (#1154).
 - Document the Python MCP runtime base contract, writable-state mounts, evidence layers, tag policy, licensing notices, and maintenance ownership, and cross-link wizard help, Python source examples, and troubleshooting (#1230).
