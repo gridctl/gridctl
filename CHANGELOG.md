@@ -36,6 +36,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Bug Fixes
 
+- Classify A2A declarations as non-image exclusions for `explicit-image-digests`, matching OpenAPI. Preserve the error for evaluations with no applicable checks (#1185).
 - Keep a successful verified-test run at exit 0 when Gatekeeper supplies `--summary` without `--capture`, so the EXIT trap cannot replace a passing verifier with a failed job (#1227).
 - Count Go test JSON identities exactly, so sibling subtests whose names share a slash prefix (HTTP route cases such as `/api/traces` and `/api/traces/{traceId}`) do not fail the unit-lane scenario verifier (#1227).
 - Match unqualified local image tags to Podman's `localhost/` RepoTags so a locally built image is not pulled from a remote registry (#1230).

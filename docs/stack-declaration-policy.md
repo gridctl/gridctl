@@ -59,7 +59,7 @@ Applicability is per subject. A mixed stack may pass a narrowly scoped rule when
 
 ### `explicit-image-digests`
 
-Every explicit MCP-server and supporting-resource `image` must be a syntactically valid literal digest reference. Tags and missing digests are violations. Dynamic expressions are unknown. Invalid declarations are input errors. Source-built, local, SSH, URL, and OpenAPI servers are not applicable, with a reason. A2A declarations currently produce unknown applicability for this rule and prevent acceptance. Source-built exclusions are counted on success. No registry lookup or output-artifact inference is performed. A passing result does not claim that all artifacts are immutable.
+Every explicit MCP-server and supporting-resource `image` must be a syntactically valid literal digest reference. Tags and missing digests are violations. Dynamic expressions are unknown. Invalid declarations are input errors. Source-built, local, SSH, URL, OpenAPI, and A2A servers are not applicable, with a reason. An A2A-only stack evaluated against only this rule still fails the all-N/A guard; acceptance requires an applicable check. Source-built exclusions are counted on success. No registry lookup or output-artifact inference is performed. A passing result does not claim that all artifacts are immutable.
 
 ### `deny-local-command-servers`
 
