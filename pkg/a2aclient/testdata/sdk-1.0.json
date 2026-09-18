@@ -1,0 +1,10 @@
+{
+  "message": {"messageId":"m1","role":"ROLE_USER","parts":[{"text":"hello"}]},
+  "task": {"id":"task-1","contextId":"context-1","status":{"state":"TASK_STATE_WORKING"}},
+  "parts": [
+    {"text":"hello, world"},
+    {"data":{"foo":"bar"}},
+    {"url":"https://cats.com/1.png","filename":"foo"},
+    {"raw":"//4=","filename":"foo","mediaType":"image/png"}
+  ]
+}
