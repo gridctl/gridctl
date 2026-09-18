@@ -203,11 +203,13 @@ The `source` object can contain `type`, redacted `url`, declared `ref`, `package
 
 Each registered server also reports `protocolVersion` (string, omitted when the server did not report one or has no MCP handshake, as with OpenAPI adapters) carrying the MCP protocol version negotiated at initialize, and `protocolGeneration` (string, `"handshake"` or `"stateless"`, omitted for OpenAPI adapters) carrying the resolved MCP protocol generation. `/api/sessions` responses carry `entries`, one `{id, generation, protocolVersion}` object per active session, alongside the legacy bare `sessions` ID list. A server that failed gateway registration (unreachable endpoint, initialize failure, or unsupported protocol version) still appears in the list with `registrationFailed: true`, `healthy: false`, the failure reason in `healthError`, `initialized: false`, and no replicas, so declared servers are never silently absent. A retryable failure (the server was not reachable) is not terminal: the gateway re-attempts registration on the health-monitor cadence with exponential backoff, `healthError` carries a `retrying in Ns` hint while the loop runs, and the row flips to a normal registered server once the backend becomes reachable. Authorization failures and configuration errors are not retried, and `POST /api/mcp-servers/{name}/restart` on a retrying server forces an immediate attempt instead of returning 404.
 
-A2A declarations add `a2a: true` to their server status row; the field is omitted
-for other sources. Registration currently fails terminally with
-`a2a: adapter unavailable`, before card discovery, and reports
-`registrationFailed: true`. No negotiated dialect, card/RPC URL, session, or
-capability inventory is exposed by this classification.
+A2A sources add `a2a: true` to their server status row; the field is omitted
+for other sources. Registered adapters add `a2aStatus` with `dialect`, `cardTrust`
+(`approved`, `approval_required`, or `unavailable`), optional `omittedSkills`,
+and aggregate `liveRoots`, `liveTasks`, `expiredRoots`, and `uncertainRoots`.
+Expired counts describe records awaiting reclamation, not a cumulative history.
+No card/RPC URL, session, capability, or lookup digest is exposed. Capability
+envelopes are delivered only as tool results, with `Cache-Control: no-store`.
 
 **Experimental flag fields** appear at the top level when any experimental flag is enabled (via the stack's `experimental:` block or a `GRIDCTL_EXPERIMENTAL_*` env override), and are omitted otherwise:
 
@@ -2318,8 +2320,9 @@ verification. Card records use the same file format, with hidden digest-only
 `_agent_card` and `_agent_identity` entries. They are pin evidence, not callable
 tools. A registered card-trust snapshot supplies the complete unfiltered records
 for diff and approval, including pending evidence without a callable router
-entry. A2A declarations currently fail registration with `a2a: adapter unavailable`,
-so declaring a source does not create such a live snapshot. See [A2A configuration](config-schema.md#a2a).
+entry. Successful A2A initialization persists first-use trust before exposing
+tools. Drift blocks calls independently of optional tool-pin settings. See
+[A2A configuration](config-schema.md#a2a).
 
 #### `GET /api/pins`
 

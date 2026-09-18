@@ -1,0 +1,21 @@
+# Outbound A2A JSON-RPC. Replace the placeholder with your HTTPS Agent Card URL.
+# No container runtime is required. Handles in tool results are bearer secrets.
+version: "1"
+name: a2a-example
+
+experimental:
+  a2a: true
+
+mcp-servers:
+  - name: agent
+    a2a:
+      card: https://agent.example.com/.well-known/agent-card.json
+      dialect: auto
+      timeout: 5m
+      auth:
+        type: bearer
+        token: ${var:A2A_TOKEN}
+      # For AgentCore, set profile: bedrock and use the escaped runtime ARN:
+      # /runtimes/{escaped-arn}/invocations/.well-known/agent-card.json
+      # An advertised cross-origin RPC URL requires an explicit endpoint.
+      # endpoint: ${A2A_RPC_URL}

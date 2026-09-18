@@ -49,6 +49,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 | Skill governance pins (skill pins, skills: policy) | Stable | Backward compatible in 0.x |
 | Model preferences (model_preferences: block, projection rewrite) | Stable | Backward compatible in 0.x |
 | Model routing policy (gridctl models, LiteLLM + OpenCode projection) | Experimental | Renderer pinned to LiteLLM v1.94+ Auto Router v2; the upstream auto-router schema is still evolving. The web UI's Model routing dialog and `/api/project/models` endpoints inherit this tier |
+| Outbound MCP-to-A2A adapter | Experimental | Off by default. A2A 1.0/0.3 JSON-RPC, mandatory card-byte trust, and secret context/task capabilities. Absolute 24-hour expiry; replacement/restart invalidates handles, with no recovery by label or history. Shared-agent memory remains a downstream trust boundary. See [A2A configuration](config-schema.md#a2a) |
 | Distributed tracing | Stable | Unreleased gateway name/attribute and error sanitation masks recognizable typed capability strings before recording or export. See [diagnostic migration](usage-observability.md#diagnostic-privacy-and-migration) |
 | Usage observability (token metrics, optimize) | Stable | Backward compatible in 0.x |
 | Persisted run records (`gridctl runs`, `GET /api/runs`, Runs tab) | Implemented, Unreleased | Opt-in metadata-only final dispositions. Best-effort, not a complete audit trail. Wipe is not secure erasure. See [Usage Observability](usage-observability.md#run-records) |
@@ -78,7 +79,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 
 ## Known limitations
 
-- Experimental `a2a` declarations are off by default and supply configuration, bounded wire codecs, and card-trust primitives only. Registration fails with `a2a: adapter unavailable`; no callable tools, wizard, inbound listener, or hosted-agent compatibility is provided. See [A2A configuration](config-schema.md#a2a).
+- Experimental `a2a` is outbound JSON-RPC only, with no wizard, inbound listener, streaming, SigV4, or file download. Fixture acceptance is not evidence of genuine-agent or hosted compatibility. Capabilities protect gateway routing, not shared downstream memory or agent behavior. See [A2A configuration](config-schema.md#a2a).
 - Hardened MCP execution needs locally instance-bound Linux `/proc` and cgroup v2 observations. Remote/VM-backed engines without this path and non-Linux clients are unsupported for the profile. Resources are not covered, local processes remain unsandboxed, and SSH remote confinement and descendant cleanup are unverified. See [execution controls](execution.md).
 - Passive security evidence reports do not scan, probe, or certify a stack. Exit zero is not a secure verdict. See [Security Evidence Report](security-evidence.md).
 - Opt-in `gridctl validate --check-mutable-refs` inspects literal selectors only. Exit zero is not complete coverage, a digest is not publisher-verified, and an exact package version is not a transitive lock. See [mutable reference diagnostics](cli-reference.md#mutable-reference-diagnostics).

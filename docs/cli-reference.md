@@ -47,10 +47,13 @@ Plain tables: `status`, `search`, `skill list`, `pins list`, `optimize`, `teleme
 | `gridctl logs [stack]` | Tail the gateway daemon log (`~/.gridctl/logs/<stack>.log`), including INFO source-build phases and image-build diagnostics tagged with `server` and `phase` for filtering. `-f` / `--follow` streams, `-n` / `--tail <N>` picks the line count (default 100), `--server <name>` switches to that containerized MCP server's stdout/stderr instead, and `-s` / `--stack <name>` names the stack explicitly. Stack auto-detected when exactly one is running. |
 
 Experimental [A2A declarations](config-schema.md#a2a) validate only with the
-`a2a` flag enabled. Apply classifies them without requiring a container runtime,
-but registration fails terminally with `a2a: adapter unavailable` before any
-card request. `status` identifies their type as `a2a`; server rows in JSON add
-`a2a: true`. A valid declaration is not a working connection.
+`a2a` flag enabled. Apply discovers and pins the Agent Card without requiring a
+container runtime. `status` identifies the source as `a2a`; server rows in JSON
+add `a2a: true` and safe `a2aStatus` trust, dialect, and aggregate counts.
+Tool results contain secret bearer handles. Use user-managed mode-0600 files,
+for example `gridctl call agent__task_get @private-args.json --format json`, and
+protect stdout. `--as` grants no task authority; lost handles cannot be recovered
+from labels or run history. Use a confidential channel for remote gateway access.
 
 ### Mutable reference diagnostics
 
@@ -341,9 +344,9 @@ Card-trust records require `approve --expect <live_server_hash>` and reject
 `reset`. Diff and approval use complete immutable pin evidence, including hidden
 card and identity digests; those records are not tools. Approval refetches the
 card and checks the current registration generation before persisting, so a
-stale review cannot unblock a replacement or another policy block. The A2A
-source currently fails registration with `a2a: adapter unavailable`; a declaration
-alone supplies no live snapshot to approve. See [A2A configuration](config-schema.md#a2a).
+stale review cannot unblock a replacement or another policy block. Observed card
+drift retires affected capabilities; approval does not revive old handles.
+See [A2A configuration](config-schema.md#a2a).
 
 ## Server authorization (OAuth)
 

@@ -54,8 +54,8 @@ Fail predicates (exit `1`): `pin.schema.continuity` when stored status is drift,
 
 An A2A declaration reports source kind `a2a` and is non-container for execution
 evidence. This classification does not fetch an Agent Card or establish card
-approval, connectivity, or hosted compatibility. A2A registration is unavailable
-in this build; see [the configuration boundary](config-schema.md#a2a).
+approval, connectivity, or hosted compatibility. See
+[the A2A configuration boundary](config-schema.md#a2a).
 
 ## Allowlisted output
 

@@ -20,15 +20,15 @@ Python MCP runtime image evidence was updated on September 16, 2026, against imp
 
 Capability and diagnostic privacy evidence was updated on September 18, 2026,
 against implementation commit `f9a198b`. The shared authority store and
-sensitive-observation primitives are internal and Unreleased, with no callable
-source or capability tuning option. Diagnostic-output changes require maintainer-owned
+sensitive-observation primitives are internal and Unreleased, with no capability
+tuning option. Diagnostic-output changes require maintainer-owned
 major-release scheduling under Article VIII; this is not release approval.
 
 A2A wire and card-trust evidence was updated on September 18, 2026, against
-implementation commits `7331b9f` and `a1090f8`. Declarations are experimental and
-Unreleased. Gateway construction rejects them before network access with
-`a2a: adapter unavailable`; there is no callable A2A adapter or hosted-agent
-compatibility claim.
+implementation commits `7331b9f` and `a1090f8`. The Unreleased outbound adapter
+now uses these controls for MCP calls. It remains experimental and off by
+default. Real HTTP fixtures do not establish hosted-agent compatibility or
+downstream shared-memory isolation.
 
 | State | Evidence at this baseline |
 |-------|---------------------------|
@@ -132,8 +132,10 @@ cache allows at most 30 seconds of freshness and never serves stale on error.
 The gateway's separate card-trust service retains approved and pending immutable
 snapshots; approval binds a fresh fetch to the complete hash and current
 generation/revision before persistence and publication. Neither legacy pin
-disablement nor `action: warn` disables that service. These are tested supporting
-contracts, not an active A2A dispatch path. Evidence: [real HTTP wire tests](../../tests/integration/a2a_wire_test.go),
+disablement nor `action: warn` disables that service. Every adapter operation
+checks capability authority before discovery, then rechecks trust before dispatch
+and result commit. Evidence: [adapter acceptance](../../tests/integration/a2a_adapter_test.go),
+[real HTTP wire tests](../../tests/integration/a2a_wire_test.go),
 [trust lifecycle tests](../../pkg/mcp/card_trust_test.go), and
 [independent store installation](../../pkg/controller/schema_pinning_test.go).
 

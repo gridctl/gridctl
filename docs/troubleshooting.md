@@ -109,7 +109,7 @@ Sockets checked:
   - /run/podman/podman.sock
 ```
 
-The error also lists which workloads need a container runtime and which can run without one (external URL, local process, SSH, OpenAPI, and A2A sources). A2A declarations still fail registration with `a2a: adapter unavailable`; installing a runtime does not resolve that limitation.
+The error also lists which workloads need a container runtime and which can run without one (external URL, local process, SSH, OpenAPI, and A2A sources). A2A registration failures concern card discovery, compatibility, or trust; installing a container runtime does not resolve them.
 
 **Resolution:**
 

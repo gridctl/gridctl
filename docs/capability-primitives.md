@@ -1,8 +1,9 @@
 # Gateway capability and sensitive-call primitives
 
 The gateway owns an in-memory capability store and an internal sensitive-call
-classification. These are supporting primitives, with no new stack fields,
-listeners, or callable source. Existing sources keep their observer, token
+classification. The experimental [A2A adapter](config-schema.md#a2a) uses these
+primitives for every dispatch. The store has no tuning fields or new listeners.
+Existing sources keep their observer, token
 counter, result formatting, and routing behavior unless trusted server
 construction classifies their calls as sensitive.
 

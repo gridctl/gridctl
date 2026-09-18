@@ -84,7 +84,7 @@ pkg/catalog/        MCP server catalog behind `gridctl search` / `gridctl add`: 
                     official MCP Registry, with install-shape mapping into stack.yaml server blocks.
 pkg/config/         stack.yaml schema, defaults and validation, variable/env expansion, plan diffing, health-check parsing.
                     a2a.go owns experimental Agent Card declarations and validation. A2A is external/non-container,
-                    rejects replicas > 1, autoscale, and execution, and cannot register a callable adapter.
+                    rejects replicas > 1, autoscale, and execution. Its flag is off by default.
                     export.go owns the shared non-resolving ExportStack projection for CLI/API exports, with bounded
                     sensitive-literal rejection and source ancestry for CLI destination checks. Runtime loaders stay separate.
                     mutablerefs.go is the CLI-only advisory path for literal image and npx/uvx selectors; default
@@ -111,16 +111,18 @@ pkg/mcp/            MCP protocol: gateway (router + tool aggregation), stdio/SSE
                     and typed call outcomes for canonical REST/CLI dispatch.
                     a2a_capabilities.go owns the gateway's shared CapabilityStore, atomic reservations, and teardown
                     accounting; a2a_authority.go supplies private generation-bound authority and send/cancel slots.
-                    These are internal primitives with no callable source or capability tuning option. card_trust.go
+                    These are internal primitives with no capability tuning option. card_trust.go
                     owns separate approved/pending immutable pin snapshots and generation/revision-bound approval.
                     Registration and reconnect verify mandatory snapshot trust before optional legacy tool pins.
-                    The A2A construction branch returns a terminal adapter-unavailable error before network access.
+                    a2a_client.go supplies the outbound adapter, generation-bound trust/admission, advisory tools,
+                    and atomic bounded envelopes. a2a_status.go projects local trust and aggregate authority only.
                     sensitive.go supplies
                     payload-free observations, safe errors, and shared code-mode sensitivity. Trusted construction
                     metadata selects this path; raw observers, configured counters, and format conversion are skipped.
 pkg/a2aclient/      Bounded outbound A2A 1.0/0.3 JSON-RPC codecs, card compatibility, origin/redirect policy,
                     and registration-local freshness with a 30-second cap. No AgentClient implementation or SDK dependency.
-                    Versioned SDK reference fixtures and attribution live in testdata/.
+                    The MCP adapter uses these codecs without an SDK dependency. Versioned SDK reference fixtures
+                    and attribution live in testdata/.
 pkg/mcpauth/        Downstream OAuth 2.1 brokering for external servers (discovery, dynamic client registration,
                     token store, callback listener). Backed by `gridctl auth`.
 pkg/registry/       Skills registry: discovers SKILL.md files, parses frontmatter, validates, serves as MCP prompts.
