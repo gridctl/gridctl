@@ -112,6 +112,7 @@ func (cm *CodeMode) handleSearch(params ToolCallParams, tools []Tool) (*ToolCall
 
 // handleExecute handles the execute meta-tool.
 func (cm *CodeMode) handleExecute(ctx context.Context, params ToolCallParams, caller ToolCaller, allowedTools []Tool) (*ToolCallResult, error) {
+	ctx = withSensitiveExecution(ctx)
 	code, ok := params.Arguments["code"].(string)
 	if !ok || code == "" {
 		return &ToolCallResult{
@@ -127,7 +128,13 @@ func (cm *CodeMode) handleExecute(ctx context.Context, params ToolCallParams, ca
 	duration := time.Since(start)
 
 	if err != nil {
-		cm.logger.Warn("code mode execution failed", "duration", duration, "error", err)
+		// Parser errors can contain source excerpts before any inner call has
+		// classified the execution. Keep source and thrown values caller-only.
+		diagnostic := "code_execution_failed"
+		if isSensitiveExecution(ctx) {
+			diagnostic = safeCallError(err).Error()
+		}
+		cm.logger.Warn("code mode execution failed", "duration", duration, "error", diagnostic)
 
 		errMsg := err.Error()
 		var hint string

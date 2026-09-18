@@ -36,6 +36,12 @@ func (o *Observer) ObserveToolCallWithClient(_ context.Context, obs mcp.ToolCall
 	return o.observe(obs.ServerName, obs.ReplicaID, obs.ClientID, obs.ToolName, obs.Arguments, obs.Result)
 }
 
+// ObserveSensitiveToolCall records numeric usage without receiving payloads.
+func (o *Observer) ObserveSensitiveToolCall(obs mcp.SensitiveToolCallObservation) {
+	o.accumulator.RecordReplicaWithClient(obs.ServerName, obs.ReplicaID, "", obs.Usage.InputTokens, obs.Usage.OutputTokens)
+	o.accumulator.RecordToolCallUsage(obs.ServerName, obs.Operation, obs.Usage.InputTokens, obs.Usage.OutputTokens)
+}
+
 // ObservePromptGet records that a registry skill was served via prompts/get,
 // incrementing its cumulative count and last-used timestamp in the parallel
 // prompt-usage namespace. The token path does not apply: prompts are

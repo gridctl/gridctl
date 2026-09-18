@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/logging"
+
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -27,10 +29,11 @@ func (g *Gateway) startRunAttempt(ctx context.Context, requestedName string) Run
 	if sink == nil {
 		return noopAttempt{ctx: ctx}
 	}
-	a := sink.Begin(ctx, requestedName)
+	a := sink.Begin(ctx, logging.RedactString(requestedName))
 	if a == nil {
 		return noopAttempt{ctx: ctx}
 	}
+	a = diagnosticAttempt{a}
 	a.SetLabels(ClientIDFromContext(ctx), ClientAccessIDFromContext(ctx))
 	if sc := trace.SpanFromContext(ctx).SpanContext(); sc.IsValid() && sc.IsSampled() {
 		a.SetTraceID(sc.TraceID().String())
@@ -39,6 +42,20 @@ func (g *Gateway) startRunAttempt(ctx context.Context, requestedName string) Run
 		a.SetPreviousAttemptID(relay.AttemptID)
 	}
 	return a
+}
+
+type diagnosticAttempt struct{ RunAttempt }
+
+func (a diagnosticAttempt) SetResolved(server, tool string, replica int) {
+	a.RunAttempt.SetResolved(logging.RedactString(server), logging.RedactString(tool), replica)
+}
+
+func (a diagnosticAttempt) SetLabels(client, access string) {
+	a.RunAttempt.SetLabels(logging.RedactString(client), logging.RedactString(access))
+}
+
+func (a diagnosticAttempt) SetPreviousAttemptID(id string) {
+	a.RunAttempt.SetPreviousAttemptID(logging.RedactString(id))
 }
 
 func classifyDownstream(a RunAttempt, result *ToolCallResult, callErr error, ctx context.Context) {

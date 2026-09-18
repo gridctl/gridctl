@@ -127,6 +127,23 @@ type ClientObserver interface {
 	ObserveToolCallWithClient(ctx context.Context, obs ToolCallObservation) ToolCallSummary
 }
 
+// SensitiveToolCallObservation is a payload-free value snapshot. It contains
+// neither caller labels nor references to arguments, results, or errors.
+type SensitiveToolCallObservation struct {
+	ServerName string
+	ReplicaID  int
+	Operation  string
+	Failed     bool
+	Duration   time.Duration
+	Usage      ToolCallSummary
+}
+
+// SensitiveToolCallObserver receives locally counted metadata for sensitive
+// calls. Legacy observers are skipped for these calls, even if client-aware.
+type SensitiveToolCallObserver interface {
+	ObserveSensitiveToolCall(SensitiveToolCallObservation)
+}
+
 // GateCall is the identity of one tool call as seen by a CallGate: enough to
 // key policy decisions, nothing more. ServerName is parsed from the prefixed
 // tool name and may be empty when the name is unparseable (gates that key on
