@@ -866,6 +866,8 @@ func BuildWorkloadSummaries(stack *config.Stack, result *runtime.UpResult) []out
 			transport = "ssh"
 		} else if s.IsOpenAPI() {
 			transport = "openapi"
+		} else if s.IsA2A() {
+			transport = "a2a"
 		}
 		serverTransports[s.Name] = transport
 	}
@@ -956,6 +958,10 @@ func getRunningContainers(ctx context.Context, rt *runtime.Orchestrator, stack *
 				Name: server.Name, SSH: true, Command: server.Command,
 				SSHHost: server.SSH.Host, SSHUser: server.SSH.User,
 				SSHPort: server.SSH.Port, SSHIdentityFile: server.SSH.IdentityFile,
+			})
+		case server.IsA2A():
+			result.MCPServers = append(result.MCPServers, runtime.MCPServerResult{
+				Name: server.Name, A2A: true, A2AConfig: server.A2A,
 			})
 		case server.IsOpenAPI():
 			result.MCPServers = append(result.MCPServers, runtime.MCPServerResult{

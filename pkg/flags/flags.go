@@ -137,6 +137,10 @@ func (r *Registry) experimentalNames() []string {
 // deleted. The lifecycle rules live in CONTRIBUTING.md.
 var builtin = []Flag{
 	{
+		Name: "a2a", Description: "Outbound A2A declarations and card trust (adapter unavailable).",
+		Stage: StageExperimental, Since: "1.0.0", GraduatesBy: "1.1.0",
+	},
+	{
 		Name:        "transport_dual_stack",
 		Description: "MCP 2026-07-28 transport dual-stack; always on, per-server pinning via protocol_generation.",
 		Stage:       StageGraduated,

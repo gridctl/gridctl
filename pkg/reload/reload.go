@@ -310,15 +310,17 @@ func (h *Handler) applyMCPServerChanges(ctx context.Context, diff MCPServerDiff,
 			result.Errors = append(result.Errors, fmt.Sprintf("failed to retire %s: %v", server.Name, err))
 		}
 
-		// Clear stored pins so a future re-add of the same server name starts fresh.
-		if err := h.gateway.ResetServerPins(server.Name); err != nil {
-			h.logger.Warn("failed to reset schema pins for removed server", "name", server.Name, "error", err)
+		// Card trust survives removal; re-addition must compare the stored identity.
+		if server.A2A == nil {
+			if err := h.gateway.ResetServerPins(server.Name); err != nil {
+				h.logger.Warn("failed to reset schema pins for removed server", "name", server.Name, "error", err)
+			}
 		}
 
 		// Stop and remove container(s) if the server was container-based. For
 		// multi-replica servers we iterate replica containers; single-replica
 		// preserves the pre-replicas naming (no suffix).
-		if !server.IsExternal() && !server.IsLocalProcess() && !server.IsSSH() && !server.IsOpenAPI() {
+		if server.IsContainerBased() {
 			for _, name := range replicaContainerNames(h.currentCfg.Name, &server) {
 				if err := h.stopAndRemoveContainer(ctx, name); err != nil {
 					h.logger.Warn("failed to remove container", "name", name, "error", err)
@@ -410,7 +412,7 @@ func (h *Handler) applyMCPServerChanges(ctx context.Context, diff MCPServerDiff,
 		}
 
 		// Stop old container(s) if it was container-based.
-		if !change.Old.IsExternal() && !change.Old.IsLocalProcess() && !change.Old.IsSSH() && !change.Old.IsOpenAPI() {
+		if change.Old.IsContainerBased() {
 			for _, name := range replicaContainerNames(h.currentCfg.Name, &change.Old) {
 				if err := h.stopAndRemoveContainer(ctx, name); err != nil {
 					h.logger.Warn("failed to stop container", "name", name, "error", err)
@@ -418,9 +420,9 @@ func (h *Handler) applyMCPServerChanges(ctx context.Context, diff MCPServerDiff,
 			}
 		}
 
-		// Clear stale pins: the server config changed, so existing pins are invalid.
-		// The next RegisterMCPServer call will re-pin the new tool definitions from scratch.
-		if !config.ExecutionOnlyChange(change.Old, change.New) {
+		// Card trust survives edits and is reconciled by configured identity.
+		// Legacy sources re-pin changed tool launch inputs on registration.
+		if change.Old.A2A == nil && change.New.A2A == nil && !config.ExecutionOnlyChange(change.Old, change.New) {
 			if err := h.gateway.ResetServerPins(change.Name); err != nil {
 				h.logger.Warn("failed to reset schema pins for modified server", "name", change.Name, "error", err)
 			}
@@ -606,7 +608,7 @@ func (h *Handler) startMCPServer(ctx context.Context, server config.MCPServer, s
 
 	// Skip container creation for non-container servers. Still produce N
 	// placeholder ReplicaRuntime entries so the registrar creates N clients.
-	if server.IsExternal() || server.IsLocalProcess() || server.IsSSH() || server.IsOpenAPI() {
+	if !server.IsContainerBased() {
 		if h.registerServer != nil {
 			return h.registerServer(ctx, server, make([]ReplicaRuntime, replicas), h.stackPath)
 		}

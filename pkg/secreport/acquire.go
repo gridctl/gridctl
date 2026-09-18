@@ -300,6 +300,8 @@ func serverViewFromConfig(srv config.MCPServer) ServerView {
 
 func serverKind(srv config.MCPServer) string {
 	switch {
+	case srv.IsA2A():
+		return "a2a"
 	case srv.IsOpenAPI():
 		return "openapi"
 	case srv.IsSSH():

@@ -296,6 +296,8 @@ func (r *ServerRegistrar) buildReplicaConfigs(server runtime.MCPServerResult, se
 			LocalProcess:    server.LocalProcess,
 			SSH:             server.SSH,
 			OpenAPI:         server.OpenAPI,
+			A2A:             server.A2A,
+			A2AConfig:       server.A2AConfig,
 			URL:             server.URL,
 			Command:         server.Command,
 			SSHHost:         server.SSHHost,
@@ -367,6 +369,9 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 			cfg.SSHJumpHost = serverCfg.SSH.JumpHost
 		}
 		return cfg
+	}
+	if server.A2A {
+		return buildA2AConfig(serverCfg)
 	}
 	if server.OpenAPI {
 		cfg := r.buildOpenAPIConfig(server.Name, server.OpenAPIConfig, serverCfg.Tools)
@@ -447,6 +452,9 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 			PingTimeout:        server.ResolvedPingTimeout(),
 			ProtocolGeneration: server.ProtocolGeneration,
 		}
+	}
+	if server.IsA2A() {
+		return buildA2AConfig(server)
 	}
 	if server.IsOpenAPI() {
 		cfg := r.buildOpenAPIConfig(server.Name, server.OpenAPI, server.Tools)

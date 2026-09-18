@@ -529,6 +529,7 @@ type MCPServer struct {
 	Network      string            `yaml:"network,omitempty"`       // Network to join (for multi-network mode)
 	SSH          *SSHConfig        `yaml:"ssh,omitempty"`           // SSH connection config for remote servers
 	OpenAPI      *OpenAPIConfig    `yaml:"openapi,omitempty"`       // OpenAPI spec config for API-backed servers
+	A2A          *A2AConfig        `yaml:"a2a,omitempty"`           // Experimental outbound Agent Card source
 	Tools        []string          `yaml:"tools,omitempty"`         // Tool whitelist (empty = all tools exposed)
 	OutputFormat string            `yaml:"output_format,omitempty"` // Output format override: "json", "toon", "csv", "text"
 	PinSchemas   *bool             `yaml:"pin_schemas,omitempty"`   // Override gateway schema pinning for this server (nil = inherit)
@@ -753,7 +754,7 @@ func (s *MCPServer) IsOpenAPI() bool {
 
 // IsContainerBased returns true if this MCP server requires a container runtime.
 func (s *MCPServer) IsContainerBased() bool {
-	return !s.IsExternal() && !s.IsLocalProcess() && !s.IsSSH() && !s.IsOpenAPI()
+	return !s.IsExternal() && !s.IsLocalProcess() && !s.IsSSH() && !s.IsOpenAPI() && !s.IsA2A()
 }
 
 // PersistLogs reports whether log persistence is effectively enabled for this
@@ -868,6 +869,8 @@ func (s *Stack) NonContainerWorkloads() []string {
 			kind = "ssh"
 		case srv.IsOpenAPI():
 			kind = "openapi"
+		case srv.IsA2A():
+			kind = "a2a"
 		default:
 			continue
 		}

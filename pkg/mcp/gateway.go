@@ -43,12 +43,14 @@ type MCPServerConfig struct {
 	Execution            *execution.ExecutionConfig
 	Name                 string
 	Transport            Transport
-	Endpoint             string               // For HTTP/SSE transport
-	ContainerID          string               // For Docker Stdio transport
-	External             bool                 // True for external URL servers (no container)
-	LocalProcess         bool                 // True for local process servers (no container)
-	SSH                  bool                 // True for SSH servers (remote process over SSH)
-	OpenAPI              bool                 // True for OpenAPI-based servers
+	Endpoint             string // For HTTP/SSE transport
+	ContainerID          string // For Docker Stdio transport
+	External             bool   // True for external URL servers (no container)
+	LocalProcess         bool   // True for local process servers (no container)
+	SSH                  bool   // True for SSH servers (remote process over SSH)
+	OpenAPI              bool   // True for OpenAPI-based servers
+	A2A                  bool   // True for outbound A2A sources
+	A2AConfig            *A2AClientConfig
 	Command              []string             // For local process or SSH transport
 	WorkDir              string               // For local process transport
 	Env                  map[string]string    // For local process or SSH transport
@@ -172,11 +174,15 @@ func isTerminalRegistrationError(err error) bool {
 // Gateway aggregates multiple MCP servers into a single endpoint.
 type Gateway struct {
 	capabilities *CapabilityStore
-	router       *Router
-	sessions     *SessionManager
-	dockerCli    dockerclient.DockerClient
-	logger       *slog.Logger
-	cancel       context.CancelFunc
+	cardTrust    *CardTrustService
+	// A2A declaration classification survives terminal registration failure.
+	// Guarded by pendingMu; contains no destinations or credentials.
+	a2aDeclarations map[string]bool
+	router          *Router
+	sessions        *SessionManager
+	dockerCli       dockerclient.DockerClient
+	logger          *slog.Logger
+	cancel          context.CancelFunc
 
 	mu          sync.RWMutex
 	serverInfo  ServerInfo
@@ -259,6 +265,7 @@ type Gateway struct {
 func NewGateway() *Gateway {
 	return &Gateway{
 		capabilities: NewCapabilityStore(),
+		cardTrust:    NewCardTrustService(nil),
 		router:       NewRouter(),
 		sessions:     NewSessionManager(),
 		logger:       logging.NewDiscardLogger(),
@@ -762,7 +769,7 @@ func (g *Gateway) attemptPendingRegistration(ctx context.Context, name, policy s
 	// gated by the same backoff as the connect attempt.
 	for i := range cfgs {
 		c := cfgs[i]
-		if c.Transport != TransportStdio || c.External || c.LocalProcess || c.SSH || c.OpenAPI ||
+		if c.Transport != TransportStdio || c.External || c.LocalProcess || c.SSH || c.OpenAPI || c.A2A ||
 			c.ContainerID == "" || g.dockerCli == nil {
 			continue
 		}
@@ -814,7 +821,7 @@ func (g *Gateway) attemptPendingRegistration(ctx context.Context, name, policy s
 // dedicated probe context that never reaches buildAgentClient, so it cannot
 // kill a spawned child process.
 func (g *Gateway) probePendingEndpoint(ctx context.Context, cfg MCPServerConfig) error {
-	if cfg.OpenAPI || cfg.LocalProcess || cfg.SSH || cfg.Transport == TransportStdio {
+	if cfg.OpenAPI || cfg.A2A || cfg.LocalProcess || cfg.SSH || cfg.Transport == TransportStdio {
 		return nil
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, pendingProbeTimeout)
@@ -1001,6 +1008,12 @@ func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, rep
 		return
 	}
 
+	// Card trust must succeed before a reconnected source returns to rotation.
+	if err := g.verifyClientPins(ctx, serverName, client); err != nil {
+		logger.Warn("pins: verification failed after reconnect", "name", serverName, "error", err)
+		return
+	}
+
 	// Reconnect succeeded — back in rotation.
 	replica.Restart().Reset()
 	replica.SetHealthy(true)
@@ -1017,17 +1030,6 @@ func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, rep
 	g.router.RefreshTools()
 	logger.Info("MCP server reconnected", "name", serverName)
 
-	// Verify pins after reconnection using replica-0's tool surface if we
-	// can get it; otherwise use this replica's tools. Drift on reconnect is
-	// suspicious but pinning stays per-server, not per-replica.
-	if g.pinningEnabledForServer(serverName) {
-		drifts, pinErr := g.schemaVerifier.VerifyOrPin(serverName, client.Tools())
-		if pinErr != nil {
-			logger.Warn("pins: verification failed after reconnect", "name", serverName, "error", pinErr)
-		} else {
-			g.handlePinDrift(serverName, drifts)
-		}
-	}
 }
 
 // replicaStatusLocked returns the stored replica health. Callers must hold
@@ -1193,6 +1195,9 @@ func replicaStateString(healthy bool, hasAttempts bool) string {
 
 // Close stops the cleanup goroutine and closes all agent client connections.
 func (g *Gateway) Close() {
+	if err := g.cardTrust.close(context.Background()); err != nil {
+		g.logger.Error("card trust shutdown failed", "error", err)
+	}
 	if g.capabilities != nil {
 		g.capabilities.Close()
 	}
@@ -1227,6 +1232,9 @@ func (g *Gateway) RegisterMCPServer(ctx context.Context, cfg MCPServerConfig) er
 // first tool call — except when IdleToZero=true and Min=0, in which case the
 // first tool call triggers a cold-start spawn instead.
 func (g *Gateway) RegisterAutoscaler(ctx context.Context, template MCPServerConfig, policy string, spawner Spawner, autoscale AutoscalePolicy) error {
+	if template.A2A {
+		return errors.New("a2a: autoscale is unsupported")
+	}
 	if template.Name == "" {
 		return fmt.Errorf("register autoscaler: empty name")
 	}
@@ -1355,6 +1363,14 @@ func (g *Gateway) RegisterMCPReplicaSet(ctx context.Context, name, policy string
 	// died mid-wait) does not permanently exit the retry loop.
 	g.pendingMu.Lock()
 	g.regGen[name]++
+	if len(cfgs) > 0 && cfgs[0].A2A {
+		if g.a2aDeclarations == nil {
+			g.a2aDeclarations = make(map[string]bool)
+		}
+		g.a2aDeclarations[name] = true
+	} else {
+		delete(g.a2aDeclarations, name)
+	}
 	g.pendingMu.Unlock()
 	return g.registerReplicaSet(ctx, name, policy, cfgs, 0)
 }
@@ -1422,13 +1438,12 @@ func (g *Gateway) registerReplicaSet(ctx context.Context, name, policy string, c
 
 	// Schema pinning: verify or pin on first registration. Pins are per-server
 	// (not per-replica) — all replicas should expose the same tools.
-	if g.pinningEnabledForServer(name) {
-		drifts, err := g.schemaVerifier.VerifyOrPin(name, clients[0].Tools())
-		if err != nil {
-			g.logger.Warn("pins: verification failed", "server", name, "error", err)
-		} else {
-			g.handlePinDrift(name, drifts)
+	if err := g.verifyClientPins(ctx, name, clients[0]); err != nil {
+		g.pendingMu.Unlock()
+		for _, client := range clients {
+			closeAgentClient(client)
 		}
+		return err
 	}
 
 	// A concurrent commit for the same name can land between a caller's
@@ -1506,12 +1521,15 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (re
 		return nil, err
 	}
 	if cfg.Execution != nil && !cfg.LocalProcess {
-		if cfg.External || cfg.SSH || cfg.OpenAPI || cfg.ExecutionCheck == nil {
+		if cfg.External || cfg.SSH || cfg.OpenAPI || cfg.A2A || cfg.ExecutionCheck == nil {
 			return nil, terminalRegistration(fmt.Errorf("execution: required admission unavailable"))
 		}
 		if _, err := cfg.ExecutionCheck(ctx); err != nil {
 			return nil, err
 		}
+	}
+	if cfg.A2A {
+		return nil, terminalRegistration(errors.New("a2a: adapter unavailable"))
 	}
 	g.logger.Info("connecting to MCP server", "name", cfg.Name, "transport", cfg.Transport)
 
@@ -1712,7 +1730,12 @@ func (g *Gateway) UnregisterMCPServerContext(ctx context.Context, name string) e
 	// generation and aborts. The reverse order lets a commit re-add the
 	// server between the teardown and the bump.
 	g.pendingMu.Lock()
+	if err := g.cardTrust.unregisterCurrent(ctx, name); err != nil {
+		g.pendingMu.Unlock()
+		return err
+	}
 	g.regGen[name]++
+	delete(g.a2aDeclarations, name)
 	delete(g.pending, name)
 	delete(g.cleanupRan, name)
 	g.capabilities.retireServer(name)
@@ -1923,7 +1946,7 @@ func (g *Gateway) RestartMCPServer(ctx context.Context, name string) error {
 	g.UnregisterMCPServer(name)
 
 	// For stdio (container) transport, restart the Docker container
-	if cfg.Transport == TransportStdio && !cfg.External && !cfg.LocalProcess && !cfg.SSH && !cfg.OpenAPI {
+	if cfg.Transport == TransportStdio && !cfg.External && !cfg.LocalProcess && !cfg.SSH && !cfg.OpenAPI && !cfg.A2A {
 		if cfg.Execution != nil {
 			if cfg.ExecutionBeforeStart == nil {
 				return fmt.Errorf("execution: recovery admission unavailable")
@@ -2973,6 +2996,7 @@ type MCPServerStatus struct {
 	SSH          bool              `json:"ssh"`                    // True for SSH servers
 	SSHHost      string            `json:"sshHost,omitempty"`      // SSH hostname
 	OpenAPI      bool              `json:"openapi"`                // True for OpenAPI servers
+	A2A          bool              `json:"a2a,omitempty"`          // True for outbound A2A sources
 	OpenAPISpec  string            `json:"openapiSpec,omitempty"`  // OpenAPI spec location
 	OutputFormat string            `json:"outputFormat,omitempty"` // Configured output format (empty = json default)
 	Healthy      *bool             `json:"healthy,omitempty"`      // Health check result (nil if not yet checked)
@@ -3220,6 +3244,7 @@ func (g *Gateway) Status() []MCPServerStatus {
 			SSH:           meta.SSH,
 			SSHHost:       meta.SSHHost,
 			OpenAPI:       meta.OpenAPI,
+			A2A:           meta.A2A,
 			OutputFormat:  outputFormat,
 			ToolWhitelist: meta.Tools,
 		}
@@ -3284,7 +3309,11 @@ func (g *Gateway) Status() []MCPServerStatus {
 	// a short hint so the row reads as recovering, not terminal. The hint is
 	// snapshotted before regFailMu so the two locks never nest.
 	retryHints := make(map[string]string)
+	a2aDeclarations := make(map[string]bool)
 	g.pendingMu.Lock()
+	for name := range g.a2aDeclarations {
+		a2aDeclarations[name] = true
+	}
 	for name, pe := range g.pending {
 		wait := time.Until(pe.backoff.NextAt()).Round(time.Second)
 		if wait <= 0 {
@@ -3303,6 +3332,7 @@ func (g *Gateway) Status() []MCPServerStatus {
 		failed := false
 		statuses = append(statuses, MCPServerStatus{
 			Name:               name,
+			A2A:                a2aDeclarations[name],
 			Execution:          g.executionFailures[name],
 			Tools:              []string{},
 			Healthy:            &failed,

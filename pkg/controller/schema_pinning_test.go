@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -21,6 +22,47 @@ func pinningStack(sp *config.SchemaPinningConfig) *config.Stack {
 		Gateway: &config.GatewayConfig{
 			Security: &config.GatewaySecurityConfig{SchemaPinning: sp},
 		},
+	}
+}
+
+func TestInstallSchemaPinning_MandatoryCardTrust(t *testing.T) {
+	for _, mode := range []string{"disabled", "warn", "block", "stackless"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			gw := mcp.NewGateway()
+			srv := api.NewServer(gw, nil)
+			store := pins.NewWithPath(t.TempDir(), "card-test")
+			stack := pinningStack(&config.SchemaPinningConfig{Action: mode, Enabled: boolPtr(mode != "disabled")})
+			if mode == "stackless" {
+				stack = nil
+			}
+			installSchemaPinning(gw, srv, stack, store)
+			first, err := pins.NewCardSnapshot(1, pins.CardIdentity{Card: "https://agent.example/card"}, []byte("first"), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			changed, err := pins.NewCardSnapshot(1, pins.CardIdentity{Card: "https://agent.example/card"}, []byte("changed"), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := context.Background()
+			d, err := gw.CardTrust().Register(ctx, "agent", first, func(context.Context) (mcp.PinSnapshot, error) { return changed, nil }, func() {})
+			if err != nil || !d.FirstUse {
+				t.Fatalf("mandatory store not installed: %+v %v", d, err)
+			}
+			if _, ok := store.GetServer("agent"); !ok {
+				t.Fatal("first use not persisted")
+			}
+			if err := gw.CardTrust().Observe(ctx, "agent", changed); err == nil {
+				t.Fatal("legacy mode disabled card drift enforcement")
+			}
+			if err := gw.CardTrust().Approve(ctx, "agent", changed.Hash()); err != nil {
+				t.Fatal(err)
+			}
+			if mode == "disabled" && gw.SchemaVerifier() != nil {
+				t.Fatal("mandatory store enabled legacy verifier")
+			}
+		})
 	}
 }
 

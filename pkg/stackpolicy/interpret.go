@@ -18,12 +18,13 @@ const (
 	kindLocal
 	kindSSH
 	kindOpenAPI
+	kindA2A
 )
 
 var knownServerKeys = map[string]struct{}{
 	"execution": {}, "name": {}, "image": {}, "source": {}, "url": {}, "port": {},
 	"transport": {}, "command": {}, "env": {}, "build_args": {}, "volumes": {},
-	"network": {}, "ssh": {}, "openapi": {}, "tools": {}, "output_format": {},
+	"network": {}, "ssh": {}, "openapi": {}, "a2a": {}, "tools": {}, "output_format": {},
 	"pin_schemas": {}, "ready_timeout": {}, "ping_timeout": {}, "protocol_generation": {},
 	"replicas": {}, "replica_policy": {}, "autoscale": {}, "telemetry": {}, "auth": {},
 }
@@ -92,11 +93,11 @@ type resourceSubject struct {
 }
 
 type fileDecl struct {
-	alias    string
-	gateway  *yaml.Node
-	servers  []*yaml.Node
-	resources []*yaml.Node
-	serverNames []nameField
+	alias         string
+	gateway       *yaml.Node
+	servers       []*yaml.Node
+	resources     []*yaml.Node
+	serverNames   []nameField
 	resourceNames []nameField
 }
 
@@ -463,7 +464,10 @@ func interpretServer(node *yaml.Node, alias string, index int) mcpSubject {
 	openAPINode := mappingValue(node, "openapi")
 	openAPIPresent := openAPINode != nil && !isNull(openAPINode)
 	openAPIDynamic := openAPIPresent && nodeDynamic(openAPINode) && openAPINode.Kind != yaml.MappingNode
-	if sshDynamic || openAPIDynamic {
+	a2aNode := mappingValue(node, "a2a")
+	a2aPresent := a2aNode != nil && !isNull(a2aNode)
+	a2aDynamic := a2aPresent && nodeDynamic(a2aNode) && a2aNode.Kind != yaml.MappingNode
+	if sshDynamic || openAPIDynamic || a2aDynamic {
 		subj.kindUnknown = true
 	}
 
@@ -496,6 +500,12 @@ func interpretServer(node *yaml.Node, alias string, index int) mcpSubject {
 	if hasOpenAPI {
 		count++
 	}
+	if a2aPresent {
+		count++
+		if sshPresent && !hasSSH {
+			count++
+		}
+	}
 	switch {
 	case subj.kind == kindMalformed:
 	case subj.kindUnknown && count <= 1:
@@ -513,6 +523,8 @@ func interpretServer(node *yaml.Node, alias string, index int) mcpSubject {
 		subj.kind = kindSSH
 	case hasOpenAPI:
 		subj.kind = kindOpenAPI
+	case a2aPresent:
+		subj.kind = kindA2A
 	}
 
 	if pin := mappingValue(node, "pin_schemas"); pin != nil && !isNull(pin) {

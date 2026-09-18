@@ -296,6 +296,13 @@ func expandStackVarsResolved(s *Stack, resolve referenceResolver) (unresolvedVau
 			srv.SSH.JumpHost = expandField(site("ssh.jumpHost"), srv.SSH.JumpHost)
 		}
 
+		if srv.A2A != nil {
+			srv.A2A.Card = expandField(site("a2a.card"), srv.A2A.Card)
+			srv.A2A.Endpoint = expandField(site("a2a.endpoint"), srv.A2A.Endpoint)
+			if srv.A2A.Auth != nil {
+				srv.A2A.Auth.Token = expandField(site("a2a.auth.token"), srv.A2A.Auth.Token)
+			}
+		}
 		if srv.OpenAPI != nil {
 			srv.OpenAPI.Spec = expandField(site("openapi.spec"), srv.OpenAPI.Spec)
 			srv.OpenAPI.BaseURL = expandField(site("openapi.baseUrl"), srv.OpenAPI.BaseURL)

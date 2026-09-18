@@ -97,6 +97,7 @@ type MCPServerResult struct {
 	LocalProcess bool // Local stdio process
 	SSH          bool // SSH-based remote process
 	OpenAPI      bool // OpenAPI-based adapter server
+	A2A          bool // Outbound A2A source
 
 	// For non-container servers
 	URL             string   // External server URL
@@ -108,6 +109,7 @@ type MCPServerResult struct {
 
 	// For OpenAPI servers
 	OpenAPIConfig *config.OpenAPIConfig // OpenAPI configuration for gateway to use
+	A2AConfig     *config.A2AConfig
 }
 
 // MCPServerReplica is one replica's runtime handle. For non-container replicas
@@ -244,6 +246,7 @@ func (o *Orchestrator) Up(ctx context.Context, stack *config.Stack, opts UpOptio
 				LocalProcess: server.IsLocalProcess(),
 				SSH:          server.IsSSH(),
 				OpenAPI:      server.IsOpenAPI(),
+				A2A:          server.IsA2A(),
 			})
 			continue
 		}
@@ -289,6 +292,14 @@ func (o *Orchestrator) Up(ctx context.Context, stack *config.Stack, opts UpOptio
 				SSHPort:         server.SSH.Port,
 				SSHIdentityFile: server.SSH.IdentityFile,
 				Replicas:        nReplicaPlaceholders(replicas),
+			})
+			continue
+		}
+
+		if server.IsA2A() {
+			result.MCPServers = append(result.MCPServers, MCPServerResult{
+				Name: server.Name, A2A: true, A2AConfig: server.A2A,
+				Replicas: singleReplicaPlaceholder(),
 			})
 			continue
 		}
