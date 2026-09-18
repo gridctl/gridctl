@@ -168,7 +168,7 @@ Protects against rug pull attacks (CVE-2025-54136 class) by hashing tool definit
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `enabled` | bool | No | `true` | Enable schema pinning globally for the stack |
+| `enabled` | bool | No | `true` | Enable tool schema pinning globally; does not disable mandatory A2A card trust |
 | `action` | string | No | `"warn"` | Drift response: `"warn"` logs the diff and continues; `"block"` rejects tool calls from the drifted server until approved |
 | `scan` | bool | No | `true` | Run poisoning heuristics over tool definitions at pin and drift time; findings are advisory and never block anything |
 | `scan_ignore` | string list | No | `[]` | Finding codes to suppress everywhere (e.g. `["P004"]`) |
@@ -177,7 +177,7 @@ Protects against rug pull attacks (CVE-2025-54136 class) by hashing tool definit
 
 When `scan` is on, every tool definition is checked at pin and drift time for injection signals: hidden-instruction phrases (`P001`), references to sensitive files (`P002`), sensitive-action language (`P003`), suspicious emphasis words (`P004`), hidden Unicode including decoded Tags-block payloads (`P005`), and cross-server tool shadowing (`P006`). P006 warns when a description names another server's distinctively named tool, or a generic tool name (`search`, `fetch`) qualified by its owning server's name; a bare mention of another server is info-tier only. Matching runs on Unicode-normalized text so zero-width, homoglyph, and leetspeak evasion does not defeat it, and quoted matches are downgraded so a tool that documents attack phrases is not flagged as one. Findings render beside the drift diff in `gridctl pins diff`, the diff API, and the Pins workspace; they inform the approve decision and never gate it. Static heuristics are one detection layer, not a complete defense: attacks carried in runtime tool output are invisible to any pin-time check.
 
-Pin files are stored in `~/.gridctl/pins/{stackName}.json`. Use `gridctl pins` subcommands to inspect, approve, or reset pins. Per-server opt-out is available via the `pin_schemas: false` field on any `mcp-servers` entry.
+Pin files are stored in `~/.gridctl/pins/{stackName}.json`. Use `gridctl pins` subcommands to inspect, approve, or reset tool pins. Per-server tool-pin opt-out is available via `pin_schemas: false`. Neither switch disables the separate [A2A card-trust service](#a2a), whose records require hash-bound approval and cannot be reset through the pins API.
 
 Pins recorded before output schemas were fingerprinted are upgraded in place: each pin verifies under the scheme it was recorded with, and clean pins are silently rewritten to the current scheme (which pins the output schema for the first time) on the next verify cycle. A fingerprint-scheme change never surfaces as drift.
 
@@ -536,7 +536,7 @@ networks:
 
 ## MCP Servers
 
-MCP server definitions. Each server must be exactly one type: container, external URL, local process, SSH, or OpenAPI.
+MCP server definitions. Each server must be exactly one type: container, external URL, local process, SSH, OpenAPI, or experimental A2A. A2A declarations validate but cannot register a callable adapter in this build.
 
 ### Container Server (image)
 
@@ -724,20 +724,21 @@ In the web wizard, the OpenAPI Configuration section's Operations Filter loads t
 | `network` | string | Conditional | - | Network to join (required in advanced network mode) |
 | `ssh` | object | Conditional | - | SSH connection config (see [SSH](#ssh)) |
 | `openapi` | object | Conditional | - | OpenAPI spec config (see [OpenAPI](#openapi)) |
+| `a2a` | object | Conditional | - | Experimental outbound Agent Card declaration (see [A2A](#a2a)); requires `experimental.a2a`, adapter unavailable |
 | `auth` | object | No | - | External-server authentication: `type: bearer`, `header`, or `oauth` (see [External Server Authentication](#external-server-authentication)). URL servers only |
 | `tools` | []string | No | - | Tool whitelist. Empty exposes all tools. The web wizard populates this from the live stack for running servers, and offers an optional probe of external-URL servers to discover their tools before deploy. Container / stdio / local-process / SSH servers are curated from the Stack sidebar after deploy; OpenAPI servers are curated before deploy with the wizard's Operations Filter (see [OpenAPI](#openapi-server)). Editable live from the Stack sidebar's Tools editor - `PUT /api/mcp-servers/{name}/tools` rewrites this field atomically and triggers a hot reload |
 | `output_format` | string | No | - | Output format override: `"json"`, `"toon"`, `"csv"`, or `"text"`. Overrides `gateway.output_format` for this server |
-| `pin_schemas` | bool | No | - | Override schema pinning for this server. `false` disables pinning regardless of gateway setting. Omit to inherit from `gateway.security.schema_pinning.enabled` |
+| `pin_schemas` | bool | No | - | Override tool schema pinning for this server. `false` disables tool pinning; `true` requires the global verifier to be enabled. Omit to inherit from `gateway.security.schema_pinning.enabled`. Mandatory A2A card trust is independent |
 | `ready_timeout` | duration | No | `30s` | Readiness wait for container-based HTTP/SSE servers. Accepts any `time.Duration` string (e.g. `"60s"`, `"2m"`). When a container does not become ready within this window, the container is stopped and removed; re-provisioning it requires a reload or re-apply (the automatic registration retry loop covers external, local process, SSH, OpenAPI, and stdio servers, but cannot respawn a removed container). Ignored for stdio, external, local process, SSH, and OpenAPI servers, which always use the 30s default; a server unreachable past that window is retried automatically once it comes up |
 | `ping_timeout` | duration | No | `5s` | Per-ping deadline used by the gateway health monitor. Accepts any `time.Duration` string (e.g. `"10s"`). Tune this when a server's real `Ping` latency can exceed 5s - e.g. HTTP upstreams with many tools or under autoscale spawn load where the default flakes into spurious `context deadline exceeded` errors. Applies to every pingable transport (HTTP, SSE, stdio, local process, SSH, OpenAPI) |
 | `protocol_generation` | string | No | `"auto"` | MCP protocol generation for this server: `"auto"` probes `server/discover` and falls back to the legacy `initialize` handshake; `"handshake"` and `"stateless"` skip the probe and force one generation. An escape hatch for peers the probe misclassifies; leave absent for normal auto-negotiation |
-| `replicas` | int | No | `1` | Number of independent processes to spawn for this server. Values >1 load-balance JSON-RPC tool calls across replicas using `replica_policy`. Range: 1–32. Not supported for external URL or OpenAPI transports. Mutually exclusive with `autoscale`. See [Scaling](scaling.md) |
+| `replicas` | int | No | `1` | Number of independent processes to spawn for this server. Values >1 load-balance JSON-RPC tool calls across replicas using `replica_policy`. Range: 1–32. Not supported for external URL, OpenAPI, or A2A sources. Mutually exclusive with `autoscale`. See [Scaling](scaling.md) |
 | `replica_policy` | string | No | `"round-robin"` | Dispatch policy when `replicas > 1` or `autoscale` is set: `"round-robin"` or `"least-connections"` |
-| `autoscale` | object | No | - | Reactive autoscaling block. Mutually exclusive with `replicas`. Not supported for external URL or OpenAPI transports. See [Autoscale](#autoscale) |
+| `autoscale` | object | No | - | Reactive autoscaling block. Mutually exclusive with `replicas`. Not supported for external URL, OpenAPI, or A2A sources. See [Autoscale](#autoscale) |
 | `telemetry` | object | No | - | Per-server telemetry persistence overrides. See [Per-server Overrides](#per-server-overrides) |
 
 **Type determination rules:**
-- Must have exactly one of: `image`, `source`, `url`, `command` (alone), `ssh` + `command`, or `openapi`
+- Must have exactly one of: `image`, `source`, `url`, `command` (alone), `ssh` + `command`, `openapi`, or `a2a`
 - Multiple types in the same server definition is an error
 
 **Transport constraints by type:**
@@ -749,10 +750,11 @@ In the web wizard, the OpenAPI Configuration section's Operations Filter loads t
 | Local process (command) | `stdio` | Not allowed | Not allowed |
 | SSH (ssh + command) | `stdio` | Not allowed | Not allowed |
 | OpenAPI (openapi) | Not applicable | Not allowed | Not allowed |
+| A2A (a2a) | Not applicable | Not allowed | Not allowed |
 
 ### Execution
 
-Optional per-MCP-server block. Omission preserves existing launch behavior. `mode: hardened` applies to image and source containers; `mode: local` applies to host processes. External URL, OpenAPI, and SSH servers reject execution declarations. Resources are not covered.
+Optional per-MCP-server block. Omission preserves existing launch behavior. `mode: hardened` applies to image and source containers; `mode: local` applies to host processes. External URL, OpenAPI, A2A, and SSH servers reject execution declarations. Resources are not covered.
 
 ```yaml
 execution:
@@ -967,6 +969,84 @@ SSH connection parameters for remote MCP servers.
 | `knownHostsFile` | string | No | - | Path to a known_hosts file. When set, enables `StrictHostKeyChecking=yes` instead of the default TOFU (`accept-new`). Supports `~` expansion. Pre-populate with `ssh-keyscan <host> >> <file>` |
 | `jumpHost` | string | No | - | Bastion/jump host to route the connection through (`[user@]host[:port]`). Maps to the SSH `-J` flag |
 
+### A2A
+
+The optional `a2a:` declaration is experimental and off by default. Enable
+`experimental.a2a: true` or `GRIDCTL_EXPERIMENTAL_A2A=true` to validate it.
+Without enablement, both validation and apply fail with an error naming the
+flag. This build supplies configuration, wire codecs, and card-trust primitives;
+registration fails before network access with `a2a: adapter unavailable`. This
+is a terminal registration failure, not a health-monitor retry. It exposes no A2A tools or
+inbound A2A listener, and makes no hosted-agent compatibility claim.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `card` | string | Yes | - | HTTPS Agent Card URL; loopback HTTP is allowed only for local fixtures |
+| `endpoint` | string | No | Advertised JSON-RPC URL | Explicit operator-authorized RPC destination; does not override card protocol evidence |
+| `dialect` | string | No | `auto` | `auto`, `1.0`, or `0.3`; auto prefers compatible 1.0 JSON-RPC interfaces |
+| `profile` | string | No | Empty | Empty or `bedrock`; enables Bedrock discovery/session requirements and its `text` media alias |
+| `include` | []string | No | Empty | Stored skill-selection IDs; no skill tools are generated in this build |
+| `timeout` | duration | No | `5m` | Positive RPC timeout |
+| `auth` | object | No | No credentials | `type: bearer` and `token: ${var:A2A_TOKEN}` or `${A2A_TOKEN}`; no automatic OAuth acquisition |
+
+The block is mutually exclusive with `image`, `source`, `url`, `command`,
+`ssh`, and `openapi`. It requires no container runtime. Replicas greater than
+one, autoscale, execution contracts, transport, port, and network are rejected.
+Use `a2a.auth`, not server-level `auth`. An explicitly supplied
+`a2a.auth.session_id`, even empty or null, is rejected.
+
+`card`, `endpoint`, and `auth.token` support environment and stored-variable
+references. Export preserves authored references and rejects literal bearer
+tokens. Apply summaries and CLI status classify the source as `a2a`; server
+status JSON includes `a2a: true` on the failed registration, without card or RPC
+destinations. Classification does not establish a working connection.
+
+Destination validation rejects userinfo, fragments, file URLs, and non-loopback
+HTTP. Fixture HTTP requires a loopback dial destination, including `localhost`
+resolution. The wire transport uses no environment proxy or cookies. Card GET
+credentials attach only to the configured card origin. Discovery follows at
+most three same-origin redirects. RPC credentials attach only to the explicit
+endpoint, or to a card-advertised endpoint with the card's origin. Origin means
+normalized scheme, hostname, and effective port. Cross-origin advertisement
+without an explicit endpoint fails closed; RPC redirects are never followed.
+Bedrock card paths use
+`/runtimes/{escaped-arn}/invocations/.well-known/agent-card.json` with the runtime
+ARN URL-encoded as a path segment.
+
+The discovery session is random and private to the wire client. Bedrock RPC
+requires a separate conversation session; generic endpoints receive no Bedrock
+session header. Caller labels, including `--as`, are not task authority. The
+capability primitives described in [capability primitives](capability-primitives.md)
+are process-local bearer authority, with absolute expiry and replacement/restart
+invalidation. Lost handles cannot be recovered from labels or run history.
+This build does not issue them through an A2A tool.
+
+The installed card-trust service is mandatory independently of global schema pinning and
+`pin_schemas: false`. Hidden `_agent_card` and `_agent_identity` digest records
+belong only to pin evidence, never callable inventories. Identity includes the
+canonical configured card URL, full explicit endpoint (including path/query),
+dialect, and profile. Timeout, token rotation, and include edits preserve trust.
+Configured identity changes report new first-use trust; changed card bytes under
+the same identity require approval. Existing pins missing the identity record
+also require approval. Storage failures fail closed. Approval requires the
+complete `expected_server_hash` (`gridctl pins approve --expect`), performs a
+fresh bounded GET, and checks the registration generation and candidate revision
+before persistence and publication. A stale approval cannot release a newer
+candidate or another policy block. Reload preserves card pins on A2A edits and
+removal. The source's unavailable registration does not fetch a card or create
+a live trust snapshot; these are service contracts, not a callable A2A workflow.
+
+The wire cache caps freshness at 30 seconds, honors shorter HTTP lifetimes,
+and coalesces full GETs at expiry with a five-second deadline. `no-cache` and
+`no-store` require another fetch. Errors never serve stale data; failure backoff
+is one second or valid `Retry-After` up to 30 seconds. Approval bypasses success
+reuse but honors failure backoff. Full GETs deliberately replace conditional
+revalidation so version-based ETags cannot hide byte-only drift. Idle agents
+are not polled. The wire subset supports text and inline JSON; required unknown
+extensions, tenants, authentication schemes, and unattested nonempty scopes
+are incompatible. Alternative supported media/authentication choices remain
+usable, and no authentication or artifact URL is fetched.
+
 ### OpenAPI
 
 OpenAPI specification configuration for API-backed MCP servers.
@@ -1017,7 +1097,7 @@ Cannot use both `include` and `exclude`.
 
 ### Autoscale
 
-Reactive autoscaling block - replaces the static `replicas: N` field with a policy that spawns and reaps replicas based on live in-flight load. Supported on container, local-process, and SSH servers. Rejected on external URL and OpenAPI transports with a precise YAML-path validation error. `autoscale` and `replicas` are mutually exclusive on the same server.
+Reactive autoscaling block - replaces the static `replicas: N` field with a policy that spawns and reaps replicas based on live in-flight load. Supported on container, local-process, and SSH servers. Rejected on external URL, OpenAPI, and A2A sources with a precise YAML-path validation error. `autoscale` and `replicas` are mutually exclusive on the same server.
 
 ```yaml
 mcp-servers:
@@ -1419,6 +1499,7 @@ Registered flags:
 
 | Flag | Stage | Since | Description |
 |------|-------|-------|-------------|
+| `a2a` | experimental | 1.0.0 | Outbound A2A declarations and card trust; adapter unavailable. Graduation decision due by 1.1.0 |
 | `transport_dual_stack` | graduated | 0.1.0 | MCP 2026-07-28 transport dual-stack; always on, per-server pinning via `protocol_generation` |
 
 Semantics:

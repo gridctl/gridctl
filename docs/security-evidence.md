@@ -52,6 +52,11 @@ Coverage "complete" refers only to this named inventory, not to complete securit
 
 Fail predicates (exit `1`): `pin.schema.continuity` when stored status is drift, `skill.pin.continuity` when stored status is drift, and `execution.enforcement` when recorded outcome is failed, refused, or ineligible. Heuristic findings are warnings. Pins are not explicit approvals.
 
+An A2A declaration reports source kind `a2a` and is non-container for execution
+evidence. This classification does not fetch an Agent Card or establish card
+approval, connectivity, or hosted compatibility. A2A registration is unavailable
+in this build; see [the configuration boundary](config-schema.md#a2a).
+
 ## Allowlisted output
 
 Every fact, message, location, and action is allowlisted. Bounded identifiers (subject names, tool names, package/version, producer names, digest/revision identifiers) may still contain operator-authored secrets; this report cannot detect them. Truncation bounds length; it is not redaction.

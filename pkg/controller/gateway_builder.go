@@ -231,17 +231,23 @@ func resolveSchemaPinning(stack *config.Stack) (enabled bool, action string, sca
 // installSchemaPinning shares a single pin store between the API server (for
 // read-only inspection at /api/pins) and the gateway's TOFU verifier (for drift
 // detection and the warn/block policy), so the UI reflects exactly what the
-// gateway enforces. It is a no-op when no store is provided or when pinning is
-// disabled for the stack, leaving both halves unset.
+// gateway enforces. Mandatory card trust is installed independently; disabling
+// legacy pinning keeps ordinary-source API behavior and the verifier unchanged.
 func installSchemaPinning(gateway *mcp.Gateway, server *api.Server, stack *config.Stack, ps *pins.PinStore) {
 	if ps == nil {
 		return
 	}
 	enabled, action, scan, scanIgnore := resolveSchemaPinning(stack)
+	ps.SetScanConfig(scan, scanIgnore)
+	server.SetCardPinStore(ps)
+	// Installation precedes registration; a failure is fail-closed in the
+	// gateway-owned service and must remain visible to the operator.
+	if err := gateway.SetCardPinStorage(context.Background(), ps); err != nil {
+		slog.Error("Failed to install card pin storage", "error", err)
+	}
 	if !enabled {
 		return
 	}
-	ps.SetScanConfig(scan, scanIgnore)
 	server.SetPinStore(ps)
 	gateway.SetSchemaVerifier(pins.NewGatewayAdapter(ps), action)
 }

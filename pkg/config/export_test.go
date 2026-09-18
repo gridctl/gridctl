@@ -24,6 +24,7 @@ func TestExportStack_CredentialInventory(t *testing.T) {
 		"gateway:\n  auth:\n    token: ",
 		"gateway:\n  tokenizer_api_key: ",
 		"mcp-servers:\n  - auth:\n      token: ",
+		"mcp-servers:\n  - a2a:\n      auth:\n        token: ",
 		"mcp-servers:\n  - auth:\n      value: ",
 		"mcp-servers:\n  - auth:\n      client_secret: ",
 		"mcp-servers:\n  - source:\n      auth:\n        credential_ref: ",

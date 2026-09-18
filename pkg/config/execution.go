@@ -11,7 +11,7 @@ type ExecutionMount = execution.ExecutionMount
 func ResolveExecution(server MCPServer) (*ExecutionContract, error) {
 	return execution.ResolveExecution(execution.Server{
 		Execution: server.Execution, Local: server.IsLocalProcess(),
-		External: server.IsExternal() || server.IsSSH() || server.IsOpenAPI(),
+		External: server.IsExternal() || server.IsSSH() || server.IsOpenAPI() || server.IsA2A(),
 		Command:  server.Command, Transport: server.Transport, Network: server.Network,
 		Port: server.Port, Volumes: server.Volumes,
 	})

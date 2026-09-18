@@ -300,6 +300,7 @@ type mcpServerAPI struct {
 	LocalProcess bool              `json:"localProcess"`
 	SSH          bool              `json:"ssh"`
 	OpenAPI      bool              `json:"openapi"`
+	A2A          bool              `json:"a2a,omitempty"`
 	Healthy      *bool             `json:"healthy,omitempty"`
 	HealthError  string            `json:"healthError,omitempty"`
 	RegFailed    bool              `json:"registrationFailed,omitempty"`
@@ -506,6 +507,8 @@ func mcpServerType(srv mcpServerAPI) string {
 		return "external"
 	case srv.OpenAPI:
 		return "openapi"
+	case srv.A2A:
+		return "a2a"
 	case srv.LocalProcess:
 		return "local-process"
 	case srv.SSH:

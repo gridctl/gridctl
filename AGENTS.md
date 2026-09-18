@@ -48,6 +48,10 @@ check uses a real MCP subprocess without Docker:
 `go test -race -tags=integration -run '^TestCapabilityDiagnostics_' -count=1 -timeout 3m ./tests/integration`.
 Focused checks supplement the required whole-suite gates.
 
+A2A wire codec and origin-policy acceptance uses real HTTP listeners without
+Docker: `go test -race -tags=integration -run '^TestA2AWire_' -count=1 -timeout 3m ./tests/integration`.
+These checks do not establish callable adapter or hosted-agent compatibility.
+
 Lint:
 
 ```bash
@@ -74,10 +78,13 @@ internal/api/       REST handlers backing the web UI (one file per resource: sta
                     Gateway credential denials carry Gridctl-Auth-Rejected: 1; reload_errors.go supplies shared
                     restart_required (409) and invalid_candidate (400) envelopes, including save-first callers.
 internal/probe/     Ephemeral MCP tool-list probe for the "add server" wizard (not registered with the gateway).
+                    A2A config inputs receive an explicit unsupported-source diagnostic; the REST probe DTO has no A2A field.
 internal/scenarioverify/ Post-suite Go JSON execution verifier for tests/adversarial/index.yaml. Not a product API.
 pkg/catalog/        MCP server catalog behind `gridctl search` / `gridctl add`: curated embedded entries plus the
                     official MCP Registry, with install-shape mapping into stack.yaml server blocks.
 pkg/config/         stack.yaml schema, defaults and validation, variable/env expansion, plan diffing, health-check parsing.
+                    a2a.go owns experimental Agent Card declarations and validation. A2A is external/non-container,
+                    rejects replicas > 1, autoscale, and execution, and cannot register a callable adapter.
                     export.go owns the shared non-resolving ExportStack projection for CLI/API exports, with bounded
                     sensitive-literal rejection and source ancestry for CLI destination checks. Runtime loaders stay separate.
                     mutablerefs.go is the CLI-only advisory path for literal image and npx/uvx selectors; default
@@ -104,9 +111,16 @@ pkg/mcp/            MCP protocol: gateway (router + tool aggregation), stdio/SSE
                     and typed call outcomes for canonical REST/CLI dispatch.
                     a2a_capabilities.go owns the gateway's shared CapabilityStore, atomic reservations, and teardown
                     accounting; a2a_authority.go supplies private generation-bound authority and send/cancel slots.
-                    These are internal primitives with no callable source or stack option. sensitive.go supplies
+                    These are internal primitives with no callable source or capability tuning option. card_trust.go
+                    owns separate approved/pending immutable pin snapshots and generation/revision-bound approval.
+                    Registration and reconnect verify mandatory snapshot trust before optional legacy tool pins.
+                    The A2A construction branch returns a terminal adapter-unavailable error before network access.
+                    sensitive.go supplies
                     payload-free observations, safe errors, and shared code-mode sensitivity. Trusted construction
                     metadata selects this path; raw observers, configured counters, and format conversion are skipped.
+pkg/a2aclient/      Bounded outbound A2A 1.0/0.3 JSON-RPC codecs, card compatibility, origin/redirect policy,
+                    and registration-local freshness with a 30-second cap. No AgentClient implementation or SDK dependency.
+                    Versioned SDK reference fixtures and attribution live in testdata/.
 pkg/mcpauth/        Downstream OAuth 2.1 brokering for external servers (discovery, dynamic client registration,
                     token store, callback listener). Backed by `gridctl auth`.
 pkg/registry/       Skills registry: discovers SKILL.md files, parses frontmatter, validates, serves as MCP prompts.
@@ -132,6 +146,8 @@ pkg/vault/          Encrypted variable store (XChaCha20-Poly1305 + Argon2id). Th
 pkg/varrun/         Explicit stored-variable delivery to child processes, including output redaction and signal forwarding.
 pkg/varscan/        Exact stored-secret scanning for working-tree files and staged Git blobs.
 pkg/pins/           TOFU schema pinning for tool definitions; drift surfaces in pkg/pins + `gridctl pins`.
+                    card_snapshot.go and card_store.go supply immutable digest-only card/identity evidence and
+                    fail-closed, cross-process-locked card transactions using the existing pin-file format.
 pkg/secreport/      Passive security evidence report DTO and assembler for `gridctl doctor --security` and GET /api/security-report.
 pkg/optimize/       Usage analysis: feeds `gridctl optimize` and the UI's findings panel with token-denominated findings.
 pkg/metrics/        In-memory usage accounting and observers; sensitive observations record local numeric estimates
@@ -144,11 +160,14 @@ pkg/reload/         Stack hot-reload (file watcher + diff-and-apply path). secur
                     preflight before no-op detection or mutation; rejected saved YAML is retained on disk.
                     Accepted execution transitions retire old routes before source preparation; failed replacement retains
                     desired intent, and execution-only recreation preserves schema pins, including combined pool tuning.
+                    A2A edits and removal preserve card pins; external-source handling skips container operations.
 pkg/controller/     Application composition root: builds the gateway, mounts the API server, embedded UI, and MCP transports
                     (gateway_builder.go), and owns deploy/daemonize orchestration for `gridctl apply` and `gridctl serve`.
                     Supplies the startup security snapshot and installs manual reload independently of --watch.
                     execution.go binds admission callbacks to the normalized contract, actual container ID, and inspected
                     IPv4 loopback HTTP endpoint.
+                    a2a.go maps declarations into runtime client config. Mandatory card storage is installed on the
+                    gateway and API independently of legacy pin switches, including stackless startup.
 pkg/logging/        Shared structured log handlers and redaction, including typed capability strings in messages,
                     field/group names, and nested JSON-compatible values. Diagnostic copies do not alter policy inputs.
 pkg/token/, pkg/format/, pkg/output/, pkg/jsonrpc/, pkg/state/, pkg/git/, pkg/dockerclient/   Supporting libs.
@@ -169,6 +188,7 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
                     auth_restart_test.go verifies actual process restart, saved/live-state rejection, CLI exits,
                     sessions/streams, and preserved Docker identities with race-built child binaries.
                     capability_diagnostics_test.go checks REST log/trace/usage/run observations with a real MCP subprocess.
+                    a2a_wire_test.go checks both wire dialects, origin-bound credentials, sessions, and redirects with real HTTP.
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
                     portable-pack, model-policy, python-sources, python-runtime, execution, security-evidence, stack-declaration-policy, runs).

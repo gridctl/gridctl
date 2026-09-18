@@ -177,6 +177,8 @@ func (p *Prober) Probe(ctx context.Context, cfg config.MCPServer) (Result, *Erro
 // path; every other transport routes to the Stack sidebar editor post-deploy.
 func unsupportedReason(cfg config.MCPServer) *Error {
 	switch {
+	case cfg.A2A != nil:
+		return newErr(CodeUnsupportedTransport, "Probe not supported for A2A servers.", "A2A declarations cannot be probed by the MCP wizard.")
 	case cfg.IsSSH():
 		return newErr(CodeUnsupportedTransport,
 			"Probe not supported for ssh servers.",

@@ -109,7 +109,7 @@ Sockets checked:
   - /run/podman/podman.sock
 ```
 
-The error also lists which workloads need a container runtime and which can run without one (external URL, local process, SSH, OpenAPI servers).
+The error also lists which workloads need a container runtime and which can run without one (external URL, local process, SSH, OpenAPI, and A2A sources). A2A declarations still fail registration with `a2a: adapter unavailable`; installing a runtime does not resolve that limitation.
 
 **Resolution:**
 
@@ -791,7 +791,7 @@ gateway:
       scan_ignore: [P004]
 ```
 
-Set `scan: false` to disable the scanner: stack-time findings, API decoration, and add-server wizard probe findings all honor it, as does `scan_ignore`. (If schema pinning itself is disabled, the wizard probe still scans candidate servers with default settings, since no pin store exists to carry the configuration.) Both settings are advisory-only knobs; they never affect fingerprinting or drift detection.
+Set `scan: false` to disable the scanner: stack-time findings, API decoration, and add-server wizard probe findings all honor it, as does `scan_ignore`. (If tool schema pinning itself is disabled, the wizard probe still scans candidate servers with default settings, since its legacy pin store is not installed. The separate card-trust store does not supply probe scan settings.) Both settings are advisory-only knobs; they never affect fingerprinting or drift detection.
 
 ### A finding reports "hidden characters" I cannot see
 

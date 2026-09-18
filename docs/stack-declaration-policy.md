@@ -59,7 +59,7 @@ Applicability is per subject. A mixed stack may pass a narrowly scoped rule when
 
 ### `explicit-image-digests`
 
-Every explicit MCP-server and supporting-resource `image` must be a syntactically valid literal digest reference. Tags and missing digests are violations. Dynamic expressions are unknown. Invalid declarations are input errors. Source-built and other non-image server kinds are not applicable, with a reason. Source-built exclusions are counted on success. No registry lookup or output-artifact inference is performed. A passing result does not claim that all artifacts are immutable.
+Every explicit MCP-server and supporting-resource `image` must be a syntactically valid literal digest reference. Tags and missing digests are violations. Dynamic expressions are unknown. Invalid declarations are input errors. Source-built, local, SSH, URL, OpenAPI, and A2A servers are not applicable, with a reason. An A2A-only stack evaluated against only this rule still fails the all-N/A guard; acceptance requires an applicable check. Source-built exclusions are counted on success. No registry lookup or output-artifact inference is performed. A passing result does not claim that all artifacts are immutable.
 
 ### `deny-local-command-servers`
 
@@ -67,11 +67,16 @@ Rejects classified command-only local MCP execution. A command override on a con
 
 ### `deny-ssh-servers`
 
-Independently rejects declared SSH execution. URL and OpenAPI entries are not treated as SSH. Commands are not parsed to infer remote hosting.
+Independently rejects declared SSH execution. URL, OpenAPI, and A2A entries are not treated as SSH. Commands are not parsed to infer remote hosting.
 
 ### `schema-pinning-enabled`
 
 Evaluates effective declared enablement using current runtime semantics: pinning defaults to enabled, global disablement wins, and `pin_schemas: true` does not install a verifier when global pinning is off. Per-server `false` disables that server. Unclear applicability does not pass.
+
+These rules assess tool schema pinning, not the independent mandatory A2A
+card-trust service. A2A mappings classify as external declarations; policy mode
+does not fetch cards, resolve the experimental flag, or prove registration is
+available. Ordinary A2A registration is currently unavailable.
 
 ### `schema-pinning-block`
 

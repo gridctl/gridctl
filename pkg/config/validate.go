@@ -212,6 +212,7 @@ func Validate(s *Stack) error {
 		hasSSH := server.SSH != nil && len(server.Command) > 0
 		hasCommand := len(server.Command) > 0 && !hasImage && !hasSource && !hasURL && !hasSSH // command-only = local process
 		hasOpenAPI := server.OpenAPI != nil
+		hasA2A := server.A2A != nil
 
 		// Mutual exclusivity: must have exactly one of image, source, url, command (local process), ssh, or openapi
 		count := 0
@@ -233,11 +234,19 @@ func Validate(s *Stack) error {
 		if hasOpenAPI {
 			count++
 		}
+		if hasA2A {
+			count++
+			// A malformed SSH block still conflicts with an A2A declaration.
+			if server.SSH != nil && !hasSSH {
+				count++
+			}
+			errs = append(errs, validateA2A(s, server, prefix)...)
+		}
 
 		if count == 0 {
-			errs = append(errs, ValidationError{prefix, "must have 'image', 'source', 'url', 'command', 'ssh' with 'command', or 'openapi'"})
+			errs = append(errs, ValidationError{prefix, "must have 'image', 'source', 'url', 'command', 'ssh' with 'command', 'openapi', or 'a2a'"})
 		} else if count > 1 {
-			errs = append(errs, ValidationError{prefix, "can only have one of 'image', 'source', 'url', 'command', 'ssh', or 'openapi'"})
+			errs = append(errs, ValidationError{prefix, "can only have one of 'image', 'source', 'url', 'command', 'ssh', 'openapi', or 'a2a'"})
 		}
 
 		// Downstream auth only applies to external URL servers
@@ -314,6 +323,8 @@ func Validate(s *Stack) error {
 			if server.Network != "" {
 				errs = append(errs, ValidationError{prefix + ".network", "not applicable for SSH servers"})
 			}
+		} else if server.IsA2A() {
+			// The A2A declaration is validated independently of source exclusivity.
 		} else if server.IsOpenAPI() {
 			// OpenAPI server validation
 			openapiPrefix := prefix + ".openapi"
@@ -484,6 +495,9 @@ func Validate(s *Stack) error {
 			server.ReplicaPolicy != "round-robin" &&
 			server.ReplicaPolicy != "least-connections" {
 			errs = append(errs, ValidationError{prefix + ".replica_policy", "must be 'round-robin' or 'least-connections'"})
+		}
+		if server.A2A != nil && server.Replicas > 1 {
+			errs = append(errs, ValidationError{prefix + ".replicas", "not supported for A2A servers"})
 		}
 		if server.Replicas > 1 && (server.IsExternal() || server.IsOpenAPI()) {
 			errs = append(errs, ValidationError{prefix + ".replicas", "not supported for external URL or OpenAPI servers (already external/stateless — scale them at the HTTP tier)"})
@@ -982,6 +996,9 @@ func validateAutoscale(server MCPServer, prefix string) ValidationErrors {
 	}
 
 	// Not supported on external / openapi, matching the existing replicas rule.
+	if server.A2A != nil {
+		errs = append(errs, ValidationError{asPrefix, "not supported for A2A servers"})
+	}
 	if server.IsExternal() || server.IsOpenAPI() {
 		errs = append(errs, ValidationError{asPrefix, "not supported for external URL or OpenAPI servers (already external/stateless — scale them at the HTTP tier)"})
 		return errs

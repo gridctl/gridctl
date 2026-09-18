@@ -17,7 +17,7 @@ const (
 // DiffItem represents a single change in the plan.
 type DiffItem struct {
 	Action  DiffAction `json:"action"`
-	Kind    string     `json:"kind"` // "mcp-server", "agent", "resource", "a2a-agent", "gateway", "network"
+	Kind    string     `json:"kind"` // "mcp-server", "resource", "gateway", "network"
 	Name    string     `json:"name"`
 	Details []string   `json:"details,omitempty"` // human-readable change descriptions
 }

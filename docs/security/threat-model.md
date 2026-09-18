@@ -21,8 +21,14 @@ Python MCP runtime image evidence was updated on September 16, 2026, against imp
 Capability and diagnostic privacy evidence was updated on September 18, 2026,
 against implementation commit `f9a198b`. The shared authority store and
 sensitive-observation primitives are internal and Unreleased, with no callable
-source or stack option. Diagnostic-output changes require maintainer-owned
+source or capability tuning option. Diagnostic-output changes require maintainer-owned
 major-release scheduling under Article VIII; this is not release approval.
+
+A2A wire and card-trust evidence was updated on September 18, 2026, against
+implementation commits `7331b9f` and `a1090f8`. Declarations are experimental and
+Unreleased. Gateway construction rejects them before network access with
+`a2a: adapter unavailable`; there is no callable A2A adapter or hosted-agent
+compatibility claim.
 
 | State | Evidence at this baseline |
 |-------|---------------------------|
@@ -119,6 +125,17 @@ These are current behavior and governance gaps, not amendments to Article XII. T
 | Call rate and size bounds | `limits:` is opt-in and applies token buckets per configured client, server, or tool before downstream dispatch. MCP POST bodies are bounded; normal tool-result text is truncated per content item at 64 KiB by default. | [Rate policy/tests](../../pkg/limits/limits_test.go), [call-gate tests](../../pkg/mcp/callgate_test.go), [transport](../../pkg/mcp/streamable.go), and [result handling](../../pkg/mcp/gateway.go) | Buckets reset on daemon restart. These are not aggregate memory, container resource, or bandwidth quotas. Truncation occurs after receipt and is not a bound on downstream allocation. Code-mode meta-tool returns take a separate path. |
 
 For server-side request forgery (SSRF), distinguish agent-controlled code-mode fetch from operator-configured URLs. MCP endpoints, OAuth discovery, build sources, and OpenAPI URLs can cause outbound requests by the daemon. The OpenAPI preview disables external `$ref` following, while deployment supports it; see [preview tests](../../internal/openapipreview/preview_test.go) and [OpenAPI client](../../pkg/mcp/openapi_client.go). Do not assume fetch's blocklist protects these other request paths. Restrict daemon egress and review destination URLs when operating against untrusted sources.
+
+The internal A2A wire client enforces origin-bound credentials, same-origin
+discovery redirects, RPC redirect refusal, and bounded response reads. Its card
+cache allows at most 30 seconds of freshness and never serves stale on error.
+The gateway's separate card-trust service retains approved and pending immutable
+snapshots; approval binds a fresh fetch to the complete hash and current
+generation/revision before persistence and publication. Neither legacy pin
+disablement nor `action: warn` disables that service. These are tested supporting
+contracts, not an active A2A dispatch path. Evidence: [real HTTP wire tests](../../tests/integration/a2a_wire_test.go),
+[trust lifecycle tests](../../pkg/mcp/card_trust_test.go), and
+[independent store installation](../../pkg/controller/schema_pinning_test.go).
 
 Generated builds inspect Python metadata without executing it on the host and verify selected package metadata against recorded hashes. Building and running a package still executes publisher-controlled code in the build/runtime environment. Content-addressed images, commit pins, and provenance labels help identify inputs; they do not prove those inputs harmless. See [Python build examples and guidance](../../examples/python-sources/README.md) and [builder tests](../../pkg/builder/plan_test.go).
 

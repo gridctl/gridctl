@@ -1,0 +1,10 @@
+{
+  "message": {"kind":"message","messageId":"m1","role":"user","parts":[{"kind":"text","text":"hello"}]},
+  "task": {"kind":"task","id":"task-1","contextId":"context-1","status":{"state":"working"}},
+  "parts": [
+    {"kind":"text","text":"hello"},
+    {"kind":"data","data":{"key":"value"}},
+    {"kind":"file","file":{"uri":"https://cats.com/1.png"}},
+    {"kind":"file","file":{"bytes":"//4="}}
+  ]
+}

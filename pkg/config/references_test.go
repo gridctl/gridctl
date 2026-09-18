@@ -77,6 +77,7 @@ func TestExpandStackVars_ReferenceIndexParity(t *testing.T) {
 				JumpHost:       probe,
 			},
 			OpenAPI: &OpenAPIConfig{Spec: probe, BaseURL: probe},
+			A2A:     &A2AConfig{Card: probe, Endpoint: probe, Auth: &A2AAuth{Token: probe}},
 		}},
 		Resources: []Resource{{
 			Name:    probe,
@@ -90,6 +91,9 @@ func TestExpandStackVars_ReferenceIndexParity(t *testing.T) {
 	expandStackVars(stack, VaultResolver(&mockVault{secrets: map[string]string{"PROBE": "x"}}))
 
 	want := []string{
+		"mcp-server|a2a.card",
+		"mcp-server|a2a.endpoint",
+		"mcp-server|a2a.auth.token",
 		"stack|name",
 		"gateway|allowed_origins[0]",
 		"gateway|auth.token",

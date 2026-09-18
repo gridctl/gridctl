@@ -42,6 +42,19 @@ func ExecutionOnlyChange(a, b MCPServer) bool {
 }
 
 func canonicalizeMCPServer(server *MCPServer) {
+	if server.A2A != nil {
+		a := *server.A2A
+		if a.Dialect == "" {
+			a.Dialect = "auto"
+		}
+		if a.Timeout == "" {
+			a.Timeout = "5m"
+		}
+		if len(a.Include) == 0 {
+			a.Include = nil
+		}
+		server.A2A = &a
+	}
 	if server.Source != nil {
 		server.Source = canonicalSource(server.Source)
 		if isGeneratedPythonSource(server.Source) && server.Transport == "" {

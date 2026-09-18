@@ -60,6 +60,7 @@ type Server struct {
 	linkServerName     string
 	registryServer     *registry.Server
 	pinStore           *pins.PinStore
+	cardPinStore       *pins.PinStore
 	skillPinStore      *skillpins.Store
 	vaultStore         *vault.Store
 	metricsAccumulator *metrics.Accumulator
@@ -293,6 +294,12 @@ func (s *Server) SetRegistryServer(r *registry.Server) {
 // SetPinStore sets the pin store for schema pin management.
 func (s *Server) SetPinStore(ps *pins.PinStore) {
 	s.pinStore = ps
+}
+
+// SetCardPinStore supplies mandatory card trust independently of legacy pinning.
+// Both fields share the same store when legacy tool pinning is enabled.
+func (s *Server) SetCardPinStore(ps *pins.PinStore) {
+	s.cardPinStore = ps
 }
 
 // PinStore returns the wired pin store, or nil when schema pinning is not

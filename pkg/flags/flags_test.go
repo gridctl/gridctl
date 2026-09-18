@@ -110,16 +110,14 @@ func TestBuiltinRegistryValid(t *testing.T) {
 }
 
 func TestDefaultRegistryUnknownNameHint(t *testing.T) {
-	// With every builtin flag graduated, the registry has no settable
-	// flags, so unknown names get the empty-registry hint instead of a
-	// valid-names list. This is exactly the state users hit today.
+	t.Setenv("GRIDCTL_EXPERIMENTAL_A2A", "false")
 	res := Resolve(Default(), map[string]bool{"tpyo": true})
 	if res.Enabled != nil {
 		t.Fatalf("Enabled = %v, want nil", res.Enabled)
 	}
 	if len(res.Warnings) != 1 ||
-		!strings.Contains(res.Warnings[0].Message, "no experimental flags are registered in this build") {
-		t.Fatalf("Warnings = %+v, want the empty-registry hint", res.Warnings)
+		!strings.Contains(res.Warnings[0].Message, "valid flags: a2a") {
+		t.Fatalf("Warnings = %+v, want the experimental A2A hint", res.Warnings)
 	}
 }
 

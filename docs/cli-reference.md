@@ -46,6 +46,12 @@ Plain tables: `status`, `search`, `skill list`, `pins list`, `optimize`, `teleme
 | `gridctl status` | Show running stacks; `-s` / `--stack` filters to one stack, `--replicas` expands to one row per replica, `--json` for machine-readable output. |
 | `gridctl logs [stack]` | Tail the gateway daemon log (`~/.gridctl/logs/<stack>.log`), including INFO source-build phases and image-build diagnostics tagged with `server` and `phase` for filtering. `-f` / `--follow` streams, `-n` / `--tail <N>` picks the line count (default 100), `--server <name>` switches to that containerized MCP server's stdout/stderr instead, and `-s` / `--stack <name>` names the stack explicitly. Stack auto-detected when exactly one is running. |
 
+Experimental [A2A declarations](config-schema.md#a2a) validate only with the
+`a2a` flag enabled. Apply classifies them without requiring a container runtime,
+but registration fails terminally with `a2a: adapter unavailable` before any
+card request. `status` identifies their type as `a2a`; server rows in JSON add
+`a2a: true`. A valid declaration is not a working connection.
+
 ### Mutable reference diagnostics
 
 `gridctl validate stack.yaml --check-mutable-refs` is off by default. It inspects literal image and `npx`/`uvx` selectors without expanding variables, substituting secrets, executing launchers, or rewriting the file. Findings reuse the existing `field` / `message` / `severity` shape:
@@ -107,7 +113,7 @@ MCP execution changes are reloadable after their own capability preflight. Once 
 
 `gridctl export` selects the first running deployment found in local state and rereads its associated stack file; it has no stack-selection flag. It never reconstructs effective runtime values or consults variable values. `$NAME`, `${NAME}`, `${var:KEY}`, legacy `${vault:KEY}`, and compound expressions retain their decoded string content. Missing or locked variables do not block structurally exportable configuration. Recipients may need to supply variables separately. Exit `0` means success; exit `1` covers safety refusals, invalid formats, missing running stacks or source files, and filesystem failures.
 
-Recognized nonempty inline credential fields reject the whole export: gateway auth token, downstream auth token/value/client-secret, gateway tokenizer API key, source credential reference, and sensitive-looking MCP/resource environment keys. Sensitive keys include password, secret, token, API key, private/access key, auth, and credential spellings. These are recognized fields, not proof that every rejected value is a secret. Empty values remain empty; nonempty default/replacement operands in those fields are rejected. Migrate to authored references without literal fallback operands. Export does not create variables or invent placeholder names.
+Recognized nonempty inline credential fields reject the whole export: gateway auth token, downstream auth token/value/client-secret, A2A bearer token (`a2a.auth.token`), gateway tokenizer API key, source credential reference, and sensitive-looking MCP/resource environment keys. Sensitive keys include password, secret, token, API key, private/access key, auth, and credential spellings. These are recognized fields, not proof that every rejected value is a secret. Empty values remain empty; nonempty default/replacement operands in those fields are rejected. Migrate to authored references without literal fallback operands. Export does not create variables or invent placeholder names.
 
 Review unclassified authored literals before sharing. Arbitrary commands, encoded text, free-form strings, URL queries, and literal portions of mixed reference/literal strings are not certified secret-free. A single review notice goes to stderr, separate from the one YAML or JSON document on stdout. Safety failures produce no document. The web spec view offers a separate Export YAML action; raw spec retrieval and editor/save content may still contain authored credentials.
 
@@ -330,6 +336,14 @@ All `pins` subcommands accept `--stack <name>` (auto-detected when only one stac
 | `gridctl pins diff [server]` | Per-tool before/after view of drifted definitions with change kinds on each modified tool (`[description]`, `[input_schema]`, `[output_schema]`, or `[schema_uncaptured]` for pins recorded before schema capture), old/new canonical schemas for schema changes, and poisoning-scan findings, control characters escaped; `--format json` carries the same schema fields plus `live_server_hash` for `approve --expect`. Exit `0` clean, `1` drift, `2` infrastructure error. `--fail-on-findings warn\|critical` additionally exits `1` when scan findings at or above that severity exist on pinned tools. |
 | `gridctl pins approve <server>` | Re-pin current tool definitions, clearing drift; `--expect <hash>` binds the approval to a reviewed diff. |
 | `gridctl pins reset <server>` | Delete pins (re-pinned on next apply). |
+
+Card-trust records require `approve --expect <live_server_hash>` and reject
+`reset`. Diff and approval use complete immutable pin evidence, including hidden
+card and identity digests; those records are not tools. Approval refetches the
+card and checks the current registration generation before persisting, so a
+stale review cannot unblock a replacement or another policy block. The A2A
+source currently fails registration with `a2a: adapter unavailable`; a declaration
+alone supplies no live snapshot to approve. See [A2A configuration](config-schema.md#a2a).
 
 ## Server authorization (OAuth)
 

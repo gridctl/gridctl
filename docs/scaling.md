@@ -25,8 +25,9 @@ Skip replicas when the downstream tool already holds a single shared resource (o
 | SSH (ssh + command) | Yes | Each replica is its own SSH session |
 | External URL | **No** | gridctl does not manage the process - scaling is the operator's responsibility on the remote end |
 | OpenAPI | **No** | Stateless HTTP, no process to replicate - put a load balancer in front of the upstream API |
+| A2A declaration | No | External source with no managed process; adapter registration is unavailable |
 
-Setting `replicas > 1` on `external` or `openapi` servers fails validation with the path `mcp-servers[N].replicas` so the error is unambiguous.
+Setting `replicas > 1` on external URL, OpenAPI, or A2A sources fails validation with the path `mcp-servers[N].replicas` so the error is unambiguous.
 
 For a source-based container server, gridctl resolves and builds the desired
 image once before creating the replica set. Every static replica and later
@@ -174,7 +175,7 @@ Validation surfaces the exact path (`mcp-servers[N].replicas`) so CI can fail fa
 A server can replace static `replicas: N` with an `autoscale` block that lets
 gridctl spawn and reap replicas reactively based on in-flight load. The same
 transport rules apply - autoscale is supported on container, local-process,
-and SSH servers, and rejected on external URL and OpenAPI transports.
+and SSH servers, and rejected on external URL, OpenAPI, and A2A sources.
 
 ```yaml
 mcp-servers:

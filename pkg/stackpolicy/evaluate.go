@@ -133,7 +133,7 @@ func evalExplicitImageDigests(report *Report, stack *declaredStack) {
 		case kindSource:
 			excluded[reasonSourceBuilt]++
 			report.Results = append(report.Results, naResult(RuleExplicitImageDigests, srv.loc, reasonSourceBuilt, "Source-built servers are excluded from explicit image digest checks."))
-		case kindLocal, kindSSH, kindURL, kindOpenAPI:
+		case kindLocal, kindSSH, kindURL, kindOpenAPI, kindA2A:
 			excluded[reasonNonImage]++
 			report.Results = append(report.Results, naResult(RuleExplicitImageDigests, srv.loc, reasonNonImage, "This server kind has no explicit image field."))
 		default:

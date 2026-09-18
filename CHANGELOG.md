@@ -6,6 +6,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Features
 
+- Add experimental `a2a` declarations, dual-dialect bounded HTTP codecs, origin-bound credentials, and mandatory card-byte trust with generation-bound hash approval. A2A sources classify as external workloads without Docker or Podman; replicas and autoscale are rejected. Configuration is available behind `experimental.a2a`, but registration deliberately fails with an unavailable-adapter error and exposes no callable A2A tools (#1185).
 - Add gateway-owned capability primitives with shared bounded accounting, generation retirement, expiring context/task authority, and independent same-task send/cancel slots. Opt-in payload-free observations retain locally estimated numeric token usage while skipping payload-bearing observers and external token counters. Diagnostic sanitation recognizes typed capability handles; code-mode logs exclude source excerpts and thrown values. No new callable source or stack configuration is exposed (#1185).
 - Breaking diagnostic output: typed capability strings in recorded names, labels, and errors are masked, and code-mode failure logs use local categories. Nested structured log attributes containing recognized secrets may become sanitized JSON strings. Migrate diagnostic consumers to generated attempt/trace IDs and outcome categories, and accept that attribute shape; caller-facing code errors remain available. Schedule this diagnostic-output change for a maintainer-owned major release under Article VIII (#1185).
 - Add `gridctl call` and `gridctl tools search` for invoking and discovering live tools on a selected running gateway, plus `POST /api/tools/call` and `GET /api/tools/discover`. Calls use authenticated daemon state, a default `cli` caller label, optional `--as`, strict canonical catalog admission, and typed outcomes with exits 0/1/2. Discovery is read-only lexical search. REST success is not proof of upstream MCP protocol negotiation; lost calls are not retried (#1154).
@@ -19,6 +20,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Documentation
 
+- Document A2A fields, flag lifecycle, credential origins, bounded card freshness, immutable card/identity pins, and the current unavailable-adapter boundary. Align pins API/CLI guidance, external-source classification, scaling restrictions, and the architecture map with the installed card-trust service (#1185).
 - Document capability bounds, expiry, uncertainty, teardown accounting, and sensitive-observer behavior, including local token estimates and diagnostic-recognition limits. Align usage, configuration, API, CLI, security, examples, and architecture guidance with diagnostic migration and payload-free counting boundaries (#1185).
 - Document `gridctl call`, `gridctl tools search`, live-tool versus catalog search, REST call/discover envelopes and limits, typed exits, no-retry behavior, lexical matching, REST-versus-MCP verification limits, and the caller-label trust boundary (#1154).
 - Document the Python MCP runtime base contract, writable-state mounts, evidence layers, tag policy, licensing notices, and maintenance ownership, and cross-link wizard help, Python source examples, and troubleshooting (#1230).
@@ -34,6 +36,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Bug Fixes
 
+- Classify A2A declarations as non-image exclusions for `explicit-image-digests`, matching OpenAPI. Preserve the error for evaluations with no applicable checks (#1185).
 - Keep a successful verified-test run at exit 0 when Gatekeeper supplies `--summary` without `--capture`, so the EXIT trap cannot replace a passing verifier with a failed job (#1227).
 - Count Go test JSON identities exactly, so sibling subtests whose names share a slash prefix (HTTP route cases such as `/api/traces` and `/api/traces/{traceId}`) do not fail the unit-lane scenario verifier (#1227).
 - Match unqualified local image tags to Podman's `localhost/` RepoTags so a locally built image is not pulled from a remote registry (#1230).

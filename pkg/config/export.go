@@ -175,6 +175,11 @@ func checkExportCredentials(stack *Stack) error {
 	}
 	for i, srv := range stack.MCPServers {
 		prefix := fmt.Sprintf("mcp-servers[%d]", i)
+		if srv.A2A != nil && srv.A2A.Auth != nil {
+			if err := check(prefix+".a2a.auth.token", srv.A2A.Auth.Token); err != nil {
+				return err
+			}
+		}
 		if srv.Auth != nil {
 			for _, field := range []struct{ name, value string }{{"token", srv.Auth.Token}, {"value", srv.Auth.Value}, {"client_secret", srv.Auth.ClientSecret}} {
 				if err := check(prefix+".auth."+field.name, field.value); err != nil {

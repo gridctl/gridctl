@@ -106,6 +106,8 @@ If execution intent changes alongside autoscale settings, the server is recreate
 
 - External URL servers and OpenAPI servers - they're stateless from gridctl's
   point of view; scale them at the HTTP tier.
+- A2A declarations reject autoscale and replicas greater than one. They have no
+  managed process, and adapter registration is unavailable in this build.
 - Cross-daemon load balancing - decisions are local to one gridctl daemon.
 - Predictive pre-warm - policies are reactive to current load only. Use
   `warm_pool` to keep a buffer above the load floor.

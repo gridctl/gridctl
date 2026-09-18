@@ -1,10 +1,12 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/pins"
@@ -101,7 +103,11 @@ type scanContext struct {
 // newScanContext snapshots the router inventory and scan config, or returns
 // nil when the scanner is disabled.
 func (s *Server) newScanContext() *scanContext {
-	if s.pinStore == nil || !s.pinStore.ScanEnabled() {
+	store := s.pinStore
+	if store == nil {
+		store = s.cardPinStore
+	}
+	if store == nil || !store.ScanEnabled() {
 		return nil
 	}
 	inventory := make(map[string][]string)
@@ -113,7 +119,52 @@ func (s *Server) newScanContext() *scanContext {
 		}
 		inventory[client.Name()] = names
 	}
-	return &scanContext{inventory: inventory, ignore: s.pinStore.ScanIgnoreCodes()}
+	return &scanContext{inventory: inventory, ignore: store.ScanIgnoreCodes()}
+}
+
+func (s *Server) cardSnapshot(ctx context.Context, server string) mcp.PinSnapshot {
+	snapshot, err := s.gateway.CardTrust().Snapshot(ctx, server)
+	if err != nil {
+		return nil
+	}
+	return snapshot
+}
+
+func (s *Server) pinsForServer(ctx context.Context, name string) *pins.PinStore {
+	if s.cardSnapshot(ctx, name) != nil {
+		return s.cardPinStore
+	}
+	if s.cardPinStore != nil {
+		if stored, ok := s.cardPinStore.GetServer(name); ok && hasCardRecord(stored) {
+			return s.cardPinStore
+		}
+	}
+	return s.pinStore
+}
+
+func (s *Server) hasCardPins(name string, store *pins.PinStore) bool {
+	if store != nil {
+		if stored, ok := store.GetServer(name); ok && hasCardRecord(stored) {
+			return true
+		}
+	}
+	_, hasSnapshot := s.gateway.Router().GetClient(name).(mcp.PinSnapshotSource)
+	return hasSnapshot
+}
+
+// Ordinary MCP tools may share the reserved record's name. Only the digest-only
+// representation identifies persisted card trust when no registration is live.
+func hasCardRecord(stored *pins.ServerPins) bool {
+	record := stored.Tools["_agent_card"]
+	if record == nil || !strings.HasPrefix(record.Description, "sha256:") || len(record.Description) != 71 {
+		return false
+	}
+	for _, c := range record.Description[7:] {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return (record.InputSchema == "" || record.InputSchema == "{}") && (record.OutputSchema == "" || record.OutputSchema == "{}")
 }
 
 // shadowFindings runs the P006 check for the given tools of serverName.
@@ -139,11 +190,16 @@ func (sc *scanContext) shadowFindings(serverName string, tools []mcp.Tool) map[s
 // on every refresh cycle; returning a 5xx here would log a console error on each
 // poll for stacks that simply do not enable pinning.
 func (s *Server) handleListPins(w http.ResponseWriter, r *http.Request) {
-	if s.pinStore == nil {
-		writeJSON(w, map[string]any{})
-		return
+	servers := make(map[string]*pins.ServerPins)
+	if s.pinStore != nil {
+		servers = s.pinStore.GetAll()
+	} else if s.cardPinStore != nil {
+		for name, record := range s.cardPinStore.GetAll() {
+			if hasCardRecord(record) {
+				servers[name] = record
+			}
+		}
 	}
-	servers := s.pinStore.GetAll()
 	sc := s.newScanContext()
 	for name, sp := range servers {
 		decorateServerPins(sc, name, sp)
@@ -191,12 +247,13 @@ func decorateServerPins(sc *scanContext, serverName string, sp *pins.ServerPins)
 // handleGetServerPins returns the pin record for a single server.
 // GET /api/pins/{server}
 func (s *Server) handleGetServerPins(w http.ResponseWriter, r *http.Request) {
-	if s.pinStore == nil {
+	serverName := r.PathValue("server")
+	store := s.pinsForServer(r.Context(), serverName)
+	if store == nil {
 		writeJSONError(w, "Pin store not available", http.StatusServiceUnavailable)
 		return
 	}
-	serverName := r.PathValue("server")
-	sp, ok := s.pinStore.GetServer(serverName)
+	sp, ok := store.GetServer(serverName)
 	if !ok {
 		writeJSONError(w, "No pins found for server: "+serverName, http.StatusNotFound)
 		return
@@ -212,27 +269,36 @@ func (s *Server) handleGetServerPins(w http.ResponseWriter, r *http.Request) {
 // viewing a diff never mutates pin state.
 // GET /api/pins/{server}/diff
 func (s *Server) handlePinsDiff(w http.ResponseWriter, r *http.Request) {
-	if s.pinStore == nil {
+	serverName := r.PathValue("server")
+	store := s.pinsForServer(r.Context(), serverName)
+	if store == nil {
 		writeJSONError(w, "Pin store not available", http.StatusServiceUnavailable)
 		return
 	}
-	serverName := r.PathValue("server")
 
 	// A server with no pins has nothing to diff against; mirror the
 	// get-server semantics rather than returning an empty diff.
-	if _, ok := s.pinStore.GetServer(serverName); !ok {
+	if _, ok := store.GetServer(serverName); !ok {
 		writeJSONError(w, "No pins found for server: "+serverName, http.StatusNotFound)
 		return
 	}
 
-	client := s.gateway.Router().GetClient(serverName)
-	if client == nil {
-		writeJSONError(w, "Server not found in gateway: "+serverName, http.StatusNotFound)
-		return
+	var tools []mcp.Tool
+	if snapshot := s.cardSnapshot(r.Context(), serverName); snapshot != nil {
+		tools = snapshot.Records()
+	} else {
+		if s.hasCardPins(serverName, store) {
+			writeJSONError(w, "A2A trust registration unavailable", http.StatusConflict)
+			return
+		}
+		client := s.gateway.Router().GetClient(serverName)
+		if client == nil {
+			writeJSONError(w, "Server not found in gateway: "+serverName, http.StatusNotFound)
+			return
+		}
+		tools = client.Tools()
 	}
-
-	tools := client.Tools()
-	vr, err := s.pinStore.Verify(serverName, tools)
+	vr, err := store.Verify(serverName, tools)
 	if err != nil {
 		writeJSONError(w, "Failed to compute diff: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -260,11 +326,12 @@ func (s *Server) handlePinsDiff(w http.ResponseWriter, r *http.Request) {
 // can never be pinned unseen. An empty body preserves the unconditional
 // approve for existing callers.
 func (s *Server) handleApprovePins(w http.ResponseWriter, r *http.Request) {
-	if s.pinStore == nil {
+	serverName := r.PathValue("server")
+	store := s.pinsForServer(r.Context(), serverName)
+	if store == nil {
 		writeJSONError(w, "Pin store not available", http.StatusServiceUnavailable)
 		return
 	}
-	serverName := r.PathValue("server")
 
 	var body struct {
 		ExpectedServerHash string `json:"expected_server_hash"`
@@ -277,8 +344,25 @@ func (s *Server) handleApprovePins(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if snapshot := s.cardSnapshot(r.Context(), serverName); snapshot != nil {
+		if body.ExpectedServerHash == "" {
+			writeJSONError(w, "A2A approval requires expected_server_hash", http.StatusBadRequest)
+			return
+		}
+		if err := s.gateway.CardTrust().Approve(r.Context(), serverName, body.ExpectedServerHash); err != nil {
+			writeJSONError(w, err.Error(), http.StatusConflict)
+			return
+		}
+		writeJSON(w, map[string]any{"server": serverName, "tool_count": len(snapshot.Records()), "status": "approved"})
+		return
+	}
+	if s.hasCardPins(serverName, store) {
+		writeJSONError(w, "A2A trust registration unavailable", http.StatusConflict)
+		return
+	}
+
 	// Verify the server has existing pins before approving.
-	if _, ok := s.pinStore.GetServer(serverName); !ok {
+	if _, ok := store.GetServer(serverName); !ok {
 		writeJSONError(w, "No pins found for server: "+serverName, http.StatusNotFound)
 		return
 	}
@@ -305,7 +389,7 @@ func (s *Server) handleApprovePins(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := s.pinStore.Approve(serverName, tools); err != nil {
+	if err := store.Approve(serverName, tools); err != nil {
 		writeJSONError(w, "Failed to approve pins: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -320,11 +404,15 @@ func (s *Server) handleApprovePins(w http.ResponseWriter, r *http.Request) {
 // handleResetPins deletes the pin record for a server.
 // DELETE /api/pins/{server}
 func (s *Server) handleResetPins(w http.ResponseWriter, r *http.Request) {
+	serverName := r.PathValue("server")
+	if s.cardSnapshot(r.Context(), serverName) != nil || s.hasCardPins(serverName, s.pinsForServer(r.Context(), serverName)) {
+		writeJSONError(w, "A2A card trust requires hash-bound approval", http.StatusConflict)
+		return
+	}
 	if s.pinStore == nil {
 		writeJSONError(w, "Pin store not available", http.StatusServiceUnavailable)
 		return
 	}
-	serverName := r.PathValue("server")
 
 	if _, ok := s.pinStore.GetServer(serverName); !ok {
 		writeJSONError(w, "No pins found for server: "+serverName, http.StatusNotFound)

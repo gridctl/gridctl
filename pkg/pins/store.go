@@ -44,10 +44,11 @@ var (
 // It is safe for concurrent use: in-memory access is guarded by a RWMutex,
 // and disk writes are serialized via state.WithLock.
 type PinStore struct {
-	stackName string
-	path      string
-	mu        sync.RWMutex
-	data      *PinFile
+	stackName  string
+	path       string
+	mu         sync.RWMutex
+	data       *PinFile
+	loadFailed bool // mandatory card trust cannot use legacy empty-store recovery
 
 	// scanEnabled controls the poisoning heuristics run at pin and verify
 	// time (default on); scanIgnore drops findings by code (e.g. "P004").
@@ -138,6 +139,7 @@ func (ps *PinStore) ScanIgnoreCodes() []string {
 func (ps *PinStore) Load() error {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
+	ps.loadFailed = true
 
 	if err := ps.ensurePath(); err != nil {
 		return err
@@ -146,6 +148,7 @@ func (ps *PinStore) Load() error {
 	if err != nil {
 		if os.IsNotExist(err) {
 			ps.data = ps.emptyPinFile()
+			ps.loadFailed = false
 			return nil
 		}
 		return fmt.Errorf("pins: reading pin file: %w", err)
@@ -166,6 +169,7 @@ func (ps *PinStore) Load() error {
 		pf.Servers = make(map[string]*ServerPins)
 	}
 	ps.data = &pf
+	ps.loadFailed = false
 	return nil
 }
 
