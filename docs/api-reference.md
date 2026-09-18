@@ -400,6 +400,11 @@ Returns per-(server, tool) usage observed by the gateway: cumulative call count,
 
 Usage is recorded for both direct tool calls and tools invoked through code mode's `execute` (both flow through the same observer). For servers with metrics persistence enabled, the data is restored from disk on startup so it survives gateway restarts; otherwise it reflects activity since the last gateway start.
 
+Internal sensitive dispatch records local token estimates by operation category
+(`send`, `task_get`, `task_cancel`, or `skill`), without client or individual skill
+attribution. The configured tokenizer is not used for these calls. Existing
+sources retain ordinary counting. See [sensitive-call counting](usage-observability.md#sensitive-call-counting).
+
 `observedSince` is when this gateway process began recording. With persistence enabled, restored counts and timestamps may predate it; clients should treat tools absent from `servers` (or with no `lastCalledAt`) as "no recorded calls" rather than asserting a longer disuse history than `observedSince` supports.
 
 **Auth:** Yes
@@ -479,6 +484,12 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/logs?lines=50&
 When `level` is set, the whole buffer is scanned newest-first for up to `lines` entries of the requested levels, so sparse severities are returned even when the most recent entries are all other levels. The web UI's Logs workspace polls this endpoint (window size selectable as 200, 500, or 1000 entries, 500 by default) and filters client-side.
 
 Tool-call log lines carry `server`, `tool`, `replica_id`, and (when the caller is identified) `client` in `attrs`, plus a top-level `trace_id` when tracing is enabled, for correlation with `/api/traces`.
+
+Shared redaction masks recognizable typed capability strings in log messages,
+keys, and nested JSON-compatible attributes. A nested attribute containing a
+recognized secret may be a sanitized JSON string rather than an object.
+Code-mode failure logs contain local categories and timing, not source excerpts
+or thrown values. See [diagnostic migration](usage-observability.md#diagnostic-privacy-and-migration).
 
 #### `GET /api/clients`
 
@@ -852,6 +863,12 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/limits
 
 Read the gateway's in-memory distributed-trace buffer. Each trace captures the spans for one upstream operation (tool call, prompt, etc.).
 
+Gateway diagnostic names, attributes, and errors mask recognizable typed
+capability strings before recording or export. Sensitive downstream errors use
+safe local categories. Use generated trace IDs for correlation rather than
+secret-bearing names. These protections do not sanitize arbitrary application
+responses. See [diagnostic privacy](usage-observability.md#diagnostic-privacy-and-migration).
+
 #### `GET /api/traces`
 
 Returns recent trace summaries, newest first.
@@ -958,6 +975,11 @@ Returns `404` when the trace ID is not in the buffer or tracing is disabled.
 ### Runs
 
 Metadata-only records of returning tool-dispatch attempts. Protected by gateway auth. Records are untrusted input for rendering. Live queries read successfully appended files, not the in-memory queue. Partial results set `partial: true` with warnings that do not echo malformed contents. Remote APIs do not accept arbitrary filesystem paths; offline path selection is a local CLI operation. `503` when no stack is loaded.
+
+Recorded target names and caller labels mask recognizable typed capability
+strings, including pre-routing denials. Filters match recorded values; use
+generated attempt/trace IDs for correlation instead of secret-bearing names.
+Other sensitive text may remain. See [diagnostic privacy](usage-observability.md#diagnostic-privacy-and-migration).
 
 #### `GET /api/runs`
 

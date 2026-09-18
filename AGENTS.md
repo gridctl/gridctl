@@ -42,6 +42,12 @@ Gateway authentication lifecycle changes also require `go test -race -tags=integ
 
 MCP execution changes require the real race-enabled `TestExecution_` integration suites on Docker and Podman. Hardened admission currently needs Linux, a local Unix daemon endpoint, and instance-bound `/proc` and cgroup v2 observations; missing required evidence must refuse routing. Rootless Podman acceptance must actually execute the positive fixtures. Run `node web/execution.browser.mjs <path-to-playwright/index.mjs>` from the repository root for the separate real-browser Execution checks, using an independently installed Chromium and `PLAYWRIGHT_BROWSERS_PATH` when needed.
 
+Capability and sensitive-observation primitives have race coverage in `pkg/mcp`,
+including real HTTP overlap and OTLP disclosure checks. Their REST observation
+check uses a real MCP subprocess without Docker:
+`go test -race -tags=integration -run '^TestCapabilityDiagnostics_' -count=1 -timeout 3m ./tests/integration`.
+Focused checks supplement the required whole-suite gates.
+
 Lint:
 
 ```bash
@@ -96,6 +102,11 @@ pkg/builder/        Image building from git or local Dockerfiles and generated P
 pkg/mcp/            MCP protocol: gateway (router + tool aggregation), stdio/SSE/streamable transports, OpenAPI-as-MCP,
                     autoscaler, code mode sandbox (goja), replica sets, schema pinning hooks, live tool discovery,
                     and typed call outcomes for canonical REST/CLI dispatch.
+                    a2a_capabilities.go owns the gateway's shared CapabilityStore, atomic reservations, and teardown
+                    accounting; a2a_authority.go supplies private generation-bound authority and send/cancel slots.
+                    These are internal primitives with no callable source or stack option. sensitive.go supplies
+                    payload-free observations, safe errors, and shared code-mode sensitivity. Trusted construction
+                    metadata selects this path; raw observers, configured counters, and format conversion are skipped.
 pkg/mcpauth/        Downstream OAuth 2.1 brokering for external servers (discovery, dynamic client registration,
                     token store, callback listener). Backed by `gridctl auth`.
 pkg/registry/       Skills registry: discovers SKILL.md files, parses frontmatter, validates, serves as MCP prompts.
@@ -123,7 +134,10 @@ pkg/varscan/        Exact stored-secret scanning for working-tree files and stag
 pkg/pins/           TOFU schema pinning for tool definitions; drift surfaces in pkg/pins + `gridctl pins`.
 pkg/secreport/      Passive security evidence report DTO and assembler for `gridctl doctor --security` and GET /api/security-report.
 pkg/optimize/       Usage analysis: feeds `gridctl optimize` and the UI's findings panel with token-denominated findings.
-pkg/telemetry/      Tool-call accounting (counts, latency, tokens). Buffered in-memory; surfaced via /api/telemetry.
+pkg/metrics/        In-memory usage accounting and observers; sensitive observations record local numeric estimates
+                    without client attribution. Read via /api/metrics/tokens and /api/tools/usage.
+pkg/telemetry/      Opt-in log, metric, and trace persistence, inventory, and wipe. Inventory is GET
+                    /api/telemetry/inventory; DELETE /api/telemetry wipes persisted signals.
 pkg/tracing/        OTLP exporter + in-memory trace buffer for `gridctl traces` and the UI traces panel.
 pkg/reload/         Stack hot-reload (file watcher + diff-and-apply path). security.go owns effective bind/insecure
                     precedence and immutable startup-security comparison. Reload and stackless Initialize run
@@ -135,7 +149,9 @@ pkg/controller/     Application composition root: builds the gateway, mounts the
                     Supplies the startup security snapshot and installs manual reload independently of --watch.
                     execution.go binds admission callbacks to the normalized contract, actual container ID, and inspected
                     IPv4 loopback HTTP endpoint.
-pkg/metrics/, pkg/token/, pkg/format/, pkg/output/, pkg/logging/, pkg/jsonrpc/, pkg/state/, pkg/git/, pkg/dockerclient/   Supporting libs.
+pkg/logging/        Shared structured log handlers and redaction, including typed capability strings in messages,
+                    field/group names, and nested JSON-compatible values. Diagnostic copies do not alter policy inputs.
+pkg/token/, pkg/format/, pkg/output/, pkg/jsonrpc/, pkg/state/, pkg/git/, pkg/dockerclient/   Supporting libs.
 
 web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). Zustand stores in src/stores/, route map in
                     src/routes.tsx, feature components grouped under src/components/<workspace>/. Nine workspaces:
@@ -152,7 +168,8 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
                     and CLI/REST live tool invocation. Grouped auth tests use real HTTP and a subprocess MCP backend.
                     auth_restart_test.go verifies actual process restart, saved/live-state rejection, CLI exits,
                     sessions/streams, and preserved Docker identities with race-built child binaries.
-                    examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, registry, secrets-vault,
+                    capability_diagnostics_test.go checks REST log/trace/usage/run observations with a real MCP subprocess.
+examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
                     portable-pack, model-policy, python-sources, python-runtime, execution, security-evidence, stack-declaration-policy, runs).
                     examples/_mock-servers/ is the source for `task mock:servers`.
@@ -165,13 +182,21 @@ scripts/            Build/test helpers and release tooling: release.py owns gate
 docs/               User-facing documentation (cli-reference, config-schema, api-reference, skills, packs, tools-workspace,
                     global-context, model-policy, scaling, usage-observability, installation, release-verification,
                     project-status, troubleshooting, execution, mcp-runtime-python, security/threat-model, security-evidence,
-                    stack-declaration-policy, adversarial-regression-gates).
+                    stack-declaration-policy, adversarial-regression-gates, capability-primitives, security/practical-guide).
 images/             OCI recipes that are not the gateway binary. images/mcp-runtime-python is the Python 3.12 runtime base.
 ```
 
 End-to-end request flow for an upstream HTTP MCP tool call: client → HTTP listener built by `pkg/controller` (gateway_builder.go) → `internal/api.Server.Handler` (CORS, Host validation, configured auth, and route/group selection) → `pkg/mcp` Streamable HTTP transport (Host/Origin checks and protocol handling) → `mcp.Gateway` router → per-server `mcp.Client` (process/stdio/SSE/HTTP/OpenAPI) → response, with telemetry, tracing, optional run recording, schema pinning, and (optional) output-format conversion attached on the way back. Legacy SSE routes return a negotiation hint rather than dispatching tools.
 
 End-to-end for `gridctl call` and `gridctl tools search`: CLI → state-recorded credentials on the selected daemon origin (redirects refused) → `POST /api/tools/call` or `GET /api/tools/discover` on `internal/api.Server.Handler` → `mcp.Gateway` canonical dispatch or `DiscoverTools` → versioned envelope. Discovery does not dispatch tools. REST success is not proof of upstream MCP protocol negotiation.
+
+Gateway diagnostics sanitize recognizable typed capability strings before log,
+trace, usage, and run recording. Code-mode failure logs contain local categories
+without source excerpts or thrown values, while caller-delivered execution
+errors and console output remain available. Sensitive downstream Go errors use
+safe categories with cancellation/deadline identity; ordinary source errors keep
+their caller-facing text. See `docs/capability-primitives.md` for lifecycle,
+counting, and privacy boundaries.
 
 End-to-end for the web UI: component or React store action → shared gatewayRequest transport beneath endpoint parsers in `src/lib/api.ts` → `/api/...` handler in `internal/api/` → method on `Server` → call into the relevant `pkg/*` subsystem → JSON response → current-generation component or store state update → component re-render. Credential drafts verify against protected `/api/status` before active replacement/persistence. Gateway rejection pauses protected reads; verification resumes eligible reads without replaying mutations. The Stack spec view's Export YAML action calls `/api/stack/export` and downloads the non-resolving projection; raw spec retrieval and editing remain separate and may contain authored credentials. Verbose apply uses bounded controller diagnostic summaries, not resolved stack JSON.
 

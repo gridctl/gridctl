@@ -1,6 +1,6 @@
 # Usage Observability
 
-Gridctl measures the token traffic that flows through the gateway. Every tool call's arguments and result are counted with a real tokenizer, and the counts accumulate per server, per replica, per client, and per (server, tool) pair, alongside cumulative call counts and last-used timestamps. Because the gateway also performs output format conversion, it measures the savings directly: each converted result is counted before and after conversion, so the reported format savings come from the gateway's own observed traffic, not a projection.
+Gridctl measures the token traffic that flows through the gateway. Ordinary successful dispatches count arguments and results with the configured tokenizer, accumulating per server, per replica, per client, and per (server, tool) pair, alongside cumulative call counts and last-used timestamps. Because the gateway also performs output format conversion, it measures the savings directly: each converted result is counted before and after conversion, so the reported format savings come from the gateway's own observed traffic, not a projection.
 
 ## What the gateway measures
 
@@ -11,6 +11,18 @@ Input tokens are counted on tool-call arguments and output tokens on tool result
 Token counting defaults to an embedded `cl100k_base` BPE tokenizer (`gateway.tokenizer: embedded`). Claude's vocabulary is unpublished, so `cl100k_base` counts are an approximation for Claude models, typically within 10–15% for English and code content. That is accurate enough for the comparisons this data exists for: ranking servers, spotting waste, and trending over time.
 
 For exact counts, set `gateway.tokenizer: api` to route counting through Anthropic's `count_tokens` endpoint, with the key from `gateway.tokenizer_api_key` or the `ANTHROPIC_API_KEY` environment variable. On any API error the counter falls back to the embedded tokenizer rather than dropping the measurement.
+
+### Sensitive-call counting
+
+The internal sensitive-call classification uses trusted server construction
+metadata, with no stack setting or caller annotation. Existing sources use the
+ordinary path. Classified calls skip payload-bearing observer callbacks and the
+configured tokenizer, including API-backed counting. They retain local estimates
+at four bytes per token, attributed to server, replica, and operation category
+(`send`, `task_get`, `task_cancel`, or `skill`), without client or individual skill
+attribution. Failures also contribute usage. Format conversion is skipped for
+these calls. See [capability and sensitive-call primitives](capability-primitives.md#observations-and-diagnostics)
+for the observer contract and counting boundary.
 
 ## Where usage surfaces
 
@@ -34,12 +46,29 @@ Default retention is seven days and 100 MiB of logical record bytes per stack, i
 
 Query with `gridctl runs list`, `GET /api/runs`, or the Runs tab beside Traces. Live and offline sources are explicit; a failed live request never falls back to disk. See [Run records](config-schema.md#run-records) and [CLI runs](cli-reference.md#runs).
 
+## Diagnostic privacy and migration
+
+Gateway logs, trace names/attributes, usage identifiers, and run metadata mask
+recognizable typed capability strings before recording them. Policy checks still
+use the original names and labels. Recognition does not cover arbitrary encoded
+or split secrets, and ordinary payload-bearing observers retain their existing
+access. Sensitive executions exclude payloads instead of relying on recognition.
+
+Code-mode failure logs now contain a local category, such as
+`code_execution_failed`, rather than a parser excerpt or thrown value. The
+requesting caller still receives execution errors and console output. Correlate
+diagnostics with generated attempt/trace IDs and outcome categories; do not join
+records using secret-bearing names or parse raw code-error log text. Structured
+log attributes containing recognized secrets may become sanitized JSON strings.
+These Unreleased diagnostic-output changes require maintainer-owned major-release
+scheduling under Article VIII. See [diagnostic troubleshooting](troubleshooting.md#code-mode-error-details-are-missing-from-logs).
+
 ## Metrics persistence
 
 Opt-in metrics persistence is unchanged: with `telemetry.persist.metrics: true`, the gateway appends diff snapshots to `~/.gridctl/telemetry/<stack>/<server>/metrics.jsonl` and restores cumulative counters from disk on startup. Files written while the removed cost layer was active carry extra keys (`cost_diff`, `cost_total`, `model_cost`); the decoder is non-strict and ignores them, so old files load cleanly and lose nothing but the dollar figures.
 
 ## The dollar-cost layer was removed
 
-Earlier releases priced tool calls in USD against an embedded LiteLLM rate snapshot, with model attribution declared in `stack.yaml` and dollar budget caps under `limits:`. That layer has been removed. The gateway sits below the LLM client: it never sees the prompt, the client's actual model choice, or the provider invoice, so every dollar figure was an estimate of a fraction of a related quantity. Cost attribution belongs at the LLM proxy layer, where real requests and models are visible; gridctl now reports what it can measure exactly, which is tokens and calls.
+Earlier releases priced tool calls in USD against an embedded LiteLLM rate snapshot, with model attribution declared in `stack.yaml` and dollar budget caps under `limits:`. That layer has been removed. The gateway sits below the LLM client: it never sees the prompt, the client's actual model choice, or the provider invoice, so every dollar figure was an estimate of a fraction of a related quantity. Cost attribution belongs at the LLM proxy layer, where real requests and models are visible; gridctl reports observed calls and token counts or estimates.
 
 The removed configuration fields (`gateway.default_model`, per-server `model:`, top-level `client_models:`, and `limits.budgets`) are ignored by the non-strict YAML loader, so an existing stack that still declares them loads without error; the fields simply have no effect. Leftover budget ledger files under the gridctl state directory (`~/.gridctl/limits/`) are orphaned and harmless, and can be deleted at any time.

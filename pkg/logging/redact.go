@@ -2,6 +2,7 @@ package logging
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -13,6 +14,7 @@ import (
 // Each pattern uses a capture group to preserve the prefix (e.g., "Bearer ")
 // while replacing only the secret value with [REDACTED].
 var defaultRedactPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`gca2a_[ct]1_[A-Za-z0-9_-]{43}`),
 	regexp.MustCompile(`(?i)(Authorization:\s*)\S+(\s+\S+)?`),
 	regexp.MustCompile(`(?i)(Bearer\s+)\S+`),
 	regexp.MustCompile(`(?i)((?:password|passwd|secret|api[_-]?key|token|credentials?|auth[_-]?token)\s*[=:]\s*)\S+`),
@@ -103,7 +105,7 @@ func (h *RedactingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 // WithGroup returns a new handler with the given group name.
 func (h *RedactingHandler) WithGroup(name string) slog.Handler {
 	return &RedactingHandler{
-		inner:        h.inner.WithGroup(name),
+		inner:        h.inner.WithGroup(h.redactString(name)),
 		patterns:     h.patterns,
 		redactValues: h.redactValues,
 	}
@@ -111,6 +113,8 @@ func (h *RedactingHandler) WithGroup(name string) slog.Handler {
 
 // redactAttr redacts sensitive values in an attribute.
 func (h *RedactingHandler) redactAttr(a slog.Attr) slog.Attr {
+	a.Key = h.redactString(a.Key)
+	a.Value = a.Value.Resolve()
 	switch a.Value.Kind() {
 	case slog.KindString:
 		return slog.String(a.Key, h.redactString(a.Value.String()))
@@ -143,9 +147,9 @@ func (h *RedactingHandler) redactAnyAttr(a slog.Attr) slog.Attr {
 		redacted := make(map[string]string, len(val))
 		for k, v := range val {
 			if isSensitiveKey(k) {
-				redacted[k] = "[REDACTED]"
+				redacted[h.redactString(k)] = "[REDACTED]"
 			} else {
-				redacted[k] = h.redactString(v)
+				redacted[h.redactString(k)] = h.redactString(v)
 			}
 		}
 		return slog.Any(a.Key, redacted)
@@ -154,6 +158,13 @@ func (h *RedactingHandler) redactAnyAttr(a slog.Attr) slog.Attr {
 	case fmt.Stringer:
 		return slog.String(a.Key, h.redactString(val.String()))
 	default:
+		// Preserve ordinary structured attributes. If a nested value or field
+		// name contains a secret, pass only its sanitized representation onward.
+		if b, err := json.Marshal(v); err == nil {
+			if clean := h.redactString(string(b)); clean != string(b) {
+				return slog.String(a.Key, clean)
+			}
+		}
 		return a
 	}
 }

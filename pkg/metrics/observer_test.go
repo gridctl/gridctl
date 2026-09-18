@@ -8,6 +8,20 @@ import (
 	"github.com/gridctl/gridctl/pkg/token"
 )
 
+func TestObserver_ObserveSensitiveToolCall(t *testing.T) {
+	acc := NewAccumulator(100)
+	// A nil counter proves that this entry point receives precomputed usage.
+	obs := NewObserver(nil, acc)
+	obs.ObserveSensitiveToolCall(mcp.SensitiveToolCallObservation{
+		ServerName: "agent", ReplicaID: 0, Operation: "send",
+		Usage: mcp.ToolCallSummary{InputTokens: 12, OutputTokens: 34},
+	})
+	snapshot := acc.Snapshot()
+	if snapshot.Session.InputTokens != 12 || snapshot.Session.OutputTokens != 34 || snapshot.PerServer["agent"].TotalTokens != 46 {
+		t.Fatal("numeric usage not retained", snapshot.Session)
+	}
+}
+
 func TestObserver_ObserveToolCall(t *testing.T) {
 	counter := token.NewHeuristicCounter(4)
 	acc := NewAccumulator(100)

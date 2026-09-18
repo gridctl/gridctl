@@ -94,6 +94,11 @@ gateway:
 | `tokenizer_api_key` | string | No | - | Anthropic API key for `tokenizer: api`. Falls back to `ANTHROPIC_API_KEY` env var. Supports `${VAR}` and `${var:KEY}` references |
 | `tracing` | object | No | - | Distributed tracing configuration (see [Tracing](#tracing)) |
 
+The internal sensitive-call classification bypasses the configured tokenizer and
+format conversion, using local numeric estimates without client attribution.
+It is trusted construction metadata, not a YAML option; existing sources retain
+the ordinary path. See [sensitive-call counting](usage-observability.md#sensitive-call-counting).
+
 ### Auth
 
 When configured, authentication covers `/mcp`, `/sse`, `/message`, `/groups/{name}/mcp`, `/groups/{name}/sse`, and the `/api/` namespace. The `/groups/`, `/a2a/`, and `/.well-known/` namespaces are classified as protected, including unknown paths. Missing or incorrect credentials receive HTTP 401 before operational handling, including initialization, discovery, tool calls, stream establishment or replay, and session deletion.
@@ -180,6 +185,10 @@ Pins recorded before output schemas were fingerprinted are upgraded in place: ea
 
 Configures distributed tracing for the gateway. When omitted, tracing is enabled with defaults (in-memory ring buffer, no OTLP export). Completed traces are always available in the web UI Traces tab via the ring buffer.
 
+Recorded gateway names and attributes mask recognizable typed capability strings
+before entering the buffer or OTLP exporter. Sensitive downstream failures use
+local categories. See [diagnostic privacy and migration](usage-observability.md#diagnostic-privacy-and-migration).
+
 ```yaml
 gateway:
   tracing:
@@ -225,6 +234,12 @@ gateway:
 ## Logging
 
 Optional log file output with automatic rotation. When `file` is set, logs are written to both the in-memory ring buffer (web UI) and the file simultaneously. This is distinct from [Telemetry Persistence](#telemetry-persistence), which captures per-server signals.
+
+Shared redaction recognizes typed capability strings in messages, field/group
+names, and nested JSON-compatible attributes. A nested attribute containing a
+recognized secret may be emitted as a sanitized JSON string. Code-mode failure
+logs contain categories and timing instead of source excerpts or thrown values;
+caller-delivered errors remain available. See [diagnostic migration](usage-observability.md#diagnostic-privacy-and-migration).
 
 ```yaml
 logging:
@@ -368,6 +383,11 @@ runs:
 Records are saved after dispatch returns. Recording is best-effort: a crash may leave no record. The writer queue holds 1024 records (8 KiB maximum each). Queue overflow, write failure, and capacity exhaustion leave tool results unchanged and increment independent drop counters. Saturation warnings are asynchronous and do not block dispatch. A successful append is not a sync; the writer fsyncs about every two seconds, and a synced watermark requires an actual `fsync`. Shutdown drain is two seconds; a blocked `write`/`fsync` syscall may outlive that bound and remaining queued events are counted as dropped. An unopenable destination keeps recording enabled and reports writer health `degraded`. Disabling recording does not delete retained history.
 
 The allowlist is generated IDs, timestamps, total dispatch duration, bounded target names, disposition/stage/reason, optional replica and sampled trace IDs, and optional caller-declared labels. Argument and result values, hashes, code, raw errors, tokens, headers, URLs, and host paths are excluded. Names and labels may still be sensitive. Labels are not authenticated principals.
+
+Recognizable typed capability strings are masked in recorded names and labels,
+including early denials. This sanitizes observation copies, not policy inputs.
+Use generated attempt/trace IDs for correlation; arbitrary encoded or split
+secrets are not recognized. See [diagnostic privacy](usage-observability.md#diagnostic-privacy-and-migration).
 
 Storage is stack-level at `~/.gridctl/runs/<stack>/runs.jsonl` with owner-only directories and files (0700/0600 on Unix). Physical filesystem overhead and a bounded rotation temp file sit outside the logical budget. Retention values must be `>= 1` and within the same hard caps as telemetry (1 TiB, 10 years). Wipe is stack-wide, not per-server, is not secure erasure, and does not remove exports or backups. `gridctl telemetry wipe` does not delete run records; use `gridctl runs wipe`. `GET /api/telemetry/inventory` includes a stack-level `runs` row when files exist; the UI persistence pill still lists only logs, metrics, and traces.
 

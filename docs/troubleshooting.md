@@ -854,6 +854,20 @@ they are not gridctl-owned the way labeled containers are. If leftover
 `gridctl-*` images or volumes bother you, clear them with
 `docker image prune` and `docker volume prune`.
 
+## Code-mode error details are missing from logs
+
+Code-mode failure logs use `code_execution_failed` or another safe local category
+and duration. Parser source excerpts and thrown values are intentionally omitted,
+including errors raised before any inner tool call. Inspect the error returned to
+the requesting client to debug the code; console output is also caller-delivered.
+Treat that output as potentially sensitive when saving or sharing it.
+
+For diagnostic correlation, use generated attempt/trace IDs and outcome
+categories. Recognizable typed capability strings in recorded names, labels,
+and errors are masked, so raw-name joins can differ. This is an Unreleased
+breaking diagnostic-output change requiring a major release under Article VIII.
+See [diagnostic privacy and migration](usage-observability.md#diagnostic-privacy-and-migration).
+
 ## General
 
 ### Getting help

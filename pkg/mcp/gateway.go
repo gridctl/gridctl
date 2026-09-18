@@ -35,6 +35,8 @@ var ErrReadyTimeout = errors.New("ready timeout")
 
 // MCPServerConfig contains configuration for connecting to an MCP server.
 type MCPServerConfig struct {
+	// sensitiveCalls is trusted construction metadata, never a wire annotation.
+	sensitiveCalls       bool
 	ExecutionRequested   *execution.Report
 	ExecutionBeforeStart func(context.Context) error
 	ExecutionCheck       func(context.Context) (*execution.Report, error)
@@ -169,11 +171,12 @@ func isTerminalRegistrationError(err error) bool {
 
 // Gateway aggregates multiple MCP servers into a single endpoint.
 type Gateway struct {
-	router    *Router
-	sessions  *SessionManager
-	dockerCli dockerclient.DockerClient
-	logger    *slog.Logger
-	cancel    context.CancelFunc
+	capabilities *CapabilityStore
+	router       *Router
+	sessions     *SessionManager
+	dockerCli    dockerclient.DockerClient
+	logger       *slog.Logger
+	cancel       context.CancelFunc
 
 	mu          sync.RWMutex
 	serverInfo  ServerInfo
@@ -255,9 +258,10 @@ type Gateway struct {
 // NewGateway creates a new MCP gateway.
 func NewGateway() *Gateway {
 	return &Gateway{
-		router:   NewRouter(),
-		sessions: NewSessionManager(),
-		logger:   logging.NewDiscardLogger(),
+		capabilities: NewCapabilityStore(),
+		router:       NewRouter(),
+		sessions:     NewSessionManager(),
+		logger:       logging.NewDiscardLogger(),
 		serverInfo: ServerInfo{
 			Name:    "gridctl-gateway",
 			Version: "dev",
@@ -279,7 +283,7 @@ func NewGateway() *Gateway {
 // If nil is passed, logging is disabled (default).
 func (g *Gateway) SetLogger(logger *slog.Logger) {
 	if logger != nil {
-		g.logger = logger
+		g.logger = slog.New(logging.NewRedactingHandler(logger.Handler()))
 	}
 }
 
@@ -1189,6 +1193,9 @@ func replicaStateString(healthy bool, hasAttempts bool) string {
 
 // Close stops the cleanup goroutine and closes all agent client connections.
 func (g *Gateway) Close() {
+	if g.capabilities != nil {
+		g.capabilities.Close()
+	}
 	if g.cancel != nil {
 		g.cancel()
 	}
@@ -1708,6 +1715,7 @@ func (g *Gateway) UnregisterMCPServerContext(ctx context.Context, name string) e
 	g.regGen[name]++
 	delete(g.pending, name)
 	delete(g.cleanupRan, name)
+	g.capabilities.retireServer(name)
 	set := g.router.GetReplicaSet(name)
 	g.router.RemoveClient(name)
 	if set != nil {
@@ -2216,6 +2224,7 @@ func (g *Gateway) CallCanonicalTool(ctx context.Context, params ToolCallParams) 
 }
 
 func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, opts dispatchOptions) (*ToolCallResult, CallOutcome, error) {
+	ctx = withSensitiveExecution(ctx)
 	// Root span for the whole tool-call handle. Routing, cold start, the
 	// downstream client call, and format conversion all nest under it so the
 	// buffer finalises one multi-span trace per call. Code-mode inner calls
@@ -2236,7 +2245,7 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 	}
 	rootSpan.SetAttributes(
 		attribute.String("mcp.method.name", "tools/call"),
-		attribute.String("mcp.tool.name", bareTool),
+		attribute.String("mcp.tool.name", logging.RedactString(bareTool)),
 	)
 
 	g.mu.RLock()
@@ -2341,7 +2350,7 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 
 	// Child span: routing decision.
 	_, routeSpan := tracer.Start(ctx, "mcp.routing")
-	routeSpan.SetAttributes(attribute.String("tool.name", params.Name))
+	routeSpan.SetAttributes(attribute.String("tool.name", logging.RedactString(params.Name)))
 	replica, toolName, err := g.router.RouteToolCallReplica(params.Name)
 	if err != nil {
 		// Cold-start trigger: if the target server is autoscaled and currently
@@ -2360,7 +2369,7 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 			}
 		}
 		if err != nil {
-			routeSpan.SetStatus(codes.Error, err.Error())
+			routeSpan.SetStatus(codes.Error, logging.RedactString(err.Error()))
 			routeSpan.End()
 			// Record whether the name can map to any server at all, as
 			// opposed to a known server with no pickable replica. The
@@ -2397,7 +2406,7 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 	client := replica.Client()
 	replicaID := replica.ID()
 	routeSpan.SetAttributes(
-		attribute.String("server.name", client.Name()),
+		attribute.String("server.name", logging.RedactString(client.Name())),
 		attribute.Int("mcp.replica.id", replicaID),
 	)
 	routeSpan.End()
@@ -2439,11 +2448,11 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 	// trace-level record (built from root span attrs) carries them for UI
 	// filtering, and rename the root to the human-readable operation.
 	if rootSpan.IsRecording() {
-		rootSpan.SetName(fmt.Sprintf("%s › %s", client.Name(), toolName))
+		rootSpan.SetName(logging.RedactString(fmt.Sprintf("%s › %s", client.Name(), toolName)))
 		rootSpan.SetAttributes(
-			attribute.String("server.name", client.Name()),
+			attribute.String("server.name", logging.RedactString(client.Name())),
 			// Overwrite the pre-routing prefixed name with the resolved tool.
-			attribute.String("mcp.tool.name", toolName),
+			attribute.String("mcp.tool.name", logging.RedactString(toolName)),
 			attribute.Int("mcp.replica.id", replicaID),
 		)
 	}
@@ -2463,6 +2472,9 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 	g.mu.RLock()
 	serverCfg, hasMeta := g.serverMeta[client.Name()]
 	g.mu.RUnlock()
+	if serverCfg.sensitiveCalls {
+		markSensitiveExecution(ctx)
+	}
 	networkTransport := resolveNetworkTransport(serverCfg, hasMeta)
 
 	// Child span: downstream client call.
@@ -2470,9 +2482,9 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 	defer span.End()
 	span.SetAttributes(
 		attribute.String("mcp.method.name", "tools/call"),
-		attribute.String("server.name", client.Name()),
+		attribute.String("server.name", logging.RedactString(client.Name())),
 		attribute.Int("mcp.replica.id", replicaID),
-		attribute.String("tool.name", toolName),
+		attribute.String("tool.name", logging.RedactString(toolName)),
 		attribute.String("network.transport", networkTransport),
 	)
 	if generation := protocolGenerationOf(client); generation != "" {
@@ -2488,11 +2500,23 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 	duration := time.Since(start)
 	attempt.SetResolved(client.Name(), toolName, replicaID)
 	attempt.SetDownstreamDuration(duration)
+	if isSensitiveExecution(ctx) {
+		observedResult := result
+		if err != nil {
+			observedResult = nil
+		}
+		g.observeSensitiveCall(span, client.Name(), replicaID, toolName, duration, params.Arguments, observedResult)
+	}
 
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		logger.Warn("tool call failed", "server", client.Name(), "tool", toolName, "duration", duration, "error", err)
+		diagnosticErr := sanitizedCallError(err)
+		if isSensitiveExecution(ctx) {
+			err = safeCallError(err)
+			diagnosticErr = err
+		}
+		span.RecordError(diagnosticErr)
+		span.SetStatus(codes.Error, diagnosticErr.Error())
+		logger.Warn("tool call failed", "server", client.Name(), "tool", toolName, "duration", duration, "error", diagnosticErr)
 		state.classifyDownstream(nil, err, ctx)
 		return &ToolCallResult{
 			Content: []Content{NewTextContent(fmt.Sprintf("Error calling tool: %v", err))},
@@ -2518,7 +2542,9 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 	g.applyTruncation(client.Name(), toolName, result)
 
 	// Format conversion: convert JSON content to the configured output format
-	g.applyFormatConversion(ctx, client.Name(), result)
+	if !isSensitiveExecution(ctx) {
+		g.applyFormatConversion(ctx, client.Name(), result)
+	}
 
 	// Notify the tool-call observer. Observers that implement ClientObserver
 	// receive the call synchronously (with ctx + client attribution) so they
@@ -2527,20 +2553,20 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 	g.mu.RLock()
 	obs := g.toolCallObserver
 	g.mu.RUnlock()
-	if obs != nil {
-		clientID := ClientIDFromContext(ctx)
+	if obs != nil && !isSensitiveExecution(ctx) {
+		clientID := logging.RedactString(ClientIDFromContext(ctx))
 		if co, ok := obs.(ClientObserver); ok {
 			summary := co.ObserveToolCallWithClient(ctx, ToolCallObservation{
-				ServerName: client.Name(),
+				ServerName: logging.RedactString(client.Name()),
 				ReplicaID:  replicaID,
 				ClientID:   clientID,
-				ToolName:   toolName,
+				ToolName:   logging.RedactString(toolName),
 				Arguments:  params.Arguments,
 				Result:     result,
 			})
 			setGenAISpanAttributes(span, client.Name(), toolName, clientID, summary, result)
 		} else {
-			go obs.ObserveToolCall(client.Name(), replicaID, params.Arguments, result)
+			go obs.ObserveToolCall(logging.RedactString(client.Name()), replicaID, params.Arguments, result)
 		}
 	}
 
@@ -2598,14 +2624,14 @@ func setGenAISpanAttributes(span trace.Span, serverName, toolName, clientID stri
 		return
 	}
 	attrs := []attribute.KeyValue{
-		attribute.String("mcp.server.name", serverName),
-		attribute.String("mcp.tool.name", toolName),
+		attribute.String("mcp.server.name", logging.RedactString(serverName)),
+		attribute.String("mcp.tool.name", logging.RedactString(toolName)),
 		// Draft GenAI semconv name for the same value; kept alongside the
 		// gridctl-native key until the convention stabilizes.
-		attribute.String("gen_ai.tool.name", toolName),
+		attribute.String("gen_ai.tool.name", logging.RedactString(toolName)),
 	}
 	if clientID != "" {
-		attrs = append(attrs, attribute.String("mcp.client.name", clientID))
+		attrs = append(attrs, attribute.String("mcp.client.name", logging.RedactString(clientID)))
 	}
 	if summary.InputTokens > 0 {
 		attrs = append(attrs, attribute.Int64("gen_ai.usage.input_tokens", int64(summary.InputTokens)))
@@ -2643,7 +2669,7 @@ func (g *Gateway) applyFormatConversion(ctx context.Context, serverName string, 
 	// Child span: format conversion.
 	_, fmtSpan := otel.Tracer("gridctl.gateway").Start(ctx, "mcp.format_conversion")
 	fmtSpan.SetAttributes(
-		attribute.String("server.name", serverName),
+		attribute.String("server.name", logging.RedactString(serverName)),
 		attribute.String("output.format", outputFormat),
 	)
 	defer fmtSpan.End()
