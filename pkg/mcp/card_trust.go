@@ -10,6 +10,8 @@ import (
 // Implementations bypass freshness reuse but retain bounded failure backoff.
 type CardRefetch func(context.Context) (PinSnapshot, error)
 
+var errCardApprovalRequired = errors.New("a2a: card approval required")
+
 type cardTrustEntry struct {
 	approved, pending PinSnapshot
 	generation        uint64
@@ -18,16 +20,19 @@ type cardTrustEntry struct {
 	retired           bool
 	refetch           CardRefetch
 	retire            func()
+	publish           func(PinSnapshot) error
+	approvalCheck     func(PinSnapshot) error
 }
 
 // CardTrustService serializes registration, observation, and approval publication.
 // It is independent of legacy schema pinning and owns only the card block. Other
 // gateway block reasons must still be checked after this service grants trust.
 type CardTrustService struct {
-	gate    chan struct{}
-	storage CardPinStorage
-	entries map[string]*cardTrustEntry
-	closed  bool
+	gate           chan struct{}
+	storage        CardPinStorage
+	entries        map[string]*cardTrustEntry
+	closed         bool
+	nextGeneration uint64
 }
 
 // NewCardTrustService provisions mandatory trust even if storage is unavailable.
@@ -58,6 +63,10 @@ func (s *CardTrustService) unlock() { <-s.gate }
 // authority teardown callback and must not reenter this service. Replacement
 // retires the old instance even if the new storage verification fails.
 func (s *CardTrustService) Register(ctx context.Context, server string, snapshot PinSnapshot, refetch CardRefetch, retire func()) (CardPinDecision, error) {
+	return s.register(ctx, server, snapshot, refetch, retire, nil, nil)
+}
+
+func (s *CardTrustService) register(ctx context.Context, server string, snapshot PinSnapshot, refetch CardRefetch, retire func(), publish, approvalCheck func(PinSnapshot) error) (CardPinDecision, error) {
 	if snapshot == nil || snapshot.Generation() == 0 || refetch == nil || retire == nil {
 		return CardPinDecision{}, errors.New("a2a: invalid trust registration")
 	}
@@ -74,7 +83,7 @@ func (s *CardTrustService) Register(ctx context.Context, server string, snapshot
 		}
 		old.retireOnce()
 	}
-	entry := &cardTrustEntry{pending: snapshot, generation: snapshot.Generation(), revision: 1, blocked: true, refetch: refetch, retire: retire}
+	entry := &cardTrustEntry{pending: snapshot, generation: snapshot.Generation(), revision: 1, blocked: true, refetch: refetch, retire: retire, publish: publish, approvalCheck: approvalCheck}
 	s.entries[server] = entry
 	if s.storage == nil {
 		return CardPinDecision{}, errors.New("a2a: card pin storage unavailable")
@@ -84,9 +93,22 @@ func (s *CardTrustService) Register(ctx context.Context, server string, snapshot
 		return CardPinDecision{}, errors.New("a2a: card pin verification failed")
 	}
 	if decision.Trusted {
+		if err := entry.publishSnapshot(snapshot); err != nil {
+			return CardPinDecision{}, err
+		}
 		entry.approved, entry.pending, entry.blocked = snapshot, nil, false
 	}
 	return decision, nil
+}
+
+func (e *cardTrustEntry) publishSnapshot(snapshot PinSnapshot) error {
+	if e.publish != nil {
+		if err := e.publish(snapshot); err != nil {
+			e.blocked = true
+			return errors.New("a2a: approved snapshot publication failed")
+		}
+	}
+	return nil
 }
 
 func (e *cardTrustEntry) retireOnce() {
@@ -125,7 +147,7 @@ func (s *CardTrustService) Observe(ctx context.Context, server string, snapshot 
 	if e.approved != nil && snapshotRecord(e.approved, "_agent_card") != snapshotRecord(snapshot, "_agent_card") {
 		e.blocked = true
 		e.retireOnce()
-		return errors.New("a2a: card approval required")
+		return errCardApprovalRequired
 	}
 	if s.storage == nil {
 		e.blocked = true
@@ -139,7 +161,10 @@ func (s *CardTrustService) Observe(ctx context.Context, server string, snapshot 
 	if !decision.Trusted || e.retired {
 		e.blocked = true
 		e.retireOnce()
-		return errors.New("a2a: card approval required")
+		return errCardApprovalRequired
+	}
+	if err := e.publishSnapshot(snapshot); err != nil {
+		return err
 	}
 	e.approved, e.pending, e.blocked = snapshot, nil, false
 	return nil
@@ -171,7 +196,7 @@ func (s *CardTrustService) Approved(ctx context.Context, server string, generati
 	defer s.unlock()
 	e := s.entries[server]
 	if e == nil || e.generation != generation || e.blocked || e.approved == nil {
-		return nil, errors.New("a2a: card approval required")
+		return nil, errCardApprovalRequired
 	}
 	return e.approved, nil
 }
@@ -231,6 +256,15 @@ func (s *CardTrustService) Approve(ctx context.Context, server, expected string)
 	if err := s.storage.ApproveCard(ctx, server, fresh); err != nil {
 		return errors.New("a2a: card pin approval failed")
 	}
+	if e.approvalCheck != nil {
+		if err := e.approvalCheck(fresh); err != nil {
+			e.blocked = true
+			return err
+		}
+	}
+	if err := e.publishSnapshot(fresh); err != nil {
+		return err
+	}
 	e.approved, e.pending, e.blocked = fresh, nil, false
 	e.retired = false
 	e.revision++
@@ -267,7 +301,8 @@ func (s *CardTrustService) Unregister(ctx context.Context, server string, genera
 
 func (e *cardTrustEntry) unregister() {
 	e.retireOnce()
-	e.blocked, e.refetch, e.retire = true, nil, nil
+	e.blocked, e.refetch, e.retire, e.publish = true, nil, nil, nil
+	e.approvalCheck = nil
 	e.approved, e.pending = nil, nil
 	e.revision++
 }

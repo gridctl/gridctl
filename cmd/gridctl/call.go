@@ -40,6 +40,14 @@ is performed.
 different configured profile and does not authenticate as that client. A
 denied cli call does not fall back to another profile.
 
+A2A results contain secret bearer task/context handles. --as grants no task
+authority, and lost handles cannot be recovered from labels or run history.
+Use user-managed mode-0600 files for handle-bearing inputs, for example:
+  gridctl call agent__task_get @private-args.json --format json
+Protect stdout, client transcripts, and captured results. Use HTTPS or another
+confidential channel for remote gateway access. Local timeout does not cancel
+remote work; only task_cancel requests remote cancellation.
+
 Matching in live help uses substring search, not semantic intent. Queries
 also match the generated description prefix:
 MCP server: <server>. Call using the exact tool name "<canonical-name>".

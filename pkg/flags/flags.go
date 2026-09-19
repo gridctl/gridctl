@@ -137,7 +137,7 @@ func (r *Registry) experimentalNames() []string {
 // deleted. The lifecycle rules live in CONTRIBUTING.md.
 var builtin = []Flag{
 	{
-		Name: "a2a", Description: "Outbound A2A declarations and card trust (adapter unavailable).",
+		Name: "a2a", Description: "Outbound A2A JSON-RPC tools with mandatory card trust and bearer capabilities.",
 		Stage: StageExperimental, Since: "1.0.0", GraduatesBy: "1.1.0",
 	},
 	{

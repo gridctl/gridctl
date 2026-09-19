@@ -974,6 +974,14 @@ func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, rep
 	g.setReplicaStatusLocked(serverName, replica.ID(), status)
 	g.healthMu.Unlock()
 
+	if _, ok := client.(*A2AClient); ok {
+		// Local card trust is not transport liveness. Keep the adapter routable
+		// so hash-bound approval takes effect immediately, even between health
+		// ticks. Its synchronized admission gate rejects every unapproved call.
+		replica.SetHealthy(true)
+		return
+	}
+
 	if err == nil {
 		replica.SetHealthy(true)
 		replica.Restart().Reset()
@@ -1430,6 +1438,7 @@ func (g *Gateway) registerReplicaSet(ctx context.Context, name, policy string, c
 	// same logical config modulo per-replica runtime handles.
 	canonical := cfgs[0]
 	canonical.Name = name
+	canonical.sensitiveCalls = canonical.sensitiveCalls || canonical.A2A
 	func() {
 		g.mu.Lock()
 		defer g.mu.Unlock()
@@ -1439,11 +1448,17 @@ func (g *Gateway) registerReplicaSet(ctx context.Context, name, policy string, c
 	// Schema pinning: verify or pin on first registration. Pins are per-server
 	// (not per-replica) — all replicas should expose the same tools.
 	if err := g.verifyClientPins(ctx, name, clients[0]); err != nil {
-		g.pendingMu.Unlock()
-		for _, client := range clients {
-			closeAgentClient(client)
+		_, a2a := clients[0].(*A2AClient)
+		if !a2a || !errors.Is(err, errCardApprovalRequired) {
+			g.pendingMu.Unlock()
+			for _, client := range clients {
+				closeAgentClient(client)
+			}
+			return err
 		}
-		return err
+		// Keep an unapproved A2A instance registered with no candidate tools.
+		// Hash-bound approval publishes that same instance; storage failures
+		// above still fail registration rather than becoming pending trust.
 	}
 
 	// A concurrent commit for the same name can land between a caller's
@@ -1485,8 +1500,9 @@ func (g *Gateway) registrationGenIs(name string, gen uint64) bool {
 }
 
 // BuildAgentClient creates, connects, and initializes an AgentClient from a
-// single MCPServerConfig. It does NOT touch serverMeta, pins, health, or the
-// router — callers compose that separately. Exported so Spawner implementations
+// single MCPServerConfig. Callers compose server metadata, health, and routing
+// separately. A2A initialization always verifies mandatory card pins before it
+// can publish tools. Exported so Spawner implementations
 // in pkg/controller can reuse the transport switch rather than duplicating it.
 // Successful process clients outlive the operation context and must be closed
 // by their owner. Cancellation during construction terminates the child.
@@ -1529,7 +1545,7 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (re
 		}
 	}
 	if cfg.A2A {
-		return nil, terminalRegistration(errors.New("a2a: adapter unavailable"))
+		return g.buildA2AClient(ctx, cfg)
 	}
 	g.logger.Info("connecting to MCP server", "name", cfg.Name, "transport", cfg.Transport)
 
@@ -2494,9 +2510,16 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 	// Resolve actual transport type from server metadata.
 	g.mu.RLock()
 	serverCfg, hasMeta := g.serverMeta[client.Name()]
+	resultLimit := g.maxToolResultBytes
 	g.mu.RUnlock()
-	if serverCfg.sensitiveCalls {
+	if serverCfg.sensitiveCalls || serverCfg.A2A {
 		markSensitiveExecution(ctx)
+	}
+	if serverCfg.A2A {
+		ctx = context.WithValue(ctx, a2aResultBudgetKey{}, resultLimit)
+		if err := params.preserveA2ANumbers(); err != nil {
+			return a2aErrorResult(err, ""), state.outcome, nil
+		}
 	}
 	networkTransport := resolveNetworkTransport(serverCfg, hasMeta)
 
@@ -2680,7 +2703,7 @@ const maxFormatPayloadSize = 1 << 20
 // applyFormatConversion converts tool result content to the configured output format.
 // It modifies result.Content in place. On any failure, content is left unchanged.
 func (g *Gateway) applyFormatConversion(ctx context.Context, serverName string, result *ToolCallResult) {
-	if result == nil || result.IsError {
+	if result == nil || result.IsError || result.atomicResult {
 		return
 	}
 
@@ -2757,7 +2780,7 @@ const defaultMaxToolResultBytes = 65536
 // document is invalid, and clients fall back to Content per the MCP spec. The drop
 // is surfaced as a text notice so it is never silent.
 func (g *Gateway) applyTruncation(serverName, toolName string, result *ToolCallResult) {
-	if result == nil {
+	if result == nil || result.atomicResult {
 		return
 	}
 
@@ -2991,12 +3014,13 @@ type MCPServerStatus struct {
 	Initialized  bool              `json:"initialized"`
 	ToolCount    int               `json:"toolCount"`
 	Tools        []string          `json:"tools"`
-	External     bool              `json:"external"`               // True for external URL servers
-	LocalProcess bool              `json:"localProcess"`           // True for local process servers
-	SSH          bool              `json:"ssh"`                    // True for SSH servers
-	SSHHost      string            `json:"sshHost,omitempty"`      // SSH hostname
-	OpenAPI      bool              `json:"openapi"`                // True for OpenAPI servers
-	A2A          bool              `json:"a2a,omitempty"`          // True for outbound A2A sources
+	External     bool              `json:"external"`          // True for external URL servers
+	LocalProcess bool              `json:"localProcess"`      // True for local process servers
+	SSH          bool              `json:"ssh"`               // True for SSH servers
+	SSHHost      string            `json:"sshHost,omitempty"` // SSH hostname
+	OpenAPI      bool              `json:"openapi"`           // True for OpenAPI servers
+	A2A          bool              `json:"a2a,omitempty"`     // True for outbound A2A sources
+	A2AStatus    *A2AStatus        `json:"a2aStatus,omitempty"`
 	OpenAPISpec  string            `json:"openapiSpec,omitempty"`  // OpenAPI spec location
 	OutputFormat string            `json:"outputFormat,omitempty"` // Configured output format (empty = json default)
 	Healthy      *bool             `json:"healthy,omitempty"`      // Health check result (nil if not yet checked)
@@ -3164,8 +3188,7 @@ func protocolGenerationOf(client AgentClient) string {
 }
 
 // Status returns status of all registered MCP servers.
-// Note: This only returns actual MCP servers, not A2A adapters or other
-// clients added directly to the router.
+// Clients added directly to the router without server metadata are excluded.
 func (g *Gateway) Status() []MCPServerStatus {
 	// Gather names from both the router (live replica sets) and the serverMeta
 	// map so autoscaled servers without any live replicas still appear.
@@ -3222,6 +3245,9 @@ func (g *Gateway) Status() []MCPServerStatus {
 		toolNames := make([]string, len(tools))
 		for i, t := range tools {
 			toolNames[i] = t.Name
+			if meta.A2A {
+				toolNames[i] = logging.RedactString(t.Name)
+			}
 		}
 
 		// Resolve effective output format: server override > gateway default
@@ -3248,9 +3274,19 @@ func (g *Gateway) Status() []MCPServerStatus {
 			OutputFormat:  outputFormat,
 			ToolWhitelist: meta.Tools,
 		}
+		if meta.A2A {
+			status.Endpoint = ""
+			status.ToolWhitelist = make([]string, len(meta.Tools))
+			for i, name := range meta.Tools {
+				status.ToolWhitelist[i] = logging.RedactString(name)
+			}
+		}
 		if client != nil {
 			status.ProtocolVersion = protocolVersionOf(client)
 			status.ProtocolGeneration = protocolGenerationOf(client)
+			if a2a, ok := client.(*A2AClient); ok {
+				status.A2AStatus = a2a.status()
+			}
 		}
 		if meta.OpenAPIConfig != nil {
 			status.OpenAPISpec = meta.OpenAPIConfig.Spec

@@ -87,7 +87,7 @@ gateway:
 | `code_mode` | string | No | `"off"` | Enable code mode: `"on"` or `"off"` |
 | `code_mode_timeout` | int | No | `30` | Code mode execution timeout in seconds. Must be >= 0 |
 | `output_format` | string | No | `"json"` | Default output format for tool call results: `"json"`, `"toon"`, `"csv"`, or `"text"`. Per-server `output_format` overrides this value |
-| `maxToolResultBytes` | int | No | `65536` | Maximum size of a tool result in bytes before truncation. Results over the limit are truncated with a suffix noting the original size. `0` uses the default (64 KB) |
+| `maxToolResultBytes` | int | No | `65536` | Maximum size of a tool result in bytes before truncation. Ordinary results over the limit are truncated with a suffix noting the original size; [A2A envelopes](#tools-and-capability-delivery) retain atomic JSON and mark omitted content. `0` uses the default (64 KB) |
 | `name` | string | No | `"gridctl-gateway"` | Identity announced to MCP clients in the initialize response (`serverInfo.name`). Some clients (VS Code / GitHub Copilot) display this instead of the entry key in their own config, so give distinct gateways distinct names. Group endpoints announce `<name>/<group>`. Requires a restart to propagate |
 | `security` | object | No | - | Security settings (see [Security](#security)) |
 | `tokenizer` | string | No | `"embedded"` | Token counting mode: `"embedded"` (cl100k_base approximation) or `"api"` (exact counts via Anthropic `count_tokens` endpoint) |
@@ -96,8 +96,9 @@ gateway:
 
 The internal sensitive-call classification bypasses the configured tokenizer and
 format conversion, using local numeric estimates without client attribution.
-It is trusted construction metadata, not a YAML option; existing sources retain
-the ordinary path. See [sensitive-call counting](usage-observability.md#sensitive-call-counting).
+The A2A adapter selects it through trusted construction metadata, not a separate
+YAML option; other sources retain the ordinary path. See
+[sensitive-call counting](usage-observability.md#sensitive-call-counting).
 
 ### Auth
 
@@ -536,7 +537,7 @@ networks:
 
 ## MCP Servers
 
-MCP server definitions. Each server must be exactly one type: container, external URL, local process, SSH, OpenAPI, or experimental A2A. A2A declarations validate but cannot register a callable adapter in this build.
+MCP server definitions. Each server must be exactly one type: container, external URL, local process, SSH, OpenAPI, or experimental A2A.
 
 ### Container Server (image)
 
@@ -724,7 +725,7 @@ In the web wizard, the OpenAPI Configuration section's Operations Filter loads t
 | `network` | string | Conditional | - | Network to join (required in advanced network mode) |
 | `ssh` | object | Conditional | - | SSH connection config (see [SSH](#ssh)) |
 | `openapi` | object | Conditional | - | OpenAPI spec config (see [OpenAPI](#openapi)) |
-| `a2a` | object | Conditional | - | Experimental outbound Agent Card declaration (see [A2A](#a2a)); requires `experimental.a2a`, adapter unavailable |
+| `a2a` | object | Conditional | - | Experimental outbound Agent Card adapter (see [A2A](#a2a)); requires `experimental.a2a` |
 | `auth` | object | No | - | External-server authentication: `type: bearer`, `header`, or `oauth` (see [External Server Authentication](#external-server-authentication)). URL servers only |
 | `tools` | []string | No | - | Tool whitelist. Empty exposes all tools. The web wizard populates this from the live stack for running servers, and offers an optional probe of external-URL servers to discover their tools before deploy. Container / stdio / local-process / SSH servers are curated from the Stack sidebar after deploy; OpenAPI servers are curated before deploy with the wizard's Operations Filter (see [OpenAPI](#openapi-server)). Editable live from the Stack sidebar's Tools editor - `PUT /api/mcp-servers/{name}/tools` rewrites this field atomically and triggers a hot reload |
 | `output_format` | string | No | - | Output format override: `"json"`, `"toon"`, `"csv"`, or `"text"`. Overrides `gateway.output_format` for this server |
@@ -972,12 +973,14 @@ SSH connection parameters for remote MCP servers.
 ### A2A
 
 The optional `a2a:` declaration is experimental and off by default. Enable
-`experimental.a2a: true` or `GRIDCTL_EXPERIMENTAL_A2A=true` to validate it.
+`experimental.a2a: true` or `GRIDCTL_EXPERIMENTAL_A2A=true` to use it.
 Without enablement, both validation and apply fail with an error naming the
-flag. This build supplies configuration, wire codecs, and card-trust primitives;
-registration fails before network access with `a2a: adapter unavailable`. This
-is a terminal registration failure, not a health-monitor retry. It exposes no A2A tools or
-inbound A2A listener, and makes no hosted-agent compatibility claim.
+flag. The outbound adapter supports A2A 1.0 and 0.3 JSON-RPC with bounded text
+and inline JSON data. It exposes MCP tools after Agent Card discovery and
+mandatory trust verification. No inbound A2A listener, streaming, file download,
+SigV4, or interactive authorization flow is provided. Local fixture acceptance
+does not establish hosted-agent compatibility or downstream conversation isolation.
+See the [example stack](../examples/a2a/stack.yaml).
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
@@ -985,7 +988,7 @@ inbound A2A listener, and makes no hosted-agent compatibility claim.
 | `endpoint` | string | No | Advertised JSON-RPC URL | Explicit operator-authorized RPC destination; does not override card protocol evidence |
 | `dialect` | string | No | `auto` | `auto`, `1.0`, or `0.3`; auto prefers compatible 1.0 JSON-RPC interfaces |
 | `profile` | string | No | Empty | Empty or `bedrock`; enables Bedrock discovery/session requirements and its `text` media alias |
-| `include` | []string | No | Empty | Stored skill-selection IDs; no skill tools are generated in this build |
+| `include` | []string | No | Empty | Original skill IDs to expose; empty selects every compatible skill. Generic `send` remains available |
 | `timeout` | duration | No | `5m` | Positive RPC timeout |
 | `auth` | object | No | No credentials | `type: bearer` and `token: ${var:A2A_TOKEN}` or `${A2A_TOKEN}`; no automatic OAuth acquisition |
 
@@ -998,8 +1001,11 @@ Use `a2a.auth`, not server-level `auth`. An explicitly supplied
 `card`, `endpoint`, and `auth.token` support environment and stored-variable
 references. Export preserves authored references and rejects literal bearer
 tokens. Apply summaries and CLI status classify the source as `a2a`; server
-status JSON includes `a2a: true` on the failed registration, without card or RPC
-destinations. Classification does not establish a working connection.
+status JSON includes `a2a: true` and `a2aStatus` with negotiated dialect, card
+trust state, safe skill omission reasons, and aggregate live/expired/uncertain
+counts. It does not expose card/RPC destinations, sessions, or handles.
+Health checks report local card trust, not remote task progress or fresh remote
+liveness. They do not poll the card in the background.
 
 Destination validation rejects userinfo, fragments, file URLs, and non-loopback
 HTTP. Fixture HTTP requires a loopback dial destination, including `localhost`
@@ -1019,7 +1025,10 @@ session header. Caller labels, including `--as`, are not task authority. The
 capability primitives described in [capability primitives](capability-primitives.md)
 are process-local bearer authority, with absolute expiry and replacement/restart
 invalidation. Lost handles cannot be recovered from labels or run history.
-This build does not issue them through an A2A tool.
+Each fresh conversation gets a separate Bedrock session, even with the same
+caller label. Only verified handles select an existing session. Unrelated reloads
+that keep the adapter instance preserve handles; timeout, token, or include edits
+replace the instance and invalidate its handles while retaining card trust.
 
 The installed card-trust service is mandatory independently of global schema pinning and
 `pin_schemas: false`. Hidden `_agent_card` and `_agent_identity` digest records
@@ -1033,8 +1042,8 @@ complete `expected_server_hash` (`gridctl pins approve --expect`), performs a
 fresh bounded GET, and checks the registration generation and candidate revision
 before persistence and publication. A stale approval cannot release a newer
 candidate or another policy block. Reload preserves card pins on A2A edits and
-removal. The source's unavailable registration does not fetch a card or create
-a live trust snapshot; these are service contracts, not a callable A2A workflow.
+removal. Observed card drift retires all affected handles immediately. Approval
+publishes new authority; it never revives handles from the previous card.
 
 The wire cache caps freshness at 30 seconds, honors shorter HTTP lifetimes,
 and coalesces full GETs at expiry with a five-second deadline. `no-cache` and
@@ -1046,6 +1055,100 @@ are not polled. The wire subset supports text and inline JSON; required unknown
 extensions, tenants, authentication schemes, and unattested nonempty scopes
 are incompatible. Alternative supported media/authentication choices remain
 usable, and no authentication or artifact URL is fetched.
+
+#### Tools and capability delivery
+
+The router prefixes each local tool with `server__`:
+
+| Local tool | Arguments | Authority |
+|------------|-----------|-----------|
+| `send` | Required string `message`; optional object `data`; optional strings `skill_id`, `context_handle`, and `task_handle`; optional boolean `return_immediately` (default false) | No handles starts a conversation; context alone starts new work; both matching handles resume an interrupted task |
+| `skill-<sanitized-id>` | Same as `send`, except no `skill_id` | Advisory entry point; sends the original skill ID in metadata, without restricting remote behavior |
+| `task_get` | Required string `task_handle`; optional integer `history_length` (zero by default, 0–100) | Reads only the supplied task; never returns its context capability |
+| `task_cancel` | Required string `task_handle` | Requests cancellation; only a remote canceled state confirms it |
+
+Unknown properties, raw task/context IDs, caller-selected sessions, and task-only
+continuation are rejected. Skills need compatible text input and text/JSON output;
+optional `data` additionally requires JSON input. Missing or incompatible explicit
+includes fail registration. Otherwise incompatible skills are omitted with safe
+reasons. Generic `send` also checks compatibility and any selected `skill_id`.
+The include list controls discovery, not semantic authorization inside the agent.
+
+Skill names preserve case and replace each run outside ASCII letters, digits,
+underscore, and hyphen with `-`. Empty or duplicate IDs, sanitized collisions,
+and generated names longer than 64 ASCII bytes including `server__skill-` fail
+registration. The same final name bound applies to send/get/cancel.
+
+```bash
+gridctl call agent__send '{"message":"Hello","return_immediately":true}' --format json
+gridctl call agent__task_get @private-args.json --format json
+```
+
+Create handle-bearing argument files with mode `0600`, manage them yourself, and
+protect stdout. Never put handles in shared command examples, shell history, or
+projected client configuration. Use HTTPS or another confidential channel for
+remote upstream access. Client transcripts, browser devtools, and stdout capture
+are outside gateway diagnostic confidentiality. Possession of a valid capability
+authorizes its operation only within current group, client, whitelist, rate-limit,
+and pin policy. `--as` does not grant task access.
+
+Each result is one JSON envelope in MCP text content. `kind` is `message` or
+`task`; direct messages contain ordered `parts`, while tasks preserve separate
+`status_messages`, `artifacts`, and `history`. Accepted text and application JSON
+remain content, never routing authority. The envelope carries optional handles
+(`task_handle`, `context_handle`) and UTC expiration timestamps
+(`task_expires_at`, `context_expires_at`), without raw routing IDs. Get and cancel
+echo only the verified task handle supplied by the caller, never the parent
+context handle. Parts are ordered objects with `type: text` and `text`, or
+`type: data` and an application JSON `data` object. Message entries retain
+`role` (`user` or `agent`) and `parts`; artifacts retain optional `name` and
+`description` alongside their `parts`. Absent collections are omitted.
+States are `submitted`,
+`working`, `input-required`, `auth-required`, `completed`, `failed`, `canceled`,
+or `rejected`. `input-required` and `auth-required` do not create MCP Tasks or
+MCP continuation requests: the REST/CLI invocation can complete while remote
+work remains interrupted. Out-of-band authorization is the operator's concern.
+
+Messages plus serialized data are limited to 256 KiB. RPC bodies are capped at
+10 MiB, and cards at 1 MiB. Unsupported file/raw/URL response parts fail the whole
+result. The configured gateway output limit applies to atomic envelopes: whole
+application parts, messages, or artifacts can be omitted with
+`content_truncated: true`, while every issued handle and valid JSON are retained.
+A budget too small for the minimal envelope refuses before dispatch. Non-JSON
+format conversion does not rewrite A2A envelopes. Call responses use `no-store`.
+
+#### Bounds, uncertainty, and downstream isolation
+
+The fixed bounds require no tuning fields: per adapter, 1,024 live roots, 8,192
+live tasks, and 65,536 retired-ID tombstones; gateway-wide, 4,096 roots, 32,768
+tasks, and 262,144 tombstones. Capacity exhaustion refuses new work before send.
+Root expiry is absolute at 24 hours, inherited by tasks without sliding renewal.
+Terminal tasks remain readable until expiry. Undelivered fresh sends with unknown
+outcomes retain capacity for up to 10 minutes, bounded by root expiry. Reclaiming
+that lease does not cancel remote work or recover a lost handle.
+
+One send per conversation may run at a time. A verified cancellation for the
+same task being resumed has an independent control slot and may overlap that
+send. Other conflicting operations fail fast with retryable
+`operation_in_progress`. An overlapping cancel supersedes the send's state
+update; after both finish, an authorized get must reconcile an interrupted or
+terminal state before another new/resume send. Explicit cancellation remains
+available after active calls drain. A working/submitted read cannot clear
+uncertainty. An ambiguous context-only new turn cannot be recovered through a
+sibling task and blocks new/resume mutations until root expiry.
+
+Local timeout, disconnect, or shutdown is not remote cancellation. Fresh blocking
+work exposes no handle until its response arrives; choose `return_immediately`
+for early polling/cancel access. No automatic mutation retry or exactly-once
+guarantee is provided. Operators need provider-native cleanup and quota controls
+for orphan work.
+
+Capabilities prevent unauthorized gateway routing by known IDs. They cannot stop
+a remote agent from using shared memory, responding to natural-language requests
+for another conversation, or inventing previously unseen foreign IDs. Separate
+Bedrock runtime sessions reduce accidental sharing but do not isolate external
+shared stores or malicious agents. Workloads requiring tenant confidentiality
+need downstream enforcement or separate deployments and credentials.
 
 ### OpenAPI
 
@@ -1499,7 +1602,7 @@ Registered flags:
 
 | Flag | Stage | Since | Description |
 |------|-------|-------|-------------|
-| `a2a` | experimental | 1.0.0 | Outbound A2A declarations and card trust; adapter unavailable. Graduation decision due by 1.1.0 |
+| `a2a` | experimental | 1.0.0 | Outbound A2A JSON-RPC tools with mandatory card trust and bearer capabilities. Off by default; graduation decision due by 1.1.0 |
 | `transport_dual_stack` | graduated | 0.1.0 | MCP 2026-07-28 transport dual-stack; always on, per-server pinning via `protocol_generation` |
 
 Semantics:
@@ -1508,8 +1611,8 @@ Semantics:
   and `gridctl validate` and is ignored; the warning lists the valid names
   when any experimental flags are registered, and says "no experimental
   flags are registered in this build" otherwise. A graduated or removed
-  flag name warns with a specific migration message. A stack.yaml written
-  against a newer gridctl still deploys on this one.
+  flag name warns with a specific migration message. Feature-specific validation
+  still applies: an `a2a:` declaration without effective `a2a` enablement is an error.
 - **Env override.** Each flag can be overridden per process with
   `GRIDCTL_EXPERIMENTAL_<NAME>` (upper snake_case), accepting the
   `strconv.ParseBool` vocabulary: `1`, `t`, `T`, `TRUE`, `true`, `True`,

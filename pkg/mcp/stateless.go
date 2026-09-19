@@ -316,7 +316,7 @@ func collectMcpParamHeaders(r *http.Request) map[string]string {
 // including the MRTR relay legs.
 func (s *StreamableHTTPServer) handleStatelessToolsCall(ctx context.Context, w http.ResponseWriter, req *jsonrpc.Request, meta RequestMeta) {
 	var params ToolCallParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := decodeUpstreamToolCall(req.Params, &params); err != nil {
 		writeStatelessResponse(w, http.StatusOK, jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "Invalid tools/call params"))
 		return
 	}

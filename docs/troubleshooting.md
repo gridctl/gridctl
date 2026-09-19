@@ -109,7 +109,7 @@ Sockets checked:
   - /run/podman/podman.sock
 ```
 
-The error also lists which workloads need a container runtime and which can run without one (external URL, local process, SSH, OpenAPI, and A2A sources). A2A declarations still fail registration with `a2a: adapter unavailable`; installing a runtime does not resolve that limitation.
+The error also lists which workloads need a container runtime and which can run without one (external URL, local process, SSH, OpenAPI, and A2A sources). A2A registration failures concern card discovery, compatibility, or trust; installing a container runtime does not resolve them.
 
 **Resolution:**
 
@@ -467,6 +467,28 @@ The entry key written by `gridctl link --name` / `--group` is a client-local ali
 3. Stop the gateway process and start it again with `gridctl apply` and the original startup options; connected clients pick up the new name on their next initialize. Applying while the daemon is still running is not a process restart. See [gateway restart recovery](#gateway-security-requires-a-restart).
 
 ---
+
+## A2A calls
+
+The experimental adapter requires `experimental.a2a: true` or
+`GRIDCTL_EXPERIMENTAL_A2A=true`. Its safe error categories appear in JSON text
+inside the tool result; a completed adapter error makes `gridctl call` exit two.
+Outer gateway policy or transport failures retain their own outcome and exit.
+
+| Diagnostic | Resolution |
+|------------|------------|
+| `card_approval_required` | Review `gridctl pins diff <server>` and approve the current complete hash with `gridctl pins approve <server> --expect <live_server_hash>`. Fix pin-store errors rather than disabling schema pinning. Old handles remain invalid after drift approval |
+| `capability_unavailable` | Use the exact task/context handles delivered for this server and live instance. Unknown, expired, mismatched, or retired handles share this error; `--as`, raw IDs, and run history cannot recover them |
+| `operation_in_progress` | Let conflicting calls finish. Only explicit cancellation of the same known task being resumed can overlap its send |
+| `operation_superseded` or `operation_uncertain` | Once active calls drain, use an authorized get to reconcile a known task. Working/submitted state does not clear uncertainty; an ambiguous context-only new turn cannot be reconciled through a sibling task |
+| `result_budget_too_small` | Increase `gateway.maxToolResultBytes` enough to hold the atomic envelope and handles. The refused call did not dispatch |
+
+A healthy A2A status reports local trust, not remote liveness. Card refresh occurs
+on authorized calls, with at most 30 seconds of freshness; fetch errors block RPC
+without serving stale data. Local timeout or shutdown does not cancel remote work.
+Use provider-native cleanup for orphan work, and do not blindly retry mutations.
+See [A2A configuration](config-schema.md#a2a) for destination policy, private-file
+arguments, and lifecycle limits.
 
 ## Hot Reload
 

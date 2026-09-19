@@ -71,6 +71,12 @@ type Client struct {
 	http             *http.Client
 }
 
+// Close releases idle transport connections. In-flight calls are canceled by
+// their owning adapter generation before transport cleanup.
+func (c *Client) Close() {
+	c.http.CloseIdleConnections()
+}
+
 // New constructs the transport. HTTP fixtures always dial verified loopback IPs.
 func New(opts Options) (*Client, error) {
 	card, err := ParseURL(opts.Card)

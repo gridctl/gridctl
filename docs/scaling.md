@@ -25,7 +25,7 @@ Skip replicas when the downstream tool already holds a single shared resource (o
 | SSH (ssh + command) | Yes | Each replica is its own SSH session |
 | External URL | **No** | gridctl does not manage the process - scaling is the operator's responsibility on the remote end |
 | OpenAPI | **No** | Stateless HTTP, no process to replicate - put a load balancer in front of the upstream API |
-| A2A declaration | No | External source with no managed process; adapter registration is unavailable |
+| A2A adapter | No | External source with no managed process; conversation authority belongs to one adapter instance |
 
 Setting `replicas > 1` on external URL, OpenAPI, or A2A sources fails validation with the path `mcp-servers[N].replicas` so the error is unambiguous.
 

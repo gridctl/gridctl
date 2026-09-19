@@ -494,6 +494,8 @@ type ToolsListResult struct {
 type ToolCallParams struct {
 	Name      string         `json:"name"`
 	Arguments map[string]any `json:"arguments"`
+	// Retained only at upstream MCP ingress for lossless A2A application data.
+	rawArguments json.RawMessage
 
 	// InputResponses and RequestState are the MRTR retry fields
 	// (2026-07-28): a client retrying a call that returned
@@ -510,6 +512,10 @@ type ToolCallParams struct {
 type ToolCallResult struct {
 	Content []Content `json:"content"`
 	IsError bool      `json:"isError,omitempty"`
+
+	// atomicResult is set only by trusted adapters that reserve authority
+	// overhead and bound application content before committing their result.
+	atomicResult bool
 
 	// StructuredContent is the optional machine-readable result that the
 	// MCP spec allows alongside Content. Raw pass-through: the gateway

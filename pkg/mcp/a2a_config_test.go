@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGateway_A2ARemainsUnregistrable(t *testing.T) {
+func TestGateway_A2ARequiresStorageAndConfiguration(t *testing.T) {
 	g := NewGateway()
 	for _, contract := range []*execution.ExecutionConfig{nil, {Mode: "hardened"}} {
 		cfg := MCPServerConfig{Name: "agent", A2A: true, A2AConfig: &A2AClientConfig{Card: "http://127.0.0.1:1/card"}, Execution: contract}
@@ -19,7 +19,7 @@ func TestGateway_A2ARemainsUnregistrable(t *testing.T) {
 		client, err := g.buildAgentClient(context.Background(), cfg)
 		require.Nil(t, client)
 		if contract == nil {
-			require.ErrorContains(t, err, "a2a: adapter unavailable")
+			require.ErrorContains(t, err, "card_pin_storage_unavailable")
 		} else {
 			require.ErrorContains(t, err, "execution: required admission unavailable")
 		}
@@ -29,7 +29,7 @@ func TestGateway_A2ARemainsUnregistrable(t *testing.T) {
 	_, err := g.buildAgentClient(ctx, MCPServerConfig{A2A: true})
 	require.ErrorIs(t, err, context.Canceled)
 	err = g.RegisterMCPServer(t.Context(), MCPServerConfig{Name: "agent", A2A: true})
-	require.ErrorContains(t, err, "adapter unavailable")
+	require.ErrorContains(t, err, "configuration_required")
 	g.RecordRegistrationFailure("agent", err)
 	statuses := g.Status()
 	require.Len(t, statuses, 1)

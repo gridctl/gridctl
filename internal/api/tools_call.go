@@ -18,6 +18,7 @@ type toolsCallRequest struct {
 }
 
 func (s *Server) handleToolsCall(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if s.gateway == nil {
 		writeToolsEndpointError(w, http.StatusServiceUnavailable, errCodeGatewayUnavailable, "gateway is unavailable", "", "", mcp.CallOutcome{
 			Disposition: "routing_failed",

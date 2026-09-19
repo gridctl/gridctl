@@ -203,11 +203,13 @@ The `source` object can contain `type`, redacted `url`, declared `ref`, `package
 
 Each registered server also reports `protocolVersion` (string, omitted when the server did not report one or has no MCP handshake, as with OpenAPI adapters) carrying the MCP protocol version negotiated at initialize, and `protocolGeneration` (string, `"handshake"` or `"stateless"`, omitted for OpenAPI adapters) carrying the resolved MCP protocol generation. `/api/sessions` responses carry `entries`, one `{id, generation, protocolVersion}` object per active session, alongside the legacy bare `sessions` ID list. A server that failed gateway registration (unreachable endpoint, initialize failure, or unsupported protocol version) still appears in the list with `registrationFailed: true`, `healthy: false`, the failure reason in `healthError`, `initialized: false`, and no replicas, so declared servers are never silently absent. A retryable failure (the server was not reachable) is not terminal: the gateway re-attempts registration on the health-monitor cadence with exponential backoff, `healthError` carries a `retrying in Ns` hint while the loop runs, and the row flips to a normal registered server once the backend becomes reachable. Authorization failures and configuration errors are not retried, and `POST /api/mcp-servers/{name}/restart` on a retrying server forces an immediate attempt instead of returning 404.
 
-A2A declarations add `a2a: true` to their server status row; the field is omitted
-for other sources. Registration currently fails terminally with
-`a2a: adapter unavailable`, before card discovery, and reports
-`registrationFailed: true`. No negotiated dialect, card/RPC URL, session, or
-capability inventory is exposed by this classification.
+A2A sources add `a2a: true` to their server status row; the field is omitted
+for other sources. Registered adapters add `a2aStatus` with optional published
+`dialect`, `cardTrust` (`approved`, `approval_required`, or `unavailable`), optional `omittedSkills`,
+and aggregate `liveRoots`, `liveTasks`, `expiredRoots`, and `uncertainRoots`.
+Expired counts describe records awaiting reclamation, not a cumulative history.
+No card/RPC URL, session, capability, or lookup digest is exposed. Capability
+envelopes are delivered only as tool results, with `Cache-Control: no-store`.
 
 **Experimental flag fields** appear at the top level when any experimental flag is enabled (via the stack's `experimental:` block or a `GRIDCTL_EXPERIMENTAL_*` env override), and are omitted otherwise:
 
@@ -366,6 +368,17 @@ curl -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
 
 `result` is `null` when no result exists. `error` is `null` on success; otherwise it is `{"code":"<fixed-code>","message":"<safe-message>"}`. `outcome.reason` is the machine discriminator. Gate denials may set `outcome.gate`. Execution admission refusal sets `outcome.detail` to `execution_admission`. `completion` is `complete` for a finished success or tool error, `not_started` when the tool was not invoked, `input_required` for an interim result, and `unknown` when timeout, cancellation, or transport loss makes completion uncertain. These are observations, not exactly-once guarantees. Adapter messages do not echo arguments, tokens, or raw bodies. Tool-returned content is user output, including every serializable `ToolCallResult` field. HTTP success is not proof that upstream MCP protocol negotiation succeeded. There is no automatic retry.
 
+For A2A, `result.content[].text` contains the adapter's JSON envelope, including
+any secret task/context handles and their expiry timestamps. It is not a second
+REST endpoint or an MCP Tasks result. Remote `input-required` or `auth-required`
+can accompany `outcome.completion: complete`; inspect the inner `state` to decide
+whether remote work needs attention. Completed adapter errors use `result.isError: true`
+and a JSON text object with local `error`, `retryable`, and optional `dialect`,
+`http_status`, and `rpc_code`; downstream error bodies are excluded. Gateway
+denials and failures outside the adapter still use the outer outcome contract. Call responses set
+`Cache-Control: no-store`. Protect request/result bodies and see
+[A2A tools and capability delivery](config-schema.md#tools-and-capability-delivery).
+
 #### `GET /api/tools/discover`
 
 Read-only live tool search and targeted help. Query parameters: optional `client`, optional exact `server`, optional exact canonical `name`, optional `query`, optional `limit` (default 20, range 1-200). `name` cannot be combined with `server` or `query`. Duplicate scalar parameters are rejected. Code mode does not change membership. Matching uses the same generated descriptions as code-mode search, including the `MCP server:` prefix. Hidden tools are omitted from results and counts. Unknown or invisible exact server/name lookup is HTTP `404` with the typed endpoint-error envelope. An empty search is success with `tools: []`.
@@ -406,10 +419,10 @@ Returns per-(server, tool) usage observed by the gateway: cumulative call count,
 
 Usage is recorded for both direct tool calls and tools invoked through code mode's `execute` (both flow through the same observer). For servers with metrics persistence enabled, the data is restored from disk on startup so it survives gateway restarts; otherwise it reflects activity since the last gateway start.
 
-Internal sensitive dispatch records local token estimates by operation category
+The A2A adapter's sensitive dispatch records local token estimates by operation category
 (`send`, `task_get`, `task_cancel`, or `skill`), without client or individual skill
 attribution. The configured tokenizer is not used for these calls. Existing
-sources retain ordinary counting. See [sensitive-call counting](usage-observability.md#sensitive-call-counting).
+sources other than A2A retain ordinary counting. See [sensitive-call counting](usage-observability.md#sensitive-call-counting).
 
 `observedSince` is when this gateway process began recording. With persistence enabled, restored counts and timestamps may predate it; clients should treat tools absent from `servers` (or with no `lastCalledAt`) as "no recorded calls" rather than asserting a longer disuse history than `observedSince` supports.
 
@@ -2318,8 +2331,9 @@ verification. Card records use the same file format, with hidden digest-only
 `_agent_card` and `_agent_identity` entries. They are pin evidence, not callable
 tools. A registered card-trust snapshot supplies the complete unfiltered records
 for diff and approval, including pending evidence without a callable router
-entry. A2A declarations currently fail registration with `a2a: adapter unavailable`,
-so declaring a source does not create such a live snapshot. See [A2A configuration](config-schema.md#a2a).
+entry. Successful A2A initialization persists first-use trust before exposing
+tools. Drift blocks calls independently of optional tool-pin settings. See
+[A2A configuration](config-schema.md#a2a).
 
 #### `GET /api/pins`
 
@@ -2429,8 +2443,9 @@ hash returns `409`; an empty body retains ordinary unconditional approval.
 Card-trust approval requires a nonempty `expected_server_hash` and uses the
 service's immutable snapshot. It performs an unconditional bounded card refetch,
 checks the complete hash, registration generation, and candidate revision, and
-persists before publishing approval. Success clears only the matching card
-block, not another gateway block. Its `tool_count` includes hidden pin records.
+persists before publishing approval. When ordinary tool pinning is enabled,
+approval also re-verifies generated tool pins before clearing their schema block.
+Other policy gates remain independent. Its `tool_count` includes hidden pin records.
 
 **Auth:** Yes
 
@@ -3622,6 +3637,11 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/mcp \
 ```
 
 Tool names are namespaced as `{server}__{tool}` to prevent collisions.
+
+`tools/call` responses use `Cache-Control: no-store` in both generations. A2A
+`task_get` and `task_cancel` are ordinary tools reached through this method;
+the native MCP `tasks/*` extension does not route to A2A. Remote interrupted
+states remain inside the [A2A envelope](config-schema.md#tools-and-capability-delivery).
 
 The streamable HTTP transport also serves two other verbs on `/mcp`, for the
 handshake generation only (a request declaring the stateless generation

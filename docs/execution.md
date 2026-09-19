@@ -1,6 +1,6 @@
 # MCP execution controls
 
-Execution controls are opt-in per MCP server. Omit `execution` to retain compatibility behavior. Supporting resource containers are not covered. External URL, OpenAPI, and experimental A2A sources reject execution declarations as externally managed sources; SSH does not provide locally verifiable remote confinement. A2A adapter registration is unavailable in this build.
+Execution controls are opt-in per MCP server. Omit `execution` to retain compatibility behavior. Supporting resource containers are not covered. External URL, OpenAPI, and experimental A2A sources reject execution declarations as externally managed sources; SSH does not provide locally verifiable remote confinement.
 
 ## Container profile
 

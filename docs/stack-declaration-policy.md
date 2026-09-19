@@ -76,7 +76,7 @@ Evaluates effective declared enablement using current runtime semantics: pinning
 These rules assess tool schema pinning, not the independent mandatory A2A
 card-trust service. A2A mappings classify as external declarations; policy mode
 does not fetch cards, resolve the experimental flag, or prove registration is
-available. Ordinary A2A registration is currently unavailable.
+available. Runtime registration separately verifies mandatory card trust.
 
 ### `schema-pinning-block`
 

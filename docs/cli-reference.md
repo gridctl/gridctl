@@ -47,10 +47,13 @@ Plain tables: `status`, `search`, `skill list`, `pins list`, `optimize`, `teleme
 | `gridctl logs [stack]` | Tail the gateway daemon log (`~/.gridctl/logs/<stack>.log`), including INFO source-build phases and image-build diagnostics tagged with `server` and `phase` for filtering. `-f` / `--follow` streams, `-n` / `--tail <N>` picks the line count (default 100), `--server <name>` switches to that containerized MCP server's stdout/stderr instead, and `-s` / `--stack <name>` names the stack explicitly. Stack auto-detected when exactly one is running. |
 
 Experimental [A2A declarations](config-schema.md#a2a) validate only with the
-`a2a` flag enabled. Apply classifies them without requiring a container runtime,
-but registration fails terminally with `a2a: adapter unavailable` before any
-card request. `status` identifies their type as `a2a`; server rows in JSON add
-`a2a: true`. A valid declaration is not a working connection.
+`a2a` flag enabled. Apply discovers and pins the Agent Card without requiring a
+container runtime. `status` identifies the source as `a2a`; server rows in JSON
+add `a2a: true` and safe `a2aStatus` trust, dialect, and aggregate counts.
+Tool results contain secret bearer handles. Use user-managed mode-0600 files,
+for example `gridctl call agent__task_get @private-args.json --format json`, and
+protect stdout. `--as` grants no task authority; lost handles cannot be recovered
+from labels or run history. Use a confidential channel for remote gateway access.
 
 ### Mutable reference diagnostics
 
@@ -177,6 +180,15 @@ JSON stdout is one document, including recognized flag and argument errors; diag
 | 1 | Interim `input_required` result | `input_required/downstream/input_required` (takes precedence over `isError`) |
 
 Exit 2 is selected only for a completed downstream tool error. Do not treat HTTP status or `isError` alone as that exit. Lost calls are not retried.
+
+For A2A, a successful tool invocation exits zero even when the inner envelope's
+remote task `state` is `input-required`, `auth-required`, or `failed`. These states
+do not use the MCP interim-result exit. Adapter errors such as
+`capability_unavailable` arrive as completed `isError` results and exit two.
+The default CLI timeout is 60 seconds, independent of the adapter's five-minute
+RPC timeout; use `--timeout 5m` for a longer blocking call or
+`return_immediately: true` for early task access. Local timeout does not cancel
+remote work. See [A2A tools](config-schema.md#tools-and-capability-delivery).
 
 `gridctl call --help` and `gridctl tools --help` work offline.
 
@@ -341,9 +353,9 @@ Card-trust records require `approve --expect <live_server_hash>` and reject
 `reset`. Diff and approval use complete immutable pin evidence, including hidden
 card and identity digests; those records are not tools. Approval refetches the
 card and checks the current registration generation before persisting, so a
-stale review cannot unblock a replacement or another policy block. The A2A
-source currently fails registration with `a2a: adapter unavailable`; a declaration
-alone supplies no live snapshot to approve. See [A2A configuration](config-schema.md#a2a).
+stale review cannot unblock a replacement or another policy block. Observed card
+drift retires affected capabilities; approval does not revive old handles.
+See [A2A configuration](config-schema.md#a2a).
 
 ## Server authorization (OAuth)
 
