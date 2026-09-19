@@ -38,6 +38,13 @@ updates:
           - "react-dom"
           - "@types/react"
           - "@types/react-dom"
+      # coverage-v8 pins its peer vitest to the exact same version, so a solo
+      # bump of either one fails npm ci with an unresolvable peer conflict
+      # (see the coverage-v8 5.0.1 bump). Group them so they move in lockstep.
+      vitest:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
     ignore:
       # typescript-eslint caps its typescript peer at <6.1.0, so a TS 7 bump
       # fails npm ci with ERESOLVE (see PR #1124). Forcing the install past it
