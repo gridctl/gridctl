@@ -333,28 +333,37 @@ func TestRecorder_WipeConcurrentWithFinish(t *testing.T) {
 	}
 	defer r.Close()
 	var wg sync.WaitGroup
+	start := make(chan struct{})
 	for i := 0; i < 20; i++ {
+		// Bind every attempt to the old epoch before racing Finish with Wipe.
+		a := r.Begin(context.Background(), "pre__wipe")
+		a.SetOutcome(DispositionCompleted, StageDownstream, ReasonOK)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			a := r.Begin(context.Background(), "pre__wipe")
-			a.SetOutcome(DispositionCompleted, StageDownstream, ReasonOK)
+			<-start
 			a.Finish()
 		}()
 	}
+	var wipeErr error
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_ = r.Wipe(context.Background())
+		<-start
+		wipeErr = r.Wipe(context.Background())
 	}()
+	close(start)
 	wg.Wait()
+	if wipeErr != nil {
+		t.Fatal(wipeErr)
+	}
 	post := r.Begin(context.Background(), "post__wipe")
 	post.SetOutcome(DispositionCompleted, StageDownstream, ReasonOK)
 	post.Finish()
 	res := waitRecords(t, dir, 1)
 	for _, rec := range res.Records {
-		if rec.RequestedName == "pre__wipe" && rec.ReturnedAt.Before(time.Now().Add(-time.Second)) {
-			t.Fatal("unexpected pre-wipe record")
+		if rec.RequestedName == "pre__wipe" {
+			t.Fatal("pre-wipe record resurrected")
 		}
 	}
 	found := false
