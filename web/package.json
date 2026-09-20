@@ -60,7 +60,7 @@
     "autoprefixer": "^10.6.1",
     "eslint": "^10",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.4",
+    "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^17.12.0",
     "jsdom": "^30.0.1",
     "postcss": "^8.5.26",

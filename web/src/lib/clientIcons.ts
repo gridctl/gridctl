@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react';
 import { Monitor } from 'lucide-react';
-// Named imports only — @lobehub/icons sets `sideEffects: false`, so Vite
+// Named imports only: @lobehub/icons sets `sideEffects: false`, so Vite
 // tree-shakes these down to the individual icon modules we reference.
 import {
   Claude,
