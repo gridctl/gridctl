@@ -321,7 +321,7 @@ invalid on adapter replacement or restart. Use private argument files and protec
 call output. Handles authorize gateway routing within current policy; they do not
 isolate a remote agent's shared memory.
 
-Learn more → [A2A configuration](docs/config-schema.md#a2a) · [Example setup](examples/a2a/)
+Learn more → [A2A configuration](docs/config-schema.md#a2a) · [Example setup](examples/a2a/) · [Real-agent rehearsal and acceptance limits](docs/a2a-verification.md)
 
 ### Rate Limits
 
