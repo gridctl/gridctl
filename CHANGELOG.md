@@ -36,6 +36,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Bug Fixes
 
+- Retry transient release archive and checksum download failures in the installer, with bounded retries and request timeouts, so temporary HTTP 504 responses do not immediately fail installation.
 - Release unused A2A capability reservations after a plain HTTP 424 refusal, matching JSON-RPC refusals. Correct the experimental flag summary to describe the callable adapter (#1185).
 - Classify A2A declarations as non-image exclusions for `explicit-image-digests`, matching OpenAPI. Preserve the error for evaluations with no applicable checks (#1185).
 - Keep a successful verified-test run at exit 0 when Gatekeeper supplies `--summary` without `--capture`, so the EXIT trap cannot replace a passing verifier with a failed job (#1227).
