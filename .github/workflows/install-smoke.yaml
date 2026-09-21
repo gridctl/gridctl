@@ -4,11 +4,14 @@ on:
   pull_request:
     paths:
       - "install.sh"
+      - "scripts/test_install.py"
       - ".github/workflows/install-smoke.yaml"
   push:
     branches: [main]
     paths:
       - "install.sh"
+      - "scripts/test_install.py"
+      - ".github/workflows/install-smoke.yaml"
   schedule:
     # Catch GitHub Releases drift weekly (Monday 08:00 UTC).
     - cron: "0 8 * * 1"
@@ -32,6 +35,9 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7.0.1
+
+      - name: Test installer download retries
+        run: python3 -m unittest discover -s scripts -p 'test_install.py' -v
 
       - name: Resolve latest release tag
         id: latest

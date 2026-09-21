@@ -181,6 +181,11 @@ check_existing_install() {
 
 # --- download ---------------------------------------------------------------
 
+download_request() {
+    # Retry transient HTTP failures (including 504), but keep permanent errors fatal.
+    curl --retry 3 --retry-max-time 60 --connect-timeout 10 --max-time 300 "$@"
+}
+
 download() {
     tmpdir="$(mktemp -d -t gridctl-install.XXXXXX)"
     # shellcheck disable=SC2064
@@ -188,13 +193,13 @@ download() {
 
     info "Downloading" "$ARCHIVE"
     debug "archive URL: ${ARCHIVE_URL}"
-    if ! curl -fsSI "$ARCHIVE_URL" >/dev/null 2>&1; then
+    if ! download_request -fsSI "$ARCHIVE_URL" >/dev/null 2>&1; then
         err "Release artifact not found at ${ARCHIVE_URL}."
         err "The release may not have built for ${OS}/${ARCH}. See ${RELEASES_URL}."
         exit 1
     fi
-    curl -fsSL "$ARCHIVE_URL" -o "$tmpdir/$ARCHIVE"
-    curl -fsSL "$CHECKSUMS_URL" -o "$tmpdir/checksums.txt"
+    download_request -fsSL "$ARCHIVE_URL" -o "$tmpdir/$ARCHIVE"
+    download_request -fsSL "$CHECKSUMS_URL" -o "$tmpdir/checksums.txt"
 }
 
 verify_checksum() {
