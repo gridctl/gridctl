@@ -980,7 +980,9 @@ and inline JSON data. It exposes MCP tools after Agent Card discovery and
 mandatory trust verification. No inbound A2A listener, streaming, file download,
 SigV4, or interactive authorization flow is provided. Local fixture acceptance
 does not establish hosted-agent compatibility or downstream conversation isolation.
-See the [example stack](../examples/a2a/stack.yaml).
+See the [example stack](../examples/a2a/stack.yaml) and the
+[external verification record](a2a-verification.md) for the real-agent rehearsal
+and pending final PR-head acceptance.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|

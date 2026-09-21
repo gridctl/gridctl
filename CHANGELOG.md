@@ -20,6 +20,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Documentation
 
+- Record the September 21, 2026 genuine generic A2A 1.0 and hosted AgentCore bearer rehearsal, including agent/runtime identities, card digests, workflow outcomes, session observations, and shared-memory limitations. Final exact-PR-head external acceptance remains required before merge or manual-merge handoff; rehearsal and CI fixtures do not close that gate (#1185).
 - Document A2A fields, tools, capability bounds and secrecy, credential origins, bounded card freshness, immutable card/identity pins, and downstream shared-memory limits. Add example setup and private-file CLI guidance, link the feature from the README and indexes, and distinguish remote task states from completed MCP/REST invocations and CLI exits (#1185).
 - Document capability bounds, expiry, uncertainty, teardown accounting, and sensitive-observer behavior, including local token estimates and diagnostic-recognition limits. Align usage, configuration, API, CLI, security, examples, and architecture guidance with diagnostic migration and payload-free counting boundaries (#1185).
 - Document `gridctl call`, `gridctl tools search`, live-tool versus catalog search, REST call/discover envelopes and limits, typed exits, no-retry behavior, lexical matching, REST-versus-MCP verification limits, and the caller-label trust boundary (#1154).

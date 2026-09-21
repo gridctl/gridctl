@@ -30,6 +30,13 @@ updated against `e16549e`. The Unreleased adapter uses these controls for MCP
 calls. It remains experimental and off by default. Real HTTP fixtures do not establish hosted-agent compatibility or
 downstream shared-memory isolation.
 
+A September 21, 2026 [external A2A rehearsal](../a2a-verification.md) against
+`da8073bb3c3eaf18367849d6a5d09f3bb4f6ca5d` recorded genuine generic 1.0 and
+hosted AgentCore bearer workflows, session relationships, invalid-authority
+dispatch rejection, and bidirectional memory checks. Final PR-head acceptance
+remains pending. Those observations do not establish arbitrary shared-agent
+isolation or general hosted compatibility.
+
 | State | Evidence at this baseline |
 |-------|---------------------------|
 | Released as a prerelease | [`v1.0.0-rc.1`](https://github.com/gridctl/gridctl/releases/tag/v1.0.0-rc.1), published September 10, 2026, points to `2f6c00472c33304bcc560ecbe4be18497ec15c2e`. It contains grouped-route authentication, non-resolving stack export, reserved internal-credential filtering, scoped variable delivery, skill package completeness tracking, and authenticated binary-release tooling. The runtime controls credited at the original baseline are present in that tag; the Unreleased lifecycle additions are separate. |
