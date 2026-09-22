@@ -55,6 +55,10 @@ After `task build`, set `GRIDCTL_A2A_FIXTURE_BINARY="$PWD/gridctl"` on this comm
 to exercise the local binary in the CLI fixture; daemon fixtures still build
 race-enabled children. These checks do not establish hosted-agent compatibility
 or shared-agent isolation.
+`docs/a2a-verification.md` records the September 21, 2026 genuine generic 1.0 and
+hosted AgentCore bearer rehearsal, including target identities and limitations.
+Final exact-PR-head external acceptance remains required before merge or
+manual-merge handoff; neither the rehearsal nor fixture suites close that gate.
 
 Lint:
 
@@ -209,7 +213,8 @@ scripts/            Build/test helpers and release tooling: release.py owns gate
 docs/               User-facing documentation (cli-reference, config-schema, api-reference, skills, packs, tools-workspace,
                     global-context, model-policy, scaling, usage-observability, installation, release-verification,
                     project-status, troubleshooting, execution, mcp-runtime-python, security/threat-model, security-evidence,
-                    stack-declaration-policy, adversarial-regression-gates, capability-primitives, security/practical-guide).
+                    stack-declaration-policy, adversarial-regression-gates, capability-primitives, a2a-verification,
+                    security/practical-guide).
 images/             OCI recipes that are not the gateway binary. images/mcp-runtime-python is the Python 3.12 runtime base.
 ```
 

@@ -100,6 +100,10 @@ remote work. Separate Bedrock sessions do not isolate an agent's shared external
 memory; tenant confidentiality requires downstream enforcement or separate
 deployments and credentials.
 
+Consult the [external verification record](../a2a-verification.md) for the tested
+agents, observed isolation, and limits of the September 21, 2026 rehearsal.
+Final exact-PR-head acceptance remains pending; fixture tests cannot replace it.
+
 ## Handle secrets and shared configuration deliberately
 
 The variable store supports plaintext operation. Enable encryption using the [variable commands](../cli-reference.md#variables) when you need encryption at rest, and check its lock state. An encrypted store loads locked; an unlocked daemon and an authorized recipient still hold plaintext values. Downstream OAuth grants use separate storage with a machine-local key; copying both key and ciphertext exposes the grants.

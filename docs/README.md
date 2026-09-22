@@ -50,6 +50,7 @@ New to gridctl? Read in this order:
 | Document | Description |
 |----------|-------------|
 | [Project Status](project-status.md) | Per-feature stability tiers and currently known limitations |
+| [External A2A Verification](a2a-verification.md) | Real-agent rehearsal identities, workflow and session observations, limitations, and pending final acceptance |
 | [Practical Security Guide](security/practical-guide.md) | Operator workflow for verified installation, private deployment, credentials, execution, content review, and diagnostic privacy |
 | [Security Threat Model](security/threat-model.md) | Current trust boundaries, security defaults, source/test evidence, and residual risks |
 | [Security Evidence Report](security-evidence.md) | Passive `doctor --security` / `/api/security-report` scope, unknowns, and exit-zero limits |

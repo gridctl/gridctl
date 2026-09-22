@@ -45,5 +45,10 @@ labels, or run history; replacement, card drift, and restart invalidate them.
 Card approval does not restore old handles. Capabilities do not isolate an
 agent's shared memory, and fixture coverage does not establish hosted compatibility.
 
+The [external verification record](../../docs/a2a-verification.md) documents the
+September 21, 2026 generic A2A 1.0 and hosted AgentCore bearer rehearsal, including
+workflow and session observations. Final exact-PR-head acceptance remains pending;
+the observations apply only to the recorded targets and versions.
+
 See [A2A configuration](../../docs/config-schema.md#a2a) for skill selection,
 hash-bound card approval, result bounds, and continuation rules.
