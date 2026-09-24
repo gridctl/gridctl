@@ -33,6 +33,11 @@ brew install gridctl/tap/gridctl
 
 Update with `brew upgrade gridctl/tap/gridctl`.
 
+Gridctl casks that use declarative post-install steps require Homebrew 6.0.13
+or later. Run `brew update` before installing or upgrading if your Homebrew is
+older. Cached metadata for an earlier Gridctl cask can still contain its legacy
+post-install hook.
+
 </details>
 
 ## Other options
