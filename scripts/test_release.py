@@ -54,6 +54,25 @@ class ReleasePolicyTests(unittest.TestCase):
         )
         self.assertNotIn("custom_block", cask)
 
+    def test_goreleaser_pin_matches_cask_regression(self):
+        tools_spec = importlib.util.spec_from_file_location(
+            "release_tools", Path(__file__).with_name("release-tools.py")
+        )
+        release_tools = importlib.util.module_from_spec(tools_spec)
+        tools_spec.loader.exec_module(release_tools)
+        regression_spec = importlib.util.spec_from_file_location(
+            "check_goreleaser_cask", Path(__file__).with_name("check_goreleaser_cask.py")
+        )
+        regression = importlib.util.module_from_spec(regression_spec)
+        regression_spec.loader.exec_module(regression)
+        self.assertEqual(
+            "v" + regression.GORELEASER_VERSION, release_tools.TOOLS["goreleaser"][1]
+        )
+
+    @unittest.skipUnless(
+        importlib.util.find_spec("jsonschema"),
+        "jsonschema is installed by the release-policy CI environment",
+    )
     def test_prepare_requires_complete_inventories(self):
         import jsonschema
 
