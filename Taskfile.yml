@@ -96,7 +96,7 @@ tasks:
       Discover cases with `task scenarios`. Focused reruns do not replace
       whole-suite acceptance. Example: go test -race -count=1 -run '^TestName$' ./pkg/mcp
     cmds:
-      - go test -race ./...
+      - TMPDIR="$(cd "${TMPDIR:-/tmp}" && pwd -P)" go test -race ./...
 
   test:verify:
     desc: Run unit tests with JSON capture and scenario verification
