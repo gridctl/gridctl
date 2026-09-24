@@ -16,7 +16,7 @@ Task (https://taskfile.dev) is the entry point for development builds and Go/fro
 | `task build:go` | Backend only. Skips the embed tag if `cmd/gridctl/web/dist` is absent (UI 404s in that case). |
 | `task build:web` | Builds the frontend and stages `web/dist` in `cmd/gridctl/web/dist` for embedding; does not compile Go. |
 | `task dev` | Runs the Vite dev server (`web/`) against a separately-running backend. |
-| `task test` | `go test -race ./...` (unit tests only, same race detector CI runs). |
+| `task test` | `go test -race ./...` with `TMPDIR` normalized to its physical path (unit tests only, same race detector CI runs). |
 | `task test:verify` | Unit-lane JSON capture plus `cmd/scenarioverify` against `tests/adversarial/index.yaml` (same path Gatekeeper uses). |
 | `task scenarios` | Prints designated scenario IDs and escaped focused `-run` commands. Focused reruns do not replace whole-suite acceptance. |
 | `task test:integration` | `go test -tags=integration -race -timeout 15m ./tests/integration/...`. The full suite requires Docker (or Podman); selected HTTP/subprocess suites need no container runtime. All use real dependencies per Article IV of `CONSTITUTION.md`; mocks are disallowed in `tests/integration/`. |
@@ -67,7 +67,7 @@ golangci-lint run                # backend (gosec is enabled; see .golangci.yml 
 cd web && npm run lint           # frontend; zero-error baseline, enforced by the gatekeeper frontend CI job
 ```
 
-Release tooling has separate Python policy/scanner tests: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_*.py' -v` (Python 3.11+, jsonschema 4.23.0, PyYAML 6.0.3, Bash, and jq). These are not included in `task test`. `.github/workflows/release.yaml` reuses all six exact-commit Gatekeeper jobs, assembles and authenticates a draft with GoReleaser, verifies it on Linux/macOS, publishes, and only then advances Homebrew. See `docs/release-verification.md` for external verification, immutable-mode prerequisites, and recovery; local fixtures do not replace hosted acceptance. The Python runtime image recipe is validated by `task images:python-runtime`; hosted amd64/arm64 acceptance is `.github/workflows/mcp-runtime-python.yaml`.
+Release tooling has separate Python policy/scanner tests: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_*.py' -v` (Python 3.11+, jsonschema 4.23.0, PyYAML 6.0.3, Bash, and jq). These are not included in `task test`. Cask-generation changes also require the explicit pinned GoReleaser exercise on Linux-x86_64; it is intentionally outside discovered `test_*.py` files. `.github/workflows/release.yaml` reuses all six exact-commit Gatekeeper jobs, assembles and authenticates a draft with GoReleaser, verifies it on Linux/macOS, publishes, and only then advances Homebrew. See `docs/release-verification.md` for the generator command, external verification, immutable-mode prerequisites, and recovery; local fixtures do not replace hosted acceptance. The Python runtime image recipe is validated by `task images:python-runtime`; hosted amd64/arm64 acceptance is `.github/workflows/mcp-runtime-python.yaml`.
 
 ## Code architecture
 
@@ -205,9 +205,11 @@ examples/           Example stack YAMLs grouped by surface (getting-started, tra
                     portable-pack, model-policy, python-sources, python-runtime, execution, security-evidence, stack-declaration-policy, runs).
                     examples/_mock-servers/ is the source for `task mock:servers`.
 scripts/            Build/test helpers and release tooling: release.py owns gate, inventory, verification, draft/public,
-                    and tap policy; release-tools.py pins executables and the SPDX schema; release-acceptance.py exercises
-                    authorized sandbox releases. mcp_runtime_python.py owns the Python runtime image recipe, tag, and
-                    evidence policy. test_release.py, test_govulncheck.py, and test_mcp_runtime_python.py cover local policy regressions.
+                    and tap policy; release-tools.py pins executables and the SPDX schema; check_goreleaser_cask.py runs
+                    the explicit production-derived cask generator regression, while validate_generated_cask.py owns its
+                    output contract; release-acceptance.py exercises authorized sandbox releases. mcp_runtime_python.py
+                    owns the Python runtime image recipe, tag, and evidence policy. Discovered test_*.py files cover local
+                    policy and validator regressions without invoking GoReleaser.
                     check-example-refs.sh enforces pinned or excepted example image and package selectors after task build:go, including unassessed in-scope references.
                     run-verified-tests.sh captures go test JSON and runs cmd/scenarioverify for designated Gatekeeper lanes.
 docs/               User-facing documentation (cli-reference, config-schema, api-reference, skills, packs, tools-workspace,
