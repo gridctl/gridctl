@@ -41,18 +41,44 @@ class ReleasePolicyTests(unittest.TestCase):
                          set(publisher["publish"]["needs"]))
         self.assertEqual("publish", publisher["homebrew"]["needs"])
 
-    def test_homebrew_xattr_hook_is_macos_only(self):
+        assemble_steps = publisher["assemble"]["steps"]
+        commands = [step.get("run", "") for step in assemble_steps]
+        generate = commands.index("goreleaser release --clean")
+        validate = next(index for index, command in enumerate(commands)
+                        if "validate_generated_cask.py" in command)
+        prepare = commands.index("python3 scripts/release.py prepare")
+        attest = next(index for index, step in enumerate(assemble_steps)
+                      if step.get("uses", "").startswith("actions/attest@"))
+        self.assertLess(generate, validate)
+        self.assertLess(validate, prepare)
+        self.assertLess(prepare, attest)
+        self.assertIn("ruby -c dist/homebrew/Casks/gridctl.rb", commands[validate])
+
+    def test_homebrew_xattr_uses_declarative_steps(self):
         import yaml
 
-        cask = yaml.safe_load(Path(".goreleaser.yaml").read_text())["homebrew_casks"][0]
+        config = yaml.safe_load(Path(".goreleaser.yaml").read_text())
+        cask = config["homebrew_casks"][0]
+        self.assertTrue(config["release"]["draft"])
+        self.assertTrue(cask["skip_upload"])
         self.assertEqual(
-            'if OS.mac?\n'
-            '  system_command "/usr/bin/xattr",\n'
-            '                 args: ["-dr", "com.apple.quarantine", "#{staged_path}/gridctl"]\n'
-            'end\n',
-            cask["hooks"]["post"]["install"],
+            {
+                "owner": "gridctl",
+                "name": "homebrew-tap",
+                "token": "{{ .Env.GORELEASER_TOKEN }}",
+            },
+            cask["repository"],
         )
-        self.assertNotIn("custom_block", cask)
+        self.assertEqual(
+            'postflight_steps do\n'
+            '  on_macos do\n'
+            '    run "/usr/bin/xattr",\n'
+            '        args: ["-dr", "com.apple.quarantine", "{{ "{{staged_path}}" }}/gridctl"]\n'
+            '  end\n'
+            'end\n',
+            cask["custom_block"],
+        )
+        self.assertNotIn("hooks", cask)
 
     def test_goreleaser_pin_matches_cask_regression(self):
         tools_spec = importlib.util.spec_from_file_location(
@@ -92,12 +118,20 @@ class ReleasePolicyTests(unittest.TestCase):
             inventory.write_text(good)
             cask = directory / "homebrew/Casks/gridctl.rb"
             cask.parent.mkdir(parents=True)
-            cask.write_text("cask fixture")
+            cask_bytes = b"cask fixture\nwith exact bytes \x00\xff"
+            cask.write_bytes(cask_bytes)
             with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo"}):
                 names = release.prepare(directory, tag, sha, schema_path)
                 self.assertEqual(set(release.expected_assets(tag)) - {"provenance.sigstore.json"}, set(names))
+                prepared = directory / "gridctl.rb"
+                self.assertEqual(cask_bytes, prepared.read_bytes())
                 checksums = (directory / "checksums.txt").read_text()
                 subjects = (directory / "attestation-subjects.txt").read_text()
+                cask_digest = release.digest(cask)
+                self.assertEqual(cask_digest, release.digest(prepared))
+                cask_subject = f"{cask_digest}  gridctl.rb\n"
+                self.assertEqual(1, checksums.count(cask_subject))
+                self.assertEqual(1, subjects.count(cask_subject))
                 self.assertNotIn("provenance.sigstore.json", checksums)
                 self.assertNotIn("checksums.txt", checksums)
                 self.assertIn("checksums.txt", subjects)
