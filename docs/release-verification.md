@@ -73,6 +73,17 @@ The four archives, five SPDX documents, index, generated cask, and `checksums.tx
 
 All six exact-commit Gatekeeper jobs are required: backend test/lint/coverage/vulnerability/build/example policies, frontend tests/lint/types/audit/build, Docker integration, Podman integration, LiteLLM contract, and MCP conformance. Failed, missing, canceled, and skipped results fail closed. Prior branch or PR runs do not substitute.
 
+The cask generator regression is an explicit Linux-x86_64 check, separate from offline Python test discovery. Install the reviewed GoReleaser executable through the same digest-verified mechanism as the release workflow, then exercise the production-derived cask configuration without publication credentials:
+
+```bash
+tools="$(mktemp -d)"
+python3 scripts/release-tools.py "$tools" goreleaser
+"$tools/goreleaser" check
+python3 scripts/check_goreleaser_cask.py --goreleaser "$tools/goreleaser" --expect-invalid
+```
+
+The baseline mode succeeds only when the current legacy output is generated and rejected by the declarative-steps contract. It proves that the regression detects the compatibility defect; it does not claim the generated cask is fixed or establish Homebrew behavior. Offline `test_*.py` discovery tests validator rejection cases and never invokes or downloads GoReleaser.
+
 GoReleaser OSS 2.14.3 builds archives and inventories into a draft. Its tap upload is disabled; the generated cask is authenticated with the assets. Linux and macOS jobs verify downloaded draft bytes and rejection cases. Publication checks the tag again and reverifies the draft. The tap advances after public asset download and provenance checks. GoReleaser alone is not an alternative production publication path.
 
 GitHub draft assets require write-capable repository access. The assembly job reads them back and supplies a same-run Actions artifact to read-only Linux/macOS verifier jobs. These jobs authenticate every expected file independently against the repository/workflow/tag/SHA policy, so the transport is not their origin trust anchor. No PR artifacts are reused. The publisher separately downloads and verifies the current draft before publication.
