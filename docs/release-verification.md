@@ -82,7 +82,7 @@ python3 scripts/release-tools.py "$tools" goreleaser
 python3 scripts/check_goreleaser_cask.py --goreleaser "$tools/goreleaser"
 ```
 
-The cask configuration uses GoReleaser's `custom_block` as a temporary bridge until the pinned generator supports declarative post-install steps natively. The exercise requires the generated `postflight_steps` contract and matching archive checksums. It does not establish Homebrew behavior. Offline `test_*.py` discovery tests validator rejection cases and never invokes or downloads GoReleaser.
+The cask configuration uses GoReleaser's `custom_block` as a temporary bridge until the pinned generator supports declarative post-install steps natively. The exercise requires the generated `postflight_steps` contract and matching archive checksums. The release assembly applies the same validator and `ruby -c` to the actual generated cask before `release.py prepare` copies it byte-for-byte and records that digest in the checksum and provenance subject lists. These checks do not establish Homebrew behavior. Offline `test_*.py` discovery tests validator rejection cases, release ordering, and prepared-byte identity without invoking or downloading GoReleaser.
 
 GoReleaser OSS 2.14.3 builds archives and inventories into a draft. Its tap upload is disabled; the generated cask is authenticated with the assets. Linux and macOS jobs verify downloaded draft bytes and rejection cases. Publication checks the tag again and reverifies the draft. The tap advances after public asset download and provenance checks. GoReleaser alone is not an alternative production publication path.
 
