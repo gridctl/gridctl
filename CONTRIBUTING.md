@@ -231,6 +231,8 @@ These fixtures do not replace hosted release acceptance. The backend CI job runs
 
 Changes to Homebrew cask generation also require the pinned Linux-x86_64 GoReleaser exercise. It is separate from Python discovery and must be invoked explicitly; follow the command and evidence limits in [release verification and maintainer operations](docs/release-verification.md#maintainer-operations).
 
+Changes to the declarative post-install step or its minimum Homebrew version also require real Homebrew load and installation acceptance on the declared floor and current stable. Cover the macOS step and Linux platform guard, and record exact Homebrew versions, operating systems, and architectures. Local fixtures do not replace the hosted release gates.
+
 Pull requests are automatically checked for:
 - Go linting (`golangci-lint` with `gosec`)
 - Vulnerability scanning (`govulncheck`, `npm audit`)
