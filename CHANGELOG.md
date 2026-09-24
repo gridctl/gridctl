@@ -60,6 +60,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Maintenance
 
+- Add an explicit Linux-x86_64 regression that runs the pinned GoReleaser against the production-derived Homebrew cask configuration and checks generated archive hashes. Offline Python discovery now rejects legacy, duplicate, unguarded, wrong-token, and missing postflight-step output without downloading or invoking GoReleaser. This detects the current compatibility defect but does not change the generated cask (#1290).
 - Add a declarative adversarial scenario index and a post-suite Go JSON execution verifier on Gatekeeper unit, integration, and Podman lanes. Designated invocations use `-json -count=1 -race`. The verifier checks that required identities ran and passed; it does not prove the security properties those tests assert. Hosted Podman execution remains required for Podman-assigned cases. Not a comprehensive security test suite (#1227).
 - Add a manually triggered, read-only Homebrew authentication diagnostic that compares the release Python helper with GitHub CLI and reports sanitized results without exposing credentials.
 

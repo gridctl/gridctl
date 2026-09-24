@@ -229,6 +229,8 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_*.py'
 
 These fixtures do not replace hosted release acceptance. The backend CI job runs them before the binary build and example validation.
 
+Changes to Homebrew cask generation also require the pinned Linux-x86_64 GoReleaser exercise. It is separate from Python discovery and must be invoked explicitly; follow the command and evidence limits in [release verification and maintainer operations](docs/release-verification.md#maintainer-operations).
+
 Pull requests are automatically checked for:
 - Go linting (`golangci-lint` with `gosec`)
 - Vulnerability scanning (`govulncheck`, `npm audit`)

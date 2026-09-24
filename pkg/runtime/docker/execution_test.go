@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"errors"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -35,6 +36,13 @@ func executionTestContract(t *testing.T) *execution.ExecutionContract {
 	return contract
 }
 
+func requireLinuxExecutionObservation(t *testing.T) {
+	t.Helper()
+	if goruntime.GOOS != "linux" {
+		t.Skip("instance-bound execution observation requires Linux")
+	}
+}
+
 func TestExecution_PreflightRefusesBeforeCreate(t *testing.T) {
 	for _, info := range []system.Info{{}, {CgroupVersion: "1", SecurityOptions: []string{"name=seccomp,profile=builtin"}}, {CgroupVersion: "2", MemoryLimit: true, CPUCfsQuota: true, PidsLimit: true}} {
 		engine := &executionEngine{MockDockerClient: &MockDockerClient{}, info: info}
@@ -62,6 +70,7 @@ func TestExecution_PreflightRefusesBeforeCreate(t *testing.T) {
 }
 
 func TestExecution_InspectRejectsWeakerControls(t *testing.T) {
+	requireLinuxExecutionObservation(t)
 	for _, mutate := range []func(*container.Config, *container.HostConfig){
 		func(c *container.Config, _ *container.HostConfig) { c.User = "root" },
 		func(_ *container.Config, h *container.HostConfig) { h.Privileged = true },
@@ -103,6 +112,7 @@ func TestExecution_CapabilityErrorsAreRedacted(t *testing.T) {
 }
 
 func TestExecution_ConnectedNetworkInventory(t *testing.T) {
+	requireLinuxExecutionObservation(t)
 	for _, tc := range []struct {
 		name, mode, requested string
 		networks              []string
@@ -175,6 +185,7 @@ func TestExecution_ImageReferenceEquality(t *testing.T) {
 }
 
 func TestExecution_InspectTmpfsOptions(t *testing.T) {
+	requireLinuxExecutionObservation(t)
 	for _, tc := range []struct {
 		name, options string
 		wantError     bool
@@ -212,6 +223,7 @@ func TestExecution_InspectTmpfsOptions(t *testing.T) {
 }
 
 func TestExecution_MountInventoryDiagnostics(t *testing.T) {
+	requireLinuxExecutionObservation(t)
 	for _, tc := range []struct {
 		name, field string
 		mutate      func(*container.InspectResponse)
