@@ -746,13 +746,13 @@ func TestProcessClient_Reconnect(t *testing.T) {
 		}
 	}
 
-	// After failed reconnect, client should still be in a connected state
-	// (Connect succeeded, Initialize failed)
+	// A failed handshake closes the replacement process rather than leaving a
+	// process that never initialized attached to the client.
 	client.procMu.Lock()
 	started := client.started
 	client.procMu.Unlock()
-	if !started {
-		t.Error("expected client to be started after Connect succeeded in Reconnect")
+	if started {
+		t.Error("failed reconnect left replacement process started")
 	}
 
 	client.Close()

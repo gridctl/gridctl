@@ -133,7 +133,7 @@ func (c *StdioClient) retire() error {
 	return c.Close()
 }
 
-// readResponses reads JSON-RPC responses from stdout.
+// readResponses handles JSON-RPC messages from stdout.
 // stdout is passed as a parameter to capture the value at goroutine launch
 // time (under connMu), avoiding a data race with Reconnect.
 func (c *StdioClient) readResponses(ctx context.Context, stdout io.Reader) {
@@ -156,19 +156,30 @@ func (c *StdioClient) readResponses(ctx context.Context, stdout io.Reader) {
 			continue
 		}
 
-		var resp jsonrpc.Response
-		if err := json.Unmarshal(line, &resp); err != nil {
+		message, err := classifyStdioMessage(line)
+		if err != nil {
 			c.logger.Info("server output", "msg", string(line))
 			continue
 		}
+		if message.kind == stdioNotification {
+			continue
+		}
+		if message.kind == stdioRequest {
+			if err := c.writeStdioContext(ctx, *message.reply); err != nil {
+				c.logger.Warn("server request reply failed", "error", err)
+				return
+			}
+			continue
+		}
+		resp := message.response
 
 		// Route response to waiting caller
-		if resp.ID != nil {
+		if resp != nil && resp.ID != nil {
 			var id int64
 			if err := json.Unmarshal(*resp.ID, &id); err == nil {
 				c.responsesMu.Lock()
 				if ch, ok := c.responses[id]; ok {
-					ch <- &resp
+					ch <- resp
 					delete(c.responses, id)
 				}
 				c.responsesMu.Unlock()
@@ -289,6 +300,10 @@ func (c *StdioClient) sendStdio(req jsonrpc.Request) error {
 }
 
 func (c *StdioClient) sendStdioContext(ctx context.Context, req jsonrpc.Request) error {
+	return c.writeStdioContext(ctx, req)
+}
+
+func (c *StdioClient) writeStdioContext(ctx context.Context, message any) error {
 	ctx, cancel := context.WithTimeout(ctx, DefaultRequestTimeout)
 	defer cancel()
 	c.connMu.Lock()
@@ -300,9 +315,9 @@ func (c *StdioClient) sendStdioContext(ctx context.Context, req jsonrpc.Request)
 	stdin := c.stdin
 	c.connMu.Unlock()
 
-	data, err := json.Marshal(req)
+	data, err := json.Marshal(message)
 	if err != nil {
-		return fmt.Errorf("marshaling request: %w", err)
+		return fmt.Errorf("marshaling stdio message: %w", err)
 	}
 
 	written := make(chan error, 1)
