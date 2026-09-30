@@ -288,7 +288,7 @@ func (c *ProcessClient) connectOwned(ctx context.Context) (func() bool, error) {
 	return stopCancellation, c.Connect(childCtx)
 }
 
-// readResponses reads JSON-RPC responses from stdout.
+// readResponses handles JSON-RPC messages from stdout.
 // stdout is passed as a parameter to capture the value at goroutine launch
 // time (under procMu), avoiding a data race with Reconnect clearing c.stdout.
 func (c *ProcessClient) readResponses(ctx context.Context, stdout io.Reader) {

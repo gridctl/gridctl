@@ -133,7 +133,7 @@ func (c *StdioClient) retire() error {
 	return c.Close()
 }
 
-// readResponses reads JSON-RPC responses from stdout.
+// readResponses handles JSON-RPC messages from stdout.
 // stdout is passed as a parameter to capture the value at goroutine launch
 // time (under connMu), avoiding a data race with Reconnect.
 func (c *StdioClient) readResponses(ctx context.Context, stdout io.Reader) {
