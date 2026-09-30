@@ -72,11 +72,15 @@ func TestReplicas_AllReplicasDown(t *testing.T) {
 		cmd.Wait() //nolint:errcheck
 	}
 
-	// Poll until all three replicas are marked unhealthy (up to 5s).
+	// Poll until all three replicas and the server rollup are marked unhealthy
+	// (up to 5s). Replica statuses default to unhealthy before the first monitor
+	// pass, so they cannot alone prove that health monitoring has run.
 	deadline := time.Now().Add(5 * time.Second)
 	var statuses []mcp.ReplicaStatus
+	var hs *mcp.HealthStatus
 	for time.Now().Before(deadline) {
 		statuses = gw.ReplicaStatuses(serverName)
+		hs = gw.GetHealthStatus(serverName)
 		allDown := len(statuses) == len(ports)
 		for _, rs := range statuses {
 			if rs.Healthy {
@@ -84,10 +88,13 @@ func TestReplicas_AllReplicasDown(t *testing.T) {
 				break
 			}
 		}
-		if allDown {
+		if allDown && hs != nil && !hs.Healthy {
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+	if len(statuses) != len(ports) {
+		t.Fatalf("expected %d replica statuses, got %d", len(ports), len(statuses))
 	}
 	for i, rs := range statuses {
 		if rs.Healthy {
@@ -96,7 +103,6 @@ func TestReplicas_AllReplicasDown(t *testing.T) {
 	}
 
 	// Rollup health should also reflect the outage.
-	hs := gw.GetHealthStatus(serverName)
 	if hs == nil {
 		t.Fatal("expected rollup health status, got nil")
 	}

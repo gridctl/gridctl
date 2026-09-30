@@ -143,6 +143,50 @@ func TestStdioClient_ReadResponses(t *testing.T) {
 	<-done
 }
 
+func TestStdioClient_ServerPingDoesNotCorrelate(t *testing.T) {
+	client := newTestStdioClient("test-stdio", logging.NewDiscardLogger())
+	respCh := make(chan *jsonrpc.Response, 1)
+	client.responsesMu.Lock()
+	client.responses[1] = respCh
+	client.responsesMu.Unlock()
+
+	ping, err := classifyStdioMessage([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
+	if err != nil {
+		t.Fatalf("classify ping: %v", err)
+	}
+	if ping.kind != stdioRequest || ping.reply == nil || string(ping.reply.Result) != `{}` {
+		t.Fatalf("ping reply = %#v", ping.reply)
+	}
+	select {
+	case got := <-respCh:
+		t.Fatalf("ping completed pending call: %#v", got)
+	default:
+	}
+	client.responsesMu.Lock()
+	_, pending := client.responses[1]
+	client.responsesMu.Unlock()
+	if !pending {
+		t.Fatal("ping removed pending call")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		client.readResponses(ctx, strings.NewReader(`{"jsonrpc":"2.0","id":1,"result":{"token":"expected"}}`+"\n"))
+		close(done)
+	}()
+	select {
+	case got := <-respCh:
+		if string(got.Result) != `{"token":"expected"}` {
+			t.Fatalf("result = %s", got.Result)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for real response")
+	}
+	<-done
+}
+
 func TestStdioClient_SendStdio_NotConnected(t *testing.T) {
 	client := newTestStdioClient("test-stdio", logging.NewDiscardLogger())
 
