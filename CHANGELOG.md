@@ -37,6 +37,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Bug Fixes
 
+- Respond to keepalive pings from container and local-process stdio MCP servers so healthy sessions remain connected (#1304).
 - Generate future Homebrew casks with a supported, macOS-only declarative post-install step instead of the deprecated `postflight` hook. The step removes quarantine from the staged binary, preserves command failures, and does not run xattr on Linux. These casks require Homebrew 6.0.13 or later; users on older versions should run `brew update`. The already-published 1.0.0-rc.1 cask is unchanged (#1290).
 - Retry transient release archive and checksum download failures in the installer, with bounded retries and request timeouts, so temporary HTTP 504 responses do not immediately fail installation.
 - Release unused A2A capability reservations after a plain HTTP 424 refusal, matching JSON-RPC refusals. Correct the experimental flag summary to describe the callable adapter (#1185).
