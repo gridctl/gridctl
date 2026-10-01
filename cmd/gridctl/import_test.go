@@ -21,13 +21,13 @@ type fakeImportClient struct {
 	listErr error
 }
 
-func (f *fakeImportClient) Name() string                     { return f.slug }
-func (f *fakeImportClient) Slug() string                     { return f.slug }
-func (f *fakeImportClient) Detect() (string, bool)           { return "/fake/" + f.slug, true }
-func (f *fakeImportClient) NeedsBridge() bool                { return false }
-func (f *fakeImportClient) IsLinked(string, string) (bool, error) { return false, nil }
+func (f *fakeImportClient) Name() string                               { return f.slug }
+func (f *fakeImportClient) Slug() string                               { return f.slug }
+func (f *fakeImportClient) Detect() (string, bool)                     { return "/fake/" + f.slug, true }
+func (f *fakeImportClient) NeedsBridge() bool                          { return false }
+func (f *fakeImportClient) IsLinked(string, string) (bool, error)      { return false, nil }
 func (f *fakeImportClient) Link(string, provisioner.LinkOptions) error { return nil }
-func (f *fakeImportClient) Unlink(string, string) error      { return nil }
+func (f *fakeImportClient) Unlink(string, string) error                { return nil }
 func (f *fakeImportClient) ListServers(string) ([]provisioner.ServerEntry, error) {
 	return f.entries, f.listErr
 }
@@ -71,6 +71,9 @@ func TestScanForCandidates_FiltersDedupesAndWarns(t *testing.T) {
 	}
 	if got := importable[0].FoundIn; len(got) != 2 || got[0] != "claude" || got[1] != "cursor" {
 		t.Errorf("provenance = %v", got)
+	}
+	if importable[0].Source != "claude" || importable[0].SourcePath != "/fake/claude" {
+		t.Errorf("source path = %q from %q", importable[0].SourcePath, importable[0].Source)
 	}
 
 	reasons := map[string]string{}
