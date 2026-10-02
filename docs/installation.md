@@ -116,6 +116,8 @@ gridctl import --all --dry-run  # Preview everything without writing
 
 The scan is read-only on client configs; the only file modified is your stack file, which is backed up first. Identical servers found in several clients are imported once (their provenance is shown), entries pointing at the gridctl gateway itself are filtered out, and plaintext secret-looking env values are offered into the encrypted variable store as `${var:KEY}` references. After importing, run `gridctl apply` to deploy and `gridctl link` to point the clients at the gateway.
 
+OpenCode import reads one file under the Gridctl home: `opencode.json`, or `opencode.jsonc` only when the JSON file is absent. It does not merge `config.json`, project files, or OpenCode override variables. Pass `--source-config PATH` to read a different file. Native command arrays and `{env:NAME}` references are imported; `{file}` expressions are skipped, as are disabled servers and working directories on every OpenCode shape, including remote entries and string commands. See the [CLI reference](cli-reference.md#llm-clients).
+
 ## Isolated and CI installs
 
 `GRIDCTL_HOME` (or the `--home <dir>` global flag) replaces the home directory every gridctl path derives from: `~/.gridctl` and the client projection targets alike. `GRIDCTL_HOME=/tmp/demo gridctl apply` runs a fully isolated instance that cannot touch real client configs, which is the right shape for CI jobs, demos, and trying gridctl without committing your machine to it. `gridctl doctor` reports the active home and its source. See [Home directory override](cli-reference.md#home-directory-override) for the full semantics.

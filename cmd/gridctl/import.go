@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/gridctl/gridctl/internal/importer"
@@ -25,14 +27,15 @@ const importExitInfrastructure = 2
 const importJSONSchemaVersion = 1
 
 var (
-	importAll     bool
-	importDryRun  bool
-	importYes     bool
-	importName    string
-	importFile    string
-	importNoVault bool
-	importFormat  string
-	importAsJSON  *bool
+	importAll          bool
+	importDryRun       bool
+	importYes          bool
+	importName         string
+	importFile         string
+	importNoVault      bool
+	importFormat       string
+	importAsJSON       *bool
+	importSourceConfig string
 )
 
 var importCmd = &cobra.Command{
@@ -54,12 +57,15 @@ Without arguments, all detected clients are scanned and servers are picked
 interactively. Run 'gridctl link --help' for the supported client list.
 
 Exit codes:
-  0  imported (or nothing to import)
-  1  cancelled, or every selected server failed
+  0  imported, dry-run, or nothing enumerated (including an empty or
+     all-skipped OpenCode source)
+  1  cancelled, every selected server skipped after selection, unknown
+     client, or --source-config used with a client other than opencode
   2  infrastructure error (no stack file, parse or write failure,
      post-import validation failure)`,
 	Example: `  gridctl import                    Scan all clients, pick interactively
   gridctl import cursor             Import from Cursor only
+  gridctl import opencode --source-config ./opencode.jsonc
   gridctl import --all --dry-run    Preview everything without writing
   gridctl import --all --yes        Import everything, defaults applied`,
 	Args: cobra.MaximumNArgs(1),
@@ -73,7 +79,7 @@ Exit codes:
 		if len(args) == 1 {
 			client = args[0]
 		}
-		return runImport(client, format)
+		return runImport(cmd.Context(), client, format)
 	},
 }
 
@@ -85,8 +91,33 @@ func init() {
 	importCmd.Flags().StringVarP(&importFile, "file", "f", "", "Stack file to append to (default: running stack's file, else ./stack.yaml)")
 	importCmd.Flags().BoolVar(&importNoVault, "no-vault", false, "Import env values as-is instead of offering vault moves (a warning is printed per secret)")
 	importCmd.Flags().StringVar(&importFormat, "format", "", "Output format: 'json' for machine-readable output (default: text)")
+	importCmd.Flags().StringVar(&importSourceConfig, "source-config", "", "OpenCode config file to read exactly (no fallback; relative paths use the working directory)")
+	importCmd.Long += "\n\n" + openCodeImportHelp
 	importAsJSON = addJSONAlias(importCmd)
 }
+
+const openCodeImportHelp = `OpenCode import reads one file under the Gridctl home (GRIDCTL_HOME when
+set, otherwise the OS home). It does not follow XDG_CONFIG_HOME. Existing
+opencode.json is selected; opencode.jsonc is read only when opencode.json is
+absent. If both exist, opencode.json is selected and opencode.jsonc is
+reported but not merged.
+` + provisioner.OpenCodeImportPolicy + `
+config.json, project files, and OPENCODE_CONFIG, OPENCODE_CONFIG_DIR, and
+OPENCODE_CONFIG_CONTENT are not read automatically. --source-config PATH is
+valid only for 'gridctl import opencode'. It reads exactly that file, with
+no fallback if the file is missing, unreadable, or malformed.
+
+Native local command arrays are imported as argv and are not shell-split.
+A whole-value {env:NAME} reference becomes ${NAME} and expands when the
+stack loads; an unset name becomes empty. {file} expressions, embedded
+expressions, and invalid env names are skipped. Disabled servers and entries
+with a working directory are skipped for every OpenCode shape, including
+remote entries and string commands. A timeout is not transferred.
+
+Text output includes per-entry skip reasons. JSON keeps schema version 1.
+source and found_in remain client slugs. Optional source_path, source_paths,
+and sources fields carry file provenance. servers is null when nothing is
+enumerated.`
 
 // --- JSON document ---
 
@@ -97,13 +128,25 @@ type importSecretDoc struct {
 }
 
 type importServerDoc struct {
-	Name       string            `json:"name"`
-	Imported   bool              `json:"imported"`
-	FoundIn    []string          `json:"found_in,omitempty"`
-	Source     string            `json:"source,omitempty"`
-	SkipReason string            `json:"skip_reason,omitempty"`
-	Warnings   []string          `json:"warnings,omitempty"`
-	Secrets    []importSecretDoc `json:"secrets,omitempty"`
+	Name        string            `json:"name"`
+	Imported    bool              `json:"imported"`
+	FoundIn     []string          `json:"found_in,omitempty"`
+	Source      string            `json:"source,omitempty"`
+	SourcePath  string            `json:"source_path,omitempty"`
+	SourcePaths []string          `json:"source_paths,omitempty"`
+	SkipReason  string            `json:"skip_reason,omitempty"`
+	Warnings    []string          `json:"warnings,omitempty"`
+	Secrets     []importSecretDoc `json:"secrets,omitempty"`
+}
+
+// importSourceDoc is file-level provenance. It does not replace client slugs.
+type importSourceDoc struct {
+	Client        string   `json:"client"`
+	Path          string   `json:"path,omitempty"`
+	Status        string   `json:"status"`
+	Detail        string   `json:"detail,omitempty"`
+	AlternatePath string   `json:"alternate_path,omitempty"`
+	Notes         []string `json:"notes,omitempty"`
 }
 
 type importSummaryDoc struct {
@@ -118,6 +161,7 @@ type importDoc struct {
 	StackFile     string            `json:"stack_file"`
 	BackupPath    string            `json:"backup_path,omitempty"`
 	DryRun        bool              `json:"dry_run"`
+	Sources       []importSourceDoc `json:"sources,omitempty"`
 	Servers       []importServerDoc `json:"servers"`
 	Summary       importSummaryDoc  `json:"summary"`
 }
@@ -241,20 +285,23 @@ func runConfirm(title string) (bool, error) {
 
 // --- command flow ---
 
-func runImport(client, format string) error {
+func runImport(ctx context.Context, client, format string) error {
 	// In JSON mode stdout carries exactly one document; narration moves to
 	// stderr so pipelines can parse the output.
 	printer := output.New()
 	if strings.EqualFold(format, "json") {
 		printer = output.NewWithWriter(os.Stderr)
 	}
+	if err := rejectSourceConfig(client); err != nil {
+		return err
+	}
 	registry := provisioner.NewRegistry()
 
-	scope, err := importScope(registry, client)
+	scope, sources, err := importScope(ctx, registry, client)
 	if err != nil {
 		return err
 	}
-	if len(scope) == 0 {
+	if len(scope) == 0 && len(sources) == 0 {
 		printer.Info("No supported LLM clients detected")
 		printer.Print("Run 'gridctl link --help' for the supported client list.\n")
 		return nil
@@ -271,17 +318,17 @@ func runImport(client, format string) error {
 		os.Exit(importExitInfrastructure)
 	}
 
+	printImportSources(printer, sources)
 	candidates, skipped := scanForCandidates(printer, scope)
 	doc := importDoc{
 		SchemaVersion: importJSONSchemaVersion,
 		StackFile:     stackPath,
 		DryRun:        importDryRun,
+		Sources:       sources,
 	}
 	for _, s := range skipped {
-		doc.Servers = append(doc.Servers, importServerDoc{
-			Name: s.Name, FoundIn: s.FoundIn, Source: s.Source,
-			SkipReason: s.SkipReason, Warnings: s.Warnings,
-		})
+		renderImportSkip(printer, s)
+		doc.Servers = append(doc.Servers, serverDoc(s, false, nil))
 	}
 	doc.Summary.Found = len(candidates) + len(skipped)
 	doc.Summary.Skipped = len(skipped)
@@ -320,6 +367,7 @@ func runImport(client, format string) error {
 		}
 		if !interactive {
 			selected[i].SkipReason = importer.SkipNameCollision
+			renderImportSkip(printer, selected[i])
 			continue
 		}
 		action, newName, err := importCollisionResolver(selected[i].Name, taken)
@@ -336,6 +384,7 @@ func runImport(client, format string) error {
 			selected[i].Warnings = append(selected[i].Warnings, "replaced the existing stack entry")
 		default:
 			selected[i].SkipReason = importer.SkipNameCollision
+			renderImportSkip(printer, selected[i])
 		}
 	}
 
@@ -354,6 +403,7 @@ func runImport(client, format string) error {
 			selected[i].SkipReason = importer.SkipNameCollision
 			selected[i].Warnings = append(selected[i].Warnings,
 				fmt.Sprintf("another selected server named %q (from %s) was imported instead; rename one and re-run to import both", selected[i].Name, winner))
+			renderImportSkip(printer, selected[i])
 			continue
 		}
 		seenNames[selected[i].Name] = strings.Join(selected[i].FoundIn, ", ")
@@ -379,10 +429,7 @@ func runImport(client, format string) error {
 		if c.SkipReason == "" {
 			importable = append(importable, c)
 		} else {
-			doc.Servers = append(doc.Servers, importServerDoc{
-				Name: c.Name, FoundIn: c.FoundIn, Source: c.Source,
-				SkipReason: c.SkipReason, Warnings: c.Warnings,
-			})
+			doc.Servers = append(doc.Servers, serverDoc(c, false, nil))
 			doc.Summary.Skipped++
 		}
 	}
@@ -408,10 +455,7 @@ func runImport(client, format string) error {
 
 	if importDryRun {
 		for _, c := range importable {
-			doc.Servers = append(doc.Servers, importServerDoc{
-				Name: c.Name, Imported: false, FoundIn: c.FoundIn, Source: c.Source,
-				Warnings: c.Warnings, Secrets: secretDocs[c.Name],
-			})
+			doc.Servers = append(doc.Servers, serverDoc(c, false, secretDocs[c.Name]))
 		}
 		printer.Print("\nNo changes made (dry run).\n")
 		return finishImport(printer, doc, format, nil)
@@ -439,10 +483,7 @@ func runImport(client, format string) error {
 	doc.BackupPath = backupPath
 
 	for _, c := range importable {
-		doc.Servers = append(doc.Servers, importServerDoc{
-			Name: c.Name, Imported: true, FoundIn: c.FoundIn, Source: c.Source,
-			Warnings: c.Warnings, Secrets: secretDocs[c.Name],
-		})
+		doc.Servers = append(doc.Servers, serverDoc(c, true, secretDocs[c.Name]))
 		doc.Summary.Imported++
 		printer.Info(fmt.Sprintf("Imported %s (from %s)", c.Name, strings.Join(c.FoundIn, ", ")))
 	}
@@ -453,20 +494,118 @@ func runImport(client, format string) error {
 	return finishImport(printer, doc, format, nil)
 }
 
-// importScope resolves which detected clients to scan.
-func importScope(registry *provisioner.Registry, client string) ([]provisioner.DetectedClient, error) {
+// importScope resolves which detected clients to scan. OpenCode read
+// selection is separate from Detect, which remains the write target.
+func importScope(ctx context.Context, registry *provisioner.Registry, client string) ([]provisioner.DetectedClient, []importSourceDoc, error) {
+	if importSourceConfig != "" {
+		prov, ok := registry.FindBySlug("opencode")
+		if !ok {
+			return nil, nil, unknownClientError(registry, "opencode")
+		}
+		path, err := resolveSourceConfig(importSourceConfig)
+		if err != nil {
+			return nil, nil, err
+		}
+		sel, err := provisioner.DiscoverOpenCodeImport(ctx, path)
+		if err != nil {
+			return nil, nil, err
+		}
+		return scopeFromSelection(ctx, prov, sel)
+	}
 	if client == "" {
-		return registry.DetectAll(), nil
+		var scope []provisioner.DetectedClient
+		var sources []importSourceDoc
+		for _, dc := range registry.DetectAll() {
+			if dc.Provisioner.Slug() != "opencode" {
+				scope = append(scope, dc)
+				continue
+			}
+			sel, err := provisioner.DiscoverOpenCodeImport(ctx, "")
+			if err != nil {
+				return nil, nil, err
+			}
+			next, docs, err := scopeFromSelection(ctx, dc.Provisioner, sel)
+			if err != nil {
+				return nil, nil, err
+			}
+			scope = append(scope, next...)
+			sources = append(sources, docs...)
+		}
+		return scope, sources, nil
 	}
 	prov, ok := registry.FindBySlug(client)
 	if !ok {
-		return nil, unknownClientError(registry, client)
+		return nil, nil, unknownClientError(registry, client)
+	}
+	if prov.Slug() == "opencode" {
+		if _, found := prov.Detect(); !found {
+			return nil, nil, provisioner.ErrClientNotFound
+		}
+		sel, err := provisioner.DiscoverOpenCodeImport(ctx, "")
+		if err != nil {
+			return nil, nil, err
+		}
+		return scopeFromSelection(ctx, prov, sel)
 	}
 	configPath, found := prov.Detect()
 	if !found {
-		return nil, provisioner.ErrClientNotFound
+		return nil, nil, provisioner.ErrClientNotFound
 	}
-	return []provisioner.DetectedClient{{Provisioner: prov, ConfigPath: configPath}}, nil
+	return []provisioner.DetectedClient{{Provisioner: prov, ConfigPath: configPath}}, nil, nil
+}
+
+func scopeFromSelection(ctx context.Context, prov provisioner.ClientProvisioner, sel provisioner.OpenCodeImportSelection) ([]provisioner.DetectedClient, []importSourceDoc, error) {
+	doc := importSourceDoc{
+		Client: prov.Slug(),
+		Path:   sel.Path,
+		Notes:  append([]string(nil), sel.Notes...),
+	}
+	if sel.BothPresent {
+		doc.AlternatePath = sel.JSONCPath
+	}
+	if sel.Path == "" {
+		doc.Status = provisioner.OpenCodeImportMissing
+		doc.Detail = "neither opencode.json nor opencode.jsonc exists under the Gridctl home"
+		if sel.JSONPath != "" {
+			doc.Path = sel.JSONPath
+		}
+		return nil, []importSourceDoc{doc}, nil
+	}
+	read, err := provisioner.ReadOpenCodeImport(ctx, sel.Path)
+	if err != nil {
+		return nil, nil, err
+	}
+	doc.Status = read.Status
+	doc.Detail = read.Detail
+	if read.Status != provisioner.OpenCodeImportSelected {
+		return nil, []importSourceDoc{doc}, nil
+	}
+	return []provisioner.DetectedClient{{Provisioner: prov, ConfigPath: sel.Path}}, []importSourceDoc{doc}, nil
+}
+
+func rejectSourceConfig(client string) error {
+	if importSourceConfig == "" {
+		return nil
+	}
+	if client == "opencode" {
+		return nil
+	}
+	target := client
+	if target == "" {
+		target = "a multi-client scan"
+	}
+	return fmt.Errorf("--source-config is only valid for 'gridctl import opencode' (got %s)", target)
+}
+
+func resolveSourceConfig(path string) (string, error) {
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path), nil
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("resolving --source-config: %w", err)
+	}
+	return filepath.Clean(filepath.Join(cwd, path)), nil
 }
 
 // scanForCandidates lists, filters, maps, and dedupes servers across the
@@ -474,7 +613,7 @@ func importScope(registry *provisioner.Registry, client string) ([]provisioner.D
 // aborts because one client's file is broken.
 func scanForCandidates(printer *output.Printer, scope []provisioner.DetectedClient) (importable, skipped []importer.Candidate) {
 	var all []importer.Candidate
-	seenSkip := make(map[string]bool)
+	seenSkip := make(map[string]int)
 	for _, dc := range scope {
 		slug := dc.Provisioner.Slug()
 		entries, err := dc.Provisioner.ListServers(dc.ConfigPath)
@@ -485,37 +624,116 @@ func scanForCandidates(printer *output.Printer, scope []provisioner.DetectedClie
 		for _, entry := range entries {
 			if importer.IsGatewaySelfEntry(entry.Name, importName, entry.Raw) {
 				key := entry.Name + "|self"
-				if !seenSkip[key] {
-					seenSkip[key] = true
-					skipped = append(skipped, importer.Candidate{
-						Name: entry.Name, FoundIn: []string{slug}, Source: slug,
-						SkipReason: importer.SkipGatewaySelfEntry,
-					})
-				}
+				skipped = appendSkip(skipped, seenSkip, key, withSourcePath(importer.Candidate{
+					Name: entry.Name, FoundIn: []string{slug}, Source: slug,
+					SkipReason: importer.SkipGatewaySelfEntry,
+				}, dc.ConfigPath))
 				continue
 			}
 			server, warnings, err := importer.MapEntry(slug, entry)
 			if err != nil {
-				key := entry.Name + "|unsupported"
-				if !seenSkip[key] {
-					seenSkip[key] = true
-					skipped = append(skipped, importer.Candidate{
-						Name: entry.Name, FoundIn: []string{slug}, Source: slug,
-						SkipReason: importer.SkipUnsupported,
-						Warnings:   []string{err.Error()},
-					})
-				}
+				reason, detail := skipFromMapErr(err)
+				key := entry.Name + "|" + reason
+				skipped = appendSkip(skipped, seenSkip, key, withSourcePath(importer.Candidate{
+					Name: entry.Name, FoundIn: []string{slug}, Source: slug,
+					SkipReason: reason,
+					Warnings:   []string{detail},
+				}, dc.ConfigPath))
 				continue
 			}
-			all = append(all, importer.Candidate{
+			all = append(all, withSourcePath(importer.Candidate{
 				Name: server.Name, Server: server,
 				FoundIn: []string{slug}, Source: slug,
 				Warnings:   warnings,
 				SecretKeys: importer.ClassifySecretKeys(server.Env),
-			})
+			}, dc.ConfigPath))
 		}
 	}
 	return importer.Dedupe(all), skipped
+}
+
+func appendSkip(skipped []importer.Candidate, seen map[string]int, key string, c importer.Candidate) []importer.Candidate {
+	if i, ok := seen[key]; ok {
+		appendSourcePath(&skipped[i], c.SourcePath)
+		return skipped
+	}
+	seen[key] = len(skipped)
+	return append(skipped, c)
+}
+
+func withSourcePath(c importer.Candidate, path string) importer.Candidate {
+	appendSourcePath(&c, path)
+	return c
+}
+
+func appendSourcePath(c *importer.Candidate, path string) {
+	if path == "" {
+		return
+	}
+	if c.SourcePath == "" {
+		c.SourcePath = path
+	}
+	for _, existing := range c.SourcePaths {
+		if existing == path {
+			return
+		}
+	}
+	c.SourcePaths = append(c.SourcePaths, path)
+}
+
+func skipFromMapErr(err error) (string, string) {
+	var me *importer.MapError
+	if errors.As(err, &me) && me.Reason != "" {
+		detail := me.Detail
+		if detail == "" {
+			detail = me.Reason
+		}
+		return me.Reason, detail
+	}
+	return importer.SkipUnsupported, err.Error()
+}
+
+func serverDoc(c importer.Candidate, imported bool, secrets []importSecretDoc) importServerDoc {
+	return importServerDoc{
+		Name: c.Name, Imported: imported, FoundIn: c.FoundIn, Source: c.Source,
+		SourcePath: c.SourcePath, SourcePaths: c.SourcePaths,
+		SkipReason: c.SkipReason, Warnings: c.Warnings, Secrets: secrets,
+	}
+}
+
+func printImportSources(printer *output.Printer, sources []importSourceDoc) {
+	for _, s := range sources {
+		path := s.Path
+		if path == "" {
+			path = "(none)"
+		}
+		printer.Print("OpenCode source (%s): %s\n", s.Status, path)
+		if s.Detail != "" {
+			printer.Print("  %s\n", s.Detail)
+		}
+		if s.AlternatePath != "" {
+			printer.Print("  unmerged sibling: %s\n", s.AlternatePath)
+		}
+		for _, note := range s.Notes {
+			printer.Print("  %s\n", note)
+		}
+	}
+}
+
+func renderImportSkip(printer *output.Printer, c importer.Candidate) {
+	loc := strings.Join(c.FoundIn, ", ")
+	if c.SourcePath != "" {
+		if loc != "" {
+			loc += " "
+		}
+		loc += c.SourcePath
+	}
+	detail := strings.Join(c.Warnings, "; ")
+	if detail == "" {
+		printer.Print("  skipped %s (%s) from %s\n", c.Name, c.SkipReason, loc)
+		return
+	}
+	printer.Print("  skipped %s (%s) from %s: %s\n", c.Name, c.SkipReason, loc, detail)
 }
 
 // selectCandidates applies the selection mode: everything under --all or

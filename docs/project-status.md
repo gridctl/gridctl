@@ -57,7 +57,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 | Capability and sensitive-call primitives | Implemented, Unreleased | Internal shared accounting and generation lifecycle used by the A2A adapter, with payload-free observations and local usage estimates. No store tuning option. Diagnostic-output changes require maintainer-owned major-release scheduling under Article VIII. See [primitives](capability-primitives.md) |
 | Server catalog (search, add) | Stable | Backward compatible in 0.x |
 | Live tool invocation (`gridctl call`, `gridctl tools search`, `POST /api/tools/call`, `GET /api/tools/discover`) | Implemented, Unreleased | Talks to a selected running gateway. Default caller label `cli`; `--as` is not credential-bound authorization. REST success is not upstream MCP handshake proof. See [Live tools](cli-reference.md#live-tools) |
-| Client config import (import) | Stable | Backward compatible in 0.x |
+| Client config import (import) | Stable | Unreleased OpenCode native-array import changes text diagnostics, optional JSON provenance, and JSONC-only selection. Disabled servers and working directories are skipped on every OpenCode shape, including remote entries and string commands that were previously imported. Stack schema is unchanged. Requires maintainer-owned major-release scheduling under Article VIII. |
 | Machine reset (`gridctl reset`, reset REST + web UI dialog) | Stable | Backward compatible in 0.x |
 | Home directory override (`GRIDCTL_HOME`, `--home`) | Stable | Backward compatible in 0.x |
 | MCP protocol generation dual-stack (handshake + 2026-07-28 stateless) | Stable | Both generations served and auto-negotiated per client and per server |

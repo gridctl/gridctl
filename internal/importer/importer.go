@@ -22,17 +22,52 @@ const (
 	SkipGatewaySelfEntry = "gateway_self_entry"
 	SkipUnsupported      = "unsupported_entry"
 	SkipNameCollision    = "name_collision"
+	// SkipDisabled means an OpenCode entry set enabled to false. Other clients
+	// ignore the field.
+	SkipDisabled = "disabled"
+	// SkipUntransferredOption means dropping the option would change execution.
+	// OpenCode skips a working directory on every shape, and skips oauth or
+	// local headers on a command array.
+	SkipUntransferredOption = "untransferred_option"
+	// SkipNativeExpression means a newly supported native value used an
+	// OpenCode expression Gridctl cannot represent without reading it.
+	SkipNativeExpression = "unsupported_native_expression"
+	// SkipAmbiguous means two native forms conflict and were not merged.
+	SkipAmbiguous = "ambiguous_entry"
 )
+
+// openCodeSlug is the provisioner slug whose native local shape this package
+// maps. Other clients keep the string-command dialect.
+const openCodeSlug = "opencode"
+
+// MapError is a value-free reason an entry cannot be imported. Detail must
+// not include config values, expression text, or referenced file contents.
+type MapError struct {
+	Reason string
+	Detail string
+}
+
+func (e *MapError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.Detail != "" {
+		return e.Detail
+	}
+	return e.Reason
+}
 
 // Candidate is one importable server assembled from client config entries.
 type Candidate struct {
-	Name       string
-	Server     config.MCPServer
-	FoundIn    []string // client slugs the server was found in, sorted
-	Source     string   // canonical slug (first client in registry order)
-	Warnings   []string
-	SkipReason string   // empty means importable
-	SecretKeys []string // env keys whose literal values look like secrets
+	Name        string
+	Server      config.MCPServer
+	FoundIn     []string // client slugs the server was found in, sorted
+	Source      string   // canonical slug (first client in registry order)
+	SourcePath  string   // canonical config file path; not a client slug
+	SourcePaths []string // config file paths retained through dedupe
+	Warnings    []string
+	SkipReason  string   // empty means importable
+	SecretKeys  []string // env keys whose literal values look like secrets
 }
 
 // MapEntry converts one raw client entry into a config.MCPServer plus
@@ -48,6 +83,14 @@ func MapEntry(slug string, entry provisioner.ServerEntry) (config.MCPServer, []s
 	}
 
 	server := config.MCPServer{Name: name}
+
+	// OpenCode enabled and cwd apply before the URL return. A remote entry
+	// with either set must skip, not import as an ordinary HTTP server.
+	if slug == openCodeSlug {
+		if err := openCodeExecutionConstraints(raw); err != nil {
+			return server, warnings, err
+		}
+	}
 
 	transport, transportErr := normalizeTransport(raw)
 	if transportErr != nil {
@@ -70,6 +113,10 @@ func MapEntry(slug string, entry provisioner.ServerEntry) (config.MCPServer, []s
 		server.Auth = auth
 		warnings = append(warnings, authWarnings...)
 		return server, warnings, nil
+	}
+
+	if slug == openCodeSlug && openCodeNative(raw) {
+		return mapOpenCodeNative(server, warnings, raw)
 	}
 
 	command := commandSlice(raw)
@@ -122,6 +169,10 @@ func Dedupe(candidates []Candidate) []Candidate {
 		id := identity(c)
 		if i, ok := index[id]; ok {
 			out[i].FoundIn = mergeSlug(out[i].FoundIn, c.FoundIn...)
+			out[i].SourcePaths = mergePaths(out[i].SourcePaths, c.SourcePaths...)
+			if out[i].SourcePath == "" {
+				out[i].SourcePath = c.SourcePath
+			}
 			continue
 		}
 		if firstID, ok := byName[c.Name]; ok && firstID != id {
@@ -354,6 +405,21 @@ func identity(c Candidate) string {
 		return c.Name + "|url|" + c.Server.URL
 	}
 	return c.Name + "|cmd|" + strings.Join(c.Server.Command, "\x00")
+}
+
+func mergePaths(existing []string, add ...string) []string {
+	seen := make(map[string]bool, len(existing)+len(add))
+	for _, s := range existing {
+		seen[s] = true
+	}
+	for _, s := range add {
+		if s == "" || seen[s] {
+			continue
+		}
+		seen[s] = true
+		existing = append(existing, s)
+	}
+	return existing
 }
 
 func mergeSlug(existing []string, add ...string) []string {

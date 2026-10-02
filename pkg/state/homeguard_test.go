@@ -43,8 +43,14 @@ func TestNoUserHomeDirOutsideResolver(t *testing.T) {
 		}
 		name := d.Name()
 		if d.IsDir() {
-			// Skip vendored, generated frontend, git internals, and hidden dirs.
-			if name == "vendor" || name == "web" || name == "node_modules" || strings.HasPrefix(name, ".") && name != "." {
+			// Skip vendored code, the generated frontend, git internals, hidden
+			// directories, and the gitignored plan/ tree. That tree is local
+			// investigation material, not product source, and CI checkouts omit it.
+			rel, relErr := filepath.Rel(root, path)
+			if relErr != nil {
+				return relErr
+			}
+			if filepath.ToSlash(rel) == "plan" || name == "vendor" || name == "web" || name == "node_modules" || strings.HasPrefix(name, ".") && name != "." {
 				return filepath.SkipDir
 			}
 			return nil
