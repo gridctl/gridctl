@@ -2825,11 +2825,13 @@ func (g *Gateway) applyTruncation(serverName, toolName string, result *ToolCallR
 
 // noteOversizedNonText records that a non-text block exceeded the text limit.
 // The block is left intact. The log carries size and type, not the payload.
+// Encoding is skipped unless debug is enabled: the size exists only for this
+// line, and the default logger discards every record.
 func (g *Gateway) noteOversizedNonText(serverName, toolName string, block Content, limit int) {
-	if g.logger == nil || limit <= 0 {
+	if g.logger == nil || limit <= 0 || !g.logger.Enabled(context.Background(), slog.LevelDebug) {
 		return
 	}
-	n, err := contentBlockSize(block)
+	n, err := nonTextBlockSize(block)
 	if err != nil || n <= limit {
 		return
 	}
@@ -2840,6 +2842,10 @@ func (g *Gateway) noteOversizedNonText(serverName, toolName string, block Conten
 		"bytes", n,
 		"limit_bytes", limit)
 }
+
+// nonTextBlockSize is the encoded size for the oversized-block debug note.
+// Tests replace it to prove a debug-disabled logger does not encode the block.
+var nonTextBlockSize = contentBlockSize
 
 // CallTool implements the ToolCaller interface, allowing components to call
 // tools through the gateway without a direct reference to the router.

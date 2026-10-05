@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"go.uber.org/mock/gomock"
-
 )
 
 const mixedContentWire = `{"content":[{"type":"text","text":"Screenshot taken","annotations":{"audience":["user"],"priority":0.9},"_meta":{"k":"v"}},{"type":"image","data":"iVBORw0K","mimeType":"image/png"},{"type":"audio","data":"UklGRg==","mimeType":"audio/wav"},{"type":"resource_link","uri":"file:///a.rs","name":"a.rs","mimeType":"text/x-rust","size":42},{"type":"resource","resource":{"uri":"ui://excalidraw/canvas","mimeType":"text/html","text":"<html></html>"}},{"type":"resource","resource":{"uri":"file:///b.bin","mimeType":"application/octet-stream","blob":"AAEC"}},{"type":"future","x":1}],"_meta":{"result-level":true}}`
@@ -243,6 +242,61 @@ func TestGateway_SmallNonTextDoesNotLog(t *testing.T) {
 	if strings.Contains(logs.String(), "non-text content block exceeds result size limit") {
 		t.Fatalf("small image logged as oversized: %s", logs.String())
 	}
+}
+
+func TestGateway_DebugDisabledDoesNotEncodeNonText(t *testing.T) {
+	orig := nonTextBlockSize
+	t.Cleanup(func() { nonTextBlockSize = orig })
+
+	image := Content{Type: "image", Data: strings.Repeat("A", 200), MimeType: "image/png"}
+	call := func(t *testing.T, g *Gateway) {
+		t.Helper()
+		ctrl := gomock.NewController(t)
+		client := setupMockAgentClient(ctrl, "agent1", []Tool{{Name: "shot"}})
+		client.EXPECT().CallTool(gomock.Any(), gomock.Any(), gomock.Any()).Return(&ToolCallResult{
+			Content: []Content{image},
+		}, nil).AnyTimes()
+		g.Router().AddClient(client)
+		g.Router().RefreshTools()
+		g.SetServerMeta(MCPServerConfig{Name: "agent1"})
+		result, err := g.HandleToolsCall(context.Background(), ToolCallParams{Name: "agent1__shot", Arguments: map[string]any{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Content[0].Data != image.Data || result.Content[0].MimeType != image.MimeType {
+			t.Fatalf("image changed: %+v", result.Content[0])
+		}
+	}
+
+	t.Run("info", func(t *testing.T) {
+		var calls int
+		nonTextBlockSize = func(c Content) (int, error) {
+			calls++
+			return contentBlockSize(c)
+		}
+		g := NewGateway()
+		g.SetLogger(slog.New(slog.NewTextHandler(&bytes.Buffer{}, &slog.HandlerOptions{Level: slog.LevelInfo})))
+		g.SetMaxToolResultBytes(100)
+		call(t, g)
+		if calls != 0 {
+			t.Fatalf("encoded non-text block %d times with debug disabled", calls)
+		}
+	})
+
+	t.Run("debug", func(t *testing.T) {
+		var calls int
+		nonTextBlockSize = func(c Content) (int, error) {
+			calls++
+			return contentBlockSize(c)
+		}
+		g := NewGateway()
+		g.SetLogger(slog.New(slog.NewTextHandler(&bytes.Buffer{}, &slog.HandlerOptions{Level: slog.LevelDebug})))
+		g.SetMaxToolResultBytes(100)
+		call(t, g)
+		if calls != 1 {
+			t.Fatalf("debug note encoded %d times, want 1", calls)
+		}
+	})
 }
 
 func TestGateway_ToolsListAndDiscoverPreserveOpaqueFields(t *testing.T) {
