@@ -2,10 +2,13 @@
 #
 # Declares remote git repositories gridctl clones to discover SKILL.md files
 # (and agents/*.md definitions, which import alongside skills).
-# Place this at ~/.gridctl/skills.yaml and run:
+# Place this at ~/.gridctl/skills.yaml. The Library source list reads it
+# for auto-update display. gridctl skill update does not consult it.
+# Persist credentials at import instead:
 #
-#   gridctl skill update               # fetch all sources
-#   gridctl skill update private-skills # fetch a single source
+#   gridctl skill add <repo> --vault-key GIT_TOKEN
+#   gridctl skill add <ssh-url> --ssh-key ~/.ssh/id_ed25519
+#   gridctl skill update
 #
 # See docs/config-schema.md ("Skill Sources") for the full field reference.
 #

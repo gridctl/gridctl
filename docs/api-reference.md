@@ -2828,7 +2828,7 @@ Auth for private repos accepts an optional `auth` object on mutating endpoints:
 }
 ```
 
-`credentialRef` is resolved against the live variable store; raw `token` values are transient and never persisted.
+`credentialRef` is resolved against the live variable store; raw `token` values are transient and never persisted. An `sshKeyPath` must be absolute (a relative path is a 400, because the daemon's working directory is not the caller's). On import, a vault reference and an absolute ssh key path are written to the origin sidecar and lockfile; key material and passphrases are not. Omit `auth` on a later check, update, sync, or summary and the stored reference or key path is used. An explicit empty object (`"auth": {}`) yields ambient auth and suppresses the stored record.
 
 #### `GET /api/skills/sources`
 
@@ -3516,9 +3516,9 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/packs/p
 }
 ```
 
-`credentialRef` is resolved against the live variable store; raw `token` values are transient and never persisted. Only the reference is recorded, on the pack's imported source and on each resource's origin sidecar.
+`credentialRef` is resolved against the live variable store; raw `token` values are transient and never persisted. An absolute `sshKeyPath` is the other persisted, non-secret field (never key material or a passphrase). A relative `sshKeyPath` is a 400. Both are recorded on the pack's imported source and, when resources are imported, on each resource's origin sidecar. Literal and piped tokens persist nothing.
 
-Omit `auth` entirely on a repository already imported with a reference and that stored reference is resolved automatically, which is how an update previews a private pack with no user input. Sending an empty object (`"auth": {}`) is an explicit request to use no credentials and suppresses the stored reference.
+Omit `auth` entirely on a repository already imported with a reference or an ssh key path and that stored auth is resolved automatically, including wiring-only packs and rules, which is how an update previews a private pack with no user input. Sending an empty object (`"auth": {}`) is an explicit request to use no credentials and suppresses the stored record.
 
 `POST /api/packs/{name}/apply` takes no `auth`: it projects already-imported material and never clones.
 

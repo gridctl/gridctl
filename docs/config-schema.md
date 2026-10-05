@@ -1672,7 +1672,9 @@ sources:
 
 ### Skill Source Auth
 
-Declares how gridctl authenticates when cloning or fetching this repository. Raw tokens must **never** appear in `skills.yaml` - use `credential_ref` to point at a vault key.
+Declares how gridctl authenticates when cloning or fetching this repository. Raw tokens must **never** appear in `skills.yaml`. Use `credential_ref` to point at a vault key.
+
+`skills.yaml` `auth:` is not consulted by `gridctl skill update`. The Library source list reads the file for auto-update display. The authentication a later update actually uses is the one written to the origin sidecar and `skills.lock.yaml` at import: a `--vault-key` reference, or the absolute `--ssh-key` path.
 
 ```yaml
 auth:
@@ -1693,15 +1695,16 @@ auth:
 |--------|-----------|-------------------|-----------|
 | `token` | HTTPS | `credential_ref` (vault) - resolved on every clone/fetch | Reference only |
 | `ssh-agent` | SSH | Ambient `SSH_AUTH_SOCK` | None |
-| `ssh-key` | SSH | `ssh_key_path` on disk (optionally decrypted with `GRIDCTL_SSH_KEY_PASSPHRASE`) | Path only |
+| `ssh-key` | SSH | `ssh_key_path` on disk (optionally decrypted with `GRIDCTL_SSH_KEY_PASSPHRASE`, re-read from the environment and never stored) | Path only, written to the origin sidecar and lockfile at import |
 | `none` / omitted | HTTPS or SSH | Ambient `GITHUB_TOKEN` env for HTTPS; `SSH_AUTH_SOCK` for SSH | None |
 
 **Security rules:**
 
 - Raw PAT or SSH key material must never appear in `skills.yaml`, the lock file, or origin sidecars.
-- `credential_ref` is the only credential field persisted; the live variable store is consulted on every remote operation so rotating a secret takes effect immediately.
+- Two non-secret fields are persisted at import: `credential_ref`, and the ssh key path (`ssh_key_path` in the lockfile, `sshKeyPath` in the origin sidecar). The live variable store is consulted on every remote operation that carries a reference, so rotating a secret takes effect immediately. The passphrase is re-read from `GRIDCTL_SSH_KEY_PASSPHRASE` and is never written. Literal and piped tokens persist nothing.
+- `skills.yaml` `auth:` is not consulted by `skill update`. The persisted path is the one written to the origin sidecar and lockfile at import, not a path declared only in `skills.yaml`.
 - Prefer `credential_ref` over embedding credentials in the `repo` URL (`https://TOKEN@host/...`). Any userinfo or known PAT patterns that do leak into errors and logs are scrubbed by the redaction layer, but vault references keep them out of on-disk state entirely.
-- The CLI equivalents are `--auth-token <pat>` (ephemeral), `--vault-key <key>` (persisted as `credential_ref`), and `--ssh-key <path>` on `skill add` / `skill try`.
+- The CLI equivalents are `--auth-token <pat>` (ephemeral, not persisted), `--vault-key <key>` (persisted as `credential_ref`), and `--ssh-key <path>` (persisted as an absolute path) on `skill add` / `skill try`.
 
 ---
 
