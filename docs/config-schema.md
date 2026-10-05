@@ -86,8 +86,8 @@ gateway:
 | `auth` | object | No | - | Authentication configuration |
 | `code_mode` | string | No | `"off"` | Enable code mode: `"on"` or `"off"` |
 | `code_mode_timeout` | int | No | `30` | Code mode execution timeout in seconds. Must be >= 0 |
-| `output_format` | string | No | `"json"` | Default output format for tool call results: `"json"`, `"toon"`, `"csv"`, or `"text"`. Per-server `output_format` overrides this value |
-| `maxToolResultBytes` | int | No | `65536` | Maximum size of a tool-result text block in bytes before truncation. The limit applies to text blocks; binary blocks (image, audio, and embedded resources) are exempt and are not dropped. Ordinary text over the limit is truncated with a suffix noting the original size; [A2A envelopes](#tools-and-capability-delivery) retain atomic JSON and mark omitted content. `0` uses the default (64 KB) |
+| `output_format` | string | No | `"json"` | Default output format for tool call results: `"json"`, `"toon"`, `"csv"`, or `"text"`. Conversion rewrites text blocks only; non-text blocks are left intact. Per-server `output_format` overrides this value |
+| `maxToolResultBytes` | int | No | `65536` | Maximum size of a tool-result text block in bytes before truncation. The limit applies to text blocks. Image, audio, resource link, embedded resource, and other non-text blocks are exempt and are not dropped. Ordinary text over the limit is truncated with a suffix noting the original size; [A2A envelopes](#tools-and-capability-delivery) retain atomic JSON and mark omitted content. `0` uses the default (64 KB) |
 | `name` | string | No | `"gridctl-gateway"` | Identity announced to MCP clients in the initialize response (`serverInfo.name`). Some clients (VS Code / GitHub Copilot) display this instead of the entry key in their own config, so give distinct gateways distinct names. Group endpoints announce `<name>/<group>`. Requires a restart to propagate |
 | `security` | object | No | - | Security settings (see [Security](#security)) |
 | `tokenizer` | string | No | `"embedded"` | Token counting mode: `"embedded"` (cl100k_base approximation) or `"api"` (exact counts via Anthropic `count_tokens` endpoint) |
@@ -165,7 +165,7 @@ gateway:
 
 **Schema Pinning:**
 
-Protects against rug pull attacks (CVE-2025-54136 class) by hashing tool definitions (name, description, input schema, and output schema) on first connect and verifying them on every subsequent reconnect or reload.
+Protects against rug pull attacks (CVE-2025-54136 class) by hashing tool definitions (name, description, input schema, and output schema) on first connect and verifying them on every subsequent reconnect or reload. Title, annotations, `_meta`, `icons`, and `execution` are forwarded to clients and are not part of the fingerprint, so changes to those fields do not surface as pin drift.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
@@ -176,7 +176,7 @@ Protects against rug pull attacks (CVE-2025-54136 class) by hashing tool definit
 
 **Poisoning scan:**
 
-When `scan` is on, every tool definition is checked at pin and drift time for injection signals: hidden-instruction phrases (`P001`), references to sensitive files (`P002`), sensitive-action language (`P003`), suspicious emphasis words (`P004`), hidden Unicode including decoded Tags-block payloads (`P005`), and cross-server tool shadowing (`P006`). P006 warns when a description names another server's distinctively named tool, or a generic tool name (`search`, `fetch`) qualified by its owning server's name; a bare mention of another server is info-tier only. Matching runs on Unicode-normalized text so zero-width, homoglyph, and leetspeak evasion does not defeat it, and quoted matches are downgraded so a tool that documents attack phrases is not flagged as one. Findings render beside the drift diff in `gridctl pins diff`, the diff API, and the Pins workspace; they inform the approve decision and never gate it. Static heuristics are one detection layer, not a complete defense: attacks carried in runtime tool output are invisible to any pin-time check.
+When `scan` is on, each tool's name, description, and both schemas are checked at pin and drift time for injection signals: hidden-instruction phrases (`P001`), references to sensitive files (`P002`), sensitive-action language (`P003`), suspicious emphasis words (`P004`), hidden Unicode including decoded Tags-block payloads (`P005`), and cross-server tool shadowing (`P006`). P006 warns when a description names another server's distinctively named tool, or a generic tool name (`search`, `fetch`) qualified by its owning server's name; a bare mention of another server is info-tier only. Matching runs on Unicode-normalized text so zero-width, homoglyph, and leetspeak evasion does not defeat it, and quoted matches are downgraded so a tool that documents attack phrases is not flagged as one. Findings render beside the drift diff in `gridctl pins diff`, the diff API, and the Pins workspace; they inform the approve decision and never gate it. Static heuristics are one detection layer, not a complete defense: forwarded `_meta`, `icons`, `execution`, and unknown annotation keys are not scanned, and attacks carried in runtime tool output are invisible to any pin-time check.
 
 Pin files are stored in `~/.gridctl/pins/{stackName}.json`. Use `gridctl pins` subcommands to inspect, approve, or reset tool pins. Per-server tool-pin opt-out is available via `pin_schemas: false`. Neither switch disables the separate [A2A card-trust service](#a2a), whose records require hash-bound approval and cannot be reset through the pins API.
 

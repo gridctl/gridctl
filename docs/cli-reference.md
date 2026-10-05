@@ -158,7 +158,7 @@ gridctl call echo__echo @args.json --stack demo --timeout 30s
 | `gridctl call <server__tool> --help` | Live leaf help: name, description, input schema, and a property summary. `--match`/`--limit` are rejected. |
 | `gridctl tools search <query>` | Search the scoped live inventory. `--limit` 1-200 (default 20), `--stack`, `--as`, `--timeout`, `--format json` or `--json`. |
 
-JSON stdout is one document, including recognized flag and argument errors; diagnostics go to stderr. Call JSON matches the [REST call envelope](api-reference.md#post-apitoolscall). Search JSON matches the [discovery envelope](api-reference.md#get-apitoolsdiscover). CLI responses larger than 16 MiB fail without retry. Redirects are refused before credentials can follow. HTTP success is not proof of upstream MCP protocol negotiation.
+JSON stdout is one document, including recognized flag and argument errors; diagnostics go to stderr. Call JSON matches the [REST call envelope](api-reference.md#post-apitoolscall), including forwarded non-text content blocks, per-block `annotations`, and `_meta`. Human call output prints text blocks and a type label such as `[image content]` for other blocks; it does not print those payloads. Search JSON matches the [discovery envelope](api-reference.md#get-apitoolsdiscover). CLI responses larger than 16 MiB fail without retry. Redirects are refused before credentials can follow. HTTP success is not proof of upstream MCP protocol negotiation.
 
 | Exit | Situation | Classification |
 |---|---|---|

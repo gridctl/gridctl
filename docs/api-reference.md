@@ -302,7 +302,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/mcp-servers
 
 #### `GET /api/tools`
 
-Returns all aggregated tools from registered MCP servers.
+Returns all aggregated tools from registered MCP servers. Tool objects follow the same forwarding and title rules as [`tools/list`](#post-mcp).
 
 **Auth:** Yes
 
@@ -312,7 +312,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/tools
 
 #### `GET /api/tools/catalog`
 
-Returns the full downstream tool inventory (each tool's raw description and input schema) for the web console, regardless of code mode. Read-only and informational: it does not change what MCP clients see from `tools/list`. The response shape matches [`/api/tools`](#get-apitools).
+Returns the full downstream tool inventory (each tool's raw description and input schema) for the web console, regardless of code mode. Catalog entries also forward `_meta`, `icons`, `execution`, and unknown annotation keys, and keep the downstream title rather than the aggregated title rule. Read-only and informational: it does not change what MCP clients see from `tools/list`. The response shape matches [`/api/tools`](#get-apitools).
 
 **Auth:** Yes
 
@@ -366,7 +366,7 @@ curl -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
 }
 ```
 
-`result` is `null` when no result exists. `error` is `null` on success; otherwise it is `{"code":"<fixed-code>","message":"<safe-message>"}`. `outcome.reason` is the machine discriminator. Gate denials may set `outcome.gate`. Execution admission refusal sets `outcome.detail` to `execution_admission`. `completion` is `complete` for a finished success or tool error, `not_started` when the tool was not invoked, `input_required` for an interim result, and `unknown` when timeout, cancellation, or transport loss makes completion uncertain. These are observations, not exactly-once guarantees. Adapter messages do not echo arguments, tokens, or raw bodies. Tool-returned content is user output, including every serializable `ToolCallResult` field. Non-text content blocks, per-block `annotations`, and `_meta` are forwarded unchanged. HTTP success is not proof that upstream MCP protocol negotiation succeeded. There is no automatic retry.
+`result` is `null` when no result exists. `error` is `null` on success; otherwise it is `{"code":"<fixed-code>","message":"<safe-message>"}`. `outcome.reason` is the machine discriminator. Gate denials may set `outcome.gate`. Execution admission refusal sets `outcome.detail` to `execution_admission`. `completion` is `complete` for a finished success or tool error, `not_started` when the tool was not invoked, `input_required` for an interim result, and `unknown` when timeout, cancellation, or transport loss makes completion uncertain. These are observations, not exactly-once guarantees. Adapter messages do not echo arguments, tokens, or raw bodies. Tool-returned content is user output, including every serializable `ToolCallResult` field. Non-text content blocks, per-block `annotations`, and `_meta` are forwarded unchanged. Truncation and format conversion do not strip those fields. HTTP success is not proof that upstream MCP protocol negotiation succeeded. There is no automatic retry.
 
 For A2A, `result.content[].text` contains the adapter's JSON envelope, including
 any secret task/context handles and their expiry timestamps. It is not a second
@@ -411,7 +411,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 }
 ```
 
-`total_visible` counts the scoped inventory after the optional exact server filter and before query or limit. `matched` is the count before limit. `returned` is the array length. `truncated` is true when `returned < matched`. Empty arrays are `[]`, never null. Count fields never include hidden tools.
+`total_visible` counts the scoped inventory after the optional exact server filter and before query or limit. `matched` is the count before limit. `returned` is the array length. `truncated` is true when `returned < matched`. Empty arrays are `[]`, never null. Count fields never include hidden tools. Each returned tool is an aggregated definition, including forwarded `_meta`, `icons`, `execution`, unknown annotation keys, and the [title rule](#post-mcp). Code mode does not change this inventory.
 
 #### `GET /api/tools/usage`
 
@@ -3636,7 +3636,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/mcp \
 }
 ```
 
-Tool names are namespaced as `{server}__{tool}` to prevent collisions.
+Tool names are namespaced as `{server}__{tool}` to prevent collisions. When this list returns downstream tools, each definition forwards `_meta`, `icons`, `execution`, and unknown annotation keys. `title` is the prefixed name when the downstream title is empty or equal to the bare tool name, and the downstream title otherwise. A group rename updates `title` only when it equals the aggregated name. Code mode replaces this list with the `search` and `execute` meta-tools, and `search` still returns only `name`, `description`, and `inputSchema`.
 
 `tools/call` responses use `Cache-Control: no-store` in both generations. A2A
 `task_get` and `task_cancel` are ordinary tools reached through this method;
