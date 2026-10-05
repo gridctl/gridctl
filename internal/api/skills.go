@@ -1152,7 +1152,7 @@ type SkillDiffResponse struct {
 
 // handleSkillDiff returns the local vs upstream SKILL.md for an imported skill
 // without writing anything to the registry. The upstream side is the content
-// an update would install; auth is taken from the skill's stored credentialRef.
+// an update would install; rebuild the stored auth (vault reference or ssh-key path).
 // GET /api/skills/sources/{name}/skills/{skill}/diff
 func (s *Server) handleSkillDiff(w http.ResponseWriter, r *http.Request) {
 	skillName := r.PathValue("skill")

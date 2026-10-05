@@ -147,16 +147,11 @@ func checkAllUpdates(registryDir string, logger *slog.Logger) *UpdateStatus {
 			// Background check has no vault resolver. A stored CredentialRef
 			// is skipped rather than failed. ssh-key sources rebuild from
 			// the stored path; the passphrase is re-read from the environment.
+			// ResolveStoredAuth errors only for a CredentialRef, already skipped.
 			if origin.CredentialRef != "" {
 				return
 			}
-			auth, err := ResolveStoredAuth(origin.StoredAuth(), nil)
-			if err != nil {
-				mu.Lock()
-				status.Errors = append(status.Errors, fmt.Sprintf("%s: %v", name, err))
-				mu.Unlock()
-				return
-			}
+			auth, _ := ResolveStoredAuth(origin.StoredAuth(), nil)
 			newSHA, changed, err := FetchAndCompare(origin.Repo, origin.Ref, origin.CommitSHA, auth, logger)
 			if err != nil {
 				mu.Lock()

@@ -728,7 +728,7 @@ func (imp *Importer) Update(skillName string, dryRun, force, trust bool) (*Impor
 		}
 	}
 
-	// Re-resolve any CredentialRef stored at import time.
+	// Rebuild the stored auth (vault reference or ssh-key path).
 	auth, err := imp.authFromOrigin(origin)
 	if err != nil {
 		return nil, err
