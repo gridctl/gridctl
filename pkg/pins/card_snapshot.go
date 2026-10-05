@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 
 	"github.com/gridctl/gridctl/pkg/a2aclient"
@@ -98,12 +99,17 @@ func cloneSnapshotTools(tools []mcp.Tool) []mcp.Tool {
 		out[i] = tool
 		out[i].InputSchema = append([]byte(nil), tool.InputSchema...)
 		out[i].OutputSchema = append([]byte(nil), tool.OutputSchema...)
+		out[i].Icons = cloneJSONRaw(tool.Icons)
+		out[i].Execution = cloneJSONRaw(tool.Execution)
+		out[i].Meta = cloneJSONRaw(tool.Meta)
+		out[i].Extra = cloneJSONMap(tool.Extra)
 		if tool.Annotations != nil {
 			annotations := *tool.Annotations
 			annotations.ReadOnlyHint = cloneHint(annotations.ReadOnlyHint)
 			annotations.DestructiveHint = cloneHint(annotations.DestructiveHint)
 			annotations.IdempotentHint = cloneHint(annotations.IdempotentHint)
 			annotations.OpenWorldHint = cloneHint(annotations.OpenWorldHint)
+			annotations.Extra = cloneJSONMap(tool.Annotations.Extra)
 			out[i].Annotations = &annotations
 		}
 	}
@@ -116,4 +122,22 @@ func cloneHint(hint *bool) *bool {
 	}
 	value := *hint
 	return &value
+}
+
+func cloneJSONRaw(raw json.RawMessage) json.RawMessage {
+	if raw == nil {
+		return nil
+	}
+	return append(json.RawMessage(nil), raw...)
+}
+
+func cloneJSONMap(in map[string]json.RawMessage) map[string]json.RawMessage {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]json.RawMessage, len(in))
+	for k, v := range in {
+		out[k] = cloneJSONRaw(v)
+	}
+	return out
 }

@@ -4,7 +4,7 @@ Gridctl measures the token traffic that flows through the gateway. Ordinary succ
 
 ## What the gateway measures
 
-Input tokens are counted on tool-call arguments and output tokens on tool results, attributed to the server that handled the call, the replica that served it, the calling client (from the session's MCP `clientInfo`), and the individual tool. Call counts and last-called timestamps are kept per (server, tool) pair, and registry skills get the same treatment for `prompts/get` usage. When `output_format: toon` or `csv` is active, the format-savings tally records original tokens, formatted tokens, and the saved difference.
+Input tokens are counted on tool-call arguments and output tokens on tool-result text. Non-text payloads are not counted. Counts are attributed to the server that handled the call, the replica that served it, the calling client (from the session's MCP `clientInfo`), and the individual tool. Call counts and last-called timestamps are kept per (server, tool) pair, and registry skills get the same treatment for `prompts/get` usage. When `output_format: toon` or `csv` is active, the format-savings tally records original tokens, formatted tokens, and the saved difference.
 
 ## Tokenizers
 

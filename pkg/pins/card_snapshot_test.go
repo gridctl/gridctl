@@ -63,6 +63,38 @@ func TestNewCardSnapshot_Immutable(t *testing.T) {
 	}
 }
 
+func TestCloneSnapshotTools_OpaqueFieldsIndependent(t *testing.T) {
+	readOnly := true
+	tools := []mcp.Tool{{
+		Name:         "send",
+		InputSchema:  json.RawMessage(`{"type":"object"}`),
+		Icons:        json.RawMessage(`[{"src":"icon.png"}]`),
+		Execution:    json.RawMessage(`{"taskSupport":"optional"}`),
+		Meta:         json.RawMessage(`{"ui":{"resourceUri":"ui://app"}}`),
+		Extra:        map[string]json.RawMessage{"future": json.RawMessage(`"a"`)},
+		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: &readOnly, Extra: map[string]json.RawMessage{"x-custom": json.RawMessage(`"a"`)}},
+	}}
+	cloned := cloneSnapshotTools(tools)
+	tools[0].Icons[0] = 'x'
+	tools[0].Execution[0] = 'x'
+	tools[0].Meta[0] = 'x'
+	tools[0].Extra["future"][1] = 'z'
+	tools[0].Extra["added"] = json.RawMessage(`1`)
+	tools[0].Annotations.Extra["x-custom"][1] = 'z'
+	readOnly = false
+
+	got := cloned[0]
+	if got.Icons[0] != '[' || got.Execution[0] != '{' || got.Meta[0] != '{' {
+		t.Fatal("snapshot shares raw tool fields")
+	}
+	if string(got.Extra["future"]) != `"a"` || len(got.Extra) != 1 {
+		t.Fatalf("snapshot shares tool extra: %+v", got.Extra)
+	}
+	if got.Annotations == nil || string(got.Annotations.Extra["x-custom"]) != `"a"` || !*got.Annotations.ReadOnlyHint {
+		t.Fatalf("snapshot shares annotation extra: %+v", got.Annotations)
+	}
+}
+
 func TestNewCardSnapshot_IdentityAndByteTrust(t *testing.T) {
 	base := CardIdentity{Card: "https://example.com/card"}
 	snapshot, err := NewCardSnapshot(1, base, []byte(`{}`), nil)

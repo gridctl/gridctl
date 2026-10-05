@@ -13,7 +13,7 @@
 //   - initialize - MCP handshake
 //   - notifications/initialized - Notification acknowledgment
 //   - tools/list - Returns sample tools
-//   - tools/call - Execute tools (echo, add, get_time)
+//   - tools/call - Execute tools (echo, add, get_time, mixed_content)
 //   - ping - Health check
 //
 // With -protocol 2026-07-28 the server speaks the stateless generation
@@ -76,9 +76,13 @@ type ToolsCapability struct {
 }
 
 type Tool struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description,omitempty"`
-	InputSchema map[string]any `json:"inputSchema"`
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	InputSchema map[string]any  `json:"inputSchema"`
+	Annotations json.RawMessage `json:"annotations,omitempty"`
+	Icons       json.RawMessage `json:"icons,omitempty"`
+	Execution   json.RawMessage `json:"execution,omitempty"`
+	Meta        json.RawMessage `json:"_meta,omitempty"`
 }
 
 type ToolsListResult struct {
@@ -96,8 +100,16 @@ type ToolCallResult struct {
 }
 
 type Content struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
+	Type        string          `json:"type"`
+	Text        string          `json:"text,omitempty"`
+	Data        string          `json:"data,omitempty"`
+	MimeType    string          `json:"mimeType,omitempty"`
+	URI         string          `json:"uri,omitempty"`
+	Name        string          `json:"name,omitempty"`
+	Size        *int64          `json:"size,omitempty"`
+	Resource    json.RawMessage `json:"resource,omitempty"`
+	Annotations json.RawMessage `json:"annotations,omitempty"`
+	Meta        json.RawMessage `json:"_meta,omitempty"`
 }
 
 // Sample tools provided by this mock server
@@ -141,6 +153,21 @@ var sampleTools = []Tool{
 			"type":       "object",
 			"properties": map[string]any{},
 		},
+	},
+	// mixed_content exists so transport tests can prove non-text blocks and
+	// opaque tool fields survive stdio decode. echo, add, and get_time stay
+	// text-only so their result shape does not change.
+	{
+		Name:        "mixed_content",
+		Description: "Returns mixed content blocks and opaque tool metadata",
+		InputSchema: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{},
+		},
+		Annotations: json.RawMessage(`{"readOnlyHint":true,"x-custom":"keep"}`),
+		Icons:       json.RawMessage(`[{"src":"icon.png","mimeType":"image/png"}]`),
+		Execution:   json.RawMessage(`{"taskSupport":"optional"}`),
+		Meta:        json.RawMessage(`{"ui":{"resourceUri":"ui://mock/mixed"}}`),
 	},
 }
 
@@ -288,6 +315,24 @@ func handleToolCall(params ToolCallParams) ToolCallResult {
 	case "get_time":
 		return ToolCallResult{
 			Content: []Content{{Type: "text", Text: fmt.Sprintf("Current time: %s", time.Now().Format(time.RFC3339))}},
+		}
+
+	case "mixed_content":
+		size := int64(42)
+		return ToolCallResult{
+			Content: []Content{
+				{
+					Type:        "text",
+					Text:        "Screenshot taken",
+					Annotations: json.RawMessage(`{"audience":["user"],"priority":0.9}`),
+					Meta:        json.RawMessage(`{"k":"v"}`),
+				},
+				{Type: "image", Data: "iVBORw0K", MimeType: "image/png"},
+				{Type: "audio", Data: "UklGRg==", MimeType: "audio/wav"},
+				{Type: "resource_link", URI: "file:///a.rs", Name: "a.rs", MimeType: "text/x-rust", Size: &size},
+				{Type: "resource", Resource: json.RawMessage(`{"uri":"ui://excalidraw/canvas","mimeType":"text/html","text":"<html></html>"}`)},
+				{Type: "resource", Resource: json.RawMessage(`{"uri":"file:///b.bin","mimeType":"application/octet-stream","blob":"AAEC"}`)},
+			},
 		}
 
 	default:

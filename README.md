@@ -260,7 +260,7 @@ Learn more → [Usage Observability](docs/usage-observability.md)
 
 ### Output Format Conversion
 
-Tool call results default to JSON. Set `output_format` at the gateway or per-server level to convert structured responses into `TOON` or `CSV` before they reach the client, reducing token consumption by **25–61%** for tabular and key-value data. Non-JSON responses and payloads over 1 MB are passed through unchanged. A2A envelopes retain atomic JSON and bypass format conversion.
+Tool call results default to JSON. Set `output_format` at the gateway or per-server level to convert structured responses into `TOON` or `CSV` before they reach the client, reducing token consumption by **25–61%** for tabular and key-value data. Non-JSON responses and payloads over 1 MB are passed through unchanged. Format conversion rewrites text blocks only; non-text blocks are left intact. A2A envelopes retain atomic JSON and bypass format conversion.
 
 ```yaml
 gateway:

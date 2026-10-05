@@ -64,9 +64,25 @@ func containsJSONKey(t *testing.T, data []byte, key string) bool {
 // future field added to Tool without updating the copies fails here.
 func TestRouter_AnnotationsSurviveAggregation(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	ann := &ToolAnnotations{ReadOnlyHint: boolPtr(true), Title: "Safe read"}
+	meta := json.RawMessage(`{"ui":{"resourceUri":"ui://alpha/read"}}`)
+	icons := json.RawMessage(`[{"src":"icon.png"}]`)
+	execution := json.RawMessage(`{"taskSupport":"forbidden"}`)
+	ann := &ToolAnnotations{
+		ReadOnlyHint: boolPtr(true),
+		Title:        "Safe read",
+		Extra:        map[string]json.RawMessage{"x-custom": json.RawMessage(`"keep"`)},
+	}
 	client := setupMockAgentClient(ctrl, "alpha", []Tool{
-		{Name: "read", Description: "reads", InputSchema: json.RawMessage(`{}`), Annotations: ann},
+		{
+			Name:         "read",
+			Description:  "reads",
+			InputSchema:  json.RawMessage(`{}`),
+			Annotations:  ann,
+			Icons:        icons,
+			Execution:    execution,
+			Meta:         meta,
+			Extra:        map[string]json.RawMessage{"future": json.RawMessage(`1`)},
+		},
 	})
 
 	r := NewRouter()
@@ -81,10 +97,28 @@ func TestRouter_AnnotationsSurviveAggregation(t *testing.T) {
 	if len(cat) != 1 || cat[0].Annotations == nil || cat[0].Annotations.Title != "Safe read" {
 		t.Fatalf("CatalogTools dropped annotations: %+v", cat)
 	}
+	for _, site := range []struct {
+		name  string
+		tools []Tool
+	}{
+		{"AggregatedTools", agg},
+		{"CatalogTools", cat},
+	} {
+		tool := site.tools[0]
+		if string(tool.Meta) != string(meta) || string(tool.Icons) != string(icons) || string(tool.Execution) != string(execution) {
+			t.Fatalf("%s dropped opaque tool fields: %+v", site.name, tool)
+		}
+		if string(tool.Extra["future"]) != "1" {
+			t.Fatalf("%s dropped unknown tool key: %+v", site.name, tool.Extra)
+		}
+		if tool.Annotations.Extra == nil || string(tool.Annotations.Extra["x-custom"]) != `"keep"` {
+			t.Fatalf("%s dropped unknown annotation key: %+v", site.name, tool.Annotations)
+		}
+	}
 
 	// Field-completeness tripwire: if Tool grows a field, this count changes
 	// and whoever adds it must extend both copy sites plus this test.
-	if got := reflect.TypeOf(Tool{}).NumField(); got != 6 {
+	if got := reflect.TypeOf(Tool{}).NumField(); got != 10 {
 		t.Errorf("Tool has %d fields; update AggregatedTools, CatalogTools, and this test when adding fields", got)
 	}
 }
@@ -149,11 +183,19 @@ func TestToolAnnotations_Clone(t *testing.T) {
 	if nilAnn.Clone() != nil {
 		t.Error("nil clone should be nil")
 	}
-	orig := &ToolAnnotations{ReadOnlyHint: boolPtr(false)}
+	orig := &ToolAnnotations{
+		ReadOnlyHint: boolPtr(false),
+		Extra:        map[string]json.RawMessage{"x-custom": json.RawMessage(`"a"`)},
+	}
 	c := orig.Clone()
 	c.ReadOnlyHint = boolPtr(true)
 	c.Title = "changed"
+	c.Extra["x-custom"][1] = 'z'
+	c.Extra["added"] = json.RawMessage(`1`)
 	if *orig.ReadOnlyHint || orig.Title != "" {
 		t.Error("clone mutated original")
+	}
+	if string(orig.Extra["x-custom"]) != `"a"` || len(orig.Extra) != 1 {
+		t.Error("clone shares extra map or raw bytes with original")
 	}
 }

@@ -4,6 +4,7 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -312,6 +314,91 @@ func TestStdioTransportStateless(t *testing.T) {
 	}
 	if result.ResultType != mcp.ResultTypeComplete {
 		t.Errorf("resultType = %q, want complete", result.ResultType)
+	}
+}
+
+// TestStdioTransportMixedContent drives the fixture's mixed_content tool
+// through ProcessClient. This is a decode check of the stdio chokepoint,
+// not a gateway truncation or aggregation check.
+func TestStdioTransportMixedContent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	client := mcp.NewProcessClient("test-stdio-mixed", []string{mockStdioBin}, "", nil)
+	t.Cleanup(func() { client.Close() })
+
+	if err := client.Initialize(ctx); err != nil {
+		t.Fatalf("Initialize (stdio mixed): %v", err)
+	}
+	if err := client.RefreshTools(ctx); err != nil {
+		t.Fatalf("RefreshTools (stdio mixed): %v", err)
+	}
+
+	var def mcp.Tool
+	var found bool
+	for _, tool := range client.Tools() {
+		if tool.Name == "mixed_content" {
+			def = tool
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("mixed_content missing from tools/list: %v", toolNames(client.Tools()))
+	}
+	if def.Annotations == nil || string(def.Annotations.Extra["x-custom"]) != `"keep"` {
+		t.Fatalf("unknown annotation key lost: %+v", def.Annotations)
+	}
+	assertRawJSON(t, def.Icons, `[{"src":"icon.png","mimeType":"image/png"}]`)
+	assertRawJSON(t, def.Execution, `{"taskSupport":"optional"}`)
+	assertRawJSON(t, def.Meta, `{"ui":{"resourceUri":"ui://mock/mixed"}}`)
+
+	result, err := client.CallTool(ctx, "mixed_content", map[string]any{})
+	if err != nil {
+		t.Fatalf("CallTool(mixed_content): %v", err)
+	}
+	if result.IsError || len(result.Content) != 6 {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+
+	text := result.Content[0]
+	if text.Type != "text" || text.Text != "Screenshot taken" {
+		t.Fatalf("text block: %+v", text)
+	}
+	assertRawJSON(t, text.Annotations, `{"audience":["user"],"priority":0.9}`)
+	assertRawJSON(t, text.Meta, `{"k":"v"}`)
+
+	image := result.Content[1]
+	if image.Type != "image" || image.Data != "iVBORw0K" || image.MimeType != "image/png" {
+		t.Fatalf("image block: %+v", image)
+	}
+	audio := result.Content[2]
+	if audio.Type != "audio" || audio.Data != "UklGRg==" || audio.MimeType != "audio/wav" {
+		t.Fatalf("audio block: %+v", audio)
+	}
+	link := result.Content[3]
+	if link.Type != "resource_link" || link.URI != "file:///a.rs" || link.Name != "a.rs" || link.MimeType != "text/x-rust" || link.Size == nil || *link.Size != 42 {
+		t.Fatalf("resource_link block: %+v", link)
+	}
+	assertRawJSON(t, result.Content[4].Resource, `{"uri":"ui://excalidraw/canvas","mimeType":"text/html","text":"<html></html>"}`)
+	assertRawJSON(t, result.Content[5].Resource, `{"uri":"file:///b.bin","mimeType":"application/octet-stream","blob":"AAEC"}`)
+}
+
+func assertRawJSON(t *testing.T, got json.RawMessage, want string) {
+	t.Helper()
+	var g, w any
+	if err := json.Unmarshal(got, &g); err != nil {
+		t.Fatalf("got: %v (%s)", err, got)
+	}
+	if err := json.Unmarshal([]byte(want), &w); err != nil {
+		t.Fatalf("want: %v", err)
+	}
+	if !reflect.DeepEqual(g, w) {
+		t.Fatalf("json mismatch\ngot:  %s\nwant: %s", got, want)
 	}
 }
 

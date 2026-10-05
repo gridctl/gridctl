@@ -37,6 +37,8 @@ Code runs in a [goja](https://github.com/dop251/goja) JavaScript runtime (ES5.1 
 - `mcp.callTool(serverName, toolName, args)` - synchronous, returns parsed objects
 - `console.log()`, `console.warn()`, `console.error()` - captured in response
 
+`mcp.callTool` returns `structuredContent` when the server provides it, otherwise text. Non-text blocks are not exposed to the script.
+
 **Limits:**
 - Max code size: 64 KB
 - Default timeout: 30 seconds (configurable via `code_mode_timeout`)

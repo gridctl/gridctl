@@ -2758,6 +2758,7 @@ func (g *Gateway) applyFormatConversion(ctx context.Context, serverName string, 
 			totalFormattedTokens += formattedTokens
 		}
 
+		// Assign Text only. Replacing the block would drop image data, annotations, and _meta.
 		result.Content[i].Text = formatted
 
 		g.logger.Info("format conversion applied",
@@ -2776,9 +2777,11 @@ const defaultMaxToolResultBytes = 65536
 
 // applyTruncation truncates oversized tool results before they enter the log buffer.
 // It modifies result.Content in place. Results at or under the limit are unchanged.
-// Oversized structuredContent is dropped rather than clipped: a byte-clipped JSON
-// document is invalid, and clients fall back to Content per the MCP spec. The drop
-// is surfaced as a text notice so it is never silent.
+// Only text blocks are clipped. Image, audio, resource link, and embedded resource
+// blocks are exempt; a debug log notes when one exceeds the limit so a large result
+// is not silent. Oversized structuredContent is dropped rather than clipped: a
+// byte-clipped JSON document is invalid, and clients fall back to Content per the
+// MCP spec. The drop is surfaced as a text notice so it is never silent.
 func (g *Gateway) applyTruncation(serverName, toolName string, result *ToolCallResult) {
 	if result == nil || result.atomicResult {
 		return
@@ -2793,7 +2796,11 @@ func (g *Gateway) applyTruncation(serverName, toolName string, result *ToolCallR
 	}
 
 	for i, c := range result.Content {
-		if c.Type != "text" || c.Text == "" {
+		if c.Type != "text" {
+			g.noteOversizedNonText(serverName, toolName, c, limit)
+			continue
+		}
+		if c.Text == "" {
 			continue
 		}
 		truncated, wasTruncated := format.TruncateResult(c.Text, limit)
@@ -2815,6 +2822,30 @@ func (g *Gateway) applyTruncation(serverName, toolName string, result *ToolCallR
 		result.StructuredContent = nil
 	}
 }
+
+// noteOversizedNonText records that a non-text block exceeded the text limit.
+// The block is left intact. The log carries size and type, not the payload.
+// Encoding is skipped unless debug is enabled: the size exists only for this
+// line, and the default logger discards every record.
+func (g *Gateway) noteOversizedNonText(serverName, toolName string, block Content, limit int) {
+	if g.logger == nil || limit <= 0 || !g.logger.Enabled(context.Background(), slog.LevelDebug) {
+		return
+	}
+	n, err := nonTextBlockSize(block)
+	if err != nil || n <= limit {
+		return
+	}
+	g.logger.Debug("non-text content block exceeds result size limit",
+		"tool", toolName,
+		"server", serverName,
+		"type", block.Type,
+		"bytes", n,
+		"limit_bytes", limit)
+}
+
+// nonTextBlockSize is the encoded size for the oversized-block debug note.
+// Tests replace it to prove a debug-disabled logger does not encode the block.
+var nonTextBlockSize = contentBlockSize
 
 // CallTool implements the ToolCaller interface, allowing components to call
 // tools through the gateway without a direct reference to the router.
