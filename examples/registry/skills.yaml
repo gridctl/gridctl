@@ -1,9 +1,8 @@
 # Skill Sources Example
 #
-# Declares remote git repositories gridctl clones to discover SKILL.md files
-# (and agents/*.md definitions, which import alongside skills).
 # Place this at ~/.gridctl/skills.yaml. The Library source list reads it
-# for auto-update display. gridctl skill update does not consult it.
+# for auto-update display. gridctl skill update does not consult it, and
+# an auth: block in this file is not resolved on fetch.
 # Persist credentials at import instead:
 #
 #   gridctl skill add <repo> --vault-key GIT_TOKEN
@@ -14,9 +13,8 @@
 #
 # Security:
 #   - Raw PATs and SSH keys MUST NOT appear in this file.
-#   - Use credential_ref to point at a vault key. The raw value stays in
-#     ~/.gridctl/vault/ (XChaCha20-Poly1305 + Argon2id) and is resolved on
-#     every clone/fetch, so rotating a secret takes effect immediately.
+#   - A --vault-key reference or an absolute --ssh-key path is written at
+#     import and reused later. Literal and piped tokens persist nothing.
 
 defaults:
   auto_update: true
@@ -28,9 +26,8 @@ sources:
     repo: https://github.com/acme/public-skills
     ref: main
 
-  # Private HTTPS repo — PAT resolved from the variable store on every fetch.
-  # Pre-stage the secret first:
-  #   gridctl var set GIT_TOKEN --value ghp_xxxxxxxxxxxxxxxxxxxx
+  # Schema example only. This auth block is not read on update.
+  # Import with: gridctl skill add <repo> --vault-key GIT_TOKEN
   - name: private-skills
     repo: https://github.com/acme/private-skills
     ref: v1.2.0
@@ -38,8 +35,8 @@ sources:
       method: token
       credential_ref: "${var:GIT_TOKEN}"
 
-  # Private SSH repo — uses the user's ambient ssh-agent and ~/.ssh/known_hosts.
-  # No credentials travel through gridctl at all.
+  # Schema example only. This auth block is not read on update.
+  # Import with: gridctl skill add <ssh-url> --ssh-key ~/.ssh/id_ed25519
   - name: private-ssh-skills
     repo: git@github.com:acme/private-skills.git
     auth:

@@ -2815,7 +2815,7 @@ Removes a fragment after writing a backup. Returns `{ "name", "backup" }`.
 
 ### Skill Sources
 
-Manage git-imported skill dependencies (`skills.yaml` + lock file). Mirrors `gridctl skill *` operations for the Library workspace.
+Manage git-imported skill sources. The lockfile and origin sidecars hold import auth. `skills.yaml` is read by the list endpoint for auto-update display only. Mirrors `gridctl skill *` operations for the Library workspace.
 
 Auth for private repos accepts an optional `auth` object on mutating endpoints:
 
@@ -2857,7 +2857,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 #### `POST /api/skills/sources/update`
 
-Syncs every imported source in parallel (respects pinned refs). Optional body: `{force: true, skills: ["name"], auth: {...}}`.
+Syncs every imported source in parallel (respects pinned refs). Optional body: `{force: true, skills: ["name"], auth: {...}}`. A failed fetch is recorded on that skill's `error` and counts in `failedSources`, rather than as up to date.
 
 **Auth:** Yes
 
@@ -2869,7 +2869,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/skills/
 
 #### `GET /api/skills/updates`
 
-Live-fetches upstream SHAs and returns pending update counts per source.
+Live-fetches upstream SHAs and returns pending update counts per source. A failed fetch sets `error` on that source and leaves `hasUpdate` false. It is not reported as current.
 
 **Auth:** Yes
 
@@ -2889,11 +2889,11 @@ Checks whether a source has upstream changes without applying them.
 
 **Auth:** Yes
 
-**Response:** `{source, currentSha, latestSha, hasUpdate}`.
+**Response:** `{source, currentSha, latestSha, hasUpdate}`. A failed fetch is a redacted git error (same status mapping as import) instead of `hasUpdate: false`.
 
 #### `POST /api/skills/sources/{name}/update`
 
-Applies available updates for one source. Locally edited (drifted) skills are skipped unless `force: true`.
+Applies available updates for one source. Locally edited (drifted) skills are skipped unless `force: true`. A failed fetch is reported on that skill's `error`, not as up to date.
 
 **Auth:** Yes
 
@@ -3478,7 +3478,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/packs \
 **Response:** `201` with `{ "doc": <add document>, "notes": [...] }`. The document carries the resolved selection, `unresolved`, `skipped` (with reasons), and `warnings`; `notes` carries progress prose (rule updates, fragments-mode activation).
 
 **Errors:**
-- `400` - Missing repo, invalid body, or an unresolvable `auth.credentialRef`
+- `400` - Missing repo, invalid body, an unresolvable `auth.credentialRef`, or a relative `auth.sshKeyPath`
 - `409` - Security findings without trust: `{ "error", "pack", "findings": [{kind, name, findings}] }`; nothing was imported
 - `422` - No `gridctl-pack.yaml` at the repository root, or no reachable ssh-agent (see [pack auth](#pack-authentication))
 
@@ -3501,7 +3501,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/packs/p
 | `path` | string | Subdirectory within the repository |
 | `auth` | object | Credentials for a private repository (see below) |
 
-**Errors:** `400` when `auth.credentialRef` cannot be resolved. `422` when the repository has no manifest (the body suggests the Skill import flow for plain skill repos), or when an SSH URL has no reachable ssh-agent.
+**Errors:** `400` when `auth.credentialRef` cannot be resolved or `auth.sshKeyPath` is relative. `422` when the repository has no manifest (the body suggests the Skill import flow for plain skill repos), or when an SSH URL has no reachable ssh-agent.
 
 #### Pack authentication
 

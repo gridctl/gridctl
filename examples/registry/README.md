@@ -9,7 +9,7 @@ Examples demonstrating the skills and agents registry. Skills follow the [agents
 | `registry-basic.yaml` | Single server with basic Agent Skills |
 | `registry-advanced.yaml` | Two servers; comments show the cross-server `allowed-tools` pattern |
 | `model-preferences.yaml` | Stack-level model preference defaults and overrides for projected skills and agents |
-| `skills.yaml` | Remote skill source list (public, private HTTPS via the variable store, private SSH via ssh-agent) |
+| `skills.yaml` | Library source list for auto-update display; `skill update` does not read it |
 | `items/code-review/` | Pre-made skill: code review checklist |
 | `items/explain-error/` | Pre-made skill: error explanation helper |
 
@@ -44,10 +44,8 @@ Skills are managed via the REST API or Web UI - they are **not** declared in sta
 `skills.yaml` (separate from the stack YAML above) declares **remote git repositories** that gridctl can list as skill sources. It lives at `~/.gridctl/skills.yaml` and is read by the Library source list for auto-update display. `gridctl skill update` does not consult it. Updates authenticate from the origin sidecar and `skills.lock.yaml` written at import.
 
 ```bash
-# Use the provided example (edit sources first, stage any vault keys):
+# Display list only. This does not import skills, and skill update does not read the file.
 cp examples/registry/skills.yaml ~/.gridctl/skills.yaml
-gridctl var set GIT_TOKEN --value ghp_xxxxxxxxxxxxxxxxxxxx   # only if using token auth
-gridctl skill update
 ```
 
 Private repos are authenticated at import, not by an `auth:` block in `skills.yaml` (that block is not consulted by `skill update`):

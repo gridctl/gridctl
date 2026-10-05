@@ -101,7 +101,7 @@ Supported auth flows for private repos:
 - `--vault-key <key>`: resolves the token from a `${var:KEY}` entry. The reference is persisted and re-resolved on a later update, which makes it the right form for a long-running daemon.
 - `--auth-token-stdin`: reads an HTTPS personal access token from stdin, keeping it out of shell history and out of the process list. `--auth-token -` is equivalent. The token is not persisted.
 - `--auth-token <pat>`: the same token as a literal argument, kept for CI ergonomics. A literal value prints a warning, because it lands in shell history and is visible to anyone who can run `ps`. The token is not persisted.
-- `--ssh-key <path>`: SSH private key path. The absolute path is persisted (never the key material). Set `GRIDCTL_SSH_KEY_PASSPHRASE` for an encrypted key; the passphrase is re-read from the environment on every use and is not stored.
+- `--ssh-key <path>`: SSH private key path. The absolute path is persisted (never the key material) and reused on a later update. Set `GRIDCTL_SSH_KEY_PASSPHRASE` for an encrypted key; the passphrase is re-read from the environment on every use and is not stored.
 
 gridctl does not read `~/.ssh/config`, and a daemonized gridctl inherits `SSH_AUTH_SOCK` only from the shell that started it, so an SSH URL that works with the `git` CLI can still fail. See [troubleshooting](troubleshooting.md#ssh-agent-not-available).
 
