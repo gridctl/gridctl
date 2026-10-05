@@ -106,6 +106,31 @@ func TestGroupPolicy_FilterAndRewrite(t *testing.T) {
 	}
 }
 
+func TestGroupPolicy_RenameUpdatesSynthesizedTitle(t *testing.T) {
+	p := NewGroupPolicy(GroupsSpec{
+		"g": {
+			Servers: []string{"github"},
+			Overrides: map[string]GroupOverrideSpec{
+				"github__create_issue": {Name: "create_issue"},
+			},
+		},
+	})
+	synthesized := p.FilterAndRewrite("g", []Tool{{
+		Name:  "github__create_issue",
+		Title: "github__create_issue",
+	}})
+	if len(synthesized) != 1 || synthesized[0].Title != "create_issue" {
+		t.Fatalf("synthesized title = %+v, want alias", synthesized)
+	}
+	distinct := p.FilterAndRewrite("g", []Tool{{
+		Name:  "github__create_issue",
+		Title: "File an issue",
+	}})
+	if len(distinct) != 1 || distinct[0].Title != "File an issue" {
+		t.Fatalf("distinct title rewritten: %+v", distinct)
+	}
+}
+
 func TestGroupPolicy_RenameUpdatesWrapperText(t *testing.T) {
 	p := NewGroupPolicy(GroupsSpec{
 		"g": {

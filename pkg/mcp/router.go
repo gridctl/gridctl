@@ -159,6 +159,34 @@ func (r *Router) HasTool(prefixedName string) bool {
 	return ok
 }
 
+// projectTool copies definition fields the gateway must forward unchanged.
+// Callers set name, title, and description because aggregation and the
+// catalog rewrite those differently. Both copy sites use this helper so a
+// new pass-through field cannot land in only one of them.
+func projectTool(src Tool) Tool {
+	return Tool{
+		InputSchema:  src.InputSchema,
+		OutputSchema: src.OutputSchema,
+		Annotations:  src.Annotations,
+		Icons:        src.Icons,
+		Execution:    src.Execution,
+		Meta:         src.Meta,
+		Extra:        src.Extra,
+	}
+}
+
+// aggregatedToolTitle keeps a downstream display title when it is distinct
+// from the bare tool name. An empty title, or a title that only repeats the
+// bare name, becomes the prefixed name so clients do not see an unprefixed
+// alias. Group renames still match synthesized titles because those equal
+// the aggregated name.
+func aggregatedToolTitle(prefixedName string, tool Tool) string {
+	if tool.Title == "" || tool.Title == tool.Name {
+		return prefixedName
+	}
+	return tool.Title
+}
+
 // AggregatedTools returns all tools from all servers with prefixed names.
 func (r *Router) AggregatedTools() []Tool {
 	r.mu.RLock()
@@ -174,14 +202,10 @@ func (r *Router) AggregatedTools() []Tool {
 	for _, name := range names {
 		for _, tool := range toolsOf(r.sets[name]) {
 			prefixedName := PrefixTool(name, tool.Name)
-			prefixedTool := Tool{
-				Name:         prefixedName,
-				Title:        prefixedName,
-				Description:  fmt.Sprintf("MCP server: %s. Call using the exact tool name %q. %s", name, prefixedName, tool.Description),
-				InputSchema:  tool.InputSchema,
-				OutputSchema: tool.OutputSchema,
-				Annotations:  tool.Annotations,
-			}
+			prefixedTool := projectTool(tool)
+			prefixedTool.Name = prefixedName
+			prefixedTool.Title = aggregatedToolTitle(prefixedName, tool)
+			prefixedTool.Description = fmt.Sprintf("MCP server: %s. Call using the exact tool name %q. %s", name, prefixedName, tool.Description)
 			tools = append(tools, prefixedTool)
 		}
 	}
@@ -220,14 +244,11 @@ func (r *Router) catalogTools(source func(*ReplicaSet) []Tool) []Tool {
 	var tools []Tool
 	for _, name := range names {
 		for _, tool := range source(r.sets[name]) {
-			tools = append(tools, Tool{
-				Name:         PrefixTool(name, tool.Name),
-				Title:        tool.Title,
-				Description:  tool.Description,
-				InputSchema:  tool.InputSchema,
-				OutputSchema: tool.OutputSchema,
-				Annotations:  tool.Annotations,
-			})
+			projected := projectTool(tool)
+			projected.Name = PrefixTool(name, tool.Name)
+			projected.Title = tool.Title
+			projected.Description = tool.Description
+			tools = append(tools, projected)
 		}
 	}
 	return tools

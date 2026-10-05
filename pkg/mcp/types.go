@@ -416,6 +416,12 @@ type InitializeResult struct {
 }
 
 // Tool represents an MCP tool definition.
+//
+// Icons, execution, and _meta are spec-opaque and forwarded as raw JSON.
+// Extra retains object keys this version does not model (MCP Apps hosts
+// read _meta.ui.resourceUri; a typed-only struct would drop it). Custom
+// JSON methods merge Extra back and keep known keys out of it. InputSchema
+// stays non-omitempty so an absent schema still encodes as null.
 type Tool struct {
 	Name        string          `json:"name"`
 	Title       string          `json:"title,omitempty"`
@@ -434,27 +440,46 @@ type Tool struct {
 	// server's declared behavior; group overrides may inject or replace
 	// individual hints. Not part of the pins fingerprint.
 	Annotations *ToolAnnotations `json:"annotations,omitempty"`
+
+	Icons     json.RawMessage `json:"icons,omitempty"`
+	Execution json.RawMessage `json:"execution,omitempty"`
+	Meta      json.RawMessage `json:"_meta,omitempty"`
+
+	// Extra is not a wire name. It is exported so snapshot cloning can
+	// copy unknown keys without a second decode.
+	Extra map[string]json.RawMessage `json:"-"`
 }
 
 // ToolAnnotations are the spec's tool behavior hints. All hint fields are
 // pointers: nil means "not declared", which clients must treat as the
 // worst-case default per the spec (writable, destructive, non-idempotent,
 // open-world). Hints are advisory, never guarantees.
+//
+// Extra retains unknown annotation keys (for example x-custom). Those keys
+// are not hints and are not part of the pins fingerprint.
 type ToolAnnotations struct {
 	Title           string `json:"title,omitempty"`
 	ReadOnlyHint    *bool  `json:"readOnlyHint,omitempty"`
 	DestructiveHint *bool  `json:"destructiveHint,omitempty"`
 	IdempotentHint  *bool  `json:"idempotentHint,omitempty"`
 	OpenWorldHint   *bool  `json:"openWorldHint,omitempty"`
+
+	Extra map[string]json.RawMessage `json:"-"`
 }
 
 // Clone returns a copy so override merging never mutates a downstream
-// server's cached tool definition. Nil-safe.
+// server's cached tool definition. Nil-safe. Hint pointers and Extra are
+// copied so a later write cannot race with the live definition.
 func (a *ToolAnnotations) Clone() *ToolAnnotations {
 	if a == nil {
 		return nil
 	}
 	c := *a
+	c.ReadOnlyHint = cloneBool(a.ReadOnlyHint)
+	c.DestructiveHint = cloneBool(a.DestructiveHint)
+	c.IdempotentHint = cloneBool(a.IdempotentHint)
+	c.OpenWorldHint = cloneBool(a.OpenWorldHint)
+	c.Extra = cloneRawMap(a.Extra)
 	return &c
 }
 
@@ -581,10 +606,33 @@ type CallUsage struct {
 	CacheCreationTokens int `json:"cache_creation_tokens,omitempty"`
 }
 
-// Content represents content in a tool response.
+// Content is one block in a tools/call result. Typed fields cover the
+// spec's text, image, audio, resource_link, and embedded resource
+// variants. Resource, annotations, and _meta stay raw so the gateway
+// forwards them without interpreting them. Extra retains keys this
+// version does not model, including a future block type and its fields.
+//
+// text is omitted when empty for every block type, including "text".
+// That matches the historical omitempty tag. The spec asks for text on
+// text blocks even when empty, but no caller depends on
+// {"type":"text","text":""}, and emitting it would change text-only
+// wire output. NewTextContent("") therefore still marshals as
+// {"type":"text"}.
 type Content struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
+	Type        string          `json:"type"`
+	Text        string          `json:"text,omitempty"`
+	Data        string          `json:"data,omitempty"`
+	MimeType    string          `json:"mimeType,omitempty"`
+	URI         string          `json:"uri,omitempty"`
+	Name        string          `json:"name,omitempty"`
+	Title       string          `json:"title,omitempty"`
+	Description string          `json:"description,omitempty"`
+	Size        *int64          `json:"size,omitempty"`
+	Resource    json.RawMessage `json:"resource,omitempty"`
+	Annotations json.RawMessage `json:"annotations,omitempty"`
+	Meta        json.RawMessage `json:"_meta,omitempty"`
+
+	Extra map[string]json.RawMessage `json:"-"`
 }
 
 // NewTextContent creates a text content item.
