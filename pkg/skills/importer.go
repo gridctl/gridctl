@@ -82,6 +82,16 @@ func resolveAuther(cfg AuthConfig, url string) (gitpkg.Auther, error) {
 	return gitpkg.NoAuth{}, nil
 }
 
+// persistedAuth returns the ssh-key method, user, and path to store.
+// Every other method, including token and ssh-agent, persists nothing here.
+// The passphrase is never returned.
+func persistedAuth(cfg AuthConfig) (method, user, path string) {
+	if cfg.Method == "ssh-key" && cfg.SSHKeyPath != "" {
+		return cfg.Method, cfg.SSHUser, cfg.SSHKeyPath
+	}
+	return "", "", ""
+}
+
 // CredentialResolver resolves an opaque reference like "${vault:GIT_TOKEN}"
 // to its raw value. Callers (CLI, HTTP API) register one via
 // Importer.SetCredentialResolver so that Update can re-resolve credentials
@@ -397,8 +407,9 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 		// files are not yet drift-tracked (see CHANGELOG).
 		installedHash, _ := ContentHashFile(filepath.Join(skillDir, "SKILL.md"))
 
-		// Write origin sidecar. CredentialRef (if any) is persisted as an
-		// opaque reference string — the raw token is never written to disk.
+		// Write origin sidecar. A vault reference and an ssh-key path may be
+		// persisted. The raw token, key material, and passphrase are not.
+		authMethod, sshUser, sshKeyPath := persistedAuth(opts.Auth)
 		origin := &Origin{
 			Repo:                     opts.Repo,
 			Ref:                      opts.Ref,
@@ -410,6 +421,9 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 			Fingerprint:              fp,
 			SupportingFilesInstalled: true,
 			CredentialRef:            opts.Auth.CredentialRef,
+			AuthMethod:               authMethod,
+			SSHUser:                  sshUser,
+			SSHKeyPath:               sshKeyPath,
 		}
 
 		if err := WriteOrigin(skillDir, origin); err != nil {
@@ -488,6 +502,7 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 					}
 				}
 			}
+			authMethod, sshUser, sshKeyPath := persistedAuth(opts.Auth)
 			lf.SetSource(sourceName, LockedSource{
 				Repo:          opts.Repo,
 				Ref:           opts.Ref,
@@ -497,6 +512,9 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 				Skills:        lockedSkills,
 				Agents:        lockedAgents,
 				CredentialRef: opts.Auth.CredentialRef,
+				AuthMethod:    authMethod,
+				SSHUser:       sshUser,
+				SSHKeyPath:    sshKeyPath,
 				Pack:          prevPack,
 			})
 			return true, nil
@@ -609,6 +627,7 @@ func (imp *Importer) importAgents(result *CloneResult, opts ImportOptions, impor
 		}
 
 		installedHash, _ := ContentHashFile(agentFile)
+		authMethod, sshUser, sshKeyPath := persistedAuth(opts.Auth)
 		origin := &Origin{
 			Repo:          opts.Repo,
 			Ref:           opts.Ref,
@@ -618,6 +637,9 @@ func (imp *Importer) importAgents(result *CloneResult, opts ImportOptions, impor
 			ContentHash:   discovered.ContentHash,
 			InstalledHash: installedHash,
 			CredentialRef: opts.Auth.CredentialRef,
+			AuthMethod:    authMethod,
+			SSHUser:       sshUser,
+			SSHKeyPath:    sshKeyPath,
 		}
 		if err := WriteOrigin(agentDir, origin); err != nil {
 			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("failed to write origin for agent %s: %v", discovered.Name, err))
@@ -896,27 +918,41 @@ func (imp *Importer) skillDir(skillName string) string {
 	return filepath.Join(imp.registryDir, "skills", sk.Dir)
 }
 
-// authFromOrigin builds an AuthConfig from a stored Origin. If the origin
-// carries a CredentialRef, the configured CredentialResolver is invoked
-// to obtain the raw token. Without a resolver, a stored CredentialRef is
-// a hard failure — we never silently fall through to an unauth clone.
+// authFromOrigin builds an AuthConfig from a stored Origin.
 func (imp *Importer) authFromOrigin(origin *Origin) (AuthConfig, error) {
-	if origin.CredentialRef == "" {
-		return AuthConfig{}, nil
+	return ResolveStoredAuth(origin.StoredAuth(), imp.credentialResolver)
+}
+
+// ResolveStoredAuth rebuilds an AuthConfig from a stored record.
+// A CredentialRef wins and is resolved to a token. Otherwise an ssh-key
+// path is rebuilt and the passphrase is re-read from the environment.
+// Anything else is ambient (the zero value). The passphrase is never
+// taken from the record, because it is never stored.
+func ResolveStoredAuth(stored StoredAuth, resolver CredentialResolver) (AuthConfig, error) {
+	if stored.CredentialRef != "" {
+		if resolver == nil {
+			return AuthConfig{}, fmt.Errorf("%w: credential %q requires a resolver; vault not available", gitpkg.ErrAuthFailed, stored.CredentialRef)
+		}
+		token, err := resolver(stored.CredentialRef)
+		if err != nil {
+			return AuthConfig{}, fmt.Errorf("%w: resolving %q: %w", gitpkg.ErrAuthFailed, stored.CredentialRef, err)
+		}
+		if token == "" {
+			return AuthConfig{}, fmt.Errorf("%w: %q resolved to empty value", gitpkg.ErrEmptyToken, stored.CredentialRef)
+		}
+		return AuthConfig{
+			Method:        "token",
+			Token:         token,
+			CredentialRef: stored.CredentialRef,
+		}, nil
 	}
-	if imp.credentialResolver == nil {
-		return AuthConfig{}, fmt.Errorf("%w: credential %q requires a resolver; vault not available", gitpkg.ErrAuthFailed, origin.CredentialRef)
+	if stored.Method == "ssh-key" && stored.SSHKeyPath != "" {
+		return AuthConfig{
+			Method:        "ssh-key",
+			SSHUser:       stored.SSHUser,
+			SSHKeyPath:    stored.SSHKeyPath,
+			SSHPassphrase: os.Getenv("GRIDCTL_SSH_KEY_PASSPHRASE"),
+		}, nil
 	}
-	token, err := imp.credentialResolver(origin.CredentialRef)
-	if err != nil {
-		return AuthConfig{}, fmt.Errorf("%w: resolving %q: %w", gitpkg.ErrAuthFailed, origin.CredentialRef, err)
-	}
-	if token == "" {
-		return AuthConfig{}, fmt.Errorf("%w: %q resolved to empty value", gitpkg.ErrEmptyToken, origin.CredentialRef)
-	}
-	return AuthConfig{
-		Method:        "token",
-		Token:         token,
-		CredentialRef: origin.CredentialRef,
-	}, nil
+	return AuthConfig{}, nil
 }

@@ -103,8 +103,8 @@ func TestHandlePackPreview_FallsBackToStoredCredentialRef(t *testing.T) {
 	repo := packRepoFixture(t, packTestManifest, nil)
 	seedLockedSource(t, repo, "${vault:GIT_TOKEN}")
 
-	if got := srv.storedPackCredentialRef(repo); got != "${vault:GIT_TOKEN}" {
-		t.Fatalf("storedPackCredentialRef = %q, want the recorded reference", got)
+	if got := srv.storedPackAuth(repo); got.CredentialRef != "${vault:GIT_TOKEN}" {
+		t.Fatalf("storedPackAuth = %+v, want the recorded reference", got)
 	}
 
 	// No auth block at all: the handler must find and resolve the stored
@@ -134,14 +134,35 @@ func TestHandlePackPreview_EmptyAuthObjectSuppressesStoredRef(t *testing.T) {
 	}
 }
 
-func TestStoredPackCredentialRef_UnknownRepoIsEmpty(t *testing.T) {
+func TestStoredPackAuth_UnknownRepoIsEmpty(t *testing.T) {
 	srv, _ := setupPackTestServer(t)
 
-	if got := srv.storedPackCredentialRef("https://github.com/never/imported"); got != "" {
-		t.Errorf("storedPackCredentialRef = %q, want empty for an unknown repo", got)
+	if got := srv.storedPackAuth("https://github.com/never/imported"); got != (skills.StoredAuth{}) {
+		t.Errorf("storedPackAuth = %+v, want zero for an unknown repo", got)
 	}
-	if got := srv.storedPackCredentialRef(""); got != "" {
-		t.Errorf(`storedPackCredentialRef("") = %q, want empty`, got)
+	if got := srv.storedPackAuth(""); got != (skills.StoredAuth{}) {
+		t.Errorf("storedPackAuth(\"\") = %+v, want zero", got)
+	}
+}
+
+func TestStoredPackAuth_SSHKey(t *testing.T) {
+	srv, _ := setupPackTestServer(t)
+	const repo = "ssh://git@127.0.0.1:1/pack.git"
+	err := skills.MutateLockFile(context.Background(), skills.LockFilePath(), func(lf *skills.LockFile) (bool, error) {
+		lf.SetSource(skills.RepoToName(repo), skills.LockedSource{
+			Repo:       repo,
+			AuthMethod: "ssh-key",
+			SSHUser:    "git",
+			SSHKeyPath: "/abs/key",
+		})
+		return true, nil
+	})
+	if err != nil {
+		t.Fatalf("seed lockfile: %v", err)
+	}
+	got := srv.storedPackAuth(repo)
+	if got.Method != "ssh-key" || got.SSHUser != "git" || got.SSHKeyPath != "/abs/key" {
+		t.Fatalf("storedPackAuth = %+v", got)
 	}
 }
 

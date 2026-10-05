@@ -224,6 +224,99 @@ func TestAuthFromOrigin_EmptyResolvedValue(t *testing.T) {
 	}
 }
 
+func TestPersistedAuth(t *testing.T) {
+	method, user, path := persistedAuth(AuthConfig{
+		Method: "ssh-key", SSHUser: "git", SSHKeyPath: "/abs/key", SSHPassphrase: "secret",
+	})
+	if method != "ssh-key" || user != "git" || path != "/abs/key" {
+		t.Fatalf("persistedAuth ssh-key = %q %q %q", method, user, path)
+	}
+	for _, cfg := range []AuthConfig{
+		{Method: "token", Token: "raw", CredentialRef: "${var:GIT_TOKEN}"},
+		{Method: "ssh-agent", SSHUser: "git"},
+		{Method: "ssh-key"},
+		{},
+	} {
+		method, user, path = persistedAuth(cfg)
+		if method != "" || user != "" || path != "" {
+			t.Fatalf("persistedAuth(%+v) = %q %q %q, want empty", cfg, method, user, path)
+		}
+	}
+}
+
+func TestResolveStoredAuth(t *testing.T) {
+	const passphrase = "from-the-environment"
+	t.Setenv("GRIDCTL_SSH_KEY_PASSPHRASE", passphrase)
+
+	resolver := func(ref string) (string, error) {
+		if ref != "${var:GIT_TOKEN}" {
+			return "", errors.New("unexpected ref")
+		}
+		return "resolved-secret", nil
+	}
+	cases := []struct {
+		name     string
+		stored   StoredAuth
+		resolver CredentialResolver
+		want     AuthConfig
+		wantErr  error
+		wantPass bool
+	}{
+		{
+			name:     "ref with resolver",
+			stored:   StoredAuth{CredentialRef: "${var:GIT_TOKEN}"},
+			resolver: resolver,
+			want:     AuthConfig{Method: "token", Token: "resolved-secret", CredentialRef: "${var:GIT_TOKEN}"},
+		},
+		{
+			name:    "ref with nil resolver",
+			stored:  StoredAuth{CredentialRef: "${var:GIT_TOKEN}"},
+			wantErr: gitpkg.ErrAuthFailed,
+		},
+		{
+			name:     "ref resolves empty",
+			stored:   StoredAuth{CredentialRef: "${var:GIT_TOKEN}"},
+			resolver: func(string) (string, error) { return "", nil },
+			wantErr:  gitpkg.ErrEmptyToken,
+		},
+		{
+			name:     "ssh-key carries passphrase from the environment",
+			stored:   StoredAuth{Method: "ssh-key", SSHUser: "git", SSHKeyPath: "/abs/key"},
+			want:     AuthConfig{Method: "ssh-key", SSHUser: "git", SSHKeyPath: "/abs/key", SSHPassphrase: passphrase},
+			wantPass: true,
+		},
+		{
+			name:     "ref wins over ssh fields",
+			stored:   StoredAuth{Method: "ssh-key", SSHUser: "git", SSHKeyPath: "/abs/key", CredentialRef: "${var:GIT_TOKEN}"},
+			resolver: resolver,
+			want:     AuthConfig{Method: "token", Token: "resolved-secret", CredentialRef: "${var:GIT_TOKEN}"},
+		},
+		{
+			name: "nothing",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := ResolveStoredAuth(c.stored, c.resolver)
+			if c.wantErr != nil {
+				if !errors.Is(err, c.wantErr) {
+					t.Fatalf("error = %v, want %v", err, c.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != c.want {
+				t.Fatalf("ResolveStoredAuth = %+v, want %+v", got, c.want)
+			}
+			if c.wantPass && got.SSHPassphrase != passphrase {
+				t.Fatalf("passphrase = %q, want the environment value", got.SSHPassphrase)
+			}
+		})
+	}
+}
+
 func TestSourceAuth_ToAuthConfig(t *testing.T) {
 	var nilAuth *SourceAuth
 	if cfg := nilAuth.ToAuthConfig(); cfg.Method != "" {

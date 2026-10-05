@@ -31,8 +31,36 @@ type Origin struct {
 	SupportingFilesInstalled bool `json:"supportingFilesInstalled,omitempty"`
 	// CredentialRef is an opaque reference like "${vault:GIT_TOKEN}" used to
 	// re-resolve credentials on skill update. Raw token values are never
-	// persisted — only the reference string.
+	// persisted, only the reference string.
 	CredentialRef string `json:"credentialRef,omitempty"`
+	// AuthMethod, SSHUser, and SSHKeyPath persist ssh-key authentication so a
+	// later update can rebuild it. Only the path is stored, never key material
+	// or a passphrase.
+	AuthMethod string `json:"authMethod,omitempty"`
+	SSHUser    string `json:"sshUser,omitempty"`
+	SSHKeyPath string `json:"sshKeyPath,omitempty"`
+}
+
+// StoredAuth is the non-secret authentication recorded for a source.
+// Token values and passphrases are never part of it.
+type StoredAuth struct {
+	Method        string
+	SSHUser       string
+	SSHKeyPath    string
+	CredentialRef string
+}
+
+// StoredAuth returns the authentication this origin recorded at import.
+func (o *Origin) StoredAuth() StoredAuth {
+	if o == nil {
+		return StoredAuth{}
+	}
+	return StoredAuth{
+		Method:        o.AuthMethod,
+		SSHUser:       o.SSHUser,
+		SSHKeyPath:    o.SSHKeyPath,
+		CredentialRef: o.CredentialRef,
+	}
 }
 
 const originFileName = ".origin.json"

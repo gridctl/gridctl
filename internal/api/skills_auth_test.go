@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	gitpkg "github.com/gridctl/gridctl/pkg/git"
+	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/vault"
 )
 
@@ -68,6 +70,106 @@ func TestAuthRequest_ToAuthConfig_ResolveCredentialRef(t *testing.T) {
 	}
 	if cfg.CredentialRef != "${vault:GIT_TOKEN}" {
 		t.Errorf("expected CredentialRef preserved, got %q", cfg.CredentialRef)
+	}
+}
+
+func TestAuthRequest_ToAuthConfig_RejectsRelativeSSHKeyPath(t *testing.T) {
+	r := &AuthRequest{Method: "ssh-key", SSHKeyPath: "keys/id_ed25519"}
+	_, err := r.toAuthConfig(nil)
+	if err == nil {
+		t.Fatal("expected an error for a relative sshKeyPath")
+	}
+	if !strings.Contains(err.Error(), "absolute") {
+		t.Fatalf("error = %q, want it to require an absolute path", err.Error())
+	}
+}
+
+func TestResolveCheckAuth_StoredSSHKey(t *testing.T) {
+	const passphrase = "env-pass"
+	t.Setenv("GRIDCTL_SSH_KEY_PASSPHRASE", passphrase)
+	srv := &Server{}
+
+	cfg, err := srv.resolveCheckAuth(nil, skills.StoredAuth{
+		Method: "ssh-key", SSHUser: "git", SSHKeyPath: "/abs/key",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Method != "ssh-key" || cfg.SSHKeyPath != "/abs/key" || cfg.SSHUser != "git" {
+		t.Fatalf("stored ssh-key auth = %+v", cfg)
+	}
+	if cfg.SSHPassphrase != passphrase {
+		t.Fatalf("passphrase = %q, want the environment value", cfg.SSHPassphrase)
+	}
+
+	v := vault.NewStore(t.TempDir())
+	if err := v.Load(); err != nil {
+		t.Fatalf("vault load: %v", err)
+	}
+	if err := v.Set("GIT_TOKEN", "secret-abc"); err != nil {
+		t.Fatalf("vault set: %v", err)
+	}
+	srv.SetVaultStore(v)
+	cfg, err = srv.resolveCheckAuth(nil, skills.StoredAuth{
+		Method: "ssh-key", SSHKeyPath: "/abs/key", CredentialRef: "${vault:GIT_TOKEN}",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Method != "token" || cfg.Token != "secret-abc" || cfg.CredentialRef != "${vault:GIT_TOKEN}" {
+		t.Fatalf("credential ref should win, got %+v", cfg)
+	}
+	if cfg.SSHKeyPath != "" {
+		t.Fatalf("ssh path should not survive a winning credential ref, got %+v", cfg)
+	}
+}
+
+func TestResolveCheckAuth_StoredRefStillResolves(t *testing.T) {
+	srv, _ := setupRegistryTestServer(t)
+	v := vault.NewStore(t.TempDir())
+	if err := v.Load(); err != nil {
+		t.Fatalf("vault load: %v", err)
+	}
+	if err := v.Set("GIT_TOKEN", "secret-abc"); err != nil {
+		t.Fatalf("vault set: %v", err)
+	}
+	srv.SetVaultStore(v)
+
+	const repo = "https://github.com/acme/private-skills"
+	err := skills.MutateLockFile(context.Background(), srv.lockFilePath(), func(lf *skills.LockFile) (bool, error) {
+		lf.SetSource(skills.RepoToName(repo), skills.LockedSource{
+			Repo:          repo,
+			Ref:           "main",
+			CommitSHA:     "abc",
+			CredentialRef: "${var:GIT_TOKEN}",
+		})
+		return true, nil
+	})
+	if err != nil {
+		t.Fatalf("seed lockfile: %v", err)
+	}
+
+	lf, err := skills.ReadLockFile(srv.lockFilePath())
+	if err != nil {
+		t.Fatalf("read lockfile: %v", err)
+	}
+	src := lf.Sources[skills.RepoToName(repo)]
+	cfg, err := srv.resolveCheckAuth(nil, src.StoredAuth())
+	if err != nil {
+		t.Fatalf("resolveCheckAuth: %v", err)
+	}
+	if cfg.Method != "token" || cfg.Token != "secret-abc" || cfg.CredentialRef != "${var:GIT_TOKEN}" {
+		t.Fatalf("stored ref = %+v, want token auth with the vault value", cfg)
+	}
+
+	rec := httptest.NewRecorder()
+	req := loopbackRequest(http.MethodPost, "/api/skills/sources/"+skills.RepoToName(repo)+"/check", nil)
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("check = %d, want 200 (stored ref must resolve, not 400): %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "vault key") || strings.Contains(rec.Body.String(), "secret-abc") {
+		t.Fatalf("check body leaked a resolution failure or the token: %s", rec.Body.String())
 	}
 }
 

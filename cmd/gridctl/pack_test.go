@@ -66,6 +66,83 @@ func packFixture(t *testing.T, manifest string, extra map[string]string) string 
 	return dir
 }
 
+func TestPackAdd_StoredAuthFallback(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+	t.Setenv("GRIDCTL_SSH_KEY_PASSPHRASE", "from-env")
+
+	const repo = "ssh://git@127.0.0.1:1/pack.git"
+	lf := &skills.LockFile{Sources: map[string]skills.LockedSource{
+		skills.RepoToName(repo): {
+			Repo:       repo,
+			AuthMethod: "ssh-key",
+			SSHUser:    "git",
+			SSHKeyPath: "/stored/key",
+		},
+	}}
+	if err := skills.WriteLockFile(skills.LockFilePath(), lf); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := packAddAuth(&bytes.Buffer{}, strings.NewReader(""), "", false, "", "", repo)
+	if err != nil {
+		t.Fatalf("no flags: %v", err)
+	}
+	if cfg.Method != "ssh-key" || cfg.SSHKeyPath != "/stored/key" || cfg.SSHUser != "git" {
+		t.Fatalf("no flags = %+v, want stored ssh-key auth", cfg)
+	}
+	if cfg.SSHPassphrase != "from-env" {
+		t.Fatalf("passphrase = %q, want the environment value", cfg.SSHPassphrase)
+	}
+
+	cfg, err = packAddAuth(&bytes.Buffer{}, strings.NewReader(""), "", false, "", "id_ed25519", repo)
+	if err != nil {
+		t.Fatalf("explicit ssh key: %v", err)
+	}
+	abs, err := filepath.Abs("id_ed25519")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SSHKeyPath != abs {
+		t.Fatalf("explicit --ssh-key path = %q, want %q", cfg.SSHKeyPath, abs)
+	}
+
+	cfg, err = storedPackAuthFromLock(skills.LockFilePath(), "ssh://git@127.0.0.1:1/unknown.git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg != (skills.AuthConfig{}) {
+		t.Fatalf("unknown repo = %+v, want zero", cfg)
+	}
+
+	cfg, err = storedPackAuthFromLock(filepath.Join(t.TempDir(), "missing.lock.yaml"), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg != (skills.AuthConfig{}) {
+		t.Fatalf("missing lockfile = %+v, want zero", cfg)
+	}
+}
+
+func TestPackAdd_StoredCredentialRefResolverError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+
+	const repo = "https://github.com/acme/pack"
+	lf := &skills.LockFile{Sources: map[string]skills.LockedSource{
+		skills.RepoToName(repo): {Repo: repo, CredentialRef: "${var:GIT_TOKEN}"},
+	}}
+	if err := skills.WriteLockFile(skills.LockFilePath(), lf); err != nil {
+		t.Fatal(err)
+	}
+	_, err := packAddAuth(&bytes.Buffer{}, strings.NewReader(""), "", false, "", "", repo)
+	if err == nil {
+		t.Fatal("expected a resolver error so pack add can exit 2")
+	}
+}
+
 // packTestEnv sandboxes HOME (with a detected ~/.claude so agent
 // projection has one available target) and returns the cmd-layer
 // helpers rooted in it.

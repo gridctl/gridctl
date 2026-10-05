@@ -144,14 +144,20 @@ func checkAllUpdates(registryDir string, logger *slog.Logger) *UpdateStatus {
 				return
 			}
 
-			// Background check uses ambient auth only. A stored CredentialRef
-			// is recorded on origin, but resolving vault refs from a
-			// background goroutine requires a wired resolver — skip that
-			// source rather than fail loudly.
+			// Background check has no vault resolver. A stored CredentialRef
+			// is skipped rather than failed. ssh-key sources rebuild from
+			// the stored path; the passphrase is re-read from the environment.
 			if origin.CredentialRef != "" {
 				return
 			}
-			newSHA, changed, err := FetchAndCompare(origin.Repo, origin.Ref, origin.CommitSHA, AuthConfig{}, logger)
+			auth, err := ResolveStoredAuth(origin.StoredAuth(), nil)
+			if err != nil {
+				mu.Lock()
+				status.Errors = append(status.Errors, fmt.Sprintf("%s: %v", name, err))
+				mu.Unlock()
+				return
+			}
+			newSHA, changed, err := FetchAndCompare(origin.Repo, origin.Ref, origin.CommitSHA, auth, logger)
 			if err != nil {
 				mu.Lock()
 				status.Errors = append(status.Errors, fmt.Sprintf("%s: %v", name, err))

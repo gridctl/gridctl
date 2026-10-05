@@ -12,12 +12,22 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Per-feature lockfile schema versions. WriteLockFile stamps the highest
+// version any source requires, which is also the lowest version that can
+// represent the file, so users without those features keep downgrade freedom.
+const (
+	lockVersionPacks     = 2
+	lockVersionVariables = 3
+	lockVersionSSHAuth   = 4
+)
+
 // ImportLockVersion is the highest skills.lock.yaml schema version this
-// gridctl reads. Version 1 added the version field itself and
-// per-source agents; version 2 added per-source pack records. Files are
-// written at the lowest version that can represent them (see
-// WriteLockFile), so users without packs keep downgrade freedom.
-const ImportLockVersion = 3
+// gridctl reads. Version 1 added the version field itself and per-source
+// agents; version 2 added per-source pack records; version 3 added pack
+// variable declarations; version 4 added ssh-key auth fields (auth_method,
+// ssh_user, ssh_key_path). Files are written at the lowest version that
+// can represent them (see WriteLockFile).
+const ImportLockVersion = lockVersionSSHAuth
 
 // ErrNewerImportLockVersion signals a skills.lock.yaml written by a
 // newer gridctl. Callers must never paper over it: acting on state a
@@ -48,6 +58,11 @@ type LockedSource struct {
 	// CredentialRef is an opaque reference like "${vault:GIT_TOKEN}" used to
 	// re-resolve credentials on source update. Raw tokens are never stored.
 	CredentialRef string `yaml:"credential_ref,omitempty"`
+	// AuthMethod, SSHUser, and SSHKeyPath persist ssh-key authentication.
+	// Only the path is stored, never key material or a passphrase.
+	AuthMethod string `yaml:"auth_method,omitempty"`
+	SSHUser    string `yaml:"ssh_user,omitempty"`
+	SSHKeyPath string `yaml:"ssh_key_path,omitempty"`
 	// Pack records the pack manifest this source was imported through,
 	// with its resolved selection. Nil for plain skill/agent sources.
 	Pack *LockedPack `yaml:"pack,omitempty"`
@@ -103,6 +118,16 @@ func (lf *LockFile) FindPackSource(packName string) (string, *LockedSource, bool
 		}
 	}
 	return "", nil, false
+}
+
+// StoredAuth returns the authentication this source recorded at import.
+func (s LockedSource) StoredAuth() StoredAuth {
+	return StoredAuth{
+		Method:        s.AuthMethod,
+		SSHUser:       s.SSHUser,
+		SSHKeyPath:    s.SSHKeyPath,
+		CredentialRef: s.CredentialRef,
+	}
 }
 
 // LockedSkill records per-skill metadata within a source.
@@ -193,15 +218,19 @@ func WriteLockFile(path string, lf *LockFile) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return fmt.Errorf("creating lock file directory: %w", err)
 	}
-	// Stamp the lowest version that can represent the file.
+	// Stamp the lowest version that can represent the file: the highest
+	// version any source requires. A file with neither packs nor ssh-key
+	// fields stays at 1.
 	lf.Version = 1
 	for _, src := range lf.Sources {
-		if src.Pack != nil {
-			lf.Version = 2
-			if len(src.Pack.Variables) > 0 {
-				lf.Version = ImportLockVersion
-				break
-			}
+		if src.Pack != nil && lf.Version < lockVersionPacks {
+			lf.Version = lockVersionPacks
+		}
+		if src.Pack != nil && len(src.Pack.Variables) > 0 && lf.Version < lockVersionVariables {
+			lf.Version = lockVersionVariables
+		}
+		if src.SSHKeyPath != "" && lf.Version < lockVersionSSHAuth {
+			lf.Version = lockVersionSSHAuth
 		}
 	}
 

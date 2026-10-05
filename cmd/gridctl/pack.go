@@ -117,7 +117,7 @@ Exit codes:
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
 		}
-		authCfg, err := buildAuthConfigFromFlags(os.Stderr, os.Stdin, packAddAuthToken, packAddAuthTokenStdin, packAddVaultKey, packAddSSHKey)
+		authCfg, err := packAddAuth(os.Stderr, os.Stdin, packAddAuthToken, packAddAuthTokenStdin, packAddVaultKey, packAddSSHKey, args[0])
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
@@ -127,6 +127,36 @@ Exit codes:
 		}
 		return nil
 	},
+}
+
+// packAddAuth builds auth for pack add. Explicit flags always win and skip
+// the lockfile. With no auth flags, a repo already in the lockfile reuses
+// its stored vault reference or ssh-key path. A missing or unreadable
+// lockfile, or an unknown source, yields ambient auth. A resolver error is
+// returned so the caller can exit 2, the same as a --vault-key failure.
+func packAddAuth(stderr io.Writer, stdin io.Reader, token string, tokenStdin bool, vaultKey, sshKey, repo string) (skills.AuthConfig, error) {
+	if token != "" || tokenStdin || vaultKey != "" || sshKey != "" {
+		return buildAuthConfigFromFlags(stderr, stdin, token, tokenStdin, vaultKey, sshKey)
+	}
+	return storedPackAuthFromLock(skills.LockFilePath(), repo)
+}
+
+// storedPackAuthFromLock reads the lockfile source for repo and rebuilds
+// its stored auth. A missing or unreadable lockfile, or an unknown source,
+// yields the zero value. Resolver failures are returned.
+func storedPackAuthFromLock(lockPath, repo string) (skills.AuthConfig, error) {
+	if lockPath == "" || repo == "" {
+		return skills.AuthConfig{}, nil
+	}
+	lf, err := skills.ReadLockFile(lockPath)
+	if err != nil {
+		return skills.AuthConfig{}, nil
+	}
+	src, ok := lf.Sources[skills.RepoToName(repo)]
+	if !ok {
+		return skills.AuthConfig{}, nil
+	}
+	return skills.ResolveStoredAuth(src.StoredAuth(), cliCredentialResolver)
 }
 
 // runPackAdd clones, resolves the manifest selection, and imports.

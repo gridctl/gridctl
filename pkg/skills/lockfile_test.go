@@ -70,6 +70,70 @@ func TestLockFile_CredentialRefRoundTrip(t *testing.T) {
 	assert.Equal(t, "${vault:GIT_TOKEN}", got.Sources["private"].CredentialRef)
 }
 
+func TestLockFile_SSHKeyAuthRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "skills.lock.yaml")
+
+	lf := &LockFile{
+		Sources: map[string]LockedSource{
+			"private": {
+				Repo:       "ssh://git@127.0.0.1/x.git",
+				Ref:        "main",
+				CommitSHA:  "abc",
+				AuthMethod: "ssh-key",
+				SSHUser:    "git",
+				SSHKeyPath: "/abs/key",
+				Skills:     map[string]LockedSkill{"x": {Path: "x"}},
+			},
+		},
+	}
+	require.NoError(t, WriteLockFile(path, lf))
+
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), "version: 4")
+	assert.Contains(t, string(raw), "auth_method: ssh-key")
+	assert.Contains(t, string(raw), "ssh_key_path: /abs/key")
+	assert.NotContains(t, string(raw), "passphrase")
+
+	got, err := ReadLockFile(path)
+	require.NoError(t, err)
+	src := got.Sources["private"]
+	assert.Equal(t, "ssh-key", src.AuthMethod)
+	assert.Equal(t, "git", src.SSHUser)
+	assert.Equal(t, "/abs/key", src.SSHKeyPath)
+	assert.Equal(t, StoredAuth{Method: "ssh-key", SSHUser: "git", SSHKeyPath: "/abs/key"}, src.StoredAuth())
+
+	plainPath := filepath.Join(dir, "plain.lock.yaml")
+	plain := &LockFile{Sources: map[string]LockedSource{
+		"plain": {Repo: "https://example.com/r", Skills: map[string]LockedSkill{"a": {}}},
+	}}
+	require.NoError(t, WriteLockFile(plainPath, plain))
+	plainRaw, err := os.ReadFile(plainPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(plainRaw), "version: 1")
+	assert.NotContains(t, string(plainRaw), "version: 4")
+
+	varPath := filepath.Join(dir, "vars.lock.yaml")
+	required := true
+	vars := &LockFile{Sources: map[string]LockedSource{
+		"packsrc": {
+			Repo: "https://example.com/p",
+			Pack: &LockedPack{
+				Name: "team-pack",
+				Variables: map[string]LockedVariableDeclaration{
+					"TOKEN": {Required: &required, Type: "string"},
+				},
+			},
+		},
+	}}
+	require.NoError(t, WriteLockFile(varPath, vars))
+	varRaw, err := os.ReadFile(varPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(varRaw), "version: 3")
+	assert.NotContains(t, string(varRaw), "version: 4")
+}
+
 func TestLockFileReadNotFound(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "nonexistent.yaml")

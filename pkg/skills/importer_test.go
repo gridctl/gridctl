@@ -11,6 +11,8 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 
+	"github.com/gridctl/gridctl/pkg/builder"
+	gitpkg "github.com/gridctl/gridctl/pkg/git"
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -881,4 +883,76 @@ func TestImporter_Update_RestoresStrippedKeys(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "argument-hint: <task description>",
 		"update must restore keys a pre-fix import dropped")
+}
+
+func TestImporter_Import_PersistsSSHKeyAuth(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+	t.Setenv("SSH_AUTH_SOCK", "")
+
+	store, regDir := setupTestRegistry(t)
+	lockPath := filepath.Join(regDir, "skills.lock.yaml")
+	imp := NewImporter(store, regDir, lockPath, slog.Default())
+
+	repoDir, _ := initSkillRepo(t, "# Test\n\nFirst version.\n")
+	discovered, err := CloneAndDiscover(repoDir, "master", "", AuthConfig{}, slog.Default())
+	require.NoError(t, err)
+
+	const (
+		sshURL     = "ssh://git@127.0.0.1:1/x.git"
+		keyPath    = "/abs/missing-key"
+		user       = "git"
+		passphrase = "super-secret-passphrase"
+	)
+	result, err := imp.Import(ImportOptions{
+		Repo:       sshURL,
+		Ref:        "master",
+		Trust:      true,
+		Discovered: discovered,
+		Auth: AuthConfig{
+			Method:        "ssh-key",
+			SSHUser:       user,
+			SSHKeyPath:    keyPath,
+			SSHPassphrase: passphrase,
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Imported, 1)
+
+	skillDir := filepath.Join(regDir, "skills", "test-skill")
+	originRaw, err := os.ReadFile(filepath.Join(skillDir, ".origin.json"))
+	require.NoError(t, err)
+	assert.NotContains(t, string(originRaw), passphrase)
+	origin, err := ReadOrigin(skillDir)
+	require.NoError(t, err)
+	assert.Equal(t, "ssh-key", origin.AuthMethod)
+	assert.Equal(t, user, origin.SSHUser)
+	assert.Equal(t, keyPath, origin.SSHKeyPath)
+
+	lockRaw, err := os.ReadFile(lockPath)
+	require.NoError(t, err)
+	assert.NotContains(t, string(lockRaw), passphrase)
+	assert.Contains(t, string(lockRaw), "version: 4")
+	lf, err := ReadLockFile(lockPath)
+	require.NoError(t, err)
+	src := lf.Sources[RepoToName(sshURL)]
+	assert.Equal(t, "ssh-key", src.AuthMethod)
+	assert.Equal(t, user, src.SSHUser)
+	assert.Equal(t, keyPath, src.SSHKeyPath)
+
+	cachePath, err := builder.URLToPath(sshURL)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(cachePath), 0o755))
+	cached, err := git.PlainClone(cachePath, false, &git.CloneOptions{URL: repoDir})
+	require.NoError(t, err)
+	cfg, err := cached.Config()
+	require.NoError(t, err)
+	cfg.Remotes["origin"].URLs = []string{sshURL}
+	require.NoError(t, cached.SetConfig(cfg))
+
+	_, err = imp.Update("test-skill", false, false, true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), keyPath)
+	assert.NotErrorIs(t, err, gitpkg.ErrSSHAgentMissing)
 }

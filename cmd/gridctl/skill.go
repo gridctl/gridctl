@@ -311,16 +311,21 @@ func warnLiteralToken(stderr io.Writer) {
 // When --vault-key is set, the vault is unlocked (prompting if necessary)
 // and the reference is resolved immediately so Import sees a ready Token.
 //
-// Only --vault-key yields a CredentialRef, and so only --vault-key survives
-// the import: a literal or piped token is transient by construction, which is
-// why an update of a repo imported that way falls back to ambient credentials.
+// --vault-key persists a reference and --ssh-key persists the absolute key
+// path (never key material or a passphrase). A literal or piped token is
+// transient, so an update of a repo imported that way falls back to ambient
+// credentials unless a later import records a reference or key path.
 func buildAuthConfigFromFlags(stderr io.Writer, stdin io.Reader, token string, tokenStdin bool, vaultKey, sshKey string) (skills.AuthConfig, error) {
 	fromStdin := tokenStdin || token == stdinTokenSentinel
 	switch {
 	case sshKey != "":
+		abs, err := filepath.Abs(sshKey)
+		if err != nil {
+			return skills.AuthConfig{}, fmt.Errorf("resolving ssh key path: %w", err)
+		}
 		return skills.AuthConfig{
 			Method:        "ssh-key",
-			SSHKeyPath:    sshKey,
+			SSHKeyPath:    abs,
 			SSHPassphrase: os.Getenv("GRIDCTL_SSH_KEY_PASSPHRASE"),
 		}, nil
 	case fromStdin:

@@ -118,3 +118,32 @@ func TestOrigin_NoCredentialRefOmitted(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, string(raw), "credentialRef")
 }
+
+func TestOrigin_SSHKeyAuthRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	const passphrase = "super-secret-passphrase"
+
+	origin := &Origin{
+		Repo:       "ssh://git@127.0.0.1/x.git",
+		Ref:        "main",
+		CommitSHA:  "abc",
+		AuthMethod: "ssh-key",
+		SSHUser:    "git",
+		SSHKeyPath: "/abs/key",
+	}
+	require.NoError(t, WriteOrigin(dir, origin))
+
+	raw, err := os.ReadFile(filepath.Join(dir, ".origin.json"))
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), `"authMethod": "ssh-key"`)
+	assert.Contains(t, string(raw), `"sshKeyPath": "/abs/key"`)
+	assert.NotContains(t, string(raw), passphrase)
+	assert.NotContains(t, string(raw), "sshPassphrase")
+
+	got, err := ReadOrigin(dir)
+	require.NoError(t, err)
+	assert.Equal(t, "ssh-key", got.AuthMethod)
+	assert.Equal(t, "git", got.SSHUser)
+	assert.Equal(t, "/abs/key", got.SSHKeyPath)
+	assert.Equal(t, StoredAuth{Method: "ssh-key", SSHUser: "git", SSHKeyPath: "/abs/key"}, got.StoredAuth())
+}
