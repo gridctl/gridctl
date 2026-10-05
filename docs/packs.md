@@ -41,7 +41,9 @@ defaults of false, true, and string for the first three fields. Import records
 the declarations and lists unmet required keys with `gridctl var set KEY`
 commands. It never imports a value, edits a stack, writes the variable store,
 or prompts. Packs without declarations retain the version-two lock shape;
-version three is used only when declarations must be represented.
+version three is used only when declarations must be represented. A source
+imported with `--ssh-key` raises the stamp to version four, and gridctl
+releases before this change refuse such a file.
 
 ## Verbs
 
