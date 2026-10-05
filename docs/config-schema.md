@@ -87,7 +87,7 @@ gateway:
 | `code_mode` | string | No | `"off"` | Enable code mode: `"on"` or `"off"` |
 | `code_mode_timeout` | int | No | `30` | Code mode execution timeout in seconds. Must be >= 0 |
 | `output_format` | string | No | `"json"` | Default output format for tool call results: `"json"`, `"toon"`, `"csv"`, or `"text"`. Per-server `output_format` overrides this value |
-| `maxToolResultBytes` | int | No | `65536` | Maximum size of a tool result in bytes before truncation. Ordinary results over the limit are truncated with a suffix noting the original size; [A2A envelopes](#tools-and-capability-delivery) retain atomic JSON and mark omitted content. `0` uses the default (64 KB) |
+| `maxToolResultBytes` | int | No | `65536` | Maximum size of a tool-result text block in bytes before truncation. The limit applies to text blocks; binary blocks (image, audio, and embedded resources) are exempt and are not dropped. Ordinary text over the limit is truncated with a suffix noting the original size; [A2A envelopes](#tools-and-capability-delivery) retain atomic JSON and mark omitted content. `0` uses the default (64 KB) |
 | `name` | string | No | `"gridctl-gateway"` | Identity announced to MCP clients in the initialize response (`serverInfo.name`). Some clients (VS Code / GitHub Copilot) display this instead of the entry key in their own config, so give distinct gateways distinct names. Group endpoints announce `<name>/<group>`. Requires a restart to propagate |
 | `security` | object | No | - | Security settings (see [Security](#security)) |
 | `tokenizer` | string | No | `"embedded"` | Token counting mode: `"embedded"` (cl100k_base approximation) or `"api"` (exact counts via Anthropic `count_tokens` endpoint) |
