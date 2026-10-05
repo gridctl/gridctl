@@ -1,8 +1,10 @@
 package skills
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -76,4 +78,34 @@ Body.
 	assert.Equal(t, "openclaw-style", discovered[0].Name)
 	assert.Equal(t, "samber", discovered[0].Skill.Metadata["author"])
 	assert.NotEmpty(t, discovered[0].Skill.Metadata["openclaw"])
+}
+
+func TestFetchAndCompare_FetchFailureReturnsError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+
+	store, regDir := setupTestRegistry(t)
+	lockPath := filepath.Join(regDir, "skills.lock.yaml")
+	imp := NewImporter(store, regDir, lockPath, slog.Default())
+
+	repoDir, _ := initSkillRepo(t, "# Test\n\nFirst version.\n")
+	result, err := imp.Import(ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
+	require.NoError(t, err)
+	require.Len(t, result.Imported, 1)
+
+	origin, err := ReadOrigin(filepath.Join(regDir, "skills", "test-skill"))
+	require.NoError(t, err)
+
+	require.NoError(t, os.RemoveAll(repoDir))
+
+	sha, changed, err := FetchAndCompare(repoDir, "master", origin.CommitSHA, AuthConfig{}, slog.Default())
+	require.Error(t, err)
+	assert.False(t, changed)
+	assert.Equal(t, origin.CommitSHA, sha)
+
+	_, uerr := imp.Update("test-skill", false, false, true)
+	require.Error(t, uerr)
+	assert.True(t, strings.HasPrefix(uerr.Error(), "checking updates:"), "error = %q", uerr.Error())
+	assert.NotContains(t, uerr.Error(), "already up to date")
 }
