@@ -461,8 +461,11 @@ func (sc *StackController) checkState(stack *config.Stack) error {
 			if !sc.config.Silent {
 				fmt.Printf("Stopping running stack '%s'...\n", stack.Name)
 			}
-			if killErr := state.KillDaemon(existingState); killErr != nil && !sc.config.Silent {
-				fmt.Printf("Warning: could not kill daemon: %v\n", killErr)
+			if killErr := state.KillDaemon(existingState); killErr != nil {
+				if !sc.config.Silent {
+					fmt.Printf("Warning: could not kill daemon: %v\n", killErr)
+				}
+				slog.Warn("could not kill daemon", "stack", stack.Name, "error", killErr)
 			}
 			if delErr := state.Delete(stack.Name); delErr != nil {
 				return fmt.Errorf("deleting state: %w", delErr)
