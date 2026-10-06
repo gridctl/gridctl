@@ -832,6 +832,8 @@ Static heuristics are one layer. Published benchmarks put signature-only detecti
 
 `gridctl skill add` clones each source repo into `~/.gridctl/cache/repos/<hash>/`, where `<hash>` is derived from the repo URL. The cache holds only clones; everything user-facing lives elsewhere (installed skills in `~/.gridctl/registry/skills/`, tracking in `~/.gridctl/skills.lock.yaml`). Deleting the cache directory is always safe: the next `skill add` or `skill update` that needs a repo re-clones it.
 
+A pack-carried stack does not run from that cache. `pack add` copies the pinned commit to `~/.gridctl/packs/<name>/<commit>/`, and `pack apply` starts the daemon from that checkout. Deleting the clone cache does not stop that daemon. Deleting the pack checkout makes `pack status` report `target-missing` until the next `pack add`.
+
 Git-sourced MCP server image builds use a separate builder namespace. Each active build plan gets an isolated checkout under `~/.gridctl/cache/builder/worktrees/`, resolved to the fetched commit, and removes that checkout when the plan closes. Deleting leftover builder worktrees is safe when no build is running; the next apply creates a fresh checkout.
 
 ### `skill update` does not pick up an upstream change
@@ -841,6 +843,10 @@ Git-sourced MCP server image builds use a separate builder namespace. Each activ
 ### "written by a newer gridctl version" on ctx, skill project, or project commands
 
 The unified projection lockfile (`~/.gridctl/project.lock.yaml`) carries a schema version, and an older gridctl refuses to touch a file written by a newer one rather than risk corrupting it. Upgrade gridctl on this machine, or restore the pre-migration state from `~/.gridctl/project-migration-backup/` if you need to stay on the older version.
+
+### "import lockfile was written by a newer gridctl version"
+
+`~/.gridctl/skills.lock.yaml` stamps version 5 when any imported pack has a resolved stack record. The stamp covers the whole file, so an older gridctl refuses skill and pack commands that read it, not only the stack pack. Packs without a resolved stack keep the previous stamp: version 2, version 3 when variable declarations must be represented, or version 4 when a source has an SSH key path. Remove the stack-carrying pack with this build before downgrading. An older binary cannot remove it, because it refuses the file.
 
 ---
 
@@ -854,11 +860,15 @@ command, and copying projection files back by hand leaves the lockfile
 out of sync (everything shows as drifted).
 
 The supported recovery path is forward: re-run the imports that created
-the state.
+the state. A pack-carried daemon is stopped with the other stacks. The
+default tier keeps `~/.gridctl/packs/` and the import lockfile, so
+`gridctl pack apply <name>` starts it again. `--purge` removes that
+checkout; `gridctl pack add` then `gridctl pack apply` recreates it.
 
 ```bash
-gridctl apply <stack.yaml>      # stacks, containers, daemons
-gridctl pack add <repo>         # skills, agents, rules, wiring from a pack
+gridctl apply <stack.yaml>      # stacks you applied yourself
+gridctl pack add <repo>         # skills, agents, rules, wiring, and a pinned stack checkout
+gridctl pack apply <name>       # project the pack, and start a carried stack
 gridctl skill add <repo>        # individually imported skills
 gridctl link <client>           # gateway entries in client configs
 ```

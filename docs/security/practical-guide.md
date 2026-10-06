@@ -124,7 +124,7 @@ Use `gridctl pins verify` to inspect continuity and `gridctl pins diff <server>`
 
 Poisoning findings are advisory heuristics. Review suspicious descriptions and cross-server references, but treat clean scans and unchanged schemas as limited observations. They cannot prevent a model from following hostile runtime output.
 
-Review a skill or pack's supporting scripts, agents, rules, and wiring before import and projection. Import-time scan gates differ from advisory skill-pin observations. `--trust` bypasses the import scan gate; it is not a remedy for an unexplained finding. Projection ownership and drift records protect against accidental overwrites, not hostile code. Force and adopt operations are explicit ownership decisions. The [skills](../skills.md) and [packs](../packs.md) guides describe these workflows.
+Review a skill or pack's supporting scripts, agents, rules, and wiring before import and projection. A carried stack is started by `gridctl pack apply`, including any local-process command or image it declares. Import refuses recognized inline credentials and paths that leave the repository; that check does not review those commands. The web UI does not start the gateway. Import-time scan gates differ from advisory skill-pin observations. `--trust` bypasses the import scan gate; it is not a remedy for an unexplained finding. Projection ownership and drift records protect against accidental overwrites, not hostile code. Force and adopt operations are explicit ownership decisions. The [skills](../skills.md) and [packs](../packs.md) guides describe these workflows.
 
 ## Use diagnostics without overstating their evidence
 
