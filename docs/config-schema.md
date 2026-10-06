@@ -1453,6 +1453,8 @@ least one server or tool.
 
 On `/groups/{name}/mcp`, a server contributes prompts and resources only when
 at least one of its currently aggregated tools passes group membership.
+A server with no aggregated tools is never a group member, so a prompt-only
+or resource-only server stays hidden on every group endpoint.
 `exclude` is applied first, so a group whose every member tool is excluded
 exposes nothing from that server. A group that excludes only some of a
 server's tools still exposes that server's prompts and resources. Registry
