@@ -60,6 +60,25 @@ describe('getMCPServerStatus', () => {
       'error',
     ],
     [
+      'unhealthy server with a restarting replica',
+      makeServer({
+        initialized: true,
+        healthy: false,
+        replicas: [{ replicaId: 0, state: 'restarting', healthy: false, inFlight: 0 }],
+      }),
+      'restarting',
+    ],
+    [
+      'needs-auth stays ahead of restarting',
+      makeServer({
+        initialized: true,
+        healthy: false,
+        authStatus: 'needs_auth',
+        replicas: [{ replicaId: 0, state: 'restarting', healthy: false, inFlight: 0 }],
+      }),
+      'needs-auth',
+    ],
+    [
       'registration-failed server (uninitialized, unhealthy, no replicas)',
       makeServer({ initialized: false, healthy: false, healthError: 'unsupported protocol version from server: "1999-01-01"' }),
       'error',
@@ -91,6 +110,19 @@ describe('createMCPServerNodes', () => {
       kind: server.kind,
       image: server.image,
       source: server.source,
+    });
+  });
+
+  it('copies replica diagnostics and stderr into node data', () => {
+    const server = makeServer({
+      healthy: false,
+      stderrTail: ['fatal: refusing to continue'],
+      replicas: [{ replicaId: 0, state: 'restarting', healthy: false, inFlight: 0, exit: { code: 3, oomKilled: false, status: 'exited' } }],
+    });
+    expect(createMCPServerNodes([server])[0].data).toMatchObject({
+      replicas: server.replicas,
+      stderrTail: server.stderrTail,
+      status: 'restarting',
     });
   });
 });

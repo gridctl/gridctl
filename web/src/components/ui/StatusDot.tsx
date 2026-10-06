@@ -14,6 +14,7 @@ const dotStyles: Record<NodeStatus, string> = {
   initializing: 'bg-status-pending shadow-[0_0_8px_rgba(234,179,8,0.4)]',
   idle: 'bg-status-idle',
   'needs-auth': 'bg-status-pending shadow-[0_0_8px_var(--color-status-pending-glow)]',
+  restarting: 'bg-status-pending shadow-[0_0_8px_rgba(234,179,8,0.4)]',
 };
 
 export function StatusDot({ status, size = 'sm', pulse = true }: StatusDotProps) {

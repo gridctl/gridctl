@@ -16,6 +16,36 @@ import type { MCPServerNodeData, ResourceNodeData } from '../../types';
 
 export type CustomNodeData = MCPServerNodeData | ResourceNodeData;
 
+function retryInSeconds(iso: string | undefined, now: number): string | undefined {
+  if (!iso) return undefined;
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return undefined;
+  const seconds = Math.max(0, Math.round((at - now) / 1000));
+  return `${seconds}s`;
+}
+
+function mcpHealthSummary(data: MCPServerNodeData, now = Date.now()): string {
+  const replicas = data.replicas ?? [];
+  const exited = replicas.find((replica) => replica.exit);
+  const restarting = replicas.find((replica) => replica.state === 'restarting');
+  const parts: string[] = [];
+  if (exited?.exit) {
+    parts.push(exited.exit.oomKilled
+      ? `exited ${exited.exit.code}, OOM killed`
+      : `exited ${exited.exit.code}`);
+  }
+  if (restarting) {
+    const attempt = restarting.restartAttempts ?? 0;
+    const retry = retryInSeconds(restarting.nextRetryAt, now);
+    parts.push(retry
+      ? `restarting (attempt ${attempt}, retry in ${retry})`
+      : `restarting (attempt ${attempt})`);
+  } else {
+    parts.push(data.healthError || 'Health check failed');
+  }
+  return parts.join('; ');
+}
+
 interface CustomNodeProps {
   data: CustomNodeData;
   selected?: boolean;
@@ -328,8 +358,8 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
             (data as MCPServerNodeData).authStatus !== 'needs_auth' && (
             <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-status-error/5 border border-status-error/15">
               <HeartPulse size={11} className="text-status-error flex-shrink-0" />
-              <span className="text-xs text-status-error/80 font-mono truncate" title={(data as MCPServerNodeData).healthError}>
-                {(data as MCPServerNodeData).healthError || 'Health check failed'}
+              <span className="text-xs text-status-error/80 font-mono truncate" title={mcpHealthSummary(data as MCPServerNodeData)}>
+                {mcpHealthSummary(data as MCPServerNodeData)}
               </span>
             </div>
           )}
