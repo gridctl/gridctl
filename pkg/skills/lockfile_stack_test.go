@@ -69,6 +69,45 @@ func TestLockFile_StackStamp(t *testing.T) {
 	assert.Contains(t, string(packRaw), "version: 2")
 }
 
+func TestLockFile_UnresolvedDetailsStamp(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "skills.lock.yaml")
+	lf := &LockFile{Sources: map[string]LockedSource{
+		"packsrc": {
+			Repo: "https://example.com/p",
+			Pack: &LockedPack{
+				Name:              "team-pack",
+				Unresolved:        []string{"stack:stack.yaml"},
+				UnresolvedDetails: map[string]string{"stack:stack.yaml": "stack file has no name:"},
+			},
+		},
+	}}
+	require.NoError(t, WriteLockFile(path, lf))
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), "version: 5")
+	assert.Contains(t, string(raw), "unresolved_details:")
+	assert.NotContains(t, string(raw), "checkout_dir:")
+
+	got, err := ReadLockFile(path)
+	require.NoError(t, err)
+	require.NotNil(t, got.Sources["packsrc"].Pack)
+	assert.Nil(t, got.Sources["packsrc"].Pack.Stack)
+	assert.Equal(t, "stack file has no name:", got.Sources["packsrc"].Pack.UnresolvedDetails["stack:stack.yaml"])
+
+	tokenOnly := filepath.Join(dir, "token.lock.yaml")
+	require.NoError(t, WriteLockFile(tokenOnly, &LockFile{Sources: map[string]LockedSource{
+		"s": {Repo: "https://example.com/p", Pack: &LockedPack{
+			Name:       "p",
+			Unresolved: []string{"rules:missing"},
+		}},
+	}}))
+	tokenRaw, err := os.ReadFile(tokenOnly)
+	require.NoError(t, err)
+	assert.Contains(t, string(tokenRaw), "version: 2")
+	assert.NotContains(t, string(tokenRaw), "version: 5")
+}
+
 func TestLockFile_StackStampRefusedByPriorReader(t *testing.T) {
 	if lockVersionStack != lockVersionSSHAuth+1 {
 		t.Fatalf("stack stamp = %d, want %d", lockVersionStack, lockVersionSSHAuth+1)
