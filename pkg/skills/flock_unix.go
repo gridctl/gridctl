@@ -12,8 +12,8 @@ import (
 )
 
 // importLockTimeout bounds how long a mutating operation waits for the
-// cross-process import lock before reporting contention.
-const importLockTimeout = 5 * time.Second
+// cross-process import lock before reporting contention. Tests shorten it.
+var importLockTimeout = 5 * time.Second
 
 // withLockFileFlock runs fn while holding an exclusive flock on the
 // import lockfile's ".flock" sibling. The Importer's in-process mutex is

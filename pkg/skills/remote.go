@@ -216,12 +216,24 @@ func cloneShallow(url, ref string, auth AuthConfig, logger *slog.Logger) (string
 	unlock := lockRepoPath(repoPath)
 	defer unlock()
 
-	// If repo exists, fetch updates instead
-	if _, err := os.Stat(repoPath); err == nil {
-		return updateExisting(repoPath, url, ref, auth, logger)
+	// The in-process mutex above is released before CloneAndDiscover
+	// returns, and it does not cross processes. Hold the same sibling
+	// flock SnapshotWorktree uses so a copy cannot race a worktree sync
+	// or re-clone of this cache directory.
+	var out string
+	err = withLockFileFlock(context.Background(), repoPath, func() error {
+		var ferr error
+		if _, statErr := os.Stat(repoPath); statErr == nil {
+			out, ferr = updateExisting(repoPath, url, ref, auth, logger)
+			return ferr
+		}
+		out, ferr = cloneFresh(repoPath, url, ref, auth, logger)
+		return ferr
+	})
+	if err != nil {
+		return "", err
 	}
-
-	return cloneFresh(repoPath, url, ref, auth, logger)
+	return out, nil
 }
 
 // cloneFresh clones url into repoPath and lands the worktree on ref.
