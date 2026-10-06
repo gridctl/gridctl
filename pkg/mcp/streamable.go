@@ -668,7 +668,7 @@ func (s *StreamableHTTPServer) handlePromptsGet(ctx context.Context, req *jsonrp
 		return handshakeRelayError(req.ID, err)
 	}
 	if outcome.inputRequired {
-		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, inputRequiredRelayMessage)
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, inputRequiredRelayMessage("prompt"))
 	}
 	return jsonrpc.NewSuccessResponse(req.ID, outcome.raw)
 }
@@ -694,7 +694,7 @@ func (s *StreamableHTTPServer) handleResourcesRead(ctx context.Context, req *jso
 		return handshakeResourceError(req.ID, params.URI, err)
 	}
 	if outcome.inputRequired {
-		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, inputRequiredRelayMessage)
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, inputRequiredRelayMessage("resource"))
 	}
 	return jsonrpc.NewSuccessResponse(req.ID, outcome.raw)
 }

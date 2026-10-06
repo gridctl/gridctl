@@ -21,6 +21,7 @@ var (
 	cacheTTL      int
 	cacheScope    string
 	uiDeclared    bool
+	failListsLeft int
 )
 
 func main() {
@@ -32,6 +33,7 @@ func main() {
 	flag.BoolVar(&extraURI, "extra", false, "publish file:///extra")
 	flag.BoolVar(&enableUI, "ui", false, "serve a UI resource when the client declares the extension")
 	flag.IntVar(&readError, "read-error", 0, "resources/read of file:///error returns this JSON-RPC code")
+	flag.IntVar(&failListsLeft, "fail-resource-lists", 0, "fail the first N resources/list calls, then succeed")
 	flag.IntVar(&cacheTTL, "cache-ttl", 30000, "stateless ttlMs")
 	flag.StringVar(&cacheScope, "cache-scope", "public", "stateless cacheScope")
 	flag.Parse()
@@ -118,7 +120,10 @@ func handle(req map[string]any) map[string]any {
 		if !enableRes {
 			return errResp(id, -32601, "Method not found")
 		}
-		if failResources {
+		if failResources || failListsLeft > 0 {
+			if failListsLeft > 0 {
+				failListsLeft--
+			}
 			return errResp(id, -32000, "list failed")
 		}
 		return ok(id, cacheWrap(map[string]any{"resources": resources()}))
@@ -248,6 +253,9 @@ func resources() []any {
 	}
 	if extraURI {
 		list = append(list, map[string]any{"uri": "file:///extra", "name": "extra", "mimeType": "text/plain"})
+	}
+	if readError != 0 {
+		list = append(list, map[string]any{"uri": "file:///error", "name": "error", "mimeType": "text/plain"})
 	}
 	return list
 }

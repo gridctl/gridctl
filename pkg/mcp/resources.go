@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -18,9 +19,12 @@ import (
 const listFanoutTimeout = 10 * time.Second
 
 // inputRequiredRelayMessage is the handshake-era explanation when a
-// stateless downstream read returns resultType input_required. It follows
-// the tools/call wording in streamable.go.
-const inputRequiredRelayMessage = "resource requires additional input via MRTR (2026-07-28), which this session's protocol generation cannot relay; use a client that speaks the stateless generation"
+// stateless downstream read or get returns resultType input_required.
+// noun is "resource" or "prompt". It follows the tools/call wording in
+// streamable.go.
+func inputRequiredRelayMessage(noun string) string {
+	return noun + " requires additional input via MRTR (2026-07-28), which this session's protocol generation cannot relay; use a client that speaks the stateless generation"
+}
 
 // ResourceNotFoundError is a gateway-originated resources/read miss.
 // The handshake edge maps it to -32002 and the stateless edge to -32602,
@@ -129,13 +133,15 @@ func (g *Gateway) serverVisible(ctx context.Context, server string) bool {
 }
 
 type listedPage struct {
-	name     string
-	page     RawListPage
-	err      error
-	category string
+	name       string
+	page       RawListPage
+	err        error
+	category   string
+	skipStatus bool
 }
 
 func (g *Gateway) fanOutList(ctx context.Context, method string, want func(Capabilities) bool, list func(context.Context, AgentClient) (RawListPage, error)) []listedPage {
+	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, listFanoutTimeout)
 	defer cancel()
 
@@ -170,7 +176,14 @@ func (g *Gateway) fanOutList(ctx context.Context, method string, want func(Capab
 			if err != nil {
 				item.err = err
 				item.category = errorCategory(err)
-				g.logger.Warn("downstream list failed", "server", client.Name(), "method", method, "category", item.category)
+				// The caller's context ending is not a downstream fault.
+				// The 10-second child deadline still records timeout.
+				if parent.Err() != nil {
+					item.skipStatus = true
+					g.logger.Debug("downstream list canceled with caller", "server", client.Name(), "method", method, "category", item.category)
+				} else {
+					g.logger.Warn("downstream list failed", "server", client.Name(), "method", method, "category", item.category)
+				}
 			}
 			out[i] = item
 		}(i, client)
@@ -218,17 +231,21 @@ func (g *Gateway) applyResourcePages(resources, templates []listedPage) {
 	failed := map[string]string{}
 	for _, item := range resources {
 		if item.err != nil {
-			failed[item.name] = item.category
-			g.router.SetResourceListError(item.name, item.category)
+			if !item.skipStatus {
+				failed[item.name] = item.category
+				g.router.SetResourceListError(item.name, item.category)
+			}
 			continue
 		}
 		g.logCollisions(g.router.ReplaceServerURIs(item.name, resourceURIs(item.page.Entries)))
 	}
 	for _, item := range templates {
 		if item.err != nil {
-			if _, ok := failed[item.name]; !ok {
-				failed[item.name] = item.category
-				g.router.SetResourceListError(item.name, item.category)
+			if !item.skipStatus {
+				if _, ok := failed[item.name]; !ok {
+					failed[item.name] = item.category
+					g.router.SetResourceListError(item.name, item.category)
+				}
 			}
 			continue
 		}
@@ -461,15 +478,27 @@ func (g *Gateway) resolveResource(ctx context.Context, uri string) (string, bool
 }
 
 func (g *Gateway) refreshResourceIndex(ctx context.Context) {
-	pages := g.fanOutList(ctx, "resources/list", wantsResources, g.listResourcesOf)
-	templates := g.fanOutList(ctx, "resources/templates/list", wantsResources, g.listTemplatesOf)
+	ctx, cancel := context.WithTimeout(ctx, listFanoutTimeout)
+	defer cancel()
+	var pages, templates []listedPage
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		pages = g.fanOutList(ctx, "resources/list", wantsResources, g.listResourcesOf)
+	}()
+	go func() {
+		defer wg.Done()
+		templates = g.fanOutList(ctx, "resources/templates/list", wantsResources, g.listTemplatesOf)
+	}()
+	wg.Wait()
 	g.applyResourcePages(pages, templates)
 }
 
 func (g *Gateway) relayToServer(ctx context.Context, server, method string, rawParams json.RawMessage, fallback any) (relayResult, error) {
 	replica, err := g.router.PickServer(server)
 	if err != nil {
-		return relayResult{}, notFound("", "")
+		return relayResult{}, &DownstreamRelayError{Server: server, Category: "transport"}
 	}
 	relayer, ok := replica.Client().(rawRelayer)
 	if !ok {

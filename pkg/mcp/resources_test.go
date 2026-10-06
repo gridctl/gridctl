@@ -3,8 +3,12 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
+	"time"
+
+	"go.uber.org/mock/gomock"
 )
 
 func TestAggregateRawListCacheMeta(t *testing.T) {
@@ -202,4 +206,148 @@ func TestInitializeDeclaresUIExtension(t *testing.T) {
 	if !saw {
 		t.Fatal("handshake initialize omitted the UI extension")
 	}
+}
+
+func TestInputRequiredRelayMessageNoun(t *testing.T) {
+	prompt := inputRequiredRelayMessage("prompt")
+	resource := inputRequiredRelayMessage("resource")
+	if !strings.HasPrefix(prompt, "prompt requires") || strings.Contains(prompt, "resource requires") {
+		t.Fatalf("prompt message = %q", prompt)
+	}
+	if !strings.HasPrefix(resource, "resource requires") || !strings.Contains(resource, "MRTR") {
+		t.Fatalf("resource message = %q", resource)
+	}
+}
+
+func TestRouter_ServerToolsPickAndListMutations(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	r := NewRouter()
+	client := setupMockAgentClient(ctrl, "docs", []Tool{{Name: "echo"}})
+	r.AddClient(client)
+	r.RefreshTools()
+	names := r.ServerToolNames("docs")
+	if len(names) != 1 || names[0] != "docs__echo" {
+		t.Fatalf("tools = %#v", names)
+	}
+	if _, err := r.PickServer("docs"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.PickServer("missing"); err == nil {
+		t.Fatal("expected pick error")
+	}
+	if fresh := r.ReplaceServerURIs("docs", []string{"file:///a"}); len(fresh) != 0 {
+		t.Fatalf("fresh uris = %+v", fresh)
+	}
+	if fresh := r.ReplaceServerTemplates("docs", []string{"file:///tmpl/{name}"}); len(fresh) != 0 {
+		t.Fatalf("fresh templates = %+v", fresh)
+	}
+	if owner, ok := r.ResolveResource("file:///a"); !ok || owner != "docs" {
+		t.Fatalf("uri owner = %q %v", owner, ok)
+	}
+	r.SetResourceListError("docs", "rpc")
+	if r.ResourceStatus("docs").ListError != "rpc" {
+		t.Fatal("error not recorded")
+	}
+	r.SetResourceListError("docs", "")
+	if r.ResourceStatus("docs").ListError != "" {
+		t.Fatal("error not cleared")
+	}
+}
+
+func TestFanOutListCallerCancelSkipsStatus(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+	client := &listingClient{
+		AgentClient: setupMockAgentClient(ctrl, "docs", nil),
+		resources: func(ctx context.Context) (RawListPage, error) {
+			return RawListPage{}, ctx.Err()
+		},
+	}
+	g.Router().AddClient(client)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := g.HandleResourcesList(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := g.router.ResourceStatus("docs").ListError; got != "" {
+		t.Fatalf("caller cancel recorded as %q", got)
+	}
+
+	client.resources = func(context.Context) (RawListPage, error) {
+		return RawListPage{}, errors.New("boom")
+	}
+	if _, err := g.HandleResourcesList(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := g.router.ResourceStatus("docs").ListError; got != "transport" {
+		t.Fatalf("list error = %q, want transport", got)
+	}
+}
+
+func TestRefreshResourceIndexFansOutConcurrently(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+	started := make(chan string, 2)
+	release := make(chan struct{})
+	block := func(kind string) func(context.Context) (RawListPage, error) {
+		return func(ctx context.Context) (RawListPage, error) {
+			started <- kind
+			select {
+			case <-release:
+				return RawListPage{}, nil
+			case <-ctx.Done():
+				return RawListPage{}, ctx.Err()
+			}
+		}
+	}
+	g.Router().AddClient(&listingClient{
+		AgentClient: setupMockAgentClient(ctrl, "docs", nil),
+		resources:   block("resources"),
+		templates:   block("templates"),
+	})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		g.refreshResourceIndex(context.Background())
+	}()
+	seen := map[string]bool{}
+	timeout := time.After(2 * time.Second)
+	for len(seen) < 2 {
+		select {
+		case kind := <-started:
+			seen[kind] = true
+		case <-timeout:
+			t.Fatal("resource and template fan-outs did not overlap")
+		}
+	}
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("refresh did not finish")
+	}
+}
+
+type listingClient struct {
+	AgentClient
+	resources func(context.Context) (RawListPage, error)
+	templates func(context.Context) (RawListPage, error)
+}
+
+func (c *listingClient) DownstreamCapabilities() Capabilities {
+	return Capabilities{Resources: &ResourcesCapability{}}
+}
+
+func (c *listingClient) ListResources(ctx context.Context) (RawListPage, error) {
+	if c.resources == nil {
+		return RawListPage{}, nil
+	}
+	return c.resources(ctx)
+}
+
+func (c *listingClient) ListResourceTemplates(ctx context.Context) (RawListPage, error) {
+	if c.templates == nil {
+		return RawListPage{}, nil
+	}
+	return c.templates(ctx)
 }

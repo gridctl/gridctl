@@ -50,9 +50,10 @@ func (p clientProfile) allowsTool(prefixedName string) bool {
 	return true
 }
 
-// ClientAccessPolicy is the resolved per-client tool access filter applied at
-// every gateway exposure path (tools/list, tools/call, and the code-mode tool
-// universe). It is a read-time filter modeled on the per-server tool whitelist
+// ClientAccessPolicy is the resolved per-client access filter applied at
+// every gateway exposure path (tools/list, tools/call, the code-mode tool
+// universe, and server-level prompt and resource gating via AllowsServer).
+// It is a read-time filter modeled on the per-server tool whitelist
 // in client_base.go, keyed on the connecting client's stable access identifier.
 //
 // A nil *ClientAccessPolicy means no `clients:` block was configured: every

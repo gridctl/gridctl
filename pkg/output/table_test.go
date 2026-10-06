@@ -135,6 +135,26 @@ func TestPrinter_Containers_WithData(t *testing.T) {
 	}
 }
 
+func TestPrinter_MCPServers_ConditionalCatalogColumns(t *testing.T) {
+	var buf bytes.Buffer
+	p := NewWithWriter(&buf)
+	p.MCPServers([]MCPServerRollup{{Name: "bare", Type: "local-process", Replicas: "1/1", State: "healthy"}})
+	got := buf.String()
+	if strings.Contains(got, "PROMPTS") || strings.Contains(got, "RESOURCES") {
+		t.Fatalf("tool-only header changed: %s", got)
+	}
+	if !strings.Contains(got, "NAME") || !strings.Contains(got, "STATE") {
+		t.Fatalf("missing base header: %s", got)
+	}
+
+	buf.Reset()
+	p.MCPServers([]MCPServerRollup{{Name: "docs", Type: "local-process", Replicas: "1/1", State: "healthy", Prompts: 2, Resources: 3}})
+	got = buf.String()
+	if !strings.Contains(got, "PROMPTS") || !strings.Contains(got, "RESOURCES") {
+		t.Fatalf("catalog header missing: %s", got)
+	}
+}
+
 func TestColorState(t *testing.T) {
 	tests := []struct {
 		state    string

@@ -283,6 +283,25 @@ func TestStatelessClientStampsMetaOnEveryCall(t *testing.T) {
 	}
 }
 
+func TestStatelessMetaMapUIExtension(t *testing.T) {
+	got := statelessMetaMap(StatelessProtocolVersion, []string{UIExtensionID})
+	caps, _ := got[metaKeyClientCapabilities].(map[string]any)
+	ext, _ := caps["extensions"].(map[string]any)
+	ui, _ := ext[UIExtensionID].(map[string]any)
+	mimes, _ := ui["mimeTypes"].([]string)
+	if len(mimes) != 1 || mimes[0] != UIExtensionMIME {
+		t.Fatalf("extension = %#v", caps)
+	}
+	if synthesizedUIExtension(nil) != nil {
+		t.Fatal("absent extension should not be synthesized")
+	}
+	plain := statelessMetaMap(StatelessProtocolVersion, nil)
+	plainCaps, _ := plain[metaKeyClientCapabilities].(map[string]any)
+	if _, ok := plainCaps["extensions"]; ok {
+		t.Fatal("synthesized meta included an extension")
+	}
+}
+
 func TestStampStatelessMetaPreservesSiblingBytes(t *testing.T) {
 	// Sibling values must pass through byte-exact: a decode through
 	// map[string]any would rewrite 2^53+1 as a float64 and corrupt it.

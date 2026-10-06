@@ -113,10 +113,6 @@ func TestResourceAggregation_BothEras(t *testing.T) {
 		t.Fatalf("stateless not-found = %d %#v", w.Code, resp["error"])
 	}
 
-	initBody := map[string]any{"protocolVersion": "2025-06-18", "capabilities": map[string]any{}, "serverInfo": map[string]any{}}
-	_ = initBody
-	caps := handshakeCall(t, handler, session, "ping", nil)
-	_ = caps
 	discoverW, discover := aggregationStateless(t, handler, "server/discover", nil)
 	if discoverW.Code != http.StatusOK {
 		t.Fatalf("discover: %d %s", discoverW.Code, discoverW.Body.String())
@@ -161,16 +157,16 @@ func TestResourceAggregation_ScopeCollisionAndStatus(t *testing.T) {
 	if denied.Error == nil || denied.Error.Code != -32002 {
 		t.Fatalf("out-of-scope read = %+v", denied.Error)
 	}
-	var bStatus mcp.MCPServerStatus
+	var cStatus mcp.MCPServerStatus
 	for _, status := range gw.Status() {
 		if status.Name == "b" && status.ResourceCollisions < 1 {
 			t.Fatalf("b collisions = %d", status.ResourceCollisions)
 		}
 		if status.Name == "c" {
-			bStatus = status
+			cStatus = status
 		}
 	}
-	if bStatus.ResourceListError == "" {
+	if cStatus.ResourceListError == "" {
 		t.Fatalf("expected list error on c, got %+v", gw.Status())
 	}
 
@@ -383,6 +379,233 @@ func TestResourceAggregation_StatusJSON(t *testing.T) {
 	if !bytes.Contains(out, []byte(`"promptCount"`)) || !bytes.Contains(out, []byte(`"mcpResourceCount"`)) {
 		t.Fatalf("status json missing counts: %s", out)
 	}
+}
+
+func TestResourceAggregation_StatelessFields(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	bin := buildResourcePrompt(t)
+
+	t.Run("stateless downstream", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		gw := mcp.NewGateway()
+		defer gw.Close()
+		registerProcess(t, ctx, gw, "docs", bin, "stateless", "-protocol", "2026-07-28", "-cache-ttl", "30000", "-cache-scope", "public", "-prompts", "-resources")
+		registerProcess(t, ctx, gw, "bare", bin, "handshake")
+		handler := mcp.NewStreamableHTTPServer(gw, nil)
+
+		listed := statelessResult(t, handler, "prompts/list", nil)
+		assertStatelessCache(t, listed, 30000, "public", "complete")
+		if !strings.Contains(string(mustJSON(listed)), "docs__review") || strings.Contains(string(mustJSON(listed)), "bare__") {
+			t.Fatalf("prompts = %s", mustJSON(listed))
+		}
+		if _, ok := listed["nextCursor"]; ok {
+			t.Fatal("prompts/list emitted nextCursor")
+		}
+		got := statelessResult(t, handler, "prompts/get", map[string]any{
+			"name":      "docs__brief",
+			"arguments": map[string]string{"topic": "maps"},
+		})
+		assertStatelessCache(t, got, 30000, "public", "complete")
+		if !bytes.Contains(mustJSON(got), []byte("topic=maps")) {
+			t.Fatalf("prompt get = %s", mustJSON(got))
+		}
+
+		resources := statelessResult(t, handler, "resources/list", nil)
+		assertStatelessCache(t, resources, 30000, "public", "complete")
+		if _, ok := resources["nextCursor"]; ok {
+			t.Fatal("resources/list emitted nextCursor")
+		}
+		templates := statelessResult(t, handler, "resources/templates/list", nil)
+		assertStatelessCache(t, templates, 30000, "public", "complete")
+		if !strings.Contains(string(mustJSON(templates)), "file:///tmpl/{name}") {
+			t.Fatalf("templates = %s", mustJSON(templates))
+		}
+		read := statelessResult(t, handler, "resources/read", map[string]any{"uri": "file:///readme"})
+		assertStatelessCache(t, read, 30000, "public", "complete")
+		if !strings.Contains(string(mustJSON(read)), "hello") {
+			t.Fatalf("read = %s", mustJSON(read))
+		}
+	})
+
+	t.Run("handshake downstream", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		gw := mcp.NewGateway()
+		defer gw.Close()
+		registerProcess(t, ctx, gw, "old", bin, "handshake", "-prompts", "-resources")
+		handler := mcp.NewStreamableHTTPServer(gw, nil)
+		read := statelessResult(t, handler, "resources/read", map[string]any{"uri": "file:///readme"})
+		assertStatelessCache(t, read, 0, "private", "complete")
+		if !strings.Contains(string(mustJSON(read)), "hello") {
+			t.Fatalf("read = %s", mustJSON(read))
+		}
+		listed := statelessResult(t, handler, "prompts/list", nil)
+		assertStatelessCache(t, listed, 0, "private", "complete")
+		if !strings.Contains(string(mustJSON(listed)), "old__review") {
+			t.Fatalf("prompts = %s", mustJSON(listed))
+		}
+	})
+}
+
+func TestResourceAggregation_ReadErrorPassthrough(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	bin := buildResourcePrompt(t)
+	gw := mcp.NewGateway()
+	defer gw.Close()
+	registerProcess(t, ctx, gw, "docs", bin, "handshake", "-resources", "-read-error", "-32001")
+	handler := mcp.NewStreamableHTTPServer(gw, nil)
+	session := initializeAggregation(t, handler)
+	handshakeCall(t, handler, session, "resources/list", nil)
+	denied := handshakePost(t, handler, session, "resources/read", map[string]any{"uri": "file:///error"})
+	if denied.Error == nil || denied.Error.Code != -32001 {
+		t.Fatalf("handshake read error = %+v", denied.Error)
+	}
+	_, resp := aggregationStateless(t, handler, "resources/read", map[string]any{"uri": "file:///error"})
+	errObj, _ := resp["error"].(map[string]any)
+	if errObj["code"] != float64(-32001) {
+		t.Fatalf("stateless read error = %#v", resp["error"])
+	}
+}
+
+func TestResourceAggregation_GroupMembership(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	bin := buildResourcePrompt(t)
+	gw := mcp.NewGateway()
+	defer gw.Close()
+	registerProcess(t, ctx, gw, "a", bin, "handshake", "-prompts", "-resources")
+	registerProcess(t, ctx, gw, "b", bin, "handshake", "-prompts", "-resources", "-extra")
+	gw.SetGroupPolicy(mcp.NewGroupPolicy(mcp.GroupsSpec{
+		"empty": {Tools: []string{"a__echo"}, Exclude: []string{"a__echo"}},
+		"some":  {Servers: []string{"a"}, Exclude: []string{"a__other"}},
+	}))
+	handler := mcp.NewStreamableHTTPServer(gw, nil)
+
+	hidden := initializeAggregationAs(t, handler, "", "empty")
+	hiddenResources := string(mustJSON(handshakeCall(t, handler, hidden, "resources/list", nil)))
+	hiddenPrompts := string(mustJSON(handshakeCall(t, handler, hidden, "prompts/list", nil)))
+	if strings.Contains(hiddenResources, "file:///") || strings.Contains(hiddenPrompts, "a__") || strings.Contains(hiddenPrompts, "b__") {
+		t.Fatalf("empty group leaked resources=%s prompts=%s", hiddenResources, hiddenPrompts)
+	}
+	hiddenRead := handshakePost(t, handler, hidden, "resources/read", map[string]any{"uri": "file:///readme"})
+	if hiddenRead.Error == nil || hiddenRead.Error.Code != -32002 {
+		t.Fatalf("hidden read = %+v", hiddenRead.Error)
+	}
+
+	visible := initializeAggregationAs(t, handler, "", "some")
+	visibleResources := string(mustJSON(handshakeCall(t, handler, visible, "resources/list", nil)))
+	visiblePrompts := string(mustJSON(handshakeCall(t, handler, visible, "prompts/list", nil)))
+	if !strings.Contains(visibleResources, "file:///readme") || strings.Contains(visibleResources, "file:///extra") {
+		t.Fatalf("some group resources = %s", visibleResources)
+	}
+	if !strings.Contains(visiblePrompts, "a__review") || strings.Contains(visiblePrompts, "b__") {
+		t.Fatalf("some group prompts = %s", visiblePrompts)
+	}
+	extra := handshakePost(t, handler, visible, "resources/read", map[string]any{"uri": "file:///extra"})
+	if extra.Error == nil || extra.Error.Code != -32002 {
+		t.Fatalf("hidden server read = %+v", extra.Error)
+	}
+	if !strings.Contains(string(mustJSON(handshakeCall(t, handler, visible, "resources/read", map[string]any{"uri": "file:///readme"}))), "hello") {
+		t.Fatal("visible read failed")
+	}
+}
+
+func TestResourceAggregation_ListErrorClears(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	bin := buildResourcePrompt(t)
+	gw := mcp.NewGateway()
+	defer gw.Close()
+	registerProcess(t, ctx, gw, "flaky", bin, "handshake", "-resources", "-fail-resource-lists", "1")
+	waitForListError(t, gw, "flaky")
+	handler := mcp.NewStreamableHTTPServer(gw, nil)
+	session := initializeAggregation(t, handler)
+	listed := string(mustJSON(handshakeCall(t, handler, session, "resources/list", nil)))
+	if !strings.Contains(listed, "file:///readme") {
+		t.Fatalf("recovered list = %s", listed)
+	}
+	for _, status := range gw.Status() {
+		if status.Name == "flaky" && status.ResourceListError != "" {
+			t.Fatalf("list error stuck at %q", status.ResourceListError)
+		}
+	}
+}
+
+func TestResourceAggregation_StatelessUIExtension(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	bin := buildResourcePrompt(t)
+	gw := mcp.NewGateway()
+	defer gw.Close()
+	if err := gw.RegisterMCPServer(ctx, mcp.MCPServerConfig{
+		Name: "app", LocalProcess: true,
+		Command:            []string{bin, "-protocol", "2026-07-28", "-ui", "-resources"},
+		ProtocolGeneration: "stateless", ProtocolExtensions: []string{"io.modelcontextprotocol/ui"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var saw bool
+	for _, tool := range gw.Router().CatalogTools() {
+		if strings.HasSuffix(tool.Name, "__draw") {
+			saw = true
+		}
+	}
+	if !saw {
+		t.Fatal("stateless UI tool was not registered")
+	}
+}
+
+func statelessResult(t *testing.T, handler http.Handler, method string, params map[string]any) map[string]any {
+	t.Helper()
+	w, resp := aggregationStateless(t, handler, method, params)
+	if w.Code != http.StatusOK {
+		t.Fatalf("%s: %d %s", method, w.Code, w.Body.String())
+	}
+	if errObj, ok := resp["error"]; ok && errObj != nil {
+		t.Fatalf("%s error: %#v", method, errObj)
+	}
+	result, _ := resp["result"].(map[string]any)
+	if result == nil {
+		t.Fatalf("%s result = %#v", method, resp)
+	}
+	return result
+}
+
+func assertStatelessCache(t *testing.T, result map[string]any, ttl float64, scope, resultType string) {
+	t.Helper()
+	if result["resultType"] != resultType || result["cacheScope"] != scope || result["ttlMs"] != ttl {
+		t.Fatalf("cache fields = resultType:%#v ttlMs:%#v cacheScope:%#v, want %s %v %s", result["resultType"], result["ttlMs"], result["cacheScope"], resultType, ttl, scope)
+	}
+}
+
+func waitForListError(t *testing.T, gw *mcp.Gateway, name string) {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, status := range gw.Status() {
+			if status.Name == name && status.ResourceListError == "rpc" {
+				return
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("resourceListError was not set on %s: %+v", name, gw.Status())
 }
 
 func mustPort(rawURL string) int {
