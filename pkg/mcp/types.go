@@ -640,6 +640,57 @@ func NewTextContent(text string) Content {
 	return Content{Type: "text", Text: text}
 }
 
+// RawListPage is one drained downstream list: the entries plus the
+// list-level cache fields the server declared. TTLMs is nil when the
+// server declared none or is handshake-era.
+type RawListPage struct {
+	Entries    []json.RawMessage
+	TTLMs      *int64
+	CacheScope string
+}
+
+// ResourceLister is the optional interface for clients that can list
+// downstream resources. OpenAPI and A2A adapters do not implement it.
+type ResourceLister interface {
+	ListResources(ctx context.Context) (RawListPage, error)
+	ListResourceTemplates(ctx context.Context) (RawListPage, error)
+}
+
+// PromptLister is the optional interface for clients that can list
+// downstream prompts.
+type PromptLister interface {
+	ListPrompts(ctx context.Context) (RawListPage, error)
+}
+
+// RawPromptsListResult is the prompts/list envelope. Entries stay raw so
+// downstream fields the typed MCPPrompt struct does not model survive.
+type RawPromptsListResult struct {
+	StatelessResultFields
+	Prompts []json.RawMessage `json:"prompts"`
+}
+
+// RawResourcesListResult is the resources/list envelope.
+type RawResourcesListResult struct {
+	StatelessResultFields
+	Resources []json.RawMessage `json:"resources"`
+}
+
+// RawResourceTemplatesListResult is the resources/templates/list envelope.
+type RawResourceTemplatesListResult struct {
+	StatelessResultFields
+	ResourceTemplates []json.RawMessage `json:"resourceTemplates"`
+}
+
+// DownstreamCapabilityStatus is the capability set a downstream server
+// declared, projected onto status surfaces. Subscribe and list-changed
+// are reported but never advertised upstream.
+type DownstreamCapabilityStatus struct {
+	Prompts              bool `json:"prompts"`
+	Resources            bool `json:"resources"`
+	ResourcesSubscribe   bool `json:"resourcesSubscribe"`
+	ResourcesListChanged bool `json:"resourcesListChanged"`
+}
+
 // PromptProvider is an optional interface for AgentClients that manage prompts.
 // The gateway uses type assertion to detect prompt-capable clients and serve
 // the MCP prompts/* and resources/* protocol methods.

@@ -331,6 +331,7 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 			PinSchemas:         serverCfg.PinSchemas,
 			PingTimeout:        serverCfg.ResolvedPingTimeout(),
 			ProtocolGeneration: serverCfg.ProtocolGeneration,
+			ProtocolExtensions: serverCfg.ProtocolExtensions,
 		}
 	}
 	if server.LocalProcess {
@@ -346,6 +347,7 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 			PinSchemas:         serverCfg.PinSchemas,
 			PingTimeout:        serverCfg.ResolvedPingTimeout(),
 			ProtocolGeneration: serverCfg.ProtocolGeneration,
+			ProtocolExtensions: serverCfg.ProtocolExtensions,
 		}
 	}
 	if server.SSH {
@@ -363,6 +365,7 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 			PinSchemas:         serverCfg.PinSchemas,
 			PingTimeout:        serverCfg.ResolvedPingTimeout(),
 			ProtocolGeneration: serverCfg.ProtocolGeneration,
+			ProtocolExtensions: serverCfg.ProtocolExtensions,
 		}
 		if serverCfg.SSH != nil {
 			cfg.SSHKnownHostsFile = serverCfg.SSH.KnownHostsFile
@@ -390,6 +393,7 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 			PinSchemas:         serverCfg.PinSchemas,
 			PingTimeout:        serverCfg.ResolvedPingTimeout(),
 			ProtocolGeneration: serverCfg.ProtocolGeneration,
+			ProtocolExtensions: serverCfg.ProtocolExtensions,
 		}
 	}
 	// Container HTTP/SSE
@@ -417,6 +421,7 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 			PinSchemas:         server.PinSchemas,
 			PingTimeout:        server.ResolvedPingTimeout(),
 			ProtocolGeneration: server.ProtocolGeneration,
+			ProtocolExtensions: server.ProtocolExtensions,
 		}
 	}
 	if server.IsLocalProcess() {
@@ -432,6 +437,7 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 			PinSchemas:         server.PinSchemas,
 			PingTimeout:        server.ResolvedPingTimeout(),
 			ProtocolGeneration: server.ProtocolGeneration,
+			ProtocolExtensions: server.ProtocolExtensions,
 		}
 	}
 	if server.IsSSH() {
@@ -451,6 +457,7 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 			PinSchemas:         server.PinSchemas,
 			PingTimeout:        server.ResolvedPingTimeout(),
 			ProtocolGeneration: server.ProtocolGeneration,
+			ProtocolExtensions: server.ProtocolExtensions,
 		}
 	}
 	if server.IsA2A() {
@@ -473,6 +480,7 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 			PinSchemas:         server.PinSchemas,
 			PingTimeout:        server.ResolvedPingTimeout(),
 			ProtocolGeneration: server.ProtocolGeneration,
+			ProtocolExtensions: server.ProtocolExtensions,
 		}
 	}
 	// Container HTTP/SSE
@@ -498,6 +506,7 @@ func (r *ServerRegistrar) buildContainerHTTPConfig(name string, transport mcp.Tr
 		ReadyTimeout:          serverCfg.ResolvedReadyTimeout(),
 		PingTimeout:           serverCfg.ResolvedPingTimeout(),
 		ProtocolGeneration:    serverCfg.ProtocolGeneration,
+		ProtocolExtensions:    serverCfg.ProtocolExtensions,
 		CleanupOnReadyFailure: r.cleanupClosure(name, id),
 	}
 }

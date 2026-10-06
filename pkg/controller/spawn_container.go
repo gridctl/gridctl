@@ -226,6 +226,7 @@ func (c *ContainerSpawner) buildClientConfig(hostPort int, id runtime.WorkloadID
 		PinSchemas:         c.server.PinSchemas,
 		ReadyTimeout:       c.server.ResolvedReadyTimeout(),
 		ProtocolGeneration: c.server.ProtocolGeneration,
+		ProtocolExtensions: c.server.ProtocolExtensions,
 	}
 	wireExecution(&cfg, c.server, c.rt, string(id))
 	if cfg.Transport == "" {

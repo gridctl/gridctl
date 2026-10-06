@@ -108,7 +108,7 @@ func (c *Client) call(ctx context.Context, method string, params any, result any
 	// Stateless-era servers require version, capabilities, and identity
 	// in _meta on every request.
 	if c.Era() == EraStateless {
-		paramsBytes = stampStatelessMeta(ctx, paramsBytes, c.ProtocolVersion())
+		paramsBytes = stampStatelessMeta(ctx, paramsBytes, c.ProtocolVersion(), c.copyProtocolExtensions())
 	}
 
 	req := jsonrpc.Request{
@@ -324,7 +324,7 @@ func (c *Client) Ping(ctx context.Context) error {
 	// tool errors.
 	if c.Era() == EraStateless {
 		var result DiscoverResult
-		if err := c.call(ctx, "server/discover", map[string]any{"_meta": statelessMetaMap(c.ProtocolVersion())}, &result); err != nil {
+		if err := c.call(ctx, "server/discover", map[string]any{"_meta": statelessMetaMap(c.ProtocolVersion(), c.copyProtocolExtensions())}, &result); err != nil {
 			return err
 		}
 		return verifyDiscoverHealth(result)
@@ -436,7 +436,7 @@ func (c *Client) pingHandshake(ctx context.Context) error {
 // confirms the flip just as well as a discover result does.
 func (c *Client) confirmGenerationFlip(ctx context.Context) bool {
 	var result DiscoverResult
-	err := c.call(ctx, "server/discover", map[string]any{"_meta": statelessMetaMap(StatelessProtocolVersion)}, &result)
+	err := c.call(ctx, "server/discover", map[string]any{"_meta": statelessMetaMap(StatelessProtocolVersion, c.copyProtocolExtensions())}, &result)
 	if err != nil {
 		return isRecognizedModernError(err)
 	}

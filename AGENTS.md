@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repository. Follows the [agents.md
 
 ## What gridctl is
 
-Gridctl is an MCP (Model Context Protocol) gateway with a built-in skills and agents registry. A user declares a stack of MCP servers (containerized stdio, SSE/HTTP, OpenAPI-backed, local processes, SaaS proxies) in `stack.yaml`, runs `gridctl apply`, and gridctl orchestrates the containers, fans tool calls to the right server, and surfaces every active `SKILL.md` to upstream clients as an MCP prompt. A projection engine (`pkg/project`, one lockfile at `~/.gridctl/project.lock.yaml`) also places skills, agents, global-context rules, and gateway wiring onto disk for file-reading clients, and packs (`gridctl-pack.yaml`) import all of it from one git repo. The same process embeds a React web UI on `:8180`. Inspired by Containerlab.
+Gridctl is an MCP (Model Context Protocol) gateway with a built-in skills and agents registry. A user declares a stack of MCP servers (containerized stdio, SSE/HTTP, OpenAPI-backed, local processes, SaaS proxies) in `stack.yaml`, runs `gridctl apply`, and gridctl orchestrates the containers, fans tool calls to the right server, aggregates downstream prompts and resources with registry skills, and surfaces every active `SKILL.md` to upstream clients as an MCP prompt. A projection engine (`pkg/project`, one lockfile at `~/.gridctl/project.lock.yaml`) also places skills, agents, global-context rules, and gateway wiring onto disk for file-reading clients, and packs (`gridctl-pack.yaml`) import all of it from one git repo. The same process embeds a React web UI on `:8180`. Inspired by Containerlab.
 
 ## Build and run
 
@@ -114,7 +114,7 @@ pkg/builder/        Image building from git or local Dockerfiles and generated P
                     image tags, label-verified cache reuse, and non-secret provenance labels. Also owns bounded public-PyPI
                     resolution, static Python package/project metadata inspection, supported-interpreter selection,
                     console-script resolution, and deterministic digest-pinned uv Dockerfile generation.
-pkg/mcp/            MCP protocol: gateway (router + tool aggregation), stdio/SSE/streamable transports, OpenAPI-as-MCP,
+pkg/mcp/            MCP protocol: gateway (router, tool aggregation, and downstream prompt and resource aggregation), stdio/SSE/streamable transports, OpenAPI-as-MCP,
                     autoscaler, code mode sandbox (goja), replica sets, schema pinning hooks, live tool discovery,
                     and typed call outcomes for canonical REST/CLI dispatch.
                     Container and local-process stdio readers classify peer requests and notifications before response
@@ -194,6 +194,7 @@ web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). 
 tests/adversarial/  Declarative scenario index (`index.yaml`) for mandatory-execution accounting. Not a runner.
 tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway lifecycle, hot reload, autoscaler,
                     replicas, transports (incl. Podman), private git auth, generated Python source builds,
+                    downstream prompt and resource aggregation,
                     the Python MCP runtime base and its derivatives, digest-cache lookup, optimize heuristics,
                     and CLI/REST live tool invocation. Grouped auth tests use real HTTP and a subprocess MCP backend.
                     auth_restart_test.go verifies actual process restart, saved/live-state rejection, CLI exits,
@@ -202,7 +203,7 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
                     a2a_wire_test.go checks both wire dialects, origin-bound credentials, sessions, and redirects with real HTTP.
                     a2a_*_test.go adapter suites cover authority, atomic delivery, policy, trust, observation sinks,
                     overlapping cancel, and actual daemon restart/reload with real HTTP and subprocesses.
-examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, a2a, registry, secrets-vault,
+examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, a2a, mcp-apps, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
                     portable-pack, model-policy, python-sources, python-runtime, execution, security-evidence, stack-declaration-policy, runs).
                     examples/_mock-servers/ is the source for `task mock:servers`.

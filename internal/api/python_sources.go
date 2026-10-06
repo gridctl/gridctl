@@ -53,6 +53,7 @@ type pythonMCPServerRequest struct {
 	ReadyTimeout       string                     `json:"readyTimeout,omitempty"`
 	PingTimeout        string                     `json:"pingTimeout,omitempty"`
 	ProtocolGeneration string                     `json:"protocolGeneration,omitempty"`
+	ProtocolExtensions []string                   `json:"protocolExtensions,omitempty"`
 	Replicas           int                        `json:"replicas,omitempty"`
 	ReplicaPolicy      string                     `json:"replicaPolicy,omitempty"`
 	Autoscale          *pythonAutoscaleRequest    `json:"autoscale,omitempty"`
@@ -279,7 +280,7 @@ func (r pythonMCPServerRequest) config() config.MCPServer {
 		Command: r.Command, Env: r.Env, BuildArgs: r.BuildArgs, Volumes: r.Volumes,
 		Network: r.Network, SSH: r.SSH, OpenAPI: r.OpenAPI, Tools: r.Tools,
 		Execution: r.Execution, OutputFormat: r.OutputFormat, PinSchemas: r.PinSchemas, ReadyTimeout: r.ReadyTimeout,
-		PingTimeout: r.PingTimeout, ProtocolGeneration: r.ProtocolGeneration,
+		PingTimeout: r.PingTimeout, ProtocolGeneration: r.ProtocolGeneration, ProtocolExtensions: r.ProtocolExtensions,
 		Replicas: r.Replicas, ReplicaPolicy: r.ReplicaPolicy, Telemetry: r.Telemetry, Auth: r.Auth,
 	}
 	if r.Source != nil {

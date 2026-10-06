@@ -26,7 +26,7 @@
 
 ![Gridctl](assets/dashboard.png)
 
-Gridctl aggregates tools from [MCP](https://modelcontextprotocol.io/) servers into a single gateway and serves [Agent Skills](https://agentskills.io) as MCP prompts to upstream clients. Define your stack in YAML, apply with one command, and connect Claude Desktop (or any MCP client) through one endpoint.
+Gridctl aggregates tools, prompts, and resources from [MCP](https://modelcontextprotocol.io/) servers into a single gateway and serves [Agent Skills](https://agentskills.io) as MCP prompts to upstream clients. Define your stack in YAML, apply with one command, and connect Claude Desktop (or any MCP client) through one endpoint.
 
 ```bash
 gridctl apply stack.yaml
@@ -437,6 +437,7 @@ Learn more → [Packs guide](docs/packs.md)
 | [`ssh-mcp.yaml`](examples/transports/ssh-mcp.yaml) | Connect to MCP servers on remote machines via SSH |
 | [`openapi-basic.yaml`](examples/openapi/openapi-basic.yaml) | Turn a REST API into MCP tools via OpenAPI spec |
 | [`a2a/`](examples/a2a/) | Experimental outbound A2A tools with card trust and secret task/context handles |
+| [`mcp-apps/`](examples/mcp-apps/) | Remote MCP App server with `protocol_extensions` |
 | [`code-mode-basic.yaml`](examples/code-mode/code-mode-basic.yaml) | Gateway code mode with search + execute meta-tools |
 | [`github-mcp.yaml`](examples/platforms/github-mcp.yaml) | GitHub MCP server integration |
 | [`registry-basic.yaml`](examples/registry/registry-basic.yaml) | Skills registry with a single server |

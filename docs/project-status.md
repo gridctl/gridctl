@@ -61,6 +61,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 | Machine reset (`gridctl reset`, reset REST + web UI dialog) | Stable | Backward compatible in 0.x |
 | Home directory override (`GRIDCTL_HOME`, `--home`) | Stable | Backward compatible in 0.x |
 | MCP protocol generation dual-stack (handshake + 2026-07-28 stateless) | Stable | Both generations served and auto-negotiated per client and per server |
+| Downstream prompt and resource aggregation | Implemented, Unreleased | Registry skill names, URIs, and skill-policy visibility are unchanged. Handshake-era `resources/read` not-found is `-32002` with `data.uri` instead of `-32603`; stateless not-found stays `-32602`. See [POST /mcp](api-reference.md#post-mcp) |
 | Declarative client linking (`link:`) | Stable | Backward compatible in 0.x |
 | Wiring ownership (link / unlink recording, project) | Stable | Backward compatible in 0.x |
 | Downstream OAuth brokering (auth) | Stable | Backward compatible in 0.x |
@@ -85,6 +86,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 - Opt-in `gridctl validate --check-mutable-refs` inspects literal selectors only. Exit zero is not complete coverage, a digest is not publisher-verified, and an exact package version is not a transitive lock. See [mutable reference diagnostics](cli-reference.md#mutable-reference-diagnostics).
 - Opt-in `gridctl validate --policy` evaluates captured declarations only. Exit zero is not deployment admission or runtime safety. Identifiers in reports may themselves be sensitive. See [stack declaration policy](stack-declaration-policy.md).
 - Opt-in run records are best-effort metadata of returning dispatches. They are not a complete audit trail, crash-durable start journal, or secure deletion. Names and caller-declared labels may be sensitive. See [Usage Observability](usage-observability.md#run-records).
+- Downstream prompt and resource aggregation does not implement subscriptions or list-changed notifications. `limits:` and run recording cover `tools/call` only. The web UI shows counts and badges; it does not render MCP App HTML. See [POST /mcp](api-reference.md#post-mcp).
 - Live CLI/REST tool invocation uses a caller-declared label, default `cli`. `--as` can select a broader configured profile and does not authenticate as that client. A 200 call envelope is not proof of upstream MCP protocol negotiation, and lost calls are not retried. See [Live tools](cli-reference.md#live-tools).
 - Podman rootless multi-container networking requires `netavark` and `aardvark-dns` (Podman 4.0+); `pasta`/`slirp4netns` are egress-only transports and are not used for inter-container communication.
 - Generated Python package sources support the official public PyPI index only. Private indexes require a custom Dockerfile.

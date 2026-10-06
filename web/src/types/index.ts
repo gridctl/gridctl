@@ -178,6 +178,12 @@ export interface MCPServerStatus {
   initialized: boolean;
   toolCount: number;
   tools: string[];
+  promptCount?: number;
+  mcpResourceCount?: number;
+  resourceTemplateCount?: number;
+  capabilities?: DownstreamCapabilityStatus;
+  resourceCollisions?: number;
+  resourceListError?: string;
   external?: boolean; // True for external URL servers
   localProcess?: boolean; // True for local process servers
   ssh?: boolean; // True for SSH servers
@@ -459,6 +465,13 @@ export interface GatewayNodeData extends NodeDataBase {
   activeSkills: number;
 }
 
+export interface DownstreamCapabilityStatus {
+  prompts: boolean;
+  resources: boolean;
+  resourcesSubscribe: boolean;
+  resourcesListChanged: boolean;
+}
+
 export interface MCPServerNodeData extends NodeDataBase {
   type: 'mcp-server';
   name: string;
@@ -468,6 +481,12 @@ export interface MCPServerNodeData extends NodeDataBase {
   initialized: boolean;
   toolCount: number;
   tools: string[];
+  promptCount?: number;
+  mcpResourceCount?: number;
+  resourceTemplateCount?: number;
+  capabilities?: DownstreamCapabilityStatus;
+  resourceCollisions?: number;
+  resourceListError?: string;
   status: NodeStatus;
   external?: boolean; // True for external URL servers
   localProcess?: boolean; // True for local process servers

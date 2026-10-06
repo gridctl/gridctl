@@ -40,7 +40,7 @@ clients:
         - github__search-repos
 ```
 
-The scope is enforced on `tools/list`, `tools/call`, and the code-mode search/execute surface. Bind a linked client to a profile with a stable identifier:
+The scope is enforced on `tools/list`, `tools/call`, and the code-mode search/execute surface. Downstream prompts and resources follow server membership and are not narrowed by a tool whitelist. Bind a linked client to a profile with a stable identifier:
 
 ```bash
 gridctl link cursor --client-id cursor

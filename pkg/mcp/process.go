@@ -394,7 +394,7 @@ func (c *ProcessClient) call(ctx context.Context, method string, params any, res
 	// Stateless-era servers require version, capabilities, and identity
 	// in _meta on every request.
 	if c.Era() == EraStateless {
-		paramsBytes = stampStatelessMeta(ctx, paramsBytes, c.ProtocolVersion())
+		paramsBytes = stampStatelessMeta(ctx, paramsBytes, c.ProtocolVersion(), c.copyProtocolExtensions())
 	}
 
 	req := jsonrpc.Request{
@@ -613,7 +613,7 @@ func (c *ProcessClient) Ping(ctx context.Context) error {
 	// tripping -32601 into a permanent unhealthy loop.
 	if c.Era() == EraStateless {
 		var result DiscoverResult
-		if err := c.call(ctx, "server/discover", map[string]any{"_meta": statelessMetaMap(c.ProtocolVersion())}, &result); err != nil {
+		if err := c.call(ctx, "server/discover", map[string]any{"_meta": statelessMetaMap(c.ProtocolVersion(), c.copyProtocolExtensions())}, &result); err != nil {
 			return err
 		}
 		return verifyDiscoverHealth(result)

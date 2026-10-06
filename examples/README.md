@@ -22,6 +22,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | [Stack declaration policy](stack-declaration-policy/) | Offline `validate --policy` fixture, policy file, and CI workflow design |
 | [🔗 openapi/](openapi/) | Turn REST APIs into MCP tools via OpenAPI specs |
 | [A2A](a2a/) | Experimental outbound Agent Card adapter with secret task/context handles |
+| [MCP Apps](mcp-apps/) | Remote MCP App server with the UI client extension |
 | [🔐 access-control/](access-control/) | Tool filtering and per-client scoping |
 | [⚡ code-mode/](code-mode/) | Reduce context window with search + execute meta-tools |
 | [🔒 gateways/](gateways/) | Bridge to existing infrastructure |
@@ -73,6 +74,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | openapi-basic | openapi | REST API as MCP tools, operation filtering |
 | openapi-auth | openapi | Bearer, header, query, OAuth2, basic auth, and mTLS |
 | a2a/stack | A2A JSON-RPC | Off-by-default remote agent tools, card trust, and capability-based task access |
+| mcp-apps/stack | http (remote URL) | Downstream resources and prompts, MCP Apps client extension |
 | tool-filtering | http (containers) | Server-level tool whitelists |
 | per-client-scoping | http (containers) | `clients:` blocks restricting servers and tools per client |
 | code-mode-basic | http (containers) | Search + execute meta-tools |

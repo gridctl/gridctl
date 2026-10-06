@@ -1,0 +1,21 @@
+# MCP Apps example
+#
+# Fronts a remote MCP App server and declares the client extension that
+# server checks before it registers UI-enabled tools. Resource URIs,
+# including ui:// values named by a tool's _meta.ui.resourceUri, pass
+# through unchanged.
+#
+# Usage:
+#   gridctl apply examples/mcp-apps/stack.yaml
+#
+# A UI-capable host then reads the tool's resourceUri through resources/read.
+# gridctl does not render the HTML itself.
+
+version: "1"
+name: mcp-apps
+
+mcp-servers:
+  - name: excalidraw
+    url: https://mcp.excalidraw.com/mcp
+    protocol_extensions:
+      - io.modelcontextprotocol/ui

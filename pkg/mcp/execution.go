@@ -377,6 +377,39 @@ func (c *executionClient) ListCacheMeta() (*int64, string) {
 	return nil, CacheScopePrivate
 }
 
+func (c *executionClient) ListResources(ctx context.Context) (RawListPage, error) {
+	if err := c.admit(ctx); err != nil {
+		return RawListPage{}, err
+	}
+	lister, ok := c.AgentClient.(ResourceLister)
+	if !ok {
+		return RawListPage{}, fmt.Errorf("execution: transport does not list resources")
+	}
+	return lister.ListResources(ctx)
+}
+
+func (c *executionClient) ListResourceTemplates(ctx context.Context) (RawListPage, error) {
+	if err := c.admit(ctx); err != nil {
+		return RawListPage{}, err
+	}
+	lister, ok := c.AgentClient.(ResourceLister)
+	if !ok {
+		return RawListPage{}, fmt.Errorf("execution: transport does not list resource templates")
+	}
+	return lister.ListResourceTemplates(ctx)
+}
+
+func (c *executionClient) ListPrompts(ctx context.Context) (RawListPage, error) {
+	if err := c.admit(ctx); err != nil {
+		return RawListPage{}, err
+	}
+	lister, ok := c.AgentClient.(PromptLister)
+	if !ok {
+		return RawListPage{}, fmt.Errorf("execution: transport does not list prompts")
+	}
+	return lister.ListPrompts(ctx)
+}
+
 func (c *executionClient) AllTools() []Tool {
 	if source, ok := c.AgentClient.(allToolsSource); ok {
 		return source.AllTools()

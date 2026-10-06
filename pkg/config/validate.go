@@ -458,6 +458,16 @@ func Validate(s *Stack) error {
 		if server.ProtocolGeneration != "" && !validProtocolGenerations[server.ProtocolGeneration] {
 			errs = append(errs, ValidationError{prefix + ".protocol_generation", "must be one of: auto, handshake, stateless"})
 		}
+		if len(server.ProtocolExtensions) > 0 {
+			if server.IsA2A() || server.IsOpenAPI() {
+				errs = append(errs, ValidationError{prefix + ".protocol_extensions", fmt.Sprintf("server %s does not run the MCP handshake", server.Name)})
+			}
+			for i, ext := range server.ProtocolExtensions {
+				if ext != "io.modelcontextprotocol/ui" {
+					errs = append(errs, ValidationError{fmt.Sprintf("%s.protocol_extensions[%d]", prefix, i), "must be io.modelcontextprotocol/ui"})
+				}
+			}
+		}
 
 		// ready_timeout validation: must parse as a duration and be non-negative.
 		// Only meaningful for container-based HTTP/SSE servers; accepted (but unused)

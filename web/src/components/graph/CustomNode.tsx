@@ -293,6 +293,22 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
                     {toolCount} tools
                   </span>
                 )}
+                {isServer && ((data as MCPServerNodeData).promptCount ?? 0) > 0 && (
+                  <span className="text-text-secondary font-mono text-[11px]" title="Downstream prompts">
+                    {(data as MCPServerNodeData).promptCount} prompts
+                  </span>
+                )}
+                {isServer && ((data as MCPServerNodeData).mcpResourceCount ?? 0) > 0 && (
+                  <span className="text-text-secondary font-mono text-[11px]" title="MCP resources, not stack infrastructure">
+                    {(data as MCPServerNodeData).mcpResourceCount} MCP resources
+                  </span>
+                )}
+                {isServer && (data as MCPServerNodeData).capabilities?.prompts && (
+                  <span className="text-[10px] uppercase tracking-wider text-violet-300">prompts</span>
+                )}
+                {isServer && (data as MCPServerNodeData).capabilities?.resources && (
+                  <span className="text-[10px] uppercase tracking-wider text-violet-300">resources</span>
+                )}
               </div>
             </div>
           )}

@@ -871,25 +871,31 @@ type ServerInfo struct {
 
 // MCPServerStatus mirrors the mcp.MCPServerStatus type for API responses.
 type MCPServerStatus struct {
-	Execution     *execution.Report `json:"execution,omitempty"`
-	Name          string            `json:"name"`
-	Transport     string            `json:"transport"`
-	Endpoint      string            `json:"endpoint"`
-	ContainerID   string            `json:"containerId,omitempty"`
-	Initialized   bool              `json:"initialized"`
-	ToolCount     int               `json:"toolCount"`
-	Tools         []string          `json:"tools"`
-	External      bool              `json:"external"`
-	LocalProcess  bool              `json:"localProcess"`
-	SSH           bool              `json:"ssh"`
-	SSHHost       string            `json:"sshHost,omitempty"`
-	OpenAPI       bool              `json:"openapi"`
-	OpenAPISpec   string            `json:"openapiSpec,omitempty"`
-	OutputFormat  string            `json:"outputFormat,omitempty"`
-	Healthy       *bool             `json:"healthy,omitempty"`
-	LastCheck     *string           `json:"lastCheck,omitempty"`
-	HealthError   string            `json:"healthError,omitempty"`
-	ToolWhitelist []string          `json:"toolWhitelist,omitempty"`
+	Execution             *execution.Report              `json:"execution,omitempty"`
+	Name                  string                         `json:"name"`
+	Transport             string                         `json:"transport"`
+	Endpoint              string                         `json:"endpoint"`
+	ContainerID           string                         `json:"containerId,omitempty"`
+	Initialized           bool                           `json:"initialized"`
+	ToolCount             int                            `json:"toolCount"`
+	Tools                 []string                       `json:"tools"`
+	PromptCount           int                            `json:"promptCount"`
+	MCPResourceCount      int                            `json:"mcpResourceCount"`
+	ResourceTemplateCount int                            `json:"resourceTemplateCount"`
+	Capabilities          mcp.DownstreamCapabilityStatus `json:"capabilities"`
+	ResourceCollisions    int                            `json:"resourceCollisions"`
+	ResourceListError     string                         `json:"resourceListError,omitempty"`
+	External              bool                           `json:"external"`
+	LocalProcess          bool                           `json:"localProcess"`
+	SSH                   bool                           `json:"ssh"`
+	SSHHost               string                         `json:"sshHost,omitempty"`
+	OpenAPI               bool                           `json:"openapi"`
+	OpenAPISpec           string                         `json:"openapiSpec,omitempty"`
+	OutputFormat          string                         `json:"outputFormat,omitempty"`
+	Healthy               *bool                          `json:"healthy,omitempty"`
+	LastCheck             *string                        `json:"lastCheck,omitempty"`
+	HealthError           string                         `json:"healthError,omitempty"`
+	ToolWhitelist         []string                       `json:"toolWhitelist,omitempty"`
 	// ProtocolVersion is the MCP protocol version the downstream server
 	// reported at initialize; empty for lax servers and OpenAPI adapters.
 	ProtocolVersion string `json:"protocolVersion,omitempty"`
@@ -931,32 +937,38 @@ func (s *Server) getMCPServerStatuses(ctx context.Context) []MCPServerStatus {
 	statuses := make([]MCPServerStatus, len(mcpStatuses))
 	for i, ms := range mcpStatuses {
 		status := MCPServerStatus{
-			Execution:          ms.Execution,
-			Name:               ms.Name,
-			Transport:          string(ms.Transport),
-			Endpoint:           ms.Endpoint,
-			ContainerID:        ms.ContainerID,
-			Initialized:        ms.Initialized,
-			ToolCount:          ms.ToolCount,
-			Tools:              ms.Tools,
-			External:           ms.External,
-			LocalProcess:       ms.LocalProcess,
-			SSH:                ms.SSH,
-			SSHHost:            ms.SSHHost,
-			OpenAPI:            ms.OpenAPI,
-			OpenAPISpec:        ms.OpenAPISpec,
-			OutputFormat:       ms.OutputFormat,
-			Healthy:            ms.Healthy,
-			HealthError:        ms.HealthError,
-			ToolWhitelist:      ms.ToolWhitelist,
-			ProtocolVersion:    ms.ProtocolVersion,
-			ProtocolGeneration: ms.ProtocolGeneration,
-			RegistrationFailed: ms.RegistrationFailed,
-			Replicas:           ms.Replicas,
-			Autoscale:          ms.Autoscale,
-			AuthStatus:         ms.AuthStatus,
-			AuthIssuer:         ms.AuthIssuer,
-			AuthExpiry:         ms.AuthExpiry,
+			Execution:             ms.Execution,
+			Name:                  ms.Name,
+			Transport:             string(ms.Transport),
+			Endpoint:              ms.Endpoint,
+			ContainerID:           ms.ContainerID,
+			Initialized:           ms.Initialized,
+			ToolCount:             ms.ToolCount,
+			Tools:                 ms.Tools,
+			PromptCount:           ms.PromptCount,
+			MCPResourceCount:      ms.MCPResourceCount,
+			ResourceTemplateCount: ms.ResourceTemplateCount,
+			Capabilities:          ms.Capabilities,
+			ResourceCollisions:    ms.ResourceCollisions,
+			ResourceListError:     ms.ResourceListError,
+			External:              ms.External,
+			LocalProcess:          ms.LocalProcess,
+			SSH:                   ms.SSH,
+			SSHHost:               ms.SSHHost,
+			OpenAPI:               ms.OpenAPI,
+			OpenAPISpec:           ms.OpenAPISpec,
+			OutputFormat:          ms.OutputFormat,
+			Healthy:               ms.Healthy,
+			HealthError:           ms.HealthError,
+			ToolWhitelist:         ms.ToolWhitelist,
+			ProtocolVersion:       ms.ProtocolVersion,
+			ProtocolGeneration:    ms.ProtocolGeneration,
+			RegistrationFailed:    ms.RegistrationFailed,
+			Replicas:              ms.Replicas,
+			Autoscale:             ms.Autoscale,
+			AuthStatus:            ms.AuthStatus,
+			AuthIssuer:            ms.AuthIssuer,
+			AuthExpiry:            ms.AuthExpiry,
 		}
 		if ms.LastCheck != nil {
 			ts := ms.LastCheck.Format(time.RFC3339)

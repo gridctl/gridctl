@@ -392,7 +392,7 @@ secrets are not recognized. See [diagnostic privacy](usage-observability.md#diag
 
 Storage is stack-level at `~/.gridctl/runs/<stack>/runs.jsonl` with owner-only directories and files (0700/0600 on Unix). Physical filesystem overhead and a bounded rotation temp file sit outside the logical budget. Retention values must be `>= 1` and within the same hard caps as telemetry (1 TiB, 10 years). Wipe is stack-wide, not per-server, is not secure erasure, and does not remove exports or backups. `gridctl telemetry wipe` does not delete run records; use `gridctl runs wipe`. `GET /api/telemetry/inventory` includes a stack-level `runs` row when files exist; the UI persistence pill still lists only logs, metrics, and traces.
 
-The recording boundary is gateway `tools/call` entry through its normal return. HTTP envelope failures, auth failures before dispatch, and wire delivery after return are out of scope. Query through `gridctl runs`, `GET /api/runs`, or the Runs tab beside Traces.
+The recording boundary is gateway `tools/call` entry through its normal return. Prompt gets and resource reads are not recorded. HTTP envelope failures, auth failures before dispatch, and wire delivery after return are out of scope. Query through `gridctl runs`, `GET /api/runs`, or the Runs tab beside Traces.
 
 ---
 
@@ -733,6 +733,7 @@ In the web wizard, the OpenAPI Configuration section's Operations Filter loads t
 | `ready_timeout` | duration | No | `30s` | Readiness wait for container-based HTTP/SSE servers. Accepts any `time.Duration` string (e.g. `"60s"`, `"2m"`). When a container does not become ready within this window, the container is stopped and removed; re-provisioning it requires a reload or re-apply (the automatic registration retry loop covers external, local process, SSH, OpenAPI, and stdio servers, but cannot respawn a removed container). Ignored for stdio, external, local process, SSH, and OpenAPI servers, which always use the 30s default; a server unreachable past that window is retried automatically once it comes up |
 | `ping_timeout` | duration | No | `5s` | Per-ping deadline used by the gateway health monitor. Accepts any `time.Duration` string (e.g. `"10s"`). Tune this when a server's real `Ping` latency can exceed 5s - e.g. HTTP upstreams with many tools or under autoscale spawn load where the default flakes into spurious `context deadline exceeded` errors. Applies to every pingable transport (HTTP, SSE, stdio, local process, SSH, OpenAPI) |
 | `protocol_generation` | string | No | `"auto"` | MCP protocol generation for this server: `"auto"` probes `server/discover` and falls back to the legacy `initialize` handshake; `"handshake"` and `"stateless"` skip the probe and force one generation. An escape hatch for peers the probe misclassifies; leave absent for normal auto-negotiation |
+| `protocol_extensions` | []string | No | empty | Client extensions the gateway declares downstream. The only accepted value is `io.modelcontextprotocol/ui`, which sends `mimeTypes: ["text/html;profile=mcp-app"]` on the handshake `initialize`. On a stateless downstream leg the same extension is added only when the gateway synthesizes client capabilities; upstream client capabilities are relayed unchanged. Absent leaves the handshake unchanged. Any other value fails validation with `must be io.modelcontextprotocol/ui`. A2A and OpenAPI servers fail with `server <name> does not run the MCP handshake` |
 | `replicas` | int | No | `1` | Number of independent processes to spawn for this server. Values >1 load-balance JSON-RPC tool calls across replicas using `replica_policy`. Range: 1–32. Not supported for external URL, OpenAPI, or A2A sources. Mutually exclusive with `autoscale`. See [Scaling](scaling.md) |
 | `replica_policy` | string | No | `"round-robin"` | Dispatch policy when `replicas > 1` or `autoscale` is set: `"round-robin"` or `"least-connections"` |
 | `autoscale` | object | No | - | Reactive autoscaling block. Mutually exclusive with `replicas`. Not supported for external URL, OpenAPI, or A2A sources. See [Autoscale](#autoscale) |
@@ -1307,6 +1308,15 @@ allow-lists with each server's own `tools:` whitelist. A profile with neither
 `servers:` nor `tools:` is listed but unrestricted (sees everything). Unknown
 server references (directly or via a tool prefix) fail config validation.
 
+The same profile also gates downstream prompts and resources at the server
+level. A profile allows a server when `servers:` is empty or contains it, and
+`tools:` is empty or names at least one prefixed tool for that server. Servers
+that fail that test stay hidden. A profile that omits `registry` from
+`servers:` still receives registry skill prompts and `skills://registry/`
+resources. A server `tools:` whitelist narrows tools only; it does not filter
+that server's prompts or resources. An out-of-scope read or get is
+indistinguishable from an absent one.
+
 ### Client identity
 
 Enforcement keys on a **stable client identifier** that reconciles the wire
@@ -1335,16 +1345,19 @@ identity. Identity-based access control (IdP / OAuth / JWT) is out of scope.
 
 ### Scope coverage (v1)
 
-Scoping covers **tools only**. Skills (served as MCP prompts) and resources
-remain globally visible to every client. Extending scope to prompts and
-resources is deferred.
+Tools are filtered by the intersection of the profile and each server's
+`tools:` whitelist. Downstream prompts and resources use the server-level
+rule above and are not filtered by that whitelist. Registry skill prompts
+and `skills://registry/` resources stay on the skill exposure policy only.
 
 ### Reload semantics
 
 The gateway re-resolves each client's scope from the live configuration on every
-`tools/list` and `tools/call`. A `clients:` change applied via hot-reload (file
-watch or `POST /api/reload`) therefore takes effect on the next request,
-including for already-established sessions, with no restart required.
+`tools/list`, `tools/call`, `prompts/list`, `prompts/get`, `resources/list`,
+`resources/templates/list`, and `resources/read`. A `clients:` or `groups:`
+change applied via hot-reload (file watch or `POST /api/reload`) therefore
+takes effect on the next request, including for already-established sessions,
+with no restart and no resource-index rebuild required.
 
 ### Editing in the web UI
 
@@ -1386,7 +1399,7 @@ limits:
 
 ### Enforcement semantics
 
-Each entry is a token bucket checked at dispatch. A call that finds the
+Each entry is a token bucket checked at `tools/call` dispatch. Prompt gets and resource reads are not gated. A call that finds the
 bucket empty is denied as an in-band tool error carrying the configured
 rate, the scope that tripped, and retry guidance, so agent LLMs stop
 retrying instead of burning tokens. Edits hot-reload without restarting any
@@ -1438,6 +1451,16 @@ groups:
 Group names must match `^[a-z0-9][a-z0-9_-]{0,31}$`. A group must include at
 least one server or tool.
 
+On `/groups/{name}/mcp`, a server contributes prompts and resources only when
+at least one of its currently aggregated tools passes group membership.
+A server with no aggregated tools is never a group member, so a prompt-only
+or resource-only server stays hidden on every group endpoint.
+`exclude` is applied first, so a group whose every member tool is excluded
+exposes nothing from that server. A group that excludes only some of a
+server's tools still exposes that server's prompts and resources. Registry
+skill prompts and `skills://registry/` resources keep their current group
+behavior and are not filtered by group membership.
+
 ### Override fields
 
 | Field | Type | Required | Default | Description |
@@ -1464,11 +1487,12 @@ flags any group whose description override touches it, since the rewrite was
 written against the old definition. A rename whose original tool name still
 appears in an active skill logs a warning at startup.
 
-Edits hot-reload: surfaces change on the next request, and connected clients
-pick up membership changes on reconnect. Groups serve tools only; prompts
-and resources remain globally visible (matching client scoping's v1
-decision). Link a client to a group with `gridctl link <client> --group
-<name>`; consumption appears in `gridctl groups` and `GET /api/groups`.
+Edits hot-reload: tool, prompt, and resource visibility change on the next
+request, and connected clients pick up membership changes on reconnect.
+Downstream prompts and resources follow the membership rule above. Registry
+skill prompts and `skills://registry/` resources stay visible as today.
+Link a client to a group with `gridctl link <client> --group <name>`;
+consumption appears in `gridctl groups` and `GET /api/groups`.
 
 ---
 
@@ -1499,7 +1523,7 @@ skills:
 
 Evaluation order per skill name: a `deny` match denies (naming the glob as the rule), then an `allow` match admits, then `default` decides. A denied skill is excluded from `prompts/list`, `resources/list`, `prompts/get`/`resources/read` (indistinguishable from an absent skill on the wire), and projection sync — but denial is a filter, never a state change: the skill keeps its draft/active/disabled state, stays visible in the Library and registry API flagged with the matching rule, and `gridctl apply` prints a warning for every active skill the policy hides. Recorded projections of a newly denied skill are skipped and reported, never silently removed. Unparseable glob patterns are rejected at validation.
 
-The policy is global. Per-client skill scoping remains deferred, matching the `clients:` block's documented tools-only scope. Edits hot-reload without container restarts. The block is not inherited across `extends` (matching `clients`/`groups`/`limits`).
+The policy is global. Per-client skill scoping remains deferred: a `clients:` profile that omits `registry` still receives registry skill prompts and `skills://registry/` resources, while downstream prompts and resources follow server membership. Edits hot-reload without container restarts. The block is not inherited across `extends` (matching `clients`/`groups`/`limits`).
 
 ## Model Preferences
 

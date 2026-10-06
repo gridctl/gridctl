@@ -248,6 +248,27 @@ func TestValidate_GatewayOutputFormat(t *testing.T) {
 	}
 }
 
+func TestValidate_ProtocolExtensions(t *testing.T) {
+	base := &Stack{Name: "test", Network: Network{Name: "test-net"}}
+	ok := *base
+	ok.MCPServers = []MCPServer{{Name: "s1", Image: "alpine", Port: 3000, ProtocolExtensions: []string{"io.modelcontextprotocol/ui"}}}
+	if err := Validate(&ok); err != nil {
+		t.Fatal(err)
+	}
+	bad := *base
+	bad.MCPServers = []MCPServer{{Name: "s1", Image: "alpine", Port: 3000, ProtocolExtensions: []string{"nope"}}}
+	err := Validate(&bad)
+	if err == nil || !strings.Contains(err.Error(), "io.modelcontextprotocol/ui") {
+		t.Fatalf("bad extension: %v", err)
+	}
+	openapi := *base
+	openapi.MCPServers = []MCPServer{{Name: "api", OpenAPI: &OpenAPIConfig{Spec: "spec.json"}, ProtocolExtensions: []string{"io.modelcontextprotocol/ui"}}}
+	err = Validate(&openapi)
+	if err == nil || !strings.Contains(err.Error(), "api") || !strings.Contains(err.Error(), "handshake") {
+		t.Fatalf("openapi extension: %v", err)
+	}
+}
+
 func TestValidate_ProtocolGeneration(t *testing.T) {
 	base := func(generation string) *Stack {
 		return &Stack{

@@ -40,6 +40,10 @@ type ClientBase struct {
 	// the probe and force one era.
 	generationPin string
 
+	// protocolExtensions is the operator's protocol_extensions list.
+	// Empty leaves the downstream initialize byte-identical to today.
+	protocolExtensions []string
+
 	// capabilities is what the downstream server declared (initialize
 	// result or discover result). Read by the tasks-extension proxy.
 	capabilities Capabilities
@@ -156,6 +160,29 @@ func (b *ClientBase) generationPinValue() string {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.generationPin
+}
+
+// SetProtocolExtensions installs the operator's protocol_extensions list.
+// Must be set before Initialize.
+func (b *ClientBase) SetProtocolExtensions(ext []string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.protocolExtensions = append([]string(nil), ext...)
+}
+
+func (b *ClientBase) copyProtocolExtensions() []string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return append([]string(nil), b.protocolExtensions...)
+}
+
+func (b *ClientBase) hasUIExtension() bool {
+	for _, ext := range b.copyProtocolExtensions() {
+		if ext == UIExtensionID {
+			return true
+		}
+	}
+	return false
 }
 
 // SetDownstreamCapabilities records what the server declared at
@@ -318,15 +345,19 @@ func (r *RPCClient) Initialize(ctx context.Context) error {
 // initializeHandshake performs the legacy (2025-11-25 and earlier)
 // initialize handshake.
 func (r *RPCClient) initializeHandshake(ctx context.Context) error {
+	caps := Capabilities{Tools: &ToolsCapability{}}
+	if r.hasUIExtension() {
+		caps.Extensions = map[string]json.RawMessage{
+			UIExtensionID: uiExtensionSettings(),
+		}
+	}
 	params := InitializeParams{
 		ProtocolVersion: MCPProtocolVersion,
 		ClientInfo: ClientInfo{
 			Name:    "gridctl-gateway",
 			Version: "1.0.0",
 		},
-		Capabilities: Capabilities{
-			Tools: &ToolsCapability{},
-		},
+		Capabilities: caps,
 	}
 
 	var result InitializeResult
@@ -416,6 +447,10 @@ func (r *RPCClient) CallTool(ctx context.Context, name string, arguments map[str
 	}
 
 	return &result, nil
+}
+
+func uiExtensionSettings() json.RawMessage {
+	return json.RawMessage(`{"mimeTypes":["text/html;profile=mcp-app"]}`)
 }
 
 // RelayRaw sends a JSON-RPC request with verbatim params and returns
