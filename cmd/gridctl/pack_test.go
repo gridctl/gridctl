@@ -184,6 +184,9 @@ func TestPackAddApplyStatusRemove_EndToEnd(t *testing.T) {
 	if !strings.Contains(stdout.String(), `Imported pack "team-pack" (1 skills, 1 agents, wiring: yes)`) {
 		t.Errorf("add summary:\n%s", stdout.String())
 	}
+	if strings.Contains(stdout.String(), "Stack:") {
+		t.Errorf("pack without stack printed a stack line:\n%s", stdout.String())
+	}
 	locked, err := loadLockedPack("team-pack")
 	if err != nil {
 		t.Fatal(err)
@@ -200,7 +203,7 @@ func TestPackAddApplyStatusRemove_EndToEnd(t *testing.T) {
 	// Apply: skills + agents project (wiring skips, no gateway) with
 	// pack tags; exit 1 because the wiring row needs attention.
 	stdout.Reset()
-	exit := runPackApply(ctx, &stdout, &stderr, freshManagers(), "team-pack", false, false, nil, "json", false)
+	exit := runPackApply(ctx, &stdout, &stderr, freshManagers(), "team-pack", false, false, nil, 8180, "json", false)
 	if exit != ctxExitAttention {
 		t.Fatalf("apply exit = %d\n%s%s", exit, stdout.String(), stderr.String())
 	}
@@ -345,7 +348,7 @@ func TestPackApply_ForeignPackRefusal(t *testing.T) {
 	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, repoA, "", "", false, false, "text", skills.AuthConfig{}); exit != ctxExitOK {
 		t.Fatal(stderr.String())
 	}
-	if exit := runPackApply(ctx, &stdout, &stderr, freshManagers(), "team-pack", false, false, nil, "text", true); exit == ctxExitInfrastructure {
+	if exit := runPackApply(ctx, &stdout, &stderr, freshManagers(), "team-pack", false, false, nil, 8180, "text", true); exit == ctxExitInfrastructure {
 		t.Fatal(stderr.String())
 	}
 
@@ -362,7 +365,7 @@ func TestPackApply_ForeignPackRefusal(t *testing.T) {
 	}
 
 	stdout.Reset()
-	exit := runPackApply(ctx, &stdout, &stderr, freshManagers(), "other-pack", false, false, nil, "json", false)
+	exit := runPackApply(ctx, &stdout, &stderr, freshManagers(), "other-pack", false, false, nil, 8180, "json", false)
 	if exit != ctxExitAttention {
 		t.Fatalf("apply exit = %d, want 1 (foreign refusal)\n%s", exit, stdout.String())
 	}
@@ -393,7 +396,7 @@ func TestPackRemove_DriftedResourceKept(t *testing.T) {
 	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, repo, "", "", false, false, "text", skills.AuthConfig{}); exit != ctxExitOK {
 		t.Fatal(stderr.String())
 	}
-	if exit := runPackApply(ctx, &stdout, &stderr, freshManagers(), "team-pack", false, false, nil, "text", true); exit != ctxExitOK {
+	if exit := runPackApply(ctx, &stdout, &stderr, freshManagers(), "team-pack", false, false, nil, 8180, "text", true); exit != ctxExitOK {
 		t.Fatalf("apply: %s%s", stdout.String(), stderr.String())
 	}
 
@@ -526,5 +529,20 @@ func TestPackAdd_PathScopesDiscovery(t *testing.T) {
 	}
 	if !strings.Contains(scoped.String(), "alpha") || !strings.Contains(strings.ToLower(scoped.String()), "unresolved") {
 		t.Errorf("--path did not scope discovery; expected alpha unresolved, got: %s", scoped.String())
+	}
+}
+
+func TestPackAdd_PrintsCarriedStack(t *testing.T) {
+	imp, freshManagers := packTestEnv(t)
+	manifest := packTestManifest + "stack: stack.yaml\n"
+	repo := packFixture(t, manifest, map[string]string{
+		"stack.yaml": "version: \"1\"\nname: team-pack\nmcp-servers:\n  - name: local\n    command: [\"echo\"]\n",
+	})
+	var stdout, stderr bytes.Buffer
+	if exit := runPackAdd(context.Background(), &stdout, &stderr, freshManagers(), imp, repo, "", "", false, false, "text", skills.AuthConfig{}); exit != ctxExitOK {
+		t.Fatalf("add exit = %d\n%s%s", exit, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Stack: stack.yaml (team-pack, 1 server)") {
+		t.Fatalf("stdout =\n%s", stdout.String())
 	}
 }
