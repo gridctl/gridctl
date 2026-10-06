@@ -41,16 +41,18 @@ The optional `variables:` map uses the same value-free declaration fields as
 defaults of false, true, and string for the first three fields. Import records
 the declarations and lists unmet required keys with `gridctl var set KEY`
 commands. It never imports a value, writes the variable store, or prompts.
-A carried stack is pinned and deployed, not edited. Packs without declarations
-or a stack record retain the version-two lock shape. Version three is used
-when declarations must be represented and the file has no stack record or SSH
-fields. A source imported with `--ssh-key` raises the stamp to version four.
-A pack that carries a resolved stack stamps version five on the whole
-import lockfile, so a reader that only understands SSH fields refuses the
-file instead of dropping the stack key. That refusal also blocks unrelated
-skill updates in the same file. Remove the pack with this build before
-downgrading; an older binary cannot, because it refuses the file. An
-unresolved stack does not raise the stamp.
+A carried stack is pinned and deployed, not edited. Packs without declarations,
+a stack record, or an unresolved-detail map retain the version-two lock shape.
+Version three is used when declarations must be represented and the file has
+no stack record, no unresolved-detail map, and no SSH fields. A source imported with `--ssh-key` raises the stamp to version four when
+the file has no stack record and no unresolved-detail map. A resolved
+stack, or an unresolved stack that records a detail, stamps version five
+on the whole import lockfile, so a reader that only understands SSH fields
+refuses the file instead of dropping the stack key or the detail map. That
+refusal also blocks unrelated skill updates in the same file. Remove the
+pack with this build before downgrading; an older binary cannot, because
+it refuses the file. A pack with neither a stack record nor an
+unresolved-detail map keeps the previous stamp.
 
 ## Verbs
 
@@ -59,7 +61,7 @@ unresolved stack does not raise the stamp.
 | `gridctl pack add <repo-url>` | Clone, read the manifest, and import exactly its selection into the registry (`--ref`, `--path`, `--trust`, `--dry-run`, `--format json`). `--path` scopes discovery to a subdirectory, matching the REST `path` field; the manifest is always read from the repository root. A `stack:` entry is resolved against the clone root, not `--path`. Auth flags for private repos: `--vault-key <key>`, `--auth-token-stdin`, `--auth-token <pat>`, `--ssh-key <path>`. Exit `0` clean, `1` partial (unresolved or skipped), `2` infrastructure. |
 | `gridctl pack apply <name>` | Start a carried stack from its pinned checkout, then project skills and agents through the projection engines, rule fragments through `ctx` (pack-tagged), and (when `wiring: true`) the gateway entry through the wiring ownership manager, scoped to `clients:`. Wiring for a stack-carrying pack uses that daemon's port and never another running gateway. Packs without `stack:` keep the previous "no running gateway" skip. Additive, never transactional (`Applied N/M`). `-p` / `--port` (default 8180), `--force` (replaces a same-named daemon whose state file is outside `~/.gridctl/packs/<name>/`; a daemon under that directory is replaced without `--force`), `--dry-run`, `--clients`, `--format json`. |
 | `gridctl pack status [name]` | Per-resource state in the shared vocabulary (in-sync, stale, drifted, target-missing, foreign, missing) plus `unresolved` rows. A carried stack is the first row: `in-sync`, `stale`, `drifted`, `missing` (not attention), or `target-missing`. Exit `0`/`1`/`2`. |
-| `gridctl pack remove <name>` | Stop a daemon whose state file is under this pack's checkout, delete `~/.gridctl/packs/<name>/`, then cascade removal: projections unsynced from client trees (rule fragment projections by pack tag only), wiring records removed through the ownership manager (entries gridctl did not record are never deleted), then the pack's registry skills, agents, and installed fragments, then the pack record. A same-named daemon running from anywhere else is left running and gets no stack row; the checkout is still deleted. A failed stop leaves the pack record in place so remove can be retried. Drifted projections are kept with a remediation hint unless `--force`; a partial removal trims the pack record to what stayed. `--dry-run`, `--format json`. |
+| `gridctl pack remove <name>` | Stop a daemon whose state file is under this pack's checkout, delete `~/.gridctl/packs/<name>/`, then cascade removal: projections unsynced from client trees (rule fragment projections by pack tag only), wiring records removed through the ownership manager (entries gridctl did not record are never deleted), then the pack's registry skills, agents, and installed fragments, then the pack record. A same-named daemon running from anywhere else is left running and gets no stack row on a real remove; the checkout is still deleted. `--dry-run` reports `would-remove` for that checkout and says the daemon is left running. A failed stop, or a remove that cannot stop a running pack-owned daemon, leaves the pack record and checkout in place so remove can be retried. Drifted projections are kept with a remediation hint unless `--force`; a partial removal trims the pack record to what stayed. `--dry-run`, `--format json`. |
 
 ## Private pack repositories
 
@@ -92,9 +94,9 @@ Wiring uses that daemon's port on `started`, `replaced`, and `unchanged`, and on
 
 `pack status` puts the stack row first. `in-sync` means the running `StackFile` is the pinned path. `stale` means it is running from an older checkout under the pack directory (attention; the detail names that commit when known, and the remediation is `re-run 'gridctl pack apply <name>'`). `drifted` means a same-named daemon is running from any other path (attention; the detail names that path). `missing` means nothing is running and is not attention. `target-missing` means the checkout or stack file is gone (attention; remediation `re-run 'gridctl pack add'`). A stack-only pack reports applied when the stack is `in-sync` or `stale`. A projected pack without a stack is unchanged.
 
-After a successful replace, other commit directories under that pack that no running daemon references are removed. `pack remove` stops a daemon only when its `StackFile` is under the pack checkout, then deletes `~/.gridctl/packs/<pack-name>/`. A stop or checkout-delete failure returns before the pack record is trimmed, so the next remove can retry. A same-named daemon running from elsewhere is not stopped and gets no stack row, including on `--dry-run`. A real remove still deletes the pack checkout, because that daemon's stack file is not under it.
+After a successful replace, other commit directories under that pack that no running daemon references are removed. `pack remove` stops a daemon only when its `StackFile` is under the pack checkout, then deletes `~/.gridctl/packs/<pack-name>/`. A stop or checkout-delete failure returns before the pack record is trimmed, so the next remove can retry. A same-named daemon running from elsewhere is not stopped. A real remove gets no stack row and still deletes the pack checkout, because that daemon's stack file is not under it. `--dry-run` reports `would-remove` for the checkout and says the running daemon is not pack-owned and is left running.
 
-The launcher is CLI-only. `POST /api/packs/{name}/apply` and the web UI return `skipped-unavailable` with detail `stack deploy is not available over this interface` and remediation `run 'gridctl pack apply <name>' from the CLI`. They do not start the gateway. `DELETE /api/packs/{name}` cannot stop a daemon either. If a pack-owned daemon is running, that row is `skipped-unavailable` with remediation `gridctl destroy <name>`, the daemon and checkout stay, and the rest of the cascade can still remove the pack record. A REST dry-run still reports `would-remove` and a stop for that daemon; the preview does not mean REST can perform the stop. Stop the daemon with `gridctl pack remove` before removing the pack from the web UI. A carried stack's own `link:` block is ignored; pack `wiring:` and `clients:` apply instead, and add warns `stack declares link:; pack wiring (wiring:/clients:) applies instead and link: is ignored under pack apply`. `gridctl status`, `gridctl destroy <name>`, `gridctl reload`, and `gridctl logs` work on the pinned checkout the same way they work on a stack you applied yourself. Updates go through replace, not hot reload.
+The launcher is CLI-only. `POST /api/packs/{name}/apply` and the web UI return `skipped-unavailable` with detail `stack deploy is not available over this interface` and remediation `run 'gridctl pack apply <name>' from the CLI`. They do not start the gateway. `DELETE /api/packs/{name}` cannot stop a daemon either. If a pack-owned daemon is running, that row is `skipped-unavailable` with remediation `gridctl destroy <name>`, and the daemon, checkout, and pack record all stay so `gridctl pack remove` can finish the job. A REST dry-run still reports `would-remove` and a stop for that daemon; the preview does not mean REST can perform the stop. Stop the daemon with `gridctl pack remove` before removing the pack from the web UI. A carried stack's own `link:` block is ignored; pack `wiring:` and `clients:` apply instead, and add warns `stack declares link:; pack wiring (wiring:/clients:) applies instead and link: is ignored under pack apply`. `gridctl status`, `gridctl destroy <name>`, `gridctl reload`, and `gridctl logs` work on the pinned checkout the same way they work on a stack you applied yourself. Updates go through replace, not hot reload.
 
 ## Interplay with the standalone verbs
 

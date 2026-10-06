@@ -43,7 +43,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 | Skill projection (skill project) | Stable | Backward compatible in 0.x |
 | Agent kind (skill add / skill project --kind agent) | Stable | Distinct from the removed Agent IDE below; backward compatible in 0.x |
 | Multi-client agent renders (opencode, copilot, gemini) | Stable | Lossy by design - each dialect drops keys it cannot express; backward compatible in 0.x |
-| Packs (pack add / apply / status / remove) | Stable | Manifest schema `gridctl.dev/v1`; `v1alpha1` still accepted. A resolved carried stack stamps `skills.lock.yaml` version 5. REST and the web UI do not start or stop that daemon |
+| Packs (pack add / apply / status / remove) | Stable | Manifest schema `gridctl.dev/v1`; `v1alpha1` still accepted. A resolved carried stack, or an unresolved stack that records a detail, stamps `skills.lock.yaml` version 5. REST and the web UI do not start or stop that daemon |
 | Global context sync (ctx) | Stable | Backward compatible in 0.x |
 | Rules fragment library (ctx add / list / rm, fragments mode) | Stable | Backward compatible in 0.x |
 | Skill governance pins (skill pins, skills: policy) | Stable | Backward compatible in 0.x |
@@ -93,7 +93,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 - The Python MCP runtime base is not a supported public release until hosted architecture tests, candidate publication, and anonymous evidence succeed. Convenience aliases are promoted separately. Untested runtimes are unsupported.
 - Code mode sandbox has no filesystem access (by design).
 - Skills registry is local-only with no remote discovery.
-- Agents and packs are first-class in the web UI: the Library's Agents segment covers catalog, editing, and per-client projection over the agents REST endpoints. The Packs segment imports, projects, and removes pack resources over REST and shows a carried stack row. It does not start or stop that daemon. Apply returns `skipped-unavailable` and the CLI command. Removing a running pack-owned daemon over REST leaves the daemon and `~/.gridctl/packs/<name>/` in place and can still drop the pack record; stop it with `gridctl pack remove` or `gridctl destroy <name>`.
+- Agents and packs are first-class in the web UI: the Library's Agents segment covers catalog, editing, and per-client projection over the agents REST endpoints. The Packs segment imports, projects, and removes pack resources over REST and shows a carried stack row. It does not start or stop that daemon. Apply returns `skipped-unavailable` and the CLI command. Removing a running pack-owned daemon over REST leaves the daemon, `~/.gridctl/packs/<name>/`, and the pack record in place. Stop it with `gridctl pack remove` or `gridctl destroy <name>`, then remove the pack again.
 - Agent renders for OpenCode, Copilot, and Gemini CLI are lossy by design: each dialect drops frontmatter keys it cannot express, and `skill project status` names the dropped keys per row. Claude Code receives the canonical bytes verbatim.
 - Global context sync covers 12 of 16 linkable clients; Claude Desktop, Cursor, AnythingLLM, and LM Studio expose no writable global context file, and Windsurf caps `global_rules.md` at 6,000 characters.
 - Antigravity's skills and global-context paths rest on unofficial sourcing rather than published documentation. Those targets are marked `unofficial` in `ctx status` and `skill project status`; the projection itself is supported, but the path may move without an upstream release note.
