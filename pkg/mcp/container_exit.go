@@ -25,6 +25,27 @@ type containerInspector interface {
 	InspectContainer(ctx context.Context) (*ContainerExit, error)
 }
 
+// retainCreatedExit keeps a recorded exit when a later inspect reports the
+// non-running status created with the same finish time. That shape is what
+// Podman's compat attach leaves behind after it clears the real exit code.
+func retainCreatedExit(prev, next *ContainerExit) *ContainerExit {
+	if prev == nil || next == nil || next.Status != "created" {
+		return next
+	}
+	if !sameFinishedAt(prev.FinishedAt, next.FinishedAt) {
+		return next
+	}
+	copied := *prev
+	return &copied
+}
+
+func sameFinishedAt(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return a.Equal(*b)
+}
+
 func parseContainerFinishedAt(raw string) (time.Time, bool) {
 	if raw == "" || strings.HasPrefix(raw, "0001-01-01") {
 		return time.Time{}, false

@@ -994,7 +994,11 @@ func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, rep
 		}
 	} else {
 		status.Error = err.Error()
-		status.Exit = exit
+		var previous *ContainerExit
+		if prev != nil {
+			previous = prev.Exit
+		}
+		status.Exit = retainCreatedExit(previous, exit)
 		if prev != nil {
 			status.LastHealthy = prev.LastHealthy
 		}

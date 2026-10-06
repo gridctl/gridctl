@@ -129,6 +129,14 @@ func TestContainerCrashDiagnostics(t *testing.T) {
 		t.Fatal("runtime status string is empty")
 	}
 	t.Logf("runtime status %q", replica.Exit.Status)
+	stableUntil := time.Now().Add(2 * time.Second)
+	for time.Now().Before(stableUntil) {
+		again := gateway.ReplicaStatuses("crash")
+		if len(again) != 1 || again[0].Exit == nil || again[0].Exit.Code != 3 || again[0].State != "restarting" {
+			t.Fatalf("exit evidence lost after reconnect: %#v", again)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
 
 	apiServer := api.NewServer(gateway, nil)
 	apiServer.SetLogBuffer(logBuffer)

@@ -58,8 +58,12 @@ function ReplicaRow({ replica }: { replica: ReplicaStatus }) {
   );
 }
 
+function replicaNeedsDetail(replica: ReplicaStatus): boolean {
+  return replica.state !== 'healthy' || (replica.restartAttempts ?? 0) > 0 || replica.exit != null;
+}
+
 export function ServerCrashDetails({ data }: { data?: MCPServerNodeData }) {
-  const replicas = data?.replicas ?? [];
+  const replicas = (data?.replicas ?? []).filter(replicaNeedsDetail);
   const stderr = data?.stderrTail ?? [];
   if (replicas.length === 0 && stderr.length === 0) return null;
   return (

@@ -90,8 +90,14 @@ func (c *StdioClient) Connect(ctx context.Context) error {
 			return fmt.Errorf("previous container response cleanup pending")
 		}
 	}
+	if err := c.ensureContainerRunning(ctx); err != nil {
+		return err
+	}
 
-	// Attach to container
+	// Attach to container. Logs is left false: replayed stdout would re-enter
+	// the JSON-RPC correlation map. A non-running container is refused above
+	// so a Podman compat attach cannot re-initialize an exited container and
+	// clear its exit code.
 	resp, err := c.cli.ContainerAttach(ctx, c.containerID, container.AttachOptions{
 		Stream: true,
 		Stdin:  true,
@@ -207,29 +213,93 @@ func (c *StdioClient) readResponses(ctx context.Context, stdout io.Reader) {
 	}
 }
 
+const maxStderrLine = 1024 * 1024
+
 // readStderr logs container stderr lines. It drains to EOF and does not
 // return on context cancel: abandoning an unbuffered pipe would leave
-// StdCopy blocked on its next stderr write. An oversized line stops the
-// scanner, so the remainder is discarded to EOF rather than left unread.
+// StdCopy blocked on its next stderr write. A line over the cap is logged
+// truncated, the rest of that line is discarded, and later lines are read.
 func (c *StdioClient) readStderr(r io.Reader) {
-	scanner := bufio.NewScanner(r)
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
-	for scanner.Scan() {
-		if c.logger != nil {
-			c.logger.Warn("server stderr", "output", scanner.Text())
+	reader := bufio.NewReaderSize(r, 64*1024)
+	for {
+		line, truncated, err := readCappedLine(reader, maxStderrLine)
+		if err == nil || truncated || line != "" {
+			c.logStderrLine(line, truncated)
 		}
+		if err == nil {
+			continue
+		}
+		if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrClosedPipe) {
+			if c.logger != nil {
+				c.logger.Debug("stderr scan failed", "error", err)
+			}
+			_, _ = io.Copy(io.Discard, reader)
+		}
+		return
 	}
-	if err := scanner.Err(); err != nil && !errors.Is(err, io.ErrClosedPipe) {
-		if c.logger != nil {
-			c.logger.Debug("stderr scan failed", "error", err)
+}
+
+func (c *StdioClient) logStderrLine(line string, truncated bool) {
+	if c.logger == nil {
+		return
+	}
+	if truncated {
+		c.logger.Warn("server stderr", "output", line, "truncated", true)
+		return
+	}
+	c.logger.Warn("server stderr", "output", line)
+}
+
+// readCappedLine reads one stderr line, capping stored bytes at cap. The
+// remainder of an over-long line is discarded through the next newline so
+// the following line can still be read. The returned error is EOF, a closed
+// pipe, or a read failure after any partial line.
+func readCappedLine(r *bufio.Reader, cap int) (string, bool, error) {
+	if cap < 0 {
+		cap = 0
+	}
+	buf := make([]byte, 0, 64*1024)
+	truncated := false
+	for {
+		frag, err := r.ReadSlice('\n')
+		piece := frag
+		hadNL := false
+		if len(piece) > 0 && piece[len(piece)-1] == '\n' {
+			hadNL = true
+			piece = piece[:len(piece)-1]
+			if len(piece) > 0 && piece[len(piece)-1] == '\r' {
+				piece = piece[:len(piece)-1]
+			}
 		}
-		_, _ = io.Copy(io.Discard, r)
+		if !truncated && len(piece) > 0 {
+			remain := cap - len(buf)
+			if len(piece) > remain {
+				if remain > 0 {
+					buf = append(buf, piece[:remain]...)
+				}
+				truncated = true
+			} else {
+				buf = append(buf, piece...)
+			}
+		}
+		if hadNL && !truncated && len(buf) > 0 && buf[len(buf)-1] == '\r' {
+			buf = buf[:len(buf)-1]
+		}
+		if hadNL {
+			return string(buf), truncated, nil
+		}
+		if errors.Is(err, bufio.ErrBufferFull) {
+			continue
+		}
+		if err != nil {
+			return string(buf), truncated, err
+		}
+		return string(buf), truncated, io.ErrUnexpectedEOF
 	}
 }
 
 // InspectContainer reads the runtime's account of a stopped container.
-// A running container returns nil, nil. A missing state is an error.
+// A running container returns nil, nil. A missing base or state is an error.
 func (c *StdioClient) InspectContainer(ctx context.Context) (*ContainerExit, error) {
 	if c.cli == nil || c.containerID == "" {
 		return nil, fmt.Errorf("container state unavailable")
@@ -238,22 +308,57 @@ func (c *StdioClient) InspectContainer(ctx context.Context) (*ContainerExit, err
 	if err != nil {
 		return nil, fmt.Errorf("inspecting container: %w", err)
 	}
-	if info.State == nil {
-		return nil, fmt.Errorf("container state unavailable")
+	state, err := containerState(info)
+	if err != nil {
+		return nil, err
 	}
-	if info.State.Running {
+	if state.Running {
 		return nil, nil
 	}
 	exit := &ContainerExit{
-		Code:      info.State.ExitCode,
-		OOMKilled: info.State.OOMKilled,
-		Status:    string(info.State.Status),
-		Error:     info.State.Error,
+		Code:      state.ExitCode,
+		OOMKilled: state.OOMKilled,
+		Status:    string(state.Status),
+		Error:     state.Error,
 	}
-	if finished, ok := parseContainerFinishedAt(info.State.FinishedAt); ok {
+	if finished, ok := parseContainerFinishedAt(state.FinishedAt); ok {
 		exit.FinishedAt = &finished
 	}
 	return exit, nil
+}
+
+// ensureContainerRunning refuses attach unless inspect shows the container is
+// running. Podman's compat attach re-initializes an exited container, which
+// replaces the real exit code with 0 and status created.
+func (c *StdioClient) ensureContainerRunning(ctx context.Context) error {
+	if c.cli == nil || c.containerID == "" {
+		return fmt.Errorf("container state unavailable")
+	}
+	inspectCtx, cancel := context.WithTimeout(ctx, containerInspectTimeout)
+	defer cancel()
+	info, err := c.cli.ContainerInspect(inspectCtx, c.containerID)
+	if err != nil {
+		return fmt.Errorf("inspecting container: %w", err)
+	}
+	state, err := containerState(info)
+	if err != nil {
+		return err
+	}
+	if state.Running {
+		return nil
+	}
+	status := string(state.Status)
+	if status == "" {
+		return fmt.Errorf("container not running")
+	}
+	return fmt.Errorf("container not running (status %s)", status)
+}
+
+func containerState(info container.InspectResponse) (*container.State, error) {
+	if info.ContainerJSONBase == nil || info.State == nil {
+		return nil, fmt.Errorf("container state unavailable")
+	}
+	return info.State, nil
 }
 
 // drainPendingRequests sends error responses to all pending callers so they

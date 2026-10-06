@@ -40,4 +40,22 @@ describe('ServerCrashDetails', () => {
     expect(screen.getByText('Recent stderr')).toBeInTheDocument();
     expect(screen.getByText('fatal: refusing to continue')).toBeInTheDocument();
   });
+
+  it('renders nothing for a healthy replica', () => {
+    const { container } = render(<ServerCrashDetails data={data({
+      status: 'running',
+      healthy: true,
+      replicas: [{
+        replicaId: 0,
+        state: 'healthy',
+        healthy: true,
+        inFlight: 0,
+        restartAttempts: 0,
+      }],
+    })} />);
+
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByText('Replica 0')).not.toBeInTheDocument();
+    expect(screen.queryByText('Attempts')).not.toBeInTheDocument();
+  });
 });

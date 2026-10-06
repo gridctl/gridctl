@@ -1101,6 +1101,53 @@ func TestGateway_HealthMonitor_RecordsContainerExit(t *testing.T) {
 	}
 }
 
+func TestGateway_HealthMonitor_RetainsCreatedExit(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+	finished := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	var calls atomic.Int32
+	mock := setupMockAgentClient(ctrl, "svc", []Tool{{Name: "tool1"}})
+	client := &reconnectableClient{
+		AgentClient: mock,
+		pingFn:      func(context.Context) error { return fmt.Errorf("not connected") },
+		reconnectFn: func(context.Context) error { return fmt.Errorf("container not running (status exited)") },
+		inspectFn: func(context.Context) (*ContainerExit, error) {
+			if calls.Add(1) == 1 {
+				return &ContainerExit{Code: 3, Status: "exited", FinishedAt: &finished}, nil
+			}
+			return &ContainerExit{Code: 0, Status: "created", FinishedAt: &finished}, nil
+		},
+	}
+	g.Router().AddClient(client)
+	g.SetServerMeta(MCPServerConfig{Name: "svc", Transport: TransportStdio})
+
+	ctx := context.Background()
+	g.checkHealth(ctx)
+	g.checkHealth(ctx)
+	replicas := g.ReplicaStatuses("svc")
+	if len(replicas) != 1 || replicas[0].Exit == nil || replicas[0].Exit.Code != 3 || replicas[0].Exit.Status != "exited" {
+		t.Fatalf("retained exit = %#v", replicas)
+	}
+}
+
+func TestRetainCreatedExit(t *testing.T) {
+	finished := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	later := finished.Add(time.Second)
+	prev := &ContainerExit{Code: 3, Status: "exited", FinishedAt: &finished}
+	if got := retainCreatedExit(prev, &ContainerExit{Code: 0, Status: "created", FinishedAt: &finished}); got == nil || got.Code != 3 || got == prev {
+		t.Fatalf("same finish = %#v", got)
+	}
+	if got := retainCreatedExit(prev, &ContainerExit{Code: 1, Status: "exited", FinishedAt: &later}); got == nil || got.Code != 1 {
+		t.Fatalf("new exit = %#v", got)
+	}
+	if got := retainCreatedExit(prev, &ContainerExit{Code: 0, Status: "created", FinishedAt: &later}); got == nil || got.Code != 0 {
+		t.Fatalf("changed finish = %#v", got)
+	}
+	if got := retainCreatedExit(nil, &ContainerExit{Status: "created"}); got == nil || got.Status != "created" {
+		t.Fatalf("no previous = %#v", got)
+	}
+}
+
 func TestGateway_HealthMonitor_ReconnectionFails(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	g := NewGateway()
