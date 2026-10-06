@@ -206,6 +206,10 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
 
 The `source` object can contain `type`, redacted `url`, declared `ref`, `package`, resolved `version`, immutable Git `commit`, and selected PyPI `artifact`. Empty fields are omitted. When an older image has no provenance labels, the API falls back to the declared PyPI package and version but does not guess a commit or artifact.
 
+A server includes `stderrTail` only when `healthy` is false: up to the last 10 redacted `server stderr` lines for that server from the gateway log ring, oldest first. A healthy server, or one with no health result yet, omits the field, as does an unhealthy server with no matching lines. The lines are the same ones `GET /api/logs` and `GET /api/mcp-servers/{name}/logs` return; gridctl does not keep a second raw buffer. A busy server can push older lines out of the 1000-entry ring. The ring does not replay output from before the gateway attached.
+
+`replicas[]` may include `exit` after a failed health check inspects a stopped container. The object has `code` (int), `oomKilled` (bool), `finishedAt` (RFC3339, omitted when the runtime reports the zero timestamp), `status` (the runtime status string, passed through unchanged), and optional `error`. Docker and Podman compat inspection both reported `exited` for a process that exited 3. `stopped`, `dead`, and `created` are passed through when the runtime uses them. Reconnect does not attach unless the container is running, so a Podman compat attach cannot reset an exited container to `created` and replace the exit code with 0. A later inspect that reports `created` with the same finish time keeps the earlier exit record. A running container, a non-container replica, an inspect failure, or a later successful ping omits `exit`. `lastError` remains the ping error and is not replaced by the exit record. [`/api/stack/health`](#get-apistackhealth) does not copy `exit` or `stderrTail`.
+
 Each registered server also reports `promptCount`, `mcpResourceCount`, and `resourceTemplateCount` from the last successful list. Computing status does not list downstream servers again. `mcpResourceCount` counts MCP resources, not the infrastructure `resources` array on this response. `capabilities` reports the booleans the downstream declared: `prompts`, `resources`, `resourcesSubscribe`, and `resourcesListChanged`. The gateway does not advertise subscribe or list-changed upstream. `resourceCollisions` counts resource URIs, identical templates, and `ui://` index entries this server lost to another server. `resourceListError` is omitted when the last resource list succeeded; otherwise it is `timeout`, `canceled`, `rpc`, or `transport`. It covers `resources/list` and `resources/templates/list` only. A `prompts/list` failure is logged with the server name and category and is not stored on this field. An upstream disconnect is not recorded as a server fault. The Stack sidebar labels the counts Prompts, MCP resources, and Templates, and shows a warning row for a list error or a non-zero collision count.
 
 Each registered server also reports `protocolVersion` (string, omitted when the server did not report one or has no MCP handshake, as with OpenAPI adapters) carrying the MCP protocol version negotiated at initialize, and `protocolGeneration` (string, `"handshake"` or `"stateless"`, omitted for OpenAPI adapters) carrying the resolved MCP protocol generation. `/api/sessions` responses carry `entries`, one `{id, generation, protocolVersion}` object per active session, alongside the legacy bare `sessions` ID list. A server that failed gateway registration (unreachable endpoint, initialize failure, or unsupported protocol version) still appears in the list with `registrationFailed: true`, `healthy: false`, the failure reason in `healthError`, `initialized: false`, and no replicas, so declared servers are never silently absent. A retryable failure (the server was not reachable) is not terminal: the gateway re-attempts registration on the health-monitor cadence with exponential backoff, `healthError` carries a `retrying in Ns` hint while the loop runs, and the row flips to a normal registered server once the backend becomes reachable. Authorization failures and configuration errors are not retried, and `POST /api/mcp-servers/{name}/restart` on a retrying server forces an immediate attempt instead of returning 404.
@@ -306,6 +310,8 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/mcp-servers
 | `lastDecision` | string | `"up"`, `"down"`, or `"noop"` - what the controller just decided |
 | `warmPool` | int | Configured warm-pool (omitted when 0) |
 | `idleToZero` | bool | Configured scale-to-zero (omitted when false) |
+
+Replica objects on this response match `/api/status`. `exit` and server-level `stderrTail` are described with the [server status fields](#get-apistatus).
 
 #### `GET /api/tools`
 
@@ -510,6 +516,8 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/logs?lines=50&
 When `level` is set, the whole buffer is scanned newest-first for up to `lines` entries of the requested levels, so sparse severities are returned even when the most recent entries are all other levels. The web UI's Logs workspace polls this endpoint (window size selectable as 200, 500, or 1000 entries, 500 by default) and filters client-side.
 
 Tool-call log lines carry `server`, `tool`, `replica_id`, and (when the caller is identified) `client` in `attrs`, plus a top-level `trace_id` when tracing is enabled, for correlation with `/api/traces`.
+
+Container and local-process stderr captured after attach is a WARN `server stderr` entry with `server` and `output` in `attrs`. A container stderr line longer than 1 MiB is logged once with `truncated: true` and at most 1 MiB of `output`; later lines on that stream are still captured. Local-process stderr still stops the scanner at 1 MiB. Rejected stdio requests (`server request rejected`, with `method` and `code`) and dropped notifications (`server notification dropped`, with `method`) are DEBUG, as are skipped HTTP and SSE no-id notifications (`server notification skipped`, with `method`). Params are not logged. A method-plus-id HTTP event is not logged as a skipped notification; the decoder still returns it as the call result. Those DEBUG lines are absent unless the gateway log level is debug.
 
 Shared redaction masks recognizable typed capability strings in log messages,
 keys, and nested JSON-compatible attributes. A nested attribute containing a
@@ -1365,7 +1373,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/stack/health
 }
 ```
 
-`validation.status` is `valid`, `warnings`, or `errors`. `drift.status` is `in-sync`, `drifted`, or `unknown`.
+`validation.status` is `valid`, `warnings`, or `errors`. `drift.status` is `in-sync`, `drifted`, or `unknown`. Replica entries here do not include `exit` or server `stderrTail`. Those fields are on [`/api/mcp-servers`](#get-apimcp-servers) and [`/api/status`](#get-apistatus).
 
 #### `GET /api/stack/spec`
 
@@ -1608,7 +1616,7 @@ Returns structured log entries from the gateway log buffer filtered to the named
 curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/mcp-servers/github/logs?lines=50"
 ```
 
-The response is the same JSON array of buffered entries as [`/api/logs`](#get-apilogs), limited to entries tagged with the requested server. The buffer is scanned newest-first for up to `lines` matching entries, so servers with a small share of the buffer still get their full history within the ring. Returns an empty array (`[]`) when no log buffer is configured.
+The response is the same JSON array of buffered entries as [`/api/logs`](#get-apilogs), limited to entries tagged with the requested server. The buffer is scanned newest-first for up to `lines` matching entries, so servers with a small share of the buffer still get their full history within the ring. Returns an empty array (`[]`) when no log buffer is configured. WARN `server stderr` lines for that server appear here after attach, including after the container is removed, until the ring drops them.
 
 #### `PUT /api/mcp-servers/{name}/tools`
 

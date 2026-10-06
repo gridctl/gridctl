@@ -128,10 +128,11 @@ type OpenAPIClientConfig struct {
 
 // HealthStatus tracks the health state of a downstream MCP server.
 type HealthStatus struct {
-	Healthy     bool      // Whether the server is responding to pings
-	LastCheck   time.Time // When the last health check ran
-	LastHealthy time.Time // When the server was last seen healthy
-	Error       string    // Error message if unhealthy (empty when healthy)
+	Healthy     bool           // Whether the server is responding to pings
+	LastCheck   time.Time      // When the last health check ran
+	LastHealthy time.Time      // When the server was last seen healthy
+	Error       string         // Error message if unhealthy (empty when healthy)
+	Exit        *ContainerExit // Set when a failed ping can inspect a stopped container
 }
 
 // DefaultHealthCheckInterval is the default interval between health checks.
@@ -941,6 +942,29 @@ func (g *Gateway) checkHealth(ctx context.Context) {
 	}
 }
 
+// inspectContainerExit records why a container stopped after a failed ping.
+// It does not hold healthMu. A running container, a client that cannot
+// inspect, or an inspect error leaves the result nil.
+func inspectContainerExit(ctx context.Context, logger *slog.Logger, client AgentClient, pingErr error) *ContainerExit {
+	if pingErr == nil {
+		return nil
+	}
+	inspector, ok := client.(containerInspector)
+	if !ok {
+		return nil
+	}
+	inspectCtx, cancel := context.WithTimeout(ctx, containerInspectTimeout)
+	defer cancel()
+	exit, err := inspector.InspectContainer(inspectCtx)
+	if err != nil {
+		if logger != nil {
+			logger.Debug("container inspect failed", "error", err)
+		}
+		return nil
+	}
+	return exit
+}
+
 // checkReplicaHealth runs one health cycle for a single replica: ping, update
 // per-replica status, and optionally trigger a backoff-gated Reconnect.
 func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, replica *Replica) {
@@ -955,6 +979,7 @@ func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, rep
 	logger := logging.WithReplicaID(g.logger, replica.ID())
 	now := time.Now()
 	err := pingable.Ping(ctx)
+	exit := inspectContainerExit(ctx, logger, client, err)
 
 	g.healthMu.Lock()
 	prev := g.replicaStatusLocked(serverName, replica.ID())
@@ -969,6 +994,11 @@ func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, rep
 		}
 	} else {
 		status.Error = err.Error()
+		var previous *ContainerExit
+		if prev != nil {
+			previous = prev.Exit
+		}
+		status.Exit = retainCreatedExit(previous, exit)
 		if prev != nil {
 			status.LastHealthy = prev.LastHealthy
 		}
@@ -1017,7 +1047,11 @@ func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, rep
 	logger.Info("attempting reconnection", "name", serverName)
 	if reconnErr := rc.Reconnect(ctx); reconnErr != nil {
 		delay := replica.Restart().Advance(now)
-		logger.Warn("reconnection failed", "name", serverName, "error", reconnErr, "next_retry_in", delay)
+		if exit != nil {
+			logger.Warn("reconnection failed", "name", serverName, "error", reconnErr, "next_retry_in", delay, "exit_code", exit.Code, "oom_killed", exit.OOMKilled)
+		} else {
+			logger.Warn("reconnection failed", "name", serverName, "error", reconnErr, "next_retry_in", delay)
+		}
 		return
 	}
 
@@ -1179,6 +1213,10 @@ func (g *Gateway) ReplicaStatuses(serverName string) []ReplicaStatus {
 				rs.LastHealthy = &t
 			}
 			rs.LastError = hs.Error
+			if hs.Exit != nil {
+				copied := *hs.Exit
+				rs.Exit = &copied
+			}
 		}
 		switch client := r.Client().(type) {
 		case *ProcessClient:
@@ -2972,6 +3010,7 @@ type ReplicaStatus struct {
 	LastCheck       *time.Time        `json:"lastCheck,omitempty"`
 	LastHealthy     *time.Time        `json:"lastHealthy,omitempty"`
 	LastError       string            `json:"lastError,omitempty"`
+	Exit            *ContainerExit    `json:"exit,omitempty"`
 	RestartAttempts uint32            `json:"restartAttempts,omitempty"`
 	NextRetryAt     *time.Time        `json:"nextRetryAt,omitempty"`
 	PID             int               `json:"pid,omitempty"`

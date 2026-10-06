@@ -31,6 +31,7 @@ import { AutoscalePanel } from '../status/AutoscalePanel';
 import { SidebarTelemetrySection } from '../telemetry/SidebarTelemetrySection';
 import { SourceProvenance } from '../sidebar/SourceProvenance';
 import { ExecutionDetails } from '../sidebar/ExecutionDetails';
+import { ServerCrashDetails } from '../sidebar/ServerCrashDetails';
 import { SecurityEvidence } from '../sidebar/SecurityEvidence';
 import { CatalogSummary } from '../sidebar/CatalogSummary';
 import { getTransportIcon, getTransportColorClasses } from '../../lib/transport';
@@ -222,7 +223,6 @@ export function Sidebar() {
               <SourceProvenance kind={serverData?.kind} image={serverData?.image} source={serverData?.source} />
             )}
             {isServer && <SecurityEvidence scope={{ server: data.name }} />}
-            {!isClient && <ExecutionDetails server={mcpServers.find((server) => server.name === data.name)} resource={!isServer} />}
 
             {/* Generation renders only on mixed fleets: when every server
                 speaks the same generation the label carries no signal
@@ -314,8 +314,11 @@ export function Sidebar() {
                     </span>
                   </div>
                 )}
+                <ServerCrashDetails data={serverData} />
               </>
             )}
+
+            {!isClient && <ExecutionDetails server={mcpServers.find((server) => server.name === data.name)} resource={!isServer} />}
 
             {/* Client fields */}
             {isClient && clientData?.transport && (

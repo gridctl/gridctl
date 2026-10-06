@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/logging"
@@ -367,6 +368,67 @@ func TestHandleMCPServers_WithServer(t *testing.T) {
 	}
 	if result[0].Transport != mcp.TransportStdio {
 		t.Errorf("expected transport %q, got %q", mcp.TransportStdio, result[0].Transport)
+	}
+}
+
+type pingClient struct {
+	mcp.AgentClient
+	err error
+}
+
+func (p pingClient) Ping(context.Context) error { return p.err }
+
+func TestHandleMCPServers_StderrTail(t *testing.T) {
+	srv := newTestServerWithLogBuffer(t, 50)
+	logger := slog.New(logging.NewRedactingHandler(logging.NewBufferHandler(srv.LogBuffer(), nil)))
+	github := logger.With("server", "github")
+	github.Warn("server stderr", "output", "starting")
+	github.Warn("server stderr", "output", "token=abc123")
+	github.Warn("server stderr", "output", "fatal: refusing to continue")
+	logger.With("server", "ok").Warn("server stderr", "output", "token=hidden")
+
+	srv.gateway.Router().AddClient(pingClient{AgentClient: newMockAgentClient("github", nil), err: errors.New("connection refused")})
+	srv.gateway.Router().AddClient(pingClient{AgentClient: newMockAgentClient("ok", nil)})
+	registerMockServerMeta(srv.gateway, "github", mcp.TransportStdio)
+	registerMockServerMeta(srv.gateway, "ok", mcp.TransportStdio)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv.gateway.StartHealthMonitor(ctx, 20*time.Millisecond)
+
+	deadline := time.Now().Add(2 * time.Second)
+	var statuses []MCPServerStatus
+	for {
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, loopbackRequest(http.MethodGet, "/api/mcp-servers", nil))
+		statuses = nil
+		if err := json.NewDecoder(rec.Body).Decode(&statuses); err != nil {
+			t.Fatal(err)
+		}
+		ready := 0
+		for _, status := range statuses {
+			if status.Healthy != nil {
+				ready++
+			}
+		}
+		if ready == 2 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	byName := map[string]MCPServerStatus{}
+	for _, status := range statuses {
+		byName[status.Name] = status
+	}
+	got := byName["github"]
+	if got.Healthy == nil || *got.Healthy {
+		t.Fatalf("github health = %#v", got.Healthy)
+	}
+	if len(got.StderrTail) != 3 || got.StderrTail[0] != "starting" || got.StderrTail[1] != "token=[REDACTED]" || got.StderrTail[2] != "fatal: refusing to continue" {
+		t.Fatalf("stderrTail = %#v", got.StderrTail)
+	}
+	if tail := byName["ok"].StderrTail; tail != nil {
+		t.Fatalf("healthy stderrTail = %#v", tail)
 	}
 }
 

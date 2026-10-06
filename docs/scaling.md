@@ -123,8 +123,16 @@ Per-replica state is surfaced through every existing gridctl observability surfa
   junos  local-process    3/3        healthy
   junos  local-process    2/3        degraded (replica-1 restarting, next in 4s)
   ```
-  `gridctl status --replicas` expands to one row per replica with PID/container-id, uptime, and in-flight count. STATE also includes execution outcome and mode when a report exists; use `--json` for structured evidence.
-- **REST API.** `/api/stack/health` includes a `replicas` map keyed by server name, each array entry carrying `replicaId`, `state`, `inFlight`, optional `restartAttempts`, `nextRetrySeconds`, and the transport-specific handle (`pid` or `containerId`). Optional `execution` carries the per-replica report. `/api/mcp-servers` uses `nextRetryAt` timestamps instead. See the [report schema](api-reference.md#execution-reports).
+  `gridctl status --replicas` expands to one row per replica with PID/container-id, uptime, and in-flight count. STATE also includes execution outcome and mode when a report exists, and `; exited <code>` plus ` (OOM)` when a stopped container was inspected. Use `--json` for structured evidence.
+
+  | State | Meaning |
+  |-------|---------|
+  | `healthy` | The last ping succeeded. |
+  | `restarting` | Unhealthy after at least one failed reconnect, so a backoff retry is scheduled. JSON includes `restartAttempts` and `nextRetryAt`. |
+  | `unhealthy` | Unhealthy, with no failed reconnect recorded. |
+
+  A stopped container can add `exit.code`, `exit.oomKilled`, `exit.finishedAt`, `exit.status`, and optional `exit.error` on `status --json` and `/api/mcp-servers` without changing the state label. `exit.status` is passed through. Docker and Podman both reported `exited` for a process that exited 3. Reconnect does not attach unless the container is running. The rollup table does not append the exit annotation.
+- **REST API.** `/api/stack/health` includes a `replicas` map keyed by server name, each array entry carrying `replicaId`, `state`, `inFlight`, optional `restartAttempts`, `nextRetrySeconds`, and the transport-specific handle (`pid` or `containerId`). Optional `execution` carries the per-replica report. That response does not copy `exit` or `stderrTail`. `/api/mcp-servers` uses `nextRetryAt` timestamps instead, and its replicas may include `exit` after a failed container inspect. See the [server status fields](api-reference.md#get-apistatus) and the [report schema](api-reference.md#execution-reports).
 - **Metrics.** `pkg/metrics/accumulator.go` tracks per-replica counters. Per-server aggregates remain (they sum across replicas).
 
 ---

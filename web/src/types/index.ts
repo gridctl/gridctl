@@ -18,6 +18,14 @@ export interface ServerInfo {
 // Per-replica runtime status matching mcp.ReplicaStatus on the Go side.
 // Present only when a server has a replica set; single-replica servers may
 // still populate a single-element array.
+export interface ContainerExit {
+  code: number;
+  oomKilled: boolean;
+  finishedAt?: string;
+  status: string;
+  error?: string;
+}
+
 export interface ReplicaStatus {
   execution?: ExecutionReport;
   replicaId: number;
@@ -28,6 +36,7 @@ export interface ReplicaStatus {
   lastCheck?: string;
   lastHealthy?: string;
   lastError?: string;
+  exit?: ContainerExit;
   restartAttempts?: number;
   nextRetryAt?: string;
   pid?: number;
@@ -220,6 +229,7 @@ export interface MCPServerStatus {
   kind?: string;
   image?: string;
   source?: MCPServerSourceStatus;
+  stderrTail?: string[];
 }
 
 // Per-server downstream authorization detail from GET /api/auth/servers.
@@ -443,7 +453,7 @@ export interface SkillUsageResponse {
 }
 
 // Node status for UI display
-export type NodeStatus = 'running' | 'stopped' | 'error' | 'initializing' | 'idle' | 'needs-auth';
+export type NodeStatus = 'running' | 'stopped' | 'error' | 'initializing' | 'idle' | 'needs-auth' | 'restarting';
 
 // Base type for React Flow compatibility (requires index signature)
 interface NodeDataBase {
@@ -518,6 +528,8 @@ export interface MCPServerNodeData extends NodeDataBase {
   kind?: string;
   image?: string;
   source?: MCPServerSourceStatus;
+  replicas?: ReplicaStatus[];
+  stderrTail?: string[];
 }
 
 export interface ResourceNodeData extends NodeDataBase {

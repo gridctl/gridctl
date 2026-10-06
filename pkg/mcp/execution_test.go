@@ -75,6 +75,30 @@ func TestProcessClient_ExecutionLookup(t *testing.T) {
 	}
 }
 
+type inspectStub struct {
+	AgentClient
+	exit *ContainerExit
+	err  error
+}
+
+func (s inspectStub) InspectContainer(context.Context) (*ContainerExit, error) {
+	return s.exit, s.err
+}
+
+func TestExecutionClient_ForwardsInspect(t *testing.T) {
+	want := &ContainerExit{Code: 3, Status: "exited"}
+	forwarded := &executionClient{AgentClient: inspectStub{exit: want}}
+	got, err := forwarded.InspectContainer(context.Background())
+	if err != nil || got != want {
+		t.Fatalf("forwarded inspect = %#v, %v", got, err)
+	}
+	plain := &executionClient{AgentClient: NewProcessClient("fixture", nil, "", nil)}
+	got, err = plain.InspectContainer(context.Background())
+	if err != nil || got != nil {
+		t.Fatalf("non-container inspect = %#v, %v", got, err)
+	}
+}
+
 func TestExecutionClient_AdmissionBlocksDispatch(t *testing.T) {
 	client := &executionClient{check: func(context.Context) (*execution.Report, error) { return &execution.Report{Outcome: "unknown"}, nil }}
 	if _, err := client.CallTool(context.Background(), "test", nil); err == nil {

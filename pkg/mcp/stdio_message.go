@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"log/slog"
 
 	"github.com/gridctl/gridctl/pkg/jsonrpc"
 )
@@ -16,6 +17,7 @@ const (
 
 type stdioMessage struct {
 	kind     stdioMessageKind
+	method   string
 	response *jsonrpc.Response
 	reply    *jsonrpc.Response
 }
@@ -37,19 +39,36 @@ func classifyStdioMessage(line []byte) (stdioMessage, error) {
 		return stdioMessage{kind: stdioResponse, response: &response}, nil
 	}
 
+	var method string
+	_ = json.Unmarshal(methodJSON, &method)
+
 	idJSON, hasID := envelope["id"]
 	if !hasID {
-		return stdioMessage{kind: stdioNotification}, nil
+		return stdioMessage{kind: stdioNotification, method: method}, nil
 	}
 
 	id := json.RawMessage(append([]byte(nil), idJSON...))
-	var method string
-	_ = json.Unmarshal(methodJSON, &method)
 	if method == "ping" {
 		reply := jsonrpc.NewSuccessResponse(&id, struct{}{})
-		return stdioMessage{kind: stdioRequest, reply: &reply}, nil
+		return stdioMessage{kind: stdioRequest, method: method, reply: &reply}, nil
 	}
 
 	reply := jsonrpc.NewErrorResponse(&id, jsonrpc.MethodNotFound, "Method not found")
-	return stdioMessage{kind: stdioRequest, reply: &reply}, nil
+	return stdioMessage{kind: stdioRequest, method: method, reply: &reply}, nil
+}
+
+// logStdioPeer names a dropped notification or a rejected server request.
+// Ping replies are not logged. Params are never included.
+func logStdioPeer(logger *slog.Logger, message stdioMessage) {
+	if logger == nil {
+		return
+	}
+	switch message.kind {
+	case stdioNotification:
+		logger.Debug("server notification dropped", "method", message.method)
+	case stdioRequest:
+		if message.reply != nil && message.reply.Error != nil {
+			logger.Debug("server request rejected", "method", message.method, "code", message.reply.Error.Code)
+		}
+	}
 }

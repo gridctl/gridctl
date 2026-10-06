@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/jsonrpc"
+	"github.com/gridctl/gridctl/pkg/logging"
 )
 
 func TestClient_SendsNegotiatedProtocolVersionHeader(t *testing.T) {
@@ -96,6 +98,44 @@ data: {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"succes
 	}
 	if len(content) != 1 {
 		t.Fatalf("expected 1 content item")
+	}
+}
+
+func TestClient_ParseSSEResponse_LogsSkippedNotification(t *testing.T) {
+	logBuffer := logging.NewLogBuffer(10)
+	client := &Client{}
+	client.logger = slog.New(logging.NewBufferHandler(logBuffer, nil))
+	body := "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\"}}\n\n" +
+		"data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n"
+	resp, err := client.parseSSEResponse(strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.ID == nil || string(*resp.ID) != "1" {
+		t.Fatalf("result = %#v", resp)
+	}
+	entries := logBuffer.GetRecent(10)
+	if len(entries) != 1 || entries[0].Level != "DEBUG" || entries[0].Message != "server notification skipped" || entries[0].Attrs["method"] != "notifications/message" {
+		t.Fatalf("skipped notification log = %#v", entries)
+	}
+	raw, err := json.Marshal(entries[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "params") {
+		t.Fatalf("skipped notification log included params: %s", raw)
+	}
+
+	logBuffer = logging.NewLogBuffer(10)
+	client.logger = slog.New(logging.NewBufferHandler(logBuffer, nil))
+	misrouted := "data: {\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"sampling/createMessage\",\"params\":{\"token\":\"secret\"}}\n"
+	if _, err := client.parseSSEResponse(strings.NewReader(misrouted)); err != nil && !strings.Contains(err.Error(), "no response with ID") {
+		t.Fatal(err)
+	}
+	for _, entry := range logBuffer.GetRecent(10) {
+		if entry.Message == "server notification skipped" {
+			t.Fatalf("method-plus-id event logged as skipped: %#v", entry)
+		}
 	}
 }
 

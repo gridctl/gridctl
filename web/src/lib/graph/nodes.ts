@@ -28,6 +28,9 @@ export function getMCPServerStatus(server: MCPServerStatus): NodeStatus {
   // Unhealthy wins over initializing: registration failures report both
   // healthy=false and initialized=false, and must render as errors.
   if (server.healthy === false) {
+    if (server.replicas?.some((replica) => replica.state === 'restarting')) {
+      return 'restarting';
+    }
     return 'error';
   }
   if (!server.initialized) {
@@ -138,6 +141,8 @@ export function createMCPServerNodes(mcpServers: MCPServerStatus[]): Node[] {
       kind: server.kind,
       image: server.image,
       source: server.source,
+      replicas: server.replicas,
+      stderrTail: server.stderrTail,
     },
     draggable: true,
   }));

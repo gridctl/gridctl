@@ -39,6 +39,28 @@ describe('CustomNode health indicator', () => {
     expect(screen.getByText('connection refused')).toBeInTheDocument();
   });
 
+  it('shows the exit summary when a replica has stopped', () => {
+    const data = makeServerData({
+      healthy: false,
+      healthError: 'connection lost',
+      status: 'restarting',
+      replicas: [{
+        replicaId: 0,
+        state: 'restarting',
+        healthy: false,
+        inFlight: 0,
+        restartAttempts: 2,
+        nextRetryAt: new Date(Date.now() + 4000).toISOString(),
+        exit: { code: 137, oomKilled: true, status: 'exited' },
+      }],
+    });
+
+    render(<CustomNode data={data} />);
+
+    expect(screen.getByText(/exited 137, OOM killed/)).toBeInTheDocument();
+    expect(screen.getByText(/restarting \(attempt 2, retry in \d+s\)/)).toBeInTheDocument();
+  });
+
   it('shows default message when healthy is false with no healthError', () => {
     const data = makeServerData({
       healthy: false,

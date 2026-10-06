@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gridctl/gridctl/pkg/mcp"
 )
 
 func TestBuildMCPRollup_HealthyServers(t *testing.T) {
@@ -158,6 +162,38 @@ func TestBuildReplicaDetails(t *testing.T) {
 	}
 	if rows[2].Handle != "abc123def456" {
 		t.Errorf("container id should be truncated to 12 chars; got %q", rows[2].Handle)
+	}
+}
+
+func TestBuildReplicaDetails_ExitAnnotation(t *testing.T) {
+	servers := []mcpServerAPI{
+		{Name: "crash", Replicas: []mcpReplicaAPI{{ReplicaID: 0, State: "restarting", Exit: &mcp.ContainerExit{Code: 3}}}},
+		{Name: "oom", Replicas: []mcpReplicaAPI{{ReplicaID: 0, State: "restarting", Exit: &mcp.ContainerExit{Code: 137, OOMKilled: true}}}},
+	}
+	rows := buildReplicaDetails(servers)
+	if rows[0].State != "restarting; exited 3" {
+		t.Fatalf("state = %q", rows[0].State)
+	}
+	if rows[1].State != "restarting; exited 137 (OOM)" {
+		t.Fatalf("oom state = %q", rows[1].State)
+	}
+}
+
+func TestMCPReplicaAPI_JSONPreservesDiagnostics(t *testing.T) {
+	payload := []byte(`{"replicaId":0,"state":"restarting","healthy":false,"lastError":"not connected","lastCheck":"2026-10-06T12:00:00Z","exit":{"code":3,"oomKilled":false,"status":"exited"}}`)
+	var replica mcpReplicaAPI
+	if err := json.Unmarshal(payload, &replica); err != nil {
+		t.Fatal(err)
+	}
+	if replica.LastError != "not connected" || replica.Exit == nil || replica.Exit.Code != 3 || replica.LastCheck == nil {
+		t.Fatalf("replica = %#v", replica)
+	}
+	encoded, err := json.Marshal(replica)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(encoded, []byte(`"lastError"`)) || !bytes.Contains(encoded, []byte(`"exit"`)) {
+		t.Fatalf("encoded = %s", encoded)
 	}
 }
 

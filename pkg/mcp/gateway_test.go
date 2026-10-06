@@ -972,6 +972,7 @@ type reconnectableClient struct {
 	AgentClient
 	pingFn      func(ctx context.Context) error
 	reconnectFn func(ctx context.Context) error
+	inspectFn   func(ctx context.Context) (*ContainerExit, error)
 }
 
 func (r *reconnectableClient) Ping(ctx context.Context) error {
@@ -980,6 +981,13 @@ func (r *reconnectableClient) Ping(ctx context.Context) error {
 
 func (r *reconnectableClient) Reconnect(ctx context.Context) error {
 	return r.reconnectFn(ctx)
+}
+
+func (r *reconnectableClient) InspectContainer(ctx context.Context) (*ContainerExit, error) {
+	if r.inspectFn == nil {
+		return nil, nil
+	}
+	return r.inspectFn(ctx)
 }
 
 func TestGateway_HealthMonitor_ReconnectsUnhealthyClient(t *testing.T) {
@@ -1037,6 +1045,106 @@ func TestGateway_HealthMonitor_ReconnectsUnhealthyClient(t *testing.T) {
 	}
 	if !foundReconnected {
 		t.Error("expected 'MCP server reconnected' log entry")
+	}
+}
+
+func TestGateway_HealthMonitor_RecordsContainerExit(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+	logBuffer := logging.NewLogBuffer(20)
+	g.SetLogger(slog.New(logging.NewBufferHandler(logBuffer, nil)))
+
+	finished := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	want := &ContainerExit{Code: 137, OOMKilled: true, Status: "exited", FinishedAt: &finished}
+	pingErr := fmt.Errorf("connection refused")
+	mock := setupMockAgentClient(ctrl, "svc", []Tool{{Name: "tool1"}})
+	client := &reconnectableClient{
+		AgentClient: mock,
+		pingFn:      func(context.Context) error { return pingErr },
+		reconnectFn: func(context.Context) error { return fmt.Errorf("container not found") },
+		inspectFn: func(context.Context) (*ContainerExit, error) {
+			return want, nil
+		},
+	}
+	g.Router().AddClient(client)
+	g.SetServerMeta(MCPServerConfig{Name: "svc", Transport: TransportStdio})
+
+	ctx := context.Background()
+	g.checkHealth(ctx)
+
+	replicas := g.ReplicaStatuses("svc")
+	if len(replicas) != 1 || replicas[0].Exit == nil || replicas[0].Exit.Code != 137 || !replicas[0].Exit.OOMKilled || replicas[0].Exit.Status != "exited" {
+		t.Fatalf("replica exit = %#v", replicas)
+	}
+	statuses := g.Status()
+	if len(statuses) != 1 || len(statuses[0].Replicas) != 1 || statuses[0].Replicas[0].Exit == nil || statuses[0].Replicas[0].Exit.Code != 137 {
+		t.Fatalf("status exit = %#v", statuses)
+	}
+	found := false
+	for _, entry := range logBuffer.GetRecent(20) {
+		if entry.Message == "reconnection failed" && entry.Attrs["exit_code"] == int64(137) && entry.Attrs["oom_killed"] == true {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("reconnection log missing exit attributes: %#v", logBuffer.GetRecent(20))
+	}
+
+	pingErr = nil
+	g.checkHealth(ctx)
+	replicas = g.ReplicaStatuses("svc")
+	if len(replicas) != 1 || replicas[0].Exit != nil || !replicas[0].Healthy {
+		t.Fatalf("recovered replica = %#v", replicas)
+	}
+	if g.Status()[0].Replicas[0].Exit != nil {
+		t.Fatal("recovered status still carries exit")
+	}
+}
+
+func TestGateway_HealthMonitor_RetainsCreatedExit(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+	finished := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	var calls atomic.Int32
+	mock := setupMockAgentClient(ctrl, "svc", []Tool{{Name: "tool1"}})
+	client := &reconnectableClient{
+		AgentClient: mock,
+		pingFn:      func(context.Context) error { return fmt.Errorf("not connected") },
+		reconnectFn: func(context.Context) error { return fmt.Errorf("container not running (status exited)") },
+		inspectFn: func(context.Context) (*ContainerExit, error) {
+			if calls.Add(1) == 1 {
+				return &ContainerExit{Code: 3, Status: "exited", FinishedAt: &finished}, nil
+			}
+			return &ContainerExit{Code: 0, Status: "created", FinishedAt: &finished}, nil
+		},
+	}
+	g.Router().AddClient(client)
+	g.SetServerMeta(MCPServerConfig{Name: "svc", Transport: TransportStdio})
+
+	ctx := context.Background()
+	g.checkHealth(ctx)
+	g.checkHealth(ctx)
+	replicas := g.ReplicaStatuses("svc")
+	if len(replicas) != 1 || replicas[0].Exit == nil || replicas[0].Exit.Code != 3 || replicas[0].Exit.Status != "exited" {
+		t.Fatalf("retained exit = %#v", replicas)
+	}
+}
+
+func TestRetainCreatedExit(t *testing.T) {
+	finished := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	later := finished.Add(time.Second)
+	prev := &ContainerExit{Code: 3, Status: "exited", FinishedAt: &finished}
+	if got := retainCreatedExit(prev, &ContainerExit{Code: 0, Status: "created", FinishedAt: &finished}); got == nil || got.Code != 3 || got == prev {
+		t.Fatalf("same finish = %#v", got)
+	}
+	if got := retainCreatedExit(prev, &ContainerExit{Code: 1, Status: "exited", FinishedAt: &later}); got == nil || got.Code != 1 {
+		t.Fatalf("new exit = %#v", got)
+	}
+	if got := retainCreatedExit(prev, &ContainerExit{Code: 0, Status: "created", FinishedAt: &later}); got == nil || got.Code != 0 {
+		t.Fatalf("changed finish = %#v", got)
+	}
+	if got := retainCreatedExit(nil, &ContainerExit{Status: "created"}); got == nil || got.Status != "created" {
+		t.Fatalf("no previous = %#v", got)
 	}
 }
 
