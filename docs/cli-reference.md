@@ -57,6 +57,8 @@ from labels or run history. Use a confidential channel for remote gateway access
 
 `gridctl status --json` `mcp_servers` entries include `promptCount`, `mcpResourceCount`, `resourceTemplateCount`, `capabilities`, `resourceCollisions`, and `resourceListError` (omitted when empty). The human MCP servers table adds `PROMPTS` and `RESOURCES` only when at least one server has a non-zero prompt or MCP resource count, so a tool-only fleet is unchanged. `--replicas` does not add those columns. See the [server status fields](api-reference.md#get-apistatus).
 
+`gridctl status --json` replica objects also include `lastCheck`, `lastHealthy`, `lastError`, and `exit` when a health check has run. `exit` carries `code`, `oomKilled`, `finishedAt`, `status`, and optional `error` after a failed ping can inspect a stopped container. Unhealthy servers may include `stderrTail`, the last redacted `server stderr` lines from the gateway ring (at most 10). Healthy servers omit it. `gridctl status --replicas` appends `; exited <code>` and ` (OOM)` when that exit is known. The rollup STATE cell is unchanged. This STATE annotation is an Unreleased breaking output change under Article VIII.
+
 ### Mutable reference diagnostics
 
 `gridctl validate stack.yaml --check-mutable-refs` is off by default. It inspects literal image and `npx`/`uvx` selectors without expanding variables, substituting secrets, executing launchers, or rewriting the file. Findings reuse the existing `field` / `message` / `severity` shape:

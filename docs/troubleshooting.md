@@ -296,6 +296,18 @@ pulling image gcr.io/private/image:tag: unauthorized
 
 Digest and tag-plus-digest references match locally cached `RepoDigests`, including familiar names such as `alpine` versus `docker.io/library/alpine`. Tag-only lookup is unchanged. A cache hit is not publisher verification.
 
+### Container exits immediately
+
+**Symptoms:**
+
+The Stack node is red or amber, health reads failed, and tool calls return `connection lost`. The container is gone from `docker ps`, or `gridctl status` shows it exited.
+
+**Resolution:**
+
+1. Read gridctl's own record before the runtime logs. `gridctl status --replicas` appends `; exited <code>` and ` (OOM)` when the health check could inspect the container. `gridctl status --json` carries `replicas[].exit`, `lastError`, and `stderrTail` on the unhealthy server. The Logs workspace source filter, `GET /api/logs`, and `GET /api/mcp-servers/{name}/logs` show WARN `server stderr` lines captured after attach. The Stack inspector lists the same exit fields and recent stderr beside the execution evidence.
+2. If the container is still present, `gridctl logs --server <name>` and `docker logs` can show output from before the gateway attached. Those commands stop working once the container is removed. The ring does not replay pre-attach output, and a verbose server can crowd out older lines.
+3. An OOM exit (`oomKilled: true`, often code 137) needs a larger memory limit. A non-zero exit without OOM is the process's own failure; the stderr tail is the first place to look.
+
 ### Container fails to start
 
 **Symptoms:**
@@ -413,14 +425,14 @@ Tool calls fail with `connection lost` after working initially.
 
 **Resolution:**
 
-1. Check container status:
+1. Check gridctl before the runtime. `gridctl status --json` includes `lastError` and `replicas[].exit` (`code`, `oomKilled`, `finishedAt`, `status`). The Logs source filter and `GET /api/mcp-servers/{name}/logs` show `server stderr` captured while the gateway was attached. The Stack node shows `restarting` with the attempt count and next retry while backoff is running.
+2. If the container still exists, confirm it with the runtime:
    ```bash
    docker ps -a | grep gridctl
    ```
+3. If OOMKilled, increase the container's memory limit.
 
-2. If OOMKilled, increase the container's memory limit.
-
-3. Wait one health-check cycle (30 seconds by default): the gateway's health monitor detects the lost connection and reconnects automatically with exponential backoff. If the server needs a manual kick, restart just that server:
+4. Wait one health-check cycle (30 seconds by default): the gateway's health monitor detects the lost connection and reconnects automatically with exponential backoff. If the server needs a manual kick, restart just that server:
    ```bash
    curl -X POST http://localhost:8180/api/mcp-servers/<name>/restart
    ```
