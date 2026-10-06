@@ -3415,7 +3415,7 @@ Records that the user restarted LiteLLM since the last fragment write: the only 
 
 ### Packs
 
-The REST face of `gridctl pack add|apply|status|remove`, plus a read-only preview for import flows. A pack is one git repository carrying a `gridctl-pack.yaml` manifest selecting skills, agents, context rule fragments, and optional gateway wiring (see the [Packs guide](packs.md)). Per-resource rows use the shared projection-state vocabulary (`in-sync`, `stale`, `drifted`, `target-missing`, `foreign`, `missing`), plus `unresolved` for manifest selections the repository does not ship.
+The REST face of `gridctl pack add|apply|status|remove`, plus a read-only preview for import flows. A pack is one git repository carrying a `gridctl-pack.yaml` manifest selecting skills, agents, context rule fragments, optional gateway wiring, and an optional stack file (see the [Packs guide](packs.md)). Per-resource rows use the shared projection-state vocabulary (`in-sync`, `stale`, `drifted`, `target-missing`, `foreign`, `missing`), plus `unresolved` for manifest selections the repository does not ship. A carried stack is a `stack` row, first in kind order. This release does not start or stop that daemon over REST. Apply returns `skipped-unavailable` and the CLI command, and wiring is `skipped-unavailable` with `pack stack is not running`. Delete of a running pack-owned daemon is `skipped-unavailable` and keeps the pack record; see the delete endpoint below.
 
 #### `GET /api/packs`
 
@@ -3439,7 +3439,7 @@ Lists installed packs: identity, origin, per-kind resource counts, and aggregate
         "commit_sha": "abc123...",
         "fetched_at": "2026-08-05T12:00:00Z"
       },
-      "counts": { "skills": 3, "agents": 1, "rules": 2, "wiring": true },
+      "counts": { "skills": 3, "agents": 1, "rules": 2, "wiring": true, "stack": true },
       "unresolved": [],
       "needs_attention": false
     }
@@ -3447,11 +3447,11 @@ Lists installed packs: identity, origin, per-kind resource counts, and aggregate
 }
 ```
 
-A pack name claimed by more than one imported source carries `"collision": true` with `collision_repos` listing them, and counts as attention.
+A pack name claimed by more than one imported source carries `"collision": true` with `collision_repos` listing them, and counts as attention. `counts.stack` is true when a resolved stack record is present and is omitted otherwise. `applied` is true when any row has a client, and also when the stack row is `in-sync` or `stale`, so a stack-only pack can report applied. A projected pack without a stack is unchanged.
 
 #### `GET /api/packs/{name}`
 
-One pack's identity (`info`, the list item's fields) plus its per-resource state rows and `needs_attention`. Skill, agent, and wiring rows are per-client; rule rows are per-client once applied (state joined from the pack-tagged projection lock entries and the context engine's per-fragment status; coverage is per fragment-file projection, so compiled clients' whole-document state stays on `GET /api/context`), with a single store-presence row for a rule that was imported but never projected.
+One pack's identity (`info`, the list item's fields) plus its per-resource state rows and `needs_attention`. A carried stack is the first row: `in-sync` (running `StackFile` matches the pin), `stale` (running from an older checkout under `~/.gridctl/packs/<name>/`; attention, detail names the commit when known), `drifted` (running from any other path; attention), `missing` (nothing running; not attention), or `target-missing` (checkout or stack file absent; attention, remediation `re-run 'gridctl pack add'`). Skill, agent, and wiring rows are per-client; rule rows are per-client once applied (state joined from the pack-tagged projection lock entries and the context engine's per-fragment status; coverage is per fragment-file projection, so compiled clients' whole-document state stays on `GET /api/context`), with a single store-presence row for a rule that was imported but never projected. An unresolved stack is an `unresolved` row named `stack:<path>`, not a `stack` row, and its `detail` is the export or path error when one was recorded.
 
 **Auth:** Yes
 
@@ -3482,7 +3482,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/packs \
 | `dryRun` | bool | Resolve and report without importing |
 | `auth` | object | Credentials for a private repository; same shape as the skill source endpoints (see below) |
 
-**Response:** `201` with `{ "doc": <add document>, "notes": [...] }`. The document carries the resolved selection, `unresolved`, `skipped` (with reasons), and `warnings`; `notes` carries progress prose (rule updates, fragments-mode activation).
+**Response:** `201` with `{ "doc": <add document>, "notes": [...] }`. The document carries the resolved selection, `unresolved`, `skipped` (with reasons), and `warnings`; `notes` carries progress prose (rule updates, fragments-mode activation). A resolved stack adds optional `doc.stack`: `{ "path", "name", "servers" }` and, unless `dryRun` is set, pins `~/.gridctl/packs/<name>/<commit>/`. It does not start the daemon. A `link:` block on that stack is a warning, not a hard error: `stack declares link:; pack wiring (wiring:/clients:) applies instead and link: is ignored under pack apply`.
 
 **Errors:**
 - `400` - Missing repo, invalid body, an unresolvable `auth.credentialRef`, or a relative `auth.sshKeyPath`
@@ -3491,7 +3491,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/packs \
 
 #### `POST /api/packs/preview`
 
-Resolves a pack manifest against its repository without writing anything: manifest identity, the resolved selection per kind with per-resource scan findings, unresolved names, and warnings. The wizard's read-only review step.
+Resolves a pack manifest against its repository without writing anything: manifest identity, the resolved selection per kind with per-resource scan findings, unresolved names, and warnings. The wizard's read-only review step. A carried stack adds optional `stack`: `{ "path", "name", "servers" }` on the result itself (not under `doc`) and does not create a checkout.
 
 **Auth:** Yes
 
@@ -3543,7 +3543,7 @@ Omit `auth` entirely on a repository already imported with a reference or an ssh
 
 #### `POST /api/packs/{name}/apply`
 
-Projects one pack with full CLI flag parity. Apply is additive and never transactional: each resource succeeds or skips independently, and the response reports every outcome.
+Projects one pack. Apply is additive and never transactional: each resource succeeds or skips independently, and the response reports every outcome. There is no `port` field. A carried stack is not deployed: the launcher is nil on this interface.
 
 **Auth:** Yes
 
@@ -3553,13 +3553,15 @@ Projects one pack with full CLI flag parity. Apply is additive and never transac
 | `force` | bool | Overwrite drifted or foreign resources after backup (`--force`) |
 | `dry_run` | bool | Report what would change without writing (`--dry-run`) |
 
-An empty or absent body is a plain apply. **Response:** the apply document: `applied`, `total`, and per-resource `rows` (kind, name, client, action, detail, remediation). Drifted resources are skipped with a remediation hint unless forced; resources tagged by a different pack are refused with the owning pack named.
+An empty or absent body is a plain apply. **Response:** the apply document: `applied`, `total`, and per-resource `rows` (kind, name, client, action, detail, remediation). A carried stack is the first row. Over REST its action is `skipped-unavailable`, detail `stack deploy is not available over this interface`, remediation `run 'gridctl pack apply <name>' from the CLI`. The wiring row is `skipped-unavailable` with detail `pack stack is not running` and remediation `resolve the stack row above, then re-run 'gridctl pack apply <name>'`. Drifted resources are skipped with a remediation hint unless forced; resources tagged by a different pack are refused with the owning pack named.
 
 **Errors:** `404` - Pack not imported; `409` - Name collision.
 
 #### `DELETE /api/packs/{name}`
 
-Cascade removal in dependency order: pack-tagged projections are unsynced, pack-tagged wiring records removed through the ownership manager, then registry entries and the pack record. `?dry_run=1` returns the cascade preview (`would-remove` rows plus the drift-kept list) without executing; `?force=1` removes hand-edited projections too. A partial removal trims the pack record to the kept resources rather than deleting it, so the response's `kept` list is the truth about what remains.
+Cascade removal in dependency order: the stack step first when a stack record exists, then pack-tagged projections are unsynced, pack-tagged wiring records removed through the ownership manager, then registry entries and the pack record. `?dry_run=1` returns the cascade preview (`would-remove` rows plus the drift-kept list) without executing; `?force=1` removes hand-edited projections too. A partial removal trims the pack record to the kept resources rather than deleting it, so the response's `kept` list is the truth about what remains.
+
+This release cannot stop a daemon. If a pack-owned daemon is running, a real delete returns a first `stack` row of `skipped-unavailable` with detail `stack deploy is not available over this interface` and remediation `gridctl destroy <name>`, and leaves that daemon, `~/.gridctl/packs/<name>/`, and the pack record in place so `gridctl pack remove` can finish the job. `?dry_run=1` still reports `would-remove` and a stop for that daemon; the preview does not mean REST can perform the stop. A same-named daemon running from another path is not stopped. A real delete gets no stack row for it and still removes the pack checkout. `?dry_run=1` reports `would-remove` for that checkout and says the daemon is left running. When nothing is running, delete removes the checkout. Stop the daemon with `gridctl pack remove` before deleting the pack here.
 
 **Auth:** Yes
 

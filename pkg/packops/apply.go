@@ -4,21 +4,26 @@ import (
 	"context"
 	"strings"
 
+	"fmt"
+
 	"github.com/gridctl/gridctl/pkg/agentsync"
 	"github.com/gridctl/gridctl/pkg/contexts"
 	"github.com/gridctl/gridctl/pkg/provisioner"
+	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/skillsync"
 	"github.com/gridctl/gridctl/pkg/wiring"
-	"fmt"
 )
 
 // ApplyOptions parameterizes a pack projection, mirroring the CLI flags
-// one to one (--force, --dry-run, --clients).
+// one to one (--force, --dry-run, --clients, --port).
 type ApplyOptions struct {
 	Force  bool
 	DryRun bool
 	// Clients restricts wiring to these client slugs.
 	Clients []string
+	// Port is the gateway port passed to the stack launcher. Zero means
+	// the launcher's default (the CLI passes 8180).
+	Port int
 }
 
 // ApplyDoc is the machine-readable apply document.
@@ -35,16 +40,27 @@ type ApplyDoc struct {
 // additive and never transactional: each resource succeeds or skips
 // independently, and per-resource outcomes become rows, not errors.
 func (m *Managers) Apply(ctx context.Context, name string, opts ApplyOptions) (*ApplyDoc, error) {
-	locked, err := m.LoadLockedPack(name)
+	lf, err := skills.ReadLockFile(m.lockPath())
 	if err != nil {
 		return nil, err
 	}
+	ps, err := findPack(lf, name)
+	if err != nil {
+		return nil, err
+	}
+	locked := ps.Pack
 	foreign, err := foreignPackTags(ctx, m.Home, name)
 	if err != nil {
 		return nil, err
 	}
 
 	var rows []Row
+	var stack *stackOutcome
+	if locked.Stack != nil {
+		row, outcome := m.applyStack(ctx, name, ps.Source.Repo, locked, opts)
+		rows = append(rows, row)
+		stack = &outcome
+	}
 	addRow := func(r Row) { rows = append(rows, r) }
 
 	// Skills and agents: exclude foreign-tagged resources up front, then
@@ -82,36 +98,7 @@ func (m *Managers) Apply(ctx context.Context, name string, opts ApplyOptions) (*
 	}
 
 	if locked.Wiring {
-		if _, ok := foreign["wiring/gridctl"]; ok {
-			addRow(Row{Kind: "wiring", Name: "gridctl", Action: wiring.ActionSkippedForeign,
-				Detail: fmt.Sprintf("the gridctl wiring entry is managed by pack %q", foreign["wiring/gridctl"])})
-		} else if port, running := runningGatewayPort(); !running {
-			addRow(Row{Kind: "wiring", Name: "gridctl", Action: wiring.ActionSkippedUnavailable,
-				Detail:      "no running gateway detected",
-				Remediation: fmt.Sprintf("start one with 'gridctl serve' or 'gridctl apply', then re-run 'gridctl pack apply %s'", name)})
-		} else {
-			clients := locked.Clients
-			if len(opts.Clients) > 0 {
-				clients = opts.Clients
-			}
-			results, werr := m.Wiring.Sync(ctx, wiring.SyncOptions{
-				Clients:    clients,
-				ServerName: "gridctl",
-				GatewayURL: provisioner.GatewayHTTPURL(port),
-				Port:       port,
-				Force:      opts.Force,
-				DryRun:     opts.DryRun,
-				Pack:       name,
-			})
-			if werr != nil {
-				addRow(Row{Kind: "wiring", Name: "gridctl", Action: "error", Detail: werr.Error()})
-				results = nil
-			}
-			for _, r := range results {
-				addRow(Row{Kind: "wiring", Name: r.Name, Client: r.Client, Action: r.Action,
-					Detail: firstNonEmpty(r.Error, r.Detail), Remediation: r.Remediation})
-			}
-		}
+		m.applyWiring(ctx, name, locked, opts, foreign, stack, addRow)
 	}
 
 	// Rules: project every available client with the pack tag so lock
@@ -143,10 +130,81 @@ func (m *Managers) Apply(ctx context.Context, name string, opts ApplyOptions) (*
 	}
 
 	for _, u := range locked.Unresolved {
-		addRow(Row{Kind: "unresolved", Name: u, Action: "unresolved",
-			Detail: "selected by the pack manifest but not shipped by the repository"})
+		detail := "selected by the pack manifest but not shipped by the repository"
+		if locked.UnresolvedDetails != nil && locked.UnresolvedDetails[u] != "" {
+			detail = locked.UnresolvedDetails[u]
+		}
+		addRow(Row{Kind: "unresolved", Name: u, Action: "unresolved", Detail: detail})
 	}
 
 	applied, failed := TallyRows(rows)
 	return &ApplyDoc{SchemaVersion: SchemaVersion, Pack: name, DryRun: opts.DryRun, Applied: applied, Total: applied + failed, Rows: rows}, nil
+}
+
+// applyWiring projects the gateway entry. A pack-carried stack never
+// consults runningGatewayPort: the port comes from the stack step, and
+// every other stack outcome skips wiring.
+func (m *Managers) applyWiring(ctx context.Context, name string, locked *skills.LockedPack, opts ApplyOptions, foreign map[string]string, stack *stackOutcome, addRow func(Row)) {
+	if locked.Stack != nil {
+		if stack == nil || !stackWiringReady(stack.action) {
+			addRow(Row{Kind: "wiring", Name: "gridctl", Action: wiring.ActionSkippedUnavailable,
+				Detail:      "pack stack is not running",
+				Remediation: fmt.Sprintf("resolve the stack row above, then re-run 'gridctl pack apply %s'", name)})
+			return
+		}
+	}
+	if _, ok := foreign["wiring/gridctl"]; ok {
+		addRow(Row{Kind: "wiring", Name: "gridctl", Action: wiring.ActionSkippedForeign,
+			Detail: fmt.Sprintf("the gridctl wiring entry is managed by pack %q", foreign["wiring/gridctl"])})
+		return
+	}
+	if locked.Stack != nil {
+		if !stack.portKnown {
+			addRow(Row{Kind: "wiring", Name: "gridctl", Action: wiring.ActionWouldLink})
+			return
+		}
+		m.syncWiring(ctx, name, locked, opts, stack.port, addRow)
+		return
+	}
+	port, running := runningGatewayPort()
+	if !running {
+		addRow(Row{Kind: "wiring", Name: "gridctl", Action: wiring.ActionSkippedUnavailable,
+			Detail:      "no running gateway detected",
+			Remediation: fmt.Sprintf("start one with 'gridctl serve' or 'gridctl apply', then re-run 'gridctl pack apply %s'", name)})
+		return
+	}
+	m.syncWiring(ctx, name, locked, opts, port, addRow)
+}
+
+func stackWiringReady(action string) bool {
+	switch action {
+	case "started", "replaced", "unchanged", "would-start", "would-replace":
+		return true
+	default:
+		return false
+	}
+}
+
+func (m *Managers) syncWiring(ctx context.Context, name string, locked *skills.LockedPack, opts ApplyOptions, port int, addRow func(Row)) {
+	clients := locked.Clients
+	if len(opts.Clients) > 0 {
+		clients = opts.Clients
+	}
+	results, werr := m.Wiring.Sync(ctx, wiring.SyncOptions{
+		Clients:    clients,
+		ServerName: "gridctl",
+		GatewayURL: provisioner.GatewayHTTPURL(port),
+		Port:       port,
+		Force:      opts.Force,
+		DryRun:     opts.DryRun,
+		Pack:       name,
+	})
+	if werr != nil {
+		addRow(Row{Kind: "wiring", Name: "gridctl", Action: "error", Detail: werr.Error()})
+		return
+	}
+	for _, r := range results {
+		addRow(Row{Kind: "wiring", Name: r.Name, Client: r.Client, Action: r.Action,
+			Detail: firstNonEmpty(r.Error, r.Detail), Remediation: r.Remediation})
+	}
 }

@@ -19,15 +19,20 @@ const (
 	lockVersionPacks     = 2
 	lockVersionVariables = 3
 	lockVersionSSHAuth   = 4
+	lockVersionStack     = 5
 )
 
 // ImportLockVersion is the highest skills.lock.yaml schema version this
 // gridctl reads. Version 1 added the version field itself and per-source
 // agents; version 2 added per-source pack records; version 3 added pack
 // variable declarations; version 4 added ssh-key auth fields (auth_method,
-// ssh_user, ssh_key_path). Files are written at the lowest version that
-// can represent them (see WriteLockFile).
-const ImportLockVersion = lockVersionSSHAuth
+// ssh_user, ssh_key_path); version 5 added pack stack records and
+// unresolved-detail maps. Files are written at the lowest version that
+// can represent them (see WriteLockFile). A reader whose maximum is 4
+// understands SSH fields only and must refuse a file that carries a
+// stack record or an unresolved-detail map rather than drop those keys
+// on the next write.
+const ImportLockVersion = lockVersionStack
 
 // ErrNewerImportLockVersion signals a skills.lock.yaml written by a
 // newer gridctl. Callers must never paper over it: acting on state a
@@ -99,6 +104,23 @@ type LockedPack struct {
 	// manifest) is fixed.
 	Unresolved []string                             `yaml:"unresolved,omitempty"`
 	Variables  map[string]LockedVariableDeclaration `yaml:"variables,omitempty"`
+	// Stack records a pinned checkout of a pack-carried stack. Nil when
+	// the manifest has no stack, or the stack did not resolve at import.
+	Stack *LockedStack `yaml:"stack,omitempty"`
+	// UnresolvedDetails maps an unresolved token (for example
+	// "stack:stack.yaml") to the reason it did not resolve, so status can
+	// show the export or escape error without re-reading the repository.
+	// A non-empty map stamps lockVersionStack. An older reader has no
+	// field for the key and would drop it on the next write.
+	UnresolvedDetails map[string]string `yaml:"unresolved_details,omitempty"`
+}
+
+// LockedStack is the pinned checkout of a pack-carried stack file.
+type LockedStack struct {
+	Path        string `yaml:"path"`
+	Name        string `yaml:"name"`
+	ContentHash string `yaml:"content_hash"`
+	CheckoutDir string `yaml:"checkout_dir"`
 }
 
 // LockedVariableDeclaration persists one value-free pack prerequisite.
@@ -220,7 +242,9 @@ func WriteLockFile(path string, lf *LockFile) error {
 	}
 	// Stamp the lowest version that can represent the file: the highest
 	// version any source requires. A file with neither packs nor ssh-key
-	// fields stays at 1.
+	// fields stays at 1. A stack record or an unresolved-detail map stamps
+	// lockVersionStack so a reader that only understands SSH fields refuses
+	// the file instead of dropping the new key.
 	lf.Version = 1
 	for _, src := range lf.Sources {
 		if src.Pack != nil && lf.Version < lockVersionPacks {
@@ -231,6 +255,10 @@ func WriteLockFile(path string, lf *LockFile) error {
 		}
 		if src.SSHKeyPath != "" && lf.Version < lockVersionSSHAuth {
 			lf.Version = lockVersionSSHAuth
+		}
+		if src.Pack != nil && lf.Version < lockVersionStack &&
+			(src.Pack.Stack != nil || len(src.Pack.UnresolvedDetails) > 0) {
+			lf.Version = lockVersionStack
 		}
 	}
 

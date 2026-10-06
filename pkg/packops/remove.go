@@ -52,6 +52,18 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 
 	var rows []Row
 	var kept []string
+	if locked.Stack != nil {
+		row, block, rerr := m.removeStack(ctx, name, locked.Stack, opts.DryRun)
+		if rerr != nil {
+			return nil, rerr
+		}
+		if row != nil {
+			rows = append(rows, *row)
+		}
+		if block {
+			return &RemoveDoc{SchemaVersion: SchemaVersion, Pack: name, DryRun: opts.DryRun, Rows: rows, Kept: kept}, nil
+		}
+	}
 	removableSkills := splitKept(locked.Skills, driftedSkills, opts.Force, "skill", &rows, &kept)
 	removableAgents := splitKept(locked.Agents, driftedAgents, opts.Force, "agent", &rows, &kept)
 

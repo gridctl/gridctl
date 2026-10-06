@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/contexts"
 	"github.com/gridctl/gridctl/pkg/pack"
 	"github.com/gridctl/gridctl/pkg/skills"
@@ -60,6 +61,7 @@ type AddDoc struct {
 	Warnings       []string                                    `json:"warnings,omitempty"`
 	Variables      map[string]skills.LockedVariableDeclaration `json:"variables,omitempty"`
 	UnmetVariables []VariableRequirement                       `json:"unmet_variables,omitempty"`
+	Stack          *StackSummary                               `json:"stack,omitempty"`
 }
 
 // VariableRequirement is a value-free prerequisite reported after import.
@@ -103,6 +105,7 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 
 	discoveredRules := discoverPackRules(clone.RepoPath)
 	resolved := resolvePackSelection(manifest, clone, discoveredRules)
+	stackSummary, stackWarnings := m.resolveCarriedStack(ctx, clone, manifest, &resolved, opts.DryRun)
 
 	if opts.BlockOnFindings && !opts.Trust {
 		if flagged := scanSelection(clone, resolved, discoveredRules); len(flagged) > 0 {
@@ -123,8 +126,9 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 			Rules:         resolved.rules,
 			Wiring:        manifest.Wiring,
 			Unresolved:    resolved.unresolved,
-			Warnings:      manifest.Warnings(),
+			Warnings:      append(manifest.Warnings(), stackWarnings...),
 			Variables:     lockedVariableDeclarations(manifest.Variables),
+			Stack:         stackSummary,
 		},
 		Notes: []string{},
 	}
@@ -184,7 +188,13 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 		res.Doc.Rules = resolved.rules
 	}
 	if !opts.DryRun {
+		if extra := m.materializeCarriedStack(ctx, &resolved); len(extra) > 0 {
+			res.Doc.Warnings = append(res.Doc.Warnings, extra...)
+			res.Doc.Stack = nil
+			res.Doc.Unresolved = append([]string(nil), resolved.unresolved...)
+		}
 		if err := recordLockedPack(ctx, m.lockPath(), manifest, resolved, opts.Repo, opts.Ref, clone.CommitSHA, opts.Auth); err != nil {
+			discardCheckout(resolved.createdCheckout)
 			return nil, err
 		}
 	}
@@ -199,8 +209,26 @@ type resolvedSelection struct {
 	rules  []string
 	// ruleFiles carries per-rule provenance for what actually installed,
 	// populated by installPackRules and persisted alongside rules.
-	ruleFiles  map[string]skills.LockedRule
-	unresolved []string
+	ruleFiles         map[string]skills.LockedRule
+	unresolved        []string
+	stack             *skills.LockedStack
+	unresolvedDetails map[string]string
+	// pendingStack is a validated checkout that Add materializes only
+	// after the findings gate and the import succeed.
+	pendingStack *pendingStack
+	// createdCheckout is a directory this add created. A later lockfile
+	// write failure deletes it. A reused checkout is left alone.
+	createdCheckout string
+}
+
+// pendingStack is a carried stack waiting for SnapshotWorktree.
+type pendingStack struct {
+	repoPath      string
+	dest          string
+	rel           string
+	stackPath     string
+	name          string
+	manifestStack string
 }
 
 // PackRuleFile is one discovered rule fragment in a pack repo.
@@ -431,18 +459,20 @@ func recordLockedPack(ctx context.Context, lockPath string, m *pack.Manifest, re
 			}
 		}
 		src.Pack = &skills.LockedPack{
-			Name:        m.Name,
-			Version:     m.Version,
-			Description: m.Description,
-			Author:      m.Author.Name,
-			Wiring:      m.Wiring,
-			Clients:     m.Clients,
-			Skills:      resolved.skills,
-			Agents:      resolved.agents,
-			Rules:       resolved.rules,
-			RuleFiles:   resolved.ruleFiles,
-			Unresolved:  resolved.unresolved,
-			Variables:   lockedVariableDeclarations(m.Variables),
+			Name:              m.Name,
+			Version:           m.Version,
+			Description:       m.Description,
+			Author:            m.Author.Name,
+			Wiring:            m.Wiring,
+			Clients:           m.Clients,
+			Skills:            resolved.skills,
+			Agents:            resolved.agents,
+			Rules:             resolved.rules,
+			RuleFiles:         resolved.ruleFiles,
+			Unresolved:        resolved.unresolved,
+			Variables:         lockedVariableDeclarations(m.Variables),
+			Stack:             resolved.stack,
+			UnresolvedDetails: resolved.unresolvedDetails,
 		}
 		lf.SetSource(sourceName, src)
 		return true, nil
@@ -457,6 +487,161 @@ func persistedPackSSH(cfg skills.AuthConfig) (method, user, path string) {
 		return cfg.Method, cfg.SSHUser, cfg.SSHKeyPath
 	}
 	return "", "", ""
+}
+
+// resolveCarriedStack validates a manifest stack entry against the clone
+// root (not the --path subdirectory). A failure is an unresolved selection,
+// not an import abort. Dry-run and a failed read never materialize a checkout.
+// A successful read records a pending checkout; Add copies it only after
+// the findings gate and the import succeed.
+func (m *Managers) resolveCarriedStack(ctx context.Context, clone *skills.CloneResult, manifest *pack.Manifest, resolved *resolvedSelection, dryRun bool) (*StackSummary, []string) {
+	if manifest.Stack == "" {
+		return nil, nil
+	}
+	token := "stack:" + manifest.Stack
+	rel := filepath.FromSlash(manifest.Stack)
+	stackPath := filepath.Join(clone.RepoPath, rel)
+	var warnings []string
+	fail := func(detail string) (*StackSummary, []string) {
+		resolved.unresolved = append(resolved.unresolved, token)
+		if resolved.unresolvedDetails == nil {
+			resolved.unresolvedDetails = map[string]string{}
+		}
+		resolved.unresolvedDetails[token] = detail
+		warnings = append(warnings, detail)
+		return nil, warnings
+	}
+	info, err := os.Stat(stackPath)
+	if err != nil || info.IsDir() {
+		return fail(fmt.Sprintf("stack file %q not found in the pack repository", manifest.Stack))
+	}
+	exported, sources, err := config.ExportStack(ctx, stackPath)
+	if err != nil {
+		return fail(err.Error())
+	}
+	if exported.Name == "" {
+		return fail("stack file has no name:")
+	}
+	if len(exported.Link) > 0 {
+		warnings = append(warnings, stackLinkWarning)
+	}
+	if escaping, outside := stackEscapesClone(clone.RepoPath, sources); outside {
+		return fail(fmt.Sprintf("stack path escapes the pack repository: %s", escaping))
+	}
+	summary := &StackSummary{Path: manifest.Stack, Name: exported.Name, Servers: len(exported.MCPServers)}
+	if dryRun {
+		return summary, warnings
+	}
+	home, err := m.homeDir()
+	if err != nil {
+		return fail(err.Error())
+	}
+	dest, err := filepath.Abs(PackCheckoutDir(home, manifest.Name, clone.CommitSHA))
+	if err != nil {
+		return fail(err.Error())
+	}
+	resolved.pendingStack = &pendingStack{
+		repoPath:      clone.RepoPath,
+		dest:          dest,
+		rel:           rel,
+		stackPath:     stackPath,
+		name:          exported.Name,
+		manifestStack: manifest.Stack,
+	}
+	return summary, warnings
+}
+
+// materializeCarriedStack copies a validated stack into the pinned checkout.
+// A snapshot failure, or a stack file the copy skipped, is an unresolved
+// selection. The returned warnings are empty when the checkout is recorded.
+func (m *Managers) materializeCarriedStack(ctx context.Context, resolved *resolvedSelection) []string {
+	pending := resolved.pendingStack
+	resolved.pendingStack = nil
+	if pending == nil {
+		return nil
+	}
+	fail := func(detail string) []string {
+		token := "stack:" + pending.manifestStack
+		resolved.unresolved = append(resolved.unresolved, token)
+		if resolved.unresolvedDetails == nil {
+			resolved.unresolvedDetails = map[string]string{}
+		}
+		resolved.unresolvedDetails[token] = detail
+		resolved.stack = nil
+		resolved.createdCheckout = ""
+		return []string{detail}
+	}
+	pinned := filepath.Join(pending.dest, pending.rel)
+	if info, statErr := os.Stat(pinned); statErr != nil || info.IsDir() {
+		discardCheckout(pending.dest)
+		result, snapErr := skills.SnapshotWorktree(ctx, pending.repoPath, pending.dest)
+		if snapErr != nil {
+			discardCheckout(pending.dest)
+			return fail(snapErr.Error())
+		}
+		if !result.Reused {
+			resolved.createdCheckout = pending.dest
+		}
+	}
+	if info, statErr := os.Stat(pinned); statErr != nil || info.IsDir() {
+		discardCheckout(pending.dest)
+		return fail(fmt.Sprintf("stack file %q is a symlink or was not copied into the checkout", pending.manifestStack))
+	}
+	hash, err := skills.ContentHashFile(pending.stackPath)
+	if err != nil {
+		discardCheckout(resolved.createdCheckout)
+		return fail(err.Error())
+	}
+	resolved.stack = &skills.LockedStack{
+		Path:        pending.manifestStack,
+		Name:        pending.name,
+		ContentHash: hash,
+		CheckoutDir: pending.dest,
+	}
+	return nil
+}
+
+// discardCheckout removes a checkout this add created. An empty pack root
+// left behind by the copy is removed too. A root that still holds another
+// commit is left alone.
+func discardCheckout(dest string) {
+	if dest == "" {
+		return
+	}
+	_ = os.RemoveAll(dest)
+	parent := filepath.Dir(dest)
+	entries, err := os.ReadDir(parent)
+	if err != nil || len(entries) != 0 {
+		return
+	}
+	_ = os.Remove(parent)
+}
+
+// stackEscapesClone reports the first source path that resolves outside
+// the clone root. ExportStack's source list includes the extends chain.
+func stackEscapesClone(cloneRoot string, sources []string) (string, bool) {
+	root, err := filepath.Abs(cloneRoot)
+	if err != nil {
+		return cloneRoot, true
+	}
+	if evaluated, evalErr := filepath.EvalSymlinks(root); evalErr == nil {
+		root = evaluated
+	}
+	for _, source := range sources {
+		abs, absErr := filepath.Abs(source)
+		if absErr != nil {
+			return source, true
+		}
+		checked := abs
+		if evaluated, evalErr := filepath.EvalSymlinks(abs); evalErr == nil {
+			checked = evaluated
+		}
+		rel, relErr := filepath.Rel(root, checked)
+		if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return checked, true
+		}
+	}
+	return "", false
 }
 
 func lockedVariableDeclarations(in map[string]pack.VariableDeclaration) map[string]skills.LockedVariableDeclaration {

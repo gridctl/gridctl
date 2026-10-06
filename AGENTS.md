@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repository. Follows the [agents.md
 
 ## What gridctl is
 
-Gridctl is an MCP (Model Context Protocol) gateway with a built-in skills and agents registry. A user declares a stack of MCP servers (containerized stdio, SSE/HTTP, OpenAPI-backed, local processes, SaaS proxies) in `stack.yaml`, runs `gridctl apply`, and gridctl orchestrates the containers, fans tool calls to the right server, aggregates downstream prompts and resources with registry skills, and surfaces every active `SKILL.md` to upstream clients as an MCP prompt. A projection engine (`pkg/project`, one lockfile at `~/.gridctl/project.lock.yaml`) also places skills, agents, global-context rules, and gateway wiring onto disk for file-reading clients, and packs (`gridctl-pack.yaml`) import all of it from one git repo. The same process embeds a React web UI on `:8180`. Inspired by Containerlab.
+Gridctl is an MCP (Model Context Protocol) gateway with a built-in skills and agents registry. A user declares a stack of MCP servers (containerized stdio, SSE/HTTP, OpenAPI-backed, local processes, SaaS proxies) in `stack.yaml`, runs `gridctl apply`, and gridctl orchestrates the containers, fans tool calls to the right server, aggregates downstream prompts and resources with registry skills, and surfaces every active `SKILL.md` to upstream clients as an MCP prompt. A projection engine (`pkg/project`, one lockfile at `~/.gridctl/project.lock.yaml`) also places skills, agents, global-context rules, and gateway wiring onto disk for file-reading clients, and packs (`gridctl-pack.yaml`) import all of it from one git repo and can start an optional carried stack from a pinned checkout under `~/.gridctl/packs/`. The same process embeds a React web UI on `:8180`. Inspired by Containerlab.
 
 ## Build and run
 
@@ -146,7 +146,7 @@ pkg/contexts/       Global agent-context projection (`gridctl ctx`): one canonic
 pkg/modelsync/      Model routing policy projection (`gridctl models`): a router-only LiteLLM fragment plus its include:
                     line in the parent config, and an OpenCode provider stanza, with drift and restart-pending state.
 pkg/wiring/         Key-level ownership of gateway entries merged into client MCP configs (`gridctl project`, link/unlink).
-pkg/pack/           gridctl-pack.yaml manifest schema; pkg/packops owns orchestration shared by the CLI and REST handlers.
+pkg/pack/           gridctl-pack.yaml manifest schema, including an optional relative `stack` path; pkg/packops owns orchestration shared by the CLI and REST handlers. The CLI injects stack launch; REST leaves the launcher nil and does not start or stop a carried daemon.
 pkg/skillpins/      TOFU pins over skill documents (per-file digests, findings); the `gridctl skill pins` store.
 pkg/runs/           Metadata-only persisted dispatch records (`gridctl runs`). Opt-in stack-level JSONL with a bounded queue, single writer, retention, and coordinated wipe.
 pkg/limits/         Enforces the `limits:` block: token-bucket rate limits on the tool-call dispatch path.
@@ -203,6 +203,7 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
                     a2a_wire_test.go checks both wire dialects, origin-bound credentials, sessions, and redirects with real HTTP.
                     a2a_*_test.go adapter suites cover authority, atomic delivery, policy, trust, observation sinks,
                     overlapping cancel, and actual daemon restart/reload with real HTTP and subprocesses.
+                    pack_stack_test.go (`integration && !windows`) drives a real pack-carried local-process daemon through add, CLI launch, status, replace, and remove.
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, a2a, mcp-apps, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
                     portable-pack, model-policy, python-sources, python-runtime, execution, security-evidence, stack-declaration-policy, runs).

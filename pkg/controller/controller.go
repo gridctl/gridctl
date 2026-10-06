@@ -80,16 +80,21 @@ type Config struct {
 	BasePort             int
 	Verbose              bool
 	Quiet                bool
-	NoCache              bool
-	NoExpand             bool
-	Foreground           bool
-	Watch                bool
-	DaemonChild          bool
-	CodeMode             bool       // Enable code mode via CLI flag
-	Runtime              string     // Explicit runtime selection (docker, podman)
-	Replace              bool       // Stop a running stack before deploying (used by plan apply)
-	LogFile              string     // Path to log file (overrides stack.yaml logging.file)
-	LogLevel             slog.Level // Minimum slog level (global --log-level; zero value is info)
+	// Silent suppresses every stdout line Deploy would otherwise print,
+	// including the nil-printer success banner and the replace-path
+	// notices. Quiet still prints that banner; pack apply sets both so
+	// the pack table is the only stdout.
+	Silent      bool
+	NoCache     bool
+	NoExpand    bool
+	Foreground  bool
+	Watch       bool
+	DaemonChild bool
+	CodeMode    bool       // Enable code mode via CLI flag
+	Runtime     string     // Explicit runtime selection (docker, podman)
+	Replace     bool       // Stop a running stack before deploying (used by plan apply)
+	LogFile     string     // Path to log file (overrides stack.yaml logging.file)
+	LogLevel    slog.Level // Minimum slog level (global --log-level; zero value is info)
 
 	// OnReady fires once the gateway HTTP listener is serving and MCP server
 	// registration has run — the same readiness the daemon parent polls via
@@ -441,7 +446,7 @@ func (sc *StackController) checkState(stack *config.Stack) error {
 		if cleanErr != nil {
 			return fmt.Errorf("checking state: %w", cleanErr)
 		}
-		if cleaned {
+		if cleaned && !sc.config.Silent {
 			fmt.Printf("Cleaned up stale state for '%s'\n", stack.Name)
 		}
 		existingState, _ = state.Load(stack.Name)
@@ -453,9 +458,14 @@ func (sc *StackController) checkState(stack *config.Stack) error {
 				sc.config.Port = existingState.Port
 			}
 
-			fmt.Printf("Stopping running stack '%s'...\n", stack.Name)
+			if !sc.config.Silent {
+				fmt.Printf("Stopping running stack '%s'...\n", stack.Name)
+			}
 			if killErr := state.KillDaemon(existingState); killErr != nil {
-				fmt.Printf("Warning: could not kill daemon: %v\n", killErr)
+				if !sc.config.Silent {
+					fmt.Printf("Warning: could not kill daemon: %v\n", killErr)
+				}
+				slog.Warn("could not kill daemon", "stack", stack.Name, "error", killErr)
 			}
 			if delErr := state.Delete(stack.Name); delErr != nil {
 				return fmt.Errorf("deleting state: %w", delErr)
@@ -524,7 +534,7 @@ func (sc *StackController) runDaemonChild(ctx context.Context, stack *config.Sta
 
 // createPrinter creates the output printer unless quiet mode is enabled.
 func (sc *StackController) createPrinter(stack *config.Stack) *output.Printer {
-	if sc.config.Quiet {
+	if sc.config.Quiet || sc.config.Silent {
 		return nil
 	}
 
@@ -557,7 +567,7 @@ func (sc *StackController) createPrinter(stack *config.Stack) *output.Printer {
 // (spinner convention) and animates only on an interactive, non-CI
 // terminal.
 func (sc *StackController) createReporter() *output.Reporter {
-	if sc.config.Quiet || sc.config.DaemonChild {
+	if sc.config.Quiet || sc.config.Silent || sc.config.DaemonChild {
 		return nil
 	}
 	return output.NewReporter(os.Stderr)
@@ -574,7 +584,7 @@ func (sc *StackController) setupOrchestratorLogging(rt *runtime.Orchestrator) (*
 		}
 	}
 
-	if cfg.Foreground && !cfg.Quiet {
+	if cfg.Foreground && !cfg.Quiet && !cfg.Silent {
 		logBuffer := logging.NewLogBuffer(1000)
 		innerHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: effectiveLogLevel(cfg)})
 		bufferHandler := logging.NewBufferHandler(logBuffer, innerHandler)
@@ -584,7 +594,7 @@ func (sc *StackController) setupOrchestratorLogging(rt *runtime.Orchestrator) (*
 		return logBuffer, redactHandler
 	}
 
-	if !cfg.Quiet {
+	if !cfg.Quiet && !cfg.Silent {
 		textHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: effectiveLogLevel(cfg)})
 		redactHandler := logging.NewRedactingHandler(textHandler)
 		registerVault(redactHandler)
@@ -629,7 +639,7 @@ func (sc *StackController) runDaemonMode(ctx context.Context, stack *config.Stac
 		// conversational hints go through Printer.Hint and are TTY-only.
 		printer.Print("\nUse 'gridctl destroy %s' to stop\n", sc.config.StackPath)
 		printer.Hint("Follow the daemon with 'gridctl logs', or 'gridctl open' for the web UI")
-	} else {
+	} else if !sc.config.Silent {
 		fmt.Printf("Stack '%s' started successfully\n", stack.Name)
 		fmt.Printf("  Gateway: http://localhost:%d\n", st.Port)
 		fmt.Printf("  PID: %d\n", pid)

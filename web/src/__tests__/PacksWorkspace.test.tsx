@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router';
 import { CommandRegistryProvider } from '../hooks/useCommandRegistry';
 import { PacksWorkspace } from '../components/registry/packs/PacksWorkspace';
 import { PackImportWizard } from '../components/wizard/steps/PackImportWizard';
-import { describeApplyDoc, groupPackRows, packNeedsAttention, sortPacks } from '../components/registry/packs/packModel';
+import { describeApplyDoc, groupPackRows, packNeedsAttention, rowNeedsAttention, sortPacks } from '../components/registry/packs/packModel';
 import { isRegistryKind } from '../lib/registryKind';
 import { StatePill } from '../components/ui/StatePill';
 import { SourceGroupHeader } from '../components/registry/SourceGroupHeader';
@@ -100,6 +100,30 @@ describe('packModel', () => {
       listItem({ name: 'alpha' }),
     ]);
     expect(sorted.map((p) => p.name)).toEqual(['beta', 'alpha', 'zeta']);
+  });
+
+  it('treats started and replaced as clean, and skipped stack states as attention', () => {
+    expect(rowNeedsAttention({ kind: 'stack', name: 'neteng', action: 'started' })).toBe(false);
+    expect(rowNeedsAttention({ kind: 'stack', name: 'neteng', action: 'replaced' })).toBe(false);
+    expect(rowNeedsAttention({ kind: 'stack', name: 'neteng', action: 'would-start' })).toBe(false);
+    expect(rowNeedsAttention({ kind: 'stack', name: 'neteng', action: 'would-replace' })).toBe(false);
+    expect(rowNeedsAttention({ kind: 'stack', name: 'neteng', action: 'skipped-variables' })).toBe(true);
+    expect(rowNeedsAttention({ kind: 'stack', name: 'neteng', action: 'skipped-running' })).toBe(true);
+    expect(rowNeedsAttention({ kind: 'stack', name: 'neteng', action: 'skipped-unavailable' })).toBe(true);
+    expect(rowNeedsAttention({ kind: 'stack', name: 'neteng', state: 'stale' })).toBe(true);
+    expect(rowNeedsAttention({ kind: 'stack', name: 'neteng', state: 'drifted' })).toBe(true);
+    expect(rowNeedsAttention({ kind: 'stack', name: 'neteng', state: 'target-missing' })).toBe(true);
+    expect(rowNeedsAttention({ kind: 'stack', name: 'neteng', state: 'missing' })).toBe(false);
+  });
+
+  it('groups a stack row first', () => {
+    const groups = groupPackRows([
+      { kind: 'skill', name: 'ok', client: 'claude', state: 'in-sync' },
+      { kind: 'stack', name: 'neteng', state: 'in-sync', remediation: "re-run 'gridctl pack apply neteng'" },
+    ]);
+    expect(groups.map((g) => g.kind)).toEqual(['stack', 'skill']);
+    expect(groups[0].label).toBe('Stack');
+    expect(groups[0].rows[0].remediation).toContain('gridctl pack apply');
   });
 
   it('groups rows by kind in manifest order, attention-first within groups', () => {

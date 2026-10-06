@@ -3168,7 +3168,7 @@ export async function deleteContextFragment(name: string): Promise<{ name: strin
 
 /** One resource line in a pack document (status, apply, or remove). */
 export interface PackRow {
-  kind: 'skill' | 'agent' | 'rule' | 'wiring' | 'unresolved';
+  kind: 'stack' | 'skill' | 'agent' | 'rule' | 'wiring' | 'unresolved';
   name: string;
   client?: string;
   action?: string;
@@ -3185,11 +3185,18 @@ export interface PackOrigin {
   fetched_at?: string;
 }
 
+export interface PackStackSummary {
+  path: string;
+  name: string;
+  servers: number;
+}
+
 export interface PackCounts {
   skills: number;
   agents: number;
   rules: number;
   wiring: boolean;
+  stack?: boolean;
 }
 
 /** Identity half of a pack: the list item shape. */
@@ -3226,6 +3233,7 @@ export interface PackAddDoc {
   unresolved?: string[];
   skipped?: string[];
   warnings?: string[];
+  stack?: PackStackSummary;
 }
 
 export interface PackApplyDoc {
@@ -3265,6 +3273,7 @@ export interface PackPreview {
   rules: PackPreviewResource[];
   unresolved?: string[];
   warnings?: string[];
+  stack?: PackStackSummary;
 }
 
 /** The 409 body a blocked-on-findings pack import carries. */

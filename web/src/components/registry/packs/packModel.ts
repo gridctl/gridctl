@@ -2,9 +2,10 @@ import type { PackApplyDoc, PackListItem, PackRow } from '../../../lib/api';
 import type { ProjectionState } from '../../ui/StatePill';
 
 /** Kind order matches the manifest's own axis. */
-export const PACK_KIND_ORDER = ['skill', 'agent', 'rule', 'wiring', 'unresolved'] as const;
+export const PACK_KIND_ORDER = ['stack', 'skill', 'agent', 'rule', 'wiring', 'unresolved'] as const;
 
 const KIND_LABELS: Record<(typeof PACK_KIND_ORDER)[number], string> = {
+  stack: 'Stack',
   skill: 'Skills',
   agent: 'Agents',
   rule: 'Rules',
@@ -26,7 +27,7 @@ export function rowNeedsAttention(row: PackRow): boolean {
     // attention so it sorts first.
     return row.kind === 'rule' && v === 'missing';
   }
-  return !['synced', 'updated', 'created', 'unchanged', 'removed', 'would-remove', 'adopted', 'linked'].includes(v);
+  return !['synced', 'updated', 'created', 'unchanged', 'removed', 'would-remove', 'adopted', 'linked', 'started', 'replaced', 'would-start', 'would-replace'].includes(v);
 }
 
 /** The list's attention signal: backend attention, a collision, or an

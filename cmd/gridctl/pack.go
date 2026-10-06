@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/contexts"
@@ -24,11 +23,12 @@ var packCmd = &cobra.Command{
 	Use:   "pack",
 	Short: "Import and apply team packs (skills + agents + rules + wiring)",
 	Long: `A pack is a git repo carrying a ` + pack.ManifestFileName + ` manifest that
-selects skills, agents, context rule fragments, and gateway wiring, so
-one import configures a whole setup. 'pack add' imports the selection
-through the same origin pipeline (security scan, --trust gate,
-drift-safe updates) that 'gridctl skill add' uses; 'pack apply'
-projects it through the same engines as 'gridctl skill project sync',
+selects skills, agents, context rule fragments, gateway wiring, and an
+optional stack file, so one import configures a whole setup. 'pack add'
+imports the selection and pins a carried stack through the same origin
+pipeline (security scan, --trust gate, drift-safe updates) that
+'gridctl skill add' uses; 'pack apply' starts that stack, then
+projects the selection through the same engines as 'gridctl skill project sync',
 'gridctl ctx sync', and 'gridctl project sync --kind wiring', scoped to
 the pack; 'pack remove' cascades: projections are unsynced and wiring
 records cleaned before the registry entries go.
@@ -64,7 +64,11 @@ func newPackManagers() (*packops.Managers, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &packops.Managers{Skills: sm, Agents: am, Wiring: wm, Contexts: cm, Home: home}, nil
+	return &packops.Managers{
+		Skills: sm, Agents: am, Wiring: wm, Contexts: cm, Home: home,
+		Launcher:        packStackLauncher{},
+		StoredVariables: packStoredVariables,
+	}, nil
 }
 
 // --- pack add ---
@@ -202,6 +206,9 @@ func runPackAdd(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Man
 			fmt.Fprintf(stdout, "%s pack %q (%d skills, %d agents, wiring: %s) from %s\n",
 				verb, doc.Pack, len(doc.Skills), len(doc.Agents), wiringLabel, repo)
 		}
+		if doc.Stack != nil {
+			fmt.Fprintf(stdout, "Stack: %s (%s, %s)\n", doc.Stack.Path, doc.Stack.Name, serverCountLabel(doc.Stack.Servers))
+		}
 		for _, w := range doc.Warnings {
 			fmt.Fprintf(stdout, "Warning: %s\n", w)
 		}
@@ -237,39 +244,15 @@ func runPackAdd(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Man
 }
 
 func unmetPackVariables(declarations map[string]skills.LockedVariableDeclaration) []packops.VariableRequirement {
-	if len(declarations) == 0 {
-		return nil
+	keys, available := packStoredVariables()
+	return packops.UnmetVariables(declarations, keys, available)
+}
+
+func serverCountLabel(n int) string {
+	if n == 1 {
+		return "1 server"
 	}
-	store, err := loadVault()
-	if err != nil || store.IsLocked() {
-		return nil
-	}
-	stored := map[string]bool{}
-	for _, variable := range store.List() {
-		stored[variable.Key] = true
-	}
-	keys := make([]string, 0, len(declarations))
-	for key, declaration := range declarations {
-		if declaration.Required != nil && *declaration.Required && !stored[key] {
-			keys = append(keys, key)
-		}
-	}
-	sort.Strings(keys)
-	out := make([]packops.VariableRequirement, 0, len(keys))
-	for _, key := range keys {
-		declaration := declarations[key]
-		typeName := declaration.Type
-		if typeName == "" {
-			typeName = "string"
-		}
-		secret := declaration.Secret == nil || *declaration.Secret
-		out = append(out, packops.VariableRequirement{
-			Key: key, Type: typeName, Secret: secret,
-			Description: declaration.Description, Docs: declaration.Docs,
-			Command: "gridctl var set " + key,
-		})
-	}
-	return out
+	return fmt.Sprintf("%d servers", n)
 }
 
 // --- pack apply ---
@@ -278,6 +261,7 @@ var (
 	packApplyForce   bool
 	packApplyDryRun  bool
 	packApplyClients []string
+	packApplyPort    int
 	packApplyFormat  string
 	packApplyJSON    *bool
 	packApplyPlain   *bool
@@ -286,13 +270,17 @@ var (
 var packApplyCmd = &cobra.Command{
 	Use:   "apply <name>",
 	Short: "Project a pack's resources to clients",
-	Long: `Projects an imported pack: its skills and agents through the same
-engines as 'gridctl skill project sync' (scoped to the pack's
-selection), its rule fragments through 'gridctl ctx sync', and, when
+	Long: `Projects an imported pack. When the pack carries a stack, that
+step runs first: the gateway starts from the pinned checkout (or is
+left unchanged when it already matches), then skills and agents project
+through the same engines as 'gridctl skill project sync' (scoped to the
+pack's selection), rule fragments through 'gridctl ctx sync', and, when
 the manifest declares wiring, the gateway entry through the same
-machinery as 'gridctl project sync --kind wiring'. Every projection is
-tagged with the pack name; for rules only pack-shipped fragments carry
-the tag.
+machinery as 'gridctl project sync --kind wiring'. Wiring for a
+stack-carrying pack uses the pack daemon's port. --port selects that
+port (default 8180). --force also replaces a same-named daemon that was
+not started from this pack. Every projection is tagged with the pack
+name; for rules only pack-shipped fragments carry the tag.
 
 Apply is additive and never transactional: each resource succeeds or
 skips independently, drifted resources are skipped with an adopt or
@@ -318,7 +306,7 @@ Exit codes:
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
 		}
-		if exit := runPackApply(cmd.Context(), os.Stdout, os.Stderr, mgrs, args[0], packApplyForce, packApplyDryRun, packApplyClients, format, *packApplyPlain); exit != ctxExitOK {
+		if exit := runPackApply(cmd.Context(), os.Stdout, os.Stderr, mgrs, args[0], packApplyForce, packApplyDryRun, packApplyClients, packApplyPort, format, *packApplyPlain); exit != ctxExitOK {
 			os.Exit(exit)
 		}
 		return nil
@@ -326,8 +314,8 @@ Exit codes:
 }
 
 // runPackApply projects one pack across every kind it selects.
-func runPackApply(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Managers, name string, force, dryRun bool, clientOverride []string, format string, plain bool) int {
-	doc, err := mgrs.Apply(ctx, name, packops.ApplyOptions{Force: force, DryRun: dryRun, Clients: clientOverride})
+func runPackApply(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Managers, name string, force, dryRun bool, clientOverride []string, port int, format string, plain bool) int {
+	doc, err := mgrs.Apply(ctx, name, packops.ApplyOptions{Force: force, DryRun: dryRun, Clients: clientOverride, Port: port})
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return ctxExitInfrastructure
@@ -552,12 +540,14 @@ func runPackRemove(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.
 		renderPackRows(stdout, doc.Rows, false)
 		if len(doc.Kept) > 0 {
 			fmt.Fprintf(stdout, "\nKept (drifted, re-run with --force to remove): %s\n", strings.Join(doc.Kept, ", "))
+		} else if label, blocked := blockedPackRemoval(doc.Rows); blocked && !dryRun {
+			fmt.Fprintf(stdout, "\nPack %q not removed: %s.\n", name, label)
 		} else if !dryRun {
 			fmt.Fprintf(stdout, "\nPack %q removed.\n", name)
 		}
 	}
 	for _, r := range doc.Rows {
-		if r.Action == "error" {
+		if r.Action == "error" || strings.HasPrefix(r.Action, "skipped") {
 			return ctxExitAttention
 		}
 	}
@@ -565,6 +555,25 @@ func runPackRemove(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.
 		return ctxExitAttention
 	}
 	return ctxExitOK
+}
+
+// blockedPackRemoval names a stack row that stopped removal before the
+// pack record was dropped. A success line would contradict the exit code.
+func blockedPackRemoval(rows []packops.Row) (string, bool) {
+	for _, r := range rows {
+		if r.Kind != "stack" {
+			continue
+		}
+		if r.Action != "error" && r.Action != "skipped-unavailable" {
+			continue
+		}
+		name := r.Name
+		if name == "" {
+			name = "stack"
+		}
+		return fmt.Sprintf("stack %s (%s)", name, r.Action), true
+	}
+	return "", false
 }
 
 // loadLockedPack finds a pack's record in the import lockfile.
@@ -584,7 +593,8 @@ func init() {
 	packAddCmd.Flags().StringVar(&packAddSSHKey, "ssh-key", "", "Use an SSH private key at this path (SSH URLs only)")
 	packAddJSON = addJSONAlias(packAddCmd)
 
-	packApplyCmd.Flags().BoolVar(&packApplyForce, "force", false, "Overwrite drifted or foreign resources (after backup)")
+	packApplyCmd.Flags().BoolVar(&packApplyForce, "force", false, "Overwrite drifted or foreign resources, and replace a same-named daemon that was not started from this pack")
+	packApplyCmd.Flags().IntVarP(&packApplyPort, "port", "p", 8180, "Port for a pack-carried stack's gateway")
 	packApplyCmd.Flags().BoolVar(&packApplyDryRun, "dry-run", false, "Show what would change without modifying files")
 	packApplyCmd.Flags().StringSliceVar(&packApplyClients, "clients", nil, "Restrict wiring to these client slugs")
 	packApplyCmd.Flags().StringVar(&packApplyFormat, "format", "text", "Output format: text or json")

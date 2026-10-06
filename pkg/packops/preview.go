@@ -48,6 +48,7 @@ type PreviewResult struct {
 	Rules       []PreviewResource `json:"rules"`
 	Unresolved  []string          `json:"unresolved,omitempty"`
 	Warnings    []string          `json:"warnings,omitempty"`
+	Stack       *StackSummary     `json:"stack,omitempty"`
 }
 
 // FindingsError blocks an import whose resolved selection carries
@@ -88,6 +89,8 @@ func Preview(ctx context.Context, opts PreviewOptions) (*PreviewResult, error) {
 	}
 	discoveredRules := discoverPackRules(clone.RepoPath)
 	resolved := resolvePackSelection(manifest, clone, discoveredRules)
+	var scratch Managers
+	stackSummary, stackWarnings := scratch.resolveCarriedStack(ctx, clone, manifest, &resolved, true)
 
 	res := &PreviewResult{
 		Pack:        manifest.Name,
@@ -100,7 +103,8 @@ func Preview(ctx context.Context, opts PreviewOptions) (*PreviewResult, error) {
 		Agents:      []PreviewResource{},
 		Rules:       []PreviewResource{},
 		Unresolved:  resolved.unresolved,
-		Warnings:    manifest.Warnings(),
+		Warnings:    append(manifest.Warnings(), stackWarnings...),
+		Stack:       stackSummary,
 	}
 	for _, pr := range scanResources(clone, resolved, discoveredRules, false) {
 		switch pr.Kind {

@@ -64,9 +64,30 @@ func (s *Server) packsMgr() (*packops.Managers, error) {
 			s.packsErr = err
 			return
 		}
-		s.packsManagers = &packops.Managers{Skills: sm, Agents: am, Wiring: wm, Contexts: cm, Home: home, LockPath: s.lockFilePath()}
+		s.packsManagers = &packops.Managers{
+			Skills: sm, Agents: am, Wiring: wm, Contexts: cm, Home: home, LockPath: s.lockFilePath(),
+			// Launcher stays nil: this release does not deploy a pack stack
+			// over REST. StoredVariables lets apply report unmet keys when
+			// the vault is unlocked; a locked vault falls through to the
+			// loader, which this interface cannot run.
+			StoredVariables: s.packStoredVariables,
+		}
 	})
 	return s.packsManagers, s.packsErr
+}
+
+// packStoredVariables reports unlocked vault keys. A nil or locked store
+// is unavailable, so apply does not prompt and does not treat every
+// required key as unmet.
+func (s *Server) packStoredVariables() (map[string]bool, bool) {
+	if s.vaultStore == nil || s.vaultStore.IsLocked() {
+		return nil, false
+	}
+	keys := map[string]bool{}
+	for _, variable := range s.vaultStore.List() {
+		keys[variable.Key] = true
+	}
+	return keys, true
 }
 
 // SetPacksManagers injects the pack engine. Tests use it to keep pack

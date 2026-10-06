@@ -1,0 +1,8 @@
+# Local-process server carried by this pack. The command is a development
+# wrapper, not a published image, so it needs no digest pin.
+version: "1"
+name: network-eng
+
+mcp-servers:
+  - name: local-tools
+    command: ["sh", "-c", "while true; do sleep 3600; done"]
