@@ -477,8 +477,9 @@ func statusStackRow(home, packName string, st *skills.LockedStack) (Row, bool) {
 }
 
 // removeStack decides the stack row and whether the checkout may be deleted.
-// A nil row means no stack row (a non-pack daemon is left running).
-// block is true when removal must stop before dropping the pack record.
+// A nil row means no stack row. A non-pack daemon is left running; dry-run
+// still previews the checkout deletion. block is true when removal must
+// stop before dropping the pack record.
 func (m *Managers) removeStack(ctx context.Context, name string, st *skills.LockedStack, dryRun bool) (row *Row, block bool, err error) {
 	if st == nil {
 		return nil, false, nil
@@ -497,7 +498,10 @@ func (m *Managers) removeStack(ctx context.Context, name string, st *skills.Lock
 	}
 	if run.running && !run.owned {
 		if dryRun {
-			return nil, false, nil
+			return &Row{
+				Kind: "stack", Name: rowName, Action: "would-remove",
+				Detail: "would remove the checkout; the running daemon is not pack-owned and is left running",
+			}, false, nil
 		}
 		if rmErr := os.RemoveAll(PackCheckoutRoot(home, name)); rmErr != nil {
 			return nil, true, rmErr
@@ -516,7 +520,7 @@ func (m *Managers) removeStack(ctx context.Context, name string, st *skills.Lock
 			Kind: "stack", Name: rowName, Action: "skipped-unavailable",
 			Detail:      "stack deploy is not available over this interface",
 			Remediation: fmt.Sprintf("gridctl destroy %s", st.Name),
-		}, false, nil
+		}, true, nil
 	}
 	if run.running && run.owned {
 		if stopErr := m.Launcher.Stop(ctx, st.Name); stopErr != nil {
