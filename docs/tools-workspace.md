@@ -55,10 +55,10 @@ Treat these as claims, not guarantees: they are reported by the server and not v
 ## Fleet, Access, and Groups
 
 - **Fleet**: bulk actions across servers - expose all, hide tools matching a glob pattern, or disable unused. Every action follows plan, then confirm, then a single reload.
-- **Access**: per-client scoping. Without a `clients:` block in `stack.yaml`, every linked client reaches every server; creating one flips unlisted clients to deny-by-default, and the editor warns before you do that. Server grants and per-server tool selections are both editable here; the same tool axis is available in the Stack workspace's Access Lens.
+- **Access**: per-client scoping. Without a `clients:` block in `stack.yaml`, every linked client reaches every server; creating one flips unlisted clients to deny-by-default, and the editor warns before you do that. Server grants and per-server tool selections are both editable here; the same tool axis is available in the Stack workspace's Access Lens. Downstream prompts and resources follow the server grant, not the tool selection.
 - **Groups**: curated tool bundles served at `/groups/{name}/mcp`, configured via the `groups:` block. The Groups panel teaches the configuration when none exists yet.
 
-Where they overlap: whitelists (this workspace) decide what the gateway exposes at all; Access decides which client sees which servers and tools; Groups publish named subsets at separate endpoints. A tool must survive all applicable layers for a client to call it.
+Where they overlap: whitelists (this workspace) decide what the gateway exposes at all; Access decides which client sees which servers and tools; Groups publish named subsets at separate endpoints. A tool must survive all applicable layers for a client to call it. Downstream prompts and resources follow server membership. A tool whitelist or a partial tool selection does not filter them. A group exposes a server's prompts and resources only when at least one of that server's tools is a member.
 
 These filters are separate from [gateway authentication](config-schema.md#auth). When configured, the gateway credential is required on every grouped MCP request, just as on `/mcp`. Client selectors are self-declared, and group names are not authenticated identities; the filters are guardrails for cooperating clients.
 

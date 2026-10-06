@@ -60,6 +60,6 @@ New to gridctl? Read in this order:
 
 ## Quick Links
 
-- [Examples](../examples/) - example stacks and repos (transports, generated Python sources, OpenAPI, A2A, skills registry, portable pack, variables, tracing, run records, autoscale, code mode, access control, declarative linking)
+- [Examples](../examples/) - example stacks and repos (transports, generated Python sources, OpenAPI, A2A, MCP Apps, skills registry, portable pack, variables, tracing, run records, autoscale, code mode, access control, declarative linking)
 - [Contributing](../CONTRIBUTING.md) - development setup and conventions
 - [Changelog](../CHANGELOG.md) - release history

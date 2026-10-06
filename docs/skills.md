@@ -38,7 +38,7 @@ Two channels, complementary and per-client.
 
 **MCP prompts (always on).** The registry implements the MCP `prompts/list` and `prompts/get` endpoints. A connected client that renders prompts sees every active skill as a prompt the user can invoke; `prompts/get` returns the post-frontmatter body verbatim. Prompts are user-invoked: the model does not discover them on its own. When the stack declares a `skills:` exposure policy, denied skills are filtered from both prompt and resource surfaces; see [Skill pins and exposure policy](#skill-pins-and-exposure-policy).
 
-Downstream MCP servers that declare `prompts` or `resources` are aggregated beside the registry. Their prompts are named `<server>__<prompt>`. Their resource URIs are not rewritten. A name or URI that collides with a registry skill keeps the registry entry. Client and group scoping apply to downstream servers, not to registry skills.
+Downstream MCP servers that declare `prompts` or `resources` are aggregated beside the registry. Their prompts are named `<server>__<prompt>`. A prompt name that matches a registry skill keeps the registry entry and drops the downstream prompt. Resource URIs are not rewritten. Reads of `skills://registry/` and legacy `prompt://` still go to the registry. Client and group scoping apply to downstream servers, not to registry skills.
 
 **File projection (opt-in).** `gridctl skill project sync <skill>` places selected active skills into native client skill directories, where clients that read skills from disk auto-trigger them from the frontmatter description. See [Projecting skills into clients](#projecting-skills-into-clients).
 

@@ -55,6 +55,8 @@ for example `gridctl call agent__task_get @private-args.json --format json`, and
 protect stdout. `--as` grants no task authority; lost handles cannot be recovered
 from labels or run history. Use a confidential channel for remote gateway access.
 
+`gridctl status --json` `mcp_servers` entries include `promptCount`, `mcpResourceCount`, `resourceTemplateCount`, `capabilities`, `resourceCollisions`, and `resourceListError` (omitted when empty). The human MCP servers table adds `PROMPTS` and `RESOURCES` only when at least one server has a non-zero prompt or MCP resource count, so a tool-only fleet is unchanged. `--replicas` does not add those columns. See the [server status fields](api-reference.md#get-apistatus).
+
 ### Mutable reference diagnostics
 
 `gridctl validate stack.yaml --check-mutable-refs` is off by default. It inspects literal image and `npx`/`uvx` selectors without expanding variables, substituting secrets, executing launchers, or rewriting the file. Findings reuse the existing `field` / `message` / `severity` shape:
