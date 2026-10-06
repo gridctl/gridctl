@@ -33,6 +33,7 @@ type StdioClient struct {
 	readDone chan struct{}
 	stdin    io.WriteCloser
 	stdout   io.Reader
+	stderr   io.ReadCloser
 	attached bool
 	retired  bool
 	cancel   context.CancelFunc
@@ -102,28 +103,44 @@ func (c *StdioClient) Connect(ctx context.Context) error {
 	}
 
 	c.stdin = resp.Conn
-
-	// Docker attach uses a multiplexed stream format with headers.
-	// We need to demultiplex stdout from the stream using stdcopy.
-	stdoutReader, stdoutWriter := io.Pipe()
-	c.stdout = stdoutReader
 	c.attached = true
+	c.startStdioReaders(resp.Reader)
+	return nil
+}
 
-	// Demultiplex the stream in the background
+// startStdioReaders demultiplexes an attach stream and starts the stdout and
+// stderr readers. Callers must hold connMu. Tests drive the same path with a
+// reader instead of a live attach.
+func (c *StdioClient) startStdioReaders(stream io.Reader) {
+	stdoutReader, stdoutWriter := io.Pipe()
+	stderrReader, stderrWriter := io.Pipe()
+	c.stdout = stdoutReader
+	c.stderr = stderrReader
+
 	go func() {
 		defer stdoutWriter.Close()
-		// StdCopy reads the multiplexed stream and writes stdout to the first writer
-		_, _ = stdcopy.StdCopy(stdoutWriter, io.Discard, resp.Reader)
+		defer stderrWriter.Close()
+		_, _ = stdcopy.StdCopy(stdoutWriter, stderrWriter, stream)
 	}()
 
-	// Start reading responses with cancellation
 	readerCtx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
 	readDone := make(chan struct{})
 	c.readDone = readDone
-	go func() { defer close(readDone); c.readResponses(readerCtx, stdoutReader) }()
-
-	return nil
+	var readers sync.WaitGroup
+	readers.Add(2)
+	go func() {
+		defer readers.Done()
+		c.readResponses(readerCtx, stdoutReader)
+	}()
+	go func() {
+		defer readers.Done()
+		c.readStderr(stderrReader)
+	}()
+	go func() {
+		readers.Wait()
+		close(readDone)
+	}()
 }
 
 func (c *StdioClient) retire() error {
@@ -162,9 +179,11 @@ func (c *StdioClient) readResponses(ctx context.Context, stdout io.Reader) {
 			continue
 		}
 		if message.kind == stdioNotification {
+			logStdioPeer(c.logger, message)
 			continue
 		}
 		if message.kind == stdioRequest {
+			logStdioPeer(c.logger, message)
 			if err := c.writeStdioContext(ctx, *message.reply); err != nil {
 				c.logger.Warn("server request reply failed", "error", err)
 				return
@@ -186,6 +205,55 @@ func (c *StdioClient) readResponses(ctx context.Context, stdout io.Reader) {
 			}
 		}
 	}
+}
+
+// readStderr logs container stderr lines. It drains to EOF and does not
+// return on context cancel: abandoning an unbuffered pipe would leave
+// StdCopy blocked on its next stderr write. An oversized line stops the
+// scanner, so the remainder is discarded to EOF rather than left unread.
+func (c *StdioClient) readStderr(r io.Reader) {
+	scanner := bufio.NewScanner(r)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+	for scanner.Scan() {
+		if c.logger != nil {
+			c.logger.Warn("server stderr", "output", scanner.Text())
+		}
+	}
+	if err := scanner.Err(); err != nil && !errors.Is(err, io.ErrClosedPipe) {
+		if c.logger != nil {
+			c.logger.Debug("stderr scan failed", "error", err)
+		}
+		_, _ = io.Copy(io.Discard, r)
+	}
+}
+
+// InspectContainer reads the runtime's account of a stopped container.
+// A running container returns nil, nil. A missing state is an error.
+func (c *StdioClient) InspectContainer(ctx context.Context) (*ContainerExit, error) {
+	if c.cli == nil || c.containerID == "" {
+		return nil, fmt.Errorf("container state unavailable")
+	}
+	info, err := c.cli.ContainerInspect(ctx, c.containerID)
+	if err != nil {
+		return nil, fmt.Errorf("inspecting container: %w", err)
+	}
+	if info.State == nil {
+		return nil, fmt.Errorf("container state unavailable")
+	}
+	if info.State.Running {
+		return nil, nil
+	}
+	exit := &ContainerExit{
+		Code:      info.State.ExitCode,
+		OOMKilled: info.State.OOMKilled,
+		Status:    string(info.State.Status),
+		Error:     info.State.Error,
+	}
+	if finished, ok := parseContainerFinishedAt(info.State.FinishedAt); ok {
+		exit.FinishedAt = &finished
+	}
+	return exit, nil
 }
 
 // drainPendingRequests sends error responses to all pending callers so they
@@ -416,7 +484,7 @@ func (c *StdioClient) Close() error {
 	if c.cancel != nil {
 		c.cancel()
 	}
-	stdin, stdout, readDone := c.stdin, c.stdout, c.readDone
+	stdin, stdout, stderr, readDone := c.stdin, c.stdout, c.stderr, c.readDone
 	c.attached = false
 	c.connMu.Unlock()
 	var cleanupErrors []error
@@ -430,6 +498,11 @@ func (c *StdioClient) Close() error {
 			if err := closer.Close(); err != nil {
 				cleanupErrors = append(cleanupErrors, fmt.Errorf("container output cleanup failed"))
 			}
+		}
+	}
+	if stderr != nil {
+		if err := stderr.Close(); err != nil {
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("container error output cleanup failed"))
 		}
 	}
 	if readDone != nil {

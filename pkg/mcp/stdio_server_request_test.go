@@ -196,10 +196,69 @@ func testReadResponsesServerMessages(t *testing.T, factory responseLoopFactory) 
 	})
 }
 
+type nopStdioWriteCloser struct{ io.Writer }
+
+func (nopStdioWriteCloser) Close() error { return nil }
+
 type failingStdioWriter struct{}
 
 func (failingStdioWriter) Write([]byte) (int, error) { return 0, errors.New("write failed") }
 func (failingStdioWriter) Close() error              { return nil }
+
+func TestStdioClient_ReadResponses_LogsPeerMessages(t *testing.T) {
+	testReadResponsesLogsPeerMessages(t, newContainerResponseLoopFixture)
+}
+
+func TestProcessClient_ReadResponses_LogsPeerMessages(t *testing.T) {
+	testReadResponsesLogsPeerMessages(t, newProcessResponseLoopFixture)
+}
+
+func testReadResponsesLogsPeerMessages(t *testing.T, factory responseLoopFactory) {
+	t.Helper()
+	logBuffer := logging.NewLogBuffer(10)
+	logger := slog.New(logging.NewBufferHandler(logBuffer, nil))
+	fixture := factory(logger, nopStdioWriteCloser{Writer: io.Discard})
+	done := make(chan struct{})
+	go func() {
+		fixture.read(t.Context(), strings.NewReader(
+			`{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info","token":"secret"}}`+"\n"+
+				`{"jsonrpc":"2.0","id":"server-1","method":"sampling/createMessage","params":{"token":"secret"}}`+"\n"+
+				`{"jsonrpc":"2.0","id":1,"method":"ping"}`+"\n",
+		))
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("response reader did not exit")
+	}
+	entries := logBuffer.GetRecent(10)
+	var dropped, rejected int
+	for _, entry := range entries {
+		raw, err := json.Marshal(entry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(raw), "params") || strings.Contains(string(raw), "secret") {
+			t.Fatalf("peer log included params: %s", raw)
+		}
+		switch entry.Message {
+		case "server notification dropped":
+			dropped++
+			if entry.Level != "DEBUG" || entry.Attrs["method"] != "notifications/message" {
+				t.Fatalf("dropped notification = %#v", entry)
+			}
+		case "server request rejected":
+			rejected++
+			if entry.Level != "DEBUG" || entry.Attrs["method"] != "sampling/createMessage" || entry.Attrs["code"] != int64(jsonrpc.MethodNotFound) {
+				t.Fatalf("rejected request = %#v", entry)
+			}
+		}
+	}
+	if dropped != 1 || rejected != 1 {
+		t.Fatalf("dropped=%d rejected=%d entries=%#v", dropped, rejected, entries)
+	}
+}
 
 func TestStdioClient_ReadResponses_ReplyFailure(t *testing.T) {
 	testReadResponsesReplyFailure(t, newContainerResponseLoopFixture)

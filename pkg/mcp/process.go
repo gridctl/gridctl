@@ -317,9 +317,11 @@ func (c *ProcessClient) readResponses(ctx context.Context, stdout io.Reader) {
 			continue
 		}
 		if message.kind == stdioNotification {
+			logStdioPeer(c.logger, message)
 			continue
 		}
 		if message.kind == stdioRequest {
+			logStdioPeer(c.logger, message)
 			if err := c.writeStdioContext(ctx, *message.reply); err != nil {
 				c.logger.Warn("server request reply failed", "error", err)
 				return

@@ -295,13 +295,29 @@ func (c *Client) parseSSEResponse(body io.Reader) (*jsonrpc.Response, error) {
 	for _, line := range lines {
 		if strings.HasPrefix(line, "data: ") {
 			jsonData := strings.TrimPrefix(line, "data: ")
+			var envelope struct {
+				Method string
+				ID     *json.RawMessage
+			}
+			if err := json.Unmarshal([]byte(jsonData), &envelope); err != nil {
+				continue
+			}
+			if envelope.Method != "" && envelope.ID == nil {
+				if c.logger != nil {
+					c.logger.Debug("server notification skipped", "method", envelope.Method)
+				}
+				continue
+			}
 			var resp jsonrpc.Response
 			if err := json.Unmarshal([]byte(jsonData), &resp); err != nil {
 				// Skip malformed lines
 				continue
 			}
 			// Return the response that has an ID (actual result), not notifications
-			// Notifications have a "method" field but no "id" field
+			// Notifications have a "method" field but no "id" field.
+			// A method-plus-id event is a server request the current decoder
+			// misroutes; leave that return behavior unchanged and do not log it
+			// as a skipped notification.
 			if resp.ID != nil {
 				return &resp, nil
 			}
