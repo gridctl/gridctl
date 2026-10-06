@@ -15,3 +15,6 @@ agents: [neteng-reviewer]
 rules: [network-style]
 wiring: true
 clients: []
+# Optional stack in this repository. pack apply starts it from the pinned
+# checkout; this example uses a local process so it needs no image pin.
+stack: stack.yaml

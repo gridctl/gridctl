@@ -1,6 +1,6 @@
 # Portable pack example
 
-A minimal pack repo: skills, agents, rule fragments, and a `gridctl-pack.yaml` manifest that imports and applies them as one unit.
+A minimal pack repo: skills, agents, rule fragments, a local-process `stack.yaml`, and a `gridctl-pack.yaml` manifest that imports and applies them as one unit. `pack apply` starts the stack from the pinned checkout before wiring clients.
 
 ```bash
 gridctl pack add <this-repo-url>

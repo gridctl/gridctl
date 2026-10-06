@@ -20,6 +20,7 @@ agents: [neteng-reviewer]            # same
 wiring: true                         # ensure the gateway entry in client configs
 clients: []                          # wiring scope; empty = all detected clients
 rules: [team-style]                  # context fragments from rules/*.md or fragments/*.md (opt-in; empty = none)
+stack: stack.yaml                    # optional stack file in this repository; empty means no gateway
 variables:
   GITHUB_TOKEN:
     required: true
@@ -39,20 +40,23 @@ The optional `variables:` map uses the same value-free declaration fields as
 `stack.yaml`: `required`, `secret`, `type`, `description`, and `docs`, with
 defaults of false, true, and string for the first three fields. Import records
 the declarations and lists unmet required keys with `gridctl var set KEY`
-commands. It never imports a value, edits a stack, writes the variable store,
-or prompts. Packs without declarations retain the version-two lock shape;
-version three is used only when declarations must be represented. A source
-imported with `--ssh-key` raises the stamp to version four, and gridctl
-releases before this change refuse such a file.
+commands. It never imports a value, writes the variable store, or prompts.
+A carried stack is pinned and deployed, not edited. Packs without declarations
+or a stack record retain the version-two lock shape. Version three is used
+when declarations must be represented and the file has no stack record or SSH
+fields. A source imported with `--ssh-key` raises the stamp to version four.
+A pack that carries a resolved stack stamps version five, so a reader that
+only understands SSH fields refuses the file instead of dropping the stack
+key.
 
 ## Verbs
 
 | Command | Purpose |
 |---|---|
-| `gridctl pack add <repo-url>` | Clone, read the manifest, and import exactly its selection into the registry (`--ref`, `--path`, `--trust`, `--dry-run`, `--format json`). `--path` scopes discovery to a subdirectory, matching the REST `path` field; the manifest is always read from the repository root. Auth flags for private repos: `--vault-key <key>`, `--auth-token-stdin`, `--auth-token <pat>`, `--ssh-key <path>`. Registry-side only. Exit `0` clean, `1` partial (unresolved or skipped), `2` infrastructure. |
-| `gridctl pack apply <name>` | Project the pack: skills and agents through the projection engines, rule fragments through `ctx` (pack-tagged), and (when `wiring: true`) the gateway entry through the wiring ownership manager, scoped to `clients:`. Additive, never transactional: each resource succeeds or skips independently (`Applied N/M` summary), drifted resources skip with an adopt/`--force` hint, a resource tagged by a different pack is refused, and wiring skips with a hint when no gateway is running. `--force`, `--dry-run`, `--clients`, `--format json`. |
-| `gridctl pack status [name]` | Per-resource state in the shared vocabulary (in-sync, stale, drifted, target-missing, foreign, missing) plus `unresolved` rows. Exit `0`/`1`/`2`. |
-| `gridctl pack remove <name>` | Cascade removal in dependency order: projections unsynced from client trees (rule fragment projections by pack tag only), wiring records removed through the ownership manager (entries gridctl did not record are never deleted), then the pack's registry skills, agents, and installed fragments, then the pack record. Drifted projections are kept with a remediation hint unless `--force`; a partial removal trims the pack record to what stayed. `--dry-run`, `--format json`. |
+| `gridctl pack add <repo-url>` | Clone, read the manifest, and import exactly its selection into the registry (`--ref`, `--path`, `--trust`, `--dry-run`, `--format json`). `--path` scopes discovery to a subdirectory, matching the REST `path` field; the manifest is always read from the repository root. A `stack:` entry is resolved against the clone root, not `--path`. Auth flags for private repos: `--vault-key <key>`, `--auth-token-stdin`, `--auth-token <pat>`, `--ssh-key <path>`. Exit `0` clean, `1` partial (unresolved or skipped), `2` infrastructure. |
+| `gridctl pack apply <name>` | Start a carried stack from its pinned checkout, then project skills and agents through the projection engines, rule fragments through `ctx` (pack-tagged), and (when `wiring: true`) the gateway entry through the wiring ownership manager, scoped to `clients:`. Wiring for a stack-carrying pack uses that daemon's port and never another running gateway. Packs without `stack:` keep the previous "no running gateway" skip. Additive, never transactional (`Applied N/M`). `--port` (default 8180), `--force` (also replaces a same-named daemon that was not started from this pack), `--dry-run`, `--clients`, `--format json`. |
+| `gridctl pack status [name]` | Per-resource state in the shared vocabulary (in-sync, stale, drifted, target-missing, foreign, missing) plus `unresolved` rows. A carried stack is the first row: `in-sync`, `stale`, `drifted`, `missing` (not attention), or `target-missing`. Exit `0`/`1`/`2`. |
+| `gridctl pack remove <name>` | Stop a daemon this pack started, delete its checkout, then cascade removal: projections unsynced from client trees (rule fragment projections by pack tag only), wiring records removed through the ownership manager (entries gridctl did not record are never deleted), then the pack's registry skills, agents, and installed fragments, then the pack record. A same-named daemon running from anywhere else is left running and gets no stack row. Drifted projections are kept with a remediation hint unless `--force`; a partial removal trims the pack record to what stayed. `--dry-run`, `--format json`. |
 
 ## Private pack repositories
 
@@ -72,6 +76,18 @@ Over REST, `POST /api/packs` and `POST /api/packs/preview` accept the same optio
 `gridctl apply` and `gridctl serve` daemonize by re-spawning with the environment of the shell that launched them, so the daemon has a usable `SSH_AUTH_SOCK` only if that shell did, and a long-running daemon can outlive the agent it inherited. Every import driven from the web UI or the REST API runs in the daemon's environment, not in the shell of whoever is using the browser. If you rely on an agent, start it before the daemon and restart the daemon after restarting the agent.
 
 gridctl does not read `~/.ssh/config`. Per-host `IdentityFile` entries have no effect, which is why an SSH URL that works with the `git` CLI can still fail here. For a private pack the dependable options are an HTTPS URL with `--vault-key`, or `--ssh-key` naming the key explicitly.
+
+## Carrying a stack
+
+An optional `stack:` field names a stack file inside the same repository (`stack: stack.yaml`). The path is slash-separated, relative, and must stay inside the repo. `pack add` reads it without expanding variables or vault values. An inline credential in a recognized sensitive field, a missing file, or an `extends` chain or source path that leaves the repository is recorded as unresolved (`stack:<path>`) and the rest of the pack still imports. Nothing from the carried stack is expanded against the vault at add time.
+
+When the stack resolves, gridctl copies the pinned commit to `~/.gridctl/packs/<pack-name>/<commit-sha>/` and starts the daemon from that checkout, never from the shared clone cache. The copy skips symlinks, refuses paths that resolve outside the clone, and fails the import of the stack (not the rest of the pack) if the repository exceeds 5 MiB per file, 5000 files, or 64 MiB total. A later `pack add` of the same commit reuses the checkout when the stack file is still there.
+
+`pack apply` runs the stack step first. It starts the daemon, leaves it unchanged when the running state file already points at the pinned stack, or replaces a daemon whose state file lies under `~/.gridctl/packs/<pack-name>/`. That last case is a path heuristic: the state file records `StackFile` and no pack owner, so a daemon you started yourself with `gridctl apply` on a path inside that directory is replaced too. A same-named daemon running from any other path is skipped (`skipped-running`) unless you pass `--force`. Required pack variables that are unset skip the launch and list one `gridctl var set KEY` per key. Deploy writes nothing of its own to stdout; the pack table is the outcome.
+
+After a successful replace, other commit directories under that pack that no running daemon references are removed. `pack remove` stops a daemon only when its `StackFile` is under the pack checkout, then deletes `~/.gridctl/packs/<pack-name>/`. A daemon running from elsewhere is not touched.
+
+The launcher is CLI-only in this release. `POST /api/packs/{name}/apply` and the web UI show a `skipped-unavailable` stack row and the `gridctl pack apply` command. They do not start the gateway. A carried stack's own `link:` block is ignored; pack `wiring:` and `clients:` apply instead, and add prints a warning. `gridctl status`, `gridctl destroy <name>`, `gridctl reload`, and `gridctl logs` work on the pinned checkout the same way they work on a stack you applied yourself. Updates go through replace, not hot reload.
 
 ## Interplay with the standalone verbs
 

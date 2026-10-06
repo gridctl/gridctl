@@ -3415,7 +3415,7 @@ Records that the user restarted LiteLLM since the last fragment write: the only 
 
 ### Packs
 
-The REST face of `gridctl pack add|apply|status|remove`, plus a read-only preview for import flows. A pack is one git repository carrying a `gridctl-pack.yaml` manifest selecting skills, agents, context rule fragments, and optional gateway wiring (see the [Packs guide](packs.md)). Per-resource rows use the shared projection-state vocabulary (`in-sync`, `stale`, `drifted`, `target-missing`, `foreign`, `missing`), plus `unresolved` for manifest selections the repository does not ship.
+The REST face of `gridctl pack add|apply|status|remove`, plus a read-only preview for import flows. A pack is one git repository carrying a `gridctl-pack.yaml` manifest selecting skills, agents, context rule fragments, optional gateway wiring, and an optional stack file (see the [Packs guide](packs.md)). Per-resource rows use the shared projection-state vocabulary (`in-sync`, `stale`, `drifted`, `target-missing`, `foreign`, `missing`), plus `unresolved` for manifest selections the repository does not ship. A carried stack is a `stack` row, first in kind order. This release does not deploy that stack over REST: apply returns `skipped-unavailable` and the CLI command, and wiring is `skipped-unavailable` with `pack stack is not running`.
 
 #### `GET /api/packs`
 
@@ -3439,7 +3439,7 @@ Lists installed packs: identity, origin, per-kind resource counts, and aggregate
         "commit_sha": "abc123...",
         "fetched_at": "2026-08-05T12:00:00Z"
       },
-      "counts": { "skills": 3, "agents": 1, "rules": 2, "wiring": true },
+      "counts": { "skills": 3, "agents": 1, "rules": 2, "wiring": true, "stack": true },
       "unresolved": [],
       "needs_attention": false
     }
@@ -3482,7 +3482,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/packs \
 | `dryRun` | bool | Resolve and report without importing |
 | `auth` | object | Credentials for a private repository; same shape as the skill source endpoints (see below) |
 
-**Response:** `201` with `{ "doc": <add document>, "notes": [...] }`. The document carries the resolved selection, `unresolved`, `skipped` (with reasons), and `warnings`; `notes` carries progress prose (rule updates, fragments-mode activation).
+**Response:** `201` with `{ "doc": <add document>, "notes": [...] }`. The document carries the resolved selection, `unresolved`, `skipped` (with reasons), and `warnings`; `notes` carries progress prose (rule updates, fragments-mode activation). A carried stack adds optional `doc.stack`: `{ "path", "name", "servers" }`. Preview returns the same object and does not create a checkout.
 
 **Errors:**
 - `400` - Missing repo, invalid body, an unresolvable `auth.credentialRef`, or a relative `auth.sshKeyPath`
@@ -3553,7 +3553,7 @@ Projects one pack with full CLI flag parity. Apply is additive and never transac
 | `force` | bool | Overwrite drifted or foreign resources after backup (`--force`) |
 | `dry_run` | bool | Report what would change without writing (`--dry-run`) |
 
-An empty or absent body is a plain apply. **Response:** the apply document: `applied`, `total`, and per-resource `rows` (kind, name, client, action, detail, remediation). Drifted resources are skipped with a remediation hint unless forced; resources tagged by a different pack are refused with the owning pack named.
+An empty or absent body is a plain apply. **Response:** the apply document: `applied`, `total`, and per-resource `rows` (kind, name, client, action, detail, remediation). A carried stack is the first row. Over REST its action is `skipped-unavailable` (deploy is CLI-only) and the wiring row is `skipped-unavailable` with detail `pack stack is not running`. Drifted resources are skipped with a remediation hint unless forced; resources tagged by a different pack are refused with the owning pack named. `counts.stack` on list and detail is true when a stack record is present. `applied` is also true when that stack row is `in-sync` or `stale`.
 
 **Errors:** `404` - Pack not imported; `409` - Name collision.
 
