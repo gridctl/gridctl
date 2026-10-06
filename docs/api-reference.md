@@ -104,6 +104,11 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
       "endpoint": "stdio://github",
       "initialized": true,
       "toolCount": 5,
+      "promptCount": 0,
+      "mcpResourceCount": 0,
+      "resourceTemplateCount": 0,
+      "capabilities": {"prompts": false, "resources": false, "resourcesSubscribe": false, "resourcesListChanged": false},
+      "resourceCollisions": 0,
       "tools": ["get_file_contents", "search_code", "list_commits", "get_issue", "get_pull_request"],
       "external": false,
       "localProcess": false,
@@ -3604,13 +3609,15 @@ JSON-RPC 2.0 endpoint for MCP protocol operations.
 | `server/discover` | Server identity, versions, and capabilities (stateless generation) |
 | `tools/list` | List available tools |
 | `tools/call` | Call a tool (stateless generation adds MRTR relay: `input_required` results, `requestState`, `inputResponses`) |
-| `prompts/list` | List available prompts |
-| `prompts/get` | Get a specific prompt |
-| `resources/list` | List available resources |
-| `resources/read` | Read a specific resource |
-| `resources/templates/list` | List resource templates (always empty; gridctl exposes no templated resources) |
+| `prompts/list` | List registry skills, then downstream prompts named `<server>__<prompt>` |
+| `prompts/get` | Get a registry skill or a prefixed downstream prompt. Downstream messages are relayed verbatim |
+| `resources/list` | List registry `skills://registry/` entries, then downstream resources with unchanged URIs |
+| `resources/read` | Read a registry skill or a downstream resource. URIs are not rewritten. Handshake not-found is `-32002` with `data.uri`; stateless not-found is `-32602` with `data.uri` |
+| `resources/templates/list` | List downstream resource templates. The registry contributes none |
 | `tasks/get`, `tasks/update`, `tasks/cancel` | Tasks-extension proxy, when exactly one stateless server declares the extension |
 | `ping` | Connectivity check (handshake generation only) |
+
+`resources/subscribe`, `subscriptions/listen`, and list-changed notifications stay unsupported (`-32601`). The gateway does not advertise `subscribe` or `listChanged`. `limits:` and run recording cover `tools/call` only.
 | `notifications/initialized` | Client initialization notification (handshake generation only) |
 
 ```bash

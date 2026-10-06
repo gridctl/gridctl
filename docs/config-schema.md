@@ -733,6 +733,7 @@ In the web wizard, the OpenAPI Configuration section's Operations Filter loads t
 | `ready_timeout` | duration | No | `30s` | Readiness wait for container-based HTTP/SSE servers. Accepts any `time.Duration` string (e.g. `"60s"`, `"2m"`). When a container does not become ready within this window, the container is stopped and removed; re-provisioning it requires a reload or re-apply (the automatic registration retry loop covers external, local process, SSH, OpenAPI, and stdio servers, but cannot respawn a removed container). Ignored for stdio, external, local process, SSH, and OpenAPI servers, which always use the 30s default; a server unreachable past that window is retried automatically once it comes up |
 | `ping_timeout` | duration | No | `5s` | Per-ping deadline used by the gateway health monitor. Accepts any `time.Duration` string (e.g. `"10s"`). Tune this when a server's real `Ping` latency can exceed 5s - e.g. HTTP upstreams with many tools or under autoscale spawn load where the default flakes into spurious `context deadline exceeded` errors. Applies to every pingable transport (HTTP, SSE, stdio, local process, SSH, OpenAPI) |
 | `protocol_generation` | string | No | `"auto"` | MCP protocol generation for this server: `"auto"` probes `server/discover` and falls back to the legacy `initialize` handshake; `"handshake"` and `"stateless"` skip the probe and force one generation. An escape hatch for peers the probe misclassifies; leave absent for normal auto-negotiation |
+| `protocol_extensions` | []string | No | empty | Client extensions the gateway declares on its downstream initialize. The only accepted value is `io.modelcontextprotocol/ui`, which sends `mimeTypes: ["text/html;profile=mcp-app"]`. Absent leaves the handshake unchanged. Rejected on A2A and OpenAPI servers, which do not run the MCP handshake |
 | `replicas` | int | No | `1` | Number of independent processes to spawn for this server. Values >1 load-balance JSON-RPC tool calls across replicas using `replica_policy`. Range: 1–32. Not supported for external URL, OpenAPI, or A2A sources. Mutually exclusive with `autoscale`. See [Scaling](scaling.md) |
 | `replica_policy` | string | No | `"round-robin"` | Dispatch policy when `replicas > 1` or `autoscale` is set: `"round-robin"` or `"least-connections"` |
 | `autoscale` | object | No | - | Reactive autoscaling block. Mutually exclusive with `replicas`. Not supported for external URL, OpenAPI, or A2A sources. See [Autoscale](#autoscale) |
@@ -1307,6 +1308,14 @@ allow-lists with each server's own `tools:` whitelist. A profile with neither
 `servers:` nor `tools:` is listed but unrestricted (sees everything). Unknown
 server references (directly or via a tool prefix) fail config validation.
 
+The same profile also gates downstream prompts and resources at the server
+level. A profile that allows server A, or names at least one `A__` tool, can
+list and read A's prompts and resources. It does not see other servers. A
+profile that omits `registry` from `servers:` still receives registry skill
+prompts and `skills://registry/` resources. A server `tools:` whitelist narrows
+tools only; it does not filter that server's prompts or resources. An
+out-of-scope read or get is not found, not a distinct denial.
+
 ### Client identity
 
 Enforcement keys on a **stable client identifier** that reconciles the wire
@@ -1386,7 +1395,7 @@ limits:
 
 ### Enforcement semantics
 
-Each entry is a token bucket checked at dispatch. A call that finds the
+Each entry is a token bucket checked at `tools/call` dispatch. Prompt gets and resource reads are not gated. A call that finds the
 bucket empty is denied as an in-band tool error carrying the configured
 rate, the scope that tripped, and retry guidance, so agent LLMs stop
 retrying instead of burning tokens. Edits hot-reload without restarting any
@@ -1437,6 +1446,14 @@ groups:
 
 Group names must match `^[a-z0-9][a-z0-9_-]{0,31}$`. A group must include at
 least one server or tool.
+
+On `/groups/{name}/mcp`, a server contributes prompts and resources only when
+at least one of its currently aggregated tools passes group membership.
+`exclude` is applied first, so a group whose every member tool is excluded
+exposes nothing from that server. A group that excludes only some of a
+server's tools still exposes that server's prompts and resources. Registry
+skill prompts and `skills://registry/` resources keep their current group
+behavior and are not filtered by group membership.
 
 ### Override fields
 
