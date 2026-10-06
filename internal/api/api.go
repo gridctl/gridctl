@@ -918,6 +918,11 @@ type MCPServerStatus struct {
 	Kind   string                 `json:"kind,omitempty"`
 	Image  string                 `json:"image,omitempty"`
 	Source *MCPServerSourceStatus `json:"source,omitempty"`
+
+	// StderrTail is the last server-stderr lines from the log ring for an
+	// unhealthy server. Healthy servers omit it. Lines have already passed
+	// through the gateway logger, including redaction.
+	StderrTail []string `json:"stderrTail,omitempty"`
 }
 
 // MCPServerSourceStatus reports declared source identity plus immutable
@@ -977,7 +982,42 @@ func (s *Server) getMCPServerStatuses(ctx context.Context) []MCPServerStatus {
 		statuses[i] = status
 	}
 	s.enrichMCPServerStatuses(ctx, statuses)
+	s.fillStderrTails(statuses)
 	return statuses
+}
+
+// fillStderrTails copies the last redacted stderr lines for unhealthy servers.
+// The ring is the source of truth; the client does not keep a raw-line buffer.
+func (s *Server) fillStderrTails(statuses []MCPServerStatus) {
+	if s.logBuffer == nil {
+		return
+	}
+	for i := range statuses {
+		if statuses[i].Healthy == nil || *statuses[i].Healthy {
+			continue
+		}
+		entries := s.logBuffer.GetRecentMatching(10, func(entry logging.BufferedEntry) bool {
+			if entry.Message != "server stderr" {
+				return false
+			}
+			server, _ := entry.Attrs["server"].(string)
+			return server == statuses[i].Name
+		})
+		if len(entries) == 0 {
+			continue
+		}
+		tail := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			output, ok := entry.Attrs["output"].(string)
+			if !ok {
+				continue
+			}
+			tail = append(tail, output)
+		}
+		if len(tail) > 0 {
+			statuses[i].StderrTail = tail
+		}
+	}
 }
 
 // writeJSON writes a JSON response.
