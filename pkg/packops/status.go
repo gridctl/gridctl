@@ -39,6 +39,9 @@ type Counts struct {
 	Agents int  `json:"agents"`
 	Rules  int  `json:"rules"`
 	Wiring bool `json:"wiring"`
+	// Stack is true when the pack carries a resolved stack record.
+	// omitempty keeps packs without a stack on the previous JSON shape.
+	Stack bool `json:"stack,omitempty"`
 }
 
 // PackInfo is the identity half of a pack status: everything a list view
@@ -140,11 +143,11 @@ func (m *Managers) Statuses(ctx context.Context, opts StatusOptions) ([]PackStat
 				CommitSHA: ps.Source.CommitSHA,
 				FetchedAt: ps.Source.FetchedAt,
 			},
-			Counts:     Counts{Skills: len(p.Skills), Agents: len(p.Agents), Rules: len(p.Rules), Wiring: p.Wiring},
+			Counts:     Counts{Skills: len(p.Skills), Agents: len(p.Agents), Rules: len(p.Rules), Wiring: p.Wiring, Stack: p.Stack != nil},
 			Unresolved: p.Unresolved,
 		}
 		for _, r := range rows {
-			if r.Client != "" {
+			if r.Client != "" || (r.Kind == "stack" && (r.State == "in-sync" || r.State == "stale")) {
 				info.Applied = true
 				break
 			}
@@ -208,11 +211,22 @@ func (m *Managers) loadRuleStatusDeps(ctx context.Context, sources []packSource)
 	return deps, nil
 }
 
-// statusRowsFor builds one pack's rows in kind order: skills, agents,
-// rules, wiring, unresolved.
+// statusRowsFor builds one pack's rows in kind order: stack, skills,
+// agents, rules, wiring, unresolved.
 func (m *Managers) statusRowsFor(p *skills.LockedPack, skillStatuses []skillsync.ProjectionStatus, agentStatuses []agentsync.ProjectionStatus, wiringRows []wiring.Row, ruleDeps *ruleStatusDeps) ([]Row, bool) {
 	var rows []Row
 	attention := false
+	if p.Stack != nil {
+		home, err := m.homeDir()
+		if err != nil {
+			rows = append(rows, Row{Kind: "stack", Name: p.Stack.Name, State: "target-missing", Detail: err.Error(), Remediation: "re-run 'gridctl pack add'"})
+			attention = true
+		} else {
+			row, stackAttention := statusStackRow(home, p.Name, p.Stack)
+			rows = append(rows, row)
+			attention = attention || stackAttention
+		}
+	}
 	needsAttention := func(state string) bool {
 		switch state {
 		case skillsync.StateInSync, "missing":
@@ -300,8 +314,11 @@ func (m *Managers) statusRowsFor(p *skills.LockedPack, skillStatuses []skillsync
 		}
 	}
 	for _, u := range p.Unresolved {
-		rows = append(rows, Row{Kind: "unresolved", Name: u, State: "unresolved",
-			Detail: "selected by the pack manifest but not shipped by the repository"})
+		detail := "selected by the pack manifest but not shipped by the repository"
+		if p.UnresolvedDetails != nil && p.UnresolvedDetails[u] != "" {
+			detail = p.UnresolvedDetails[u]
+		}
+		rows = append(rows, Row{Kind: "unresolved", Name: u, State: "unresolved", Detail: detail})
 		attention = true
 	}
 	return rows, attention

@@ -62,6 +62,13 @@ type Managers struct {
 	// same path here, or the importer and the pack record would write
 	// two different files.
 	LockPath string
+	// Launcher deploys a pack-carried stack. Nil means this interface
+	// cannot start a gateway (the REST server in this release).
+	Launcher StackLauncher
+	// StoredVariables reports vault keys. available is false when the
+	// store cannot be read (locked or unset); the apply gate then falls
+	// through to the loader instead of prompting.
+	StoredVariables func() (keys map[string]bool, available bool)
 }
 
 // lockPath returns the import lockfile path this engine operates on.
