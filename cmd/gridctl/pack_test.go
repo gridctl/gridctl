@@ -14,6 +14,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/packops"
 	"github.com/gridctl/gridctl/pkg/project"
 	"github.com/gridctl/gridctl/pkg/skills"
+	"github.com/gridctl/gridctl/pkg/state"
 )
 
 const packTestManifest = `apiVersion: gridctl.dev/v1
@@ -544,5 +545,50 @@ func TestPackAdd_PrintsCarriedStack(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "Stack: stack.yaml (team-pack, 1 server)") {
 		t.Fatalf("stdout =\n%s", stdout.String())
+	}
+}
+
+func TestPackRemove_BlockedStackDoesNotClaimRemoved(t *testing.T) {
+	_, freshManagers := packTestEnv(t)
+	home, _ := os.UserHomeDir()
+	checkout := packops.PackCheckoutDir(home, "neteng", "abc")
+	if err := os.MkdirAll(checkout, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	pinned := filepath.Join(checkout, "stack.yaml")
+	if err := os.WriteFile(pinned, []byte("name: neteng\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := skills.LockFilePath()
+	if err := skills.WriteLockFile(path, &skills.LockFile{Sources: map[string]skills.LockedSource{
+		"neteng": {
+			Repo: "https://example.com/neteng",
+			Pack: &skills.LockedPack{
+				Name:  "neteng",
+				Stack: &skills.LockedStack{Path: "stack.yaml", Name: "neteng", ContentHash: "abc", CheckoutDir: checkout},
+			},
+		},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.Save(&state.DaemonState{StackName: "neteng", StackFile: pinned, PID: os.Getpid(), Port: 8180}); err != nil {
+		t.Fatal(err)
+	}
+	mgrs := freshManagers()
+	mgrs.Launcher = nil
+	var stdout, stderr bytes.Buffer
+	exit := runPackRemove(context.Background(), &stdout, &stderr, mgrs, nil, "neteng", false, false, "text")
+	if exit != ctxExitAttention {
+		t.Fatalf("exit = %d\n%s%s", exit, stdout.String(), stderr.String())
+	}
+	if strings.Contains(stdout.String(), "Pack \"neteng\" removed.") {
+		t.Fatalf("blocked remove claimed success:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "Pack \"neteng\" not removed: stack neteng (skipped-unavailable).") {
+		t.Fatalf("stdout =\n%s", stdout.String())
+	}
+	locked, err := packops.LoadLockedPack("neteng")
+	if err != nil || locked == nil || locked.Stack == nil {
+		t.Fatalf("record dropped: %v %+v", err, locked)
 	}
 }

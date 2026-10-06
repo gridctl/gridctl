@@ -540,6 +540,8 @@ func runPackRemove(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.
 		renderPackRows(stdout, doc.Rows, false)
 		if len(doc.Kept) > 0 {
 			fmt.Fprintf(stdout, "\nKept (drifted, re-run with --force to remove): %s\n", strings.Join(doc.Kept, ", "))
+		} else if label, blocked := blockedPackRemoval(doc.Rows); blocked && !dryRun {
+			fmt.Fprintf(stdout, "\nPack %q not removed: %s.\n", name, label)
 		} else if !dryRun {
 			fmt.Fprintf(stdout, "\nPack %q removed.\n", name)
 		}
@@ -553,6 +555,25 @@ func runPackRemove(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.
 		return ctxExitAttention
 	}
 	return ctxExitOK
+}
+
+// blockedPackRemoval names a stack row that stopped removal before the
+// pack record was dropped. A success line would contradict the exit code.
+func blockedPackRemoval(rows []packops.Row) (string, bool) {
+	for _, r := range rows {
+		if r.Kind != "stack" {
+			continue
+		}
+		if r.Action != "error" && r.Action != "skipped-unavailable" {
+			continue
+		}
+		name := r.Name
+		if name == "" {
+			name = "stack"
+		}
+		return fmt.Sprintf("stack %s (%s)", name, r.Action), true
+	}
+	return "", false
 }
 
 // loadLockedPack finds a pack's record in the import lockfile.
