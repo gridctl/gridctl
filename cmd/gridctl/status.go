@@ -306,12 +306,26 @@ type mcpServerAPI struct {
 	RegFailed    bool              `json:"registrationFailed,omitempty"`
 	// ProtocolGeneration is the resolved MCP protocol era ("handshake"
 	// or "stateless"); empty for OpenAPI adapters.
-	ProtocolGeneration string          `json:"protocolGeneration,omitempty"`
-	AuthStatus         string          `json:"authStatus,omitempty"`
-	AuthIssuer         string          `json:"authIssuer,omitempty"`
-	AuthExpiry         *time.Time      `json:"authExpiry,omitempty"`
-	Replicas           []mcpReplicaAPI `json:"replicas,omitempty"`
-	Autoscale          *autoscaleAPI   `json:"autoscale,omitempty"`
+	ProtocolGeneration    string           `json:"protocolGeneration,omitempty"`
+	PromptCount           int              `json:"promptCount"`
+	MCPResourceCount      int              `json:"mcpResourceCount"`
+	ResourceTemplateCount int              `json:"resourceTemplateCount"`
+	Capabilities          mcpCapabilityAPI `json:"capabilities"`
+	ResourceCollisions    int              `json:"resourceCollisions"`
+	ResourceListError     string           `json:"resourceListError,omitempty"`
+	AuthStatus            string           `json:"authStatus,omitempty"`
+	AuthIssuer            string           `json:"authIssuer,omitempty"`
+	AuthExpiry            *time.Time       `json:"authExpiry,omitempty"`
+	Replicas              []mcpReplicaAPI  `json:"replicas,omitempty"`
+	Autoscale             *autoscaleAPI    `json:"autoscale,omitempty"`
+}
+
+// mcpCapabilityAPI is the downstream capability projection on status JSON.
+type mcpCapabilityAPI struct {
+	Prompts              bool `json:"prompts"`
+	Resources            bool `json:"resources"`
+	ResourcesSubscribe   bool `json:"resourcesSubscribe"`
+	ResourcesListChanged bool `json:"resourcesListChanged"`
 }
 
 // autoscaleAPI mirrors the subset of mcp.AutoscaleStatus the CLI renders in
@@ -368,6 +382,8 @@ func buildMCPRollup(servers []mcpServerAPI) []output.MCPServerRollup {
 			Replicas:  "—",
 			State:     "healthy",
 			Autoscale: formatAutoscaleCell(srv.Autoscale),
+			Prompts:   srv.PromptCount,
+			Resources: srv.MCPResourceCount,
 		}
 		n := len(srv.Replicas)
 		if n == 0 {

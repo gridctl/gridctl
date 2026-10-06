@@ -81,6 +81,11 @@ type MCPServerConfig struct {
 	// the others skip the probe and force one generation.
 	ProtocolGeneration string
 
+	// ProtocolExtensions is the operator's protocol_extensions list.
+	// The only accepted value is the MCP Apps client extension. Empty
+	// leaves the downstream initialize unchanged.
+	ProtocolExtensions []string
+
 	// CleanupOnReadyFailure runs when waitForHTTPServer returns ErrReadyTimeout.
 	// Callers that manage the underlying container populate this with a closure
 	// that stops and removes it, so a retry starts from a clean slate. nil means
@@ -1285,6 +1290,9 @@ func (g *Gateway) RegisterAutoscaler(ctx context.Context, template MCPServerConf
 		}
 	}
 
+	if len(set.Replicas()) > 0 {
+		g.scheduleResourceIndex(template.Name)
+	}
 	g.logger.Info("registered autoscaled MCP server",
 		"name", template.Name,
 		"min", autoscale.Min,
@@ -1488,6 +1496,7 @@ func (g *Gateway) registerReplicaSet(ctx context.Context, name, policy string, c
 	}
 
 	g.logger.Info("registered MCP server", "name", name, "transport", cfgs[0].Transport, "replicas", len(clients), "tools", len(clients[0].Tools()), "duration", time.Since(start))
+	g.scheduleResourceIndex(name)
 	return nil
 }
 
@@ -1674,6 +1683,11 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (re
 	if cfg.ProtocolGeneration != "" {
 		if pinner, ok := agentClient.(interface{ SetGenerationPin(string) }); ok {
 			pinner.SetGenerationPin(cfg.ProtocolGeneration)
+		}
+	}
+	if len(cfg.ProtocolExtensions) > 0 {
+		if setter, ok := agentClient.(interface{ SetProtocolExtensions([]string) }); ok {
+			setter.SetProtocolExtensions(cfg.ProtocolExtensions)
 		}
 	}
 
@@ -2202,14 +2216,6 @@ func (g *Gateway) HandleToolsList(ctx context.Context) (*ToolsListResult, error)
 		tools = []Tool{}
 	}
 	return &ToolsListResult{Tools: tools}, nil
-}
-
-// HandleResourceTemplatesList serves resources/templates/list. gridctl
-// exposes no templated resources (registry skills are concrete URIs),
-// but a server advertising the resources capability must answer the
-// method with an empty list rather than -32601.
-func (g *Gateway) HandleResourceTemplatesList() *ResourceTemplatesListResult {
-	return &ResourceTemplatesListResult{ResourceTemplates: []MCPResourceTemplate{}}
 }
 
 // HandleToolsListUnscoped returns the full aggregated tool surface, ignoring
@@ -2868,162 +2874,6 @@ func (g *Gateway) promptProvider() PromptProvider {
 	return nil
 }
 
-// HandlePromptsList returns all active prompts as MCP Prompts.
-func (g *Gateway) HandlePromptsList() (*PromptsListResult, error) {
-	pp := g.promptProvider()
-	if pp == nil {
-		return &PromptsListResult{Prompts: []MCPPrompt{}}, nil
-	}
-
-	policy := g.CurrentSkillPolicy()
-	prompts := pp.ListPromptData()
-	result := make([]MCPPrompt, 0, len(prompts))
-	for _, p := range prompts {
-		if !policy.Allows(p.Name) {
-			continue
-		}
-		args := make([]PromptArgument, len(p.Arguments))
-		for j, a := range p.Arguments {
-			args[j] = PromptArgument{
-				Name:        a.Name,
-				Description: a.Description,
-				Required:    a.Required,
-			}
-		}
-		result = append(result, MCPPrompt{
-			Name:        p.Name,
-			Description: p.Description,
-			Arguments:   args,
-		})
-	}
-	return &PromptsListResult{Prompts: result}, nil
-}
-
-// HandlePromptsGet returns a specific prompt with argument substitution. The
-// ctx carries the originating client id (set on the streamable transport via
-// WithClientID) so the prompt-get observer can attribute usage per client.
-func (g *Gateway) HandlePromptsGet(ctx context.Context, params PromptsGetParams) (*PromptsGetResult, error) {
-	pp := g.promptProvider()
-	if pp == nil {
-		return nil, fmt.Errorf("registry not available")
-	}
-
-	// A policy-denied skill is indistinguishable from an absent one on this
-	// surface; the registry API is where the denial stays visible.
-	if !g.CurrentSkillPolicy().Allows(params.Name) {
-		return nil, fmt.Errorf("skill %q not found", params.Name)
-	}
-
-	p, err := pp.GetPromptData(params.Name)
-	if err != nil {
-		return nil, err
-	}
-
-	// Perform argument substitution on content
-	content := p.Content
-	for _, arg := range p.Arguments {
-		placeholder := "{{" + arg.Name + "}}"
-		value, ok := params.Arguments[arg.Name]
-		if !ok {
-			if arg.Default != "" {
-				value = arg.Default
-			} else if arg.Required {
-				return nil, fmt.Errorf("required argument %q not provided", arg.Name)
-			}
-		}
-		content = strings.ReplaceAll(content, placeholder, value)
-	}
-
-	// Notify the prompt-get observer that this skill was served. Recording is
-	// advisory and must never block or fail prompt serving, so it runs on a
-	// separate goroutine and the observer swallows its own errors. Fired only
-	// on the success path, so a missing required argument does not count as a
-	// served skill. The prompt name equals the registry skill's Name.
-	g.mu.RLock()
-	pObs := g.promptGetObserver
-	g.mu.RUnlock()
-	if pObs != nil {
-		go pObs.ObservePromptGet(PromptGetObservation{
-			PromptName: params.Name,
-			ClientID:   ClientIDFromContext(ctx),
-		})
-	}
-
-	return &PromptsGetResult{
-		Description: p.Description,
-		Messages: []PromptMessage{
-			{
-				Role:    "user",
-				Content: NewTextContent(content),
-			},
-		},
-	}, nil
-}
-
-// HandleResourcesList returns prompts as MCP Resources.
-func (g *Gateway) HandleResourcesList() (*ResourcesListResult, error) {
-	pp := g.promptProvider()
-	if pp == nil {
-		return &ResourcesListResult{Resources: []MCPResource{}}, nil
-	}
-
-	policy := g.CurrentSkillPolicy()
-	prompts := pp.ListPromptData()
-	resources := make([]MCPResource, 0, len(prompts))
-	for _, p := range prompts {
-		if !policy.Allows(p.Name) {
-			continue
-		}
-		resources = append(resources, MCPResource{
-			URI:         "skills://registry/" + p.Name,
-			Name:        p.Name,
-			Description: p.Description,
-			MimeType:    "text/markdown",
-		})
-	}
-	return &ResourcesListResult{Resources: resources}, nil
-}
-
-// HandleResourcesRead returns the content of a prompt resource.
-func (g *Gateway) HandleResourcesRead(params ResourcesReadParams) (*ResourcesReadResult, error) {
-	pp := g.promptProvider()
-	if pp == nil {
-		return nil, fmt.Errorf("registry not available")
-	}
-
-	// Parse skills://registry/ URI (with legacy prompt:// fallback)
-	name := strings.TrimPrefix(params.URI, "skills://registry/")
-	if name == params.URI {
-		// Try legacy prompt:// scheme for backward compatibility
-		name = strings.TrimPrefix(params.URI, "prompt://")
-		if name == params.URI {
-			return nil, fmt.Errorf("unsupported URI scheme: %s", params.URI)
-		}
-	}
-	if name == "" {
-		return nil, fmt.Errorf("empty resource name in URI: %s", params.URI)
-	}
-
-	if !g.CurrentSkillPolicy().Allows(name) {
-		return nil, fmt.Errorf("skill %q not found", name)
-	}
-
-	p, err := pp.GetPromptData(name)
-	if err != nil {
-		return nil, err
-	}
-
-	return &ResourcesReadResult{
-		Contents: []ResourceContents{
-			{
-				URI:      params.URI,
-				MimeType: "text/markdown",
-				Text:     p.Content,
-			},
-		},
-	}, nil
-}
-
 // RefreshAllTools refreshes tools from all registered MCP servers.
 func (g *Gateway) RefreshAllTools(ctx context.Context) error {
 	for _, client := range g.router.Clients() {
@@ -3037,26 +2887,36 @@ func (g *Gateway) RefreshAllTools(ctx context.Context) error {
 
 // MCPServerStatus returns status information about registered MCP servers.
 type MCPServerStatus struct {
-	Execution    *execution.Report `json:"execution,omitempty"`
-	Name         string            `json:"name"`
-	Transport    Transport         `json:"transport"`
-	Endpoint     string            `json:"endpoint,omitempty"`
-	ContainerID  string            `json:"containerId,omitempty"`
-	Initialized  bool              `json:"initialized"`
-	ToolCount    int               `json:"toolCount"`
-	Tools        []string          `json:"tools"`
-	External     bool              `json:"external"`          // True for external URL servers
-	LocalProcess bool              `json:"localProcess"`      // True for local process servers
-	SSH          bool              `json:"ssh"`               // True for SSH servers
-	SSHHost      string            `json:"sshHost,omitempty"` // SSH hostname
-	OpenAPI      bool              `json:"openapi"`           // True for OpenAPI servers
-	A2A          bool              `json:"a2a,omitempty"`     // True for outbound A2A sources
-	A2AStatus    *A2AStatus        `json:"a2aStatus,omitempty"`
-	OpenAPISpec  string            `json:"openapiSpec,omitempty"`  // OpenAPI spec location
-	OutputFormat string            `json:"outputFormat,omitempty"` // Configured output format (empty = json default)
-	Healthy      *bool             `json:"healthy,omitempty"`      // Health check result (nil if not yet checked)
-	LastCheck    *time.Time        `json:"lastCheck,omitempty"`    // When last health check ran
-	HealthError  string            `json:"healthError,omitempty"`  // Error message if unhealthy
+	Execution   *execution.Report `json:"execution,omitempty"`
+	Name        string            `json:"name"`
+	Transport   Transport         `json:"transport"`
+	Endpoint    string            `json:"endpoint,omitempty"`
+	ContainerID string            `json:"containerId,omitempty"`
+	Initialized bool              `json:"initialized"`
+	ToolCount   int               `json:"toolCount"`
+	Tools       []string          `json:"tools"`
+
+	// PromptCount, MCPResourceCount, and ResourceTemplateCount come from
+	// the last successful fan-out. MCPResourceCount is not the gateway
+	// node's infrastructure resource count.
+	PromptCount           int                        `json:"promptCount"`
+	MCPResourceCount      int                        `json:"mcpResourceCount"`
+	ResourceTemplateCount int                        `json:"resourceTemplateCount"`
+	Capabilities          DownstreamCapabilityStatus `json:"capabilities"`
+	ResourceCollisions    int                        `json:"resourceCollisions"`
+	ResourceListError     string                     `json:"resourceListError,omitempty"`
+	External              bool                       `json:"external"`          // True for external URL servers
+	LocalProcess          bool                       `json:"localProcess"`      // True for local process servers
+	SSH                   bool                       `json:"ssh"`               // True for SSH servers
+	SSHHost               string                     `json:"sshHost,omitempty"` // SSH hostname
+	OpenAPI               bool                       `json:"openapi"`           // True for OpenAPI servers
+	A2A                   bool                       `json:"a2a,omitempty"`     // True for outbound A2A sources
+	A2AStatus             *A2AStatus                 `json:"a2aStatus,omitempty"`
+	OpenAPISpec           string                     `json:"openapiSpec,omitempty"`  // OpenAPI spec location
+	OutputFormat          string                     `json:"outputFormat,omitempty"` // Configured output format (empty = json default)
+	Healthy               *bool                      `json:"healthy,omitempty"`      // Health check result (nil if not yet checked)
+	LastCheck             *time.Time                 `json:"lastCheck,omitempty"`    // When last health check ran
+	HealthError           string                     `json:"healthError,omitempty"`  // Error message if unhealthy
 
 	// ProtocolVersion is the MCP protocol version the downstream server
 	// reported at initialize. Empty for servers that omit it (lax pre-header
@@ -3211,6 +3071,23 @@ func protocolVersionOf(client AgentClient) string {
 // OpenAPI adapter satisfies the interface but reports an empty era,
 // which is correct: it speaks no MCP wire protocol, so a bare
 // era == "" must never be read as "legacy".
+func downstreamCapabilityStatus(client AgentClient) DownstreamCapabilityStatus {
+	src, ok := client.(interface{ DownstreamCapabilities() Capabilities })
+	if !ok {
+		return DownstreamCapabilityStatus{}
+	}
+	caps := src.DownstreamCapabilities()
+	status := DownstreamCapabilityStatus{
+		Prompts:   caps.Prompts != nil,
+		Resources: caps.Resources != nil,
+	}
+	if caps.Resources != nil {
+		status.ResourcesSubscribe = caps.Resources.Subscribe
+		status.ResourcesListChanged = caps.Resources.ListChanged
+	}
+	return status
+}
+
 func protocolGenerationOf(client AgentClient) string {
 	if e, ok := client.(interface{ Era() ProtocolEra }); ok {
 		return string(e.Era())
@@ -3315,10 +3192,17 @@ func (g *Gateway) Status() []MCPServerStatus {
 		if client != nil {
 			status.ProtocolVersion = protocolVersionOf(client)
 			status.ProtocolGeneration = protocolGenerationOf(client)
+			status.Capabilities = downstreamCapabilityStatus(client)
 			if a2a, ok := client.(*A2AClient); ok {
 				status.A2AStatus = a2a.status()
 			}
 		}
+		cached := g.router.ResourceStatus(name)
+		status.PromptCount = cached.PromptCount
+		status.MCPResourceCount = cached.ResourceCount
+		status.ResourceTemplateCount = cached.TemplateCount
+		status.ResourceCollisions = cached.Collisions
+		status.ResourceListError = cached.ListError
 		if meta.OpenAPIConfig != nil {
 			status.OpenAPISpec = meta.OpenAPIConfig.Spec
 		}

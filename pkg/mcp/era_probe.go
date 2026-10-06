@@ -96,15 +96,32 @@ func rpcErrorFrom(err error) *RPCError {
 
 // statelessMetaMap builds the required per-request _meta for outbound
 // stateless-era requests.
-func statelessMetaMap(version string) map[string]any {
+func statelessMetaMap(version string, extensions []string) map[string]any {
+	caps := map[string]any{}
+	if ext := synthesizedUIExtension(extensions); ext != nil {
+		caps["extensions"] = ext
+	}
 	return map[string]any{
 		metaKeyProtocolVersion: version,
 		metaKeyClientInfo: map[string]any{
 			"name":    "gridctl-gateway",
 			"version": "1.0.0",
 		},
-		metaKeyClientCapabilities: map[string]any{},
+		metaKeyClientCapabilities: caps,
 	}
+}
+
+func synthesizedUIExtension(extensions []string) map[string]any {
+	for _, ext := range extensions {
+		if ext == UIExtensionID {
+			return map[string]any{
+				UIExtensionID: map[string]any{
+					"mimeTypes": []string{UIExtensionMIME},
+				},
+			}
+		}
+	}
+	return nil
 }
 
 // upstreamCapsKey carries the upstream client's declared capabilities
@@ -147,7 +164,7 @@ func (r *RPCClient) probeDiscover(ctx context.Context) (bool, error) {
 	probeCtx, cancel := context.WithTimeout(ctx, discoverProbeTimeout)
 	defer cancel()
 
-	params := map[string]any{"_meta": statelessMetaMap(StatelessProtocolVersion)}
+	params := map[string]any{"_meta": statelessMetaMap(StatelessProtocolVersion, r.copyProtocolExtensions())}
 	var result DiscoverResult
 	err := r.transport.call(probeCtx, "server/discover", params, &result)
 	if err == nil {
@@ -291,7 +308,7 @@ func serverInfoFromMeta(meta map[string]any) ServerInfo {
 // clientCapabilities value so modern servers know what input requests
 // the far end can actually fulfill. Returns params unchanged when they
 // are not a JSON object.
-func stampStatelessMeta(ctx context.Context, paramsBytes json.RawMessage, version string) json.RawMessage {
+func stampStatelessMeta(ctx context.Context, paramsBytes json.RawMessage, version string, extensions []string) json.RawMessage {
 	var obj map[string]json.RawMessage
 	if len(paramsBytes) > 0 {
 		if err := json.Unmarshal(paramsBytes, &obj); err != nil {
@@ -308,7 +325,7 @@ func stampStatelessMeta(ctx context.Context, paramsBytes json.RawMessage, versio
 	if meta == nil {
 		meta = make(map[string]json.RawMessage)
 	}
-	for k, v := range statelessMetaMap(version) {
+	for k, v := range statelessMetaMap(version, extensions) {
 		raw, err := json.Marshal(v)
 		if err != nil {
 			return paramsBytes

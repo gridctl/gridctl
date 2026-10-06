@@ -28,12 +28,13 @@ func TestGateway_SkillPolicyFiltersPromptSurfaces(t *testing.T) {
 
 	g.SetSkillPolicy(NewSkillPolicy(&SkillPolicySpec{Deny: []string{"secret-*"}}))
 
-	prompts, err := g.HandlePromptsList()
+	prompts, err := g.HandlePromptsList(context.Background())
 	if err != nil {
 		t.Fatalf("prompts/list: %v", err)
 	}
-	if len(prompts.Prompts) != 1 || prompts.Prompts[0].Name != "allowed-skill" {
-		t.Fatalf("prompts/list = %+v, want only allowed-skill", prompts.Prompts)
+	decoded := decodePrompts(t, prompts.Prompts)
+	if len(decoded) != 1 || decoded[0].Name != "allowed-skill" {
+		t.Fatalf("prompts/list = %+v, want only allowed-skill", decoded)
 	}
 
 	if _, err := g.HandlePromptsGet(context.Background(), PromptsGetParams{Name: "secret-skill"}); err == nil {
@@ -45,25 +46,26 @@ func TestGateway_SkillPolicyFiltersPromptSurfaces(t *testing.T) {
 		t.Fatalf("prompts/get of allowed skill: %v", err)
 	}
 
-	resources, err := g.HandleResourcesList()
+	resources, err := g.HandleResourcesList(context.Background())
 	if err != nil {
 		t.Fatalf("resources/list: %v", err)
 	}
-	if len(resources.Resources) != 1 || resources.Resources[0].Name != "allowed-skill" {
-		t.Fatalf("resources/list = %+v, want only allowed-skill", resources.Resources)
+	listed := decodeResources(t, resources.Resources)
+	if len(listed) != 1 || listed[0].Name != "allowed-skill" {
+		t.Fatalf("resources/list = %+v, want only allowed-skill", listed)
 	}
 
-	if _, err := g.HandleResourcesRead(ResourcesReadParams{URI: "skills://registry/secret-skill"}); err == nil {
+	if _, err := g.HandleResourcesRead(context.Background(), ResourcesReadParams{URI: "skills://registry/secret-skill"}); err == nil {
 		t.Fatal("resources/read served a policy-denied skill")
 	}
-	if _, err := g.HandleResourcesRead(ResourcesReadParams{URI: "skills://registry/allowed-skill"}); err != nil {
+	if _, err := g.HandleResourcesRead(context.Background(), ResourcesReadParams{URI: "skills://registry/allowed-skill"}); err != nil {
 		t.Fatalf("resources/read of allowed skill: %v", err)
 	}
 
 	// Removing the policy (skills: block deleted, hot reload) restores the
 	// full surface on the next request.
 	g.SetSkillPolicy(nil)
-	prompts, err = g.HandlePromptsList()
+	prompts, err = g.HandlePromptsList(context.Background())
 	if err != nil {
 		t.Fatalf("prompts/list after policy removal: %v", err)
 	}

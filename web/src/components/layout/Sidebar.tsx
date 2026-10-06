@@ -32,6 +32,7 @@ import { SidebarTelemetrySection } from '../telemetry/SidebarTelemetrySection';
 import { SourceProvenance } from '../sidebar/SourceProvenance';
 import { ExecutionDetails } from '../sidebar/ExecutionDetails';
 import { SecurityEvidence } from '../sidebar/SecurityEvidence';
+import { CatalogSummary } from '../sidebar/CatalogSummary';
 import { getTransportIcon, getTransportColorClasses } from '../../lib/transport';
 import { getClientIcon } from '../../lib/clientIcons';
 import { summarizeClientReach } from '../../lib/clientScope';
@@ -507,6 +508,12 @@ export function Sidebar() {
         {isServer && (
           <InspectorSection title="Telemetry" icon={Database}>
             <SidebarTelemetrySection serverName={data.name} />
+          </InspectorSection>
+        )}
+
+        {isServer && (
+          <InspectorSection title="MCP catalog" icon={FileText}>
+            <CatalogSummary data={data as MCPServerNodeData} />
           </InspectorSection>
         )}
 

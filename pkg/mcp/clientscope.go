@@ -115,6 +115,36 @@ func (p *ClientAccessPolicy) resolveKey(accessID string) (key string, listed boo
 	return n, false
 }
 
+// AllowsServer reports whether accessID may see the named server's prompts
+// and resources. A nil policy allows every server. An unlisted client follows
+// default. A profile allows the server when its servers set is empty or
+// contains it, and its tools set is empty or names at least one prefixed
+// tool whose server half equals it. The per-server tools whitelist is not
+// consulted here.
+func (p *ClientAccessPolicy) AllowsServer(accessID, server string) bool {
+	if p == nil {
+		return true
+	}
+	key, listed := p.resolveKey(accessID)
+	if !listed {
+		return p.defaultAllow
+	}
+	prof := p.profiles[key]
+	if len(prof.servers) > 0 && !prof.servers[server] {
+		return false
+	}
+	if len(prof.tools) == 0 {
+		return true
+	}
+	for name := range prof.tools {
+		half, _, err := ParsePrefixedTool(name)
+		if err == nil && half == server {
+			return true
+		}
+	}
+	return false
+}
+
 // Allows reports whether the client identified by accessID may call the given
 // prefixed tool. A nil policy allows everything.
 func (p *ClientAccessPolicy) Allows(accessID, prefixedName string) bool {

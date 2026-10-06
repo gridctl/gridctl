@@ -36,6 +36,8 @@ type MCPServerRollup struct {
 	Replicas  string // "N/M" for sets with replicas > 1, "—" for single-replica servers
 	State     string // "healthy", "degraded (replica-N restarting, next in 4s)", "unhealthy"
 	Autoscale string // "min/current/max (target=N)" for autoscaled servers, empty for static
+	Prompts   int
+	Resources int
 }
 
 // ReplicaDetail is one row of the expanded `gridctl status --replicas` view.
@@ -209,28 +211,39 @@ func (p *Printer) MCPServers(rows []MCPServerRollup) {
 	t.SetStyle(p.tableStyle())
 
 	hasAutoscale := false
+	hasCatalog := false
 	for _, r := range rows {
 		if r.Autoscale != "" {
 			hasAutoscale = true
-			break
+		}
+		if r.Prompts != 0 || r.Resources != 0 {
+			hasCatalog = true
 		}
 	}
 
+	header := table.Row{"Name", "Type", "Replicas"}
 	if hasAutoscale {
-		t.AppendHeader(table.Row{"Name", "Type", "Replicas", "Autoscale", "State"})
-	} else {
-		t.AppendHeader(table.Row{"Name", "Type", "Replicas", "State"})
+		header = append(header, "Autoscale")
 	}
+	if hasCatalog {
+		header = append(header, "PROMPTS", "RESOURCES")
+	}
+	header = append(header, "State")
+	t.AppendHeader(header)
 	for _, r := range rows {
 		state := r.State
 		if p.cellColor() {
 			state = colorReplicaState(r.State)
 		}
+		row := table.Row{r.Name, r.Type, r.Replicas}
 		if hasAutoscale {
-			t.AppendRow(table.Row{r.Name, r.Type, r.Replicas, r.Autoscale, state})
-		} else {
-			t.AppendRow(table.Row{r.Name, r.Type, r.Replicas, state})
+			row = append(row, r.Autoscale)
 		}
+		if hasCatalog {
+			row = append(row, r.Prompts, r.Resources)
+		}
+		row = append(row, state)
+		t.AppendRow(row)
 	}
 	t.Render()
 	p.Println()

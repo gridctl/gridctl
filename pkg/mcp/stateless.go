@@ -42,6 +42,52 @@ func attachSkillCacheMeta(fields *StatelessResultFields) {
 	fields.CacheScope = CacheScopePrivate
 }
 
+// aggregateRawListCacheMeta folds registry skill metadata with the
+// downstream lists that actually contributed entries. Handshake-era pages
+// and pages that omitted ttlMs pin the aggregate to 0. cacheScope is
+// public only when every contributor is public. An empty contributor set
+// matches attachSkillCacheMeta so a tool-only fleet stays byte-compatible
+// with the registry-owned lists.
+func aggregateRawListCacheMeta(registryContributed bool, pages []RawListPage) StatelessResultFields {
+	if len(pages) == 0 {
+		var fields StatelessResultFields
+		attachSkillCacheMeta(&fields)
+		return fields
+	}
+	allPublic := true
+	var ttl int64
+	haveTTL := false
+	pinZero := false
+	if registryContributed {
+		allPublic = false
+		ttl = skillResourceTTLMs
+		haveTTL = true
+	}
+	for _, page := range pages {
+		if page.TTLMs == nil {
+			pinZero = true
+		} else if !haveTTL || *page.TTLMs < ttl {
+			ttl = *page.TTLMs
+			haveTTL = true
+		}
+		if page.CacheScope != CacheScopePublic {
+			allPublic = false
+		}
+	}
+	if pinZero || !haveTTL {
+		ttl = 0
+	}
+	scope := CacheScopePrivate
+	if allPublic {
+		scope = CacheScopePublic
+	}
+	return StatelessResultFields{
+		ResultType: ResultTypeComplete,
+		TTLMs:      &ttl,
+		CacheScope: scope,
+	}
+}
+
 // mcpParamHeadersKey carries unrecognized Mcp-Param-* headers from the
 // upstream request so the downstream HTTP leg can forward them
 // untouched, per the transport spec's intermediary rules.
@@ -171,12 +217,11 @@ func (s *StreamableHTTPServer) handleStateless(w http.ResponseWriter, r *http.Re
 	case "tools/call":
 		s.handleStatelessToolsCall(ctx, w, req, meta)
 	case "prompts/list":
-		result, err := s.gateway.HandlePromptsList()
+		result, err := s.gateway.HandlePromptsList(ctx)
 		if err != nil {
 			writeStatelessResponse(w, http.StatusOK, jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error()))
 			return
 		}
-		attachSkillCacheMeta(&result.StatelessResultFields)
 		writeStatelessResponse(w, http.StatusOK, jsonrpc.NewSuccessResponse(req.ID, result))
 	case "prompts/get":
 		if req.Params == nil {
@@ -188,24 +233,21 @@ func (s *StreamableHTTPServer) handleStateless(w http.ResponseWriter, r *http.Re
 			writeStatelessResponse(w, http.StatusOK, jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "Invalid prompts/get params"))
 			return
 		}
-		result, err := s.gateway.HandlePromptsGet(ctx, params)
+		outcome, err := s.gateway.relayPromptsGet(ctx, params, req.Params)
 		if err != nil {
-			writeStatelessResponse(w, http.StatusOK, jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error()))
+			writeStatelessRelayError(w, req, err)
 			return
 		}
-		result.ResultType = ResultTypeComplete
-		writeStatelessResponse(w, http.StatusOK, jsonrpc.NewSuccessResponse(req.ID, result))
+		writeStatelessResponse(w, http.StatusOK, jsonrpc.NewSuccessResponse(req.ID, statelessRelayRaw(outcome)))
 	case "resources/list":
-		result, err := s.gateway.HandleResourcesList()
+		result, err := s.gateway.HandleResourcesList(ctx)
 		if err != nil {
 			writeStatelessResponse(w, http.StatusOK, jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error()))
 			return
 		}
-		attachSkillCacheMeta(&result.StatelessResultFields)
 		writeStatelessResponse(w, http.StatusOK, jsonrpc.NewSuccessResponse(req.ID, result))
 	case "resources/templates/list":
-		result := s.gateway.HandleResourceTemplatesList()
-		attachSkillCacheMeta(&result.StatelessResultFields)
+		result := s.gateway.HandleResourceTemplatesList(ctx)
 		writeStatelessResponse(w, http.StatusOK, jsonrpc.NewSuccessResponse(req.ID, result))
 	case "resources/read":
 		if req.Params == nil {
@@ -217,19 +259,12 @@ func (s *StreamableHTTPServer) handleStateless(w http.ResponseWriter, r *http.Re
 			writeStatelessResponse(w, http.StatusOK, jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "Invalid resources/read params"))
 			return
 		}
-		result, err := s.gateway.HandleResourcesRead(params)
+		outcome, err := s.gateway.relayResourcesRead(ctx, params, req.Params)
 		if err != nil {
-			// 2026-07-28 renumbered resource-not-found from -32002 to
-			// -32602, and every read failure is not-found shaped from
-			// the caller's viewpoint: a gateway without a registry
-			// simply has no resources (SEP-2164). The error data
-			// SHOULD carry the requested URI.
-			writeStatelessResponse(w, http.StatusOK, jsonrpc.NewErrorResponseWithData(
-				req.ID, jsonrpc.InvalidParams, err.Error(), map[string]string{"uri": params.URI}))
+			writeStatelessResourceError(w, req, params.URI, err)
 			return
 		}
-		attachSkillCacheMeta(&result.StatelessResultFields)
-		writeStatelessResponse(w, http.StatusOK, jsonrpc.NewSuccessResponse(req.ID, result))
+		writeStatelessResponse(w, http.StatusOK, jsonrpc.NewSuccessResponse(req.ID, statelessRelayRaw(outcome)))
 	case "tasks/get", "tasks/update", "tasks/cancel":
 		s.handleStatelessTask(ctx, w, req)
 	default:
@@ -538,11 +573,24 @@ func (g *Gateway) advertisedCapabilities() Capabilities {
 	caps := Capabilities{
 		Tools: &ToolsCapability{},
 	}
-	if g.promptProvider() != nil {
+	if g.promptProvider() != nil || g.downstreamDeclares(wantsPrompts) {
 		caps.Prompts = &PromptsCapability{}
+	}
+	if g.promptProvider() != nil || g.downstreamDeclares(wantsResources) {
 		caps.Resources = &ResourcesCapability{}
 	}
 	return caps
+}
+
+func (g *Gateway) downstreamDeclares(want func(Capabilities) bool) bool {
+	for _, set := range g.router.ReplicaSets() {
+		for _, rep := range set.Replicas() {
+			if declares(rep.Client(), want) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // rawRelayer is the optional client interface the tasks proxy needs: a

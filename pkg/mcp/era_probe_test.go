@@ -273,7 +273,7 @@ func TestStatelessClientStampsMetaOnEveryCall(t *testing.T) {
 	if !sawToolsList {
 		t.Fatal("tools/list not sent")
 	}
-	stamped := stampStatelessMeta(context.Background(), json.RawMessage(`{"name":"x","_meta":{"traceparent":"00-a-b-01"}}`), StatelessProtocolVersion)
+	stamped := stampStatelessMeta(context.Background(), json.RawMessage(`{"name":"x","_meta":{"traceparent":"00-a-b-01"}}`), StatelessProtocolVersion, nil)
 	meta, modern := parseRequestMeta(stamped)
 	if !modern || meta.ProtocolVersion != StatelessProtocolVersion {
 		t.Fatalf("stamped params not modern: %s", stamped)
@@ -287,7 +287,7 @@ func TestStampStatelessMetaPreservesSiblingBytes(t *testing.T) {
 	// Sibling values must pass through byte-exact: a decode through
 	// map[string]any would rewrite 2^53+1 as a float64 and corrupt it.
 	params := json.RawMessage(`{"name":"t","arguments":{"big_id":9007199254740993,"exp":1e2,"s":"x"}}`)
-	stamped := stampStatelessMeta(context.Background(), params, StatelessProtocolVersion)
+	stamped := stampStatelessMeta(context.Background(), params, StatelessProtocolVersion, nil)
 	for _, literal := range []string{"9007199254740993", "1e2"} {
 		if !strings.Contains(string(stamped), literal) {
 			t.Errorf("stamping corrupted sibling value %s: %s", literal, stamped)

@@ -1411,7 +1411,7 @@ func TestGateway_HandleInitialize_WithoutRegistry(t *testing.T) {
 func TestGateway_HandlePromptsList_Empty(t *testing.T) {
 	g := NewGateway()
 
-	result, err := g.HandlePromptsList()
+	result, err := g.HandlePromptsList(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1448,18 +1448,19 @@ func TestGateway_HandlePromptsList_WithPrompts(t *testing.T) {
 	}
 	g.Router().AddClient(client)
 
-	result, err := g.HandlePromptsList()
+	result, err := g.HandlePromptsList(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(result.Prompts) != 2 {
-		t.Fatalf("expected 2 prompts, got %d", len(result.Prompts))
+	prompts := decodePrompts(t, result.Prompts)
+	if len(prompts) != 2 {
+		t.Fatalf("expected 2 prompts, got %d", len(prompts))
 	}
 
 	// Find the code-review prompt
 	var found bool
-	for _, p := range result.Prompts {
+	for _, p := range prompts {
 		if p.Name == "code-review" {
 			found = true
 			if p.Description != "Review code for issues" {
@@ -1600,7 +1601,7 @@ func TestGateway_HandleResourcesList(t *testing.T) {
 	}
 	g.Router().AddClient(client)
 
-	result, err := g.HandleResourcesList()
+	result, err := g.HandleResourcesList(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1609,7 +1610,7 @@ func TestGateway_HandleResourcesList(t *testing.T) {
 		t.Fatalf("expected 2 resources, got %d", len(result.Resources))
 	}
 
-	for _, r := range result.Resources {
+	for _, r := range decodeResources(t, result.Resources) {
 		if r.MimeType != "text/markdown" {
 			t.Errorf("expected mimeType 'text/markdown', got %q", r.MimeType)
 		}
@@ -1622,7 +1623,7 @@ func TestGateway_HandleResourcesList(t *testing.T) {
 func TestGateway_HandleResourcesList_Empty(t *testing.T) {
 	g := NewGateway()
 
-	result, err := g.HandleResourcesList()
+	result, err := g.HandleResourcesList(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1651,10 +1652,11 @@ func TestGateway_HandleResourcesRead(t *testing.T) {
 	}
 	g.Router().AddClient(client)
 
-	result, err := g.HandleResourcesRead(ResourcesReadParams{URI: "skills://registry/code-review"})
+	raw, err := g.HandleResourcesRead(context.Background(), ResourcesReadParams{URI: "skills://registry/code-review"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	result := decodeRead(t, raw)
 
 	if len(result.Contents) != 1 {
 		t.Fatalf("expected 1 content item, got %d", len(result.Contents))
@@ -1681,12 +1683,12 @@ func TestGateway_HandleResourcesRead_InvalidURI(t *testing.T) {
 	}
 	g.Router().AddClient(client)
 
-	_, err := g.HandleResourcesRead(ResourcesReadParams{URI: "https://example.com/foo"})
+	_, err := g.HandleResourcesRead(context.Background(), ResourcesReadParams{URI: "https://example.com/foo"})
 	if err == nil {
 		t.Fatal("expected error for non-prompt:// URI")
 	}
-	if !strings.Contains(err.Error(), "unsupported URI scheme") {
-		t.Errorf("expected 'unsupported URI scheme' error, got %q", err.Error())
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected not-found error, got %q", err.Error())
 	}
 }
 
@@ -1701,7 +1703,7 @@ func TestGateway_HandleResourcesRead_NotFound(t *testing.T) {
 	}
 	g.Router().AddClient(client)
 
-	_, err := g.HandleResourcesRead(ResourcesReadParams{URI: "prompt://nonexistent"})
+	_, err := g.HandleResourcesRead(context.Background(), ResourcesReadParams{URI: "prompt://nonexistent"})
 	if err == nil {
 		t.Fatal("expected error for nonexistent prompt")
 	}
@@ -1710,7 +1712,7 @@ func TestGateway_HandleResourcesRead_NotFound(t *testing.T) {
 func TestGateway_HandleResourcesRead_NoRegistry(t *testing.T) {
 	g := NewGateway()
 
-	_, err := g.HandleResourcesRead(ResourcesReadParams{URI: "prompt://anything"})
+	_, err := g.HandleResourcesRead(context.Background(), ResourcesReadParams{URI: "prompt://anything"})
 	if err == nil {
 		t.Fatal("expected error when no registry")
 	}
@@ -1787,7 +1789,7 @@ func TestGateway_HandleResourcesRead_EmptyName(t *testing.T) {
 	}
 	g.Router().AddClient(client)
 
-	_, err := g.HandleResourcesRead(ResourcesReadParams{URI: "skills://registry/"})
+	_, err := g.HandleResourcesRead(context.Background(), ResourcesReadParams{URI: "skills://registry/"})
 	if err == nil {
 		t.Fatal("expected error for empty resource name")
 	}
@@ -2038,10 +2040,11 @@ func TestGateway_HandleResourcesRead_LegacyPromptURI(t *testing.T) {
 	g.Router().AddClient(pp)
 
 	// Legacy prompt:// URI should work
-	result, err := g.HandleResourcesRead(ResourcesReadParams{URI: "prompt://test-prompt"})
+	raw, err := g.HandleResourcesRead(context.Background(), ResourcesReadParams{URI: "prompt://test-prompt"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	result := decodeRead(t, raw)
 	if len(result.Contents) != 1 {
 		t.Fatalf("expected 1 content, got %d", len(result.Contents))
 	}
@@ -2062,13 +2065,48 @@ func TestGateway_HandleResourcesRead_EmptyNameInURI(t *testing.T) {
 	g.Router().AddClient(pp)
 
 	// Empty name after prefix strip
-	_, err := g.HandleResourcesRead(ResourcesReadParams{URI: "skills://registry/"})
+	_, err := g.HandleResourcesRead(context.Background(), ResourcesReadParams{URI: "skills://registry/"})
 	if err == nil {
 		t.Fatal("expected error for empty resource name")
 	}
 	if !strings.Contains(err.Error(), "empty resource name") {
 		t.Errorf("expected 'empty resource name' error, got: %v", err)
 	}
+}
+
+func decodePrompts(t *testing.T, raw []json.RawMessage) []MCPPrompt {
+	t.Helper()
+	out := make([]MCPPrompt, 0, len(raw))
+	for _, entry := range raw {
+		var prompt MCPPrompt
+		if err := json.Unmarshal(entry, &prompt); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, prompt)
+	}
+	return out
+}
+
+func decodeResources(t *testing.T, raw []json.RawMessage) []MCPResource {
+	t.Helper()
+	out := make([]MCPResource, 0, len(raw))
+	for _, entry := range raw {
+		var resource MCPResource
+		if err := json.Unmarshal(entry, &resource); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, resource)
+	}
+	return out
+}
+
+func decodeRead(t *testing.T, raw json.RawMessage) ResourcesReadResult {
+	t.Helper()
+	var result ResourcesReadResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		t.Fatal(err)
+	}
+	return result
 }
 
 // gatewayTestPromptProvider wraps a MockAgentClient for gateway-level prompt tests.

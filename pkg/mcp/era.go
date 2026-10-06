@@ -81,6 +81,18 @@ const (
 	ErrCodeUnsupportedProtocolVersion      = -32022
 )
 
+// ErrCodeResourceNotFound is the code the 2025-11-25 specification
+// assigns to a resources/read miss. The 2026-07-28 revision renumbered
+// that miss to -32602 (Invalid params).
+const ErrCodeResourceNotFound = -32002
+
+// UIExtensionID is the MCP Apps client extension (SEP-1865). The gateway
+// declares it downstream only when a server's protocol_extensions lists it.
+const (
+	UIExtensionID   = "io.modelcontextprotocol/ui"
+	UIExtensionMIME = "text/html;profile=mcp-app"
+)
+
 // StatelessResultFields are the result-envelope fields the 2026-07-28
 // revision requires on cacheable results. They are embedded in the
 // shared result structs with omitempty tags: the handshake-era wire

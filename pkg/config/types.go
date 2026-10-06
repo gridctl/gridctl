@@ -552,6 +552,11 @@ type MCPServer struct {
 	// auto-negotiation exactly.
 	ProtocolGeneration string `yaml:"protocol_generation,omitempty"`
 
+	// ProtocolExtensions declares client extensions the gateway sends on
+	// its downstream initialize. The only accepted value is
+	// "io.modelcontextprotocol/ui". Empty preserves today's handshake.
+	ProtocolExtensions []string `yaml:"protocol_extensions,omitempty"`
+
 	// Replicas is the number of independent processes to spawn for this server.
 	// Defaults to 1. Values >1 load-balance JSON-RPC tool calls across replicas
 	// using ReplicaPolicy. Not supported for external URL or OpenAPI transports.

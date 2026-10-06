@@ -104,6 +104,30 @@ func NewGroupPolicy(spec GroupsSpec) *GroupPolicy {
 	return p
 }
 
+// ServerIsMember reports whether any of serverTools passes isMember for
+// group. exclude is applied first because isMember checks it first. A nil
+// policy or unknown group is not a member. server is part of the call
+// contract; membership is decided from the live tool names, not by
+// reimplementing the servers set.
+func (p *GroupPolicy) ServerIsMember(group, server string, serverTools []string) bool {
+	if p == nil {
+		return false
+	}
+	def := p.groups[group]
+	if def == nil {
+		return false
+	}
+	for _, tool := range serverTools {
+		if half, _, err := ParsePrefixedTool(tool); err == nil && half != server {
+			continue
+		}
+		if def.isMember(tool) {
+			return true
+		}
+	}
+	return false
+}
+
 // Has reports whether a group with the given name is configured. Used by
 // the transport to 404 unknown group endpoints before session creation.
 func (p *GroupPolicy) Has(name string) bool {

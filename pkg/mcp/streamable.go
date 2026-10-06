@@ -599,15 +599,15 @@ func (s *StreamableHTTPServer) handleRequest(ctx context.Context, session *Strea
 	case "tools/call":
 		return s.handleToolsCall(ctx, session, req)
 	case "prompts/list":
-		return s.handlePromptsList(req)
+		return s.handlePromptsList(ctx, req)
 	case "prompts/get":
 		return s.handlePromptsGet(ctx, req)
 	case "resources/list":
-		return s.handleResourcesList(req)
+		return s.handleResourcesList(ctx, req)
 	case "resources/read":
-		return s.handleResourcesRead(req)
+		return s.handleResourcesRead(ctx, req)
 	case "resources/templates/list":
-		return jsonrpc.NewSuccessResponse(req.ID, s.gateway.HandleResourceTemplatesList())
+		return jsonrpc.NewSuccessResponse(req.ID, s.gateway.HandleResourceTemplatesList(ctx).withoutCacheFields())
 	case "ping":
 		return jsonrpc.NewSuccessResponse(req.ID, struct{}{})
 	default:
@@ -647,12 +647,12 @@ func (s *StreamableHTTPServer) handleToolsCall(ctx context.Context, _ *Streamabl
 	return jsonrpc.NewSuccessResponse(req.ID, result)
 }
 
-func (s *StreamableHTTPServer) handlePromptsList(req *jsonrpc.Request) jsonrpc.Response {
-	result, err := s.gateway.HandlePromptsList()
+func (s *StreamableHTTPServer) handlePromptsList(ctx context.Context, req *jsonrpc.Request) jsonrpc.Response {
+	result, err := s.gateway.HandlePromptsList(ctx)
 	if err != nil {
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
 	}
-	return jsonrpc.NewSuccessResponse(req.ID, result)
+	return jsonrpc.NewSuccessResponse(req.ID, result.withoutCacheFields())
 }
 
 func (s *StreamableHTTPServer) handlePromptsGet(ctx context.Context, req *jsonrpc.Request) jsonrpc.Response {
@@ -663,22 +663,25 @@ func (s *StreamableHTTPServer) handlePromptsGet(ctx context.Context, req *jsonrp
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "Invalid prompts/get params")
 	}
-	result, err := s.gateway.HandlePromptsGet(ctx, params)
+	outcome, err := s.gateway.relayPromptsGet(ctx, params, req.Params)
+	if err != nil {
+		return handshakeRelayError(req.ID, err)
+	}
+	if outcome.inputRequired {
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, inputRequiredRelayMessage)
+	}
+	return jsonrpc.NewSuccessResponse(req.ID, outcome.raw)
+}
+
+func (s *StreamableHTTPServer) handleResourcesList(ctx context.Context, req *jsonrpc.Request) jsonrpc.Response {
+	result, err := s.gateway.HandleResourcesList(ctx)
 	if err != nil {
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
 	}
-	return jsonrpc.NewSuccessResponse(req.ID, result)
+	return jsonrpc.NewSuccessResponse(req.ID, result.withoutCacheFields())
 }
 
-func (s *StreamableHTTPServer) handleResourcesList(req *jsonrpc.Request) jsonrpc.Response {
-	result, err := s.gateway.HandleResourcesList()
-	if err != nil {
-		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
-	}
-	return jsonrpc.NewSuccessResponse(req.ID, result)
-}
-
-func (s *StreamableHTTPServer) handleResourcesRead(req *jsonrpc.Request) jsonrpc.Response {
+func (s *StreamableHTTPServer) handleResourcesRead(ctx context.Context, req *jsonrpc.Request) jsonrpc.Response {
 	if req.Params == nil {
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "params required for resources/read")
 	}
@@ -686,11 +689,14 @@ func (s *StreamableHTTPServer) handleResourcesRead(req *jsonrpc.Request) jsonrpc
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, "Invalid resources/read params")
 	}
-	result, err := s.gateway.HandleResourcesRead(params)
+	outcome, err := s.gateway.relayResourcesRead(ctx, params, req.Params)
 	if err != nil {
-		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
+		return handshakeResourceError(req.ID, params.URI, err)
 	}
-	return jsonrpc.NewSuccessResponse(req.ID, result)
+	if outcome.inputRequired {
+		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, inputRequiredRelayMessage)
+	}
+	return jsonrpc.NewSuccessResponse(req.ID, outcome.raw)
 }
 
 // SessionCount returns the number of active Streamable HTTP sessions,

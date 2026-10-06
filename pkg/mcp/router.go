@@ -1,7 +1,9 @@
 package mcp
 
 import (
+	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -17,13 +19,62 @@ type Router struct {
 	mu    sync.RWMutex
 	sets  map[string]*ReplicaSet // serverName -> replica set
 	tools map[string]string      // prefixedToolName -> serverName
+
+	// Resource routing. Exact URIs win over the ui:// index, which wins
+	// over templates. Winners are the alphabetically first server.
+	resources        map[string]string
+	uiResources      map[string]string
+	templates        []compiledTemplate
+	serverURIs       map[string][]string
+	serverTemplates  map[string][]string
+	serverUI         map[string][]string
+	collisions       map[string]int
+	loggedCollisions map[string]struct{}
+	promptCounts     map[string]int
+	resourceCounts   map[string]int
+	templateCounts   map[string]int
+	listErrors       map[string]string
+}
+
+type compiledTemplate struct {
+	server  string
+	raw     string
+	matcher *regexp.Regexp
+}
+
+// ResourceCollision is one URI a later server lost to an earlier one.
+type ResourceCollision struct {
+	URI    string
+	Winner string
+	Loser  string
+}
+
+// ResourceServerStatus is the cached prompt and resource accounting for
+// one server. Status reads this; it does not fan out.
+type ResourceServerStatus struct {
+	PromptCount   int
+	ResourceCount int
+	TemplateCount int
+	Collisions    int
+	ListError     string
 }
 
 // NewRouter creates a new tool router.
 func NewRouter() *Router {
 	return &Router{
-		sets:  make(map[string]*ReplicaSet),
-		tools: make(map[string]string),
+		sets:             make(map[string]*ReplicaSet),
+		tools:            make(map[string]string),
+		resources:        make(map[string]string),
+		uiResources:      make(map[string]string),
+		serverURIs:       make(map[string][]string),
+		serverTemplates:  make(map[string][]string),
+		serverUI:         make(map[string][]string),
+		collisions:       make(map[string]int),
+		loggedCollisions: make(map[string]struct{}),
+		promptCounts:     make(map[string]int),
+		resourceCounts:   make(map[string]int),
+		templateCounts:   make(map[string]int),
+		listErrors:       make(map[string]string),
 	}
 }
 
@@ -54,6 +105,8 @@ func (r *Router) RemoveClient(name string) {
 			delete(r.tools, tool)
 		}
 	}
+	r.clearResourceServerLocked(name)
+	r.rebuildResourceWinnersLocked()
 }
 
 // GetClient returns one client for the named server, chosen by the set's
@@ -140,13 +193,20 @@ func (r *Router) RefreshTools() {
 
 	// Clear existing tool mappings
 	r.tools = make(map[string]string)
+	r.serverUI = make(map[string][]string)
 
 	for name, set := range r.sets {
+		var ui []string
 		for _, tool := range toolsOf(set) {
 			prefixedName := PrefixTool(name, tool.Name)
 			r.tools[prefixedName] = name
+			ui = append(ui, uiResourceURIs(tool.Meta)...)
+		}
+		if len(ui) > 0 {
+			r.serverUI[name] = ui
 		}
 	}
+	r.rebuildResourceWinnersLocked()
 }
 
 // HasTool reports whether a prefixed name routes to a live aggregated tool.
@@ -316,4 +376,437 @@ func ParsePrefixedTool(prefixed string) (serverName, toolName string, err error)
 		return "", "", fmt.Errorf("invalid tool name format: %s (expected server__tool)", prefixed)
 	}
 	return parts[0], parts[1], nil
+}
+
+// ServerToolNames returns the prefixed tool names currently aggregated for
+// server. Group membership asks isMember on these names so exclude wins.
+func (r *Router) ServerToolNames(server string) []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var names []string
+	for prefixed, owner := range r.tools {
+		if owner == server {
+			names = append(names, prefixed)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// SetResourceIndex replaces one server's listed URIs and templates, then
+// rebuilds the winner tables. Newly observed collisions are returned so
+// the caller can log each (uri, loser) pair once.
+func (r *Router) SetResourceIndex(server string, uris, templates []string) []ResourceCollision {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ensureResourceMapsLocked()
+	r.storeURIsLocked(server, uris)
+	r.storeTemplatesLocked(server, templates)
+	return r.rebuildResourceWinnersLocked()
+}
+
+// ReplaceServerURIs updates only the concrete URI index for server.
+func (r *Router) ReplaceServerURIs(server string, uris []string) []ResourceCollision {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ensureResourceMapsLocked()
+	r.storeURIsLocked(server, uris)
+	return r.rebuildResourceWinnersLocked()
+}
+
+// ReplaceServerTemplates updates only the template index for server.
+func (r *Router) ReplaceServerTemplates(server string, templates []string) []ResourceCollision {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ensureResourceMapsLocked()
+	r.storeTemplatesLocked(server, templates)
+	return r.rebuildResourceWinnersLocked()
+}
+
+func (r *Router) storeURIsLocked(server string, uris []string) {
+	if len(uris) == 0 {
+		delete(r.serverURIs, server)
+		return
+	}
+	r.serverURIs[server] = append([]string(nil), uris...)
+}
+
+func (r *Router) storeTemplatesLocked(server string, templates []string) {
+	if len(templates) == 0 {
+		delete(r.serverTemplates, server)
+		return
+	}
+	r.serverTemplates[server] = append([]string(nil), templates...)
+}
+
+// SetUIResourceIndex replaces one server's ui:// index built from tool
+// _meta. An empty list clears that server's UI URIs.
+func (r *Router) SetUIResourceIndex(server string, uris []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ensureResourceMapsLocked()
+	if len(uris) == 0 {
+		delete(r.serverUI, server)
+	} else {
+		r.serverUI[server] = append([]string(nil), uris...)
+	}
+	r.rebuildResourceWinnersLocked()
+}
+
+// ResolveResource returns the server that owns uri. Exact listed URIs
+// win over the ui:// index, which wins over templates.
+func (r *Router) ResolveResource(uri string) (string, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if server, ok := r.resources[uri]; ok {
+		return server, true
+	}
+	if server, ok := r.uiResources[uri]; ok {
+		return server, true
+	}
+	for _, tmpl := range r.templates {
+		if tmpl.matcher != nil && tmpl.matcher.MatchString(uri) {
+			return tmpl.server, true
+		}
+	}
+	return "", false
+}
+
+// ResourceOwner returns the server that listed uri exactly, if any.
+func (r *Router) ResourceOwner(uri string) (string, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	server, ok := r.resources[uri]
+	return server, ok
+}
+
+// TemplateOwner reports whether server's uriTemplate survived collision
+// omission. Identical templates keep the alphabetically first server.
+func (r *Router) TemplateOwner(server, raw string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, tmpl := range r.templates {
+		if tmpl.raw == raw && tmpl.server == server {
+			return true
+		}
+	}
+	return false
+}
+
+// PickServer chooses a replica for a prompt or resource dispatch, including
+// scale-to-zero cold start. Lists must not use this; they skip unhealthy sets.
+func (r *Router) PickServer(name string) (*Replica, error) {
+	r.mu.RLock()
+	set, ok := r.sets[name]
+	r.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("unknown server: %s", name)
+	}
+	replica, err := set.Pick()
+	if err != nil {
+		return nil, fmt.Errorf("server %s: %w", name, err)
+	}
+	return replica, nil
+}
+
+// SetPromptCount records the last successful prompts/list size for server.
+func (r *Router) SetPromptCount(server string, n int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ensureResourceMapsLocked()
+	r.promptCounts[server] = n
+}
+
+// SetResourceListError records the last resources list failure category.
+// An empty message clears it.
+func (r *Router) SetResourceListError(server, msg string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ensureResourceMapsLocked()
+	if msg == "" {
+		delete(r.listErrors, server)
+		return
+	}
+	r.listErrors[server] = msg
+}
+
+// ResourceStatus returns cached counts. It does not contact downstream servers.
+func (r *Router) ResourceStatus(server string) ResourceServerStatus {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return ResourceServerStatus{
+		PromptCount:   r.promptCounts[server],
+		ResourceCount: r.resourceCounts[server],
+		TemplateCount: r.templateCounts[server],
+		Collisions:    r.collisions[server],
+		ListError:     r.listErrors[server],
+	}
+}
+
+func (r *Router) ensureResourceMapsLocked() {
+	if r.resources == nil {
+		r.resources = make(map[string]string)
+	}
+	if r.uiResources == nil {
+		r.uiResources = make(map[string]string)
+	}
+	if r.serverURIs == nil {
+		r.serverURIs = make(map[string][]string)
+	}
+	if r.serverTemplates == nil {
+		r.serverTemplates = make(map[string][]string)
+	}
+	if r.serverUI == nil {
+		r.serverUI = make(map[string][]string)
+	}
+	if r.collisions == nil {
+		r.collisions = make(map[string]int)
+	}
+	if r.loggedCollisions == nil {
+		r.loggedCollisions = make(map[string]struct{})
+	}
+	if r.promptCounts == nil {
+		r.promptCounts = make(map[string]int)
+	}
+	if r.resourceCounts == nil {
+		r.resourceCounts = make(map[string]int)
+	}
+	if r.templateCounts == nil {
+		r.templateCounts = make(map[string]int)
+	}
+	if r.listErrors == nil {
+		r.listErrors = make(map[string]string)
+	}
+}
+
+func (r *Router) clearResourceServerLocked(name string) {
+	r.ensureResourceMapsLocked()
+	delete(r.serverURIs, name)
+	delete(r.serverTemplates, name)
+	delete(r.serverUI, name)
+	delete(r.collisions, name)
+	delete(r.promptCounts, name)
+	delete(r.resourceCounts, name)
+	delete(r.templateCounts, name)
+	delete(r.listErrors, name)
+	suffix := "\x00" + name
+	for key := range r.loggedCollisions {
+		if strings.HasSuffix(key, suffix) {
+			delete(r.loggedCollisions, key)
+		}
+	}
+}
+
+func (r *Router) rebuildResourceWinnersLocked() []ResourceCollision {
+	r.ensureResourceMapsLocked()
+	r.resources = make(map[string]string)
+	r.uiResources = make(map[string]string)
+	r.templates = nil
+	r.collisions = make(map[string]int)
+	var fresh []ResourceCollision
+
+	uriOwners := map[string][]string{}
+	for server, uris := range r.serverURIs {
+		for _, uri := range uris {
+			uriOwners[uri] = append(uriOwners[uri], server)
+		}
+	}
+	for uri, owners := range uriOwners {
+		uniq := uniqueSorted(owners)
+		if len(uniq) == 0 {
+			continue
+		}
+		r.resources[uri] = uniq[0]
+		for _, loser := range uniq[1:] {
+			r.collisions[loser]++
+			fresh = append(fresh, r.noteCollisionLocked(uri, uniq[0], loser)...)
+		}
+	}
+
+	tmplOwners := map[string][]string{}
+	for server, tmpls := range r.serverTemplates {
+		for _, raw := range tmpls {
+			tmplOwners[raw] = append(tmplOwners[raw], server)
+		}
+	}
+	for raw, owners := range tmplOwners {
+		uniq := uniqueSorted(owners)
+		if len(uniq) == 0 {
+			continue
+		}
+		if matcher, err := compileURITemplate(raw); err == nil {
+			r.templates = append(r.templates, compiledTemplate{server: uniq[0], raw: raw, matcher: matcher})
+		}
+		for _, loser := range uniq[1:] {
+			r.collisions[loser]++
+			fresh = append(fresh, r.noteCollisionLocked("template:"+raw, uniq[0], loser)...)
+		}
+	}
+	sort.Slice(r.templates, func(i, j int) bool {
+		if r.templates[i].server == r.templates[j].server {
+			return r.templates[i].raw < r.templates[j].raw
+		}
+		return r.templates[i].server < r.templates[j].server
+	})
+
+	uiOwners := map[string][]string{}
+	for server, uris := range r.serverUI {
+		for _, uri := range uris {
+			uiOwners[uri] = append(uiOwners[uri], server)
+		}
+	}
+	for uri, owners := range uiOwners {
+		if _, exact := r.resources[uri]; exact {
+			continue
+		}
+		uniq := uniqueSorted(owners)
+		if len(uniq) == 0 {
+			continue
+		}
+		r.uiResources[uri] = uniq[0]
+		for _, loser := range uniq[1:] {
+			r.collisions[loser]++
+			fresh = append(fresh, r.noteCollisionLocked(uri, uniq[0], loser)...)
+		}
+	}
+	r.recomputeResourceCountsLocked()
+	return fresh
+}
+
+func (r *Router) recomputeResourceCountsLocked() {
+	nextRes := make(map[string]int, len(r.serverURIs))
+	nextTmpl := make(map[string]int, len(r.serverTemplates))
+	for server := range r.serverURIs {
+		nextRes[server] = r.winningURICountLocked(server)
+	}
+	for server := range r.serverTemplates {
+		nextTmpl[server] = r.winningTemplateCountLocked(server)
+	}
+	for server := range r.resourceCounts {
+		if _, ok := nextRes[server]; !ok {
+			nextRes[server] = 0
+		}
+	}
+	for server := range r.templateCounts {
+		if _, ok := nextTmpl[server]; !ok {
+			nextTmpl[server] = 0
+		}
+	}
+	r.resourceCounts = nextRes
+	r.templateCounts = nextTmpl
+}
+
+func (r *Router) noteCollisionLocked(uri, winner, loser string) []ResourceCollision {
+	key := uri + "\x00" + loser
+	if _, seen := r.loggedCollisions[key]; seen {
+		return nil
+	}
+	r.loggedCollisions[key] = struct{}{}
+	return []ResourceCollision{{URI: uri, Winner: winner, Loser: loser}}
+}
+
+func (r *Router) winningURICountLocked(server string) int {
+	n := 0
+	for _, owner := range r.resources {
+		if owner == server {
+			n++
+		}
+	}
+	return n
+}
+
+func (r *Router) winningTemplateCountLocked(server string) int {
+	n := 0
+	for _, tmpl := range r.templates {
+		if tmpl.server == server {
+			n++
+		}
+	}
+	return n
+}
+
+func uniqueSorted(owners []string) []string {
+	if len(owners) == 0 {
+		return nil
+	}
+	sort.Strings(owners)
+	out := owners[:0]
+	var prev string
+	for i, owner := range owners {
+		if i > 0 && owner == prev {
+			continue
+		}
+		out = append(out, owner)
+		prev = owner
+	}
+	return out
+}
+
+// compileURITemplate implements RFC 6570 level-1 matching: {var} is one
+// path segment and {+var} crosses segments. Literal segments are quoted
+// so metacharacters are not patterns. The match is anchored at both ends.
+func compileURITemplate(tmpl string) (*regexp.Regexp, error) {
+	var b strings.Builder
+	b.WriteString("^")
+	for i := 0; i < len(tmpl); {
+		if tmpl[i] != '{' {
+			j := i
+			for j < len(tmpl) && tmpl[j] != '{' {
+				j++
+			}
+			b.WriteString(regexp.QuoteMeta(tmpl[i:j]))
+			i = j
+			continue
+		}
+		end := strings.IndexByte(tmpl[i:], '}')
+		if end < 0 {
+			b.WriteString(regexp.QuoteMeta(tmpl[i:]))
+			break
+		}
+		expr := tmpl[i+1 : i+end]
+		if strings.HasPrefix(expr, "+") {
+			b.WriteString(".+")
+		} else {
+			b.WriteString("[^/]+")
+		}
+		i += end + 1
+	}
+	b.WriteString("$")
+	return regexp.Compile(b.String())
+}
+
+// uiResourceURIs reads SEP-1865 resource URIs from a tool's _meta. The
+// index is a no-op when _meta is absent.
+func uiResourceURIs(meta json.RawMessage) []string {
+	if len(meta) == 0 || string(meta) == "null" {
+		return nil
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(meta, &obj); err != nil {
+		return nil
+	}
+	var uris []string
+	if raw, ok := obj["ui"]; ok {
+		var ui map[string]json.RawMessage
+		if json.Unmarshal(raw, &ui) == nil {
+			if uri := jsonString(ui["resourceUri"]); strings.HasPrefix(uri, "ui://") {
+				uris = append(uris, uri)
+			}
+		}
+	}
+	if uri := jsonString(obj["ui/resourceUri"]); strings.HasPrefix(uri, "ui://") {
+		uris = append(uris, uri)
+	}
+	return uris
+}
+
+func jsonString(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return ""
+	}
+	return s
 }
