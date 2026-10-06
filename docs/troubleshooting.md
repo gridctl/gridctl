@@ -195,6 +195,7 @@ Importing a skill, agent, or pack from an SSH URL when the gridctl process has n
 3. Or name the key directly, which bypasses the agent:
    ```bash
    gridctl pack add git@github.com:acme/pack.git --ssh-key ~/.ssh/id_ed25519
+   # the absolute path is stored; a later pack add or skill update reuses it
    ```
 
 ---
@@ -835,7 +836,7 @@ Git-sourced MCP server image builds use a separate builder namespace. Each activ
 
 ### `skill update` does not pick up an upstream change
 
-`skill update` fetches the source and installs whatever the pinned ref (or the default branch, for unpinned sources) now points at. Sources pinned to a version tag or full commit SHA are deliberately skipped by a bulk `gridctl skill update`; update them explicitly by name, or re-pin. A skill with local edits (drift) is also skipped so your changes are not overwritten; resolve the drift or pass `--force` to discard local edits and reinstall upstream (a backup of the edited `SKILL.md` is kept beside the skill). If a drifted skill was previously skipped during a web UI sync, its reviewed upstream version was recorded as seen, so a plain update reports up to date; `gridctl skill update --force <name>` installs it. When the network is unreachable, updates degrade to the cached content with a warning rather than failing.
+`skill update` fetches the source and installs whatever the pinned ref (or the default branch, for unpinned sources) now points at. Sources pinned to a version tag or full commit SHA are deliberately skipped by a bulk `gridctl skill update`; update them explicitly by name, or re-pin. A skill with local edits (drift) is also skipped so your changes are not overwritten; resolve the drift or pass `--force` to discard local edits and reinstall upstream (a backup of the edited `SKILL.md` is kept beside the skill). If a drifted skill was previously skipped during a web UI sync, its reviewed upstream version was recorded as seen, so a plain update reports up to date; `gridctl skill update --force <name>` installs it. When the fetch fails (the remote is unreachable, or authentication fails), that source is reported as an error instead of "already up to date". A named `gridctl skill update <name>` exits 1. A bulk `gridctl skill update` warns for the failed source, continues with the others, and exits 0. `skill add` re-clones still serve cached content with a warning when a fetch fails.
 
 ### "written by a newer gridctl version" on ctx, skill project, or project commands
 

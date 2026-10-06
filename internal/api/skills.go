@@ -166,6 +166,10 @@ func (r *AuthRequest) toAuthConfig(v *vault.Store) (skills.AuthConfig, error) {
 		return skills.AuthConfig{}, nil
 	}
 
+	if r.SSHKeyPath != "" && !filepath.IsAbs(r.SSHKeyPath) {
+		return skills.AuthConfig{}, fmt.Errorf("sshKeyPath must be an absolute path")
+	}
+
 	method := r.Method
 	if method == "" {
 		// Infer from provided fields: token-ish wins, then ssh-key.
@@ -528,7 +532,7 @@ func (s *Server) handleSkillSourceCheck(w http.ResponseWriter, r *http.Request) 
 		auth = req.Auth
 	}
 
-	authCfg, err := s.resolveCheckAuth(auth, src.CredentialRef)
+	authCfg, err := s.resolveCheckAuth(auth, src.StoredAuth())
 	if err != nil {
 		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
@@ -549,24 +553,17 @@ func (s *Server) handleSkillSourceCheck(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// resolveCheckAuth prefers an explicit request-body auth; falls back to the
-// stored CredentialRef on the lock file entry when the request omits auth.
-func (s *Server) resolveCheckAuth(req *AuthRequest, storedRef string) (skills.AuthConfig, error) {
+// resolveCheckAuth prefers an explicit request-body auth. When the request
+// omits auth, it rebuilds from the stored record: a vault reference resolves
+// to a token, otherwise an ssh-key path is reused. An explicit empty object
+// still yields ambient auth and suppresses the stored record.
+func (s *Server) resolveCheckAuth(req *AuthRequest, stored skills.StoredAuth) (skills.AuthConfig, error) {
 	if req != nil {
 		return req.toAuthConfig(s.vaultStore)
 	}
-	if storedRef == "" {
-		return skills.AuthConfig{}, nil
-	}
-	token, err := resolveCredentialRef(storedRef, s.vaultStore)
-	if err != nil {
-		return skills.AuthConfig{}, err
-	}
-	return skills.AuthConfig{
-		Method:        "token",
-		Token:         token,
-		CredentialRef: storedRef,
-	}, nil
+	return skills.ResolveStoredAuth(stored, func(ref string) (string, error) {
+		return resolveCredentialRef(ref, s.vaultStore)
+	})
 }
 
 // syncSkill applies the drift-safe update policy to a single skill within a
@@ -686,7 +683,7 @@ func (s *Server) handleSkillSourceUpdate(w http.ResponseWriter, r *http.Request)
 	registryDir := store.Dir()
 	ctx := r.Context()
 
-	authCfg, err := s.resolveCheckAuth(req.Auth, src.CredentialRef)
+	authCfg, err := s.resolveCheckAuth(req.Auth, src.StoredAuth())
 	if err != nil {
 		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
@@ -783,7 +780,7 @@ func (s *Server) handleSkillSourcePreview(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	var storedRef string
+	var stored skills.StoredAuth
 	if repo == "" {
 		lockPath := s.lockFilePath()
 		lf, _ := skills.ReadLockFile(lockPath)
@@ -792,7 +789,7 @@ func (s *Server) handleSkillSourcePreview(w http.ResponseWriter, r *http.Request
 			if ref == "" {
 				ref = src.Ref
 			}
-			storedRef = src.CredentialRef
+			stored = src.StoredAuth()
 		}
 	}
 
@@ -801,7 +798,7 @@ func (s *Server) handleSkillSourcePreview(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	authCfg, err := s.resolveCheckAuth(reqBody.Auth, storedRef)
+	authCfg, err := s.resolveCheckAuth(reqBody.Auth, stored)
 	if err != nil {
 		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
@@ -987,7 +984,7 @@ func (s *Server) handleSkillSourcesSyncAll(w http.ResponseWriter, r *http.Reques
 			// Best-effort auth for the on-demand fetches in syncSkill (skip
 			// tracking-advance, backup naming). Errors are non-fatal: Update
 			// independently resolves credentials from the stored origin.
-			authCfg, _ := s.resolveCheckAuth(req.Auth, source.CredentialRef)
+			authCfg, _ := s.resolveCheckAuth(req.Auth, source.StoredAuth())
 
 			// Skill names sorted so per-skill output order is stable too.
 			skillNames := make([]string, 0, len(source.Skills))
@@ -1116,7 +1113,7 @@ func (s *Server) handleSkillUpdates(w http.ResponseWriter, _ *http.Request) {
 			Current: src.CommitSHA,
 		}
 
-		authCfg, authErr := s.resolveCheckAuth(nil, src.CredentialRef)
+		authCfg, authErr := s.resolveCheckAuth(nil, src.StoredAuth())
 		if authErr != nil {
 			entry.Error = authErr.Error()
 			summary.Sources = append(summary.Sources, entry)
@@ -1155,7 +1152,7 @@ type SkillDiffResponse struct {
 
 // handleSkillDiff returns the local vs upstream SKILL.md for an imported skill
 // without writing anything to the registry. The upstream side is the content
-// an update would install; auth is taken from the skill's stored credentialRef.
+// an update would install; rebuild the stored auth (vault reference or ssh-key path).
 // GET /api/skills/sources/{name}/skills/{skill}/diff
 func (s *Server) handleSkillDiff(w http.ResponseWriter, r *http.Request) {
 	skillName := r.PathValue("skill")
@@ -1262,7 +1259,7 @@ func (s *Server) handleSkillReset(w http.ResponseWriter, r *http.Request) {
 	store := s.registryServer.Store()
 	ctx := r.Context()
 
-	authCfg, err := s.resolveCheckAuth(req.Auth, src.CredentialRef)
+	authCfg, err := s.resolveCheckAuth(req.Auth, src.StoredAuth())
 	if err != nil {
 		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return

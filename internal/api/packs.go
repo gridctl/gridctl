@@ -89,28 +89,24 @@ func (s *Server) packsImporter() (*skills.Importer, error) {
 	return imp, nil
 }
 
-// storedPackCredentialRef returns the credential reference recorded for a
-// repository's imported source, or "" when the repository is unknown or was
-// imported without one. It is the fallback that lets a re-import or an update
-// authenticate without the caller re-supplying credentials, mirroring what
-// the skill source handlers do with resolveCheckAuth.
-//
-// A missing or unreadable lockfile is not an error here: it only means there
-// is no stored reference to fall back to, and the caller-supplied auth (or
-// ambient behavior) still applies.
-func (s *Server) storedPackCredentialRef(repo string) string {
+// storedPackAuth returns the authentication recorded for a repository's
+// imported source, or the zero value when the repository is unknown, the
+// lockfile is missing or unreadable, or the import recorded nothing. It is
+// the fallback that lets a re-import or an update authenticate without the
+// caller re-supplying credentials, mirroring resolveCheckAuth.
+func (s *Server) storedPackAuth(repo string) skills.StoredAuth {
 	if repo == "" {
-		return ""
+		return skills.StoredAuth{}
 	}
 	lf, err := skills.ReadLockFile(s.lockFilePath())
 	if err != nil {
-		return ""
+		return skills.StoredAuth{}
 	}
 	src, ok := lf.Sources[skills.RepoToName(repo)]
 	if !ok {
-		return ""
+		return skills.StoredAuth{}
 	}
-	return src.CredentialRef
+	return src.StoredAuth()
 }
 
 // packErrorStatus maps pkg/packops sentinel errors to HTTP statuses.
@@ -219,7 +215,7 @@ func (s *Server) handlePackAdd(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, "repo is required", http.StatusBadRequest)
 		return
 	}
-	auth, err := s.resolveCheckAuth(req.Auth, s.storedPackCredentialRef(req.Repo))
+	auth, err := s.resolveCheckAuth(req.Auth, s.storedPackAuth(req.Repo))
 	if err != nil {
 		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
@@ -280,7 +276,7 @@ func (s *Server) handlePackPreview(w http.ResponseWriter, r *http.Request) {
 	// The stored-reference fallback is what lets the update dialog preview an
 	// already-imported private pack with no user input: it previews on mount,
 	// with no fields to fill.
-	auth, err := s.resolveCheckAuth(req.Auth, s.storedPackCredentialRef(req.Repo))
+	auth, err := s.resolveCheckAuth(req.Auth, s.storedPackAuth(req.Repo))
 	if err != nil {
 		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return

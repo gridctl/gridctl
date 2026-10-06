@@ -955,7 +955,7 @@ mcp-servers:
 - Raw PAT or SSH key material must never appear in `stack.yaml`. `credential_ref` is the only credential field persisted to YAML.
 - The vault is consulted on every clone so rotating a secret takes effect immediately - there is no on-disk caching of the resolved token.
 - Vault references survive `stack.yaml` extends/merges and variable expansion as opaque strings; they are only resolved at apply time inside the orchestrator.
-- The skills registry uses the identical schema for `skills.yaml` source auth - see [Skill Source Auth](#skill-source-auth).
+- The skills registry declares the same field names on `skills.yaml` source auth, but `skill update` does not read that block. See [Skill Source Auth](#skill-source-auth).
 
 ### SSH
 
@@ -1476,7 +1476,7 @@ decision). Link a client to a group with `gridctl link <client> --group
 
 The optional top-level `skills:` block is a global exposure policy for registry skills: it filters which skills the gateway serves via MCP prompts/resources and which the daemon projects into client skill directories. Omitting the block preserves legacy behavior — every active skill is exposed.
 
-Not to be confused with [Skill Sources](#skill-sources), which configures where git-imported skills come from (`~/.gridctl/skills.yaml`); this block decides what an already-registered skill may reach.
+Not to be confused with [Skill Sources](#skill-sources) (`~/.gridctl/skills.yaml`, a Library display list that `skill update` does not read); this block decides what an already-registered skill may reach.
 
 ```yaml
 skills:
@@ -1633,9 +1633,10 @@ Semantics:
 
 ## Skill Sources
 
-Skill sources are declared in `~/.gridctl/skills.yaml`. Each source points at a git repository that gridctl clones to discover `SKILL.md` files. Sources may be public or authenticated.
+`~/.gridctl/skills.yaml` is the Library source list. It is read for auto-update display. `gridctl skill update` and the background checker do not consult it. Imports and later updates authenticate from the origin sidecar and `skills.lock.yaml` written at import.
 
 ```yaml
+# Display list only. auth: blocks here are not read on update.
 defaults:
   auto_update: true
   update_interval: 24h
@@ -1666,13 +1667,15 @@ sources:
 | `repo` | string | **Yes** | - | Git repository URL (HTTPS or SSH) |
 | `ref` | string | No | Default branch | Branch, tag, or semver constraint (e.g. `^1.2`) |
 | `path` | string | No | - | Subdirectory containing `SKILL.md` files |
-| `auto_update` | bool | No | Inherits `defaults.auto_update` | Enable background updates for this source |
-| `update_interval` | duration | No | Inherits `defaults.update_interval` | Poll interval (e.g. `1h`, `24h`) |
-| `auth` | object | No | - | Authentication block for private repos (see [Auth](#skill-source-auth)) |
+| `auto_update` | bool | No | Inherits `defaults.auto_update` | Shown on the Library source list. Does not enable or disable background checks |
+| `update_interval` | duration | No | Inherits `defaults.update_interval` | Shown on the Library source list (e.g. `1h`, `24h`). Nothing polls on this value |
+| `auth` | object | No | - | Declared auth block. Not consulted by `skill update` (see [Auth](#skill-source-auth)) |
 
 ### Skill Source Auth
 
-Declares how gridctl authenticates when cloning or fetching this repository. Raw tokens must **never** appear in `skills.yaml` - use `credential_ref` to point at a vault key.
+Optional `auth:` field names. Raw tokens must **never** appear in `skills.yaml`. This block is not consulted on update.
+
+`skills.yaml` `auth:` is not consulted by `gridctl skill update` or the background checker. The Library source list reads the file for auto-update display. The authentication a later update or check uses is the one written to the origin sidecar and `skills.lock.yaml` at import: a `--vault-key` reference, or the absolute `--ssh-key` path. The background checker reuses a stored ssh-key path. It skips any source with a vault reference, because the checker has no variable-store resolver.
 
 ```yaml
 auth:
@@ -1683,25 +1686,26 @@ auth:
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `method` | string | **Yes** | - | One of `"token"`, `"ssh-agent"`, `"ssh-key"`, or `"none"` |
-| `credential_ref` | string | Conditional | - | `${var:KEY}` reference resolved at clone/fetch time. Required for `"token"` |
+| `credential_ref` | string | Conditional | - | `${var:KEY}` reference. Required for `"token"` in this schema. Updates resolve the reference written at import, not a value declared only here |
 | `ssh_user` | string | No | `git` | SSH username used with `"ssh-agent"` or `"ssh-key"` |
-| `ssh_key_path` | string | Conditional | - | Path to a private key file. Required for `"ssh-key"` |
+| `ssh_key_path` | string | Conditional | - | Path to a private key file. Required for `"ssh-key"` in this schema. A path declared only here is not persisted |
 
-**Method behavior:**
+**Method behavior** (import-time auth from CLI flags and the REST `auth` object, which is what updates read):
 
 | Method | Transport | Credential source | Persisted |
 |--------|-----------|-------------------|-----------|
 | `token` | HTTPS | `credential_ref` (vault) - resolved on every clone/fetch | Reference only |
 | `ssh-agent` | SSH | Ambient `SSH_AUTH_SOCK` | None |
-| `ssh-key` | SSH | `ssh_key_path` on disk (optionally decrypted with `GRIDCTL_SSH_KEY_PASSPHRASE`) | Path only |
+| `ssh-key` | SSH | `ssh_key_path` on disk (optionally decrypted with `GRIDCTL_SSH_KEY_PASSPHRASE`, re-read from the environment and never stored) | Path only, written to the origin sidecar and lockfile at import |
 | `none` / omitted | HTTPS or SSH | Ambient `GITHUB_TOKEN` env for HTTPS; `SSH_AUTH_SOCK` for SSH | None |
 
 **Security rules:**
 
 - Raw PAT or SSH key material must never appear in `skills.yaml`, the lock file, or origin sidecars.
-- `credential_ref` is the only credential field persisted; the live variable store is consulted on every remote operation so rotating a secret takes effect immediately.
+- Two non-secret fields are persisted at import: `credential_ref`, and the ssh key path (`ssh_key_path` in the lockfile, `sshKeyPath` in the origin sidecar). The live variable store is consulted on every remote operation that carries a reference, so rotating a secret takes effect immediately. The passphrase is re-read from `GRIDCTL_SSH_KEY_PASSPHRASE` and is never written. Literal and piped tokens persist nothing.
+- `skills.yaml` `auth:` is not consulted by `skill update`. The persisted path is the one written to the origin sidecar and lockfile at import, not a path declared only in `skills.yaml`.
 - Prefer `credential_ref` over embedding credentials in the `repo` URL (`https://TOKEN@host/...`). Any userinfo or known PAT patterns that do leak into errors and logs are scrubbed by the redaction layer, but vault references keep them out of on-disk state entirely.
-- The CLI equivalents are `--auth-token <pat>` (ephemeral), `--vault-key <key>` (persisted as `credential_ref`), and `--ssh-key <path>` on `skill add` / `skill try`.
+- The CLI equivalents are `--auth-token <pat>` (ephemeral, not persisted), `--vault-key <key>` (persisted as `credential_ref`), and `--ssh-key <path>` (persisted as an absolute path) on `skill add` / `skill try`.
 
 ---
 

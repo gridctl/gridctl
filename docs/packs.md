@@ -41,7 +41,9 @@ defaults of false, true, and string for the first three fields. Import records
 the declarations and lists unmet required keys with `gridctl var set KEY`
 commands. It never imports a value, edits a stack, writes the variable store,
 or prompts. Packs without declarations retain the version-two lock shape;
-version three is used only when declarations must be represented.
+version three is used only when declarations must be represented. A source
+imported with `--ssh-key` raises the stamp to version four, and gridctl
+releases before this change refuse such a file.
 
 ## Verbs
 
@@ -56,14 +58,14 @@ version three is used only when declarations must be represented.
 
 A pack is a git repository, so a private one needs credentials the same way an imported skill source does. `gridctl pack add` takes the same flags as `gridctl skill add`:
 
-- `--vault-key <key>`: resolves the token from a `${var:KEY}` vault entry. Prefer this. It is the only form gridctl can re-resolve later, so it is the only one where a private pack keeps updating after the first import.
-- `--auth-token-stdin`: reads the token from stdin, keeping it out of shell history and out of the process list. `--auth-token -` does the same thing.
-- `--auth-token <pat>`: an ephemeral HTTPS token, kept for CI ergonomics. Passing a literal value prints a warning, because the value lands in your shell history and is visible to anyone who can run `ps`.
-- `--ssh-key <path>`: an SSH private key path. Set `GRIDCTL_SSH_KEY_PASSPHRASE` if the key is encrypted.
+- `--vault-key <key>`: resolves the token from a `${var:KEY}` vault entry. Prefer this for HTTPS. The reference is persisted, and a later `pack add` with no auth flags reuses it, including wiring-only packs and rules.
+- `--auth-token-stdin`: reads the token from stdin, keeping it out of shell history and out of the process list. `--auth-token -` does the same thing. The token is not persisted.
+- `--auth-token <pat>`: an ephemeral HTTPS token, kept for CI ergonomics. Passing a literal value prints a warning, because the value lands in your shell history and is visible to anyone who can run `ps`. The token is not persisted.
+- `--ssh-key <path>`: an SSH private key path. The absolute path is persisted (never key material), and a later `pack add` with no auth flags reuses it, including wiring-only packs and rules. Set `GRIDCTL_SSH_KEY_PASSPHRASE` if the key is encrypted; the passphrase is re-read from the environment and is not stored.
 
-Only the reference is ever written to disk. A pack imported with `--vault-key GIT_TOKEN` records `${var:GIT_TOKEN}` in the import lockfile and in each resource's origin sidecar, never the token value, and a later `gridctl skill update` re-resolves it with nothing re-supplied. A pack imported with a literal or piped token records no reference at all, by design, so its next update falls back to ambient credentials.
+A pack imported with `--vault-key GIT_TOKEN` records `${var:GIT_TOKEN}` in the import lockfile and in each resource's origin sidecar, never the token value, and a later `gridctl skill update` or `gridctl pack add` with no auth flags re-resolves it. A pack imported with `--ssh-key` records the absolute key path in those same files, never the key or the passphrase. A pack imported with a literal or piped token records neither, by design, so its next update falls back to ambient credentials.
 
-Over REST, `POST /api/packs` and `POST /api/packs/preview` accept the same optional `auth` object the skill source endpoints take. Omit it on a repository that was already imported with a `--vault-key` reference and the stored reference is used automatically, which is how the web UI's update dialog previews a private pack without asking for anything.
+Over REST, `POST /api/packs` and `POST /api/packs/preview` accept the same optional `auth` object the skill source endpoints take. Omit it on a repository that was already imported with a `--vault-key` reference or an `--ssh-key` path and the stored auth is used automatically, which is how the web UI's update dialog previews a private pack without asking for anything. A relative `sshKeyPath` is rejected, because the daemon's working directory is not the caller's.
 
 ### The daemon and ssh-agent
 

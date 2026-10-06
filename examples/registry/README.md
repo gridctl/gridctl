@@ -9,7 +9,7 @@ Examples demonstrating the skills and agents registry. Skills follow the [agents
 | `registry-basic.yaml` | Single server with basic Agent Skills |
 | `registry-advanced.yaml` | Two servers; comments show the cross-server `allowed-tools` pattern |
 | `model-preferences.yaml` | Stack-level model preference defaults and overrides for projected skills and agents |
-| `skills.yaml` | Remote skill source list (public, private HTTPS via the variable store, private SSH via ssh-agent) |
+| `skills.yaml` | Library source list for auto-update display; `skill update` does not read it |
 | `items/code-review/` | Pre-made skill: code review checklist |
 | `items/explain-error/` | Pre-made skill: error explanation helper |
 
@@ -41,24 +41,22 @@ Skills are managed via the REST API or Web UI - they are **not** declared in sta
 
 ## Skill Sources
 
-`skills.yaml` (separate from the stack YAML above) declares **remote git repositories** that gridctl clones to import SKILL.md files (and any `agents/*.md` definitions the repo ships). It lives at `~/.gridctl/skills.yaml` and is consumed by `gridctl skill update`.
+`skills.yaml` (separate from the stack YAML above) declares **remote git repositories** that gridctl can list as skill sources. It lives at `~/.gridctl/skills.yaml` and is read by the Library source list for auto-update display. `gridctl skill update` does not consult it. Updates authenticate from the origin sidecar and `skills.lock.yaml` written at import.
 
 ```bash
-# Use the provided example (edit sources first, stage any vault keys):
+# Display list only. This does not import skills, and skill update does not read the file.
 cp examples/registry/skills.yaml ~/.gridctl/skills.yaml
-gridctl var set GIT_TOKEN --value ghp_xxxxxxxxxxxxxxxxxxxx   # only if using token auth
-gridctl skill update
 ```
 
-Private repos are supported via three auth methods, declared under `auth:`:
+Private repos are authenticated at import, not by an `auth:` block in `skills.yaml` (that block is not consulted by `skill update`):
 
 | Method | Use when |
 |--------|----------|
-| `token` + `credential_ref: ${var:KEY}` | Private HTTPS repo; PAT stored in the encrypted variable store and re-resolved on every fetch |
-| `ssh-agent` | Private SSH URL; uses the user's ambient ssh-agent + `~/.ssh/known_hosts` |
-| `ssh-key` + `ssh_key_path` | Private SSH URL with an explicit on-disk key |
+| `--vault-key` (`${var:KEY}`) | Private HTTPS repo; the reference is persisted and re-resolved on every update |
+| ssh-agent | Private SSH URL; uses the process's ambient ssh-agent. Nothing is persisted, so a later update needs an agent in that process |
+| `--ssh-key` | Private SSH URL; the absolute key path is persisted (never key material). `GRIDCTL_SSH_KEY_PASSPHRASE` is re-read from the environment and is not stored |
 
-See [`docs/config-schema.md`](../../docs/config-schema.md#skill-sources) for the full field reference. One-shot / CI use can skip `skills.yaml` entirely and pass `--auth-token` or `--vault-key` directly to `gridctl skill add`.
+Literal and piped tokens persist nothing. See [`docs/config-schema.md`](../../docs/config-schema.md#skill-sources) for the full field reference. One-shot / CI use can skip `skills.yaml` entirely and pass `--auth-token` or `--vault-key` directly to `gridctl skill add`. Only `--vault-key` and `--ssh-key` survive for a later update.
 
 ## Prerequisites
 

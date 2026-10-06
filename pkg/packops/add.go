@@ -29,9 +29,9 @@ type AddOptions struct {
 	// import with per-resource skips, its documented contract); the REST
 	// layer sets it so a 409 can never follow a half-done import.
 	BlockOnFindings bool
-	// Auth authenticates the clone and, when it carries a CredentialRef,
-	// is persisted by reference so a later update re-resolves without the
-	// caller re-supplying credentials. A zero value keeps the ambient
+	// Auth authenticates the clone. A CredentialRef is persisted and
+	// re-resolved later. An ssh-key path is persisted (never key material
+	// or a passphrase) and reused later. A zero value keeps the ambient
 	// behavior (ssh-agent for SSH, GITHUB_TOKEN for HTTPS, else anonymous).
 	Auth skills.AuthConfig
 }
@@ -184,7 +184,7 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 		res.Doc.Rules = resolved.rules
 	}
 	if !opts.DryRun {
-		if err := recordLockedPack(ctx, m.lockPath(), manifest, resolved, opts.Repo, opts.Ref, clone.CommitSHA, opts.Auth.CredentialRef); err != nil {
+		if err := recordLockedPack(ctx, m.lockPath(), manifest, resolved, opts.Repo, opts.Ref, clone.CommitSHA, opts.Auth); err != nil {
 			return nil, err
 		}
 	}
@@ -409,16 +409,26 @@ func priorPackRules(lockPath, packName string) map[string]skills.LockedRule {
 // selection). The whole read-modify-write cycle holds the import
 // lockfile's cross-process lock.
 //
-// credentialRef is carried onto a source this function creates. On the
-// normal path Import has already written it; this branch runs precisely
-// when Import wrote nothing, and without it a wiring-only private pack
-// would record no way to authenticate its next update.
-func recordLockedPack(ctx context.Context, lockPath string, m *pack.Manifest, resolved resolvedSelection, repo, ref, commitSHA, credentialRef string) error {
+// auth is carried onto a source this function creates. On the normal
+// path Import has already written the vault reference or ssh-key path;
+// this branch runs precisely when Import wrote nothing, and without it a
+// wiring-only private pack would record no way to authenticate its next
+// update. Token values and passphrases are not written.
+func recordLockedPack(ctx context.Context, lockPath string, m *pack.Manifest, resolved resolvedSelection, repo, ref, commitSHA string, auth skills.AuthConfig) error {
 	return skills.MutateLockFile(ctx, lockPath, func(lf *skills.LockFile) (bool, error) {
 		sourceName := skills.RepoToName(repo)
 		src, ok := lf.Sources[sourceName]
 		if !ok {
-			src = skills.LockedSource{Repo: repo, Ref: ref, CommitSHA: commitSHA, CredentialRef: credentialRef}
+			method, user, path := persistedPackSSH(auth)
+			src = skills.LockedSource{
+				Repo:          repo,
+				Ref:           ref,
+				CommitSHA:     commitSHA,
+				CredentialRef: auth.CredentialRef,
+				AuthMethod:    method,
+				SSHUser:       user,
+				SSHKeyPath:    path,
+			}
 		}
 		src.Pack = &skills.LockedPack{
 			Name:        m.Name,
@@ -437,6 +447,16 @@ func recordLockedPack(ctx context.Context, lockPath string, m *pack.Manifest, re
 		lf.SetSource(sourceName, src)
 		return true, nil
 	})
+}
+
+// persistedPackSSH mirrors skills.persistedAuth. The helper is unexported
+// in pkg/skills, so the wiring-only create path applies the same rule here:
+// only an ssh-key method with a path is stored, never a passphrase.
+func persistedPackSSH(cfg skills.AuthConfig) (method, user, path string) {
+	if cfg.Method == "ssh-key" && cfg.SSHKeyPath != "" {
+		return cfg.Method, cfg.SSHUser, cfg.SSHKeyPath
+	}
+	return "", "", ""
 }
 
 func lockedVariableDeclarations(in map[string]pack.VariableDeclaration) map[string]skills.LockedVariableDeclaration {

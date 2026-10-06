@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gridctl/gridctl/pkg/pack"
 	"github.com/gridctl/gridctl/pkg/skills"
 )
 
@@ -119,6 +120,41 @@ func TestAdd_NeverPersistsTheTokenItself(t *testing.T) {
 	})
 	if len(found) > 0 {
 		t.Errorf("token value written to disk in: %v", found)
+	}
+}
+
+func TestRecordLockedPack_CarriesSSHKeyAuth(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+
+	const (
+		repo       = "ssh://git@127.0.0.1:1/wiring.git"
+		passphrase = "must-not-persist"
+		keyPath    = "/abs/key"
+	)
+	err := recordLockedPack(context.Background(), skills.LockFilePath(), &pack.Manifest{
+		Name: "wiring-pack", Version: "1.0.0", Wiring: true,
+	}, resolvedSelection{}, repo, "main", "abc", skills.AuthConfig{
+		Method:        "ssh-key",
+		SSHUser:       "git",
+		SSHKeyPath:    keyPath,
+		SSHPassphrase: passphrase,
+	})
+	if err != nil {
+		t.Fatalf("recordLockedPack: %v", err)
+	}
+
+	src := lockedSourceFor(t, repo)
+	if src.AuthMethod != "ssh-key" || src.SSHUser != "git" || src.SSHKeyPath != keyPath {
+		t.Fatalf("stored ssh auth = method %q user %q path %q", src.AuthMethod, src.SSHUser, src.SSHKeyPath)
+	}
+	raw, err := os.ReadFile(skills.LockFilePath())
+	if err != nil {
+		t.Fatalf("read lockfile: %v", err)
+	}
+	if strings.Contains(string(raw), passphrase) {
+		t.Error("lockfile contains the passphrase")
 	}
 }
 

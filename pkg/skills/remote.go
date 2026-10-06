@@ -154,13 +154,14 @@ func FetchAndCompare(repo, ref, currentSHA string, auth AuthConfig, logger *slog
 	}
 
 	if err := gitpkg.Fetch(context.Background(), repoPath, gitpkg.FetchOptions{AllTags: true, AllBranches: true, Auth: authMethod}, logger); err != nil {
-		logger.Warn("fetch failed", "error", gitpkg.RedactError(err))
-		return currentSHA, false, nil
+		classified := fetchCompareErr(repo, err)
+		logger.Warn("fetch failed", "error", classified)
+		return currentSHA, false, classified
 	}
 
 	r, err := gitpkg.Open(repoPath)
 	if err != nil {
-		return currentSHA, false, nil
+		return currentSHA, false, fetchCompareErr(repo, err)
 	}
 
 	// Resolve against remote-tracking state, never the local HEAD: a fetch
@@ -168,13 +169,20 @@ func FetchAndCompare(repo, ref, currentSHA string, auth AuthConfig, logger *slog
 	// still describe the previous sync and would mask upstream changes.
 	target, err := semverTarget(repoPath, ref)
 	if err != nil {
-		return currentSHA, false, nil
+		return currentSHA, false, fetchCompareErr(repo, err)
 	}
 	newSHA, err := gitpkg.ResolveRemoteRef(r, target)
 	if err != nil {
-		return currentSHA, false, nil
+		return currentSHA, false, fetchCompareErr(repo, err)
 	}
 	return newSHA, newSHA != currentSHA, nil
+}
+
+// fetchCompareErr classifies and redacts a freshness-check failure so the
+// caller can tell a failed fetch from "already up to date".
+func fetchCompareErr(repo string, err error) error {
+	wrapped := fmt.Errorf("fetching %s: %w", gitpkg.RedactURL(repo), err)
+	return gitpkg.RedactError(gitpkg.ClassifyError(wrapped))
 }
 
 // semverTarget resolves a semver-constraint ref to its best matching tag in

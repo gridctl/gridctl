@@ -1,11 +1,14 @@
 package skills
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/builder"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -118,4 +121,36 @@ func TestCheckUpdatesBackground_DisabledByEnv(t *testing.T) {
 
 	// Should return immediately
 	CheckUpdatesBackground("/nonexistent", nil)
+}
+
+func TestCheckAllUpdates_SSHKeyOriginUsesStoredPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+	t.Setenv("SSH_AUTH_SOCK", "")
+
+	registryDir := t.TempDir()
+	skillDir := filepath.Join(registryDir, "skills", "private-skill")
+	require.NoError(t, os.MkdirAll(skillDir, 0o755))
+
+	const (
+		keyPath = "/no/such/ssh/key"
+		repo    = "ssh://git@127.0.0.1:1/private.git"
+	)
+	require.NoError(t, WriteOrigin(skillDir, &Origin{
+		Repo:       repo,
+		Ref:        "main",
+		CommitSHA:  "abc123",
+		AuthMethod: "ssh-key",
+		SSHUser:    "git",
+		SSHKeyPath: keyPath,
+	}))
+
+	cache, err := builder.URLToPath(repo)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(cache, 0o755))
+
+	status := checkAllUpdates(registryDir, slog.Default())
+	require.NotEmpty(t, status.Errors)
+	assert.Contains(t, strings.Join(status.Errors, "\n"), keyPath)
 }
