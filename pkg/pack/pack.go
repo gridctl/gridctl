@@ -16,6 +16,8 @@ package pack
 import (
 	"fmt"
 	"os"
+	"path"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -76,6 +78,9 @@ type Manifest struct {
 	// Variables documents value-free prerequisites. Installing a pack never
 	// writes these declarations to a stack or variable store.
 	Variables map[string]VariableDeclaration `yaml:"variables,omitempty" json:"variables,omitempty"`
+	// Stack names a stack file inside this repository. Empty means the
+	// pack carries no stack and apply does not start a gateway.
+	Stack string `yaml:"stack,omitempty" json:"stack,omitempty"`
 }
 
 // VariableDeclaration documents a pack prerequisite.
@@ -135,7 +140,27 @@ func (m *Manifest) Validate() error {
 			return fmt.Errorf("variable %q has unsupported type %q", key, declaration.Type)
 		}
 	}
+	if err := validateStackPath(m.Stack); err != nil {
+		return err
+	}
 	return m.validateRuleNames()
+}
+
+// validateStackPath accepts an empty path and otherwise requires a
+// slash-separated relative path that stays inside the pack repository.
+func validateStackPath(p string) error {
+	if p == "" {
+		return nil
+	}
+	if path.Clean(p) != p || path.IsAbs(p) || filepath.IsAbs(p) || strings.Contains(p, `\`) {
+		return fmt.Errorf("stack path %q must be a relative path inside the pack repository", p)
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if seg == ".." {
+			return fmt.Errorf("stack path %q must be a relative path inside the pack repository", p)
+		}
+	}
+	return nil
 }
 
 // Warnings reports advisory conditions a valid manifest still carries.
