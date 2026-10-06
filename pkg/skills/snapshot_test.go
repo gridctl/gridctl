@@ -106,11 +106,12 @@ func TestSnapshotWorktree_Caps(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(src, "big"), []byte("12345"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		_, err := SnapshotWorktree(context.Background(), src, filepath.Join(t.TempDir(), "out"))
+		dest := filepath.Join(t.TempDir(), "out")
+		_, err := SnapshotWorktree(context.Background(), src, dest)
 		if err == nil || !strings.Contains(err.Error(), "5 MiB") {
 			t.Fatalf("error = %v", err)
 		}
-		if _, statErr := os.Stat(filepath.Join(t.TempDir(), "out")); !os.IsNotExist(statErr) {
+		if _, statErr := os.Stat(dest); !os.IsNotExist(statErr) {
 			t.Fatal("partial checkout survived")
 		}
 	})
@@ -122,9 +123,13 @@ func TestSnapshotWorktree_Caps(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		_, err := SnapshotWorktree(context.Background(), src, filepath.Join(t.TempDir(), "out"))
+		dest := filepath.Join(t.TempDir(), "out")
+		_, err := SnapshotWorktree(context.Background(), src, dest)
 		if err == nil || !strings.Contains(err.Error(), "5000") {
 			t.Fatalf("error = %v", err)
+		}
+		if _, statErr := os.Stat(dest); !os.IsNotExist(statErr) {
+			t.Fatal("partial checkout survived")
 		}
 	})
 	t.Run("total", func(t *testing.T) {
@@ -134,9 +139,13 @@ func TestSnapshotWorktree_Caps(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(src, "a"), []byte("12345"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		_, err := SnapshotWorktree(context.Background(), src, filepath.Join(t.TempDir(), "out"))
+		dest := filepath.Join(t.TempDir(), "out")
+		_, err := SnapshotWorktree(context.Background(), src, dest)
 		if err == nil || !strings.Contains(err.Error(), "64 MiB") {
 			t.Fatalf("error = %v", err)
+		}
+		if _, statErr := os.Stat(dest); !os.IsNotExist(statErr) {
+			t.Fatal("partial checkout survived")
 		}
 	})
 }
