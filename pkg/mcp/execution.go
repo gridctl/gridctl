@@ -297,6 +297,14 @@ func (c *executionClient) CallTool(ctx context.Context, name string, arguments m
 	return c.AgentClient.CallTool(ctx, name, arguments)
 }
 
+func (c *executionClient) InspectContainer(ctx context.Context) (*ContainerExit, error) {
+	inspector, ok := c.AgentClient.(containerInspector)
+	if !ok {
+		return nil, nil
+	}
+	return inspector.InspectContainer(ctx)
+}
+
 func (c *executionClient) Ping(ctx context.Context) error {
 	if err := c.admit(ctx); err != nil {
 		return err
