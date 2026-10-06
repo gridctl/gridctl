@@ -206,9 +206,9 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
 
 The `source` object can contain `type`, redacted `url`, declared `ref`, `package`, resolved `version`, immutable Git `commit`, and selected PyPI `artifact`. Empty fields are omitted. When an older image has no provenance labels, the API falls back to the declared PyPI package and version but does not guess a commit or artifact.
 
-Unhealthy servers may include `stderrTail`, up to the last 10 redacted `server stderr` lines for that server from the gateway log ring, oldest first. Healthy servers omit the field. The lines are the same ones `GET /api/logs` and `GET /api/mcp-servers/{name}/logs` return; gridctl does not keep a second raw buffer. A busy server can push older lines out of the 1000-entry ring.
+A server includes `stderrTail` only when `healthy` is false: up to the last 10 redacted `server stderr` lines for that server from the gateway log ring, oldest first. A healthy server, or one with no health result yet, omits the field, as does an unhealthy server with no matching lines. The lines are the same ones `GET /api/logs` and `GET /api/mcp-servers/{name}/logs` return; gridctl does not keep a second raw buffer. A busy server can push older lines out of the 1000-entry ring. The ring does not replay output from before the gateway attached.
 
-`replicas[]` may include `exit` after a failed health check inspects a stopped container. The object has `code` (int), `oomKilled` (bool), `finishedAt` (RFC3339, omitted when the runtime reports the zero timestamp), `status` (runtime status string such as `exited` or `stopped`), and optional `error`. A running container, a non-container replica, or an inspect failure omits `exit`. `lastError` remains the ping error and is not replaced by the exit record.
+`replicas[]` may include `exit` after a failed health check inspects a stopped container. The object has `code` (int), `oomKilled` (bool), `finishedAt` (RFC3339, omitted when the runtime reports the zero timestamp), `status` (runtime status string such as `exited` or `stopped`), and optional `error`. A running container, a non-container replica, an inspect failure, or a later successful ping omits `exit`. `lastError` remains the ping error and is not replaced by the exit record. [`/api/stack/health`](#get-apistackhealth) does not copy `exit` or `stderrTail`.
 
 Each registered server also reports `promptCount`, `mcpResourceCount`, and `resourceTemplateCount` from the last successful list. Computing status does not list downstream servers again. `mcpResourceCount` counts MCP resources, not the infrastructure `resources` array on this response. `capabilities` reports the booleans the downstream declared: `prompts`, `resources`, `resourcesSubscribe`, and `resourcesListChanged`. The gateway does not advertise subscribe or list-changed upstream. `resourceCollisions` counts resource URIs, identical templates, and `ui://` index entries this server lost to another server. `resourceListError` is omitted when the last resource list succeeded; otherwise it is `timeout`, `canceled`, `rpc`, or `transport`. It covers `resources/list` and `resources/templates/list` only. A `prompts/list` failure is logged with the server name and category and is not stored on this field. An upstream disconnect is not recorded as a server fault. The Stack sidebar labels the counts Prompts, MCP resources, and Templates, and shows a warning row for a list error or a non-zero collision count.
 
@@ -516,6 +516,8 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/logs?lines=50&
 When `level` is set, the whole buffer is scanned newest-first for up to `lines` entries of the requested levels, so sparse severities are returned even when the most recent entries are all other levels. The web UI's Logs workspace polls this endpoint (window size selectable as 200, 500, or 1000 entries, 500 by default) and filters client-side.
 
 Tool-call log lines carry `server`, `tool`, `replica_id`, and (when the caller is identified) `client` in `attrs`, plus a top-level `trace_id` when tracing is enabled, for correlation with `/api/traces`.
+
+Container and local-process stderr captured after attach is a WARN `server stderr` entry with `server` and `output` in `attrs`. Rejected stdio requests (`server request rejected`, with `method` and `code`) and dropped notifications (`server notification dropped`, with `method`) are DEBUG, as are skipped HTTP and SSE no-id notifications (`server notification skipped`, with `method`). Params are not logged. A method-plus-id HTTP event is not logged as a skipped notification; the decoder still returns it as the call result. Those DEBUG lines are absent unless the gateway log level is debug.
 
 Shared redaction masks recognizable typed capability strings in log messages,
 keys, and nested JSON-compatible attributes. A nested attribute containing a
@@ -1371,7 +1373,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/stack/health
 }
 ```
 
-`validation.status` is `valid`, `warnings`, or `errors`. `drift.status` is `in-sync`, `drifted`, or `unknown`.
+`validation.status` is `valid`, `warnings`, or `errors`. `drift.status` is `in-sync`, `drifted`, or `unknown`. Replica entries here do not include `exit` or server `stderrTail`. Those fields are on [`/api/mcp-servers`](#get-apimcp-servers) and [`/api/status`](#get-apistatus).
 
 #### `GET /api/stack/spec`
 
@@ -1614,7 +1616,7 @@ Returns structured log entries from the gateway log buffer filtered to the named
 curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/mcp-servers/github/logs?lines=50"
 ```
 
-The response is the same JSON array of buffered entries as [`/api/logs`](#get-apilogs), limited to entries tagged with the requested server. The buffer is scanned newest-first for up to `lines` matching entries, so servers with a small share of the buffer still get their full history within the ring. Returns an empty array (`[]`) when no log buffer is configured.
+The response is the same JSON array of buffered entries as [`/api/logs`](#get-apilogs), limited to entries tagged with the requested server. The buffer is scanned newest-first for up to `lines` matching entries, so servers with a small share of the buffer still get their full history within the ring. Returns an empty array (`[]`) when no log buffer is configured. WARN `server stderr` lines for that server appear here after attach, including after the container is removed, until the ring drops them.
 
 #### `PUT /api/mcp-servers/{name}/tools`
 

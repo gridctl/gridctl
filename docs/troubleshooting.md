@@ -300,13 +300,14 @@ Digest and tag-plus-digest references match locally cached `RepoDigests`, includ
 
 **Symptoms:**
 
-The Stack node is red or amber, health reads failed, and tool calls return `connection lost`. The container is gone from `docker ps`, or `gridctl status` shows it exited.
+The Stack node is red, or amber while backoff is running. The health strip may show both an exit summary and a retry line, such as `exited 3; restarting (attempt 1, retry in 4s)`, with `, OOM killed` when the runtime set that flag. Tool calls return `connection lost`. The container may already be gone from `docker ps`.
 
 **Resolution:**
 
 1. Read gridctl's own record before the runtime logs. `gridctl status --replicas` appends `; exited <code>` and ` (OOM)` when the health check could inspect the container. `gridctl status --json` carries `replicas[].exit`, `lastError`, and `stderrTail` on the unhealthy server. The Logs workspace source filter, `GET /api/logs`, and `GET /api/mcp-servers/{name}/logs` show WARN `server stderr` lines captured after attach. The Stack inspector lists the same exit fields and recent stderr beside the execution evidence.
 2. If the container is still present, `gridctl logs --server <name>` and `docker logs` can show output from before the gateway attached. Those commands stop working once the container is removed. The ring does not replay pre-attach output, and a verbose server can crowd out older lines.
 3. An OOM exit (`oomKilled: true`, often code 137) needs a larger memory limit. A non-zero exit without OOM is the process's own failure; the stderr tail is the first place to look.
+4. A server that stops after the gateway rejects its request leaves a DEBUG line, not a stderr line. `server request rejected` and `server notification dropped` (stdio and local process) and `server notification skipped` (HTTP and SSE, no-id notifications only) appear only when the daemon was started with `--log-level debug`. Params are not logged.
 
 ### Container fails to start
 
@@ -425,7 +426,7 @@ Tool calls fail with `connection lost` after working initially.
 
 **Resolution:**
 
-1. Check gridctl before the runtime. `gridctl status --json` includes `lastError` and `replicas[].exit` (`code`, `oomKilled`, `finishedAt`, `status`). The Logs source filter and `GET /api/mcp-servers/{name}/logs` show `server stderr` captured while the gateway was attached. The Stack node shows `restarting` with the attempt count and next retry while backoff is running.
+1. Check gridctl before the runtime. `gridctl status --json` includes `lastError` and `replicas[].exit` (`code`, `oomKilled`, `finishedAt`, `status`) when a stopped container was inspected, plus `stderrTail` on the unhealthy server. The Logs source filter and `GET /api/mcp-servers/{name}/logs` show WARN `server stderr` captured while the gateway was attached. The Stack node shows amber `restarting` with the attempt count and next retry while backoff is running. See [Container exits immediately](#container-exits-immediately) for the exit annotation and debug peer lines.
 2. If the container still exists, confirm it with the runtime:
    ```bash
    docker ps -a | grep gridctl
