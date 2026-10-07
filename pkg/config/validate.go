@@ -20,6 +20,19 @@ var sourceExtraPattern = regexp.MustCompile(`^[a-z0-9]+(?:[-_.][a-z0-9]+)*$`)
 var sourceDependencyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*(?:\[[A-Za-z0-9,._-]+\])?(?:\s*(?:===|==|!=|~=|<=|>=|<|>)\s*[A-Za-z0-9*+.!_-]+)?(?:\s*;\s*[A-Za-z0-9_. -]+(?:==|!=|<=|>=|<|>)\s*["'][A-Za-z0-9_. -]+["'])?$`)
 var sourceDebianPackagePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*$`)
 
+func validateRestart(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	if raw == "unless-stopped" {
+		return fmt.Errorf("unless-stopped is not accepted; gridctl cannot distinguish an operator stop from a crash (accepted: always, on-failure, on-failure:N with N >= 1, no)")
+	}
+	if resolveRestartPolicy(raw).Mode == "" {
+		return fmt.Errorf("invalid restart %q (accepted: always, on-failure, on-failure:N with N >= 1, no)", raw)
+	}
+	return nil
+}
+
 // maxReplicas is the sanity cap on MCPServer.Replicas. Values above this
 // are almost certainly a config error; the cap also bounds per-server
 // fan-out costs for things like health checking and least-connections scans.
@@ -491,6 +504,12 @@ func Validate(s *Stack) error {
 			} else if d < 0 {
 				errs = append(errs, ValidationError{prefix + ".ping_timeout", "must be non-negative"})
 			}
+		}
+
+		// restart is only applied to managed stdio containers. Other server
+		// kinds accept it and ignore it, matching ready_timeout.
+		if err := validateRestart(server.Restart); err != nil {
+			errs = append(errs, ValidationError{prefix + ".restart", err.Error()})
 		}
 
 		// Replica validation.

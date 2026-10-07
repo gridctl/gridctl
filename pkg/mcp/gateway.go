@@ -19,7 +19,6 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/docker/docker/api/types/container"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/execution"
 	"github.com/gridctl/gridctl/pkg/format"
@@ -75,6 +74,11 @@ type MCPServerConfig struct {
 	// Zero uses DefaultPingTimeout. Useful for slow upstreams (e.g. HTTP servers
 	// with many tools) where the 5s default can flake under autoscale spawn load.
 	PingTimeout time.Duration
+
+	// RestartPolicy is the operator's restart: value for a managed stdio
+	// container. Empty means always. Other transports accept the value and
+	// ignore it.
+	RestartPolicy string
 
 	// ProtocolGeneration is the operator's protocol_generation pin
 	// ("", "auto", "handshake", "stateless"). Empty and "auto" probe;
@@ -779,18 +783,7 @@ func (g *Gateway) attemptPendingRegistration(ctx context.Context, name, policy s
 			c.ContainerID == "" || g.dockerCli == nil {
 			continue
 		}
-		if c.Execution != nil {
-			if c.ExecutionBeforeStart == nil {
-				g.advancePendingBackoff(name, fmt.Errorf("execution: recovery admission unavailable"))
-				return
-			}
-			if err := c.ExecutionBeforeStart(ctx); err != nil {
-				g.advancePendingBackoff(name, err)
-				return
-			}
-		}
-		timeout := 10
-		if err := g.dockerCli.ContainerRestart(ctx, c.ContainerID, container.StopOptions{Timeout: &timeout}); err != nil {
+		if err := g.restartManagedContainer(ctx, name, c.ContainerID, stdioContainerStopTimeout, c.Execution, c.ExecutionBeforeStart); err != nil {
 			g.advancePendingBackoff(name, err)
 			return
 		}
@@ -936,7 +929,7 @@ func (g *Gateway) checkHealth(ctx context.Context) {
 		}
 
 		for _, replica := range set.Replicas() {
-			g.checkReplicaHealth(ctx, name, replica)
+			g.checkReplicaHealth(ctx, name, set, replica)
 		}
 		g.recomputeRollup(name, set)
 	}
@@ -945,13 +938,13 @@ func (g *Gateway) checkHealth(ctx context.Context) {
 // inspectContainerExit records why a container stopped after a failed ping.
 // It does not hold healthMu. A running container, a client that cannot
 // inspect, or an inspect error leaves the result nil.
-func inspectContainerExit(ctx context.Context, logger *slog.Logger, client AgentClient, pingErr error) *ContainerExit {
+func inspectContainerExit(ctx context.Context, logger *slog.Logger, client AgentClient, pingErr error) (*ContainerExit, error) {
 	if pingErr == nil {
-		return nil
+		return nil, nil
 	}
 	inspector, ok := client.(containerInspector)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	inspectCtx, cancel := context.WithTimeout(ctx, containerInspectTimeout)
 	defer cancel()
@@ -960,14 +953,14 @@ func inspectContainerExit(ctx context.Context, logger *slog.Logger, client Agent
 		if logger != nil {
 			logger.Debug("container inspect failed", "error", err)
 		}
-		return nil
+		return nil, err
 	}
-	return exit
+	return exit, nil
 }
 
 // checkReplicaHealth runs one health cycle for a single replica: ping, update
 // per-replica status, and optionally trigger a backoff-gated Reconnect.
-func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, replica *Replica) {
+func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, set *ReplicaSet, replica *Replica) {
 	client := replica.Client()
 	pingable, ok := client.(Pingable)
 	if !ok {
@@ -979,7 +972,7 @@ func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, rep
 	logger := logging.WithReplicaID(g.logger, replica.ID())
 	now := time.Now()
 	err := pingable.Ping(ctx)
-	exit := inspectContainerExit(ctx, logger, client, err)
+	exit, inspectErr := inspectContainerExit(ctx, logger, client, err)
 
 	g.healthMu.Lock()
 	prev := g.replicaStatusLocked(serverName, replica.ID())
@@ -1020,6 +1013,7 @@ func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, rep
 	if err == nil {
 		replica.SetHealthy(true)
 		replica.Restart().Reset()
+		replica.ClearRestartExhausted()
 		return
 	}
 
@@ -1035,6 +1029,15 @@ func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, rep
 	// Unhealthy: exclude from dispatch and try to restart if eligible.
 	replica.SetHealthy(false)
 
+	if replica.RestartExhausted() {
+		g.rewriteReplicaError(serverName, replica.ID(), replica.RestartExhaustedReason())
+		return
+	}
+	if missingContainer(inspectErr) {
+		g.markRestartTerminal(serverName, replica, removedContainerReason)
+		return
+	}
+
 	rc, reconnectable := client.(Reconnectable)
 	if !reconnectable {
 		return
@@ -1042,6 +1045,36 @@ func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, rep
 	if !replica.Restart().ShouldTry(now) {
 		// Still in backoff window; wait for next check.
 		return
+	}
+
+	restartedContainer := false
+	if g.shouldRestartExitedContainer(serverName, client, exit) {
+		cfg := g.serverMetaCopy(serverName)
+		if reason, refuse := restartRefusal(cfg.RestartPolicy, serverName, exit, replica.ContainerRestarts()); refuse {
+			g.markRestartTerminal(serverName, replica, reason)
+			return
+		}
+		restarts := replica.AddContainerRestart()
+		if execClient, ok := client.(*executionClient); ok {
+			if execClient.config.ExecutionBeforeStart == nil || execClient.config.ContainerID == "" || g.dockerCli == nil {
+				g.noteContainerRestartFailure(logger, serverName, replica, exit, now, fmt.Errorf("execution: replica recovery admission unavailable"))
+				return
+			}
+			g.restartHardenedFromMonitor(ctx, logger, serverName, set, replica, execClient, exit, restarts, now)
+			return
+		}
+		if restartErr := g.restartPlainContainer(ctx, serverName, containerIDOf(client)); restartErr != nil {
+			if missingContainer(restartErr) {
+				// Inspect saw the container, then ContainerRestart reported
+				// it gone. This is the inspect-then-restart race, not a
+				// removal observed before the tick.
+				g.markRestartTerminal(serverName, replica, removedContainerReason)
+				return
+			}
+			g.noteContainerRestartFailure(logger, serverName, replica, exit, now, restartErr)
+			return
+		}
+		restartedContainer = true
 	}
 
 	logger.Info("attempting reconnection", "name", serverName)
@@ -1056,8 +1089,13 @@ func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, rep
 	}
 
 	// Card trust must succeed before a reconnected source returns to rotation.
-	if err := g.verifyClientPins(ctx, serverName, client); err != nil {
-		logger.Warn("pins: verification failed after reconnect", "name", serverName, "error", err)
+	if pinErr := g.verifyClientPins(ctx, serverName, client); pinErr != nil {
+		logger.Warn("pins: verification failed after reconnect", "name", serverName, "error", pinErr)
+		return
+	}
+
+	if restartedContainer {
+		g.recordContainerRestartSuccess(logger, serverName, replica, exit, replica.ContainerRestarts())
 		return
 	}
 
@@ -1076,7 +1114,6 @@ func (g *Gateway) checkReplicaHealth(ctx context.Context, serverName string, rep
 
 	g.router.RefreshTools()
 	logger.Info("MCP server reconnected", "name", serverName)
-
 }
 
 // replicaStatusLocked returns the stored replica health. Callers must hold
@@ -1184,12 +1221,23 @@ func (g *Gateway) ReplicaStatuses(serverName string) []ReplicaStatus {
 	}
 	g.healthMu.RUnlock()
 
+	g.mu.RLock()
+	meta, hasMeta := g.serverMeta[serverName]
+	g.mu.RUnlock()
+	policy := ""
+	if hasMeta && isManagedStdio(meta) {
+		policy = displayRestartPolicy(meta.RestartPolicy)
+	}
+
 	for _, r := range replicas {
 		rs := ReplicaStatus{
-			ReplicaID: r.ID(),
-			Healthy:   r.Healthy(),
-			InFlight:  r.InFlight(),
-			StartedAt: r.StartedAt(),
+			ReplicaID:         r.ID(),
+			Healthy:           r.Healthy(),
+			InFlight:          r.InFlight(),
+			StartedAt:         r.StartedAt(),
+			RestartPolicy:     policy,
+			RestartExhausted:  r.RestartExhausted(),
+			ContainerRestarts: r.ContainerRestarts(),
 		}
 		attempts := r.Restart().Attempts()
 		if source, ok := r.Client().(interface{ ExecutionReport() *execution.Report }); ok {
@@ -1224,7 +1272,7 @@ func (g *Gateway) ReplicaStatuses(serverName string) []ReplicaStatus {
 		case *StdioClient:
 			rs.ContainerID = client.ContainerID()
 		}
-		rs.State = replicaStateString(rs.Healthy, attempts > 0)
+		rs.State = replicaStateString(rs.Healthy, rs.RestartExhausted, attempts > 0)
 		out = append(out, rs)
 	}
 	return out
@@ -1233,10 +1281,13 @@ func (g *Gateway) ReplicaStatuses(serverName string) []ReplicaStatus {
 // replicaStateString maps a replica's health flag and restart-attempt counter
 // to a short state label: "healthy", "restarting" (unhealthy but currently
 // backing off a retry), or "unhealthy" (unhealthy with no retry pending).
-func replicaStateString(healthy bool, hasAttempts bool) string {
+// An exhausted restart budget stays "unhealthy" even when attempts > 0.
+func replicaStateString(healthy, exhausted, hasAttempts bool) string {
 	switch {
 	case healthy:
 		return "healthy"
+	case exhausted:
+		return "unhealthy"
 	case hasAttempts:
 		return "restarting"
 	default:
@@ -2013,21 +2064,13 @@ func (g *Gateway) RestartMCPServer(ctx context.Context, name string) error {
 	// Unregister from router (removes client + cleans tool registry)
 	g.UnregisterMCPServer(name)
 
-	// For stdio (container) transport, restart the Docker container
+	// For stdio (container) transport, restart the Docker container.
 	if cfg.Transport == TransportStdio && !cfg.External && !cfg.LocalProcess && !cfg.SSH && !cfg.OpenAPI && !cfg.A2A {
-		if cfg.Execution != nil {
-			if cfg.ExecutionBeforeStart == nil {
-				return fmt.Errorf("execution: recovery admission unavailable")
-			}
-			if err := cfg.ExecutionBeforeStart(ctx); err != nil {
-				g.RecordRegistrationFailure(name, err)
+		if err := g.restartManagedContainer(ctx, name, cfg.ContainerID, stdioContainerStopTimeout, cfg.Execution, cfg.ExecutionBeforeStart); err != nil {
+			if cfg.Execution != nil && cfg.ExecutionBeforeStart == nil {
 				return err
 			}
-		}
-		if g.dockerCli != nil && cfg.ContainerID != "" {
-			timeout := 10
-			if err := g.dockerCli.ContainerRestart(ctx, cfg.ContainerID, container.StopOptions{Timeout: &timeout}); err != nil {
-				err = fmt.Errorf("restarting container for %s: %w", name, err)
+			if isContainerRestartError(err) {
 				// The server was already unregistered; record the failure so
 				// it does not silently vanish from status and the UI, and
 				// keep it retryable so a failed restart is not permanent.
@@ -2035,6 +2078,8 @@ func (g *Gateway) RestartMCPServer(ctx context.Context, name string) error {
 				g.notePendingRegistrationFailure(name, ReplicaPolicyRoundRobin, []MCPServerConfig{cfg}, err)
 				return err
 			}
+			g.RecordRegistrationFailure(name, err)
+			return err
 		}
 	}
 
@@ -2044,6 +2089,7 @@ func (g *Gateway) RestartMCPServer(ctx context.Context, name string) error {
 		g.RecordRegistrationFailure(name, err)
 		return err
 	}
+	g.clearServerRestartState(name)
 
 	// Update health status to healthy
 	g.healthMu.Lock()
@@ -3001,20 +3047,23 @@ type MCPServerStatus struct {
 // ReplicaStatus reports the live state of a single replica within a
 // ReplicaSet. Uptime is derived from StartedAt at read time by the consumer.
 type ReplicaStatus struct {
-	Execution       *execution.Report `json:"execution,omitempty"`
-	ReplicaID       int               `json:"replicaId"`
-	State           string            `json:"state"` // "healthy" | "unhealthy" | "restarting"
-	Healthy         bool              `json:"healthy"`
-	InFlight        int64             `json:"inFlight"`
-	StartedAt       time.Time         `json:"startedAt,omitempty"`
-	LastCheck       *time.Time        `json:"lastCheck,omitempty"`
-	LastHealthy     *time.Time        `json:"lastHealthy,omitempty"`
-	LastError       string            `json:"lastError,omitempty"`
-	Exit            *ContainerExit    `json:"exit,omitempty"`
-	RestartAttempts uint32            `json:"restartAttempts,omitempty"`
-	NextRetryAt     *time.Time        `json:"nextRetryAt,omitempty"`
-	PID             int               `json:"pid,omitempty"`
-	ContainerID     string            `json:"containerId,omitempty"`
+	Execution         *execution.Report `json:"execution,omitempty"`
+	ReplicaID         int               `json:"replicaId"`
+	State             string            `json:"state"` // "healthy" | "unhealthy" | "restarting"
+	Healthy           bool              `json:"healthy"`
+	InFlight          int64             `json:"inFlight"`
+	StartedAt         time.Time         `json:"startedAt,omitempty"`
+	LastCheck         *time.Time        `json:"lastCheck,omitempty"`
+	LastHealthy       *time.Time        `json:"lastHealthy,omitempty"`
+	LastError         string            `json:"lastError,omitempty"`
+	Exit              *ContainerExit    `json:"exit,omitempty"`
+	RestartAttempts   uint32            `json:"restartAttempts,omitempty"`
+	NextRetryAt       *time.Time        `json:"nextRetryAt,omitempty"`
+	PID               int               `json:"pid,omitempty"`
+	ContainerID       string            `json:"containerId,omitempty"`
+	RestartPolicy     string            `json:"restartPolicy,omitempty"`
+	RestartExhausted  bool              `json:"restartExhausted,omitempty"`
+	ContainerRestarts uint32            `json:"containerRestarts,omitempty"`
 }
 
 // resolveNetworkTransport returns the network.transport attribute value for a

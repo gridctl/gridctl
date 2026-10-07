@@ -473,12 +473,24 @@ func TestGateway_Unregister_RacingRetryCommitDoesNotResurrect(t *testing.T) {
 // which the failure-path test never reaches.
 type restartRecorder struct {
 	dockerclient.DockerClient
-	restarted atomic.Bool
-	err       error
+	restarted   atomic.Bool
+	sawDeadline atomic.Bool
+	err         error
+	id          atomic.Value
+	timeout     atomic.Int32
+	calls       atomic.Int32
 }
 
-func (r *restartRecorder) ContainerRestart(_ context.Context, _ string, _ container.StopOptions) error {
+func (r *restartRecorder) ContainerRestart(ctx context.Context, id string, opts container.StopOptions) error {
+	r.calls.Add(1)
 	r.restarted.Store(true)
+	r.id.Store(id)
+	if opts.Timeout != nil {
+		r.timeout.Store(int32(*opts.Timeout))
+	}
+	if _, ok := ctx.Deadline(); ok {
+		r.sawDeadline.Store(true)
+	}
 	return r.err
 }
 
@@ -510,6 +522,12 @@ func TestGateway_PendingRetry_RestartsStdioContainer(t *testing.T) {
 		settled := pe != nil && !pe.inFlight && pe.backoff.Attempts() > 0
 		g.pendingMu.Unlock()
 		if settled {
+			if rec.timeout.Load() != stdioContainerStopTimeout {
+				t.Fatalf("stop timeout = %d, want %d", rec.timeout.Load(), stdioContainerStopTimeout)
+			}
+			if rec.sawDeadline.Load() {
+				t.Fatal("pending retry must keep the gateway context, not a monitor deadline")
+			}
 			break
 		}
 		if time.Now().After(deadline) {

@@ -185,6 +185,7 @@ func TestServerRegistrar_BuildServerConfig_ContainerStdio(t *testing.T) {
 		Name:      "stdio-server",
 		Transport: "stdio",
 		Tools:     []string{"exec"},
+		Restart:   "on-failure:3",
 	}
 
 	cfg := r.buildServerConfig(server, serverCfg, "/path/to/stack.yaml")
@@ -194,6 +195,9 @@ func TestServerRegistrar_BuildServerConfig_ContainerStdio(t *testing.T) {
 	}
 	if cfg.ContainerID != "container123" {
 		t.Errorf("expected container ID 'container123', got '%s'", cfg.ContainerID)
+	}
+	if cfg.RestartPolicy != "on-failure:3" {
+		t.Errorf("RestartPolicy = %q", cfg.RestartPolicy)
 	}
 }
 
@@ -389,6 +393,7 @@ func TestServerRegistrar_BuildConfigFromMCPServer_Stdio(t *testing.T) {
 		Image:     "my-image:latest",
 		Transport: "stdio",
 		Tools:     []string{"exec"},
+		Restart:   "no",
 	}
 
 	cfg := r.buildConfigFromMCPServer(server, 0, "container-abc", "/path/stack.yaml")
@@ -398,6 +403,9 @@ func TestServerRegistrar_BuildConfigFromMCPServer_Stdio(t *testing.T) {
 	}
 	if cfg.ContainerID != "container-abc" {
 		t.Errorf("expected container ID 'container-abc', got '%s'", cfg.ContainerID)
+	}
+	if cfg.RestartPolicy != "no" {
+		t.Errorf("RestartPolicy = %q", cfg.RestartPolicy)
 	}
 	if len(cfg.Tools) != 1 || cfg.Tools[0] != "exec" {
 		t.Errorf("unexpected tools: %v", cfg.Tools)

@@ -34,6 +34,29 @@ func TestBackoff_ProgressionAndCap(t *testing.T) {
 	}
 }
 
+func TestReplica_MonitorRestartAccounting(t *testing.T) {
+	r := &Replica{restart: &backoffState{}}
+	if r.RestartExhausted() || r.ContainerRestarts() != 0 {
+		t.Fatal("new replica is not clear")
+	}
+	if got := r.AddContainerRestart(); got != 1 || r.ContainerRestarts() != 1 {
+		t.Fatalf("counter = %d", r.ContainerRestarts())
+	}
+	r.SetRestartExhausted("stopped")
+	if !r.RestartExhausted() || r.RestartExhaustedReason() != "stopped" {
+		t.Fatal("exhausted state not recorded")
+	}
+	r.ClearRestartExhausted()
+	if r.RestartExhausted() || r.RestartExhaustedReason() != "" || r.ContainerRestarts() != 1 {
+		t.Fatal("clearing exhausted reset the counter")
+	}
+	r.SetRestartExhausted("stopped")
+	r.ClearMonitorRestartState()
+	if r.RestartExhausted() || r.ContainerRestarts() != 0 {
+		t.Fatal("manual clear left restart state")
+	}
+}
+
 func TestBackoff_ResetReturnsToInitial(t *testing.T) {
 	b := &backoffState{}
 	for i := 0; i < 5; i++ {

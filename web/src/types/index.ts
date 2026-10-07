@@ -41,6 +41,9 @@ export interface ReplicaStatus {
   nextRetryAt?: string;
   pid?: number;
   containerId?: string;
+  restartPolicy?: string;
+  restartExhausted?: boolean;
+  containerRestarts?: number;
 }
 
 export interface ExecutionReport {

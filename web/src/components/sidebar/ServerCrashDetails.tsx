@@ -34,6 +34,26 @@ function ReplicaRow({ replica }: { replica: ReplicaStatus }) {
         <span className="text-sm text-text-muted">Next retry</span>
         <span className="text-xs text-text-secondary font-mono">{formatRetryIn(replica.nextRetryAt)}</span>
       </div>
+      {replica.restartExhausted && (
+        <>
+          <div className="flex justify-between items-center gap-4">
+            <span className="text-sm text-text-muted">Automatic restarts</span>
+            <span className="text-xs text-text-secondary font-mono">stopped</span>
+          </div>
+          <div className="flex justify-between items-start gap-4">
+            <span className="text-sm text-text-muted">Why</span>
+            <span className="text-xs text-text-secondary font-mono text-right">{replica.lastError || '—'}</span>
+          </div>
+          <div className="flex justify-between items-center gap-4">
+            <span className="text-sm text-text-muted">Policy</span>
+            <span className="text-xs text-text-secondary font-mono">{replica.restartPolicy || '—'}</span>
+          </div>
+          <div className="flex justify-between items-center gap-4">
+            <span className="text-sm text-text-muted">Container restarts</span>
+            <span className="text-xs text-text-secondary font-mono">{replica.containerRestarts ?? 0}</span>
+          </div>
+        </>
+      )}
       {replica.exit && (
         <>
           <div className="flex justify-between items-center gap-4">

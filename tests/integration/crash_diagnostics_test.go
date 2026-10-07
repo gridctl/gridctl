@@ -23,7 +23,12 @@ import (
 	"github.com/gridctl/gridctl/pkg/state"
 )
 
-const crashDiagnosticsScript = `import json, sys, time
+const crashDiagnosticsScript = `import json, os, sys, time
+
+marker = "/tmp/crash-again"
+again = os.path.exists(marker)
+if not again:
+    open(marker, "w").close()
 
 def reply(message):
     sys.stdout.write(json.dumps(message) + "\n")
@@ -45,6 +50,8 @@ for line in sys.stdin:
 
 sys.stderr.write("fatal: refusing to continue\n")
 sys.stderr.flush()
+if again:
+    raise SystemExit(3)
 time.sleep(2)
 raise SystemExit(3)
 `
@@ -116,26 +123,36 @@ func TestContainerCrashDiagnostics(t *testing.T) {
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
 		replicas := gateway.ReplicaStatuses("crash")
-		if len(replicas) == 1 && replicas[0].Exit != nil && replicas[0].Exit.Code == 3 && replicas[0].State == "restarting" {
+		if len(replicas) == 1 && replicas[0].Exit != nil && replicas[0].Exit.Code == 3 && replicas[0].ContainerRestarts >= 1 {
 			replica = replicas[0]
 			break
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	if replica.Exit == nil || replica.Exit.Code != 3 || replica.State != "restarting" {
+	if replica.Exit == nil || replica.Exit.Code != 3 || replica.ContainerRestarts < 1 {
 		t.Fatalf("replica = %#v", gateway.ReplicaStatuses("crash"))
 	}
 	if replica.Exit.Status == "" {
 		t.Fatal("runtime status string is empty")
 	}
 	t.Logf("runtime status %q", replica.Exit.Status)
+	sawExit := false
 	stableUntil := time.Now().Add(2 * time.Second)
 	for time.Now().Before(stableUntil) {
 		again := gateway.ReplicaStatuses("crash")
-		if len(again) != 1 || again[0].Exit == nil || again[0].Exit.Code != 3 || again[0].State != "restarting" {
-			t.Fatalf("exit evidence lost after reconnect: %#v", again)
+		if len(again) != 1 {
+			t.Fatalf("replica set changed: %#v", again)
+		}
+		if again[0].Exit != nil {
+			if again[0].Exit.Code != 3 {
+				t.Fatalf("exit evidence replaced: %#v", again)
+			}
+			sawExit = true
 		}
 		time.Sleep(200 * time.Millisecond)
+	}
+	if !sawExit {
+		t.Fatal("exit evidence was not re-recorded across restart cycles")
 	}
 
 	apiServer := api.NewServer(gateway, nil)
@@ -151,39 +168,45 @@ func TestContainerCrashDiagnostics(t *testing.T) {
 		t.Fatal(err)
 	}
 	bin := crashDiagnosticsBinary(t, ctx)
-	cmd := exec.CommandContext(ctx, bin, "status", "--json")
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "GRIDCTL_HOME=" + home, "NO_COLOR=1", "DOCKER_HOST=" + os.Getenv("DOCKER_HOST"), "GRIDCTL_RUNTIME=" + os.Getenv("GRIDCTL_RUNTIME")}
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("status --json: %v", err)
-	}
-	var report struct {
-		MCPServers []struct {
-			Name     string `json:"name"`
-			Replicas []struct {
-				LastError string `json:"lastError"`
-				Exit      *struct {
-					Code int `json:"code"`
-				} `json:"exit"`
-			} `json:"replicas"`
-		} `json:"mcp_servers"`
-	}
-	if err := json.Unmarshal(out, &report); err != nil {
-		t.Fatalf("decode status: %v\n%s", err, out)
-	}
+	statusDeadline := time.Now().Add(20 * time.Second)
+	var out []byte
 	var found bool
-	for _, server := range report.MCPServers {
-		if server.Name != "crash" || len(server.Replicas) == 0 {
-			continue
+	for time.Now().Before(statusDeadline) && !found {
+		cmd := exec.CommandContext(ctx, bin, "status", "--json")
+		cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "GRIDCTL_HOME=" + home, "NO_COLOR=1", "DOCKER_HOST=" + os.Getenv("DOCKER_HOST"), "GRIDCTL_RUNTIME=" + os.Getenv("GRIDCTL_RUNTIME")}
+		out, err = cmd.Output()
+		if err != nil {
+			t.Fatalf("status --json: %v", err)
 		}
-		found = true
-		got := server.Replicas[0]
-		if got.LastError == "" || strings.Contains(got.LastError, "execution.ping") || got.Exit == nil || got.Exit.Code != 3 {
-			t.Fatalf("status replica = %#v\n%s", got, out)
+		var report struct {
+			MCPServers []struct {
+				Name     string `json:"name"`
+				Replicas []struct {
+					LastError string `json:"lastError"`
+					Exit      *struct {
+						Code int `json:"code"`
+					} `json:"exit"`
+				} `json:"replicas"`
+			} `json:"mcp_servers"`
+		}
+		if err := json.Unmarshal(out, &report); err != nil {
+			t.Fatalf("decode status: %v\n%s", err, out)
+		}
+		for _, server := range report.MCPServers {
+			if server.Name != "crash" || len(server.Replicas) == 0 {
+				continue
+			}
+			got := server.Replicas[0]
+			if got.LastError != "" && !strings.Contains(got.LastError, "execution.ping") && got.Exit != nil && got.Exit.Code == 3 {
+				found = true
+			}
+		}
+		if !found {
+			time.Sleep(200 * time.Millisecond)
 		}
 	}
 	if !found {
-		t.Fatalf("status json missing crash server: %s", out)
+		t.Fatalf("status json missing crash exit: %s", out)
 	}
 }
 

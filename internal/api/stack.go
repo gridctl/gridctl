@@ -367,14 +367,17 @@ func (s *Server) collectReplicaHealth() map[string][]config.ReplicaHealth {
 // config.ReplicaHealth shape.
 func toReplicaHealth(r mcp.ReplicaStatus, now time.Time) config.ReplicaHealth {
 	h := config.ReplicaHealth{
-		Execution:       r.Execution,
-		ReplicaID:       r.ReplicaID,
-		State:           r.State,
-		InFlight:        r.InFlight,
-		LastError:       r.LastError,
-		RestartAttempts: r.RestartAttempts,
-		PID:             r.PID,
-		ContainerID:     r.ContainerID,
+		Execution:         r.Execution,
+		ReplicaID:         r.ReplicaID,
+		State:             r.State,
+		InFlight:          r.InFlight,
+		LastError:         r.LastError,
+		RestartAttempts:   r.RestartAttempts,
+		PID:               r.PID,
+		ContainerID:       r.ContainerID,
+		RestartPolicy:     r.RestartPolicy,
+		RestartExhausted:  r.RestartExhausted,
+		ContainerRestarts: r.ContainerRestarts,
 	}
 	if !r.StartedAt.IsZero() && r.Healthy {
 		if d := now.Sub(r.StartedAt); d > 0 {
