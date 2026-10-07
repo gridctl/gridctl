@@ -100,7 +100,10 @@ func (n *listChangeNotifier) trigger() {
 	if n.timer != nil {
 		n.timer.Stop()
 	}
-	n.timer = time.AfterFunc(delay, n.flush)
+	// AfterFunc can run the callback before it returns. Publish the
+	// pointer first so that callback does not race the assignment, and
+	// so a stale callback cannot clear the timer this call just armed.
+	n.timer = armTimer(delay, n.flushFired)
 }
 
 func (n *listChangeNotifier) close() {
@@ -123,9 +126,13 @@ func (n *listChangeNotifier) aborted() bool {
 	return closed || n.ctx.Err() != nil
 }
 
-func (n *listChangeNotifier) flush() {
+func (n *listChangeNotifier) flushFired(fired *time.Timer) {
 	n.mu.Lock()
 	if n.closed || n.ctx.Err() != nil {
+		n.mu.Unlock()
+		return
+	}
+	if fired == nil || n.timer != fired {
 		n.mu.Unlock()
 		return
 	}
@@ -243,9 +250,37 @@ func (g *Gateway) scheduleDownstreamToolRefresh(name string) {
 	if t, ok := g.downstreamTimers[name]; ok {
 		t.Stop()
 	}
-	g.downstreamTimers[name] = time.AfterFunc(delay, func() {
+	g.downstreamTimers[name] = armTimer(delay, func(fired *time.Timer) {
+		if g.dropDownstreamTimer(name, fired) {
+			return
+		}
 		g.refreshServerToolsFromNotification(g.lifeCtx, name)
 	})
+}
+
+// armTimer starts fn with the timer that fired. The send synchronizes
+// that pointer with the callback. AfterFunc can run fn before it returns,
+// and a direct read of the assignment would race.
+func armTimer(delay time.Duration, fn func(*time.Timer)) *time.Timer {
+	ready := make(chan *time.Timer, 1)
+	timer := time.AfterFunc(delay, func() {
+		fn(<-ready)
+	})
+	ready <- timer
+	return timer
+}
+
+// dropDownstreamTimer removes fired when it is still the armed timer.
+// It reports whether the callback must not refresh. Close and a replaced
+// timer both skip the refresh and leave any newer timer in place.
+func (g *Gateway) dropDownstreamTimer(name string, fired *time.Timer) bool {
+	g.downstreamMu.Lock()
+	defer g.downstreamMu.Unlock()
+	if current, ok := g.downstreamTimers[name]; ok && current == fired {
+		delete(g.downstreamTimers, name)
+		return g.downstreamClosed
+	}
+	return true
 }
 
 func (g *Gateway) stopDownstreamRefreshTimers() {

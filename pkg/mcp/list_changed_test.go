@@ -156,6 +156,70 @@ func TestListChangeNotifier_BurstAndNoop(t *testing.T) {
 	sink.waitQuiet(t, before, 30*time.Millisecond)
 }
 
+func TestListChangeNotifier_ZeroDelayPublishesTimer(t *testing.T) {
+	g, sink := newListChangedGateway(t, time.Hour, time.Hour)
+	g.listChanges.mu.Lock()
+	g.listChanges.quiet = 0
+	g.listChanges.mu.Unlock()
+	session := initSession(t, g, "client", "", "")
+	g.Router().AddClient(&listChangedStub{name: "alpha", tools: []Tool{testTool("echo", "hi")}})
+	g.Router().RefreshTools()
+	got := sink.waitFor(t, 1, time.Second)
+	if len(got) != 1 || got[0] != session.ID {
+		t.Fatalf("notifications = %v, want [%s]", got, session.ID)
+	}
+}
+
+func TestListChangeNotifier_RearmKeepsReplacement(t *testing.T) {
+	g, sink := newListChangedGateway(t, time.Hour, time.Hour)
+	initSession(t, g, "client", "", "")
+	g.Router().AddClient(&listChangedStub{name: "alpha", tools: []Tool{testTool("echo", "hi")}})
+	g.Router().RefreshTools()
+
+	n := g.listChanges
+	n.mu.Lock()
+	first := n.timer
+	n.mu.Unlock()
+	if first == nil {
+		t.Fatal("trigger did not arm a timer")
+	}
+	g.Router().RefreshTools()
+	n.mu.Lock()
+	second := n.timer
+	armed := !n.firstTrigger.IsZero()
+	n.mu.Unlock()
+	if second == nil || second == first {
+		t.Fatal("re-arm did not replace the timer")
+	}
+	if !armed {
+		t.Fatal("firstTrigger cleared before flush")
+	}
+
+	n.flushFired(first)
+	n.mu.Lock()
+	kept := n.timer == second && !n.firstTrigger.IsZero()
+	n.mu.Unlock()
+	if !kept {
+		t.Fatal("stale flush dropped the re-armed timer")
+	}
+	if got := sink.snapshot(); len(got) != 0 {
+		t.Fatalf("stale flush notified: %v", got)
+	}
+
+	n.flushFired(second)
+	second.Stop()
+	got := sink.waitFor(t, 1, time.Second)
+	if len(got) != 1 {
+		t.Fatalf("matching flush notifications = %v", got)
+	}
+	n.mu.Lock()
+	cleared := n.timer == nil && n.firstTrigger.IsZero()
+	n.mu.Unlock()
+	if !cleared {
+		t.Fatal("matching flush did not clear timer state")
+	}
+}
+
 func TestListChangeNotifier_MaxLatency(t *testing.T) {
 	g, sink := newListChangedGateway(t, time.Second, 40*time.Millisecond)
 	initSession(t, g, "client", "", "")
@@ -334,6 +398,35 @@ func TestDownstreamRefresh_DebouncePinsAndClose(t *testing.T) {
 		time.Sleep(90 * time.Millisecond)
 		if got := n.Load(); got != 1 {
 			t.Fatalf("refreshes = %d, want 1", got)
+		}
+		g.downstreamMu.Lock()
+		_, left := g.downstreamTimers["srv"]
+		g.downstreamMu.Unlock()
+		if left {
+			t.Fatal("fired downstream timer was not pruned")
+		}
+	})
+
+	t.Run("stale callback keeps replacement", func(t *testing.T) {
+		g := NewGateway()
+		t.Cleanup(g.Close)
+		g.SetDownstreamRefreshDebounce(time.Hour)
+		g.scheduleDownstreamToolRefresh("srv")
+		g.downstreamMu.Lock()
+		first := g.downstreamTimers["srv"]
+		g.downstreamMu.Unlock()
+		if first == nil {
+			t.Fatal("schedule did not arm a timer")
+		}
+		g.scheduleDownstreamToolRefresh("srv")
+		if !g.dropDownstreamTimer("srv", first) {
+			t.Fatal("stale callback was allowed to refresh")
+		}
+		g.downstreamMu.Lock()
+		second, ok := g.downstreamTimers["srv"]
+		g.downstreamMu.Unlock()
+		if !ok || second == nil || second == first {
+			t.Fatal("stale callback removed the re-armed timer")
 		}
 	})
 
