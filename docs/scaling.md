@@ -96,7 +96,22 @@ Every replica is pinged independently on the gateway's health-check interval. A 
 
 If **every** replica is unhealthy, tool calls return a structured error naming the server and including the per-replica failure reason. Clients see `no healthy replicas` instead of a hanging call.
 
-Restart storms are bounded by the backoff. A binary that crashes on startup will attempt reconnection a handful of times per minute, not once per health-check tick - the CPU cannot spin.
+A managed stdio container uses `restart` for that recovery. Absent means `always`. `on-failure:N` caps monitor-initiated attempts; a successful handshake does not refill the cap.
+
+```yaml
+version: "1"
+name: restart-docs
+mcp-servers:
+  - name: fetch
+    image: python:3.13-alpine@sha256:7415fbc3c9e4979cc717d92377ab2bc7b2b4a2af1ac03cc52b5f3f88efedaf3a
+    transport: stdio
+    command: ["python", "-c", "print('mcp')"]
+    restart: on-failure:3
+```
+
+`gridctl validate` accepts that file. The command is not an MCP server.
+
+A reconnect that never completes is bounded by the backoff. A process that fails during handshake attempts reconnection a handful of times per minute, not once per health-check tick. A managed stdio container that finishes a handshake and then exits is different under `restart: always`: the monitor starts it again on the next health tick. Autoscaled servers stay on the scaler's replacement path.
 
 ### Tuning the ping timeout
 
@@ -128,11 +143,11 @@ Per-replica state is surfaced through every existing gridctl observability surfa
   | State | Meaning |
   |-------|---------|
   | `healthy` | The last ping succeeded. |
-  | `restarting` | Unhealthy after at least one failed reconnect, so a backoff retry is scheduled. JSON includes `restartAttempts` and `nextRetryAt`. |
+  | `restarting` | Unhealthy after at least one failed reconnect or container start, so a backoff retry is scheduled. JSON includes `restartAttempts` and `nextRetryAt`. |
   | `unhealthy` | Unhealthy, with no failed reconnect recorded, or automatic container restarts have stopped (`restartExhausted: true`). |
 
-  A stopped container can add `exit.code`, `exit.oomKilled`, `exit.finishedAt`, `exit.status`, and optional `exit.error` on `status --json` and `/api/mcp-servers` without changing the state label. `exit.status` is passed through. Docker and Podman both reported `exited` for a process that exited 3. Reconnect does not attach unless the container is running. The rollup table does not append the exit annotation. Managed stdio replicas also carry `restartPolicy`, `containerRestarts`, and `restartExhausted`. `unhealthy` plus `restartExhausted` is the terminal state: the monitor records the ping failure and exit, and does not start the container or advance backoff. `always` keeps restarting a crash loop once per health interval, and `containerRestarts` is how an operator sees that loop. A successful handshake resets the backoff delay, not that counter.
-- **REST API.** `/api/stack/health` includes a `replicas` map keyed by server name, each array entry carrying `replicaId`, `state`, `inFlight`, optional `restartAttempts`, `nextRetrySeconds`, `restartPolicy`, `restartExhausted`, `containerRestarts`, and the transport-specific handle (`pid` or `containerId`). Optional `execution` carries the per-replica report. That response does not copy `exit` or `stderrTail`. `/api/mcp-servers` uses `nextRetryAt` timestamps instead, and its replicas may include `exit` after a failed container inspect, plus the same three restart fields. See the [server status fields](api-reference.md#get-apistatus) and the [report schema](api-reference.md#execution-reports).
+  A stopped container can add `exit.code`, `exit.oomKilled`, `exit.finishedAt`, `exit.status`, and optional `exit.error` on `status --json` and `/api/mcp-servers` without changing the state label. `exit.status` is passed through. Docker and Podman both reported `exited` for a process that exited 3. Reconnect does not attach unless the container is running. The rollup table does not append the exit annotation. Managed stdio replicas carry `restartPolicy` (`always` when `restart:` is absent). `containerRestarts` and `restartExhausted` appear only when set. `unhealthy` plus `restartExhausted` is the terminal state: the monitor records the ping failure and exit, and does not start the container or advance backoff. `always` keeps restarting a crash loop once per health interval, and `containerRestarts` counts those attempts, including ones that fail. A successful handshake resets the backoff delay, not that counter. Autoscaled servers are not restarted by this path.
+- **REST API.** `/api/stack/health` includes a `replicas` map keyed by server name, each array entry carrying `replicaId`, `state`, `inFlight`, optional `restartAttempts` and `nextRetrySeconds`, `restartPolicy`, `restartExhausted`, and `containerRestarts` when set, plus the transport-specific handle (`pid` or `containerId`). Optional `execution` carries the per-replica report. That response does not copy `exit` or `stderrTail`. `/api/mcp-servers` uses `nextRetryAt` timestamps instead, and its replicas may include `exit` after a failed container inspect, plus the same three restart fields. See the [server status fields](api-reference.md#get-apistatus) and the [report schema](api-reference.md#execution-reports).
 - **Metrics.** `pkg/metrics/accumulator.go` tracks per-replica counters. Per-server aggregates remain (they sum across replicas).
 
 ---
