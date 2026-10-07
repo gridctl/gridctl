@@ -300,11 +300,11 @@ Digest and tag-plus-digest references match locally cached `RepoDigests`, includ
 
 **Symptoms:**
 
-The Stack node is red, or amber while backoff is running. The health strip may show both an exit summary and a retry line, such as `exited 3; restarting (attempt 1, retry in 4s)`, with `, OOM killed` when the runtime set that flag. Tool calls return `connection lost`. The container may already be gone from `docker ps`.
+The Stack node is red, or amber while backoff is running. The health strip may show both an exit summary and a retry line, such as `exited 3; restarting (attempt 1, retry in 4s)`, with `, OOM killed` when the runtime set that flag. An in-flight tool call fails with `connection lost`. Later calls fail with `server <name>: no healthy replicas` until a replica is healthy again. The container may already be gone from `docker ps`.
 
 **Resolution:**
 
-1. Read gridctl's own record before the runtime logs. `gridctl status --replicas` appends `; exited <code>` and ` (OOM)` when the health check could inspect the container. `gridctl status --json` carries `replicas[].exit`, `lastError`, and `stderrTail` on the unhealthy server. `exit.status` is the runtime string. Docker and Podman both reported `exited` for a process that exited 3. Reconnect does not attach to a container that is not running, so the exit code stays available on the next health tick. The Logs workspace source filter, `GET /api/logs`, and `GET /api/mcp-servers/{name}/logs` show WARN `server stderr` lines captured after attach. A line longer than 1 MiB is truncated in the ring and later lines are still captured. The Stack inspector lists exit fields and recent stderr beside the execution evidence, and omits a healthy replica that has no exit record.
+1. Read gridctl's own record before the runtime logs. `gridctl status --replicas` appends `; exited <code>` and ` (OOM)` when the health check could inspect the container. `gridctl status --json` carries `replicas[].exit`, `lastError`, and `stderrTail` on the unhealthy server. `exit.status` is the runtime string. Docker and Podman both reported `exited` for a process that exited 3. Reconnect does not attach to a container that is not running, so the exit code stays available on the next health tick. For a managed stdio container, the health monitor restarts that container and re-attaches, using the server's `restart` policy (`always` when the field is absent). `replicas[].containerRestarts` counts those monitor-initiated attempts. `restartExhausted: true` with `state: unhealthy` means automatic restarts have stopped; `lastError` says why (policy `no`, a clean exit under `on-failure`, a spent `on-failure:N` budget, or a container the runtime no longer has). A removed container is not recreated. Re-apply, or `POST /api/mcp-servers/{name}/restart` when the container still exists. The Logs workspace source filter, `GET /api/logs`, and `GET /api/mcp-servers/{name}/logs` show WARN `server stderr` lines captured after attach. A line longer than 1 MiB is truncated in the ring and later lines are still captured. The Stack inspector lists exit fields, the exhausted reason, and recent stderr beside the execution evidence, and omits a healthy replica that has no exit record.
 2. If the container is still present, `gridctl logs --server <name>` and `docker logs` can show output from before the gateway attached. Those commands stop working once the container is removed. The ring does not replay pre-attach output, and a verbose server can crowd out older lines.
 3. An OOM exit (`oomKilled: true`, often code 137) needs a larger memory limit. A non-zero exit without OOM is the process's own failure; the stderr tail is the first place to look.
 4. A server that stops after the gateway rejects its request leaves a DEBUG line, not a stderr line. `server request rejected` and `server notification dropped` (stdio and local process) and `server notification skipped` (HTTP and SSE, no-id notifications only) appear only when the daemon was started with `--log-level debug`. Params are not logged.
@@ -416,7 +416,7 @@ timeout waiting for response from container
 
 **Symptoms:**
 
-Tool calls fail with `connection lost` after working initially.
+An in-flight tool call fails with `connection lost` after working initially. Calls after the replica is marked unhealthy fail with `server <name>: no healthy replicas`.
 
 **Causes:**
 
@@ -426,14 +426,13 @@ Tool calls fail with `connection lost` after working initially.
 
 **Resolution:**
 
-1. Check gridctl before the runtime. `gridctl status --json` includes `lastError` and `replicas[].exit` (`code`, `oomKilled`, `finishedAt`, `status`) when a stopped container was inspected, plus `stderrTail` on the unhealthy server. The Logs source filter and `GET /api/mcp-servers/{name}/logs` show WARN `server stderr` captured while the gateway was attached. The Stack node shows amber `restarting` with the attempt count and next retry while backoff is running. See [Container exits immediately](#container-exits-immediately) for the exit annotation and debug peer lines.
+1. Check gridctl before the runtime. `gridctl status --json` includes `lastError` and `replicas[].exit` (`code`, `oomKilled`, `finishedAt`, `status`) when a stopped container was inspected, plus `stderrTail` on the unhealthy server. It also includes `restartPolicy`, `containerRestarts`, and `restartExhausted` for a managed stdio container. The Logs source filter and `GET /api/mcp-servers/{name}/logs` show WARN `server stderr` captured while the gateway was attached. The Stack node shows amber `restarting` with the attempt count and next retry while backoff is running, and red `error` once `restartExhausted` is set. See [Container exits immediately](#container-exits-immediately) for the exit annotation and debug peer lines.
 2. If the container still exists, confirm it with the runtime:
    ```bash
    docker ps -a | grep gridctl
    ```
 3. If OOMKilled, increase the container's memory limit.
-
-4. Wait one health-check cycle (30 seconds by default): the gateway's health monitor detects the lost connection and reconnects automatically with exponential backoff. If the server needs a manual kick, restart just that server:
+4. Wait one health-check cycle (30 seconds by default). For a managed stdio container the monitor starts the stopped container, re-attaches, and runs `initialize` again, with the same exponential backoff as a reconnect. `restart: always` (the default) does this for any non-running container, including one stopped with `docker stop` or `podman stop`, and keeps doing it once per health interval if the process exits after every handshake. `restart: no`, a clean exit under `on-failure`, a spent `on-failure:N` budget, or a container the runtime reports as missing stops that loop and sets `restartExhausted`. Re-apply to recreate a removed container. If the server needs a manual kick and the container still exists, restart just that server:
    ```bash
    curl -X POST http://localhost:8180/api/mcp-servers/<name>/restart
    ```
