@@ -119,7 +119,8 @@ pkg/mcp/            MCP protocol: gateway (router, tool aggregation, and downstr
                     and typed call outcomes for canonical REST/CLI dispatch.
                     Container, local-process, and HTTP/SSE readers classify peer requests and notifications before response
                     correlation. Stdio and process replies use the same context-bounded, serialized writer as outbound calls.
-                    HTTP and SSE replies are a separate POST that does not update the session.
+                    HTTP and SSE replies are a separate POST that closes the response body without reading it and does not
+                    update the session.
                     a2a_capabilities.go owns the gateway's shared CapabilityStore, atomic reservations, and teardown
                     accounting; a2a_authority.go supplies private generation-bound authority and send/cancel slots.
                     These are internal primitives with no capability tuning option. card_trust.go
