@@ -43,6 +43,11 @@ type Session struct {
 	Initialized     bool
 	CreatedAt       time.Time
 	LastSeen        time.Time
+
+	// toolFingerprint is the last recorded hash of this session's visible
+	// tool list. Empty means none has been recorded. Handshake delivery
+	// state only; the stateless generation has no sessions.
+	toolFingerprint string
 }
 
 // SessionManager manages client sessions.
@@ -130,6 +135,30 @@ func (m *SessionManager) Touch(id string) {
 	if s, ok := m.sessions[id]; ok {
 		s.LastSeen = time.Now()
 	}
+}
+
+// SetToolFingerprint records the visible-list hash for a session.
+// A missing session is ignored.
+func (m *SessionManager) SetToolFingerprint(id, fp string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if s, ok := m.sessions[id]; ok {
+		s.toolFingerprint = fp
+	}
+}
+
+// SwapToolFingerprint stores fp and returns the previous value.
+// ok is false when the session has been deleted or evicted.
+func (m *SessionManager) SwapToolFingerprint(id, fp string) (previous string, ok bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, found := m.sessions[id]
+	if !found {
+		return "", false
+	}
+	previous = s.toolFingerprint
+	s.toolFingerprint = fp
+	return previous, true
 }
 
 // Delete removes a session.

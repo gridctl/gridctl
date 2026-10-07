@@ -483,6 +483,7 @@ export interface DownstreamCapabilityStatus {
   resources: boolean;
   resourcesSubscribe: boolean;
   resourcesListChanged: boolean;
+  toolsListChanged: boolean;
 }
 
 export interface MCPServerNodeData extends NodeDataBase {

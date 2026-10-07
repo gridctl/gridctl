@@ -193,6 +193,12 @@ type Gateway struct {
 	dockerCli       dockerclient.DockerClient
 	logger          *slog.Logger
 	cancel          context.CancelFunc
+	// lifeCtx outlives StartCleanup's cancel. The notifier and downstream
+	// refresh timers use it so Close stops them even when those helpers
+	// were never started. The parent is Background because NewGateway has
+	// no caller context; refresh work derives its deadline from lifeCtx.
+	lifeCtx    context.Context
+	lifeCancel context.CancelFunc
 
 	mu          sync.RWMutex
 	serverInfo  ServerInfo
@@ -269,11 +275,19 @@ type Gateway struct {
 	// every active skill is exposed (legacy behavior). Guarded by mu;
 	// replaced wholesale on apply and hot-reload.
 	skillPolicy *SkillPolicy
+
+	listChanges *listChangeNotifier
+
+	downstreamMu       sync.Mutex
+	downstreamTimers   map[string]*time.Timer
+	downstreamClosed   bool
+	downstreamDebounce time.Duration
 }
 
 // NewGateway creates a new MCP gateway.
 func NewGateway() *Gateway {
-	return &Gateway{
+	lifeCtx, lifeCancel := context.WithCancel(context.Background())
+	g := &Gateway{
 		capabilities: NewCapabilityStore(),
 		cardTrust:    NewCardTrustService(nil),
 		router:       NewRouter(),
@@ -293,7 +307,14 @@ func NewGateway() *Gateway {
 		pending:              make(map[string]*pendingRegistration),
 		regGen:               make(map[string]uint64),
 		cleanupRan:           make(map[string]bool),
+		lifeCtx:              lifeCtx,
+		lifeCancel:           lifeCancel,
+		downstreamTimers:     make(map[string]*time.Timer),
+		downstreamDebounce:   defaultDownstreamDebounce,
 	}
+	g.listChanges = newListChangeNotifier(g, lifeCtx)
+	g.router.SetOnChange(g.listChanges.trigger)
+	return g
 }
 
 // SetLogger sets the logger for gateway operations.
@@ -370,8 +391,11 @@ func (g *Gateway) SetCodeMode(timeout time.Duration) {
 // already-established sessions.
 func (g *Gateway) SetClientAccessPolicy(policy *ClientAccessPolicy) {
 	g.mu.Lock()
-	defer g.mu.Unlock()
 	g.clientPolicy = policy
+	g.mu.Unlock()
+	if g.listChanges != nil {
+		g.listChanges.trigger()
+	}
 }
 
 // SetCallGates installs the pre-call policy gates, replacing any previous
@@ -390,8 +414,11 @@ func (g *Gateway) SetCallGates(gates []CallGate) {
 // request, so a hot-reload swap takes effect immediately.
 func (g *Gateway) SetGroupPolicy(policy *GroupPolicy) {
 	g.mu.Lock()
-	defer g.mu.Unlock()
 	g.groupPolicy = policy
+	g.mu.Unlock()
+	if g.listChanges != nil {
+		g.listChanges.trigger()
+	}
 }
 
 // CurrentGroupPolicy returns the current group policy under a read lock.
@@ -1297,6 +1324,14 @@ func replicaStateString(healthy, exhausted, hasAttempts bool) string {
 
 // Close stops the cleanup goroutine and closes all agent client connections.
 func (g *Gateway) Close() {
+	if g.lifeCancel != nil {
+		g.lifeCancel()
+	}
+	if g.listChanges != nil {
+		g.listChanges.close()
+	}
+	g.stopDownstreamRefreshTimers()
+
 	if err := g.cardTrust.close(context.Background()); err != nil {
 		g.logger.Error("card trust shutdown failed", "error", err)
 	}
@@ -1802,6 +1837,12 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (re
 		return nil, fmt.Errorf("fetching tools from %s: %w", cfg.Name, err)
 	}
 
+	if hook, ok := agentClient.(interface{ setListChangedHandler(func()) }); ok {
+		name := cfg.Name
+		hook.setListChangedHandler(func() {
+			g.scheduleDownstreamToolRefresh(name)
+		})
+	}
 	if cfg.ExecutionCheck != nil {
 		guarded := &executionClient{AgentClient: agentClient, check: cfg.ExecutionCheck, config: cfg}
 		if err := guarded.admit(ctx); err != nil {
@@ -2253,8 +2294,9 @@ func (g *Gateway) HandleInitialize(params InitializeParams, accessID, group stri
 	// the client decides whether to disconnect). Never fail for version reasons.
 	protocolVersion := NegotiateProtocolVersion(params.ProtocolVersion)
 	session := g.sessions.Create(params.ClientInfo, accessID, group, protocolVersion)
+	g.sessions.SetToolFingerprint(session.ID, fingerprintTools(g.visibleToolsFor(session.AccessID, session.Group)))
 
-	caps := g.advertisedCapabilities()
+	caps := g.advertisedCapabilities(EraHandshake)
 
 	// Group endpoints announce a group-suffixed identity so several linked
 	// endpoints of the same gateway are distinguishable in clients that
@@ -2286,13 +2328,7 @@ func (g *Gateway) HandleToolsList(ctx context.Context) (*ToolsListResult, error)
 		return cm.ToolsList(), nil
 	}
 
-	tools := g.scopeToolsForContext(ctx, g.router.AggregatedTools())
-	// A group session sees its curated, rewritten surface. Client scoping
-	// ran first, on canonical names, so a scoped-out tool never reappears
-	// under a group rename.
-	if group := GroupFromContext(ctx); group != "" {
-		tools = g.CurrentGroupPolicy().FilterAndRewrite(group, tools)
-	}
+	tools := g.visibleToolsFor(ClientAccessIDFromContext(ctx), GroupFromContext(ctx))
 	g.logToolCountHint(len(tools))
 	if tools == nil {
 		// The spec requires an array; a nil slice would marshal as
@@ -3166,8 +3202,9 @@ func downstreamCapabilityStatus(client AgentClient) DownstreamCapabilityStatus {
 	}
 	caps := src.DownstreamCapabilities()
 	status := DownstreamCapabilityStatus{
-		Prompts:   caps.Prompts != nil,
-		Resources: caps.Resources != nil,
+		Prompts:          caps.Prompts != nil,
+		Resources:        caps.Resources != nil,
+		ToolsListChanged: caps.Tools != nil && caps.Tools.ListChanged,
 	}
 	if caps.Resources != nil {
 		status.ResourcesSubscribe = caps.Resources.Subscribe

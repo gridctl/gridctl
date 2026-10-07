@@ -14,6 +14,7 @@ const badges: { key: keyof DownstreamCapabilityStatus; label: string }[] = [
   { key: 'resources', label: 'resources' },
   { key: 'resourcesSubscribe', label: 'subscribe' },
   { key: 'resourcesListChanged', label: 'list changed' },
+  { key: 'toolsListChanged', label: 'tools list changed' },
 ];
 
 export function CatalogSummary({ data }: { data: CatalogFields }) {

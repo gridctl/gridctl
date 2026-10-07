@@ -328,6 +328,7 @@ type mcpCapabilityAPI struct {
 	Resources            bool `json:"resources"`
 	ResourcesSubscribe   bool `json:"resourcesSubscribe"`
 	ResourcesListChanged bool `json:"resourcesListChanged"`
+	ToolsListChanged     bool `json:"toolsListChanged"`
 }
 
 // autoscaleAPI mirrors the subset of mcp.AutoscaleStatus the CLI renders in

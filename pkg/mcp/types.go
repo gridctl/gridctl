@@ -682,13 +682,16 @@ type RawResourceTemplatesListResult struct {
 }
 
 // DownstreamCapabilityStatus is the capability set a downstream server
-// declared, projected onto status surfaces. Subscribe and list-changed
-// are reported but never advertised upstream.
+// declared, projected onto status surfaces. Resource subscribe and
+// resource list-changed are reported but not advertised upstream.
+// ToolsListChanged reflects the downstream declaration; the gateway
+// advertises tools.listChanged itself on the handshake generation.
 type DownstreamCapabilityStatus struct {
 	Prompts              bool `json:"prompts"`
 	Resources            bool `json:"resources"`
 	ResourcesSubscribe   bool `json:"resourcesSubscribe"`
 	ResourcesListChanged bool `json:"resourcesListChanged"`
+	ToolsListChanged     bool `json:"toolsListChanged"`
 }
 
 // PromptProvider is an optional interface for AgentClients that manage prompts.

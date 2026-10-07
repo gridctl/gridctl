@@ -11,6 +11,12 @@ import (
 	"github.com/gridctl/gridctl/pkg/logging"
 )
 
+// MethodToolsListChanged is the handshake-era notification that a server's
+// tool list changed. The stateless generation removed it; readers ignore it
+// unless the peer's era is handshake. Servers that omit the capability are
+// still honored: the declaration is informational.
+const MethodToolsListChanged = "notifications/tools/list_changed"
+
 // ClientBase provides shared state and accessor methods for all AgentClient implementations.
 // Embed this struct to get Tools(), IsInitialized(), ServerInfo(), and SetToolWhitelist().
 //
@@ -54,6 +60,11 @@ type ClientBase struct {
 	// gateway's min/intersect cache-metadata aggregation.
 	listTTLMs      *int64
 	listCacheScope string
+
+	// listChangedHandler is armed by the reader and must return without
+	// issuing a request. The reader goroutine is the one that completes
+	// pending calls.
+	listChangedHandler func()
 }
 
 // Tools returns the cached tool list filtered by the whitelist, if any.
@@ -183,6 +194,35 @@ func (b *ClientBase) hasUIExtension() bool {
 		}
 	}
 	return false
+}
+
+func (b *ClientBase) setListChangedHandler(fn func()) {
+	b.mu.Lock()
+	b.listChangedHandler = fn
+	b.mu.Unlock()
+}
+
+func (b *ClientBase) notifyListChanged() {
+	b.mu.RLock()
+	fn := b.listChangedHandler
+	b.mu.RUnlock()
+	if fn != nil {
+		fn()
+	}
+}
+
+// handlePeerListChanged logs and arms the handler for a handshake-era
+// tools list-changed notification. Other methods, and the same method from
+// a stateless peer, return false so the caller keeps today's drop path.
+func (r *RPCClient) handlePeerListChanged(method string) bool {
+	if method != MethodToolsListChanged || r.Era() != EraHandshake {
+		return false
+	}
+	if r.logger != nil {
+		r.logger.Debug("server notification handled", "server", r.name, "method", method)
+	}
+	r.notifyListChanged()
+	return true
 }
 
 // SetDownstreamCapabilities records what the server declared at

@@ -481,7 +481,7 @@ func (s *StreamableHTTPServer) handleStatelessTask(ctx context.Context, w http.R
 // versions, extension declarations, and cache metadata aggregated from
 // the downstream fleet.
 func (g *Gateway) HandleServerDiscover(ctx context.Context) *DiscoverResult {
-	caps := g.advertisedCapabilities()
+	caps := g.advertisedCapabilities(EraStateless)
 	if name := g.taskCapableServerName(); name != "" {
 		caps.Extensions = map[string]json.RawMessage{
 			TasksExtensionID: json.RawMessage(`{}`),
@@ -565,13 +565,14 @@ func (g *Gateway) attachListCacheMeta(fields *StatelessResultFields) {
 }
 
 // advertisedCapabilities is the single source for what the gateway
-// declares to upstream clients on both eras. listChanged is not
-// advertised: gridctl has never emitted a list-changed notification,
-// and advertising an undelivered capability is a spec violation the
-// conformance suite surfaces.
-func (g *Gateway) advertisedCapabilities() Capabilities {
+// declares to upstream clients. Handshake peers get tools.listChanged
+// because the gateway emits notifications/tools/list_changed on the
+// session GET stream. The stateless generation removed that notification,
+// so discover keeps tools without listChanged. Prompts and resources
+// listChanged stay unadvertised on both eras.
+func (g *Gateway) advertisedCapabilities(era ProtocolEra) Capabilities {
 	caps := Capabilities{
-		Tools: &ToolsCapability{},
+		Tools: &ToolsCapability{ListChanged: era == EraHandshake},
 	}
 	if g.promptProvider() != nil || g.downstreamDeclares(wantsPrompts) {
 		caps.Prompts = &PromptsCapability{}

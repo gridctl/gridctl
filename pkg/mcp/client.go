@@ -410,6 +410,9 @@ func (c *Client) dispatchSSEEvent(ctx context.Context, dataLines []string, wantI
 	}
 	switch message.kind {
 	case stdioNotification:
+		if c.handlePeerListChanged(message.method) {
+			return nil
+		}
 		if c.logger != nil {
 			c.logger.Debug("server notification skipped", "method", message.method)
 		}

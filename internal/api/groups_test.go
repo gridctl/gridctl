@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -59,6 +60,17 @@ func TestHandleGroups_ReportsResolvedGroups(t *testing.T) {
 	// No servers connected: membership resolves to zero against the live
 	// surface, but the group itself is still reported.
 	assert.Equal(t, 0, g.MemberCount)
+}
+
+func TestHandleGroupMCP_AdvertisesToolsListChanged(t *testing.T) {
+	s := NewServer(groupsGateway(), nil)
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"c","version":"1"}}}`)
+	req := loopbackRequest(http.MethodPost, "/groups/release/mcp", bytes.NewReader(body))
+	req.SetPathValue("name", "release")
+	w := httptest.NewRecorder()
+	s.handleGroupMCP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"listChanged":true`)
 }
 
 func TestHandleGroupMCP_UnknownGroup404s(t *testing.T) {

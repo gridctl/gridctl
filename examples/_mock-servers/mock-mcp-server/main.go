@@ -31,6 +31,9 @@ var (
 	sseMode          bool
 	protocol         string
 	sseServerRequest bool
+	listChanged      bool
+	addedSeq         int
+	toolsMu          sync.Mutex
 	pongMu           sync.Mutex
 	pongWaiters      = map[string]chan struct{}{}
 	ssePingSeq       atomic.Int64
@@ -47,6 +50,7 @@ func init() {
 	flag.BoolVar(&sseMode, "sse", false, "Enable SSE response format")
 	flag.StringVar(&protocol, "protocol", "", "Protocol generation: empty for legacy handshake, 2026-07-28 for stateless")
 	flag.BoolVar(&sseServerRequest, "sse-server-request", false, "In SSE mode, emit a ping and a notification before tools/call and wait for the pong")
+	flag.BoolVar(&listChanged, "list-changed", false, "Declare tools.listChanged and emit notifications/tools/list_changed on the POST SSE stream")
 }
 
 // serverRequestMode is the opt-in SSE preamble. MOCK_SSE_SERVER_REQUEST
@@ -218,6 +222,7 @@ func handleMCP(w http.ResponseWriter, r *http.Request) {
 
 	var result any
 	var rpcErr *Error
+	var notifyListChanged bool
 
 	switch req.Method {
 	case "initialize":
@@ -228,7 +233,7 @@ func handleMCP(w http.ResponseWriter, r *http.Request) {
 				Version: "1.0.0",
 			},
 			Capabilities: Capabilities{
-				Tools: &ToolsCapability{ListChanged: false},
+				Tools: &ToolsCapability{ListChanged: listChanged},
 			},
 		}
 
@@ -238,14 +243,16 @@ func handleMCP(w http.ResponseWriter, r *http.Request) {
 		return
 
 	case "tools/list":
-		result = ToolsListResult{Tools: sampleTools}
+		result = ToolsListResult{Tools: snapshotTools()}
 
 	case "tools/call":
 		var params ToolCallParams
 		if err := json.Unmarshal(req.Params, &params); err != nil {
 			rpcErr = &Error{Code: -32602, Message: "Invalid params"}
 		} else {
-			result = handleToolCall(params)
+			callResult, mutated := handleToolCall(params)
+			result = callResult
+			notifyListChanged = mutated && listChanged && sseMode
 		}
 
 	case "ping":
@@ -262,12 +269,34 @@ func handleMCP(w http.ResponseWriter, r *http.Request) {
 
 	if req.Method == "tools/call" && sseMode && serverRequestMode() {
 		if callResult, ok := result.(ToolCallResult); ok {
+			if notifyListChanged {
+				writeListChangedSSE(w)
+			}
 			sendToolCallWithServerRequest(w, req.ID, callResult)
 			return
 		}
 	}
 
+	if notifyListChanged {
+		writeListChangedSSE(w)
+	}
 	sendResult(w, req.ID, result)
+}
+
+func snapshotTools() []Tool {
+	toolsMu.Lock()
+	defer toolsMu.Unlock()
+	return append([]Tool(nil), sampleTools...)
+}
+
+func writeListChangedSSE(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	fmt.Fprintf(w, "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\"}\n\n")
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 func armPong(id string) <-chan struct{} {
@@ -379,7 +408,7 @@ func handleModernMCP(w http.ResponseWriter, req Request) {
 			sendResult(w, req.ID, handleAskSecret(params))
 			return
 		}
-		result := handleToolCall(params)
+		result, _ := handleToolCall(params)
 		result.ResultType = "complete"
 		sendResult(w, req.ID, result)
 
@@ -441,31 +470,58 @@ func handleAskSecret(params ToolCallParams) ToolCallResult {
 	}
 }
 
-func handleToolCall(params ToolCallParams) ToolCallResult {
+func handleToolCall(params ToolCallParams) (ToolCallResult, bool) {
 	switch params.Name {
 	case "echo":
 		msg, _ := params.Arguments["message"].(string)
 		return ToolCallResult{
 			Content: []Content{{Type: "text", Text: fmt.Sprintf("Echo: %s", msg)}},
-		}
+		}, false
 
 	case "add":
 		a, _ := params.Arguments["a"].(float64)
 		b, _ := params.Arguments["b"].(float64)
 		return ToolCallResult{
 			Content: []Content{{Type: "text", Text: fmt.Sprintf("Result: %v", a+b)}},
-		}
+		}, false
 
 	case "get_time":
 		return ToolCallResult{
 			Content: []Content{{Type: "text", Text: "Current time: 2024-01-15T10:30:00Z (mock)"}},
-		}
+		}, false
+
+	case "mutate_tools":
+		return mutateTools(params)
 
 	default:
 		return ToolCallResult{
 			Content: []Content{{Type: "text", Text: fmt.Sprintf("Unknown tool: %s", params.Name)}},
 			IsError: true,
+		}, false
+	}
+}
+
+func mutateTools(params ToolCallParams) (ToolCallResult, bool) {
+	action, _ := params.Arguments["action"].(string)
+	toolsMu.Lock()
+	defer toolsMu.Unlock()
+	switch action {
+	case "add":
+		addedSeq++
+		sampleTools = append(sampleTools, Tool{
+			Name:        fmt.Sprintf("added_tool_%d", addedSeq),
+			Description: "Added by mutate_tools",
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
+		})
+		return ToolCallResult{Content: []Content{{Type: "text", Text: "added"}}}, true
+	case "modify":
+		if len(sampleTools) == 0 {
+			return ToolCallResult{Content: []Content{{Type: "text", Text: "no tools"}}, IsError: true}, false
 		}
+		sampleTools[0].Description = "modified by mutate_tools"
+		return ToolCallResult{Content: []Content{{Type: "text", Text: "modified"}}}, true
+	default:
+		return ToolCallResult{Content: []Content{{Type: "text", Text: "action must be add or modify"}}, IsError: true}, false
 	}
 }
 
@@ -538,6 +594,20 @@ func main() {
 
 	// The modern generation carries an MRTR-exercising tool so tests
 	// can verify the requestState round trip through the gateway.
+	if listChanged && !modernMode() {
+		sampleTools = append(sampleTools, Tool{
+			Name:        "mutate_tools",
+			Description: "Adds or modifies a tool and emits notifications/tools/list_changed",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"action": map[string]any{"type": "string", "description": "add or modify"},
+				},
+				"required": []string{"action"},
+			},
+		})
+	}
+
 	if modernMode() {
 		sampleTools = append(sampleTools, Tool{
 			Name:        "ask_secret",

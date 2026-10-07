@@ -108,6 +108,36 @@ func TestRouter_Clients(t *testing.T) {
 	}
 }
 
+func TestRouter_OnChangeFiresAfterUnlock(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	r := NewRouter()
+	client := setupMockAgentClient(ctrl, "srv", []Tool{{Name: "tool"}})
+	r.AddClient(client)
+
+	var calls int
+	r.SetOnChange(func() {
+		calls++
+		if !r.mu.TryLock() {
+			t.Error("onChange ran while the router lock was held")
+			return
+		}
+		r.mu.Unlock()
+	})
+
+	r.RefreshTools()
+	r.RefreshTools()
+	r.RemoveClient("srv")
+	if calls != 3 {
+		t.Fatalf("onChange calls = %d, want 3", calls)
+	}
+
+	r.SetOnChange(nil)
+	r.RefreshTools()
+	if calls != 3 {
+		t.Fatalf("nil callback still fired, calls = %d", calls)
+	}
+}
+
 func TestRouter_RefreshTools(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	r := NewRouter()
