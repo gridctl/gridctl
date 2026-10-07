@@ -21,13 +21,22 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 )
 
 var (
-	port     int
-	sseMode  bool
-	protocol string
+	port             int
+	sseMode          bool
+	protocol         string
+	sseServerRequest bool
+	pongMu           sync.Mutex
+	pongWaiters      = map[string]chan struct{}{}
+	ssePingSeq       atomic.Int64
 )
+
+const ssePongWait = 5 * time.Second
 
 // modernMode reports whether the mock speaks the stateless 2026-07-28
 // generation instead of the legacy handshake generation.
@@ -37,6 +46,13 @@ func init() {
 	flag.IntVar(&port, "port", 8080, "Port to listen on")
 	flag.BoolVar(&sseMode, "sse", false, "Enable SSE response format")
 	flag.StringVar(&protocol, "protocol", "", "Protocol generation: empty for legacy handshake, 2026-07-28 for stateless")
+	flag.BoolVar(&sseServerRequest, "sse-server-request", false, "In SSE mode, emit a ping and a notification before tools/call and wait for the pong")
+}
+
+// serverRequestMode is the opt-in SSE preamble. MOCK_SSE_SERVER_REQUEST
+// matches the MOCK_ECHO_DESC style; the flag is the integration-test path.
+func serverRequestMode() bool {
+	return sseServerRequest || os.Getenv("MOCK_SSE_SERVER_REQUEST") != ""
 }
 
 // JSON-RPC types
@@ -187,6 +203,14 @@ func handleMCP(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Received request: method=%s", req.Method)
 
+	// A body with an id and no method is the client's response to a
+	// server request. Answer 202 and do not treat it as a new call.
+	if req.Method == "" && len(req.ID) > 0 {
+		notePong(req.ID)
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+
 	if modernMode() {
 		handleModernMCP(w, req)
 		return
@@ -236,7 +260,81 @@ func handleMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Method == "tools/call" && sseMode && serverRequestMode() {
+		if callResult, ok := result.(ToolCallResult); ok {
+			sendToolCallWithServerRequest(w, req.ID, callResult)
+			return
+		}
+	}
+
 	sendResult(w, req.ID, result)
+}
+
+func armPong(id string) <-chan struct{} {
+	ch := make(chan struct{}, 1)
+	pongMu.Lock()
+	pongWaiters[id] = ch
+	pongMu.Unlock()
+	return ch
+}
+
+func notePong(id json.RawMessage) {
+	var key string
+	if err := json.Unmarshal(id, &key); err != nil {
+		return
+	}
+	pongMu.Lock()
+	ch := pongWaiters[key]
+	pongMu.Unlock()
+	if ch == nil {
+		return
+	}
+	select {
+	case ch <- struct{}{}:
+	default:
+	}
+}
+
+func disarmPong(id string) {
+	pongMu.Lock()
+	delete(pongWaiters, id)
+	pongMu.Unlock()
+}
+
+// sendToolCallWithServerRequest writes a ping and a notification, waits
+// for the matching client response, then writes the tool result. A missing
+// pong becomes an isError result instead of leaving the stream open.
+func sendToolCallWithServerRequest(w http.ResponseWriter, id json.RawMessage, result ToolCallResult) {
+	flusher, _ := w.(http.Flusher)
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	pingID := fmt.Sprintf("srv-%d", ssePingSeq.Add(1))
+	ch := armPong(pingID)
+	defer disarmPong(pingID)
+
+	fmt.Fprintf(w, "data: {\"jsonrpc\":\"2.0\",\"id\":%q,\"method\":\"ping\"}\n\n", pingID)
+	fmt.Fprintf(w, "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\"}}\n\n")
+	if flusher != nil {
+		flusher.Flush()
+	}
+
+	select {
+	case <-ch:
+	case <-time.After(ssePongWait):
+		log.Printf("missing pong for ping %s", pingID)
+		result = ToolCallResult{
+			Content: []Content{{Type: "text", Text: "missing pong for ping " + pingID}},
+			IsError: true,
+		}
+	}
+
+	data, _ := json.Marshal(Response{JSONRPC: "2.0", ID: id, Result: result})
+	fmt.Fprintf(w, "data: %s\n\n", data)
+	if flusher != nil {
+		flusher.Flush()
+	}
 }
 
 // handleModernMCP serves the stateless 2026-07-28 generation: no

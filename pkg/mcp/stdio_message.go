@@ -22,9 +22,11 @@ type stdioMessage struct {
 	reply    *jsonrpc.Response
 }
 
-// classifyStdioMessage distinguishes peer requests and notifications before
-// decoding messages that may be correlated as responses.
-func classifyStdioMessage(line []byte) (stdioMessage, error) {
+// classifyPeerMessage distinguishes peer requests and notifications before
+// decoding messages that may be correlated as responses. It serves the
+// stdio, process, and HTTP readers. A ping is answered with an empty
+// result; every other request is rejected with -32601 Method not found.
+func classifyPeerMessage(line []byte) (stdioMessage, error) {
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(line, &envelope); err != nil {
 		return stdioMessage{}, err
