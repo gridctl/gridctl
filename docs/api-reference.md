@@ -107,7 +107,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
       "promptCount": 0,
       "mcpResourceCount": 0,
       "resourceTemplateCount": 0,
-      "capabilities": {"prompts": false, "resources": false, "resourcesSubscribe": false, "resourcesListChanged": false},
+      "capabilities": {"prompts": false, "resources": false, "resourcesSubscribe": false, "resourcesListChanged": false, "toolsListChanged": false},
       "resourceCollisions": 0,
       "tools": ["get_file_contents", "search_code", "list_commits", "get_issue", "get_pull_request"],
       "external": false,
@@ -212,7 +212,7 @@ A server includes `stderrTail` only when `healthy` is false: up to the last 10 r
 
 `replicas[]` may include `exit` after a failed health check inspects a stopped container. The object has `code` (int), `oomKilled` (bool), `finishedAt` (RFC3339, omitted when the runtime reports the zero timestamp), `status` (the runtime status string, passed through unchanged), and optional `error`. Docker and Podman compat inspection both reported `exited` for a process that exited 3. `stopped`, `dead`, and `created` are passed through when the runtime uses them. Reconnect does not attach unless the container is running, so a Podman compat attach cannot reset an exited container to `created` and replace the exit code with 0. A later inspect that reports `created` with the same finish time keeps the earlier exit record. A running container, a non-container replica, an inspect failure, or a later successful ping omits `exit`. `lastError` remains the ping error and is not replaced by the exit record, unless a terminal restart decision overwrites it. [`/api/stack/health`](#get-apistackhealth) does not copy `exit` or `stderrTail`.
 
-Each registered server also reports `promptCount`, `mcpResourceCount`, and `resourceTemplateCount` from the last successful list. Computing status does not list downstream servers again. `mcpResourceCount` counts MCP resources, not the infrastructure `resources` array on this response. `capabilities` reports the booleans the downstream declared: `prompts`, `resources`, `resourcesSubscribe`, and `resourcesListChanged`. The gateway does not advertise subscribe or list-changed upstream. `resourceCollisions` counts resource URIs, identical templates, and `ui://` index entries this server lost to another server. `resourceListError` is omitted when the last resource list succeeded; otherwise it is `timeout`, `canceled`, `rpc`, or `transport`. It covers `resources/list` and `resources/templates/list` only. A `prompts/list` failure is logged with the server name and category and is not stored on this field. An upstream disconnect is not recorded as a server fault. The Stack sidebar labels the counts Prompts, MCP resources, and Templates, and shows a warning row for a list error or a non-zero collision count.
+Each registered server also reports `promptCount`, `mcpResourceCount`, and `resourceTemplateCount` from the last successful list. Computing status does not list downstream servers again. `mcpResourceCount` counts MCP resources, not the infrastructure `resources` array on this response. `capabilities` reports the booleans the downstream declared: `prompts`, `resources`, `resourcesSubscribe`, `resourcesListChanged`, and `toolsListChanged`. Resource subscribe and resource list-changed are reported but not advertised upstream. `toolsListChanged` is what the downstream declared; handshake clients are separately told that the gateway itself emits tool list changes. `resourceCollisions` counts resource URIs, identical templates, and `ui://` index entries this server lost to another server. `resourceListError` is omitted when the last resource list succeeded; otherwise it is `timeout`, `canceled`, `rpc`, or `transport`. It covers `resources/list` and `resources/templates/list` only. A `prompts/list` failure is logged with the server name and category and is not stored on this field. An upstream disconnect is not recorded as a server fault. The Stack sidebar labels the counts Prompts, MCP resources, and Templates, shows a tools list changed badge when `toolsListChanged` is true, and shows a warning row for a list error or a non-zero collision count.
 
 Each registered server also reports `protocolVersion` (string, omitted when the server did not report one or has no MCP handshake, as with OpenAPI adapters) carrying the MCP protocol version negotiated at initialize, and `protocolGeneration` (string, `"handshake"` or `"stateless"`, omitted for OpenAPI adapters) carrying the resolved MCP protocol generation. `/api/sessions` responses carry `entries`, one `{id, generation, protocolVersion}` object per active session, alongside the legacy bare `sessions` ID list. A server that failed gateway registration (unreachable endpoint, initialize failure, or unsupported protocol version) still appears in the list with `registrationFailed: true`, `healthy: false`, the failure reason in `healthError`, `initialized: false`, and no replicas, so declared servers are never silently absent. A retryable failure (the server was not reachable) is not terminal: the gateway re-attempts registration on the health-monitor cadence with exponential backoff, `healthError` carries a `retrying in Ns` hint while the loop runs, and the row flips to a normal registered server once the backend becomes reachable. Authorization failures and configuration errors are not retried, and `POST /api/mcp-servers/{name}/restart` on a retrying server forces an immediate attempt instead of returning 404.
 
@@ -519,7 +519,7 @@ When `level` is set, the whole buffer is scanned newest-first for up to `lines` 
 
 Tool-call log lines carry `server`, `tool`, `replica_id`, and (when the caller is identified) `client` in `attrs`, plus a top-level `trace_id` when tracing is enabled, for correlation with `/api/traces`.
 
-Container and local-process stderr captured after attach is a WARN `server stderr` entry with `server` and `output` in `attrs`. A container stderr line longer than 1 MiB is logged once with `truncated: true` and at most 1 MiB of `output`; later lines on that stream are still captured. Local-process stderr still stops the scanner at 1 MiB. Rejected server requests (`server request rejected`, with `method` and `code`) are DEBUG for stdio, local process, HTTP, and SSE. Dropped stdio and local-process notifications (`server notification dropped`, with `method`) and skipped HTTP and SSE notifications (`server notification skipped`, with `method`) are also DEBUG. Handshake-generation HTTP and SSE POST streams answer server requests the same way stdio does: `ping` with an empty result, and every other method with `-32601 Method not found`. A failed reply is a WARN `server request reply failed` line with `error`. A response with a different id is a DEBUG `server response skipped` line, and a stateless-generation server request is a DEBUG `server request skipped` line with `method`. Params are not logged. Unsolicited requests on the GET listener stream, including keepalive pings, are still unhandled. Those DEBUG lines are absent unless the gateway log level is debug.
+Container and local-process stderr captured after attach is a WARN `server stderr` entry with `server` and `output` in `attrs`. A container stderr line longer than 1 MiB is logged once with `truncated: true` and at most 1 MiB of `output`; later lines on that stream are still captured. Local-process stderr still stops the scanner at 1 MiB. Rejected server requests (`server request rejected`, with `method` and `code`) are DEBUG for stdio, local process, HTTP, and SSE. Dropped stdio and local-process notifications (`server notification dropped`, with `method`) and skipped HTTP and SSE notifications (`server notification skipped`, with `method`) are also DEBUG. A handshake-era `notifications/tools/list_changed` is the exception: it is logged at DEBUG as `server notification handled` with `server` and `method`, and it schedules one tool refresh for that server. A delivered upstream notification is a DEBUG `list_changed sent` line with `session` and nothing else. A failed replica refresh is a WARN `downstream tool refresh failed` line with `server`, `replica`, and `error`. Handshake-generation HTTP and SSE POST streams answer server requests the same way stdio does: `ping` with an empty result, and every other method with `-32601 Method not found`. A failed reply is a WARN `server request reply failed` line with `error`. A response with a different id is a DEBUG `server response skipped` line, and a stateless-generation server request is a DEBUG `server request skipped` line with `method`. Params are not logged. Unsolicited requests on the GET listener stream, including keepalive pings, are still unhandled. Those DEBUG lines are absent unless the gateway log level is debug.
 
 Shared redaction masks recognizable typed capability strings in log messages,
 keys, and nested JSON-compatible attributes. A nested attribute containing a
@@ -831,7 +831,7 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/optimize?min_i
 
 #### `GET /api/groups`
 
-Returns every tool group declared under `groups:` in stack.yaml, resolved against the live tool surface. Backs `gridctl groups`. An authenticated request returns `200`: with no groups configured the payload carries `configured: false` and an empty array. Each group also serves MCP at `GET|POST|DELETE /groups/{name}/mcp` (and a negotiation hint at `GET /groups/{name}/sse`). These routes require the same configured credential as `/mcp` on every request. After authentication, unknown group names return `404` before any session is created.
+Returns every tool group declared under `groups:` in stack.yaml, resolved against the live tool surface. Backs `gridctl groups`. An authenticated request returns `200`: with no groups configured the payload carries `configured: false` and an empty array. Each group also serves MCP at `GET|POST|DELETE /groups/{name}/mcp` (and a negotiation hint at `GET /groups/{name}/sse`). Handshake tool list changes are pushed on that GET stream the same way as [`GET /mcp`](#get-mcp). These routes require the same configured credential as `/mcp` on every request. After authentication, unknown group names return `404` before any session is created.
 
 **Auth:** Yes
 
@@ -3661,7 +3661,7 @@ Downstream prompts and resources come only from servers that declare the capabil
 
 On the stateless path, these list results use `resultType: "complete"`. `ttlMs` is the minimum across contributing lists. The registry, when it contributed entries, counts as 60000 and private. A handshake-era contributor, or one that omitted `ttlMs`, pins the aggregate to 0. Servers that contributed no entries do not participate, so a handshake-era tool-only server does not change these values. `cacheScope` is `public` only when every contributor is public. With no downstream contributors the result is `ttlMs` 60000 and `private`. A stateless read passes through the downstream `ttlMs`, `cacheScope`, and `resultType`. A handshake client that receives `input_required` gets an internal error naming MRTR, using the same pattern as `tools/call`, with the noun matching the method (`prompt` or `resource`). Downstream JSON-RPC errors pass through with their original code. Timeouts and transport errors return `-32603` and name the server, not payload bytes. Unknown or out-of-scope prompt names keep the existing unknown-skill error.
 
-`resources/subscribe`, `resources/unsubscribe`, `subscriptions/listen`, and list-changed notifications stay unsupported (`-32601`). The gateway advertises `prompts` and `resources` when the registry is present or any downstream declares them, and never advertises `subscribe` or `listChanged`. `limits:` and run recording cover `tools/call` only.
+`resources/subscribe`, `resources/unsubscribe`, and `subscriptions/listen` stay unsupported (`-32601`). Prompt and resource `listChanged` stay unadvertised. Handshake-era `initialize` on `/mcp` and `/groups/{name}/mcp` advertises `tools.listChanged`. The stateless `server/discover` result keeps `tools` without `listChanged`. The gateway advertises `prompts` and `resources` when the registry is present or any downstream declares them, and never advertises `subscribe` or prompt or resource `listChanged`. `limits:` and run recording cover `tools/call` only.
 
 `tools/call` responses use `Cache-Control: no-store` in both generations. A2A
 `task_get` and `task_cancel` are ordinary tools reached through this method;
@@ -3676,8 +3676,33 @@ server-initiated streams):
 #### `GET /mcp`
 
 Opens a server-to-client SSE stream for the session identified by the
-`Mcp-Session-Id` header. Clients may send `Last-Event-ID` to resume a
-disconnected stream.
+`Mcp-Session-Id` header. Response headers are sent immediately. Clients
+may send `Last-Event-ID` to resume a disconnected stream.
+
+Handshake sessions receive `notifications/tools/list_changed` on this
+stream when that session's visible tool list changes. A group session
+receives the same event on `GET /groups/{name}/mcp`. The SSE event type
+is `message`. The data is `{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}`,
+with no `id` and no `params`. Visible means the list `tools/list` would
+return for that session after client-profile and group filtering. A
+change the session cannot see produces no event. Code mode produces
+none. Triggers are coalesced: a 250 ms quiet window, and at least one
+flush every 2 seconds while triggers continue. A session with no open
+stream gets nothing at the time of the change; the event is stored and
+replayed if the client reconnects with `Last-Event-ID`. Autoscaler cold
+start and scale-up are not triggers. Drift those introduce is reported
+on the next trigger from any other source.
+
+Downstream handshake servers are honored when stdio, a local process, or
+an HTTP or SSE POST response stream carries the same notification.
+Servers that omit `tools.listChanged` are still honored. The gateway does
+not open a standalone GET listener to HTTP servers, so a notification
+that arrives only on a downstream GET stream is not seen. Each server is
+refreshed at most once per 500 ms. A server that keeps emitting the
+notification postpones that refresh until the emissions stop. Each
+replica refresh is bounded at 10 seconds. Schema pin verification runs before
+the upstream notification, so block mode is in place before clients are
+told to re-list.
 
 **Auth:** Yes
 

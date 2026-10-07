@@ -34,6 +34,11 @@ type Router struct {
 	resourceCounts   map[string]int
 	templateCounts   map[string]int
 	listErrors       map[string]string
+
+	// onChange runs after RefreshTools and RemoveClient release r.mu.
+	// Invoking it under the write lock deadlocks: the callback reads the
+	// aggregated tool map.
+	onChange func()
 }
 
 type compiledTemplate struct {
@@ -93,10 +98,28 @@ func (r *Router) AddReplicaSet(set *ReplicaSet) {
 	r.sets[set.Name()] = set
 }
 
+// SetOnChange installs the callback invoked after RefreshTools and
+// RemoveClient release the router lock. A nil callback disables it.
+// The callback must not assume it runs under r.mu, and must not take
+// locks the caller of RefreshTools may already hold.
+func (r *Router) SetOnChange(fn func()) {
+	r.mu.Lock()
+	r.onChange = fn
+	r.mu.Unlock()
+}
+
+func (r *Router) fireOnChange() {
+	r.mu.RLock()
+	fn := r.onChange
+	r.mu.RUnlock()
+	if fn != nil {
+		fn()
+	}
+}
+
 // RemoveClient removes a server (replica set) and its tools from the router.
 func (r *Router) RemoveClient(name string) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	delete(r.sets, name)
 
 	// Remove tools for this server
@@ -107,6 +130,8 @@ func (r *Router) RemoveClient(name string) {
 	}
 	r.clearResourceServerLocked(name)
 	r.rebuildResourceWinnersLocked()
+	r.mu.Unlock()
+	r.fireOnChange()
 }
 
 // GetClient returns one client for the named server, chosen by the set's
@@ -189,8 +214,6 @@ func toolsOf(set *ReplicaSet) []Tool {
 // RefreshTools updates the tool registry from all servers.
 func (r *Router) RefreshTools() {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	// Clear existing tool mappings
 	r.tools = make(map[string]string)
 	r.serverUI = make(map[string][]string)
@@ -207,6 +230,8 @@ func (r *Router) RefreshTools() {
 		}
 	}
 	r.rebuildResourceWinnersLocked()
+	r.mu.Unlock()
+	r.fireOnChange()
 }
 
 // HasTool reports whether a prefixed name routes to a live aggregated tool.

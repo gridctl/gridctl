@@ -122,10 +122,8 @@ func TestGateway_HandleInitialize(t *testing.T) {
 	if result.Capabilities.Tools == nil {
 		t.Error("expected Tools capability to be set")
 	}
-	// gridctl never emits list-changed notifications, so the capability
-	// must not be advertised (a conformance-surfaced spec violation).
-	if result.Capabilities.Tools.ListChanged {
-		t.Error("Tools.ListChanged must not be advertised")
+	if !result.Capabilities.Tools.ListChanged {
+		t.Error("Tools.ListChanged must be advertised to handshake clients")
 	}
 }
 
@@ -1487,8 +1485,8 @@ func TestGateway_HandleInitialize_WithRegistry(t *testing.T) {
 	if result.Capabilities.Prompts == nil {
 		t.Error("expected Prompts capability to be set")
 	}
-	// listChanged is never advertised: gridctl does not emit
-	// list-changed notifications on any surface.
+	// Prompt and resource listChanged stay unadvertised. Tools listChanged
+	// is handshake-only and is checked in TestGateway_HandleInitialize.
 	if result.Capabilities.Prompts != nil && result.Capabilities.Prompts.ListChanged {
 		t.Error("Prompts.ListChanged must not be advertised")
 	}

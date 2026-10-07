@@ -31,7 +31,14 @@ import (
 	"time"
 )
 
-var protocol string
+var (
+	protocol    string
+	listChanged bool
+	// emitListChanged is set by mutate_tools and consumed after the call
+	// response is written. The reader is single-threaded.
+	emitListChanged bool
+	addedSeq        int
+)
 
 func modernMode() bool { return protocol == "2026-07-28" }
 
@@ -257,7 +264,7 @@ func handleRequest(req Request) *Response {
 				Version: "1.0.0",
 			},
 			Capabilities: Capabilities{
-				Tools: &ToolsCapability{ListChanged: false},
+				Tools: &ToolsCapability{ListChanged: listChanged},
 			},
 		}
 
@@ -266,7 +273,7 @@ func handleRequest(req Request) *Response {
 		return nil
 
 	case "tools/list":
-		result = ToolsListResult{Tools: sampleTools}
+		result = ToolsListResult{Tools: append([]Tool(nil), sampleTools...)}
 
 	case "tools/call":
 		var params ToolCallParams
@@ -317,6 +324,29 @@ func handleToolCall(params ToolCallParams) ToolCallResult {
 			Content: []Content{{Type: "text", Text: fmt.Sprintf("Current time: %s", time.Now().Format(time.RFC3339))}},
 		}
 
+	case "mutate_tools":
+		action, _ := params.Arguments["action"].(string)
+		switch action {
+		case "add":
+			addedSeq++
+			sampleTools = append(sampleTools, Tool{
+				Name:        fmt.Sprintf("added_tool_%d", addedSeq),
+				Description: "Added by mutate_tools",
+				InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
+			})
+			emitListChanged = listChanged
+			return ToolCallResult{Content: []Content{{Type: "text", Text: "added"}}}
+		case "modify":
+			if len(sampleTools) == 0 {
+				return ToolCallResult{Content: []Content{{Type: "text", Text: "no tools"}}, IsError: true}
+			}
+			sampleTools[0].Description = "modified by mutate_tools"
+			emitListChanged = listChanged
+			return ToolCallResult{Content: []Content{{Type: "text", Text: "modified"}}}
+		default:
+			return ToolCallResult{Content: []Content{{Type: "text", Text: "action must be add or modify"}}, IsError: true}
+		}
+
 	case "mixed_content":
 		size := int64(42)
 		return ToolCallResult{
@@ -345,7 +375,21 @@ func handleToolCall(params ToolCallParams) ToolCallResult {
 
 func main() {
 	flag.StringVar(&protocol, "protocol", "", "Protocol generation: empty for legacy handshake, 2026-07-28 for stateless")
+	flag.BoolVar(&listChanged, "list-changed", false, "Declare tools.listChanged and emit notifications/tools/list_changed after mutate_tools")
 	flag.Parse()
+	if listChanged && !modernMode() {
+		sampleTools = append(sampleTools, Tool{
+			Name:        "mutate_tools",
+			Description: "Adds or modifies a tool and emits notifications/tools/list_changed",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"action": map[string]any{"type": "string", "description": "add or modify"},
+				},
+				"required": []string{"action"},
+			},
+		})
+	}
 
 	// Log startup to stderr (not stdout, which is for JSON-RPC)
 	fmt.Fprintln(os.Stderr, "Mock stdio MCP server started")
@@ -377,6 +421,10 @@ func main() {
 		if resp != nil {
 			data, _ := json.Marshal(resp)
 			fmt.Println(string(data))
+		}
+		if emitListChanged {
+			emitListChanged = false
+			fmt.Println(`{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}`)
 		}
 	}
 

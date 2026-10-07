@@ -317,6 +317,9 @@ func (c *ProcessClient) readResponses(ctx context.Context, stdout io.Reader) {
 			continue
 		}
 		if message.kind == stdioNotification {
+			if c.handlePeerListChanged(message.method) {
+				continue
+			}
 			logStdioPeer(c.logger, message)
 			continue
 		}

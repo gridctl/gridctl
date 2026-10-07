@@ -110,12 +110,33 @@ type StreamableHTTPServer struct {
 }
 
 // NewStreamableHTTPServer creates a new Streamable HTTP server.
+// The server registers itself as the gateway's list-change sink so every
+// construction site, including tests that build the server directly, delivers
+// notifications/tools/list_changed on the session GET stream.
 func NewStreamableHTTPServer(gateway *Gateway, allowedOrigins []string) *StreamableHTTPServer {
-	return &StreamableHTTPServer{
+	s := &StreamableHTTPServer{
 		gateway:        gateway,
 		allowedOrigins: allowedOrigins,
 		sessions:       make(map[string]*StreamableSession),
 	}
+	if gateway != nil {
+		gateway.SetListChangeSink(s)
+	}
+	return s
+}
+
+// NotifyToolsListChanged appends a tools list-changed notification to the
+// session history and enqueues it for the active GET stream. The event type
+// is message because handshake clients ignore any other SSE event name.
+// A missing transport session is skipped.
+func (s *StreamableHTTPServer) NotifyToolsListChanged(sessionID string) {
+	s.mu.RLock()
+	session, ok := s.sessions[sessionID]
+	s.mu.RUnlock()
+	if !ok {
+		return
+	}
+	session.pushEvent("message", toolsListChangedPayload)
 }
 
 // SetAllowedOrigins updates the list of allowed origins for DNS rebinding protection.
@@ -498,6 +519,9 @@ func (s *StreamableHTTPServer) handleGet(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	// Send the response headers before the first event. Without this, a
+	// client waiting on the GET blocks until the 30s keepalive.
+	flusher.Flush()
 
 	// Replay missed events if Last-Event-ID is provided; track lastSentID to
 	// deduplicate events that are also queued in the channel buffer.
@@ -615,10 +639,13 @@ func (s *StreamableHTTPServer) handleRequest(ctx context.Context, session *Strea
 	}
 }
 
-func (s *StreamableHTTPServer) handleToolsList(ctx context.Context, _ *StreamableSession, req *jsonrpc.Request) jsonrpc.Response {
+func (s *StreamableHTTPServer) handleToolsList(ctx context.Context, session *StreamableSession, req *jsonrpc.Request) jsonrpc.Response {
 	result, err := s.gateway.HandleToolsList(ctx)
 	if err != nil {
 		return jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error())
+	}
+	if session != nil {
+		s.gateway.sessions.SetToolFingerprint(session.ID, fingerprintTools(result.Tools))
 	}
 	return jsonrpc.NewSuccessResponse(req.ID, result)
 }
