@@ -3698,8 +3698,9 @@ an HTTP or SSE POST response stream carries the same notification.
 Servers that omit `tools.listChanged` are still honored. The gateway does
 not open a standalone GET listener to HTTP servers, so a notification
 that arrives only on a downstream GET stream is not seen. Each server is
-refreshed at most once per 500 ms, and each replica refresh is bounded
-at 10 seconds. Schema pin verification runs before
+refreshed at most once per 500 ms. A server that keeps emitting the
+notification postpones that refresh until the emissions stop. Each
+replica refresh is bounded at 10 seconds. Schema pin verification runs before
 the upstream notification, so block mode is in place before clients are
 told to re-list.
 
