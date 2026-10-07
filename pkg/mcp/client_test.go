@@ -1129,3 +1129,126 @@ func TestClient_SSELargeEvent(t *testing.T) {
 	}
 	assertTextContent(t, result, text)
 }
+
+func TestClient_SSEReplyStreamHeldOpen(t *testing.T) {
+	release := make(chan struct{})
+	var mu sync.Mutex
+	replies := 0
+	ts := startSSECallServer(t, func(w http.ResponseWriter, r *http.Request, body []byte) {
+		mu.Lock()
+		replies++
+		mu.Unlock()
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "data: {\"jsonrpc\":\"2.0\",\"id\":\"other\",\"method\":\"ping\"}\n\n")
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-release
+	}, func(w http.ResponseWriter, req jsonrpc.Request) {
+		writeSSEEvents(w,
+			`{"jsonrpc":"2.0","id":"srv-7","method":"ping"}`,
+			fmt.Sprintf(`{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"held"}]}}`, *req.ID),
+		)
+	})
+	t.Cleanup(ts.Close)
+	t.Cleanup(func() { close(release) })
+
+	c := NewClient("test", ts.URL)
+	type callResult struct {
+		result *ToolCallResult
+		err    error
+	}
+	done := make(chan callResult, 1)
+	go func() {
+		result, err := c.CallTool(context.Background(), "echo", map[string]any{"message": "hi"})
+		done <- callResult{result, err}
+	}()
+	select {
+	case res := <-done:
+		if res.err != nil {
+			t.Fatal(res.err)
+		}
+		assertTextContent(t, res.result, "held")
+	case <-time.After(time.Second):
+		t.Fatal("CallTool blocked on the reply stream")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if replies != 1 {
+		t.Fatalf("replies = %d, want 1", replies)
+	}
+}
+
+func TestClient_SSEInitializeServerRequestBeforeResponse(t *testing.T) {
+	var mu sync.Mutex
+	var replies []capturedReply
+	ts := startSSECallServer(t, func(w http.ResponseWriter, r *http.Request, body []byte) {
+		mu.Lock()
+		replies = append(replies, capturedReply{
+			body:    append([]byte(nil), body...),
+			session: r.Header.Get("Mcp-Session-Id"),
+			version: r.Header.Get("MCP-Protocol-Version"),
+		})
+		mu.Unlock()
+		w.WriteHeader(http.StatusAccepted)
+	}, func(w http.ResponseWriter, req jsonrpc.Request) {
+		if req.Method != "initialize" {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		w.Header().Set("Mcp-Session-Id", "init-session")
+		result, err := json.Marshal(InitializeResult{
+			ProtocolVersion: "2025-06-18",
+			ServerInfo:      ServerInfo{Name: "sse-init", Version: "1.2.3"},
+		})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeSSEEvents(w,
+			`{"jsonrpc":"2.0","id":"srv-init","method":"ping"}`,
+			fmt.Sprintf(`{"jsonrpc":"2.0","id":%s,"result":%s}`, *req.ID, result),
+		)
+	})
+	defer ts.Close()
+
+	c := NewClient("test", ts.URL)
+	c.SetGenerationPin(GenerationHandshake)
+	if err := c.Initialize(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	info := c.ServerInfo()
+	if info.Name != "sse-init" || info.Version != "1.2.3" {
+		t.Fatalf("server info = %#v", info)
+	}
+	c.mu.RLock()
+	sid := c.sessionID
+	c.mu.RUnlock()
+	if sid != "init-session" {
+		t.Fatalf("sessionID = %q, want init-session", sid)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(replies) != 1 {
+		t.Fatalf("replies = %d, want 1", len(replies))
+	}
+	var reply struct {
+		ID     json.RawMessage `json:"id"`
+		Result json.RawMessage `json:"result"`
+		Method string          `json:"method"`
+	}
+	if err := json.Unmarshal(replies[0].body, &reply); err != nil {
+		t.Fatal(err)
+	}
+	if reply.Method != "" || string(reply.ID) != `"srv-init"` || string(reply.Result) != `{}` {
+		t.Fatalf("reply = %s", replies[0].body)
+	}
+	if replies[0].session != "init-session" {
+		t.Fatalf("reply session = %q, want init-session", replies[0].session)
+	}
+	if replies[0].version != "" {
+		t.Fatalf("reply protocol version = %q, want empty during initialize", replies[0].version)
+	}
+}

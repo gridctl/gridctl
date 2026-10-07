@@ -299,9 +299,10 @@ func (c *Client) newPOSTRequest(ctx context.Context, body []byte, method string,
 }
 
 // replyToServer POSTs a JSON-RPC response to a server request. It does
-// not use sendHTTP: a non-2xx reply must not invalidate a cached token,
-// and the response body is discarded so a nested SSE event cannot recurse
-// or replace the live session id.
+// not use sendHTTP: a non-2xx reply must not invalidate a cached token.
+// The response body is closed without reading it. A held-open stream
+// must not stall the originating call, and a nested SSE event must not
+// recurse or replace the live session id.
 func (c *Client) replyToServer(ctx context.Context, reply jsonrpc.Response) error {
 	if c.httpClient == nil {
 		return errors.New("no http client")
@@ -319,10 +320,6 @@ func (c *Client) replyToServer(ctx context.Context, reply jsonrpc.Response) erro
 		return fmt.Errorf("sending reply: %w", err)
 	}
 	defer httpResp.Body.Close()
-	// Drain a bounded prefix so a small 202 body can be discarded without
-	// parsing it as another JSON-RPC stream. The remainder is abandoned
-	// with the close.
-	_, _ = io.Copy(io.Discard, io.LimitReader(httpResp.Body, 32<<10))
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
 		return fmt.Errorf("reply status %d", httpResp.StatusCode)
 	}
