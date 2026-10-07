@@ -22,6 +22,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -32,12 +33,10 @@ var (
 	sseServerRequest bool
 	pongMu           sync.Mutex
 	pongWaiters      = map[string]chan struct{}{}
+	ssePingSeq       atomic.Int64
 )
 
-const (
-	ssePingID   = "srv-7"
-	ssePongWait = 5 * time.Second
-)
+const ssePongWait = 5 * time.Second
 
 // modernMode reports whether the mock speaks the stateless 2026-07-28
 // generation instead of the legacy handshake generation.
@@ -311,10 +310,11 @@ func sendToolCallWithServerRequest(w http.ResponseWriter, id json.RawMessage, re
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	ch := armPong(ssePingID)
-	defer disarmPong(ssePingID)
+	pingID := fmt.Sprintf("srv-%d", ssePingSeq.Add(1))
+	ch := armPong(pingID)
+	defer disarmPong(pingID)
 
-	fmt.Fprintf(w, "data: {\"jsonrpc\":\"2.0\",\"id\":%q,\"method\":\"ping\"}\n\n", ssePingID)
+	fmt.Fprintf(w, "data: {\"jsonrpc\":\"2.0\",\"id\":%q,\"method\":\"ping\"}\n\n", pingID)
 	fmt.Fprintf(w, "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\"}}\n\n")
 	if flusher != nil {
 		flusher.Flush()
@@ -323,9 +323,9 @@ func sendToolCallWithServerRequest(w http.ResponseWriter, id json.RawMessage, re
 	select {
 	case <-ch:
 	case <-time.After(ssePongWait):
-		log.Printf("missing pong for ping %s", ssePingID)
+		log.Printf("missing pong for ping %s", pingID)
 		result = ToolCallResult{
-			Content: []Content{{Type: "text", Text: "missing pong for ping " + ssePingID}},
+			Content: []Content{{Type: "text", Text: "missing pong for ping " + pingID}},
 			IsError: true,
 		}
 	}
