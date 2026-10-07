@@ -1225,7 +1225,7 @@ func (g *Gateway) ReplicaStatuses(serverName string) []ReplicaStatus {
 	meta, hasMeta := g.serverMeta[serverName]
 	g.mu.RUnlock()
 	policy := ""
-	if hasMeta && isManagedStdio(meta) {
+	if hasMeta && isManagedStdio(meta) && g.GetAutoscaler(serverName) == nil {
 		policy = displayRestartPolicy(meta.RestartPolicy)
 	}
 

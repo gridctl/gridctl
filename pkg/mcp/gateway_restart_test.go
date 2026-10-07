@@ -141,6 +141,18 @@ func TestGateway_HealthMonitor_RestartPolicyNo(t *testing.T) {
 	}
 }
 
+func TestGateway_HealthMonitor_RestartPolicyOverflowIsNotUnbounded(t *testing.T) {
+	g, _, rec, reconnects := installExitedStdio(t, "svc", "on-failure:4294967296", "cid-1", &ContainerExit{Code: 3, Status: "exited"}, nil, nil)
+	g.checkHealth(context.Background())
+	if rec.calls.Load() != 0 || reconnects.Load() != 0 {
+		t.Fatalf("overflow policy restarted: calls=%d reconnects=%d", rec.calls.Load(), reconnects.Load())
+	}
+	got := g.ReplicaStatuses("svc")[0]
+	if got.State != "unhealthy" || !got.RestartExhausted {
+		t.Fatalf("replica = %#v", got)
+	}
+}
+
 func TestGateway_HealthMonitor_RestartPolicyOnFailureBudget(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	g := NewGateway()
@@ -272,6 +284,9 @@ func TestGateway_HealthMonitor_RestartSkipsAutoscaled(t *testing.T) {
 	}
 	if reconnects.Load() != 1 {
 		t.Fatalf("autoscaled reconnects = %d, want the existing reconnect path", reconnects.Load())
+	}
+	if got := g.ReplicaStatuses("svc"); len(got) != 1 || got[0].RestartPolicy != "" {
+		t.Fatalf("autoscaled restartPolicy = %#v, want omitted", got)
 	}
 }
 

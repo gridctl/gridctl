@@ -25,10 +25,10 @@ func validateRestart(raw string) error {
 		return nil
 	}
 	if raw == "unless-stopped" {
-		return fmt.Errorf("unless-stopped is not accepted; gridctl cannot distinguish an operator stop from a crash (accepted: always, on-failure, on-failure:N with N >= 1, no)")
+		return fmt.Errorf("unless-stopped is not accepted; gridctl cannot distinguish an operator stop from a crash (accepted: always, on-failure, on-failure:N with N >= 1 and N <= 4294967295, no)")
 	}
 	if resolveRestartPolicy(raw).Mode == "" {
-		return fmt.Errorf("invalid restart %q (accepted: always, on-failure, on-failure:N with N >= 1, no)", raw)
+		return fmt.Errorf("invalid restart %q (accepted: always, on-failure, on-failure:N with N >= 1 and N <= 4294967295, no)", raw)
 	}
 	return nil
 }

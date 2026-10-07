@@ -68,11 +68,11 @@ func parseRestartPolicy(raw string) parsedRestartPolicy {
 	if !ok {
 		return parsedRestartPolicy{mode: "no", display: raw}
 	}
-	max, err := strconv.Atoi(n)
-	if err != nil || max < 1 {
+	limit, err := strconv.ParseUint(n, 10, 32)
+	if err != nil || limit < 1 {
 		return parsedRestartPolicy{mode: "no", display: raw}
 	}
-	return parsedRestartPolicy{mode: "on-failure", max: uint32(max), display: "on-failure:" + strconv.Itoa(max)}
+	return parsedRestartPolicy{mode: "on-failure", max: uint32(limit), display: "on-failure:" + strconv.FormatUint(limit, 10)}
 }
 
 func displayRestartPolicy(raw string) string {

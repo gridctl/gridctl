@@ -548,6 +548,7 @@ type MCPServer struct {
 
 	// Restart controls whether the health monitor restarts a managed stdio
 	// container that inspect reports as not running. Empty means always.
+	// on-failure:N requires N from 1 through 4294967295.
 	// Accepted and unused on non-container servers.
 	Restart string `yaml:"restart,omitempty" json:"restart,omitempty"`
 
@@ -706,11 +707,11 @@ func resolveRestartPolicy(raw string) RestartPolicy {
 	if !ok {
 		return RestartPolicy{Raw: raw}
 	}
-	max, err := strconv.Atoi(n)
-	if err != nil || max < 1 {
+	limit, err := strconv.ParseUint(n, 10, 32)
+	if err != nil || limit < 1 {
 		return RestartPolicy{Raw: raw}
 	}
-	return RestartPolicy{Mode: "on-failure", Max: uint32(max), Raw: "on-failure:" + strconv.Itoa(max)}
+	return RestartPolicy{Mode: "on-failure", Max: uint32(limit), Raw: "on-failure:" + strconv.FormatUint(limit, 10)}
 }
 
 // ResolvedPingTimeout parses PingTimeout; returns 0 when unset or invalid so

@@ -1042,14 +1042,14 @@ func TestValidate_RestartPolicy(t *testing.T) {
 	base := func(servers []MCPServer) *Stack {
 		return &Stack{Name: "test", Network: Network{Name: "test-net"}, MCPServers: servers}
 	}
-	accepted := []string{"always", "no", "on-failure", "on-failure:5"}
+	accepted := []string{"always", "no", "on-failure", "on-failure:5", "on-failure:4294967295"}
 	for _, raw := range accepted {
 		err := Validate(base([]MCPServer{{Name: "s1", Image: "alpine", Port: 3000, Transport: "stdio", Restart: raw}}))
 		if err != nil {
 			t.Errorf("restart %q: %v", raw, err)
 		}
 	}
-	rejected := []string{"unless-stopped", "on-failure:0", "sometimes"}
+	rejected := []string{"unless-stopped", "on-failure:0", "sometimes", "on-failure:4294967296", "on-failure:4294967297"}
 	for _, raw := range rejected {
 		err := Validate(base([]MCPServer{{Name: "s1", Image: "alpine", Port: 3000, Transport: "stdio", Restart: raw}}))
 		if err == nil || !strings.Contains(err.Error(), "mcp-servers[0].restart") {
@@ -1080,6 +1080,8 @@ func TestMCPServer_ResolvedRestartPolicy(t *testing.T) {
 		{"no", "no", 0, "no"},
 		{"on-failure", "on-failure", 0, "on-failure"},
 		{"on-failure:5", "on-failure", 5, "on-failure:5"},
+		{"on-failure:4294967295", "on-failure", 4294967295, "on-failure:4294967295"},
+		{"on-failure:4294967296", "", 0, "on-failure:4294967296"},
 		{"sometimes", "", 0, "sometimes"},
 	}
 	for _, tc := range cases {
