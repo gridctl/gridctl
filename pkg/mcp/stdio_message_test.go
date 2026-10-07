@@ -39,7 +39,7 @@ func TestClassifyStdioMessage_ServerMessages(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			message, err := classifyStdioMessage([]byte(tt.message))
+			message, err := classifyPeerMessage([]byte(tt.message))
 			if err != nil {
 				t.Fatalf("classify message: %v", err)
 			}
@@ -75,7 +75,7 @@ func TestClassifyStdioMessage_ServerMessages(t *testing.T) {
 }
 
 func TestClassifyStdioMessage_Response(t *testing.T) {
-	message, err := classifyStdioMessage([]byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`))
+	message, err := classifyPeerMessage([]byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`))
 	if err != nil {
 		t.Fatalf("classify response: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestClassifyStdioMessage_Response(t *testing.T) {
 }
 
 func TestClassifyStdioMessage_InvalidJSON(t *testing.T) {
-	if _, err := classifyStdioMessage([]byte(`not-json`)); err == nil {
+	if _, err := classifyPeerMessage([]byte(`not-json`)); err == nil {
 		t.Fatal("invalid JSON classified without error")
 	}
 }

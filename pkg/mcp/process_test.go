@@ -159,7 +159,7 @@ func TestProcessClient_ServerPingDoesNotCorrelate(t *testing.T) {
 	client.responses[1] = respCh
 	client.responsesMu.Unlock()
 
-	ping, err := classifyStdioMessage([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
+	ping, err := classifyPeerMessage([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
 	if err != nil {
 		t.Fatalf("classify ping: %v", err)
 	}

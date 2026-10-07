@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -178,50 +179,17 @@ func (c *Client) sendHTTPOnce(ctx context.Context, req jsonrpc.Request) (*jsonrp
 		return nil, fmt.Errorf("marshaling request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.endpoint, bytes.NewReader(body))
+	httpReq, err := c.newPOSTRequest(ctx, body, req.Method, req.Params)
 	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json, text/event-stream")
-
-	if err := c.applyAuthHeader(ctx, httpReq); err != nil {
 		return nil, err
 	}
 
-	// Inject W3C traceparent/tracestate into outgoing request headers.
-	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(httpReq.Header))
-
-	// Include session ID if we have one (for stateful MCP servers) and the
-	// protocol version negotiated at initialize (required by the spec on all
-	// post-initialize requests). The stateless era has no sessions:
-	// Mcp-Session-Id is never sent, and the required Mcp-Method/Mcp-Name
-	// request-metadata headers are stamped instead. The probe stamps
-	// them too; a modern server validates them on every request it
-	// accepts.
+	// Snapshot the era before the exchange. The session header below
+	// re-checks at write time so a response that raced a re-negotiation
+	// cannot write a stale session over the flipped client's state.
 	c.mu.RLock()
-	era, protocolVersion := c.era, c.protocolVersion
-	if era != EraStateless && c.sessionID != "" {
-		httpReq.Header.Set("Mcp-Session-Id", c.sessionID)
-	}
+	era := c.era
 	c.mu.RUnlock()
-	if protocolVersion != "" {
-		httpReq.Header.Set("MCP-Protocol-Version", protocolVersion)
-	}
-	if era == EraStateless || req.Method == "server/discover" {
-		if req.Method == "server/discover" && protocolVersion == "" {
-			httpReq.Header.Set("MCP-Protocol-Version", StatelessProtocolVersion)
-		}
-		httpReq.Header.Set(headerMcpMethod, req.Method)
-		if name := mcpNameForRequest(req.Method, req.Params); name != "" {
-			httpReq.Header.Set(headerMcpName, encodeHeaderValue(name))
-		}
-		// Forward unrecognized Mcp-Param-* headers from the upstream
-		// request untouched, per the intermediary rules.
-		for name, value := range mcpParamHeadersFromContext(ctx) {
-			httpReq.Header.Set(name, value)
-		}
-	}
 
 	httpResp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -268,7 +236,7 @@ func (c *Client) sendHTTPOnce(ctx context.Context, req jsonrpc.Request) (*jsonrp
 	// Check if response is SSE format (text/event-stream)
 	contentType := httpResp.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "text/event-stream") {
-		return c.parseSSEResponse(httpResp.Body)
+		return c.parseSSEResponse(ctx, httpResp.Body, req.ID)
 	}
 
 	var resp jsonrpc.Response
@@ -279,52 +247,216 @@ func (c *Client) sendHTTPOnce(ctx context.Context, req jsonrpc.Request) (*jsonrp
 	return &resp, nil
 }
 
-// parseSSEResponse parses a Server-Sent Events formatted response.
-// SSE streams may contain multiple events (notifications + result).
-// We look for the response with an ID field (the actual result), skipping notifications.
-func (c *Client) parseSSEResponse(body io.Reader) (*jsonrpc.Response, error) {
-	data, err := io.ReadAll(body)
+// newPOSTRequest builds a downstream JSON-RPC POST. method and params
+// select the stateless request-metadata headers; replies pass an empty
+// method and nil params so they do not look like a new RPC call.
+func (c *Client) newPOSTRequest(ctx context.Context, body []byte, method string, params json.RawMessage) (*http.Request, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.endpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("reading SSE response: %w", err)
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/json, text/event-stream")
+
+	if err := c.applyAuthHeader(ctx, httpReq); err != nil {
+		return nil, err
 	}
 
-	// Parse SSE format: look for "data: " lines
-	// Some MCP servers send multiple SSE events (notifications followed by result).
-	// We need to find the response with an ID field (not a notification).
-	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "data: ") {
-			jsonData := strings.TrimPrefix(line, "data: ")
-			var envelope struct {
-				Method string
-				ID     *json.RawMessage
-			}
-			if err := json.Unmarshal([]byte(jsonData), &envelope); err != nil {
-				continue
-			}
-			if envelope.Method != "" && envelope.ID == nil {
-				if c.logger != nil {
-					c.logger.Debug("server notification skipped", "method", envelope.Method)
-				}
-				continue
-			}
-			var resp jsonrpc.Response
-			if err := json.Unmarshal([]byte(jsonData), &resp); err != nil {
-				// Skip malformed lines
-				continue
-			}
-			// Return the response that has an ID (actual result), not notifications
-			// Notifications have a "method" field but no "id" field.
-			// A method-plus-id event is a server request the current decoder
-			// misroutes; leave that return behavior unchanged and do not log it
-			// as a skipped notification.
-			if resp.ID != nil {
-				return &resp, nil
-			}
+	// Inject W3C traceparent/tracestate into outgoing request headers.
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(httpReq.Header))
+
+	// Include session ID if we have one (for stateful MCP servers) and the
+	// protocol version negotiated at initialize (required by the spec on all
+	// post-initialize requests). The stateless era has no sessions:
+	// Mcp-Session-Id is never sent, and the required Mcp-Method/Mcp-Name
+	// request-metadata headers are stamped instead. The probe stamps
+	// them too; a modern server validates them on every request it
+	// accepts.
+	c.mu.RLock()
+	era, protocolVersion := c.era, c.protocolVersion
+	if era != EraStateless && c.sessionID != "" {
+		httpReq.Header.Set("Mcp-Session-Id", c.sessionID)
+	}
+	c.mu.RUnlock()
+	if protocolVersion != "" {
+		httpReq.Header.Set("MCP-Protocol-Version", protocolVersion)
+	}
+	if era == EraStateless || method == "server/discover" {
+		if method == "server/discover" && protocolVersion == "" {
+			httpReq.Header.Set("MCP-Protocol-Version", StatelessProtocolVersion)
+		}
+		httpReq.Header.Set(headerMcpMethod, method)
+		if name := mcpNameForRequest(method, params); name != "" {
+			httpReq.Header.Set(headerMcpName, encodeHeaderValue(name))
+		}
+		// Forward unrecognized Mcp-Param-* headers from the upstream
+		// request untouched, per the intermediary rules.
+		for name, value := range mcpParamHeadersFromContext(ctx) {
+			httpReq.Header.Set(name, value)
 		}
 	}
+	return httpReq, nil
+}
 
-	return nil, fmt.Errorf("no response with ID found in SSE stream")
+// replyToServer POSTs a JSON-RPC response to a server request. It does
+// not use sendHTTP: a non-2xx reply must not invalidate a cached token,
+// and the response body is discarded so a nested SSE event cannot recurse
+// or replace the live session id.
+func (c *Client) replyToServer(ctx context.Context, reply jsonrpc.Response) error {
+	if c.httpClient == nil {
+		return errors.New("no http client")
+	}
+	body, err := json.Marshal(reply)
+	if err != nil {
+		return fmt.Errorf("marshaling reply: %w", err)
+	}
+	httpReq, err := c.newPOSTRequest(ctx, body, "", nil)
+	if err != nil {
+		return err
+	}
+	httpResp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("sending reply: %w", err)
+	}
+	defer httpResp.Body.Close()
+	// Drain a bounded prefix so a small 202 body can be discarded without
+	// parsing it as another JSON-RPC stream. The remainder is abandoned
+	// with the close.
+	_, _ = io.Copy(io.Discard, io.LimitReader(httpResp.Body, 32<<10))
+	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
+		return fmt.Errorf("reply status %d", httpResp.StatusCode)
+	}
+	return nil
+}
+
+// parseSSEResponse reads a Server-Sent Events body until the response
+// whose id matches wantID. Handshake-generation server requests are
+// answered inline. Notifications and foreign responses are skipped.
+// The read returns as soon as the matching response arrives and does not
+// wait for EOF.
+func (c *Client) parseSSEResponse(ctx context.Context, body io.Reader, wantID *json.RawMessage) (*jsonrpc.Response, error) {
+	reader := bufio.NewReaderSize(body, 64*1024)
+	var dataLines []string
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		line, err := reader.ReadBytes('\n')
+		if len(line) > 0 {
+			if resp, ok := c.consumeSSELine(ctx, &dataLines, line, wantID); ok {
+				return resp, nil
+			}
+		}
+		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
+			if errors.Is(err, io.EOF) {
+				if resp := c.dispatchSSEEvent(ctx, dataLines, wantID); resp != nil {
+					return resp, nil
+				}
+				return nil, fmt.Errorf("no response with ID found in SSE stream")
+			}
+			return nil, fmt.Errorf("reading SSE response: %w", err)
+		}
+	}
+}
+
+// consumeSSELine applies one SSE line. A blank line dispatches the
+// current event. ok is true only when that event is the correlated response.
+func (c *Client) consumeSSELine(ctx context.Context, dataLines *[]string, line []byte, wantID *json.RawMessage) (*jsonrpc.Response, bool) {
+	line = bytes.TrimRight(line, "\r\n")
+	if len(line) == 0 {
+		resp := c.dispatchSSEEvent(ctx, *dataLines, wantID)
+		*dataLines = nil
+		if resp != nil {
+			return resp, true
+		}
+		return nil, false
+	}
+	if value, ok := sseDataField(line); ok {
+		*dataLines = append(*dataLines, value)
+	}
+	return nil, false
+}
+
+// sseDataField reports the value of a data field. One leading space after
+// the colon is removed, matching the SSE field rule. Other fields and
+// comments are ignored.
+func sseDataField(line []byte) (string, bool) {
+	if len(line) == 0 || line[0] == ':' {
+		return "", false
+	}
+	name, value, _ := bytes.Cut(line, []byte{':'})
+	if string(name) != "data" {
+		return "", false
+	}
+	if len(value) > 0 && value[0] == ' ' {
+		value = value[1:]
+	}
+	return string(value), true
+}
+
+// dispatchSSEEvent classifies one accumulated SSE payload. A matching
+// response is returned. Every other event is logged or answered and skipped.
+func (c *Client) dispatchSSEEvent(ctx context.Context, dataLines []string, wantID *json.RawMessage) *jsonrpc.Response {
+	if len(dataLines) == 0 {
+		return nil
+	}
+	payload := strings.Join(dataLines, "\n")
+	if payload == "" {
+		return nil
+	}
+	message, err := classifyPeerMessage([]byte(payload))
+	if err != nil {
+		return nil
+	}
+	switch message.kind {
+	case stdioNotification:
+		if c.logger != nil {
+			c.logger.Debug("server notification skipped", "method", message.method)
+		}
+		return nil
+	case stdioRequest:
+		if c.Era() == EraStateless {
+			if c.logger != nil {
+				c.logger.Debug("server request skipped", "method", message.method)
+			}
+			return nil
+		}
+		logStdioPeer(c.logger, message)
+		if message.reply != nil {
+			if err := c.replyToServer(ctx, *message.reply); err != nil && c.logger != nil {
+				c.logger.Warn("server request reply failed", "error", err)
+			}
+		}
+		return nil
+	default:
+		resp := message.response
+		if resp == nil || resp.ID == nil {
+			return nil
+		}
+		if !sseIDsMatch(wantID, resp.ID) {
+			if c.logger != nil {
+				c.logger.Debug("server response skipped")
+			}
+			return nil
+		}
+		return resp
+	}
+}
+
+// sseIDsMatch reports whether both ids are the same integer. The client
+// only generates integer ids, so a string id from the server never matches.
+func sseIDsMatch(want, got *json.RawMessage) bool {
+	if want == nil || got == nil {
+		return false
+	}
+	var wantID, gotID int64
+	if json.Unmarshal(*want, &wantID) != nil || json.Unmarshal(*got, &gotID) != nil {
+		return false
+	}
+	return wantID == gotID
 }
 
 // Ping checks server liveness with an era-appropriate protocol request.

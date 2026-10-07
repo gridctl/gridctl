@@ -179,7 +179,7 @@ func (c *StdioClient) readResponses(ctx context.Context, stdout io.Reader) {
 			continue
 		}
 
-		message, err := classifyStdioMessage(line)
+		message, err := classifyPeerMessage(line)
 		if err != nil {
 			c.logger.Info("server output", "msg", string(line))
 			continue

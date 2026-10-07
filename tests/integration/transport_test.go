@@ -235,6 +235,43 @@ func TestSSETransportConnect(t *testing.T) {
 	}
 }
 
+// TestSSETransportServerRequestBeforeResponse verifies that an SSE server
+// which emits a ping before tools/call still returns the real result once
+// the client answers the ping.
+func TestSSETransportServerRequestBeforeResponse(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	port := freePort(t)
+	startMockServer(t, mockHTTPServerBin, "-port", fmt.Sprintf("%d", port), "-sse", "-sse-server-request")
+	waitForPort(t, ctx, port)
+
+	endpoint := fmt.Sprintf("http://127.0.0.1:%d/mcp", port)
+	client := mcp.NewClient("test-sse-request", endpoint)
+
+	if err := client.Initialize(ctx); err != nil {
+		t.Fatalf("Initialize (SSE server request): %v", err)
+	}
+	if err := client.RefreshTools(ctx); err != nil {
+		t.Fatalf("RefreshTools (SSE server request): %v", err)
+	}
+
+	result, err := client.CallTool(ctx, "echo", map[string]any{"message": "pong-test"})
+	if err != nil {
+		t.Fatalf("CallTool(echo): %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("isError result: %+v", result)
+	}
+	if len(result.Content) == 0 || !strings.Contains(result.Content[0].Text, "pong-test") {
+		t.Fatalf("content = %+v, want pong-test", result.Content)
+	}
+}
+
 // TestStdioTransportConnect verifies that the process-based (stdio) MCP
 // transport can start a subprocess, initialize, list tools, and call a tool.
 func TestStdioTransportConnect(t *testing.T) {

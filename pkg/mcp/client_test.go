@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -75,7 +76,7 @@ data: {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"succes
 `
 
 	client := &Client{}
-	resp, err := client.parseSSEResponse(strings.NewReader(sseBody))
+	resp, err := client.parseSSEResponse(context.Background(), strings.NewReader(sseBody), rawID("1"))
 	if err != nil {
 		t.Fatalf("parseSSEResponse failed: %v", err)
 	}
@@ -107,7 +108,7 @@ func TestClient_ParseSSEResponse_LogsSkippedNotification(t *testing.T) {
 	client.logger = slog.New(logging.NewBufferHandler(logBuffer, nil))
 	body := "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\"}}\n\n" +
 		"data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n"
-	resp, err := client.parseSSEResponse(strings.NewReader(body))
+	resp, err := client.parseSSEResponse(context.Background(), strings.NewReader(body), rawID("1"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,13 +130,27 @@ func TestClient_ParseSSEResponse_LogsSkippedNotification(t *testing.T) {
 	logBuffer = logging.NewLogBuffer(10)
 	client.logger = slog.New(logging.NewBufferHandler(logBuffer, nil))
 	misrouted := "data: {\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"sampling/createMessage\",\"params\":{\"token\":\"secret\"}}\n"
-	if _, err := client.parseSSEResponse(strings.NewReader(misrouted)); err != nil && !strings.Contains(err.Error(), "no response with ID") {
-		t.Fatal(err)
+	if _, err := client.parseSSEResponse(context.Background(), strings.NewReader(misrouted), rawID("1")); err == nil || !strings.Contains(err.Error(), "no response with ID") {
+		t.Fatalf("expected no response with ID, got %v", err)
 	}
+	var rejected bool
 	for _, entry := range logBuffer.GetRecent(10) {
 		if entry.Message == "server notification skipped" {
 			t.Fatalf("method-plus-id event logged as skipped: %#v", entry)
 		}
+		if entry.Message == "server request rejected" && entry.Level == "DEBUG" && entry.Attrs["method"] == "sampling/createMessage" {
+			rejected = true
+			raw, err := json.Marshal(entry)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(raw), "params") || strings.Contains(string(raw), "secret") {
+				t.Fatalf("rejected request log included params: %s", raw)
+			}
+		}
+	}
+	if !rejected {
+		t.Fatal("expected server request rejected")
 	}
 }
 
@@ -146,7 +161,7 @@ data: {"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info"
 `
 
 	client := &Client{}
-	_, err := client.parseSSEResponse(strings.NewReader(sseBody))
+	_, err := client.parseSSEResponse(context.Background(), strings.NewReader(sseBody), rawID("1"))
 	if err == nil {
 		t.Fatal("expected error when no response with ID is found")
 	}
@@ -165,7 +180,7 @@ data: {"jsonrpc":"2.0","id":1,"result":{}}
 `
 
 	client := &Client{}
-	resp, err := client.parseSSEResponse(strings.NewReader(sseBody))
+	resp, err := client.parseSSEResponse(context.Background(), strings.NewReader(sseBody), rawID("1"))
 	if err != nil {
 		t.Fatalf("parseSSEResponse failed with malformed data skipped: %v", err)
 	}
@@ -706,4 +721,411 @@ func TestClient_Reconnect(t *testing.T) {
 	if sid != "" {
 		t.Errorf("sessionID = %q, want cleared after Reconnect", sid)
 	}
+}
+
+func rawID(v string) *json.RawMessage {
+	id := json.RawMessage(v)
+	return &id
+}
+
+type capturedReply struct {
+	body    []byte
+	session string
+	version string
+	auth    string
+	accept  string
+	ctype   string
+}
+
+func startSSECallServer(t *testing.T, onReply func(http.ResponseWriter, *http.Request, []byte), onCall func(http.ResponseWriter, jsonrpc.Request)) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var req jsonrpc.Request
+		if err := json.Unmarshal(raw, &req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Method == "" && req.ID != nil {
+			if onReply != nil {
+				onReply(w, r, raw)
+				return
+			}
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		onCall(w, req)
+	}))
+}
+
+func writeSSEEvents(w http.ResponseWriter, events ...string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	flusher, _ := w.(http.Flusher)
+	for _, event := range events {
+		fmt.Fprintf(w, "data: %s\n\n", event)
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+}
+
+func handshakeSSEClient(t *testing.T, endpoint string, logger *slog.Logger) *Client {
+	t.Helper()
+	c := NewClient("test", endpoint)
+	if logger != nil {
+		c.SetLogger(logger)
+	}
+	c.sessionID = "sess-1"
+	c.setProtocolVersion("2025-06-18")
+	c.SetHeaderSource(NewStaticHeaderSource("Authorization", "Bearer downstream-token"))
+	return c
+}
+
+func assertTextContent(t *testing.T, result *ToolCallResult, want string) {
+	t.Helper()
+	if result == nil || len(result.Content) != 1 || result.Content[0].Text != want {
+		t.Fatalf("content = %#v, want %q", result, want)
+	}
+}
+
+func TestClient_ParseSSEResponse_EventFraming(t *testing.T) {
+	client := &Client{}
+	body := ": keepalive\r\n" +
+		"event: message\r\n" +
+		"id: 9\r\n" +
+		"retry: 1000\r\n" +
+		"data:{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\r\n" +
+		"data: {\"content\":[{\"type\":\"text\",\"text\":\"joined\"}]}}\r\n"
+	resp, err := client.parseSSEResponse(t.Context(), strings.NewReader(body), rawID("1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatal(err)
+	}
+	content, ok := result["content"].([]any)
+	if !ok || len(content) != 1 {
+		t.Fatalf("content = %#v", result["content"])
+	}
+	item, ok := content[0].(map[string]any)
+	if !ok || item["text"] != "joined" {
+		t.Fatalf("content item = %#v", content[0])
+	}
+}
+
+func TestClient_SSEServerRequestBeforeResponse(t *testing.T) {
+	var mu sync.Mutex
+	var replies []capturedReply
+	ts := startSSECallServer(t, func(w http.ResponseWriter, r *http.Request, body []byte) {
+		mu.Lock()
+		replies = append(replies, capturedReply{
+			body:    append([]byte(nil), body...),
+			session: r.Header.Get("Mcp-Session-Id"),
+			version: r.Header.Get("MCP-Protocol-Version"),
+			auth:    r.Header.Get("Authorization"),
+			accept:  r.Header.Get("Accept"),
+			ctype:   r.Header.Get("Content-Type"),
+		})
+		mu.Unlock()
+		w.WriteHeader(http.StatusAccepted)
+	}, func(w http.ResponseWriter, req jsonrpc.Request) {
+		writeSSEEvents(w,
+			`{"jsonrpc":"2.0","id":"srv-7","method":"ping"}`,
+			`{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info","token":"secret"}}`,
+			fmt.Sprintf(`{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"expected"}]}}`, *req.ID),
+		)
+	})
+	defer ts.Close()
+
+	logBuffer := logging.NewLogBuffer(10)
+	c := handshakeSSEClient(t, ts.URL, slog.New(logging.NewBufferHandler(logBuffer, nil)))
+	result, err := c.CallTool(t.Context(), "echo", map[string]any{"message": "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertTextContent(t, result, "expected")
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(replies) != 1 {
+		t.Fatalf("replies = %d, want 1", len(replies))
+	}
+	var reply struct {
+		ID     json.RawMessage `json:"id"`
+		Result json.RawMessage `json:"result"`
+		Method string          `json:"method"`
+	}
+	if err := json.Unmarshal(replies[0].body, &reply); err != nil {
+		t.Fatal(err)
+	}
+	if reply.Method != "" || string(reply.ID) != `"srv-7"` || string(reply.Result) != `{}` {
+		t.Fatalf("reply = %s", replies[0].body)
+	}
+	if replies[0].session != "sess-1" || replies[0].version != "2025-06-18" {
+		t.Fatalf("reply headers session=%q version=%q", replies[0].session, replies[0].version)
+	}
+	if replies[0].auth != "Bearer downstream-token" || replies[0].ctype != "application/json" || replies[0].accept != "application/json, text/event-stream" {
+		t.Fatalf("reply headers auth=%q type=%q accept=%q", replies[0].auth, replies[0].ctype, replies[0].accept)
+	}
+	var skipped int
+	for _, entry := range logBuffer.GetRecent(10) {
+		if entry.Message != "server notification skipped" {
+			continue
+		}
+		skipped++
+		if entry.Level != "DEBUG" || entry.Attrs["method"] != "notifications/message" {
+			t.Fatalf("notification log = %#v", entry)
+		}
+		raw, err := json.Marshal(entry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(raw), "params") || strings.Contains(string(raw), "secret") {
+			t.Fatalf("notification log included params: %s", raw)
+		}
+	}
+	if skipped != 1 {
+		t.Fatalf("skipped notifications = %d", skipped)
+	}
+}
+
+func TestClient_SSEUnsupportedServerRequest(t *testing.T) {
+	var mu sync.Mutex
+	var replies [][]byte
+	ts := startSSECallServer(t, func(w http.ResponseWriter, r *http.Request, body []byte) {
+		mu.Lock()
+		replies = append(replies, append([]byte(nil), body...))
+		mu.Unlock()
+		w.WriteHeader(http.StatusAccepted)
+	}, func(w http.ResponseWriter, req jsonrpc.Request) {
+		writeSSEEvents(w,
+			`{"jsonrpc":"2.0","id":"server-1","method":"sampling/createMessage","params":{"token":"secret"}}`,
+			fmt.Sprintf(`{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"kept"}]}}`, *req.ID),
+		)
+	})
+	defer ts.Close()
+
+	logBuffer := logging.NewLogBuffer(10)
+	c := handshakeSSEClient(t, ts.URL, slog.New(logging.NewBufferHandler(logBuffer, nil)))
+	result, err := c.CallTool(t.Context(), "echo", map[string]any{"message": "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertTextContent(t, result, "kept")
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(replies) != 1 {
+		t.Fatalf("replies = %d", len(replies))
+	}
+	var reply jsonrpc.Response
+	if err := json.Unmarshal(replies[0], &reply); err != nil {
+		t.Fatal(err)
+	}
+	if reply.ID == nil || string(*reply.ID) != `"server-1"` || reply.Error == nil || reply.Error.Code != jsonrpc.MethodNotFound || reply.Error.Message != "Method not found" {
+		t.Fatalf("reply = %s", replies[0])
+	}
+	var rejected bool
+	for _, entry := range logBuffer.GetRecent(10) {
+		if entry.Message != "server request rejected" {
+			continue
+		}
+		rejected = true
+		if entry.Level != "DEBUG" || entry.Attrs["method"] != "sampling/createMessage" || entry.Attrs["code"] != int64(jsonrpc.MethodNotFound) {
+			t.Fatalf("rejected log = %#v", entry)
+		}
+		raw, err := json.Marshal(entry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(raw), "params") || strings.Contains(string(raw), "secret") {
+			t.Fatalf("rejected log included params: %s", raw)
+		}
+	}
+	if !rejected {
+		t.Fatal("expected server request rejected")
+	}
+}
+
+func TestClient_SSEForeignResponseIDSkipped(t *testing.T) {
+	ts := startSSECallServer(t, nil, func(w http.ResponseWriter, req jsonrpc.Request) {
+		writeSSEEvents(w,
+			`{"jsonrpc":"2.0","id":9999,"result":{"content":[{"type":"text","text":"wrong"}]}}`,
+			fmt.Sprintf(`{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"real"}]}}`, *req.ID),
+		)
+	})
+	defer ts.Close()
+
+	c := NewClient("test", ts.URL)
+	result, err := c.CallTool(t.Context(), "echo", map[string]any{"message": "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertTextContent(t, result, "real")
+}
+
+func TestClient_SSEReturnsBeforeEOF(t *testing.T) {
+	release := make(chan struct{})
+	ts := startSSECallServer(t, nil, func(w http.ResponseWriter, req jsonrpc.Request) {
+		writeSSEEvents(w, fmt.Sprintf(`{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"early"}]}}`, *req.ID))
+		<-release
+	})
+	t.Cleanup(ts.Close)
+	t.Cleanup(func() { close(release) })
+
+	c := NewClient("test", ts.URL)
+	type callResult struct {
+		result *ToolCallResult
+		err    error
+	}
+	done := make(chan callResult, 1)
+	go func() {
+		result, err := c.CallTool(context.Background(), "echo", map[string]any{"message": "hi"})
+		done <- callResult{result, err}
+	}()
+	select {
+	case res := <-done:
+		if res.err != nil {
+			t.Fatal(res.err)
+		}
+		assertTextContent(t, res.result, "early")
+	case <-time.After(time.Second):
+		t.Fatal("CallTool waited for EOF")
+	}
+}
+
+func TestClient_SSEStatelessNoReply(t *testing.T) {
+	var mu sync.Mutex
+	replies := 0
+	ts := startSSECallServer(t, func(w http.ResponseWriter, r *http.Request, body []byte) {
+		mu.Lock()
+		replies++
+		mu.Unlock()
+		w.WriteHeader(http.StatusAccepted)
+	}, func(w http.ResponseWriter, req jsonrpc.Request) {
+		writeSSEEvents(w,
+			`{"jsonrpc":"2.0","id":"srv-7","method":"ping"}`,
+			fmt.Sprintf(`{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"stateless"}]}}`, *req.ID),
+		)
+	})
+	defer ts.Close()
+
+	c := NewClient("test", ts.URL)
+	c.SetEra(EraStateless)
+	c.SetProtocolVersion(StatelessProtocolVersion)
+	result, err := c.CallTool(t.Context(), "echo", map[string]any{"message": "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertTextContent(t, result, "stateless")
+	mu.Lock()
+	defer mu.Unlock()
+	if replies != 0 {
+		t.Fatalf("stateless client posted %d replies", replies)
+	}
+}
+
+func TestClient_SSEReplyFailureDoesNotFailCall(t *testing.T) {
+	ts := startSSECallServer(t, func(w http.ResponseWriter, r *http.Request, body []byte) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}, func(w http.ResponseWriter, req jsonrpc.Request) {
+		writeSSEEvents(w,
+			`{"jsonrpc":"2.0","id":"srv-7","method":"ping"}`,
+			fmt.Sprintf(`{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"still-ok"}]}}`, *req.ID),
+		)
+	})
+	defer ts.Close()
+
+	logBuffer := logging.NewLogBuffer(10)
+	c := NewClient("test", ts.URL)
+	c.SetLogger(slog.New(logging.NewBufferHandler(logBuffer, nil)))
+	result, err := c.CallTool(t.Context(), "echo", map[string]any{"message": "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertTextContent(t, result, "still-ok")
+	var failed bool
+	for _, entry := range logBuffer.GetRecent(10) {
+		if entry.Message != "server request reply failed" {
+			continue
+		}
+		failed = true
+		if entry.Level != "WARN" || entry.Attrs["error"] == nil {
+			t.Fatalf("reply failure log = %#v", entry)
+		}
+	}
+	if !failed {
+		t.Fatal("expected server request reply failed")
+	}
+}
+
+func TestClient_SSEReplyBodyDiscarded(t *testing.T) {
+	var mu sync.Mutex
+	replies := 0
+	ts := startSSECallServer(t, func(w http.ResponseWriter, r *http.Request, body []byte) {
+		mu.Lock()
+		replies++
+		mu.Unlock()
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Mcp-Session-Id", "stolen-session")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "data: {\"jsonrpc\":\"2.0\",\"id\":\"other\",\"method\":\"ping\"}\n\n")
+	}, func(w http.ResponseWriter, req jsonrpc.Request) {
+		writeSSEEvents(w,
+			`{"jsonrpc":"2.0","id":"srv-7","method":"ping"}`,
+			fmt.Sprintf(`{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"kept-session"}]}}`, *req.ID),
+		)
+	})
+	defer ts.Close()
+
+	c := NewClient("test", ts.URL)
+	c.sessionID = "live-session"
+	result, err := c.CallTool(t.Context(), "echo", map[string]any{"message": "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertTextContent(t, result, "kept-session")
+	mu.Lock()
+	if replies != 1 {
+		t.Fatalf("replies = %d, want 1", replies)
+	}
+	mu.Unlock()
+	c.mu.RLock()
+	sid := c.sessionID
+	c.mu.RUnlock()
+	if sid != "live-session" {
+		t.Fatalf("sessionID = %q, want live-session", sid)
+	}
+}
+
+func TestClient_SSELargeEvent(t *testing.T) {
+	text := strings.Repeat("a", 1024*1024+1)
+	ts := startSSECallServer(t, nil, func(w http.ResponseWriter, req jsonrpc.Request) {
+		payload, err := json.Marshal(map[string]any{
+			"jsonrpc": "2.0",
+			"id":      json.RawMessage(*req.ID),
+			"result": map[string]any{
+				"content": []map[string]string{{"type": "text", "text": text}},
+			},
+		})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(w, "data: %s\n\n", payload)
+	})
+	defer ts.Close()
+
+	c := NewClient("test", ts.URL)
+	result, err := c.CallTool(t.Context(), "echo", map[string]any{"message": "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertTextContent(t, result, text)
 }
