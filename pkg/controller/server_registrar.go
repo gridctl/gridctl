@@ -394,6 +394,7 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 			PingTimeout:        serverCfg.ResolvedPingTimeout(),
 			ProtocolGeneration: serverCfg.ProtocolGeneration,
 			ProtocolExtensions: serverCfg.ProtocolExtensions,
+			RestartPolicy:      serverCfg.ResolvedRestartPolicy().Raw,
 		}
 	}
 	// Container HTTP/SSE
@@ -481,6 +482,7 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 			PingTimeout:        server.ResolvedPingTimeout(),
 			ProtocolGeneration: server.ProtocolGeneration,
 			ProtocolExtensions: server.ProtocolExtensions,
+			RestartPolicy:      server.ResolvedRestartPolicy().Raw,
 		}
 	}
 	// Container HTTP/SSE

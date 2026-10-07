@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -544,6 +546,12 @@ type MCPServer struct {
 	// 5s default can flake under autoscale spawn load.
 	PingTimeout string `yaml:"ping_timeout,omitempty"`
 
+	// Restart controls whether the health monitor restarts a managed stdio
+	// container that inspect reports as not running. Empty means always.
+	// on-failure:N requires N from 1 through 4294967295.
+	// Accepted and unused on non-container servers.
+	Restart string `yaml:"restart,omitempty" json:"restart,omitempty"`
+
 	// ProtocolGeneration overrides MCP protocol-generation resolution for
 	// this server: "auto" (default, same as empty) probes server/discover
 	// and falls back to the initialize handshake; "handshake" and
@@ -665,6 +673,45 @@ func (s *MCPServer) ResolvedReadyTimeout() time.Duration {
 		return 0
 	}
 	return d
+}
+
+// RestartPolicy is the parsed restart: value. Max is zero when the policy
+// does not bound monitor-initiated attempts. Raw is the canonical display
+// form; empty input resolves to always.
+type RestartPolicy struct {
+	Mode string
+	Max  uint32
+	Raw  string
+}
+
+// ResolvedRestartPolicy parses Restart. An empty value is always. Invalid
+// values return Mode "" so validation can reject them; callers that already
+// passed validation can treat Mode "" as unset.
+func (s *MCPServer) ResolvedRestartPolicy() RestartPolicy {
+	if s == nil {
+		return RestartPolicy{Mode: "always", Raw: "always"}
+	}
+	return resolveRestartPolicy(s.Restart)
+}
+
+func resolveRestartPolicy(raw string) RestartPolicy {
+	switch raw {
+	case "", "always":
+		return RestartPolicy{Mode: "always", Raw: "always"}
+	case "no":
+		return RestartPolicy{Mode: "no", Raw: "no"}
+	case "on-failure":
+		return RestartPolicy{Mode: "on-failure", Raw: "on-failure"}
+	}
+	n, ok := strings.CutPrefix(raw, "on-failure:")
+	if !ok {
+		return RestartPolicy{Raw: raw}
+	}
+	limit, err := strconv.ParseUint(n, 10, 32)
+	if err != nil || limit < 1 {
+		return RestartPolicy{Raw: raw}
+	}
+	return RestartPolicy{Mode: "on-failure", Max: uint32(limit), Raw: "on-failure:" + strconv.FormatUint(limit, 10)}
 }
 
 // ResolvedPingTimeout parses PingTimeout; returns 0 when unset or invalid so

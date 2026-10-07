@@ -970,9 +970,10 @@ func TestGateway_recomputeRollup_ClearsOnEmptySet(t *testing.T) {
 // reconnectableClient wraps a MockAgentClient to implement both Pingable and Reconnectable.
 type reconnectableClient struct {
 	AgentClient
-	pingFn      func(ctx context.Context) error
-	reconnectFn func(ctx context.Context) error
-	inspectFn   func(ctx context.Context) (*ContainerExit, error)
+	pingFn        func(ctx context.Context) error
+	reconnectFn   func(ctx context.Context) error
+	inspectFn     func(ctx context.Context) (*ContainerExit, error)
+	containerIDFn func() string
 }
 
 func (r *reconnectableClient) Ping(ctx context.Context) error {
@@ -988,6 +989,13 @@ func (r *reconnectableClient) InspectContainer(ctx context.Context) (*ContainerE
 		return nil, nil
 	}
 	return r.inspectFn(ctx)
+}
+
+func (r *reconnectableClient) ContainerID() string {
+	if r.containerIDFn == nil {
+		return ""
+	}
+	return r.containerIDFn()
 }
 
 func TestGateway_HealthMonitor_ReconnectsUnhealthyClient(t *testing.T) {

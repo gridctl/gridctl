@@ -55,16 +55,19 @@ type SpecHealth struct {
 // ReplicaSet. Durations use seconds so the JSON representation does not
 // depend on Go's time formatting.
 type ReplicaHealth struct {
-	Execution        *execution.Report `json:"execution,omitempty"`
-	ReplicaID        int               `json:"replicaId"`
-	State            string            `json:"state"` // "healthy" | "unhealthy" | "restarting"
-	InFlight         int64             `json:"inFlight"`
-	UptimeSeconds    int64             `json:"uptimeSeconds,omitempty"`
-	LastError        string            `json:"lastError,omitempty"`
-	NextRetrySeconds int64             `json:"nextRetrySeconds,omitempty"`
-	RestartAttempts  uint32            `json:"restartAttempts,omitempty"`
-	PID              int               `json:"pid,omitempty"`
-	ContainerID      string            `json:"containerId,omitempty"`
+	Execution         *execution.Report `json:"execution,omitempty"`
+	ReplicaID         int               `json:"replicaId"`
+	State             string            `json:"state"` // "healthy" | "unhealthy" | "restarting"
+	InFlight          int64             `json:"inFlight"`
+	UptimeSeconds     int64             `json:"uptimeSeconds,omitempty"`
+	LastError         string            `json:"lastError,omitempty"`
+	NextRetrySeconds  int64             `json:"nextRetrySeconds,omitempty"`
+	RestartAttempts   uint32            `json:"restartAttempts,omitempty"`
+	PID               int               `json:"pid,omitempty"`
+	ContainerID       string            `json:"containerId,omitempty"`
+	RestartPolicy     string            `json:"restartPolicy,omitempty"`
+	RestartExhausted  bool              `json:"restartExhausted,omitempty"`
+	ContainerRestarts uint32            `json:"containerRestarts,omitempty"`
 }
 
 // ValidationStatus summarizes the spec validation state.

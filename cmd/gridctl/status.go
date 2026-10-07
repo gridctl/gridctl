@@ -342,20 +342,23 @@ type autoscaleAPI struct {
 
 // mcpReplicaAPI is the per-replica slice of mcpServerAPI.
 type mcpReplicaAPI struct {
-	Execution       *execution.Report  `json:"execution,omitempty"`
-	ReplicaID       int                `json:"replicaId"`
-	State           string             `json:"state"`
-	Healthy         bool               `json:"healthy"`
-	InFlight        int64              `json:"inFlight"`
-	StartedAt       time.Time          `json:"startedAt,omitempty"`
-	LastCheck       *time.Time         `json:"lastCheck,omitempty"`
-	LastHealthy     *time.Time         `json:"lastHealthy,omitempty"`
-	LastError       string             `json:"lastError,omitempty"`
-	Exit            *mcp.ContainerExit `json:"exit,omitempty"`
-	RestartAttempts uint32             `json:"restartAttempts,omitempty"`
-	NextRetryAt     *time.Time         `json:"nextRetryAt,omitempty"`
-	PID             int                `json:"pid,omitempty"`
-	ContainerID     string             `json:"containerId,omitempty"`
+	Execution         *execution.Report  `json:"execution,omitempty"`
+	ReplicaID         int                `json:"replicaId"`
+	State             string             `json:"state"`
+	Healthy           bool               `json:"healthy"`
+	InFlight          int64              `json:"inFlight"`
+	StartedAt         time.Time          `json:"startedAt,omitempty"`
+	LastCheck         *time.Time         `json:"lastCheck,omitempty"`
+	LastHealthy       *time.Time         `json:"lastHealthy,omitempty"`
+	LastError         string             `json:"lastError,omitempty"`
+	Exit              *mcp.ContainerExit `json:"exit,omitempty"`
+	RestartAttempts   uint32             `json:"restartAttempts,omitempty"`
+	NextRetryAt       *time.Time         `json:"nextRetryAt,omitempty"`
+	PID               int                `json:"pid,omitempty"`
+	ContainerID       string             `json:"containerId,omitempty"`
+	RestartPolicy     string             `json:"restartPolicy,omitempty"`
+	RestartExhausted  bool               `json:"restartExhausted,omitempty"`
+	ContainerRestarts uint32             `json:"containerRestarts,omitempty"`
 }
 
 // queryMCPServers fetches the /api/mcp-servers payload from a running

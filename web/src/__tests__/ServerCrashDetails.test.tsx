@@ -41,6 +41,27 @@ describe('ServerCrashDetails', () => {
     expect(screen.getByText('fatal: refusing to continue')).toBeInTheDocument();
   });
 
+  it('shows why automatic restarts stopped', () => {
+    render(<ServerCrashDetails data={data({
+      status: 'error',
+      replicas: [{
+        replicaId: 0,
+        state: 'unhealthy',
+        healthy: false,
+        inFlight: 0,
+        restartExhausted: true,
+        restartPolicy: 'on-failure:2',
+        containerRestarts: 2,
+        lastError: 'restart budget exhausted after 2 attempts (restart: on-failure:2); use POST /api/mcp-servers/crash/restart',
+      }],
+    })} />);
+
+    expect(screen.getByText('stopped')).toBeInTheDocument();
+    expect(screen.getByText('on-failure:2')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText(/restart budget exhausted/)).toBeInTheDocument();
+  });
+
   it('renders nothing for a healthy replica', () => {
     const { container } = render(<ServerCrashDetails data={data({
       status: 'running',

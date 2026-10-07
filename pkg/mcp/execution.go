@@ -115,6 +115,7 @@ func (g *Gateway) restartExecutionReplicas(ctx context.Context, name string, set
 			return err
 		}
 	}
+	g.clearServerRestartState(name)
 	g.router.RefreshTools()
 	return nil
 }
@@ -163,6 +164,7 @@ func (g *Gateway) restartProcessReplicas(ctx context.Context, name string, set *
 			return err
 		}
 	}
+	g.clearServerRestartState(name)
 	g.router.RefreshTools()
 	return nil
 }
@@ -295,6 +297,13 @@ func (c *executionClient) CallTool(ctx context.Context, name string, arguments m
 		return nil, &ExecutionAdmissionError{err: err}
 	}
 	return c.AgentClient.CallTool(ctx, name, arguments)
+}
+
+func (c *executionClient) ContainerID() string {
+	if c == nil {
+		return ""
+	}
+	return containerIDOf(c.AgentClient)
 }
 
 func (c *executionClient) InspectContainer(ctx context.Context) (*ContainerExit, error) {

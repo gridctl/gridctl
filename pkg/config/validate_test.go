@@ -1038,6 +1038,60 @@ func TestMCPServer_ResolvedReadyTimeout(t *testing.T) {
 	}
 }
 
+func TestValidate_RestartPolicy(t *testing.T) {
+	base := func(servers []MCPServer) *Stack {
+		return &Stack{Name: "test", Network: Network{Name: "test-net"}, MCPServers: servers}
+	}
+	accepted := []string{"always", "no", "on-failure", "on-failure:5", "on-failure:4294967295"}
+	for _, raw := range accepted {
+		err := Validate(base([]MCPServer{{Name: "s1", Image: "alpine", Port: 3000, Transport: "stdio", Restart: raw}}))
+		if err != nil {
+			t.Errorf("restart %q: %v", raw, err)
+		}
+	}
+	rejected := []string{"unless-stopped", "on-failure:0", "sometimes", "on-failure:4294967296", "on-failure:4294967297"}
+	for _, raw := range rejected {
+		err := Validate(base([]MCPServer{{Name: "s1", Image: "alpine", Port: 3000, Transport: "stdio", Restart: raw}}))
+		if err == nil || !strings.Contains(err.Error(), "mcp-servers[0].restart") {
+			t.Errorf("restart %q error = %v, want field mcp-servers[0].restart", raw, err)
+		}
+	}
+	local := base([]MCPServer{{Name: "s1", Command: []string{"./server"}, Restart: "on-failure:2"}})
+	if err := Validate(local); err != nil {
+		t.Fatalf("local process restart: %v", err)
+	}
+	issues := ValidateWithIssues(local)
+	for _, issue := range issues.Issues {
+		if strings.Contains(issue.Field, "restart") {
+			t.Fatalf("local process restart issue: %#v", issue)
+		}
+	}
+}
+
+func TestMCPServer_ResolvedRestartPolicy(t *testing.T) {
+	cases := []struct {
+		in   string
+		mode string
+		max  uint32
+		raw  string
+	}{
+		{"", "always", 0, "always"},
+		{"always", "always", 0, "always"},
+		{"no", "no", 0, "no"},
+		{"on-failure", "on-failure", 0, "on-failure"},
+		{"on-failure:5", "on-failure", 5, "on-failure:5"},
+		{"on-failure:4294967295", "on-failure", 4294967295, "on-failure:4294967295"},
+		{"on-failure:4294967296", "", 0, "on-failure:4294967296"},
+		{"sometimes", "", 0, "sometimes"},
+	}
+	for _, tc := range cases {
+		got := (&MCPServer{Restart: tc.in}).ResolvedRestartPolicy()
+		if got.Mode != tc.mode || got.Max != tc.max || got.Raw != tc.raw {
+			t.Errorf("ResolvedRestartPolicy(%q) = %#v", tc.in, got)
+		}
+	}
+}
+
 func TestMCPServer_ResolvedPingTimeout(t *testing.T) {
 	cases := []struct {
 		in   string

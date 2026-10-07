@@ -69,6 +69,23 @@ describe('getMCPServerStatus', () => {
       'restarting',
     ],
     [
+      'exhausted replica stays an error, not restarting',
+      makeServer({
+        initialized: true,
+        healthy: false,
+        replicas: [{
+          replicaId: 0,
+          state: 'unhealthy',
+          healthy: false,
+          inFlight: 0,
+          restartAttempts: 2,
+          restartExhausted: true,
+          restartPolicy: 'on-failure:2',
+        }],
+      }),
+      'error',
+    ],
+    [
       'needs-auth stays ahead of restarting',
       makeServer({
         initialized: true,

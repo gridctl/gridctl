@@ -25,7 +25,7 @@ var knownServerKeys = map[string]struct{}{
 	"execution": {}, "name": {}, "image": {}, "source": {}, "url": {}, "port": {},
 	"transport": {}, "command": {}, "env": {}, "build_args": {}, "volumes": {},
 	"network": {}, "ssh": {}, "openapi": {}, "a2a": {}, "tools": {}, "output_format": {},
-	"pin_schemas": {}, "ready_timeout": {}, "ping_timeout": {}, "protocol_generation": {},
+	"pin_schemas": {}, "ready_timeout": {}, "ping_timeout": {}, "protocol_generation": {}, "restart": {},
 	"replicas": {}, "replica_policy": {}, "autoscale": {}, "telemetry": {}, "auth": {},
 }
 

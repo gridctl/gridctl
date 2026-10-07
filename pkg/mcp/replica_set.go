@@ -106,14 +106,19 @@ func computeBackoff(attempts uint32) time.Duration {
 // concrete transport — ProcessClient, StdioClient, Client, etc.) and tracks
 // liveness and in-flight request count for dispatch decisions.
 type Replica struct {
-	id       int
-	client   AgentClient
-	healthy  atomic.Bool
-	inFlight atomic.Int64
-	restart  *backoffState
+	id                int
+	client            AgentClient
+	healthy           atomic.Bool
+	inFlight          atomic.Int64
+	restart           *backoffState
+	restartExhausted  atomic.Bool
+	containerRestarts atomic.Uint32
 
 	startedMu sync.Mutex
 	startedAt time.Time
+
+	terminalMu     sync.Mutex
+	terminalReason string
 }
 
 // ID returns the zero-indexed replica id within its ReplicaSet.
@@ -162,6 +167,54 @@ func (r *Replica) MarkStarted(now time.Time) {
 	r.startedMu.Lock()
 	defer r.startedMu.Unlock()
 	r.startedAt = now
+}
+
+// RestartExhausted reports whether automatic container restarts have stopped
+// for this replica. A successful ping clears the flag; it does not clear
+// ContainerRestarts.
+func (r *Replica) RestartExhausted() bool { return r.restartExhausted.Load() }
+
+// RestartExhaustedReason is the operator-facing explanation recorded when
+// automatic restarts stopped. Empty when the replica is not exhausted.
+func (r *Replica) RestartExhaustedReason() string {
+	r.terminalMu.Lock()
+	defer r.terminalMu.Unlock()
+	return r.terminalReason
+}
+
+// SetRestartExhausted stops automatic container restarts and records why.
+func (r *Replica) SetRestartExhausted(reason string) {
+	r.terminalMu.Lock()
+	r.terminalReason = reason
+	r.terminalMu.Unlock()
+	r.restartExhausted.Store(true)
+}
+
+// ClearRestartExhausted allows automatic restarts again. The cumulative
+// container-restart counter is left unchanged.
+func (r *Replica) ClearRestartExhausted() {
+	r.restartExhausted.Store(false)
+	r.terminalMu.Lock()
+	r.terminalReason = ""
+	r.terminalMu.Unlock()
+}
+
+// ContainerRestarts is the number of monitor-initiated container restart
+// attempts since registration or the last manual restart. A successful
+// handshake does not reset it.
+func (r *Replica) ContainerRestarts() uint32 { return r.containerRestarts.Load() }
+
+// AddContainerRestart records one monitor-initiated restart attempt and
+// returns the new total. Call it before the runtime call, including attempts
+// that fail.
+func (r *Replica) AddContainerRestart() uint32 { return r.containerRestarts.Add(1) }
+
+// ClearMonitorRestartState clears the exhausted flag and the cumulative
+// container-restart counter. Manual restart and re-registration use this;
+// a successful health handshake must not.
+func (r *Replica) ClearMonitorRestartState() {
+	r.containerRestarts.Store(0)
+	r.ClearRestartExhausted()
 }
 
 // ReplicaSet is a pool of AgentClient replicas for a single logical MCP server.
