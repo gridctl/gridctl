@@ -81,9 +81,14 @@ func exportStackFile(ctx context.Context, path string, stdout, stderr io.Writer)
 	}
 	artifacts := []exportArtifact{{"stack." + exportFormat, data}}
 	if exportFormat == "yaml" {
-		sidecar, err := exportSkillsData(ctx)
+		sidecar, omitted, err := exportSkillsData(ctx)
 		if err != nil {
 			return err
+		}
+		if omitted > 0 {
+			if _, err := fmt.Fprintf(stderr, "export: %d local skill source(s) omitted from skills.yaml (local paths are not portable)\n", omitted); err != nil {
+				return err
+			}
 		}
 		if sidecar != nil {
 			artifacts = append(artifacts, exportArtifact{"skills.yaml", sidecar})
@@ -134,16 +139,16 @@ func writeExportArtifacts(ctx context.Context, dir string, sources []string, art
 	return err
 }
 
-func exportSkillsData(ctx context.Context) ([]byte, error) {
+func exportSkillsData(ctx context.Context) ([]byte, int, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	lf, err := skills.ReadLockFile(skills.LockFilePath())
 	if err != nil {
-		return nil, fmt.Errorf("export: cannot read skills metadata")
+		return nil, 0, fmt.Errorf("export: cannot read skills metadata")
 	}
 	if len(lf.Sources) == 0 {
-		return nil, nil
+		return nil, 0, nil
 	}
 	names := make([]string, 0, len(lf.Sources))
 	for name := range lf.Sources {
@@ -153,19 +158,27 @@ func exportSkillsData(ctx context.Context) ([]byte, error) {
 	var out struct {
 		Sources []skillSourceYAML `yaml:"sources"`
 	}
+	omitted := 0
 	for i, name := range names {
 		src := lf.Sources[name]
+		if src.IsLocal() {
+			omitted++
+			continue
+		}
 		u, err := url.Parse(src.Repo)
 		if (err != nil && strings.Contains(src.Repo, "://")) || (err == nil && u.User != nil && u.User.String() != "") {
-			return nil, fmt.Errorf("export: skills.sources[%d].repo: invalid URL or credential-bearing userinfo; remove userinfo before exporting", i)
+			return nil, omitted, fmt.Errorf("export: skills.sources[%d].repo: invalid URL or credential-bearing userinfo; remove userinfo before exporting", i)
 		}
 		out.Sources = append(out.Sources, skillSourceYAML{Name: name, Repo: src.Repo, Ref: src.Ref})
 	}
+	if len(out.Sources) == 0 {
+		return nil, omitted, nil
+	}
 	data, err := yaml.Marshal(out)
 	if err != nil {
-		return nil, fmt.Errorf("export: cannot encode skills metadata")
+		return nil, omitted, fmt.Errorf("export: cannot encode skills metadata")
 	}
-	return data, nil
+	return data, omitted, nil
 }
 
 type skillSourceYAML struct {

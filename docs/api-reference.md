@@ -2832,7 +2832,7 @@ Removes a fragment after writing a backup. Returns `{ "name", "backup" }`.
 
 ### Skill Sources
 
-Manage git-imported skill sources. The lockfile and origin sidecars hold import auth. `skills.yaml` is read by the list endpoint for auto-update display only. Mirrors `gridctl skill *` operations for the Library workspace.
+Manage imported skill sources, git or local directory. The lockfile and origin sidecars hold import auth. `skills.yaml` is read by the list endpoint for auto-update display only, and it does not decorate a local source unless `repo` matches. Mirrors `gridctl skill *` operations for the Library workspace. The import wizard still accepts git URLs only. A local directory uses this endpoint or the CLI.
 
 Auth for private repos accepts an optional `auth` object on mutating endpoints:
 
@@ -2849,7 +2849,7 @@ Auth for private repos accepts an optional `auth` object on mutating endpoints:
 
 #### `GET /api/skills/sources`
 
-Lists imported sources with skill entries, auto-update settings, drift markers, and cached update availability.
+Lists imported sources with skill entries, auto-update settings, drift markers, and cached update availability. Each source includes `kind`: `"git"` or `"local"`. Existing fields are unchanged. A local source is matched to `skills.yaml` by `repo` only, so a same-named git config does not attach path or update settings. The background checker skips local origins, so `updateAvailable` from that cache stays false for them until a live check.
 
 **Auth:** Yes
 
@@ -2859,7 +2859,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/skills/sources
 
 #### `POST /api/skills/sources`
 
-Imports skills (and agent definitions) from a git repository. `selected` restricts the import to named skills; `selectedAgents` restricts it to named agents. A skill selection alone deliberately skips agents (the importer's legacy contract), so a caller importing both kinds names both.
+Imports skills (and agent definitions) from a git repository, or from an absolute local directory on the daemon host. `selected` restricts the import to named skills; `selectedAgents` restricts it to named agents. A skill selection alone deliberately skips agents (the importer's legacy contract), so a caller importing both kinds names both. A relative local path returns 400 (`local skill paths must be absolute`). A path inside the gridctl home returns 400 (`refusing to import from inside the gridctl home`). `ref` or `path` on a local directory returns 400 (`local sources do not accept ref or path`). A git repository root stays on the git path. A known location root (the directory in the client location table, not a child of one) uses that row's source name, the same rule as `gridctl skill add`. A source-name collision returns 409. The body has no source-name field; rename with `gridctl skill add --source-name`. Anyone who can reach this endpoint can import any `SKILL.md` tree the daemon can read. On the default loopback listener with no token, that is every local process. A later local import error, including a directory with nothing to import, returns 400 with the error text. Git failures still use the git error mapper.
 
 **Auth:** Yes
 
@@ -2870,11 +2870,18 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8180/api/skills/sources
 ```
 
-**Response:** `201 Created` with the import result (`imported`, `skipped`, `warnings`, plus `importedAgents` and `skippedAgents` when the repo ships agents). Git errors return `401`/`404`/`400` with redacted messages.
+**Response:** `201 Created` with the import result (`imported`, `skipped`, `warnings`, plus `importedAgents` and `skippedAgents` when the source ships agents). Git errors return `401`/`404`/`400` with redacted messages.
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"repo": "/home/user/skills/pcap-analysis"}' \
+  http://localhost:8180/api/skills/sources
+```
 
 #### `POST /api/skills/sources/update`
 
-Syncs every imported source in parallel (respects pinned refs). Optional body: `{force: true, skills: ["name"], auth: {...}}`. A failed fetch is recorded on that skill's `error` and counts in `failedSources`, rather than as up to date.
+Syncs every imported source in parallel (respects pinned refs). Optional body: `{force: true, skills: ["name"], auth: {...}}`. A failed fetch is recorded on that skill's `error` and counts in `failedSources`, rather than as up to date. A local source is re-read from its path, including its agents, and does not fetch. A drifted local skill is skipped as `local edits` without advancing hashes unless `force` is true.
 
 **Auth:** Yes
 
@@ -2886,7 +2893,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/skills/
 
 #### `GET /api/skills/updates`
 
-Live-fetches upstream SHAs and returns pending update counts per source. A failed fetch sets `error` on that source and leaves `hasUpdate` false. It is not reported as current.
+Live-fetches upstream SHAs and returns pending update counts per source. A failed fetch sets `error` on that source and leaves `hasUpdate` false. It is not reported as current. A local source compares tracked entry hashes and does not fetch. A missing path sets `error` and leaves `hasUpdate` false. An unrelated sibling does not set `hasUpdate`.
 
 **Auth:** Yes
 
@@ -2906,11 +2913,11 @@ Checks whether a source has upstream changes without applying them.
 
 **Auth:** Yes
 
-**Response:** `{source, currentSha, latestSha, hasUpdate}`. A failed fetch is a redacted git error (same status mapping as import) instead of `hasUpdate: false`.
+**Response:** `{source, currentSha, latestSha, hasUpdate}`. A failed fetch is a redacted git error (same status mapping as import) instead of `hasUpdate: false`. A local source compares tracked entry hashes, returns an empty `latestSha`, and reports a missing path as 400 rather than a git status.
 
 #### `POST /api/skills/sources/{name}/update`
 
-Applies available updates for one source. Locally edited (drifted) skills are skipped unless `force: true`. A failed fetch is reported on that skill's `error`, not as up to date.
+Applies available updates for one source. Locally edited (drifted) skills are skipped unless `force: true`. A git skip advances tracking to the latest commit. A local skip does not advance hashes, and `force: true` backs up `SKILL.md` as `SKILL.md.pre-local`. A local source also refreshes its agents. A failed fetch is reported on that skill's `error`, not as up to date.
 
 **Auth:** Yes
 
@@ -2918,7 +2925,7 @@ Applies available updates for one source. Locally edited (drifted) skills are sk
 
 #### `POST /api/skills/sources/{name}/preview`
 
-Previews skills in a repo without importing. GET accepts `repo`, `ref`, and `path` query params; POST accepts the same fields plus optional `auth` in the body. When `repo` is omitted, the stored source URL is used.
+Previews skills in a repo or local directory without importing. GET accepts `repo`, `ref`, and `path` query params; POST accepts the same fields plus optional `auth` in the body. When `repo` is omitted, the stored source is used. A local directory is discovered in place. Copies that carry `.origin.json` are omitted from the skill list. A root with nothing left to preview is an error. `ref` and `path` are not applied to that discovery.
 
 **Auth:** Yes
 
@@ -2926,7 +2933,7 @@ Previews skills in a repo without importing. GET accepts `repo`, `ref`, and `pat
 
 #### `GET /api/skills/sources/{name}/skills/{skill}/diff`
 
-Returns local vs upstream `SKILL.md` with a unified diff. Read-only.
+Returns local vs upstream `SKILL.md` with a unified diff. Read-only. A local-directory skill reads the source file and does not fetch.
 
 **Auth:** Yes
 
@@ -3161,7 +3168,7 @@ Deletes a file from a skill directory. The `{path...}` segment is variadic, so n
 
 ### Registry (Agents)
 
-Manage imported agent definitions (`~/.gridctl/registry/agents/<name>/AGENT.md`). Agents are single-file definitions projected into client directories; gridctl never executes them, and they are not gateway-routed MCP content. Agents enter the store through import (`gridctl skill add` or `POST /api/skills/sources`), so there is no create endpoint; PUT edits an existing agent.
+Manage imported agent definitions (`~/.gridctl/registry/agents/<name>/AGENT.md`). Agents are single-file definitions projected into client directories; gridctl never executes them, and they are not gateway-routed MCP content. Agents enter the store through import (`gridctl skill add`, `gridctl skill import`, or `POST /api/skills/sources`), so there is no create endpoint; PUT edits an existing agent. OpenCode-dialect agent files are listed and skipped by `skill import`.
 
 Frontmatter keys other than `name` and `description` ride in `extra` as an ordered `{key, value}` array, never an object: the canonical file is projected verbatim to identity targets, so key order is part of the contract. `extra` is read-only display data; edits submit the whole file through `raw`.
 

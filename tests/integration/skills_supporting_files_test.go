@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -92,7 +93,7 @@ func TestSkills_Import_InstallsSupportingFilesOverHTTP(t *testing.T) {
 	}
 	imp := skills.NewImporter(store, regDir, filepath.Join(regDir, "skills.lock.yaml"), logging.NewDiscardLogger())
 
-	result, err := imp.Import(skills.ImportOptions{
+	result, err := imp.Import(context.Background(), skills.ImportOptions{
 		Repo:  repoURL,
 		Trust: true,
 		Auth:  skills.AuthConfig{Method: "token", Token: privateRepoValidToken},

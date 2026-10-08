@@ -214,7 +214,7 @@ func TestPacks_PrivateHTTPS_ImportThenUpdateReResolves(t *testing.T) {
 	// A fresh process: no AuthConfig anywhere, only the recorded reference and
 	// a resolver. Update must re-resolve and reach the authed remote.
 	_, imp2 := packEnv(t, ref, privateRepoValidToken)
-	if _, err := imp2.Update(privateRepoSkillName, false, true, true); err != nil {
+	if _, err := imp2.Update(context.Background(), privateRepoSkillName, false, true, true); err != nil {
 		t.Fatalf("update re-resolving the stored reference: %v", err)
 	}
 }
@@ -252,7 +252,7 @@ func TestPacks_PrivateHTTPS_UpdateWithoutResolverFails(t *testing.T) {
 	// No SetCredentialResolver: the reference cannot be resolved.
 	bare := skills.NewImporter(store, registryDir, skills.LockFilePath(), slog.Default())
 
-	_, err = bare.Update(privateRepoSkillName, false, true, true)
+	_, err = bare.Update(context.Background(), privateRepoSkillName, false, true, true)
 	if err == nil {
 		t.Fatal("expected update to fail with no resolver for the stored reference")
 	}

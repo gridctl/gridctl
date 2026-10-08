@@ -405,12 +405,14 @@ Every `SKILL.md` in your registry surfaces to upstream MCP clients as a prompt. 
 ```bash
 gridctl skill list                        # Show what's in the registry
 gridctl skill add <git-repo>              # Import skills (and agents) from a remote repo
+gridctl skill add <directory>             # Import a directory that is not a git repository root
+gridctl skill import claude-code          # Import skills already present in a client home
 gridctl activate my-skill                 # Promote a draft → active
 ```
 
 Skills follow the [agentskills.io specification](https://agentskills.io): author them as plain markdown with frontmatter and they work with every skill-aware client, not just gridctl.
 
-The registry holds more than skills. The same import pipeline discovers Claude Code subagent definitions (`agents/*.md`), and `gridctl skill project sync` places both onto disk for clients that read files instead of MCP: identity copies for Claude Code, rendered dialects for OpenCode, Copilot, and Gemini CLI. A shared lockfile tracks every projected file, so drift is detected, hand edits are adoptable, and unsync removes exactly what gridctl wrote. The global context can likewise become a library of rule fragments with per-client assembly; see [Global Context Sync](docs/global-context.md).
+The registry holds more than skills. The same import pipeline discovers Claude Code subagent definitions (`agents/*.md`) from a git repository, a local directory, or a client home (`gridctl skill import`). `gridctl skill project sync` places both onto disk for clients that read files instead of MCP: identity copies for Claude Code, rendered dialects for OpenCode, Copilot, and Gemini CLI. A shared lockfile tracks every projected file, so drift is detected, hand edits are adoptable, and unsync removes exactly what gridctl wrote. The global context can likewise become a library of rule fragments with per-client assembly; see [Global Context Sync](docs/global-context.md).
 
 Learn more → [Skills guide](docs/skills.md)
 

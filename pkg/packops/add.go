@@ -144,7 +144,7 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 		if len(selectedAgents) == 0 {
 			selectedAgents = resolved.agents
 		}
-		result, ierr := imp.Import(skills.ImportOptions{
+		result, ierr := imp.Import(ctx, skills.ImportOptions{
 			Repo:           opts.Repo,
 			Ref:            opts.Ref,
 			Path:           opts.Path,
@@ -152,6 +152,7 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 			Selected:       selectedSkills,
 			SelectedAgents: selectedAgents,
 			Discovered:     clone,
+			PackImport:     true,
 			// Discovered is set, so the importer does not re-clone and Auth
 			// buys no network access here. It is what persists the
 			// CredentialRef into the origin sidecars and the lockfile
@@ -446,6 +447,9 @@ func recordLockedPack(ctx context.Context, lockPath string, m *pack.Manifest, re
 	return skills.MutateLockFile(ctx, lockPath, func(lf *skills.LockFile) (bool, error) {
 		sourceName := skills.RepoToName(repo)
 		src, ok := lf.Sources[sourceName]
+		if ok && src.IsLocal() {
+			return false, fmt.Errorf("source %q is a local source at %s; packs cannot replace a local source", sourceName, src.Repo)
+		}
 		if !ok {
 			method, user, path := persistedPackSSH(auth)
 			src = skills.LockedSource{

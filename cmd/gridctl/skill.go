@@ -30,8 +30,10 @@ var skillCmd = &cobra.Command{
 	Use:   "skill",
 	Short: "Manage skills and agents: import, update, and project",
 	Long: "Import, update, and manage skills and agent definitions from remote " +
-		"git repositories, project them into native client directories with " +
-		"'skill project', and review skill-document pins with 'skill pins'.",
+		"git repositories or local directories, import skills already installed " +
+		"for a client with 'skill import', project them into native client " +
+		"directories with 'skill project', and review skill-document pins with " +
+		"'skill pins'.",
 }
 
 // Flags
@@ -46,6 +48,7 @@ var (
 	skillAddAuthTokenStdin bool
 	skillAddVaultKey       string
 	skillAddSSHKey         string
+	skillAddSourceName     string
 	skillListRemote        bool
 	skillListFormat        string
 	skillListKind          string
@@ -62,17 +65,19 @@ var (
 )
 
 var skillAddCmd = &cobra.Command{
-	Use:   "add <repo-url>",
-	Short: "Import skills and agents from a git repository",
-	Long: "Clone a repository, discover SKILL.md files and agent definitions " +
+	Use:   "add <repo-url-or-directory>",
+	Short: "Import skills and agents from a git repository or local directory",
+	Long: "Clone a repository, or read a local directory that is not a git " +
+		"repository root, discover SKILL.md files and agent definitions " +
 		"(agents/*.md), and import them into the local registry. " +
-		"A repo shipping skills/ plus agents/ imports as a unit.",
+		"A repo shipping skills/ plus agents/ imports as a unit. " +
+		"A path that does not exist is treated as a git URL.",
 	Example: `  gridctl skill add https://github.com/acme/skills
   gridctl skill add git@github.com:acme/private-skills.git --vault-key GH_TOKEN`,
 	Args:    cobra.ExactArgs(1),
 	PreRunE: validateSkillAuthFlags(&skillAddAuthToken, &skillAddVaultKey, &skillAddAuthTokenStdin),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runSkillAdd(args[0])
+		return runSkillAdd(cmd.Context(), args[0])
 	},
 }
 
@@ -122,7 +127,7 @@ This command is also available as 'gridctl skill sync' for parity with the
 		if len(args) > 0 {
 			name = args[0]
 		}
-		return runSkillUpdate(name)
+		return runSkillUpdate(cmd.Context(), name)
 	},
 }
 
@@ -179,7 +184,7 @@ var skillTryCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	PreRunE: validateSkillAuthFlags(&skillTryAuthToken, &skillTryVaultKey, &skillTryAuthTokenStdin),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runSkillTry(args[0])
+		return runSkillTry(cmd.Context(), args[0])
 	},
 }
 
@@ -194,6 +199,7 @@ func init() {
 	skillAddCmd.Flags().BoolVar(&skillAddAuthTokenStdin, "auth-token-stdin", false, "Read the Personal Access Token from stdin (keeps it out of shell history)")
 	skillAddCmd.Flags().StringVar(&skillAddVaultKey, "vault-key", "", "Resolve the PAT from this vault key (e.g. GIT_TOKEN)")
 	skillAddCmd.Flags().StringVar(&skillAddSSHKey, "ssh-key", "", "Use an SSH private key at this path (SSH URLs only)")
+	skillAddCmd.Flags().StringVar(&skillAddSourceName, "source-name", "", "Record this import under an explicit source name")
 
 	skillListCmd.Flags().BoolVar(&skillListRemote, "remote", false, "Show only remote (imported) skills")
 	skillListCmd.Flags().StringVar(&skillListFormat, "format", "", "Output format (json)")
@@ -399,7 +405,26 @@ func printSkillAuthHint(stderr io.Writer, repo string, err error) bool {
 	return false
 }
 
-func runSkillAdd(repoURL string) error {
+func isLocalSkillSource(arg string) (bool, error) {
+	info, err := os.Stat(arg)
+	if err != nil || !info.IsDir() {
+		return false, nil
+	}
+	repo, err := gitpkg.IsRepoRoot(arg)
+	if err != nil {
+		return false, err
+	}
+	return !repo, nil
+}
+
+func runSkillAdd(ctx context.Context, repoURL string) error {
+	local, err := isLocalSkillSource(repoURL)
+	if err != nil {
+		return err
+	}
+	if local {
+		return runSkillAddLocal(ctx, repoURL)
+	}
 	store, err := loadRegistry()
 	if err != nil {
 		return err
@@ -411,10 +436,11 @@ func runSkillAdd(repoURL string) error {
 	}
 
 	imp := newImporter(store)
-	result, err := imp.Import(skills.ImportOptions{
+	result, err := imp.Import(ctx, skills.ImportOptions{
 		Repo:       repoURL,
 		Ref:        skillAddRef,
 		Path:       skillAddPath,
+		SourceName: skillAddSourceName,
 		Trust:      skillAddTrust,
 		NoActivate: skillAddNoActivate,
 		Force:      skillAddForce,
@@ -467,6 +493,89 @@ func runSkillAdd(repoURL string) error {
 	return nil
 }
 
+func runSkillAddLocal(ctx context.Context, dir string) error {
+	if skillAddRef != "" || skillAddPath != "" || skillAddAuthToken != "" || skillAddAuthTokenStdin || skillAddVaultKey != "" || skillAddSSHKey != "" {
+		return fmt.Errorf("local directories do not accept --ref, --path, or auth flags")
+	}
+	root, err := skills.ResolveLocalRoot(dir)
+	if err != nil {
+		return err
+	}
+	inside, err := skills.InsideGridctlHome(root)
+	if err != nil {
+		return err
+	}
+	if inside {
+		return fmt.Errorf("%w: %s", skills.ErrInsideGridctlHome, root)
+	}
+	home, err := state.Home()
+	if err != nil {
+		return err
+	}
+	if _, err := skills.ProjectionHintClients(ctx, home, []string{root}); err != nil {
+		return err
+	}
+	store, err := loadRegistry()
+	if err != nil {
+		return err
+	}
+	imp := newImporter(store)
+	result, err := imp.Import(ctx, skills.ImportOptions{
+		Repo:       root,
+		Kind:       skills.SourceKindLocal,
+		SourceName: skillAddSourceName,
+		KnownName:  skills.KnownSourceName(home, root),
+		Trust:      skillAddTrust,
+		NoActivate: skillAddNoActivate,
+		Force:      skillAddForce,
+		Rename:     skillAddRename,
+	})
+	if err != nil {
+		return err
+	}
+	printer := output.New()
+	for _, imported := range result.Imported {
+		printer.Info("Imported skill", "name", imported.Name)
+		if len(imported.Findings) > 0 {
+			fmt.Print(skills.FormatFindings(imported.Findings))
+		}
+	}
+	for _, imported := range result.ImportedAgents {
+		printer.Info("Imported agent", "name", imported.Name)
+		if len(imported.Findings) > 0 {
+			fmt.Print(skills.FormatFindings(imported.Findings))
+		}
+	}
+	for _, skipped := range result.Skipped {
+		printer.Warn("Skipped skill", "name", skipped.Name, "reason", skipped.Reason)
+	}
+	for _, skipped := range result.SkippedAgents {
+		printer.Warn("Skipped agent", "name", skipped.Name, "reason", skipped.Reason)
+	}
+	for _, warning := range result.Warnings {
+		printer.Warn(warning)
+	}
+	if len(result.Imported) == 0 && len(result.ImportedAgents) == 0 {
+		return fmt.Errorf("nothing was imported")
+	}
+	fmt.Printf("Imported %d skill(s), %d agent(s) from %s (local)\n", len(result.Imported), len(result.ImportedAgents), root)
+	if len(result.ImportedAgents) > 0 {
+		fmt.Println("List agents with 'gridctl skill list --kind agent', project them with 'gridctl skill project sync --kind agent'.")
+	}
+	return printProjectionHints(ctx, home, []string{root})
+}
+
+func printProjectionHints(ctx context.Context, home string, roots []string) error {
+	clients, err := skills.ProjectionHintClients(ctx, home, roots)
+	if err != nil {
+		return err
+	}
+	for _, client := range clients {
+		fmt.Println(skills.ProjectionHint(client))
+	}
+	return nil
+}
+
 // runSkillListAgents implements `skill list --kind agent`.
 func runSkillListAgents() error {
 	agents, err := skills.ListAgents(registryDir())
@@ -484,6 +593,7 @@ func runSkillListAgents() error {
 		Model       string `json:"model,omitempty"`
 		Repo        string `json:"repo,omitempty"`
 		Ref         string `json:"ref,omitempty"`
+		Kind        string `json:"kind,omitempty"`
 	}
 
 	var entries []agentEntry
@@ -493,6 +603,12 @@ func runSkillListAgents() error {
 		if origin, err := skills.ReadOrigin(a.Dir); err == nil {
 			entry.Repo = origin.Repo
 			entry.Ref = origin.Ref
+			if origin.IsLocal() {
+				entry.Kind = skills.SourceKindLocal
+				entry.Ref = ""
+			} else {
+				entry.Kind = "git"
+			}
 		}
 		entries = append(entries, entry)
 	}
@@ -535,6 +651,7 @@ func runSkillList() error {
 		Model  string `json:"model,omitempty"`
 		Repo   string `json:"repo,omitempty"`
 		Ref    string `json:"ref,omitempty"`
+		Kind   string `json:"kind,omitempty"`
 	}
 
 	var entries []skillEntry
@@ -553,9 +670,15 @@ func runSkillList() error {
 			entry.Source = "remote"
 			entry.Repo = origin.Repo
 			entry.Ref = origin.Ref
+			entry.Kind = "git"
+			if origin.IsLocal() {
+				entry.Source = "local-dir"
+				entry.Kind = skills.SourceKindLocal
+				entry.Ref = ""
+			}
 		}
 
-		if skillListRemote && entry.Source != "remote" {
+		if skillListRemote && entry.Source == "local" {
 			continue
 		}
 
@@ -645,7 +768,7 @@ func driftedAgent(name string) ([]string, error) {
 	return nil, nil
 }
 
-func runSkillUpdate(name string) error {
+func runSkillUpdate(ctx context.Context, name string) error {
 	store, err := loadRegistry()
 	if err != nil {
 		return err
@@ -672,7 +795,7 @@ func runSkillUpdate(name string) error {
 	}
 
 	if name != "" {
-		result, err := imp.Update(name, skillUpdateDryRun, skillUpdateForce, skillUpdateTrust)
+		result, err := imp.Update(ctx, name, skillUpdateDryRun, skillUpdateForce, skillUpdateTrust)
 		if err != nil {
 			return err
 		}
@@ -695,9 +818,11 @@ func runSkillUpdate(name string) error {
 		name   string
 		ref    string
 		source string
+		local  bool
 	}
+	lf, _ := skills.ReadLockFile(skills.LockFilePath())
 	var remoteSkills []skillRef
-	sourcesSeen := map[string]string{} // source name → ref (one is enough for pin check)
+	sourcesSeen := map[string]string{} // git source name → ref (one is enough for pin check)
 	for _, sk := range allSkills {
 		skillDir := skillDirPath(sk)
 		if !skills.HasOrigin(skillDir) {
@@ -707,19 +832,36 @@ func runSkillUpdate(name string) error {
 		if err != nil {
 			continue
 		}
+		if origin.IsLocal() {
+			sourceName, _ := lockOwner(lf, sk.Name, false)
+			if sourceName == "" {
+				sourceName = filepath.Base(origin.Repo)
+			}
+			remoteSkills = append(remoteSkills, skillRef{name: sk.Name, source: sourceName, local: true})
+			continue
+		}
 		sourceName := skills.RepoToName(origin.Repo)
 		sourcesSeen[sourceName] = origin.Ref
 		remoteSkills = append(remoteSkills, skillRef{name: sk.Name, ref: origin.Ref, source: sourceName})
 	}
 
-	// Sources that ship only agents have no skill to carry them into the
+	// Git sources that ship only agents have no skill to carry them into the
 	// loop; one agent per such source stands in. Sources already covered
 	// by a skill are skipped: updating any resource re-imports the whole
-	// source, agents included.
+	// source, agents included. Local sources visit every agent, including
+	// agents in a source that also has skills.
 	if agents, err := skills.ListAgents(registryDir()); err == nil {
 		for _, a := range agents {
 			origin, oerr := skills.ReadOrigin(a.Dir)
 			if oerr != nil {
+				continue
+			}
+			if origin.IsLocal() {
+				sourceName, _ := lockOwner(lf, a.Name, true)
+				if sourceName == "" {
+					sourceName = filepath.Base(origin.Repo)
+				}
+				remoteSkills = append(remoteSkills, skillRef{name: a.Name, source: sourceName, local: true})
 				continue
 			}
 			sourceName := skills.RepoToName(origin.Repo)
@@ -739,12 +881,12 @@ func runSkillUpdate(name string) error {
 	)
 
 	for _, sr := range remoteSkills {
-		if skills.IsPinnedRef(sr.ref) {
+		if !sr.local && skills.IsPinnedRef(sr.ref) {
 			pinnedSources[sr.source] = true
 			continue
 		}
 
-		result, err := imp.Update(sr.name, skillUpdateDryRun, skillUpdateForce, skillUpdateTrust)
+		result, err := imp.Update(ctx, sr.name, skillUpdateDryRun, skillUpdateForce, skillUpdateTrust)
 		if err != nil {
 			printer.Warn("Failed to update", "skill", sr.name, "error", err)
 			failedSources[sr.source] = true
@@ -790,6 +932,28 @@ func runSkillUpdate(name string) error {
 		len(syncedSources), updatedSkills, len(failedSources), len(pinnedSources))
 
 	return nil
+}
+
+func lockOwner(lf *skills.LockFile, name string, agent bool) (string, bool) {
+	if lf == nil {
+		return "", false
+	}
+	var owners []string
+	for srcName, src := range lf.Sources {
+		if agent {
+			if _, ok := src.Agents[name]; ok {
+				owners = append(owners, srcName)
+			}
+			continue
+		}
+		if _, ok := src.Skills[name]; ok {
+			owners = append(owners, srcName)
+		}
+	}
+	if len(owners) != 1 {
+		return "", false
+	}
+	return owners[0], true
 }
 
 func runSkillRemove(name, kind string) error {
@@ -854,14 +1018,24 @@ func runSkillInfo(name, kind string) error {
 	if kind == skillProjectKindAgent {
 		label = "agent"
 	}
-	if !info.IsRemote {
+	if info.Origin != nil && info.Origin.IsLocal() {
+		printer.Info("Local-dir "+label,
+			"name", info.Name,
+			"path", info.Origin.Repo,
+			"hash", info.Origin.ContentHash,
+			"imported", info.Origin.ImportedAt.Format(time.RFC3339),
+		)
+		if info.Origin.Client != "" || info.Origin.Location != "" {
+			fmt.Printf("  Client: %s\n  Location: %s\n", info.Origin.Client, info.Origin.Location)
+		}
+	} else if !info.IsRemote {
 		printer.Info("Local "+label, "name", info.Name)
 	} else {
 		printer.Info("Remote "+label,
 			"name", info.Name,
 			"repo", info.Origin.Repo,
 			"ref", info.Origin.Ref,
-			"commit", info.Origin.CommitSHA[:8],
+			"commit", skills.ShortSHA(info.Origin.CommitSHA),
 			"imported", info.Origin.ImportedAt.Format(time.RFC3339),
 		)
 
@@ -910,7 +1084,7 @@ func runSkillValidate(name string) error {
 	return nil
 }
 
-func runSkillTry(repoURL string) error {
+func runSkillTry(ctx context.Context, repoURL string) error {
 	duration, err := time.ParseDuration(skillTryDuration)
 	if err != nil {
 		return fmt.Errorf("invalid duration: %w", err)
@@ -927,7 +1101,7 @@ func runSkillTry(repoURL string) error {
 	}
 
 	imp := newImporter(store)
-	result, err := imp.Import(skills.ImportOptions{
+	result, err := imp.Import(ctx, skills.ImportOptions{
 		Repo:  repoURL,
 		Trust: true,
 		Force: true,

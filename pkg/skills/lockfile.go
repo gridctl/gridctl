@@ -20,6 +20,7 @@ const (
 	lockVersionVariables = 3
 	lockVersionSSHAuth   = 4
 	lockVersionStack     = 5
+	lockVersionLocal     = 6
 )
 
 // ImportLockVersion is the highest skills.lock.yaml schema version this
@@ -27,12 +28,14 @@ const (
 // agents; version 2 added per-source pack records; version 3 added pack
 // variable declarations; version 4 added ssh-key auth fields (auth_method,
 // ssh_user, ssh_key_path); version 5 added pack stack records and
-// unresolved-detail maps. Files are written at the lowest version that
-// can represent them (see WriteLockFile). A reader whose maximum is 4
-// understands SSH fields only and must refuse a file that carries a
-// stack record or an unresolved-detail map rather than drop those keys
-// on the next write.
-const ImportLockVersion = lockVersionStack
+// unresolved-detail maps; version 6 added local directory sources
+// (kind: local and per-skill tree_hash). Files are written at the lowest
+// version that can represent them (see WriteLockFile). A reader whose
+// maximum is 4 understands SSH fields only and must refuse a file that
+// carries a stack record or an unresolved-detail map rather than drop
+// those keys on the next write. A reader whose maximum is 5 must refuse
+// a file that carries a local source.
+const ImportLockVersion = lockVersionLocal
 
 // ErrNewerImportLockVersion signals a skills.lock.yaml written by a
 // newer gridctl. Callers must never paper over it: acting on state a
@@ -51,7 +54,9 @@ type LockFile struct {
 
 // LockedSource records the resolved state of a skill source.
 type LockedSource struct {
-	Repo        string                 `yaml:"repo"`
+	Repo string `yaml:"repo"`
+	// Kind is "local" for a directory source and empty for a git source.
+	Kind        string                 `yaml:"kind,omitempty"`
 	Ref         string                 `yaml:"ref"`
 	ResolvedRef string                 `yaml:"resolved_ref,omitempty"`
 	CommitSHA   string                 `yaml:"commit_sha"`
@@ -154,9 +159,17 @@ func (s LockedSource) StoredAuth() StoredAuth {
 
 // LockedSkill records per-skill metadata within a source.
 type LockedSkill struct {
-	Path        string       `yaml:"path"`
-	ContentHash string       `yaml:"content_hash"`
+	Path        string `yaml:"path"`
+	ContentHash string `yaml:"content_hash"`
+	// TreeHash is the sha256:-prefixed hash of SKILL.md plus allowlisted
+	// supporting files. Set only for local sources.
+	TreeHash    string       `yaml:"tree_hash,omitempty"`
 	Fingerprint *Fingerprint `yaml:"fingerprint,omitempty"`
+}
+
+// IsLocal reports whether this source is a local directory import.
+func (s LockedSource) IsLocal() bool {
+	return s.Kind == SourceKindLocal
 }
 
 // LockedAgent records per-agent metadata within a source.
@@ -260,6 +273,9 @@ func WriteLockFile(path string, lf *LockFile) error {
 			(src.Pack.Stack != nil || len(src.Pack.UnresolvedDetails) > 0) {
 			lf.Version = lockVersionStack
 		}
+		if src.IsLocal() && lf.Version < lockVersionLocal {
+			lf.Version = lockVersionLocal
+		}
 	}
 
 	data, err := yaml.Marshal(lf)
@@ -310,6 +326,9 @@ func (lf *LockFile) RemoveSkill(skillName string) {
 			if len(src.Skills) == 0 && len(src.Agents) == 0 {
 				delete(lf.Sources, srcName)
 			} else {
+				if src.IsLocal() {
+					src.ContentHash = CombineTrackedSourceHash(src.Skills, src.Agents)
+				}
 				lf.Sources[srcName] = src
 			}
 			return
@@ -336,6 +355,9 @@ func (lf *LockFile) RemoveAgent(agentName string) {
 			if len(src.Skills) == 0 && len(src.Agents) == 0 {
 				delete(lf.Sources, srcName)
 			} else {
+				if src.IsLocal() {
+					src.ContentHash = CombineTrackedSourceHash(src.Skills, src.Agents)
+				}
 				lf.Sources[srcName] = src
 			}
 			return

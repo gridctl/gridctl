@@ -51,6 +51,9 @@ func (imp *Importer) Diff(ctx context.Context, skillName string) (*DiffResult, e
 	}
 
 	localPath := filepath.Join(skillDir, "SKILL.md")
+	if origin.IsLocal() {
+		return imp.diffLocal(ctx, skillName, origin, localPath)
+	}
 	localBytes, err := os.ReadFile(localPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading local SKILL.md: %w", err)
@@ -143,6 +146,9 @@ func (imp *Importer) AdvanceTracking(ctx context.Context, skillName, newSHA stri
 	origin, err := ReadOrigin(skillDir)
 	if err != nil {
 		return fmt.Errorf("skill %q has no origin: %w", skillName, err)
+	}
+	if origin.IsLocal() {
+		return fmt.Errorf("local sources have no commit to advance")
 	}
 	origin.CommitSHA = newSHA
 	if err := WriteOrigin(skillDir, origin); err != nil {

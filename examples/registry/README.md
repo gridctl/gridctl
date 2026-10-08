@@ -41,7 +41,7 @@ Skills are managed via the REST API or Web UI - they are **not** declared in sta
 
 ## Skill Sources
 
-`skills.yaml` (separate from the stack YAML above) declares **remote git repositories** that gridctl can list as skill sources. It lives at `~/.gridctl/skills.yaml` and is read by the Library source list for auto-update display. `gridctl skill update` does not consult it. Updates authenticate from the origin sidecar and `skills.lock.yaml` written at import.
+`skills.yaml` (separate from the stack YAML above) declares **remote git repositories** that gridctl can list as skill sources. It lives at `~/.gridctl/skills.yaml` and is read by the Library source list for auto-update display. `gridctl skill update` does not consult it. Updates authenticate from the origin sidecar and `skills.lock.yaml` written at import. A local directory import is recorded in that lockfile, not in this display list. `gridctl export --output` omits those sources from the generated sidecar.
 
 ```bash
 # Display list only. This does not import skills, and skill update does not read the file.

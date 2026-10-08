@@ -472,7 +472,7 @@ func TestPackAdd_SkillAddSourceKeepsItsIdentity(t *testing.T) {
 
 	// Plain skill repo imported first: source X holds alpha.
 	plainRepo := initRepoNoManifest(t)
-	if _, err := imp.Import(skills.ImportOptions{Repo: plainRepo}); err != nil {
+	if _, err := imp.Import(context.Background(), skills.ImportOptions{Repo: plainRepo}); err != nil {
 		t.Fatal(err)
 	}
 

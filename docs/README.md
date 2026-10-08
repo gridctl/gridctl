@@ -34,7 +34,7 @@ New to gridctl? Read in this order:
 
 | Document | Description |
 |----------|-------------|
-| [Skills](skills.md) | Author `SKILL.md` files, serve them as MCP prompts, import agents alongside them, and project both onto disk for file-reading clients via `gridctl skill project` |
+| [Skills](skills.md) | Author `SKILL.md` files, serve them as MCP prompts, import from git, a local directory, or a client home, and project skills and agents onto disk via `gridctl skill project` |
 | [Packs](packs.md) | One `gridctl-pack.yaml` manifest importing skills, agents, rule fragments, wiring, and an optional stack as a unit, with tag-exact removal |
 | [Tools Workspace](tools-workspace.md) | Curate the exposed tool surface - whitelists, Audit Mode, annotation hints, fleet actions, per-client access, and groups |
 | [Global Context Sync](global-context.md) | Manage the global context (one canonical AGENTS.md, or an opt-in rule fragment library with per-client assembly) via `gridctl ctx`, the web UI, or the REST API |

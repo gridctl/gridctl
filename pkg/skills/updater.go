@@ -143,6 +143,11 @@ func checkAllUpdates(registryDir string, logger *slog.Logger) *UpdateStatus {
 			if err != nil {
 				return
 			}
+			// Local origins have no git remote. Skip them with neither an
+			// update entry nor an error.
+			if origin.IsLocal() {
+				return
+			}
 
 			// Background check has no vault resolver. A stored CredentialRef
 			// is skipped rather than failed. ssh-key sources rebuild from

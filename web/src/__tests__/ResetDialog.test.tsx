@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { ResetDialog, pageReload } from '../components/system/ResetDialog';
 import { fetchResetPreview, executeReset } from '../lib/api';
 import type { ResetDoc, ResetPreviewResponse } from '../lib/api';
@@ -185,12 +185,50 @@ describe('ResetDialog', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /continue to confirm/i }));
     fireEvent.click(screen.getByRole('button', { name: DEFAULT_CONFIRM }));
-    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: /done/i })).toBeInTheDocument());
+    // The result commit can be visible before Modal rebinds its document
+    // listener. Flush that effect, then require Escape to reload.
+    await act(async () => {});
 
     // Every exit from a successful result reloads; Done is not special.
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(reloadSpy).toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('reloads when the Escape listener bound before the result phase runs', async () => {
+    const listeners: EventListener[] = [];
+    const orig = document.addEventListener.bind(document);
+    const spy = vi.spyOn(document, 'addEventListener').mockImplementation((type, listener, options) => {
+      if (type === 'keydown' && typeof listener === 'function') listeners.push(listener);
+      orig(type, listener, options);
+    });
+    try {
+      const onClose = vi.fn();
+      vi.mocked(fetchResetPreview).mockResolvedValue(previewResponse());
+      vi.mocked(executeReset).mockResolvedValue({
+        schema_version: 1,
+        home: '/Users/demo',
+        purge: false,
+        dry_run: false,
+        failed: 0,
+        rows: [{ kind: 'skill', name: 'review-pr', action: 'removed' }],
+      });
+      render(<ResetDialog isOpen onClose={onClose} />);
+      await waitFor(() => expect(screen.getByText(/will be removed/i)).toBeInTheDocument());
+      const boundBeforeResult = listeners.slice();
+
+      fireEvent.click(screen.getByRole('button', { name: /continue to confirm/i }));
+      fireEvent.click(screen.getByRole('button', { name: DEFAULT_CONFIRM }));
+      await waitFor(() => expect(screen.getByRole('button', { name: /done/i })).toBeInTheDocument());
+
+      const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true });
+      for (const listener of boundBeforeResult) listener(event);
+      expect(reloadSpy).toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('ignores Escape while the reset is running', async () => {

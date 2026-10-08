@@ -123,6 +123,40 @@ func TestAdd_NeverPersistsTheTokenItself(t *testing.T) {
 	}
 }
 
+func TestRecordLockedPack_RefusesLocalSource(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+	repo := "https://github.com/acme/skills.git"
+	lockPath := skills.LockFilePath()
+	lf := &skills.LockFile{Sources: map[string]skills.LockedSource{
+		"skills": {
+			Kind: skills.SourceKindLocal,
+			Repo: filepath.Join(home, "local", "skills"),
+			Skills: map[string]skills.LockedSkill{
+				"keep": {Path: "keep", TreeHash: "sha256:abc"},
+			},
+		},
+	}}
+	if err := skills.WriteLockFile(lockPath, lf); err != nil {
+		t.Fatal(err)
+	}
+	err := recordLockedPack(context.Background(), lockPath, &pack.Manifest{
+		Name: "wiring-pack", Version: "1.0.0", Wiring: true,
+	}, resolvedSelection{}, repo, "main", "abc", skills.AuthConfig{})
+	if err == nil || !strings.Contains(err.Error(), "local source") {
+		t.Fatalf("recordLockedPack err = %v", err)
+	}
+	after, err := skills.ReadLockFile(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := after.Sources["skills"]
+	if !src.IsLocal() || src.Pack != nil || src.Skills["keep"].TreeHash != "sha256:abc" {
+		t.Fatalf("local source changed: %+v", src)
+	}
+}
+
 func TestRecordLockedPack_CarriesSSHKeyAuth(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

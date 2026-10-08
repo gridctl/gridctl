@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -56,7 +57,7 @@ func TestImport_SelectedAgentsImportsExactly(t *testing.T) {
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
 
 	repo := packFixtureRepo(t)
-	result, err := imp.Import(ImportOptions{
+	result, err := imp.Import(context.Background(), ImportOptions{
 		Repo:           repo,
 		Selected:       []string{"alpha"},
 		SelectedAgents: []string{"reviewer"},
@@ -86,7 +87,7 @@ func TestImport_LegacySelectionStillSkipsAgents(t *testing.T) {
 	store, regDir := setupTestRegistry(t)
 	imp := NewImporter(store, regDir, filepath.Join(regDir, "skills.lock.yaml"), slog.Default())
 
-	result, err := imp.Import(ImportOptions{
+	result, err := imp.Import(context.Background(), ImportOptions{
 		Repo:     packFixtureRepo(t),
 		Selected: []string{"alpha"},
 	})
@@ -157,7 +158,7 @@ func TestImport_DiscoveredSkipsSecondClone(t *testing.T) {
 	clone, err := CloneAndDiscover(repo, "", "", AuthConfig{}, slog.Default())
 	require.NoError(t, err)
 
-	result, err := imp.Import(ImportOptions{
+	result, err := imp.Import(context.Background(), ImportOptions{
 		Repo:           repo,
 		Selected:       []string{"alpha", "beta"},
 		SelectedAgents: []string{"reviewer", "tester"},
@@ -177,7 +178,7 @@ func TestImport_SourceRewritePreservesPackRecord(t *testing.T) {
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
 
 	repo := packFixtureRepo(t)
-	_, err := imp.Import(ImportOptions{Repo: repo})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repo})
 	require.NoError(t, err)
 
 	lf, err := ReadLockFile(lockPath)
@@ -188,7 +189,7 @@ func TestImport_SourceRewritePreservesPackRecord(t *testing.T) {
 	require.NoError(t, WriteLockFile(lockPath, lf))
 
 	// Force re-import (the Update path).
-	_, err = imp.Import(ImportOptions{Repo: repo, Force: true, PreserveState: true})
+	_, err = imp.Import(context.Background(), ImportOptions{Repo: repo, Force: true, PreserveState: true})
 	require.NoError(t, err)
 
 	back, err := ReadLockFile(lockPath)
@@ -207,10 +208,10 @@ func TestImport_SelectedAgentsPreservesSiblingLockEntries(t *testing.T) {
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
 
 	repo := packFixtureRepo(t)
-	_, err := imp.Import(ImportOptions{Repo: repo}) // both agents in
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repo}) // both agents in
 	require.NoError(t, err)
 
-	_, err = imp.Import(ImportOptions{Repo: repo, Selected: []string{"alpha"}, SelectedAgents: []string{"reviewer"}})
+	_, err = imp.Import(context.Background(), ImportOptions{Repo: repo, Selected: []string{"alpha"}, SelectedAgents: []string{"reviewer"}})
 	require.NoError(t, err)
 
 	lf, err := ReadLockFile(lockPath)
@@ -231,14 +232,14 @@ func TestImport_SelectedAgentCrossSourceNeedsForce(t *testing.T) {
 	repoA := initRepoWithSkillContent(t, map[string]string{
 		"agents/reviewer.md": sprintfName(packAgentMD, "reviewer"),
 	})
-	_, err := imp.Import(ImportOptions{Repo: repoA})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoA})
 	require.NoError(t, err)
 
 	repoB := initRepoWithSkillContent(t, map[string]string{
 		"skills/alpha/SKILL.md": sprintfName(packSkillMD, "alpha"),
 		"agents/reviewer.md":    "---\nname: reviewer\ndescription: Different agent\n---\n\nOther.\n",
 	})
-	result, err := imp.Import(ImportOptions{Repo: repoB, Selected: []string{"alpha"}, SelectedAgents: []string{"reviewer"}})
+	result, err := imp.Import(context.Background(), ImportOptions{Repo: repoB, Selected: []string{"alpha"}, SelectedAgents: []string{"reviewer"}})
 	require.NoError(t, err)
 	require.Empty(t, result.ImportedAgents, "cross-source agent overwritten without --force")
 	require.NotEmpty(t, result.SkippedAgents)

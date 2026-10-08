@@ -123,6 +123,20 @@ type ImportOptions struct {
 	// disabled) instead of resetting it. Used by Update so that re-syncing
 	// a source does not silently re-activate skills the user disabled.
 	PreserveState bool
+	// Kind is SourceKindLocal for a directory import. Empty keeps git import.
+	Kind string
+	// SourceName overrides RepoToName. Required when a derived name collides.
+	SourceName string
+	// KnownName is the client-location source name for a new local root.
+	KnownName string
+	// Provenance maps a discovered relative path to client import metadata.
+	// skill add leaves it nil.
+	Provenance map[string]EntryProvenance
+	// ResourceKind, when set to skill or agent, imports only that kind.
+	ResourceKind string
+	// PackImport fails before any registry write when a local source key or
+	// a local-owned resource would be replaced. Packs have no force option.
+	PackImport bool
 }
 
 // ImportResult contains the results of an import operation.
@@ -199,9 +213,13 @@ func (imp *Importer) SetCredentialResolver(r CredentialResolver) {
 }
 
 // Import clones a repo, discovers skills and agents, validates, scans,
-// and imports.
-func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
-	if opts.Path != "" {
+// and imports. A local directory import sets Kind to SourceKindLocal and
+// skips git. ctx is checked before any registry write and between entries.
+func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if opts.Path != "" && opts.Kind != SourceKindLocal {
 		if err := SafeRepoPath(opts.Path); err != nil {
 			return nil, err
 		}
@@ -215,10 +233,18 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 		}
 	}
 
-	imp.logger.Info("importing skills", "repo", gitpkg.RedactURL(opts.Repo), "ref", opts.Ref)
+	imp.logger.Info("importing skills", "repo", gitpkg.RedactURL(opts.Repo), "ref", opts.Ref, "kind", opts.Kind)
 
+	var discoverWarnings []string
 	result := opts.Discovered
-	if result == nil {
+	if opts.Kind == SourceKindLocal {
+		prepared, warnings, err := prepareLocalImport(ctx, &opts, imp.logger)
+		if err != nil {
+			return nil, err
+		}
+		discoverWarnings = warnings
+		result = prepared
+	} else if result == nil {
 		var err error
 		result, err = CloneAndDiscover(opts.Repo, opts.Ref, opts.Path, opts.Auth, imp.logger)
 		if err != nil {
@@ -233,12 +259,38 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 		if len(result.MalformedAgents) > 0 {
 			return nil, fmt.Errorf("no importable agents found: %s", summarizeMalformed(result.MalformedAgents))
 		}
+		if opts.Kind == SourceKindLocal {
+			return nil, fmt.Errorf("no importable skills or agents found in %s", opts.Repo)
+		}
 		return nil, fmt.Errorf("no SKILL.md or agents/*.md files found in repository")
 	}
 
 	imp.logger.Info("discovered skills", "count", len(result.Skills), "agents", len(result.Agents))
 
-	importResult := &ImportResult{}
+	lf, err := ReadLockFile(imp.lockPath)
+	if err != nil {
+		return nil, err
+	}
+	sourceName, err := ResolveSourceName(lf, SourceNameInput{
+		Kind:      opts.Kind,
+		Root:      opts.Repo,
+		Explicit:  opts.SourceName,
+		KnownName: opts.KnownName,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := GuardSourceKey(lf, sourceName, opts.Kind, opts.Repo); err != nil {
+		return nil, err
+	}
+	if opts.PackImport {
+		if err := GuardPackOwnership(lf, sourceName, result, opts); err != nil {
+			return nil, err
+		}
+	}
+	opts.SourceName = sourceName
+
+	importResult := &ImportResult{Warnings: discoverWarnings}
 	// Surface parse failures on fresh imports only. Update re-imports with
 	// PreserveState, and warning about a permanently broken sibling SKILL.md
 	// on every sync would just train users to ignore warnings.
@@ -259,198 +311,232 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 
 	lockedSkills := make(map[string]LockedSkill)
 
-	for _, discovered := range result.Skills {
-		skillName := discovered.Name
-		if opts.Rename != "" && len(result.Skills) == 1 {
-			skillName = opts.Rename
-		}
+	if opts.ResourceKind != ResourceKindAgent {
+		for _, discovered := range result.Skills {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			skillName := discovered.Name
+			if opts.Rename != "" && len(result.Skills) == 1 {
+				skillName = opts.Rename
+			}
 
-		// Filter to user-selected skills when a selection is provided
-		if len(opts.Selected) > 0 && !selectedSet[skillName] {
-			continue
-		}
+			// Filter to user-selected skills when a selection is provided
+			if len(opts.Selected) > 0 && !selectedSet[skillName] {
+				continue
+			}
 
-		// Check for existing skill; treat explicitly selected skills as force-overwrite
-		if _, err := imp.store.GetSkill(skillName); err == nil {
-			force := opts.Force || (len(opts.Selected) > 0 && selectedSet[skillName])
-			if !force {
+			// Check for existing skill. Git selection still implies overwrite
+			// unless a local source owns the name. Local re-import of an unowned
+			// or same-source name does not need --force.
+			if _, err := imp.store.GetSkill(skillName); err == nil {
+				selected := len(opts.Selected) > 0 && selectedSet[skillName]
+				if !AllowOverwrite(lf, opts.Kind, skillName, sourceName, selected, opts.Force, false) {
+					importResult.Skipped = append(importResult.Skipped, SkippedSkill{
+						Name:   skillName,
+						Reason: fmt.Sprintf("skill %q already exists (use --force to overwrite or --rename to import with a different name)", skillName),
+					})
+					continue
+				}
+			}
+
+			// Validate
+			vr := registry.ValidateSkillFull(discovered.Skill)
+			if !vr.Valid() {
 				importResult.Skipped = append(importResult.Skipped, SkippedSkill{
 					Name:   skillName,
-					Reason: fmt.Sprintf("skill %q already exists (use --force to overwrite or --rename to import with a different name)", skillName),
+					Reason: fmt.Sprintf("validation failed: %s", vr.Error()),
 				})
 				continue
 			}
-		}
+			if len(vr.Warnings) > 0 {
+				for _, w := range vr.Warnings {
+					importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("%s: %s", skillName, w))
+				}
+			}
 
-		// Validate
-		vr := registry.ValidateSkillFull(discovered.Skill)
-		if !vr.Valid() {
-			importResult.Skipped = append(importResult.Skipped, SkippedSkill{
-				Name:   skillName,
-				Reason: fmt.Sprintf("validation failed: %s", vr.Error()),
-			})
-			continue
-		}
-		if len(vr.Warnings) > 0 {
-			for _, w := range vr.Warnings {
+			// Resolve the destination directory up front. SaveSkill defaults Dir
+			// (to an existing skill's Dir, else the name), but the supporting-file
+			// copy has to know where it is writing before SaveSkill runs, so set
+			// Dir explicitly here and let SaveSkill's defaulting become a no-op.
+			// Keeping one resolution point stops the two from drifting.
+			if discovered.Skill.Dir == "" {
+				if existing, err := imp.store.GetSkill(skillName); err == nil && existing.Dir != "" {
+					discovered.Skill.Dir = existing.Dir
+				} else {
+					discovered.Skill.Dir = skillName
+				}
+			}
+			skillsRoot := filepath.Join(imp.registryDir, "skills")
+			skillDir := filepath.Join(skillsRoot, discovered.Skill.Dir)
+			// Defense in depth behind SaveSkill's name validation: never let a
+			// resolved destination land outside the skills root.
+			if !withinDir(skillsRoot, skillDir) {
+				importResult.Skipped = append(importResult.Skipped, SkippedSkill{
+					Name:   skillName,
+					Reason: fmt.Sprintf("resolved directory %q escapes the registry", discovered.Skill.Dir),
+				})
+				continue
+			}
+
+			// Gather supporting files from the clone. Nothing is written yet: the
+			// scan below has to run against the source so a rejected skill never
+			// leaves a partial install behind.
+			srcDir := filepath.Join(result.RepoPath, discovered.Path)
+			supporting, copyWarnings, err := collectSupportingFiles(srcDir)
+			// Surface what was excluded even when collection then failed, so the
+			// skip reason is not the only thing the user sees.
+			for _, w := range copyWarnings {
 				importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("%s: %s", skillName, w))
 			}
-		}
-
-		// Resolve the destination directory up front. SaveSkill defaults Dir
-		// (to an existing skill's Dir, else the name), but the supporting-file
-		// copy has to know where it is writing before SaveSkill runs, so set
-		// Dir explicitly here and let SaveSkill's defaulting become a no-op.
-		// Keeping one resolution point stops the two from drifting.
-		if discovered.Skill.Dir == "" {
-			if existing, err := imp.store.GetSkill(skillName); err == nil && existing.Dir != "" {
-				discovered.Skill.Dir = existing.Dir
-			} else {
-				discovered.Skill.Dir = skillName
+			if err != nil {
+				var le *limitError
+				if errors.As(err, &le) {
+					importResult.Skipped = append(importResult.Skipped, SkippedSkill{
+						Name:   skillName,
+						Reason: fmt.Sprintf("supporting files exceed limits: %s", le.reason),
+					})
+					continue
+				}
+				importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("%s: collecting supporting files: %v", skillName, err))
+				continue
 			}
-		}
-		skillsRoot := filepath.Join(imp.registryDir, "skills")
-		skillDir := filepath.Join(skillsRoot, discovered.Skill.Dir)
-		// Defense in depth behind SaveSkill's name validation: never let a
-		// resolved destination land outside the skills root.
-		if !withinDir(skillsRoot, skillDir) {
-			importResult.Skipped = append(importResult.Skipped, SkippedSkill{
-				Name:   skillName,
-				Reason: fmt.Sprintf("resolved directory %q escapes the registry", discovered.Skill.Dir),
-			})
-			continue
-		}
 
-		// Gather supporting files from the clone. Nothing is written yet: the
-		// scan below has to run against the source so a rejected skill never
-		// leaves a partial install behind.
-		srcDir := filepath.Join(result.RepoPath, discovered.Path)
-		supporting, copyWarnings, err := collectSupportingFiles(srcDir)
-		// Surface what was excluded even when collection then failed, so the
-		// skip reason is not the only thing the user sees.
-		for _, w := range copyWarnings {
-			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("%s: %s", skillName, w))
-		}
-		if err != nil {
-			var le *limitError
-			if errors.As(err, &le) {
+			// Security scan: body first (any finding blocks, unchanged), then the
+			// supporting files (only danger-severity findings block; see
+			// scanSupportingFiles for why).
+			scanResult := ScanSkill(discovered.Skill)
+			treeFindings, treeBlocking := scanSupportingFiles(supporting)
+			scanResult.Findings = append(scanResult.Findings, treeFindings...)
+			blocked := !scanResult.Safe || treeBlocking
+			// Keep Safe consistent with Findings so a later reader of the struct
+			// cannot conclude "safe" while findings are attached.
+			scanResult.Safe = len(scanResult.Findings) == 0
+			if blocked && !opts.Trust {
 				importResult.Skipped = append(importResult.Skipped, SkippedSkill{
 					Name:   skillName,
-					Reason: fmt.Sprintf("supporting files exceed limits: %s", le.reason),
+					Reason: fmt.Sprintf("security findings detected (use --trust to proceed):\n%s", FormatFindings(scanResult.Findings)),
 				})
 				continue
 			}
-			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("%s: collecting supporting files: %v", skillName, err))
-			continue
-		}
 
-		// Security scan: body first (any finding blocks, unchanged), then the
-		// supporting files (only danger-severity findings block; see
-		// scanSupportingFiles for why).
-		scanResult := ScanSkill(discovered.Skill)
-		treeFindings, treeBlocking := scanSupportingFiles(supporting)
-		scanResult.Findings = append(scanResult.Findings, treeFindings...)
-		blocked := !scanResult.Safe || treeBlocking
-		// Keep Safe consistent with Findings so a later reader of the struct
-		// cannot conclude "safe" while findings are attached.
-		scanResult.Safe = len(scanResult.Findings) == 0
-		if blocked && !opts.Trust {
-			importResult.Skipped = append(importResult.Skipped, SkippedSkill{
-				Name:   skillName,
-				Reason: fmt.Sprintf("security findings detected (use --trust to proceed):\n%s", FormatFindings(scanResult.Findings)),
-			})
-			continue
-		}
-
-		// Set state. PreserveState carries over the existing skill's State
-		// across a re-import (used by Update); otherwise NoActivate decides
-		// between draft and active.
-		discovered.Skill.Name = skillName
-		state := registry.StateActive
-		if opts.NoActivate {
-			state = registry.StateDraft
-		}
-		if opts.PreserveState {
-			if existing, err := imp.store.GetSkill(skillName); err == nil && existing.State != "" {
-				state = existing.State
+			// Set state. PreserveState carries over the existing skill's State
+			// across a re-import (used by Update); otherwise NoActivate decides
+			// between draft and active.
+			discovered.Skill.Name = skillName
+			state := registry.StateActive
+			if opts.NoActivate {
+				state = registry.StateDraft
 			}
-		}
-		discovered.Skill.State = state
+			if opts.PreserveState {
+				if existing, err := imp.store.GetSkill(skillName); err == nil && existing.State != "" {
+					state = existing.State
+				}
+			}
+			discovered.Skill.State = state
 
-		// Save to registry first. SaveSkill validates the skill (including its
-		// name) before creating any directory, and that validation is the only
-		// thing standing between a malformed name and a destructive write, so
-		// nothing may touch the filesystem ahead of it.
-		if err := imp.store.SaveSkill(discovered.Skill); err != nil {
-			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("failed to save %s: %v", skillName, err))
-			continue
-		}
+			var treeHash string
+			if opts.Kind == SourceKindLocal {
+				var hashErr error
+				treeHash, hashErr = SkillTreeHash(ctx, srcDir)
+				if hashErr != nil {
+					importResult.Skipped = append(importResult.Skipped, SkippedSkill{
+						Name:   skillName,
+						Reason: fmt.Sprintf("hashing skill tree: %v", hashErr),
+					})
+					continue
+				}
+			}
 
-		// Then install supporting files beside the rendered SKILL.md, and
-		// refresh the cached count so it reflects what actually landed.
-		filesCopied, err := installSupportingFiles(skillDir, supporting)
-		if err != nil {
-			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("failed to install supporting files for %s: %v", skillName, err))
-			continue
-		}
-		if err := imp.store.RefreshFileCount(skillName); err != nil {
-			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("failed to refresh file count for %s: %v", skillName, err))
-		}
+			// Save to registry first. SaveSkill validates the skill (including its
+			// name) before creating any directory, and that validation is the only
+			// thing standing between a malformed name and a destructive write, so
+			// nothing may touch the filesystem ahead of it.
+			if err := imp.store.SaveSkill(discovered.Skill); err != nil {
+				importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("failed to save %s: %v", skillName, err))
+				continue
+			}
 
-		// Compute fingerprint
-		fp := ComputeFingerprint(discovered.Skill)
+			// Then install supporting files beside the rendered SKILL.md, and
+			// refresh the cached count so it reflects what actually landed.
+			filesCopied, err := installSupportingFiles(skillDir, supporting)
+			if err != nil {
+				importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("failed to install supporting files for %s: %v", skillName, err))
+				continue
+			}
+			if err := imp.store.RefreshFileCount(skillName); err != nil {
+				importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("failed to refresh file count for %s: %v", skillName, err))
+			}
 
-		// Snapshot the just-written SKILL.md hash so DetectDrift can later
-		// distinguish user edits from upstream changes. ContentHash records
-		// the upstream file as fetched; InstalledHash records what we wrote.
-		// Note: this covers SKILL.md only; edits to installed supporting
-		// files are not yet drift-tracked (see CHANGELOG).
-		installedHash, _ := ContentHashFile(filepath.Join(skillDir, "SKILL.md"))
+			// Compute fingerprint
+			fp := ComputeFingerprint(discovered.Skill)
 
-		// Write origin sidecar. A vault reference and an ssh-key path may be
-		// persisted. The raw token, key material, and passphrase are not.
-		authMethod, sshUser, sshKeyPath := persistedAuth(opts.Auth)
-		origin := &Origin{
-			Repo:                     opts.Repo,
-			Ref:                      opts.Ref,
-			Path:                     discovered.Path,
-			CommitSHA:                result.CommitSHA,
-			ImportedAt:               time.Now().UTC(),
-			ContentHash:              discovered.ContentHash,
-			InstalledHash:            installedHash,
-			Fingerprint:              fp,
-			SupportingFilesInstalled: true,
-			CredentialRef:            opts.Auth.CredentialRef,
-			AuthMethod:               authMethod,
-			SSHUser:                  sshUser,
-			SSHKeyPath:               sshKeyPath,
+			// Snapshot the just-written SKILL.md hash so DetectDrift can later
+			// distinguish user edits from upstream changes. ContentHash records
+			// the upstream file as fetched; InstalledHash records what we wrote.
+			// Note: this covers SKILL.md only; edits to installed supporting
+			// files are not yet drift-tracked (see CHANGELOG).
+			installedHash, _ := ContentHashFile(filepath.Join(skillDir, "SKILL.md"))
+
+			// Write origin sidecar. A vault reference and an ssh-key path may be
+			// persisted. The raw token, key material, and passphrase are not.
+			// Local origins record none of those fields.
+			authMethod, sshUser, sshKeyPath := persistedAuth(opts.Auth)
+			client, location := provenanceFor(opts, discovered.Path, skillDir)
+			origin := &Origin{
+				Repo:                     opts.Repo,
+				Ref:                      opts.Ref,
+				Path:                     discovered.Path,
+				CommitSHA:                result.CommitSHA,
+				ImportedAt:               time.Now().UTC(),
+				ContentHash:              discovered.ContentHash,
+				InstalledHash:            installedHash,
+				Fingerprint:              fp,
+				SupportingFilesInstalled: true,
+				CredentialRef:            opts.Auth.CredentialRef,
+				AuthMethod:               authMethod,
+				SSHUser:                  sshUser,
+				SSHKeyPath:               sshKeyPath,
+				Client:                   client,
+				Location:                 location,
+			}
+			if opts.Kind == SourceKindLocal {
+				origin.Kind = SourceKindLocal
+				origin.Ref = ""
+				origin.CommitSHA = ""
+				origin.CredentialRef = ""
+				origin.AuthMethod = ""
+				origin.SSHUser = ""
+				origin.SSHKeyPath = ""
+			}
+
+			if err := WriteOrigin(skillDir, origin); err != nil {
+				importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("failed to write origin for %s: %v", skillName, err))
+			}
+
+			lockedSkills[skillName] = LockedSkill{
+				Path:        discovered.Path,
+				ContentHash: discovered.ContentHash,
+				TreeHash:    treeHash,
+				Fingerprint: fp,
+			}
+
+			imported := ImportedSkill{
+				Name:        skillName,
+				Path:        discovered.Path,
+				Origin:      origin,
+				FilesCopied: filesCopied,
+			}
+			if len(scanResult.Findings) > 0 {
+				imported.Findings = scanResult.Findings
+			}
+			importResult.Imported = append(importResult.Imported, imported)
+
+			imp.logger.Info("imported skill", "name", skillName, "supportingFiles", filesCopied)
 		}
-
-		if err := WriteOrigin(skillDir, origin); err != nil {
-			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("failed to write origin for %s: %v", skillName, err))
-		}
-
-		lockedSkills[skillName] = LockedSkill{
-			Path:        discovered.Path,
-			ContentHash: discovered.ContentHash,
-			Fingerprint: fp,
-		}
-
-		imported := ImportedSkill{
-			Name:        skillName,
-			Path:        discovered.Path,
-			Origin:      origin,
-			FilesCopied: filesCopied,
-		}
-		if len(scanResult.Findings) > 0 {
-			imported.Findings = scanResult.Findings
-		}
-		importResult.Imported = append(importResult.Imported, imported)
-
-		imp.logger.Info("imported skill", "name", skillName, "supportingFiles", filesCopied)
 	}
 
-	lockedAgents, keptAgents := imp.importAgents(result, opts, importResult)
+	lockedAgents, keptAgents := imp.importAgents(ctx, result, opts, sourceName, lf, importResult)
 
 	// Update lock file. Re-read inside the critical section so concurrent
 	// Import calls (e.g. from handleSkillSourcesSyncAll's bounded fan-out)
@@ -462,8 +548,16 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 		// The cross-process lock covers the whole read-modify-write:
 		// the API server builds a fresh Importer per request, so the
 		// in-process mutex alone cannot serialize concurrent writers.
-		err := MutateLockFile(context.Background(), imp.lockPath, func(lf *LockFile) (bool, error) {
-			sourceName := RepoToName(opts.Repo)
+		err := MutateLockFile(ctx, imp.lockPath, func(lf *LockFile) (bool, error) {
+			if err := GuardSourceKey(lf, sourceName, opts.Kind, opts.Repo); err != nil {
+				return false, err
+			}
+			if opts.Kind == SourceKindLocal {
+				canDrop := opts.Path == "" && len(opts.Selected) == 0 && len(opts.SelectedAgents) == 0 && opts.ResourceKind == "" &&
+					len(importResult.Skipped) == 0 && len(importResult.SkippedAgents) == 0 &&
+					len(result.Malformed) == 0 && len(result.MalformedAgents) == 0
+				return true, RecordLocalSource(lf, sourceName, opts.Repo, time.Now().UTC(), lockedSkills, lockedAgents, result, canDrop)
+			}
 			// Carry previously tracked agents forward instead of wiping them:
 			// a Selected import never processes agents at all (the web UI's
 			// "add more from this source" flow), and an unforced re-import
@@ -517,6 +611,15 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 				SSHKeyPath:    sshKeyPath,
 				Pack:          prevPack,
 			})
+			installedSkills := map[string]struct{}{}
+			for name := range lockedSkills {
+				installedSkills[name] = struct{}{}
+			}
+			installedAgents := map[string]struct{}{}
+			for name := range lockedAgents {
+				installedAgents[name] = struct{}{}
+			}
+			ReleaseInstalledNames(lf, sourceName, false, installedSkills, installedAgents)
 			return true, nil
 		})
 		if err != nil {
@@ -535,27 +638,17 @@ func (imp *Importer) Import(opts ImportOptions) (*ImportResult, error) {
 // skills, and agents were not on offer. The second return lists agents
 // skipped as already-existing conflicts; their prior lock entries must
 // survive the source rewrite.
-func (imp *Importer) importAgents(result *CloneResult, opts ImportOptions, importResult *ImportResult) (map[string]LockedAgent, []string) {
+func (imp *Importer) importAgents(ctx context.Context, result *CloneResult, opts ImportOptions, sourceName string, lf *LockFile, importResult *ImportResult) (map[string]LockedAgent, []string) {
 	// Legacy contract: a skill selection alone skips agents (the web UI
 	// picker chose specific skills; agents were not on offer). An
 	// explicit agent selection overrides that and imports exactly those.
-	if len(result.Agents) == 0 || (len(opts.Selected) > 0 && len(opts.SelectedAgents) == 0) {
+	// A skill-only batch never imports agents.
+	if opts.ResourceKind == ResourceKindSkill || len(result.Agents) == 0 || (len(opts.Selected) > 0 && len(opts.SelectedAgents) == 0 && opts.ResourceKind != ResourceKindAgent) {
 		return nil, nil
 	}
 	selectedAgents := make(map[string]bool, len(opts.SelectedAgents))
 	for _, name := range opts.SelectedAgents {
 		selectedAgents[name] = true
-	}
-	// Selected-implies-overwrite is scoped to this source: an agent the
-	// lockfile attributes to a different source is another import's
-	// resource and still needs --force.
-	sameSource := func(name string) bool {
-		lf, err := ReadLockFile(imp.lockPath)
-		if err != nil {
-			return false
-		}
-		srcName, _, found := lf.FindAgentSource(name)
-		return !found || srcName == RepoToName(opts.Repo)
 	}
 
 	// Duplicate names inside one batch fail every carrier: Claude Code
@@ -569,6 +662,9 @@ func (imp *Importer) importAgents(result *CloneResult, opts ImportOptions, impor
 	lockedAgents := make(map[string]LockedAgent)
 	var kept []string
 	for _, discovered := range result.Agents {
+		if err := ctx.Err(); err != nil {
+			return nil, nil
+		}
 		if len(opts.SelectedAgents) > 0 && !selectedAgents[discovered.Name] {
 			continue
 		}
@@ -586,7 +682,8 @@ func (imp *Importer) importAgents(result *CloneResult, opts ImportOptions, impor
 			})
 			continue
 		}
-		agentForce := opts.Force || (len(opts.SelectedAgents) > 0 && selectedAgents[discovered.Name] && sameSource(discovered.Name))
+		selected := len(opts.SelectedAgents) > 0 && selectedAgents[discovered.Name]
+		agentForce := AllowOverwrite(lf, opts.Kind, discovered.Name, sourceName, selected, opts.Force, true)
 		if _, err := GetAgent(imp.registryDir, discovered.Name); err == nil && !agentForce {
 			importResult.SkippedAgents = append(importResult.SkippedAgents, SkippedAgent{
 				Name:   discovered.Name,
@@ -628,18 +725,30 @@ func (imp *Importer) importAgents(result *CloneResult, opts ImportOptions, impor
 
 		installedHash, _ := ContentHashFile(agentFile)
 		authMethod, sshUser, sshKeyPath := persistedAuth(opts.Auth)
+		client, location := provenanceFor(opts, discovered.Path, agentDir)
 		origin := &Origin{
 			Repo:          opts.Repo,
 			Ref:           opts.Ref,
 			Path:          discovered.Path,
 			CommitSHA:     result.CommitSHA,
 			ImportedAt:    time.Now().UTC(),
+			Kind:          opts.Kind,
+			Client:        client,
+			Location:      location,
 			ContentHash:   discovered.ContentHash,
 			InstalledHash: installedHash,
 			CredentialRef: opts.Auth.CredentialRef,
 			AuthMethod:    authMethod,
 			SSHUser:       sshUser,
 			SSHKeyPath:    sshKeyPath,
+		}
+		if opts.Kind == SourceKindLocal {
+			origin.Ref = ""
+			origin.CommitSHA = ""
+			origin.CredentialRef = ""
+			origin.AuthMethod = ""
+			origin.SSHUser = ""
+			origin.SSHKeyPath = ""
 		}
 		if err := WriteOrigin(agentDir, origin); err != nil {
 			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("failed to write origin for agent %s: %v", discovered.Name, err))
@@ -705,6 +814,17 @@ func (imp *Importer) Remove(skillName string) error {
 	return nil
 }
 
+func provenanceFor(opts ImportOptions, relPath, destDir string) (string, string) {
+	existing, err := ReadOrigin(destDir)
+	if err == nil && existing != nil && existing.Repo == opts.Repo && existing.Path == relPath && (existing.Client != "" || existing.Location != "") {
+		return existing.Client, existing.Location
+	}
+	if prov, ok := opts.Provenance[relPath]; ok {
+		return prov.Client, prov.Location
+	}
+	return "", ""
+}
+
 // Update fetches latest for a skill and applies changes.
 //
 // trust forwards to ImportOptions.Trust. It defaults to false at every caller:
@@ -713,7 +833,10 @@ func (imp *Importer) Remove(skillName string) error {
 // every sync refreshed upstream content with the scan gate disabled, harmless
 // while only the SKILL.md body was scanned, but not once supporting files are
 // installed too.
-func (imp *Importer) Update(skillName string, dryRun, force, trust bool) (*ImportResult, error) {
+func (imp *Importer) Update(ctx context.Context, skillName string, dryRun, force, trust bool) (*ImportResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	skillDir := imp.skillDir(skillName)
 	origin, err := ReadOrigin(skillDir)
 	isSkill := err == nil
@@ -723,9 +846,13 @@ func (imp *Importer) Update(skillName string, dryRun, force, trust bool) (*Impor
 		// source ships anyway.
 		if agentOrigin, aerr := ReadOrigin(AgentDir(imp.registryDir, skillName)); aerr == nil {
 			origin = agentOrigin
+			skillDir = AgentDir(imp.registryDir, skillName)
 		} else {
 			return nil, fmt.Errorf("skill %q has no origin (not an imported skill): %w", skillName, err)
 		}
+	}
+	if origin.IsLocal() {
+		return imp.updateLocal(ctx, skillName, skillDir, origin, isSkill, dryRun, force, trust)
 	}
 
 	// Rebuild the stored auth (vault reference or ssh-key path).
@@ -778,10 +905,15 @@ func (imp *Importer) Update(skillName string, dryRun, force, trust bool) (*Impor
 	// Store old fingerprint for comparison
 	oldFingerprint := origin.Fingerprint
 
-	result, err := imp.Import(ImportOptions{
+	lf, err := ReadLockFile(imp.lockPath)
+	if err != nil {
+		return nil, err
+	}
+	result, err := imp.Import(ctx, ImportOptions{
 		Repo:          origin.Repo,
 		Ref:           origin.Ref,
 		Path:          origin.Path,
+		SourceName:    gitLockSourceName(lf, origin, skillName, isSkill),
 		Trust:         trust,
 		Force:         true,
 		Auth:          auth,
@@ -852,6 +984,10 @@ func (imp *Importer) Pin(skillName, ref string) error {
 	origin, err := ReadOrigin(skillDir)
 	if err != nil {
 		return fmt.Errorf("skill %q has no origin: %w", skillName, err)
+	}
+
+	if origin.IsLocal() {
+		return fmt.Errorf("local sources have no refs to pin")
 	}
 
 	origin.Ref = ref
