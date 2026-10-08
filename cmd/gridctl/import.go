@@ -63,8 +63,11 @@ and OpenCode (opencode.jsonc, then opencode.json). A project file is read
 whether or not that client is installed. --scope all (the default) also
 reads Claude Code local scope from ~/.claude.json, then OpenCode's
 OPENCODE_CONFIG file when that variable is set, then each detected client's
-user file. --scope user reads user files only. --scope project reads project
-files only and does not open a home file.
+user file. A readable ~/.claude.json with no projects object produces no
+local row. A project file that is also that client's user file is listed
+once, as the user row. --scope user reads user files only. --scope project
+reads project files only and does not open a home file. An empty project
+scan says no project files were found.
 
 On a same-name conflict gridctl keeps the earlier scope. The order is local,
 then project, then custom, then user. That order is gridctl's choice. It
@@ -322,6 +325,13 @@ func runConfirm(title string) (bool, error) {
 
 // --- command flow ---
 
+func emptyImportNotice(scope, projectDir string) (message, hint string) {
+	if scope == "project" {
+		return fmt.Sprintf("No project MCP files found from %s up to the nearest git root", projectDir), ""
+	}
+	return "No supported LLM clients detected", "Run 'gridctl link --help' for the supported client list.\n"
+}
+
 func runImport(ctx context.Context, client, format string) error {
 	// In JSON mode stdout carries exactly one document; narration moves to
 	// stderr so pipelines can parse the output.
@@ -353,8 +363,11 @@ func runImport(ctx context.Context, client, format string) error {
 	}
 	sources := sourceDocs(collected)
 	if client == "" && len(collected) == 0 {
-		printer.Info("No supported LLM clients detected")
-		printer.Print("Run 'gridctl link --help' for the supported client list.\n")
+		message, hint := emptyImportNotice(importScopeFlag, projectDir)
+		printer.Info(message)
+		if hint != "" {
+			printer.Print("%s", hint)
+		}
 		return nil
 	}
 

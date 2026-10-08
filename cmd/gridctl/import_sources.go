@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
+	"strings"
 
 	"github.com/gridctl/gridctl/internal/importer"
 	"github.com/gridctl/gridctl/pkg/provisioner"
@@ -59,11 +61,15 @@ func collectSources(ctx context.Context, registry *provisioner.Registry, client 
 		}
 		return project, nil
 	default:
-		local, err := collectLocalSources(ctx, registry, client, opts.ProjectDir)
+		dirs, err := provisioner.ProjectWalk(ctx, opts.ProjectDir)
 		if err != nil {
 			return nil, err
 		}
-		project, err := collectProjectSources(ctx, client, opts.ProjectDir)
+		local, err := collectLocalSources(ctx, registry, client, dirs)
+		if err != nil {
+			return nil, err
+		}
+		project, err := collectProjectSourcesIn(ctx, client, dirs)
 		if err != nil {
 			return nil, err
 		}
@@ -78,6 +84,9 @@ func collectSources(ctx context.Context, registry *provisioner.Registry, client 
 		if err != nil {
 			return nil, err
 		}
+		// A home directory that is a git root makes a user file match a
+		// project-table path. List that file once, as the user row.
+		project = omitProjectRowsDuplicatingUser(project, user)
 		out := make([]importSource, 0, len(local)+len(project)+len(custom)+len(user))
 		out = append(out, local...)
 		out = append(out, project...)
@@ -144,6 +153,22 @@ func collectProjectSources(ctx context.Context, client, projectDir string) ([]im
 	if err != nil {
 		return nil, err
 	}
+	return projectSourcesFromFiles(ctx, found)
+}
+
+func collectProjectSourcesIn(ctx context.Context, client string, dirs []string) ([]importSource, error) {
+	var filter []string
+	if client != "" {
+		filter = []string{client}
+	}
+	found, err := provisioner.DiscoverProjectSourcesIn(ctx, dirs, filter)
+	if err != nil {
+		return nil, err
+	}
+	return projectSourcesFromFiles(ctx, found)
+}
+
+func projectSourcesFromFiles(ctx context.Context, found []provisioner.ProjectSourceFile) ([]importSource, error) {
 	out := make([]importSource, 0, len(found))
 	for _, file := range found {
 		if err := ctx.Err(); err != nil {
@@ -161,7 +186,7 @@ func collectProjectSources(ctx context.Context, client, projectDir string) ([]im
 	return out, nil
 }
 
-func collectLocalSources(ctx context.Context, registry *provisioner.Registry, client, projectDir string) ([]importSource, error) {
+func collectLocalSources(ctx context.Context, registry *provisioner.Registry, client string, dirs []string) ([]importSource, error) {
 	if client != "" && client != "claude-code" {
 		return nil, nil
 	}
@@ -172,10 +197,6 @@ func collectLocalSources(ctx context.Context, registry *provisioner.Registry, cl
 	configPath, found := prov.Detect()
 	if !found || configPath == "" {
 		return nil, nil
-	}
-	dirs, err := provisioner.ProjectWalk(ctx, projectDir)
-	if err != nil {
-		return nil, err
 	}
 	matches, err := provisioner.ClaudeCodeLocalScope(ctx, configPath, dirs)
 	if err != nil {
@@ -445,6 +466,61 @@ func stringListed(values []string, want string) bool {
 func isReadError(err error) bool {
 	var pe *os.PathError
 	return errors.As(err, &pe)
+}
+
+// omitProjectRowsDuplicatingUser drops a project row, or the overlapping
+// clients on a shared row, when that path is already a user row for the
+// same client. The user row remains.
+func omitProjectRowsDuplicatingUser(project, user []importSource) []importSource {
+	if len(project) == 0 || len(user) == 0 {
+		return project
+	}
+	out := make([]importSource, 0, len(project))
+	for _, row := range project {
+		var keep []string
+		for _, slug := range row.Slugs {
+			if userOwnsPath(user, slug, row.Path) {
+				continue
+			}
+			keep = append(keep, slug)
+		}
+		if len(keep) == 0 {
+			continue
+		}
+		if len(keep) != len(row.Slugs) {
+			row.Slugs = keep
+			row.Doc.Clients = append([]string(nil), keep...)
+			row.Doc.Client = keep[0]
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+func userOwnsPath(user []importSource, slug, path string) bool {
+	for _, row := range user {
+		if row.Scope != "" && row.Scope != "user" {
+			continue
+		}
+		if !importPathsEqual(row.Path, path) {
+			continue
+		}
+		for _, existing := range row.Slugs {
+			if existing == slug {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func importPathsEqual(a, b string) bool {
+	a = filepath.Clean(a)
+	b = filepath.Clean(b)
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
 }
 
 func validateImportScope(scope string) error {

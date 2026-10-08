@@ -183,4 +183,23 @@ func TestDedupe_MergesOriginsAndNamesScopes(t *testing.T) {
 	if out[0].ProvenanceLabel() != "cursor (project)" {
 		t.Fatalf("label = %s", out[0].ProvenanceLabel())
 	}
+
+	user.Server = server
+	vscode, _, err := MapEntry("vscode", provisioner.ServerEntry{Name: "github", Raw: map[string]any{"command": "other"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conflict := Candidate{
+		Name: "github", Server: vscode, Source: "vscode", FoundIn: []string{"vscode"},
+		SourcePath: "/home/.vscode/mcp.json", SourcePaths: []string{"/home/.vscode/mcp.json"},
+		Origins: []Origin{{Client: "vscode", Scope: "user", Path: "/home/.vscode/mcp.json"}},
+	}
+	out = Dedupe([]Candidate{project, user, conflict})
+	if len(out) != 2 {
+		t.Fatalf("merged then conflicting = %d", len(out))
+	}
+	warning = strings.Join(out[1].Warnings, "\n")
+	if !strings.Contains(warning, "the cursor (project+user) definition was kept") {
+		t.Fatalf("merged warning = %s", warning)
+	}
 }

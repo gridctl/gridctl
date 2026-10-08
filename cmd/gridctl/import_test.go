@@ -52,6 +52,61 @@ mcp-servers:
     port: 3000
 `
 
+func TestOmitProjectRowsDuplicatingUser(t *testing.T) {
+	cursor := &fakeImportClient{slug: "cursor"}
+	project := fakeSource(cursor, "project")
+	project.Path = "/home/.cursor/mcp.json"
+	project.Doc.Path = project.Path
+	user := fakeSource(cursor, "user")
+	user.Path = "/home/.cursor/mcp.json"
+	user.Doc.Path = user.Path
+
+	got := omitProjectRowsDuplicatingUser([]importSource{project}, []importSource{user})
+	if len(got) != 0 {
+		t.Fatalf("duplicate project row kept: %+v", got)
+	}
+
+	distinct := fakeSource(cursor, "project")
+	distinct.Path = "/repo/.cursor/mcp.json"
+	got = omitProjectRowsDuplicatingUser([]importSource{distinct}, []importSource{user})
+	if len(got) != 1 || got[0].Path != distinct.Path {
+		t.Fatalf("distinct project row = %+v", got)
+	}
+
+	shared := importSource{
+		Slugs: []string{"claude-code", "vscode"},
+		Path:  "/home/.vscode/mcp.json",
+		Scope: "project",
+		Doc: importSourceDoc{
+			Client:  "claude-code",
+			Clients: []string{"claude-code", "vscode"},
+			Path:    "/home/.vscode/mcp.json",
+			Scope:   "project",
+		},
+	}
+	vscode := fakeSource(&fakeImportClient{slug: "vscode"}, "user")
+	vscode.Path = "/home/.vscode/mcp.json"
+	got = omitProjectRowsDuplicatingUser([]importSource{shared}, []importSource{vscode})
+	if len(got) != 1 || len(got[0].Slugs) != 1 || got[0].Slugs[0] != "claude-code" || got[0].Doc.Client != "claude-code" {
+		t.Fatalf("partial overlap = %+v", got)
+	}
+}
+
+func TestEmptyImportNotice(t *testing.T) {
+	message, hint := emptyImportNotice("project", "/work/repo")
+	if message != "No project MCP files found from /work/repo up to the nearest git root" || hint != "" {
+		t.Fatalf("project notice = %q %q", message, hint)
+	}
+	message, hint = emptyImportNotice("all", "/work/repo")
+	if message != "No supported LLM clients detected" || !strings.Contains(hint, "gridctl link --help") {
+		t.Fatalf("default notice = %q %q", message, hint)
+	}
+	message, hint = emptyImportNotice("user", "/work/repo")
+	if message != "No supported LLM clients detected" || hint == "" {
+		t.Fatalf("user notice = %q %q", message, hint)
+	}
+}
+
 func TestScanForCandidates_FiltersDedupesAndWarns(t *testing.T) {
 	github := map[string]any{"command": "npx", "args": []any{"-y", "server-github"}}
 	scope := []importSource{

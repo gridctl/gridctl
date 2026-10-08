@@ -161,6 +161,38 @@ func TestDiscoverProjectSources_WalkAndStop(t *testing.T) {
 	})
 }
 
+func TestDiscoverProjectSourcesIn_UsesGivenDirs(t *testing.T) {
+	root := t.TempDir()
+	child := filepath.Join(root, "child")
+	if err := os.MkdirAll(filepath.Join(child, ".cursor"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	parentFile := filepath.Join(root, ".mcp.json")
+	childFile := filepath.Join(child, ".cursor", "mcp.json")
+	writeImportFile(t, parentFile, `{"mcpServers":{"p":{"command":"p"}}}`)
+	writeImportFile(t, childFile, `{"mcpServers":{"c":{"command":"c"}}}`)
+
+	got, err := DiscoverProjectSourcesIn(t.Context(), []string{child}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Path != childFile || got[0].Depth != 0 {
+		t.Fatalf("given dirs = %+v", got)
+	}
+	for _, f := range got {
+		if f.Path == parentFile {
+			t.Fatalf("parent outside dirs was returned: %s", f.Path)
+		}
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err = DiscoverProjectSourcesIn(ctx, []string{child}, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestDiscoverProjectSources_Cancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -259,6 +291,18 @@ func TestClaudeCodeLocalScope_PathMatch(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("unmatched dir yielded %+v", got)
+	}
+
+	userOnly := filepath.Join(dir, "user-only.json")
+	writeImportFile(t, userOnly, `{"mcpServers":{"home":{"command":"echo"}}}`)
+	got, err = ClaudeCodeLocalScope(t.Context(), userOnly, []string{repo})
+	if err != nil || len(got) != 0 {
+		t.Fatalf("absent projects = %+v err %v", got, err)
+	}
+	writeImportFile(t, userOnly, `{"projects":"not-an-object","mcpServers":{"home":{"command":"echo"}}}`)
+	got, err = ClaudeCodeLocalScope(t.Context(), userOnly, []string{repo})
+	if err != nil || len(got) != 0 {
+		t.Fatalf("non-object projects = %+v err %v", got, err)
 	}
 
 	missing, err := ClaudeCodeLocalScope(t.Context(), filepath.Join(dir, "absent.json"), []string{repo})

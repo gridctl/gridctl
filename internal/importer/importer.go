@@ -304,17 +304,18 @@ func Dedupe(candidates []Candidate) []Candidate {
 			continue
 		}
 		if first, ok := byName[c.Name]; ok && first.id != id {
-			if originsDiffer(first.origins, c.Origins) {
+			kept := out[first.idx]
+			if originsDiffer(kept.Origins, c.Origins) {
 				c.Warnings = append(c.Warnings, fmt.Sprintf(
 					"a different definition of %q was also found in %s; the %s definition was kept",
-					c.Name, c.ProvenanceLabel(), first.prov))
+					c.Name, c.ProvenanceLabel(), kept.ProvenanceLabel()))
 			} else {
 				c.Warnings = append(c.Warnings, fmt.Sprintf(
 					"a different definition of %q was also found in %s; review before importing both",
 					c.Name, strings.Join(c.FoundIn, ", ")))
 			}
 		} else if !ok {
-			byName[c.Name] = seenDef{id: id, prov: c.ProvenanceLabel(), origins: append([]Origin(nil), c.Origins...)}
+			byName[c.Name] = seenDef{id: id, idx: len(out)}
 		}
 		index[id] = len(out)
 		out = append(out, c)
@@ -543,9 +544,8 @@ func identity(c Candidate) string {
 }
 
 type seenDef struct {
-	id      string
-	prov    string
-	origins []Origin
+	id  string
+	idx int
 }
 
 func originsDiffer(a, b []Origin) bool {

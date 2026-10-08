@@ -114,6 +114,17 @@ func DiscoverProjectSources(ctx context.Context, startDir string, clients []stri
 	if err != nil {
 		return nil, err
 	}
+	return DiscoverProjectSourcesIn(ctx, dirs, clients)
+}
+
+// DiscoverProjectSourcesIn stats project files in dirs. dirs is a
+// nearest-first chain, typically from ProjectWalk. Depth is the index in
+// dirs. It does not walk, does not read file contents, and does not stat
+// paths outside dirs.
+func DiscoverProjectSourcesIn(ctx context.Context, dirs []string, clients []string) ([]ProjectSourceFile, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	table := ProjectSources()
 	var out []ProjectSourceFile
 	for depth, dir := range dirs {
@@ -185,7 +196,9 @@ func ReadProjectSource(ctx context.Context, src ProjectSourceFile) (ImportRead, 
 // under projects.<dir> for each directory in dirs that has that object.
 // Path keys are compared after filepath.Clean, and case-insensitively on
 // Windows. A missing, empty, malformed, or unreadable file yields one
-// status element and no entries. It does not abort the caller.
+// status element and no entries. A readable file whose projects key is
+// absent, empty, or not an object yields no element, the same as a file
+// with no matching directory. It does not abort the caller.
 func ClaudeCodeLocalScope(ctx context.Context, configPath string, dirs []string) ([]LocalScopeEntries, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -214,9 +227,6 @@ func ClaudeCodeLocalScope(ctx context.Context, configPath string, dirs []string)
 		return []LocalScopeEntries{{Status: OpenCodeImportEmpty, Detail: "selected file is empty"}}, nil
 	}
 	projects := getMap(data, "projects")
-	if len(projects) == 0 {
-		return []LocalScopeEntries{{Status: OpenCodeImportEmpty, Detail: "selected file has no MCP server entries"}}, nil
-	}
 	var out []LocalScopeEntries
 	for _, dir := range dirs {
 		if err := ctx.Err(); err != nil {
