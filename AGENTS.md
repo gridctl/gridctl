@@ -141,7 +141,7 @@ pkg/a2aclient/      Bounded outbound A2A 1.0/0.3 JSON-RPC codecs, card compatibi
 pkg/mcpauth/        Downstream OAuth 2.1 brokering for external servers (discovery, dynamic client registration,
                     token store, callback listener). Backed by `gridctl auth`.
 pkg/registry/       Skills registry: discovers SKILL.md files, parses frontmatter, validates, serves as MCP prompts.
-pkg/skills/         Remote skill and agent management (git import, lockfile, fingerprinting, updater, security scan).
+pkg/skills/         Skill and agent management: git import, local directory import, client skill-location import, lockfile, fingerprinting, updater, security scan.
 pkg/project/        Unified projection engine: one lockfile (~/.gridctl/project.lock.yaml), flock, hashing, backups,
                     drift states, and migrate-on-read. The kind packages below are its tenants.
 pkg/skillsync/      Projects active registry skills into native client skill directories (`gridctl skill project`).

@@ -1660,6 +1660,8 @@ Semantics:
 
 `~/.gridctl/skills.yaml` is the Library source list. It is read for auto-update display. `gridctl skill update` and the background checker do not consult it. Imports and later updates authenticate from the origin sidecar and `skills.lock.yaml` written at import.
 
+`skills.lock.yaml` is stamped at the lowest version that can represent its sources. Version 6 is written only when at least one source has `kind: local` (a directory import, with per-skill `tree_hash` and an empty `commit_sha`). Files without a local source keep their previous stamp. A reader refuses a file newer than version 6. Local paths are not portable: `gridctl export --output` omits those sources from the generated `skills.yaml` and prints a notice.
+
 ```yaml
 # Display list only. auth: blocks here are not read on update.
 defaults:

@@ -82,7 +82,8 @@ The same operations are exposed as CLI subcommands. Use these when scripting or 
 | Show a skill's metadata | `gridctl skill info <name>` |
 | Activate a draft skill | `gridctl activate <name>` |
 | Validate a skill's frontmatter | `gridctl skill validate <name>` |
-| Import skills from a git repo | `gridctl skill add <repo-url>` |
+| Import skills from a git repo or local directory | `gridctl skill add <repo-url-or-directory>` |
+| Import skills from a client home directory | `gridctl skill import <client>` |
 | Update imported skills (alias `sync`) | `gridctl skill update [name]` |
 | Try a skill temporarily before importing | `gridctl skill try <repo-url>` |
 | Pin an imported skill to a ref | `gridctl skill pin <name> <ref>` |
@@ -106,6 +107,18 @@ Supported auth flows for private repos:
 - `--ssh-key <path>`: SSH private key path. The absolute path is persisted (never the key material) and reused on a later update. Set `GRIDCTL_SSH_KEY_PASSPHRASE` for an encrypted key; the passphrase is re-read from the environment on every use and is not stored.
 
 gridctl does not read `~/.ssh/config`, and a daemonized gridctl inherits `SSH_AUTH_SOCK` only from the shell that started it, so an SSH URL that works with the `git` CLI can still fail. See [troubleshooting](troubleshooting.md#ssh-agent-not-available).
+
+## Local directories and client imports
+
+`gridctl skill add <dir>` imports a directory that is not a git repository root. Discovery, validation, the security scan, size caps, and `--trust`, `--force`, `--no-activate`, and `--rename` behave as they do for git. A path that does not exist, or a file, is still treated as a git URL. A git repository root keeps the clone path. The directory is resolved to an absolute path, and a path inside the gridctl home (`~/.gridctl`) is refused.
+
+Local origins record `kind: local`, the resolved path, and a content hash. They have no ref and no commit. `gridctl skill update` re-reads that path. An unchanged tree reports already up to date. A changed `SKILL.md` or allowlisted supporting file is re-imported. A missing path is a per-entry error and does not abort a bulk update. Local sources are never pinned: `gridctl skill pin` exits 1 with `local sources have no refs to pin`.
+
+When a skill's frontmatter name differs from its directory name, the local path installs under the directory name and warns. The same fixture imported from git still installs under the frontmatter name.
+
+`gridctl skill import <client>` reads home-scoped locations for `claude-code`, `opencode`, and `agents`. It lists candidates, skips gridctl's own projections, and imports the selection. OpenCode agent files are listed and skipped in this release. `--dry-run` enumerates without writing. Without a terminal, pass `--all` or `--select`. Exit 0 means imported, dry-run, or nothing enumerated. Exit 1 means an unknown client, a cancelled selection, an absent selected name, or every explicitly selected entry skipped. Exit 2 is an infrastructure error, including a newer lockfile.
+
+A lockfile that contains a local source is stamped version 6. A lockfile without one keeps its previous stamp. `gridctl export --output` omits local sources from `skills.yaml` and prints a notice, because a local path is not portable. `POST /api/skills/sources` accepts an absolute directory on the daemon host. Relative paths and paths inside the gridctl home return 400. A source-name collision returns 409.
 
 ### Reconciling local edits (web UI)
 

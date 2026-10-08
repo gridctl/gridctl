@@ -2849,7 +2849,7 @@ Auth for private repos accepts an optional `auth` object on mutating endpoints:
 
 #### `GET /api/skills/sources`
 
-Lists imported sources with skill entries, auto-update settings, drift markers, and cached update availability.
+Lists imported sources with skill entries, auto-update settings, drift markers, and cached update availability. Each source includes `kind`: `"git"` or `"local"`. Existing fields are unchanged. A local source is matched to `skills.yaml` by `repo` only, so a same-named git config does not attach path or update settings.
 
 **Auth:** Yes
 
@@ -2859,7 +2859,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/skills/sources
 
 #### `POST /api/skills/sources`
 
-Imports skills (and agent definitions) from a git repository. `selected` restricts the import to named skills; `selectedAgents` restricts it to named agents. A skill selection alone deliberately skips agents (the importer's legacy contract), so a caller importing both kinds names both.
+Imports skills (and agent definitions) from a git repository, or from an absolute local directory on the daemon host. `selected` restricts the import to named skills; `selectedAgents` restricts it to named agents. A skill selection alone deliberately skips agents (the importer's legacy contract), so a caller importing both kinds names both. A relative local path, or a path inside the gridctl home, returns 400. A source-name collision returns 409. Anyone who can reach this endpoint can import any `SKILL.md` tree the daemon can read. On the default loopback listener with no token, that is every local process.
 
 **Auth:** Yes
 
