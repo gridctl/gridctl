@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useId, type ReactNode } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useId, useRef, type ReactNode } from 'react';
 import { X, Maximize2, Minimize2, ExternalLink } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
@@ -59,19 +59,23 @@ export function Modal({
     if (!isOpen) setExpanded(false);
   }
 
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
-        // Blur the field instead of closing the modal
-        (e.target as HTMLElement).blur();
-        return;
-      }
-      onClose();
-    },
-    [onClose],
-  );
+  // Layout, not passive: the document listener below can still be the
+  // previous binding when the new close callback is already committed.
+  const onCloseRef = useRef(onClose);
+  useLayoutEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key !== 'Escape') return;
+    const tag = (e.target as HTMLElement)?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+      // Blur the field instead of closing the modal
+      (e.target as HTMLElement).blur();
+      return;
+    }
+    onCloseRef.current();
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
