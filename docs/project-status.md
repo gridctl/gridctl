@@ -39,7 +39,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 | Stack export (export) | Stable | Breaking security correction in v1.0.0-rc.1: references stay unresolved, and recognized inline credentials reject export. See [migration guidance](cli-reference.md#export-semantics) |
 | Spec drift detection | Stable | No API guarantee (internal) |
 | Visual spec builder | Stable | No API guarantee (internal) |
-| Skills import (skill add) | Stable | Backward compatible in 0.x |
+| Skills import (skill add / skill import) | Stable | Unreleased local directories and client home import. A local source stamps `skills.lock.yaml` version 6; an older gridctl refuses the file. Git-only output is unchanged. The Library wizard still accepts git URLs only |
 | Skill projection (skill project) | Stable | Backward compatible in 0.x |
 | Agent kind (skill add / skill project --kind agent) | Stable | Distinct from the removed Agent IDE below; backward compatible in 0.x |
 | Multi-client agent renders (opencode, copilot, gemini) | Stable | Lossy by design - each dialect drops keys it cannot express; backward compatible in 0.x |
@@ -92,7 +92,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 - Generated Python package sources support the official public PyPI index only. Private indexes require a custom Dockerfile.
 - The Python MCP runtime base is not a supported public release until hosted architecture tests, candidate publication, and anonymous evidence succeed. Convenience aliases are promoted separately. Untested runtimes are unsupported.
 - Code mode sandbox has no filesystem access (by design).
-- Skills registry is local-only with no remote discovery.
+- Skills registry is local-only with no remote discovery. Local directory import is CLI and `POST /api/skills/sources`. The Library wizard still accepts git URLs only. On the default loopback listener with no token, any local process can import a tree the daemon can read. Paths inside the gridctl home are refused. See [Imported skills](security/threat-model.md#imported-skills-packs-and-projection).
 - Agents and packs are first-class in the web UI: the Library's Agents segment covers catalog, editing, and per-client projection over the agents REST endpoints. The Packs segment imports, projects, and removes pack resources over REST and shows a carried stack row. It does not start or stop that daemon. Apply returns `skipped-unavailable` and the CLI command. Removing a running pack-owned daemon over REST leaves the daemon, `~/.gridctl/packs/<name>/`, and the pack record in place. Stop it with `gridctl pack remove` or `gridctl destroy <name>`, then remove the pack again.
 - Agent renders for OpenCode, Copilot, and Gemini CLI are lossy by design: each dialect drops frontmatter keys it cannot express, and `skill project status` names the dropped keys per row. Claude Code receives the canonical bytes verbatim.
 - Global context sync covers 12 of 16 linkable clients; Claude Desktop, Cursor, AnythingLLM, and LM Studio expose no writable global context file, and Windsurf caps `global_rules.md` at 6,000 characters.

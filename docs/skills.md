@@ -108,18 +108,6 @@ Supported auth flows for private repos:
 
 gridctl does not read `~/.ssh/config`, and a daemonized gridctl inherits `SSH_AUTH_SOCK` only from the shell that started it, so an SSH URL that works with the `git` CLI can still fail. See [troubleshooting](troubleshooting.md#ssh-agent-not-available).
 
-## Local directories and client imports
-
-`gridctl skill add <dir>` imports a directory that is not a git repository root. Discovery, validation, the security scan, size caps, and `--trust`, `--force`, `--no-activate`, and `--rename` behave as they do for git. A path that does not exist, or a file, is still treated as a git URL. A git repository root keeps the clone path. The directory is resolved to an absolute path, and a path inside the gridctl home (`~/.gridctl`) is refused.
-
-Local origins record `kind: local`, the resolved path, and a content hash. They have no ref and no commit. `gridctl skill update` re-reads that path. An unchanged tree reports already up to date. A changed `SKILL.md` or allowlisted supporting file is re-imported. A missing path is a per-entry error and does not abort a bulk update. Local sources are never pinned: `gridctl skill pin` exits 1 with `local sources have no refs to pin`.
-
-When a skill's frontmatter name differs from its directory name, the local path installs under the directory name and warns. The same fixture imported from git still installs under the frontmatter name.
-
-`gridctl skill import <client>` reads home-scoped locations for `claude-code`, `opencode`, and `agents`. It lists candidates, skips gridctl's own projections, and imports the selection. OpenCode agent files are listed and skipped in this release. `--dry-run` enumerates without writing. Without a terminal, pass `--all` or `--select`. Exit 0 means imported, dry-run, or nothing enumerated. Exit 1 means an unknown client, a cancelled selection, an absent selected name, or every explicitly selected entry skipped. Exit 2 is an infrastructure error, including a newer lockfile.
-
-A lockfile that contains a local source is stamped version 6. A lockfile without one keeps its previous stamp. `gridctl export --output` omits local sources from `skills.yaml` and prints a notice, because a local path is not portable. `POST /api/skills/sources` accepts an absolute directory on the daemon host. Relative paths and paths inside the gridctl home return 400. A source-name collision returns 409.
-
 ### Reconciling local edits (web UI)
 
 A `SKILL.md` imported from git can be edited in the Library workspace. An edited
@@ -143,10 +131,48 @@ applies (`gridctl skill update` refuses to overwrite a drifted skill unless
 - `POST /api/skills/sources/{name}/skills/{skill}/reset` backs up and
   force-restores a single skill to its upstream content.
 
+A local-directory source uses the same skip text and does not advance hashes. `--force` backs that file up as `SKILL.md.pre-local`. See [Local directories and client imports](#local-directories-and-client-imports).
+
 Skill content is never changed by any of this beyond the explicit overwrite a
 `reset` or `force` sync performs. Note that import and save do normalize
 frontmatter formatting (field order, quoting) while preserving every key and
 value, so the registry copy is not byte-identical to the upstream file.
+
+## Local directories and client imports
+
+`gridctl skill add <dir>` imports a directory that is not a git repository root. Discovery, validation, the security scan, size caps, and `--trust`, `--force`, `--no-activate`, and `--rename` behave as they do for git. A path that does not exist, or a file, is still treated as a git URL. A git repository root keeps the clone path. The directory is resolved to an absolute path. A path inside the gridctl home (`~/.gridctl`) is refused: `refusing to import from inside the gridctl home: <path>`. `--ref`, `--path`, and the auth flags are an error on this path (`local directories do not accept --ref, --path, or auth flags`).
+
+The lock key defaults to the directory basename. Importing a known location root (a path in the table below, not a child of one) uses that row's source name instead. If another source already owns the name, the import fails before it writes: `source "skills" already records /other/path; pass --source-name to import this directory under another name`. `--source-name` chooses the key, including for a git URL whose derived name is already a local source. An explicit name that differs from the key already tracking that same directory is an error. Pack import has no equivalent flag and fails the collision before it writes.
+
+Local origins record `kind: local`, the resolved path, and a content hash. They have no ref and no commit. `gridctl skill update` re-reads that path, including agents in a source that also has skills. An unchanged tree reports already up to date. `--dry-run` on a change reports `update available (local content changed)`. A changed `SKILL.md` or allowlisted supporting file is re-imported. A missing path, or a path that now resolves inside the gridctl home, is a per-entry error: a named update exits 1, and a bulk update warns and exits 0. Local sources are never pinned: `gridctl skill pin` exits 1 with `local sources have no refs to pin`. The background checker skips them, so a cached update badge does not cover a local directory.
+
+When a skill's frontmatter name differs from its directory name, the local path installs under the directory name and warns: `name mismatch: frontmatter "x", directory "y"; installed as "y"`. The same fixture imported from git still installs under the frontmatter name. `gridctl skill list` shows `local-dir` in the Source column and the path in Repo. JSON adds `kind` (`git` or `local`) on imported rows. A skill with no origin stays `local` in that column and omits `kind`. `gridctl skill info` prints the path, content hash, and import time, plus `Client` and `Location` when the import recorded them.
+
+`gridctl skill import <client>` reads home-scoped locations only. Project directories such as `.claude/skills` are not scanned; pass that path to `skill add`.
+
+| Client | Kind | Path | Source name |
+|---|---|---|---|
+| `claude-code` | skill | `~/.claude/skills` | `claude-code` |
+| `claude-code` | agent | `~/.claude/agents` | `claude-code-agents` |
+| `opencode` | skill | `~/.config/opencode/skills` | `opencode` |
+| `opencode` | skill | `~/.claude/skills` | `claude-code` |
+| `opencode` | skill | `~/.agents/skills` | `agents` |
+| `opencode` | agent | `~/.config/opencode/agents` | listed and skipped |
+| `agents` | skill | `~/.agents/skills` | `agents` |
+
+Shared locations keep that row's source name whichever client you name. OpenCode agent files are skipped (`OpenCode agent dialect is not imported in this release`). Directories named `synced` or `anthropic-skills` under `~/.claude/skills` are skipped (`claude.ai sync directory`). A copy under the gridctl home, a path recorded in `project.lock.yaml`, or a directory that already carries `.origin.json` is skipped (`gridctl projection`). A dangling symlink is skipped (`dangling symlink`). A symlinked agent whose resolved parent is not named `agents` is skipped (`agent symlink target is not under an agents/ directory`). A symlinked skill whose target is a direct child of a known skill location joins that root. Any other resolved skill target is its own root. External roots that share a basename are named `<name>-` plus the first eight hex characters of the path hash, and that name stays stable on re-import.
+
+```bash
+gridctl skill add ~/skills/pcap-analysis
+gridctl skill import claude-code --dry-run
+gridctl skill import opencode --all
+```
+
+Text columns are `KIND NAME LOCATION ACTION`, with actions `imported`, `skipped: <reason>`, or `would import`. `--dry-run` enumerates without writing or prompting. Without a terminal, pass `--all` or `--select`. Exit 0 means imported, dry-run, or nothing enumerated, including an all-skipped `--all` scan. Exit 1 means an unknown client, an unknown kind, a cancelled selection, an absent selected name, a source-name conflict, or every explicitly selected entry skipped on a real import. Exit 2 is an infrastructure error, including a newer lockfile. JSON (`--format json`) carries `schema_version`, `client`, `dry_run`, `entries` (`kind`, `name`, `location`, `source`, `action`, and `reason` when skipped), and `warnings`. `source` is the root's lock key and can differ from the client you named.
+
+Importing a projection target, or a direct child of one (`~/.claude/skills`, `~/.agents/skills`, `~/.gemini/config/skills`, `~/.claude/agents`, `~/.config/opencode/agents`, `~/.copilot/agents`, `~/.gemini/agents`), or a path recorded in the project lock, prints one hint: `hint: projecting these to <client> would replace the originals; run 'gridctl skill project sync --client <client>' only after reviewing 'gridctl skill project status'`. A directory outside those roots does not. `~/.config/opencode/skills` is not a projection target, so importing it does not print that hint unless the path is also recorded.
+
+A lockfile that contains a local source is stamped version 6. A lockfile without one keeps its previous stamp. An older gridctl refuses the whole file. Remove the local sources with this build before downgrading. A YAML `gridctl export --output` omits local sources from `skills.yaml` and prints `export: N local skill source(s) omitted from skills.yaml (local paths are not portable)`. JSON and stdout exports have no sidecar. `POST /api/skills/sources` accepts an absolute directory on the daemon host. The Library import wizard still accepts git URLs only.
 
 ## Projecting skills into clients
 
