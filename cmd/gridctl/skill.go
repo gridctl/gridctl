@@ -440,6 +440,7 @@ func runSkillAdd(ctx context.Context, repoURL string) error {
 		Repo:       repoURL,
 		Ref:        skillAddRef,
 		Path:       skillAddPath,
+		SourceName: skillAddSourceName,
 		Trust:      skillAddTrust,
 		NoActivate: skillAddNoActivate,
 		Force:      skillAddForce,

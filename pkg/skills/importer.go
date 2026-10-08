@@ -905,10 +905,15 @@ func (imp *Importer) Update(ctx context.Context, skillName string, dryRun, force
 	// Store old fingerprint for comparison
 	oldFingerprint := origin.Fingerprint
 
+	lf, err := ReadLockFile(imp.lockPath)
+	if err != nil {
+		return nil, err
+	}
 	result, err := imp.Import(ctx, ImportOptions{
 		Repo:          origin.Repo,
 		Ref:           origin.Ref,
 		Path:          origin.Path,
+		SourceName:    gitLockSourceName(lf, origin, skillName, isSkill),
 		Trust:         trust,
 		Force:         true,
 		Auth:          auth,

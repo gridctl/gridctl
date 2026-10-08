@@ -108,6 +108,31 @@ func findLocalByRepo(lf *LockFile, root string) (string, bool) {
 	return names[0], true
 }
 
+// gitLockSourceName returns the git lock source that owns name and records
+// the same repository as origin. An explicit --source-name stays stable
+// across update. No match, or more than one, leaves naming to RepoToName.
+func gitLockSourceName(lf *LockFile, origin *Origin, name string, isSkill bool) string {
+	if lf == nil || origin == nil || origin.IsLocal() {
+		return ""
+	}
+	owners := skillOwners(lf, name)
+	if !isSkill {
+		owners = agentOwners(lf, name)
+	}
+	var match string
+	for _, owner := range owners {
+		src, ok := lf.Sources[owner]
+		if !ok || src.IsLocal() || src.Repo != origin.Repo {
+			continue
+		}
+		if match != "" && match != owner {
+			return ""
+		}
+		match = owner
+	}
+	return match
+}
+
 // GuardSourceKey refuses to replace an existing local source key with a
 // different root or source kind. Git-to-git reuse is unchanged.
 func GuardSourceKey(lf *LockFile, name string, kind, repo string) error {
@@ -330,14 +355,8 @@ func RecordLocalSource(lf *LockFile, sourceName, repo string, fetchedAt time.Tim
 		agents[name] = entry
 	}
 	if canDrop && discovered != nil {
-		presentSkills := map[string]bool{}
-		for _, sk := range discovered.Skills {
-			presentSkills[sk.Name] = true
-		}
-		presentAgents := map[string]bool{}
-		for _, ag := range discovered.Agents {
-			presentAgents[ag.Name] = true
-		}
+		presentSkills := presentInstalled(discovered.Skills, installedSkills)
+		presentAgents := presentInstalledAgents(discovered.Agents, installedAgents)
 		for _, path := range discovered.FilteredSkills {
 			presentSkills[filepath.Base(path)] = true
 			if path == "." || path == "" {
@@ -374,4 +393,40 @@ func RecordLocalSource(lf *LockFile, sourceName, repo string, fetchedAt time.Tim
 	}
 	ReleaseInstalledNames(lf, sourceName, true, installedSkillNames, installedAgentNames)
 	return nil
+}
+
+// presentInstalled marks installed names present, and discovered names present
+// only when this call did not install that path under a different name.
+// A --rename therefore keeps the installed key and does not treat the
+// directory name as a second live entry.
+func presentInstalled(discovered []DiscoveredSkill, installed map[string]LockedSkill) map[string]bool {
+	present := map[string]bool{}
+	byPath := map[string]string{}
+	for name, entry := range installed {
+		present[name] = true
+		byPath[filepath.ToSlash(entry.Path)] = name
+	}
+	for _, sk := range discovered {
+		if _, ok := byPath[filepath.ToSlash(sk.Path)]; ok {
+			continue
+		}
+		present[sk.Name] = true
+	}
+	return present
+}
+
+func presentInstalledAgents(discovered []DiscoveredAgent, installed map[string]LockedAgent) map[string]bool {
+	present := map[string]bool{}
+	byPath := map[string]string{}
+	for name, entry := range installed {
+		present[name] = true
+		byPath[filepath.ToSlash(entry.Path)] = name
+	}
+	for _, ag := range discovered {
+		if _, ok := byPath[filepath.ToSlash(ag.Path)]; ok {
+			continue
+		}
+		present[ag.Name] = true
+	}
+	return present
 }

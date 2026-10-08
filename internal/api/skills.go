@@ -16,6 +16,7 @@ import (
 	gitpkg "github.com/gridctl/gridctl/pkg/git"
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/skills"
+	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/vault"
 )
 
@@ -457,6 +458,15 @@ func (s *Server) handleSkillSourceAdd(w http.ResponseWriter, r *http.Request) {
 	lockPath := s.lockFilePath()
 	logger := slog.Default()
 
+	knownName := ""
+	if kind == skills.SourceKindLocal {
+		home, herr := state.Home()
+		if herr != nil {
+			writeJSONError(w, herr.Error(), http.StatusInternalServerError)
+			return
+		}
+		knownName = skills.KnownSourceName(home, resolved)
+	}
 	imp := skills.NewImporter(store, registryDir, lockPath, logger)
 	imp.SetCredentialResolver(s.credentialResolver())
 	result, err := imp.Import(r.Context(), skills.ImportOptions{
@@ -464,6 +474,7 @@ func (s *Server) handleSkillSourceAdd(w http.ResponseWriter, r *http.Request) {
 		Ref:            req.Ref,
 		Path:           req.Path,
 		Kind:           kind,
+		KnownName:      knownName,
 		Trust:          req.Trust,
 		NoActivate:     req.NoActivate,
 		Selected:       req.Selected,
@@ -473,6 +484,10 @@ func (s *Server) handleSkillSourceAdd(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, skills.ErrSourceConflict) {
 			writeJSONError(w, err.Error(), http.StatusConflict)
+			return
+		}
+		if kind == skills.SourceKindLocal {
+			writeJSONError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		writeGitErrorForRepo(w, "Import failed: ", req.Repo, err)
@@ -1093,9 +1108,12 @@ func (s *Server) handleSkillSourcesSyncAll(w http.ResponseWriter, r *http.Reques
 	results := make([]SourceSyncResult, len(names))
 	// ghostsBySource collects, per source index, the names of skills that are
 	// recorded in the lock file but no longer present in the registry (e.g.
-	// deleted via the UI). Each goroutine writes only its own index, so the
-	// slice is race-free without a mutex. Pruned once after the fan-out.
-	ghostsBySource := make([][]string, len(names))
+	// deleted via the UI). Agent ghosts are separate: a local agent is not a
+	// skill, and RemoveSkill would not find it. Each goroutine writes only
+	// its own index, so the slices are race-free without a mutex. Pruned
+	// once after the fan-out.
+	skillGhostsBySource := make([][]string, len(names))
+	agentGhostsBySource := make([][]string, len(names))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, syncAllConcurrency)
 
@@ -1119,30 +1137,49 @@ func (s *Server) handleSkillSourcesSyncAll(w http.ResponseWriter, r *http.Reques
 			// independently resolves credentials from the stored origin.
 			authCfg, _ := s.resolveCheckAuth(req.Auth, source.StoredAuth())
 
-			// Skill names sorted so per-skill output order is stable too.
-			skillNames := make([]string, 0, len(source.Skills))
+			// Names sorted so per-entry output order is stable. Local agents
+			// are tagged so the ghost check reads the agent registry, not
+			// the skill store.
+			tracked := make([]struct {
+				name  string
+				agent bool
+			}, 0, len(source.Skills)+len(source.Agents))
 			for sn := range source.Skills {
-				skillNames = append(skillNames, sn)
+				tracked = append(tracked, struct {
+					name  string
+					agent bool
+				}{name: sn})
 			}
-			sort.Strings(skillNames)
 			if source.IsLocal() {
 				for agentName := range source.Agents {
-					skillNames = append(skillNames, agentName)
+					tracked = append(tracked, struct {
+						name  string
+						agent bool
+					}{name: agentName, agent: true})
 				}
-				sort.Strings(skillNames)
 			}
+			sort.Slice(tracked, func(i, j int) bool {
+				if tracked[i].name != tracked[j].name {
+					return tracked[i].name < tracked[j].name
+				}
+				return !tracked[i].agent && tracked[j].agent
+			})
 
-			// Agent-only sources get a stand-in agent so they refresh
+			// Agent-only git sources get a stand-in agent so they refresh
 			// too; it bypasses the registry ghost check below, which only
 			// applies to skills. Local sources already listed every agent.
 			standIn := ""
-			if !source.IsLocal() && len(skillNames) == 0 {
+			if !source.IsLocal() && len(tracked) == 0 {
 				if standIn = standInAgent(source); standIn != "" {
-					skillNames = append(skillNames, standIn)
+					tracked = append(tracked, struct {
+						name  string
+						agent bool
+					}{name: standIn})
 				}
 			}
 
-			for _, skillName := range skillNames {
+			for _, item := range tracked {
+				skillName := item.name
 				// Stop processing further skills in this source if the
 				// client disconnected. In-flight Update calls still complete
 				// (Importer.Update doesn't accept ctx today) but no new
@@ -1163,11 +1200,25 @@ func (s *Server) handleSkillSourcesSyncAll(w http.ResponseWriter, r *http.Reques
 				// present skill whose update merely failed (transient/auth) is
 				// still reported and retained.
 				if skillName != standIn {
-					if _, err := store.GetSkill(skillName); err != nil {
-						ghostsBySource[idx] = append(ghostsBySource[idx], skillName)
+					missing := false
+					if item.agent {
+						if _, err := skills.GetAgent(registryDir, skillName); err != nil {
+							missing = true
+						}
+					} else if _, err := store.GetSkill(skillName); err != nil {
+						missing = true
+					}
+					if missing {
+						warning := "skill no longer in registry; removed stale lock entry"
+						if item.agent {
+							agentGhostsBySource[idx] = append(agentGhostsBySource[idx], skillName)
+							warning = "agent no longer in registry; removed stale lock entry"
+						} else {
+							skillGhostsBySource[idx] = append(skillGhostsBySource[idx], skillName)
+						}
 						results[idx].Skills = append(results[idx].Skills, SkillSyncResult{
 							Skill:    skillName,
-							Warnings: []string{"skill no longer in registry; removed stale lock entry"},
+							Warnings: []string{warning},
 						})
 						continue
 					}
@@ -1185,14 +1236,20 @@ func (s *Server) handleSkillSourcesSyncAll(w http.ResponseWriter, r *http.Reques
 	// Done on the main goroutine after the fan-out so the lock-file write can't
 	// race the in-flight Update calls (which may write the lock file via the
 	// importer). Re-read first to pick up any writes those updates made.
-	var ghosts []string
-	for _, g := range ghostsBySource {
-		ghosts = append(ghosts, g...)
+	var skillGhosts, agentGhosts []string
+	for _, g := range skillGhostsBySource {
+		skillGhosts = append(skillGhosts, g...)
 	}
-	if len(ghosts) > 0 {
+	for _, g := range agentGhostsBySource {
+		agentGhosts = append(agentGhosts, g...)
+	}
+	if len(skillGhosts) > 0 || len(agentGhosts) > 0 {
 		if err := skills.MutateLockFile(r.Context(), lockPath, func(lf2 *skills.LockFile) (bool, error) {
-			for _, skillName := range ghosts {
+			for _, skillName := range skillGhosts {
 				lf2.RemoveSkill(skillName)
+			}
+			for _, agentName := range agentGhosts {
+				lf2.RemoveAgent(agentName)
 			}
 			return true, nil
 		}); err != nil {

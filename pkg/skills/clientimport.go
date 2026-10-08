@@ -3,6 +3,7 @@ package skills
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -320,7 +321,13 @@ func ApplyClientImport(ctx context.Context, imp *Importer, opts ClientImportOpti
 		importable = append(importable, c)
 		res.Entries = append(res.Entries, entry)
 	}
-	if opts.DryRun || len(importable) == 0 {
+	if opts.DryRun {
+		if err := fillDryRunSources(imp, res); err != nil {
+			return nil, err
+		}
+		return res, nil
+	}
+	if len(importable) == 0 {
 		return res, nil
 	}
 	lf, err := ReadLockFile(imp.lockPath)
@@ -341,7 +348,9 @@ func ApplyClientImport(ctx context.Context, imp *Importer, opts ClientImportOpti
 		}
 	}
 	imported := map[string]bool{}
+	importedPath := map[string]bool{}
 	skipped := map[string]string{}
+	agentInstalled := map[string]string{}
 	var roots []string
 	rootSeen := map[string]bool{}
 	for _, batch := range batches {
@@ -365,8 +374,17 @@ func ApplyClientImport(ctx context.Context, imp *Importer, opts ClientImportOpti
 			Provenance: prov,
 		}
 		if batch.kind == ResourceKindAgent {
+			selected, byRel, disc, warnings, aerr := agentSelection(ctx, batch.root, batch.entries, imp.logger)
+			if aerr != nil {
+				return nil, aerr
+			}
+			res.Warnings = append(res.Warnings, warnings...)
+			for rel, name := range byRel {
+				agentInstalled[batch.root+"\x00"+rel] = name
+			}
 			iopts.ResourceKind = ResourceKindAgent
-			iopts.SelectedAgents = names
+			iopts.SelectedAgents = selected
+			iopts.Discovered = disc
 		} else {
 			iopts.ResourceKind = ResourceKindSkill
 			iopts.Selected = names
@@ -381,6 +399,7 @@ func ApplyClientImport(ctx context.Context, imp *Importer, opts ClientImportOpti
 		}
 		for _, importedAgent := range result.ImportedAgents {
 			imported[ResourceKindAgent+"\x00"+importedAgent.Name+"\x00"+batch.root] = true
+			importedPath[ResourceKindAgent+"\x00"+filepath.ToSlash(importedAgent.Path)+"\x00"+batch.root] = true
 		}
 		for _, sk := range result.Skipped {
 			skipped[ResourceKindSkill+"\x00"+sk.Name+"\x00"+batch.root] = sk.Reason
@@ -398,9 +417,16 @@ func ApplyClientImport(ctx context.Context, imp *Importer, opts ClientImportOpti
 		if c.SkipReason != "" || opts.DryRun {
 			continue
 		}
-		key := c.Kind + "\x00" + c.Name + "\x00" + c.Root
+		lookup := c.Name
+		if c.Kind == ResourceKindAgent {
+			if mapped, ok := agentInstalled[c.Root+"\x00"+c.RelPath]; ok {
+				lookup = mapped
+			}
+		}
+		key := c.Kind + "\x00" + lookup + "\x00" + c.Root
+		pathKey := c.Kind + "\x00" + filepath.ToSlash(c.RelPath) + "\x00" + c.Root
 		switch {
-		case imported[key]:
+		case imported[key] || importedPath[pathKey]:
 			res.Entries[i].Action = "imported"
 		case skipped[key] != "":
 			res.Entries[i].Action = "skipped"
@@ -426,22 +452,15 @@ func batchCandidates(lf *LockFile, candidates []ClientCandidate) ([]importBatch,
 		root string
 		kind string
 	}
+	names, conflicts := resolveClientSourceNames(lf, candidates)
+	for _, c := range candidates {
+		if err, ok := conflicts[c.Root]; ok {
+			return nil, err
+		}
+	}
 	order := []key{}
 	groups := map[key][]ClientCandidate{}
-	names := map[string]string{}
 	for _, c := range candidates {
-		if _, ok := names[c.Root]; !ok {
-			name, err := ResolveSourceName(lf, SourceNameInput{
-				Kind:         SourceKindLocal,
-				Root:         c.Root,
-				KnownName:    c.KnownName,
-				ClientImport: true,
-			})
-			if err != nil {
-				return nil, err
-			}
-			names[c.Root] = name
-		}
 		k := key{root: c.Root, kind: c.Kind}
 		if _, ok := groups[k]; !ok {
 			order = append(order, k)
@@ -468,4 +487,124 @@ func batchCandidates(lf *LockFile, candidates []ClientCandidate) ([]importBatch,
 type EntryProvenance struct {
 	Client   string
 	Location string
+}
+
+// resolveClientSourceNames picks one lock key per root. Names chosen earlier
+// in this batch are reserved so two new external roots with the same basename
+// get a base name and a stable suffix. A conflict is recorded per root.
+func resolveClientSourceNames(lf *LockFile, candidates []ClientCandidate) (map[string]string, map[string]error) {
+	scratch := &LockFile{Sources: map[string]LockedSource{}}
+	if lf != nil {
+		for name, src := range lf.Sources {
+			scratch.Sources[name] = src
+		}
+	}
+	names := map[string]string{}
+	conflicts := map[string]error{}
+	for _, c := range candidates {
+		if c.SkipReason != "" || c.Root == "" {
+			continue
+		}
+		if _, ok := names[c.Root]; ok {
+			continue
+		}
+		if _, ok := conflicts[c.Root]; ok {
+			continue
+		}
+		name, err := ResolveSourceName(scratch, SourceNameInput{
+			Kind:         SourceKindLocal,
+			Root:         c.Root,
+			KnownName:    c.KnownName,
+			ClientImport: true,
+		})
+		if err != nil {
+			conflicts[c.Root] = err
+			continue
+		}
+		names[c.Root] = name
+		if _, exists := scratch.Sources[name]; !exists {
+			scratch.Sources[name] = LockedSource{Kind: SourceKindLocal, Repo: c.Root}
+		}
+	}
+	return names, conflicts
+}
+
+func fillDryRunSources(imp *Importer, res *ClientImportResult) error {
+	if imp == nil {
+		return fmt.Errorf("client import requires an importer")
+	}
+	lf, err := ReadLockFile(imp.lockPath)
+	if err != nil {
+		return err
+	}
+	var importable []ClientCandidate
+	for _, e := range res.Entries {
+		if e.Candidate.SkipReason == "" && e.Action == "would import" {
+			importable = append(importable, e.Candidate)
+		}
+	}
+	names, conflicts := resolveClientSourceNames(lf, importable)
+	for i := range res.Entries {
+		c := &res.Entries[i].Candidate
+		if c.SkipReason != "" {
+			continue
+		}
+		if err, ok := conflicts[c.Root]; ok {
+			res.Entries[i].Action = "skipped"
+			res.Entries[i].Reason = err.Error()
+			continue
+		}
+		if name, ok := names[c.Root]; ok {
+			c.Source = name
+		}
+	}
+	return nil
+}
+
+func agentSelection(ctx context.Context, root string, entries []ClientCandidate, logger *slog.Logger) ([]string, map[string]string, *CloneResult, []string, error) {
+	disc, err := DiscoverLocal(ctx, root, "", logger)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	var agents []DiscoveredAgent
+	if disc != nil && disc.Result != nil {
+		agents = disc.Result.Agents
+	}
+	byRel := map[string]string{}
+	var names []string
+	var warnings []string
+	for _, c := range entries {
+		name := c.Name
+		if found, ok := agentNameByRel(agents, c.RelPath); ok {
+			name = found
+		}
+		names = append(names, name)
+		byRel[c.RelPath] = name
+		if name != c.Name {
+			warnings = append(warnings, fmt.Sprintf("%s: name mismatch: frontmatter %q, file %q; installed as %q", c.RelPath, name, c.Name, name))
+		}
+	}
+	var result *CloneResult
+	if disc != nil {
+		result = disc.Result
+	}
+	return names, byRel, result, warnings, nil
+}
+
+func agentNameByRel(agents []DiscoveredAgent, rel string) (string, bool) {
+	want := filepath.ToSlash(rel)
+	var baseMatch string
+	for _, ag := range agents {
+		got := filepath.ToSlash(ag.Path)
+		if got == want {
+			return ag.Name, true
+		}
+		if filepath.Base(got) == filepath.Base(want) && baseMatch == "" {
+			baseMatch = ag.Name
+		}
+	}
+	if baseMatch != "" {
+		return baseMatch, true
+	}
+	return "", false
 }

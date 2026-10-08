@@ -70,3 +70,30 @@ func TestRunSkillImport_ExitContract(t *testing.T) {
 		t.Fatalf("selected skip code = %d stdout=%s", code, stdout.String())
 	}
 }
+
+func TestRunSkillImport_CountsRootsNotEntries(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+	dir := filepath.Join(home, ".config", "opencode", "skills")
+	for _, name := range []string{"oc-one", "oc-two"} {
+		skillDir := filepath.Join(dir, name)
+		if err := os.MkdirAll(skillDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		body := "---\nname: " + name + "\ndescription: " + name + " skill\n---\n\nBody.\n"
+		if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var stdout, stderr bytes.Buffer
+	code := runSkillImport(context.Background(), &stdout, &stderr, "opencode", skillImportConfig{
+		Kind: "skill", All: true, Trust: true,
+	})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s stdout=%s", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "from 1 location(s)") {
+		t.Fatalf("stdout = %s", stdout.String())
+	}
+}

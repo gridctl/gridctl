@@ -326,6 +326,9 @@ func (lf *LockFile) RemoveSkill(skillName string) {
 			if len(src.Skills) == 0 && len(src.Agents) == 0 {
 				delete(lf.Sources, srcName)
 			} else {
+				if src.IsLocal() {
+					src.ContentHash = CombineTrackedSourceHash(src.Skills, src.Agents)
+				}
 				lf.Sources[srcName] = src
 			}
 			return
@@ -352,6 +355,9 @@ func (lf *LockFile) RemoveAgent(agentName string) {
 			if len(src.Skills) == 0 && len(src.Agents) == 0 {
 				delete(lf.Sources, srcName)
 			} else {
+				if src.IsLocal() {
+					src.ContentHash = CombineTrackedSourceHash(src.Skills, src.Agents)
+				}
 				lf.Sources[srcName] = src
 			}
 			return

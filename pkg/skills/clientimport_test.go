@@ -107,6 +107,81 @@ func TestApplyClientImport_ReusesResolvedSource(t *testing.T) {
 	assert.Equal(t, agentsRoot, origin.Location)
 }
 
+func TestApplyClientImport_MismatchedAgentName(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+	agentsDir := filepath.Join(home, ".claude", "agents")
+	require.NoError(t, os.MkdirAll(agentsDir, 0o755))
+	body := "---\nname: code-reviewer\ndescription: Reviews things\n---\n\nReview.\n"
+	require.NoError(t, os.WriteFile(filepath.Join(agentsDir, "reviewer.md"), []byte(body), 0o644))
+
+	store, regDir := setupTestRegistry(t)
+	imp := NewImporter(store, regDir, filepath.Join(regDir, "skills.lock.yaml"), slog.Default())
+	candidates, err := EnumerateClient(context.Background(), "claude-code", home)
+	require.NoError(t, err)
+	var selected []ClientCandidate
+	for _, c := range candidates {
+		if c.Kind == ResourceKindAgent && c.Name == "reviewer" {
+			selected = append(selected, c)
+		}
+	}
+	require.Len(t, selected, 1)
+
+	result, err := ApplyClientImport(context.Background(), imp, ClientImportOptions{Trust: true}, selected)
+	require.NoError(t, err)
+	require.Len(t, result.Entries, 1)
+	assert.Equal(t, "imported", result.Entries[0].Action)
+	assert.NotContains(t, result.Entries[0].Reason, "not imported")
+	_, err = GetAgent(regDir, "code-reviewer")
+	require.NoError(t, err)
+	lf, err := ReadLockFile(imp.lockPath)
+	require.NoError(t, err)
+	assert.Contains(t, lf.Sources["claude-code-agents"].Agents, "code-reviewer")
+}
+
+func TestResolveClientSourceNames_SuffixesSecondRoot(t *testing.T) {
+	first := "/tmp/one/ext-skill"
+	second := "/tmp/two/ext-skill"
+	names, conflicts := resolveClientSourceNames(nil, []ClientCandidate{
+		{Kind: ResourceKindSkill, Name: "ext-skill", Root: first},
+		{Kind: ResourceKindSkill, Name: "ext-skill", Root: second},
+	})
+	require.Empty(t, conflicts)
+	assert.Equal(t, "ext-skill", names[first])
+	assert.Equal(t, "ext-skill-"+rootSuffix(second), names[second])
+}
+
+func TestApplyClientImport_DryRunNamesExternalRoot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+	outside := filepath.Join(home, "outside", "ext-skill")
+	writeSkillDir(t, outside, "ext-skill", "body")
+	claude := filepath.Join(home, ".claude", "skills")
+	require.NoError(t, os.MkdirAll(claude, 0o755))
+	require.NoError(t, os.Symlink(outside, filepath.Join(claude, "ext-skill")))
+
+	store, regDir := setupTestRegistry(t)
+	imp := NewImporter(store, regDir, filepath.Join(regDir, "skills.lock.yaml"), slog.Default())
+	candidates, err := EnumerateClient(context.Background(), "claude-code", home)
+	require.NoError(t, err)
+	result, err := ApplyClientImport(context.Background(), imp, ClientImportOptions{DryRun: true}, candidates)
+	require.NoError(t, err)
+	var found bool
+	for _, e := range result.Entries {
+		if e.Candidate.Name != "ext-skill" {
+			continue
+		}
+		found = true
+		assert.Equal(t, "would import", e.Action)
+		assert.Equal(t, "ext-skill", e.Candidate.Source)
+	}
+	require.True(t, found)
+	_, err = os.Stat(imp.lockPath)
+	assert.True(t, os.IsNotExist(err))
+}
+
 func TestProjectionHint_DirectChild(t *testing.T) {
 	home := t.TempDir()
 	child := filepath.Join(home, ".claude", "skills", "pcap-analysis")

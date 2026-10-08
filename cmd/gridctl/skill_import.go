@@ -394,7 +394,11 @@ func renderSkillImport(stdout, stderr io.Writer, client string, cfg skillImportC
 	}
 	t.Render()
 	if !cfg.DryRun {
-		fmt.Fprintf(stdout, "Imported %d skill(s), %d agent(s) from %d location(s); %d skipped\n", importedSkills, importedAgents, importedSkills+importedAgents, skipped)
+		locations := 0
+		if result != nil {
+			locations = len(result.Roots)
+		}
+		fmt.Fprintf(stdout, "Imported %d skill(s), %d agent(s) from %d location(s); %d skipped\n", importedSkills, importedAgents, locations, skipped)
 	}
 	for _, w := range result.Warnings {
 		fmt.Fprintln(stderr, w)
