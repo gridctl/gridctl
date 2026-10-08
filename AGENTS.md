@@ -158,7 +158,7 @@ pkg/runs/           Metadata-only persisted dispatch records (`gridctl runs`). O
 pkg/limits/         Enforces the `limits:` block: token-bucket rate limits on the tool-call dispatch path.
 pkg/provisioner/    LLM-client config writers (claude, claudecode, cursor, windsurf, gemini, antigravity, opencode, grok, goose,
                     cline, anythingllm, lmstudio, roo, zed, continue, vscode). JSON and TOML helpers in json.go / toml.go.
-                    Backed by `gridctl link` / `gridctl unlink`.
+                    Backed by `gridctl link` / `gridctl unlink`. `projectsources.go` discovers project MCP files for `gridctl import`.
 pkg/vault/          Encrypted variable store (XChaCha20-Poly1305 + Argon2id). The `gridctl var` and (deprecated) `gridctl vault` CLIs.
 pkg/varrun/         Explicit stored-variable delivery to child processes, including output redaction and signal forwarding.
 pkg/varscan/        Exact stored-secret scanning for working-tree files and staged Git blobs.

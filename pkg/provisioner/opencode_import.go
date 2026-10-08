@@ -84,7 +84,7 @@ func DiscoverOpenCodeImport(ctx context.Context, explicit string) (OpenCodeImpor
 		sel.Notes = []string{
 			"Selected " + jsonPath + ". No sibling opencode.jsonc was found.",
 			OpenCodeImportPolicy,
-			"Pass --source-config to import a project file, an override file, or a file outside the Gridctl home.",
+			"Pass --source-config to read a file outside the Gridctl home. Project files are discovered separately.",
 		}
 	case jsoncExists:
 		sel.Path = jsoncPath
@@ -97,7 +97,7 @@ func DiscoverOpenCodeImport(ctx context.Context, explicit string) (OpenCodeImpor
 		sel.Notes = []string{
 			"No opencode.json or opencode.jsonc exists under the Gridctl home (" + jsonPath + ", " + jsoncPath + ").",
 			OpenCodeImportPolicy,
-			"XDG_CONFIG_HOME, project files, and OPENCODE_CONFIG are not scanned. Pass --source-config to select a file.",
+			"XDG_CONFIG_HOME is not scanned for this user-scope file. Pass --source-config to select a file outside the Gridctl home.",
 		}
 	}
 	return sel, nil

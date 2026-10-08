@@ -32,12 +32,14 @@ func (f *fakeImportClient) ListServers(string) ([]provisioner.ServerEntry, error
 	return f.entries, f.listErr
 }
 
-func detected(clients ...*fakeImportClient) []provisioner.DetectedClient {
-	out := make([]provisioner.DetectedClient, len(clients))
-	for i, c := range clients {
-		out[i] = provisioner.DetectedClient{Provisioner: c, ConfigPath: "/fake/" + c.slug}
+func fakeSource(c *fakeImportClient, scope string) importSource {
+	return importSource{
+		Slugs:   []string{c.slug},
+		Path:    "/fake/" + c.slug,
+		Scope:   scope,
+		Entries: c.entries,
+		ListErr: c.listErr,
 	}
-	return out
 }
 
 const testStackYAML = `# my stack
@@ -50,19 +52,74 @@ mcp-servers:
     port: 3000
 `
 
+func TestOmitProjectRowsDuplicatingUser(t *testing.T) {
+	cursor := &fakeImportClient{slug: "cursor"}
+	project := fakeSource(cursor, "project")
+	project.Path = "/home/.cursor/mcp.json"
+	project.Doc.Path = project.Path
+	user := fakeSource(cursor, "user")
+	user.Path = "/home/.cursor/mcp.json"
+	user.Doc.Path = user.Path
+
+	got := omitProjectRowsDuplicatingUser([]importSource{project}, []importSource{user})
+	if len(got) != 0 {
+		t.Fatalf("duplicate project row kept: %+v", got)
+	}
+
+	distinct := fakeSource(cursor, "project")
+	distinct.Path = "/repo/.cursor/mcp.json"
+	got = omitProjectRowsDuplicatingUser([]importSource{distinct}, []importSource{user})
+	if len(got) != 1 || got[0].Path != distinct.Path {
+		t.Fatalf("distinct project row = %+v", got)
+	}
+
+	shared := importSource{
+		Slugs: []string{"claude-code", "vscode"},
+		Path:  "/home/.vscode/mcp.json",
+		Scope: "project",
+		Doc: importSourceDoc{
+			Client:  "claude-code",
+			Clients: []string{"claude-code", "vscode"},
+			Path:    "/home/.vscode/mcp.json",
+			Scope:   "project",
+		},
+	}
+	vscode := fakeSource(&fakeImportClient{slug: "vscode"}, "user")
+	vscode.Path = "/home/.vscode/mcp.json"
+	got = omitProjectRowsDuplicatingUser([]importSource{shared}, []importSource{vscode})
+	if len(got) != 1 || len(got[0].Slugs) != 1 || got[0].Slugs[0] != "claude-code" || got[0].Doc.Client != "claude-code" {
+		t.Fatalf("partial overlap = %+v", got)
+	}
+}
+
+func TestEmptyImportNotice(t *testing.T) {
+	message, hint := emptyImportNotice("project", "/work/repo")
+	if message != "No project MCP files found from /work/repo up to the nearest git root" || hint != "" {
+		t.Fatalf("project notice = %q %q", message, hint)
+	}
+	message, hint = emptyImportNotice("all", "/work/repo")
+	if message != "No supported LLM clients detected" || !strings.Contains(hint, "gridctl link --help") {
+		t.Fatalf("default notice = %q %q", message, hint)
+	}
+	message, hint = emptyImportNotice("user", "/work/repo")
+	if message != "No supported LLM clients detected" || hint == "" {
+		t.Fatalf("user notice = %q %q", message, hint)
+	}
+}
+
 func TestScanForCandidates_FiltersDedupesAndWarns(t *testing.T) {
 	github := map[string]any{"command": "npx", "args": []any{"-y", "server-github"}}
-	scope := detected(
-		&fakeImportClient{slug: "claude", entries: []provisioner.ServerEntry{
+	scope := []importSource{
+		fakeSource(&fakeImportClient{slug: "claude", entries: []provisioner.ServerEntry{
 			{Name: "github", Raw: github},
 			{Name: "gridctl", Raw: map[string]any{"url": "http://localhost:8180/sse"}},
-		}},
-		&fakeImportClient{slug: "cursor", entries: []provisioner.ServerEntry{
+		}}, "user"),
+		fakeSource(&fakeImportClient{slug: "cursor", entries: []provisioner.ServerEntry{
 			{Name: "github", Raw: github},
 			{Name: "sockets", Raw: map[string]any{"type": "websocket", "url": "wss://x"}},
-		}},
-		&fakeImportClient{slug: "broken", listErr: os.ErrPermission},
-	)
+		}}, "user"),
+		fakeSource(&fakeImportClient{slug: "broken", listErr: os.ErrPermission}, "user"),
+	}
 
 	importable, skipped := scanForCandidates(output.New(), scope)
 
@@ -268,4 +325,82 @@ func TestImportDoc_JSONShape(t *testing.T) {
 	if strings.Contains(text, "value") {
 		t.Errorf("secret value field leaked into JSON shape:\n%s", text)
 	}
+}
+
+func TestScanForCandidates_ScopePrecedence(t *testing.T) {
+	localDef := map[string]any{"command": "local-bin"}
+	projectDef := map[string]any{"command": "project-bin"}
+	userDef := map[string]any{"command": "user-bin"}
+	same := map[string]any{"command": "same-bin"}
+
+	t.Run("local beats project", func(t *testing.T) {
+		got, skipped := scanForCandidates(output.New(), []importSource{
+			{
+				Slugs: []string{"claude-code"}, Path: "/home/.claude.json", Scope: "local",
+				Entries: []provisioner.ServerEntry{{Name: "x", Raw: localDef}},
+			},
+			{
+				Slugs: []string{"claude-code", "vscode"}, Path: "/repo/.mcp.json", Scope: "project",
+				Entries: []provisioner.ServerEntry{{Name: "x", Raw: projectDef}},
+			},
+		})
+		if len(got) != 2 || len(got[0].Server.Command) == 0 || got[0].Server.Command[0] != "local-bin" {
+			t.Fatalf("winner = %+v", got)
+		}
+		if len(got[0].Origins) != 1 || got[0].Origins[0].Scope != "local" {
+			t.Fatalf("origins = %+v", got[0].Origins)
+		}
+		if len(skipped) != 0 {
+			t.Fatalf("dedupe must keep the loser importable, skipped = %+v", skipped)
+		}
+		if !strings.Contains(strings.Join(got[1].Warnings, "\n"), "claude-code (local)") {
+			t.Fatalf("warning = %v", got[1].Warnings)
+		}
+	})
+
+	t.Run("project beats user and identical defs merge", func(t *testing.T) {
+		got, _ := scanForCandidates(output.New(), []importSource{
+			{
+				Slugs: []string{"cursor"}, Path: "/repo/.cursor/mcp.json", Scope: "project",
+				Entries: []provisioner.ServerEntry{{Name: "github", Raw: same}},
+			},
+			{
+				Slugs: []string{"cursor"}, Path: "/home/.cursor/mcp.json", Scope: "user",
+				Entries: []provisioner.ServerEntry{{Name: "github", Raw: same}},
+			},
+		})
+		if len(got) != 1 {
+			t.Fatalf("merged = %d", len(got))
+		}
+		doc := serverDoc(got[0], true, nil)
+		if len(doc.Origins) != 2 || len(doc.Scopes) != 2 || doc.Scopes[0] != "project" || doc.Scopes[1] != "user" {
+			t.Fatalf("doc = %+v", doc)
+		}
+		if len(doc.SourcePaths) != 2 || doc.SourcePaths[0] != "/repo/.cursor/mcp.json" {
+			t.Fatalf("paths = %v", doc.SourcePaths)
+		}
+		if formatProvenance(got[0]) != "cursor (project+user)" {
+			t.Fatalf("label = %s", formatProvenance(got[0]))
+		}
+	})
+
+	t.Run("different user def stays a second candidate", func(t *testing.T) {
+		got, _ := scanForCandidates(output.New(), []importSource{
+			{
+				Slugs: []string{"cursor"}, Path: "/repo/.cursor/mcp.json", Scope: "project",
+				Entries: []provisioner.ServerEntry{{Name: "github", Raw: projectDef}},
+			},
+			{
+				Slugs: []string{"cursor"}, Path: "/home/.cursor/mcp.json", Scope: "user",
+				Entries: []provisioner.ServerEntry{{Name: "github", Raw: userDef}},
+			},
+		})
+		if len(got) != 2 || got[0].Server.Command[0] != "project-bin" {
+			t.Fatalf("candidates = %+v", got)
+		}
+		warning := strings.Join(got[1].Warnings, "\n")
+		if !strings.Contains(warning, "cursor (user)") || !strings.Contains(warning, "cursor (project)") {
+			t.Fatalf("warning = %s", warning)
+		}
+	})
 }

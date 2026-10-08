@@ -36,6 +36,8 @@ var (
 	importFormat       string
 	importAsJSON       *bool
 	importSourceConfig string
+	importProjectDir   string
+	importScopeFlag    string
 )
 
 var importCmd = &cobra.Command{
@@ -53,6 +55,26 @@ interactively. Plaintext secret-looking env values are offered into the
 variable store as ${var:KEY} references; genuine references such as
 ${env:VAR}, ${input:id}, or op:// URIs are preserved as-is.
 
+Project files are discovered from the working directory, or --project-dir,
+up to the nearest git root. The clients are Claude Code and VS Code
+(.mcp.json), Cursor (.cursor/mcp.json), VS Code (.vscode/mcp.json), Roo
+(.roo/mcp.json), Gemini (.gemini/settings.json), Zed (.zed/settings.json),
+and OpenCode (opencode.jsonc, then opencode.json). A project file is read
+whether or not that client is installed. --scope all (the default) also
+reads Claude Code local scope from ~/.claude.json, then OpenCode's
+OPENCODE_CONFIG file when that variable is set, then each detected client's
+user file. A readable ~/.claude.json with no projects object produces no
+local row. A project file that is also that client's user file is listed
+once, as the user row. --scope user reads user files only. --scope project
+reads project files only and does not open a home file. An empty project
+scan says no project files were found.
+
+On a same-name conflict gridctl keeps the earlier scope. The order is local,
+then project, then custom, then user. That order is gridctl's choice. It
+matches the documented rules for Claude Code, Roo, Gemini, and OpenCode.
+Cursor does not document a replacement rule, and Zed gates project servers
+on worktree trust, which gridctl does not consult.
+
 Without arguments, all detected clients are scanned and servers are picked
 interactively. Run 'gridctl link --help' for the supported client list.
 
@@ -60,14 +82,15 @@ Exit codes:
   0  imported, dry-run, or nothing enumerated (including an empty or
      all-skipped OpenCode source)
   1  cancelled, every selected server skipped after selection, unknown
-     client, or --source-config used with a client other than opencode
+     client, or --source-config used without a client argument
   2  infrastructure error (no stack file, parse or write failure,
-     post-import validation failure)`,
-	Example: `  gridctl import                    Scan all clients, pick interactively
-  gridctl import cursor             Import from Cursor only
-  gridctl import opencode --source-config ./opencode.jsonc
-  gridctl import --all --dry-run    Preview everything without writing
-  gridctl import --all --yes        Import everything, defaults applied`,
+     post-import validation failure, invalid --project-dir or --scope)`,
+	Example: `  gridctl import                         Scan all clients, pick interactively
+  gridctl import cursor                  Import from Cursor only
+  gridctl import --scope project         Import checked-in project files only
+  gridctl import cursor --source-config ./mcp.json
+  gridctl import --all --dry-run         Preview everything without writing
+  gridctl import --all --yes             Import everything, defaults applied`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		format, err := resolveFormat(importFormat, cmd.Flags().Changed("format"), *importAsJSON)
@@ -91,21 +114,26 @@ func init() {
 	importCmd.Flags().StringVarP(&importFile, "file", "f", "", "Stack file to append to (default: running stack's file, else ./stack.yaml)")
 	importCmd.Flags().BoolVar(&importNoVault, "no-vault", false, "Import env values as-is instead of offering vault moves (a warning is printed per secret)")
 	importCmd.Flags().StringVar(&importFormat, "format", "", "Output format: 'json' for machine-readable output (default: text)")
-	importCmd.Flags().StringVar(&importSourceConfig, "source-config", "", "OpenCode config file to read exactly (no fallback; relative paths use the working directory)")
+	importCmd.Flags().StringVar(&importSourceConfig, "source-config", "", "Config file to read exactly for the named client (no other sources; relative paths use the working directory)")
+	importCmd.Flags().StringVar(&importProjectDir, "project-dir", "", "Directory to start project discovery from (default: working directory)")
+	importCmd.Flags().StringVar(&importScopeFlag, "scope", "all", "Which scopes to scan: all, user, or project")
 	importCmd.Long += "\n\n" + openCodeImportHelp
 	importAsJSON = addJSONAlias(importCmd)
 }
 
-const openCodeImportHelp = `OpenCode import reads one file under the Gridctl home (GRIDCTL_HOME when
+const openCodeImportHelp = `OpenCode user-scope import reads one file under the Gridctl home (GRIDCTL_HOME when
 set, otherwise the OS home). It does not follow XDG_CONFIG_HOME. Existing
 opencode.json is selected; opencode.jsonc is read only when opencode.json is
 absent. If both exist, opencode.json is selected and opencode.jsonc is
 reported but not merged.
 ` + provisioner.OpenCodeImportPolicy + `
-config.json, project files, and OPENCODE_CONFIG, OPENCODE_CONFIG_DIR, and
-OPENCODE_CONFIG_CONTENT are not read automatically. --source-config PATH is
-valid only for 'gridctl import opencode'. It reads exactly that file, with
-no fallback if the file is missing, unreadable, or malformed.
+config.json is not read automatically. OPENCODE_CONFIG_DIR and
+OPENCODE_CONFIG_CONTENT are not read. OPENCODE_CONFIG is one custom-scope
+file under --scope all, and is not consulted under --scope user, --scope
+project, or --source-config. Project opencode.jsonc and opencode.json are
+discovered with the other project files. --source-config PATH reads exactly
+that file for the named client, with no fallback if the file is missing,
+unreadable, or malformed.
 
 Native local command arrays are imported as argv and are not shell-split.
 A whole-value {env:NAME} reference becomes ${NAME} and expands when the
@@ -114,10 +142,10 @@ expressions, and invalid env names are skipped. Disabled servers and entries
 with a working directory are skipped for every OpenCode shape, including
 remote entries and string commands. A timeout is not transferred.
 
-Text output includes per-entry skip reasons. JSON keeps schema version 1.
-source and found_in remain client slugs. Optional source_path, source_paths,
-and sources fields carry file provenance. servers is null when nothing is
-enumerated.`
+Text output includes per-entry skip reasons and a Sources block. JSON keeps
+schema version 1. source and found_in remain client slugs. Optional
+source_path, source_paths, origins, scopes, and sources fields carry
+provenance. servers is null when nothing is enumerated.`
 
 // --- JSON document ---
 
@@ -127,10 +155,18 @@ type importSecretDoc struct {
 	Var    string `json:"var,omitempty"`
 }
 
+type importOriginDoc struct {
+	Client string `json:"client"`
+	Scope  string `json:"scope"`
+	Path   string `json:"path"`
+}
+
 type importServerDoc struct {
 	Name        string            `json:"name"`
 	Imported    bool              `json:"imported"`
 	FoundIn     []string          `json:"found_in,omitempty"`
+	Origins     []importOriginDoc `json:"origins,omitempty"`
+	Scopes      []string          `json:"scopes,omitempty"`
 	Source      string            `json:"source,omitempty"`
 	SourcePath  string            `json:"source_path,omitempty"`
 	SourcePaths []string          `json:"source_paths,omitempty"`
@@ -140,13 +176,17 @@ type importServerDoc struct {
 }
 
 // importSourceDoc is file-level provenance. It does not replace client slugs.
+// count is text-only and is not part of the JSON document.
 type importSourceDoc struct {
 	Client        string   `json:"client"`
+	Clients       []string `json:"clients,omitempty"`
+	Scope         string   `json:"scope,omitempty"`
 	Path          string   `json:"path,omitempty"`
 	Status        string   `json:"status"`
 	Detail        string   `json:"detail,omitempty"`
 	AlternatePath string   `json:"alternate_path,omitempty"`
 	Notes         []string `json:"notes,omitempty"`
+	count         int
 }
 
 type importSummaryDoc struct {
@@ -188,7 +228,7 @@ func huhSelectCandidates(candidates []importer.Candidate) ([]int, error) {
 	}
 	options := make([]huh.Option[int], len(candidates))
 	for i, c := range candidates {
-		label := fmt.Sprintf("%-24s from %s", c.Name, strings.Join(c.FoundIn, ", "))
+		label := fmt.Sprintf("%-24s from %s", c.Name, formatProvenance(c))
 		options[i] = huh.NewOption(label, i).Selected(true)
 	}
 	var picked []int
@@ -285,6 +325,13 @@ func runConfirm(title string) (bool, error) {
 
 // --- command flow ---
 
+func emptyImportNotice(scope, projectDir string) (message, hint string) {
+	if scope == "project" {
+		return fmt.Sprintf("No project MCP files found from %s up to the nearest git root", projectDir), ""
+	}
+	return "No supported LLM clients detected", "Run 'gridctl link --help' for the supported client list.\n"
+}
+
 func runImport(ctx context.Context, client, format string) error {
 	// In JSON mode stdout carries exactly one document; narration moves to
 	// stderr so pipelines can parse the output.
@@ -295,15 +342,32 @@ func runImport(ctx context.Context, client, format string) error {
 	if err := rejectSourceConfig(client); err != nil {
 		return err
 	}
+	if err := validateImportScope(importScopeFlag); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(importExitInfrastructure)
+	}
+	projectDir, err := resolveProjectDir(importProjectDir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(importExitInfrastructure)
+	}
 	registry := provisioner.NewRegistry()
 
-	scope, sources, err := importScope(ctx, registry, client)
+	collected, err := collectSources(ctx, registry, client, importCollectOpts{
+		Scope:      importScopeFlag,
+		ProjectDir: projectDir,
+		Explicit:   importSourceConfig,
+	})
 	if err != nil {
 		return err
 	}
-	if len(scope) == 0 && len(sources) == 0 {
-		printer.Info("No supported LLM clients detected")
-		printer.Print("Run 'gridctl link --help' for the supported client list.\n")
+	sources := sourceDocs(collected)
+	if client == "" && len(collected) == 0 {
+		message, hint := emptyImportNotice(importScopeFlag, projectDir)
+		printer.Info(message)
+		if hint != "" {
+			printer.Print("%s", hint)
+		}
 		return nil
 	}
 
@@ -319,7 +383,7 @@ func runImport(ctx context.Context, client, format string) error {
 	}
 
 	printImportSources(printer, sources)
-	candidates, skipped := scanForCandidates(printer, scope)
+	candidates, skipped := scanForCandidates(printer, collected)
 	doc := importDoc{
 		SchemaVersion: importJSONSchemaVersion,
 		StackFile:     stackPath,
@@ -406,7 +470,7 @@ func runImport(ctx context.Context, client, format string) error {
 			renderImportSkip(printer, selected[i])
 			continue
 		}
-		seenNames[selected[i].Name] = strings.Join(selected[i].FoundIn, ", ")
+		seenNames[selected[i].Name] = formatProvenance(selected[i])
 	}
 
 	// Secret handling. References were never classified as secrets; what is
@@ -485,7 +549,7 @@ func runImport(ctx context.Context, client, format string) error {
 	for _, c := range importable {
 		doc.Servers = append(doc.Servers, serverDoc(c, true, secretDocs[c.Name]))
 		doc.Summary.Imported++
-		printer.Info(fmt.Sprintf("Imported %s (from %s)", c.Name, strings.Join(c.FoundIn, ", ")))
+		printer.Info(fmt.Sprintf("Imported %s (from %s)", c.Name, formatProvenance(c)))
 	}
 	if backupPath != "" {
 		printer.Print("  Backup: %s\n", backupPath)
@@ -494,107 +558,11 @@ func runImport(ctx context.Context, client, format string) error {
 	return finishImport(printer, doc, format, nil)
 }
 
-// importScope resolves which detected clients to scan. OpenCode read
-// selection is separate from Detect, which remains the write target.
-func importScope(ctx context.Context, registry *provisioner.Registry, client string) ([]provisioner.DetectedClient, []importSourceDoc, error) {
-	if importSourceConfig != "" {
-		prov, ok := registry.FindBySlug("opencode")
-		if !ok {
-			return nil, nil, unknownClientError(registry, "opencode")
-		}
-		path, err := resolveSourceConfig(importSourceConfig)
-		if err != nil {
-			return nil, nil, err
-		}
-		sel, err := provisioner.DiscoverOpenCodeImport(ctx, path)
-		if err != nil {
-			return nil, nil, err
-		}
-		return scopeFromSelection(ctx, prov, sel)
-	}
-	if client == "" {
-		var scope []provisioner.DetectedClient
-		var sources []importSourceDoc
-		for _, dc := range registry.DetectAll() {
-			if dc.Provisioner.Slug() != "opencode" {
-				scope = append(scope, dc)
-				continue
-			}
-			sel, err := provisioner.DiscoverOpenCodeImport(ctx, "")
-			if err != nil {
-				return nil, nil, err
-			}
-			next, docs, err := scopeFromSelection(ctx, dc.Provisioner, sel)
-			if err != nil {
-				return nil, nil, err
-			}
-			scope = append(scope, next...)
-			sources = append(sources, docs...)
-		}
-		return scope, sources, nil
-	}
-	prov, ok := registry.FindBySlug(client)
-	if !ok {
-		return nil, nil, unknownClientError(registry, client)
-	}
-	if prov.Slug() == "opencode" {
-		if _, found := prov.Detect(); !found {
-			return nil, nil, provisioner.ErrClientNotFound
-		}
-		sel, err := provisioner.DiscoverOpenCodeImport(ctx, "")
-		if err != nil {
-			return nil, nil, err
-		}
-		return scopeFromSelection(ctx, prov, sel)
-	}
-	configPath, found := prov.Detect()
-	if !found {
-		return nil, nil, provisioner.ErrClientNotFound
-	}
-	return []provisioner.DetectedClient{{Provisioner: prov, ConfigPath: configPath}}, nil, nil
-}
-
-func scopeFromSelection(ctx context.Context, prov provisioner.ClientProvisioner, sel provisioner.OpenCodeImportSelection) ([]provisioner.DetectedClient, []importSourceDoc, error) {
-	doc := importSourceDoc{
-		Client: prov.Slug(),
-		Path:   sel.Path,
-		Notes:  append([]string(nil), sel.Notes...),
-	}
-	if sel.BothPresent {
-		doc.AlternatePath = sel.JSONCPath
-	}
-	if sel.Path == "" {
-		doc.Status = provisioner.OpenCodeImportMissing
-		doc.Detail = "neither opencode.json nor opencode.jsonc exists under the Gridctl home"
-		if sel.JSONPath != "" {
-			doc.Path = sel.JSONPath
-		}
-		return nil, []importSourceDoc{doc}, nil
-	}
-	read, err := provisioner.ReadOpenCodeImport(ctx, sel.Path)
-	if err != nil {
-		return nil, nil, err
-	}
-	doc.Status = read.Status
-	doc.Detail = read.Detail
-	if read.Status != provisioner.OpenCodeImportSelected {
-		return nil, []importSourceDoc{doc}, nil
-	}
-	return []provisioner.DetectedClient{{Provisioner: prov, ConfigPath: sel.Path}}, []importSourceDoc{doc}, nil
-}
-
 func rejectSourceConfig(client string) error {
-	if importSourceConfig == "" {
+	if importSourceConfig == "" || client != "" {
 		return nil
 	}
-	if client == "opencode" {
-		return nil
-	}
-	target := client
-	if target == "" {
-		target = "a multi-client scan"
-	}
-	return fmt.Errorf("--source-config is only valid for 'gridctl import opencode' (got %s)", target)
+	return fmt.Errorf("--source-config requires a client argument (got a multi-client scan)")
 }
 
 func resolveSourceConfig(path string) (string, error) {
@@ -609,44 +577,57 @@ func resolveSourceConfig(path string) (string, error) {
 }
 
 // scanForCandidates lists, filters, maps, and dedupes servers across the
-// scanned clients. Unparseable configs warn and are skipped; the scan never
-// aborts because one client's file is broken.
-func scanForCandidates(printer *output.Printer, scope []provisioner.DetectedClient) (importable, skipped []importer.Candidate) {
+// ordered sources. A broken source warns and is skipped; the scan never
+// aborts because one file is broken.
+func scanForCandidates(printer *output.Printer, sources []importSource) (importable, skipped []importer.Candidate) {
 	var all []importer.Candidate
 	seenSkip := make(map[string]int)
-	for _, dc := range scope {
-		slug := dc.Provisioner.Slug()
-		entries, err := dc.Provisioner.ListServers(dc.ConfigPath)
-		if err != nil {
-			printer.Warn(fmt.Sprintf("Skipping %s: cannot parse %s (%v)", dc.Provisioner.Name(), dc.ConfigPath, err))
+	for _, src := range sources {
+		if src.ListErr != nil {
+			name := src.Doc.Client
+			if name == "" && len(src.Slugs) > 0 {
+				name = src.Slugs[0]
+			}
+			printer.Warn(fmt.Sprintf("Skipping %s: cannot parse %s (%v)", name, src.Path, src.ListErr))
 			continue
 		}
-		for _, entry := range entries {
+		if src.Doc.Status != "" && src.Doc.Status != provisioner.OpenCodeImportSelected {
+			continue
+		}
+		slug := ""
+		if len(src.Slugs) > 0 {
+			slug = src.Slugs[0]
+		}
+		origins := originsFor(src)
+		for _, entry := range src.Entries {
 			if importer.IsGatewaySelfEntry(entry.Name, importName, entry.Raw) {
-				key := entry.Name + "|self"
-				skipped = appendSkip(skipped, seenSkip, key, withSourcePath(importer.Candidate{
-					Name: entry.Name, FoundIn: []string{slug}, Source: slug,
+				key := entry.Name + "|self|" + src.Scope
+				skipped = appendSkip(skipped, seenSkip, key, withOrigins(importer.Candidate{
+					Name:       entry.Name,
 					SkipReason: importer.SkipGatewaySelfEntry,
-				}, dc.ConfigPath))
+				}, origins))
 				continue
 			}
-			server, warnings, err := importer.MapEntry(slug, entry)
+			server, warnings, err := importer.MapEntryWithOptions(slug, entry, importer.MapOptions{
+				OwnerDir: src.OwnerDir,
+				Scope:    src.Scope,
+			})
 			if err != nil {
 				reason, detail := skipFromMapErr(err)
-				key := entry.Name + "|" + reason
-				skipped = appendSkip(skipped, seenSkip, key, withSourcePath(importer.Candidate{
-					Name: entry.Name, FoundIn: []string{slug}, Source: slug,
+				key := entry.Name + "|" + reason + "|" + src.Scope
+				skipped = appendSkip(skipped, seenSkip, key, withOrigins(importer.Candidate{
+					Name:       entry.Name,
 					SkipReason: reason,
 					Warnings:   []string{detail},
-				}, dc.ConfigPath))
+				}, origins))
 				continue
 			}
-			all = append(all, withSourcePath(importer.Candidate{
-				Name: server.Name, Server: server,
-				FoundIn: []string{slug}, Source: slug,
+			all = append(all, withOrigins(importer.Candidate{
+				Name:       server.Name,
+				Server:     server,
 				Warnings:   warnings,
 				SecretKeys: importer.ClassifySecretKeys(server.Env),
-			}, dc.ConfigPath))
+			}, origins))
 		}
 	}
 	return importer.Dedupe(all), skipped
@@ -654,16 +635,11 @@ func scanForCandidates(printer *output.Printer, scope []provisioner.DetectedClie
 
 func appendSkip(skipped []importer.Candidate, seen map[string]int, key string, c importer.Candidate) []importer.Candidate {
 	if i, ok := seen[key]; ok {
-		appendSourcePath(&skipped[i], c.SourcePath)
+		mergeSkip(&skipped[i], c)
 		return skipped
 	}
 	seen[key] = len(skipped)
 	return append(skipped, c)
-}
-
-func withSourcePath(c importer.Candidate, path string) importer.Candidate {
-	appendSourcePath(&c, path)
-	return c
 }
 
 func appendSourcePath(c *importer.Candidate, path string) {
@@ -694,34 +670,55 @@ func skipFromMapErr(err error) (string, string) {
 }
 
 func serverDoc(c importer.Candidate, imported bool, secrets []importSecretDoc) importServerDoc {
+	var origins []importOriginDoc
+	for _, o := range c.Origins {
+		origins = append(origins, importOriginDoc{Client: o.Client, Scope: o.Scope, Path: o.Path})
+	}
+	scopes := c.Scopes()
 	return importServerDoc{
-		Name: c.Name, Imported: imported, FoundIn: c.FoundIn, Source: c.Source,
+		Name: c.Name, Imported: imported, FoundIn: c.FoundIn, Origins: origins, Scopes: scopes, Source: c.Source,
 		SourcePath: c.SourcePath, SourcePaths: c.SourcePaths,
 		SkipReason: c.SkipReason, Warnings: c.Warnings, Secrets: secrets,
 	}
 }
 
 func printImportSources(printer *output.Printer, sources []importSourceDoc) {
+	if len(sources) == 0 {
+		return
+	}
+	printer.Print("Sources:\n")
 	for _, s := range sources {
+		clients := strings.Join(s.Clients, ", ")
+		if clients == "" {
+			clients = s.Client
+		}
+		scope := s.Scope
+		if scope == "" {
+			scope = "-"
+		}
 		path := s.Path
 		if path == "" {
 			path = "(none)"
 		}
-		printer.Print("OpenCode source (%s): %s\n", s.Status, path)
-		if s.Detail != "" {
-			printer.Print("  %s\n", s.Detail)
+		printer.Print("  %-22s %-8s %s  %s\n", clients, scope, path, formatSourceStatus(s))
+		detail := s.Detail
+		if s.Scope == "local" && s.Status == provisioner.OpenCodeImportSelected {
+			detail = ""
+		}
+		if detail != "" {
+			printer.Print("    %s\n", detail)
 		}
 		if s.AlternatePath != "" {
-			printer.Print("  unmerged sibling: %s\n", s.AlternatePath)
+			printer.Print("    unmerged sibling: %s\n", s.AlternatePath)
 		}
 		for _, note := range s.Notes {
-			printer.Print("  %s\n", note)
+			printer.Print("    %s\n", note)
 		}
 	}
 }
 
 func renderImportSkip(printer *output.Printer, c importer.Candidate) {
-	loc := strings.Join(c.FoundIn, ", ")
+	loc := formatProvenance(c)
 	if c.SourcePath != "" {
 		if loc != "" {
 			loc += " "
@@ -844,7 +841,7 @@ func renderImportPlan(printer *output.Printer, importable []importer.Candidate, 
 		if overwriting[c.Name] {
 			symbol, label = "~", "replace"
 		}
-		printer.Print("  %s mcp-server %q (%s, from %s)\n", symbol, c.Name, label, strings.Join(c.FoundIn, ", "))
+		printer.Print("  %s mcp-server %q (%s, from %s)\n", symbol, c.Name, label, formatProvenance(c))
 		for _, w := range c.Warnings {
 			printer.Print("      warning: %s\n", w)
 		}

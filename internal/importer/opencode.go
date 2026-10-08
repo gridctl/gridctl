@@ -37,7 +37,7 @@ func openCodeNative(raw map[string]any) bool {
 // command arrays are argv: they are not shell-split, and they are not passed
 // through unwrapCmdC or unwrapMCPRemote. Those helpers stay on the legacy
 // string path, including IsGatewaySelfEntry.
-func mapOpenCodeNative(server config.MCPServer, warnings []string, raw map[string]any) (config.MCPServer, []string, error) {
+func mapOpenCodeNative(server config.MCPServer, warnings []string, raw map[string]any, st *mapState) (config.MCPServer, []string, error) {
 	cmd, hasCmd := raw["command"]
 	_, cmdIsString := cmd.(string)
 	nativeArray := hasCmd && !cmdIsString
@@ -48,7 +48,7 @@ func mapOpenCodeNative(server config.MCPServer, warnings []string, raw map[strin
 			return server, warnings, err
 		}
 		warnings = append(warnings, optWarnings...)
-		argv, err := openCodeArgv(raw)
+		argv, err := openCodeArgv(raw, st)
 		if err != nil {
 			return server, warnings, err
 		}
@@ -70,6 +70,12 @@ func mapOpenCodeNative(server config.MCPServer, warnings []string, raw map[strin
 		return server, warnings, &MapError{Reason: SkipUnsupported, Detail: "environment is set but the entry has no command"}
 	}
 	command := commandSlice(raw)
+	if st != nil {
+		command, err = st.substituteArgv(command)
+		if err != nil {
+			return server, warnings, err
+		}
+	}
 	if len(command) == 0 {
 		return server, warnings, fmt.Errorf("entry has neither a command nor a URL")
 	}
@@ -91,7 +97,7 @@ func mapOpenCodeNative(server config.MCPServer, warnings []string, raw map[strin
 
 // openCodeArgv validates a native command array and preserves every element
 // exactly, including empty arguments, spaces, quotes, and backslashes.
-func openCodeArgv(raw map[string]any) ([]string, error) {
+func openCodeArgv(raw map[string]any, st *mapState) ([]string, error) {
 	cmd, ok := raw["command"]
 	if !ok {
 		return nil, &MapError{Reason: SkipUnsupported, Detail: "entry has neither a command nor a URL"}
@@ -115,7 +121,15 @@ func openCodeArgv(raw map[string]any) ([]string, error) {
 		if !ok {
 			return nil, &MapError{Reason: SkipUnsupported, Detail: "command array must contain only strings"}
 		}
-		next, err := translateNativeRef(s)
+		next := s
+		if st != nil {
+			var err error
+			next, err = st.apply(s)
+			if err != nil {
+				return nil, err
+			}
+		}
+		next, err := translateNativeRef(next)
 		if err != nil {
 			return nil, err
 		}

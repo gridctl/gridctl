@@ -143,7 +143,7 @@ gridctl link lmstudio --group <name>
 
 Declaring a `link:` block in stack.yaml (as above) does the same thing on every `gridctl apply`: each listed client is linked idempotently once the gateway is healthy, and clients that aren't installed warn and skip. `gridctl destroy --unlink` removes those entries again.
 
-Already have MCP servers configured in your clients? `gridctl import` runs the same detection in reverse: it scans those configs (read-only), dedupes the servers it finds, and appends your selection to stack.yaml, offering plaintext secrets into the encrypted variable store on the way. OpenCode import reads one selected file, not OpenCode's merged configuration; use `--source-config` for a project or override file.
+Already have MCP servers configured in your clients? `gridctl import` runs the same detection in reverse: it scans those configs (read-only), including project MCP files from the working directory up to the nearest git root, dedupes the servers it finds, and appends your selection to stack.yaml, offering plaintext secrets into the encrypted variable store on the way. OpenCode's user file is still one selected file, not OpenCode's merged configuration. See the [CLI reference](docs/cli-reference.md#llm-clients).
 
 Supported clients: Claude Desktop, Claude Code, Cursor, Windsurf, VS Code, Gemini, Antigravity, OpenCode, Grok Build, Continue, Cline, AnythingLLM, LM Studio, Roo, Zed, Goose
 

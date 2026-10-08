@@ -31,13 +31,9 @@ func TestImportOpenCode_CLI(t *testing.T) {
 		}
 	})
 
-	t.Run("rejects source-config for other clients", func(t *testing.T) {
-		_, stderr, code := runImportBin(t, bin, t.TempDir(), t.TempDir(), "import", "cursor", "--source-config", "x.json")
-		if code != 1 || !strings.Contains(stderr, "only valid for 'gridctl import opencode'") {
-			t.Fatalf("exit %d stderr=%s", code, stderr)
-		}
-		_, stderr, code = runImportBin(t, bin, t.TempDir(), t.TempDir(), "import", "--source-config", "x.json")
-		if code != 1 || !strings.Contains(stderr, "multi-client scan") {
+	t.Run("rejects source-config without a client", func(t *testing.T) {
+		_, stderr, code := runImportBin(t, bin, t.TempDir(), t.TempDir(), "import", "--source-config", "x.json")
+		if code != 1 || !strings.Contains(stderr, "requires a client argument") || !strings.Contains(stderr, "multi-client scan") {
 			t.Fatalf("exit %d stderr=%s", code, stderr)
 		}
 	})
