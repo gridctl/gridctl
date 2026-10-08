@@ -57,6 +57,21 @@ func (e *MapError) Error() string {
 	return e.Reason
 }
 
+// Origin is one place a candidate was read from. Scope is project, local,
+// custom, or user.
+type Origin struct {
+	Client string
+	Scope  string
+	Path   string
+}
+
+// MapOptions carries project-import context. Empty options keep MapEntry
+// behavior unchanged.
+type MapOptions struct {
+	OwnerDir string
+	Scope    string
+}
+
 // Candidate is one importable server assembled from client config entries.
 type Candidate struct {
 	Name        string
@@ -65,16 +80,121 @@ type Candidate struct {
 	Source      string   // canonical slug (first client in registry order)
 	SourcePath  string   // canonical config file path; not a client slug
 	SourcePaths []string // config file paths retained through dedupe
+	Origins     []Origin // client, scope, and path triples in append order
 	Warnings    []string
 	SkipReason  string   // empty means importable
 	SecretKeys  []string // env keys whose literal values look like secrets
+}
+
+// Scopes returns the sorted unique scopes recorded on Origins.
+func (c Candidate) Scopes() []string {
+	return scopesFrom(c.Origins, "")
+}
+
+// ScopesFor returns the sorted unique scopes recorded for client.
+func (c Candidate) ScopesFor(client string) []string {
+	return scopesFrom(c.Origins, client)
+}
+
+// ProvenanceLabel groups origins by client in FoundIn order and renders
+// slug (scope) pairs. Several scopes for one client join with +.
+func (c Candidate) ProvenanceLabel() string {
+	if len(c.Origins) == 0 {
+		return strings.Join(c.FoundIn, ", ")
+	}
+	order := append([]string(nil), c.FoundIn...)
+	seenClient := make(map[string]bool, len(order))
+	for _, slug := range order {
+		seenClient[slug] = true
+	}
+	for _, o := range c.Origins {
+		if o.Client != "" && !seenClient[o.Client] {
+			seenClient[o.Client] = true
+			order = append(order, o.Client)
+		}
+	}
+	var parts []string
+	for _, client := range order {
+		var scopes []string
+		seenScope := map[string]bool{}
+		for _, o := range c.Origins {
+			if o.Client != client || o.Scope == "" || seenScope[o.Scope] {
+				continue
+			}
+			seenScope[o.Scope] = true
+			scopes = append(scopes, o.Scope)
+		}
+		if len(scopes) == 0 {
+			parts = append(parts, client)
+			continue
+		}
+		parts = append(parts, client+" ("+strings.Join(scopes, "+")+")")
+	}
+	return strings.Join(parts, ", ")
+}
+
+func scopesFrom(origins []Origin, client string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, o := range origins {
+		if client != "" && o.Client != client {
+			continue
+		}
+		if o.Scope == "" || seen[o.Scope] {
+			continue
+		}
+		seen[o.Scope] = true
+		out = append(out, o.Scope)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // MapEntry converts one raw client entry into a config.MCPServer plus
 // warnings. An error means the entry cannot be represented (for example a
 // websocket transport) and should surface as a skipped candidate.
 func MapEntry(slug string, entry provisioner.ServerEntry) (config.MCPServer, []string, error) {
-	raw := flattenTransportObject(entry.Raw)
+	return MapEntryWithOptions(slug, entry, MapOptions{})
+}
+
+// MapEntryWithOptions is MapEntry with project placeholder substitution and
+// scope-dependent working-directory handling. Empty options match MapEntry.
+func MapEntryWithOptions(slug string, entry provisioner.ServerEntry, opts MapOptions) (config.MCPServer, []string, error) {
+	raw := entry.Raw
+	var pre []string
+	var st *mapState
+	if opts.Scope != "" && slug != openCodeSlug {
+		warning, err := nonOpenCodeCwd(flattenTransportObject(raw), opts.Scope)
+		if err != nil {
+			server := config.MCPServer{}
+			server.Name, _ = sanitizeName(entry.Name)
+			return server, nil, err
+		}
+		if warning != "" {
+			pre = append(pre, warning)
+		}
+	}
+	if opts.OwnerDir != "" {
+		raw = cloneEntryMap(flattenTransportObject(raw))
+		st = &mapState{ownerDir: opts.OwnerDir}
+		if err := substituteMappedFields(raw, st); err != nil {
+			server := config.MCPServer{}
+			server.Name, _ = sanitizeName(entry.Name)
+			return server, append(pre, st.warnings()...), err
+		}
+	}
+	server, warnings, err := mapEntryPrepared(slug, entry, raw, st)
+	if st != nil {
+		warnings = append(warnings, st.warnings()...)
+	}
+	if len(pre) > 0 {
+		warnings = append(warnings, pre...)
+	}
+	return server, warnings, err
+}
+
+func mapEntryPrepared(slug string, entry provisioner.ServerEntry, raw map[string]any, st *mapState) (config.MCPServer, []string, error) {
+	raw = flattenTransportObject(raw)
 	var warnings []string
 
 	name, renamed := sanitizeName(entry.Name)
@@ -116,10 +236,17 @@ func MapEntry(slug string, entry provisioner.ServerEntry) (config.MCPServer, []s
 	}
 
 	if slug == openCodeSlug && openCodeNative(raw) {
-		return mapOpenCodeNative(server, warnings, raw)
+		return mapOpenCodeNative(server, warnings, raw, st)
 	}
 
 	command := commandSlice(raw)
+	if st != nil {
+		var err error
+		command, err = st.substituteArgv(command)
+		if err != nil {
+			return server, warnings, err
+		}
+	}
 	if len(command) == 0 {
 		return server, warnings, fmt.Errorf("entry has neither a command nor a URL")
 	}
@@ -164,22 +291,30 @@ func IsGatewaySelfEntry(entryName, linkServerName string, raw map[string]any) bo
 func Dedupe(candidates []Candidate) []Candidate {
 	var out []Candidate
 	index := make(map[string]int)
-	byName := make(map[string]string) // name -> identity of first definition
+	byName := make(map[string]seenDef)
 	for _, c := range candidates {
 		id := identity(c)
 		if i, ok := index[id]; ok {
 			out[i].FoundIn = mergeSlug(out[i].FoundIn, c.FoundIn...)
 			out[i].SourcePaths = mergePaths(out[i].SourcePaths, c.SourcePaths...)
+			out[i].Origins = mergeOrigins(out[i].Origins, c.Origins...)
 			if out[i].SourcePath == "" {
 				out[i].SourcePath = c.SourcePath
 			}
 			continue
 		}
-		if firstID, ok := byName[c.Name]; ok && firstID != id {
-			c.Warnings = append(c.Warnings,
-				fmt.Sprintf("a different definition of %q was also found in %s; review before importing both", c.Name, strings.Join(c.FoundIn, ", ")))
-		} else {
-			byName[c.Name] = id
+		if first, ok := byName[c.Name]; ok && first.id != id {
+			if originsDiffer(first.origins, c.Origins) {
+				c.Warnings = append(c.Warnings, fmt.Sprintf(
+					"a different definition of %q was also found in %s; the %s definition was kept",
+					c.Name, c.ProvenanceLabel(), first.prov))
+			} else {
+				c.Warnings = append(c.Warnings, fmt.Sprintf(
+					"a different definition of %q was also found in %s; review before importing both",
+					c.Name, strings.Join(c.FoundIn, ", ")))
+			}
+		} else if !ok {
+			byName[c.Name] = seenDef{id: id, prov: c.ProvenanceLabel(), origins: append([]Origin(nil), c.Origins...)}
 		}
 		index[id] = len(out)
 		out = append(out, c)
@@ -405,6 +540,42 @@ func identity(c Candidate) string {
 		return c.Name + "|url|" + c.Server.URL
 	}
 	return c.Name + "|cmd|" + strings.Join(c.Server.Command, "\x00")
+}
+
+type seenDef struct {
+	id      string
+	prov    string
+	origins []Origin
+}
+
+func originsDiffer(a, b []Origin) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return false
+	}
+	if len(a) != len(b) {
+		return true
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return true
+		}
+	}
+	return false
+}
+
+func mergeOrigins(existing []Origin, add ...Origin) []Origin {
+	seen := make(map[Origin]bool, len(existing)+len(add))
+	for _, o := range existing {
+		seen[o] = true
+	}
+	for _, o := range add {
+		if seen[o] {
+			continue
+		}
+		seen[o] = true
+		existing = append(existing, o)
+	}
+	return existing
 }
 
 func mergePaths(existing []string, add ...string) []string {
