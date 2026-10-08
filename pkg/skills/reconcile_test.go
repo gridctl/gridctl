@@ -34,7 +34,7 @@ func TestImporter_Update_ForceColdCacheNoPanic(t *testing.T) {
 	lockPath := filepath.Join(regDir, "skills.lock.yaml")
 	repoDir, _ := initSkillRepo(t, "# Test\n\nv1.\n")
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	_, err := imp.Import(ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
 	require.NoError(t, err)
 
 	// Evict the clone cache so FetchAndCompare yields an empty SHA.
@@ -43,7 +43,7 @@ func TestImporter_Update_ForceColdCacheNoPanic(t *testing.T) {
 	require.NoError(t, os.RemoveAll(cacheDir))
 
 	require.NotPanics(t, func() {
-		_, _ = imp.Update("test-skill", false, true, false)
+		_, _ = imp.Update(context.Background(), "test-skill", false, true, false)
 	})
 }
 
@@ -78,7 +78,7 @@ func TestImporter_AdvanceTracking_SkipPreservesFileAndInstalledHash(t *testing.T
 	repoDir, repo := initSkillRepo(t, "# Test\n\nv1.\n")
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
 
-	_, err := imp.Import(ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
 	require.NoError(t, err)
 
 	skillDir := imp.skillDir("test-skill")
@@ -132,7 +132,7 @@ func TestImporter_AdvanceTracking_RequiresSHA(t *testing.T) {
 	lockPath := filepath.Join(regDir, "skills.lock.yaml")
 	repoDir, _ := initSkillRepo(t, "# Test\n\nv1.\n")
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	_, err := imp.Import(ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
 	require.NoError(t, err)
 
 	assert.Error(t, imp.AdvanceTracking(context.Background(), "test-skill", ""))
@@ -148,7 +148,7 @@ func TestImporter_BackupSkillFile(t *testing.T) {
 	lockPath := filepath.Join(regDir, "skills.lock.yaml")
 	repoDir, _ := initSkillRepo(t, "# Test\n\nv1.\n")
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	_, err := imp.Import(ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
 	require.NoError(t, err)
 
 	original := driftSkill(t, store, "test-skill", "Edited before backup.")
@@ -184,7 +184,7 @@ func TestImporter_Detach(t *testing.T) {
 	lockPath := filepath.Join(regDir, "skills.lock.yaml")
 	repoDir, _ := initSkillRepo(t, "# Test\n\nv1.\n")
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	_, err := imp.Import(ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
 	require.NoError(t, err)
 
 	skillDir := imp.skillDir("test-skill")
@@ -210,7 +210,7 @@ func TestImporter_Diff(t *testing.T) {
 	lockPath := filepath.Join(regDir, "skills.lock.yaml")
 	repoDir, repo := initSkillRepo(t, "# Test\n\nv1 body.\n")
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	_, err := imp.Import(ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
 	require.NoError(t, err)
 
 	edited := driftSkill(t, store, "test-skill", "Local note.")
@@ -253,7 +253,7 @@ func TestImporterDiff_UpstreamMalformedSurfacesParseError(t *testing.T) {
 	lockPath := filepath.Join(regDir, "skills.lock.yaml")
 	repoDir, repo := initSkillRepo(t, "# Test\n\nv1.\n")
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	_, err := imp.Import(ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
 	require.NoError(t, err)
 
 	// Upstream pushes a SKILL.md with broken frontmatter.

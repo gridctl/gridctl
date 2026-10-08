@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -90,7 +91,7 @@ func TestFetchAndCompare_FetchFailureReturnsError(t *testing.T) {
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
 
 	repoDir, _ := initSkillRepo(t, "# Test\n\nFirst version.\n")
-	result, err := imp.Import(ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
+	result, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
 	require.NoError(t, err)
 	require.Len(t, result.Imported, 1)
 
@@ -104,7 +105,7 @@ func TestFetchAndCompare_FetchFailureReturnsError(t *testing.T) {
 	assert.False(t, changed)
 	assert.Equal(t, origin.CommitSHA, sha)
 
-	_, uerr := imp.Update("test-skill", false, false, true)
+	_, uerr := imp.Update(context.Background(), "test-skill", false, false, true)
 	require.Error(t, uerr)
 	assert.True(t, strings.HasPrefix(uerr.Error(), "checking updates:"), "error = %q", uerr.Error())
 	assert.NotContains(t, uerr.Error(), "already up to date")

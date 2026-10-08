@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -247,7 +248,7 @@ func TestImporter_Update_PreservesState(t *testing.T) {
 	// Initial import → skill should be active. Pin to "master" (go-git's
 	// default branch) so FetchAndCompare can resolve via origin/master after
 	// a subsequent fetch.
-	result, err := imp.Import(ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
+	result, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
 	require.NoError(t, err)
 	require.Len(t, result.Imported, 1)
 
@@ -264,7 +265,7 @@ func TestImporter_Update_PreservesState(t *testing.T) {
 	commitChange(t, repo, repoDir, "# Test\n\nSecond version.\n")
 
 	// Sync. The bug under test would reset State to active here.
-	updateResult, err := imp.Update("test-skill", false, false, false)
+	updateResult, err := imp.Update(context.Background(), "test-skill", false, false, false)
 	require.NoError(t, err)
 	require.Len(t, updateResult.Imported, 1, "expected a re-import after upstream change")
 
@@ -289,7 +290,7 @@ func TestImporter_Update_UnpinnedInstallsFresh(t *testing.T) {
 	repoDir, repo := initSkillRepo(t, "# Test\n\nFirst version.\n")
 
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	result, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	result, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true})
 	require.NoError(t, err)
 	require.Len(t, result.Imported, 1)
 
@@ -297,7 +298,7 @@ func TestImporter_Update_UnpinnedInstallsFresh(t *testing.T) {
 	head, err := repo.Head()
 	require.NoError(t, err)
 
-	updateResult, err := imp.Update("test-skill", false, false, false)
+	updateResult, err := imp.Update(context.Background(), "test-skill", false, false, false)
 	require.NoError(t, err)
 	require.Len(t, updateResult.Imported, 1, "expected a re-import after upstream change, got warnings: %v", updateResult.Warnings)
 
@@ -310,7 +311,7 @@ func TestImporter_Update_UnpinnedInstallsFresh(t *testing.T) {
 	assert.Equal(t, head.Hash().String(), origin.CommitSHA, "origin must record the new upstream commit")
 
 	// A repeat update is a clean no-op, not a perpetual "update available".
-	repeat, err := imp.Update("test-skill", false, false, false)
+	repeat, err := imp.Update(context.Background(), "test-skill", false, false, false)
 	require.NoError(t, err)
 	assert.Empty(t, repeat.Imported)
 	require.NotEmpty(t, repeat.Warnings)
@@ -328,13 +329,13 @@ func TestImporter_Update_PinnedBranchInstallsFresh(t *testing.T) {
 	repoDir, repo := initSkillRepo(t, "# Test\n\nFirst version.\n")
 
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	result, err := imp.Import(ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
+	result, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Ref: "master", Trust: true})
 	require.NoError(t, err)
 	require.Len(t, result.Imported, 1)
 
 	commitChange(t, repo, repoDir, "# Test\n\nSecond version.\n")
 
-	updateResult, err := imp.Update("test-skill", false, false, false)
+	updateResult, err := imp.Update(context.Background(), "test-skill", false, false, false)
 	require.NoError(t, err)
 	require.Len(t, updateResult.Imported, 1)
 
@@ -342,7 +343,7 @@ func TestImporter_Update_PinnedBranchInstallsFresh(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "Second version.")
 
-	repeat, err := imp.Update("test-skill", false, false, false)
+	repeat, err := imp.Update(context.Background(), "test-skill", false, false, false)
 	require.NoError(t, err)
 	assert.Empty(t, repeat.Imported, "second update must not loop on a phantom change")
 	require.NotEmpty(t, repeat.Warnings)
@@ -363,7 +364,7 @@ func TestImporter_Import_DiscoversNewUpstreamSkill(t *testing.T) {
 	})
 
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	result, err := imp.Import(ImportOptions{Repo: repoDir, Path: "skills", Trust: true})
+	result, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Path: "skills", Trust: true})
 	require.NoError(t, err)
 	require.Len(t, result.Imported, 1)
 
@@ -382,7 +383,7 @@ func TestImporter_Import_DiscoversNewUpstreamSkill(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	result, err = imp.Import(ImportOptions{Repo: repoDir, Path: "skills", Trust: true})
+	result, err = imp.Import(context.Background(), ImportOptions{Repo: repoDir, Path: "skills", Trust: true})
 	require.NoError(t, err)
 
 	names := make([]string, 0, len(result.Imported))
@@ -408,7 +409,7 @@ func TestFetchAndCompare_SemverConstraintDetectsNewTag(t *testing.T) {
 	require.NoError(t, err)
 
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	result, err := imp.Import(ImportOptions{Repo: repoDir, Ref: "^1.0.0", Trust: true})
+	result, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Ref: "^1.0.0", Trust: true})
 	require.NoError(t, err)
 	require.Len(t, result.Imported, 1)
 
@@ -471,7 +472,7 @@ func TestImporter_Import_NoPreserveStateResetsState(t *testing.T) {
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
 
 	// Initial import.
-	_, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true})
 	require.NoError(t, err)
 
 	sk, err := store.GetSkill("test-skill")
@@ -480,7 +481,7 @@ func TestImporter_Import_NoPreserveStateResetsState(t *testing.T) {
 	require.NoError(t, store.SaveSkill(sk))
 
 	// Re-import without PreserveState: state should be reset to active.
-	_, err = imp.Import(ImportOptions{Repo: repoDir, Trust: true, Force: true})
+	_, err = imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true, Force: true})
 	require.NoError(t, err)
 
 	sk, err = store.GetSkill("test-skill")
@@ -503,7 +504,7 @@ func TestImporter_Import_PreserveStateNewSkillDefaultsActive(t *testing.T) {
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
 
 	// First-time import with PreserveState. No existing skill to preserve.
-	_, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true, PreserveState: true})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true, PreserveState: true})
 	require.NoError(t, err)
 
 	sk, err := store.GetSkill("test-skill")
@@ -529,9 +530,9 @@ func TestImporter_Update_ConcurrentSourcesPreserveLockfile(t *testing.T) {
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
 
 	// Initial imports so both sources exist in the lock file.
-	_, err := imp.Import(ImportOptions{Repo: repoA.dir, Ref: "master", Trust: true})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoA.dir, Ref: "master", Trust: true})
 	require.NoError(t, err)
-	_, err = imp.Import(ImportOptions{Repo: repoB.dir, Ref: "master", Trust: true})
+	_, err = imp.Import(context.Background(), ImportOptions{Repo: repoB.dir, Ref: "master", Trust: true})
 	require.NoError(t, err)
 
 	// Push new commits to both so Update will re-import them.
@@ -543,11 +544,11 @@ func TestImporter_Update_ConcurrentSourcesPreserveLockfile(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		_, _ = imp.Update("skill-a", false, false, false)
+		_, _ = imp.Update(context.Background(), "skill-a", false, false, false)
 	}()
 	go func() {
 		defer wg.Done()
-		_, _ = imp.Update("skill-b", false, false, false)
+		_, _ = imp.Update(context.Background(), "skill-b", false, false, false)
 	}()
 	wg.Wait()
 
@@ -662,7 +663,7 @@ func TestImporter_Import_AllMalformedNamesFiles(t *testing.T) {
 	})
 
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	_, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true})
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "no SKILL.md files found")
 	assert.Contains(t, err.Error(), "failed to parse")
@@ -683,7 +684,7 @@ func TestImporter_Import_MixedMalformedWarns(t *testing.T) {
 	})
 
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	result, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	result, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true})
 	require.NoError(t, err)
 
 	require.Len(t, result.Imported, 1)
@@ -725,7 +726,7 @@ Body.
 	})
 
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	result, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	result, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true})
 	require.NoError(t, err)
 	require.Len(t, result.Imported, 1)
 
@@ -746,7 +747,7 @@ func TestImporter_Import_RecordsSupportingFileInstall(t *testing.T) {
 	})
 
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	result, err := imp.Import(ImportOptions{Repo: repoDir, Path: "skills", Trust: true})
+	result, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Path: "skills", Trust: true})
 	require.NoError(t, err)
 	require.Len(t, result.Imported, 1)
 
@@ -766,7 +767,7 @@ func TestImporter_Update_ReinstallsUnchangedLegacySupportingFiles(t *testing.T) 
 	})
 
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	_, err := imp.Import(ImportOptions{Repo: repoDir, Path: "skills", Trust: true})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Path: "skills", Trust: true})
 	require.NoError(t, err)
 
 	skillDir := filepath.Join(regDir, "skills", "legacy-skill")
@@ -776,7 +777,7 @@ func TestImporter_Update_ReinstallsUnchangedLegacySupportingFiles(t *testing.T) 
 	require.NoError(t, WriteOrigin(skillDir, origin))
 	require.NoError(t, os.RemoveAll(filepath.Join(skillDir, "references")))
 
-	result, err := imp.Update("legacy-skill", false, false, false)
+	result, err := imp.Update(context.Background(), "legacy-skill", false, false, false)
 	require.NoError(t, err)
 	require.Len(t, result.Imported, 1)
 	assert.FileExists(t, filepath.Join(skillDir, "references", "guide.md"))
@@ -796,7 +797,7 @@ func TestImporter_Update_DoesNotOverwriteUnsnapshottedLegacySkill(t *testing.T) 
 	})
 
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	_, err := imp.Import(ImportOptions{Repo: repoDir, Path: "skills", Trust: true})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Path: "skills", Trust: true})
 	require.NoError(t, err)
 
 	skillDir := filepath.Join(regDir, "skills", "legacy-skill")
@@ -809,7 +810,7 @@ func TestImporter_Update_DoesNotOverwriteUnsnapshottedLegacySkill(t *testing.T) 
 	locallyEdited := []byte("---\nname: legacy-skill\ndescription: Local edit\nstate: active\n---\n\nKeep this body.\n")
 	require.NoError(t, os.WriteFile(skillFile, locallyEdited, 0o644))
 
-	result, err := imp.Update("legacy-skill", false, false, false)
+	result, err := imp.Update(context.Background(), "legacy-skill", false, false, false)
 	require.NoError(t, err)
 	assert.Empty(t, result.Imported)
 	installed, err := os.ReadFile(skillFile)
@@ -831,7 +832,7 @@ func TestImporter_Import_UnknownFrontmatterPreserved(t *testing.T) {
 	})
 
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	result, err := imp.Import(ImportOptions{Repo: repoDir, Path: "skills", Trust: true})
+	result, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Path: "skills", Trust: true})
 	require.NoError(t, err)
 	require.Len(t, result.Imported, 1)
 
@@ -855,7 +856,7 @@ func TestImporter_Update_RestoresStrippedKeys(t *testing.T) {
 	})
 
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	_, err := imp.Import(ImportOptions{Repo: repoDir, Path: "skills", Trust: true})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Path: "skills", Trust: true})
 	require.NoError(t, err)
 
 	// Simulate a pre-fix install: strip the key from the installed copy and
@@ -875,7 +876,7 @@ func TestImporter_Update_RestoresStrippedKeys(t *testing.T) {
 	origin.CommitSHA = "0123456789abcdef0123456789abcdef01234567"
 	require.NoError(t, WriteOrigin(skillDir, origin))
 
-	updateResult, err := imp.Update("hinted-skill", false, false, false)
+	updateResult, err := imp.Update(context.Background(), "hinted-skill", false, false, false)
 	require.NoError(t, err)
 	require.Len(t, updateResult.Imported, 1, "warnings: %v", updateResult.Warnings)
 
@@ -905,7 +906,7 @@ func TestImporter_Import_PersistsSSHKeyAuth(t *testing.T) {
 		user       = "git"
 		passphrase = "super-secret-passphrase"
 	)
-	result, err := imp.Import(ImportOptions{
+	result, err := imp.Import(context.Background(), ImportOptions{
 		Repo:       sshURL,
 		Ref:        "master",
 		Trust:      true,
@@ -951,7 +952,7 @@ func TestImporter_Import_PersistsSSHKeyAuth(t *testing.T) {
 	cfg.Remotes["origin"].URLs = []string{sshURL}
 	require.NoError(t, cached.SetConfig(cfg))
 
-	_, err = imp.Update("test-skill", false, false, true)
+	_, err = imp.Update(context.Background(), "test-skill", false, false, true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), keyPath)
 	assert.NotErrorIs(t, err, gitpkg.ErrSSHAgentMissing)

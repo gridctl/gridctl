@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
 	"sort"
 	"sync"
@@ -50,6 +51,7 @@ func (s *Server) updateCachePath() string {
 type SkillSourceStatus struct {
 	Name           string             `json:"name"`
 	Repo           string             `json:"repo"`
+	Kind           string             `json:"kind"`
 	Ref            string             `json:"ref,omitempty"`
 	Path           string             `json:"path,omitempty"`
 	AutoUpdate     bool               `json:"autoUpdate"`
@@ -329,16 +331,30 @@ func (s *Server) handleSkillSourcesList(w http.ResponseWriter, r *http.Request) 
 		src := SkillSourceStatus{
 			Name:      srcName,
 			Repo:      locked.Repo,
+			Kind:      "git",
 			Ref:       locked.Ref,
 			CommitSHA: locked.CommitSHA,
+		}
+		if locked.IsLocal() {
+			src.Kind = skills.SourceKindLocal
 		}
 
 		if !locked.FetchedAt.IsZero() {
 			src.LastFetched = locked.FetchedAt.Format("2006-01-02T15:04:05Z")
 		}
 
-		// Match with config for auto-update settings
+		// Match with config for auto-update settings. Local sources match by
+		// repo only so a same-named git config does not decorate them.
 		for _, cfgSrc := range cfg.Sources {
+			if locked.IsLocal() {
+				if cfgSrc.Repo == locked.Repo {
+					src.AutoUpdate = cfg.EffectiveAutoUpdate(&cfgSrc)
+					src.UpdateInterval = cfgSrc.UpdateInterval
+					src.Path = cfgSrc.Path
+					break
+				}
+				continue
+			}
 			if cfgSrc.Repo == locked.Repo || cfgSrc.Name == srcName {
 				src.AutoUpdate = cfg.EffectiveAutoUpdate(&cfgSrc)
 				src.UpdateInterval = cfgSrc.UpdateInterval
@@ -423,6 +439,19 @@ func (s *Server) handleSkillSourceAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	kind, resolved, status, msg := classifySkillSourceRepo(req.Repo)
+	if status != 0 {
+		writeJSONError(w, msg, status)
+		return
+	}
+	if kind == skills.SourceKindLocal && (req.Path != "" || req.Ref != "") {
+		writeJSONError(w, "local sources do not accept ref or path", http.StatusBadRequest)
+		return
+	}
+	if kind == skills.SourceKindLocal {
+		req.Repo = resolved
+	}
+
 	store := s.registryServer.Store()
 	registryDir := store.Dir()
 	lockPath := s.lockFilePath()
@@ -430,10 +459,11 @@ func (s *Server) handleSkillSourceAdd(w http.ResponseWriter, r *http.Request) {
 
 	imp := skills.NewImporter(store, registryDir, lockPath, logger)
 	imp.SetCredentialResolver(s.credentialResolver())
-	result, err := imp.Import(skills.ImportOptions{
+	result, err := imp.Import(r.Context(), skills.ImportOptions{
 		Repo:           req.Repo,
 		Ref:            req.Ref,
 		Path:           req.Path,
+		Kind:           kind,
 		Trust:          req.Trust,
 		NoActivate:     req.NoActivate,
 		Selected:       req.Selected,
@@ -441,6 +471,10 @@ func (s *Server) handleSkillSourceAdd(w http.ResponseWriter, r *http.Request) {
 		Auth:           authCfg,
 	})
 	if err != nil {
+		if errors.Is(err, skills.ErrSourceConflict) {
+			writeJSONError(w, err.Error(), http.StatusConflict)
+			return
+		}
 		writeGitErrorForRepo(w, "Import failed: ", req.Repo, err)
 		return
 	}
@@ -449,6 +483,39 @@ func (s *Server) handleSkillSourceAdd(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusCreated)
 	writeJSON(w, result)
+}
+
+// classifySkillSourceRepo reports a local directory import when repo is an
+// absolute existing directory that is not a git repository root and is not
+// inside the gridctl home. Relative directories and home paths are 400.
+// Anything else keeps the git URL path, including a missing path.
+func classifySkillSourceRepo(repo string) (kind, resolved string, status int, msg string) {
+	info, err := os.Stat(repo)
+	if err != nil || !info.IsDir() {
+		return "", repo, 0, ""
+	}
+	if !filepath.IsAbs(repo) {
+		return "", "", http.StatusBadRequest, "local skill paths must be absolute"
+	}
+	resolved, err = skills.ResolveLocalRoot(repo)
+	if err != nil {
+		return "", "", http.StatusBadRequest, err.Error()
+	}
+	inside, err := skills.InsideGridctlHome(resolved)
+	if err != nil {
+		return "", "", http.StatusBadRequest, err.Error()
+	}
+	if inside {
+		return "", "", http.StatusBadRequest, fmt.Sprintf("%s: %s", skills.ErrInsideGridctlHome.Error(), resolved)
+	}
+	isRepo, err := gitpkg.IsRepoRoot(resolved)
+	if err != nil {
+		return "", "", http.StatusBadRequest, err.Error()
+	}
+	if isRepo {
+		return "", repo, 0, ""
+	}
+	return skills.SourceKindLocal, resolved, 0, ""
 }
 
 // handleSkillSourceRemove removes a skill source and its imported skills.
@@ -539,6 +606,20 @@ func (s *Server) handleSkillSourceCheck(w http.ResponseWriter, r *http.Request) 
 	}
 
 	logger := slog.Default()
+	if src.IsLocal() {
+		changed, err := skills.LocalSourceHasUpdate(r.Context(), src)
+		if err != nil {
+			writeJSONError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, map[string]any{
+			"source":     sourceName,
+			"currentSha": src.CommitSHA,
+			"latestSha":  "",
+			"hasUpdate":  changed,
+		})
+		return
+	}
 	newSHA, changed, err := skills.FetchAndCompare(src.Repo, src.Ref, src.CommitSHA, authCfg, logger)
 	if err != nil {
 		writeGitErrorForRepo(w, "Check failed: ", src.Repo, err)
@@ -597,8 +678,31 @@ func standInAgent(src skills.LockedSource) string {
 func (s *Server) syncSkill(ctx context.Context, imp *skills.Importer, authCfg skills.AuthConfig, src skills.LockedSource, skillName string, drifted, force bool) SkillSyncResult {
 	entry := SkillSyncResult{Skill: skillName}
 
+	if src.IsLocal() {
+		if drifted && !force {
+			entry.Skipped = "local edits"
+			return entry
+		}
+		if drifted && force {
+			if backup, berr := imp.BackupSkillFile(ctx, skillName, ""); berr != nil {
+				entry.Warnings = append(entry.Warnings, "backup failed: "+berr.Error())
+			} else {
+				entry.Backup = backup
+			}
+		}
+		result, err := imp.Update(ctx, skillName, false, force, false)
+		if err != nil {
+			entry.Error = gitpkg.RedactError(err).Error()
+			return entry
+		}
+		entry.Imported = len(result.Imported)
+		entry.ImportedAgents = len(result.ImportedAgents)
+		entry.Warnings = append(entry.Warnings, result.Warnings...)
+		return entry
+	}
+
 	if !drifted {
-		result, err := imp.Update(skillName, false, false, false)
+		result, err := imp.Update(ctx, skillName, false, false, false)
 		if err != nil {
 			entry.Error = gitpkg.RedactError(err).Error()
 			return entry
@@ -629,7 +733,7 @@ func (s *Server) syncSkill(ctx context.Context, imp *skills.Importer, authCfg sk
 		entry.Backup = backup
 	}
 
-	result, err := imp.Update(skillName, false, true, false)
+	result, err := imp.Update(ctx, skillName, false, true, false)
 	if err != nil {
 		entry.Error = gitpkg.RedactError(err).Error()
 		return entry
@@ -722,11 +826,20 @@ func (s *Server) handleSkillSourceUpdate(w http.ResponseWriter, r *http.Request)
 		skillNames = append(skillNames, skillName)
 	}
 	sort.Strings(skillNames)
+	if src.IsLocal() {
+		for agentName := range src.Agents {
+			if len(filter) > 0 && !filter[agentName] {
+				continue
+			}
+			skillNames = append(skillNames, agentName)
+		}
+		sort.Strings(skillNames)
+	}
 
 	// A source that ships only agents has no skill to carry the update;
 	// one agent stands in (Update re-imports the whole source, so every
 	// agent it ships refreshes). Mirrors the CLI's stand-in loop.
-	if len(skillNames) == 0 && len(filter) == 0 {
+	if !src.IsLocal() && len(skillNames) == 0 && len(filter) == 0 {
 		if standIn := standInAgent(src); standIn != "" {
 			skillNames = append(skillNames, standIn)
 		}
@@ -781,6 +894,7 @@ func (s *Server) handleSkillSourcePreview(w http.ResponseWriter, r *http.Request
 	}
 
 	var stored skills.StoredAuth
+	storedLocal := false
 	if repo == "" {
 		lockPath := s.lockFilePath()
 		lf, _ := skills.ReadLockFile(lockPath)
@@ -790,6 +904,7 @@ func (s *Server) handleSkillSourcePreview(w http.ResponseWriter, r *http.Request
 				ref = src.Ref
 			}
 			stored = src.StoredAuth()
+			storedLocal = src.IsLocal()
 		}
 	}
 
@@ -805,10 +920,28 @@ func (s *Server) handleSkillSourcePreview(w http.ResponseWriter, r *http.Request
 	}
 
 	logger := slog.Default()
-	result, err := skills.CloneAndDiscover(repo, ref, path, authCfg, logger)
-	if err != nil {
-		writeGitErrorForRepo(w, "Clone failed: ", repo, err)
+	var result *skills.CloneResult
+	if kind, resolved, status, msg := classifySkillSourceRepo(repo); status != 0 {
+		writeJSONError(w, msg, status)
 		return
+	} else if kind == skills.SourceKindLocal || storedLocal {
+		root := repo
+		if kind == skills.SourceKindLocal {
+			root = resolved
+		}
+		disc, derr := skills.DiscoverLocal(r.Context(), root, "", logger)
+		if derr != nil {
+			writeJSONError(w, derr.Error(), http.StatusBadRequest)
+			return
+		}
+		result = disc.Result
+	} else {
+		var err error
+		result, err = skills.CloneAndDiscover(repo, ref, path, authCfg, logger)
+		if err != nil {
+			writeGitErrorForRepo(w, "Clone failed: ", repo, err)
+			return
+		}
 	}
 
 	store := s.registryServer.Store()
@@ -992,12 +1125,18 @@ func (s *Server) handleSkillSourcesSyncAll(w http.ResponseWriter, r *http.Reques
 				skillNames = append(skillNames, sn)
 			}
 			sort.Strings(skillNames)
+			if source.IsLocal() {
+				for agentName := range source.Agents {
+					skillNames = append(skillNames, agentName)
+				}
+				sort.Strings(skillNames)
+			}
 
 			// Agent-only sources get a stand-in agent so they refresh
 			// too; it bypasses the registry ghost check below, which only
-			// applies to skills.
+			// applies to skills. Local sources already listed every agent.
 			standIn := ""
-			if len(skillNames) == 0 {
+			if !source.IsLocal() && len(skillNames) == 0 {
 				if standIn = standInAgent(source); standIn != "" {
 					skillNames = append(skillNames, standIn)
 				}
@@ -1095,7 +1234,7 @@ func (s *Server) handleSkillSourcesSyncAll(w http.ResponseWriter, r *http.Reques
 
 // handleSkillUpdates returns pending update summary across all sources.
 // GET /api/skills/updates
-func (s *Server) handleSkillUpdates(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleSkillUpdates(w http.ResponseWriter, r *http.Request) {
 	lockPath := s.lockFilePath()
 	lf, err := skills.ReadLockFile(lockPath)
 	if err != nil {
@@ -1111,6 +1250,20 @@ func (s *Server) handleSkillUpdates(w http.ResponseWriter, _ *http.Request) {
 			Name:    srcName,
 			Repo:    src.Repo,
 			Current: src.CommitSHA,
+		}
+
+		if src.IsLocal() {
+			changed, lerr := skills.LocalSourceHasUpdate(r.Context(), src)
+			if lerr != nil {
+				entry.Error = lerr.Error()
+			} else {
+				entry.HasUpdate = changed
+				if changed {
+					summary.Available++
+				}
+			}
+			summary.Sources = append(summary.Sources, entry)
+			continue
 		}
 
 		authCfg, authErr := s.resolveCheckAuth(nil, src.StoredAuth())

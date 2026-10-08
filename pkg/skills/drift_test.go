@@ -20,7 +20,7 @@ func TestDetectDrift_NoDriftAfterImport(t *testing.T) {
 	repoDir, _ := initSkillRepo(t, "# Test\n\nBody.\n")
 
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	_, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true})
 	require.NoError(t, err)
 
 	drifted, err := DetectDrift(context.Background(), store, lockPath, "")
@@ -37,7 +37,7 @@ func TestDetectDrift_DetectsEditedSkill(t *testing.T) {
 	repoDir, _ := initSkillRepo(t, "# Test\n\nBody.\n")
 
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	_, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true})
 	require.NoError(t, err)
 
 	// Tamper with the installed SKILL.md.
@@ -85,7 +85,7 @@ func TestDetectDrift_PerSource(t *testing.T) {
 	repoDir, _ := initSkillRepo(t, "# Test\n\nBody.\n")
 
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	_, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true})
 	require.NoError(t, err)
 
 	// Tamper.

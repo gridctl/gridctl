@@ -39,6 +39,22 @@ type Origin struct {
 	AuthMethod string `json:"authMethod,omitempty"`
 	SSHUser    string `json:"sshUser,omitempty"`
 	SSHKeyPath string `json:"sshKeyPath,omitempty"`
+	// Kind is "local" for a directory import and empty for a git import.
+	// Empty is the historical zero value so existing sidecars keep decoding
+	// as git origins.
+	Kind string `json:"kind,omitempty"`
+	// Client and Location are optional client-import provenance. skill add
+	// does not write them and does not clear a pair that still matches.
+	Client   string `json:"client,omitempty"`
+	Location string `json:"location,omitempty"`
+}
+
+// SourceKindLocal is the origin and lockfile kind for a directory import.
+const SourceKindLocal = "local"
+
+// IsLocal reports whether this origin tracks a local directory.
+func (o *Origin) IsLocal() bool {
+	return o != nil && o.Kind == SourceKindLocal
 }
 
 // StoredAuth is the non-secret authentication recorded for a source.

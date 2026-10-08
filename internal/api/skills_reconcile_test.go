@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -154,7 +155,7 @@ func importLocalSkill(t *testing.T, srv *Server, regServer *registry.Server, bod
 
 	store := regServer.Store()
 	imp := skills.NewImporter(store, store.Dir(), srv.lockFilePath(), slog.Default())
-	if _, err := imp.Import(skills.ImportOptions{Repo: dir, Ref: "master", Trust: true}); err != nil {
+	if _, err := imp.Import(context.Background(), skills.ImportOptions{Repo: dir, Ref: "master", Trust: true}); err != nil {
 		t.Fatalf("import: %v", err)
 	}
 	return dir, repo

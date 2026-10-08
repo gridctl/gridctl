@@ -35,7 +35,7 @@ func TestImporter_Import_SkillsAndAgentsAsUnit(t *testing.T) {
 	})
 
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	result, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	result, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true})
 	require.NoError(t, err)
 	require.Len(t, result.Imported, 1)
 	require.Len(t, result.ImportedAgents, 1)
@@ -71,7 +71,7 @@ func TestImporter_Import_AgentsOnlyRepo(t *testing.T) {
 		"agents/reviewer.md": importableAgent,
 	})
 	imp := NewImporter(store, regDir, filepath.Join(regDir, "skills.lock.yaml"), slog.Default())
-	result, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	result, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true})
 	require.NoError(t, err)
 	assert.Empty(t, result.Imported)
 	assert.Len(t, result.ImportedAgents, 1)
@@ -86,7 +86,7 @@ func TestImporter_Import_AgentNameValidationFailsItemNotBatch(t *testing.T) {
 		"agents/good.md":     "---\ndescription: fine\n---\n\nBody.\n",
 	})
 	imp := NewImporter(store, regDir, filepath.Join(regDir, "skills.lock.yaml"), slog.Default())
-	result, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	result, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true})
 	require.NoError(t, err)
 	require.Len(t, result.ImportedAgents, 1)
 	assert.Equal(t, "good", result.ImportedAgents[0].Name)
@@ -106,7 +106,7 @@ func TestImporter_Import_DuplicateAgentNamesFailBoth(t *testing.T) {
 		"agents/solo.md":      "---\ndescription: fine\n---\n\nC.\n",
 	})
 	imp := NewImporter(store, regDir, filepath.Join(regDir, "skills.lock.yaml"), slog.Default())
-	result, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	result, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true})
 	require.NoError(t, err)
 	require.Len(t, result.ImportedAgents, 1)
 	assert.Equal(t, "solo", result.ImportedAgents[0].Name)
@@ -146,12 +146,12 @@ func TestImporter_Import_SelectedPreservesAgentLock(t *testing.T) {
 		"agents/reviewer.md":   importableAgent,
 	})
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	_, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true})
 	require.NoError(t, err)
 
 	// The web UI's "add more from this source" flow: a Selected re-import
 	// never processes agents and must not unlist the tracked ones.
-	_, err = imp.Import(ImportOptions{Repo: repoDir, Trust: true, Selected: []string{"good-skill"}})
+	_, err = imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true, Selected: []string{"good-skill"}})
 	require.NoError(t, err)
 
 	lf, err := ReadLockFile(lockPath)
@@ -170,14 +170,14 @@ func TestImporter_Import_SkippedExistingAgentKeepsLock(t *testing.T) {
 		"agents/reviewer.md":  importableAgent,
 	})
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	_, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true})
 	require.NoError(t, err)
 
 	// Upstream adds a skill; an unforced re-import brings it in while the
 	// existing agent is skipped as a conflict. Its lock entry must
 	// survive the source rewrite.
 	commitExtraFile(t, repoDir, "skills/two/SKILL.md", "---\nname: two\ndescription: valid\n---\n\nBody.\n")
-	result, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	result, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true})
 	require.NoError(t, err)
 	require.Len(t, result.Imported, 1)
 	require.Len(t, result.SkippedAgents, 1)
@@ -198,13 +198,13 @@ func TestImporter_Import_AgentScanGatesBehindTrust(t *testing.T) {
 	})
 	imp := NewImporter(store, regDir, filepath.Join(regDir, "skills.lock.yaml"), slog.Default())
 
-	result, err := imp.Import(ImportOptions{Repo: repoDir})
+	result, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir})
 	require.NoError(t, err)
 	assert.Empty(t, result.ImportedAgents)
 	require.Len(t, result.SkippedAgents, 1)
 	assert.Contains(t, result.SkippedAgents[0].Reason, "--trust")
 
-	result, err = imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	result, err = imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true})
 	require.NoError(t, err)
 	require.Len(t, result.ImportedAgents, 1)
 	assert.NotEmpty(t, result.ImportedAgents[0].Findings)
@@ -219,16 +219,16 @@ func TestImporter_Import_ExistingAgentNeedsForce(t *testing.T) {
 	})
 	imp := NewImporter(store, regDir, filepath.Join(regDir, "skills.lock.yaml"), slog.Default())
 
-	_, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true})
 	require.NoError(t, err)
 
-	result, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	result, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true})
 	require.NoError(t, err)
 	assert.Empty(t, result.ImportedAgents)
 	require.Len(t, result.SkippedAgents, 1)
 	assert.Contains(t, result.SkippedAgents[0].Reason, "--force")
 
-	result, err = imp.Import(ImportOptions{Repo: repoDir, Trust: true, Force: true})
+	result, err = imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true, Force: true})
 	require.NoError(t, err)
 	assert.Len(t, result.ImportedAgents, 1)
 }
@@ -245,7 +245,7 @@ func TestImporter_Import_MalformedAgentFilesWarn(t *testing.T) {
 		"agents/unclosed.md": "---\nname: unclosed\ndescription: broken\n\nNo closing delimiter.\n",
 	})
 	imp := NewImporter(store, regDir, filepath.Join(regDir, "skills.lock.yaml"), slog.Default())
-	result, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	result, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true})
 	require.NoError(t, err)
 	require.Len(t, result.ImportedAgents, 1)
 	assert.Equal(t, "good", result.ImportedAgents[0].Name)
@@ -271,11 +271,11 @@ func TestImporter_UpdateAgent_DriftAndRemove(t *testing.T) {
 		"agents/reviewer.md": importableAgent,
 	})
 	imp := NewImporter(store, regDir, lockPath, slog.Default())
-	_, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true})
 	require.NoError(t, err)
 
 	// Update by agent name resolves through the agent origin.
-	result, err := imp.Update("reviewer", false, false, true)
+	result, err := imp.Update(context.Background(), "reviewer", false, false, true)
 	require.NoError(t, err)
 	assert.Contains(t, result.Warnings[0], "already up to date")
 
@@ -305,7 +305,7 @@ func TestImporter_AgentInfo(t *testing.T) {
 		"agents/reviewer.md": importableAgent,
 	})
 	imp := NewImporter(store, regDir, filepath.Join(regDir, "skills.lock.yaml"), slog.Default())
-	_, err := imp.Import(ImportOptions{Repo: repoDir, Trust: true})
+	_, err := imp.Import(context.Background(), ImportOptions{Repo: repoDir, Trust: true})
 	require.NoError(t, err)
 
 	info, err := imp.AgentInfo("reviewer")

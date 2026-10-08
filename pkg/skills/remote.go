@@ -44,6 +44,9 @@ type CloneResult struct {
 	// that are not parseable agent definitions.
 	Agents          []DiscoveredAgent
 	MalformedAgents []MalformedAgent
+	// FilteredSkills are relative skill paths DiscoverLocal skipped because
+	// they carry .origin.json. Git discovery leaves this nil.
+	FilteredSkills []string
 }
 
 // MalformedSkill records a SKILL.md that could not be read or parsed (or a
