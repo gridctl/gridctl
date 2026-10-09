@@ -15,6 +15,31 @@ import (
 // ExportNotice describes the bounded policy, not a guarantee about arbitrary text.
 const ExportNotice = "Export preserves authored references without resolving values. Review authored literals, including mixed reference/literal strings, before sharing."
 
+// ExportConfigFilesNotice is appended when the export contains file-backed configs.
+const ExportConfigFilesNotice = "Referenced config files are not bundled; copy them alongside the exported stack."
+
+// ExportNotices returns the stderr and REST notice for an exported stack.
+func ExportNotices(stack *Stack) string {
+	if !stackReferencesConfigFiles(stack) {
+		return ExportNotice
+	}
+	return ExportNotice + "\n" + ExportConfigFilesNotice
+}
+
+func stackReferencesConfigFiles(stack *Stack) bool {
+	if stack == nil {
+		return false
+	}
+	for _, srv := range stack.MCPServers {
+		for _, cfg := range srv.Configs {
+			if cfg.File != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // ExportStack reads an unresolved export projection and returns every source path
 // for destination collision checks. It does not access stores or runtime values.
 func ExportStack(ctx context.Context, path string) (*Stack, []string, error) {
@@ -110,6 +135,11 @@ func readExportStack(ctx context.Context, path string, sources *[]string) (*Stac
 			}
 			if srv.OpenAPI != nil && !isURL(srv.OpenAPI.Spec) {
 				paths = append(paths, &srv.OpenAPI.Spec)
+			}
+			for j := range srv.Configs {
+				if srv.Configs[j].File != "" {
+					paths = append(paths, &srv.Configs[j].File)
+				}
 			}
 			for _, p := range paths {
 				if *p == "" || filepath.IsAbs(*p) {

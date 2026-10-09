@@ -435,7 +435,7 @@ func (s *Server) handleStackExport(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
 		"content": string(data),
 		"format":  "yaml",
-		"notice":  config.ExportNotice,
+		"notice":  config.ExportNotices(stack),
 	})
 }
 

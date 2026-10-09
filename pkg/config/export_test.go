@@ -135,6 +135,25 @@ resources:
 	require.False(t, decoded.InjectsIntoServer("any"))
 }
 
+func TestExportStack_ReanchorsInheritedConfigFiles(t *testing.T) {
+	dir := t.TempDir()
+	parentDir := filepath.Join(dir, "parent")
+	require.NoError(t, os.Mkdir(parentDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(parentDir, "parent.yaml"), []byte("name: parent\nmcp-servers:\n  - name: inherited\n    image: alpine\n    transport: stdio\n    configs:\n      - target: /etc/app.yaml\n        file: ./extra.yaml\n"), 0o600))
+	child := filepath.Join(dir, "child.yaml")
+	require.NoError(t, os.WriteFile(child, []byte("name: child\nextends: parent/parent.yaml\n"), 0o600))
+	stack, _, err := ExportStack(context.Background(), child)
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(parentDir, "extra.yaml"), stack.MCPServers[0].Configs[0].File)
+	require.Contains(t, ExportNotices(stack), ExportConfigFilesNotice)
+	require.NotContains(t, ExportNotices(&Stack{Name: "plain"}), ExportConfigFilesNotice)
+
+	require.NoError(t, os.WriteFile(filepath.Join(parentDir, "parent.yaml"), []byte("name: parent\nmcp-servers:\n  - name: inherited\n    image: alpine\n    configs:\n      - target: /etc/app.yaml\n        file: ~/secret.yaml\n"), 0o600))
+	_, _, err = ExportStack(context.Background(), child)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cannot retain its anchor")
+}
+
 func TestExportStack_InheritanceAndSafeErrors(t *testing.T) {
 	dir := t.TempDir()
 	parent := filepath.Join(dir, "parent.yaml")

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/stretchr/testify/require"
@@ -126,14 +127,14 @@ func TestWriteExportArtifacts_ProtectSourcesAndPartialFailure(t *testing.T) {
 	alias := filepath.Join(dir, "stack.yaml")
 	require.NoError(t, os.Symlink(source, alias))
 	var stderr bytes.Buffer
-	err := writeExportArtifacts(context.Background(), dir, []string{source}, []exportArtifact{{"stack.yaml", []byte("replacement")}}, &stderr)
+	err := writeExportArtifacts(context.Background(), dir, []string{source}, []exportArtifact{{"stack.yaml", []byte("replacement")}}, config.ExportNotice, &stderr)
 	require.ErrorContains(t, err, "overwrite")
 	data, err := os.ReadFile(source)
 	require.NoError(t, err)
 	require.Equal(t, "original", string(data))
 	other := t.TempDir()
 	require.NoError(t, os.Mkdir(filepath.Join(other, "skills.yaml"), 0700))
-	err = writeExportArtifacts(context.Background(), other, []string{source}, []exportArtifact{{"stack.yaml", []byte("name: test")}, {"skills.yaml", []byte("sources: []")}}, &stderr)
+	err = writeExportArtifacts(context.Background(), other, []string{source}, []exportArtifact{{"stack.yaml", []byte("name: test")}, {"skills.yaml", []byte("sources: []")}}, config.ExportNotice, &stderr)
 	require.ErrorContains(t, err, "already written: [stack.yaml]")
 	require.FileExists(t, filepath.Join(other, "stack.yaml"))
 }
