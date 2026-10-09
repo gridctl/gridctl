@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gridctl/gridctl/pkg/config"
@@ -118,6 +119,42 @@ func TestExportStackFile_SidecarPreflight(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, data, after)
 	}
+}
+
+func TestExportStackFile_ConfigFileNotice(t *testing.T) {
+	oldFormat, oldDir := exportFormat, exportOutputDir
+	t.Cleanup(func() { exportFormat, exportOutputDir = oldFormat, oldDir })
+	withFile := "name: export\nmcp-servers:\n  - name: prometheus\n    image: alpine\n    transport: stdio\n    configs:\n      - target: /etc/app.yaml\n        file: ./extra.yaml\n"
+	withoutFile := "name: export\nmcp-servers:\n  - name: prometheus\n    image: alpine\n    transport: stdio\n    configs:\n      - target: /etc/app.yaml\n        content: alpha\n"
+
+	t.Run("stdout", func(t *testing.T) {
+		exportFormat, exportOutputDir = "yaml", ""
+		path := filepath.Join(t.TempDir(), "stack.yaml")
+		require.NoError(t, os.WriteFile(path, []byte(withFile), 0600))
+		var stdout, stderr bytes.Buffer
+		require.NoError(t, exportStackFile(context.Background(), path, &stdout, &stderr))
+		lines := strings.Split(strings.TrimRight(stderr.String(), "\n"), "\n")
+		require.Len(t, lines, 2)
+		require.Equal(t, config.ExportConfigFilesNotice, lines[1])
+		require.NotContains(t, stdout.String(), config.ExportConfigFilesNotice)
+
+		require.NoError(t, os.WriteFile(path, []byte(withoutFile), 0600))
+		stdout.Reset()
+		stderr.Reset()
+		require.NoError(t, exportStackFile(context.Background(), path, &stdout, &stderr))
+		require.NotContains(t, stderr.String(), config.ExportConfigFilesNotice)
+	})
+
+	t.Run("directory", func(t *testing.T) {
+		dir := t.TempDir()
+		exportFormat, exportOutputDir = "yaml", filepath.Join(dir, "out")
+		path := filepath.Join(dir, "stack.yaml")
+		require.NoError(t, os.WriteFile(path, []byte(withFile), 0600))
+		var stdout, stderr bytes.Buffer
+		require.NoError(t, exportStackFile(context.Background(), path, &stdout, &stderr))
+		require.Contains(t, stderr.String(), config.ExportConfigFilesNotice)
+		require.Empty(t, stdout.String())
+	})
 }
 
 func TestWriteExportArtifacts_ProtectSourcesAndPartialFailure(t *testing.T) {
