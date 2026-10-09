@@ -31,8 +31,8 @@ Setting `replicas > 1` on external URL, OpenAPI, or A2A sources fails validation
 
 For a source-based container server, gridctl resolves and builds the desired
 image once before creating the replica set. Every static replica and later
-autoscaled spawn uses that same image. Per-server `volumes` mounts are also
-copied to every container replica.
+autoscaled spawn uses that same image. Per-server `volumes` mounts and
+`configs` files are also copied to every container replica.
 
 Opt-in [execution controls](execution.md) propagate to every static replica, autoscaled spawn, and idle-to-zero wake-up. Hardened containers require fresh instance-bound evidence before serving; health alone does not establish eligibility. Resource limits apply per replica, not to the fleet. Named data volumes can be shared and are not storage-bounded.
 

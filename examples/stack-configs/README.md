@@ -8,4 +8,4 @@ gridctl apply examples/stack-configs/stack.yaml
 gridctl destroy examples/stack-configs/stack.yaml
 ```
 
-`gridctl validate` does not open `prometheus-extra.yaml`. A missing file fails apply. `execution.mode: hardened` cannot use `configs`; seed an engine-local volume instead. See [Configs](../../docs/config-schema.md#configs).
+`gridctl validate` does not open `prometheus-extra.conf`. A missing file fails apply. `execution.mode: hardened` cannot use `configs`; seed an engine-local volume instead. See [Configs](../../docs/config-schema.md#configs).

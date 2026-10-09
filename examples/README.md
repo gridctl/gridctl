@@ -71,6 +71,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | python-runtime/locked | stdio (custom Dockerfile) | Locked-project derivative of the Python runtime base with UID 10001 |
 | python-runtime/hashed | stdio (custom Dockerfile) | Hashed-wheel derivative of the Python runtime base with UID 10001 |
 | execution/stack | stdio (container) | Non-root echo server with finite resources, read-only root, bounded scratch, and network none |
+| stack-configs | stdio (container) | Inline and stack-relative files copied into a container; `./` volume source |
 | zapier-mcp | http (remote URL) | Hosted platform server with OAuth brokering |
 | openapi-basic | openapi | REST API as MCP tools, operation filtering |
 | openapi-auth | openapi | Bearer, header, query, OAuth2, basic auth, and mTLS |

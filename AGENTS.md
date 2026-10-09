@@ -212,7 +212,7 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
                     pack_stack_test.go (`integration && !windows`) drives a real pack-carried local-process daemon through add, CLI launch, status, replace, and remove.
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, a2a, mcp-apps, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
-                    portable-pack, model-policy, python-sources, python-runtime, execution, security-evidence, stack-declaration-policy, runs).
+                    portable-pack, model-policy, python-sources, python-runtime, execution, security-evidence, stack-configs, stack-declaration-policy, runs).
                     examples/_mock-servers/ is the source for `task mock:servers`.
 scripts/            Build/test helpers and release tooling: release.py owns gate, inventory, verification, draft/public,
                     and tap policy; release-tools.py pins executables and the SPDX schema; check_goreleaser_cask.py runs
