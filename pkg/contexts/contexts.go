@@ -13,6 +13,7 @@
 package contexts
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -33,6 +34,9 @@ var (
 	ErrNotAvailable    = errors.New("client not initialized on this machine")
 	ErrNotSynced       = errors.New("client has never been synced")
 	ErrOverCap         = errors.New("rendered content exceeds the client's size limit")
+	// ErrNothingToImport is a client file that is empty once gridctl-managed
+	// markers, shim lines, and header chrome are removed.
+	ErrNothingToImport = errors.New("empty after removing gridctl-managed content")
 )
 
 // canonicalFileName follows the agents.md spec name so the canonical file
@@ -139,13 +143,8 @@ func (m *Manager) SaveCanonical(content string) error {
 // saveCanonical is SaveCanonical without the lock, for callers that
 // already hold mu (Adopt).
 func (m *Manager) saveCanonical(content string) error {
-	// The managed-block parser treats these strings as boundaries, so
-	// canonical content containing them would corrupt every block target
-	// on sync and silently truncate the canon on adopt. Refuse up front.
-	for _, forbidden := range []string{beginMarker, endMarker, headerPrefix} {
-		if strings.Contains(content, forbidden) {
-			return fmt.Errorf("canonical content must not contain the gridctl marker %q", forbidden)
-		}
+	if err := ValidateCanonicalContent(content); err != nil {
+		return err
 	}
 	if err := os.MkdirAll(m.Dir(), 0755); err != nil {
 		return fmt.Errorf("creating context directory: %w", err)
@@ -201,24 +200,58 @@ func (m *Manager) InitFromFile(path string, force bool) error {
 	return m.initWith(string(data), force)
 }
 
+// ValidateCanonicalContent rejects the managed-block boundaries and the
+// managed header prefix. Match order and the message are the ones
+// saveCanonical has always used.
+func ValidateCanonicalContent(content string) error {
+	for _, forbidden := range []string{beginMarker, endMarker, headerPrefix} {
+		if strings.Contains(content, forbidden) {
+			return fmt.Errorf("canonical content must not contain the gridctl marker %q", forbidden)
+		}
+	}
+	return nil
+}
+
+// ReadClientContext reads and strips a client's global context file the
+// same way InitFromClient does, without writing. path is set whenever the
+// import location is known, including on read errors. A cancelled ctx
+// returns before the read.
+func (m *Manager) ReadClientContext(ctx context.Context, slug string) (content, path string, err error) {
+	if err := ctx.Err(); err != nil {
+		return "", "", err
+	}
+	return m.readClientContext(slug)
+}
+
 // InitFromClient adopts a client's existing global context file as the
 // canonical context. Content gridctl previously managed there (block,
 // shim line, header chrome) is stripped so adoption never round-trips
 // gridctl's own markers into the canon.
 func (m *Manager) InitFromClient(slug string, force bool) error {
-	t, err := resolveTarget(slug)
+	content, _, err := m.readClientContext(slug)
 	if err != nil {
 		return err
 	}
-	path := t.importPath(m.home)
+	return m.initWith(content, force)
+}
+
+// readClientContext is the shared strip path. It performs no marker check
+// of its own: a corrupt block keeps its marker lines, and SaveCanonical
+// refuses them later.
+func (m *Manager) readClientContext(slug string) (content, path string, err error) {
+	t, err := resolveTarget(slug)
+	if err != nil {
+		return "", "", err
+	}
+	path = t.importPath(m.home)
 	if path == "" {
-		return fmt.Errorf("%w: %s has no global context path on this platform", ErrUnsupported, slug)
+		return "", "", fmt.Errorf("%w: %s has no global context path on this platform", ErrUnsupported, slug)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("reading %s: %w", path, err)
+		return "", path, fmt.Errorf("reading %s: %w", path, err)
 	}
-	content := string(data)
+	content = string(data)
 	if inner, found, berr := extractBlockInner(content); berr == nil && found {
 		// The file holds a gridctl block: everything else is the user's;
 		// adopt both the block body and the surrounding content.
@@ -228,10 +261,22 @@ func (m *Manager) InitFromClient(slug string, force bool) error {
 	content = removeShim(content, m.CanonicalPath())
 	content = stripManagedChrome(t, content)
 	if strings.TrimSpace(content) == "" {
-		return fmt.Errorf("%s is empty after removing gridctl-managed content; nothing to import", path)
+		return "", path, &nothingToImportError{path: path}
 	}
-	return m.initWith(content, force)
+	return content, path, nil
 }
+
+// nothingToImportError keeps the historical InitFromClient message and
+// unwraps to ErrNothingToImport.
+type nothingToImportError struct {
+	path string
+}
+
+func (e *nothingToImportError) Error() string {
+	return fmt.Sprintf("%s is empty after removing gridctl-managed content; nothing to import", e.path)
+}
+
+func (e *nothingToImportError) Unwrap() error { return ErrNothingToImport }
 
 // initWith writes content as the canonical file, refusing to overwrite an
 // existing canon unless forced (mirrors `gridctl init`).
