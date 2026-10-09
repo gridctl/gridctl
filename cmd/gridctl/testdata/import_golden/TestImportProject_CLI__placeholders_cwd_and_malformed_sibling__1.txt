@@ -1,0 +1,40 @@
+exit: 0
+--- stdout
+Sources:
+  claude-code, vscode    project  <TESTROOT>/002/My Project/.mcp.json  selected (1 server)
+  cursor                 project  <TESTROOT>/002/My Project/.cursor/mcp.json  selected (3 servers)
+  vscode                 project  <TESTROOT>/002/My Project/.vscode/mcp.json  selected (1 server)
+  roo                    project  <TESTROOT>/002/My Project/.roo/mcp.json  malformed
+    selected file is not valid JSON or JSONC
+  gemini                 project  <TESTROOT>/002/My Project/.gemini/settings.json  selected (1 server)
+  opencode               project  <TESTROOT>/002/My Project/opencode.jsonc  selected (2 servers)
+  claude-code            user     <TESTROOT>/001/.claude.json  selected (1 server)
+  gemini                 user     <TESTROOT>/001/.gemini/settings.json  selected (1 server)
+  opencode               user     <TESTROOT>/001/.config/opencode/opencode.json  selected (1 server)
+    Selected <TESTROOT>/001/.config/opencode/opencode.json. No sibling opencode.jsonc was found.
+    This is a compatibility-preserving single-file choice, not OpenCode's merge or writable-file preference. OpenCode merges config.json, then opencode.json, then opencode.jsonc, and prefers opencode.jsonc for writes. config.json is not read automatically.
+    Pass --source-config to read a file outside the Gridctl home. Project files are discovered separately.
+  skipped hdr (unsupported_native_expression) from cursor (project) <TESTROOT>/002/My Project/.cursor/mcp.json: ${input:...} in command, args, url, env, or headers is not imported; replace it with a literal value
+  skipped input (unsupported_native_expression) from cursor (project) <TESTROOT>/002/My Project/.cursor/mcp.json: ${input:...} in command, args, url, env, or headers is not imported; replace it with a literal value
+  skipped projcwd (untransferred_option) from gemini (project) <TESTROOT>/002/My Project/.gemini/settings.json: working directory cannot be transferred to the stack
+  skipped occwd (untransferred_option) from opencode (project) <TESTROOT>/002/My Project/opencode.jsonc: a working directory is set and was not transferred
+  skipped usercwdoc (untransferred_option) from opencode (user) <TESTROOT>/001/.config/opencode/opencode.json: a working directory is set and was not transferred
+
+Plan: 6 server(s) to import
+
+  + mcp-server "spaced" (add, from claude-code (project), vscode (project))
+      warning: resolved ${CLAUDE_PROJECT_DIR} to <TESTROOT>/002/My Project; the imported entry is machine-specific
+  + mcp-server "tools" (add, from cursor (project))
+      warning: resolved ${workspaceFolder} to <TESTROOT>/002/My Project; the imported entry is machine-specific
+  + mcp-server "vsc" (add, from vscode (project))
+  + mcp-server "native" (add, from opencode (project))
+      warning: resolved ${workspaceFolder} to <TESTROOT>/002/My Project; the imported entry is machine-specific
+  + mcp-server "homeph" (add, from claude-code (user))
+      warning: resolved ${CLAUDE_PROJECT_DIR} to <TESTROOT>/002/My Project; the imported entry is machine-specific
+  + mcp-server "usercwd" (add, from gemini (user))
+      warning: cwd was not transferred; relative paths in the command may not resolve
+
+
+No changes made (dry run).
+--- stderr
+home: <TESTROOT>/001 (GRIDCTL_HOME)

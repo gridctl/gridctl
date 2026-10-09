@@ -11,7 +11,6 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/gridctl/gridctl/pkg/output"
-	"github.com/gridctl/gridctl/pkg/project"
 	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/jedib0t/go-pretty/v6/table"
@@ -49,7 +48,8 @@ Exit codes:
   0  imported, dry-run, or nothing enumerated (including an all-skipped scan)
   1  unknown client, cancelled selection, absent selected name, or every
      explicitly selected entry skipped
-  2  infrastructure error (home resolution, lock read or write, newer lock)`,
+  2  infrastructure error (home resolution, lock read or write, newer lock)
+` + "\nTo import servers, skills, agents, and context in one run, use `gridctl import <client> --kind all`.",
 	Example: `  gridctl skill import claude-code --dry-run
   gridctl skill import opencode --all
   gridctl skill import agents --select foo`,
@@ -93,15 +93,16 @@ func init() {
 }
 
 type skillImportConfig struct {
-	Kind       string
-	Select     []string
-	All        bool
-	DryRun     bool
-	Trust      bool
-	Force      bool
-	NoActivate bool
-	Format     string
-	Plain      bool
+	Kind           string
+	Select         []string
+	All            bool
+	DryRun         bool
+	Trust          bool
+	Force          bool
+	NoActivate     bool
+	Format         string
+	Plain          bool
+	NoTerminalHint string
 }
 
 type skillImportDoc struct {
@@ -158,75 +159,29 @@ func huhSelectSkillImports(candidates []skills.ClientCandidate) ([]int, error) {
 }
 
 func runSkillImport(ctx context.Context, stdout, stderr io.Writer, client string, cfg skillImportConfig) int {
-	if _, ok := skills.ClientLocations(client); !ok {
-		fmt.Fprintf(stderr, "unknown client %q (supported: %s)\n", client, strings.Join(skills.SupportedImportClients(), ", "))
-		return 1
-	}
-	kinds, err := parseSkillImportKinds(cfg.Kind)
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+	result, doc, roots, missing, code, _ := collectSkillImport(ctx, stderr, client, cfg)
+	if code != 0 {
+		return code
 	}
 	home, err := state.Home()
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return skillImportExitInfrastructure
 	}
-	candidates, err := skills.EnumerateClient(ctx, client, home)
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		if errors.Is(err, project.ErrNewerLockVersion) || errors.Is(err, skills.ErrNewerImportLockVersion) {
-			return skillImportExitInfrastructure
-		}
-		return skillImportExitInfrastructure
-	}
-	candidates = filterSkillImportKinds(candidates, kinds)
-	if len(candidates) == 0 {
+	if result == nil {
 		if cfg.Format == "json" {
-			writeSkillImportJSON(stdout, skillImportDoc{
-				SchemaVersion: 1,
-				Client:        client,
-				DryRun:        cfg.DryRun,
-				Entries:       []skillImportEntryDoc{},
-				Warnings:      []string{},
-			})
+			writeSkillImportJSON(stdout, doc)
 			return 0
 		}
 		fmt.Fprintf(stdout, "no skills or agents found in %s locations (checked: %s)\n", client, strings.Join(skills.CheckedLocations(client, home), ", "))
 		return 0
 	}
-	selected, missing, code := selectSkillImport(stderr, candidates, cfg)
-	if code != 0 {
-		return code
-	}
-	store, err := loadRegistry()
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return skillImportExitInfrastructure
-	}
-	imp := newImporter(store)
-	result, err := skills.ApplyClientImport(ctx, imp, skills.ClientImportOptions{
-		Trust:      cfg.Trust,
-		Force:      cfg.Force,
-		NoActivate: cfg.NoActivate,
-		DryRun:     cfg.DryRun,
-	}, selected)
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		if errors.Is(err, skills.ErrNewerImportLockVersion) || errors.Is(err, project.ErrNewerLockVersion) {
-			return skillImportExitInfrastructure
-		}
-		if errors.Is(err, skills.ErrSourceConflict) {
-			return 1
-		}
-		return skillImportExitInfrastructure
-	}
 	if len(missing) > 0 {
 		fmt.Fprintf(stderr, "selected name not found: %s\n", strings.Join(missing, ", "))
 	}
 	renderSkillImport(stdout, stderr, client, cfg, result)
-	if !cfg.DryRun && len(result.Roots) > 0 {
-		if err := printProjectionHints(ctx, home, result.Roots); err != nil {
+	if !cfg.DryRun && len(roots) > 0 {
+		if err := printProjectionHints(ctx, home, roots); err != nil {
 			fmt.Fprintln(stderr, err)
 			return skillImportExitInfrastructure
 		}
@@ -238,6 +193,70 @@ func runSkillImport(ctx context.Context, stdout, stderr io.Writer, client string
 		return 1
 	}
 	return 0
+}
+
+// collectSkillImport enumerates and applies a client import without rendering.
+// result is nil when the filtered enumeration is empty. err is set for a
+// cancelled selection so a caller can detect it after the message is printed.
+func collectSkillImport(ctx context.Context, stderr io.Writer, client string, cfg skillImportConfig) (result *skills.ClientImportResult, doc skillImportDoc, roots []string, missing []string, code int, err error) {
+	if _, ok := skills.ClientLocations(client); !ok {
+		fmt.Fprintf(stderr, "unknown client %q (supported: %s)\n", client, strings.Join(skills.SupportedImportClients(), ", "))
+		return nil, skillImportDoc{}, nil, nil, 1, nil
+	}
+	kinds, err := parseSkillImportKinds(cfg.Kind)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return nil, skillImportDoc{}, nil, nil, 1, err
+	}
+	home, err := state.Home()
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return nil, skillImportDoc{}, nil, nil, skillImportExitInfrastructure, err
+	}
+	candidates, err := skills.EnumerateClient(ctx, client, home)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return nil, skillImportDoc{}, nil, nil, skillImportExitInfrastructure, err
+	}
+	candidates = filterSkillImportKinds(candidates, kinds)
+	doc = skillImportDoc{
+		SchemaVersion: 1,
+		Client:        client,
+		DryRun:        cfg.DryRun,
+		Entries:       []skillImportEntryDoc{},
+		Warnings:      []string{},
+	}
+	if len(candidates) == 0 {
+		return nil, doc, nil, nil, 0, nil
+	}
+	selected, missing, code, selErr := selectSkillImport(stderr, candidates, cfg)
+	if code != 0 {
+		return nil, doc, nil, missing, code, selErr
+	}
+	store, err := loadRegistry()
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return nil, doc, nil, missing, skillImportExitInfrastructure, err
+	}
+	imp := newImporter(store)
+	result, err = skills.ApplyClientImport(ctx, imp, skills.ClientImportOptions{
+		Trust:      cfg.Trust,
+		Force:      cfg.Force,
+		NoActivate: cfg.NoActivate,
+		DryRun:     cfg.DryRun,
+	}, selected)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		if errors.Is(err, skills.ErrSourceConflict) {
+			return nil, doc, nil, missing, 1, err
+		}
+		return nil, doc, nil, missing, skillImportExitInfrastructure, err
+	}
+	if result.Warnings == nil {
+		result.Warnings = []string{}
+	}
+	doc = skillImportDocument(client, cfg.DryRun, result)
+	return result, doc, result.Roots, missing, 0, nil
 }
 
 func parseSkillImportKinds(raw string) (map[string]bool, error) {
@@ -268,7 +287,7 @@ func filterSkillImportKinds(in []skills.ClientCandidate, kinds map[string]bool) 
 	return out
 }
 
-func selectSkillImport(stderr io.Writer, candidates []skills.ClientCandidate, cfg skillImportConfig) ([]skills.ClientCandidate, []string, int) {
+func selectSkillImport(stderr io.Writer, candidates []skills.ClientCandidate, cfg skillImportConfig) ([]skills.ClientCandidate, []string, int, error) {
 	if len(cfg.Select) > 0 {
 		wanted := map[string]bool{}
 		for _, name := range cfg.Select {
@@ -290,25 +309,30 @@ func selectSkillImport(stderr io.Writer, candidates []skills.ClientCandidate, cf
 		}
 		if len(selected) == 0 {
 			fmt.Fprintf(stderr, "selected name not found: %s\n", strings.Join(missing, ", "))
-			return nil, missing, 1
+			return nil, missing, 1, nil
 		}
-		return selected, missing, 0
+		return selected, missing, 0, nil
 	}
 	if cfg.All || cfg.DryRun {
-		return candidates, nil, 0
+		return candidates, nil, 0, nil
 	}
 	if !output.IsTerminal(os.Stdin) {
-		fmt.Fprintln(stderr, "no selection and stdin is not a terminal; pass --all or --select <name>")
-		return nil, nil, 1
+		hint := "pass --all or --select <name>"
+		if cfg.NoTerminalHint != "" {
+			hint = cfg.NoTerminalHint
+		}
+		err := fmt.Errorf("no selection and stdin is not a terminal; %s", hint)
+		fmt.Fprintln(stderr, err)
+		return nil, nil, 1, err
 	}
 	picked, err := skillImportSelector(candidates)
 	if err != nil {
 		if errors.Is(err, errPromptCancelled) {
 			fmt.Fprintln(stderr, "selection cancelled")
-			return nil, nil, 1
+			return nil, nil, 1, errPromptCancelled
 		}
 		fmt.Fprintln(stderr, err)
-		return nil, nil, 1
+		return nil, nil, 1, err
 	}
 	var selected []skills.ClientCandidate
 	for _, i := range picked {
@@ -318,9 +342,9 @@ func selectSkillImport(stderr io.Writer, candidates []skills.ClientCandidate, cf
 	}
 	if len(selected) == 0 {
 		fmt.Fprintln(stderr, "selection cancelled")
-		return nil, nil, 1
+		return nil, nil, 1, errPromptCancelled
 	}
-	return selected, nil, 0
+	return selected, nil, 0, nil
 }
 
 func everySelectedSkipped(result *skills.ClientImportResult) bool {
@@ -335,18 +359,20 @@ func everySelectedSkipped(result *skills.ClientImportResult) bool {
 	return true
 }
 
-func renderSkillImport(stdout, stderr io.Writer, client string, cfg skillImportConfig, result *skills.ClientImportResult) {
+func skillImportDocument(client string, dryRun bool, result *skills.ClientImportResult) skillImportDoc {
 	doc := skillImportDoc{
 		SchemaVersion: 1,
 		Client:        client,
-		DryRun:        cfg.DryRun,
+		DryRun:        dryRun,
 		Entries:       []skillImportEntryDoc{},
-		Warnings:      result.Warnings,
+		Warnings:      []string{},
 	}
-	if doc.Warnings == nil {
-		doc.Warnings = []string{}
+	if result == nil {
+		return doc
 	}
-	importedSkills, importedAgents, skipped := 0, 0, 0
+	if result.Warnings != nil {
+		doc.Warnings = result.Warnings
+	}
 	for _, e := range result.Entries {
 		action := e.Action
 		if action == "" {
@@ -368,9 +394,17 @@ func renderSkillImport(stdout, stderr io.Writer, client string, cfg skillImportC
 			Action:   action,
 			Reason:   reason,
 		})
-		switch action {
+	}
+	return doc
+}
+
+func renderSkillImport(stdout, stderr io.Writer, client string, cfg skillImportConfig, result *skills.ClientImportResult) {
+	doc := skillImportDocument(client, cfg.DryRun, result)
+	importedSkills, importedAgents, skipped := 0, 0, 0
+	for _, e := range doc.Entries {
+		switch e.Action {
 		case "imported":
-			if e.Candidate.Kind == skills.ResourceKindAgent {
+			if e.Kind == skills.ResourceKindAgent {
 				importedAgents++
 			} else {
 				importedSkills++

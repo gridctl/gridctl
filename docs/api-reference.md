@@ -3168,7 +3168,7 @@ Deletes a file from a skill directory. The `{path...}` segment is variadic, so n
 
 ### Registry (Agents)
 
-Manage imported agent definitions (`~/.gridctl/registry/agents/<name>/AGENT.md`). Agents are single-file definitions projected into client directories; gridctl never executes them, and they are not gateway-routed MCP content. Agents enter the store through import (`gridctl skill add`, `gridctl skill import`, or `POST /api/skills/sources`), so there is no create endpoint; PUT edits an existing agent. OpenCode-dialect agent files are listed and skipped by `skill import`.
+Manage imported agent definitions (`~/.gridctl/registry/agents/<name>/AGENT.md`). Agents are single-file definitions projected into client directories; gridctl never executes them, and they are not gateway-routed MCP content. Agents enter the store through import (`gridctl skill add`, `gridctl skill import`, `gridctl import <client> --kind agents`, or `POST /api/skills/sources`), so there is no create endpoint; PUT edits an existing agent. OpenCode-dialect agent files are listed and skipped by `skill import` and by that `--kind` path.
 
 Frontmatter keys other than `name` and `description` ride in `extra` as an ordered `{key, value}` array, never an object: the canonical file is projected verbatim to identity targets, so key order is part of the contract. `extra` is read-only display data; edits submit the whole file through `raw`.
 

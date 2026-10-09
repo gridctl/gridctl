@@ -1,0 +1,40 @@
+exit: 0
+--- stdout
+{
+  "schema_version": 1,
+  "stack_file": "<TESTROOT>/002/stack.yaml",
+  "dry_run": false,
+  "sources": [
+    {
+      "client": "opencode",
+      "clients": [
+        "opencode"
+      ],
+      "scope": "user",
+      "path": "<TESTROOT>/001/.config/opencode/opencode.json",
+      "status": "missing",
+      "detail": "neither opencode.json nor opencode.jsonc exists under the Gridctl home",
+      "notes": [
+        "No opencode.json or opencode.jsonc exists under the Gridctl home (<TESTROOT>/001/.config/opencode/opencode.json, <TESTROOT>/001/.config/opencode/opencode.jsonc).",
+        "This is a compatibility-preserving single-file choice, not OpenCode's merge or writable-file preference. OpenCode merges config.json, then opencode.json, then opencode.jsonc, and prefers opencode.jsonc for writes. config.json is not read automatically.",
+        "XDG_CONFIG_HOME is not scanned for this user-scope file. Pass --source-config to select a file outside the Gridctl home."
+      ]
+    }
+  ],
+  "servers": null,
+  "summary": {
+    "found": 0,
+    "imported": 0,
+    "skipped": 0,
+    "failed": 0
+  }
+}
+--- stderr
+home: <TESTROOT>/001 (GRIDCTL_HOME)
+Sources:
+  opencode               user     <TESTROOT>/001/.config/opencode/opencode.json  missing
+    neither opencode.json nor opencode.jsonc exists under the Gridctl home
+    No opencode.json or opencode.jsonc exists under the Gridctl home (<TESTROOT>/001/.config/opencode/opencode.json, <TESTROOT>/001/.config/opencode/opencode.jsonc).
+    This is a compatibility-preserving single-file choice, not OpenCode's merge or writable-file preference. OpenCode merges config.json, then opencode.json, then opencode.jsonc, and prefers opencode.jsonc for writes. config.json is not read automatically.
+    XDG_CONFIG_HOME is not scanned for this user-scope file. Pass --source-config to select a file outside the Gridctl home.
+<TIME> INFO No importable servers found

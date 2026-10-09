@@ -83,7 +83,7 @@ The same operations are exposed as CLI subcommands. Use these when scripting or 
 | Activate a draft skill | `gridctl activate <name>` |
 | Validate a skill's frontmatter | `gridctl skill validate <name>` |
 | Import skills from a git repo or local directory | `gridctl skill add <repo-url-or-directory>` |
-| Import skills from a client home directory | `gridctl skill import <client>` |
+| Import skills from a client home directory | `gridctl skill import <client>` (or `gridctl import <client> --kind skills,agents`) |
 | Update imported skills (alias `sync`) | `gridctl skill update [name]` |
 | Try a skill temporarily before importing | `gridctl skill try <repo-url>` |
 | Pin an imported skill to a ref | `gridctl skill pin <name> <ref>` |
@@ -148,7 +148,7 @@ Local origins record `kind: local`, the resolved path, and a content hash. They 
 
 When a skill's frontmatter name differs from its directory name, the local path installs under the directory name and warns: `name mismatch: frontmatter "x", directory "y"; installed as "y"`. The same fixture imported from git still installs under the frontmatter name. `gridctl skill list` shows `local-dir` in the Source column and the path in Repo. JSON adds `kind` (`git` or `local`) on imported rows. A skill with no origin stays `local` in that column and omits `kind`. `gridctl skill info` prints the path, content hash, and import time, plus `Client` and `Location` when the import recorded them.
 
-`gridctl skill import <client>` reads home-scoped locations only. Project directories such as `.claude/skills` are not scanned; pass that path to `skill add`.
+`gridctl skill import <client>` reads home-scoped locations only. Project directories such as `.claude/skills` are not scanned; pass that path to `skill add`. `gridctl import <client> --kind skills,agents` runs the same importer, and `--kind all` also takes servers and context. `--trust` and `--no-activate` are accepted on both. Name-level `--select` and `--force` stay on `gridctl skill import`. A non-interactive `gridctl import` run without `--all` or `--yes` says to pass those flags.
 
 | Client | Kind | Path | Source name |
 |---|---|---|---|

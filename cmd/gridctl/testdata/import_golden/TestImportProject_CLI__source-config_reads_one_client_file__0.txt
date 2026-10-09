@@ -1,0 +1,61 @@
+exit: 0
+--- stdout
+{
+  "schema_version": 1,
+  "stack_file": "<TESTROOT>/002/stack.yaml",
+  "backup_path": "<TESTROOT>/002/stack.yaml.gridctl-backup-TIMESTAMP",
+  "dry_run": false,
+  "sources": [
+    {
+      "client": "cursor",
+      "clients": [
+        "cursor"
+      ],
+      "scope": "user",
+      "path": "<TESTROOT>/002/x.json",
+      "status": "selected"
+    }
+  ],
+  "servers": [
+    {
+      "name": "explicit",
+      "imported": true,
+      "found_in": [
+        "cursor"
+      ],
+      "origins": [
+        {
+          "client": "cursor",
+          "scope": "user",
+          "path": "<TESTROOT>/002/x.json"
+        }
+      ],
+      "scopes": [
+        "user"
+      ],
+      "source": "cursor",
+      "source_path": "<TESTROOT>/002/x.json",
+      "source_paths": [
+        "<TESTROOT>/002/x.json"
+      ]
+    }
+  ],
+  "summary": {
+    "found": 1,
+    "imported": 1,
+    "skipped": 0,
+    "failed": 0
+  }
+}
+--- stderr
+home: <TESTROOT>/001 (GRIDCTL_HOME)
+Sources:
+  cursor                 user     <TESTROOT>/002/x.json  selected (1 server)
+
+Plan: 1 server(s) to import
+
+  + mcp-server "explicit" (add, from cursor (user))
+
+<TIME> INFO Imported explicit (from cursor (user))
+  Backup: <TESTROOT>/002/stack.yaml.gridctl-backup-TIMESTAMP
+  Run 'gridctl apply <TESTROOT>/002/stack.yaml' to deploy the imported servers.

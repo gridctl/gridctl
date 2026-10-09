@@ -1,0 +1,147 @@
+exit: 0
+--- stdout
+{
+  "schema_version": 1,
+  "stack_file": "<TESTROOT>/002/repo/stack.yaml",
+  "backup_path": "<TESTROOT>/002/repo/stack.yaml.gridctl-backup-TIMESTAMP",
+  "dry_run": false,
+  "sources": [
+    {
+      "client": "opencode",
+      "clients": [
+        "opencode"
+      ],
+      "scope": "project",
+      "path": "<TESTROOT>/002/repo/opencode.jsonc",
+      "status": "selected"
+    },
+    {
+      "client": "opencode",
+      "clients": [
+        "opencode"
+      ],
+      "scope": "custom",
+      "path": "<TESTROOT>/001/custom.json",
+      "status": "selected"
+    }
+  ],
+  "servers": [
+    {
+      "name": "shared",
+      "imported": false,
+      "found_in": [
+        "opencode"
+      ],
+      "origins": [
+        {
+          "client": "opencode",
+          "scope": "custom",
+          "path": "<TESTROOT>/001/custom.json"
+        }
+      ],
+      "scopes": [
+        "custom"
+      ],
+      "source": "opencode",
+      "source_path": "<TESTROOT>/001/custom.json",
+      "source_paths": [
+        "<TESTROOT>/001/custom.json"
+      ],
+      "skip_reason": "name_collision",
+      "warnings": [
+        "a different definition of \"shared\" was also found in opencode (custom); the opencode (project) definition was kept",
+        "another selected server named \"shared\" (from opencode (project)) was imported instead; rename one and re-run to import both"
+      ]
+    },
+    {
+      "name": "projonly",
+      "imported": true,
+      "found_in": [
+        "opencode"
+      ],
+      "origins": [
+        {
+          "client": "opencode",
+          "scope": "project",
+          "path": "<TESTROOT>/002/repo/opencode.jsonc"
+        }
+      ],
+      "scopes": [
+        "project"
+      ],
+      "source": "opencode",
+      "source_path": "<TESTROOT>/002/repo/opencode.jsonc",
+      "source_paths": [
+        "<TESTROOT>/002/repo/opencode.jsonc"
+      ]
+    },
+    {
+      "name": "shared",
+      "imported": true,
+      "found_in": [
+        "opencode"
+      ],
+      "origins": [
+        {
+          "client": "opencode",
+          "scope": "project",
+          "path": "<TESTROOT>/002/repo/opencode.jsonc"
+        }
+      ],
+      "scopes": [
+        "project"
+      ],
+      "source": "opencode",
+      "source_path": "<TESTROOT>/002/repo/opencode.jsonc",
+      "source_paths": [
+        "<TESTROOT>/002/repo/opencode.jsonc"
+      ]
+    },
+    {
+      "name": "customonly",
+      "imported": true,
+      "found_in": [
+        "opencode"
+      ],
+      "origins": [
+        {
+          "client": "opencode",
+          "scope": "custom",
+          "path": "<TESTROOT>/001/custom.json"
+        }
+      ],
+      "scopes": [
+        "custom"
+      ],
+      "source": "opencode",
+      "source_path": "<TESTROOT>/001/custom.json",
+      "source_paths": [
+        "<TESTROOT>/001/custom.json"
+      ]
+    }
+  ],
+  "summary": {
+    "found": 4,
+    "imported": 3,
+    "skipped": 1,
+    "failed": 0
+  }
+}
+--- stderr
+home: <TESTROOT>/001 (GRIDCTL_HOME)
+Sources:
+  opencode               project  <TESTROOT>/002/repo/opencode.jsonc  selected (2 servers)
+  opencode               custom   <TESTROOT>/001/custom.json  selected (2 servers)
+  skipped shared (name_collision) from opencode (custom) <TESTROOT>/001/custom.json: a different definition of "shared" was also found in opencode (custom); the opencode (project) definition was kept; another selected server named "shared" (from opencode (project)) was imported instead; rename one and re-run to import both
+
+Plan: 3 server(s) to import
+
+  + mcp-server "projonly" (add, from opencode (project))
+  + mcp-server "shared" (add, from opencode (project))
+  + mcp-server "customonly" (add, from opencode (custom))
+
+<TIME> INFO Imported projonly (from opencode (project))
+<TIME> INFO Imported shared (from opencode (project))
+<TIME> INFO Imported customonly (from opencode (custom))
+  Backup: <TESTROOT>/002/repo/stack.yaml.gridctl-backup-TIMESTAMP
+  Run 'gridctl apply <TESTROOT>/002/repo/stack.yaml' to deploy the imported servers.

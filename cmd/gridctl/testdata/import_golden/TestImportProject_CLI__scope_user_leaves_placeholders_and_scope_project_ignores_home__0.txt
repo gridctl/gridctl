@@ -1,0 +1,73 @@
+exit: 0
+--- stdout
+{
+  "schema_version": 1,
+  "stack_file": "<TESTROOT>/002/repo/stack.yaml",
+  "backup_path": "<TESTROOT>/002/repo/stack.yaml.gridctl-backup-TIMESTAMP",
+  "dry_run": false,
+  "sources": [
+    {
+      "client": "claude-code",
+      "clients": [
+        "claude-code"
+      ],
+      "scope": "user",
+      "path": "<TESTROOT>/001/.claude.json",
+      "status": "selected"
+    },
+    {
+      "client": "cursor",
+      "clients": [
+        "cursor"
+      ],
+      "scope": "user",
+      "path": "<TESTROOT>/001/.cursor/mcp.json",
+      "status": "malformed",
+      "detail": "selected file is not valid JSON or JSONC"
+    }
+  ],
+  "servers": [
+    {
+      "name": "homebin",
+      "imported": true,
+      "found_in": [
+        "claude-code"
+      ],
+      "origins": [
+        {
+          "client": "claude-code",
+          "scope": "user",
+          "path": "<TESTROOT>/001/.claude.json"
+        }
+      ],
+      "scopes": [
+        "user"
+      ],
+      "source": "claude-code",
+      "source_path": "<TESTROOT>/001/.claude.json",
+      "source_paths": [
+        "<TESTROOT>/001/.claude.json"
+      ]
+    }
+  ],
+  "summary": {
+    "found": 1,
+    "imported": 1,
+    "skipped": 0,
+    "failed": 0
+  }
+}
+--- stderr
+home: <TESTROOT>/001 (GRIDCTL_HOME)
+Sources:
+  claude-code            user     <TESTROOT>/001/.claude.json  selected (1 server)
+  cursor                 user     <TESTROOT>/001/.cursor/mcp.json  malformed
+    selected file is not valid JSON or JSONC
+
+Plan: 1 server(s) to import
+
+  + mcp-server "homebin" (add, from claude-code (user))
+
+<TIME> INFO Imported homebin (from claude-code (user))
+  Backup: <TESTROOT>/002/repo/stack.yaml.gridctl-backup-TIMESTAMP
+  Run 'gridctl apply <TESTROOT>/002/repo/stack.yaml' to deploy the imported servers.

@@ -1,0 +1,67 @@
+exit: 0
+--- stdout
+{
+  "schema_version": 1,
+  "stack_file": "<TESTROOT>/002/stack.yaml",
+  "backup_path": "<TESTROOT>/002/stack.yaml.gridctl-backup-TIMESTAMP",
+  "dry_run": false,
+  "sources": [
+    {
+      "client": "opencode",
+      "clients": [
+        "opencode"
+      ],
+      "scope": "user",
+      "path": "<TESTROOT>/002/project.jsonc",
+      "status": "selected",
+      "notes": [
+        "Reading the explicit --source-config path only. There is no fallback if this file is missing, unreadable, or malformed.",
+        "config.json, project files, XDG_CONFIG_HOME, OPENCODE_CONFIG, OPENCODE_CONFIG_DIR, and OPENCODE_CONFIG_CONTENT are not consulted."
+      ]
+    }
+  ],
+  "servers": [
+    {
+      "name": "proj",
+      "imported": true,
+      "found_in": [
+        "opencode"
+      ],
+      "origins": [
+        {
+          "client": "opencode",
+          "scope": "user",
+          "path": "<TESTROOT>/002/project.jsonc"
+        }
+      ],
+      "scopes": [
+        "user"
+      ],
+      "source": "opencode",
+      "source_path": "<TESTROOT>/002/project.jsonc",
+      "source_paths": [
+        "<TESTROOT>/002/project.jsonc"
+      ]
+    }
+  ],
+  "summary": {
+    "found": 1,
+    "imported": 1,
+    "skipped": 0,
+    "failed": 0
+  }
+}
+--- stderr
+home: <TESTROOT>/001 (GRIDCTL_HOME)
+Sources:
+  opencode               user     <TESTROOT>/002/project.jsonc  selected (1 server)
+    Reading the explicit --source-config path only. There is no fallback if this file is missing, unreadable, or malformed.
+    config.json, project files, XDG_CONFIG_HOME, OPENCODE_CONFIG, OPENCODE_CONFIG_DIR, and OPENCODE_CONFIG_CONTENT are not consulted.
+
+Plan: 1 server(s) to import
+
+  + mcp-server "proj" (add, from opencode (user))
+
+<TIME> INFO Imported proj (from opencode (user))
+  Backup: <TESTROOT>/002/stack.yaml.gridctl-backup-TIMESTAMP
+  Run 'gridctl apply <TESTROOT>/002/stack.yaml' to deploy the imported servers.

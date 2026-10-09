@@ -1,0 +1,40 @@
+exit: 0
+--- stdout
+{
+  "schema_version": 1,
+  "stack_file": "<TESTROOT>/002/stack.yaml",
+  "dry_run": false,
+  "sources": [
+    {
+      "client": "opencode",
+      "clients": [
+        "opencode"
+      ],
+      "scope": "user",
+      "path": "<TESTROOT>/001/.config/opencode/opencode.json",
+      "status": "malformed",
+      "detail": "selected file is not valid JSON or JSONC",
+      "alternate_path": "<TESTROOT>/001/.config/opencode/opencode.jsonc",
+      "notes": [
+        "Selected <TESTROOT>/001/.config/opencode/opencode.json. Sibling <TESTROOT>/001/.config/opencode/opencode.jsonc was not merged.",
+        "This is a compatibility-preserving single-file choice, not OpenCode's merge or writable-file preference. OpenCode merges config.json, then opencode.json, then opencode.jsonc, and prefers opencode.jsonc for writes. config.json is not read automatically."
+      ]
+    }
+  ],
+  "servers": null,
+  "summary": {
+    "found": 0,
+    "imported": 0,
+    "skipped": 0,
+    "failed": 0
+  }
+}
+--- stderr
+home: <TESTROOT>/001 (GRIDCTL_HOME)
+Sources:
+  opencode               user     <TESTROOT>/001/.config/opencode/opencode.json  malformed
+    selected file is not valid JSON or JSONC
+    unmerged sibling: <TESTROOT>/001/.config/opencode/opencode.jsonc
+    Selected <TESTROOT>/001/.config/opencode/opencode.json. Sibling <TESTROOT>/001/.config/opencode/opencode.jsonc was not merged.
+    This is a compatibility-preserving single-file choice, not OpenCode's merge or writable-file preference. OpenCode merges config.json, then opencode.json, then opencode.jsonc, and prefers opencode.jsonc for writes. config.json is not read automatically.
+<TIME> INFO No importable servers found

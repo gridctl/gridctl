@@ -1,0 +1,6 @@
+exit: 0
+--- stdout
+--- stderr
+home: <TESTROOT>/001 (GRIDCTL_HOME)
+<TIME> INFO No supported LLM clients detected
+Run 'gridctl link --help' for the supported client list.

@@ -1,0 +1,5 @@
+exit: 1
+--- stdout
+--- stderr
+home: <TESTROOT>/001 (GRIDCTL_HOME)
+Error: --source-config requires a client argument (got a multi-client scan)

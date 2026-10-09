@@ -1,0 +1,69 @@
+exit: 0
+--- stdout
+{
+  "schema_version": 1,
+  "stack_file": "<TESTROOT>/004/stack.yaml",
+  "backup_path": "<TESTROOT>/004/stack.yaml.gridctl-backup-TIMESTAMP",
+  "dry_run": false,
+  "sources": [
+    {
+      "client": "opencode",
+      "clients": [
+        "opencode"
+      ],
+      "scope": "user",
+      "path": "<TESTROOT>/003/.config/opencode/opencode.json",
+      "status": "selected",
+      "alternate_path": "<TESTROOT>/003/.config/opencode/opencode.jsonc",
+      "notes": [
+        "Selected <TESTROOT>/003/.config/opencode/opencode.json. Sibling <TESTROOT>/003/.config/opencode/opencode.jsonc was not merged.",
+        "This is a compatibility-preserving single-file choice, not OpenCode's merge or writable-file preference. OpenCode merges config.json, then opencode.json, then opencode.jsonc, and prefers opencode.jsonc for writes. config.json is not read automatically."
+      ]
+    }
+  ],
+  "servers": [
+    {
+      "name": "fromjson",
+      "imported": true,
+      "found_in": [
+        "opencode"
+      ],
+      "origins": [
+        {
+          "client": "opencode",
+          "scope": "user",
+          "path": "<TESTROOT>/003/.config/opencode/opencode.json"
+        }
+      ],
+      "scopes": [
+        "user"
+      ],
+      "source": "opencode",
+      "source_path": "<TESTROOT>/003/.config/opencode/opencode.json",
+      "source_paths": [
+        "<TESTROOT>/003/.config/opencode/opencode.json"
+      ]
+    }
+  ],
+  "summary": {
+    "found": 1,
+    "imported": 1,
+    "skipped": 0,
+    "failed": 0
+  }
+}
+--- stderr
+home: <TESTROOT>/003 (GRIDCTL_HOME)
+Sources:
+  opencode               user     <TESTROOT>/003/.config/opencode/opencode.json  selected (1 server)
+    unmerged sibling: <TESTROOT>/003/.config/opencode/opencode.jsonc
+    Selected <TESTROOT>/003/.config/opencode/opencode.json. Sibling <TESTROOT>/003/.config/opencode/opencode.jsonc was not merged.
+    This is a compatibility-preserving single-file choice, not OpenCode's merge or writable-file preference. OpenCode merges config.json, then opencode.json, then opencode.jsonc, and prefers opencode.jsonc for writes. config.json is not read automatically.
+
+Plan: 1 server(s) to import
+
+  + mcp-server "fromjson" (add, from opencode (user))
+
+<TIME> INFO Imported fromjson (from opencode (user))
+  Backup: <TESTROOT>/004/stack.yaml.gridctl-backup-TIMESTAMP
+  Run 'gridctl apply <TESTROOT>/004/stack.yaml' to deploy the imported servers.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,27 +28,33 @@ const importExitInfrastructure = 2
 const importJSONSchemaVersion = 1
 
 var (
-	importAll          bool
-	importDryRun       bool
-	importYes          bool
-	importName         string
-	importFile         string
-	importNoVault      bool
-	importFormat       string
-	importAsJSON       *bool
-	importSourceConfig string
-	importProjectDir   string
-	importScopeFlag    string
+	importAll             bool
+	importDryRun          bool
+	importYes             bool
+	importName            string
+	importFile            string
+	importNoVault         bool
+	importFormat          string
+	importAsJSON          *bool
+	importSourceConfig    string
+	importProjectDir      string
+	importScopeFlag       string
+	importKinds           string
+	importContextFragment string
+	importTrust           bool
+	importNoActivate      bool
+	importPlain           *bool
 )
 
 var importCmd = &cobra.Command{
 	Use:   "import [client]",
-	Short: "Import MCP servers from installed client configs",
+	Short: "Import servers, skills, agents, and context from installed clients",
 	Long: `Scans installed LLM clients for existing MCP server definitions and adds
 selected servers to your stack.yaml. The reverse of 'gridctl link'.
 
-Client configs are read-only: the only file modified is the stack file
-(backed up first as .gridctl-backup-<timestamp>). Identical servers found
+Client configs are read-only. With the default --kind, the only file
+modified is the stack file (backed up first as
+.gridctl-backup-<timestamp>). Identical servers found
 in several clients are imported once, with their provenance shown. Entries
 that connect a client to this gridctl gateway are filtered out, and name
 collisions with existing stack servers are skipped unless resolved
@@ -98,11 +105,40 @@ Exit codes:
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(importExitInfrastructure)
 		}
+		if err := resolvePlain(importPlain != nil && *importPlain, format); err != nil {
+			return err
+		}
 		client := ""
 		if len(args) == 1 {
 			client = args[0]
 		}
-		return runImport(cmd.Context(), client, format)
+		kinds, err := resolvedImportKinds(cmd.Flags().Changed("kind"), importKinds)
+		if err != nil {
+			return err
+		}
+		if err := validateUnifiedFlags(kinds); err != nil {
+			return err
+		}
+		if serversOnlyKinds(kinds) {
+			return runImport(cmd.Context(), client, format)
+		}
+		if client == "" {
+			return fmt.Errorf("--kind %s requires a client argument (skills, agents, and context are imported from one client at a time)", strings.TrimSpace(importKinds))
+		}
+		code := runUnifiedImport(cmd.Context(), os.Stdout, os.Stderr, client, kinds, unifiedImportConfig{
+			Format:     format,
+			DryRun:     importDryRun,
+			All:        importAll,
+			Yes:        importYes,
+			Trust:      importTrust,
+			NoActivate: importNoActivate,
+			Plain:      importPlain != nil && *importPlain,
+			Fragment:   importContextFragment,
+		})
+		if code != 0 {
+			os.Exit(code)
+		}
+		return nil
 	},
 }
 
@@ -117,7 +153,21 @@ func init() {
 	importCmd.Flags().StringVar(&importSourceConfig, "source-config", "", "Config file to read exactly for the named client (no other sources; relative paths use the working directory)")
 	importCmd.Flags().StringVar(&importProjectDir, "project-dir", "", "Directory to start project discovery from (default: working directory)")
 	importCmd.Flags().StringVar(&importScopeFlag, "scope", "all", "Which scopes to scan: all, user, or project")
+	importCmd.Flags().StringVar(&importKinds, "kind", "", "Kinds to import: servers, skills, agents, context, or all (default: servers)")
+	importCmd.Flags().StringVar(&importContextFragment, "context-fragment", "", "Import context as this fragment instead of the canonical file (requires --kind context)")
+	importCmd.Flags().BoolVar(&importTrust, "trust", false, "Import skills and agents despite security findings (requires --kind skills or agents)")
+	importCmd.Flags().BoolVar(&importNoActivate, "no-activate", false, "Import skills as draft (requires --kind skills or agents)")
+	importPlain = addPlainFlag(importCmd)
 	importCmd.Long += "\n\n" + openCodeImportHelp
+	importHelp := importCmd.HelpFunc()
+	importCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		applyHomeFlagForHelp()
+		saved := cmd.Long
+		cmd.Long = saved + "\n\n" + unifiedImportHelp()
+		defer func() { cmd.Long = saved }()
+		importHelp(cmd, args)
+	})
+	importCmd.Example += "\n  gridctl import opencode --kind all --dry-run\n  gridctl import claude-code --kind skills,agents --yes"
 	importAsJSON = addJSONAlias(importCmd)
 }
 
@@ -332,24 +382,68 @@ func emptyImportNotice(scope, projectDir string) (message, hint string) {
 	return "No supported LLM clients detected", "Run 'gridctl link --help' for the supported client list.\n"
 }
 
+// serverImportResult is the servers kind outcome. emit is set only on the
+// paths that today call finishImport, so the default wrapper stays
+// byte-identical: a returned error without emit still reaches Cobra, and
+// infrastructure exits do not encode JSON.
+type serverImportResult struct {
+	doc  *importDoc
+	rows []importSummaryRow
+	code int
+	err  error
+	emit bool
+}
+
 func runImport(ctx context.Context, client, format string) error {
+	res := runServerImport(ctx, os.Stdout, os.Stderr, client, format)
+	if res.code == importExitInfrastructure {
+		os.Exit(res.code)
+	}
+	if res.emit && res.doc != nil {
+		return finishImport(nil, *res.doc, format, res.err)
+	}
+	return res.err
+}
+
+func runServerImport(ctx context.Context, stdout, stderr io.Writer, client, format string) serverImportResult {
 	// In JSON mode stdout carries exactly one document; narration moves to
-	// stderr so pipelines can parse the output.
-	printer := output.New()
+	// stderr so pipelines can parse the output. The wrapper, not this
+	// function, encodes that document.
+	printer := output.NewWithWriter(stdout)
 	if strings.EqualFold(format, "json") {
-		printer = output.NewWithWriter(os.Stderr)
+		printer = output.NewWithWriter(stderr)
+	}
+	fail := func(err error) serverImportResult {
+		return serverImportResult{code: 1, err: err}
+	}
+	infra := func() serverImportResult {
+		return serverImportResult{code: importExitInfrastructure}
+	}
+	done := func(doc *importDoc, rows []importSummaryRow, err error) serverImportResult {
+		code := 0
+		if err != nil {
+			code = 1
+		}
+		return serverImportResult{doc: doc, rows: rows, code: code, err: err, emit: true}
+	}
+	keep := func(doc *importDoc, rows []importSummaryRow, err error) serverImportResult {
+		code := 0
+		if err != nil {
+			code = 1
+		}
+		return serverImportResult{doc: doc, rows: rows, code: code, err: err}
 	}
 	if err := rejectSourceConfig(client); err != nil {
-		return err
+		return fail(err)
 	}
 	if err := validateImportScope(importScopeFlag); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(importExitInfrastructure)
+		fmt.Fprintln(stderr, err)
+		return infra()
 	}
 	projectDir, err := resolveProjectDir(importProjectDir)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(importExitInfrastructure)
+		fmt.Fprintln(stderr, err)
+		return infra()
 	}
 	registry := provisioner.NewRegistry()
 
@@ -359,7 +453,7 @@ func runImport(ctx context.Context, client, format string) error {
 		Explicit:   importSourceConfig,
 	})
 	if err != nil {
-		return err
+		return fail(err)
 	}
 	sources := sourceDocs(collected)
 	if client == "" && len(collected) == 0 {
@@ -368,23 +462,23 @@ func runImport(ctx context.Context, client, format string) error {
 		if hint != "" {
 			printer.Print("%s", hint)
 		}
-		return nil
+		return serverImportResult{}
 	}
 
 	stackPath, source, err := resolveStackFileTarget(importFile)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(importExitInfrastructure)
+		fmt.Fprintln(stderr, err)
+		return infra()
 	}
 	existingNames, err := stackServerNames(source)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "parsing %s: %v\n", stackPath, err)
-		os.Exit(importExitInfrastructure)
+		fmt.Fprintf(stderr, "parsing %s: %v\n", stackPath, err)
+		return infra()
 	}
 
 	printImportSources(printer, sources)
 	candidates, skipped := scanForCandidates(printer, collected)
-	doc := importDoc{
+	doc := &importDoc{
 		SchemaVersion: importJSONSchemaVersion,
 		StackFile:     stackPath,
 		DryRun:        importDryRun,
@@ -397,18 +491,19 @@ func runImport(ctx context.Context, client, format string) error {
 	doc.Summary.Found = len(candidates) + len(skipped)
 	doc.Summary.Skipped = len(skipped)
 
+	scanRows := serverSummaryRows(skipped, nil, nil, false)
 	if len(candidates) == 0 {
 		printer.Info("No importable servers found")
-		return finishImport(printer, doc, format, nil)
+		return done(doc, scanRows, nil)
 	}
 
 	selected, err := selectCandidates(candidates)
 	if err != nil {
-		return err
+		return keep(doc, scanRows, err)
 	}
 	if len(selected) == 0 {
 		printer.Info("No servers selected")
-		return finishImport(printer, doc, format, nil)
+		return done(doc, scanRows, nil)
 	}
 
 	// Resolve name collisions against the stack and within the selection.
@@ -436,7 +531,7 @@ func runImport(ctx context.Context, client, format string) error {
 		}
 		action, newName, err := importCollisionResolver(selected[i].Name, taken)
 		if err != nil {
-			return err
+			return keep(doc, scanRows, err)
 		}
 		switch action {
 		case "rename":
@@ -478,7 +573,7 @@ func runImport(ctx context.Context, client, format string) error {
 	secretDocs := make(map[string][]importSecretDoc)
 	if !importDryRun {
 		if err := vaultSelectedSecrets(printer, selected, secretDocs); err != nil {
-			return err
+			return keep(doc, scanRows, err)
 		}
 	} else {
 		for _, c := range selected {
@@ -510,10 +605,12 @@ func runImport(ctx context.Context, client, format string) error {
 	}
 
 	renderImportPlan(printer, importable, overwrites)
+	laterSkipped := selectedSkips(selected)
+	planned := serverSummaryRows(append(append([]importer.Candidate{}, skipped...), laterSkipped...), importable, overwrites, false)
 	if len(importable) == 0 {
 		// A non-empty selection that produced zero imports is the documented
 		// exit-1 case: the user asked for servers and got none.
-		return finishImport(printer, doc, format,
+		return done(doc, planned,
 			errors.New("nothing imported: every selected server was skipped (see skip reasons above)"))
 	}
 
@@ -522,27 +619,28 @@ func runImport(ctx context.Context, client, format string) error {
 			doc.Servers = append(doc.Servers, serverDoc(c, false, secretDocs[c.Name]))
 		}
 		printer.Print("\nNo changes made (dry run).\n")
-		return finishImport(printer, doc, format, nil)
+		return done(doc, serverSummaryRows(append(append([]importer.Candidate{}, skipped...), laterSkipped...), importable, overwrites, true), nil)
 	}
 
 	if err := warnRunningStack(printer, stackPath, importYes); err != nil {
-		return err
+		return keep(doc, unwrittenServerRows(skipped, laterSkipped, importable, err.Error()), err)
 	}
 	if interactive {
 		ok, err := importWriteConfirm(fmt.Sprintf("Append %d server(s) to %s?", len(importable), stackPath))
 		if err != nil {
-			return err
+			return keep(doc, unwrittenServerRows(skipped, laterSkipped, importable, err.Error()), err)
 		}
 		if !ok {
 			printer.Info("Import cancelled")
-			return finishImport(printer, doc, format, nil)
+			declined := declineCandidates(importable)
+			return done(doc, serverSummaryRows(append(append([]importer.Candidate{}, skipped...), append(laterSkipped, declined...)...), nil, nil, false), nil)
 		}
 	}
 
 	backupPath, err := writeImportedServers(stackPath, importable, overwrites)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(importExitInfrastructure)
+		fmt.Fprintln(stderr, err)
+		return serverImportResult{doc: doc, rows: unwrittenServerRows(skipped, laterSkipped, importable, "stack write failed"), code: importExitInfrastructure}
 	}
 	doc.BackupPath = backupPath
 
@@ -555,7 +653,65 @@ func runImport(ctx context.Context, client, format string) error {
 		printer.Print("  Backup: %s\n", backupPath)
 	}
 	printer.Print("  Run 'gridctl apply %s' to deploy the imported servers.\n", stackPath)
-	return finishImport(printer, doc, format, nil)
+	return done(doc, serverSummaryRows(append(append([]importer.Candidate{}, skipped...), laterSkipped...), importable, overwrites, false), nil)
+}
+
+func selectedSkips(selected []importer.Candidate) []importer.Candidate {
+	var out []importer.Candidate
+	for _, c := range selected {
+		if c.SkipReason != "" {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func declineCandidates(importable []importer.Candidate) []importer.Candidate {
+	return markCandidatesSkipped(importable, "import cancelled")
+}
+
+func markCandidatesSkipped(importable []importer.Candidate, reason string) []importer.Candidate {
+	out := make([]importer.Candidate, len(importable))
+	for i, c := range importable {
+		c.SkipReason = reason
+		out[i] = c
+	}
+	return out
+}
+
+func unwrittenServerRows(skipped, laterSkipped, importable []importer.Candidate, reason string) []importSummaryRow {
+	marked := markCandidatesSkipped(importable, reason)
+	return serverSummaryRows(append(append([]importer.Candidate{}, skipped...), append(laterSkipped, marked...)...), nil, nil, false)
+}
+
+func serverSummaryRows(skipped, importable []importer.Candidate, overwrites []string, dryRun bool) []importSummaryRow {
+	replacing := make(map[string]bool, len(overwrites))
+	for _, name := range overwrites {
+		replacing[name] = true
+	}
+	rows := make([]importSummaryRow, 0, len(skipped)+len(importable))
+	for _, c := range skipped {
+		source := formatProvenance(c)
+		if source == "" {
+			source = "-"
+		}
+		rows = append(rows, importSummaryRow{Kind: "servers", Name: c.Name, Source: source, Action: "skipped: " + c.SkipReason})
+	}
+	for _, c := range importable {
+		source := formatProvenance(c)
+		if source == "" {
+			source = "-"
+		}
+		action := "imported"
+		if dryRun {
+			action = "would import"
+		}
+		if replacing[c.Name] {
+			action += " (replace)"
+		}
+		rows = append(rows, importSummaryRow{Kind: "servers", Name: c.Name, Source: source, Action: action})
+	}
+	return rows
 }
 
 func rejectSourceConfig(client string) error {

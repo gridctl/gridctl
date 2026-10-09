@@ -1,0 +1,6 @@
+exit: 1
+--- stdout
+--- stderr
+home: <TESTROOT>/002 (GRIDCTL_HOME)
+Error: unknown client "nosuch"
+Supported clients: claude, claude-code, cursor, windsurf, vscode, gemini, antigravity, opencode, grok, continue, cline, anythingllm, lmstudio, roo, zed, goose
