@@ -460,6 +460,7 @@ func Validate(s *Stack) error {
 		if !server.IsContainerBased() && len(server.Volumes) > 0 {
 			errs = append(errs, ValidationError{prefix + ".volumes", "only valid for container-based servers"})
 		}
+		errs = append(errs, validateConfigs(server, prefix)...)
 		// Per-server output_format validation
 		if server.OutputFormat != "" && !validOutputFormats[server.OutputFormat] {
 			errs = append(errs, ValidationError{prefix + ".output_format", "must be one of: json, toon, csv, text"})
@@ -557,6 +558,14 @@ func Validate(s *Stack) error {
 
 		if resource.Image == "" {
 			errs = append(errs, ValidationError{prefix + ".image", "is required"})
+		}
+		for volumeIndex, volume := range resource.Volumes {
+			if err := validateVolume(volume); err != nil {
+				errs = append(errs, ValidationError{
+					fmt.Sprintf("%s.volumes[%d]", prefix, volumeIndex),
+					err.Error(),
+				})
+			}
 		}
 
 		// Network validation (only in advanced mode)
