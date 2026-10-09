@@ -143,7 +143,7 @@ gridctl link lmstudio --group <name>
 
 Declaring a `link:` block in stack.yaml (as above) does the same thing on every `gridctl apply`: each listed client is linked idempotently once the gateway is healthy, and clients that aren't installed warn and skip. `gridctl destroy --unlink` removes those entries again.
 
-Already have MCP servers configured in your clients? `gridctl import` runs the same detection in reverse: it scans those configs (read-only), including project MCP files from the working directory up to the nearest git root, dedupes the servers it finds, and appends your selection to stack.yaml, offering plaintext secrets into the encrypted variable store on the way. OpenCode's user file is still one selected file, not OpenCode's merged configuration. See the [CLI reference](docs/cli-reference.md#llm-clients).
+Already have MCP servers configured in your clients? `gridctl import` runs the same detection in reverse: it scans those configs (read-only), including project MCP files from the working directory up to the nearest git root, dedupes the servers it finds, and appends your selection to stack.yaml, offering plaintext secrets into the encrypted variable store on the way. `gridctl import <client> --kind all` also imports that client's skills, agents, and global context in one dry run and one summary. Omitting `--kind` stays servers-only. OpenCode's user file is still one selected file, not OpenCode's merged configuration. See the [CLI reference](docs/cli-reference.md#llm-clients).
 
 Supported clients: Claude Desktop, Claude Code, Cursor, Windsurf, VS Code, Gemini, Antigravity, OpenCode, Grok Build, Continue, Cline, AnythingLLM, LM Studio, Roo, Zed, Goose
 
@@ -407,6 +407,7 @@ gridctl skill list                        # Show what's in the registry
 gridctl skill add <git-repo>              # Import skills (and agents) from a remote repo
 gridctl skill add <directory>             # Import a directory that is not a git repository root
 gridctl skill import claude-code          # Import skills already present in a client home
+gridctl import opencode --kind all        # Servers, skills, agents, and context in one run
 gridctl activate my-skill                 # Promote a draft → active
 ```
 

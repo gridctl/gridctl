@@ -17,10 +17,13 @@ Keep the file short. Every client loads it into every session; durable preferenc
 ```bash
 gridctl ctx init                     # scan clients, bootstrap the canon (writes nothing during the scan)
 gridctl ctx init --import claude-code   # or adopt your existing CLAUDE.md as the canon
+gridctl import opencode --kind context --dry-run   # preview adoption without overwriting
 gridctl ctx sync --dry-run           # preview per-client changes
 gridctl ctx sync                     # propagate to every available client
 gridctl ctx status                   # per-client sync state
 ```
+
+`gridctl import <client> --kind context` adopts a client file only when no canonical file exists and fragments mode is off. It never passes `--force`. An existing canonical file is skipped; overwrite it with `gridctl ctx init --import <client> --force`. A home that already has `fragments/` is skipped too, because a canonical file written there would be ignored by `gridctl ctx sync`. Pass `--context-fragment <name>` to add a fragment instead. That flag is explicit: the first fragment migrates the single-file store, the same way `gridctl ctx add` does.
 
 The web UI offers the same surface, reachable from the Library workspace header ("Global Context") and from a Global Context tile in the Create Resource wizard. First run shows the adoption-first setup: existing client files are listed with their paths and sizes, and the first one found is preselected over the starter template. After that, the editor takes over: a resizable markdown/preview split with a formatting toolbar and live marker validation, a collapsible per-client state strip that opens itself when anything needs attention, sync-all, and a three-way drift dialog. The editor's Import action reopens the source picker at any time to replace the canonical file from a client file or the template (a timestamped backup precedes the write; `gridctl ctx init --import <client> --force` is the CLI equivalent). In fragments mode the dialog swaps the single editor for a fragment rail in composition order (add, delete, and a globs badge for path-scoped fragments) feeding the same editor pane, the client strip shows each client's mode chip, and the single-file editor's Fragments action performs the same explicit migration as `ctx add`. The same operations are exposed over REST; see the [API reference](api-reference.md#global-context).
 
