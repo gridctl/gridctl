@@ -38,11 +38,6 @@ func TestDockerRuntime_Start_MaterializesConfigs(t *testing.T) {
 		t.Fatalf("copy options = %+v, want empty", mock.LastCopyOptions)
 	}
 	first := append([]byte(nil), mock.LastCopyArchive...)
-	if _, err := rt.Start(context.Background(), cfg); err != nil {
-		t.Fatal(err)
-	}
-	// The second start finds the created container only if the mock lists it.
-	// Rebuild from the captured archive twice via a fresh runtime instead.
 	mock2 := &MockDockerClient{}
 	if _, err := NewWithClient(mock2).Start(context.Background(), cfg); err != nil {
 		t.Fatal(err)

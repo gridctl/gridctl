@@ -63,11 +63,7 @@ func TestValidate_Configs(t *testing.T) {
 func TestValidate_ConfigsEntryCap(t *testing.T) {
 	configs := make([]ConfigFile, maxConfigEntries+1)
 	for i := range configs {
-		configs[i] = ConfigFile{Target: "/etc/app-" + strings.Repeat("x", 0) + string(rune('a'+i%26)) + ".yaml", Content: "a"}
-	}
-	// Distinct absolute targets.
-	for i := range configs {
-		configs[i].Target = "/etc/cfg/" + strings.Repeat("n", i+1)
+		configs[i] = ConfigFile{Target: "/etc/cfg/" + strings.Repeat("n", i+1), Content: "a"}
 	}
 	err := Validate(&Stack{Name: "test", Network: Network{Name: "test-net"}, MCPServers: []MCPServer{configServer(configs...)}})
 	if err == nil || !strings.Contains(err.Error(), "at most 64") {
