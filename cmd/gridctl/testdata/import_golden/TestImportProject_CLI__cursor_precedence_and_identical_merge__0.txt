@@ -1,0 +1,127 @@
+exit: 0
+--- stdout
+{
+  "schema_version": 1,
+  "stack_file": "<TESTROOT>/002/repo/stack.yaml",
+  "dry_run": true,
+  "sources": [
+    {
+      "client": "cursor",
+      "clients": [
+        "cursor"
+      ],
+      "scope": "project",
+      "path": "<TESTROOT>/002/repo/.cursor/mcp.json",
+      "status": "selected"
+    },
+    {
+      "client": "cursor",
+      "clients": [
+        "cursor"
+      ],
+      "scope": "user",
+      "path": "<TESTROOT>/001/.cursor/mcp.json",
+      "status": "selected"
+    }
+  ],
+  "servers": [
+    {
+      "name": "github",
+      "imported": false,
+      "found_in": [
+        "cursor"
+      ],
+      "origins": [
+        {
+          "client": "cursor",
+          "scope": "user",
+          "path": "<TESTROOT>/001/.cursor/mcp.json"
+        }
+      ],
+      "scopes": [
+        "user"
+      ],
+      "source": "cursor",
+      "source_path": "<TESTROOT>/001/.cursor/mcp.json",
+      "source_paths": [
+        "<TESTROOT>/001/.cursor/mcp.json"
+      ],
+      "skip_reason": "name_collision",
+      "warnings": [
+        "a different definition of \"github\" was also found in cursor (user); the cursor (project) definition was kept",
+        "another selected server named \"github\" (from cursor (project)) was imported instead; rename one and re-run to import both"
+      ]
+    },
+    {
+      "name": "github",
+      "imported": false,
+      "found_in": [
+        "cursor"
+      ],
+      "origins": [
+        {
+          "client": "cursor",
+          "scope": "project",
+          "path": "<TESTROOT>/002/repo/.cursor/mcp.json"
+        }
+      ],
+      "scopes": [
+        "project"
+      ],
+      "source": "cursor",
+      "source_path": "<TESTROOT>/002/repo/.cursor/mcp.json",
+      "source_paths": [
+        "<TESTROOT>/002/repo/.cursor/mcp.json"
+      ]
+    },
+    {
+      "name": "same",
+      "imported": false,
+      "found_in": [
+        "cursor"
+      ],
+      "origins": [
+        {
+          "client": "cursor",
+          "scope": "project",
+          "path": "<TESTROOT>/002/repo/.cursor/mcp.json"
+        },
+        {
+          "client": "cursor",
+          "scope": "user",
+          "path": "<TESTROOT>/001/.cursor/mcp.json"
+        }
+      ],
+      "scopes": [
+        "project",
+        "user"
+      ],
+      "source": "cursor",
+      "source_path": "<TESTROOT>/002/repo/.cursor/mcp.json",
+      "source_paths": [
+        "<TESTROOT>/002/repo/.cursor/mcp.json",
+        "<TESTROOT>/001/.cursor/mcp.json"
+      ]
+    }
+  ],
+  "summary": {
+    "found": 3,
+    "imported": 0,
+    "skipped": 1,
+    "failed": 0
+  }
+}
+--- stderr
+home: <TESTROOT>/001 (GRIDCTL_HOME)
+Sources:
+  cursor                 project  <TESTROOT>/002/repo/.cursor/mcp.json  selected (2 servers)
+  cursor                 user     <TESTROOT>/001/.cursor/mcp.json  selected (2 servers)
+  skipped github (name_collision) from cursor (user) <TESTROOT>/001/.cursor/mcp.json: a different definition of "github" was also found in cursor (user); the cursor (project) definition was kept; another selected server named "github" (from cursor (project)) was imported instead; rename one and re-run to import both
+
+Plan: 2 server(s) to import
+
+  + mcp-server "github" (add, from cursor (project))
+  + mcp-server "same" (add, from cursor (project+user))
+
+
+No changes made (dry run).

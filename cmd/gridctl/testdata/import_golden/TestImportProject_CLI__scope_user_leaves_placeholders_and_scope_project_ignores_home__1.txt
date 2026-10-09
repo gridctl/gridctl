@@ -1,0 +1,59 @@
+exit: 0
+--- stdout
+{
+  "schema_version": 1,
+  "stack_file": "<TESTROOT>/002/repo/stack.yaml",
+  "dry_run": true,
+  "sources": [
+    {
+      "client": "cursor",
+      "clients": [
+        "cursor"
+      ],
+      "scope": "project",
+      "path": "<TESTROOT>/002/repo/.cursor/mcp.json",
+      "status": "selected"
+    }
+  ],
+  "servers": [
+    {
+      "name": "projcur",
+      "imported": false,
+      "found_in": [
+        "cursor"
+      ],
+      "origins": [
+        {
+          "client": "cursor",
+          "scope": "project",
+          "path": "<TESTROOT>/002/repo/.cursor/mcp.json"
+        }
+      ],
+      "scopes": [
+        "project"
+      ],
+      "source": "cursor",
+      "source_path": "<TESTROOT>/002/repo/.cursor/mcp.json",
+      "source_paths": [
+        "<TESTROOT>/002/repo/.cursor/mcp.json"
+      ]
+    }
+  ],
+  "summary": {
+    "found": 1,
+    "imported": 0,
+    "skipped": 0,
+    "failed": 0
+  }
+}
+--- stderr
+home: <TESTROOT>/001 (GRIDCTL_HOME)
+Sources:
+  cursor                 project  <TESTROOT>/002/repo/.cursor/mcp.json  selected (1 server)
+
+Plan: 1 server(s) to import
+
+  + mcp-server "projcur" (add, from cursor (project))
+
+
+No changes made (dry run).

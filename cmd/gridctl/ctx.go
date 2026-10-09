@@ -96,7 +96,8 @@ With --from, an arbitrary file does. With --template (or when no client
 has an existing file), a short commented starter is scaffolded.
 
 This bootstraps the single-file store; 'gridctl ctx add <name>' later
-converts it into a fragment library.`,
+converts it into a fragment library.
+` + "\nTo import servers, skills, agents, and context in one run, use `gridctl import <client> --kind all`.",
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr, err := contexts.NewManager()

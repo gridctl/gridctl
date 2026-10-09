@@ -423,7 +423,9 @@ func runImportBin(t *testing.T, bin, home, cwd string, args ...string) (stdout, 
 			t.Fatal(err)
 		}
 	}
-	return outBuf.String(), errBuf.String(), code
+	stdout, stderr = outBuf.String(), errBuf.String()
+	checkImportGolden(t, home, cwd, args, stdout, stderr, code)
+	return stdout, stderr, code
 }
 
 func importChildEnv(home string) []string {

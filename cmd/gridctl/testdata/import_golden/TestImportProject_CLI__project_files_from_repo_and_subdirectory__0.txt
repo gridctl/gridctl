@@ -1,0 +1,264 @@
+exit: 0
+--- stdout
+{
+  "schema_version": 1,
+  "stack_file": "<TESTROOT>/002/repo/stack.yaml",
+  "dry_run": true,
+  "sources": [
+    {
+      "client": "claude-code",
+      "clients": [
+        "claude-code",
+        "vscode"
+      ],
+      "scope": "project",
+      "path": "<TESTROOT>/002/repo/.mcp.json",
+      "status": "selected"
+    },
+    {
+      "client": "cursor",
+      "clients": [
+        "cursor"
+      ],
+      "scope": "project",
+      "path": "<TESTROOT>/002/repo/.cursor/mcp.json",
+      "status": "selected"
+    },
+    {
+      "client": "vscode",
+      "clients": [
+        "vscode"
+      ],
+      "scope": "project",
+      "path": "<TESTROOT>/002/repo/.vscode/mcp.json",
+      "status": "selected"
+    },
+    {
+      "client": "roo",
+      "clients": [
+        "roo"
+      ],
+      "scope": "project",
+      "path": "<TESTROOT>/002/repo/.roo/mcp.json",
+      "status": "selected"
+    },
+    {
+      "client": "gemini",
+      "clients": [
+        "gemini"
+      ],
+      "scope": "project",
+      "path": "<TESTROOT>/002/repo/.gemini/settings.json",
+      "status": "selected"
+    },
+    {
+      "client": "zed",
+      "clients": [
+        "zed"
+      ],
+      "scope": "project",
+      "path": "<TESTROOT>/002/repo/.zed/settings.json",
+      "status": "selected"
+    },
+    {
+      "client": "opencode",
+      "clients": [
+        "opencode"
+      ],
+      "scope": "project",
+      "path": "<TESTROOT>/002/repo/opencode.jsonc",
+      "status": "selected"
+    }
+  ],
+  "servers": [
+    {
+      "name": "shared",
+      "imported": false,
+      "found_in": [
+        "claude-code",
+        "vscode"
+      ],
+      "origins": [
+        {
+          "client": "claude-code",
+          "scope": "project",
+          "path": "<TESTROOT>/002/repo/.mcp.json"
+        },
+        {
+          "client": "vscode",
+          "scope": "project",
+          "path": "<TESTROOT>/002/repo/.mcp.json"
+        }
+      ],
+      "scopes": [
+        "project"
+      ],
+      "source": "claude-code",
+      "source_path": "<TESTROOT>/002/repo/.mcp.json",
+      "source_paths": [
+        "<TESTROOT>/002/repo/.mcp.json"
+      ]
+    },
+    {
+      "name": "cur",
+      "imported": false,
+      "found_in": [
+        "cursor"
+      ],
+      "origins": [
+        {
+          "client": "cursor",
+          "scope": "project",
+          "path": "<TESTROOT>/002/repo/.cursor/mcp.json"
+        }
+      ],
+      "scopes": [
+        "project"
+      ],
+      "source": "cursor",
+      "source_path": "<TESTROOT>/002/repo/.cursor/mcp.json",
+      "source_paths": [
+        "<TESTROOT>/002/repo/.cursor/mcp.json"
+      ]
+    },
+    {
+      "name": "vsc",
+      "imported": false,
+      "found_in": [
+        "vscode"
+      ],
+      "origins": [
+        {
+          "client": "vscode",
+          "scope": "project",
+          "path": "<TESTROOT>/002/repo/.vscode/mcp.json"
+        }
+      ],
+      "scopes": [
+        "project"
+      ],
+      "source": "vscode",
+      "source_path": "<TESTROOT>/002/repo/.vscode/mcp.json",
+      "source_paths": [
+        "<TESTROOT>/002/repo/.vscode/mcp.json"
+      ]
+    },
+    {
+      "name": "roosrv",
+      "imported": false,
+      "found_in": [
+        "roo"
+      ],
+      "origins": [
+        {
+          "client": "roo",
+          "scope": "project",
+          "path": "<TESTROOT>/002/repo/.roo/mcp.json"
+        }
+      ],
+      "scopes": [
+        "project"
+      ],
+      "source": "roo",
+      "source_path": "<TESTROOT>/002/repo/.roo/mcp.json",
+      "source_paths": [
+        "<TESTROOT>/002/repo/.roo/mcp.json"
+      ]
+    },
+    {
+      "name": "gem",
+      "imported": false,
+      "found_in": [
+        "gemini"
+      ],
+      "origins": [
+        {
+          "client": "gemini",
+          "scope": "project",
+          "path": "<TESTROOT>/002/repo/.gemini/settings.json"
+        }
+      ],
+      "scopes": [
+        "project"
+      ],
+      "source": "gemini",
+      "source_path": "<TESTROOT>/002/repo/.gemini/settings.json",
+      "source_paths": [
+        "<TESTROOT>/002/repo/.gemini/settings.json"
+      ]
+    },
+    {
+      "name": "zedsrv",
+      "imported": false,
+      "found_in": [
+        "zed"
+      ],
+      "origins": [
+        {
+          "client": "zed",
+          "scope": "project",
+          "path": "<TESTROOT>/002/repo/.zed/settings.json"
+        }
+      ],
+      "scopes": [
+        "project"
+      ],
+      "source": "zed",
+      "source_path": "<TESTROOT>/002/repo/.zed/settings.json",
+      "source_paths": [
+        "<TESTROOT>/002/repo/.zed/settings.json"
+      ]
+    },
+    {
+      "name": "oc",
+      "imported": false,
+      "found_in": [
+        "opencode"
+      ],
+      "origins": [
+        {
+          "client": "opencode",
+          "scope": "project",
+          "path": "<TESTROOT>/002/repo/opencode.jsonc"
+        }
+      ],
+      "scopes": [
+        "project"
+      ],
+      "source": "opencode",
+      "source_path": "<TESTROOT>/002/repo/opencode.jsonc",
+      "source_paths": [
+        "<TESTROOT>/002/repo/opencode.jsonc"
+      ]
+    }
+  ],
+  "summary": {
+    "found": 7,
+    "imported": 0,
+    "skipped": 0,
+    "failed": 0
+  }
+}
+--- stderr
+home: <TESTROOT>/001 (GRIDCTL_HOME)
+Sources:
+  claude-code, vscode    project  <TESTROOT>/002/repo/.mcp.json  selected (1 server)
+  cursor                 project  <TESTROOT>/002/repo/.cursor/mcp.json  selected (1 server)
+  vscode                 project  <TESTROOT>/002/repo/.vscode/mcp.json  selected (1 server)
+  roo                    project  <TESTROOT>/002/repo/.roo/mcp.json  selected (1 server)
+  gemini                 project  <TESTROOT>/002/repo/.gemini/settings.json  selected (1 server)
+  zed                    project  <TESTROOT>/002/repo/.zed/settings.json  selected (1 server)
+  opencode               project  <TESTROOT>/002/repo/opencode.jsonc  selected (1 server)
+
+Plan: 7 server(s) to import
+
+  + mcp-server "shared" (add, from claude-code (project), vscode (project))
+  + mcp-server "cur" (add, from cursor (project))
+  + mcp-server "vsc" (add, from vscode (project))
+  + mcp-server "roosrv" (add, from roo (project))
+  + mcp-server "gem" (add, from gemini (project))
+  + mcp-server "zedsrv" (add, from zed (project))
+  + mcp-server "oc" (add, from opencode (project))
+
+
+No changes made (dry run).

@@ -566,12 +566,16 @@ func runSkillAddLocal(ctx context.Context, dir string) error {
 }
 
 func printProjectionHints(ctx context.Context, home string, roots []string) error {
+	return writeProjectionHints(ctx, os.Stdout, home, roots)
+}
+
+func writeProjectionHints(ctx context.Context, w io.Writer, home string, roots []string) error {
 	clients, err := skills.ProjectionHintClients(ctx, home, roots)
 	if err != nil {
 		return err
 	}
 	for _, client := range clients {
-		fmt.Println(skills.ProjectionHint(client))
+		fmt.Fprintln(w, skills.ProjectionHint(client))
 	}
 	return nil
 }

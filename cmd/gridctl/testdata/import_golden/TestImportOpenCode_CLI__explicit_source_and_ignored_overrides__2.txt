@@ -1,0 +1,38 @@
+exit: 0
+--- stdout
+{
+  "schema_version": 1,
+  "stack_file": "<TESTROOT>/002/stack.yaml",
+  "dry_run": false,
+  "sources": [
+    {
+      "client": "opencode",
+      "clients": [
+        "opencode"
+      ],
+      "scope": "user",
+      "path": "<TESTROOT>/002/missing.jsonc",
+      "status": "missing",
+      "detail": "selected file does not exist",
+      "notes": [
+        "Reading the explicit --source-config path only. There is no fallback if this file is missing, unreadable, or malformed.",
+        "config.json, project files, XDG_CONFIG_HOME, OPENCODE_CONFIG, OPENCODE_CONFIG_DIR, and OPENCODE_CONFIG_CONTENT are not consulted."
+      ]
+    }
+  ],
+  "servers": null,
+  "summary": {
+    "found": 0,
+    "imported": 0,
+    "skipped": 0,
+    "failed": 0
+  }
+}
+--- stderr
+home: <TESTROOT>/001 (GRIDCTL_HOME)
+Sources:
+  opencode               user     <TESTROOT>/002/missing.jsonc  missing
+    selected file does not exist
+    Reading the explicit --source-config path only. There is no fallback if this file is missing, unreadable, or malformed.
+    config.json, project files, XDG_CONFIG_HOME, OPENCODE_CONFIG, OPENCODE_CONFIG_DIR, and OPENCODE_CONFIG_CONTENT are not consulted.
+<TIME> INFO No importable servers found

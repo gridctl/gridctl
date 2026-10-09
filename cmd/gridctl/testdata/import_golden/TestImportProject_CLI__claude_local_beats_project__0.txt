@@ -1,0 +1,117 @@
+exit: 0
+--- stdout
+{
+  "schema_version": 1,
+  "stack_file": "<TESTROOT>/002/repo/stack.yaml",
+  "dry_run": true,
+  "sources": [
+    {
+      "client": "claude-code",
+      "clients": [
+        "claude-code"
+      ],
+      "scope": "local",
+      "path": "<TESTROOT>/001/.claude.json",
+      "status": "selected",
+      "detail": "<TESTROOT>/002/repo"
+    },
+    {
+      "client": "claude-code",
+      "clients": [
+        "claude-code",
+        "vscode"
+      ],
+      "scope": "project",
+      "path": "<TESTROOT>/002/repo/.mcp.json",
+      "status": "selected"
+    },
+    {
+      "client": "claude-code",
+      "clients": [
+        "claude-code"
+      ],
+      "scope": "user",
+      "path": "<TESTROOT>/001/.claude.json",
+      "status": "empty",
+      "detail": "selected file has no MCP server entries"
+    }
+  ],
+  "servers": [
+    {
+      "name": "x",
+      "imported": false,
+      "found_in": [
+        "claude-code",
+        "vscode"
+      ],
+      "origins": [
+        {
+          "client": "claude-code",
+          "scope": "project",
+          "path": "<TESTROOT>/002/repo/.mcp.json"
+        },
+        {
+          "client": "vscode",
+          "scope": "project",
+          "path": "<TESTROOT>/002/repo/.mcp.json"
+        }
+      ],
+      "scopes": [
+        "project"
+      ],
+      "source": "claude-code",
+      "source_path": "<TESTROOT>/002/repo/.mcp.json",
+      "source_paths": [
+        "<TESTROOT>/002/repo/.mcp.json"
+      ],
+      "skip_reason": "name_collision",
+      "warnings": [
+        "a different definition of \"x\" was also found in claude-code (project), vscode (project); the claude-code (local) definition was kept",
+        "another selected server named \"x\" (from claude-code (local)) was imported instead; rename one and re-run to import both"
+      ]
+    },
+    {
+      "name": "x",
+      "imported": false,
+      "found_in": [
+        "claude-code"
+      ],
+      "origins": [
+        {
+          "client": "claude-code",
+          "scope": "local",
+          "path": "<TESTROOT>/001/.claude.json"
+        }
+      ],
+      "scopes": [
+        "local"
+      ],
+      "source": "claude-code",
+      "source_path": "<TESTROOT>/001/.claude.json",
+      "source_paths": [
+        "<TESTROOT>/001/.claude.json"
+      ]
+    }
+  ],
+  "summary": {
+    "found": 2,
+    "imported": 0,
+    "skipped": 1,
+    "failed": 0
+  }
+}
+--- stderr
+home: <TESTROOT>/001 (GRIDCTL_HOME)
+Sources:
+  claude-code            local    <TESTROOT>/001/.claude.json  selected (1 server) for <TESTROOT>/002/repo
+  claude-code, vscode    project  <TESTROOT>/002/repo/.mcp.json  selected (1 server)
+  claude-code            user     <TESTROOT>/001/.claude.json  empty
+    selected file has no MCP server entries
+  skipped x (name_collision) from claude-code (project), vscode (project) <TESTROOT>/002/repo/.mcp.json: a different definition of "x" was also found in claude-code (project), vscode (project); the claude-code (local) definition was kept; another selected server named "x" (from claude-code (local)) was imported instead; rename one and re-run to import both
+
+Plan: 1 server(s) to import
+
+  + mcp-server "x" (add, from claude-code (local))
+
+
+No changes made (dry run).

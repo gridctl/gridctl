@@ -1,0 +1,208 @@
+exit: 0
+--- stdout
+{
+  "schema_version": 1,
+  "stack_file": "<TESTROOT>/002/stack.yaml",
+  "backup_path": "<TESTROOT>/002/stack.yaml.gridctl-backup-TIMESTAMP",
+  "dry_run": false,
+  "sources": [
+    {
+      "client": "opencode",
+      "clients": [
+        "opencode"
+      ],
+      "scope": "user",
+      "path": "<TESTROOT>/001/.config/opencode/opencode.json",
+      "status": "selected",
+      "notes": [
+        "Selected <TESTROOT>/001/.config/opencode/opencode.json. No sibling opencode.jsonc was found.",
+        "This is a compatibility-preserving single-file choice, not OpenCode's merge or writable-file preference. OpenCode merges config.json, then opencode.json, then opencode.jsonc, and prefers opencode.jsonc for writes. config.json is not read automatically.",
+        "Pass --source-config to read a file outside the Gridctl home. Project files are discovered separately."
+      ]
+    }
+  ],
+  "servers": [
+    {
+      "name": "badname",
+      "imported": false,
+      "found_in": [
+        "opencode"
+      ],
+      "origins": [
+        {
+          "client": "opencode",
+          "scope": "user",
+          "path": "<TESTROOT>/001/.config/opencode/opencode.json"
+        }
+      ],
+      "scopes": [
+        "user"
+      ],
+      "source": "opencode",
+      "source_path": "<TESTROOT>/001/.config/opencode/opencode.json",
+      "source_paths": [
+        "<TESTROOT>/001/.config/opencode/opencode.json"
+      ],
+      "skip_reason": "unsupported_native_expression",
+      "warnings": [
+        "native {env} name is not a shell identifier; only a whole-value {env:NAME} is converted to ${NAME}, and ${NAME} is expanded when the stack loads"
+      ]
+    },
+    {
+      "name": "embedded",
+      "imported": false,
+      "found_in": [
+        "opencode"
+      ],
+      "origins": [
+        {
+          "client": "opencode",
+          "scope": "user",
+          "path": "<TESTROOT>/001/.config/opencode/opencode.json"
+        }
+      ],
+      "scopes": [
+        "user"
+      ],
+      "source": "opencode",
+      "source_path": "<TESTROOT>/001/.config/opencode/opencode.json",
+      "source_paths": [
+        "<TESTROOT>/001/.config/opencode/opencode.json"
+      ],
+      "skip_reason": "unsupported_native_expression",
+      "warnings": [
+        "embedded or unsupported native {env} expression; only a whole-value {env:NAME} with a shell identifier is converted to ${NAME}"
+      ]
+    },
+    {
+      "name": "file",
+      "imported": false,
+      "found_in": [
+        "opencode"
+      ],
+      "origins": [
+        {
+          "client": "opencode",
+          "scope": "user",
+          "path": "<TESTROOT>/001/.config/opencode/opencode.json"
+        }
+      ],
+      "scopes": [
+        "user"
+      ],
+      "source": "opencode",
+      "source_path": "<TESTROOT>/001/.config/opencode/opencode.json",
+      "source_paths": [
+        "<TESTROOT>/001/.config/opencode/opencode.json"
+      ],
+      "skip_reason": "unsupported_native_expression",
+      "warnings": [
+        "native {file} expressions are not imported; the referenced file is not read. Replace the value with a literal or a ${NAME} reference"
+      ]
+    },
+    {
+      "name": "off",
+      "imported": false,
+      "found_in": [
+        "opencode"
+      ],
+      "origins": [
+        {
+          "client": "opencode",
+          "scope": "user",
+          "path": "<TESTROOT>/001/.config/opencode/opencode.json"
+        }
+      ],
+      "scopes": [
+        "user"
+      ],
+      "source": "opencode",
+      "source_path": "<TESTROOT>/001/.config/opencode/opencode.json",
+      "source_paths": [
+        "<TESTROOT>/001/.config/opencode/opencode.json"
+      ],
+      "skip_reason": "disabled",
+      "warnings": [
+        "enabled is false; disabled servers are not imported"
+      ]
+    },
+    {
+      "name": "workdir",
+      "imported": false,
+      "found_in": [
+        "opencode"
+      ],
+      "origins": [
+        {
+          "client": "opencode",
+          "scope": "user",
+          "path": "<TESTROOT>/001/.config/opencode/opencode.json"
+        }
+      ],
+      "scopes": [
+        "user"
+      ],
+      "source": "opencode",
+      "source_path": "<TESTROOT>/001/.config/opencode/opencode.json",
+      "source_paths": [
+        "<TESTROOT>/001/.config/opencode/opencode.json"
+      ],
+      "skip_reason": "untransferred_option",
+      "warnings": [
+        "a working directory is set and was not transferred"
+      ]
+    },
+    {
+      "name": "kept",
+      "imported": true,
+      "found_in": [
+        "opencode"
+      ],
+      "origins": [
+        {
+          "client": "opencode",
+          "scope": "user",
+          "path": "<TESTROOT>/001/.config/opencode/opencode.json"
+        }
+      ],
+      "scopes": [
+        "user"
+      ],
+      "source": "opencode",
+      "source_path": "<TESTROOT>/001/.config/opencode/opencode.json",
+      "source_paths": [
+        "<TESTROOT>/001/.config/opencode/opencode.json"
+      ],
+      "warnings": [
+        "timeout was not transferred; the OpenCode tool-fetch timeout is not represented in the stack"
+      ]
+    }
+  ],
+  "summary": {
+    "found": 6,
+    "imported": 1,
+    "skipped": 5,
+    "failed": 0
+  }
+}
+--- stderr
+home: <TESTROOT>/001 (GRIDCTL_HOME)
+Sources:
+  opencode               user     <TESTROOT>/001/.config/opencode/opencode.json  selected (6 servers)
+    Selected <TESTROOT>/001/.config/opencode/opencode.json. No sibling opencode.jsonc was found.
+    This is a compatibility-preserving single-file choice, not OpenCode's merge or writable-file preference. OpenCode merges config.json, then opencode.json, then opencode.jsonc, and prefers opencode.jsonc for writes. config.json is not read automatically.
+    Pass --source-config to read a file outside the Gridctl home. Project files are discovered separately.
+  skipped badname (unsupported_native_expression) from opencode (user) <TESTROOT>/001/.config/opencode/opencode.json: native {env} name is not a shell identifier; only a whole-value {env:NAME} is converted to ${NAME}, and ${NAME} is expanded when the stack loads
+  skipped embedded (unsupported_native_expression) from opencode (user) <TESTROOT>/001/.config/opencode/opencode.json: embedded or unsupported native {env} expression; only a whole-value {env:NAME} with a shell identifier is converted to ${NAME}
+  skipped file (unsupported_native_expression) from opencode (user) <TESTROOT>/001/.config/opencode/opencode.json: native {file} expressions are not imported; the referenced file is not read. Replace the value with a literal or a ${NAME} reference
+  skipped off (disabled) from opencode (user) <TESTROOT>/001/.config/opencode/opencode.json: enabled is false; disabled servers are not imported
+  skipped workdir (untransferred_option) from opencode (user) <TESTROOT>/001/.config/opencode/opencode.json: a working directory is set and was not transferred
+
+Plan: 1 server(s) to import
+
+  + mcp-server "kept" (add, from opencode (user))
+      warning: timeout was not transferred; the OpenCode tool-fetch timeout is not represented in the stack
+
+<TIME> INFO Imported kept (from opencode (user))
+  Backup: <TESTROOT>/002/stack.yaml.gridctl-backup-TIMESTAMP
+  Run 'gridctl apply <TESTROOT>/002/stack.yaml' to deploy the imported servers.

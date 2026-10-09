@@ -1,0 +1,67 @@
+exit: 0
+--- stdout
+{
+  "schema_version": 1,
+  "stack_file": "<TESTROOT>/002/stack.yaml",
+  "backup_path": "<TESTROOT>/002/stack.yaml.gridctl-backup-TIMESTAMP",
+  "dry_run": false,
+  "sources": [
+    {
+      "client": "opencode",
+      "clients": [
+        "opencode"
+      ],
+      "scope": "user",
+      "path": "<TESTROOT>/001/.config/opencode/opencode.jsonc",
+      "status": "selected",
+      "notes": [
+        "Selected <TESTROOT>/001/.config/opencode/opencode.jsonc because <TESTROOT>/001/.config/opencode/opencode.json is absent.",
+        "This is a compatibility-preserving single-file choice, not OpenCode's merge or writable-file preference. OpenCode merges config.json, then opencode.json, then opencode.jsonc, and prefers opencode.jsonc for writes. config.json is not read automatically."
+      ]
+    }
+  ],
+  "servers": [
+    {
+      "name": "docs",
+      "imported": true,
+      "found_in": [
+        "opencode"
+      ],
+      "origins": [
+        {
+          "client": "opencode",
+          "scope": "user",
+          "path": "<TESTROOT>/001/.config/opencode/opencode.jsonc"
+        }
+      ],
+      "scopes": [
+        "user"
+      ],
+      "source": "opencode",
+      "source_path": "<TESTROOT>/001/.config/opencode/opencode.jsonc",
+      "source_paths": [
+        "<TESTROOT>/001/.config/opencode/opencode.jsonc"
+      ]
+    }
+  ],
+  "summary": {
+    "found": 1,
+    "imported": 1,
+    "skipped": 0,
+    "failed": 0
+  }
+}
+--- stderr
+home: <TESTROOT>/001 (GRIDCTL_HOME)
+Sources:
+  opencode               user     <TESTROOT>/001/.config/opencode/opencode.jsonc  selected (1 server)
+    Selected <TESTROOT>/001/.config/opencode/opencode.jsonc because <TESTROOT>/001/.config/opencode/opencode.json is absent.
+    This is a compatibility-preserving single-file choice, not OpenCode's merge or writable-file preference. OpenCode merges config.json, then opencode.json, then opencode.jsonc, and prefers opencode.jsonc for writes. config.json is not read automatically.
+
+Plan: 1 server(s) to import
+
+  + mcp-server "docs" (add, from opencode (user))
+
+<TIME> INFO Imported docs (from opencode (user))
+  Backup: <TESTROOT>/002/stack.yaml.gridctl-backup-TIMESTAMP
+  Run 'gridctl apply <TESTROOT>/002/stack.yaml' to deploy the imported servers.

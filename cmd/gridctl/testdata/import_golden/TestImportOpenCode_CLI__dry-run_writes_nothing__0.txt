@@ -1,0 +1,113 @@
+exit: 0
+--- stdout
+{
+  "schema_version": 1,
+  "stack_file": "<TESTROOT>/002/stack.yaml",
+  "dry_run": true,
+  "sources": [
+    {
+      "client": "opencode",
+      "clients": [
+        "opencode"
+      ],
+      "scope": "user",
+      "path": "<TESTROOT>/001/.config/opencode/opencode.json",
+      "status": "selected",
+      "notes": [
+        "Selected <TESTROOT>/001/.config/opencode/opencode.json. No sibling opencode.jsonc was found.",
+        "This is a compatibility-preserving single-file choice, not OpenCode's merge or writable-file preference. OpenCode merges config.json, then opencode.json, then opencode.jsonc, and prefers opencode.jsonc for writes. config.json is not read automatically.",
+        "Pass --source-config to read a file outside the Gridctl home. Project files are discovered separately."
+      ]
+    }
+  ],
+  "servers": [
+    {
+      "name": "alpha",
+      "imported": false,
+      "found_in": [
+        "opencode"
+      ],
+      "origins": [
+        {
+          "client": "opencode",
+          "scope": "user",
+          "path": "<TESTROOT>/001/.config/opencode/opencode.json"
+        }
+      ],
+      "scopes": [
+        "user"
+      ],
+      "source": "opencode",
+      "source_path": "<TESTROOT>/001/.config/opencode/opencode.json",
+      "source_paths": [
+        "<TESTROOT>/001/.config/opencode/opencode.json"
+      ]
+    },
+    {
+      "name": "beta",
+      "imported": false,
+      "found_in": [
+        "opencode"
+      ],
+      "origins": [
+        {
+          "client": "opencode",
+          "scope": "user",
+          "path": "<TESTROOT>/001/.config/opencode/opencode.json"
+        }
+      ],
+      "scopes": [
+        "user"
+      ],
+      "source": "opencode",
+      "source_path": "<TESTROOT>/001/.config/opencode/opencode.json",
+      "source_paths": [
+        "<TESTROOT>/001/.config/opencode/opencode.json"
+      ]
+    },
+    {
+      "name": "gamma",
+      "imported": false,
+      "found_in": [
+        "opencode"
+      ],
+      "origins": [
+        {
+          "client": "opencode",
+          "scope": "user",
+          "path": "<TESTROOT>/001/.config/opencode/opencode.json"
+        }
+      ],
+      "scopes": [
+        "user"
+      ],
+      "source": "opencode",
+      "source_path": "<TESTROOT>/001/.config/opencode/opencode.json",
+      "source_paths": [
+        "<TESTROOT>/001/.config/opencode/opencode.json"
+      ]
+    }
+  ],
+  "summary": {
+    "found": 3,
+    "imported": 0,
+    "skipped": 0,
+    "failed": 0
+  }
+}
+--- stderr
+home: <TESTROOT>/001 (GRIDCTL_HOME)
+Sources:
+  opencode               user     <TESTROOT>/001/.config/opencode/opencode.json  selected (3 servers)
+    Selected <TESTROOT>/001/.config/opencode/opencode.json. No sibling opencode.jsonc was found.
+    This is a compatibility-preserving single-file choice, not OpenCode's merge or writable-file preference. OpenCode merges config.json, then opencode.json, then opencode.jsonc, and prefers opencode.jsonc for writes. config.json is not read automatically.
+    Pass --source-config to read a file outside the Gridctl home. Project files are discovered separately.
+
+Plan: 3 server(s) to import
+
+  + mcp-server "alpha" (add, from opencode (user))
+  + mcp-server "beta" (add, from opencode (user))
+  + mcp-server "gamma" (add, from opencode (user))
+
+
+No changes made (dry run).
