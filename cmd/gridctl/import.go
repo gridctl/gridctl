@@ -28,16 +28,16 @@ const importExitInfrastructure = 2
 const importJSONSchemaVersion = 1
 
 var (
-	importAll          bool
-	importDryRun       bool
-	importYes          bool
-	importName         string
-	importFile         string
-	importNoVault      bool
-	importFormat       string
-	importAsJSON       *bool
-	importSourceConfig string
-	importProjectDir   string
+	importAll             bool
+	importDryRun          bool
+	importYes             bool
+	importName            string
+	importFile            string
+	importNoVault         bool
+	importFormat          string
+	importAsJSON          *bool
+	importSourceConfig    string
+	importProjectDir      string
 	importScopeFlag       string
 	importKinds           string
 	importContextFragment string
@@ -48,12 +48,13 @@ var (
 
 var importCmd = &cobra.Command{
 	Use:   "import [client]",
-	Short: "Import MCP servers from installed client configs",
+	Short: "Import servers, skills, agents, and context from installed clients",
 	Long: `Scans installed LLM clients for existing MCP server definitions and adds
 selected servers to your stack.yaml. The reverse of 'gridctl link'.
 
-Client configs are read-only: the only file modified is the stack file
-(backed up first as .gridctl-backup-<timestamp>). Identical servers found
+Client configs are read-only. With the default --kind, the only file
+modified is the stack file (backed up first as
+.gridctl-backup-<timestamp>). Identical servers found
 in several clients are imported once, with their provenance shown. Entries
 that connect a client to this gridctl gateway are filtered out, and name
 collisions with existing stack servers are skipped unless resolved
@@ -158,7 +159,14 @@ func init() {
 	importCmd.Flags().BoolVar(&importNoActivate, "no-activate", false, "Import skills as draft (requires --kind skills or agents)")
 	importPlain = addPlainFlag(importCmd)
 	importCmd.Long += "\n\n" + openCodeImportHelp
-	importCmd.Long += "\n\n" + unifiedImportHelp()
+	importHelp := importCmd.HelpFunc()
+	importCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		applyHomeFlagForHelp()
+		saved := cmd.Long
+		cmd.Long = saved + "\n\n" + unifiedImportHelp()
+		defer func() { cmd.Long = saved }()
+		importHelp(cmd, args)
+	})
 	importCmd.Example += "\n  gridctl import opencode --kind all --dry-run\n  gridctl import claude-code --kind skills,agents --yes"
 	importAsJSON = addJSONAlias(importCmd)
 }
@@ -615,12 +623,12 @@ func runServerImport(ctx context.Context, stdout, stderr io.Writer, client, form
 	}
 
 	if err := warnRunningStack(printer, stackPath, importYes); err != nil {
-		return keep(doc, planned, err)
+		return keep(doc, unwrittenServerRows(skipped, laterSkipped, importable, err.Error()), err)
 	}
 	if interactive {
 		ok, err := importWriteConfirm(fmt.Sprintf("Append %d server(s) to %s?", len(importable), stackPath))
 		if err != nil {
-			return keep(doc, planned, err)
+			return keep(doc, unwrittenServerRows(skipped, laterSkipped, importable, err.Error()), err)
 		}
 		if !ok {
 			printer.Info("Import cancelled")
@@ -632,7 +640,7 @@ func runServerImport(ctx context.Context, stdout, stderr io.Writer, client, form
 	backupPath, err := writeImportedServers(stackPath, importable, overwrites)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
-		return serverImportResult{doc: doc, rows: planned, code: importExitInfrastructure}
+		return serverImportResult{doc: doc, rows: unwrittenServerRows(skipped, laterSkipped, importable, "stack write failed"), code: importExitInfrastructure}
 	}
 	doc.BackupPath = backupPath
 
@@ -659,12 +667,21 @@ func selectedSkips(selected []importer.Candidate) []importer.Candidate {
 }
 
 func declineCandidates(importable []importer.Candidate) []importer.Candidate {
+	return markCandidatesSkipped(importable, "import cancelled")
+}
+
+func markCandidatesSkipped(importable []importer.Candidate, reason string) []importer.Candidate {
 	out := make([]importer.Candidate, len(importable))
 	for i, c := range importable {
-		c.SkipReason = "import cancelled"
+		c.SkipReason = reason
 		out[i] = c
 	}
 	return out
+}
+
+func unwrittenServerRows(skipped, laterSkipped, importable []importer.Candidate, reason string) []importSummaryRow {
+	marked := markCandidatesSkipped(importable, reason)
+	return serverSummaryRows(append(append([]importer.Candidate{}, skipped...), append(laterSkipped, marked...)...), nil, nil, false)
 }
 
 func serverSummaryRows(skipped, importable []importer.Candidate, overwrites []string, dryRun bool) []importSummaryRow {

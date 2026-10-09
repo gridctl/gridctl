@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -336,16 +337,16 @@ func runUnifiedImport(ctx context.Context, stdout, stderr io.Writer, client stri
 	}
 
 	var (
-		rows            []importSummaryRow
-		exitCode        int
-		stopped         string
-		cancelled       bool
-		serversWritten  bool
-		serverStack     string
-		skillsWritten   bool
-		skillRoots      []string
-		contextWritten  bool
-		skillReported   bool
+		rows           []importSummaryRow
+		exitCode       int
+		stopped        string
+		cancelled      bool
+		serversWritten bool
+		serverStack    string
+		skillsWritten  bool
+		skillRoots     []string
+		contextWritten bool
+		skillReported  bool
 	)
 
 	for _, kind := range importKindOrder {
@@ -394,13 +395,14 @@ func runUnifiedImport(ctx context.Context, stdout, stderr io.Writer, client stri
 			}
 			fmt.Fprintf(narrate, "== %s ==\n", header)
 			skillCfg := skillImportConfig{
-				Kind:       skillKindFilter(requested, sup),
-				All:        cfg.All || cfg.Yes,
-				DryRun:     cfg.DryRun,
-				Trust:      cfg.Trust,
-				NoActivate: cfg.NoActivate,
-				Format:     "text",
-				Plain:      cfg.Plain,
+				Kind:           skillKindFilter(requested, sup),
+				All:            cfg.All || cfg.Yes,
+				DryRun:         cfg.DryRun,
+				Trust:          cfg.Trust,
+				NoActivate:     cfg.NoActivate,
+				Format:         "text",
+				Plain:          cfg.Plain,
+				NoTerminalHint: "pass --all or --yes",
 			}
 			result, skillDoc, roots, _, code, selErr := collectSkillImport(ctx, stderr, client, skillCfg)
 			if code != 0 {
@@ -747,6 +749,17 @@ Per-kind client coverage is derived from the provisioner, skill location, and co
 ` + importCoverageLines()
 }
 
+func applyHomeFlagForHelp() {
+	if homeFlag == "" {
+		return
+	}
+	abs, err := filepath.Abs(homeFlag)
+	if err != nil {
+		return
+	}
+	_ = os.Setenv(state.HomeEnv, abs)
+}
+
 func importCoverageLines() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "  servers: %s\n", strings.Join(provisioner.NewRegistry().AllSlugs(), ", "))
@@ -770,10 +783,11 @@ func importCoverageLines() string {
 	}
 	fmt.Fprintf(&b, "  skills: %s\n", strings.Join(skillSlugs, ", "))
 	fmt.Fprintf(&b, "  agents: %s\n", strings.Join(agentSlugs, ", "))
-	mgr, err := contexts.NewManager()
+	home, err := state.Home()
 	if err != nil {
 		fmt.Fprintf(&b, "  context: (home unavailable: %s)\n", err)
 	} else {
+		mgr := contexts.NewManagerWithHome(home)
 		scanned := map[string]bool{}
 		for _, e := range mgr.Scan() {
 			scanned[e.Slug] = true

@@ -47,7 +47,7 @@ already projected are skipped.
 Exit codes:
   0  imported, dry-run, or nothing enumerated (including an all-skipped scan)
   1  unknown client, cancelled selection, absent selected name, or every
-      explicitly selected entry skipped
+     explicitly selected entry skipped
   2  infrastructure error (home resolution, lock read or write, newer lock)
 ` + "\nTo import servers, skills, agents, and context in one run, use `gridctl import <client> --kind all`.",
 	Example: `  gridctl skill import claude-code --dry-run
@@ -93,15 +93,16 @@ func init() {
 }
 
 type skillImportConfig struct {
-	Kind       string
-	Select     []string
-	All        bool
-	DryRun     bool
-	Trust      bool
-	Force      bool
-	NoActivate bool
-	Format     string
-	Plain      bool
+	Kind           string
+	Select         []string
+	All            bool
+	DryRun         bool
+	Trust          bool
+	Force          bool
+	NoActivate     bool
+	Format         string
+	Plain          bool
+	NoTerminalHint string
 }
 
 type skillImportDoc struct {
@@ -316,7 +317,11 @@ func selectSkillImport(stderr io.Writer, candidates []skills.ClientCandidate, cf
 		return candidates, nil, 0, nil
 	}
 	if !output.IsTerminal(os.Stdin) {
-		err := errors.New("no selection and stdin is not a terminal; pass --all or --select <name>")
+		hint := "pass --all or --select <name>"
+		if cfg.NoTerminalHint != "" {
+			hint = cfg.NoTerminalHint
+		}
+		err := fmt.Errorf("no selection and stdin is not a terminal; %s", hint)
 		fmt.Fprintln(stderr, err)
 		return nil, nil, 1, err
 	}
