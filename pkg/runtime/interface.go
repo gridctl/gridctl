@@ -4,8 +4,31 @@ import (
 	"context"
 	"errors"
 
+	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/execution"
 )
+
+// ConfigFile is one file materialized into a container at create time.
+type ConfigFile = config.ConfigFile
+
+// LabelConfigsRevision is the container label holding the configs content digest.
+// It is absent when the server has no configs.
+const LabelConfigsRevision = "gridctl.configs-revision"
+
+// WithConfigsRevision copies labels and sets the configs revision.
+// An empty revision leaves the map unchanged. A nil map with a revision
+// becomes a one-entry map. The input map is not mutated.
+func WithConfigsRevision(labels map[string]string, revision string) map[string]string {
+	if revision == "" {
+		return labels
+	}
+	out := make(map[string]string, len(labels)+1)
+	for key, value := range labels {
+		out[key] = value
+	}
+	out[LabelConfigsRevision] = revision
+	return out
+}
 
 // WorkloadID uniquely identifies a workload across runtimes.
 // For Docker this is a container ID, for K8s a pod UID, for processes a PID.
@@ -52,7 +75,8 @@ type WorkloadConfig struct {
 	HostPort    int    // Desired host port (0 for auto-assign)
 
 	// Storage
-	Volumes []string // Volume mounts (format: "host:container" or "host:container:mode")
+	Volumes []string     // Volume mounts (format: "host:container" or "host:container:mode")
+	Configs []ConfigFile // Files copied into the container after create and before start
 
 	// Transport-specific
 	Transport string // "http", "stdio", "sse"

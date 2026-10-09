@@ -3,6 +3,8 @@ package controller
 import (
 	"context"
 	"errors"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gridctl/gridctl/pkg/config"
@@ -17,12 +19,12 @@ type fakeAgentClient struct {
 	name string
 }
 
-func (f *fakeAgentClient) Name() string                             { return f.name }
-func (f *fakeAgentClient) Initialize(context.Context) error         { return nil }
-func (f *fakeAgentClient) RefreshTools(context.Context) error       { return nil }
-func (f *fakeAgentClient) Tools() []mcp.Tool                         { return nil }
-func (f *fakeAgentClient) IsInitialized() bool                      { return true }
-func (f *fakeAgentClient) ServerInfo() mcp.ServerInfo                { return mcp.ServerInfo{Name: f.name} }
+func (f *fakeAgentClient) Name() string                       { return f.name }
+func (f *fakeAgentClient) Initialize(context.Context) error   { return nil }
+func (f *fakeAgentClient) RefreshTools(context.Context) error { return nil }
+func (f *fakeAgentClient) Tools() []mcp.Tool                  { return nil }
+func (f *fakeAgentClient) IsInitialized() bool                { return true }
+func (f *fakeAgentClient) ServerInfo() mcp.ServerInfo         { return mcp.ServerInfo{Name: f.name} }
 func (f *fakeAgentClient) CallTool(context.Context, string, map[string]any) (*mcp.ToolCallResult, error) {
 	return &mcp.ToolCallResult{}, nil
 }
@@ -406,6 +408,41 @@ func TestToAutoscalePolicy_MapsFieldsAndDefaults(t *testing.T) {
 	bare := toAutoscalePolicy(&config.AutoscaleConfig{Min: 1, Max: 2, TargetInFlight: 1})
 	if bare.ScaleUpAfter.String() != "30s" || bare.ScaleDownAfter.String() != "5m0s" {
 		t.Errorf("default durations wrong: up=%v down=%v", bare.ScaleUpAfter, bare.ScaleDownAfter)
+	}
+}
+
+func TestContainerSpawner_Spawn_PassesConfigsAndRevision(t *testing.T) {
+	rt := &stubContainerRuntime{startStatus: runtime.WorkloadStatus{ID: "c-1"}}
+	sp := NewContainerSpawner(ContainerSpawnerOptions{
+		Builder:   newFakeBuilder(t),
+		Runtime:   rt,
+		Stack:     "demo",
+		Server:    config.MCPServer{Name: "svc", Transport: "stdio", Configs: []config.ConfigFile{{Target: "/etc/a.txt", Content: "alpha", Mode: "0444"}}},
+		Image:     "alpine",
+		Transport: "stdio",
+		Ports:     NewAtomicPortAllocator(9000),
+	})
+	if _, err := sp.Spawn(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(rt.startCalls) != 1 || len(rt.startCalls[0].Configs) != 1 || rt.startCalls[0].Labels[runtime.LabelConfigsRevision] == "" {
+		t.Fatalf("start = %+v", rt.startCalls)
+	}
+	sp = NewContainerSpawner(ContainerSpawnerOptions{
+		Builder:   newFakeBuilder(t),
+		Runtime:   rt,
+		Stack:     "demo",
+		Server:    config.MCPServer{Name: "svc", Transport: "stdio", Configs: []config.ConfigFile{{Target: "/etc/a.txt", File: filepath.Join(t.TempDir(), "missing.yaml")}}},
+		Image:     "alpine",
+		Transport: "stdio",
+		Ports:     NewAtomicPortAllocator(9000),
+	})
+	_, err := sp.Spawn(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "svc") || !strings.Contains(err.Error(), "config 0") {
+		t.Fatalf("error = %v", err)
+	}
+	if len(rt.startCalls) != 1 {
+		t.Fatal("missing file reached Start")
 	}
 }
 

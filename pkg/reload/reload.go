@@ -623,6 +623,10 @@ func (h *Handler) startMCPServer(ctx context.Context, server config.MCPServer, s
 	if rt == nil {
 		return fmt.Errorf("container runtime unavailable (Docker/Podman not detected); load the stack via 'gridctl apply' instead")
 	}
+	configsRevision, err := config.ConfigsRevision(ctx, server.Configs)
+	if err != nil {
+		return fmt.Errorf("reading configs for %s: %w", server.Name, err)
+	}
 	if server.Source == nil {
 		if err := rt.EnsureImage(ctx, desiredImage); err != nil {
 			return fmt.Errorf("ensuring image: %w", err)
@@ -660,12 +664,13 @@ func (h *Handler) startMCPServer(ctx context.Context, server config.MCPServer, s
 			ExposedPort: server.Port,
 			HostPort:    hostPort,
 			Volumes:     server.Volumes,
+			Configs:     server.Configs,
 			Transport:   server.Transport,
-			Labels: map[string]string{
+			Labels: runtime.WithConfigsRevision(map[string]string{
 				"gridctl.managed":    "true",
 				"gridctl.stack":      stack.Name,
 				"gridctl.mcp-server": server.Name,
-			},
+			}, configsRevision),
 		}
 
 		status, err := rt.Start(ctx, cfg)

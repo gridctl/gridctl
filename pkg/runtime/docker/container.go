@@ -31,6 +31,7 @@ type ContainerConfig struct {
 	Labels      map[string]string
 	Transport   string               // "http" or "stdio"
 	Volumes     []string             // Volume mounts in "host:container" or "host:container:mode" format
+	Configs     []runtime.ConfigFile // Files copied after create and before start
 	RuntimeInfo *runtime.RuntimeInfo // Runtime info for host alias and volume labels
 }
 

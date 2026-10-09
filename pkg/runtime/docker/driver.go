@@ -68,6 +68,9 @@ func (d *DockerRuntime) RuntimeInfo() *runtime.RuntimeInfo {
 
 // Start starts a workload and returns its status.
 func (d *DockerRuntime) Start(ctx context.Context, cfg runtime.WorkloadConfig) (*runtime.WorkloadStatus, error) {
+	if cfg.Execution != nil && len(cfg.Configs) > 0 {
+		return nil, fmt.Errorf("configs are not supported with execution.mode: hardened")
+	}
 	if cfg.Execution != nil {
 		if cfg.Type != runtime.WorkloadTypeMCPServer || cfg.Execution.Mode != "hardened" {
 			return nil, fmt.Errorf("execution.mode: only managed MCP containers are covered")
@@ -105,6 +108,29 @@ func (d *DockerRuntime) Start(ctx context.Context, cfg runtime.WorkloadConfig) (
 			}
 		}
 	}
+	if exists && configsNeedRecheck(cfg) {
+		current, inspectErr := d.cli.ContainerInspect(ctx, containerID)
+		if inspectErr != nil {
+			return nil, fmt.Errorf("inspecting container configs: %w", inspectErr)
+		}
+		existing := ""
+		if current.Config != nil {
+			existing = current.Config.Labels[LabelConfigsRevision]
+		}
+		desired := ""
+		if cfg.Labels != nil {
+			desired = cfg.Labels[LabelConfigsRevision]
+		}
+		if existing != desired {
+			if err := StopContainer(ctx, d.cli, containerID, 5); err != nil {
+				return nil, fmt.Errorf("stopping container with stale configs: %w", err)
+			}
+			if err := RemoveContainer(ctx, d.cli, containerID, false); err != nil {
+				return nil, fmt.Errorf("removing container with stale configs: %w", err)
+			}
+			exists = false
+		}
+	}
 	if exists {
 		if err := StartContainer(ctx, d.cli, containerID); err != nil {
 			if cfg.Execution != nil {
@@ -137,6 +163,7 @@ func (d *DockerRuntime) Start(ctx context.Context, cfg runtime.WorkloadConfig) (
 		Labels:      cfg.Labels,
 		Transport:   cfg.Transport,
 		Volumes:     cfg.Volumes,
+		Configs:     cfg.Configs,
 		RuntimeInfo: d.runtimeInfo,
 	}
 
@@ -149,6 +176,15 @@ func (d *DockerRuntime) Start(ctx context.Context, cfg runtime.WorkloadConfig) (
 			cleanupErr := RemoveContainer(ctx, d.cli, containerID, false)
 			if cleanupErr != nil {
 				return nil, errors.Join(err, fmt.Errorf("execution.cleanup: remove noncompliant instance failed"))
+			}
+			return nil, err
+		}
+	}
+	if len(cfg.Configs) > 0 {
+		if err := materializeConfigs(ctx, d.cli, containerID, configServerName(cfg), cfg.Configs); err != nil {
+			cleanupErr := RemoveContainer(ctx, d.cli, containerID, false)
+			if cleanupErr != nil {
+				return nil, errors.Join(err, fmt.Errorf("removing container after config copy failed: %w", cleanupErr))
 			}
 			return nil, err
 		}

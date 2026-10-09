@@ -433,6 +433,10 @@ func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, 
 		return nil, err
 	}
 	o.logger.Info("MCP server phase", "server", server.Name, "phase", "starting_container", "replica", replicaID)
+	configsRevision, err := config.ConfigsRevision(ctx, server.Configs)
+	if err != nil {
+		return nil, fmt.Errorf("reading configs for %s: %w", server.Name, err)
+	}
 	runtimeName := ReplicaContainerName(stack.Name, server.Name, replicaID, totalReplicas)
 
 	// Name drives both container name and DNS alias; for multi-replica
@@ -453,8 +457,21 @@ func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, 
 		if err != nil {
 			return nil, err
 		}
-		if status.Image != desiredImage || status.Labels["gridctl.execution-revision"] != "" {
-			o.logger.Info("replacing MCP server with desired image", "name", server.Name, "replica", replicaID, "current_image", status.Image, "desired_image", desiredImage)
+		existingRevision := ""
+		executionRevision := ""
+		if status.Labels != nil {
+			existingRevision = status.Labels[LabelConfigsRevision]
+			executionRevision = status.Labels["gridctl.execution-revision"]
+		}
+		configsChanged := existingRevision != configsRevision
+		imageChanged := status.Image != desiredImage || executionRevision != ""
+		if configsChanged || imageChanged {
+			if configsChanged {
+				o.logger.Info("replacing MCP server with changed configs", "name", server.Name, "replica", replicaID)
+			}
+			if imageChanged {
+				o.logger.Info("replacing MCP server with desired image", "name", server.Name, "replica", replicaID, "current_image", status.Image, "desired_image", desiredImage)
+			}
 			if err := o.runtime.Stop(ctx, workloadID); err != nil {
 				return nil, fmt.Errorf("stopping stale workload: %w", err)
 			}
@@ -508,8 +525,9 @@ func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, 
 		ExposedPort: server.Port,
 		HostPort:    hostPort,
 		Volumes:     server.Volumes,
+		Configs:     server.Configs,
 		Transport:   server.Transport,
-		Labels:      managedLabels(stack.Name, server.Name, true),
+		Labels:      WithConfigsRevision(managedLabels(stack.Name, server.Name, true), configsRevision),
 	}
 
 	status, err := o.runtime.Start(ctx, cfg)

@@ -114,6 +114,10 @@ func (c *ContainerSpawner) Spawn(ctx context.Context) (mcp.AgentClient, error) {
 	if c.rt == nil {
 		return nil, fmt.Errorf("container spawner %q: runtime unavailable", c.server.Name)
 	}
+	configsRevision, err := config.ConfigsRevision(ctx, c.server.Configs)
+	if err != nil {
+		return nil, fmt.Errorf("reading configs for %s: %w", c.server.Name, err)
+	}
 	replicaID := int(c.idCounter.Add(1) - 1)
 	name := runtime.ReplicaContainerName(c.stack, c.server.Name, replicaID, 2) // >1 to force suffix
 	hostPort := 0
@@ -133,12 +137,13 @@ func (c *ContainerSpawner) Spawn(ctx context.Context) (mcp.AgentClient, error) {
 		ExposedPort: c.server.Port,
 		HostPort:    hostPort,
 		Volumes:     c.server.Volumes,
+		Configs:     c.server.Configs,
 		Transport:   c.transport,
-		Labels: map[string]string{
+		Labels: runtime.WithConfigsRevision(map[string]string{
 			"gridctl.managed":    "true",
 			"gridctl.stack":      c.stack,
 			"gridctl.mcp-server": c.server.Name,
-		},
+		}, configsRevision),
 	}
 
 	c.logger.Info("autoscale spawn: starting container",

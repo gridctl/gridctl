@@ -93,7 +93,10 @@ func (m *mockDockerClient) ImagePull(context.Context, string, image.PullOptions)
 	return nil, nil
 }
 func (m *mockDockerClient) Ping(context.Context) (types.Ping, error) { return types.Ping{}, nil }
-func (m *mockDockerClient) Close() error                             { return nil }
+func (m *mockDockerClient) CopyToContainer(context.Context, string, string, io.Reader, container.CopyToContainerOptions) error {
+	return nil
+}
+func (m *mockDockerClient) Close() error { return nil }
 
 var _ dockerclient.DockerClient = &mockDockerClient{}
 
