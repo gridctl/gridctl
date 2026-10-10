@@ -53,6 +53,36 @@ func TestOrchestrator_Up_ConfigReadErrorBeforeEngineStart(t *testing.T) {
 	}
 }
 
+func TestOrchestrator_Up_ReusesEngineExpandedImage(t *testing.T) {
+	rt := newSourceLifecycleRuntime()
+	stack := configStack("alpha")
+	revision, err := config.ConfigsRevision(context.Background(), stack.MCPServers[0].Configs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt.statuses["gridctl-demo-server"] = &WorkloadStatus{
+		ID:     "existing",
+		State:  WorkloadStateRunning,
+		Image:  "docker.io/library/alpine:latest",
+		Labels: map[string]string{LabelConfigsRevision: revision},
+	}
+	orch := NewOrchestrator(rt, &recordingSourceBuilder{})
+	if _, err := orch.Up(context.Background(), stack, UpOptions{BasePort: 9000}); err != nil {
+		t.Fatal(err)
+	}
+	if len(rt.removed) != 0 || len(rt.started) != 0 {
+		t.Fatalf("expanded image replaced container: removed=%v started=%d", rt.removed, len(rt.started))
+	}
+
+	rt.statuses["gridctl-demo-server"].Image = "docker.io/library/busybox:latest"
+	if _, err := orch.Up(context.Background(), stack, UpOptions{BasePort: 9000}); err != nil {
+		t.Fatal(err)
+	}
+	if len(rt.removed) != 1 || rt.removed[0] != "existing" {
+		t.Fatalf("removed = %v, want existing", rt.removed)
+	}
+}
+
 func TestOrchestrator_ReuseStartOmitsConfigs(t *testing.T) {
 	rt := newSourceLifecycleRuntime()
 	revision, err := config.ConfigsRevision(context.Background(), []config.ConfigFile{{Target: "/etc/a.txt", Content: "alpha", Mode: "0444"}})

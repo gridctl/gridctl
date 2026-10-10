@@ -464,7 +464,7 @@ func (o *Orchestrator) startMCPServer(ctx context.Context, stack *config.Stack, 
 			executionRevision = status.Labels["gridctl.execution-revision"]
 		}
 		configsChanged := existingRevision != configsRevision
-		imageChanged := status.Image != desiredImage || executionRevision != ""
+		imageChanged := (status.Image != desiredImage && !ImageReferenceMatches(status.Image, desiredImage)) || executionRevision != ""
 		if configsChanged || imageChanged {
 			if configsChanged {
 				o.logger.Info("replacing MCP server with changed configs", "name", server.Name, "replica", replicaID)

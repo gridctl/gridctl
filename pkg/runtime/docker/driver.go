@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/distribution/reference"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/execution"
 	"github.com/gridctl/gridctl/pkg/logging"
@@ -212,15 +211,7 @@ func (d *DockerRuntime) Start(ctx context.Context, cfg runtime.WorkloadConfig) (
 // Compare normalized references without treating different registries or tags
 // as aliases. Control inspection and fresh kernel evidence still gate reuse.
 func executionImageMatches(current, requested string) bool {
-	if current != "" && current == requested {
-		return true
-	}
-	a, err := reference.ParseNormalizedNamed(current)
-	if err != nil {
-		return false
-	}
-	b, err := reference.ParseNormalizedNamed(requested)
-	return err == nil && reference.TagNameOnly(a).String() == reference.TagNameOnly(b).String()
+	return runtime.ImageReferenceMatches(current, requested)
 }
 
 // Stop stops a running workload.
