@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -137,6 +138,17 @@ type ImportOptions struct {
 	// PackImport fails before any registry write when a local source key or
 	// a local-owned resource would be replaced. Packs have no force option.
 	PackImport bool
+	// ExactSelection makes Selected and SelectedAgents authoritative. An
+	// empty Selected imports no skills and an empty SelectedAgents imports
+	// no agents, regardless of ResourceKind and of the legacy empty-means-all
+	// rules. Unset preserves those rules.
+	ExactSelection bool
+	// SelectionIsImportAll marks a non-empty Selected list that still means
+	// import-all. An existing skill is skipped instead of overwritten.
+	// ExactSelection still decides which names import. Pack add sets this
+	// for the pack repository when skills: is empty, so declaring sources
+	// does not change that import-all.
+	SelectionIsImportAll bool
 }
 
 // ImportResult contains the results of an import operation.
@@ -283,6 +295,15 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportRes
 	if err := GuardSourceKey(lf, sourceName, opts.Kind, opts.Repo); err != nil {
 		return nil, err
 	}
+	if prev, ok := lf.Sources[sourceName]; ok && prev.PackMember != "" && !opts.ExactSelection && opts.Selected == nil && opts.SelectedAgents == nil {
+		// A selection-less rewrite of a member (skill update) refreshes the
+		// recorded names only. A primary pack source is not a member and is
+		// unchanged. Explicit ExactSelection, including an empty list from
+		// pack add, stays authoritative.
+		opts.ExactSelection = true
+		opts.Selected = sortedSkillNames(prev.Skills)
+		opts.SelectedAgents = sortedAgentNames(prev.Agents)
+	}
 	if opts.PackImport {
 		if err := GuardPackOwnership(lf, sourceName, result, opts); err != nil {
 			return nil, err
@@ -311,7 +332,7 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportRes
 
 	lockedSkills := make(map[string]LockedSkill)
 
-	if opts.ResourceKind != ResourceKindAgent {
+	if opts.ResourceKind != ResourceKindAgent && (!opts.ExactSelection || len(opts.Selected) > 0) {
 		for _, discovered := range result.Skills {
 			if err := ctx.Err(); err != nil {
 				return nil, err
@@ -330,7 +351,7 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportRes
 			// unless a local source owns the name. Local re-import of an unowned
 			// or same-source name does not need --force.
 			if _, err := imp.store.GetSkill(skillName); err == nil {
-				selected := len(opts.Selected) > 0 && selectedSet[skillName]
+				selected := len(opts.Selected) > 0 && selectedSet[skillName] && !opts.SelectionIsImportAll
 				if !AllowOverwrite(lf, opts.Kind, skillName, sourceName, selected, opts.Force, false) {
 					importResult.Skipped = append(importResult.Skipped, SkippedSkill{
 						Name:   skillName,
@@ -564,11 +585,14 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportRes
 			// skips agents that already exist in the store, but neither means
 			// the source stopped shipping them.
 			var prevPack *LockedPack
+			var prevPackMember string
 			if prev, ok := lf.Sources[sourceName]; ok {
 				// A source rewrite must never orphan its pack record: pack
 				// verbs would report "not imported" while projections still
-				// carry the tag, with no cascade-removal path left.
+				// carry the tag, with no cascade-removal path left. PackMember
+				// is carried the same way so a member rewrite keeps its marker.
 				prevPack = prev.Pack
+				prevPackMember = prev.PackMember
 				if prev.Agents != nil {
 					switch {
 					case len(opts.SelectedAgents) > 0:
@@ -610,6 +634,7 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportRes
 				SSHUser:       sshUser,
 				SSHKeyPath:    sshKeyPath,
 				Pack:          prevPack,
+				PackMember:    prevPackMember,
 			})
 			installedSkills := map[string]struct{}{}
 			for name := range lockedSkills {
@@ -630,6 +655,24 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportRes
 	return importResult, nil
 }
 
+func sortedSkillNames(in map[string]LockedSkill) []string {
+	names := make([]string, 0, len(in))
+	for name := range in {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func sortedAgentNames(in map[string]LockedAgent) []string {
+	names := make([]string, 0, len(in))
+	for name := range in {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // importAgents installs the agent definitions a clone discovered. Agents
 // are written verbatim (identity render): the fetched bytes become
 // ~/.gridctl/registry/agents/<name>/AGENT.md unchanged, so ContentHash
@@ -643,6 +686,9 @@ func (imp *Importer) importAgents(ctx context.Context, result *CloneResult, opts
 	// picker chose specific skills; agents were not on offer). An
 	// explicit agent selection overrides that and imports exactly those.
 	// A skill-only batch never imports agents.
+	if opts.ExactSelection && len(opts.SelectedAgents) == 0 {
+		return nil, nil
+	}
 	if opts.ResourceKind == ResourceKindSkill || len(result.Agents) == 0 || (len(opts.Selected) > 0 && len(opts.SelectedAgents) == 0 && opts.ResourceKind != ResourceKindAgent) {
 		return nil, nil
 	}

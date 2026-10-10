@@ -126,6 +126,16 @@ describe('packModel', () => {
     expect(groups[0].rows[0].remediation).toContain('gridctl pack apply');
   });
 
+  it('groups a source row after the stack row and before skills', () => {
+    const groups = groupPackRows([
+      { kind: 'skill', name: 'ok', client: 'claude', state: 'in-sync' },
+      { kind: 'source', name: 'netops', state: 'in-sync', detail: 'https://example.com/netops@v1 (abc1234)' },
+      { kind: 'stack', name: 'neteng', state: 'in-sync' },
+    ]);
+    expect(groups.map((g) => g.kind)).toEqual(['stack', 'source', 'skill']);
+    expect(groups[1].label).toBe('Sources');
+  });
+
   it('groups rows by kind in manifest order, attention-first within groups', () => {
     const groups = groupPackRows([
       { kind: 'wiring', name: 'gridctl', client: 'claude', state: 'in-sync' },
@@ -342,6 +352,20 @@ describe('PackImportWizard', () => {
     );
   }
 
+  it('labels a resource that came from an external source', async () => {
+    vi.mocked(previewPack).mockResolvedValue({
+      ...previewResult,
+      rules: [],
+      skills: [{ kind: 'skill', name: 'alpha', source: 'netops' }],
+    });
+    renderWizard();
+    fireEvent.change(screen.getByLabelText('Pack repository URL'), {
+      target: { value: 'https://github.com/acme/team-pack' },
+    });
+    fireEvent.click(screen.getByText('Preview pack'));
+    expect(await screen.findByText(/alpha from netops/)).toBeInTheDocument();
+  });
+
   it('previews, gates on the pack-wide trust ack, and installs', async () => {
     vi.mocked(previewPack).mockResolvedValue(previewResult);
     vi.mocked(addPack).mockResolvedValue({
@@ -436,6 +460,22 @@ describe('reverse ownership chip', () => {
     render(
       <MemoryRouter>
         <SourceGroupHeader source={source} count={2} hasSearch={false} isActive={false} onToggle={() => {}} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('pack: team-pack')).toBeInTheDocument();
+  });
+
+  it('labels a pack member source even when the packs list is unloaded', () => {
+    useRegistryStore.setState({ packs: null });
+    render(
+      <MemoryRouter>
+        <SourceGroupHeader
+          source={{ name: 'team-pack/netops', repo: 'https://github.com/acme/netops', packMember: 'team-pack' } as never}
+          count={2}
+          hasSearch={false}
+          isActive={false}
+          onToggle={() => {}}
+        />
       </MemoryRouter>,
     );
     expect(screen.getByText('pack: team-pack')).toBeInTheDocument();

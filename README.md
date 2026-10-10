@@ -419,7 +419,7 @@ Learn more → [Skills guide](docs/skills.md)
 
 ### Packs
 
-A pack is a git repo with a `gridctl-pack.yaml` manifest: a versioned selection of skills, agents, rule fragments, gateway wiring, and an optional stack that imports and applies as one unit, so a team setup is one command instead of a checklist.
+A pack is a git repo with a `gridctl-pack.yaml` manifest: a versioned selection of skills, agents, rule fragments, gateway wiring, and an optional stack that imports and applies as one unit, so a team setup is one command instead of a checklist. Skills and agents may also come from git repositories the manifest names. Rules and the stack still come from the pack repository.
 
 ```bash
 gridctl pack add <git-repo>               # Clone, scan, and import the manifest's selection
@@ -453,7 +453,7 @@ Learn more → [Packs guide](docs/packs.md)
 | [`security-evidence/`](examples/security-evidence/) | Partial, unknown, and N/A states for `gridctl doctor --security` |
 | [`otlp-jaeger.yaml`](examples/tracing/otlp-jaeger.yaml) | Export traces to Jaeger via OTLP |
 | [`runs/stack.yaml`](examples/runs/stack.yaml) | Opt-in metadata-only persisted dispatch records |
-| [`portable-pack/`](examples/portable-pack) | Team pack: skills, agents, wiring, and a local-process stack from one manifest |
+| [`portable-pack/`](examples/portable-pack) | Team pack: skills, agents, wiring, a local-process stack, and a commented external source example from one manifest |
 
 ## 📖 Documentation
 

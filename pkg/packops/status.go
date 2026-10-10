@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/agentsync"
@@ -42,6 +44,9 @@ type Counts struct {
 	// Stack is true when the pack carries a resolved stack record.
 	// omitempty keeps packs without a stack on the previous JSON shape.
 	Stack bool `json:"stack,omitempty"`
+	// Sources is the number of pinned external sources. omitempty keeps
+	// packs without sources on the previous JSON shape.
+	Sources int `json:"sources,omitempty"`
 }
 
 // PackInfo is the identity half of a pack status: everything a list view
@@ -61,8 +66,9 @@ type PackInfo struct {
 	// Collision marks a pack name claimed by more than one source; the
 	// listed repos disambiguate. Detail fetches for a colliding name
 	// refuse instead of picking one.
-	Collision      bool     `json:"collision,omitempty"`
-	CollisionRepos []string `json:"collision_repos,omitempty"`
+	Collision      bool            `json:"collision,omitempty"`
+	CollisionRepos []string        `json:"collision_repos,omitempty"`
+	Sources        []SourceSummary `json:"sources,omitempty"`
 }
 
 // PackStatus is one pack's identity plus its per-resource state rows.
@@ -130,7 +136,14 @@ func (m *Managers) Statuses(ctx context.Context, opts StatusOptions) ([]PackStat
 	var out []PackStatus
 	for _, ps := range sources {
 		p := ps.Pack
-		rows, attention := m.statusRowsFor(p, skillStatuses, agentStatuses, wiringRows, ruleDeps)
+		members := map[string]skills.LockedSource{}
+		for _, key := range lf.MemberSources(p.Name) {
+			if src, ok := lf.Sources[key]; ok {
+				members[memberSourceName(p.Name, key)] = src
+			}
+		}
+		cache, _ := skills.ReadUpdateCacheAt(skills.UpdateCachePath())
+		rows, attention := m.statusRowsFor(p, ps.Source.Repo, members, cache, skillStatuses, agentStatuses, wiringRows, ruleDeps)
 		info := PackInfo{
 			Name:        p.Name,
 			Version:     p.Version,
@@ -143,7 +156,8 @@ func (m *Managers) Statuses(ctx context.Context, opts StatusOptions) ([]PackStat
 				CommitSHA: ps.Source.CommitSHA,
 				FetchedAt: ps.Source.FetchedAt,
 			},
-			Counts:     Counts{Skills: len(p.Skills), Agents: len(p.Agents), Rules: len(p.Rules), Wiring: p.Wiring, Stack: p.Stack != nil},
+			Counts:     Counts{Skills: len(p.Skills), Agents: len(p.Agents), Rules: len(p.Rules), Wiring: p.Wiring, Stack: p.Stack != nil, Sources: len(p.Sources)},
+			Sources:    statusSourceSummaries(p),
 			Unresolved: p.Unresolved,
 		}
 		for _, r := range rows {
@@ -213,7 +227,7 @@ func (m *Managers) loadRuleStatusDeps(ctx context.Context, sources []packSource)
 
 // statusRowsFor builds one pack's rows in kind order: stack, skills,
 // agents, rules, wiring, unresolved.
-func (m *Managers) statusRowsFor(p *skills.LockedPack, skillStatuses []skillsync.ProjectionStatus, agentStatuses []agentsync.ProjectionStatus, wiringRows []wiring.Row, ruleDeps *ruleStatusDeps) ([]Row, bool) {
+func (m *Managers) statusRowsFor(p *skills.LockedPack, packRepo string, members map[string]skills.LockedSource, cache *skills.UpdateStatus, skillStatuses []skillsync.ProjectionStatus, agentStatuses []agentsync.ProjectionStatus, wiringRows []wiring.Row, ruleDeps *ruleStatusDeps) ([]Row, bool) {
 	var rows []Row
 	attention := false
 	if p.Stack != nil {
@@ -226,6 +240,11 @@ func (m *Managers) statusRowsFor(p *skills.LockedPack, skillStatuses []skillsync
 			rows = append(rows, row)
 			attention = attention || stackAttention
 		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(p.Sources)) {
+		row, sourceAttention := sourceStatusRow(packRepo, name, p.Sources[name], members[name], cache)
+		rows = append(rows, row)
+		attention = attention || sourceAttention
 	}
 	needsAttention := func(state string) bool {
 		switch state {
@@ -322,4 +341,63 @@ func (m *Managers) statusRowsFor(p *skills.LockedPack, skillStatuses []skillsync
 		attention = true
 	}
 	return rows, attention
+}
+
+func memberSourceName(packName, key string) string {
+	prefix := packName + "/"
+	if len(key) > len(prefix) && key[:len(prefix)] == prefix {
+		return key[len(prefix):]
+	}
+	return key
+}
+
+func statusSourceSummaries(p *skills.LockedPack) []SourceSummary {
+	if len(p.Sources) == 0 {
+		return nil
+	}
+	out := make([]SourceSummary, 0, len(p.Sources))
+	for _, name := range slices.Sorted(maps.Keys(p.Sources)) {
+		ps := p.Sources[name]
+		out = append(out, SourceSummary{
+			Name:      name,
+			Repo:      redactRepo(ps.Repo),
+			Ref:       ps.Ref,
+			CommitSHA: ps.CommitSHA,
+			Skills:    orEmpty(ps.Skills),
+			Agents:    orEmpty(ps.Agents),
+		})
+	}
+	return out
+}
+
+func sourceStatusRow(packRepo, name string, ps skills.LockedPackSource, member skills.LockedSource, cache *skills.UpdateStatus) (Row, bool) {
+	detail := sourceDetail(ps.Repo, ps.Ref, ps.CommitSHA)
+	checkable := len(ps.Skills) > 0 && member.CredentialRef == ""
+	if !checkable {
+		return Row{Kind: "source", Name: name, State: "in-sync", Detail: detail + ", freshness not checked"}, false
+	}
+	if cache != nil {
+		for _, skillName := range ps.Skills {
+			upd, ok := cache.Updates[skillName]
+			if ok && upd.Repo == ps.Repo && upd.LatestSHA != "" && upd.LatestSHA != ps.CommitSHA {
+				return Row{
+					Kind:        "source",
+					Name:        name,
+					State:       "stale",
+					Detail:      detail,
+					Remediation: fmt.Sprintf("re-run 'gridctl pack add %s'", packRepo),
+				}, true
+			}
+		}
+	}
+	return Row{Kind: "source", Name: name, State: "in-sync", Detail: detail}, false
+}
+
+func sourceDetail(repo, ref, sha string) string {
+	repo = redactRepo(repo)
+	short := skills.ShortSHA(sha)
+	if ref == "" {
+		return fmt.Sprintf("%s (%s)", repo, short)
+	}
+	return fmt.Sprintf("%s@%s (%s)", repo, ref, short)
 }

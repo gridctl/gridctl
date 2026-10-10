@@ -10,7 +10,7 @@ New to gridctl? Read in this order:
 2. **[Quick Start](../README.md#-quick-start)** - apply your first stack in three commands
 3. **[Configuration Reference](config-schema.md)** - the shape of `stack.yaml`
 4. **[Skills](skills.md)** - serve skills to upstream MCP clients and project skills and agents onto disk
-5. **[Packs](packs.md)** - import skills, agents, rules, wiring, and an optional stack as one unit from a git repo
+5. **[Packs](packs.md)** - import skills, agents (including from declared external repositories), rules, wiring, and an optional stack as one unit from a git repo
 6. **[Scaling](scaling.md)** and **[Usage Observability](usage-observability.md)** - operate at volume
 7. **[Troubleshooting](troubleshooting.md)** - when something goes wrong
 
@@ -35,7 +35,7 @@ New to gridctl? Read in this order:
 | Document | Description |
 |----------|-------------|
 | [Skills](skills.md) | Author `SKILL.md` files, serve them as MCP prompts, import from git, a local directory, or a client home, and project skills and agents onto disk via `gridctl skill project` |
-| [Packs](packs.md) | One `gridctl-pack.yaml` manifest importing skills, agents, rule fragments, wiring, and an optional stack as a unit, with tag-exact removal |
+| [Packs](packs.md) | One `gridctl-pack.yaml` manifest importing skills, agents (including from declared external repositories), rule fragments, wiring, and an optional stack as a unit, with tag-exact removal |
 | [Tools Workspace](tools-workspace.md) | Curate the exposed tool surface - whitelists, Audit Mode, annotation hints, fleet actions, per-client access, and groups |
 | [Global Context Sync](global-context.md) | Manage the global context (one canonical AGENTS.md, or an opt-in rule fragment library with per-client assembly) via `gridctl ctx`, the web UI, or the REST API |
 | [Scaling stdio servers](scaling.md) | Run multiple replicas of a single MCP server - policies, trade-offs, observability |

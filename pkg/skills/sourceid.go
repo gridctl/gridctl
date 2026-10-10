@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	gitpkg "github.com/gridctl/gridctl/pkg/git"
 )
 
 // ErrSourceConflict is a source-name or source-kind collision. REST maps it
@@ -51,6 +53,11 @@ type SourceNameInput struct {
 // with the same resolved root is reused. An explicit name that differs from
 // that key is an error. Client import suffixes a colliding basename with
 // the first eight hex characters of sha256(root); skill add fails instead.
+//
+// A pack member key is "<pack>/<source>". RepoToName returns a basename and
+// cannot produce a slash, so a plain skill add without --source-name never
+// derives that key. GuardSourceKey is what refuses an explicit --source-name
+// that would re-key a member onto another repository.
 func ResolveSourceName(lf *LockFile, in SourceNameInput) (string, error) {
 	if lf == nil {
 		lf = &LockFile{}
@@ -134,7 +141,10 @@ func gitLockSourceName(lf *LockFile, origin *Origin, name string, isSkill bool) 
 }
 
 // GuardSourceKey refuses to replace an existing local source key with a
-// different root or source kind. Git-to-git reuse is unchanged.
+// different root or source kind. Git-to-git reuse of a non-member key is
+// unchanged. A pack member key cannot be pointed at a different repository
+// by any caller; the same repository under the same key stays allowed so
+// pack add can re-pin and skill update can refresh.
 func GuardSourceKey(lf *LockFile, name string, kind, repo string) error {
 	if lf == nil {
 		return nil
@@ -142,6 +152,14 @@ func GuardSourceKey(lf *LockFile, name string, kind, repo string) error {
 	existing, ok := lf.Sources[name]
 	if !ok {
 		return nil
+	}
+	if existing.PackMember != "" && existing.Repo != repo {
+		return &SourceConflictError{
+			Name: name,
+			Repo: existing.Repo,
+			Msg: fmt.Sprintf("source %q belongs to pack %q and records %s; refusing to re-key it to %s; run 'gridctl pack remove %s' and add the pack again to point this source at a new repository",
+				name, existing.PackMember, gitpkg.RedactURL(existing.Repo), gitpkg.RedactURL(repo), existing.PackMember),
+		}
 	}
 	if kind == SourceKindLocal {
 		if existing.IsLocal() && existing.Repo == repo {
@@ -231,7 +249,7 @@ func GuardPackOwnership(lf *LockFile, sourceName string, result *CloneResult, op
 	for _, name := range opts.SelectedAgents {
 		selectedAgents[name] = true
 	}
-	if opts.ResourceKind != ResourceKindAgent {
+	if opts.ResourceKind != ResourceKindAgent && (!opts.ExactSelection || len(opts.Selected) > 0) {
 		for _, sk := range result.Skills {
 			if len(opts.Selected) > 0 && !selected[sk.Name] {
 				continue
@@ -242,6 +260,9 @@ func GuardPackOwnership(lf *LockFile, sourceName string, result *CloneResult, op
 		}
 	}
 	if opts.ResourceKind == ResourceKindSkill {
+		return nil
+	}
+	if opts.ExactSelection && len(opts.SelectedAgents) == 0 {
 		return nil
 	}
 	if len(opts.Selected) > 0 && len(opts.SelectedAgents) == 0 {
@@ -287,7 +308,7 @@ func copyAgents(in map[string]LockedAgent) map[string]LockedAgent {
 }
 
 func sourceEmpty(src LockedSource) bool {
-	return len(src.Skills) == 0 && len(src.Agents) == 0 && src.Pack == nil
+	return len(src.Skills) == 0 && len(src.Agents) == 0 && src.Pack == nil && src.PackMember == ""
 }
 
 // ReleaseInstalledNames removes installed names from other sources when a

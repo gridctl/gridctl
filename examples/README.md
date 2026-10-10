@@ -31,7 +31,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | [🔑 secrets-vault/](secrets-vault/) | Encrypted variables and variable sets |
 | [📈 autoscale/](autoscale/) | Reactive autoscaling of MCP server replicas |
 | [🧳 portable-stack/](portable-stack/) | Stack that stays committable by keeping every per-environment value in the variable store |
-| [🎒 portable-pack/](portable-pack/) | Pack repo: skills, agents, rules, and a local-process stack behind one `gridctl-pack.yaml` |
+| [🎒 portable-pack/](portable-pack/) | Pack repo: skills, agents, rules, a local-process stack, and a commented external source example behind one `gridctl-pack.yaml` |
 | [🧭 model-policy/](model-policy/) | Model routing policy projected into LiteLLM and OpenCode config |
 | [🔭 tracing/](tracing/) | Distributed tracing and OTLP export |
 | [Run records](runs/) | Opt-in metadata-only persisted dispatch records |
@@ -46,7 +46,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 4. **OpenAPI**: `openapi/openapi-basic.yaml` - turn any REST API into MCP tools
 5. **Python sources**: `python-sources/pypi.yaml` - start with one exact package, then try `daily.yaml` for PyPI and Git together
 6. **Registry**: `registry/registry-basic.yaml` - Skills as MCP prompts (imports also discover agents)
-7. **Packs**: `portable-pack/` - one manifest importing skills, agents, rules, and a local-process stack as a unit
+7. **Packs**: `portable-pack/` - one manifest importing skills, agents, rules, and a local-process stack as a unit, with a commented external source example
 8. **Scaling**: `autoscale/autoscale-basic.yaml` - reactive autoscaling of MCP replicas
 
 > **Note:** Getting-started examples use digest-pinned `alpine:3.22` placeholders (`sleep`) to focus on infrastructure concepts, not MCP server logic.
@@ -96,7 +96,7 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | skills.yaml | - (skill sources) | Remote git skill sources; Library auto-update display, not `skill update` |
 | declarative-link | stdio (container) | `link:` block, `groups:` endpoints |
 | portable-stack | http (containers) | Committable stack, all values from the variable store |
-| portable-pack | - (pack manifest) | Skills, agents, rules, wiring, and a local-process stack from one manifest |
+| portable-pack | - (pack manifest) | Skills, agents, rules, wiring, a local-process stack, and a commented external source example from one manifest |
 | model-policy | - (models policy) | Router-only LiteLLM fragment, include line, OpenCode provider |
 | declaration-policy-demo | http (container) | Offline `validate --policy` against digest-pinned images and pinning block |
 

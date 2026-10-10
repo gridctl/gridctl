@@ -858,7 +858,7 @@ The unified projection lockfile (`~/.gridctl/project.lock.yaml`) carries a schem
 
 ### "import lockfile was written by a newer gridctl version"
 
-`~/.gridctl/skills.lock.yaml` stamps version 6 when any source is a local directory import, and version 5 when any imported pack has a resolved stack record or an unresolved-detail map and no local source is present. The stamp covers the whole file, so an older gridctl refuses skill and pack commands that read it, not only the stack pack. Packs with neither keep the previous stamp: version 2, version 3 when variable declarations must be represented, or version 4 when a source has an SSH key path. Remove the stack-carrying pack, and any local directory sources, with this build before downgrading. An older binary cannot remove them, because it refuses the file.
+`~/.gridctl/skills.lock.yaml` stamps version 7 when any imported pack pins external sources or any source is a pack member, version 6 when any source is a local directory import and no version-7 key is present, and version 5 when any imported pack has a resolved stack record or an unresolved-detail map and no local source or pack source is present. The stamp covers the whole file, so an older gridctl refuses skill and pack commands that read it, not only the stack pack. A pack with neither a stack record nor an unresolved-detail map, and no external sources, keeps the previous stamp: version 2, version 3 when variable declarations must be represented, or version 4 when a source has an SSH key path. Remove the stack-carrying pack, any pack that pins external sources, and any local directory sources, with this build before downgrading. An older binary cannot remove them, because it refuses the file.
 
 ---
 

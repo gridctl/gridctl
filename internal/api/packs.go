@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -130,6 +131,24 @@ func (s *Server) storedPackAuth(repo string) skills.StoredAuth {
 	return src.StoredAuth()
 }
 
+// resolveSourceAuthMap converts a request sourceAuth map into runtime auth.
+// Omitted sources are not filled here: the pack name is unknown until the
+// manifest is read, so stored member auth is resolved inside packops.
+func (s *Server) resolveSourceAuthMap(in map[string]*AuthRequest) (map[string]skills.AuthConfig, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]skills.AuthConfig, len(in))
+	for name, req := range in {
+		cfg, err := s.resolveCheckAuth(req, skills.StoredAuth{})
+		if err != nil {
+			return nil, fmt.Errorf("source %q: %w", name, err)
+		}
+		out[name] = cfg
+	}
+	return out, nil
+}
+
 // packErrorStatus maps pkg/packops sentinel errors to HTTP statuses.
 func packErrorStatus(err error) int {
 	var fe *packops.FindingsError
@@ -221,12 +240,13 @@ func (s *Server) handlePackAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Repo   string       `json:"repo"`
-		Ref    string       `json:"ref,omitempty"`
-		Path   string       `json:"path,omitempty"`
-		Trust  bool         `json:"trust,omitempty"`
-		DryRun bool         `json:"dryRun,omitempty"`
-		Auth   *AuthRequest `json:"auth,omitempty"`
+		Repo       string                  `json:"repo"`
+		Ref        string                  `json:"ref,omitempty"`
+		Path       string                  `json:"path,omitempty"`
+		Trust      bool                    `json:"trust,omitempty"`
+		DryRun     bool                    `json:"dryRun,omitempty"`
+		Auth       *AuthRequest            `json:"auth,omitempty"`
+		SourceAuth map[string]*AuthRequest `json:"sourceAuth,omitempty"`
 	}
 	if err := decodeJSONBody(r, &req); err != nil {
 		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -241,6 +261,11 @@ func (s *Server) handlePackAdd(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	sourceAuth, err := s.resolveSourceAuthMap(req.SourceAuth)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	res, err := mgr.Add(r.Context(), imp, packops.AddOptions{
 		Repo:            req.Repo,
@@ -250,6 +275,8 @@ func (s *Server) handlePackAdd(w http.ResponseWriter, r *http.Request) {
 		DryRun:          req.DryRun,
 		BlockOnFindings: true,
 		Auth:            auth,
+		SourceAuth:      sourceAuth,
+		Resolver:        s.credentialResolver(),
 	})
 	if err != nil {
 		var fe *packops.FindingsError
@@ -281,10 +308,11 @@ func (s *Server) handlePackAdd(w http.ResponseWriter, r *http.Request) {
 // POST /api/packs/preview
 func (s *Server) handlePackPreview(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Repo string       `json:"repo"`
-		Ref  string       `json:"ref,omitempty"`
-		Path string       `json:"path,omitempty"`
-		Auth *AuthRequest `json:"auth,omitempty"`
+		Repo       string                  `json:"repo"`
+		Ref        string                  `json:"ref,omitempty"`
+		Path       string                  `json:"path,omitempty"`
+		Auth       *AuthRequest            `json:"auth,omitempty"`
+		SourceAuth map[string]*AuthRequest `json:"sourceAuth,omitempty"`
 	}
 	if err := decodeJSONBody(r, &req); err != nil {
 		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -302,7 +330,15 @@ func (s *Server) handlePackPreview(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	res, err := packops.Preview(r.Context(), packops.PreviewOptions{Repo: req.Repo, Ref: req.Ref, Path: req.Path, Auth: auth})
+	sourceAuth, err := s.resolveSourceAuthMap(req.SourceAuth)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	res, err := packops.Preview(r.Context(), packops.PreviewOptions{
+		Repo: req.Repo, Ref: req.Ref, Path: req.Path, Auth: auth,
+		SourceAuth: sourceAuth, LockPath: s.lockFilePath(), Resolver: s.credentialResolver(),
+	})
 	if err != nil {
 		if status := packErrorStatus(err); status != http.StatusInternalServerError {
 			writeJSONError(w, err.Error(), status)

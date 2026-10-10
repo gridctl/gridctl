@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/gridctl/gridctl/pkg/agentsync"
 	"github.com/gridctl/gridctl/pkg/contexts"
@@ -64,8 +65,13 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 			return &RemoveDoc{SchemaVersion: SchemaVersion, Pack: name, DryRun: opts.DryRun, Rows: rows, Kept: kept}, nil
 		}
 	}
-	removableSkills := splitKept(locked.Skills, driftedSkills, opts.Force, "skill", &rows, &kept)
-	removableAgents := splitKept(locked.Agents, driftedAgents, opts.Force, "agent", &rows, &kept)
+	lf, lerr := skills.ReadLockFile(m.lockPath())
+	if lerr != nil {
+		return nil, lerr
+	}
+	memberSkills, memberAgents := memberOwnedNames(lf, name)
+	removableSkills := splitKept(unionNames(locked.Skills, memberSkills), driftedSkills, opts.Force, "skill", &rows, &kept)
+	removableAgents := splitKept(unionNames(locked.Agents, memberAgents), driftedAgents, opts.Force, "agent", &rows, &kept)
 
 	if opts.DryRun {
 		for _, n := range removableSkills {
@@ -79,6 +85,11 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 		}
 		if locked.Wiring {
 			rows = append(rows, Row{Kind: "wiring", Name: "gridctl", Action: "would-remove"})
+		}
+		if len(kept) == 0 {
+			for _, key := range lf.MemberSources(name) {
+				rows = append(rows, Row{Kind: "source", Name: memberSourceName(name, key), Action: "would-remove"})
+			}
 		}
 		return &RemoveDoc{SchemaVersion: SchemaVersion, Pack: name, DryRun: true, Rows: rows, Kept: kept}, nil
 	}
@@ -290,9 +301,14 @@ func (m *Managers) removePackWiring(ctx context.Context, packName string, force 
 // lockfile's cross-process lock.
 func trimLockedPack(ctx context.Context, lockPath, name string, kept []string) error {
 	return skills.MutateLockFile(ctx, lockPath, func(lf *skills.LockFile) (bool, error) {
+		if len(kept) == 0 {
+			for _, key := range lf.MemberSources(name) {
+				lf.RemoveSource(key)
+			}
+		}
 		srcName, src, ok := lf.FindPackSource(name)
 		if !ok {
-			return false, nil // source already GC'd by the last resource removal
+			return len(kept) == 0, nil // source already GC'd; members were dropped above
 		}
 		if len(kept) == 0 {
 			src.Pack = nil
@@ -320,7 +336,74 @@ func trimLockedPack(ctx context.Context, lockPath, name string, kept []string) e
 		}
 		src.Pack.Skills = skillsKept
 		src.Pack.Agents = agentsKept
+		if len(src.Pack.Sources) > 0 {
+			for sourceName, ps := range src.Pack.Sources {
+				ps.Skills = filterKept(ps.Skills, "skill", keptSet)
+				ps.Agents = filterKept(ps.Agents, "agent", keptSet)
+				src.Pack.Sources[sourceName] = ps
+			}
+		}
 		lf.SetSource(srcName, *src)
 		return true, nil
 	})
+}
+
+func memberOwnedNames(lf *skills.LockFile, packName string) (skillNames, agentNames []string) {
+	if lf == nil {
+		return nil, nil
+	}
+	skillsSet := map[string]struct{}{}
+	agentsSet := map[string]struct{}{}
+	for _, key := range lf.MemberSources(packName) {
+		src := lf.Sources[key]
+		for name := range src.Skills {
+			skillsSet[name] = struct{}{}
+		}
+		for name := range src.Agents {
+			agentsSet[name] = struct{}{}
+		}
+	}
+	return sortedSet(skillsSet), sortedSet(agentsSet)
+}
+
+func sortedSet(in map[string]struct{}) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(in))
+	for name := range in {
+		out = append(out, name)
+	}
+	slices.Sort(out)
+	return out
+}
+
+func unionNames(primary, extra []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(primary)+len(extra))
+	for _, name := range primary {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	for _, name := range extra {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	return out
+}
+
+func filterKept(names []string, kind string, kept map[string]bool) []string {
+	var out []string
+	for _, n := range names {
+		if kept[kind+"/"+n] {
+			out = append(out, n)
+		}
+	}
+	return out
 }

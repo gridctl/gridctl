@@ -107,7 +107,7 @@ export function SourceGroupHeader({
               {shortSha}
             </span>
           )}
-          {source && <PackChip source={source.name} />}
+          {source?.packMember ? <PackChip pack={source.packMember} /> : source && <PackChip source={source.name} />}
           {source && repoInfo && (
             <a
               href={`https://github.com/${repoInfo.owner}/${repoInfo.repo}`}

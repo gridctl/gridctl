@@ -860,6 +860,8 @@ export interface SkillSourceStatus {
   updateAvailable: boolean;
   /** Names of skills in this source with local edits a sync would overwrite. */
   driftedSkills?: string[];
+  /** Pack name when this source was imported as a named external source of that pack. */
+  packMember?: string;
 }
 
 export interface SkillPreview {
