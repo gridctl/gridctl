@@ -66,9 +66,6 @@ beforeEach(() => {
     needs_sync: false,
     clients: [],
   });
-  vi.spyOn(api, 'fetchModelsStatus').mockResolvedValue({
-    policy_path: '/fixture/models/policy.yaml', policy_exists: false, needs_attention: false, targets: [],
-  });
   vi.spyOn(api, 'fetchSessions').mockResolvedValue({ count: 0, sessions: [], entries: [] });
   vi.spyOn(api, 'previewClientLink').mockResolvedValue({
     client: 'grok', serverName: 'gridctl', configPath: '/fixture/client.json', before: '{}', after: '{}', stackDiff: '',
@@ -91,22 +88,22 @@ function deferred<T>() {
 
 describe('ConnectionsWorkspace', () => {
   it.each(['initial', 'post-apply'] as const)('ignores late %s health results after unmount', async (phase) => {
-    const models = deferred<Awaited<ReturnType<typeof api.fetchModelsStatus>>>();
-    if (phase === 'initial') vi.mocked(api.fetchModelsStatus).mockReturnValueOnce(models.promise);
+    const wiring = deferred<Awaited<ReturnType<typeof api.fetchWiringStatus>>>();
+    if (phase === 'initial') vi.mocked(api.fetchWiringStatus).mockReturnValueOnce(wiring.promise);
     const view = renderWorkspace();
     if (phase === 'post-apply') {
       await act(async () => {});
-      vi.mocked(api.fetchModelsStatus).mockReturnValueOnce(models.promise);
+      vi.mocked(api.fetchWiringStatus).mockReturnValueOnce(wiring.promise);
       vi.spyOn(api, 'unlinkClient').mockResolvedValue({ client: 'claude', serverName: 'gridctl', linked: false, declared: false });
       fireEvent.click(screen.getByRole('switch', { name: 'Link Claude Desktop' }));
       fireEvent.click(screen.getByText('Review & Apply'));
       fireEvent.click(screen.getByText('Apply changes'));
-      await waitFor(() => expect(api.fetchModelsStatus).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(api.fetchWiringStatus).toHaveBeenCalledTimes(2));
     }
     view.unmount();
     useStackStore.setState({ clients: [] });
     useRegistryStore.setState({ agentStatuses: null });
-    await act(async () => { models.reject(new Error('Models unavailable')); });
+    await act(async () => { wiring.reject(new Error('Wiring unavailable')); });
     expect(useStackStore.getState().clients).toEqual([]);
     expect(useRegistryStore.getState().agentStatuses).toBeNull();
   });
@@ -121,7 +118,7 @@ describe('ConnectionsWorkspace', () => {
     await waitFor(() => expect(api.unlinkClient).toHaveBeenCalledOnce());
     view.unmount();
     await act(async () => { unlink.resolve({ client: 'claude', serverName: 'gridctl', linked: false, declared: false }); });
-    expect(api.fetchModelsStatus).toHaveBeenCalledOnce();
+    expect(api.fetchWiringStatus).toHaveBeenCalledOnce();
   });
 
   it('stops an in-flight apply batch on credential rejection without replaying it', async () => {
@@ -137,9 +134,9 @@ describe('ConnectionsWorkspace', () => {
     act(() => useAuthStore.getState().rejectGeneration(useAuthStore.getState().generation));
     await act(async () => { unlink.reject(new api.AuthError()); });
     expect(link).not.toHaveBeenCalled();
-    expect(api.fetchModelsStatus).toHaveBeenCalledOnce();
+    expect(api.fetchWiringStatus).toHaveBeenCalledOnce();
     await act(async () => useAuthStore.setState({ authRequired: false, generation: Symbol() }));
-    expect(api.fetchModelsStatus).toHaveBeenCalledTimes(2);
+    expect(api.fetchWiringStatus).toHaveBeenCalledTimes(2);
     expect(api.unlinkClient).toHaveBeenCalledOnce();
     expect(link).not.toHaveBeenCalled();
     expect(screen.getByText('Apply changes')).toBeEnabled();
@@ -157,21 +154,21 @@ describe('ConnectionsWorkspace', () => {
   });
 
   it('discards old health results and resumes reads after credential verification', async () => {
-    const models = deferred<Awaited<ReturnType<typeof api.fetchModelsStatus>>>();
+    const wiring = deferred<Awaited<ReturnType<typeof api.fetchWiringStatus>>>();
     const context = deferred<Awaited<ReturnType<typeof api.fetchGlobalContext>>>();
-    vi.mocked(api.fetchModelsStatus).mockReturnValueOnce(models.promise);
+    vi.mocked(api.fetchWiringStatus).mockReturnValueOnce(wiring.promise);
     vi.mocked(api.fetchGlobalContext).mockReturnValueOnce(context.promise);
     renderWorkspace();
     act(() => useAuthStore.getState().rejectGeneration(useAuthStore.getState().generation));
     await act(async () => {
       context.resolve({ canonical: { path: '/old', exists: false, content: '' }, needs_sync: false, clients: [] });
-      models.reject(new Error('Old request failed'));
+      wiring.reject(new Error('Old request failed'));
     });
     expect(useContextStore.getState().doc).toBeNull();
     expect(useRegistryStore.getState().agentStatuses).toBeNull();
-    expect(api.fetchModelsStatus).toHaveBeenCalledOnce();
+    expect(api.fetchWiringStatus).toHaveBeenCalledOnce();
     await act(async () => useAuthStore.setState({ authRequired: false, generation: Symbol() }));
-    expect(api.fetchModelsStatus).toHaveBeenCalledTimes(2);
+    expect(api.fetchWiringStatus).toHaveBeenCalledTimes(2);
     expect(useContextStore.getState().doc?.canonical.path).toBe('/fixture/context/AGENTS.md');
   });
 

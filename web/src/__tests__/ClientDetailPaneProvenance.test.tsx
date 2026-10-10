@@ -48,9 +48,7 @@ function renderPane() {
         agentRows={[]}
         sessions={[]}
         onRefresh={() => {}}
-        modelsTargets={null}
         onReviewContext={() => {}}
-        onOpenModelRouting={() => {}}
       />
     </MemoryRouter>,
   );
@@ -83,9 +81,7 @@ describe('ClientDetailPane context provenance', () => {
           agentRows={[]}
           sessions={[]}
           onRefresh={() => {}}
-          modelsTargets={null}
           onReviewContext={() => {}}
-          onOpenModelRouting={() => {}}
         />
       </MemoryRouter>,
     );

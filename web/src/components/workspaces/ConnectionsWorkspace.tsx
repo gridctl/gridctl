@@ -6,7 +6,6 @@ import {
   ClientLinkError,
   fetchClients,
   fetchGlobalContext,
-  fetchModelsStatus,
   fetchSessions,
   fetchWiringStatus,
   fetchAgentProjectionStatus,
@@ -19,10 +18,9 @@ import { useRegistryStore } from '../../stores/useRegistryStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useListNav } from '../../hooks/useListNav';
-import type { AgentProjectionStatus, ClientStatus, ModelsStatusDoc, SessionEntry, WiringRow } from '../../types';
+import type { AgentProjectionStatus, ClientStatus, SessionEntry, WiringRow } from '../../types';
 import { showToast } from '../ui/Toast';
 import { GlobalContextDialog } from '../context/GlobalContextDialog';
-import { ModelRoutingDialog } from '../models/ModelRoutingDialog';
 import { ResetDialog } from '../system/ResetDialog';
 import { useUIStore } from '../../stores/useUIStore';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
@@ -62,11 +60,6 @@ export default function ConnectionsWorkspace() {
   const agentStatuses = useRegistryStore((s) => s.agentStatuses);
 
   const [wiringRows, setWiringRows] = useState<WiringRow[] | null>(null);
-  const [modelsDoc, setModelsDoc] = useState<ModelsStatusDoc | null>(null);
-  // A failed models fetch is its own fact, distinct from "still
-  // loading": the pane says unavailable instead of loading forever.
-  const [modelsFailed, setModelsFailed] = useState(false);
-  const [showModelsDialog, setShowModelsDialog] = useState(false);
   const [sessionsFailed, setSessionsFailed] = useState(false);
   const [staged, setStaged] = useState<StagedChanges>({});
   const [reviewing, setReviewing] = useState(false);
@@ -105,7 +98,6 @@ export default function ConnectionsWorkspace() {
       fetchAgentProjectionStatus(),
       fetchGlobalContext(),
       fetchClients(),
-      fetchModelsStatus(),
     ]);
     if (!current() || healthRequest.current !== request) return;
     if (results[0].status === 'fulfilled') setWiringRows(results[0].value);
@@ -119,12 +111,6 @@ export default function ConnectionsWorkspace() {
     }
     if (results[3].status === 'fulfilled') {
       useStackStore.getState().setClients(results[3].value);
-    }
-    if (results[4].status === 'fulfilled') {
-      setModelsDoc(results[4].value);
-      setModelsFailed(false);
-    } else {
-      setModelsFailed(true);
     }
   }, [captureCurrent]);
 
@@ -171,10 +157,9 @@ export default function ConnectionsWorkspace() {
 
   // ---- Health join + ordering. ----
   const contextClients = contextDoc?.clients ?? null;
-  const modelsTargets = modelsDoc?.targets ?? null;
   const healthOf = useCallback(
-    (slug: string) => clientHealth(slug, wiringRows, contextClients, agentStatuses, modelsTargets),
-    [wiringRows, contextClients, agentStatuses, modelsTargets],
+    (slug: string) => clientHealth(slug, wiringRows, contextClients, agentStatuses),
+    [wiringRows, contextClients, agentStatuses],
   );
   const sorted = useMemo(() => sortClients(clients, healthOf), [clients, healthOf]);
 
@@ -374,14 +359,7 @@ export default function ConnectionsWorkspace() {
   if (clients.length === 0) {
     return (
       <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
-        <ConnectionsHeader
-          subtitle="No clients reported"
-          onOpenModelRouting={() => setShowModelsDialog(true)}
-        />
-        <ModelRoutingDialog
-          isOpen={showModelsDialog}
-          onClose={() => setShowModelsDialog(false)}
-        />
+        <ConnectionsHeader subtitle="No clients reported" />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center max-w-xs">
             <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-4 text-primary">
@@ -401,7 +379,6 @@ export default function ConnectionsWorkspace() {
     <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
       <ConnectionsHeader
         subtitle={`${clients.filter((c) => c.linked).length} linked · ${clients.filter((c) => c.detected).length} detected · access scoping lives in Tools`}
-        onOpenModelRouting={() => setShowModelsDialog(true)}
       />
 
       <div className="flex-1 min-h-0 relative">
@@ -446,14 +423,11 @@ export default function ConnectionsWorkspace() {
                       : []
                 }
                 sessionsFailed={sessionsFailed}
-                modelsTargets={modelsTargets}
-                modelsFailed={modelsFailed}
                 onRefresh={refreshHealth}
                 onReviewContext={() => {
                   setContextReviewSlug(selectedSlug);
                   setShowContextDialog(true);
                 }}
-                onOpenModelRouting={() => setShowModelsDialog(true)}
               />
             </div>
             {unjoinedAgents.length > 0 && (
@@ -518,14 +492,6 @@ export default function ConnectionsWorkspace() {
           void refreshHealth();
         }}
       />
-
-      <ModelRoutingDialog
-        isOpen={showModelsDialog}
-        onClose={() => {
-          setShowModelsDialog(false);
-          void refreshHealth();
-        }}
-      />
     </div>
   );
 }
@@ -554,13 +520,7 @@ function DangerZoneStrip({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-function ConnectionsHeader({
-  subtitle,
-  onOpenModelRouting,
-}: {
-  subtitle: string;
-  onOpenModelRouting?: () => void;
-}) {
+function ConnectionsHeader({ subtitle }: { subtitle: string }) {
   return (
     <div className="flex-shrink-0 bg-surface/30 backdrop-blur-sm border-b border-border-subtle px-6 py-3">
       <div className="flex items-baseline gap-3">
@@ -568,17 +528,6 @@ function ConnectionsHeader({
           Connections
         </h1>
         <span className="font-mono text-[10px] text-text-muted flex-1 truncate">{subtitle}</span>
-        {/* Always visible, never gated on the selected client: two of the
-            three model-routing targets belong to LiteLLM, which has no
-            rail row, so this is the surface's one guaranteed entry. */}
-        {onOpenModelRouting && (
-          <button
-            onClick={onOpenModelRouting}
-            className="px-2.5 py-1 rounded-md text-[11px] font-medium border border-border/40 text-text-muted hover:bg-surface-highlight hover:text-text-primary transition-colors whitespace-nowrap"
-          >
-            Model routing
-          </button>
-        )}
       </div>
     </div>
   );
