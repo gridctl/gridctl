@@ -1,6 +1,7 @@
 package pack
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -104,5 +105,118 @@ func TestValidate_RejectsBadRuleName(t *testing.T) {
 	src := validManifest + "rules: [Bad_Name]\n"
 	if _, err := Parse([]byte(src)); err == nil || !strings.Contains(err.Error(), "rule name") {
 		t.Fatalf("want rule-name validation error, got %v", err)
+	}
+}
+
+func TestParse_StringSelectionsKeepLocalNames(t *testing.T) {
+	m, err := Parse([]byte(validManifest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := m.SkillNames(); len(got) != 1 || got[0] != "incident-triage" {
+		t.Fatalf("SkillNames = %v", got)
+	}
+	if got := m.AgentNames(); len(got) != 1 || got[0] != "reviewer" {
+		t.Fatalf("AgentNames = %v", got)
+	}
+	if m.Skills[0].Source != "" || m.Agents[0].Source != "" {
+		t.Fatalf("string entries must have an empty source: %+v %+v", m.Skills, m.Agents)
+	}
+}
+
+func TestParse_SourceMappingAndJSONRoundTrip(t *testing.T) {
+	src := `apiVersion: gridctl.dev/v1
+kind: Pack
+name: network-eng
+sources:
+  netops:
+    repo: git@gitlab.example.com:network/netops-copilot.git
+    ref: v2.3.0
+    auth:
+      method: ssh-key
+      ssh_user: git
+  skillsbench:
+    repo: https://github.com/benchflow-ai/skillsbench
+    ref: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
+    path: tasks/dapt/skills
+skills:
+  - incident-triage
+  - { name: noc-l2-agent, source: netops }
+agents:
+  - { name: neteng-reviewer, source: netops }
+`
+	m, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Skills[0].Name != "incident-triage" || m.Skills[0].Source != "" {
+		t.Fatalf("scalar skill = %+v", m.Skills[0])
+	}
+	if m.Skills[1].Name != "noc-l2-agent" || m.Skills[1].Source != "netops" {
+		t.Fatalf("mapped skill = %+v", m.Skills[1])
+	}
+	if m.Sources["skillsbench"].Path != "tasks/dapt/skills" {
+		t.Fatalf("path = %q", m.Sources["skillsbench"].Path)
+	}
+	raw, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back Manifest
+	if err := json.Unmarshal(raw, &back); err != nil {
+		t.Fatal(err)
+	}
+	if back.Skills[1].Name != "noc-l2-agent" || back.Skills[1].Source != "netops" {
+		t.Fatalf("json round-trip skill = %+v", back.Skills[1])
+	}
+	if back.Sources["netops"].Auth == nil || back.Sources["netops"].Auth.Method != "ssh-key" {
+		t.Fatalf("json round-trip auth = %+v", back.Sources["netops"].Auth)
+	}
+}
+
+func TestParse_SelectionMappingRequiresNameAndSource(t *testing.T) {
+	cases := []string{
+		"skills:\n  - { source: netops }\n",
+		"agents:\n  - { name: reviewer }\n",
+	}
+	base := `apiVersion: gridctl.dev/v1
+kind: Pack
+name: team-pack
+sources:
+  netops:
+    repo: https://github.com/acme/netops
+`
+	for _, extra := range cases {
+		_, err := Parse([]byte(base + extra))
+		if err == nil || !strings.Contains(err.Error(), "line ") {
+			t.Fatalf("src %q: want a line-numbered parse error, got %v", extra, err)
+		}
+	}
+}
+
+func TestParse_SourceValidationNamesKey(t *testing.T) {
+	base := "apiVersion: gridctl.dev/v1\nkind: Pack\nname: team-pack\n"
+	cases := []struct {
+		label string
+		src   string
+		want  string
+	}{
+		{"bad source name", base + "sources:\n  NetOps:\n    repo: https://github.com/acme/netops\n", "NetOps"},
+		{"file repo", base + "sources:\n  netops:\n    repo: file:///tmp/netops\n", "netops"},
+		{"git scheme", base + "sources:\n  netops:\n    repo: git://github.com/acme/netops\n", "netops"},
+		{"absolute repo", base + "sources:\n  netops:\n    repo: /tmp/netops\n", "netops"},
+		{"relative repo", base + "sources:\n  netops:\n    repo: ./netops\n", "netops"},
+		{"home repo", base + "sources:\n  netops:\n    repo: ~/netops\n", "netops"},
+		{"duplicate repo", base + "sources:\n  alpha:\n    repo: https://github.com/acme/netops\n  beta:\n    repo: https://github.com/acme/netops\n", "beta"},
+		{"undeclared source", base + "skills:\n  - { name: noc, source: missing }\n", "missing"},
+		{"bad path", base + "sources:\n  netops:\n    repo: https://github.com/acme/netops\n    path: ../outside\n", "netops"},
+		{"bad method", base + "sources:\n  netops:\n    repo: https://github.com/acme/netops\n    auth:\n      method: password\n", "netops"},
+		{"ssh key path", base + "sources:\n  netops:\n    repo: ssh://git@github.com/acme/netops.git\n    auth:\n      method: ssh-key\n      ssh_key_path: /tmp/key\n", "ssh_key_path"},
+	}
+	for _, tc := range cases {
+		_, err := Parse([]byte(tc.src))
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: error %v should name %q", tc.label, err, tc.want)
+		}
 	}
 }

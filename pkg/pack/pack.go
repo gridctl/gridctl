@@ -22,6 +22,8 @@ import (
 	"slices"
 	"strings"
 
+	gitpkg "github.com/gridctl/gridctl/pkg/git"
+	"github.com/gridctl/gridctl/pkg/skills"
 	"gopkg.in/yaml.v3"
 )
 
@@ -55,6 +57,94 @@ type Author struct {
 	URL  string `yaml:"url,omitempty" json:"url,omitempty"`
 }
 
+// Source is one external git repository a pack selects skills and agents
+// from. Field names and YAML tags mirror skills.SkillSource. A source is a
+// repository the pack author chose, pinned by commit at import, not an index
+// entry.
+type Source struct {
+	Repo string      `yaml:"repo" json:"repo"`
+	Ref  string      `yaml:"ref,omitempty" json:"ref,omitempty"`
+	Path string      `yaml:"path,omitempty" json:"path,omitempty"`
+	Auth *SourceAuth `yaml:"auth,omitempty" json:"auth,omitempty"`
+}
+
+// SourceAuth is the declarative auth block on a pack source. It mirrors
+// skills.SourceAuth except ssh_key_path, which a manifest must not carry:
+// a key path is a caller secret, not pack content. UnmarshalYAML captures
+// that key so validation can refuse it by name instead of dropping it.
+type SourceAuth struct {
+	Method        string `yaml:"method,omitempty" json:"method,omitempty"`
+	CredentialRef string `yaml:"credential_ref,omitempty" json:"credentialRef,omitempty"`
+	SSHUser       string `yaml:"ssh_user,omitempty" json:"sshUser,omitempty"`
+	sshKeyPath    string `yaml:"-" json:"-"`
+}
+
+// UnmarshalYAML decodes the auth block and remembers ssh_key_path so
+// Validate can reject it explicitly.
+func (a *SourceAuth) UnmarshalYAML(value *yaml.Node) error {
+	var raw struct {
+		Method        string `yaml:"method"`
+		CredentialRef string `yaml:"credential_ref"`
+		SSHUser       string `yaml:"ssh_user"`
+		SSHKeyPath    string `yaml:"ssh_key_path"`
+	}
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	a.Method = raw.Method
+	a.CredentialRef = raw.CredentialRef
+	a.SSHUser = raw.SSHUser
+	a.sshKeyPath = raw.SSHKeyPath
+	return nil
+}
+
+// HasSSHKeyPath reports whether the manifest named ssh_key_path.
+func (a *SourceAuth) HasSSHKeyPath() bool {
+	return a != nil && a.sshKeyPath != ""
+}
+
+// Selection is one skill or agent name. A scalar is a name from the pack
+// repository. A mapping names a resource in a declared source. JSON encoding
+// is always the object form.
+type Selection struct {
+	Name   string `yaml:"name" json:"name"`
+	Source string `yaml:"source,omitempty" json:"source,omitempty"`
+}
+
+// UnmarshalYAML accepts a scalar name or a mapping with name and source.
+// A mapping that omits either key is an error that names the line.
+func (s *Selection) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.ScalarNode:
+		var name string
+		if err := value.Decode(&name); err != nil {
+			return err
+		}
+		s.Name = name
+		s.Source = ""
+		return nil
+	case yaml.MappingNode:
+		var raw struct {
+			Name   string `yaml:"name"`
+			Source string `yaml:"source"`
+		}
+		if err := value.Decode(&raw); err != nil {
+			return err
+		}
+		if raw.Name == "" {
+			return fmt.Errorf("selection mapping requires name (line %d)", value.Line)
+		}
+		if raw.Source == "" {
+			return fmt.Errorf("selection mapping requires source (line %d)", value.Line)
+		}
+		s.Name = raw.Name
+		s.Source = raw.Source
+		return nil
+	default:
+		return fmt.Errorf("selection must be a name or a mapping (line %d)", value.Line)
+	}
+}
+
 // Manifest is a parsed gridctl-pack.yaml.
 type Manifest struct {
 	APIVersion  string `yaml:"apiVersion" json:"apiVersion"`
@@ -63,10 +153,15 @@ type Manifest struct {
 	Version     string `yaml:"version,omitempty" json:"version,omitempty"`
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 	Author      Author `yaml:"author,omitempty" json:"author,omitempty"`
-	// Skills and Agents select resources by name from the same repo's
-	// discovery. Empty means every discovered resource of that kind.
-	Skills []string `yaml:"skills,omitempty" json:"skills,omitempty"`
-	Agents []string `yaml:"agents,omitempty" json:"agents,omitempty"`
+	// Sources names external git repositories this pack selects from.
+	// Empty means every selection comes from this repository.
+	Sources map[string]Source `yaml:"sources,omitempty" json:"sources,omitempty"`
+	// Skills and Agents select resources by name. A string entry (Source
+	// empty) comes from this repository. A mapping names a declared source.
+	// Empty means every resource of that kind discovered in this repository
+	// only; external sources are never import-all.
+	Skills []Selection `yaml:"skills,omitempty" json:"skills,omitempty"`
+	Agents []Selection `yaml:"agents,omitempty" json:"agents,omitempty"`
 	// Wiring asks apply to ensure the gateway entry is present in the
 	// selected clients (empty Clients = all detected).
 	Wiring  bool     `yaml:"wiring,omitempty" json:"wiring,omitempty"`
@@ -143,7 +238,92 @@ func (m *Manifest) Validate() error {
 	if err := validateStackPath(m.Stack); err != nil {
 		return err
 	}
+	if err := m.validateSources(); err != nil {
+		return err
+	}
+	if err := m.validateSelections(m.Skills, "skill"); err != nil {
+		return err
+	}
+	if err := m.validateSelections(m.Agents, "agent"); err != nil {
+		return err
+	}
 	return m.validateRuleNames()
+}
+
+// SkillNames returns skill selections that come from the pack repository.
+func (m *Manifest) SkillNames() []string {
+	return localSelectionNames(m.Skills)
+}
+
+// AgentNames returns agent selections that come from the pack repository.
+func (m *Manifest) AgentNames() []string {
+	return localSelectionNames(m.Agents)
+}
+
+func localSelectionNames(in []Selection) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(in))
+	for _, sel := range in {
+		if sel.Source == "" {
+			out = append(out, sel.Name)
+		}
+	}
+	return out
+}
+
+func (m *Manifest) validateSources() error {
+	names := make([]string, 0, len(m.Sources))
+	for name := range m.Sources {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	seen := map[string]string{}
+	for _, name := range names {
+		src := m.Sources[name]
+		if !namePattern.MatchString(name) {
+			return fmt.Errorf("source %q must be lowercase letters, digits, and hyphens", name)
+		}
+		switch gitpkg.DetectProtocol(src.Repo) {
+		case gitpkg.ProtocolHTTPS, gitpkg.ProtocolSSH:
+		default:
+			return fmt.Errorf("source %q repo %q must be an https or ssh URL", name, src.Repo)
+		}
+		if other, ok := seen[src.Repo]; ok {
+			return fmt.Errorf("source %q has the same repo as %q", name, other)
+		}
+		seen[src.Repo] = name
+		if src.Path != "" {
+			if err := skills.SafeRepoPath(src.Path); err != nil {
+				return fmt.Errorf("source %q path: %w", name, err)
+			}
+		}
+		if src.Auth == nil {
+			continue
+		}
+		if src.Auth.HasSSHKeyPath() {
+			return fmt.Errorf("source %q auth.ssh_key_path is not allowed in a pack manifest", name)
+		}
+		switch src.Auth.Method {
+		case "ssh-key", "ssh-agent", "token":
+		default:
+			return fmt.Errorf("source %q auth.method %q must be ssh-key, ssh-agent, or token", name, src.Auth.Method)
+		}
+	}
+	return nil
+}
+
+func (m *Manifest) validateSelections(selections []Selection, kind string) error {
+	for _, sel := range selections {
+		if sel.Source == "" {
+			continue
+		}
+		if _, ok := m.Sources[sel.Source]; !ok {
+			return fmt.Errorf("%s %q names undeclared source %q", kind, sel.Name, sel.Source)
+		}
+	}
+	return nil
 }
 
 // validateStackPath accepts an empty path and otherwise requires a
