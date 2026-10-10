@@ -532,6 +532,23 @@ func (m *Managers) resolveCarriedStack(ctx context.Context, clone *skills.CloneR
 	if escaping, outside := stackEscapesClone(clone.RepoPath, sources); outside {
 		return fail(fmt.Sprintf("stack path escapes the pack repository: %s", escaping))
 	}
+	configFiles, err := config.ReferencedConfigFiles(exported, filepath.Dir(stackPath))
+	if err != nil {
+		return fail(err.Error())
+	}
+	if escaping, outside := stackEscapesClone(clone.RepoPath, configFiles); outside {
+		return fail(fmt.Sprintf("stack config file escapes the pack repository: %s", escaping))
+	}
+	for _, configFile := range configFiles {
+		info, statErr := os.Stat(configFile)
+		if statErr != nil || info.IsDir() {
+			rel, relErr := filepath.Rel(clone.RepoPath, configFile)
+			if relErr != nil || rel == "" {
+				rel = configFile
+			}
+			return fail(fmt.Sprintf("stack config file not found in the pack repository: %s", rel))
+		}
+	}
 	summary := &StackSummary{Path: manifest.Stack, Name: exported.Name, Servers: len(exported.MCPServers)}
 	if dryRun {
 		return summary, warnings

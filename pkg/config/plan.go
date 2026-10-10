@@ -182,6 +182,9 @@ func compareMCPServers(a, b MCPServer) []string {
 	if !stringSliceEqual(a.Volumes, b.Volumes) {
 		details = append(details, "volumes changed")
 	}
+	if !configFilesEqual(a.Configs, b.Configs) {
+		details = append(details, "configs changed")
+	}
 	if !SourceEqual(a.Source, b.Source) {
 		details = append(details, "source changed")
 	}

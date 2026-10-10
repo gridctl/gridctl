@@ -11,6 +11,8 @@ export type ServerType = 'container' | 'source' | 'external' | 'local' | 'ssh' |
 export interface MCPServerFormData {
   // Preserve the complete execution mapping, including false and empty lists.
   execution?: Record<string, unknown>;
+  // Preserve config file entries through server form edits. No form fields.
+  configs?: unknown[];
   name: string;
   serverType: ServerType;
   // Container
@@ -205,6 +207,10 @@ function buildMCPServer(data: MCPServerFormData, indentLevel = 2): string {
   if (data.execution !== undefined) {
     lines.push(`${inner}execution:`);
     lines.push(stringifyYAML(data.execution).trimEnd().split('\n').map((line) => `${inner}  ${line}`).join('\n'));
+  }
+  if (data.configs !== undefined) {
+    lines.push(`${inner}configs:`);
+    lines.push(stringifyYAML(data.configs).trimEnd().split('\n').map((line) => `${inner}  ${line}`).join('\n'));
   }
 
   switch (data.serverType) {
@@ -565,6 +571,9 @@ export function parseYAMLToForm(yaml: string, resourceType: ResourceType): Wizar
         if (result.execution !== undefined && (result.execution === null || typeof result.execution !== 'object' || Array.isArray(result.execution))) {
           return { error: 'Execution must be a mapping. Correct it in YAML mode before switching to the form.' };
         }
+        if (result.configs !== undefined && !Array.isArray(result.configs)) {
+          return { error: 'configs must be a list. Correct it in YAML mode before switching to the form.' };
+        }
         const autoRaw = result.autoscale ? asRecord(result.autoscale) : undefined;
         const autoscale: AutoscaleFormData | undefined = autoRaw
           ? {
@@ -589,6 +598,7 @@ export function parseYAMLToForm(yaml: string, resourceType: ResourceType): Wizar
             : undefined;
         const data: MCPServerFormData = {
           ...(result.execution !== undefined ? { execution: asRecord(result.execution) } : {}),
+          ...(Array.isArray(result.configs) ? { configs: result.configs } : {}),
           name: (result.name as string) || '',
           serverType: detectServerType(result),
           // autoscale and replicas are mutually exclusive at the backend —
@@ -650,6 +660,9 @@ export function parseYAMLToForm(yaml: string, resourceType: ResourceType): Wizar
           },
         };
       case 'stack':
+        if (Array.isArray(result['mcp-servers']) && result['mcp-servers'].some((server) => asRecord(server).configs !== undefined)) {
+          return { error: 'Keep this stack in YAML mode to preserve config files. Edit individual server forms instead.' };
+        }
         if (Array.isArray(result['mcp-servers']) && result['mcp-servers'].some((server) => asRecord(server).execution !== undefined)) {
           return { error: 'Keep this stack in YAML mode to preserve execution controls. Edit individual server forms instead.' };
         }

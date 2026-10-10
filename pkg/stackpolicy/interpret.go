@@ -27,6 +27,7 @@ var knownServerKeys = map[string]struct{}{
 	"network": {}, "ssh": {}, "openapi": {}, "a2a": {}, "tools": {}, "output_format": {},
 	"pin_schemas": {}, "ready_timeout": {}, "ping_timeout": {}, "protocol_generation": {}, "restart": {},
 	"replicas": {}, "replica_policy": {}, "autoscale": {}, "telemetry": {}, "auth": {},
+	"configs": {},
 }
 
 var knownTransports = map[string]struct{}{

@@ -91,6 +91,7 @@ func (r *sourceLifecycleRuntime) Start(_ context.Context, cfg WorkloadConfig) (*
 		State:    WorkloadStateRunning,
 		HostPort: cfg.HostPort,
 		Image:    cfg.Image,
+		Labels:   cfg.Labels,
 	}
 	r.statuses[name] = status
 	return status, nil

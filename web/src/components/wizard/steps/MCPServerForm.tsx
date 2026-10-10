@@ -1477,7 +1477,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
               placeholder="./data:/data:ro"
               className={cn(inputClass, 'font-mono')}
             />
-            <p className="text-[10px] text-text-muted mt-1">Comma-separated host:container[:mode] mounts</p>
+            <p className="text-[10px] text-text-muted mt-1">Comma-separated host:container[:mode] mounts; ./ and ../ are relative to the stack file</p>
           </div>
         )}
 

@@ -1,12 +1,15 @@
 package docker
 
+import "github.com/gridctl/gridctl/pkg/runtime"
+
 // Labels used to identify gridctl-managed resources.
 const (
-	LabelManaged   = "gridctl.managed"
-	LabelStack     = "gridctl.stack"
-	LabelMCPServer = "gridctl.mcp-server"
-	LabelResource  = "gridctl.resource"
-	LabelAgent     = "gridctl.agent"
+	LabelManaged         = "gridctl.managed"
+	LabelStack           = "gridctl.stack"
+	LabelMCPServer       = "gridctl.mcp-server"
+	LabelResource        = "gridctl.resource"
+	LabelAgent           = "gridctl.agent"
+	LabelConfigsRevision = runtime.LabelConfigsRevision
 )
 
 // ManagedLabels returns labels that identify a managed container.

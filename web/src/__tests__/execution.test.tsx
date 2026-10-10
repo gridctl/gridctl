@@ -19,6 +19,23 @@ describe('execution preservation and reporting', () => {
     expect(parseYAMLToForm('name: fixture\nmcp-servers:\n- name: local\n  command: [/bin/cat]\n  execution: {mode: local, inherit: []}\n', 'stack')).toHaveProperty('error');
   });
 
+  it('preserves config files through an unrelated server form edit', () => {
+    const input = 'name: prometheus\nimage: alpine\ntransport: stdio\nconfigs:\n  - target: /etc/mimir/http.yaml\n    content: "tenant: ${MIMIR_TENANT}"\n    mode: "0440"\n    uid: 65534\n    gid: 65534\n  - target: /etc/prometheus/extra.yaml\n    file: ./prometheus-extra.yaml\n';
+    const form = parseYAMLToForm(input, 'mcp-server');
+    expect(form).not.toHaveProperty('error');
+    if (!('type' in form) || form.type !== 'mcp-server') {
+      throw new Error('expected a server form');
+    }
+    form.data.name = 'renamed';
+    const output = parse(buildYAML(form));
+    expect(output.configs).toEqual(parse(input).configs);
+  });
+
+  it('keeps a stack with config files in YAML mode', () => {
+    const result = parseYAMLToForm('name: fixture\nmcp-servers:\n- name: prometheus\n  image: alpine\n  configs:\n    - target: /etc/app.yaml\n      content: hello\n', 'stack');
+    expect(result).toEqual({ error: 'Keep this stack in YAML mode to preserve config files. Edit individual server forms instead.' });
+  });
+
   it('does not turn healthy MCP into protected evidence', () => {
     const server = { name: 'fixture', replicas: [{ replicaId: 0, healthy: true, execution: { mode: 'hardened', outcome: 'mismatch', eligible: false, controls: [{ field: 'memory_bytes', requested: '268435456', outcome: 'mismatch', source: 'kernel' }] } }] } as MCPServerStatus;
     render(<ExecutionDetails server={server} />);

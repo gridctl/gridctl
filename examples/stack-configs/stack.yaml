@@ -1,0 +1,35 @@
+# Stack-relative config files
+#
+# Copies an inline settings file and a file next to this stack into the
+# container at create time. ./ and ../ volume sources resolve against this
+# file's directory. The image is a pinned Alpine stand-in for a settings-file
+# server such as Prometheus pointed at Mimir.
+#
+# Usage:
+#   gridctl validate examples/stack-configs/stack.yaml
+#   gridctl apply examples/stack-configs/stack.yaml
+#
+version: "1"
+name: stack-configs
+
+network:
+  name: stack-configs-net
+
+mcp-servers:
+  - name: prometheus
+    image: alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+    transport: stdio
+    command: ["sh", "-c", "while true; do sleep 3600; done"]
+    configs:
+      - target: /etc/mimir/http.yaml
+        content: |
+          http_headers:
+            X-Scope-OrgID:
+              values: ["${MIMIR_TENANT}"]
+      - target: /etc/prometheus/extra.yaml
+        file: ./prometheus-extra.conf
+        mode: "0440"
+        uid: 65534
+        gid: 65534
+    volumes:
+      - ./dashboards:/dashboards:ro

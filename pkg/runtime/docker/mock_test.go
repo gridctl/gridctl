@@ -38,6 +38,7 @@ type MockDockerClient struct {
 	NetworkListError      error
 	ImageListError        error
 	ImagePullError        error
+	CopyToContainerError  error
 
 	// Call tracking
 	Calls []string
@@ -59,6 +60,11 @@ type MockDockerClient struct {
 
 	// Last host config passed to ContainerCreate (for verifying volume mounts, etc.)
 	LastHostConfig *container.HostConfig
+
+	// Last archive and destination passed to CopyToContainer.
+	LastCopyArchive []byte
+	LastCopyPath    string
+	LastCopyOptions container.CopyToContainerOptions
 }
 
 func (m *MockDockerClient) recordCall(name string) {
@@ -205,6 +211,25 @@ func (m *MockDockerClient) ImageBuild(ctx context.Context, buildContext io.Reade
 func (m *MockDockerClient) Ping(ctx context.Context) (types.Ping, error) {
 	m.recordCall("Ping")
 	return types.Ping{}, m.PingError
+}
+
+func (m *MockDockerClient) CopyToContainer(ctx context.Context, containerID, dstPath string, content io.Reader, options container.CopyToContainerOptions) error {
+	m.recordCall("CopyToContainer")
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if m.CopyToContainerError != nil {
+		return m.CopyToContainerError
+	}
+	body, err := io.ReadAll(content)
+	if err != nil {
+		return err
+	}
+	m.LastCopyArchive = body
+	m.LastCopyPath = dstPath
+	m.LastCopyOptions = options
+	m.recordCall("copied:" + containerID)
+	return nil
 }
 
 func (m *MockDockerClient) Close() error {

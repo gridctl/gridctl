@@ -7,8 +7,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/stretchr/testify/require"
@@ -119,6 +121,42 @@ func TestExportStackFile_SidecarPreflight(t *testing.T) {
 	}
 }
 
+func TestExportStackFile_ConfigFileNotice(t *testing.T) {
+	oldFormat, oldDir := exportFormat, exportOutputDir
+	t.Cleanup(func() { exportFormat, exportOutputDir = oldFormat, oldDir })
+	withFile := "name: export\nmcp-servers:\n  - name: prometheus\n    image: alpine\n    transport: stdio\n    configs:\n      - target: /etc/app.yaml\n        file: ./extra.yaml\n"
+	withoutFile := "name: export\nmcp-servers:\n  - name: prometheus\n    image: alpine\n    transport: stdio\n    configs:\n      - target: /etc/app.yaml\n        content: alpha\n"
+
+	t.Run("stdout", func(t *testing.T) {
+		exportFormat, exportOutputDir = "yaml", ""
+		path := filepath.Join(t.TempDir(), "stack.yaml")
+		require.NoError(t, os.WriteFile(path, []byte(withFile), 0600))
+		var stdout, stderr bytes.Buffer
+		require.NoError(t, exportStackFile(context.Background(), path, &stdout, &stderr))
+		lines := strings.Split(strings.TrimRight(stderr.String(), "\n"), "\n")
+		require.Len(t, lines, 2)
+		require.Equal(t, config.ExportConfigFilesNotice, lines[1])
+		require.NotContains(t, stdout.String(), config.ExportConfigFilesNotice)
+
+		require.NoError(t, os.WriteFile(path, []byte(withoutFile), 0600))
+		stdout.Reset()
+		stderr.Reset()
+		require.NoError(t, exportStackFile(context.Background(), path, &stdout, &stderr))
+		require.NotContains(t, stderr.String(), config.ExportConfigFilesNotice)
+	})
+
+	t.Run("directory", func(t *testing.T) {
+		dir := t.TempDir()
+		exportFormat, exportOutputDir = "yaml", filepath.Join(dir, "out")
+		path := filepath.Join(dir, "stack.yaml")
+		require.NoError(t, os.WriteFile(path, []byte(withFile), 0600))
+		var stdout, stderr bytes.Buffer
+		require.NoError(t, exportStackFile(context.Background(), path, &stdout, &stderr))
+		require.Contains(t, stderr.String(), config.ExportConfigFilesNotice)
+		require.Empty(t, stdout.String())
+	})
+}
+
 func TestWriteExportArtifacts_ProtectSourcesAndPartialFailure(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "source.yaml")
@@ -126,14 +164,14 @@ func TestWriteExportArtifacts_ProtectSourcesAndPartialFailure(t *testing.T) {
 	alias := filepath.Join(dir, "stack.yaml")
 	require.NoError(t, os.Symlink(source, alias))
 	var stderr bytes.Buffer
-	err := writeExportArtifacts(context.Background(), dir, []string{source}, []exportArtifact{{"stack.yaml", []byte("replacement")}}, &stderr)
+	err := writeExportArtifacts(context.Background(), dir, []string{source}, []exportArtifact{{"stack.yaml", []byte("replacement")}}, config.ExportNotice, &stderr)
 	require.ErrorContains(t, err, "overwrite")
 	data, err := os.ReadFile(source)
 	require.NoError(t, err)
 	require.Equal(t, "original", string(data))
 	other := t.TempDir()
 	require.NoError(t, os.Mkdir(filepath.Join(other, "skills.yaml"), 0700))
-	err = writeExportArtifacts(context.Background(), other, []string{source}, []exportArtifact{{"stack.yaml", []byte("name: test")}, {"skills.yaml", []byte("sources: []")}}, &stderr)
+	err = writeExportArtifacts(context.Background(), other, []string{source}, []exportArtifact{{"stack.yaml", []byte("name: test")}, {"skills.yaml", []byte("sources: []")}}, config.ExportNotice, &stderr)
 	require.ErrorContains(t, err, "already written: [stack.yaml]")
 	require.FileExists(t, filepath.Join(other, "stack.yaml"))
 }

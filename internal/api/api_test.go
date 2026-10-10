@@ -1392,7 +1392,10 @@ func (m *mockDockerClient) ImageBuild(_ context.Context, _ io.Reader, _ build.Im
 	return build.ImageBuildResponse{}, nil
 }
 func (m *mockDockerClient) Ping(_ context.Context) (types.Ping, error) { return types.Ping{}, nil }
-func (m *mockDockerClient) Close() error                               { return nil }
+func (m *mockDockerClient) CopyToContainer(context.Context, string, string, io.Reader, container.CopyToContainerOptions) error {
+	return nil
+}
+func (m *mockDockerClient) Close() error { return nil }
 
 var _ dockerclient.DockerClient = &mockDockerClient{}
 

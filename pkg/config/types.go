@@ -527,7 +527,8 @@ type MCPServer struct {
 	Command      []string          `yaml:"command,omitempty"`   // Override container command or remote command for SSH
 	Env          map[string]string `yaml:"env,omitempty"`
 	BuildArgs    map[string]string `yaml:"build_args,omitempty"`
-	Volumes      []string          `yaml:"volumes,omitempty"`       // Container mounts: host:container[:mode]
+	Volumes      []string          `yaml:"volumes,omitempty"` // Container mounts: host:container[:mode]
+	Configs      []ConfigFile      `yaml:"configs,omitempty" json:"configs,omitempty"`
 	Network      string            `yaml:"network,omitempty"`       // Network to join (for multi-network mode)
 	SSH          *SSHConfig        `yaml:"ssh,omitempty"`           // SSH connection config for remote servers
 	OpenAPI      *OpenAPIConfig    `yaml:"openapi,omitempty"`       // OpenAPI spec config for API-backed servers
@@ -864,6 +865,16 @@ type SourceAuth struct {
 	SSHKeyPath    string `yaml:"ssh_key_path,omitempty"`   // required for method "ssh-key"
 }
 
+// ConfigFile is one file materialized into a container server at create time.
+type ConfigFile struct {
+	Target  string `yaml:"target" json:"target"`
+	File    string `yaml:"file,omitempty" json:"file,omitempty"`
+	Content string `yaml:"content,omitempty" json:"content,omitempty"`
+	Mode    string `yaml:"mode,omitempty" json:"mode,omitempty"`
+	UID     *int   `yaml:"uid,omitempty" json:"uid,omitempty"`
+	GID     *int   `yaml:"gid,omitempty" json:"gid,omitempty"`
+}
+
 // Resource defines a supporting container (database, cache, etc).
 type Resource struct {
 	Name    string            `yaml:"name"`
@@ -980,6 +991,11 @@ func (s *Stack) SetDefaults() {
 		}
 		if s.MCPServers[i].ReplicaPolicy == "" {
 			s.MCPServers[i].ReplicaPolicy = "round-robin"
+		}
+		for j := range s.MCPServers[i].Configs {
+			if s.MCPServers[i].Configs[j].Mode == "" {
+				s.MCPServers[i].Configs[j].Mode = defaultConfigMode
+			}
 		}
 	}
 

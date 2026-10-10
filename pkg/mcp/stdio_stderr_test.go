@@ -198,7 +198,10 @@ func (attachDocker) ImageBuild(context.Context, io.Reader, build.ImageBuildOptio
 	return build.ImageBuildResponse{}, nil
 }
 func (attachDocker) Ping(context.Context) (types.Ping, error) { return types.Ping{}, nil }
-func (attachDocker) Close() error                             { return nil }
+func (attachDocker) CopyToContainer(context.Context, string, string, io.Reader, container.CopyToContainerOptions) error {
+	return nil
+}
+func (attachDocker) Close() error { return nil }
 
 func newAttachClient(t *testing.T, serve func(net.Conn)) *StdioClient {
 	t.Helper()

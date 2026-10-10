@@ -25,6 +25,7 @@ type DockerClient interface {
 	ContainerInspect(ctx context.Context, containerID string) (container.InspectResponse, error)
 	ContainerAttach(ctx context.Context, container string, options container.AttachOptions) (types.HijackedResponse, error)
 	ContainerLogs(ctx context.Context, container string, options container.LogsOptions) (io.ReadCloser, error)
+	CopyToContainer(ctx context.Context, containerID, dstPath string, content io.Reader, options container.CopyToContainerOptions) error
 
 	// Network operations
 	NetworkList(ctx context.Context, options network.ListOptions) ([]network.Summary, error)

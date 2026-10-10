@@ -287,6 +287,10 @@ func expandStackVarsResolved(s *Stack, resolve referenceResolver) (unresolvedVau
 		for j := range srv.Volumes {
 			srv.Volumes[j] = expandField(site(fmt.Sprintf("volumes[%d]", j)), srv.Volumes[j])
 		}
+		for j := range srv.Configs {
+			srv.Configs[j].Content = expandField(site(fmt.Sprintf("configs[%d].content", j)), srv.Configs[j].Content)
+			srv.Configs[j].File = expandField(site(fmt.Sprintf("configs[%d].file", j)), srv.Configs[j].File)
+		}
 
 		if srv.SSH != nil {
 			srv.SSH.Host = expandField(site("ssh.host"), srv.SSH.Host)
@@ -328,6 +332,9 @@ func expandStackVarsResolved(s *Stack, resolve referenceResolver) (unresolvedVau
 
 		for k, v := range res.Env {
 			res.Env[k] = expandField(site("env."+k), v)
+		}
+		for j := range res.Volumes {
+			res.Volumes[j] = expandField(site(fmt.Sprintf("volumes[%d]", j)), res.Volumes[j])
 		}
 	}
 
@@ -382,8 +389,47 @@ func resolveRelativePaths(s *Stack, basePath string) {
 				s.MCPServers[i].OpenAPI.Spec = expandTildeAndResolvePath(s.MCPServers[i].OpenAPI.Spec, basePath)
 			}
 		}
-	}
 
+		for j := range s.MCPServers[i].Volumes {
+			s.MCPServers[i].Volumes[j] = resolveVolumeHost(s.MCPServers[i].Volumes[j], basePath)
+		}
+		for j := range s.MCPServers[i].Configs {
+			file := s.MCPServers[i].Configs[j].File
+			if file == "" || filepath.IsAbs(file) {
+				continue
+			}
+			s.MCPServers[i].Configs[j].File = expandTildeAndResolvePath(file, basePath)
+		}
+	}
+	for i := range s.Resources {
+		for j := range s.Resources[i].Volumes {
+			s.Resources[i].Volumes[j] = resolveVolumeHost(s.Resources[i].Volumes[j], basePath)
+		}
+	}
+}
+
+// resolveVolumeHost rewrites a host:container[:mode] source when the host
+// part is stack-relative. Named volumes and absolute paths are unchanged.
+// Only the first colon separates the host part, so a Windows drive letter
+// is not treated as a relative source.
+func resolveVolumeHost(volume, basePath string) string {
+	host, rest, ok := splitVolume(volume)
+	if !ok || !stackRelativeHost(host) {
+		return volume
+	}
+	return expandTildeAndResolvePath(host, basePath) + rest
+}
+
+func splitVolume(volume string) (host, rest string, ok bool) {
+	idx := strings.Index(volume, ":")
+	if idx <= 0 {
+		return "", "", false
+	}
+	return volume[:idx], volume[idx:], true
+}
+
+func stackRelativeHost(host string) bool {
+	return strings.HasPrefix(host, "./") || strings.HasPrefix(host, "../") || strings.HasPrefix(host, "~")
 }
 
 // expandTildeAndResolvePath expands ~ to home directory and resolves relative paths.

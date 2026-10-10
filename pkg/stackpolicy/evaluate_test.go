@@ -12,6 +12,23 @@ import (
 
 const pinnedAlpine = "alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce"
 
+func TestEvaluate_ConfigsDoNotChangeOutcome(t *testing.T) {
+	dir := t.TempDir()
+	policy := write(t, dir, "policy.yaml", policyYAML(RuleExplicitImageDigests, RuleNonemptyServerToolLists))
+	without := write(t, dir, "without.yaml", "name: demo\nmcp-servers:\n  - name: tools\n    image: "+pinnedAlpine+"\n    port: 8080\n    tools: [\"read\"]\n")
+	with := write(t, dir, "with.yaml", "name: demo\nmcp-servers:\n  - name: tools\n    image: "+pinnedAlpine+"\n    port: 8080\n    tools: [\"read\"]\n    configs:\n      - target: /etc/app.yaml\n        content: hello\n        file: ./missing.yaml\n")
+	left := Evaluate(t.Context(), without, policy)
+	right := Evaluate(t.Context(), with, policy)
+	if left.Status != right.Status || left.Accepted != right.Accepted || len(left.Results) != len(right.Results) {
+		t.Fatalf("without=%+v with=%+v", left, right)
+	}
+	for i := range left.Results {
+		if left.Results[i].Rule != right.Results[i].Rule || left.Results[i].Outcome != right.Results[i].Outcome {
+			t.Fatalf("result %d without=%+v with=%+v", i, left.Results[i], right.Results[i])
+		}
+	}
+}
+
 func TestEvaluate_PinnedImagePass(t *testing.T) {
 	dir := t.TempDir()
 	stack := write(t, dir, "stack.yaml", `

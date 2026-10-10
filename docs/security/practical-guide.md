@@ -114,7 +114,7 @@ For an arbitrary command, `var run` requires explicit selection. Prefer `--only`
 
 Before committing, `gridctl var scan --staged` checks staged blobs for eligible exact current stored secrets. Inspect skips and completeness. It does not replace a general secret scanner or a history review, and it cannot discover arbitrary or transformed credentials.
 
-For sharing, use [stack export](../cli-reference.md#export-semantics) or the Stack view's Export YAML action. Export preserves references without resolving environment or stored values and rejects recognized inline credentials. Review remaining authored literals manually: bounded field classification cannot guarantee arbitrary text is secret-free. Raw stack files, spec retrieval/editing, `var export`, and a stack export have different disclosure boundaries. Do not substitute a raw spec download when export refuses a credential.
+For sharing, use [stack export](../cli-reference.md#export-semantics) or the Stack view's Export YAML action. Export preserves references without resolving environment or stored values and rejects recognized inline credentials. Review remaining authored literals manually: bounded field classification cannot guarantee arbitrary text is secret-free. Referenced `configs` files are not bundled; copy them beside the exported stack. A resolved `${var:KEY}` in `configs` content is written into the container layer and is readable by anyone with engine access. Raw stack files, spec retrieval/editing, `var export`, and a stack export have different disclosure boundaries. Do not substitute a raw spec download when export refuses a credential.
 
 ## Review pins, findings, and imported content
 

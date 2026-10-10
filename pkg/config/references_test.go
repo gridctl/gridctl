@@ -78,12 +78,14 @@ func TestExpandStackVars_ReferenceIndexParity(t *testing.T) {
 			},
 			OpenAPI: &OpenAPIConfig{Spec: probe, BaseURL: probe},
 			A2A:     &A2AConfig{Card: probe, Endpoint: probe, Auth: &A2AAuth{Token: probe}},
+			Configs: []ConfigFile{{Target: "/etc/app.yaml", File: probe, Content: probe}},
 		}},
 		Resources: []Resource{{
 			Name:    probe,
 			Image:   probe,
 			Network: probe,
 			Env:     map[string]string{"RE1": probe},
+			Volumes: []string{probe},
 		}},
 	}
 
@@ -117,10 +119,13 @@ func TestExpandStackVars_ReferenceIndexParity(t *testing.T) {
 		"mcp-server|ssh.jumpHost",
 		"mcp-server|openapi.spec",
 		"mcp-server|openapi.baseUrl",
+		"mcp-server|configs[0].content",
+		"mcp-server|configs[0].file",
 		"resource|name",
 		"resource|image",
 		"resource|network",
 		"resource|env.RE1",
+		"resource|volumes[0]",
 	}
 
 	got := map[string]bool{}

@@ -115,6 +115,59 @@ func TestAdd_DryRunDoesNotMaterialize(t *testing.T) {
 	}
 }
 
+func TestAdd_ConfigFileChecks(t *testing.T) {
+	cases := []struct {
+		name  string
+		stack string
+		files map[string]string
+		want  string
+	}{
+		{
+			name:  "escape",
+			stack: "version: \"1\"\nname: neteng\nmcp-servers:\n  - name: tools\n    image: alpine\n    transport: stdio\n    configs:\n      - target: /etc/app.yaml\n        file: ../outside.yaml\n",
+			want:  "stack config file escapes the pack repository",
+		},
+		{
+			name:  "missing",
+			stack: "version: \"1\"\nname: neteng\nmcp-servers:\n  - name: tools\n    image: alpine\n    transport: stdio\n    configs:\n      - target: /etc/app.yaml\n        file: ./missing.yaml\n",
+			want:  "stack config file not found in the pack repository: missing.yaml",
+		},
+		{
+			name:  "tilde",
+			stack: "version: \"1\"\nname: neteng\nmcp-servers:\n  - name: tools\n    image: alpine\n    transport: stdio\n    configs:\n      - target: /etc/app.yaml\n        file: ~/secret.yaml\n",
+			want:  "cannot be anchored without expansion",
+		},
+		{
+			name:  "expansion",
+			stack: "version: \"1\"\nname: neteng\nmcp-servers:\n  - name: tools\n    image: alpine\n    transport: stdio\n    configs:\n      - target: /etc/app.yaml\n        file: ${CONFIG_PATH}\n",
+			want:  "cannot be anchored without expansion",
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			mgrs, imp := testEnv(t)
+			repo := packFixture(t, stackManifest, map[string]string{"stack.yaml": tt.stack})
+			res, err := mgrs.Add(context.Background(), imp, AddOptions{Repo: repo})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !containsString(res.Doc.Unresolved, "stack:stack.yaml") {
+				t.Fatalf("unresolved = %v", res.Doc.Unresolved)
+			}
+			if res.Doc.Stack != nil {
+				t.Fatalf("resolved summary on a rejected stack: %+v", res.Doc.Stack)
+			}
+			detail := strings.Join(res.Doc.Warnings, "\n")
+			if !strings.Contains(detail, tt.want) {
+				t.Fatalf("warnings = %v, want %q", res.Doc.Warnings, tt.want)
+			}
+			if !containsString(res.Doc.Skills, "alpha") {
+				t.Fatalf("rest of pack did not import: %+v", res.Doc)
+			}
+		})
+	}
+}
+
 func TestAdd_InlineTokenUnresolved(t *testing.T) {
 	mgrs, imp := testEnv(t)
 	home, _ := os.UserHomeDir()

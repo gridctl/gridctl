@@ -98,6 +98,21 @@ func TestComputeDiff_RemovedMCPServer(t *testing.T) {
 	}
 }
 
+func TestComputeDiff_ConfigsOnlyChange(t *testing.T) {
+	old := &config.Stack{Name: "test", MCPServers: []config.MCPServer{{
+		Name: "server1", Image: "alpine", Transport: "stdio",
+		Configs: []config.ConfigFile{{Target: "/etc/a.txt", Content: "old", Mode: "0444"}},
+	}}}
+	next := &config.Stack{Name: "test", MCPServers: []config.MCPServer{{
+		Name: "server1", Image: "alpine", Transport: "stdio",
+		Configs: []config.ConfigFile{{Target: "/etc/a.txt", Content: "new", Mode: "0444"}},
+	}}}
+	diff := ComputeDiff(old, next)
+	if len(diff.MCPServers.Modified) != 1 || diff.MCPServers.Modified[0].Name != "server1" {
+		t.Fatalf("modified = %+v", diff.MCPServers.Modified)
+	}
+}
+
 func TestComputeDiff_ModifiedMCPServer(t *testing.T) {
 	old := &config.Stack{
 		Name: "test",

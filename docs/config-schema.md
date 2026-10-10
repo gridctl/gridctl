@@ -721,7 +721,8 @@ In the web wizard, the OpenAPI Configuration section's Operations Filter loads t
 | `env` | map | No | - | Environment variables |
 | `execution` | object | No | Omitted (compatibility) | Opt-in container controls or local environment hygiene (see [Execution](#execution)) |
 | `build_args` | map | No | - | Docker build-time arguments (container servers only) |
-| `volumes` | []string | No | - | Container mounts in `host:container[:mode]` form. The host path or volume name must be non-empty, the container destination must be a clean absolute path, and mode may be `ro` or `rw`. Valid only for image and source containers; every static, reloaded, and autoscaled replica receives the mounts |
+| `volumes` | []string | No | - | Container mounts in `host:container[:mode]` form. The host path or volume name must be non-empty, the container destination must be a clean absolute path, and mode may be `ro` or `rw`. A host part that starts with `./`, `../`, or `~` is resolved against the stack file's directory (`~` against the home directory) when apply or reload loads the stack. `gridctl plan` and `gridctl validate` do not apply that resolution. Named volumes and absolute paths are unchanged. Valid only for image and source containers; every static, reloaded, and autoscaled replica receives the mounts |
+| `configs` | []object | No | - | Files copied into each container replica at create time. Image and source servers only. See [Configs](#configs) |
 | `network` | string | Conditional | - | Network to join (required in advanced network mode) |
 | `ssh` | object | Conditional | - | SSH connection config (see [SSH](#ssh)) |
 | `openapi` | object | Conditional | - | OpenAPI spec config (see [OpenAPI](#openapi)) |
@@ -754,6 +755,34 @@ In the web wizard, the OpenAPI Configuration section's Operations Filter loads t
 | SSH (ssh + command) | `stdio` | Not allowed | Not allowed |
 | OpenAPI (openapi) | Not applicable | Not allowed | Not allowed |
 | A2A (a2a) | Not applicable | Not allowed | Not allowed |
+
+### Configs
+
+Optional files copied into an image or source container after create and before start. Every static, reloaded, and autoscaled replica receives the same files. The server form preserves the list and has no fields for it. Switching the whole stack to form mode is refused while any server has `configs`. `gridctl validate` checks the shape and does not open `file` paths. A missing, unreadable, non-regular, or oversized file fails apply, reload, or spawn with an error that names the server and config index. A file over 1 MiB fails at that read.
+
+```yaml
+configs:
+  - target: /etc/mimir/http.yaml
+    content: |
+      http_headers:
+        X-Scope-OrgID:
+          values: ["${MIMIR_TENANT}"]
+  - target: /etc/prometheus/extra.yaml
+    file: ./prometheus-extra.yaml
+    mode: "0440"
+    uid: 65534
+    gid: 65534
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `target` | string | **Yes** | - | Absolute container path. It must be clean, must not be `/`, and must not be under `/proc`, `/sys`, or `/dev`. Duplicate targets, and a target that matches a volume destination, are rejected |
+| `content` | string | One of `content` or `file` | - | Inline file bytes. `${VAR}` and `${var:KEY}` are expanded like `env`. At most 1 MiB. A resolved secret is written into the container layer and is readable by anyone with engine access, the same as a resolved environment variable. Export keeps the authored reference and does not scan free-form text for secrets |
+| `file` | string | One of `content` or `file` | - | Path to a regular file on the host. A relative path is resolved against the stack file's directory when the stack is loaded (`~` against the home directory) and read at container create. `gridctl plan` compares the path, not the file bytes, so a content change does not appear until the stack file changes or the server is recreated |
+| `mode` | string | No | `"0444"` | Three or four octal digits (`0444`, `644`, `0640`). An unquoted `0444` is stored as the string `"0444"`. The `0o` prefix is not accepted |
+| `uid`, `gid` | int | No | `0` | Owner and group, from 0 through 2147483647 |
+
+At most 64 entries per server. The engine creates a missing parent directory. An existing directory at `target` fails the copy, and an existing regular file is replaced. Export does not bundle `file` entries. CLI stderr and the REST `notice` add `Referenced config files are not bundled; copy them alongside the exported stack.` `execution.mode: hardened` rejects `configs`, because Docker refuses an archive copy into a read-only root. Declare an engine-local volume under `execution.mounts` and seed it separately. See [execution controls](execution.md) and the [example stack](../examples/stack-configs/).
 
 ### Execution
 
@@ -1257,7 +1286,7 @@ resources:
 | `image` | string | **Yes** | - | Docker image. Tags without a digest are mutable; pinning is not a schema requirement |
 | `env` | map | No | - | Environment variables |
 | `ports` | []string | No | - | Port mappings (e.g., `"5432:5432"`) |
-| `volumes` | []string | No | - | Volume mounts (e.g., `"data:/var/lib/postgres"`) |
+| `volumes` | []string | No | - | Volume mounts (e.g., `"data:/var/lib/postgres"`). A host part that starts with `./`, `../`, or `~` is resolved the same way as a server volume, including a value that becomes relative only after variable expansion. `gridctl plan` and `gridctl validate` do not apply that resolution |
 | `network` | string | Conditional | - | Network to join (required in advanced network mode) |
 
 **Constraints:**
@@ -1749,7 +1778,7 @@ String values in the configuration support variable expansion:
 | `${var:KEY}` | Variable store reference (error if key not found). Canonical syntax. |
 | `${vault:KEY}` | Deprecated alias for `${var:KEY}`. Logs a one-shot warning per process. Removed at v1.0. |
 
-Variable expansion is applied to string values across all configuration sections including `env`, `token`, `url`, and MCP-server `volumes` entries.
+Variable expansion is applied to string values across all configuration sections including `env`, `token`, `url`, MCP-server and resource `volumes` entries, and `configs` `content` and `file` paths.
 
 Stack export is a separate, non-resolving operation: the CLI, REST export endpoint, and web Export YAML action preserve authored expressions instead of substituting values. Nonempty inline literals and default/replacement operands in recognized sensitive fields block export, even when a sensitive-looking environment key actually holds nonsecret configuration. Use references without literal fallback operands in those fields, and provision recipient variables separately. Ordinary defaults and mixed reference/literal strings are preserved, so review authored literals before sharing. This does not change runtime expansion or raw spec editing. See [export semantics](cli-reference.md#export-semantics) for the field policy and inheritance limits.
 

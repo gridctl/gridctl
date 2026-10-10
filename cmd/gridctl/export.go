@@ -73,7 +73,7 @@ func exportStackFile(ctx context.Context, path string, stdout, stderr io.Writer)
 		return fmt.Errorf("export: cannot encode stack")
 	}
 	if exportOutputDir == "" {
-		if _, err := fmt.Fprintln(stderr, config.ExportNotice); err != nil {
+		if _, err := fmt.Fprintln(stderr, config.ExportNotices(stack)); err != nil {
 			return err
 		}
 		_, err = stdout.Write(data)
@@ -94,7 +94,7 @@ func exportStackFile(ctx context.Context, path string, stdout, stderr io.Writer)
 			artifacts = append(artifacts, exportArtifact{"skills.yaml", sidecar})
 		}
 	}
-	return writeExportArtifacts(ctx, exportOutputDir, sources, artifacts, stderr)
+	return writeExportArtifacts(ctx, exportOutputDir, sources, artifacts, config.ExportNotices(stack), stderr)
 }
 
 type exportArtifact struct {
@@ -102,7 +102,7 @@ type exportArtifact struct {
 	data []byte
 }
 
-func writeExportArtifacts(ctx context.Context, dir string, sources []string, artifacts []exportArtifact, stderr io.Writer) error {
+func writeExportArtifacts(ctx context.Context, dir string, sources []string, artifacts []exportArtifact, notice string, stderr io.Writer) error {
 	for _, artifact := range artifacts {
 		target := filepath.Join(dir, artifact.name)
 		info, err := os.Stat(target)
@@ -135,7 +135,7 @@ func writeExportArtifacts(ctx context.Context, dir string, sources []string, art
 		}
 		written = append(written, artifact.name)
 	}
-	_, err := fmt.Fprintf(stderr, "%s\nWrote %v\n", config.ExportNotice, written)
+	_, err := fmt.Fprintf(stderr, "%s\nWrote %v\n", notice, written)
 	return err
 }
 
