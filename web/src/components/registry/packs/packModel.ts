@@ -2,10 +2,11 @@ import type { PackApplyDoc, PackListItem, PackRow } from '../../../lib/api';
 import type { ProjectionState } from '../../ui/StatePill';
 
 /** Kind order matches the manifest's own axis. */
-export const PACK_KIND_ORDER = ['stack', 'skill', 'agent', 'rule', 'wiring', 'unresolved'] as const;
+export const PACK_KIND_ORDER = ['stack', 'source', 'skill', 'agent', 'rule', 'wiring', 'unresolved'] as const;
 
 const KIND_LABELS: Record<(typeof PACK_KIND_ORDER)[number], string> = {
   stack: 'Stack',
+  source: 'Sources',
   skill: 'Skills',
   agent: 'Agents',
   rule: 'Rules',

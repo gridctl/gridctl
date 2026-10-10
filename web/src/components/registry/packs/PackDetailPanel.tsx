@@ -199,6 +199,16 @@ export function PackDetailPanel({ name, onClose, onChanged }: PackDetailPanelPro
                 </span>
               )}
             </div>
+            {(detail.info.sources ?? []).length > 0 && (
+              <ul className="mt-1.5 flex flex-col gap-0.5 text-[10px] text-text-muted font-mono">
+                {(detail.info.sources ?? []).map((src) => (
+                  <li key={src.name} title={src.commit_sha}>
+                    {src.name} {src.repo}
+                    {src.ref ? `@${src.ref}` : ''} ({(src.commit_sha ?? '').slice(0, 7)})
+                  </li>
+                ))}
+              </ul>
+            )}
             {lastApply && (
               <p className="text-[11px] text-text-muted mt-1.5" aria-live="polite">
                 Applied {lastApply.applied}/{lastApply.total} resources.

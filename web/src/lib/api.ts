@@ -3168,7 +3168,7 @@ export async function deleteContextFragment(name: string): Promise<{ name: strin
 
 /** One resource line in a pack document (status, apply, or remove). */
 export interface PackRow {
-  kind: 'stack' | 'skill' | 'agent' | 'rule' | 'wiring' | 'unresolved';
+  kind: 'stack' | 'source' | 'skill' | 'agent' | 'rule' | 'wiring' | 'unresolved';
   name: string;
   client?: string;
   action?: string;
@@ -3191,12 +3191,23 @@ export interface PackStackSummary {
   servers: number;
 }
 
+export interface PackSourceSummary {
+  name: string;
+  repo: string;
+  ref?: string;
+  commit_sha?: string;
+  skills: string[];
+  agents: string[];
+  error?: string;
+}
+
 export interface PackCounts {
   skills: number;
   agents: number;
   rules: number;
   wiring: boolean;
   stack?: boolean;
+  sources?: number;
 }
 
 /** Identity half of a pack: the list item shape. */
@@ -3211,6 +3222,7 @@ export interface PackInfo {
   applied: boolean;
   collision?: boolean;
   collision_repos?: string[];
+  sources?: PackSourceSummary[];
 }
 
 export interface PackListItem extends PackInfo {
@@ -3234,6 +3246,7 @@ export interface PackAddDoc {
   skipped?: string[];
   warnings?: string[];
   stack?: PackStackSummary;
+  sources?: PackSourceSummary[];
 }
 
 export interface PackApplyDoc {
@@ -3259,6 +3272,8 @@ export interface PackPreviewResource {
    *  importer gate); non-blocking findings stay visible without forcing
    *  a trust grant. */
   blocking?: boolean;
+  /** External source name. Absent for a resource from the pack repository. */
+  source?: string;
 }
 
 export interface PackPreview {
@@ -3274,6 +3289,7 @@ export interface PackPreview {
   unresolved?: string[];
   warnings?: string[];
   stack?: PackStackSummary;
+  sources?: PackSourceSummary[];
 }
 
 /** The 409 body a blocked-on-findings pack import carries. */

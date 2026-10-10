@@ -461,7 +461,7 @@ function ResolvedKind({ label, resources }: { label: string; resources: PackPrev
         {label} <span className="font-mono normal-case">({list.length})</span>
       </p>
       <p className="text-[11px] font-mono text-text-secondary">
-        {list.map((r) => r.name).join(', ')}
+        {list.map((r) => (r.source ? `${r.name} from ${r.source}` : r.name)).join(', ')}
       </p>
     </div>
   );
