@@ -34,9 +34,6 @@ func TestExampleStacks_PinnedOrExcepted(t *testing.T) {
 			return relErr
 		}
 		rel = filepath.ToSlash(rel)
-		if strings.Contains(rel, "/model-policy/") {
-			return nil
-		}
 		if rel == "examples/stack-declaration-policy/policy.yaml" {
 			return nil
 		}
