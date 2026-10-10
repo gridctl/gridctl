@@ -265,6 +265,106 @@ func TestConcurrentMutateAcrossStores(t *testing.T) {
 	}
 }
 
+// TestRemovedModelsKindSurvivesUnrelatedReplace is the post-removal
+// Article XVII case: a lockfile written by a previous release still
+// carries a kind: models entry, including the attributes that used to
+// be typed fields and now ride in Extra. An unrelated ReplaceKind must
+// not construct or drop that entry, and a save must keep every field.
+func TestRemovedModelsKindSurvivesUnrelatedReplace(t *testing.T) {
+	home := t.TempDir()
+	s := NewStore(home)
+	const (
+		ackedHash       = "sha256:acked"
+		includeRef      = "gridctl-models.yaml"
+		includeMode     = "appended"
+		includeOriginal = "old-scalar"
+		installedHash   = "sha256:installed"
+		canonicalHash   = "sha256:canonical"
+	)
+	content := `version: 1
+revision: 2
+projections:
+    - kind: models
+      client: litellm
+      source: litellm-fragment
+      path: /home/user/litellm/gridctl-models.yaml
+      installed_hash: ` + installedHash + `
+      canonical_hash: ` + canonicalHash + `
+      acked_hash: ` + ackedHash + `
+      include_ref: ` + includeRef + `
+      include_mode: ` + includeMode + `
+      include_original: ` + includeOriginal + `
+      synced_at: 2026-08-25T12:00:00Z
+`
+	if err := os.MkdirAll(filepath.Dir(s.Path()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.Path(), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mustMutate(t, s, func(l *Lock) error {
+		if err := l.ReplaceKind(KindSkill, []*Entry{
+			testEntry(KindSkill, "claude-code", "alpha", "/dest/a"),
+		}); err != nil {
+			return err
+		}
+		return l.Save()
+	})
+
+	l, err := s.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := l.Get(Kind("models"), "litellm", "litellm-fragment")
+	if e == nil {
+		t.Fatal("kind: models entry was dropped by an unrelated ReplaceKind")
+	}
+	if e.Client != "litellm" || e.Source != "litellm-fragment" {
+		t.Fatalf("identity = %s/%s, want litellm/litellm-fragment", e.Client, e.Source)
+	}
+	if e.InstalledHash != installedHash || e.CanonicalHash != canonicalHash {
+		t.Fatalf("hashes = %q %q", e.InstalledHash, e.CanonicalHash)
+	}
+	for key, want := range map[string]string{
+		"acked_hash":       ackedHash,
+		"include_ref":      includeRef,
+		"include_mode":     includeMode,
+		"include_original": includeOriginal,
+	} {
+		if got, _ := e.Extra[key].(string); got != want {
+			t.Errorf("Extra[%s] = %#v, want %q", key, e.Extra[key], want)
+		}
+	}
+	if l.Get(KindSkill, "claude-code", "alpha") == nil {
+		t.Error("unrelated skill ReplaceKind did not record the skill entry")
+	}
+	if got := l.Entries(Kind("models")); len(got) != 1 {
+		t.Fatalf("models entries = %d, want 1", len(got))
+	}
+
+	data, err := os.ReadFile(s.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(data)
+	for _, want := range []string{
+		"kind: models",
+		"client: litellm",
+		"source: litellm-fragment",
+		"installed_hash: " + installedHash,
+		"canonical_hash: " + canonicalHash,
+		"acked_hash: " + ackedHash,
+		"include_ref: " + includeRef,
+		"include_mode: " + includeMode,
+		"include_original: " + includeOriginal,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rewritten lockfile lost %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestSaveOutsideMutateIsRefused(t *testing.T) {
 	s := NewStore(t.TempDir())
 	l, err := s.Load(context.Background())

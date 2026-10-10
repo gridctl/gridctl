@@ -17,8 +17,9 @@ const LockVersion = 1
 // staying readable by any binary of the same LockVersion. Unknown
 // fields written under a higher revision are preserved when this binary
 // rewrites the file (entries it actively re-records are written fresh).
-// Revision 2 added the models kind and its entry attributes (acked_hash,
-// include_ref, include_mode, include_original).
+// Revision 2 was introduced by the removed models kind. Those entry
+// attributes (acked_hash, include_ref, include_mode, include_original)
+// now ride in Entry.Extra on existing files. Never decrement this value.
 const lockRevision = 2
 
 // LockFile is the on-disk shape of the unified projection lockfile at
