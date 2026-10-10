@@ -360,7 +360,7 @@ func statusSourceSummaries(p *skills.LockedPack) []SourceSummary {
 		ps := p.Sources[name]
 		out = append(out, SourceSummary{
 			Name:      name,
-			Repo:      ps.Repo,
+			Repo:      redactRepo(ps.Repo),
 			Ref:       ps.Ref,
 			CommitSHA: ps.CommitSHA,
 			Skills:    orEmpty(ps.Skills),
@@ -394,6 +394,7 @@ func sourceStatusRow(packRepo, name string, ps skills.LockedPackSource, member s
 }
 
 func sourceDetail(repo, ref, sha string) string {
+	repo = redactRepo(repo)
 	short := skills.ShortSHA(sha)
 	if ref == "" {
 		return fmt.Sprintf("%s (%s)", repo, short)

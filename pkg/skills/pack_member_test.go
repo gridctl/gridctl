@@ -115,6 +115,35 @@ func TestImport_MemberRewriteKeepsRecordedNames(t *testing.T) {
 	assert.Contains(t, src.Agents, "reviewer")
 }
 
+func TestImport_SelectionIsImportAllSkipsExisting(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	repo := initMixedRepo(t)
+	store, regDir := setupTestRegistry(t)
+	lockPath := filepath.Join(t.TempDir(), "skills.lock.yaml")
+	imp := NewImporter(store, regDir, lockPath, slog.Default())
+	_, err := imp.Import(context.Background(), ImportOptions{
+		Repo: repo, Trust: true, Selected: []string{"alpha"}, SourceName: "plain",
+	})
+	require.NoError(t, err)
+
+	result, err := imp.Import(context.Background(), ImportOptions{
+		Repo: repo, Trust: true, ExactSelection: true, SelectionIsImportAll: true,
+		Selected: []string{"alpha"}, SelectedAgents: []string{},
+		SourceName: "team-pack",
+	})
+	require.NoError(t, err)
+	assert.Empty(t, result.Imported)
+	require.NotEmpty(t, result.Skipped)
+	assert.Equal(t, "alpha", result.Skipped[0].Name)
+	assert.Contains(t, result.Skipped[0].Reason, "already exists")
+
+	lf, err := ReadLockFile(lockPath)
+	require.NoError(t, err)
+	owner, _, ok := lf.FindSkillSource("alpha")
+	require.True(t, ok)
+	assert.Equal(t, "plain", owner)
+}
+
 func TestGuardSourceKey_RefusesMemberRekey(t *testing.T) {
 	lf := &LockFile{Sources: map[string]LockedSource{
 		"team/netops": {Repo: "https://github.com/acme/netops", PackMember: "team"},
@@ -123,6 +152,7 @@ func TestGuardSourceKey_RefusesMemberRekey(t *testing.T) {
 	var conflict *SourceConflictError
 	require.ErrorAs(t, err, &conflict)
 	assert.Contains(t, err.Error(), "team")
+	assert.Contains(t, err.Error(), "gridctl pack remove")
 	assert.ErrorIs(t, err, ErrSourceConflict)
 	assert.NoError(t, GuardSourceKey(lf, "team/netops", "", "https://github.com/acme/netops"))
 }

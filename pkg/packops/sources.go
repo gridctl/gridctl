@@ -53,7 +53,7 @@ func cloneDeclaredSources(ctx context.Context, manifest *pack.Manifest, opts Add
 	}
 	lf, err := skills.ReadLockFile(lockPath)
 	if err != nil {
-		lf = &skills.LockFile{}
+		return nil, nil, err
 	}
 	var warnings []string
 	out := make(map[string]*resolvedSource, len(names))
@@ -126,7 +126,7 @@ func unknownSourceAuthWarnings(manifest *pack.Manifest, auth map[string]skills.A
 func guardPackName(lockPath, name, repo string) error {
 	lf, err := skills.ReadLockFile(lockPath)
 	if err != nil {
-		return nil
+		return err
 	}
 	existing, err := findPack(lf, name)
 	if err != nil {
@@ -227,7 +227,7 @@ func sourceSummaries(resolved resolvedSelection, useImported bool) []SourceSumma
 		rs := resolved.sources[name]
 		item := SourceSummary{
 			Name:      name,
-			Repo:      rs.spec.Repo,
+			Repo:      redactRepo(rs.spec.Repo),
 			Ref:       rs.spec.Ref,
 			CommitSHA: rs.sha,
 			Skills:    []string{},
@@ -249,4 +249,8 @@ func sourceSummaries(resolved resolvedSelection, useImported bool) []SourceSumma
 
 func memberKey(packName, sourceName string) string {
 	return packName + "/" + sourceName
+}
+
+func redactRepo(repo string) string {
+	return gitpkg.RedactURL(repo)
 }

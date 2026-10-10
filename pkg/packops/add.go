@@ -570,6 +570,8 @@ func recordLockedPack(ctx context.Context, lockPath string, m *pack.Manifest, re
 				if err := ensureMemberSource(lf, m.Name, sourceName, rs); err != nil {
 					return false, err
 				}
+				entry := packRecord.Sources[sourceName]
+				packRecord.Sources[sourceName] = pinnedFailureRepo(lf, m.Name, sourceName, rs, entry)
 			}
 		}
 		src.Pack = packRecord
@@ -598,6 +600,20 @@ func lockedPackSources(packName string, resolved resolvedSelection) map[string]s
 		out[name] = entry
 	}
 	return out
+}
+
+func pinnedFailureRepo(lf *skills.LockFile, packName, sourceName string, rs *resolvedSource, entry skills.LockedPackSource) skills.LockedPackSource {
+	if lf == nil || rs == nil || rs.err == nil {
+		return entry
+	}
+	member, ok := lf.Sources[memberKey(packName, sourceName)]
+	if !ok || member.Repo == "" || member.Repo == entry.Repo {
+		return entry
+	}
+	entry.Repo = member.Repo
+	entry.Ref = member.Ref
+	entry.CommitSHA = member.CommitSHA
+	return entry
 }
 
 func ensureMemberSource(lf *skills.LockFile, packName, sourceName string, rs *resolvedSource) error {
@@ -643,21 +659,27 @@ func importPackAndSources(ctx context.Context, imp *skills.Importer, opts AddOpt
 	packSkills, packAgents := packLocalNames(resolved)
 	if len(packSkills) > 0 || len(packAgents) > 0 {
 		result, err := imp.Import(ctx, skills.ImportOptions{
-			Repo:           opts.Repo,
-			Ref:            opts.Ref,
-			Path:           opts.Path,
-			Trust:          opts.Trust,
-			Selected:       nonNilNames(packSkills),
-			SelectedAgents: nonNilNames(packAgents),
-			Discovered:     clone,
-			PackImport:     true,
-			ExactSelection: true,
-			Auth:           opts.Auth,
+			Repo:                 opts.Repo,
+			Ref:                  opts.Ref,
+			Path:                 opts.Path,
+			Trust:                opts.Trust,
+			Selected:             nonNilNames(packSkills),
+			SelectedAgents:       nonNilNames(packAgents),
+			Discovered:           clone,
+			PackImport:           true,
+			ExactSelection:       true,
+			SelectionIsImportAll: len(manifest.Skills) == 0,
+			Auth:                 opts.Auth,
 		})
 		if err != nil {
 			return err
 		}
 		appendImportSkips(doc, result)
+		if len(manifest.Skills) == 0 {
+			for _, skipped := range result.Skipped {
+				resolved.skills = removeName(resolved.skills, skipped.Name)
+			}
+		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(resolved.sources)) {
 		if err := ctx.Err(); err != nil {

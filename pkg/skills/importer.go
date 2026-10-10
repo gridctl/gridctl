@@ -143,6 +143,12 @@ type ImportOptions struct {
 	// no agents, regardless of ResourceKind and of the legacy empty-means-all
 	// rules. Unset preserves those rules.
 	ExactSelection bool
+	// SelectionIsImportAll marks a non-empty Selected list that still means
+	// import-all. An existing skill is skipped instead of overwritten.
+	// ExactSelection still decides which names import. Pack add sets this
+	// for the pack repository when skills: is empty, so declaring sources
+	// does not change that import-all.
+	SelectionIsImportAll bool
 }
 
 // ImportResult contains the results of an import operation.
@@ -345,7 +351,7 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportRes
 			// unless a local source owns the name. Local re-import of an unowned
 			// or same-source name does not need --force.
 			if _, err := imp.store.GetSkill(skillName); err == nil {
-				selected := len(opts.Selected) > 0 && selectedSet[skillName]
+				selected := len(opts.Selected) > 0 && selectedSet[skillName] && !opts.SelectionIsImportAll
 				if !AllowOverwrite(lf, opts.Kind, skillName, sourceName, selected, opts.Force, false) {
 					importResult.Skipped = append(importResult.Skipped, SkippedSkill{
 						Name:   skillName,

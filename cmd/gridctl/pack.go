@@ -25,7 +25,10 @@ var packCmd = &cobra.Command{
 	Short: "Import and apply team packs (skills + agents + rules + wiring)",
 	Long: `A pack is a git repo carrying a ` + pack.ManifestFileName + ` manifest that
 selects skills, agents, context rule fragments, gateway wiring, and an
-optional stack file, so one import configures a whole setup. 'pack add'
+optional stack file, so one import configures a whole setup. A manifest
+can declare named external git sources and select skills and agents from
+those repositories. They are pinned by commit and treated as the pack's
+own. 'pack add'
 imports the selection and pins a carried stack through the same origin
 pipeline (security scan, --trust gate, drift-safe updates) that
 'gridctl skill add' uses; 'pack apply' starts that stack, then
@@ -94,15 +97,19 @@ var packAddCmd = &cobra.Command{
 	Long: `Clones the repository, reads ` + pack.ManifestFileName + ` at its root, and
 imports exactly the manifest's selection of skills, agents, and rule
 fragments into the local stores (empty skill and agent lists mean
-everything discovered; rules are opt-in, an empty list means none).
-Nothing touches client files or the gateway; that is 'pack apply'.
+everything discovered in the pack repository; external sources are never
+import-all; rules are opt-in, an empty list means none). Declared
+sources print a Sources: block after the import line. --source-auth
+overrides one source (name=vault-key:KEY or name=ssh-key:path). Nothing
+touches client files or the gateway; that is 'pack apply'.
 
 Manifest-selected names the repository does not contain are reported as
-unresolved (exit 1); the rest of the pack still imports.
+unresolved (exit 1); the rest of the pack still imports. A failed source
+is exit 1 even when no selection names it.
 
 Exit codes:
   0  imported cleanly
-  1  partial (unresolved selections, or skipped resources)
+  1  partial (unresolved selections, skipped resources, or a failed source)
   2  infrastructure error (clone, auth, missing or invalid manifest)`,
 	Args:    cobra.ExactArgs(1),
 	PreRunE: validatePackAddFlags,
@@ -308,14 +315,26 @@ func runPackAdd(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Man
 			}
 			fmt.Fprintf(stdout, "  %s\n", variable.Command)
 		}
-		if !dryRun && len(doc.Unresolved) == 0 && len(doc.Skipped) == 0 {
+		if !dryRun && !packAddPartial(doc) {
 			fmt.Fprintf(stdout, "Run 'gridctl pack apply %s' to project it.\n", doc.Pack)
 		}
 	}
-	if len(doc.Unresolved) > 0 || len(doc.Skipped) > 0 {
+	if packAddPartial(doc) {
 		return ctxExitAttention
 	}
 	return ctxExitOK
+}
+
+func packAddPartial(doc packops.AddDoc) bool {
+	if len(doc.Unresolved) > 0 || len(doc.Skipped) > 0 {
+		return true
+	}
+	for _, src := range doc.Sources {
+		if src.Error != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func printPackSources(stdout, stderr io.Writer, sources []packops.SourceSummary) {
@@ -324,12 +343,15 @@ func printPackSources(stdout, stderr io.Writer, sources []packops.SourceSummary)
 	}
 	fmt.Fprintln(stdout, "Sources:")
 	for _, src := range sources {
+		repo := gitpkg.RedactURL(src.Repo)
 		if src.Error != "" {
-			fmt.Fprintf(stdout, "%s %s: %s\n", src.Name, src.Repo, src.Error)
-			printSkillAuthHint(stderr, src.Repo, sourceHintError(src.Error))
+			fmt.Fprintf(stdout, "%s %s: %s\n", src.Name, repo, src.Error)
+			printSkillAuthHint(stderr, repo, sourceHintError(src.Error))
 			continue
 		}
-		fmt.Fprintf(stdout, "%s %s\n", src.Name, formatSourceLine(src))
+		printed := src
+		printed.Repo = repo
+		fmt.Fprintf(stdout, "%s %s\n", src.Name, formatSourceLine(printed))
 	}
 }
 
@@ -507,7 +529,8 @@ target-missing, foreign, missing), plus unresolved manifest selections.
 Rule rows report per-client projection state once applied (per
 fragment-file projection; a compiled client's whole-document state
 stays in 'gridctl ctx status'); a rule that was imported but never
-projected reports store-level presence.
+projected reports store-level presence. Pinned external sources are
+source rows after the stack row and before skills.
 
 Exit codes:
   0  everything clean
@@ -608,6 +631,8 @@ A resource whose projection was hand-edited (drifted) is skipped with a
 remediation hint unless --force; everything else still removes, and the
 skipped resources stay imported so nothing is lost. Removing a skill
 removes all of its projections, including any made outside the pack.
+A full removal drops member lock sources. --dry-run reports those
+sources as would-remove only when nothing is kept.
 
 Exit codes:
   0  removed cleanly

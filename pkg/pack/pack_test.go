@@ -174,6 +174,36 @@ agents:
 	}
 }
 
+func TestParse_DuplicateSelectionNamesBothOwners(t *testing.T) {
+	_, err := Parse([]byte(`apiVersion: gridctl.dev/v1
+kind: Pack
+name: team-pack
+sources:
+  netops:
+    repo: https://github.com/acme/netops
+skills:
+  - alpha
+  - { name: alpha, source: netops }
+`))
+	if err == nil || !strings.Contains(err.Error(), "alpha") || !strings.Contains(err.Error(), "the pack repository") || !strings.Contains(err.Error(), "netops") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestParse_DuplicateStringNamesWithoutSourcesStillParse(t *testing.T) {
+	m, err := Parse([]byte(`apiVersion: gridctl.dev/v1
+kind: Pack
+name: team-pack
+skills: [alpha, alpha]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Skills) != 2 || m.Skills[0].Name != "alpha" || m.Skills[1].Name != "alpha" {
+		t.Fatalf("skills = %+v", m.Skills)
+	}
+}
+
 func TestParse_SelectionMappingRequiresNameAndSource(t *testing.T) {
 	cases := []string{
 		"skills:\n  - { source: netops }\n",
@@ -212,6 +242,8 @@ func TestParse_SourceValidationNamesKey(t *testing.T) {
 		{"bad path", base + "sources:\n  netops:\n    repo: https://github.com/acme/netops\n    path: ../outside\n", "netops"},
 		{"bad method", base + "sources:\n  netops:\n    repo: https://github.com/acme/netops\n    auth:\n      method: password\n", "netops"},
 		{"ssh key path", base + "sources:\n  netops:\n    repo: ssh://git@github.com/acme/netops.git\n    auth:\n      method: ssh-key\n      ssh_key_path: /tmp/key\n", "ssh_key_path"},
+		{"duplicate skill", base + "sources:\n  netops:\n    repo: https://github.com/acme/netops\nskills:\n  - alpha\n  - { name: alpha, source: netops }\n", "alpha"},
+		{"duplicate across sources", base + "sources:\n  netops:\n    repo: https://github.com/acme/netops\n  bench:\n    repo: https://github.com/acme/bench\nskills:\n  - { name: alpha, source: netops }\n  - { name: alpha, source: bench }\n", "alpha"},
 	}
 	for _, tc := range cases {
 		_, err := Parse([]byte(tc.src))

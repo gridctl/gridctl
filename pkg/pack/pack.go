@@ -315,13 +315,24 @@ func (m *Manifest) validateSources() error {
 }
 
 func (m *Manifest) validateSelections(selections []Selection, kind string) error {
+	seen := map[string]string{}
 	for _, sel := range selections {
-		if sel.Source == "" {
+		if sel.Source != "" {
+			if _, ok := m.Sources[sel.Source]; !ok {
+				return fmt.Errorf("%s %q names undeclared source %q", kind, sel.Name, sel.Source)
+			}
+		}
+		if len(m.Sources) == 0 {
 			continue
 		}
-		if _, ok := m.Sources[sel.Source]; !ok {
-			return fmt.Errorf("%s %q names undeclared source %q", kind, sel.Name, sel.Source)
+		owner := sel.Source
+		if owner == "" {
+			owner = "the pack repository"
 		}
+		if prev, ok := seen[sel.Name]; ok {
+			return fmt.Errorf("%s %q is selected more than once (%s and %s)", kind, sel.Name, prev, owner)
+		}
+		seen[sel.Name] = owner
 	}
 	return nil
 }

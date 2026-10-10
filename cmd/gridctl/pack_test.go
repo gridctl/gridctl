@@ -621,4 +621,40 @@ func TestParseSourceAuthAndText(t *testing.T) {
 	if !strings.Contains(stderr.String(), "hint:") {
 		t.Fatalf("stderr = %q, want an auth hint", stderr.String())
 	}
+
+	stdout.Reset()
+	stderr.Reset()
+	printPackSources(&stdout, &stderr, []packops.SourceSummary{
+		{Name: "tok", Repo: "https://user:secret@example.com/a", Ref: "v1", CommitSHA: "abcdef1234567890"},
+	})
+	if strings.Contains(stdout.String(), "secret") || strings.Contains(stdout.String(), "user:") {
+		t.Fatalf("printed a credential URL:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "tok https://example.com/a@v1 (abcdef12)\n") {
+		t.Fatalf("redacted line missing:\n%s", stdout.String())
+	}
+}
+
+func TestPackAdd_UnselectedFailedSourceExitsAttention(t *testing.T) {
+	imp, freshManagers := packTestEnv(t)
+	manifest := `apiVersion: gridctl.dev/v1
+kind: Pack
+name: team-pack
+skills: [alpha]
+sources:
+  gone:
+    repo: http://127.0.0.1:1/missing.git
+`
+	repo := packFixture(t, manifest, nil)
+	var stdout, stderr bytes.Buffer
+	exit := runPackAdd(context.Background(), &stdout, &stderr, freshManagers(), imp, repo, "", "", false, false, "text", skills.AuthConfig{}, nil)
+	if exit != ctxExitAttention {
+		t.Fatalf("exit = %d, want 1\n%s%s", exit, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Sources:\n") || !strings.Contains(stdout.String(), "gone ") {
+		t.Fatalf("stdout =\n%s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "Run 'gridctl pack apply") {
+		t.Fatalf("partial add invited apply:\n%s", stdout.String())
+	}
 }

@@ -140,6 +140,8 @@ type LockedPack struct {
 // Skills and Agents are the names that actually imported, not the
 // manifest shorthand and not skipped or unresolved selections.
 type LockedPackSource struct {
+	// Repo is the authored URL, stored as written, matching the primary
+	// pack source. Printed lines and source summaries redact userinfo.
 	Repo      string    `yaml:"repo"`
 	Ref       string    `yaml:"ref,omitempty"`
 	Path      string    `yaml:"path,omitempty"`

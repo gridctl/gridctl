@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	gitpkg "github.com/gridctl/gridctl/pkg/git"
 )
 
 // ErrSourceConflict is a source-name or source-kind collision. REST maps it
@@ -155,7 +157,8 @@ func GuardSourceKey(lf *LockFile, name string, kind, repo string) error {
 		return &SourceConflictError{
 			Name: name,
 			Repo: existing.Repo,
-			Msg:  fmt.Sprintf("source %q belongs to pack %q and records %s; refusing to re-key it to %s", name, existing.PackMember, existing.Repo, repo),
+			Msg: fmt.Sprintf("source %q belongs to pack %q and records %s; refusing to re-key it to %s; run 'gridctl pack remove %s' and add the pack again to point this source at a new repository",
+				name, existing.PackMember, gitpkg.RedactURL(existing.Repo), gitpkg.RedactURL(repo), existing.PackMember),
 		}
 	}
 	if kind == SourceKindLocal {

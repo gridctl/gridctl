@@ -2,6 +2,7 @@ package packops
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http/cgi" //nolint:gosec // G504: Httpoxy fixed in Go 1.6.3; test-only git http-backend
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/gridctl/gridctl/pkg/builder"
+	"github.com/gridctl/gridctl/pkg/pack"
 	"github.com/gridctl/gridctl/pkg/project"
 	"github.com/gridctl/gridctl/pkg/skills"
 )
@@ -221,6 +223,14 @@ sources:
 	}
 
 	mgrs, imp = freshEnv(t, home)
+	dry, err := mgrs.Remove(ctx, imp, "team-pack", RemoveOptions{DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceRows := rowsOfKind(dry.Rows, "source")
+	if len(sourceRows) != 2 || sourceRows[0].Action != "would-remove" || sourceRows[1].Action != "would-remove" {
+		t.Fatalf("dry-run sources = %+v", sourceRows)
+	}
 	if _, err := mgrs.Remove(ctx, imp, "team-pack", RemoveOptions{Force: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -687,6 +697,345 @@ sources:
 	if !rows[0].NeedsAttention {
 		t.Fatal("stale source should be attention")
 	}
+}
+
+func commitRepoFile(t *testing.T, repo, path, content string) {
+	t.Helper()
+	r, err := git.PlainOpen(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, err := r.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := filepath.Join(repo, path)
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Add(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Commit("update", &git.CommitOptions{Author: &object.Signature{Name: "test", Email: "test@test.com"}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAdd_EmptySkillsSkipsExistingFromOtherSource(t *testing.T) {
+	mgrs, imp := testEnv(t)
+	ctx := context.Background()
+	otherURL, _ := serveGitFiles(t, map[string]string{
+		"skills/alpha/SKILL.md": "---\nname: alpha\ndescription: Owned elsewhere\n---\n\nOriginal.\n",
+	})
+	if _, err := imp.Import(ctx, skills.ImportOptions{Repo: otherURL, Trust: true, Selected: []string{"alpha"}}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := skills.ReadLockFile(skills.LockFilePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, _, ok := before.FindSkillSource("alpha")
+	if !ok {
+		t.Fatal("alpha has no lock owner")
+	}
+	sourceURL, _ := serveGitFiles(t, map[string]string{
+		"skills/unused/SKILL.md": "---\nname: unused\ndescription: Unused\n---\n\nUnused.\n",
+	})
+	manifest := `apiVersion: gridctl.dev/v1
+kind: Pack
+name: team-pack
+sources:
+  extra:
+    repo: ` + sourceURL + `
+`
+	repo := packFixture(t, manifest, map[string]string{
+		"skills/alpha/SKILL.md": "---\nname: alpha\ndescription: Pack copy\n---\n\nPack copy.\n",
+	})
+	res, err := mgrs.Add(ctx, imp, AddOptions{Repo: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	skipped := false
+	for _, line := range res.Doc.Skipped {
+		if strings.Contains(line, "alpha") && strings.Contains(line, "already exists") {
+			skipped = true
+		}
+	}
+	if !skipped {
+		t.Fatalf("skipped = %v", res.Doc.Skipped)
+	}
+	for _, name := range res.Doc.Skills {
+		if name == "alpha" {
+			t.Fatalf("pack claimed a skipped skill: %+v", res.Doc.Skills)
+		}
+	}
+	lf, err := skills.ReadLockFile(skills.LockFilePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _, ok := lf.FindSkillSource("alpha")
+	if !ok || got != owner {
+		t.Fatalf("owner = %q, want %q", got, owner)
+	}
+	home, _ := os.UserHomeDir()
+	body, err := os.ReadFile(filepath.Join(home, ".gridctl", "skills", "skills", "alpha", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "Pack copy") {
+		t.Fatalf("pack overwrote alpha:\n%s", body)
+	}
+}
+
+func TestRemove_FailedReaddDoesNotOrphanMemberSkill(t *testing.T) {
+	mgrs, imp := testEnv(t)
+	ctx := context.Background()
+	url, _ := serveGitFiles(t, map[string]string{
+		"skills/member-skill/SKILL.md": "---\nname: member-skill\ndescription: Member\n---\n\nMember.\n",
+	})
+	manifest := `apiVersion: gridctl.dev/v1
+kind: Pack
+name: team-pack
+skills:
+  - { name: member-skill, source: extra }
+agents: []
+sources:
+  extra:
+    repo: ` + url + `
+`
+	repo := packFixture(t, manifest, map[string]string{
+		"agents/reviewer.md": "",
+	})
+	if _, err := mgrs.Add(ctx, imp, AddOptions{Repo: repo}); err != nil {
+		t.Fatal(err)
+	}
+	broken := strings.Replace(manifest, url, "http://127.0.0.1:1/missing.git", 1)
+	commitRepoFile(t, repo, "gridctl-pack.yaml", broken)
+	mgrs, imp = freshEnv(t, mustHome(t))
+	res, err := mgrs.Add(ctx, imp, AddOptions{Repo: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Doc.Sources[0].Error == "" {
+		t.Fatalf("re-add should fail the source: %+v", res.Doc.Sources)
+	}
+	lf, err := skills.ReadLockFile(skills.LockFilePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	member := lf.Sources["team-pack/extra"]
+	if _, ok := member.Skills["member-skill"]; !ok {
+		t.Fatalf("member lost its skill before remove: %+v", member.Skills)
+	}
+	home := mustHome(t)
+	skillDir := filepath.Join(home, ".gridctl", "skills", "skills", "member-skill")
+	if _, err := os.Stat(skillDir); err != nil {
+		t.Fatal(err)
+	}
+	mgrs, imp = freshEnv(t, home)
+	if _, err := mgrs.Remove(ctx, imp, "team-pack", RemoveOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(skillDir); !os.IsNotExist(err) {
+		t.Fatalf("registry directory left behind: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(skillDir, ".origin.json")); !os.IsNotExist(err) {
+		t.Fatalf("origin sidecar left behind: %v", err)
+	}
+	lf, err = skills.ReadLockFile(skills.LockFilePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if keys := lf.MemberSources("team-pack"); len(keys) != 0 {
+		t.Fatalf("members after remove = %v", keys)
+	}
+}
+
+func TestRemove_PartialTrimsLockedPackSource(t *testing.T) {
+	mgrs, imp := testEnv(t)
+	ctx := context.Background()
+	alphaURL, _ := serveGitFiles(t, map[string]string{
+		"skills/kept-skill/SKILL.md": "---\nname: kept-skill\ndescription: Kept\n---\n\nKept.\n",
+		"skills/gone-skill/SKILL.md": "---\nname: gone-skill\ndescription: Gone\n---\n\nGone.\n",
+	})
+	betaURL, _ := serveGitFiles(t, map[string]string{
+		"skills/other-skill/SKILL.md": "---\nname: other-skill\ndescription: Other\n---\n\nOther.\n",
+	})
+	manifest := `apiVersion: gridctl.dev/v1
+kind: Pack
+name: team-pack
+skills:
+  - { name: kept-skill, source: alpha }
+  - { name: gone-skill, source: alpha }
+  - { name: other-skill, source: beta }
+agents: []
+sources:
+  alpha:
+    repo: ` + alphaURL + `
+  beta:
+    repo: ` + betaURL + `
+`
+	repo := packFixture(t, manifest, map[string]string{"agents/reviewer.md": ""})
+	if _, err := mgrs.Add(ctx, imp, AddOptions{Repo: repo}); err != nil {
+		t.Fatal(err)
+	}
+	home := mustHome(t)
+	mgrs, _ = freshEnv(t, home)
+	if _, err := mgrs.Apply(ctx, "team-pack", ApplyOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(home, ".claude", "skills", "kept-skill")
+	if _, err := os.Lstat(dest); err != nil {
+		t.Fatal(err)
+	}
+	elsewhere := filepath.Join(home, ".gridctl", "skills", "skills", "gone-skill")
+	if err := os.Remove(dest); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, dest); err != nil {
+		t.Fatal(err)
+	}
+	mgrs, imp = freshEnv(t, home)
+	dry, err := mgrs.Remove(ctx, imp, "team-pack", RemoveOptions{DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dry.Kept) == 0 {
+		t.Fatalf("dry-run kept nothing: %+v", dry)
+	}
+	for _, row := range dry.Rows {
+		if row.Kind == "source" {
+			t.Fatalf("drift-kept dry-run reported a source row: %+v", dry.Rows)
+		}
+	}
+	if _, err := mgrs.Remove(ctx, imp, "team-pack", RemoveOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	lf, err := skills.ReadLockFile(skills.LockFilePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, packSrc, ok := lf.FindPackSource("team-pack")
+	if !ok || packSrc.Pack == nil {
+		t.Fatal("partial removal dropped the pack")
+	}
+	alpha := packSrc.Pack.Sources["alpha"]
+	beta := packSrc.Pack.Sources["beta"]
+	if len(alpha.Skills) != 1 || alpha.Skills[0] != "kept-skill" || len(alpha.Agents) != 0 {
+		t.Fatalf("alpha source = %+v", alpha)
+	}
+	if len(beta.Skills) != 0 || len(beta.Agents) != 0 {
+		t.Fatalf("beta source = %+v", beta)
+	}
+}
+
+func TestAdd_ChangedSourceRepoKeepsPinnedURL(t *testing.T) {
+	mgrs, imp := testEnv(t)
+	ctx := context.Background()
+	firstURL, _ := serveGitFiles(t, map[string]string{
+		"skills/moved-skill/SKILL.md": "---\nname: moved-skill\ndescription: Moved\n---\n\nMoved.\n",
+	})
+	secondURL, _ := serveGitFiles(t, map[string]string{
+		"skills/moved-skill/SKILL.md": "---\nname: moved-skill\ndescription: Moved\n---\n\nMoved again.\n",
+	})
+	manifest := `apiVersion: gridctl.dev/v1
+kind: Pack
+name: team-pack
+skills:
+  - { name: moved-skill, source: extra }
+agents: []
+sources:
+  extra:
+    repo: ` + firstURL + `
+`
+	repo := packFixture(t, manifest, map[string]string{"agents/reviewer.md": ""})
+	if _, err := mgrs.Add(ctx, imp, AddOptions{Repo: repo}); err != nil {
+		t.Fatal(err)
+	}
+	moved := strings.Replace(manifest, firstURL, secondURL, 1)
+	commitRepoFile(t, repo, "gridctl-pack.yaml", moved)
+	mgrs, imp = freshEnv(t, mustHome(t))
+	res, err := mgrs.Add(ctx, imp, AddOptions{Repo: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Doc.Sources) != 1 || !strings.Contains(res.Doc.Sources[0].Error, "pack remove") {
+		t.Fatalf("source error = %+v", res.Doc.Sources)
+	}
+	lf, err := skills.ReadLockFile(skills.LockFilePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, packSrc, ok := lf.FindPackSource("team-pack")
+	if !ok || packSrc.Pack == nil {
+		t.Fatal("pack record missing")
+	}
+	if packSrc.Pack.Sources["extra"].Repo != firstURL {
+		t.Fatalf("recorded repo = %q, want pinned %s", packSrc.Pack.Sources["extra"].Repo, firstURL)
+	}
+	if lf.Sources["team-pack/extra"].Repo != firstURL {
+		t.Fatalf("member repo = %q", lf.Sources["team-pack/extra"].Repo)
+	}
+}
+
+func TestCloneDeclaredSources_RefusesNewerLockfile(t *testing.T) {
+	testEnv(t)
+	path := skills.LockFilePath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("version: 99\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	prev := cloneAndDiscover
+	cloneAndDiscover = func(string, string, string, skills.AuthConfig, *slog.Logger) (*skills.CloneResult, error) {
+		called = true
+		return nil, errors.New("should not clone")
+	}
+	t.Cleanup(func() { cloneAndDiscover = prev })
+	manifest := &pack.Manifest{
+		Name:    "team-pack",
+		Sources: map[string]pack.Source{"extra": {Repo: "https://example.com/extra"}},
+	}
+	_, _, err := cloneDeclaredSources(context.Background(), manifest, AddOptions{}, path)
+	if !errors.Is(err, skills.ErrNewerImportLockVersion) {
+		t.Fatalf("cloneDeclaredSources err = %v", err)
+	}
+	if called {
+		t.Fatal("cloned after a newer lockfile")
+	}
+	if err := guardPackName(path, "team-pack", "https://example.com/pack"); !errors.Is(err, skills.ErrNewerImportLockVersion) {
+		t.Fatalf("guardPackName err = %v", err)
+	}
+	if err := guardPackName(filepath.Join(t.TempDir(), "missing.lock"), "team-pack", "https://example.com/pack"); err != nil {
+		t.Fatalf("missing lockfile err = %v", err)
+	}
+}
+
+func TestSourceSummary_RedactsRepo(t *testing.T) {
+	got := sourceSummaries(resolvedSelection{sources: map[string]*resolvedSource{
+		"extra": {spec: pack.Source{Repo: "https://user:secret@example.com/a.git"}},
+	}}, false)
+	if len(got) != 1 || got[0].Repo != "https://example.com/a.git" || strings.Contains(got[0].Repo, "secret") {
+		t.Fatalf("summary = %+v", got)
+	}
+	detail := sourceDetail("https://user:secret@example.com/a.git", "v1", "abcdef1234567890")
+	if strings.Contains(detail, "secret") || !strings.Contains(detail, "https://example.com/a.git@v1") {
+		t.Fatalf("detail = %s", detail)
+	}
+}
+
+func mustHome(t *testing.T) string {
+	t.Helper()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return home
 }
 
 func firstLine(s string) string {

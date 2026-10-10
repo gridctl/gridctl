@@ -465,6 +465,22 @@ describe('reverse ownership chip', () => {
     expect(screen.getByText('pack: team-pack')).toBeInTheDocument();
   });
 
+  it('labels a pack member source even when the packs list is unloaded', () => {
+    useRegistryStore.setState({ packs: null });
+    render(
+      <MemoryRouter>
+        <SourceGroupHeader
+          source={{ name: 'team-pack/netops', repo: 'https://github.com/acme/netops', packMember: 'team-pack' } as never}
+          count={2}
+          hasSearch={false}
+          isActive={false}
+          onToggle={() => {}}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('pack: team-pack')).toBeInTheDocument();
+  });
+
   it('renders no chip when the source has no pack (or packs are unloaded)', () => {
     useRegistryStore.setState({ packs: null });
     render(
