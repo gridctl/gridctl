@@ -125,7 +125,7 @@ func stateMutatingCommand(cmd *cobra.Command) bool {
 	mutating := map[string]bool{
 		"apply": true, "serve": true, "reset": true, "link": true,
 		"unlink": true, "project": true, "pack": true, "skill": true,
-		"ctx": true, "models": true, "import": true, "reload": true,
+		"ctx": true, "import": true, "reload": true,
 		"destroy": true,
 	}
 	for c := cmd; c != nil; c = c.Parent() {
@@ -187,7 +187,6 @@ func init() {
 		importCmd:    groupClients,
 		projectCmd:   groupClients,
 		ctxCmd:       groupClients,
-		modelsCmd:    groupClients,
 		skillCmd:     groupSkills,
 		packCmd:      groupSkills,
 		activateCmd:  groupSkills,
