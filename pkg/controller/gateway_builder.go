@@ -1495,7 +1495,7 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 	// It is called immediately when --watch is active, and exposed via SetStartWatcher
 	// so POST /api/stack/initialize can activate watching after cold-loading.
 	startWatcher := func(stackPath string) {
-		watchCtx, _ := context.WithCancel(ctx) //nolint:govet,gosec // cancel called on process exit via ctx
+		watchCtx, watchCancel := context.WithCancel(ctx)
 
 		watcher := reload.NewWatcher(stackPath, func() error {
 			result, err := reloadHandler.Reload(watchCtx)
@@ -1514,6 +1514,7 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 		watcher.SetLogger(slog.New(handler))
 
 		go func() {
+			defer watchCancel()
 			if err := watcher.Watch(watchCtx); err != nil && err != context.Canceled {
 				slog.New(handler).Error("file watcher error", "error", err)
 			}
