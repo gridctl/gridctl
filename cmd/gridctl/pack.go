@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/contexts"
@@ -84,6 +85,7 @@ var (
 	packAddAuthTokenStdin bool
 	packAddVaultKey       string
 	packAddSSHKey         string
+	packAddSourceAuth     []string
 )
 
 var packAddCmd = &cobra.Command{
@@ -103,7 +105,7 @@ Exit codes:
   1  partial (unresolved selections, or skipped resources)
   2  infrastructure error (clone, auth, missing or invalid manifest)`,
 	Args:    cobra.ExactArgs(1),
-	PreRunE: validateSkillAuthFlags(&packAddAuthToken, &packAddVaultKey, &packAddAuthTokenStdin),
+	PreRunE: validatePackAddFlags,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		format, err := resolveFormat(packAddFormat, cmd.Flags().Changed("format"), *packAddJSON)
 		if err != nil {
@@ -126,7 +128,12 @@ Exit codes:
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
 		}
-		if exit := runPackAdd(cmd.Context(), os.Stdout, os.Stderr, mgrs, imp, args[0], packAddRef, packAddPath, packAddTrust, packAddDryRun, format, authCfg); exit != ctxExitOK {
+		sourceAuth, err := sourceAuthFromFlags(packAddSourceAuth)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(ctxExitInfrastructure)
+		}
+		if exit := runPackAdd(cmd.Context(), os.Stdout, os.Stderr, mgrs, imp, args[0], packAddRef, packAddPath, packAddTrust, packAddDryRun, format, authCfg, sourceAuth); exit != ctxExitOK {
 			os.Exit(exit)
 		}
 		return nil
@@ -164,12 +171,79 @@ func storedPackAuthFromLock(lockPath, repo string) (skills.AuthConfig, error) {
 }
 
 // runPackAdd clones, resolves the manifest selection, and imports.
-func runPackAdd(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Managers, imp *skills.Importer, repo, ref, path string, trust, dryRun bool, format string, auth skills.AuthConfig) int {
+func validatePackAddFlags(cmd *cobra.Command, args []string) error {
+	if err := validateSkillAuthFlags(&packAddAuthToken, &packAddVaultKey, &packAddAuthTokenStdin)(cmd, args); err != nil {
+		return err
+	}
+	for _, raw := range packAddSourceAuth {
+		if _, _, err := parseSourceAuth(raw); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func parseSourceAuth(raw string) (string, skills.AuthConfig, error) {
+	name, rest, ok := strings.Cut(raw, "=")
+	if !ok || name == "" {
+		return "", skills.AuthConfig{}, fmt.Errorf("invalid --source-auth %q (want <name>=vault-key:<KEY> or <name>=ssh-key:<path>)", raw)
+	}
+	switch {
+	case strings.HasPrefix(rest, "vault-key:"):
+		key := strings.TrimPrefix(rest, "vault-key:")
+		if key == "" {
+			return "", skills.AuthConfig{}, fmt.Errorf("invalid --source-auth %q: vault key is empty", raw)
+		}
+		return name, skills.AuthConfig{Method: "token", CredentialRef: "${var:" + key + "}"}, nil
+	case strings.HasPrefix(rest, "ssh-key:"):
+		keyPath := strings.TrimPrefix(rest, "ssh-key:")
+		if keyPath == "" {
+			return "", skills.AuthConfig{}, fmt.Errorf("invalid --source-auth %q: ssh key path is empty", raw)
+		}
+		return name, skills.AuthConfig{Method: "ssh-key", SSHKeyPath: keyPath}, nil
+	default:
+		return "", skills.AuthConfig{}, fmt.Errorf("invalid --source-auth %q (want <name>=vault-key:<KEY> or <name>=ssh-key:<path>)", raw)
+	}
+}
+
+func sourceAuthFromFlags(raw []string) (map[string]skills.AuthConfig, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]skills.AuthConfig, len(raw))
+	for _, item := range raw {
+		name, cfg, err := parseSourceAuth(item)
+		if err != nil {
+			return nil, err
+		}
+		if cfg.CredentialRef != "" {
+			token, err := cliCredentialResolver(cfg.CredentialRef)
+			if err != nil {
+				return nil, err
+			}
+			cfg.Token = token
+		}
+		if cfg.Method == "ssh-key" {
+			abs, err := filepath.Abs(cfg.SSHKeyPath)
+			if err != nil {
+				return nil, fmt.Errorf("resolving ssh key path: %w", err)
+			}
+			cfg.SSHKeyPath = abs
+		}
+		out[name] = cfg
+	}
+	return out, nil
+}
+
+func runPackAdd(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Managers, imp *skills.Importer, repo, ref, path string, trust, dryRun bool, format string, auth skills.AuthConfig, sourceAuth map[string]skills.AuthConfig) int {
 	// Path scopes discovery to a subdirectory. It has to be passed here as
 	// well as over REST: 'pack add' is the documented update verb, so a CLI
 	// re-add that dropped it would silently re-resolve the whole repository
 	// and overwrite the pack record with a wider set.
-	res, err := mgrs.Add(ctx, imp, packops.AddOptions{Repo: repo, Ref: ref, Path: path, Trust: trust, DryRun: dryRun, Auth: auth})
+	res, err := mgrs.Add(ctx, imp, packops.AddOptions{
+		Repo: repo, Ref: ref, Path: path, Trust: trust, DryRun: dryRun, Auth: auth,
+		SourceAuth: sourceAuth, Resolver: cliCredentialResolver,
+	})
 	if err != nil {
 		// Same classify-hint-redact path as 'skill add'. Printing the raw
 		// error here used to leak a token embedded in the repo URL and told
@@ -206,6 +280,7 @@ func runPackAdd(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Man
 			fmt.Fprintf(stdout, "%s pack %q (%d skills, %d agents, wiring: %s) from %s\n",
 				verb, doc.Pack, len(doc.Skills), len(doc.Agents), wiringLabel, repo)
 		}
+		printPackSources(stdout, stderr, doc.Sources)
 		if doc.Stack != nil {
 			fmt.Fprintf(stdout, "Stack: %s (%s, %s)\n", doc.Stack.Path, doc.Stack.Name, serverCountLabel(doc.Stack.Servers))
 		}
@@ -241,6 +316,46 @@ func runPackAdd(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Man
 		return ctxExitAttention
 	}
 	return ctxExitOK
+}
+
+func printPackSources(stdout, stderr io.Writer, sources []packops.SourceSummary) {
+	if len(sources) == 0 {
+		return
+	}
+	fmt.Fprintln(stdout, "Sources:")
+	for _, src := range sources {
+		if src.Error != "" {
+			fmt.Fprintf(stdout, "%s %s: %s\n", src.Name, src.Repo, src.Error)
+			printSkillAuthHint(stderr, src.Repo, sourceHintError(src.Error))
+			continue
+		}
+		fmt.Fprintf(stdout, "%s %s\n", src.Name, formatSourceLine(src))
+	}
+}
+
+func formatSourceLine(src packops.SourceSummary) string {
+	short := skills.ShortSHA(src.CommitSHA)
+	if src.Ref == "" {
+		return fmt.Sprintf("%s (%s)", src.Repo, short)
+	}
+	return fmt.Sprintf("%s@%s (%s)", src.Repo, src.Ref, short)
+}
+
+func sourceHintError(msg string) error {
+	switch {
+	case strings.Contains(msg, gitpkg.ErrAuthFailed.Error()):
+		return gitpkg.ErrAuthFailed
+	case strings.Contains(msg, gitpkg.ErrSSHAgentMissing.Error()):
+		return gitpkg.ErrSSHAgentMissing
+	case strings.Contains(msg, gitpkg.ErrHostKeyMismatch.Error()):
+		return gitpkg.ErrHostKeyMismatch
+	case strings.Contains(msg, gitpkg.ErrAuthRequired.Error()):
+		return gitpkg.ErrAuthRequired
+	case strings.Contains(msg, gitpkg.ErrNotFound.Error()):
+		return gitpkg.ErrNotFound
+	default:
+		return fmt.Errorf("%s", msg)
+	}
 }
 
 func unmetPackVariables(declarations map[string]skills.LockedVariableDeclaration) []packops.VariableRequirement {
@@ -591,6 +706,7 @@ func init() {
 	packAddCmd.Flags().BoolVar(&packAddAuthTokenStdin, "auth-token-stdin", false, "Read the Personal Access Token from stdin (keeps it out of shell history)")
 	packAddCmd.Flags().StringVar(&packAddVaultKey, "vault-key", "", "Resolve the PAT from this vault key (e.g. GIT_TOKEN)")
 	packAddCmd.Flags().StringVar(&packAddSSHKey, "ssh-key", "", "Use an SSH private key at this path (SSH URLs only)")
+	packAddCmd.Flags().StringArrayVar(&packAddSourceAuth, "source-auth", nil, "Per-source auth as <name>=vault-key:<KEY> or <name>=ssh-key:<path> (repeatable; unknown names warn)")
 	packAddJSON = addJSONAlias(packAddCmd)
 
 	packApplyCmd.Flags().BoolVar(&packApplyForce, "force", false, "Overwrite drifted or foreign resources, and replace a same-named daemon that was not started from this pack")

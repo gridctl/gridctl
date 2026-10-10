@@ -179,7 +179,7 @@ func TestPackAddApplyStatusRemove_EndToEnd(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
 	// Add: imports exactly the selection.
-	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, repo, "", "", false, false, "text", skills.AuthConfig{}); exit != ctxExitOK {
+	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, repo, "", "", false, false, "text", skills.AuthConfig{}, nil); exit != ctxExitOK {
 		t.Fatalf("add exit = %d\n%s%s", exit, stdout.String(), stderr.String())
 	}
 	if !strings.Contains(stdout.String(), `Imported pack "team-pack" (1 skills, 1 agents, wiring: yes)`) {
@@ -288,7 +288,7 @@ func TestPackAdd_UnresolvedSelection(t *testing.T) {
 	repo := packFixture(t, manifest, nil)
 	var stdout, stderr bytes.Buffer
 
-	exit := runPackAdd(context.Background(), &stdout, &stderr, freshManagers(), imp, repo, "", "", false, false, "text", skills.AuthConfig{})
+	exit := runPackAdd(context.Background(), &stdout, &stderr, freshManagers(), imp, repo, "", "", false, false, "text", skills.AuthConfig{}, nil)
 	if exit != ctxExitAttention {
 		t.Fatalf("exit = %d, want 1\n%s%s", exit, stdout.String(), stderr.String())
 	}
@@ -309,7 +309,7 @@ func TestPackAdd_NoManifestRefuses(t *testing.T) {
 	repo := initRepoNoManifest(t)
 	var stdout, stderr bytes.Buffer
 
-	exit := runPackAdd(context.Background(), &stdout, &stderr, freshManagers(), imp, repo, "", "", false, false, "text", skills.AuthConfig{})
+	exit := runPackAdd(context.Background(), &stdout, &stderr, freshManagers(), imp, repo, "", "", false, false, "text", skills.AuthConfig{}, nil)
 	if exit != ctxExitInfrastructure {
 		t.Fatalf("exit = %d, want 2", exit)
 	}
@@ -346,7 +346,7 @@ func TestPackApply_ForeignPackRefusal(t *testing.T) {
 
 	// Import and apply pack A owning skill alpha.
 	repoA := packFixture(t, packTestManifest, nil)
-	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, repoA, "", "", false, false, "text", skills.AuthConfig{}); exit != ctxExitOK {
+	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, repoA, "", "", false, false, "text", skills.AuthConfig{}, nil); exit != ctxExitOK {
 		t.Fatal(stderr.String())
 	}
 	if exit := runPackApply(ctx, &stdout, &stderr, freshManagers(), "team-pack", false, false, nil, 8180, "text", true); exit == ctxExitInfrastructure {
@@ -361,7 +361,7 @@ func TestPackApply_ForeignPackRefusal(t *testing.T) {
 	stderr.Reset()
 	// Add B: alpha already exists; explicit selection overwrites in the
 	// registry (selected-implies-force), which is the import contract.
-	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, repoB, "", "", false, false, "text", skills.AuthConfig{}); exit == ctxExitInfrastructure {
+	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, repoB, "", "", false, false, "text", skills.AuthConfig{}, nil); exit == ctxExitInfrastructure {
 		t.Fatal(stderr.String())
 	}
 
@@ -394,7 +394,7 @@ func TestPackRemove_DriftedResourceKept(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	repo := packFixture(t, strings.Replace(packTestManifest, "wiring: true", "wiring: false", 1), nil)
 
-	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, repo, "", "", false, false, "text", skills.AuthConfig{}); exit != ctxExitOK {
+	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, repo, "", "", false, false, "text", skills.AuthConfig{}, nil); exit != ctxExitOK {
 		t.Fatal(stderr.String())
 	}
 	if exit := runPackApply(ctx, &stdout, &stderr, freshManagers(), "team-pack", false, false, nil, 8180, "text", true); exit != ctxExitOK {
@@ -447,7 +447,7 @@ func TestPackAdd_FullyUnresolvedImportsNothing(t *testing.T) {
 	repo := packFixture(t, manifest, nil)
 	var stdout, stderr bytes.Buffer
 
-	exit := runPackAdd(context.Background(), &stdout, &stderr, freshManagers(), imp, repo, "", "", false, false, "text", skills.AuthConfig{})
+	exit := runPackAdd(context.Background(), &stdout, &stderr, freshManagers(), imp, repo, "", "", false, false, "text", skills.AuthConfig{}, nil)
 	if exit != ctxExitAttention {
 		t.Fatalf("exit = %d, want 1\n%s%s", exit, stdout.String(), stderr.String())
 	}
@@ -478,7 +478,7 @@ func TestPackAdd_SkillAddSourceKeepsItsIdentity(t *testing.T) {
 
 	// Pack repo also ships a skill named alpha.
 	packRepo := packFixture(t, strings.Replace(packTestManifest, "wiring: true", "wiring: false", 1), nil)
-	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, packRepo, "", "", false, false, "text", skills.AuthConfig{}); exit == ctxExitInfrastructure {
+	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, packRepo, "", "", false, false, "text", skills.AuthConfig{}, nil); exit == ctxExitInfrastructure {
 		t.Fatal(stderr.String())
 	}
 
@@ -515,7 +515,7 @@ func TestPackAdd_PathScopesDiscovery(t *testing.T) {
 	// Unscoped: the manifest's "alpha" is discoverable at the repo root.
 	var wide bytes.Buffer
 	if exit := runPackAdd(context.Background(), &wide, &wide, freshManagers(), imp,
-		repo, "", "", false, true, "text", skills.AuthConfig{}); exit == ctxExitInfrastructure {
+		repo, "", "", false, true, "text", skills.AuthConfig{}, nil); exit == ctxExitInfrastructure {
 		t.Fatalf("unscoped dry-run failed: %s", wide.String())
 	}
 	if strings.Contains(wide.String(), "unresolved") {
@@ -525,7 +525,7 @@ func TestPackAdd_PathScopesDiscovery(t *testing.T) {
 	// Scoped to sub/: alpha is no longer discoverable, so it goes unresolved.
 	var scoped bytes.Buffer
 	if exit := runPackAdd(context.Background(), &scoped, &scoped, freshManagers(), imp,
-		repo, "", "sub", false, true, "text", skills.AuthConfig{}); exit == ctxExitInfrastructure {
+		repo, "", "sub", false, true, "text", skills.AuthConfig{}, nil); exit == ctxExitInfrastructure {
 		t.Fatalf("scoped dry-run failed: %s", scoped.String())
 	}
 	if !strings.Contains(scoped.String(), "alpha") || !strings.Contains(strings.ToLower(scoped.String()), "unresolved") {
@@ -540,7 +540,7 @@ func TestPackAdd_PrintsCarriedStack(t *testing.T) {
 		"stack.yaml": "version: \"1\"\nname: team-pack\nmcp-servers:\n  - name: local\n    command: [\"echo\"]\n",
 	})
 	var stdout, stderr bytes.Buffer
-	if exit := runPackAdd(context.Background(), &stdout, &stderr, freshManagers(), imp, repo, "", "", false, false, "text", skills.AuthConfig{}); exit != ctxExitOK {
+	if exit := runPackAdd(context.Background(), &stdout, &stderr, freshManagers(), imp, repo, "", "", false, false, "text", skills.AuthConfig{}, nil); exit != ctxExitOK {
 		t.Fatalf("add exit = %d\n%s%s", exit, stdout.String(), stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "Stack: stack.yaml (team-pack, 1 server)") {
@@ -590,5 +590,35 @@ func TestPackRemove_BlockedStackDoesNotClaimRemoved(t *testing.T) {
 	locked, err := packops.LoadLockedPack("neteng")
 	if err != nil || locked == nil || locked.Stack == nil {
 		t.Fatalf("record dropped: %v %+v", err, locked)
+	}
+}
+
+func TestParseSourceAuthAndText(t *testing.T) {
+	name, cfg, err := parseSourceAuth("netops=vault-key:GIT_TOKEN")
+	if err != nil || name != "netops" || cfg.CredentialRef != "${var:GIT_TOKEN}" || cfg.Method != "token" {
+		t.Fatalf("vault parse = %s %+v %v", name, cfg, err)
+	}
+	name, cfg, err = parseSourceAuth("netops=ssh-key:/tmp/id")
+	if err != nil || name != "netops" || cfg.Method != "ssh-key" || cfg.SSHKeyPath != "/tmp/id" {
+		t.Fatalf("ssh parse = %s %+v %v", name, cfg, err)
+	}
+	if _, _, err := parseSourceAuth("netops=password:x"); err == nil {
+		t.Fatal("expected a flag format error")
+	}
+
+	var stdout, stderr bytes.Buffer
+	printPackSources(&stdout, &stderr, []packops.SourceSummary{
+		{Name: "alpha", Repo: "https://example.com/a", Ref: "v1", CommitSHA: "abcdef1234567890", Skills: []string{"a"}, Agents: []string{}},
+		{Name: "zeta", Repo: "git@example.com:z.git", Error: "authentication failed: no"},
+	})
+	got := stdout.String()
+	if !strings.Contains(got, "Sources:\n") || !strings.Contains(got, "alpha https://example.com/a@v1 (abcdef12)\n") {
+		t.Fatalf("stdout =\n%s", got)
+	}
+	if !strings.Contains(got, "zeta git@example.com:z.git: authentication failed: no\n") {
+		t.Fatalf("failed source line missing:\n%s", got)
+	}
+	if !strings.Contains(stderr.String(), "hint:") {
+		t.Fatalf("stderr = %q, want an auth hint", stderr.String())
 	}
 }
