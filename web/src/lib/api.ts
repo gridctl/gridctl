@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, SessionsResponse, RegistryAgent, AgentProjectionStatus, AgentSyncResult, AgentUnsyncResult, AgentAdoptResult, SecurityFinding, WiringRow, WiringAdoptResult, ModelsStatusDoc, ModelsSyncResult, ModelsAdoptResult, ModelsValidateDoc, SecurityReport } from '../types';
+import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, SessionsResponse, RegistryAgent, AgentProjectionStatus, AgentSyncResult, AgentUnsyncResult, AgentAdoptResult, SecurityFinding, WiringRow, WiringAdoptResult, SecurityReport } from '../types';
 
 import { gatewayRequest, AuthError, GatewayRequestError } from './gatewayRequest';
 import { useAuthStore } from '../stores/useAuthStore';
@@ -981,44 +981,6 @@ export async function adoptWiringEntry(client: string, name?: string): Promise<W
     client,
     ...(name ? { name } : {}),
   });
-}
-
-// --- Model routing (REST face of `gridctl models`) ---
-
-export async function fetchModelsStatus(): Promise<ModelsStatusDoc> {
-  return fetchJSON<ModelsStatusDoc>('/api/project/models/status');
-}
-
-export async function fetchModelsValidation(): Promise<ModelsValidateDoc> {
-  return fetchJSON<ModelsValidateDoc>('/api/project/models/validate');
-}
-
-/**
- * Sync is whole-policy: the engine walks every declared target in one
- * pass, so there is no per-target variant. dry_run + diff is the
- * preview; force overwrites drifted and foreign targets.
- */
-export async function syncModels(body?: {
-  dry_run?: boolean;
-  diff?: boolean;
-  force?: boolean;
-}): Promise<ModelsSyncResult[]> {
-  return mutateJSON<ModelsSyncResult[]>('/api/project/models/sync', 'POST', body ?? {});
-}
-
-/**
- * Adopt records every recorded target's on-disk bytes as gridctl-owned
- * without touching any file. It covers the fragment and the OpenCode
- * provider only; include-line drift resolves via force sync.
- */
-export async function adoptModels(): Promise<ModelsAdoptResult[]> {
-  return mutateJSON<ModelsAdoptResult[]>('/api/project/models/adopt', 'POST', {});
-}
-
-/** Records that the user restarted LiteLLM themselves; gridctl never
- *  probes the process. */
-export async function ackModelsRestart(): Promise<{ acknowledged: boolean }> {
-  return mutateJSON<{ acknowledged: boolean }>('/api/project/models/ack-restart', 'POST', {});
 }
 
 // --- Skill File Management ---
@@ -2198,65 +2160,6 @@ export async function updateStackRuns(body: {
     throw new HTTPError(response.status, 'Failed to update runs configuration');
   }
   return data;
-}
-
-// === Playground API ===
-
-export interface PlaygroundProviderAuth {
-  apiKey: boolean;
-  keyName: string | null;
-  cliPath: string | null;
-}
-
-export interface PlaygroundAuthResponse {
-  providers: Record<string, PlaygroundProviderAuth>;
-  ollama: { reachable: boolean; endpoint: string };
-}
-
-export interface PlaygroundChatRequest {
-  agentId?: string;
-  message: string;
-  sessionId: string;
-  authMode: string;
-  model?: string;
-  ollamaUrl?: string;
-}
-
-export interface PlaygroundChatResponse {
-  sessionId: string;
-  status: string;
-}
-
-/**
- * Detect available auth methods for each LLM provider
- * POST /api/playground/auth
- */
-export async function fetchPlaygroundAuth(): Promise<PlaygroundAuthResponse> {
-  const response = await fetch(`${API_BASE}/api/playground/auth`, {
-    method: 'POST',
-    headers: buildHeaders(),
-  });
-  if (response.status === 401) throw new AuthError('Authentication required');
-  if (!response.ok) throw new Error(`Auth check failed: ${response.status} ${response.statusText}`);
-  return response.json();
-}
-
-/**
- * Start a playground inference session
- * POST /api/playground/chat
- */
-export async function sendPlaygroundChat(req: PlaygroundChatRequest): Promise<PlaygroundChatResponse> {
-  const response = await fetch(`${API_BASE}/api/playground/chat`, {
-    method: 'POST',
-    headers: buildHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify(req),
-  });
-  if (response.status === 401) throw new AuthError('Authentication required');
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error((data as { error?: string }).error || `Chat failed: ${response.status}`);
-  }
-  return response.json();
 }
 
 // === Pins API ===

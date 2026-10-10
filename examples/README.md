@@ -32,7 +32,6 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | [📈 autoscale/](autoscale/) | Reactive autoscaling of MCP server replicas |
 | [🧳 portable-stack/](portable-stack/) | Stack that stays committable by keeping every per-environment value in the variable store |
 | [🎒 portable-pack/](portable-pack/) | Pack repo: skills, agents, rules, a local-process stack, and a commented external source example behind one `gridctl-pack.yaml` |
-| [🧭 model-policy/](model-policy/) | Model routing policy projected into LiteLLM and OpenCode config |
 | [🔭 tracing/](tracing/) | Distributed tracing and OTLP export |
 | [Run records](runs/) | Opt-in metadata-only persisted dispatch records |
 | [📋 registry/](registry/) | Skills and agents registry ([agentskills.io](https://agentskills.io) spec) |
@@ -97,7 +96,6 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | declarative-link | stdio (container) | `link:` block, `groups:` endpoints |
 | portable-stack | http (containers) | Committable stack, all values from the variable store |
 | portable-pack | - (pack manifest) | Skills, agents, rules, wiring, a local-process stack, and a commented external source example from one manifest |
-| model-policy | - (models policy) | Router-only LiteLLM fragment, include line, OpenCode provider |
 | declaration-policy-demo | http (container) | Offline `validate --policy` against digest-pinned images and pinning block |
 
 ## Dependency references

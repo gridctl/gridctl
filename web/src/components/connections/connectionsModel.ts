@@ -1,7 +1,6 @@
 import type {
   AgentProjectionStatus,
   ClientStatus,
-  ModelsTargetStatus,
   SessionEntry,
   WiringRow,
 } from '../../types';
@@ -24,11 +23,6 @@ export function isConnected(c: ClientStatus): boolean {
 const WIRING_ATTENTION = new Set(['stale', 'drifted', 'target-missing', 'foreign']);
 const CONTEXT_ATTENTION = new Set(['stale', 'drifted', 'target-missing']);
 const AGENT_ATTENTION = new Set(['stale', 'drifted', 'target-missing']);
-// Model routing: restart-pending is an annotation and never counts,
-// matching the engine's NeedsAttention. Never-synced is deliberately
-// looser than the engine (whose exit-code contract counts it): here it
-// is an invitation, not a fault, matching the sets above.
-const MODELS_ATTENTION = new Set(['stale', 'drifted', 'target-missing']);
 
 /** One client's joined ownership health across the projection domains.
  *  Ownership only — live connectivity is a separate axis and must never
@@ -40,22 +34,18 @@ export interface ClientHealth {
 }
 
 /**
- * clientHealth joins wiring rows, context client states, agent
- * projection rows, and model routing targets for one slug. The sources
- * use different keys (wiring/context by provisioner slug; agent targets
- * have one documented non-provisioner exception, copilot), so the join
- * is by string slug and rows that fail to join for OTHER slugs are the
- * caller's concern (surfaced via unjoinedAgentSlugs), never silently
- * dropped. Model routing's LiteLLM targets carry client "litellm",
- * which is not a provisioner slug, so they never join a rail row by
- * construction: their drift lives in the Model routing dialog alone.
+ * clientHealth joins wiring rows, context client states, and agent
+ * projection rows for one slug. The sources use different keys
+ * (wiring/context by provisioner slug; agent targets have one documented
+ * non-provisioner exception, copilot), so the join is by string slug and
+ * rows that fail to join for OTHER slugs are the caller's concern
+ * (surfaced via unjoinedAgentSlugs), never silently dropped.
  */
 export function clientHealth(
   slug: string,
   wiring: WiringRow[] | null,
   contextClients: ContextClientStatus[] | null,
   agentStatuses: AgentProjectionStatus[] | null,
-  modelsTargets: ModelsTargetStatus[] | null = null,
 ): ClientHealth {
   const reasons: string[] = [];
 
@@ -78,13 +68,6 @@ export function clientHealth(
     reasons.push(
       `${agentHits.length} agent projection${agentHits.length === 1 ? '' : 's'} ${agentHits[0].state}`,
     );
-  }
-
-  const modelsHits = (modelsTargets ?? []).filter(
-    (t) => t.client === slug && MODELS_ATTENTION.has(t.state),
-  );
-  if (modelsHits.length > 0) {
-    reasons.push(`model routing ${modelsHits[0].state}`);
   }
 
   return { attention: reasons.length > 0, reasons };

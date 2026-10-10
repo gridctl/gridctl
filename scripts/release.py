@@ -15,7 +15,7 @@ import urllib.parse
 import urllib.request
 
 
-GATES = ("test", "integration", "litellm-contract", "conformance",
+GATES = ("test", "integration", "conformance",
          "podman-integration", "frontend")
 PREDICATE = "https://slsa.dev/provenance/v1"
 

@@ -71,7 +71,7 @@ The four archives, five SPDX documents, index, generated cask, and `checksums.tx
 
 ## Maintainer Operations
 
-All six exact-commit Gatekeeper jobs are required: backend test/lint/coverage/vulnerability/build/example policies, frontend tests/lint/types/audit/build, Docker integration, Podman integration, LiteLLM contract, and MCP conformance. Failed, missing, canceled, and skipped results fail closed. Prior branch or PR runs do not substitute.
+All five exact-commit Gatekeeper jobs are required: backend test/lint/coverage/vulnerability/build/example policies, frontend tests/lint/types/audit/build, Docker integration, Podman integration, and MCP conformance. Failed, missing, canceled, and skipped results fail closed. Prior branch or PR runs do not substitute.
 
 The cask generator regression is an explicit Linux-x86_64 check, separate from offline Python test discovery. Install the reviewed GoReleaser 2.14.3 executable through the same digest-verified mechanism as the release workflow, then exercise the production-derived cask configuration without publication credentials from the repository root:
 

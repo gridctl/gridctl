@@ -102,11 +102,6 @@ func (s *Server) resetMgr() (*resetops.Managers, error) {
 		} else {
 			m.Missing = append(m.Missing, "context")
 		}
-		if mm, err := s.modelsMgr(); err == nil {
-			m.Models = mm
-		} else {
-			m.Missing = append(m.Missing, "models")
-		}
 		if wm, err := s.wiringMgr(); err == nil {
 			m.Wiring = wm
 		} else {

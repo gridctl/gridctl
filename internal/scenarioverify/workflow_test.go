@@ -14,7 +14,7 @@ func TestWorkflowDesignatedInvocations(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(workflow)
-	for _, name := range []string{"test:", "integration:", "podman-integration:", "litellm-contract:", "conformance:", "frontend:", "required:"} {
+	for _, name := range []string{"test:", "integration:", "podman-integration:", "conformance:", "frontend:", "required:"} {
 		if !strings.Contains(text, "\n  "+name) && !strings.Contains(text, "\n"+name) {
 			t.Fatalf("missing job %q", name)
 		}

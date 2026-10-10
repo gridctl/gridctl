@@ -899,6 +899,29 @@ they are not gridctl-owned the way labeled containers are. If leftover
 `gridctl-*` images or volumes bother you, clear them with
 `docker image prune` and `docker volume prune`.
 
+## Cleaning up a removed model routing policy
+
+`gridctl models` is gone. Synced LiteLLM and OpenCode files keep working,
+because gridctl was never on the inference path. `gridctl reset` no longer
+removes those targets. `--purge` deletes `~/.gridctl/models/` and the
+project lockfile, but not the LiteLLM config, `gridctl-models.yaml`, or
+`opencode.json`.
+
+On the previous release, before upgrading, run:
+
+```bash
+gridctl models unsync
+```
+
+Add `--force` when a target was hand-edited. After upgrading, clean up by
+hand:
+
+1. Remove the `include:` line that points at `gridctl-models.yaml` from the LiteLLM config.
+2. Delete `gridctl-models.yaml` next to that config.
+3. Remove the `provider.<id>` subtree from `opencode.json` (or `providers.<id>` on the v2 shape).
+4. Delete `~/.gridctl/models/`.
+5. Optionally delete `kind: models` entries from `~/.gridctl/project.lock.yaml`. Left in place, they are inert.
+
 ## Code-mode error details are missing from logs
 
 Code-mode failure logs use `code_execution_failed` or another safe local category

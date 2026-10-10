@@ -7,7 +7,7 @@ Gridctl is preparing its 1.0 release. This page tracks the stability tier of eac
 - **Stable** - production-ready. Breaking public CLI, stack YAML, and MCP protocol changes require a major-version increment under Constitution Article VIII. The compatibility table records the prior `0.x` baseline; see the release notes for the 1.0 migration.
 - **Experimental** - usable but the API, CLI surface, or output shape may change without notice. Pin a version if you build automation on top of it.
 
-Nearly every shipped feature surface is Stable as of the release candidate; the table below marks the exceptions. The Experimental tier also covers features that ship dark behind the `experimental:` feature-flag registry (see [Config Schema](config-schema.md#experimental-feature-flags)), though a surface can be Experimental for stability reasons without being flag-gated (the model routing policy is: its CLI is on by default, but the upstream LiteLLM schema it renders is still evolving).
+Nearly every shipped feature surface is Stable as of the release candidate; the table below marks the exceptions. The Experimental tier also covers features that ship dark behind the `experimental:` feature-flag registry (see [Config Schema](config-schema.md#experimental-feature-flags)).
 
 Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked below (see [CHANGELOG.md](../CHANGELOG.md) for release-by-release detail).
 
@@ -48,7 +48,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 | Rules fragment library (ctx add / list / rm, fragments mode) | Stable | Backward compatible in 0.x |
 | Skill governance pins (skill pins, skills: policy) | Stable | Backward compatible in 0.x |
 | Model preferences (model_preferences: block, projection rewrite) | Stable | Backward compatible in 0.x |
-| Model routing policy (gridctl models, LiteLLM + OpenCode projection) | Experimental | Renderer pinned to LiteLLM v1.94+ Auto Router v2; the upstream auto-router schema is still evolving. The web UI's Model routing dialog and `/api/project/models` endpoints inherit this tier |
+| Model routing policy (`gridctl models`) | Removed, Unreleased | See the [changelog](../CHANGELOG.md). `model_preferences:` is unrelated and unchanged |
 | Outbound MCP-to-A2A adapter | Experimental, Unreleased | Off by default. A2A 1.0/0.3 JSON-RPC, mandatory card-byte trust, and secret context/task capabilities. Absolute 24-hour expiry; replacement/restart invalidates handles, with no recovery by label or history. Shared-agent memory remains a downstream trust boundary. See [A2A configuration](config-schema.md#a2a) |
 | Distributed tracing | Stable | Unreleased gateway name/attribute and error sanitation masks recognizable typed capability strings before recording or export. See [diagnostic migration](usage-observability.md#diagnostic-privacy-and-migration) |
 | Usage observability (token metrics, optimize) | Stable | Backward compatible in 0.x |
