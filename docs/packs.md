@@ -52,13 +52,48 @@ refuses the file instead of dropping the stack key or the detail map. That
 refusal also blocks unrelated skill updates in the same file. Remove the
 pack with this build before downgrading; an older binary cannot, because
 it refuses the file. A pack with neither a stack record nor an
-unresolved-detail map keeps the previous stamp.
+unresolved-detail map keeps the previous stamp. A pack that pins external
+sources, or a member source recorded for one, stamps version 7 on the whole
+import lockfile. An older gridctl refuses that file, including unrelated
+skill updates. Remove the pack with this build before downgrading. Packs
+without `sources:` keep their previous stamp.
+
+## Sources
+
+A pack can select skills and agents from other git repositories. Declare each repository once under `sources:`, then point a selection at it with `{name, source}`. A string entry is still a name from the pack repository. Empty `skills:` or `agents:` still means every resource discovered in the pack repository only. External sources are never import-all.
+
+```yaml
+sources:
+  netops:
+    repo: git@gitlab.example.com:network/netops-copilot.git
+    ref: v2.3.0
+    auth:
+      method: ssh-key
+      ssh_user: git
+  skillsbench:
+    repo: https://github.com/benchflow-ai/skillsbench
+    ref: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
+    path: tasks/dapt-intrusion-detection/environment/skills
+skills:
+  - incident-triage
+  - { name: noc-l2-agent, source: netops }
+agents:
+  - { name: neteng-reviewer, source: netops }
+```
+
+`repo` must be `https://`, `http://`, `ssh://`, or `user@host:path`. `git://`, `file://`, and filesystem paths are refused. One repository URL per source, and one source per repository: two refs of one URL cannot share the clone cache. Source names use the pack name rules. `path` is a relative directory inside that repository. `rules:` and `stack:` still come only from the pack repository. A source whose root contains `gridctl-pack.yaml` is refused: packs cannot depend on packs.
+
+`gridctl pack add` clones the pack, then each source in name order (a Go map does not keep manifest order, and order is not a contract). It resolves each selection against the matching clone, scans every clone, and imports the pack repository first. Each external source is then imported with exactly the names resolved for it, which may be none. A source that fails to clone, is itself a pack, or whose import returns an error becomes `unresolved` (`skill/<name>` or `agent/<name>`). The rest still import, the pack record is still written with that source listed and empty lists, and the command exits 1. An earlier source's resources stay. A later failure does not roll back earlier sources. Re-run `pack add` to reconcile.
+
+Auth for each source, first match wins: `--source-auth <name>=vault-key:<KEY>` or `--source-auth <name>=ssh-key:<path>`; stored auth on the member lock source; the manifest `auth` block (`credential_ref` resolves through the variable store, `ssh-key` without a path means ssh-agent with `ssh_user`, and `token` without `credential_ref` is an error for that source); the caller's `--ssh-key` when the source URL is SSH and nothing above applied; otherwise ambient. `--vault-key`, `--auth-token`, and `--auth-token-stdin` apply to the pack repository only. They are never sent to an external host. A persisted member records a vault reference or an ssh key path, never a token or passphrase. An unknown `--source-auth` name is a warning. The web wizard does not collect per-source credentials; it uses stored member auth and the manifest `auth` block. Pass `sourceAuth` on `POST /api/packs` when a source needs a one-shot override.
+
+`pack status` adds a `source` row per pinned source, after the stack row and before skills, in name order. `in-sync` means pinned as recorded, not verified current. `stale` means the background update cache lists a newer commit for one of that source's skills, and the remediation is `re-run 'gridctl pack add <url>'`. The cache skips any origin with a `credential_ref` and walks skills only, never agents, so a vault-token source or an agents-only source never reports `stale`. Those rows stay `in-sync` and append `, freshness not checked`. `skill update <member-skill>` refreshes the member's recorded names only, even when the external repository ships more. It does not import the rest of that repository. A source is still a repository the pack author chose, pinned by commit. There is no index.
 
 ## Verbs
 
 | Command | Purpose |
 |---|---|
-| `gridctl pack add <repo-url>` | Clone, read the manifest, and import exactly its selection into the registry (`--ref`, `--path`, `--trust`, `--dry-run`, `--format json`). `--path` scopes discovery to a subdirectory, matching the REST `path` field; the manifest is always read from the repository root. A `stack:` entry is resolved against the clone root, not `--path`. Auth flags for private repos: `--vault-key <key>`, `--auth-token-stdin`, `--auth-token <pat>`, `--ssh-key <path>`. Exit `0` clean, `1` partial (unresolved or skipped), `2` infrastructure. |
+| `gridctl pack add <repo-url>` | Clone, read the manifest, and import exactly its selection into the registry (`--ref`, `--path`, `--trust`, `--dry-run`, `--format json`, repeatable `--source-auth`). `--path` scopes discovery to a subdirectory, matching the REST `path` field; the manifest is always read from the repository root. A `stack:` entry is resolved against the clone root, not `--path`. Auth flags for the pack repository: `--vault-key <key>`, `--auth-token-stdin`, `--auth-token <pat>`, `--ssh-key <path>`. `--source-auth` is the per-source override. Exit `0` clean, `1` partial (unresolved, skipped, or a failed source), `2` infrastructure. |
 | `gridctl pack apply <name>` | Start a carried stack from its pinned checkout, then project skills and agents through the projection engines, rule fragments through `ctx` (pack-tagged), and (when `wiring: true`) the gateway entry through the wiring ownership manager, scoped to `clients:`. Wiring for a stack-carrying pack uses that daemon's port and never another running gateway. Packs without `stack:` keep the previous "no running gateway" skip. Additive, never transactional (`Applied N/M`). `-p` / `--port` (default 8180), `--force` (replaces a same-named daemon whose state file is outside `~/.gridctl/packs/<name>/`; a daemon under that directory is replaced without `--force`), `--dry-run`, `--clients`, `--format json`. |
 | `gridctl pack status [name]` | Per-resource state in the shared vocabulary (in-sync, stale, drifted, target-missing, foreign, missing) plus `unresolved` rows. A carried stack is the first row: `in-sync`, `stale`, `drifted`, `missing` (not attention), or `target-missing`. Exit `0`/`1`/`2`. |
 | `gridctl pack remove <name>` | Stop a daemon whose state file is under this pack's checkout, delete `~/.gridctl/packs/<name>/`, then cascade removal: projections unsynced from client trees (rule fragment projections by pack tag only), wiring records removed through the ownership manager (entries gridctl did not record are never deleted), then the pack's registry skills, agents, and installed fragments, then the pack record. A same-named daemon running from anywhere else is left running and gets no stack row on a real remove; the checkout is still deleted. `--dry-run` reports `would-remove` for that checkout and says the daemon is left running. A failed stop, or a remove that cannot stop a running pack-owned daemon, leaves the pack record and checkout in place so remove can be retried. Drifted projections are kept with a remediation hint unless `--force`; a partial removal trims the pack record to what stayed. `--dry-run`, `--format json`. |
@@ -110,6 +145,6 @@ Status rows for rules report per-client projection state once a pack is applied 
 
 ## What packs deliberately do not have
 
-No enable/disable state (imported and projected are the only states), no inter-pack dependencies, no interactive configuration prompts (secrets flow through the existing `${var:KEY}` vault mechanism), no gateway start or stop from the REST API or the web UI, and no marketplace indirection (`pack add` points at a git repo you chose, with the same trust gate as `skill add`).
+No enable/disable state (imported and projected are the only states), no inter-pack dependencies (an external source is a git repository the pack author declared, not another pack, and it is not discovered), no interactive configuration prompts (secrets flow through the existing `${var:KEY}` vault mechanism), no gateway start or stop from the REST API or the web UI, and no marketplace or index (`pack add` points at a git repo you chose, with the same trust gate as `skill add`, and each external source is pinned by commit).
 
 See `examples/portable-pack/` for a complete pack repo layout.

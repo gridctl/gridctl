@@ -2849,7 +2849,7 @@ Auth for private repos accepts an optional `auth` object on mutating endpoints:
 
 #### `GET /api/skills/sources`
 
-Lists imported sources with skill entries, auto-update settings, drift markers, and cached update availability. Each source includes `kind`: `"git"` or `"local"`. Existing fields are unchanged. A local source is matched to `skills.yaml` by `repo` only, so a same-named git config does not attach path or update settings. The background checker skips local origins, so `updateAvailable` from that cache stays false for them until a live check.
+Lists imported sources with skill entries, auto-update settings, drift markers, and cached update availability. Each source includes `kind`: `"git"` or `"local"`. A pack member source is listed under its `<pack>/<source>` key and adds `packMember` (the pack name). Member sources are not hidden. Existing fields are unchanged. A local source is matched to `skills.yaml` by `repo` only, so a same-named git config does not attach path or update settings. The background checker skips local origins, so `updateAvailable` from that cache stays false for them until a live check.
 
 **Auth:** Yes
 
@@ -3464,11 +3464,11 @@ Lists installed packs: identity, origin, per-kind resource counts, and aggregate
 }
 ```
 
-A pack name claimed by more than one imported source carries `"collision": true` with `collision_repos` listing them, and counts as attention. `counts.stack` is true when a resolved stack record is present and is omitted otherwise. `applied` is true when any row has a client, and also when the stack row is `in-sync` or `stale`, so a stack-only pack can report applied. A projected pack without a stack is unchanged.
+A pack name claimed by more than one imported source carries `"collision": true` with `collision_repos` listing them, and counts as attention. `counts.stack` is true when a resolved stack record is present and is omitted otherwise. `counts.sources` and `sources` are present when the pack pins external repositories and are omitted otherwise. `sources` entries are `{name, repo, ref, commit_sha, skills, agents}` in name order. `applied` is true when any row has a client, and also when the stack row is `in-sync` or `stale`, so a stack-only pack can report applied. A projected pack without a stack is unchanged.
 
 #### `GET /api/packs/{name}`
 
-One pack's identity (`info`, the list item's fields) plus its per-resource state rows and `needs_attention`. A carried stack is the first row: `in-sync` (running `StackFile` matches the pin), `stale` (running from an older checkout under `~/.gridctl/packs/<name>/`; attention, detail names the commit when known), `drifted` (running from any other path; attention), `missing` (nothing running; not attention), or `target-missing` (checkout or stack file absent; attention, remediation `re-run 'gridctl pack add'`). Skill, agent, and wiring rows are per-client; rule rows are per-client once applied (state joined from the pack-tagged projection lock entries and the context engine's per-fragment status; coverage is per fragment-file projection, so compiled clients' whole-document state stays on `GET /api/context`), with a single store-presence row for a rule that was imported but never projected. An unresolved stack is an `unresolved` row named `stack:<path>`, not a `stack` row, and its `detail` is the export or path error when one was recorded.
+One pack's identity (`info`, the list item's fields) plus its per-resource state rows and `needs_attention`. A carried stack is the first row, then one `source` row per pinned external source (`in-sync`, or `stale` when the update cache lists a newer commit for one of its skills). A vault-token source or an agents-only source stays `in-sync` and appends `, freshness not checked` to the detail. Then skill rows. A carried stack is the first row: `in-sync` (running `StackFile` matches the pin), `stale` (running from an older checkout under `~/.gridctl/packs/<name>/`; attention, detail names the commit when known), `drifted` (running from any other path; attention), `missing` (nothing running; not attention), or `target-missing` (checkout or stack file absent; attention, remediation `re-run 'gridctl pack add'`). Skill, agent, and wiring rows are per-client; rule rows are per-client once applied (state joined from the pack-tagged projection lock entries and the context engine's per-fragment status; coverage is per fragment-file projection, so compiled clients' whole-document state stays on `GET /api/context`), with a single store-presence row for a rule that was imported but never projected. An unresolved stack is an `unresolved` row named `stack:<path>`, not a `stack` row, and its `detail` is the export or path error when one was recorded.
 
 **Auth:** Yes
 
@@ -3497,18 +3497,19 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/packs \
 | `path` | string | Subdirectory within the repository |
 | `trust` | bool | Accept security findings (the CLI's `--trust`) |
 | `dryRun` | bool | Resolve and report without importing |
-| `auth` | object | Credentials for a private repository; same shape as the skill source endpoints (see below) |
+| `auth` | object | Credentials for the pack repository; same shape as the skill source endpoints (see below). A token here is not sent to an external source. |
+| `sourceAuth` | object | Map of source name to the same auth object. Omitted sources use stored member auth, then the manifest `auth` block. |
 
-**Response:** `201` with `{ "doc": <add document>, "notes": [...] }`. The document carries the resolved selection, `unresolved`, `skipped` (with reasons), and `warnings`; `notes` carries progress prose (rule updates, fragments-mode activation). A resolved stack adds optional `doc.stack`: `{ "path", "name", "servers" }` and, unless `dryRun` is set, pins `~/.gridctl/packs/<name>/<commit>/`. It does not start the daemon. A `link:` block on that stack is a warning, not a hard error: `stack declares link:; pack wiring (wiring:/clients:) applies instead and link: is ignored under pack apply`.
+**Response:** `201` with `{ "doc": <add document>, "notes": [...] }`. The document carries the resolved selection, `unresolved`, `skipped` (with reasons), and `warnings`; `notes` carries progress prose (rule updates, fragments-mode activation). A resolved stack adds optional `doc.stack`: `{ "path", "name", "servers" }` and, unless `dryRun` is set, pins `~/.gridctl/packs/<name>/<commit>/`. It does not start the daemon. A `link:` block on that stack is a warning, not a hard error: `stack declares link:; pack wiring (wiring:/clients:) applies instead and link: is ignored under pack apply`. External sources add optional `doc.sources`: `{ "name", "repo", "ref", "commit_sha", "skills", "agents", "error" }`, in name order. A failed source sets `error` and empty lists and does not fail the request when the pack repository imported.
 
 **Errors:**
 - `400` - Missing repo, invalid body, an unresolvable `auth.credentialRef`, or a relative `auth.sshKeyPath`
-- `409` - Security findings without trust: `{ "error", "pack", "findings": [{kind, name, findings}] }`; nothing was imported
+- `409` - Security findings without trust: `{ "error", "pack", "findings": [{kind, name, source, findings}] }`; `source` is set for an external resource and omitted for the pack repository; nothing was imported
 - `422` - No `gridctl-pack.yaml` at the repository root, or no reachable ssh-agent (see [pack auth](#pack-authentication))
 
 #### `POST /api/packs/preview`
 
-Resolves a pack manifest against its repository without writing anything: manifest identity, the resolved selection per kind with per-resource scan findings, unresolved names, and warnings. The wizard's read-only review step. A carried stack adds optional `stack`: `{ "path", "name", "servers" }` on the result itself (not under `doc`) and does not create a checkout.
+Resolves a pack manifest against its repository without writing anything: manifest identity, the resolved selection per kind with per-resource scan findings, unresolved names, and warnings. The wizard's read-only review step. A carried stack adds optional `stack`: `{ "path", "name", "servers" }` on the result itself (not under `doc`) and does not create a checkout. External sources add optional `sources` (the same shape as `doc.sources` on add) and `source` on each preview resource that did not come from the pack repository. A source clone failure is an unresolved entry and a warning, not an error.
 
 **Auth:** Yes
 
@@ -3523,7 +3524,8 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/packs/p
 | `repo` | string | Git repository URL (required) |
 | `ref` | string | Branch, tag, or commit; default: the default branch |
 | `path` | string | Subdirectory within the repository |
-| `auth` | object | Credentials for a private repository (see below) |
+| `auth` | object | Credentials for the pack repository (see below). A token here is not sent to an external source. |
+| `sourceAuth` | object | Map of source name to the same auth object. Omitted sources use stored member auth, then the manifest `auth` block. |
 
 **Errors:** `400` when `auth.credentialRef` cannot be resolved or `auth.sshKeyPath` is relative. `422` when the repository has no manifest (the body suggests the Skill import flow for plain skill repos), or when an SSH URL has no reachable ssh-agent.
 

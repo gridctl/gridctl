@@ -10,6 +10,18 @@ author:
   name: Example Team
 skills: [incident-triage]
 agents: [neteng-reviewer]
+# External skills and agents are declared, not discovered. Uncomment and
+# replace the SHA with the commit you have reviewed. One repo per source.
+# Token flags on pack add apply to this repository only; use --source-auth
+# or the auth block for a private source. ssh_key_path is not allowed here.
+# sources:
+#   skillsbench:
+#     repo: https://github.com/anthropics/skills
+#     ref: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
+#     path: skills
+# skills:
+#   - incident-triage
+#   - { name: example-skill, source: skillsbench }
 # Rules are opt-in: only the fragments named here are installed and
 # pack-tagged (from rules/*.md in this repo).
 rules: [network-style]
