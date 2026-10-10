@@ -64,6 +64,9 @@ type SkillSourceStatus struct {
 	// DriftedSkills lists the skills in this source whose on-disk SKILL.md has
 	// local edits (drift) that a sync would otherwise overwrite.
 	DriftedSkills []string `json:"driftedSkills,omitempty"`
+	// PackMember is the pack name when this source was imported as a named
+	// external source of that pack. Empty for every other source.
+	PackMember string `json:"packMember,omitempty"`
 }
 
 // SkillSourceEntry represents a single skill within a source.
@@ -339,6 +342,7 @@ func (s *Server) handleSkillSourcesList(w http.ResponseWriter, r *http.Request) 
 		if locked.IsLocal() {
 			src.Kind = skills.SourceKindLocal
 		}
+		src.PackMember = locked.PackMember
 
 		if !locked.FetchedAt.IsZero() {
 			src.LastFetched = locked.FetchedAt.Format("2006-01-02T15:04:05Z")
