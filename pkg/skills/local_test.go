@@ -37,7 +37,7 @@ func TestWriteLockFile_LocalStampsVersion6(t *testing.T) {
 	assert.Contains(t, string(gitData), "version: 1")
 
 	newer := filepath.Join(dir, "newer.lock.yaml")
-	require.NoError(t, os.WriteFile(newer, []byte("version: 7\nsources: {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(newer, []byte("version: 8\nsources: {}\n"), 0o644))
 	_, err = ReadLockFile(newer)
 	require.ErrorIs(t, err, ErrNewerImportLockVersion)
 }

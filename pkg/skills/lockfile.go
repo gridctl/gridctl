@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/state"
@@ -16,11 +17,12 @@ import (
 // version any source requires, which is also the lowest version that can
 // represent the file, so users without those features keep downgrade freedom.
 const (
-	lockVersionPacks     = 2
-	lockVersionVariables = 3
-	lockVersionSSHAuth   = 4
-	lockVersionStack     = 5
-	lockVersionLocal     = 6
+	lockVersionPacks       = 2
+	lockVersionVariables   = 3
+	lockVersionSSHAuth     = 4
+	lockVersionStack       = 5
+	lockVersionLocal       = 6
+	lockVersionPackSources = 7
 )
 
 // ImportLockVersion is the highest skills.lock.yaml schema version this
@@ -29,13 +31,15 @@ const (
 // variable declarations; version 4 added ssh-key auth fields (auth_method,
 // ssh_user, ssh_key_path); version 5 added pack stack records and
 // unresolved-detail maps; version 6 added local directory sources
-// (kind: local and per-skill tree_hash). Files are written at the lowest
-// version that can represent them (see WriteLockFile). A reader whose
-// maximum is 4 understands SSH fields only and must refuse a file that
-// carries a stack record or an unresolved-detail map rather than drop
-// those keys on the next write. A reader whose maximum is 5 must refuse
-// a file that carries a local source.
-const ImportLockVersion = lockVersionLocal
+// (kind: local and per-skill tree_hash); version 7 added pack external
+// sources (LockedPack.Sources and LockedSource.PackMember). Files are
+// written at the lowest version that can represent them (see WriteLockFile).
+// A reader whose maximum is 4 understands SSH fields only and must refuse a
+// file that carries a stack record or an unresolved-detail map rather than
+// drop those keys on the next write. A reader whose maximum is 5 must refuse
+// a file that carries a local source. A reader whose maximum is 6 must refuse
+// a file that carries pack sources or a pack member marker.
+const ImportLockVersion = lockVersionPackSources
 
 // ErrNewerImportLockVersion signals a skills.lock.yaml written by a
 // newer gridctl. Callers must never paper over it: acting on state a
@@ -75,7 +79,15 @@ type LockedSource struct {
 	SSHKeyPath string `yaml:"ssh_key_path,omitempty"`
 	// Pack records the pack manifest this source was imported through,
 	// with its resolved selection. Nil for plain skill/agent sources.
+	// A member source keeps Pack nil so FindPackSource never treats it
+	// as the pack record.
 	Pack *LockedPack `yaml:"pack,omitempty"`
+	// PackMember is the pack name when this source was imported as a
+	// named external source of that pack. Empty for every other source.
+	// <pack>/<source> cannot collide with RepoToName output, which is a
+	// basename and never contains a slash. GuardSourceKey is what stops
+	// an explicit --source-name from re-keying the member to another repo.
+	PackMember string `yaml:"pack_member,omitempty"`
 }
 
 // LockedPack is the recorded state of an imported pack: the manifest
@@ -118,6 +130,25 @@ type LockedPack struct {
 	// A non-empty map stamps lockVersionStack. An older reader has no
 	// field for the key and would drop it on the next write.
 	UnresolvedDetails map[string]string `yaml:"unresolved_details,omitempty"`
+	// Sources records each external git source pinned at import. A
+	// non-empty map stamps lockVersionPackSources. An older reader has no
+	// field for the key and would drop it on the next write.
+	Sources map[string]LockedPackSource `yaml:"sources,omitempty"`
+}
+
+// LockedPackSource is one external repository pinned by a pack import.
+// Skills and Agents are the names that actually imported, not the
+// manifest shorthand and not skipped or unresolved selections.
+type LockedPackSource struct {
+	Repo      string    `yaml:"repo"`
+	Ref       string    `yaml:"ref,omitempty"`
+	Path      string    `yaml:"path,omitempty"`
+	CommitSHA string    `yaml:"commit_sha,omitempty"`
+	FetchedAt time.Time `yaml:"fetched_at,omitempty"`
+	// SourceKey is the member lock source key (<pack>/<source>).
+	SourceKey string   `yaml:"source_key,omitempty"`
+	Skills    []string `yaml:"skills,omitempty"`
+	Agents    []string `yaml:"agents,omitempty"`
 }
 
 // LockedStack is the pinned checkout of a pack-carried stack file.
@@ -145,6 +176,23 @@ func (lf *LockFile) FindPackSource(packName string) (string, *LockedSource, bool
 		}
 	}
 	return "", nil, false
+}
+
+// MemberSources returns the lock source keys imported as members of packName,
+// sorted by key. A member source has Pack == nil, so FindPackSource does not
+// return it.
+func (lf *LockFile) MemberSources(packName string) []string {
+	if lf == nil || packName == "" {
+		return nil
+	}
+	var keys []string
+	for name, src := range lf.Sources {
+		if src.PackMember == packName {
+			keys = append(keys, name)
+		}
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // StoredAuth returns the authentication this source recorded at import.
@@ -275,6 +323,12 @@ func WriteLockFile(path string, lf *LockFile) error {
 		}
 		if src.IsLocal() && lf.Version < lockVersionLocal {
 			lf.Version = lockVersionLocal
+		}
+		if src.PackMember != "" && lf.Version < lockVersionPackSources {
+			lf.Version = lockVersionPackSources
+		}
+		if src.Pack != nil && len(src.Pack.Sources) > 0 && lf.Version < lockVersionPackSources {
+			lf.Version = lockVersionPackSources
 		}
 	}
 
