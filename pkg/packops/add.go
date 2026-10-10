@@ -10,6 +10,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
+
+	"maps"
 
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/contexts"
@@ -30,11 +33,17 @@ type AddOptions struct {
 	// import with per-resource skips, its documented contract); the REST
 	// layer sets it so a 409 can never follow a half-done import.
 	BlockOnFindings bool
-	// Auth authenticates the clone. A CredentialRef is persisted and
-	// re-resolved later. An ssh-key path is persisted (never key material
-	// or a passphrase) and reused later. A zero value keeps the ambient
-	// behavior (ssh-agent for SSH, GITHUB_TOKEN for HTTPS, else anonymous).
+	// Auth authenticates the pack repository clone. A token or vault
+	// reference here never applies to an external source. An ssh-key
+	// path is reused for SSH sources that resolved no other auth.
 	Auth skills.AuthConfig
+	// SourceAuth is an explicit per-source override, keyed by source name.
+	// A present key wins even when the value is zero. Omitted keys fall
+	// through to stored member auth, the manifest, then ambient.
+	SourceAuth map[string]skills.AuthConfig
+	// Resolver expands manifest and stored credential references. Nil means
+	// a credential_ref on a source is an error for that source.
+	Resolver skills.CredentialResolver
 }
 
 // orEmpty returns a non-nil slice so encoding/json emits [] rather than null.
@@ -62,6 +71,7 @@ type AddDoc struct {
 	Variables      map[string]skills.LockedVariableDeclaration `json:"variables,omitempty"`
 	UnmetVariables []VariableRequirement                       `json:"unmet_variables,omitempty"`
 	Stack          *StackSummary                               `json:"stack,omitempty"`
+	Sources        []SourceSummary                             `json:"sources,omitempty"`
 }
 
 // VariableRequirement is a value-free prerequisite reported after import.
@@ -103,9 +113,23 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 		return nil, err
 	}
 
+	// A second pack with the same name would reuse member keys only by
+	// coincidence. Refuse before cloning sources. Packs without sources
+	// keep the previous add behavior: both records land and findPack refuses.
+	if len(manifest.Sources) > 0 {
+		if err := guardPackName(m.lockPath(), manifest.Name, opts.Repo); err != nil {
+			return nil, err
+		}
+	}
+	sourceClones, sourceWarnings, err := cloneDeclaredSources(ctx, manifest, opts, m.lockPath())
+	if err != nil {
+		return nil, err
+	}
 	discoveredRules := discoverPackRules(clone.RepoPath)
-	resolved := resolvePackSelection(manifest, clone, discoveredRules)
+	resolved := resolvePackSelection(manifest, clone, sourceClones, discoveredRules)
 	stackSummary, stackWarnings := m.resolveCarriedStack(ctx, clone, manifest, &resolved, opts.DryRun)
+	stackWarnings = append(stackWarnings, sourceWarnings...)
+	stackWarnings = append(stackWarnings, unknownSourceAuthWarnings(manifest, opts.SourceAuth)...)
 
 	if opts.BlockOnFindings && !opts.Trust {
 		if flagged := scanSelection(clone, resolved, discoveredRules); len(flagged) > 0 {
@@ -129,19 +153,21 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 			Warnings:      append(manifest.Warnings(), stackWarnings...),
 			Variables:     lockedVariableDeclarations(manifest.Variables),
 			Stack:         stackSummary,
+			Sources:       sourceSummaries(resolved, false),
 		},
 		Notes: []string{},
 	}
 
-	if !opts.DryRun && (len(resolved.skills) > 0 || len(resolved.agents) > 0) {
+	if !opts.DryRun && len(manifest.Sources) == 0 && (len(resolved.skills) > 0 || len(resolved.agents) > 0) {
 		// Selection lists ride to the importer as the manifest wrote them
 		// (unresolved names match nothing, so exactly the resolved subset
 		// imports); an empty agents list expands to the discovered set so
 		// the importer's legacy skip-agents-on-skill-selection contract
-		// never hides a pack's agents.
-		selectedSkills := manifest.Skills
-		selectedAgents := manifest.Agents
-		if len(selectedAgents) == 0 {
+		// never hides a pack's agents. Packs without sources keep this path
+		// unchanged.
+		selectedSkills := manifest.SkillNames()
+		selectedAgents := manifest.AgentNames()
+		if len(manifest.Agents) == 0 {
 			selectedAgents = resolved.agents
 		}
 		result, ierr := imp.Import(ctx, skills.ImportOptions{
@@ -162,13 +188,12 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 		if ierr != nil {
 			return nil, ierr
 		}
-		for _, s := range result.Skipped {
-			res.Doc.Skipped = append(res.Doc.Skipped, fmt.Sprintf("%s: %s", s.Name, s.Reason))
+		appendImportSkips(&res.Doc, result)
+	}
+	if !opts.DryRun && len(manifest.Sources) > 0 {
+		if err := importPackAndSources(ctx, imp, opts, manifest, clone, &resolved, &res.Doc); err != nil {
+			return nil, err
 		}
-		for _, s := range result.SkippedAgents {
-			res.Doc.Skipped = append(res.Doc.Skipped, fmt.Sprintf("%s (agent): %s", s.Name, s.Reason))
-		}
-		res.Doc.Warnings = append(res.Doc.Warnings, result.Warnings...)
 	}
 	if !opts.DryRun && len(resolved.rules) > 0 {
 		installed, updatedRules, skippedRules, recordedRules, rerr := m.installPackRules(
@@ -194,6 +219,10 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 			res.Doc.Stack = nil
 			res.Doc.Unresolved = append([]string(nil), resolved.unresolved...)
 		}
+		res.Doc.Skills = orEmpty(resolved.skills)
+		res.Doc.Agents = orEmpty(resolved.agents)
+		res.Doc.Unresolved = resolved.unresolved
+		res.Doc.Sources = sourceSummaries(resolved, true)
 		if err := recordLockedPack(ctx, m.lockPath(), manifest, resolved, opts.Repo, opts.Ref, clone.CommitSHA, opts.Auth); err != nil {
 			discardCheckout(resolved.createdCheckout)
 			return nil, err
@@ -214,6 +243,11 @@ type resolvedSelection struct {
 	unresolved        []string
 	stack             *skills.LockedStack
 	unresolvedDetails map[string]string
+	// skillOwner and agentOwner map a resolved name to its source.
+	// Empty means the pack repository. sources holds each declared source.
+	skillOwner map[string]string
+	agentOwner map[string]string
+	sources    map[string]*resolvedSource
 	// pendingStack is a validated checkout that Add materializes only
 	// after the findings gate and the import succeed.
 	pendingStack *pendingStack
@@ -368,7 +402,7 @@ func ruleIsUnmodified(prior skills.LockedRule, onDisk []byte) bool {
 // clone's discovery. Empty skill/agent lists select everything discovered;
 // rules are opt-in (empty means none). Named selections must resolve or
 // land in unresolved.
-func resolvePackSelection(m *pack.Manifest, clone *skills.CloneResult, discoveredRules map[string]PackRuleFile) resolvedSelection {
+func resolvePackSelection(m *pack.Manifest, clone *skills.CloneResult, sources map[string]*resolvedSource, discoveredRules map[string]PackRuleFile) resolvedSelection {
 	discoveredSkills := map[string]bool{}
 	for _, s := range clone.Skills {
 		discoveredSkills[s.Name] = true
@@ -379,17 +413,16 @@ func resolvePackSelection(m *pack.Manifest, clone *skills.CloneResult, discovere
 	}
 
 	var out resolvedSelection
+	out.sources = sources
+	out.skillOwner = map[string]string{}
+	out.agentOwner = map[string]string{}
 	if len(m.Skills) == 0 {
 		for _, s := range clone.Skills {
 			out.skills = append(out.skills, s.Name)
 		}
 	} else {
-		for _, name := range m.Skills {
-			if discoveredSkills[name] {
-				out.skills = append(out.skills, name)
-			} else {
-				out.unresolved = append(out.unresolved, name)
-			}
+		for _, sel := range m.Skills {
+			resolveOne(&out, "skill", sel, discoveredSkills, sources)
 		}
 	}
 	if len(m.Agents) == 0 {
@@ -397,12 +430,8 @@ func resolvePackSelection(m *pack.Manifest, clone *skills.CloneResult, discovere
 			out.agents = append(out.agents, a.Name)
 		}
 	} else {
-		for _, name := range m.Agents {
-			if discoveredAgents[name] {
-				out.agents = append(out.agents, name)
-			} else {
-				out.unresolved = append(out.unresolved, name)
-			}
+		for _, sel := range m.Agents {
+			resolveOne(&out, "agent", sel, discoveredAgents, sources)
 		}
 	}
 	// Rules: empty means none (opt-in). Named selections must resolve.
@@ -414,6 +443,62 @@ func resolvePackSelection(m *pack.Manifest, clone *skills.CloneResult, discovere
 		}
 	}
 	return out
+}
+
+func resolveOne(out *resolvedSelection, kind string, sel pack.Selection, discovered map[string]bool, sources map[string]*resolvedSource) {
+	if sel.Source == "" {
+		if discovered[sel.Name] {
+			if kind == "skill" {
+				out.skills = append(out.skills, sel.Name)
+			} else {
+				out.agents = append(out.agents, sel.Name)
+			}
+			return
+		}
+		out.unresolved = append(out.unresolved, sel.Name)
+		return
+	}
+	rs := sources[sel.Source]
+	token := kind + "/" + sel.Name
+	if rs == nil || rs.err != nil {
+		out.unresolved = append(out.unresolved, token)
+		if rs != nil && rs.err != nil {
+			if out.unresolvedDetails == nil {
+				out.unresolvedDetails = map[string]string{}
+			}
+			out.unresolvedDetails[token] = redactSourceErr(rs.err)
+		}
+		return
+	}
+	found := false
+	if kind == "skill" {
+		for _, s := range rs.clone.Skills {
+			if s.Name == sel.Name {
+				found = true
+				break
+			}
+		}
+	} else {
+		for _, a := range rs.clone.Agents {
+			if a.Name == sel.Name {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		out.unresolved = append(out.unresolved, token)
+		return
+	}
+	if kind == "skill" {
+		out.skills = append(out.skills, sel.Name)
+		out.skillOwner[sel.Name] = sel.Source
+		rs.skills = append(rs.skills, sel.Name)
+		return
+	}
+	out.agents = append(out.agents, sel.Name)
+	out.agentOwner[sel.Name] = sel.Source
+	rs.agents = append(rs.agents, sel.Name)
 }
 
 // priorPackRules returns what a previous install recorded for this pack's
@@ -462,7 +547,7 @@ func recordLockedPack(ctx context.Context, lockPath string, m *pack.Manifest, re
 				SSHKeyPath:    path,
 			}
 		}
-		src.Pack = &skills.LockedPack{
+		packRecord := &skills.LockedPack{
 			Name:              m.Name,
 			Version:           m.Version,
 			Description:       m.Description,
@@ -478,9 +563,159 @@ func recordLockedPack(ctx context.Context, lockPath string, m *pack.Manifest, re
 			Stack:             resolved.stack,
 			UnresolvedDetails: resolved.unresolvedDetails,
 		}
+		if len(resolved.sources) > 0 {
+			packRecord.Sources = lockedPackSources(m.Name, resolved)
+			for _, sourceName := range slices.Sorted(maps.Keys(resolved.sources)) {
+				rs := resolved.sources[sourceName]
+				if err := ensureMemberSource(lf, m.Name, sourceName, rs); err != nil {
+					return false, err
+				}
+			}
+		}
+		src.Pack = packRecord
 		lf.SetSource(sourceName, src)
 		return true, nil
 	})
+}
+
+func lockedPackSources(packName string, resolved resolvedSelection) map[string]skills.LockedPackSource {
+	out := make(map[string]skills.LockedPackSource, len(resolved.sources))
+	now := time.Now().UTC()
+	for _, name := range slices.Sorted(maps.Keys(resolved.sources)) {
+		rs := resolved.sources[name]
+		entry := skills.LockedPackSource{
+			Repo:      rs.spec.Repo,
+			Ref:       rs.spec.Ref,
+			Path:      rs.spec.Path,
+			CommitSHA: rs.sha,
+			FetchedAt: now,
+			SourceKey: memberKey(packName, name),
+		}
+		if rs.err == nil {
+			entry.Skills = append([]string(nil), rs.importedSkills...)
+			entry.Agents = append([]string(nil), rs.importedAgents...)
+		}
+		out[name] = entry
+	}
+	return out
+}
+
+func ensureMemberSource(lf *skills.LockFile, packName, sourceName string, rs *resolvedSource) error {
+	key := memberKey(packName, sourceName)
+	member, ok := lf.Sources[key]
+	if ok && member.IsLocal() {
+		return fmt.Errorf("source %q is a local source at %s; packs cannot replace a local source", key, member.Repo)
+	}
+	if !ok {
+		method, user, path := persistedPackSSH(rs.auth)
+		member = skills.LockedSource{
+			Repo:          rs.spec.Repo,
+			Ref:           rs.spec.Ref,
+			CommitSHA:     rs.sha,
+			CredentialRef: rs.auth.CredentialRef,
+			AuthMethod:    method,
+			SSHUser:       user,
+			SSHKeyPath:    path,
+		}
+	}
+	member.PackMember = packName
+	if member.Repo == "" {
+		member.Repo = rs.spec.Repo
+	}
+	lf.SetSource(key, member)
+	return nil
+}
+
+func appendImportSkips(doc *AddDoc, result *skills.ImportResult) {
+	if result == nil {
+		return
+	}
+	for _, s := range result.Skipped {
+		doc.Skipped = append(doc.Skipped, fmt.Sprintf("%s: %s", s.Name, s.Reason))
+	}
+	for _, s := range result.SkippedAgents {
+		doc.Skipped = append(doc.Skipped, fmt.Sprintf("%s (agent): %s", s.Name, s.Reason))
+	}
+	doc.Warnings = append(doc.Warnings, result.Warnings...)
+}
+
+func importPackAndSources(ctx context.Context, imp *skills.Importer, opts AddOptions, manifest *pack.Manifest, clone *skills.CloneResult, resolved *resolvedSelection, doc *AddDoc) error {
+	packSkills, packAgents := packLocalNames(resolved)
+	if len(packSkills) > 0 || len(packAgents) > 0 {
+		result, err := imp.Import(ctx, skills.ImportOptions{
+			Repo:           opts.Repo,
+			Ref:            opts.Ref,
+			Path:           opts.Path,
+			Trust:          opts.Trust,
+			Selected:       nonNilNames(packSkills),
+			SelectedAgents: nonNilNames(packAgents),
+			Discovered:     clone,
+			PackImport:     true,
+			ExactSelection: true,
+			Auth:           opts.Auth,
+		})
+		if err != nil {
+			return err
+		}
+		appendImportSkips(doc, result)
+	}
+	for _, name := range slices.Sorted(maps.Keys(resolved.sources)) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		rs := resolved.sources[name]
+		if rs.err != nil {
+			continue
+		}
+		if beforeExternalImport != nil {
+			beforeExternalImport(name, rs.clone)
+		}
+		if err := recheckSourceCommit(rs); err != nil {
+			failSource(resolved, name, err)
+			doc.Warnings = append(doc.Warnings, sourceWarning(name, err))
+			continue
+		}
+		result, err := imp.Import(ctx, skills.ImportOptions{
+			Repo:           rs.spec.Repo,
+			Ref:            rs.spec.Ref,
+			Path:           rs.spec.Path,
+			Trust:          opts.Trust,
+			Selected:       nonNilNames(rs.skills),
+			SelectedAgents: nonNilNames(rs.agents),
+			Discovered:     rs.clone,
+			PackImport:     true,
+			ExactSelection: true,
+			SourceName:     memberKey(manifest.Name, name),
+			Auth:           rs.auth,
+		})
+		if err != nil {
+			failSource(resolved, name, err)
+			doc.Warnings = append(doc.Warnings, sourceWarning(name, err))
+			continue
+		}
+		for _, s := range result.Imported {
+			rs.importedSkills = append(rs.importedSkills, s.Name)
+		}
+		for _, a := range result.ImportedAgents {
+			rs.importedAgents = append(rs.importedAgents, a.Name)
+		}
+		appendImportSkips(doc, result)
+	}
+	return nil
+}
+
+func packLocalNames(resolved *resolvedSelection) (skills, agents []string) {
+	for _, name := range resolved.skills {
+		if resolved.skillOwner[name] == "" {
+			skills = append(skills, name)
+		}
+	}
+	for _, name := range resolved.agents {
+		if resolved.agentOwner[name] == "" {
+			agents = append(agents, name)
+		}
+	}
+	return skills, agents
 }
 
 // persistedPackSSH mirrors skills.persistedAuth. The helper is unexported

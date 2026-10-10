@@ -17,9 +17,16 @@ type PreviewOptions struct {
 	Repo string
 	Ref  string
 	Path string
-	// Auth authenticates the clone. A zero value keeps the ambient
-	// behavior (ssh-agent for SSH, GITHUB_TOKEN for HTTPS, else anonymous).
+	// Auth authenticates the pack repository clone. A token here never
+	// applies to an external source.
 	Auth skills.AuthConfig
+	// SourceAuth is an explicit per-source override, keyed by source name.
+	SourceAuth map[string]skills.AuthConfig
+	// LockPath is the import lockfile used to reuse stored member auth.
+	// Empty means the HOME-derived default.
+	LockPath string
+	// Resolver expands manifest and stored credential references.
+	Resolver skills.CredentialResolver
 }
 
 // PreviewResource is one resolved resource with its scan findings.
@@ -31,6 +38,8 @@ type PreviewResource struct {
 	// block; supporting-file findings block only at danger severity.
 	// Non-blocking findings stay visible without forcing a trust grant.
 	Blocking bool `json:"blocking,omitempty"`
+	// Source is the external source name. Empty for the pack repository.
+	Source string `json:"source,omitempty"`
 }
 
 // PreviewResult is a pack manifest resolved against its repository,
@@ -49,6 +58,7 @@ type PreviewResult struct {
 	Unresolved  []string          `json:"unresolved,omitempty"`
 	Warnings    []string          `json:"warnings,omitempty"`
 	Stack       *StackSummary     `json:"stack,omitempty"`
+	Sources     []SourceSummary   `json:"sources,omitempty"`
 }
 
 // FindingsError blocks an import whose resolved selection carries
@@ -87,10 +97,22 @@ func Preview(ctx context.Context, opts PreviewOptions) (*PreviewResult, error) {
 		}
 		return nil, err
 	}
+	lockPath := opts.LockPath
+	if lockPath == "" {
+		lockPath = skills.LockFilePath()
+	}
+	sourceClones, sourceWarnings, err := cloneDeclaredSources(ctx, manifest, AddOptions{
+		Auth: opts.Auth, SourceAuth: opts.SourceAuth, Resolver: opts.Resolver,
+	}, lockPath)
+	if err != nil {
+		return nil, err
+	}
 	discoveredRules := discoverPackRules(clone.RepoPath)
-	resolved := resolvePackSelection(manifest, clone, discoveredRules)
+	resolved := resolvePackSelection(manifest, clone, sourceClones, discoveredRules)
 	var scratch Managers
 	stackSummary, stackWarnings := scratch.resolveCarriedStack(ctx, clone, manifest, &resolved, true)
+	stackWarnings = append(stackWarnings, sourceWarnings...)
+	stackWarnings = append(stackWarnings, unknownSourceAuthWarnings(manifest, opts.SourceAuth)...)
 
 	res := &PreviewResult{
 		Pack:        manifest.Name,
@@ -105,6 +127,7 @@ func Preview(ctx context.Context, opts PreviewOptions) (*PreviewResult, error) {
 		Unresolved:  resolved.unresolved,
 		Warnings:    append(manifest.Warnings(), stackWarnings...),
 		Stack:       stackSummary,
+		Sources:     sourceSummaries(resolved, false),
 	}
 	for _, pr := range scanResources(clone, resolved, discoveredRules, false) {
 		switch pr.Kind {
@@ -143,13 +166,20 @@ func scanResources(clone *skills.CloneResult, resolved resolvedSelection, discov
 		}
 	}
 	for _, name := range resolved.skills {
-		pr := PreviewResource{Kind: "skill", Name: name}
-		for _, ds := range clone.Skills {
+		owner := resolved.skillOwner[name]
+		skillClone := clone
+		if owner != "" {
+			if src := resolved.sources[owner]; src != nil && src.clone != nil {
+				skillClone = src.clone
+			}
+		}
+		pr := PreviewResource{Kind: "skill", Name: name, Source: owner}
+		for _, ds := range skillClone.Skills {
 			if ds.Name == name && ds.Skill != nil {
 				// Body plus supporting files: the same gate the importer
 				// applies, so a clean SKILL.md over a dangerous script
 				// cannot slip past a refuse-before-import caller.
-				findings, blocking := skills.ScanSkillTree(ds.Skill, filepath.Join(clone.RepoPath, ds.Path))
+				findings, blocking := skills.ScanSkillTree(ds.Skill, filepath.Join(skillClone.RepoPath, ds.Path))
 				pr.Findings = findings
 				pr.Blocking = blocking
 				break
@@ -158,8 +188,15 @@ func scanResources(clone *skills.CloneResult, resolved resolvedSelection, discov
 		keep(pr)
 	}
 	for _, name := range resolved.agents {
-		pr := PreviewResource{Kind: "agent", Name: name}
-		for _, da := range clone.Agents {
+		owner := resolved.agentOwner[name]
+		agentClone := clone
+		if owner != "" {
+			if src := resolved.sources[owner]; src != nil && src.clone != nil {
+				agentClone = src.clone
+			}
+		}
+		pr := PreviewResource{Kind: "agent", Name: name, Source: owner}
+		for _, da := range agentClone.Agents {
 			if da.Name == name && da.Definition != nil {
 				if scan := skills.ScanAgent(da.Definition); !scan.Safe {
 					pr.Findings = scan.Findings
