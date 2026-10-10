@@ -16,7 +16,7 @@ A skipped required case is not evidence. Passing detection is not blocking. A su
 - That every security-related test in the repository ran
 - That feature-owned workstreams (#1220, #1221, #1222, #1223, #1224, #1226, #1228, #1229, and others) are complete
 
-Unrelated skips, optional SSH, LiteLLM image absence on the general integration lane, and platform-inapplicable tests remain allowed outside the required set for that lane.
+Unrelated skips, optional SSH, and platform-inapplicable tests remain allowed outside the required set for that lane.
 
 ## Index
 
@@ -34,7 +34,7 @@ Focused commands escape each `/`-separated name segment and include the lane's t
 
 `cmd/scenarioverify` is a repository test utility, not a `gridctl` subcommand. It reads an explicit lane, the index, and a completed `go test -json` capture. It does not execute tests.
 
-Designated Gatekeeper jobs (`test`, `integration`, `podman-integration`) invoke `scripts/run-verified-tests.sh` with lanes `unit`, `integration`, and `podman-integration`. The script adds `-json -count=1 -race` while preserving coverage, tags, suite scope, and current timeouts. The general integration job sets `GRIDCTL_RUNTIME=docker` and fails a bounded `docker info` check when Docker is missing or is the wrong engine; the Podman job keeps its own engine setup. JSON events do not identify the runtime. Go, capture/tee, and verifier statuses are recorded separately; a successful verifier cannot mask a failed suite. Raw JSON captures stay on the runner; they are not uploaded as a new public artifact. LiteLLM and conformance jobs use `-count=1` but are not verifier lanes.
+Designated Gatekeeper jobs (`test`, `integration`, `podman-integration`) invoke `scripts/run-verified-tests.sh` with lanes `unit`, `integration`, and `podman-integration`. The script adds `-json -count=1 -race` while preserving coverage, tags, suite scope, and current timeouts. The general integration job sets `GRIDCTL_RUNTIME=docker` and fails a bounded `docker info` check when Docker is missing or is the wrong engine; the Podman job keeps its own engine setup. JSON events do not identify the runtime. Go, capture/tee, and verifier statuses are recorded separately; a successful verifier cannot mask a failed suite. Raw JSON captures stay on the runner; they are not uploaded as a new public artifact. The conformance job uses `-count=1` but is not a verifier lane.
 
 The verifier decodes events incrementally, discards output payloads, and rejects null or non-object records, missing actions, unfinished observed packages or tests, test events after a package terminal, repeated or conflicting results for the same package/test identity, and Go `build-fail` events. Slash characters in a test name are not capture-time parent/child nesting; a parent pass does not credit a missing required child. Input, record, event, and identity counts are bounded. Unknown JSON fields remain allowed.
 

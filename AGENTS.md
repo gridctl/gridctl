@@ -67,7 +67,7 @@ golangci-lint run                # backend (gosec is enabled; see .golangci.yml 
 cd web && npm run lint           # frontend; zero-error baseline, enforced by the gatekeeper frontend CI job
 ```
 
-Release tooling has separate Python policy/scanner tests: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_*.py' -v` (Python 3.11+, jsonschema 4.23.0, PyYAML 6.0.3, Bash, and jq). These are not included in `task test`. Cask-generation changes also require the explicit pinned GoReleaser exercise on Linux-x86_64; it is intentionally outside discovered `test_*.py` files. Changes to the declarative post-install step or its Homebrew version floor require real Homebrew load and installation acceptance on the declared floor and current stable, including macOS behavior and the Linux platform guard. `.github/workflows/release.yaml` reuses all six exact-commit Gatekeeper jobs, assembles a draft with GoReleaser, validates the generated cask contract and Ruby syntax before preparation and signing, verifies it on Linux/macOS, publishes, and only then advances Homebrew. See `docs/release-verification.md` for the generator command, external verification, immutable-mode prerequisites, and recovery; local fixtures do not replace hosted acceptance. The Python runtime image recipe is validated by `task images:python-runtime`; hosted amd64/arm64 acceptance is `.github/workflows/mcp-runtime-python.yaml`.
+Release tooling has separate Python policy/scanner tests: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_*.py' -v` (Python 3.11+, jsonschema 4.23.0, PyYAML 6.0.3, Bash, and jq). These are not included in `task test`. Cask-generation changes also require the explicit pinned GoReleaser exercise on Linux-x86_64; it is intentionally outside discovered `test_*.py` files. Changes to the declarative post-install step or its Homebrew version floor require real Homebrew load and installation acceptance on the declared floor and current stable, including macOS behavior and the Linux platform guard. `.github/workflows/release.yaml` reuses all five exact-commit Gatekeeper jobs, assembles a draft with GoReleaser, validates the generated cask contract and Ruby syntax before preparation and signing, verifies it on Linux/macOS, publishes, and only then advances Homebrew. See `docs/release-verification.md` for the generator command, external verification, immutable-mode prerequisites, and recovery; local fixtures do not replace hosted acceptance. The Python runtime image recipe is validated by `task images:python-runtime`; hosted amd64/arm64 acceptance is `.github/workflows/mcp-runtime-python.yaml`.
 
 ## Code architecture
 
@@ -149,8 +149,6 @@ pkg/agentsync/      Projects imported agents to clients: identity copy for Claud
                     OpenCode, Copilot, and Gemini CLI (`gridctl skill project --kind agent`).
 pkg/contexts/       Global agent-context projection (`gridctl ctx`): one canonical file, or opt-in rule fragments
                     with multi-file and compiled per-client assembly.
-pkg/modelsync/      Model routing policy projection (`gridctl models`): a router-only LiteLLM fragment plus its include:
-                    line in the parent config, and an OpenCode provider stanza, with drift and restart-pending state.
 pkg/wiring/         Key-level ownership of gateway entries merged into client MCP configs (`gridctl project`, link/unlink).
 pkg/pack/           gridctl-pack.yaml manifest schema, including named external `sources` and an optional relative `stack` path; pkg/packops owns orchestration shared by the CLI and REST handlers, including per-source clone and auth. The CLI injects stack launch; REST leaves the launcher nil and does not start or stop a carried daemon.
 pkg/skillpins/      TOFU pins over skill documents (per-file digests, findings); the `gridctl skill pins` store.
@@ -212,7 +210,7 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
                     pack_stack_test.go (`integration && !windows`) drives a real pack-carried local-process daemon through add, CLI launch, status, replace, and remove.
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, a2a, mcp-apps, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
-                    portable-pack, model-policy, python-sources, python-runtime, execution, security-evidence, stack-configs, stack-declaration-policy, runs).
+                    portable-pack, python-sources, python-runtime, execution, security-evidence, stack-configs, stack-declaration-policy, runs).
                     examples/_mock-servers/ is the source for `task mock:servers`.
 scripts/            Build/test helpers and release tooling: release.py owns gate, inventory, verification, draft/public,
                     and tap policy; release-tools.py pins executables and the SPDX schema; check_goreleaser_cask.py runs
@@ -223,7 +221,7 @@ scripts/            Build/test helpers and release tooling: release.py owns gate
                     check-example-refs.sh enforces pinned or excepted example image and package selectors after task build:go, including unassessed in-scope references.
                     run-verified-tests.sh captures go test JSON and runs cmd/scenarioverify for designated Gatekeeper lanes.
 docs/               User-facing documentation (cli-reference, config-schema, api-reference, skills, packs, tools-workspace,
-                    global-context, model-policy, scaling, usage-observability, installation, release-verification,
+                    global-context, scaling, usage-observability, installation, release-verification,
                     project-status, troubleshooting, execution, mcp-runtime-python, security/threat-model, security-evidence,
                     stack-declaration-policy, adversarial-regression-gates, capability-primitives, a2a-verification,
                     security/practical-guide).
