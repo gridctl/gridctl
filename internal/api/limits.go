@@ -14,7 +14,7 @@ func (s *Server) SetLimitsStatusFunc(fn func() limits.StatusReport) {
 }
 
 // handleLimits handles GET /api/limits: the consumption snapshot for every
-// configured budget and rate limit. With no limits: block (or no wiring) it
+// configured rate limit. With no limits: block (or no wiring) it
 // returns configured: false and an empty entries array, never an error —
 // the CLI and UI render "not configured" from the payload.
 func (s *Server) handleLimits(w http.ResponseWriter, r *http.Request) {
