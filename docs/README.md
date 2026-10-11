@@ -7,12 +7,13 @@ Guides and references for gridctl.
 New to gridctl? Read in this order:
 
 1. **[Installation](installation.md)** - get the binary on your machine
-2. **[Quick Start](../README.md#-quick-start)** - apply your first stack in three commands
-3. **[Configuration Reference](config-schema.md)** - the shape of `stack.yaml`
-4. **[Skills](skills.md)** - serve skills to upstream MCP clients and project skills and agents onto disk
-5. **[Packs](packs.md)** - import skills, agents (including from declared external repositories), rules, wiring, and an optional stack as one unit from a git repo
-6. **[Scaling](scaling.md)** and **[Usage Observability](usage-observability.md)** - operate at volume
-7. **[Troubleshooting](troubleshooting.md)** - when something goes wrong
+2. **[Concepts](concepts.md)** - stack, pack, skill, agent, rule, registry, projection, and link
+3. **[Quick Start](../README.md#-quick-start)** - apply a pinned server and call a live tool
+4. **[Configuration Reference](config-schema.md)** - the shape of `stack.yaml`
+5. **[Skills](skills.md)** - serve skills to upstream MCP clients and project skills and agents onto disk
+6. **[Packs](packs.md)** - import skills, agents (including from declared external repositories), rules, wiring, and an optional stack as one unit from a git repo
+7. **[Scaling](scaling.md)** and **[Usage Observability](usage-observability.md)** - operate at volume
+8. **[Troubleshooting](troubleshooting.md)** - when something goes wrong
 
 ## Getting Started
 
@@ -20,7 +21,7 @@ New to gridctl? Read in this order:
 |----------|-------------|
 | [Installation](installation.md) | One-liner install, package managers, container runtime detection, Podman setup, updating, uninstalling |
 | [Release Verification](release-verification.md) | Authenticate archives before installation, inspect scoped inventories, and understand release coverage and maintainer recovery |
-| [Quick Start](../README.md#-quick-start) | Apply your first stack in three commands |
+| [Quick Start](../README.md#-quick-start) | Apply a pinned server and call a live tool |
 
 ## References
 
@@ -34,16 +35,17 @@ New to gridctl? Read in this order:
 
 | Document | Description |
 |----------|-------------|
+| [Concepts](concepts.md) | Stack, pack, skill, agent, rule fragment, global context, wiring, registry, projection, group, client profile, and link |
 | [Skills](skills.md) | Author `SKILL.md` files, serve them as MCP prompts, import from git, a local directory, or a client home, and project skills and agents onto disk via `gridctl skill project` |
 | [Packs](packs.md) | One `gridctl-pack.yaml` manifest importing skills, agents (including from declared external repositories), rule fragments, wiring, and an optional stack as a unit, with tag-exact removal |
 | [Tools Workspace](tools-workspace.md) | Curate the exposed tool surface - whitelists, Audit Mode, annotation hints, fleet actions, per-client access, and groups |
 | [Global Context Sync](global-context.md) | Manage the global context (one canonical AGENTS.md, or an opt-in rule fragment library with per-client assembly) via `gridctl ctx`, the web UI, or the REST API |
 | [Scaling stdio servers](scaling.md) | Run multiple replicas of a single MCP server - policies, trade-offs, observability |
-| [MCP execution controls](execution.md) | Opt-in container restrictions, local environment hygiene, and per-replica evidence |
-| [Outbound A2A](config-schema.md#a2a) | Experimental remote agent tools, mandatory card trust, secret handles, and conversation lifecycle |
-| [Python MCP runtime base](mcp-runtime-python.md) | Downstream Python 3.12 foundation image, derived-image recipes, and publication policy |
-| [Usage Observability](usage-observability.md) | Token and call metrics, tokenizer options, format savings, `gridctl optimize` heuristics, and opt-in run records |
-| [Capability and sensitive-call primitives](capability-primitives.md) | Internal shared authority accounting, generation lifecycle, payload-free observations, and diagnostic privacy |
+| [MCP execution controls](execution.md) | Implemented, Unreleased: opt-in container restrictions, local environment hygiene, and per-replica evidence |
+| [Outbound A2A](config-schema.md#a2a) | Experimental, Unreleased remote agent tools, mandatory card trust, secret handles, and conversation lifecycle |
+| [Python MCP runtime base](mcp-runtime-python.md) | Implemented, Unreleased: downstream Python 3.12 foundation image, derived-image recipes, and publication policy |
+| [Usage Observability](usage-observability.md) | Token and call metrics, tokenizer options, format savings, `gridctl optimize` heuristics, and Implemented, Unreleased opt-in run records |
+| [Capability and sensitive-call primitives](capability-primitives.md) | Implemented, Unreleased: internal shared authority accounting, generation lifecycle, payload-free observations, and diagnostic privacy |
 
 ## Operations
 
