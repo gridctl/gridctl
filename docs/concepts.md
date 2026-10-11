@@ -2,7 +2,7 @@
 
 Gridctl keeps an agent setup in files you can commit, then runs the gateway and applies the rest to the clients you select. This page defines the words the other guides use. It does not rename them.
 
-A committed stack or pack declares servers and which instruction files to import. [`gridctl link`](cli-reference.md#llm-clients) writes the gateway endpoint into a client config and does not install skills, agents, or rules. Those move by [projection](#projection), and only onto clients that can read that resource ([skill channels](skills.md#how-skills-reach-the-model), [context coverage](global-context.md#write-strategies)). Secret values and lockfiles stay on the host. A tool call is not a cross-host reproduction.
+A committed stack declares servers. A pack selects skills, agents, rules, and wiring, and may carry a stack. [`gridctl link`](cli-reference.md#llm-clients) writes the gateway endpoint into a client config and does not install skills, agents, or rules. Those move by [projection](#projection), and only onto clients that can read that resource ([skill channels](skills.md#how-skills-reach-the-model), [context coverage](global-context.md#write-strategies)). Secret values and lockfiles stay on the host. A tool call is not a cross-host reproduction.
 
 ## Stack
 
@@ -34,7 +34,7 @@ Wiring is the gateway entry `gridctl link` writes into a client MCP config, with
 
 ## Registry
 
-The registry is the local store at `~/.gridctl/registry/` for skills and agents, and it is not declared in stack YAML. Skills enter through `gridctl skill add`, `gridctl skill import`, `gridctl import <client> --kind all`, a pack, the Library workspace, or the REST API; `~/.gridctl/skills.yaml` is a display list only, and `gridctl skill update` does not read it ([Skills](skills.md), [Skill sources](config-schema.md#skill-sources)).
+The registry is the local store at `~/.gridctl/registry/` for skills and agents, and it is not declared in stack YAML. Skills enter through `gridctl skill add` (a git repo, or an Unreleased local directory), `gridctl skill import` (Unreleased), `gridctl import <client> --kind all` (Unreleased), a pack, the Library workspace, or the REST API; `~/.gridctl/skills.yaml` is a display list only, and `gridctl skill update` does not read it ([Skills](skills.md), [Skill sources](config-schema.md#skill-sources)).
 
 ## Projection
 
@@ -50,7 +50,7 @@ A client profile is an allow-list under `clients.profiles` in the stack file tha
 
 ## Link
 
-Link writes the gateway URL into one installed client's MCP config, with `gridctl link` or a `link:` block that `gridctl apply` reconciles. It configures gateway access only: it does not install skills, agents, or rules, and a client that is not installed is skipped ([LLM clients](cli-reference.md#llm-clients), [Link (declared clients)](config-schema.md#link-declared-clients)).
+Link writes the gateway URL into one installed client's MCP config, with `gridctl link` or a `link:` block that `gridctl apply` reconciles, and it does not install skills, agents, or rules. An explicit `gridctl link <client>` fails when that client is not installed; a declared `link:` entry warns and skips ([LLM clients](cli-reference.md#llm-clients), [Link (declared clients)](config-schema.md#link-declared-clients)).
 
 ## How they compose
 

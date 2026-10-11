@@ -16,11 +16,11 @@ gridctl apply examples/python-sources/pypi.yaml
 | [🔌 transports/](transports/) | MCP transport types: local process, SSH, HTTP, SSE, and external-server auth |
 | [📦 platforms/](platforms/) | Third-party MCP servers: remote OAuth endpoints, containers, and host processes |
 | [Python sources](python-sources/) | Generate Python containers from exact PyPI releases or packaged source projects |
-| [Python runtime base](python-runtime/) | Manual derivatives of the Python MCP runtime foundation image |
+| [Python runtime base](python-runtime/) | Implemented, Unreleased: manual derivatives of the Python MCP runtime foundation image |
 | [Execution controls](execution/) | Implemented, Unreleased: opt-in container restrictions and per-replica enforcement evidence |
 | [Stack config files](stack-configs/) | Inline and stack-relative files copied into container servers |
 | [Security evidence](security-evidence/) | Implemented, Unreleased: partial, stale, suppressed, unknown, and N/A states for `gridctl doctor --security` |
-| [Stack declaration policy](stack-declaration-policy/) | Offline `validate --policy` fixture, policy file, and CI workflow design |
+| [Stack declaration policy](stack-declaration-policy/) | Unreleased opt-in: offline `validate --policy` fixture, policy file, and CI workflow design |
 | [🔗 openapi/](openapi/) | Turn REST APIs into MCP tools via OpenAPI specs |
 | [A2A](a2a/) | Experimental, Unreleased outbound Agent Card adapter with secret task/context handles |
 | [MCP Apps](mcp-apps/) | Remote MCP App server with the UI client extension |

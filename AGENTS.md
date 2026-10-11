@@ -220,7 +220,7 @@ scripts/            Build/test helpers and release tooling: release.py owns gate
                     policy and validator regressions without invoking GoReleaser.
                     check-example-refs.sh enforces pinned or excepted example image and package selectors after task build:go, including unassessed in-scope references.
                     run-verified-tests.sh captures go test JSON and runs cmd/scenarioverify for designated Gatekeeper lanes.
-docs/               User-facing documentation (cli-reference, config-schema, api-reference, skills, packs, tools-workspace,
+docs/               User-facing documentation (cli-reference, config-schema, api-reference, concepts, skills, packs, tools-workspace,
                     global-context, scaling, usage-observability, installation, release-verification,
                     project-status, troubleshooting, execution, mcp-runtime-python, security/threat-model, security-evidence,
                     stack-declaration-policy, adversarial-regression-gates, capability-primitives, a2a-verification,

@@ -68,7 +68,7 @@ task mock:servers
 
 ## Quick Start
 
-Apply the stack first. `gridctl activate` calls the running gateway. `gridctl skill add` imports a directory that is not a git root as a local source and marks the skill active unless you pass `--no-activate`. The example skill's frontmatter name is `code-review`.
+Apply the stack first. `gridctl activate` calls the running gateway. `gridctl skill add` on a directory that is not a git root is Unreleased: it imports that directory as a local source and marks the skill active unless you pass `--no-activate`. The example skill's frontmatter name is `code-review`.
 
 ```bash
 gridctl apply examples/registry/registry-basic.yaml

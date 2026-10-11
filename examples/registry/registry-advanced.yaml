@@ -13,7 +13,8 @@
 #   gridctl activate code-review
 #
 # Skills are not declared in stack YAML. `gridctl activate` needs the
-# gateway from apply. `skill add` imports this directory as a local source.
+# gateway from apply. Local directory import is Unreleased. `skill add`
+# imports this directory as a local source.
 #
 # To make a skill span both servers below, list tools from each in its
 # frontmatter, e.g.:

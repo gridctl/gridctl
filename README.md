@@ -431,13 +431,13 @@ Learn more → [CLI Reference](docs/cli-reference.md#variables) · [Variable dec
 
 ### Skill Library
 
-Every `SKILL.md` in your registry surfaces to upstream MCP clients as a prompt. Author a skill as `SKILL.md` in any editor, or in the Library workspace. It enters the registry through `gridctl skill add <repo-or-directory>`, `gridctl skill import <client>`, `gridctl import <client> --kind all` (Unreleased), or a pack, and is activated with `gridctl activate`. Which clients can use the prompt channel, and which need a file projection, is in the [per-client matrix](docs/skills.md#how-skills-reach-the-model).
+Every `SKILL.md` in your registry surfaces to upstream MCP clients as a prompt. Author a skill as `SKILL.md` in any editor, or in the Library workspace. It enters the registry through `gridctl skill add` (a git repo, or an Unreleased local directory), `gridctl skill import <client>` (Unreleased), `gridctl import <client> --kind all` (Unreleased), or a pack, and is activated with `gridctl activate`. Which clients can use the prompt channel, and which need a file projection, is in the [per-client matrix](docs/skills.md#how-skills-reach-the-model).
 
 ```bash
 gridctl skill list                        # Show what's in the registry
 gridctl skill add <git-repo>              # Import skills (and agents) from a remote repo
-gridctl skill add <directory>             # Import a directory that is not a git repository root
-gridctl skill import claude-code          # Import skills already present in a client home
+gridctl skill add <directory>             # Unreleased: import a directory that is not a git repository root
+gridctl skill import claude-code          # Unreleased: import skills already present in a client home
 gridctl import opencode --kind all        # Unreleased: servers, skills, agents, and context in one run
 gridctl activate my-skill                 # Promote a draft → active
 ```
@@ -480,7 +480,7 @@ Learn more → [Packs guide](docs/packs.md)
 | [`declarative-link/stack.yaml`](examples/declarative-link/stack.yaml) | Auto-link LLM clients on apply with a `link:` block |
 | [`autoscale-basic.yaml`](examples/autoscale/autoscale-basic.yaml) | Reactive replica autoscaling for a stdio server |
 | [`python-sources/`](examples/python-sources/) | Generate non-root Python containers from exact PyPI and Git sources |
-| [`execution/`](examples/execution/) | Opt-in container restrictions and instance-bound execution evidence |
+| [`execution/`](examples/execution/) | Implemented, Unreleased: opt-in container restrictions and instance-bound execution evidence |
 | [`security-evidence/`](examples/security-evidence/) | Implemented, Unreleased: partial, unknown, and N/A states for `gridctl doctor --security` |
 | [`otlp-jaeger.yaml`](examples/tracing/otlp-jaeger.yaml) | Export traces to Jaeger via OTLP |
 | [`runs/stack.yaml`](examples/runs/stack.yaml) | Implemented, Unreleased: opt-in metadata-only persisted dispatch records |
