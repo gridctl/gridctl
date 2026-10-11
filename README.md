@@ -132,7 +132,7 @@ gridctl destroy examples/python-sources/pypi.yaml
 
 A missing runtime is covered in [Container Runtime](docs/troubleshooting.md#container-runtime). A busy 8180 is covered in [Port Conflicts](docs/troubleshooting.md#port-conflicts).
 
-A verified run of `./gridctl` against `examples/python-sources/pypi.yaml` showed gateway `python-pypi` running, container `fetch` from `gridctl-python-pypi-fetch:2026.8.18-cae029c1bc69` in state `running` with pin status pinned, and this server row:
+Running the commands above shows gateway `python-pypi` running, container `fetch` from `gridctl-python-pypi-fetch:2026.8.18-cae029c1bc69` in state `running` with pin status pinned, and this server row:
 
 ```text
 MCP SERVERS
@@ -156,7 +156,7 @@ Example Domain
 This domain is for use in documentation examples without needing permission. This is not a service; avoid relying on it for testing and monitoring purposes.
 ```
 
-The `PROMPTS` and `RESOURCES` columns are from downstream prompt and resource aggregation, which is Implemented, Unreleased. A release before that ships may omit them. The web UI at `http://localhost:8180` shows the server and the advertised `fetch` tool. It is not required for the call, and it is not the invocation path. A default apply listens on 8180. The verification run used `-p 18180` because 8180 was already taken. PID, container ID, and uptime in `gridctl status` vary by host.
+The `PROMPTS` and `RESOURCES` columns are from downstream prompt and resource aggregation, which is Implemented, Unreleased. A release before that ships may omit them. The web UI at `http://localhost:8180` shows the server and the advertised `fetch` tool. It is not required for the call, and it is not the invocation path. A default apply listens on 8180. PID, container ID, and uptime in `gridctl status` vary by host.
 
 ## 🖥️ Connect LLM Application
 
@@ -325,7 +325,7 @@ With `gateway.auth` configured, grouped endpoints require the same bearer token 
 
 For deployment and review steps, read the [Practical Security Guide](docs/security/practical-guide.md), which distinguishes current defaults, opt-in controls, and release availability.
 
-Gateway authentication and listener security settings are restart-only: reload rejects security changes, including mixed edits, while preserving the saved file and active settings. Follow [restart recovery](docs/troubleshooting.md#gateway-security-requires-a-restart). The web prompt supports Bearer and API-key modes and verifies credentials before saving; [browser credential guidance](docs/config-schema.md#browser-credentials) covers custom headers and storage limits.
+Gateway authentication and listener security settings are restart-only: reload rejects security changes, including mixed edits, while preserving the saved file and active settings. Follow [restart recovery](docs/troubleshooting.md#gateway-security-requires-a-restart). The web prompt supports Bearer and API-key modes (Unreleased) and verifies credentials before saving; [browser credential guidance](docs/config-schema.md#browser-credentials) covers custom headers and storage limits.
 
 Learn more → [Tools Workspace](docs/tools-workspace.md)
 
