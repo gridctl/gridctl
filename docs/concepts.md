@@ -38,7 +38,7 @@ The registry is the local store at `~/.gridctl/registry/` for skills and agents,
 
 ## Projection
 
-Projection copies selected skills, agents, global context, and wiring onto client disks and records each file in `~/.gridctl/project.lock.yaml`. The commands are `gridctl skill project`, `gridctl ctx sync`, and `gridctl project sync --kind wiring`; nothing is copied until you name it, and linking does not run these commands ([Projecting skills into clients](skills.md#projecting-skills-into-clients)).
+Projection copies skills, agents, global context, and wiring onto client disks and records each file in `~/.gridctl/project.lock.yaml`. Named skills use `gridctl skill project`, all imported agents can use `gridctl skill project sync --kind agent`, global context uses `gridctl ctx sync`, and wiring uses `gridctl project sync --kind wiring`; linking runs none of these commands ([Projecting skills into clients](skills.md#projecting-skills-into-clients)).
 
 ## Group
 
