@@ -41,17 +41,16 @@ const (
 
 var rootCmd = &cobra.Command{
 	Use:   "gridctl",
-	Short: "MCP orchestration tool",
-	Long: `Gridctl is an MCP (Model Context Protocol) orchestration tool.
+	Short: "Version-controlled agent setup and MCP gateway",
+	Long: `Gridctl puts your agent setup in version control.
 
-It allows you to define a stack of MCP servers, tools, and resources
-in a simple YAML file, then spins up, wires together, and exposes
-them via a single MCP gateway.
+Define a stack of MCP servers in YAML, start them, and expose them through
+one gateway. Keep skills, agent definitions, and global-context rules in
+separate files.
 
-Alongside the gateway it keeps a registry of skills and agents, projects
-them (plus your global context rules and the gateway wiring itself) into
-each linked client with lockfile-tracked ownership, and imports the whole
-set from a git repo as a pack.`,
+Linking writes the gateway endpoint into a client config. Separate projection
+commands place supported resources into selected client locations with
+lockfile-tracked ownership. A pack imports the setup from a git repository.`,
 	Example: `  gridctl apply stack.yaml     Deploy a stack of MCP servers
   gridctl link claude          Connect Claude Desktop to the gateway
   gridctl status               Show gateways and containers
