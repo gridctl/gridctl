@@ -8,13 +8,13 @@
 #   Run `task mock:servers` from the project root to build the mock server.
 #
 # Usage:
+#   gridctl skill add examples/registry/items/code-review --no-activate
 #   gridctl apply examples/registry/registry-advanced.yaml
-#   gridctl skill add examples/registry/items/code-review
 #   gridctl activate code-review
 #
-# Skills are not declared in stack YAML. `gridctl activate` needs the
-# gateway from apply. Local directory import is Unreleased. `skill add`
-# imports this directory as a local source.
+# Skills are not declared in stack YAML. Local directory import is
+# Unreleased. Import the draft before apply so the gateway loads it,
+# then use `gridctl activate` through that gateway.
 #
 # To make a skill span both servers below, list tools from each in its
 # frontmatter, e.g.:
