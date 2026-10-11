@@ -45,6 +45,27 @@ func TestRootHelpGroupsAndQuickStart(t *testing.T) {
 	}
 }
 
+func TestRootHelpDistinguishesLinkingFromProjection(t *testing.T) {
+	out, _, err := executeCommand(t, "--help")
+	if err != nil {
+		t.Fatalf("--help: %v", err)
+	}
+
+	for _, want := range []string{
+		"Gridctl puts your agent setup in version control.",
+		"Linking writes the gateway endpoint into a client config.",
+		"Separate projection",
+		"commands place supported resources",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("root help missing %q", want)
+		}
+	}
+	if strings.Contains(out, "into each linked client") {
+		t.Error("root help implies linking projects every resource")
+	}
+}
+
 func TestLeafHelpHasExamplesAndNoFooter(t *testing.T) {
 	out, _, err := executeCommand(t, "apply", "--help")
 	if err != nil {
