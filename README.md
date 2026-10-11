@@ -8,7 +8,7 @@
 
 <p align="center">
   MCP servers, skills, agent definitions, and rules, declared in files you commit.<br>
-  Gridctl runs the gateway and applies the rest to the clients you link.
+  Gridctl runs MCP servers behind one gateway; separate projection writes skills, agents, and rules to supported clients.
 </p>
 
 <p align="center">
@@ -117,18 +117,17 @@ The installer checks SHA256, not release origin. For covered releases, follow [R
 
 ## 🚦 Quick Start
 
-Needs Docker or Podman, and network access to PyPI on the first build. `gridctl init` scaffolds your own starter `stack.yaml`. That scaffold is not a verified tool server.
+Needs Docker or Podman, and network access to PyPI on the first build. `gridctl tools search` and `gridctl call` are Implemented, Unreleased; until they ship, the full transcript requires a branch build. On a release without those commands, stop after `gridctl status` and use the Tools workspace to confirm that `fetch` was advertised; invoking it requires an MCP client. `gridctl init` scaffolds your own starter `stack.yaml`, but that scaffold is not a verified tool server.
 
 ```bash
 gridctl apply examples/python-sources/pypi.yaml   # builds mcp-server-fetch 2026.8.18 into a non-root container
 gridctl status
-gridctl link claude-code                           # or any of the 16 clients; `gridctl link` to pick interactively
 gridctl tools search fetch
 gridctl call fetch__fetch '{"url":"https://example.com"}'
 gridctl destroy examples/python-sources/pypi.yaml
 ```
 
-`gridctl tools search` and `gridctl call` are Implemented, Unreleased. On a release before those commands ship, the web UI's Tools workspace shows that `fetch` was advertised. Making the request needs those commands or an MCP client.
+Connect an installed client separately with `gridctl link`, which detects clients and lets you choose. An explicit command such as `gridctl link claude-code` exits 1 when that client is not installed. Linking is not needed for `gridctl tools search` or `gridctl call`.
 
 A missing runtime is covered in [Container Runtime](docs/troubleshooting.md#container-runtime). A busy 8180 is covered in [Port Conflicts](docs/troubleshooting.md#port-conflicts).
 
@@ -431,7 +430,7 @@ Learn more → [CLI Reference](docs/cli-reference.md#variables) · [Variable dec
 
 ### Skill Library
 
-Every `SKILL.md` in your registry surfaces to upstream MCP clients as a prompt. Author a skill as `SKILL.md` in any editor, or in the Library workspace. It enters the registry through `gridctl skill add` (a git repo, or an Unreleased local directory), `gridctl skill import <client>` (Unreleased), `gridctl import <client> --kind all` (Unreleased), or a pack, and is activated with `gridctl activate`. Which clients can use the prompt channel, and which need a file projection, is in the [per-client matrix](docs/skills.md#how-skills-reach-the-model).
+Every `SKILL.md` in your registry surfaces to upstream MCP clients as a prompt. Author a skill as `SKILL.md` in any editor, or in the Library workspace. It enters the registry through `gridctl skill add` (a git repo, or an Unreleased local directory), `gridctl skill import <client>` (Unreleased), `gridctl import <client> --kind all` (Unreleased), or a pack. A draft is activated with `gridctl activate`. Which clients can use the prompt channel, and which need a file projection, is in the [per-client matrix](docs/skills.md#how-skills-reach-the-model).
 
 ```bash
 gridctl skill list                        # Show what's in the registry
@@ -444,13 +443,13 @@ gridctl activate my-skill                 # Promote a draft → active
 
 Skills follow the [agentskills.io specification](https://agentskills.io): author them as plain markdown with frontmatter and they work with every skill-aware client, not just gridctl.
 
-The registry holds more than skills. The same import pipeline discovers Claude Code subagent definitions (`agents/*.md`) from a git repository, a local directory, or a client home (`gridctl skill import`, or the Unreleased `gridctl import <client> --kind agents`). `gridctl skill project sync` places both onto disk for clients that read files instead of MCP: identity copies for Claude Code, rendered dialects for OpenCode, Copilot, and Gemini CLI. A shared lockfile tracks every projected file, so drift is detected, hand edits are adoptable, and unsync removes exactly what gridctl wrote. The global context can likewise become a library of rule fragments with per-client assembly; see [Global Context Sync](docs/global-context.md).
+The registry holds more than skills. The same import pipeline discovers Claude Code subagent definitions (`agents/*.md`) from a git repository, a local directory, or a client home (`gridctl skill import`, or the Unreleased `gridctl import <client> --kind agents`). `gridctl skill project sync <skill>` places named skills onto compatible clients. `gridctl skill project sync --kind agent` places every imported agent onto separate agent targets: an identity copy for Claude Code, and rendered dialects for OpenCode, Copilot, and Gemini CLI. Copilot is an agent projection target, not one of the linkable MCP clients. A shared lockfile tracks every projected file, so drift is detected, hand edits are adoptable, and unsync removes exactly what gridctl wrote. The global context can likewise become a library of rule fragments with per-client assembly; see [Global Context Sync](docs/global-context.md).
 
 Learn more → [Skills guide](docs/skills.md)
 
 ### Packs
 
-A pack is a git repo with a `gridctl-pack.yaml` manifest: a versioned selection of skills, agents, rule fragments, gateway wiring, and an optional stack that imports and applies as one unit, so a team setup is one command instead of a checklist. Skills and agents may also come from git repositories the manifest names. Rules and the stack still come from the pack repository. `pack apply` starting the carried stack is CLI-only, and REST and the web UI project resources but do not start or stop the daemon.
+A pack is a git repo with a `gridctl-pack.yaml` manifest: a versioned selection of skills, agents, rule fragments, gateway wiring, and an optional stack. `pack add` imports that selection, then `pack apply` starts a carried stack and projects the selected resources, with secret values supplied on the host. Skills and agents may also come from git repositories the manifest names. Rules and the stack still come from the pack repository. Starting the carried stack is CLI-only; REST and the web UI project resources but do not start or stop the daemon.
 
 ```bash
 gridctl pack add <git-repo>               # Clone, scan, and import the manifest's selection
@@ -466,7 +465,8 @@ Learn more → [Packs guide](docs/packs.md)
 
 | Example | What It Shows |
 |:--------|:--------------|
-| [`mcp-basic.yaml`](examples/getting-started/mcp-basic.yaml) | Stack with multiple MCP servers and tool filtering |
+| [`pypi.yaml`](examples/python-sources/pypi.yaml) | First example that serves a live tool: pinned `mcp-server-fetch` 2026.8.18 |
+| [`mcp-basic.yaml`](examples/getting-started/mcp-basic.yaml) | Stack structure and tool filtering with placeholders; no live tool |
 | [`local-mcp.yaml`](examples/transports/local-mcp.yaml) | Run MCP servers as local host processes over stdio |
 | [`ssh-mcp.yaml`](examples/transports/ssh-mcp.yaml) | Connect to MCP servers on remote machines via SSH |
 | [`openapi-basic.yaml`](examples/openapi/openapi-basic.yaml) | Turn a REST API into MCP tools via OpenAPI spec |
