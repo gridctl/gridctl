@@ -139,7 +139,7 @@ homebrew_casks:
       name: goreleaserbot
       email: bot@goreleaser.com
     homepage: "https://github.com/gridctl/gridctl"
-    description: "MCP orchestration tool - Containerlab for AI Agents"
+    description: "Version-controlled agent setup with an MCP gateway"
     binaries:
       - gridctl
     # Bridge to postflight_steps until GoReleaser supports it natively.
