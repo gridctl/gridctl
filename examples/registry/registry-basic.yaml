@@ -2,20 +2,20 @@
 #
 # Demonstrates Agent Skills with a single MCP server. The registry stores
 # reusable skills as SKILL.md files in ~/.gridctl/registry/skills/{name}/.
-# Skills are NOT declared in stack YAML — they are managed via the REST API
-# or Web UI.
+# Skills are not declared in stack YAML. Local directory import is
+# Unreleased. Import this draft before apply so the gateway loads it,
+# then activate it through that gateway:
+#
+#   gridctl skill add examples/registry/items/code-review --no-activate
+#   gridctl activate code-review
 #
 # Prerequisites:
 #   Run `task mock:servers` from the project root to build the mock server.
 #
 # Usage:
+#   gridctl skill add examples/registry/items/code-review --no-activate
 #   gridctl apply examples/registry/registry-basic.yaml
-#
-# After deploying, copy pre-made skills into the registry:
-#   cp -r examples/registry/items/* ~/.gridctl/registry/skills/
-#
-# Then activate a skill:
-#   curl -X POST http://localhost:8180/api/registry/skills/code-review/activate
+#   gridctl activate code-review
 
 version: "1"
 name: registry-basic

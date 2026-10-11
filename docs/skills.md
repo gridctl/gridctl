@@ -1,6 +1,6 @@
 # Skills
 
-Gridctl ships with a skill registry that delivers every active [`SKILL.md`](https://agentskills.io/specification) in your stack to upstream clients over two channels: as an MCP prompt served by the gateway, and (opt-in) as a file projection into each client's native skills directory via `gridctl skill project`. The Library workspace in the web UI is the authoring surface.
+Gridctl ships with a skill registry that delivers every active [`SKILL.md`](https://agentskills.io/specification) in your stack to upstream clients over two channels: as an MCP prompt served by the gateway, and (opt-in) as a file projection into each client's native skills directory via `gridctl skill project`. The Library workspace in the web UI is the authoring surface. Terms used here are defined in [Concepts](concepts.md).
 
 Skills are prose. Author them as markdown with agentskills.io-compliant frontmatter and store them in the registry directory. Which channel reaches a given client depends on the client: prompt-rendering clients (Gemini CLI, Cursor, Windsurf) see skills as invocable prompts, file-based clients (Antigravity, Grok Build) only see projected files, and several clients support both. See the per-client matrix below.
 
@@ -72,9 +72,9 @@ The Library is backed by the REST endpoints under `/api/registry/skills/*` (see 
 
 The main Library and detached editor share [gateway credential re-entry](config-schema.md#browser-credentials). If a save succeeds but its follow-up registry refresh is rejected, the detached editor stays open for verification. Verification resumes the read without repeating the save.
 
-## Authoring on the CLI
+## Managing skills on the CLI
 
-The same operations are exposed as CLI subcommands. Use these when scripting or working without the UI.
+The CLI imports, lists, validates, activates, pins, updates, and removes skills. It does not create or edit a skill body; that is done in an editor or the Library workspace. Use these when scripting or working without the UI.
 
 | Operation | Command |
 |---|---|
@@ -275,7 +275,7 @@ The Library workspace carries a `Skills | Agents` segment (also reachable as `/l
 
 A short list of choices worth knowing about.
 
-**Execution.** gridctl 0.1.x removed the typed-skill execution surface (TS sandbox, Go plugins, run ledger, approval gates, agent IDE). Skills are prose; upstream clients are responsible for using them. If you need an agent runtime, reach for LangGraph / CrewAI / AutoGen / OpenAI Agents SDK and let gridctl be the MCP gateway underneath. The retired surfaces were `gridctl agent {init,dev,build,validate}`, `gridctl run`, `gridctl runs *`, `/api/agent/*`, `/api/playground/*`, and the Stage / Runs / Playground UI workspaces.
+**Execution.** gridctl 0.1.x removed the typed-skill execution surface (TS sandbox, Go plugins, run ledger, approval gates, agent IDE). Skills are prose; upstream clients are responsible for using them. If you need an agent runtime, reach for LangGraph / CrewAI / AutoGen / OpenAI Agents SDK and let gridctl be the MCP gateway underneath. The retired surfaces were `gridctl agent {init,dev,build,validate}`, `gridctl run`, the Agent IDE run ledger, `/api/agent/*`, `/api/playground/*`, and the Stage / Runs / Playground UI workspaces, while today's `gridctl runs` is the separate Implemented, Unreleased metadata-only record described in [Run records](usage-observability.md#run-records).
 
 **`kind:` in the frontmatter.** File presence used to be the discriminator between flavors. With execution removed there is only one skill flavor (prompt-only); a `kind:` field would carry no information. (Agents are a separate registry kind with their own `AGENT.md` convention, not a skill flavor.)
 

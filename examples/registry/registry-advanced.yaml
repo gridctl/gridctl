@@ -8,11 +8,13 @@
 #   Run `task mock:servers` from the project root to build the mock server.
 #
 # Usage:
+#   gridctl skill add examples/registry/items/code-review --no-activate
 #   gridctl apply examples/registry/registry-advanced.yaml
+#   gridctl activate code-review
 #
-# After deploying, copy the pre-made skills and activate one:
-#   cp -r examples/registry/items/* ~/.gridctl/registry/skills/
-#   curl -X POST http://localhost:8180/api/registry/skills/code-review/activate
+# Skills are not declared in stack YAML. Local directory import is
+# Unreleased. Import the draft before apply so the gateway loads it,
+# then use `gridctl activate` through that gateway.
 #
 # To make a skill span both servers below, list tools from each in its
 # frontmatter, e.g.:
