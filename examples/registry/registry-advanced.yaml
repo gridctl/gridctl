@@ -9,10 +9,11 @@
 #
 # Usage:
 #   gridctl apply examples/registry/registry-advanced.yaml
+#   gridctl skill add examples/registry/items/code-review
+#   gridctl activate code-review
 #
-# After deploying, copy the pre-made skills and activate one:
-#   cp -r examples/registry/items/* ~/.gridctl/registry/skills/
-#   curl -X POST http://localhost:8180/api/registry/skills/code-review/activate
+# Skills are not declared in stack YAML. `gridctl activate` needs the
+# gateway from apply. `skill add` imports this directory as a local source.
 #
 # To make a skill span both servers below, list tools from each in its
 # frontmatter, e.g.:

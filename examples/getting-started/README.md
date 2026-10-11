@@ -1,12 +1,12 @@
 # 🎯 Getting Started
 
-Basic examples demonstrating core Gridctl features.
+These examples exercise stack structure only. The first example that serves a tool is [`python-sources/pypi.yaml`](../python-sources/pypi.yaml).
 
 ## 📄 Examples
 
 | File | Description |
 |------|-------------|
-| `mcp-basic.yaml` | Multiple MCP servers with tool filtering (recommended start) |
+| `mcp-basic.yaml` | Multiple MCP servers with tool filtering (structure only; no live tool) |
 | `skills-basic.yaml` | MCP server with skills registry integration |
 
 ## 🚀 Quick Start
@@ -34,6 +34,7 @@ To see examples with real MCP servers:
 
 | Example | What it demonstrates |
 |---------|---------------------|
+| `python-sources/pypi.yaml` | The first example that serves a tool (`fetch`) |
 | `transports/local-mcp.yaml` | Stdio transport with working MCP server |
 | `transports/external-mcp.yaml` | HTTP/SSE transport with external servers |
 | `platforms/github-mcp.yaml` | Real third-party MCP server (GitHub) |

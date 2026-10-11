@@ -37,7 +37,7 @@ Each skill has a lifecycle state:
 
 Agents have no lifecycle state; they project to clients via `gridctl skill project sync --kind agent`. Skill documents are also pinned trust-on-first-use (`gridctl skill pins`), so later content changes surface as reviewable drift.
 
-Skills are managed via the REST API or Web UI - they are **not** declared in stack YAML.
+Skills are not declared in stack YAML. They enter the registry through `gridctl skill add`, `gridctl skill import`, `gridctl import <client> --kind all`, a pack, the Library workspace, or the REST API.
 
 ## Skill Sources
 
@@ -68,20 +68,17 @@ task mock:servers
 
 ## Quick Start
 
-### Option A: Copy Pre-Made Skills
+Apply the stack first. `gridctl activate` calls the running gateway. `gridctl skill add` imports a directory that is not a git root as a local source and marks the skill active unless you pass `--no-activate`. The example skill's frontmatter name is `code-review`.
 
 ```bash
-# Copy skill directories into the registry
-cp -r examples/registry/items/* ~/.gridctl/registry/skills/
-
-# Deploy the stack
 gridctl apply examples/registry/registry-basic.yaml
-
-# Activate a skill
-curl -X POST http://localhost:8180/api/registry/skills/code-review/activate
+gridctl skill add examples/registry/items/code-review
+gridctl activate code-review
 ```
 
-### Option B: Create via API
+## REST path
+
+`/api/registry/skills/*` is a documented entry point. This block creates a skill over HTTP. The CLI and Library workspace are the other authoring paths.
 
 ```bash
 # Deploy the stack first
@@ -141,31 +138,6 @@ server-name__tool-name
 For example, a server named `local-tools` with an `echo` tool becomes `local-tools__echo`.
 
 ## Testing
-
-### REST API
-
-```bash
-# Check registry status
-curl http://localhost:8180/api/registry/status | jq
-
-# List all skills
-curl http://localhost:8180/api/registry/skills | jq
-
-# Activate a skill
-curl -X POST http://localhost:8180/api/registry/skills/code-review/activate
-
-# Validate a SKILL.md without saving
-curl -X POST http://localhost:8180/api/registry/skills/validate \
-  -H 'Content-Type: text/markdown' \
-  -d '---
-name: test
-description: Test skill
----
-# Test'
-
-# Manage supporting files
-curl http://localhost:8180/api/registry/skills/code-review/files | jq
-```
 
 ### Web UI
 

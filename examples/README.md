@@ -5,24 +5,24 @@ Example stacks demonstrating Gridctl patterns and capabilities.
 ## 🚀 Quick Start
 
 ```bash
-gridctl apply examples/getting-started/mcp-basic.yaml
+gridctl apply examples/python-sources/pypi.yaml
 ```
 
 ## 📁 Categories
 
 | Folder | Description |
 |--------|-------------|
-| [🎯 getting-started/](getting-started/) | Basic examples to get up and running |
+| [🎯 getting-started/](getting-started/) | Placeholder stacks that exercise structure only; the first example that serves a tool is [python-sources/pypi.yaml](python-sources/pypi.yaml) |
 | [🔌 transports/](transports/) | MCP transport types: local process, SSH, HTTP, SSE, and external-server auth |
 | [📦 platforms/](platforms/) | Third-party MCP servers: remote OAuth endpoints, containers, and host processes |
 | [Python sources](python-sources/) | Generate Python containers from exact PyPI releases or packaged source projects |
 | [Python runtime base](python-runtime/) | Manual derivatives of the Python MCP runtime foundation image |
-| [Execution controls](execution/) | Opt-in container restrictions and per-replica enforcement evidence |
+| [Execution controls](execution/) | Implemented, Unreleased: opt-in container restrictions and per-replica enforcement evidence |
 | [Stack config files](stack-configs/) | Inline and stack-relative files copied into container servers |
-| [Security evidence](security-evidence/) | Partial, stale, suppressed, unknown, and N/A states for `gridctl doctor --security` |
+| [Security evidence](security-evidence/) | Implemented, Unreleased: partial, stale, suppressed, unknown, and N/A states for `gridctl doctor --security` |
 | [Stack declaration policy](stack-declaration-policy/) | Offline `validate --policy` fixture, policy file, and CI workflow design |
 | [🔗 openapi/](openapi/) | Turn REST APIs into MCP tools via OpenAPI specs |
-| [A2A](a2a/) | Experimental outbound Agent Card adapter with secret task/context handles |
+| [A2A](a2a/) | Experimental, Unreleased outbound Agent Card adapter with secret task/context handles |
 | [MCP Apps](mcp-apps/) | Remote MCP App server with the UI client extension |
 | [🔐 access-control/](access-control/) | Tool filtering and per-client scoping |
 | [⚡ code-mode/](code-mode/) | Reduce context window with search + execute meta-tools |
@@ -33,22 +33,22 @@ gridctl apply examples/getting-started/mcp-basic.yaml
 | [🧳 portable-stack/](portable-stack/) | Stack that stays committable by keeping every per-environment value in the variable store |
 | [🎒 portable-pack/](portable-pack/) | Pack repo: skills, agents, rules, a local-process stack, and a commented external source example behind one `gridctl-pack.yaml` |
 | [🔭 tracing/](tracing/) | Distributed tracing and OTLP export |
-| [Run records](runs/) | Opt-in metadata-only persisted dispatch records |
+| [Run records](runs/) | Implemented, Unreleased: opt-in metadata-only persisted dispatch records |
 | [📋 registry/](registry/) | Skills and agents registry ([agentskills.io](https://agentskills.io) spec) |
 | [🧪 _mock-servers/](_mock-servers/) | Test servers for development |
 
 ## 🎬 Recommended Path
 
-1. **Start here**: `getting-started/mcp-basic.yaml` - stack, networking, tool filtering (digest-pinned alpine placeholders)
-2. **Real MCP servers**: `transports/local-mcp.yaml` - actual MCP server logic via stdio transport
-3. **Platforms**: `platforms/github-mcp.yaml` - third-party MCP servers
-4. **OpenAPI**: `openapi/openapi-basic.yaml` - turn any REST API into MCP tools
-5. **Python sources**: `python-sources/pypi.yaml` - start with one exact package, then try `daily.yaml` for PyPI and Git together
+1. **Start here**: `python-sources/pypi.yaml` - the first example that serves a tool (`fetch` from pinned `mcp-server-fetch` 2026.8.18); then `daily.yaml` for PyPI and Git together
+2. **Stack structure**: `getting-started/mcp-basic.yaml` - networking and tool filtering with digest-pinned alpine placeholders (no live tool)
+3. **Real MCP servers**: `transports/local-mcp.yaml` - actual MCP server logic via stdio transport
+4. **Platforms**: `platforms/github-mcp.yaml` - third-party MCP servers
+5. **OpenAPI**: `openapi/openapi-basic.yaml` - turn any REST API into MCP tools
 6. **Registry**: `registry/registry-basic.yaml` - Skills as MCP prompts (imports also discover agents)
 7. **Packs**: `portable-pack/` - one manifest importing skills, agents, rules, and a local-process stack as a unit, with a commented external source example
 8. **Scaling**: `autoscale/autoscale-basic.yaml` - reactive autoscaling of MCP replicas
 
-> **Note:** Getting-started examples use digest-pinned `alpine:3.22` placeholders (`sleep`) to focus on infrastructure concepts, not MCP server logic.
+> **Note:** Getting-started examples use digest-pinned `alpine:3.22` placeholders (`sleep`) to focus on infrastructure concepts, not MCP server logic. The first example that serves a tool is `python-sources/pypi.yaml`.
 > Transport and platform examples include real MCP server implementations.
 
 ## 📊 Feature Matrix
