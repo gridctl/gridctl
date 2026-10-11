@@ -37,7 +37,7 @@ Each skill has a lifecycle state:
 
 Agents have no lifecycle state; they project to clients via `gridctl skill project sync --kind agent`. Skill documents are also pinned trust-on-first-use (`gridctl skill pins`), so later content changes surface as reviewable drift.
 
-Skills are not declared in stack YAML. They enter the registry through `gridctl skill add`, `gridctl skill import`, `gridctl import <client> --kind all`, a pack, the Library workspace, or the REST API.
+Skills are not declared in stack YAML. They enter the registry through `gridctl skill add` (a git repo, or an Unreleased local directory), Unreleased `gridctl skill import`, Unreleased `gridctl import <client> --kind all`, a pack, the Library workspace, or the REST API.
 
 ## Skill Sources
 
@@ -68,17 +68,17 @@ task mock:servers
 
 ## Quick Start
 
-Apply the stack first. `gridctl activate` calls the running gateway. `gridctl skill add` on a directory that is not a git root is Unreleased: it imports that directory as a local source and marks the skill active unless you pass `--no-activate`. The example skill's frontmatter name is `code-review`.
+Unreleased local-directory import is active by default. This example imports a draft first, then starts the gateway so it loads that draft before `gridctl activate` promotes it. The example skill's frontmatter name is `code-review`.
 
 ```bash
+gridctl skill add examples/registry/items/code-review --no-activate
 gridctl apply examples/registry/registry-basic.yaml
-gridctl skill add examples/registry/items/code-review
 gridctl activate code-review
 ```
 
 ## REST path
 
-`/api/registry/skills/*` is a documented entry point. This block creates a skill over HTTP. The CLI and Library workspace are the other authoring paths.
+`/api/registry/skills/*` is a documented authoring entry point, and the Library workspace also creates and edits skill bodies. The CLI imports and manages skills; it does not write their bodies.
 
 ```bash
 # Deploy the stack first
