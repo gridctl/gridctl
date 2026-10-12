@@ -125,8 +125,8 @@ This changes diagnostic output, including recognizable secret-bearing names and
 labels in usage and run metadata. Consumers should correlate by generated
 attempt/trace IDs and outcome categories instead of raw code errors or secret
 identifiers. Ordinary caller-delivered source errors remain unchanged. The
-diagnostic-output change is recorded under Unreleased for maintainer-owned
-major-release scheduling under Article VIII.
+diagnostic-output change is included in v1.0.0-rc.2 and is breaking under
+Article VIII.
 
 Recognition is defense in depth, not a general information-flow sandbox. It
 cannot identify arbitrary encoded or split secrets. Sensitive payload exclusion

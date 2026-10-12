@@ -65,8 +65,8 @@ requesting caller still receives execution errors and console output. Correlate
 diagnostics with generated attempt/trace IDs and outcome categories; do not join
 records using secret-bearing names or parse raw code-error log text. Structured
 log attributes containing recognized secrets may become sanitized JSON strings.
-These Unreleased diagnostic-output changes require maintainer-owned major-release
-scheduling under Article VIII. See [diagnostic troubleshooting](troubleshooting.md#code-mode-error-details-are-missing-from-logs).
+These diagnostic-output changes are included in v1.0.0-rc.2 and are breaking
+under Article VIII. See [diagnostic troubleshooting](troubleshooting.md#code-mode-error-details-are-missing-from-logs).
 
 ## Metrics persistence
 

@@ -16,13 +16,13 @@ gridctl apply examples/python-sources/pypi.yaml
 | [🔌 transports/](transports/) | MCP transport types: local process, SSH, HTTP, SSE, and external-server auth |
 | [📦 platforms/](platforms/) | Third-party MCP servers: remote OAuth endpoints, containers, and host processes |
 | [Python sources](python-sources/) | Generate Python containers from exact PyPI releases or packaged source projects |
-| [Python runtime base](python-runtime/) | Implemented, Unreleased: manual derivatives of the Python MCP runtime foundation image |
-| [Execution controls](execution/) | Implemented, Unreleased: opt-in container restrictions and per-replica enforcement evidence |
+| [Python runtime base](python-runtime/) | Recipe included in v1.0.0-rc.2: manual derivatives of the Python MCP runtime foundation image. Not a published supported image |
+| [Execution controls](execution/) | Included in v1.0.0-rc.2: opt-in container restrictions and per-replica enforcement evidence |
 | [Stack config files](stack-configs/) | Inline and stack-relative files copied into container servers |
-| [Security evidence](security-evidence/) | Implemented, Unreleased: partial, stale, suppressed, unknown, and N/A states for `gridctl doctor --security` |
-| [Stack declaration policy](stack-declaration-policy/) | Unreleased opt-in: offline `validate --policy` fixture, policy file, and CI workflow design |
+| [Security evidence](security-evidence/) | Included in v1.0.0-rc.2: partial, stale, suppressed, unknown, and N/A states for `gridctl doctor --security` |
+| [Stack declaration policy](stack-declaration-policy/) | Opt-in included in v1.0.0-rc.2: offline `validate --policy` fixture, policy file, and CI workflow design |
 | [🔗 openapi/](openapi/) | Turn REST APIs into MCP tools via OpenAPI specs |
-| [A2A](a2a/) | Experimental, Unreleased outbound Agent Card adapter with secret task/context handles |
+| [A2A](a2a/) | Experimental outbound Agent Card adapter, included in v1.0.0-rc.2, with secret task/context handles |
 | [MCP Apps](mcp-apps/) | Remote MCP App server with the UI client extension |
 | [🔐 access-control/](access-control/) | Tool filtering and per-client scoping |
 | [⚡ code-mode/](code-mode/) | Reduce context window with search + execute meta-tools |
@@ -33,7 +33,7 @@ gridctl apply examples/python-sources/pypi.yaml
 | [🧳 portable-stack/](portable-stack/) | Stack that stays committable by keeping every per-environment value in the variable store |
 | [🎒 portable-pack/](portable-pack/) | Pack repo: skills, agents, rules, a local-process stack, and a commented external source example behind one `gridctl-pack.yaml` |
 | [🔭 tracing/](tracing/) | Distributed tracing and OTLP export |
-| [Run records](runs/) | Implemented, Unreleased: opt-in metadata-only persisted dispatch records |
+| [Run records](runs/) | Included in v1.0.0-rc.2: opt-in metadata-only persisted dispatch records |
 | [📋 registry/](registry/) | Skills and agents registry ([agentskills.io](https://agentskills.io) spec) |
 | [🧪 _mock-servers/](_mock-servers/) | Test servers for development |
 

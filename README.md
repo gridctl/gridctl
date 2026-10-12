@@ -117,7 +117,7 @@ The installer checks SHA256, not release origin. For covered releases, follow [R
 
 ## 🚦 Quick Start
 
-Needs Docker or Podman, and network access to PyPI on the first build. `gridctl tools search` and `gridctl call` are Implemented, Unreleased; until they ship, the full transcript requires a branch build. On a release without those commands, stop after `gridctl status` and use the Tools workspace to confirm that `fetch` was advertised; invoking it requires an MCP client. `gridctl init` scaffolds your own starter `stack.yaml`, but that scaffold is not a verified tool server.
+Needs Docker or Podman, and network access to PyPI on the first build. `gridctl tools search` and `gridctl call` are included in v1.0.0-rc.2. `gridctl init` scaffolds your own starter `stack.yaml`, but that scaffold is not a verified tool server.
 
 ```bash
 gridctl apply examples/python-sources/pypi.yaml   # builds mcp-server-fetch 2026.8.18 into a non-root container
@@ -155,7 +155,7 @@ Example Domain
 This domain is for use in documentation examples without needing permission. This is not a service; avoid relying on it for testing and monitoring purposes.
 ```
 
-The `PROMPTS` and `RESOURCES` columns are from downstream prompt and resource aggregation, which is Implemented, Unreleased. A release before that ships may omit them. The web UI at `http://localhost:8180` shows the server and the advertised `fetch` tool. It is not required for the call, and it is not the invocation path. A default apply listens on 8180. PID, container ID, and uptime in `gridctl status` vary by host.
+The `PROMPTS` and `RESOURCES` columns are from downstream prompt and resource aggregation, included in v1.0.0-rc.2. A release before that may omit them. The web UI at `http://localhost:8180` shows the server and the advertised `fetch` tool. It is not required for the call, and it is not the invocation path. A default apply listens on 8180. PID, container ID, and uptime in `gridctl status` vary by host.
 
 ## 🖥️ Connect LLM Application
 
@@ -173,7 +173,7 @@ gridctl link lmstudio --group <name>
 
 Declaring a `link:` block in stack.yaml (as above) does the same thing on every `gridctl apply`: each listed client is linked idempotently once the gateway is healthy, and clients that aren't installed warn and skip. `gridctl destroy --unlink` removes those entries again.
 
-Already have MCP servers configured in your clients? `gridctl import` runs the same detection in reverse: it scans those configs (read-only), including project MCP files from the working directory up to the nearest git root, dedupes the servers it finds, and appends your selection to stack.yaml, offering plaintext secrets into the encrypted variable store on the way. `gridctl import <client> --kind all` (Unreleased) also imports that client's skills, agents, and global context in one run, with one summary. Omitting `--kind` stays servers-only. OpenCode's user file is still one selected file, not OpenCode's merged configuration. See the [CLI reference](docs/cli-reference.md#llm-clients).
+Already have MCP servers configured in your clients? `gridctl import` runs the same detection in reverse: it scans those configs (read-only), including project MCP files from the working directory up to the nearest git root, dedupes the servers it finds, and appends your selection to stack.yaml, offering plaintext secrets into the encrypted variable store on the way. `gridctl import <client> --kind all`, included in v1.0.0-rc.2, also imports that client's skills, agents, and global context in one run, with one summary. Omitting `--kind` stays servers-only. OpenCode's user file is still one selected file, not OpenCode's merged configuration. See the [CLI reference](docs/cli-reference.md#llm-clients).
 
 Supported clients: Claude Desktop, Claude Code, Cursor, Windsurf, VS Code, Gemini, Antigravity, OpenCode, Grok Build, Continue, Cline, AnythingLLM, LM Studio, Roo, Zed, Goose
 
@@ -230,7 +230,7 @@ Declarative, version-controlled MCP environments. Validate before you commit, pl
 gridctl search postgres        # Find servers in the catalog and the MCP Registry
 gridctl add github             # Append a catalog server to stack.yaml by name
 gridctl validate stack.yaml    # Lint and schema-check the spec (exit 0/1/2)
-gridctl validate stack.yaml --policy policy.yaml  # Offline declaration-policy check (Unreleased opt-in)
+gridctl validate stack.yaml --policy policy.yaml  # Offline declaration-policy check (opt-in, v1.0.0-rc.2)
 gridctl plan stack.yaml        # Diff against running state
 gridctl apply stack.yaml       # Apply the spec
 gridctl export                 # Export authored config with references preserved
@@ -266,11 +266,11 @@ mcp-servers:
       runtime: python
 ```
 
-Learn more → [Source configuration](docs/config-schema.md#source) · [Runnable example](examples/python-sources/) · [Python runtime base](docs/mcp-runtime-python.md) (Implemented, Unreleased)
+Learn more → [Source configuration](docs/config-schema.md#source) · [Runnable example](examples/python-sources/) · [Python runtime base](docs/mcp-runtime-python.md) (recipe in v1.0.0-rc.2; supported image tags are not published)
 
 ### MCP Execution Controls
 
-Implemented, Unreleased. Opt into `execution.mode: hardened` for managed MCP containers, with explicit numeric UID/GID, finite per-replica limits, read-only root, bounded scratch, and no network by default. Required engine and kernel evidence gates routing. Existing server details show execution evidence separately from MCP health.
+Included in v1.0.0-rc.2. Opt into `execution.mode: hardened` for managed MCP containers, with explicit numeric UID/GID, finite per-replica limits, read-only root, bounded scratch, and no network by default. Required engine and kernel evidence gates routing. Existing server details show execution evidence separately from MCP health.
 
 Local processes can select `execution.mode: local` for explicit environment inheritance and executable lookup; they remain unsandboxed. Omission retains compatibility behavior. Container observation requires a supported Linux daemon environment; see the guide for runtime limits and acceptance status.
 
@@ -324,13 +324,13 @@ With `gateway.auth` configured, grouped endpoints require the same bearer token 
 
 For deployment and review steps, read the [Practical Security Guide](docs/security/practical-guide.md), which distinguishes current defaults, opt-in controls, and release availability.
 
-Gateway authentication and listener security settings are restart-only: reload rejects security changes, including mixed edits, while preserving the saved file and active settings. Follow [restart recovery](docs/troubleshooting.md#gateway-security-requires-a-restart). The web prompt supports Bearer and API-key modes (Unreleased) and verifies credentials before saving; [browser credential guidance](docs/config-schema.md#browser-credentials) covers custom headers and storage limits.
+Gateway authentication and listener security settings are restart-only: reload rejects security changes, including mixed edits, while preserving the saved file and active settings. Follow [restart recovery](docs/troubleshooting.md#gateway-security-requires-a-restart). The web prompt supports Bearer and API-key modes (included in v1.0.0-rc.2) and verifies credentials before saving; [browser credential guidance](docs/config-schema.md#browser-credentials) covers custom headers and storage limits.
 
 Learn more → [Tools Workspace](docs/tools-workspace.md)
 
 ### Live Tool Invocation
 
-Implemented, Unreleased. Search and invoke tools on a selected running gateway without starting a daemon:
+Included in v1.0.0-rc.2. Search and invoke tools on a selected running gateway without starting a daemon:
 
 ```bash
 gridctl tools search "message"
@@ -344,7 +344,7 @@ gridctl call echo__echo '{"message":"hello"}' --format json
 Declare a remote Agent Card under `a2a:` and enable `experimental.a2a` to expose
 A2A 1.0/0.3 JSON-RPC send, task-get, task-cancel, and advisory skill tools to MCP
 clients. The adapter requires card-byte trust and needs no container runtime.
-It is off by default and Unreleased.
+It is off by default and included in v1.0.0-rc.2.
 
 Task and context handles are bearer secrets, expire after 24 hours, and become
 invalid on adapter replacement or restart. Use private argument files and protect
@@ -430,20 +430,20 @@ Learn more → [CLI Reference](docs/cli-reference.md#variables) · [Variable dec
 
 ### Skill Library
 
-Every `SKILL.md` in your registry surfaces to upstream MCP clients as a prompt. Author a skill as `SKILL.md` in any editor, or in the Library workspace. It enters the registry through `gridctl skill add` (a git repo, or an Unreleased local directory), `gridctl skill import <client>` (Unreleased), `gridctl import <client> --kind all` (Unreleased), or a pack. A draft is activated with `gridctl activate`. Which clients can use the prompt channel, and which need a file projection, is in the [per-client matrix](docs/skills.md#how-skills-reach-the-model).
+Every `SKILL.md` in your registry surfaces to upstream MCP clients as a prompt. Author a skill as `SKILL.md` in any editor, or in the Library workspace. It enters the registry through `gridctl skill add` (a git repo or a local directory), `gridctl skill import <client>`, `gridctl import <client> --kind all`, or a pack. Local-directory import, client-home import, and `--kind` are included in v1.0.0-rc.2. A draft is activated with `gridctl activate`. Which clients can use the prompt channel, and which need a file projection, is in the [per-client matrix](docs/skills.md#how-skills-reach-the-model).
 
 ```bash
 gridctl skill list                        # Show what's in the registry
 gridctl skill add <git-repo>              # Import skills (and agents) from a remote repo
-gridctl skill add <directory>             # Unreleased: import a directory that is not a git repository root
-gridctl skill import claude-code          # Unreleased: import skills already present in a client home
-gridctl import opencode --kind all        # Unreleased: servers, skills, agents, and context in one run
+gridctl skill add <directory>             # Import a directory that is not a git repository root
+gridctl skill import claude-code          # Import skills already present in a client home
+gridctl import opencode --kind all        # Servers, skills, agents, and context in one run
 gridctl activate my-skill                 # Promote a draft → active
 ```
 
 Skills follow the [agentskills.io specification](https://agentskills.io): author them as plain markdown with frontmatter and they work with every skill-aware client, not just gridctl.
 
-The registry holds more than skills. The same import pipeline discovers Claude Code subagent definitions (`agents/*.md`) from a git repository, a local directory, or a client home (`gridctl skill import`, or the Unreleased `gridctl import <client> --kind agents`). `gridctl skill project sync <skill>` places named skills onto compatible clients. `gridctl skill project sync --kind agent` places every imported agent onto separate agent targets: an identity copy for Claude Code, and rendered dialects for OpenCode, Copilot, and Gemini CLI. Copilot is an agent projection target, not one of the linkable MCP clients. A shared lockfile tracks every projected file, so drift is detected, hand edits are adoptable, and unsync removes exactly what gridctl wrote. The global context can likewise become a library of rule fragments with per-client assembly; see [Global Context Sync](docs/global-context.md).
+The registry holds more than skills. The same import pipeline discovers Claude Code subagent definitions (`agents/*.md`) from a git repository, a local directory, or a client home (`gridctl skill import`, or `gridctl import <client> --kind agents` (included in v1.0.0-rc.2)). `gridctl skill project sync <skill>` places named skills onto compatible clients. `gridctl skill project sync --kind agent` places every imported agent onto separate agent targets: an identity copy for Claude Code, and rendered dialects for OpenCode, Copilot, and Gemini CLI. Copilot is an agent projection target, not one of the linkable MCP clients. A shared lockfile tracks every projected file, so drift is detected, hand edits are adoptable, and unsync removes exactly what gridctl wrote. The global context can likewise become a library of rule fragments with per-client assembly; see [Global Context Sync](docs/global-context.md).
 
 Learn more → [Skills guide](docs/skills.md)
 
@@ -470,7 +470,7 @@ Learn more → [Packs guide](docs/packs.md)
 | [`local-mcp.yaml`](examples/transports/local-mcp.yaml) | Run MCP servers as local host processes over stdio |
 | [`ssh-mcp.yaml`](examples/transports/ssh-mcp.yaml) | Connect to MCP servers on remote machines via SSH |
 | [`openapi-basic.yaml`](examples/openapi/openapi-basic.yaml) | Turn a REST API into MCP tools via OpenAPI spec |
-| [`a2a/`](examples/a2a/) | Experimental, Unreleased outbound A2A tools with card trust and secret task/context handles |
+| [`a2a/`](examples/a2a/) | Experimental outbound A2A tools, included in v1.0.0-rc.2, with card trust and secret task/context handles |
 | [`mcp-apps/`](examples/mcp-apps/) | Remote MCP App server with `protocol_extensions` |
 | [`code-mode-basic.yaml`](examples/code-mode/code-mode-basic.yaml) | Gateway code mode with search + execute meta-tools |
 | [`github-mcp.yaml`](examples/platforms/github-mcp.yaml) | GitHub MCP server integration |
@@ -480,10 +480,10 @@ Learn more → [Packs guide](docs/packs.md)
 | [`declarative-link/stack.yaml`](examples/declarative-link/stack.yaml) | Auto-link LLM clients on apply with a `link:` block |
 | [`autoscale-basic.yaml`](examples/autoscale/autoscale-basic.yaml) | Reactive replica autoscaling for a stdio server |
 | [`python-sources/`](examples/python-sources/) | Generate non-root Python containers from exact PyPI and Git sources |
-| [`execution/`](examples/execution/) | Implemented, Unreleased: opt-in container restrictions and instance-bound execution evidence |
-| [`security-evidence/`](examples/security-evidence/) | Implemented, Unreleased: partial, unknown, and N/A states for `gridctl doctor --security` |
+| [`execution/`](examples/execution/) | Included in v1.0.0-rc.2: opt-in container restrictions and instance-bound execution evidence |
+| [`security-evidence/`](examples/security-evidence/) | Included in v1.0.0-rc.2: partial, unknown, and N/A states for `gridctl doctor --security` |
 | [`otlp-jaeger.yaml`](examples/tracing/otlp-jaeger.yaml) | Export traces to Jaeger via OTLP |
-| [`runs/stack.yaml`](examples/runs/stack.yaml) | Implemented, Unreleased: opt-in metadata-only persisted dispatch records |
+| [`runs/stack.yaml`](examples/runs/stack.yaml) | Included in v1.0.0-rc.2: opt-in metadata-only persisted dispatch records |
 | [`portable-pack/`](examples/portable-pack) | Team pack: skills, agents, wiring, a local-process stack, and a commented external source example from one manifest |
 
 ## 📖 Documentation

@@ -9,7 +9,7 @@ Gridctl is preparing its 1.0 release. This page tracks the stability tier of eac
 
 Nearly every shipped feature surface is Stable as of the release candidate; the table below marks the exceptions. The Experimental tier also covers features that ship dark behind the `experimental:` feature-flag registry (see [Config Schema](config-schema.md#experimental-feature-flags)).
 
-Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked below (see [CHANGELOG.md](../CHANGELOG.md) for release-by-release detail).
+Release baseline: **v1.0.0-rc.2** (see [CHANGELOG.md](../CHANGELOG.md) for release-by-release detail).
 
 ## Feature stability
 
@@ -17,51 +17,51 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 |---------|--------|---------------|
 | MCP gateway (stdio, SSE, HTTP) | Stable | Backward compatible in 0.x |
 | Container orchestration (Docker) | Stable | Backward compatible in 0.x |
-| MCP execution controls | Implemented, Unreleased | Opt-in container admission/evidence and unsandboxed local hygiene. Local Docker checks pass; positive rootless Podman acceptance remains required. Status output changes require maintainer-owned major-release scheduling under Article VIII |
-| Security evidence report (`doctor --security`, `GET /api/security-report`) | Implemented, Unreleased | Passive, value-free snapshots with explicit `file:`, `snapshot:`, or `gateway:` selection. Ordinary `doctor` JSON and exits are unchanged. Exit zero is not a secure verdict. See [Security Evidence Report](security-evidence.md) |
+| MCP execution controls | Implemented | Included in v1.0.0-rc.2. Opt-in container admission/evidence and unsandboxed local hygiene. Local Docker checks pass; positive rootless Podman acceptance remains required. Status output changes are a breaking change under Article VIII |
+| Security evidence report (`doctor --security`, `GET /api/security-report`) | Implemented | Included in v1.0.0-rc.2. Passive, value-free snapshots with explicit `file:`, `snapshot:`, or `gateway:` selection. Ordinary `doctor` JSON and exits are unchanged. Exit zero is not a secure verdict. See [Security Evidence Report](security-evidence.md) |
 | Generated Python source containers (PyPI, git, local) | Stable | Opt-in through `source.runtime: python` or `source.type: pypi`; existing Dockerfile sources are unchanged |
-| Python MCP runtime base (`ghcr.io/gridctl/mcp-runtime-python`) | Implemented, Unreleased | Manual custom-Dockerfile or `image:` adoption only. Not a ready server. Supported tags wait on hosted amd64/arm64 acceptance, candidate publication, and anonymous evidence. See [Python MCP runtime base](mcp-runtime-python.md) |
-| Config schema (servers, resources) | Stable | Unreleased `configs` is optional and changes nothing when omitted. Relative volume host paths (`./`, `../`, `~`) now resolve against the stack file (`~` against the home directory) on apply and reload. That resolution changes previously valid stacks and requires maintainer-owned major-release scheduling under Articles VIII and IX. `gridctl plan` and `gridctl validate` do not apply it. See [Configs](config-schema.md#configs) |
+| Python MCP runtime base (`ghcr.io/gridctl/mcp-runtime-python`) | Implemented | Recipe included in v1.0.0-rc.2. Manual custom-Dockerfile or `image:` adoption only. Not a ready server. Supported tags wait on hosted amd64/arm64 acceptance, candidate publication, and anonymous evidence. Not a published supported image. See [Python MCP runtime base](mcp-runtime-python.md) |
+| Config schema (servers, resources) | Stable | `configs`, included in v1.0.0-rc.2, is optional and changes nothing when omitted. Relative volume host paths (`./`, `../`, `~`) now resolve against the stack file (`~` against the home directory) on apply and reload. That resolution is a breaking change under Articles VIII and IX, included in v1.0.0-rc.2. `gridctl plan` and `gridctl validate` do not apply it. See [Configs](config-schema.md#configs) |
 | Auth middleware (bearer, API key) | Stable | Credential formats unchanged; grouped MCP/SSE now require configured auth on every request (see [migration guidance](troubleshooting.md#grouped-mcp-requests-return-401)) |
-| Hot reload | Stable | Unreleased breaking correction: effective gateway security changes reject the entire reload or stackless initialization with `restart_required`. See [restart recovery](troubleshooting.md#gateway-security-requires-a-restart); major-release scheduling/policy resolution remains required before merge under Articles VIII/IX |
+| Hot reload | Stable | Breaking correction included in v1.0.0-rc.2: effective gateway security changes reject the entire reload or stackless initialization with `restart_required`. See [restart recovery](troubleshooting.md#gateway-security-requires-a-restart) |
 | Vault secrets | Stable | Backward compatible in 0.x |
 | Web UI | Stable | No API guarantee (internal) |
 | Output format conversion | Stable | Backward compatible in 0.x |
 | Token usage metrics | Stable | Backward compatible in 0.x |
-| Stack validation (validate) | Stable | Backward compatible in 0.x. Unreleased opt-in `--check-mutable-refs` is CLI-only and does not change default validate, REST, health, or apply. Unreleased opt-in `--policy` is a separate offline declaration evaluator; ordinary validate, apply, REST, and reload stay unchanged |
+| Stack validation (validate) | Stable | Backward compatible in 0.x. Opt-in `--check-mutable-refs`, included in v1.0.0-rc.2, is CLI-only and does not change default validate, REST, health, or apply. Opt-in `--policy`, included in v1.0.0-rc.2, is a separate offline declaration evaluator; ordinary validate, apply, REST, and reload stay unchanged |
 | Stack planning (plan) | Stable | Backward compatible in 0.x |
 | Static replicas | Stable | Backward compatible in 0.x |
 | Reactive autoscaling | Stable | Backward compatible in 0.x |
-| Code mode | Stable | Unreleased failure logs use local categories without source excerpts or thrown values; caller-delivered errors remain available. See [diagnostic migration](usage-observability.md#diagnostic-privacy-and-migration); major-release scheduling is required under Article VIII |
+| Code mode | Stable | Failure logs included in v1.0.0-rc.2 use local categories without source excerpts or thrown values; caller-delivered errors remain available. This is a breaking diagnostic-output change under Article VIII. See [diagnostic migration](usage-observability.md#diagnostic-privacy-and-migration) |
 | Podman runtime | Stable | Backward compatible in 0.x |
 | Skills registry (prompt-only) | Stable | Backward compatible in 0.x |
 | Library workspace (UI) | Stable | No API guarantee (internal) |
 | Stack export (export) | Stable | Breaking security correction in v1.0.0-rc.1: references stay unresolved, and recognized inline credentials reject export. See [migration guidance](cli-reference.md#export-semantics) |
 | Spec drift detection | Stable | No API guarantee (internal) |
 | Visual spec builder | Stable | No API guarantee (internal) |
-| Skills import (skill add / skill import) | Stable | Unreleased local directories and client home import. `gridctl import <client> --kind skills,agents` calls the same importer. A local source stamps `skills.lock.yaml` version 6; an older gridctl refuses the file. Git-only output is unchanged. The Library wizard still accepts git URLs only |
+| Skills import (skill add / skill import) | Stable | Local directories and client home import are included in v1.0.0-rc.2. `gridctl import <client> --kind skills,agents` calls the same importer. A local source stamps `skills.lock.yaml` version 6; an older gridctl refuses the file. Git-only output is unchanged. The Library wizard still accepts git URLs only |
 | Skill projection (skill project) | Stable | Backward compatible in 0.x |
 | Agent kind (skill add / skill project --kind agent) | Stable | Distinct from the removed Agent IDE below; backward compatible in 0.x |
 | Multi-client agent renders (opencode, copilot, gemini) | Stable | Lossy by design - each dialect drops keys it cannot express; backward compatible in 0.x |
 | Packs (pack add / apply / status / remove) | Stable | Manifest schema `gridctl.dev/v1`; `v1alpha1` still accepted. A resolved carried stack, or an unresolved stack that records a detail, stamps `skills.lock.yaml` version 5. External sources, or a pack member marker, stamp version 7; packs without `sources:` keep the previous stamp. An older gridctl refuses a version 7 file. REST and the web UI do not start or stop that daemon |
-| Global context sync (ctx) | Stable | Backward compatible in 0.x. Unreleased `gridctl import <client> --kind context` adopts a client file only when no canonical file exists and fragments mode is off, and it does not pass `--force` |
+| Global context sync (ctx) | Stable | Backward compatible in 0.x. `gridctl import <client> --kind context`, included in v1.0.0-rc.2, adopts a client file only when no canonical file exists and fragments mode is off, and it does not pass `--force` |
 | Rules fragment library (ctx add / list / rm, fragments mode) | Stable | Backward compatible in 0.x |
 | Skill governance pins (skill pins, skills: policy) | Stable | Backward compatible in 0.x |
 | Model preferences (model_preferences: block, projection rewrite) | Stable | Backward compatible in 0.x |
-| Model routing policy (`gridctl models`) | Removed, Unreleased | See the [changelog](../CHANGELOG.md). `model_preferences:` is unrelated and unchanged |
-| Outbound MCP-to-A2A adapter | Experimental, Unreleased | Off by default. A2A 1.0/0.3 JSON-RPC, mandatory card-byte trust, and secret context/task capabilities. Absolute 24-hour expiry; replacement/restart invalidates handles, with no recovery by label or history. Shared-agent memory remains a downstream trust boundary. See [A2A configuration](config-schema.md#a2a) |
-| Distributed tracing | Stable | Unreleased gateway name/attribute and error sanitation masks recognizable typed capability strings before recording or export. See [diagnostic migration](usage-observability.md#diagnostic-privacy-and-migration) |
+| Model routing policy (`gridctl models`) | Removed in v1.0.0-rc.2 | See the [changelog](../CHANGELOG.md). `model_preferences:` is unrelated and unchanged |
+| Outbound MCP-to-A2A adapter | Experimental | Included in v1.0.0-rc.2, off by default. A2A 1.0/0.3 JSON-RPC, mandatory card-byte trust, and secret context/task capabilities. Absolute 24-hour expiry; replacement/restart invalidates handles, with no recovery by label or history. Shared-agent memory remains a downstream trust boundary. See [A2A configuration](config-schema.md#a2a) |
+| Distributed tracing | Stable | Gateway name/attribute and error sanitation, included in v1.0.0-rc.2, masks recognizable typed capability strings before recording or export. See [diagnostic migration](usage-observability.md#diagnostic-privacy-and-migration) |
 | Usage observability (token metrics, optimize) | Stable | Backward compatible in 0.x |
-| Persisted run records (`gridctl runs`, `GET /api/runs`, Runs tab) | Implemented, Unreleased | Opt-in metadata-only final dispositions. Best-effort, not a complete audit trail. Wipe is not secure erasure. See [Usage Observability](usage-observability.md#run-records) |
+| Persisted run records (`gridctl runs`, `GET /api/runs`, Runs tab) | Implemented | Included in v1.0.0-rc.2. Opt-in metadata-only final dispositions. Best-effort, not a complete audit trail. Wipe is not secure erasure. See [Usage Observability](usage-observability.md#run-records) |
 | Telemetry persistence | Stable | Backward compatible in 0.x |
-| Capability and sensitive-call primitives | Implemented, Unreleased | Internal shared accounting and generation lifecycle used by the A2A adapter, with payload-free observations and local usage estimates. No store tuning option. Diagnostic-output changes require maintainer-owned major-release scheduling under Article VIII. See [primitives](capability-primitives.md) |
+| Capability and sensitive-call primitives | Implemented | Included in v1.0.0-rc.2. Internal shared accounting and generation lifecycle used by the A2A adapter, with payload-free observations and local usage estimates. No store tuning option. Diagnostic-output changes are a breaking change under Article VIII. See [primitives](capability-primitives.md) |
 | Server catalog (search, add) | Stable | Backward compatible in 0.x |
-| Live tool invocation (`gridctl call`, `gridctl tools search`, `POST /api/tools/call`, `GET /api/tools/discover`) | Implemented, Unreleased | Talks to a selected running gateway. Default caller label `cli`; `--as` is not credential-bound authorization. REST success is not upstream MCP handshake proof. See [Live tools](cli-reference.md#live-tools) |
-| Client config import (import) | Stable | Unreleased `--kind` composes server, skill, agent, and context import for one client. Omitting `--kind`, or passing `servers`, keeps the previous output and exit codes. Context is never overwritten, and a fragments-mode home is not adopted into. Project-scope discovery for seven clients adds a `Sources:` block (including under `--scope user`) and optional JSON origin fields. Project and local placeholders are replaced with a project directory, so the imported command is machine-specific. A non-OpenCode working directory at project or local scope is skipped. OpenCode native-array import still changes text diagnostics, and disabled servers and working directories are skipped on every OpenCode shape. Stack schema is unchanged. The project-scope output change still requires maintainer-owned major-release scheduling under Article VIII. `--kind` itself is additive and does not. |
+| Live tool invocation (`gridctl call`, `gridctl tools search`, `POST /api/tools/call`, `GET /api/tools/discover`) | Implemented | Included in v1.0.0-rc.2. Talks to a selected running gateway. Default caller label `cli`; `--as` is not credential-bound authorization. REST success is not upstream MCP handshake proof. See [Live tools](cli-reference.md#live-tools) |
+| Client config import (import) | Stable | `--kind`, included in v1.0.0-rc.2, composes server, skill, agent, and context import for one client. Omitting `--kind`, or passing `servers`, keeps the previous output and exit codes. Context is never overwritten, and a fragments-mode home is not adopted into. Project-scope discovery for seven clients adds a `Sources:` block (including under `--scope user`) and optional JSON origin fields. Project and local placeholders are replaced with a project directory, so the imported command is machine-specific. A non-OpenCode working directory at project or local scope is skipped. OpenCode native-array import still changes text diagnostics, and disabled servers and working directories are skipped on every OpenCode shape. Stack schema is unchanged. The project-scope output change is a breaking change under Article VIII, included in v1.0.0-rc.2. `--kind` itself is additive and does not. |
 | Machine reset (`gridctl reset`, reset REST + web UI dialog) | Stable | Backward compatible in 0.x |
 | Home directory override (`GRIDCTL_HOME`, `--home`) | Stable | Backward compatible in 0.x |
 | MCP protocol generation dual-stack (handshake + 2026-07-28 stateless) | Stable | Both generations served and auto-negotiated per client and per server |
-| Downstream prompt and resource aggregation | Implemented, Unreleased | Registry skill names, URIs, and skill-policy visibility are unchanged. Handshake-era `resources/read` not-found is `-32002` with `data.uri` instead of `-32603`; stateless not-found stays `-32602`. See [POST /mcp](api-reference.md#post-mcp) |
+| Downstream prompt and resource aggregation | Implemented | Included in v1.0.0-rc.2. Registry skill names, URIs, and skill-policy visibility are unchanged. Handshake-era `resources/read` not-found is `-32002` with `data.uri` instead of `-32603`; stateless not-found stays `-32602`. See [POST /mcp](api-reference.md#post-mcp) |
 | Declarative client linking (`link:`) | Stable | Backward compatible in 0.x |
 | Wiring ownership (link / unlink recording, project) | Stable | Backward compatible in 0.x |
 | Downstream OAuth brokering (auth) | Stable | Backward compatible in 0.x |
@@ -75,7 +75,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 | Go plugin skill loader | Removed in v0.1.x | Replaced by prompt-only skills |
 | Agent IDE (`gridctl agent dev`) | Removed in v0.1.x | Use the Library workspace instead |
 | Multi-agent orchestrator (A2A) | Removed in v0.1.x | Use an external agent runtime (LangGraph, CrewAI, AutoGen, OpenAI Agents SDK) over gridctl as the MCP gateway |
-| Agent IDE JSONL run ledger + resume | Removed in v0.1.x | Distinct from Unreleased metadata-only dispatch records above |
+| Agent IDE JSONL run ledger + resume | Removed in v0.1.x | Distinct from metadata-only dispatch records included in v1.0.0-rc.2 |
 | LLM provider abstraction | Removed in v0.1.x | Was internal to the playground |
 
 ## Known limitations
@@ -98,7 +98,7 @@ Release baseline: **v1.0.0-rc.1**, with Unreleased changes explicitly marked bel
 - Global context sync covers 12 of 16 linkable clients; Claude Desktop, Cursor, AnythingLLM, and LM Studio expose no writable global context file, and Windsurf caps `global_rules.md` at 6,000 characters.
 - Antigravity's skills and global-context paths rest on unofficial sourcing rather than published documentation. Those targets are marked `unofficial` in `ctx status` and `skill project status`; the projection itself is supported, but the path may move without an upstream release note.
 - Web UI requires a modern browser (no IE11 support).
-- Unreleased browser authentication supports Bearer and API-key modes with browser-supported custom headers. Credentials remain readable by origin scripts in localStorage; storage failure requires re-entry after refresh or in new detached windows. Requests refuse redirects. See [browser credentials](config-schema.md#browser-credentials).
+- Browser authentication, included in v1.0.0-rc.2, supports Bearer and API-key modes with browser-supported custom headers. Credentials remain readable by origin scripts in localStorage; storage failure requires re-entry after refresh or in new detached windows. Requests refuse redirects. See [browser credentials](config-schema.md#browser-credentials).
 
 ---
 

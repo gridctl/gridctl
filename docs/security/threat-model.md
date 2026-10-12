@@ -10,23 +10,23 @@ For operator setup and review workflows, use the [Practical Security Guide](prac
 
 Reviewed on September 10, 2026, against source revision [`569e1126c2283c4f8f9c82447439355b4dea1934`](https://github.com/gridctl/gridctl/tree/569e1126c2283c4f8f9c82447439355b4dea1934). Source and test links below identify the implementation evidence; use that revision when reproducing this snapshot. Test coverage establishes specific behavior, not the absence of other vulnerabilities.
 
-Authentication lifecycle evidence was updated on September 12, 2026, against source revision `b903bf373480cd7d3cb4328166da17de09c59ddf`. The lifecycle controls below are implemented in this checkout and Unreleased; this is not evidence of merge or publication. Release claims retain the original baseline.
+Authentication lifecycle evidence was updated on September 12, 2026, against source revision `b903bf373480cd7d3cb4328166da17de09c59ddf`. The lifecycle controls below are included in v1.0.0-rc.2. That September evidence is not itself the release publication.
 
-Execution evidence was updated on September 12, 2026, against implementation commit `1465e1c` and documentation commit `8d4bd26`. These opt-in controls are implemented and Unreleased. Local Docker and process checks are recorded; required positive rootless Podman acceptance remains pending the hosted real-runtime gate. This does not establish cross-runtime acceptance, merge approval, or release readiness.
+Execution evidence was updated on September 12, 2026, against implementation commit `1465e1c` and documentation commit `8d4bd26`. These opt-in controls are included in v1.0.0-rc.2. Local Docker and process checks are recorded; required positive rootless Podman acceptance remains pending the hosted real-runtime gate. This does not establish cross-runtime acceptance.
 
-Security evidence reports were updated on September 13, 2026, against implementation commit `6e84a36`. `gridctl doctor --security`, `GET /api/security-report`, and existing-panel UI are implemented and Unreleased. Exit zero is not a secure verdict. This does not establish merge approval or release readiness.
+Security evidence reports were updated on September 13, 2026, against implementation commit `6e84a36`. `gridctl doctor --security`, `GET /api/security-report`, and existing-panel UI are included in v1.0.0-rc.2. Exit zero is not a secure verdict.
 
-Python MCP runtime image evidence was updated on September 16, 2026, against implementation commits `420d8a5` and `ba9fd55`. The recipe, derivatives, and dedicated OCI workflow are implemented and Unreleased. Hosted amd64/arm64 acceptance, candidate publication, and anonymous evidence remain pending. This is not a supported public release.
+Python MCP runtime image evidence was updated on September 16, 2026, against implementation commits `420d8a5` and `ba9fd55`. The recipe, derivatives, and dedicated OCI workflow are included in v1.0.0-rc.2. Hosted amd64/arm64 acceptance, candidate publication, and anonymous evidence remain pending. This is not a supported public image.
 
 Capability and diagnostic privacy evidence was updated on September 18, 2026,
 against implementation commit `f9a198b`. The shared authority store and
-sensitive-observation primitives are internal and Unreleased, with no capability
-tuning option. Diagnostic-output changes require maintainer-owned
-major-release scheduling under Article VIII; this is not release approval.
+sensitive-observation primitives are internal and included in v1.0.0-rc.2, with no capability
+tuning option. Diagnostic-output changes are a breaking change under Article VIII,
+included in v1.0.0-rc.2.
 
 A2A wire and card-trust evidence was updated on September 18, 2026, against
 implementation commits `7331b9f` and `a1090f8`; outbound adapter evidence was
-updated against `e16549e`. The Unreleased adapter uses these controls for MCP
+updated against `e16549e`. The adapter, included in v1.0.0-rc.2, uses these controls for MCP
 calls. It remains experimental and off by default. Real HTTP fixtures do not establish hosted-agent compatibility or
 downstream shared-memory isolation.
 
@@ -39,12 +39,12 @@ isolation or general hosted compatibility.
 
 | State | Evidence at this baseline |
 |-------|---------------------------|
-| Released as a prerelease | [`v1.0.0-rc.1`](https://github.com/gridctl/gridctl/releases/tag/v1.0.0-rc.1), published September 10, 2026, points to `2f6c00472c33304bcc560ecbe4be18497ec15c2e`. It contains grouped-route authentication, non-resolving stack export, reserved internal-credential filtering, scoped variable delivery, skill package completeness tracking, and authenticated binary-release tooling. The runtime controls credited at the original baseline are present in that tag; the Unreleased lifecycle additions are separate. |
-| Merged but unreleased | Changes after that tag include dependency and Actions updates, a read-only tap authentication diagnostic, and a macOS-only declarative replacement for the deprecated Homebrew quarantine-removal hook. Do not infer those changes are in the published archives. |
-| Implemented, Unreleased | [Gateway auth lifecycle and browser parity #1228](https://github.com/gridctl/gridctl/issues/1228): restart-required security preflight and verified browser credentials, described below. Major-release scheduling/policy resolution under Articles VIII/IX remains required before merge. |
-| Implemented, Unreleased | [Execution hardening #1221](https://github.com/gridctl/gridctl/issues/1221): per-container admission/evidence and local-process hygiene. Required Podman acceptance and maintainer-owned major-release scheduling remain outstanding. |
-| Implemented, Unreleased | [Passive security evidence reports #1224](https://github.com/gridctl/gridctl/issues/1224): `gridctl doctor --security`, `GET /api/security-report`, and existing-panel UI. Collection is value-free and does not scan, probe, or mutate. Exit zero is not a secure verdict. |
-| Implemented, Unreleased | [Python MCP runtime base #1230](https://github.com/gridctl/gridctl/issues/1230): recipe, derivatives, and dedicated OCI workflow. Hosted architecture tests, candidate publication, and anonymous evidence remain outstanding. Not a published supported image. |
+| Released as a prerelease | [`v1.0.0-rc.1`](https://github.com/gridctl/gridctl/releases/tag/v1.0.0-rc.1), published September 10, 2026, points to `2f6c00472c33304bcc560ecbe4be18497ec15c2e`. It contains grouped-route authentication, non-resolving stack export, reserved internal-credential filtering, scoped variable delivery, skill package completeness tracking, and authenticated binary-release tooling. The runtime controls credited at the original baseline are present in that tag; later lifecycle additions are not in that tag. |
+| Included in v1.0.0-rc.2 | Changes after v1.0.0-rc.1, including dependency and Actions updates, a read-only tap authentication diagnostic, and a macOS-only declarative replacement for the deprecated Homebrew quarantine-removal hook. Those changes are not in the v1.0.0-rc.1 archives. |
+| Included in v1.0.0-rc.2 | [Gateway auth lifecycle and browser parity #1228](https://github.com/gridctl/gridctl/issues/1228): restart-required security preflight and verified browser credentials, described below. This is a breaking change under Articles VIII and IX. |
+| Included in v1.0.0-rc.2 | [Execution hardening #1221](https://github.com/gridctl/gridctl/issues/1221): per-container admission/evidence and local-process hygiene. Required Podman acceptance remains outstanding. Status output changes are a breaking change under Article VIII. |
+| Included in v1.0.0-rc.2 | [Passive security evidence reports #1224](https://github.com/gridctl/gridctl/issues/1224): `gridctl doctor --security`, `GET /api/security-report`, and existing-panel UI. Collection is value-free and does not scan, probe, or mutate. Exit zero is not a secure verdict. |
+| Included in v1.0.0-rc.2 | [Python MCP runtime base #1230](https://github.com/gridctl/gridctl/issues/1230): recipe, derivatives, and dedicated OCI workflow. Hosted architecture tests, candidate publication, and anonymous evidence remain outstanding. Not a published supported image. |
 
 The published `v1.0.0-rc.1` notes explicitly identify it as the first provenance-covered production release under the release policy, while GitHub marks it as a prerelease. Its asset list includes `provenance.sigstore.json`, the inventory index, and per-archive inventories. That is release-specific evidence, not a cryptographic verification of the reader's downloaded bytes. Follow [Release Verification](../release-verification.md) before installing those bytes. Earlier releases and local builds are outside that coverage.
 

@@ -37,7 +37,7 @@ Each skill has a lifecycle state:
 
 Agents have no lifecycle state; they project to clients via `gridctl skill project sync --kind agent`. Skill documents are also pinned trust-on-first-use (`gridctl skill pins`), so later content changes surface as reviewable drift.
 
-Skills are not declared in stack YAML. They enter the registry through `gridctl skill add` (a git repo, or an Unreleased local directory), Unreleased `gridctl skill import`, Unreleased `gridctl import <client> --kind all`, a pack, the Library workspace, or the REST API.
+Skills are not declared in stack YAML. They enter the registry through `gridctl skill add` (a git repo or a local directory), `gridctl skill import`, `gridctl import <client> --kind all`, a pack, the Library workspace, or the REST API. Local-directory import, client-home import, and `--kind` are included in v1.0.0-rc.2.
 
 ## Skill Sources
 
@@ -68,7 +68,7 @@ task mock:servers
 
 ## Quick Start
 
-Unreleased local-directory import is active by default. This example imports a draft first, then starts the gateway so it loads that draft before `gridctl activate` promotes it. The example skill's frontmatter name is `code-review`.
+Local-directory import, included in v1.0.0-rc.2, is active by default. This example imports a draft first, then starts the gateway so it loads that draft before `gridctl activate` promotes it. The example skill's frontmatter name is `code-review`.
 
 ```bash
 gridctl skill add examples/registry/items/code-review --no-activate
