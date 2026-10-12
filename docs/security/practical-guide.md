@@ -10,15 +10,15 @@ Initial guide revision: September 15, 2026, reviewed against source commit [`a14
 
 Diagnostic privacy guidance was updated on September 18, 2026, against
 implementation commit `f9a198b`. Capability sanitation and sensitive-observation
-primitives are implemented and Unreleased; this does not establish publication
-or approve the required major-release scheduling for diagnostic-output changes.
+primitives are included in v1.0.0-rc.2. Diagnostic-output changes in that
+release are breaking under Article VIII.
 
 The finite baseline covers installation, listener access, workload authority, secrets, content review, diagnostic privacy, and declaration checks implemented at that revision. It does not wait for every roadmap feature. Check `gridctl version`, the [changelog](../../CHANGELOG.md), and your release's documentation before using a command below.
 
 | Availability at this baseline | Capabilities |
 |---|---|
 | Included in `v1.0.0-rc.1` | Grouped-route authentication, non-resolving stack export, scoped variable delivery, internal-credential filtering, and authenticated binary-release tooling |
-| Implemented after that tag; marked Unreleased | Restart-required authentication preflight and browser credential verification, opt-in execution profiles, passive security evidence reports, mutable-reference diagnostics, offline declaration policy, opt-in persisted run records, live CLI/REST tool invocation, and the Python MCP runtime base recipe |
+| Included in v1.0.0-rc.2 | Restart-required authentication preflight and browser credential verification, opt-in execution profiles, passive security evidence reports, mutable-reference diagnostics, offline declaration policy, opt-in persisted run records, live CLI/REST tool invocation, and the Python MCP runtime base recipe |
 | Outside this baseline | A published, supported Gridctl Python MCP runtime image. This guide provides no GHCR tags or pull commands for that image. See [Python MCP runtime base](../mcp-runtime-python.md). |
 
 Implementation in a checkout does not establish release publication or runtime support. Follow the [execution support requirements](../execution.md#evidence-and-lifecycle) for your actual host and daemon.
@@ -62,7 +62,7 @@ Host validation helps defend loopback arrivals against DNS rebinding. CORS contr
 
 ### Change credentials through a process restart
 
-In the Unreleased lifecycle implementation, authentication, bind, Host/Origin allowlists, and the insecure override are fixed at startup. A `restart_required` response rejects the entire reload, including ordinary edits submitted with the security change. Saved YAML can differ from live settings; repeated reloads do not activate the new token.
+In the v1.0.0-rc.2 lifecycle implementation, authentication, bind, Host/Origin allowlists, and the insecure override are fixed at startup. A `restart_required` response rejects the entire reload, including ordinary edits submitted with the security change. Saved YAML can differ from live settings; repeated reloads do not activate the new token.
 
 Follow [restart recovery](../troubleshooting.md#gateway-security-requires-a-restart) with the original startup options. Verify the new credential works and the old credential is rejected after restarting. Applying while the old daemon is still running is not a process restart.
 
@@ -72,7 +72,7 @@ The CLI's daemon state contains the resolved token in a `0600` file. Browser cre
 
 Review the server's executable or image, credentials, writable state, network destinations, and exposed tools before applying a stack. Per-server tool lists, groups, and client policies reduce the tool surface. Client names and selectors are self-declared, so they are not authenticated user identities. `gridctl call --as` and the REST `client` field are the same kind of label: they select a configured profile and do not authenticate as that client. Rate limits are opt-in call-rate controls, not workload memory or CPU limits.
 
-Execution profiles are Unreleased at this baseline. Omitting `execution` preserves compatibility behavior. Read the [execution guide](../execution.md) before selecting a profile:
+Execution profiles are included in v1.0.0-rc.2. Omitting `execution` preserves compatibility behavior. Read the [execution guide](../execution.md) before selecting a profile:
 
 | Server type | Operator choice | What to verify |
 |---|---|---|
@@ -86,7 +86,7 @@ A saved declaration, successful container creation, or healthy MCP connection do
 
 ### Experimental remote A2A agents
 
-The Unreleased [A2A adapter](../config-schema.md#a2a) is off by default. Review
+The [A2A adapter](../config-schema.md#a2a), included in v1.0.0-rc.2, is off by default. Review
 the Agent Card destination and any explicit RPC endpoint before enabling it.
 Card-byte drift blocks calls even when ordinary schema pinning is disabled or
 set to warn. Review the complete pin diff and use hash-bound approval; approval
@@ -128,7 +128,7 @@ Review a skill or pack's supporting scripts, agents, rules, and wiring before im
 
 ## Use diagnostics without overstating their evidence
 
-The following checks are implemented but Unreleased at this baseline. Use the matching local build or a release that includes them.
+The following checks are included in v1.0.0-rc.2. Use that release, or a later one, when running them.
 
 | Check | Useful result | Boundary |
 |---|---|---|

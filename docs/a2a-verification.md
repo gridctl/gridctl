@@ -2,9 +2,8 @@
 
 The experimental [outbound A2A adapter](config-schema.md#a2a) has a completed
 real-agent rehearsal on September 21, 2026. Final acceptance of the phase-four
-PR head remains pending. This record does not establish release readiness or
-general hosted-agent compatibility. The feature remains Unreleased and off by
-default.
+PR head remains pending. This record does not establish general hosted-agent
+compatibility. The feature ships in v1.0.0-rc.2 and is off by default.
 
 ## Evidence identity
 

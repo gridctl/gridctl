@@ -34,7 +34,7 @@ Wiring is the gateway entry `gridctl link` writes into a client MCP config, with
 
 ## Registry
 
-The registry is the local store at `~/.gridctl/registry/` for skills and agents, and it is not declared in stack YAML. Skills enter through `gridctl skill add` (a git repo, or an Unreleased local directory), `gridctl skill import` (Unreleased), `gridctl import <client> --kind all` (Unreleased), a pack, the Library workspace, or the REST API; `~/.gridctl/skills.yaml` is a display list only, and `gridctl skill update` does not read it ([Skills](skills.md), [Skill sources](config-schema.md#skill-sources)).
+The registry is the local store at `~/.gridctl/registry/` for skills and agents, and it is not declared in stack YAML. Skills enter through `gridctl skill add` (a git repo, or a local directory), `gridctl skill import`, `gridctl import <client> --kind all`, a pack, the Library workspace, or the REST API; local-directory import, client-home import, and `--kind` are included in v1.0.0-rc.2. `~/.gridctl/skills.yaml` is a display list only, and `gridctl skill update` does not read it ([Skills](skills.md), [Skill sources](config-schema.md#skill-sources)).
 
 ## Projection
 

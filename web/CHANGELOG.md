@@ -61,7 +61,7 @@ All notable changes to gridctl will be documented in this file.
   routes support re-entry without replaying mutations (#1228).
 - Surface `restart_required` and saved-file recovery for reload and initialization
   instead of treating every conflict as an already-loaded stack. See the root
-  changelog's Unreleased breaking-change and major-release requirements (#1228).
+  changelog's 1.0.0-rc.2 breaking-change notes (#1228).
 
 - Remove duplicate v prefix from gateway node version display
 - Prevent selection glow bleedthrough on agent badges

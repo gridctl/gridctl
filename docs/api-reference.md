@@ -1400,7 +1400,7 @@ Nonempty inline credentials in gateway auth, downstream token/value/client-secre
 
 This policy does not detect arbitrary secrets in command arguments, encoded text, free-form strings, URL queries, or literal portions of mixed reference/literal strings. Review those before sharing. It never creates variables or rewrites the source. Recipients may need to supply variables and referenced files.
 
-This is a breaking security correction under Article VIII and must not ship in a patch or minor release. Migrate inline credentials to authored references without literal defaults, and supply their values separately. There is no resolved-export fallback. See [CLI export semantics](cli-reference.md#export-semantics) for inheritance and file behavior.
+This breaking security correction is included in v1.0.0-rc.1, with a major-version increment under Article VIII. Migrate inline credentials to authored references without literal defaults, and supply their values separately. There is no resolved-export fallback. See [CLI export semantics](cli-reference.md#export-semantics) for inheritance and file behavior.
 
 With no stack file configured, the endpoint returns HTTP 503 and `{"error":"No stack file configured"}`. Success returns YAML inside JSON; there is no format parameter or `skills.yaml` sidecar. The browser downloads that YAML as `stack.yaml` and disables Export YAML while the request is pending.
 

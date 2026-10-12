@@ -1,7 +1,7 @@
 # Outbound A2A
 
 `stack.yaml` exposes a remote A2A agent as MCP tools. This experimental,
-Unreleased adapter is off by default; the example enables `experimental.a2a`.
+The adapter, included in v1.0.0-rc.2, is off by default; the example enables `experimental.a2a`.
 It supports A2A 1.0 and 0.3 JSON-RPC without Docker or Podman.
 
 ## Setup
