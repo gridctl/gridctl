@@ -4,6 +4,8 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.0-rc.2] - 2026-10-12
+
 ### Removed
 
 - **Breaking (Experimental):** `gridctl models` and its subcommands (`init`, `edit`, `validate`, `render`, `sync`, `status`, `ack-restart`, `adopt`, `unsync`) are removed, along with the Model routing dialog, the `/api/project/models/{status,validate,sync,adopt,ack-restart}` routes, the `models` lockfile kind, and the `litellm-contract` Gatekeeper job. `model_preferences:`, the Library model chips, and the gateway's MCP tool router are unchanged. Synced LiteLLM and OpenCode files keep working, because gridctl was never on the inference path. The surface was Experimental and shipped only in the `1.0.0` release candidate. The removal is breaking under Article VIII; the release vehicle is the maintainer's decision. Before upgrading, run `gridctl models unsync` on the previous release (`--force` for hand-edited targets). Afterwards, remove the `include:` line, delete `gridctl-models.yaml`, remove the `provider.<id>` subtree from `opencode.json`, delete `~/.gridctl/models/`, and optionally delete `kind: models` entries from `~/.gridctl/project.lock.yaml` (they are otherwise inert). `gridctl reset` no longer removes those targets. `--purge` deletes the policy and the lockfile, but not the LiteLLM or OpenCode files. See [Cleaning up a removed model routing policy](docs/troubleshooting.md#cleaning-up-a-removed-model-routing-policy).
