@@ -4,6 +4,10 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- `gridctl plan` and `GET /api/stack/plan` compare the stack file against the configuration the daemon loaded, so an in-place edit is reported instead of `No changes`. `GET /api/stack/health` derives its drift block from that comparison, and the spec-mode overlay follows it. The status-bar badge still shows validation only. Planning the daemon's own file now exits nonzero when the daemon is running but does not answer, instead of printing `No changes`. Store-backed `image`, `url`, and `network` changes are reported as `image changed`, `url changed`, and `network changed`, without values. Under Article VIII, the corrected plan output and the nonzero exit are behavior changes. Schedule them for a maintainer-owned major release, not a patch or minor release. Callers that treated an in-place edit as up to date, or an unreachable daemon as success, should read the diff and the nonzero exit (#1373).
+
 ## [1.0.0-rc.2] - 2026-10-12
 
 ### Removed
@@ -54,7 +58,6 @@ All notable changes to gridctl will be documented in this file.
 
 ### Bug Fixes
 
-- `gridctl plan` and `GET /api/stack/plan` compare the stack file against the configuration the daemon loaded, so an in-place edit is reported instead of `No changes`. `GET /api/stack/health` derives its drift block from that comparison, and the spec-mode overlay follows it. The status-bar badge still shows validation only. Planning the daemon's own file now exits nonzero when the daemon is running but does not answer, instead of printing `No changes`. Store-backed `image`, `url`, and `network` changes are reported as `image changed`, `url changed`, and `network changed`, without values. Under Article VIII, the corrected plan output and the nonzero exit are behavior changes. Schedule them for a maintainer-owned major release, not a patch or minor release. Callers that treated an in-place edit as up to date, or an unreachable daemon as success, should read the diff and the nonzero exit (#1373).
 - Reuse an existing container when the engine expands a Docker Hub image name, such as `alpine:latest` to `docker.io/library/alpine:latest`. A different registry, tag, or digest still replaces the container. An execution revision still replaces it.
 - Build with Go 1.26.9 and golang.org/x/net v0.60.0 so govulncheck no longer reports 13 symbol-reachable findings in Go 1.26.6 and x/net v0.59.0 (GO-2026-6599, GO-2026-6600, GO-2026-6603, GO-2026-6604, GO-2026-6605, GO-2026-6607, GO-2026-6608, GO-2026-6609, GO-2026-6610, GO-2026-6611, GO-2026-6612, GO-2026-6613, and GO-2026-6617). The language version stays 1.26.0. Suppressed Docker client findings are unchanged.
 - Answer server requests on HTTP and SSE POST streams and return the response that matches the call, instead of treating the first event with an id as the result. A handshake-generation `ping` is answered with an empty result; every other handshake-generation server request gets `-32601 Method not found`. Notifications stay a DEBUG `server notification skipped` line and do not change the result. The call returns when its own response arrives, even if the server leaves the stream open. The reply POST is closed without reading its body, so an event-stream answer cannot stall the call or replace the session. A failed reply is logged and does not fail the call. A stateless server request is logged and not answered. Stdio, local process, OpenAPI, and A2A are unchanged. Unsolicited server requests on the GET listener stream, keepalive pings included, are still unhandled (#1327).
