@@ -29,7 +29,7 @@ Release baseline: **v1.0.0-rc.2** (see [CHANGELOG.md](../CHANGELOG.md) for relea
 | Output format conversion | Stable | Backward compatible in 0.x |
 | Token usage metrics | Stable | Backward compatible in 0.x |
 | Stack validation (validate) | Stable | Backward compatible in 0.x. Opt-in `--check-mutable-refs`, included in v1.0.0-rc.2, is CLI-only and does not change default validate, REST, health, or apply. Opt-in `--policy`, included in v1.0.0-rc.2, is a separate offline declaration evaluator; ordinary validate, apply, REST, and reload stay unchanged |
-| Stack planning (plan) | Stable | Backward compatible in 0.x |
+| Stack planning (plan) | Stable | Backward compatible in 0.x. An unreleased correction compares an in-place edit with the configuration the daemon loaded, and planning that daemon's own file exits nonzero when the daemon does not answer. Those are behavior changes under Article VIII. Schedule them for a maintainer-owned major release, not a patch or minor release. Plan JSON field names are unchanged |
 | Static replicas | Stable | Backward compatible in 0.x |
 | Reactive autoscaling | Stable | Backward compatible in 0.x |
 | Code mode | Stable | Failure logs included in v1.0.0-rc.2 use local categories without source excerpts or thrown values; caller-delivered errors remain available. This is a breaking diagnostic-output change under Article VIII. See [diagnostic migration](usage-observability.md#diagnostic-privacy-and-migration) |

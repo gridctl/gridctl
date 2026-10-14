@@ -176,6 +176,8 @@ pkg/reload/         Stack hot-reload (file watcher + diff-and-apply path). secur
                     Accepted execution transitions retire old routes before source preparation; failed replacement retains
                     desired intent, and execution-only recreation preserves schema pins, including combined pool tuning.
                     A2A edits and removal preserve card pins; external-source handling skips container operations.
+                    Handler.Plan compares the stack file with the loaded configuration and does not apply, preflight,
+                    or serialize resolved values.
 pkg/controller/     Application composition root: builds the gateway, mounts the API server, embedded UI, and MCP transports
                     (gateway_builder.go), and owns deploy/daemonize orchestration for `gridctl apply` and `gridctl serve`.
                     Supplies the startup security snapshot and installs manual reload independently of --watch.
