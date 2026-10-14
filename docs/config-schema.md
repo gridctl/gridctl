@@ -728,7 +728,7 @@ In the web wizard, the OpenAPI Configuration section's Operations Filter loads t
 | `openapi` | object | Conditional | - | OpenAPI spec config (see [OpenAPI](#openapi)) |
 | `a2a` | object | Conditional | - | Experimental outbound Agent Card adapter (see [A2A](#a2a)); requires `experimental.a2a` |
 | `auth` | object | No | - | External-server authentication: `type: bearer`, `header`, or `oauth` (see [External Server Authentication](#external-server-authentication)). URL servers only |
-| `tools` | []string | No | - | Tool whitelist. Empty exposes all tools. The web wizard populates this from the live stack for running servers, and offers an optional probe of external-URL servers to discover their tools before deploy. Container / stdio / local-process / SSH servers are curated from the Stack sidebar after deploy; OpenAPI servers are curated before deploy with the wizard's Operations Filter (see [OpenAPI](#openapi-server)). Editable live from the Stack sidebar's Tools editor - `PUT /api/mcp-servers/{name}/tools` rewrites this field atomically and triggers a hot reload |
+| `tools` | []string | No | - | Tool whitelist. Empty exposes all tools. Hidden tools are rejected on `tools/call` with the same error as an unknown tool. The web wizard populates this from the live stack for running servers, and offers an optional probe of external-URL servers to discover their tools before deploy. Container / stdio / local-process / SSH servers are curated from the Stack sidebar after deploy; OpenAPI servers are curated before deploy with the wizard's Operations Filter (see [OpenAPI](#openapi-server)). Editable live from the Stack sidebar's Tools editor - `PUT /api/mcp-servers/{name}/tools` rewrites this field atomically and triggers a hot reload |
 | `output_format` | string | No | - | Output format override: `"json"`, `"toon"`, `"csv"`, or `"text"`. Overrides `gateway.output_format` for this server |
 | `pin_schemas` | bool | No | - | Override tool schema pinning for this server. `false` disables tool pinning; `true` requires the global verifier to be enabled. Omit to inherit from `gateway.security.schema_pinning.enabled`. Mandatory A2A card trust is independent |
 | `ready_timeout` | duration | No | `30s` | Readiness wait for container-based HTTP/SSE servers. Accepts any `time.Duration` string (e.g. `"60s"`, `"2m"`). When a container does not become ready within this window, the container is stopped and removed; re-provisioning it requires a reload or re-apply (the automatic registration retry loop covers external, local process, SSH, OpenAPI, and stdio servers, but cannot respawn a removed container). Ignored for stdio, external, local process, SSH, and OpenAPI servers, which always use the 30s default; a server unreachable past that window is retried automatically once it comes up |
@@ -1334,7 +1334,8 @@ clients:
 | `profiles.<id>.aliases` | []string | No | - | Raw `clientInfo.name` values that resolve to this profile |
 
 A profile's effective scope is the intersection of its `servers:` and `tools:`
-allow-lists with each server's own `tools:` whitelist. A profile with neither
+allow-lists with each server's own `tools:` whitelist, for both `tools/list`
+and `tools/call`. A profile with neither
 `servers:` nor `tools:` is listed but unrestricted (sees everything). Unknown
 server references (directly or via a tool prefix) fail config validation.
 
@@ -1376,9 +1377,10 @@ identity. Identity-based access control (IdP / OAuth / JWT) is out of scope.
 ### Scope coverage (v1)
 
 Tools are filtered by the intersection of the profile and each server's
-`tools:` whitelist. Downstream prompts and resources use the server-level
-rule above and are not filtered by that whitelist. Registry skill prompts
-and `skills://registry/` resources stay on the skill exposure policy only.
+`tools:` whitelist, for both `tools/list` and `tools/call`. Downstream prompts
+and resources use the server-level rule above and are not filtered by that
+whitelist. Registry skill prompts and `skills://registry/` resources stay on
+the skill exposure policy only.
 
 ### Reload semantics
 
