@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/reload"
 	"github.com/gridctl/gridctl/pkg/state"
 
 	"gopkg.in/yaml.v3"
@@ -245,7 +248,9 @@ func (s *Server) handleStackValidate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, result)
 }
 
-// handleStackPlan compares current spec against running state.
+// handleStackPlan compares the on-disk stack against the configuration the
+// daemon loaded, when a reload handler is present. Otherwise it compares the
+// file against the path recorded in daemon state.
 // GET /api/stack/plan
 func (s *Server) handleStackPlan(w http.ResponseWriter, r *http.Request) {
 	if s.stackFile == "" || s.stackName == "" {
@@ -253,17 +258,15 @@ func (s *Server) handleStackPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Load the current spec from the stack file
-	proposed, _, err := config.ValidateStackFile(s.stackFile)
+	diff, err := s.planAgainstRunning(r.Context())
 	if err != nil {
+		if errors.Is(err, reload.ErrNoStackLoaded) {
+			writeJSONError(w, "No stack is currently deployed", http.StatusServiceUnavailable)
+			return
+		}
 		writeJSONError(w, "Failed to load stack file: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	// Load the running state's spec
-	current := s.loadRunningSpec()
-
-	diff := config.ComputePlan(proposed, current)
 	writeJSON(w, diff)
 }
 
@@ -306,12 +309,12 @@ func (s *Server) handleStackHealth(w http.ResponseWriter, r *http.Request) {
 		health.Validation.Status = "valid"
 	}
 
-	// Drift status
+	// Drift status. With a reload handler this is the daemon's loaded
+	// configuration, not a second parse of the stack file. A failed
+	// comparison leaves drift unknown rather than reporting in-sync.
 	if s.stackName != "" {
-		proposed, _, loadErr := config.ValidateStackFile(s.stackFile)
-		if loadErr == nil {
-			current := s.loadRunningSpec()
-			diff := config.ComputePlan(proposed, current)
+		diff, planErr := s.planAgainstRunning(r.Context())
+		if planErr == nil && diff != nil {
 			if diff.HasChanges {
 				health.Drift.Status = "drifted"
 				for _, item := range diff.Items {
@@ -718,10 +721,24 @@ func (s *Server) handleStackAppend(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// loadRunningSpec returns the stack config that was loaded at deploy time.
-// Since the state file only stores the file path (not content), we use the
-// gateway's live status as the source of truth for what's actually running.
-// This returns a best-effort reconstruction from the state file's stack path.
+// planAgainstRunning compares the daemon's stack file with the configuration
+// it loaded. Without a reload handler it keeps the file-based comparison so
+// tests that construct a Server directly still pass. It does not fall back
+// to that parse when the handler is present but cannot plan.
+func (s *Server) planAgainstRunning(ctx context.Context) (*config.PlanDiff, error) {
+	if h := s.ReloadHandler(); h != nil {
+		return h.Plan(ctx)
+	}
+	proposed, _, err := config.ValidateStackFile(s.stackFile)
+	if err != nil {
+		return nil, err
+	}
+	return config.ComputePlan(proposed, s.loadRunningSpec()), nil
+}
+
+// loadRunningSpec parses the stack file recorded in the daemon state.
+// It does not read the gateway's live status. Plan and health no longer
+// rely on it when a reload handler is present; variable usage still does.
 func (s *Server) loadRunningSpec() *config.Stack {
 	st, err := state.Load(s.stackName)
 	if err != nil {
