@@ -1251,3 +1251,70 @@ func TestStreamableHTTPServer_ResourcesRead_NilParams(t *testing.T) {
 		t.Fatal("expected error for nil params on resources/read")
 	}
 }
+
+func TestStreamableHTTPServer_WhitelistHiddenToolIsInBandError(t *testing.T) {
+	g, c := newWhitelistGateway(t)
+	srv := NewStreamableHTTPServer(g, nil)
+
+	assertUnknown := func(t *testing.T, sessionID, name string) {
+		t.Helper()
+		before := len(c.called)
+		resp := streamablePost(t, srv, sessionID, "tools/call", map[string]any{
+			"name":      name,
+			"arguments": map[string]any{},
+		})
+		if resp.Error != nil {
+			t.Fatalf("%s: handshake must keep an in-band error, got %+v", name, resp.Error)
+		}
+		var result ToolCallResult
+		if err := json.Unmarshal(resp.Result, &result); err != nil {
+			t.Fatal(err)
+		}
+		if !result.IsError || len(result.Content) == 0 || result.Content[0].Text != "Error: unknown tool" {
+			t.Fatalf("%s result = %+v", name, result)
+		}
+		if len(c.called) != before {
+			t.Fatalf("%s reached downstream: %v", name, c.called)
+		}
+	}
+
+	sessionID := initializeStreamable(t, srv)
+	t.Run("hidden", func(t *testing.T) {
+		assertUnknown(t, sessionID, "alpha__read_secret")
+	})
+	t.Run("unknown server", func(t *testing.T) {
+		assertUnknown(t, sessionID, "missing__tool")
+	})
+	t.Run("unprefixed", func(t *testing.T) {
+		assertUnknown(t, sessionID, "notprefixed")
+	})
+
+	t.Run("group", func(t *testing.T) {
+		body, _ := json.Marshal(map[string]any{
+			"jsonrpc": "2.0",
+			"id":      1,
+			"method":  "initialize",
+			"params": map[string]any{
+				"protocolVersion": "2024-11-05",
+				"clientInfo":      map[string]any{"name": "test-client", "version": "1.0"},
+			},
+		})
+		req := loopbackRequest(http.MethodPost, "/groups/grp/mcp", bytes.NewReader(body))
+		req = req.WithContext(WithGroup(req.Context(), "grp"))
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("group initialize: %d %s", w.Code, w.Body.String())
+		}
+		groupSession := w.Header().Get("Mcp-Session-Id")
+		if groupSession == "" {
+			t.Fatal("group initialize missing session")
+		}
+		assertUnknown(t, groupSession, "alpha__read_secret")
+	})
+
+	t.Run("code mode on", func(t *testing.T) {
+		g.SetCodeMode(5 * time.Second)
+		assertUnknown(t, sessionID, "alpha__read_secret")
+	})
+}

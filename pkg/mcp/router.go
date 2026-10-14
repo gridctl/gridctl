@@ -19,6 +19,11 @@ type Router struct {
 	mu    sync.RWMutex
 	sets  map[string]*ReplicaSet // serverName -> replica set
 	tools map[string]string      // prefixedToolName -> serverName
+	// surfaceKnown is the set of servers whose filtered tool surface the
+	// last RefreshTools could answer from: a live replica, or a non-empty
+	// scale-to-zero cache. A server that has never presented either is
+	// absent, so a missing name is not yet proof the tool is hidden.
+	surfaceKnown map[string]struct{}
 
 	// Resource routing. Exact URIs win over the ui:// index, which wins
 	// over templates. Winners are the alphabetically first server.
@@ -69,6 +74,7 @@ func NewRouter() *Router {
 	return &Router{
 		sets:             make(map[string]*ReplicaSet),
 		tools:            make(map[string]string),
+		surfaceKnown:     make(map[string]struct{}),
 		resources:        make(map[string]string),
 		uiResources:      make(map[string]string),
 		serverURIs:       make(map[string][]string),
@@ -96,6 +102,10 @@ func (r *Router) AddReplicaSet(set *ReplicaSet) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.sets[set.Name()] = set
+	// The previous snapshot no longer describes this set. Leave the server
+	// unanswered until the next RefreshTools so a replacement is not
+	// rejected from stale absence.
+	delete(r.surfaceKnown, set.Name())
 }
 
 // SetOnChange installs the callback invoked after RefreshTools and
@@ -121,6 +131,7 @@ func (r *Router) fireOnChange() {
 func (r *Router) RemoveClient(name string) {
 	r.mu.Lock()
 	delete(r.sets, name)
+	delete(r.surfaceKnown, name)
 
 	// Remove tools for this server
 	for tool, server := range r.tools {
@@ -217,10 +228,18 @@ func (r *Router) RefreshTools() {
 	// Clear existing tool mappings
 	r.tools = make(map[string]string)
 	r.serverUI = make(map[string][]string)
+	r.surfaceKnown = make(map[string]struct{}, len(r.sets))
 
 	for name, set := range r.sets {
 		var ui []string
-		for _, tool := range toolsOf(set) {
+		tools := toolsOf(set)
+		// toolsOf may have just filled the cache from a live replica.
+		// An empty never-started set stays unknown so dispatch can still
+		// cold-start a visible tool.
+		if len(set.Replicas()) > 0 || len(set.CachedTools()) > 0 {
+			r.surfaceKnown[name] = struct{}{}
+		}
+		for _, tool := range tools {
 			prefixedName := PrefixTool(name, tool.Name)
 			r.tools[prefixedName] = name
 			ui = append(ui, uiResourceURIs(tool.Meta)...)
@@ -242,6 +261,26 @@ func (r *Router) HasTool(prefixedName string) bool {
 	defer r.mu.RUnlock()
 	_, ok := r.tools[prefixedName]
 	return ok
+}
+
+// toolExposure reports the last RefreshTools snapshot for a prefixed name.
+// registered is whether the server half is in the router. surfaceKnown is
+// whether that snapshot observed a filtered surface for the server (a live
+// replica, or a non-empty scale-to-zero cache). exposed is HasTool.
+// An unprefixed name is not registered and not exposed. A server that has
+// never presented a surface is registered but not surfaceKnown: absence
+// from the index is not yet proof the tool is hidden.
+func (r *Router) toolExposure(prefixedName string) (registered, surfaceKnown, exposed bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	_, exposed = r.tools[prefixedName]
+	server, _, err := ParsePrefixedTool(prefixedName)
+	if err != nil || server == "" {
+		return false, false, exposed
+	}
+	_, registered = r.sets[server]
+	_, surfaceKnown = r.surfaceKnown[server]
+	return registered, surfaceKnown, exposed
 }
 
 // projectTool copies definition fields the gateway must forward unchanged.
