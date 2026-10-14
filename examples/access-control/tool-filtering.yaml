@@ -3,8 +3,9 @@
 # Demonstrates server-level tool filtering:
 #
 # The `tools` field on an mcp-server whitelists which tools are exposed
-# to all clients through the gateway. Tools not in the list are never
-# loaded — they don't appear in tool listings and can't be called.
+# to all clients through the gateway. Tools not in the list are loaded
+# for the management UI's catalog, but they are absent from listings
+# and rejected on tools/call.
 #
 # Filtering prevents tool confusion (LLMs picking the wrong tool from
 # the wrong server) and reduces context window consumption.
@@ -25,9 +26,9 @@ mcp-servers:
     port: 8080
     command: ["sh", "-c", "while true; do sleep 3600; done"]
 
-  # Server-level filtering — only "read" and "list" are exposed
-  # Even if the underlying server supports "delete" or "modify",
-  # those tools never reach the gateway or the LLM client.
+  # Server-level filtering: only "read" and "list" are listed and callable.
+  # Even if the underlying server supports "delete" or "modify", those
+  # tools stay in the management catalog and are rejected on tools/call.
   - name: restricted-server
     image: alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
     port: 8081
