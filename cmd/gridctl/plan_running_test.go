@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/gridctl/gridctl/pkg/config"
@@ -21,9 +22,9 @@ func TestRunPlan_SamePathUsesDaemonPlan(t *testing.T) {
 	t.Setenv("GRIDCTL_HOME", t.TempDir())
 	path := writePlanStack(t, "name: plan-live\nmcp-servers:\n  - name: local-only\n    image: alpine\n    port: 3000\n")
 
-	var hits int
+	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hits++
+		hits.Add(1)
 		if r.URL.Path != "/api/stack/plan" {
 			http.NotFound(w, r)
 			return
@@ -53,8 +54,8 @@ func TestRunPlan_SamePathUsesDaemonPlan(t *testing.T) {
 	if runErr != nil {
 		t.Fatalf("runPlan: %v\n%s", runErr, out)
 	}
-	if hits != 1 {
-		t.Fatalf("daemon requests = %d, want 1", hits)
+	if hits.Load() != 1 {
+		t.Fatalf("daemon requests = %d, want 1", hits.Load())
 	}
 	diff := decodePlan(t, out)
 	if !diff.HasChanges || len(diff.Items) != 1 || diff.Items[0].Action != config.DiffAdd || diff.Items[0].Name != "deepwiki" {
@@ -133,8 +134,11 @@ func TestRunPlan_DaemonNon200IsError(t *testing.T) {
 	if !strings.Contains(msg, strconv.Itoa(port)) || !strings.Contains(msg, "HTTP 500") {
 		t.Fatalf("error %q does not name port %d and HTTP 500", msg, port)
 	}
-	if !strings.Contains(msg, "missing variable(s): SECRET_KEY") {
+	if !strings.Contains(msg, "Failed to load stack file: missing variable(s): SECRET_KEY") {
 		t.Fatalf("error %q dropped the value-free daemon message", msg)
+	}
+	if strings.Contains(msg, `{"error"`) {
+		t.Fatalf("error %q embedded the JSON envelope", msg)
 	}
 	if strings.Contains(out, "No changes") {
 		t.Fatalf("fell back to an empty plan:\n%s", out)
@@ -152,9 +156,9 @@ func TestRunPlan_StaleStateComparesAgainstEmpty(t *testing.T) {
 		t.Fatal("missing exited process")
 	}
 
-	hits := 0
+	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hits++
+		hits.Add(1)
 		http.Error(w, "plan should not call a stale daemon", http.StatusInternalServerError)
 	}))
 	t.Cleanup(srv.Close)
@@ -178,8 +182,8 @@ func TestRunPlan_StaleStateComparesAgainstEmpty(t *testing.T) {
 	if runErr != nil {
 		t.Fatalf("runPlan: %v\n%s", runErr, out)
 	}
-	if hits != 0 {
-		t.Fatalf("stale state made %d HTTP calls", hits)
+	if hits.Load() != 0 {
+		t.Fatalf("stale state made %d HTTP calls", hits.Load())
 	}
 	assertEmptyStackPlan(t, decodePlan(t, out), "a")
 }
@@ -202,9 +206,9 @@ func TestRunPlan_DifferentPathUsesRecordedFile(t *testing.T) {
 	recorded := writePlanStack(t, "name: plan-copy\nmcp-servers:\n  - name: running\n    image: alpine\n    port: 3000\n")
 	proposed := writePlanStack(t, "name: plan-copy\nmcp-servers:\n  - name: running\n    image: alpine\n    port: 3000\n  - name: extra\n    image: alpine\n    port: 3001\n")
 
-	hits := 0
+	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hits++
+		hits.Add(1)
 		_, _ = w.Write([]byte(`{"hasChanges":true,"items":[{"action":"add","kind":"mcp-server","name":"from-daemon"}],"summary":"1 to add"}`))
 	}))
 	t.Cleanup(srv.Close)
@@ -228,8 +232,8 @@ func TestRunPlan_DifferentPathUsesRecordedFile(t *testing.T) {
 	if runErr != nil {
 		t.Fatalf("runPlan: %v\n%s", runErr, out)
 	}
-	if hits != 0 {
-		t.Fatalf("different-path plan called the daemon %d times", hits)
+	if hits.Load() != 0 {
+		t.Fatalf("different-path plan called the daemon %d times", hits.Load())
 	}
 	diff := decodePlan(t, out)
 	var adds int

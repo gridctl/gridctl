@@ -405,7 +405,7 @@ func fetchDaemonPlan(ctx context.Context, st *state.DaemonState) (*config.PlanDi
 		return nil, daemonPlanError(st, err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		detail := strings.TrimSpace(string(body))
+		detail := extractServerError(body)
 		if detail == "" {
 			detail = resp.Status
 		}
