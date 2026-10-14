@@ -138,17 +138,8 @@ func (h *Handler) reload(ctx context.Context, stackPath string, initialize bool)
 
 	h.logger.Info("reloading configuration", "path", h.stackPath)
 
-	// Build load options
-	loadOpts := []config.LoadOption{config.WithQuietLoad()}
-	if h.vault != nil {
-		loadOpts = append(loadOpts, config.WithVault(h.vault))
-	}
-	if h.vaultSet != nil {
-		loadOpts = append(loadOpts, config.WithVaultSets(h.vaultSet))
-	}
-
-	// Load new config
-	newCfg, err := config.LoadStack(stackPath, loadOpts...)
+	// Load new config with the same options Plan uses.
+	newCfg, err := config.LoadStack(stackPath, h.loadOptions()...)
 	if err != nil {
 		return &ReloadResult{
 			Success: false,

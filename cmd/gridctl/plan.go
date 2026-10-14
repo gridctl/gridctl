@@ -3,11 +3,14 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -24,6 +27,8 @@ import (
 
 	"github.com/spf13/cobra"
 )
+
+const planHTTPTimeout = 15 * time.Second
 
 var (
 	planAutoApprove    bool
@@ -80,14 +85,13 @@ func runPlan(ctx context.Context, stackPath string) error {
 	diagnostics := declarationDiagnostics(indexed)
 	appendDeclarationValidationIssues(result, diagnostics)
 
-	// Find the running stack's state
-	current, err := loadCurrentStack(proposed.Name)
+	// The local parse above still drives build resolution, link actions,
+	// declaration diagnostics, and -y deploy. The diff itself comes from
+	// the daemon when this file is the one it loaded.
+	diff, err := currentPlan(ctx, proposed, stackPath)
 	if err != nil {
 		return err
 	}
-
-	// Compute the diff
-	diff := config.ComputePlan(proposed, current)
 	diff.VariableDiagnostics = diagnostics
 	diff.Builds, err = resolvePlanBuilds(ctx, proposed, planShowDockerfile)
 	buildErr := err
@@ -326,29 +330,96 @@ func printPlanBuilds(w io.Writer, builds []config.BuildAction, showDockerfile bo
 	}
 }
 
-// loadCurrentStack finds and loads the currently running stack config.
-func loadCurrentStack(stackName string) (*config.Stack, error) {
-	st, err := state.Load(stackName)
+// currentPlan returns the diff between proposed and the running deployment.
+//
+// A missing or stale state file compares proposed against an empty stack.
+// A running daemon whose recorded file is this file answers the comparison
+// itself; a transport error or non-200 is returned and not replaced with a
+// local parse. A running daemon recorded against a different file keeps the
+// file-to-file comparison.
+func currentPlan(ctx context.Context, proposed *config.Stack, stackPath string) (*config.PlanDiff, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	st, err := state.Load(proposed.Name)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// No running stack — everything is an add
-			return &config.Stack{Name: stackName}, nil
+			return config.ComputePlan(proposed, &config.Stack{Name: proposed.Name}), nil
 		}
-		return nil, fmt.Errorf("loading state for %q: %w", stackName, err)
+		return nil, fmt.Errorf("loading state for %q: %w", proposed.Name, err)
 	}
-
 	if !state.IsRunning(st) {
-		// Stale state — treat as no running stack
-		return &config.Stack{Name: stackName}, nil
+		return config.ComputePlan(proposed, &config.Stack{Name: proposed.Name}), nil
 	}
-
-	// Load the running stack's config
+	if samePlanPath(stackPath, st.StackFile) {
+		return fetchDaemonPlan(ctx, st)
+	}
 	current, _, parseErr := config.ValidateStackFile(st.StackFile)
 	if parseErr != nil {
 		return nil, fmt.Errorf("loading running stack config from %s: %w", st.StackFile, parseErr)
 	}
+	return config.ComputePlan(proposed, current), nil
+}
 
-	return current, nil
+// samePlanPath reports whether two stack paths name the same file.
+// An empty path never matches: filepath.Abs("") is the working directory,
+// which would otherwise look like a stackless daemon's blank StackFile.
+func samePlanPath(a, b string) bool {
+	left, right := planPathKey(a), planPathKey(b)
+	return left != "" && left == right
+}
+
+func planPathKey(p string) string {
+	if p == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return filepath.Clean(p)
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return filepath.Clean(abs)
+	}
+	return filepath.Clean(resolved)
+}
+
+func fetchDaemonPlan(ctx context.Context, st *state.DaemonState) (*config.PlanDiff, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	api := newDaemonAPIFor(*st, planHTTPTimeout)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, api.URL("/api/stack/plan"), nil)
+	if err != nil {
+		return nil, daemonPlanError(st, err)
+	}
+	api.authorize(req)
+	resp, err := api.client.Do(req)
+	if err != nil {
+		return nil, daemonPlanError(st, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, daemonPlanError(st, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		detail := extractServerError(body)
+		if detail == "" {
+			detail = resp.Status
+		}
+		return nil, fmt.Errorf("stack %q daemon on port %d is running but did not return its plan: HTTP %d: %s", st.StackName, st.Port, resp.StatusCode, detail)
+	}
+	var diff config.PlanDiff
+	if err := json.Unmarshal(body, &diff); err != nil {
+		return nil, daemonPlanError(st, err)
+	}
+	return &diff, nil
+}
+
+func daemonPlanError(st *state.DaemonState, err error) error {
+	return fmt.Errorf("stack %q daemon on port %d is running but did not return its plan: %w", st.StackName, st.Port, err)
 }
 
 // printLinkActions renders the declared client link section after the stack

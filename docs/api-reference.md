@@ -1341,7 +1341,9 @@ Malformed requests and resolution failures return `422` as described for `/api/p
 
 #### `GET /api/stack/plan`
 
-Compares the on-disk stack file against the running state and returns a plan diff. Powers the canvas drift indicator.
+Compares the on-disk stack file against the configuration the daemon loaded and returns a plan diff. Nothing in the UI calls this endpoint. The spec-mode overlay reads drift from [`/api/stack/health`](#get-apistackhealth).
+
+Store-backed `image`, `url`, and `network` details on an `mcp-server` item are reported as `image changed`, `url changed`, and `network changed`, without old or new values. A `resource` item uses that same form for store-backed `image` and `network`. Other details are unchanged. A candidate that cannot be loaded returns `500` with `Failed to load stack file: ...` and a value-free message. Missing variable names may appear. Resolved values never do.
 
 **Auth:** Yes
 
@@ -1353,7 +1355,7 @@ Returns `503` when no stack is deployed.
 
 #### `GET /api/stack/health`
 
-Returns aggregate spec health: validation status, drift vs running state, dependency resolution, and per-replica health for multi-replica servers.
+Returns aggregate spec health: validation status, drift against the configuration the daemon loaded, dependency resolution, and per-replica health for multi-replica servers. Drift uses the same comparison as [`/api/stack/plan`](#get-apistackplan). That comparison reports store-backed `image`, `url`, and `network` changes without values; this endpoint lists added, removed, and changed names only. When the comparison cannot be computed, `drift.status` stays `unknown` rather than `in-sync`. A candidate that cannot be loaded does not make this endpoint return `500`; `/api/stack/plan` returns `500` with a value-free message.
 
 **Auth:** Yes
 

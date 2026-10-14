@@ -4,6 +4,10 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- `gridctl plan` and `GET /api/stack/plan` compare the stack file against the configuration the daemon loaded, so an in-place edit is reported instead of `No changes`. `GET /api/stack/health` derives its drift block from that comparison, and the spec-mode overlay follows it. The status-bar badge still shows validation only. Planning the daemon's own file now exits nonzero when the daemon is running but does not answer, instead of printing `No changes`. Store-backed `image`, `url`, and `network` changes are reported as `image changed`, `url changed`, and `network changed`, without values. Under Article VIII, the corrected plan output and the nonzero exit are behavior changes. Schedule them for a maintainer-owned major release, not a patch or minor release. Callers that treated an in-place edit as up to date, or an unreachable daemon as success, should read the diff and the nonzero exit (#1373).
+
 ## [1.0.0-rc.2] - 2026-10-12
 
 ### Removed

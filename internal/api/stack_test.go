@@ -15,6 +15,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/reload"
 	"github.com/gridctl/gridctl/pkg/runtime"
+	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/yaml.v3"
 )
@@ -588,4 +589,139 @@ func TestHandleStacksList_WithFiles(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), stackName)
+}
+
+func TestHandleStackPlan_UsesLoadedConfigOverStateFile(t *testing.T) {
+	s, _ := serverWithLoadedPlan(t, oneServerStack("plan-api", "a"), twoServerStack("plan-api", "a", "b"))
+
+	req := loopbackRequest(http.MethodGet, "/api/stack/plan", nil)
+	w := httptest.NewRecorder()
+	s.handleStackPlan(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var diff config.PlanDiff
+	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &diff))
+	assert.True(t, diff.HasChanges)
+	assert.Len(t, diff.Items, 1)
+	assert.Equal(t, config.DiffAdd, diff.Items[0].Action)
+	assert.Equal(t, "mcp-server", diff.Items[0].Kind)
+	assert.Equal(t, "b", diff.Items[0].Name)
+	for _, item := range diff.Items {
+		assert.NotEqual(t, "network", item.Kind)
+	}
+}
+
+func TestHandleStackHealth_DriftFollowsLoadedConfig(t *testing.T) {
+	s, _ := serverWithLoadedPlan(t, oneServerStack("plan-health", "a"), twoServerStack("plan-health", "a", "b"))
+
+	req := loopbackRequest(http.MethodGet, "/api/stack/health", nil)
+	w := httptest.NewRecorder()
+	s.handleStackHealth(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var health config.SpecHealth
+	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &health))
+	assert.Equal(t, "drifted", health.Drift.Status)
+	assert.Contains(t, health.Drift.Added, "b")
+}
+
+func TestHandleStackHealth_DriftUnknownWhenPlanFails(t *testing.T) {
+	t.Setenv("GRIDCTL_HOME", t.TempDir())
+	path := writeStackContent(t, oneServerStack("plan-unknown", "a"))
+	current, err := config.LoadStack(path, config.WithQuietLoad())
+	assert.NoError(t, err)
+	assert.NoError(t, state.Save(&state.DaemonState{StackName: current.Name, StackFile: path}))
+
+	missing := filepath.Join(t.TempDir(), "missing.yaml")
+	rh := reload.NewHandler(missing, current, mcp.NewGateway(), runtime.NewOrchestrator(nil, nil), 8180, 9000, nil, nil)
+	s := &Server{stackFile: path, stackName: current.Name}
+	s.SetReloadHandler(rh)
+
+	req := loopbackRequest(http.MethodGet, "/api/stack/health", nil)
+	w := httptest.NewRecorder()
+	s.handleStackHealth(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var health config.SpecHealth
+	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &health))
+	assert.Equal(t, "valid", health.Validation.Status)
+	assert.Equal(t, "unknown", health.Drift.Status)
+	assert.NotEqual(t, "in-sync", health.Drift.Status)
+}
+
+func TestHandleStackPlan_CandidateLoadIsValueFree(t *testing.T) {
+	path := writeStackContent(t, oneServerStack("plan-secret", "a"))
+	current, err := config.LoadStack(path, config.WithQuietLoad())
+	assert.NoError(t, err)
+	current.MCPServers[0].URL = "https://loaded-secret.example"
+	if current.MCPServers[0].Env == nil {
+		current.MCPServers[0].Env = map[string]string{}
+	}
+	current.MCPServers[0].Env["TOKEN"] = "super-secret-value"
+
+	missing := filepath.Join(t.TempDir(), "missing.yaml")
+	rh := reload.NewHandler(missing, current, mcp.NewGateway(), runtime.NewOrchestrator(nil, nil), 8180, 9000, nil, nil)
+	s := &Server{stackFile: path, stackName: current.Name}
+	s.SetReloadHandler(rh)
+
+	req := loopbackRequest(http.MethodGet, "/api/stack/plan", nil)
+	w := httptest.NewRecorder()
+	s.handleStackPlan(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, "Failed to load stack file:")
+	assert.NotContains(t, body, "super-secret-value")
+	assert.NotContains(t, body, "loaded-secret.example")
+}
+
+func TestHandleStackPlan_NoStackLoaded(t *testing.T) {
+	path := writeStackContent(t, oneServerStack("plan-empty-handler", "a"))
+	rh := reload.NewHandler("", nil, mcp.NewGateway(), runtime.NewOrchestrator(nil, nil), 8180, 9000, nil, nil)
+	s := &Server{stackFile: path, stackName: "plan-empty-handler"}
+	s.SetReloadHandler(rh)
+
+	req := loopbackRequest(http.MethodGet, "/api/stack/plan", nil)
+	w := httptest.NewRecorder()
+	s.handleStackPlan(w, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Contains(t, w.Body.String(), "No stack is currently deployed")
+}
+
+func serverWithLoadedPlan(t *testing.T, initial, updated string) (*Server, string) {
+	t.Helper()
+	t.Setenv("GRIDCTL_HOME", t.TempDir())
+	path := writeStackContent(t, initial)
+	current, err := config.LoadStack(path, config.WithQuietLoad())
+	if err != nil {
+		t.Fatalf("load current: %v", err)
+	}
+	if err := state.Save(&state.DaemonState{StackName: current.Name, StackFile: path}); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	rh := reload.NewHandler(path, current, mcp.NewGateway(), runtime.NewOrchestrator(nil, nil), 8180, 9000, nil, nil)
+	if err := os.WriteFile(path, []byte(updated), 0644); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{stackFile: path, stackName: current.Name}
+	s.SetReloadHandler(rh)
+	return s, path
+}
+
+func writeStackContent(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "stack.yaml")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func oneServerStack(name, server string) string {
+	return fmt.Sprintf("name: %s\nmcp-servers:\n  - name: %s\n    image: alpine\n    port: 3000\n", name, server)
+}
+
+func twoServerStack(name, first, second string) string {
+	return fmt.Sprintf("name: %s\nmcp-servers:\n  - name: %s\n    image: alpine\n    port: 3000\n  - name: %s\n    image: alpine\n    port: 3001\n", name, first, second)
 }
