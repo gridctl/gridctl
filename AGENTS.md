@@ -248,13 +248,14 @@ End-to-end for the web UI: component or React store action → shared gatewayReq
 
 `CONSTITUTION.md` is binding for every change. Articles that most often catch a refactor by surprise:
 
-- **III (Test-first):** every exported function gets a test before merge; bug fixes need a regression test.
-- **IV (Integration tests use real dependencies):** anything under `tests/integration/` uses real dependencies (containers, network connections, or subprocesses as applicable) and must pass `-race`. Mocks are unit-test only.
+- **III (Test-first):** every exported behavior gets a test before merge; bug fixes need a regression test. A trivial accessor or pass-through needs no test of its own when the behavior it exposes is covered.
+- **IV (Integration tests use real dependencies):** anything under `tests/integration/` uses real dependencies (containers, network connections, or subprocesses as applicable) and must pass `-race`. Mocks are unit-test only. A real process or HTTP server standing in for an external service that cannot run in CI is allowed when the transport and process boundary are real; the PR names the manual acceptance that remains.
 - **V (No panics in `pkg/` or `internal/`):** return errors. CLI init in `cmd/` is the only place panic is allowed.
 - **VI (Context propagation):** any I/O, blocking, or external call takes `context.Context` as the first arg and respects cancellation.
-- **VIII (Semantic versioning):** changed export output and newly rejected configurations are breaking changes; they require a major release and a changelog announcement, not a patch or minor release.
+- **VIII (Semantic versioning):** breaking means a previously valid stack file or documented invocation fails, or a machine-readable contract changes: stack schema, `--format json` and other structured output, exit codes, REST shapes, MCP wire behavior, and documented file formats such as exports and lockfiles. Human-readable text, log wording, and the UI are not versioned. A fix that matches existing documentation is a bug fix and says so in its changelog entry. During a release-candidate series, such changes ship in the next candidate.
 - **IX (Stack YAML back-compat):** new `stack.yaml` fields are optional with a default that preserves existing behavior. Renames and removals are breaking changes.
 - **X (Machine-readable CLI output):** structured commands need machine-readable output (`--format json` or equivalent) and meaningful exit codes: `0` for success, nonzero for failure. Check each command's contract; export uses `0`/`1`, while several command families distinguish `0`/`1`/`2`.
+- **XII (Secure defaults):** loopback bind by default. A listener reachable beyond loopback requires authentication and an explicit origin allowlist, and startup refuses without them unless the named insecure override is set. Encrypted stores load locked.
 - **XIV (Structured logging):** use `log/slog` in library code; no `fmt.Println` / `log.Printf`.
 - **XV (Changelog discipline):** every user-visible change lands an entry under `[Unreleased]` in `CHANGELOG.md` in the same PR.
 
