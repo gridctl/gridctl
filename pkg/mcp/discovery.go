@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"slices"
 	"sort"
 )
 
@@ -124,19 +125,43 @@ func canonicalHalves(name string) (server, tool string, ok bool) {
 	return server, tool, true
 }
 
-func (g *Gateway) canonicalInventoryHas(name string) bool {
+// rejectsUnexposedTool reports whether dispatch must reject name before
+// gates and routing. Meta-tool names are rejected only for canonical
+// callers; search and execute stay callable on the MCP path when code
+// mode is on (that branch runs before this check).
+//
+// Other names are rejected when they are not a canonical server__tool
+// pair, when the server is not registered, or when the last RefreshTools
+// snapshot observed a filtered surface and does not expose the name.
+// Hidden and nonexistent names share that rejection. The snapshot is
+// toolExposure, not the live Tools() projection HandleToolsList serves.
+// Between a downstream tools/list_changed refresh updating Client.Tools()
+// and the index rebuild, a name can appear on tools/list and still be
+// rejected here.
+//
+// A registered server that has never presented a replica or a tool cache
+// is not in that snapshot. Those calls are not rejected here, so a visible
+// tool on a never-started idle-to-zero server can still cold-start, unless
+// a configured tools: whitelist already excludes the bare name. After a
+// replica is picked, replicaAdvertisesTool rechecks the live filtered
+// surface for every caller.
+func (g *Gateway) rejectsUnexposedTool(name string, canonicalOnly bool) bool {
 	if isMetaToolName(name) {
+		return canonicalOnly
+	}
+	server, tool, ok := canonicalHalves(name)
+	if !ok {
+		return true
+	}
+	registered, surfaceKnown, exposed := g.router.toolExposure(name)
+	if exposed {
 		return false
 	}
-	if _, _, ok := canonicalHalves(name); !ok {
-		return false
+	if !registered || surfaceKnown {
+		return true
 	}
-	for _, t := range g.router.AggregatedTools() {
-		if t.Name == name {
-			return true
-		}
-	}
-	return false
+	whitelist := g.serverMetaCopy(server).Tools
+	return len(whitelist) > 0 && !slices.Contains(whitelist, tool)
 }
 
 func replicaAdvertisesTool(replica *Replica, toolName string) bool {

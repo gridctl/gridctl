@@ -342,7 +342,20 @@ scenarios:
     expected_boundary: canonical dispatch denies out-of-scope tools before inventory disclosure and rejects unknown in-scope names without a downstream call
     nonclaims:
       - not credential-bound per-client authorization
-      - not a global repair of legacy MCP whitelist behavior
+    budgets:
+      max_payload_bytes: 4096
+      max_duration: 5s
+  - id: whitelist-dispatch-rejects-hidden
+    owner_package: pkg/mcp
+    owner_issue: "1372"
+    package: github.com/gridctl/gridctl/pkg/mcp
+    test: TestDispatch_WhitelistHiddenToolRejectedOnEveryPath
+    lanes: [unit]
+    expected_boundary: a whitelist-hidden tool is rejected before routing on the MCP, group, code-mode, and canonical paths without a downstream call
+    nonclaims:
+      - not argument-level rules or tool-output inspection
+      - not credential-bound per-client authorization
+      - a never-started server with an empty tools list is not yet a filtered surface
     budgets:
       max_payload_bytes: 4096
       max_duration: 5s

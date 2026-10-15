@@ -2471,10 +2471,10 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 		return result, state.outcome, err
 	}
 
-	// Enforce the per-client access scope on the direct tools/call path. A
-	// denied call is rejected before routing; denials are logged at debug.
-	// Canonical-only membership checks run after this so hidden targets
-	// are not disclosed as unknown tools.
+	// Enforce the per-client access scope before the inventory check, gates,
+	// and routing. An out-of-scope caller gets the scope denial, not an
+	// unknown-tool error, so a later inventory miss cannot disclose whether
+	// a hidden name exists. Denials are logged at debug.
 	if !g.clientAllowsToolCall(ctx, params.Name) {
 		g.logger.Debug("tool call denied by client access policy",
 			"client", ClientAccessIDFromContext(ctx), "tool", params.Name)
@@ -2485,17 +2485,23 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 		}, state.outcome, nil
 	}
 
-	if opts.CanonicalOnly {
-		if isMetaToolName(params.Name) || !g.canonicalInventoryHas(params.Name) {
-			g.logger.Debug("canonical tool call rejected: unknown or hidden tool",
-				"tool", params.Name)
-			state.set(runs.DispositionRoutingFailed, runs.StageRouting, runs.ReasonUnknownTool, CompletionNotStarted)
-			return &ToolCallResult{
-				Content:     []Content{NewTextContent("Error: unknown tool")},
-				IsError:     true,
-				unknownTool: true,
-			}, state.outcome, nil
-		}
+	// Inventory check for every caller, after scope and before gates.
+	// A hidden or unknown name is rejected here so it does not consume a
+	// rate-limit token or reach routing, which would cold-start a
+	// scaled-to-zero server whose cache already holds the filtered surface.
+	// Meta-tools are rejected only for canonical callers. A server with no
+	// observed surface yet is not rejected unless its configured tools:
+	// whitelist already excludes the bare name, so a visible tool on a
+	// never-started idle-to-zero server can still cold-start.
+	if g.rejectsUnexposedTool(params.Name, opts.CanonicalOnly) {
+		g.logger.Debug("tool call rejected: unknown or hidden by whitelist",
+			"tool", params.Name)
+		state.set(runs.DispositionRoutingFailed, runs.StageRouting, runs.ReasonUnknownTool, CompletionNotStarted)
+		return &ToolCallResult{
+			Content:     []Content{NewTextContent("Error: unknown tool")},
+			IsError:     true,
+			unknownTool: true,
+		}, state.outcome, nil
 	}
 
 	// Run the pre-call policy gates (rate limits; see callGates).
@@ -2558,7 +2564,10 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 			}, state.outcome, nil
 		}
 	}
-	if opts.CanonicalOnly && !replicaAdvertisesTool(replica, toolName) {
+	// Recheck the picked replica's filtered Tools() for every caller. The
+	// index is one snapshot; a later pick can be a replica that does not
+	// advertise the name, including a cold start that just spawned.
+	if !replicaAdvertisesTool(replica, toolName) {
 		routeSpan.SetStatus(codes.Error, "replica does not advertise tool")
 		routeSpan.End()
 		state.set(runs.DispositionRoutingFailed, runs.StageRouting, runs.ReasonUnknownTool, CompletionNotStarted)

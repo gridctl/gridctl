@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"go.uber.org/mock/gomock"
 
@@ -573,4 +574,67 @@ func TestStateless_SkillListsUseGatewayOwnedCacheMeta(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestStateless_WhitelistHiddenToolIsUnknown(t *testing.T) {
+	g, c := newWhitelistGateway(t)
+	srv := NewStreamableHTTPServer(g, nil)
+
+	assertUnknown := func(t *testing.T, name string, r *http.Request) {
+		t.Helper()
+		before := len(c.called)
+		w, resp := doStateless(t, srv, r)
+		if w.Code != http.StatusOK || resp.Error == nil || resp.Error.Code != jsonrpc.InvalidParams {
+			t.Fatalf("%s: expected -32602, got %d %+v", name, w.Code, resp.Error)
+		}
+		if resp.Error.Message != "Unknown tool: "+name {
+			t.Fatalf("%s message = %q", name, resp.Error.Message)
+		}
+		if resp.Result != nil {
+			t.Fatalf("%s returned a result: %s", name, resp.Result)
+		}
+		if len(c.called) != before {
+			t.Fatalf("%s reached downstream: %v", name, c.called)
+		}
+	}
+
+	call := func(name string) *http.Request {
+		return statelessRequest(t, statelessBody(t, 1, "tools/call", map[string]any{
+			"name":      name,
+			"arguments": map[string]any{},
+		}))
+	}
+
+	t.Run("hidden", func(t *testing.T) {
+		assertUnknown(t, "alpha__read_secret", call("alpha__read_secret"))
+	})
+	t.Run("nonexistent", func(t *testing.T) {
+		assertUnknown(t, "alpha__missing", call("alpha__missing"))
+	})
+	t.Run("group", func(t *testing.T) {
+		r := call("alpha__read_secret")
+		r = r.WithContext(WithGroup(r.Context(), "grp"))
+		assertUnknown(t, "alpha__read_secret", r)
+	})
+	t.Run("code mode on", func(t *testing.T) {
+		g.SetCodeMode(5 * time.Second)
+		assertUnknown(t, "alpha__read_secret", call("alpha__read_secret"))
+	})
+	t.Run("visible", func(t *testing.T) {
+		before := len(c.called)
+		w, resp := doStateless(t, srv, call("alpha__list_paths"))
+		if w.Code != http.StatusOK || resp.Error != nil {
+			t.Fatalf("visible call: %d %+v", w.Code, resp.Error)
+		}
+		var result ToolCallResult
+		if err := json.Unmarshal(resp.Result, &result); err != nil {
+			t.Fatal(err)
+		}
+		if result.IsError {
+			t.Fatalf("visible call errored: %+v", result)
+		}
+		if len(c.called) != before+1 || c.called[len(c.called)-1] != "list_paths" {
+			t.Fatalf("visible call did not reach downstream: %v", c.called)
+		}
+	})
 }

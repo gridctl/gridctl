@@ -13,14 +13,14 @@ Examples demonstrating tool filtering and per-client scoping for least-privilege
 
 ### Server-Level Filtering
 
-The `tools` field on an MCP server whitelists which tools are exposed to all clients. Tools not in the list are never loaded into the gateway - they don't appear in tool listings and cannot be called:
+The `tools` field on an MCP server whitelists which tools are exposed to all clients. Tools not in the list are loaded for the management UI's catalog, but they are absent from listings and rejected on `tools/call`:
 
 ```yaml
 mcp-servers:
   - name: restricted-server
     image: my-mcp:latest
     port: 3000
-    tools: ["read", "list"]   # Only these tools reach the gateway
+    tools: ["read", "list"]   # Only these tools are listed and callable
 ```
 
 This is the primary mechanism for reducing context window consumption and preventing tool confusion.
