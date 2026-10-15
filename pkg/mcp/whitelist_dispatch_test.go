@@ -303,6 +303,40 @@ func TestDispatch_WhitelistHiddenToolDoesNotColdStart(t *testing.T) {
 }
 
 func TestDispatch_VisibleToolColdStartsThenRepeats(t *testing.T) {
+	t.Run("mcp", func(t *testing.T) {
+		gw, sp := newIdleToZeroGateway(t)
+		for i := 0; i < 2; i++ {
+			res, err := gw.HandleToolsCall(context.Background(), ToolCallParams{Name: "svc__echo"})
+			if err != nil || res == nil || res.IsError {
+				t.Fatalf("call %d failed: err=%v res=%+v", i, err, res)
+			}
+		}
+		if got := sp.spawns.Load(); got != 1 {
+			t.Fatalf("spawns = %d, want 1", got)
+		}
+	})
+
+	// Canonical callers used to reject this name from an empty aggregate
+	// before routing. They now cold-start a visible tool.
+	t.Run("canonical", func(t *testing.T) {
+		gw, sp := newIdleToZeroGateway(t)
+		for i := 0; i < 2; i++ {
+			res, out, err := gw.CallCanonicalTool(context.Background(), ToolCallParams{Name: "svc__echo"})
+			if err != nil || res == nil || res.IsError {
+				t.Fatalf("call %d failed: err=%v res=%+v outcome=%+v", i, err, res, out)
+			}
+			if out.Disposition != runs.DispositionCompleted || out.Reason != runs.ReasonOK || out.Completion != CompletionComplete {
+				t.Fatalf("call %d outcome = %+v, want completed/ok", i, out)
+			}
+		}
+		if got := sp.spawns.Load(); got != 1 {
+			t.Fatalf("spawns = %d, want 1", got)
+		}
+	})
+}
+
+func newIdleToZeroGateway(t *testing.T) (*Gateway, *gatewayFakeSpawner) {
+	t.Helper()
 	gw := NewGateway()
 	t.Cleanup(gw.Close)
 	sp := newGatewayFakeSpawner(t)
@@ -313,13 +347,5 @@ func TestDispatch_VisibleToolColdStartsThenRepeats(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 2; i++ {
-		res, err := gw.HandleToolsCall(context.Background(), ToolCallParams{Name: "svc__echo"})
-		if err != nil || res == nil || res.IsError {
-			t.Fatalf("call %d failed: err=%v res=%+v", i, err, res)
-		}
-	}
-	if got := sp.spawns.Load(); got != 1 {
-		t.Fatalf("spawns = %d, want 1", got)
-	}
+	return gw, sp
 }
