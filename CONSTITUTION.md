@@ -14,11 +14,13 @@ External dependencies MUST be justified by functionality, maturity, or correctne
 
 ## Article III - Test-First Development
 
-All exported functions and methods MUST have corresponding tests before a PR is merged. Tests are not optional documentation - they are the contract. A feature without tests is not complete; a bug fix without a regression test is not fixed.
+Every exported behavior MUST be covered by a test before a PR is merged: a new feature ships with tests that exercise its documented behavior, a behavior change updates them, and a bug fix includes a regression test that fails without the fix. Tests are not optional documentation - they are the contract. A trivial accessor, constructor, or pass-through does not need its own test when the behavior it exposes is already covered. A feature without tests is not complete; a bug fix without a regression test is not fixed.
 
 ## Article IV - No Mocks in Integration Tests
 
 Integration tests MUST exercise real dependencies - real Docker clients, real containers, real network connections. Mocks MUST NOT be used in `tests/integration/`. A passing integration test suite with mocked dependencies provides false assurance. Unit tests may use mocks; integration tests MUST NOT. All integration tests MUST run with the `-race` flag; a test suite that passes without race detection is not a complete integration test.
+
+A real process or HTTP server that stands in for an external service - a mock MCP server, a stub secret-provider command, a local OAuth issuer - is not a mock under this article when the real service cannot run in CI, provided the transport, protocol, and process boundary gridctl exercises are real. Faking gridctl's own clients, transports, runtime interfaces, or filesystem is. Where a stand-in is used, the PR MUST name the acceptance against the real service that remains manual or scheduled.
 
 ## Article V - Error Propagation, Not Panic
 
@@ -34,7 +36,13 @@ API keys, passwords, tokens, private keys, and any credential MUST NOT be commit
 
 ## Article VIII - Semantic Versioning
 
-The public CLI interface and stack YAML schema are versioned artifacts. Breaking changes MUST NOT be introduced in patch or minor releases. A breaking change requires a major version increment and MUST be announced in CHANGELOG.md before release. "Breaking" means any change that causes a previously valid invocation or stack file to fail or produce different output. The MCP wire protocol is part of this surface: dropping support for a protocol generation the gateway previously accepted is a breaking change under this article. Which generations are supported at a given time is defined by the project's protocol support policy, not this document.
+The public CLI interface, the stack YAML schema, and the MCP wire protocol are versioned artifacts. Breaking changes MUST NOT be introduced in patch or minor releases. A breaking change requires a major version increment and MUST be announced in CHANGELOG.md before release.
+
+"Breaking" means a change that causes a previously valid stack file or documented invocation to fail, or that changes a machine-readable contract: the stack YAML schema; `--format json` and other documented structured output; exit codes; REST request and response shapes; MCP wire behavior; and the documented formats of files gridctl writes for other programs to read, such as exports, lockfiles, and projected client entries. Human-readable text output, log wording, diagnostic phrasing, and the web UI are not versioned contracts and MAY change in any release with a changelog entry. A correction that brings behavior in line with its existing documentation is a bug fix, not a breaking change, and its changelog entry MUST say so.
+
+During a release-candidate series for a major version, a change that would otherwise require that major version ships in the next candidate with a changelog entry; the candidate series is the announcement window.
+
+Dropping support for a protocol generation the gateway previously accepted is a breaking change under this article. Which generations are supported at a given time is defined by the project's protocol support policy, not this document.
 
 ## Article IX - Stack YAML Backward Compatibility
 
@@ -50,7 +58,7 @@ Operations MUST NOT silently discard errors. If an error cannot be handled, it M
 
 ## Article XII - Secure Defaults
 
-Security-sensitive configuration MUST default to the most restrictive safe option. The vault MUST be locked by default. Authentication MUST be opt-out, not opt-in. CORS MUST default to explicit allowlists in production paths, not wildcards. Features that bypass security controls MUST require explicit opt-in flags.
+Security-sensitive configuration MUST default to the most restrictive safe option. The gateway MUST bind to loopback by default. A listener reachable beyond loopback MUST require authentication and an explicit cross-origin allowlist, and the gateway MUST refuse to start on such a listener without them unless an explicitly named insecure override is set. Loopback without configured authentication is the documented local default and is not a production path. An encrypted variable store MUST load locked; documentation MUST recommend encryption for any store that holds credentials. Features that bypass security controls MUST require explicit opt-in flags.
 
 ## Article XIII - Minimal Attack Surface
 
