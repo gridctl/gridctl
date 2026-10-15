@@ -21,8 +21,8 @@ Python MCP runtime image evidence was updated on September 16, 2026, against imp
 Capability and diagnostic privacy evidence was updated on September 18, 2026,
 against implementation commit `f9a198b`. The shared authority store and
 sensitive-observation primitives are internal and included in v1.0.0-rc.2, with no capability
-tuning option. Diagnostic-output changes are a breaking change under Article VIII,
-included in v1.0.0-rc.2.
+tuning option. Diagnostic wording changed in that release; log and trace text is
+not a versioned contract.
 
 A2A wire and card-trust evidence was updated on September 18, 2026, against
 implementation commits `7331b9f` and `a1090f8`; outbound adapter evidence was
@@ -42,7 +42,7 @@ isolation or general hosted compatibility.
 | Released as a prerelease | [`v1.0.0-rc.1`](https://github.com/gridctl/gridctl/releases/tag/v1.0.0-rc.1), published September 10, 2026, points to `2f6c00472c33304bcc560ecbe4be18497ec15c2e`. It contains grouped-route authentication, non-resolving stack export, reserved internal-credential filtering, scoped variable delivery, skill package completeness tracking, and authenticated binary-release tooling. The runtime controls credited at the original baseline are present in that tag; later lifecycle additions are not in that tag. |
 | Included in v1.0.0-rc.2 | Changes after v1.0.0-rc.1, including dependency and Actions updates, a read-only tap authentication diagnostic, and a macOS-only declarative replacement for the deprecated Homebrew quarantine-removal hook. Those changes are not in the v1.0.0-rc.1 archives. |
 | Included in v1.0.0-rc.2 | [Gateway auth lifecycle and browser parity #1228](https://github.com/gridctl/gridctl/issues/1228): restart-required security preflight and verified browser credentials, described below. This is a breaking change under Articles VIII and IX. |
-| Included in v1.0.0-rc.2 | [Execution hardening #1221](https://github.com/gridctl/gridctl/issues/1221): per-container admission/evidence and local-process hygiene. Required Podman acceptance remains outstanding. Status output changes are a breaking change under Article VIII. |
+| Included in v1.0.0-rc.2 | [Execution hardening #1221](https://github.com/gridctl/gridctl/issues/1221): per-container admission/evidence and local-process hygiene. Required Podman acceptance remains outstanding. Status JSON additions are optional fields; the human replica STATE text changed in that release. |
 | Included in v1.0.0-rc.2 | [Passive security evidence reports #1224](https://github.com/gridctl/gridctl/issues/1224): `gridctl doctor --security`, `GET /api/security-report`, and existing-panel UI. Collection is value-free and does not scan, probe, or mutate. Exit zero is not a secure verdict. |
 | Included in v1.0.0-rc.2 | [Python MCP runtime base #1230](https://github.com/gridctl/gridctl/issues/1230): recipe, derivatives, and dedicated OCI workflow. Hosted architecture tests, candidate publication, and anonymous evidence remain outstanding. Not a published supported image. |
 
@@ -115,11 +115,11 @@ The [shared browser request policy](../../web/src/lib/gatewayRequest.ts) restric
 
 Listener authentication, bind, Host/Origin allowlists, and the insecure override are startup-bound. The controller supplies an immutable effective startup snapshot to [reload security preflight](../../pkg/reload/security.go). Reload and stackless initialization compare resolved candidate values before no-op detection or application. `restart_required` rejects mixed edits without changing accepted/live state, while save-first operations retain authored YAML on disk. Failed resolution or validation returns value-free `invalid_candidate`. Observable stored-token rotation is compared with the original value, not a re-resolved old reference. [Security matrix tests](../../pkg/reload/security_test.go), [API tests](../../internal/api/reload_security_test.go), and [real restart tests](../../tests/integration/auth_restart_test.go) cover these boundaries. Follow [restart recovery](../troubleshooting.md#gateway-security-requires-a-restart) to activate new settings and end old process-owned sessions/streams. There is no live rotation or in-process revocation, and ordinary post-preflight reload failures retain their existing partial-application semantics.
 
-### Article XII Versus Current Behavior
+### Article XII Compliance
 
-[Article XII](../../CONSTITUTION.md#article-xii---secure-defaults) requires opt-out authentication, a locked vault by default, and explicit CORS allowlists in production paths. At this revision, loopback authentication is opt-in, the builder defaults to wildcard origins, and the variable store supports plaintext operation unless encryption has been enabled. An existing encrypted store loads locked, but a new or plaintext store does not.
+[Article XII](../../CONSTITUTION.md#article-xii---secure-defaults), as amended in [#1376](https://github.com/gridctl/gridctl/pull/1376), requires a loopback bind by default; authentication and an explicit cross-origin allowlist on any listener reachable beyond loopback, with startup refused without them unless the named insecure override is set; and encrypted variable stores that load locked. Loopback without configured authentication is the documented local default and is not a production path.
 
-These are current behavior and governance gaps, not amendments to Article XII. The loopback default and widened-bind refusal reduce network exposure without satisfying the entire article. This documentation does not silently change either the constitution or the implementation.
+At this revision the loopback default and the widened-bind authentication refusal ([#1058](https://github.com/gridctl/gridctl/issues/1058), [#1060](https://github.com/gridctl/gridctl/issues/1060)) are implemented, and an existing encrypted store loads locked. One gap remains: the [gateway builder](../../pkg/controller/gateway_builder.go) falls back to wildcard origins when `gateway.allowed_origins` is empty, on every bind. The matching startup refusal for a widened bind without an allowlist is a tracked follow-up in the shape of the authentication refusal. Until it lands, set `gateway.allowed_origins` explicitly on any non-loopback listener. A plaintext store remains supported; the documentation recommends encryption for any store that holds credentials.
 
 ## Downstream Tools, Poisoning, and Execution
 
