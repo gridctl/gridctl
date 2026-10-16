@@ -10,8 +10,8 @@ Initial guide revision: September 15, 2026, reviewed against source commit [`a14
 
 Diagnostic privacy guidance was updated on September 18, 2026, against
 implementation commit `f9a198b`. Capability sanitation and sensitive-observation
-primitives are included in v1.0.0-rc.2. Diagnostic-output changes in that
-release are breaking under Article VIII.
+primitives are included in v1.0.0-rc.2. Diagnostic wording changed in that
+release; log and trace text is not a versioned contract.
 
 The finite baseline covers installation, listener access, workload authority, secrets, content review, diagnostic privacy, and declaration checks implemented at that revision. It does not wait for every roadmap feature. Check `gridctl version`, the [changelog](../../CHANGELOG.md), and your release's documentation before using a command below.
 

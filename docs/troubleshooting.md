@@ -932,8 +932,8 @@ Treat that output as potentially sensitive when saving or sharing it.
 
 For diagnostic correlation, use generated attempt/trace IDs and outcome
 categories. Recognizable typed capability strings in recorded names, labels,
-and errors are masked, so raw-name joins can differ. This is a breaking
-diagnostic-output change included in v1.0.0-rc.2 under Article VIII.
+and errors are masked, so raw-name joins can differ. This diagnostic-output
+change is included in v1.0.0-rc.2; log wording is not a versioned contract.
 See [diagnostic privacy and migration](usage-observability.md#diagnostic-privacy-and-migration).
 
 ## General
