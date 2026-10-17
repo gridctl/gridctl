@@ -13,7 +13,9 @@ names the path, the key, and the line, for example
 `mcp-servers[0].headerz: unknown field "headerz" (line 31)`. The same text
 is in `gridctl validate --format json` as an issue with `line`, and in the
 `invalid_candidate` `errors` list from `POST /api/reload` and
-`POST /api/stack/initialize`.
+`POST /api/stack/initialize`. An unknown key in an `extends` parent is
+reported as `extends[<file>].<path>`, and the line is that file's line, not
+the child's.
 
 Remove the key, or rename it to a field the schema accepts. `headers:` and
 `description:` are accepted. `headers:` is only valid on external URL and

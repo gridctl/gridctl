@@ -1654,7 +1654,7 @@ The body must be a JSON object with a `tools` field. An empty array (`[]`) clear
 
 **Errors:**
 - `400 unknown_tool` - Tool name not advertised by the server (whitelist is stale)
-- `400 hidden_tool_reference` - The candidate whitelist would hide a tool a group `tools:` entry or override names. Nothing is written. The nested `error` object adds `issues`, each `{field, message}`, for the hidden-tool findings only. The hint is to remove the tool from the group or keep it exposed. Any other candidate validation failure is `400` with `{"error": "<joined messages>"}` and without this code, and the file is left unchanged. The check uses the daemon's load pipeline, including `extends`
+- `400 hidden_tool_reference` - The candidate whitelist would hide a tool a group `tools:` entry or override names. Nothing is written. The nested `error` object adds `issues`, each `{field, message}`, for the hidden-tool findings only. The hint is to remove the tool from the group or keep it exposed. Any other candidate load failure, including a validation error, a missing vault variable, or an unreadable `extends` parent, is `400` with `{"error": "<message>"}` and without this code, and the file is left unchanged. The check uses the daemon's load pipeline, including `extends`
 - `400` - Body missing `tools` array, or contains an empty tool name
 - `404` - Server not found in the stack file
 - `409 stack_modified` - Stack file changed on disk between read and write
@@ -1699,7 +1699,7 @@ The body must be a JSON object with a non-empty `servers` array; each entry need
 
 **Errors:**
 - `400 unknown_tool` - A tool name is not advertised by its server (message names the server); nothing written
-- `400 hidden_tool_reference` - The candidate whitelist would hide a tool a group `tools:` entry or override names. Nothing is written. The nested `error` object adds `issues`, each `{field, message}`, for the hidden-tool findings only. Any other candidate validation failure is `400` with `{"error": "<joined messages>"}` and without this code. The check uses the daemon's load pipeline, including `extends`
+- `400 hidden_tool_reference` - The candidate whitelist would hide a tool a group `tools:` entry or override names. Nothing is written. The nested `error` object adds `issues`, each `{field, message}`, for the hidden-tool findings only. Any other candidate load failure, including a validation error, a missing vault variable, or an unreadable `extends` parent, is `400` with `{"error": "<message>"}` and without this code, and the file is left unchanged. The check uses the daemon's load pipeline, including `extends`
 - `400` - Body missing/empty `servers`, an entry missing `name`/`tools`, a duplicate server, or an empty tool name
 - `404` - A named server is not in the stack file; nothing written
 - `409 stack_modified` - Stack file changed on disk between read and write; nothing written
