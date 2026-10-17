@@ -3719,4 +3719,28 @@ Access-Control-Allow-Headers: Content-Type, Authorization
 Vary: Origin
 ```
 
-`OPTIONS` requests return `200 OK` without authentication and never dispatch an operation. CORS response headers are present only when the request supplies an allowed Origin; a custom `gateway.auth.header` is also included in `Access-Control-Allow-Headers`. Preflight success does not authenticate the subsequent request.
+`OPTIONS` requests return `200 OK` without authentication and never dispatch an operation. CORS response headers are present only when the request supplies an allowed Origin; a custom `gateway.auth.header` is also included in `Access-Control-Allow-Headers`. Preflight success does not authenticate the subsequent request. An unlisted Origin on `/mcp`, `/api/*`, and other operational routes receives no `Access-Control-Allow-Origin`.
+
+### Public discovery routes
+
+These GET routes are enumerated, unauthenticated, and not configurable from the stack file. They carry no credential, session, or user data. Host checks still apply. With an `Origin` header they answer `Access-Control-Allow-Origin: *`, `Access-Control-Allow-Methods: GET`, `Access-Control-Allow-Headers: Content-Type, If-None-Match`, and `Access-Control-Expose-Headers: ETag`, regardless of `gateway.allowed_origins`. Other methods return 405. Responses use `Cache-Control: public, max-age=3600` and a strong ETag. A matching `If-None-Match` returns 304.
+
+SEP-2127 is Final. The extension repository's discovery notes and the AI Catalog specification are drafts. The vendored schema commit named in `pkg/servercard/testdata/NOTICE.md` is the contract.
+
+| Route | Purpose | Owner |
+|-------|---------|-------|
+| `GET /mcp/server-card` | SEP-2127 Server Card for this gateway | `internal/api` card handlers, `pkg/servercard` |
+| `GET /groups/{name}/mcp/server-card` | SEP-2127 Server Card for one configured tool group. Unknown groups return 404 | `internal/api` card handlers, `pkg/servercard` |
+| `GET /.well-known/ai-catalog.json` | AI Catalog (`specVersion` 1.0) pointing at those cards | `internal/api` card handlers, `pkg/servercard` |
+
+Each card includes `$schema`, a sanitized `name` (`io.gridctl/<segment>`, or `io.gridctl/<segment>.<group>`), `title`, `description`, and `version`. Group cards set `_meta["io.gridctl/group"]`. No card lists tools, prompts, resources, capabilities, or a credential value. `supportedProtocolVersions` matches `server/discover`.
+
+The advertised origin is `gateway.public_url` when set. Otherwise it is the request Host when the request arrived on loopback and the Host is loopback, or when the Host matches `gateway.allowed_hosts`. If none of those apply, the card omits `remotes` and the catalog serves `"entries": []`. The body does not use the hardcoded localhost gateway address. A request-derived body sets `Vary: Host`. On a non-loopback bind with `public_url` unset, startup logs one warning that the card advertises an endpoint only for Hosts in `gateway.allowed_hosts`.
+
+When auth is configured, `remotes[].headers` names a placeholder and a `variables` entry. Bearer uses `Authorization: Bearer {token}`. API-key auth uses the configured header, or `Authorization` when `gateway.auth.header` is empty, with value `{key}` and no Bearer prefix. The token value is never emitted.
+
+### POST /api/servers/card
+
+Protected like other `/api/` routes. Body is `{ "url": "<absolute http(s) URL>" }`, at most 64 KiB. The handler shares the probe limiter (`X-Session-ID`, 429, and 503). It fetches `<url>/server-card` with no credentials, no redirects, and a 64 KiB / 10 second bound, and falls back to the URL origin's `/.well-known/ai-catalog.json` when the card is missing. A remote whose scheme, host, or port differs from the submitted URL is refused, as is a URL template.
+
+Success returns `{ "card", "server", "warnings", "inputs" }`. `server` is a stack-shaped draft (`url`, `transport`, optional `auth` with a `${var:KEY}` placeholder) and contains no credential value. Error codes: `no_card`, `invalid_card`, `off_origin`, `fetch_failed`, `rate_limited`.

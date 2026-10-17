@@ -16,6 +16,19 @@ In the browser, select the configured mode and header. API-key mode defaults to 
 
 Remote authentication still requires HTTPS or an encrypted tunnel with a private backend. A shared token does not encrypt remote HTTP, bind a group/client selector to an identity, or implement the full MCP OAuth profile.
 
+## Gateway refuses to start on a widened bind
+
+A listener on `0.0.0.0`, or any other non-loopback address, refuses to start in two cases. Authentication is checked first.
+
+1. No `gateway.auth` token is configured. The error is the unauthenticated-exposure refusal. Set `gateway.auth`, drop `--bind`, `--bind-all`, and `gateway.bind` so the listener stays on loopback, or pass `--insecure-allow-unauthenticated` (or set `gateway.insecure_allow_unauthenticated: true`).
+2. Auth is configured, but `gateway.allowed_origins` is empty or contains `*`. The error names `gateway.allowed_origins`, loopback, and `insecure-allow-unauthenticated`. Set `gateway.allowed_origins` to the origins that will load the UI. `"*"` is not an allowlist on a widened bind.
+
+One override covers both refusals. With the override set, startup continues, the wildcard stays in place, and each refusal that was skipped logs one warning. Loopback binds do not refuse and do not log those warnings.
+
+`gridctl serve --bind 0.0.0.0` with no stack file is the same check. It refuses on authentication unless the override is set. With the override it starts, keeps the wildcard, and logs both warnings.
+
+This is a startup refusal, not `restart_required`. The saved file is not changed. Fix the stack or the flags and start again.
+
 ## Container Runtime
 
 ### Docker socket not found

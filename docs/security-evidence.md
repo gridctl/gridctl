@@ -47,6 +47,7 @@ Coverage "complete" refers only to this named inventory, not to complete securit
 | `var.references` | Reference-site and consumer counts without resolving values |
 | `gateway.auth.declared` | Auth/bind declarations. A saved token does not prove route enforcement |
 | `gateway.auth.startup` | Active startup snapshot when available |
+| `gateway.origins.startup` | Startup origin mode (`loopback-wildcard`, `loopback-allowlist`, `allowlist`, or `wildcard-override`) and the sanitized discovery-route list. Counts and modes only; origin strings are not included. Unknown when no startup snapshot is available |
 | `execution.availability` | Per-replica execution evidence availability |
 | `execution.enforcement` | Recorded execution outcome. Container predicates are N/A for non-container subjects |
 

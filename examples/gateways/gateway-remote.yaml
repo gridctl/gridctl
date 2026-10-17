@@ -88,6 +88,15 @@ gateway:
   auth:
     type: bearer
     token: "${var:GATEWAY_TOKEN}"
+  # Required on this widened bind. List the origins that will load the UI.
+  # "*" is not an allowlist here; an empty list refuses to start.
+  allowed_origins:
+    - "https://gateway.example.com"
+  # The Server Card advertises an endpoint only when public_url is set, or
+  # when the request Host is in allowed_hosts. A reflected Host is not used.
+  # allowed_hosts:
+  #   - "gateway.example.com"
+  # public_url: "https://gateway.example.com"
 
 network:
   name: devstack
