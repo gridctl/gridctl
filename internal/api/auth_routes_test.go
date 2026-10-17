@@ -89,8 +89,9 @@ func TestAuthHandler_RegisteredRoutes(t *testing.T) {
 			method, path = http.MethodGet, pattern
 		}
 		switch path {
-		case "/", "/health", "/ready", "/oauth/callback":
-			continue // Public contracts are exercised separately below.
+		case "/", "/health", "/ready", "/oauth/callback",
+			"/mcp/server-card", "/groups/{name}/mcp/server-card", "/.well-known/ai-catalog.json":
+			continue // Public contracts, including enumerated discovery documents, are exercised separately.
 		}
 		for strings.Contains(path, "{") {
 			start, end := strings.Index(path, "{"), strings.Index(path, "}")

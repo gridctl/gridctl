@@ -413,24 +413,36 @@ type GatewayConfig struct {
 	// Empty keeps the default "gridctl-gateway".
 	Name string `yaml:"name,omitempty" json:"name,omitempty"`
 
-	// AllowedOrigins lists origins for CORS.
-	// When not set, defaults to ["*"] (allow all) for backward compatibility.
-	// Set explicit origins to restrict cross-origin access.
+	// AllowedOrigins lists origins for CORS. On a loopback bind, empty
+	// defaults to ["*"]. A non-loopback bind requires an explicit list that
+	// does not contain "*", or the insecure override. "*" is not an allowlist.
 	AllowedOrigins []string `yaml:"allowed_origins,omitempty"`
 
 	// Bind is the address the gateway's HTTP listener binds. When not set,
 	// defaults to 127.0.0.1 (loopback only), so the API, web UI, and gateway
 	// are unreachable from other hosts. Set "0.0.0.0" to listen on every
 	// interface; the --bind and --bind-all flags override this field.
-	// Widening the bind without setting auth logs a warning at startup.
+	// gridctl refuses to start on a widened bind without auth and an origin
+	// allowlist unless the insecure override is set.
 	Bind string `yaml:"bind,omitempty"`
 
-	// InsecureAllowUnauthenticated permits a non-loopback bind with no auth
-	// configured. Without it gridctl refuses to start in that combination.
+	// InsecureAllowUnauthenticated permits a non-loopback bind without auth
+	// and without an explicit origin allowlist. One override covers both
+	// refusals. Without it gridctl refuses to start in either combination.
 	// Exists alongside the --insecure-allow-unauthenticated flag because a
 	// flag can be dropped by whatever wraps the process; a config field
 	// survives that.
 	InsecureAllowUnauthenticated bool `yaml:"insecure_allow_unauthenticated,omitempty"`
+
+	// Description is an optional Server Card description, 1 to 100 characters
+	// when set. Unset keeps the generated default. Read only by the card builder.
+	Description string `yaml:"description,omitempty"`
+
+	// PublicURL is the absolute http(s) origin the Server Card advertises,
+	// with an optional port and path prefix and no userinfo, query, or
+	// fragment. Unset leaves the card to a trusted Host, or omits remotes.
+	// Read only by the card builder.
+	PublicURL string `yaml:"public_url,omitempty"`
 
 	// AllowedHosts lists additional Host header values accepted on the MCP
 	// endpoint when a request arrives over loopback. Loopback hosts

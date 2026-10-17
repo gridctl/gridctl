@@ -47,7 +47,7 @@ Exposes Gridctl's gateway on all interfaces for remote MCP clients through HTTPS
 2. A gateway token stored on the server with `gridctl var set GATEWAY_TOKEN`
 3. A TLS-terminating reverse proxy forwarding to port 8180, with the backend firewalled so only the proxy can reach it, or an SSH tunnel
 
-If the proxy forwards the public hostname in the `Host` header, add that exact hostname to `gateway.allowed_hosts`. Loopback hosts are accepted by default; valid credentials do not bypass Host validation. See [gateway configuration](../../docs/config-schema.md#gateway).
+If the proxy forwards the public hostname in the `Host` header, add that exact hostname to `gateway.allowed_hosts`. Loopback hosts are accepted by default; valid credentials do not bypass Host validation. Replace `allowed_origins` with the browser origins that will load the UI. The example value is a placeholder, and an empty list or `*` refuses to start on this widened bind. The Server Card advertises that public hostname only when `public_url` is set or the request Host is in `allowed_hosts`. A Host that matches neither is not copied into the card. On this widened bind, startup logs one warning while `public_url` is unset. See [gateway configuration](../../docs/config-schema.md#gateway).
 
 ### Usage
 

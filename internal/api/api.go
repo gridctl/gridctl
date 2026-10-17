@@ -72,6 +72,10 @@ type Server struct {
 	authType           string
 	authToken          string
 	authHeader         string
+	originsMode        string
+	originsCount       int
+	cardDescription    string
+	cardPublicURL      string
 
 	gatewayAddr   string // e.g. "http://localhost:8180" — used to build MCP config for CLI proxy
 	tokenizerName string // active tokenizer mode: "embedded" or "api"
@@ -255,6 +259,21 @@ func (s *Server) SetAllowedHosts(hosts []string) {
 	s.streamableServer.SetAllowedHosts(hosts)
 }
 
+// SetStartupOrigins records the security-report origin mode and allowlist
+// count. mode is computed by the builder from the effective bind, never
+// from the hardcoded localhost gateway address.
+func (s *Server) SetStartupOrigins(mode string, count int) {
+	s.originsMode = mode
+	s.originsCount = count
+}
+
+// SetServerCard records card-only gateway fields. They are not used for
+// link URLs, SetGatewayAddr, or the reload snapshot.
+func (s *Server) SetServerCard(description, publicURL string) {
+	s.cardDescription = description
+	s.cardPublicURL = publicURL
+}
+
 // SetAuth configures authentication for the server.
 // When configured, operational routes require a valid token; the UI, probes,
 // terminal CORS preflight, and state-validated OAuth callback remain public.
@@ -416,6 +435,9 @@ func (s *Server) Handler() http.Handler {
 
 	// MCP endpoints - Streamable HTTP (POST/GET/DELETE) and legacy SSE negotiation
 	mux.Handle("/mcp", s.streamableServer)
+	mux.HandleFunc("GET /mcp/server-card", s.handleServerCard)
+	mux.HandleFunc("GET /groups/{name}/mcp/server-card", s.handleGroupServerCard)
+	mux.HandleFunc("GET /.well-known/ai-catalog.json", s.handleAICatalog)
 	// Group endpoints: the same streamable transport serving a curated
 	// surface. The wrapper 404s unknown groups BEFORE any MCP handling so a
 	// typo'd link URL never creates a session, and injects the group into
@@ -584,6 +606,7 @@ func (s *Server) Handler() http.Handler {
 	// Server probe — ephemeral tool enumeration used by the wizard's
 	// "Discover tools" flow for servers not yet loaded in the stack.
 	mux.HandleFunc("POST /api/servers/probe", s.handleProbe)
+	mux.HandleFunc("POST /api/servers/card", s.handleServerCardDetect)
 
 	// OpenAPI spec preview — lists a spec's operations so the wizard can
 	// curate them before deploy. Sibling of the probe, not part of it: the
@@ -1032,7 +1055,12 @@ func corsMiddleware(allowedOrigins []string, extraHeaders []string, next http.Ha
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if origin != "" && (allowAll || originSet[origin]) {
+		if origin != "" && publicDiscoveryRoute(r.URL.Path) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, If-None-Match")
+			w.Header().Set("Access-Control-Expose-Headers", "ETag")
+		} else if origin != "" && (allowAll || originSet[origin]) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", allowHeaders)

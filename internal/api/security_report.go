@@ -42,8 +42,15 @@ func (s *Server) passiveSecurityReport(ctx context.Context) *secreport.Report {
 	}
 	in.Pins = secreport.PinViewFromStore(s.pinStore, enabled, scan)
 	in.SkillPins = secreport.SkillPinViewFromStore(s.skillPinStore)
-	if s.authType != "" || s.authToken != "" || s.gatewayAddr != "" {
-		in.Startup = &secreport.StartupView{AuthEnabled: s.authToken != "", AuthType: s.authType, Bind: secreportDisplayHost(s.gatewayAddr)}
+	if s.authType != "" || s.authToken != "" || s.gatewayAddr != "" || s.originsMode != "" {
+		in.Startup = &secreport.StartupView{
+			AuthEnabled:        s.authToken != "",
+			AuthType:           s.authType,
+			Bind:               secreportDisplayHost(s.gatewayAddr),
+			OriginsMode:        s.originsMode,
+			AllowedOriginCount: s.originsCount,
+			DiscoveryRoutes:    discoveryRoutePatterns(),
+		}
 	}
 	in.Execution = s.passiveExecutionViews()
 	return secreport.Assemble(time.Now().UTC(), in)

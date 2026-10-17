@@ -220,6 +220,35 @@ func TestAssemble_StartupDistinctFromDeclaration(t *testing.T) {
 	}
 }
 
+func TestOriginsStartupCheck(t *testing.T) {
+	nilCheck := originsStartupCheck(nil)
+	if nilCheck.Outcome != OutcomeUnknown || nilCheck.ReasonCode != "startup_unavailable" {
+		t.Fatalf("nil = %s %s", nilCheck.Outcome, nilCheck.ReasonCode)
+	}
+	modes := []struct {
+		mode   string
+		reason string
+	}{
+		{"loopback-wildcard", "origins_loopback_wildcard"},
+		{"loopback-allowlist", "origins_loopback_allowlist"},
+		{"allowlist", "origins_allowlist"},
+		{"wildcard-override", "origins_wildcard_override"},
+	}
+	for _, tt := range modes {
+		got := originsStartupCheck(&StartupView{OriginsMode: tt.mode, AllowedOriginCount: 2})
+		if got.Outcome != OutcomePass || got.ReasonCode != tt.reason {
+			t.Fatalf("%s: %s %s", tt.mode, got.Outcome, got.ReasonCode)
+		}
+		if got.Facts.OriginsMode != tt.mode || got.Facts.AllowedOriginCount == nil || *got.Facts.AllowedOriginCount != 2 {
+			t.Fatalf("%s facts = %#v", tt.mode, got.Facts)
+		}
+	}
+	unknown := originsStartupCheck(&StartupView{OriginsMode: "nope"})
+	if unknown.Outcome != OutcomeUnknown || unknown.ReasonCode != "origins_unspecified" {
+		t.Fatalf("unknown = %s %s", unknown.Outcome, unknown.ReasonCode)
+	}
+}
+
 func TestQuietSummary(t *testing.T) {
 	report := &Report{Coverage: Coverage{Status: CoveragePartial}}
 	if got := QuietSummary(report); !strings.Contains(got, "No failing checks") {

@@ -118,10 +118,13 @@ type SkillPinRecordView struct {
 
 // StartupView is a value-free active startup security snapshot.
 type StartupView struct {
-	AuthEnabled bool
-	AuthType    string
-	Bind        string
-	Insecure    bool
+	AuthEnabled        bool
+	AuthType           string
+	Bind               string
+	Insecure           bool
+	OriginsMode        string
+	AllowedOriginCount int
+	DiscoveryRoutes    []string
 }
 
 // ExecutionView is per-replica execution evidence already collected.

@@ -53,7 +53,12 @@ func authMiddleware(authType, token, header string, next http.Handler) http.Hand
 
 // isProtectedPath returns true for paths that require authentication:
 // API, MCP (including groups), SSE, A2A, and well-known endpoints.
+// Enumerated public discovery documents are exempt before the prefix cases,
+// so a card under /groups/ or /.well-known/ is not opened by a prefix rule.
 func isProtectedPath(path string) bool {
+	if publicDiscoveryRoute(path) {
+		return false
+	}
 	switch {
 	case strings.HasPrefix(path, "/api/"):
 		return true

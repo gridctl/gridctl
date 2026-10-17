@@ -24,6 +24,8 @@ import { TransportAdvisor } from '../TransportAdvisor';
 import { ToolsPicker } from './ToolsPicker';
 import { OperationsPicker } from './OperationsPicker';
 import { fetchPythonPackageVersions } from '../../../lib/api';
+import { cardPrefill, useDetectCard } from '../../../hooks/useDetectCard';
+import type { DetectedCardInput } from '../../../lib/api';
 import { ExecutionFields } from './ExecutionFields';
 
 // --- Server type definitions ---
@@ -646,6 +648,8 @@ interface MCPServerFormProps {
 }
 
 export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
+  const cardDetect = useDetectCard();
+  const [cardInputs, setCardInputs] = useState<DetectedCardInput[]>([]);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(['identity', 'type', 'config']),
   );
@@ -795,14 +799,45 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
               <label className={labelClass}>
                 URL <span className="text-status-error">*</span>
               </label>
-              <input
-                type="url"
-                value={data.url ?? ''}
-                onChange={(e) => onChange({ url: e.target.value })}
-                placeholder="https://my-server.example.com/mcp"
-                className={cn(inputClass, errors?.url && 'border-status-error/50')}
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="url"
+                  value={data.url ?? ''}
+                  onChange={(e) => onChange({ url: e.target.value })}
+                  placeholder="https://my-server.example.com/mcp"
+                  className={cn(inputClass, 'flex-1', errors?.url && 'border-status-error/50')}
+                />
+                <button
+                  type="button"
+                  className="shrink-0 rounded-lg border border-border/40 px-2 py-2 text-xs text-text-secondary hover:text-text-primary"
+                  disabled={cardDetect.loading || !data.url}
+                  onClick={() => {
+                    if (!data.url) return;
+                    void cardDetect.detect(data.url).then((result) => {
+                      if (!result) return;
+                      onChange(cardPrefill(result.server));
+                      setCardInputs(result.inputs ?? []);
+                    });
+                  }}
+                >
+                  {cardDetect.loading ? 'Detecting...' : 'Detect from URL'}
+                </button>
+              </div>
               <FieldError error={errors?.url} />
+              {cardDetect.error && (
+                <p className="text-[10px] text-status-error mt-1">{cardDetect.error.message}</p>
+              )}
+              {cardInputs.length > 0 && (
+                <ul className="mt-1 space-y-0.5 text-[10px] text-text-muted">
+                  {cardInputs.map((input) => (
+                    <li key={input.name}>
+                      {input.name}
+                      {input.required ? ' (required)' : ''}
+                      {input.secret ? ', secret' : ''}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
 

@@ -288,6 +288,30 @@ func AddrIsLoopback(addr net.Addr) bool {
 	return HostIsLoopback(host)
 }
 
+// HostInAllowlist reports whether host matches an allowlist entry using the
+// same comparison as ValidateRequestHost. It does not apply that function's
+// non-loopback short-circuit, so a widened-bind Host is not treated as trusted
+// merely because the arrival address is not loopback.
+func HostInAllowlist(host string, allowedHosts []string) bool {
+	hostname, _, ok := splitHostPortLenient(host)
+	if !ok {
+		return false
+	}
+	for _, allowed := range allowedHosts {
+		if allowed == "" {
+			continue
+		}
+		allowedHost, _, allowedOK := splitHostPortLenient(allowed)
+		if !allowedOK {
+			continue
+		}
+		if strings.EqualFold(allowed, host) || strings.EqualFold(allowedHost, hostname) {
+			return true
+		}
+	}
+	return false
+}
+
 // HostIsLoopback reports whether hostname names the loopback interface.
 // ParseIP plus IsLoopback covers all of 127.0.0.0/8 and ::1 (including
 // v4-mapped v6), which a literal comparison against "127.0.0.1" would miss.

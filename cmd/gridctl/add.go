@@ -10,9 +10,11 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/gridctl/gridctl/internal/probe"
 	"github.com/gridctl/gridctl/pkg/catalog"
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/output"
+	"github.com/gridctl/gridctl/pkg/servercard"
 	"github.com/gridctl/gridctl/pkg/vault"
 
 	"github.com/charmbracelet/huh"
@@ -33,15 +35,23 @@ var (
 	addFormat    string
 	addAsJSON    *bool
 	addContainer bool
+	addNoCard    bool
 )
 
 var addCmd = &cobra.Command{
-	Use:   "add <name>",
+	Use:   "add <name-or-url>",
 	Short: "Add an MCP server from the catalog to the stack",
 	Long: `Resolves a catalog entry by name and appends the matching server block to
 your stack.yaml: curated entries first ('gridctl add github'), then the
 official MCP Registry by full reverse-DNS name
 ('gridctl add io.github.user/weather').
+
+An http:// or https:// argument skips the catalog. gridctl fetches
+<url>/server-card and, when that card is missing, a same-origin entry from
+the origin AI Catalog. Entries on another host are skipped. A card writes
+the remote URL and an auth placeholder without probing. --no-card, a
+missing card, or an invalid card probes the URL and writes a plain url
+block. An off-origin remote is refused and is not followed.
 
 Required inputs are prompted for; secret values are masked and stored in
 the variable store, so the stack file only ever carries ${var:KEY}
@@ -51,7 +61,8 @@ publications, not vetted by gridctl; review them before deploying.
 
 Exit codes:
   0  added
-  1  cancelled, unknown name, or the server was skipped (e.g. collision)
+  1  cancelled, unknown name, the server was skipped (e.g. collision),
+     a failed URL probe, or a refused server card
   2  infrastructure error (no stack file, parse or write failure,
      post-add validation failure)`,
 	Example: `  gridctl add github                Add the curated GitHub server
@@ -61,7 +72,9 @@ Exit codes:
   gridctl add io.github.user/tool --container
                                     Build an exact registry PyPI package
   gridctl add 'mcp-server-fetch==2026.8.18' --container
-                                    Build an exact public PyPI release`,
+                                    Build an exact public PyPI release
+  gridctl add https://host.example/mcp
+                                    Consume a server card, or probe`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		format, err := resolveFormat(addFormat, cmd.Flags().Changed("format"), *addAsJSON)
@@ -81,6 +94,7 @@ func init() {
 	addCmd.Flags().BoolVar(&addNoVault, "no-vault", false, "Write secret inputs as literals instead of vault references (a warning is printed per secret)")
 	addCmd.Flags().StringVar(&addFormat, "format", "", "Output format: 'json' for machine-readable output (default: text)")
 	addCmd.Flags().BoolVar(&addContainer, "container", false, "Run an exact PyPI package or pinned GitHub source in a generated Python container")
+	addCmd.Flags().BoolVar(&addNoCard, "no-card", false, "Skip server card discovery for an http(s) URL and probe the endpoint directly")
 	addAsJSON = addJSONAlias(addCmd)
 }
 
@@ -99,6 +113,14 @@ type addServerDoc struct {
 	ImageIntent string            `json:"image_intent,omitempty"`
 }
 
+type addCardDoc struct {
+	Found bool   `json:"found"`
+	URL   string `json:"url,omitempty"`
+	// protocolGeneration is applied to the written server and is not part
+	// of the JSON document. Schema version stays 1.
+	protocolGeneration string
+}
+
 type addSourceDoc struct {
 	Type    string `json:"type"`
 	URL     string `json:"url,omitempty"`
@@ -113,6 +135,7 @@ type addDoc struct {
 	BackupPath    string       `json:"backup_path,omitempty"`
 	DryRun        bool         `json:"dry_run"`
 	Server        addServerDoc `json:"server"`
+	Card          *addCardDoc  `json:"card,omitempty"`
 }
 
 // --- interactive seams ---
@@ -217,8 +240,14 @@ func runAdd(ctx context.Context, arg, format string) error {
 		return err
 	}
 	var entry catalog.Entry
+	var cardInfo *addCardDoc
 	if addContainer && directInput {
 		entry = catalog.Entry{Name: direct.name, Title: direct.name, Tier: "direct", Install: catalog.Install{Type: catalog.InstallCommand, Transport: "stdio"}}
+	} else if isAddURL(arg) && !addContainer {
+		entry, cardInfo, err = resolveURLAdd(ctx, printer, arg)
+		if err != nil {
+			return err
+		}
 	} else {
 		entry, err = resolveCatalogEntry(ctx, printer, arg)
 		if err != nil {
@@ -318,6 +347,9 @@ func runAdd(ctx context.Context, arg, format string) error {
 		}
 	}
 	warnings = append(warnings, mapWarnings...)
+	if cardInfo != nil && cardInfo.protocolGeneration != "" {
+		server.ProtocolGeneration = cardInfo.protocolGeneration
+	}
 
 	doc := addDoc{
 		SchemaVersion: addJSONSchemaVersion,
@@ -328,6 +360,7 @@ func runAdd(ctx context.Context, arg, format string) error {
 			Transport: entry.Install.Transport, Warnings: warnings,
 			Secrets: secretDocs, UnsetVars: unsetVars,
 		},
+		Card: cardInfo,
 	}
 	if server.Source != nil {
 		doc.Server.Source = &addSourceDoc{
@@ -508,6 +541,68 @@ func formatContainerSource(source *config.Source) string {
 
 // resolveCatalogEntry resolves the argument: curated catalog first, then
 // the MCP Registry, then a did-you-mean suggestion.
+func isAddURL(arg string) bool {
+	return strings.HasPrefix(arg, "http://") || strings.HasPrefix(arg, "https://")
+}
+
+// resolveURLAdd consumes a Server Card when one is published, and otherwise
+// probes the URL and writes a plain url block. An off-origin remote is
+// refused. --no-card skips the card fetch.
+func resolveURLAdd(ctx context.Context, printer *output.Printer, arg string) (catalog.Entry, *addCardDoc, error) {
+	info := &addCardDoc{URL: arg}
+	if !addNoCard {
+		card, err := servercard.Resolve(ctx, arg, servercard.FetchOptions{})
+		if err == nil {
+			draft, derr := servercard.DraftFromCard(card, arg)
+			if derr != nil {
+				return catalog.Entry{}, info, fmt.Errorf("refusing server card: %w", derr)
+			}
+			info.Found = true
+			if draft.CardURL != "" {
+				info.URL = draft.CardURL
+			}
+			info.protocolGeneration = draft.ProtocolGeneration
+			printer.Info(fmt.Sprintf("Using server card at %s", info.URL))
+			return draft.Entry, info, nil
+		}
+		if errors.Is(err, servercard.ErrOffOrigin) || errors.Is(err, servercard.ErrTemplateURL) {
+			return catalog.Entry{}, info, fmt.Errorf("refusing off-origin server card remote: %w", err)
+		}
+		if !errors.Is(err, servercard.ErrNoCard) && !errors.Is(err, servercard.ErrInvalidCard) {
+			return catalog.Entry{}, info, err
+		}
+		printer.Warn(fmt.Sprintf("No usable server card at %s; probing the URL", arg))
+	}
+	if err := probeAddURL(ctx, arg); err != nil {
+		return catalog.Entry{}, info, err
+	}
+	transport := "http"
+	if strings.HasSuffix(strings.TrimSuffix(arg, "/"), "/sse") {
+		transport = "sse"
+	}
+	name := arg
+	if u, err := url.Parse(arg); err == nil && u.Hostname() != "" {
+		name = u.Hostname()
+	}
+	return catalog.Entry{
+		Name: name,
+		Tier: "url",
+		Install: catalog.Install{
+			Type:      catalog.InstallURL,
+			Transport: transport,
+			URL:       arg,
+		},
+	}, info, nil
+}
+
+func probeAddURL(ctx context.Context, raw string) error {
+	prober := probe.NewProber(nil)
+	if _, err := prober.Probe(ctx, config.MCPServer{Name: "probe", URL: raw, Transport: "http"}); err != nil {
+		return fmt.Errorf("probe failed: %s", err.Error())
+	}
+	return nil
+}
+
 func resolveCatalogEntry(ctx context.Context, printer *output.Printer, arg string) (catalog.Entry, error) {
 	if entry, ok := catalog.FindCurated(arg); ok {
 		return entry, nil

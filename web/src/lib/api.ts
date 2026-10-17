@@ -2547,6 +2547,58 @@ export async function probeServer(config: ProbeServerConfig, sessionId?: string)
   return data as ProbeSuccess;
 }
 
+export interface DetectedCardInput {
+  name: string;
+  description?: string;
+  required?: boolean;
+  secret?: boolean;
+}
+
+export interface DetectedCardServer {
+  name: string;
+  url: string;
+  transport: string;
+  auth?: {
+    type: string;
+    token?: string;
+    header?: string;
+    value?: string;
+  };
+  protocol_generation?: string;
+}
+
+export interface DetectedCard {
+  card: unknown;
+  server: DetectedCardServer;
+  warnings?: string[];
+  inputs?: DetectedCardInput[];
+}
+
+/**
+ * Fetch a remote Server Card and return a stack draft. The draft carries
+ * ${var:KEY} placeholders, never a credential value.
+ * POST /api/servers/card
+ */
+export async function detectServerCard(url: string, sessionId?: string): Promise<DetectedCard> {
+  const headers = buildHeaders({ 'Content-Type': 'application/json' });
+  if (sessionId) headers['X-Session-ID'] = sessionId;
+  const response = await fetch(`${API_BASE}/api/servers/card`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ url }),
+  });
+  if (response.status === 401) throw new AuthError('Authentication required');
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    const err = data?.error;
+    if (err && typeof err.code === 'string') {
+      throw new ProbeError(err.code, err.message ?? 'Card detection failed', err.hint, response.status);
+    }
+    throw new Error(`Card detection failed: ${response.status} ${response.statusText}`);
+  }
+  return data as DetectedCard;
+}
+
 // === OpenAPI Operations Preview ===
 
 // Wire shape accepted by POST /api/openapi/operations. There is deliberately no

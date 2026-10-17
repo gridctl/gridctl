@@ -698,41 +698,94 @@ func (b *GatewayBuilder) effectiveBind() string {
 // beyond loopback with no authentication configured.
 var ErrUnauthenticatedExposure = errors.New("refusing to start: unauthenticated gateway on a non-loopback address")
 
-// checkExposure refuses to start a gateway that would be reachable from
-// other hosts with no authentication.
+// ErrUnrestrictedOrigins is returned when a non-loopback bind has no
+// explicit origin allowlist and the insecure override is not set.
+var ErrUnrestrictedOrigins = errors.New("refusing to start: unrestricted CORS origins on a non-loopback address")
+
+// checkExposure refuses a listener reachable beyond loopback unless
+// authentication and an explicit origin allowlist are configured, or the
+// named insecure override is set. Loopback is unchanged.
 //
-// Enforcement is keyed to the user's own act of widening the bind, following
-// Elasticsearch's bootstrap checks: a loopback gateway stays permissive and
-// silent, and only deliberately widening it flips the check to a hard
-// failure. That keeps the default path frictionless while making the
-// dangerous configuration impossible to reach by accident.
-//
-// The message enumerates every way forward rather than stating the refusal
-// alone. A bare failure here reads as gridctl being broken, and the user has
-// no way to guess which of three unrelated settings is responsible.
+// Auth is checked first. The origins check runs whenever auth did not
+// return, including when the override let an unauthenticated widened bind
+// continue. Appending the origins check after an early success return
+// would never see that configuration.
 func (b *GatewayBuilder) checkExposure(log *slog.Logger) error {
 	if bindIsLoopback(b.effectiveBind()) {
 		return nil
 	}
 	authConfigured := b.stack != nil && b.stack.Gateway != nil &&
 		b.stack.Gateway.Auth != nil && b.stack.Gateway.Auth.Token != ""
-	if authConfigured {
-		return nil
+	if !authConfigured {
+		if b.allowUnauthenticated() {
+			// The override is deliberately noisy on every start: a one-time
+			// acknowledgement that goes silent is one the operator forgets.
+			log.Warn("gateway is reachable from other hosts with no authentication; continuing because the insecure override is set",
+				"bind", b.effectiveBind(), "port", b.config.Port)
+		} else {
+			return fmt.Errorf("%w (bind %s, port %d)\n"+
+				"  The API, web UI, and gateway would accept unauthenticated requests from any host that can reach this machine.\n"+
+				"  Choose one:\n"+
+				"    1. Configure authentication: set gateway.auth in stack.yaml (type: bearer, token: \"${YOUR_TOKEN}\")\n"+
+				"    2. Listen on loopback only: drop --bind/--bind-all and gateway.bind\n"+
+				"    3. Accept the risk: pass --insecure-allow-unauthenticated, or set gateway.insecure_allow_unauthenticated: true",
+				ErrUnauthenticatedExposure, b.effectiveBind(), b.config.Port)
+		}
 	}
-	if b.allowUnauthenticated() {
-		// The override is deliberately noisy on every start: a one-time
-		// acknowledgement that goes silent is one the operator forgets.
-		log.Warn("gateway is reachable from other hosts with no authentication; continuing because the insecure override is set",
+	if originsUnrestricted(b.stack) {
+		if b.allowUnauthenticated() {
+			log.Warn("gateway is reachable from other hosts with unrestricted CORS origins; continuing because --insecure-allow-unauthenticated is set",
+				"bind", b.effectiveBind(), "port", b.config.Port)
+		} else {
+			return fmt.Errorf("%w (bind %s, port %d)\n"+
+				"  Cross-origin browser requests would be accepted from any website that can reach this listener.\n"+
+				"  Choose one:\n"+
+				"    1. Set gateway.allowed_origins in stack.yaml to the origins that will load the UI\n"+
+				"    2. Listen on loopback only: drop --bind/--bind-all and gateway.bind\n"+
+				"    3. Accept the risk: pass --insecure-allow-unauthenticated, or set gateway.insecure_allow_unauthenticated: true",
+				ErrUnrestrictedOrigins, b.effectiveBind(), b.config.Port)
+		}
+	}
+	if b.stack == nil || b.stack.Gateway == nil || b.stack.Gateway.PublicURL == "" {
+		log.Warn("server card will advertise an endpoint only for Hosts in gateway.allowed_hosts",
 			"bind", b.effectiveBind(), "port", b.config.Port)
-		return nil
 	}
-	return fmt.Errorf("%w (bind %s, port %d)\n"+
-		"  The API, web UI, and gateway would accept unauthenticated requests from any host that can reach this machine.\n"+
-		"  Choose one:\n"+
-		"    1. Configure authentication: set gateway.auth in stack.yaml (type: bearer, token: \"${YOUR_TOKEN}\")\n"+
-		"    2. Listen on loopback only: drop --bind/--bind-all and gateway.bind\n"+
-		"    3. Accept the risk: pass --insecure-allow-unauthenticated, or set gateway.insecure_allow_unauthenticated: true",
-		ErrUnauthenticatedExposure, b.effectiveBind(), b.config.Port)
+	return nil
+}
+
+func originsUnrestricted(stack *config.Stack) bool {
+	if stack == nil || stack.Gateway == nil || len(stack.Gateway.AllowedOrigins) == 0 {
+		return true
+	}
+	for _, origin := range stack.Gateway.AllowedOrigins {
+		if origin == "*" {
+			return true
+		}
+	}
+	return false
+}
+
+// startupOriginsMode classifies the effective bind and allowlist for the
+// security report. It must not be derived from the hardcoded localhost
+// gateway address.
+func startupOriginsMode(bind string, origins []string) (string, int) {
+	unrestricted := len(origins) == 0
+	for _, origin := range origins {
+		if origin == "*" {
+			unrestricted = true
+			break
+		}
+	}
+	switch {
+	case bindIsLoopback(bind) && unrestricted:
+		return "loopback-wildcard", len(origins)
+	case bindIsLoopback(bind):
+		return "loopback-allowlist", len(origins)
+	case unrestricted:
+		return "wildcard-override", len(origins)
+	default:
+		return "allowlist", len(origins)
+	}
 }
 
 // allowUnauthenticated resolves the escape hatch across both sources. The
@@ -759,10 +812,21 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	server.SetProvisionerRegistry(provisioner.NewRegistry(), "gridctl")
 	server.SetGatewayAddr(fmt.Sprintf("http://localhost:%d", b.config.Port))
 
-	if b.stack.Gateway != nil && len(b.stack.Gateway.AllowedOrigins) > 0 {
-		server.SetAllowedOrigins(b.stack.Gateway.AllowedOrigins)
+	var configuredOrigins []string
+	if b.stack.Gateway != nil {
+		configuredOrigins = b.stack.Gateway.AllowedOrigins
+	}
+	if len(configuredOrigins) > 0 {
+		server.SetAllowedOrigins(configuredOrigins)
 	} else {
+		// Reachable only on loopback or under the insecure override.
+		// checkExposure refuses this fallback on a widened bind otherwise.
 		server.SetAllowedOrigins([]string{"*"})
+	}
+	mode, count := startupOriginsMode(b.effectiveBind(), configuredOrigins)
+	server.SetStartupOrigins(mode, count)
+	if b.stack.Gateway != nil {
+		server.SetServerCard(b.stack.Gateway.Description, b.stack.Gateway.PublicURL)
 	}
 
 	// Unset means loopback-only, so an absent Gateway block needs no branch.

@@ -798,42 +798,86 @@ func TestGatewayBuilder_SetupHotReload_WithWatch(t *testing.T) {
 // TestGatewayBuilder_RefusesUnauthenticatedExposure is the regression case:
 // before this, a widened bind with no auth started and served the API to the
 // network with only a log warning.
+func TestStartupOriginsMode(t *testing.T) {
+	tests := []struct {
+		bind    string
+		origins []string
+		want    string
+		count   int
+	}{
+		{"127.0.0.1", nil, "loopback-wildcard", 0},
+		{"127.0.0.1", []string{"*"}, "loopback-wildcard", 1},
+		{"localhost", []string{"https://ui.example"}, "loopback-allowlist", 1},
+		{"0.0.0.0", []string{"https://ui.example", "https://ops.example"}, "allowlist", 2},
+		{"0.0.0.0", nil, "wildcard-override", 0},
+		{"0.0.0.0", []string{"*"}, "wildcard-override", 1},
+	}
+	for _, tt := range tests {
+		got, n := startupOriginsMode(tt.bind, tt.origins)
+		if got != tt.want || n != tt.count {
+			t.Errorf("startupOriginsMode(%q, %v) = %s %d, want %s %d", tt.bind, tt.origins, got, n, tt.want, tt.count)
+		}
+	}
+}
+
 func TestGatewayBuilder_RefusesUnauthenticatedExposure(t *testing.T) {
 	withAuth := func() *config.Stack {
 		return &config.Stack{Name: "test", Gateway: &config.GatewayConfig{
-			Auth: &config.AuthConfig{Type: "bearer", Token: "secret"},
+			Auth:           &config.AuthConfig{Type: "bearer", Token: "secret"},
+			AllowedOrigins: []string{"https://ui.example"},
 		}}
 	}
 	tests := []struct {
-		name      string
-		bind      string
-		allowFlag bool
-		stack     func() *config.Stack
-		wantErr   bool
+		name       string
+		bind       string
+		allowFlag  bool
+		stack      func() *config.Stack
+		wantErr    bool
+		wantOrigin bool
+		originWarn bool
 	}{
 		{"widened bind with no auth refuses", "0.0.0.0", false, func() *config.Stack {
 			return &config.Stack{Name: "test"}
-		}, true},
-		{"widened bind with auth starts", "0.0.0.0", false, withAuth, false},
+		}, true, false, false},
+		{"widened bind with auth and allowlist starts", "0.0.0.0", false, withAuth, false, false, false},
+		{"widened bind with auth and no allowlist refuses origins", "0.0.0.0", false, func() *config.Stack {
+			return &config.Stack{Name: "test", Gateway: &config.GatewayConfig{
+				Auth: &config.AuthConfig{Type: "bearer", Token: "secret"},
+			}}
+		}, false, true, false},
+		{"widened bind with auth and wildcard refuses origins", "0.0.0.0", false, func() *config.Stack {
+			return &config.Stack{Name: "test", Gateway: &config.GatewayConfig{
+				Auth:           &config.AuthConfig{Type: "bearer", Token: "secret"},
+				AllowedOrigins: []string{"*"},
+			}}
+		}, false, true, false},
+		{"widened bind with override and no allowlist starts", "0.0.0.0", true, func() *config.Stack {
+			return &config.Stack{Name: "test", Gateway: &config.GatewayConfig{
+				Auth: &config.AuthConfig{Type: "bearer", Token: "secret"},
+			}}
+		}, false, false, true},
+		{"stackless widened bind refuses", "0.0.0.0", false, func() *config.Stack {
+			return &config.Stack{Name: "gridctl"}
+		}, true, false, false},
 		{"loopback with no auth starts", "127.0.0.1", false, func() *config.Stack {
 			return &config.Stack{Name: "test"}
-		}, false},
+		}, false, false, false},
 		{"default bind with no auth starts", "", false, func() *config.Stack {
 			return &config.Stack{Name: "test"}
-		}, false},
+		}, false, false, false},
 		{"escape hatch flag permits it", "0.0.0.0", true, func() *config.Stack {
 			return &config.Stack{Name: "test"}
-		}, false},
+		}, false, false, true},
 		{"escape hatch config field permits it", "0.0.0.0", false, func() *config.Stack {
 			return &config.Stack{Name: "test", Gateway: &config.GatewayConfig{
 				InsecureAllowUnauthenticated: true,
 			}}
-		}, false},
+		}, false, false, true},
 		{"empty auth token does not count as configured", "0.0.0.0", false, func() *config.Stack {
 			return &config.Stack{Name: "test", Gateway: &config.GatewayConfig{
 				Auth: &config.AuthConfig{Type: "bearer", Token: ""},
 			}}
-		}, true},
+		}, true, false, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -843,14 +887,18 @@ func TestGatewayBuilder_RefusesUnauthenticatedExposure(t *testing.T) {
 				runtime.NewOrchestrator(nil, nil), &runtime.UpResult{})
 			builder.registryDir = t.TempDir()
 
-			_, err := builder.Build(false)
-			if tt.wantErr {
-				if !errors.Is(err, ErrUnauthenticatedExposure) {
-					t.Fatalf("expected ErrUnauthenticatedExposure, got %v", err)
+			inst, err := builder.Build(false)
+			if tt.wantErr || tt.wantOrigin {
+				sentinel := ErrUnauthenticatedExposure
+				fragments := []string{"gateway.auth", "loopback", "insecure-allow-unauthenticated"}
+				if tt.wantOrigin {
+					sentinel = ErrUnrestrictedOrigins
+					fragments = []string{"gateway.allowed_origins", "loopback", "insecure-allow-unauthenticated"}
 				}
-				// The message is the deliverable: a bare refusal reads as
-				// gridctl being broken, so every remedy must be named.
-				for _, want := range []string{"gateway.auth", "loopback", "insecure-allow-unauthenticated"} {
+				if !errors.Is(err, sentinel) {
+					t.Fatalf("expected %v, got %v", sentinel, err)
+				}
+				for _, want := range fragments {
 					if !strings.Contains(err.Error(), want) {
 						t.Errorf("refusal message must name %q, got:\n%s", want, err)
 					}
@@ -859,6 +907,17 @@ func TestGatewayBuilder_RefusesUnauthenticatedExposure(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatalf("expected start, got %v", err)
+			}
+			if tt.originWarn {
+				warns := 0
+				for _, entry := range inst.LogBuffer.GetRecent(100) {
+					if entry.Level == "WARN" && strings.Contains(entry.Message, "origins") {
+						warns++
+					}
+				}
+				if warns != 1 {
+					t.Fatalf("origin WARNs = %d, want 1", warns)
+				}
 			}
 		})
 	}

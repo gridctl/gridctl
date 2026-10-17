@@ -1756,6 +1756,62 @@ Error codes:
 
 Env-var values and auth secrets (`auth.token`, `auth.value`, `auth.client_secret`) present in the request body are scrubbed from error messages and hints to avoid leaking secrets.
 
+#### `POST /api/servers/card`
+
+Fetches a SEP-2127 Server Card for an external URL and returns a stack-shaped draft. Powers the wizard's "Detect from URL" button. It does not register the server, mark it trusted, or change pins.
+
+**Auth:** Yes
+
+**Request:**
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-ID: wizard-1" \
+  -d '{"url":"https://mcp.example.com/mcp"}' \
+  http://localhost:8180/api/servers/card
+```
+
+The body is `{ "url": "<absolute http or https URL>" }`, capped at 64 KiB. The handler shares the probe limiter. `X-Session-ID` is optional; when absent, the remote address is used. Concurrency is capped at 3 in-flight requests per session and 10 globally. Excess requests get `429` (session) or `503` (global) with `Retry-After: 3`.
+
+The handler fetches `<url>/server-card` with no credentials, no redirects, and a 64 KiB / 10 second bound, and falls back to the URL origin's `/.well-known/ai-catalog.json` when the card is missing. Catalog entries whose card URL is on another host are skipped. A selected remote whose scheme, host, or port differs from the submitted URL is refused. A URL template is refused with the same `off_origin` code and is not followed.
+
+**Response:**
+```json
+{
+  "card": {
+    "$schema": "https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json",
+    "name": "io.example/mcp",
+    "description": "Example server",
+    "version": "1.0.0",
+    "remotes": [
+      { "type": "streamable-http", "url": "https://mcp.example.com/mcp" }
+    ]
+  },
+  "server": {
+    "name": "mcp",
+    "url": "https://mcp.example.com/mcp",
+    "transport": "http",
+    "auth": { "type": "bearer", "token": "${var:token}" }
+  },
+  "inputs": [
+    { "name": "token", "description": "Gateway bearer token", "required": true, "secret": true }
+  ]
+}
+```
+
+`server` uses stack field names (`url`, `transport`, `auth`, and `protocol_generation` when set) and contains no credential value. `auth` is omitted when the card has no mappable auth header. `Authorization` whose value is exactly `Bearer {x}` maps to bearer auth even when the card lists other headers. A single other header whose value is exactly `{x}` maps to header auth. `protocol_generation` is set only when every listed protocol version is supported and those versions share one era. A further required header, or a header with a literal value, is named in `warnings` and is not written into `server`. `inputs` lists the variables the draft turned into placeholders. `warnings` and `inputs` are omitted when empty.
+
+**Error envelope:** same shape as the probe, `{ "error": { "code", "message", "hint" } }`.
+
+Error codes:
+- `invalid_config` (400) - Body is not JSON, or `url` is missing
+- `invalid_config` (413) - Body exceeds 64 KiB
+- `no_card` (404) - No card at the URL or in the origin catalog
+- `invalid_card` (422) - Card failed validation
+- `off_origin` (422) - Remote origin differs, or the remote is a URL template
+- `fetch_failed` (502) - Fetch failed, including a refused redirect
+- `rate_limited` (429 / 503) - Session or global probe cap exceeded
+
 #### `POST /api/openapi/operations`
 
 Parses an OpenAPI document and returns every operation it contains, without registering anything with the gateway. Powers the wizard's "Load operations" button on the OpenAPI Configuration section. A sibling of the probe rather than part of it: the probe returns `[]mcp.Tool`, which discards the method, path, and tags an operations picker filters on.
@@ -3719,4 +3775,26 @@ Access-Control-Allow-Headers: Content-Type, Authorization
 Vary: Origin
 ```
 
-`OPTIONS` requests return `200 OK` without authentication and never dispatch an operation. CORS response headers are present only when the request supplies an allowed Origin; a custom `gateway.auth.header` is also included in `Access-Control-Allow-Headers`. Preflight success does not authenticate the subsequent request.
+`OPTIONS` requests return `200 OK` without authentication and never dispatch an operation. CORS response headers are present only when the request supplies an allowed Origin; a custom `gateway.auth.header` is also included in `Access-Control-Allow-Headers`. Preflight success does not authenticate the subsequent request. An unlisted Origin on `/mcp`, `/api/*`, and other operational routes receives no `Access-Control-Allow-Origin`.
+
+### Public discovery routes
+
+These GET routes are enumerated, unauthenticated, and not configurable from the stack file. They carry no credential, session, or user data. Host checks still apply. With an `Origin` header they answer `Access-Control-Allow-Origin: *`, `Access-Control-Allow-Methods: GET`, `Access-Control-Allow-Headers: Content-Type, If-None-Match`, and `Access-Control-Expose-Headers: ETag`, regardless of `gateway.allowed_origins`. `OPTIONS` returns 200 and does not dispatch. Other methods return 405. Responses use `Cache-Control: public, max-age=3600` and a strong ETag. A matching `If-None-Match` returns 304. Card responses use `Content-Type: application/mcp-server-card+json`. The catalog uses `Content-Type: application/ai-catalog+json`.
+
+SEP-2127 is Final. The extension repository's discovery notes and the AI Catalog specification are drafts. The vendored schema commit named in `pkg/servercard/testdata/NOTICE.md` is the contract.
+
+| Route | Purpose | Owner |
+|-------|---------|-------|
+| `GET /mcp/server-card` | SEP-2127 Server Card for this gateway | `internal/api` card handlers, `pkg/servercard` |
+| `GET /groups/{name}/mcp/server-card` | SEP-2127 Server Card for one configured tool group. Unknown groups return 404 | `internal/api` card handlers, `pkg/servercard` |
+| `GET /.well-known/ai-catalog.json` | AI Catalog (`specVersion` 1.0) pointing at those cards | `internal/api` card handlers, `pkg/servercard` |
+
+Each card includes `$schema`, a sanitized `name` (`io.gridctl/<segment>`, or `io.gridctl/<segment>.<group>`), `title`, `description`, and `version`. Group cards set `_meta["io.gridctl/group"]`. No card lists tools, prompts, resources, capabilities, or a credential value. `supportedProtocolVersions` matches `server/discover`.
+
+The advertised origin is `gateway.public_url` when set. Otherwise it is the request Host when the request arrived on loopback and the Host is loopback, or when the Host matches `gateway.allowed_hosts`. Scheme for those Host cases is `https` when the request is TLS, or when the Host is in `gateway.allowed_hosts` and `X-Forwarded-Proto` is `https`; otherwise `http`. `X-Forwarded-Proto` is ignored unless the Host matched `gateway.allowed_hosts`. If none of those origins apply, the card omits `remotes` and the catalog serves `"entries": []`. The body does not use the hardcoded localhost gateway address. A request-derived body sets `Vary: Host`. A non-loopback start with `public_url` unset logs one warning that the card advertises an endpoint only for Hosts in `gateway.allowed_hosts`. Stackless mode serves the default card only.
+
+When an origin exists, a catalog entry's `identifier` is `urn:air:<hostname without port>:mcp:<segment>` (a group uses `<segment>.<group>`), `type` is `application/mcp-server-card+json`, and `url` is the absolute card URL. A path prefix on `gateway.public_url` is included in that URL.
+
+When auth is configured, `remotes[].headers` names a placeholder and a `variables` entry. Bearer uses `Authorization: Bearer {token}`. API-key auth uses the configured header, or `Authorization` when `gateway.auth.header` is empty, with value `{key}` and no Bearer prefix. The token value is never emitted.
+
+Consuming a foreign card is [`POST /api/servers/card`](#post-apiserverscard). That route is protected, shares the probe limiter, and is not one of the public discovery documents above.

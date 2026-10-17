@@ -3,11 +3,13 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"path"
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // scanIgnoreCodeRe matches poisoning-scan finding codes ("P001"), case-insensitive
@@ -19,6 +21,23 @@ var sourceExactPEP440Pattern = regexp.MustCompile(`(?i)^v?(?:[0-9]+!)?[0-9]+(?:\
 var sourceExtraPattern = regexp.MustCompile(`^[a-z0-9]+(?:[-_.][a-z0-9]+)*$`)
 var sourceDependencyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*(?:\[[A-Za-z0-9,._-]+\])?(?:\s*(?:===|==|!=|~=|<=|>=|<|>)\s*[A-Za-z0-9*+.!_-]+)?(?:\s*;\s*[A-Za-z0-9_. -]+(?:==|!=|<=|>=|<|>)\s*["'][A-Za-z0-9_. -]+["'])?$`)
 var sourceDebianPackagePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*$`)
+
+func validatePublicURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || !u.IsAbs() || u.Host == "" {
+		return fmt.Errorf("must be an absolute http or https URL")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("must use http or https")
+	}
+	if u.User != nil {
+		return fmt.Errorf("must not include userinfo")
+	}
+	if u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("must not include a query or fragment")
+	}
+	return nil
+}
 
 func validateRestart(raw string) error {
 	if raw == "" {
@@ -164,6 +183,16 @@ func Validate(s *Stack) error {
 		}
 		if auth.Header != "" && auth.Type != "api_key" {
 			errs = append(errs, ValidationError{authPrefix + ".header", "only applicable when type is 'api_key'"})
+		}
+	}
+	if s.Gateway != nil && s.Gateway.Description != "" {
+		if n := utf8.RuneCountInString(s.Gateway.Description); n < 1 || n > 100 {
+			errs = append(errs, ValidationError{"gateway.description", "must be 1 to 100 characters"})
+		}
+	}
+	if s.Gateway != nil && s.Gateway.PublicURL != "" {
+		if err := validatePublicURL(s.Gateway.PublicURL); err != nil {
+			errs = append(errs, ValidationError{"gateway.public_url", err.Error()})
 		}
 	}
 
