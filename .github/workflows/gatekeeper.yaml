@@ -36,6 +36,12 @@ jobs:
         with:
           version: v2.11.3
           args: --timeout=3m
+          # The action's config verification downloads the JSON schema from
+          # golangci-lint.run on every run. A timeout there failed the test
+          # gate on main for commits that had already passed the same lint on
+          # their pull request. Lint findings do not depend on that download,
+          # so the required gate must not either.
+          verify: false
 
       - name: Go tests with coverage
         run: |
