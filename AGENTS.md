@@ -16,8 +16,9 @@ Task (https://taskfile.dev) is the entry point for development builds and Go/fro
 | `task build:go` | Backend only. Skips the embed tag if `cmd/gridctl/web/dist` is absent (UI 404s in that case). |
 | `task build:web` | Builds the frontend and stages `web/dist` in `cmd/gridctl/web/dist` for embedding; does not compile Go. |
 | `task dev` | Runs the Vite dev server (`web/`) against a separately-running backend. |
-| `task test` | `go test -race ./...` with `TMPDIR` normalized to its physical path (unit tests only, same race detector CI runs). |
-| `task test:verify` | Unit-lane JSON capture plus `cmd/scenarioverify` against `tests/adversarial/index.yaml` (same path Gatekeeper uses). |
+| `task test` | `go test -race ./...` with `TMPDIR` normalized to its physical path (unit tests only, same race detector CI runs). Human-readable loop; not needed before `task verify`. |
+| `task test:verify` | Unit-lane JSON capture plus `cmd/scenarioverify` against `tests/adversarial/index.yaml` (same path Gatekeeper uses). Included in `task verify`. |
+| `task verify` | Canonical local gate. Runs `test:verify`, `lint`, `test:frontend`, and the Python policy tests once each and stops at the first failure. Gatekeeper lanes start together and each designated lane prints a slowest-tests summary; raw captures stay on the runner. |
 | `task scenarios` | Prints designated scenario IDs and escaped focused `-run` commands. Focused reruns do not replace whole-suite acceptance. |
 | `task test:integration` | `go test -tags=integration -race -timeout 20m ./tests/integration/...`. The full suite requires Docker (or Podman); selected HTTP/subprocess suites need no container runtime. All use real dependencies per Article IV of `CONSTITUTION.md`; mocks are disallowed in `tests/integration/`. |
 | `task test:frontend` | `cd web && npm test` (Vitest). |
@@ -30,6 +31,8 @@ Task (https://taskfile.dev) is the entry point for development builds and Go/fro
 Always test local changes with `task build` followed by `./gridctl …`. The `gridctl` binary on `$PATH` is typically a brew-installed release and will not reflect your changes.
 
 `gridctl serve` and `gridctl apply` daemonize by default. If you need a process you can ctrl-C (or that a test script can kill), pass `-f` / `--foreground`.
+
+`task verify` is the local gate before a pull request. It runs the unit-lane capture and scenario verification, backend and frontend lint, frontend tests, and the Python policy tests (Python 3.11+, jsonschema 4.23.0, PyYAML 6.0.3), each once, and stops at the first failure. `task test` is the human-readable loop and is not needed before `task verify`. Gatekeeper starts the test, integration, conformance, podman-integration, and frontend jobs together; the required job still aggregates every gate. A new push to the same pull request cancels the in-progress run. Other events, including pushes to main and the release workflow's Gatekeeper call, are not canceled. Each designated lane prints a slowest-tests summary of names and elapsed seconds. A missing capture, a jq failure, or a sort failure prints a one-line notice and does not fail the job. Raw captures stay on the runner and are not uploaded.
 
 Run a single Go test:
 
@@ -69,7 +72,7 @@ golangci-lint run                # backend (gosec is enabled; see .golangci.yml 
 cd web && npm run lint           # frontend; zero-error baseline, enforced by the gatekeeper frontend CI job
 ```
 
-Release tooling has separate Python policy/scanner tests: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_*.py' -v` (Python 3.11+, jsonschema 4.23.0, PyYAML 6.0.3, Bash, and jq). These are not included in `task test`. Cask-generation changes also require the explicit pinned GoReleaser exercise on Linux-x86_64; it is intentionally outside discovered `test_*.py` files. Changes to the declarative post-install step or its Homebrew version floor require real Homebrew load and installation acceptance on the declared floor and current stable, including macOS behavior and the Linux platform guard. `.github/workflows/release.yaml` reuses all five exact-commit Gatekeeper jobs, assembles a draft with GoReleaser, validates the generated cask contract and Ruby syntax before preparation and signing, verifies it on Linux/macOS, publishes, and only then advances Homebrew. See `docs/release-verification.md` for the generator command, external verification, immutable-mode prerequisites, and recovery; local fixtures do not replace hosted acceptance. The Python runtime image recipe is validated by `task images:python-runtime`; hosted amd64/arm64 acceptance is `.github/workflows/mcp-runtime-python.yaml`.
+Release tooling has separate Python policy/scanner tests: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_*.py' -v` (Python 3.11+, jsonschema 4.23.0, PyYAML 6.0.3, Bash, and jq). These are not included in `task test`. They run once as part of `task verify`. Cask-generation changes also require the explicit pinned GoReleaser exercise on Linux-x86_64; it is intentionally outside discovered `test_*.py` files. Changes to the declarative post-install step or its Homebrew version floor require real Homebrew load and installation acceptance on the declared floor and current stable, including macOS behavior and the Linux platform guard. `.github/workflows/release.yaml` reuses all five exact-commit Gatekeeper jobs, assembles a draft with GoReleaser, validates the generated cask contract and Ruby syntax before preparation and signing, verifies it on Linux/macOS, publishes, and only then advances Homebrew. See `docs/release-verification.md` for the generator command, external verification, immutable-mode prerequisites, and recovery; local fixtures do not replace hosted acceptance. The Python runtime image recipe is validated by `task images:python-runtime`; hosted amd64/arm64 acceptance is `.github/workflows/mcp-runtime-python.yaml`.
 
 ## Code architecture
 

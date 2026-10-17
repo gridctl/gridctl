@@ -12,6 +12,6 @@
 
 ## Checklist
 
-- [ ] Tests pass (`task test`)
+- [ ] Local gate passes (`task verify`)
 - [ ] Commits follow conventional format (`type: subject`)
 - [ ] No secrets or credentials committed

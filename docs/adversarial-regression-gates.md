@@ -34,7 +34,7 @@ Focused commands escape each `/`-separated name segment and include the lane's t
 
 `cmd/scenarioverify` is a repository test utility, not a `gridctl` subcommand. It reads an explicit lane, the index, and a completed `go test -json` capture. It does not execute tests.
 
-Designated Gatekeeper jobs (`test`, `integration`, `podman-integration`) invoke `scripts/run-verified-tests.sh` with lanes `unit`, `integration`, and `podman-integration`. The script adds `-json -count=1 -race` while preserving coverage, tags, suite scope, and current timeouts. The general integration job sets `GRIDCTL_RUNTIME=docker` and fails a bounded `docker info` check when Docker is missing or is the wrong engine; the Podman job keeps its own engine setup. JSON events do not identify the runtime. Go, capture/tee, and verifier statuses are recorded separately; a successful verifier cannot mask a failed suite. Raw JSON captures stay on the runner; they are not uploaded as a new public artifact. The conformance job uses `-count=1` but is not a verifier lane.
+The test, integration, conformance, podman-integration, and frontend jobs start together. The integration and podman-integration jobs do not wait on the unit job: those lanes consume nothing from it, and the required job still aggregates every gate. Each designated job invokes `scripts/run-verified-tests.sh` with lanes `unit`, `integration`, and `podman-integration`. The script adds `-json -count=1 -race` while preserving coverage, tags, suite scope, and current timeouts. The general integration job sets `GRIDCTL_RUNTIME=docker` and fails a bounded `docker info` check when Docker is missing or is the wrong engine; the Podman job keeps its own engine setup. JSON events do not identify the runtime. Go, capture/tee, and verifier statuses are recorded separately; a successful verifier cannot mask a failed suite. After the suite, each designated lane prints its 25 slowest top-level tests (elapsed seconds, result, and name). A missing capture, a jq failure, or a sort failure prints a one-line notice instead. That summary never fails the job. Raw JSON captures stay on the runner; they are not uploaded as a new public artifact. The conformance job uses `-count=1` but is not a verifier lane and does not print that summary.
 
 The verifier decodes events incrementally, discards output payloads, and rejects null or non-object records, missing actions, unfinished observed packages or tests, test events after a package terminal, repeated or conflicting results for the same package/test identity, and Go `build-fail` events. Slash characters in a test name are not capture-time parent/child nesting; a parent pass does not credit a missing required child. Input, record, event, and identity counts are bounded. Unknown JSON fields remain allowed.
 
@@ -57,9 +57,9 @@ Next: inspect earlier suite failure, build tags, and selector drift
 ## Local workflow
 
 ```bash
+task verify
 task test
 task test:integration
-task test:verify
 ```
 
-`task test` stays human-readable. `task test:verify` is the unit-lane capture path. Local Docker whole-suite runs with `-race` remain the general integration acceptance path; hosted Podman execution is still required for Podman-assigned cases.
+`task verify` is the local gate. It runs the unit-lane capture and scenario verification, backend and frontend lint, frontend tests, and the Python policy tests (Python 3.11+, jsonschema 4.23.0, PyYAML 6.0.3), each once, and stops at the first failure. `task test` is the human-readable loop and is not needed before `task verify`. `task test:verify` remains the unit-lane capture path and is included in `task verify`. Local Docker whole-suite runs with `-race` remain the general integration acceptance path; hosted Podman execution is still required for Podman-assigned cases.

@@ -59,8 +59,9 @@ Tasks live in `Taskfile.yml`; `task --list` shows the full catalog. The most com
 | `task build:web` | Build React frontend only |
 | `task build:go` | Build Go binary only |
 | `task dev` | Run Vite dev server for frontend development |
-| `task test` | Run unit tests (race detector on, matching CI) |
-| `task test:verify` | Unit-lane JSON capture and scenario verification (same path Gatekeeper uses) |
+| `task test` | Human-readable unit tests (race detector on, matching CI). Not needed before `task verify` |
+| `task test:verify` | Unit-lane JSON capture and scenario verification (included in `task verify`) |
+| `task verify` | Canonical local gate: unit-lane capture, lint, frontend tests, and policy tests, each once |
 | `task scenarios` | Print designated scenario IDs and focused `-run` commands |
 | `task test:coverage` | Run tests with coverage report |
 | `task test:frontend` | Run frontend tests (Vitest) |
@@ -111,16 +112,16 @@ Example: `feature/add-ssh-transport` or `fix/container-timeout`
 - Table-driven tests are preferred for multiple test cases
 - Maintain existing coverage levels
 
-Run tests before submitting:
+Run the local gate before submitting:
 
 ```bash
-task test                  # Unit tests
-task test:verify           # Unit-lane JSON capture and scenario verification
+task verify                # Local gate: unit capture, lint, frontend tests, policy tests
+task test                  # Human-readable unit tests (not needed before task verify)
 task test:integration      # Integration tests (requires Docker or Podman)
 task examples:refs         # Example image and package pin check (needs ./gridctl)
 ```
 
-Designated Gatekeeper jobs capture `go test -json -count=1 -race` and check identities in `tests/adversarial/index.yaml`. `task scenarios` prints focused reproduction commands. Those reruns are diagnostic; whole-suite CI remains acceptance. See [adversarial regression gates](docs/adversarial-regression-gates.md). Rename a required test in the same change as its index entry.
+`task verify` runs the unit-lane capture, lint, frontend tests, and policy tests once each and stops at the first failure. `task test` is the human-readable loop. Designated Gatekeeper jobs capture `go test -json -count=1 -race` and check identities in `tests/adversarial/index.yaml`. The test, integration, conformance, podman-integration, and frontend jobs start together; the required job still aggregates every gate. Each designated lane prints a slowest-tests summary of names and elapsed seconds. Raw captures stay on the runner and are not uploaded. `task scenarios` prints focused reproduction commands. Those reruns are diagnostic; whole-suite CI remains acceptance. See [adversarial regression gates](docs/adversarial-regression-gates.md). Rename a required test in the same change as its index entry.
 
 ### Example dependency references
 
@@ -202,7 +203,7 @@ All commits must be signed. If you haven't set up GPG signing, see [GitHub's gui
 
 1. **Create a feature branch** from `main`
 2. **Make your changes** following the guidelines above
-3. **Run tests** and ensure they pass
+3. **Run the local gate** (`task verify`) and ensure it passes
 4. **Push your branch** to your fork
 5. **Open a pull request** against the `main` branch
 
@@ -221,7 +222,7 @@ Your pull request should:
 
 Binary releases reuse these exact-commit gates before draft verification and publication. See [release verification and maintainer operations](docs/release-verification.md) for inventory scopes, credential boundaries, pin ownership, and recovery.
 
-Release-tooling changes also require the Python policy and scanner regressions, separate from `task test`. With Python 3.11+, `jsonschema==4.23.0`, `PyYAML==6.0.3`, Bash, and jq available, run from the repository root:
+Release-tooling changes also require the Python policy and scanner regressions. `task verify` runs that discovery once. It is not part of `task test`. With Python 3.11+, `jsonschema==4.23.0`, `PyYAML==6.0.3`, Bash, and jq available, run from the repository root:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_*.py' -v
@@ -241,6 +242,8 @@ Pull requests are automatically checked for:
 - Frontend type check, lint, tests, and build
 - Example stack validation
 - Successful binary build
+
+The five Gatekeeper jobs start together. The required check finishes when the slowest job finishes. A new push to the same pull request cancels the in-progress Gatekeeper run. Other events, including pushes to main and the release workflow's Gatekeeper call, use a group unique to that run and are not canceled. Each designated lane prints its 25 slowest top-level tests. A missing capture, a jq failure, or a sort failure prints a one-line notice and does not fail the job. Raw JSON captures remain on the runner and are not uploaded.
 
 ## 🚧 Issue Guidelines
 
