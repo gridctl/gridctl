@@ -34,19 +34,19 @@ func TestWorkflowDesignatedInvocations(t *testing.T) {
 	if !strings.Contains(text, "-coverprofile=coverage.out") {
 		t.Fatal("unit coverage profile dropped")
 	}
-	if !strings.Contains(text, "-timeout 15m") {
+	if !strings.Contains(text, "-timeout 20m") {
 		t.Fatal("integration timeout contract dropped")
-	}
-	if !strings.Contains(text, "timeout-minutes: 20") {
-		t.Fatal("integration job budget dropped")
-	}
-	if !strings.Contains(text, "timeout-minutes: 25") {
-		t.Fatal("podman job budget dropped")
 	}
 
 	integ := workflowJob(text, "integration")
 	if integ == "" {
 		t.Fatal("integration job body not found")
+	}
+	// The job budget must exceed the go test budget so a slow runner hits
+	// the package timeout (which names the running test) before the job
+	// limit kills the process without a report.
+	if !strings.Contains(integ, "timeout-minutes: 25") {
+		t.Fatal("integration job budget dropped")
 	}
 	if !strings.Contains(integ, "GRIDCTL_RUNTIME: docker") {
 		t.Fatal("integration job does not select Docker")
@@ -60,7 +60,7 @@ func TestWorkflowDesignatedInvocations(t *testing.T) {
 	if !strings.Contains(integ, "-tags=integration") {
 		t.Fatal("integration suite tag dropped")
 	}
-	if !strings.Contains(integ, "-timeout 15m") {
+	if !strings.Contains(integ, "-timeout 20m") {
 		t.Fatal("integration timeout dropped from the integration job")
 	}
 	if !strings.Contains(integ, "./tests/integration/...") {
@@ -74,7 +74,10 @@ func TestWorkflowDesignatedInvocations(t *testing.T) {
 	if !strings.Contains(podman, "GRIDCTL_RUNTIME: podman") {
 		t.Fatal("podman job does not select Podman")
 	}
-	if !strings.Contains(podman, "-tags=integration") || !strings.Contains(podman, "-timeout 15m") {
+	if !strings.Contains(podman, "timeout-minutes: 25") {
+		t.Fatal("podman job budget dropped")
+	}
+	if !strings.Contains(podman, "-tags=integration") || !strings.Contains(podman, "-timeout 20m") {
 		t.Fatal("podman job dropped suite tag or timeout")
 	}
 }
