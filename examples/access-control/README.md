@@ -58,10 +58,21 @@ and hides `read_secret`:
 ```bash
 gridctl call vault__list_paths   # exit 0
 gridctl call vault__read_secret  # exit 1
+
+# Stateless tools/call. Expect JSON-RPC -32602, message "Unknown tool: vault__read_secret".
+curl -s localhost:8180/mcp \
+  -H 'content-type: application/json' \
+  -H 'MCP-Protocol-Version: 2026-07-28' \
+  -H 'Mcp-Method: tools/call' \
+  -H 'Mcp-Name: vault__read_secret' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"vault__read_secret","arguments":{},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
 ```
 
-A raw stateless call for the hidden name expects `-32602 Unknown tool`.
-Hidden and unknown tools use the same wire error.
+Hidden and unknown tools use the same wire error. A POST without the
+stateless headers is handshake traffic and does not return that error.
+When `gateway.auth` is set, the `curl` request also needs that credential.
+The example files in this directory do not start a Vault server; the
+commands apply to a stack that exposes `list_paths` and hides `read_secret`.
 
 `gridctl validate` now refuses a group `tools:` or `overrides` entry that
 names a hidden tool. Drop the reference, or add the tool back to the

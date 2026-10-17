@@ -1213,7 +1213,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8180/api/stack/validate
 ```
 
-**Response:** `ValidationResult` JSON (`valid`, `errorCount`, `warningCount`, `issues[]`, and optional `execution`). The `execution` map is keyed by server name and contains normalized requested reports with `outcome: "pending"`, configured controls, and `eligible: false`; it does not establish runtime enforcement.
+**Response:** `ValidationResult` JSON (`valid`, `errorCount`, `warningCount`, `issues[]`, and optional `execution`). Each issue is `{field, message, severity}` and may include `line` when the failure names a source line. Unknown keys are issues, not a single `yaml` error. This endpoint does not follow `extends`. The `execution` map is keyed by server name and contains normalized requested reports with `outcome: "pending"`, configured controls, and `eligible: false`; it does not establish runtime enforcement.
 
 #### `POST /api/stack/resource/validate`
 
@@ -1238,7 +1238,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 }
 ```
 
-Invalid YAML, unresolved variables, and invalid resource fields also return `200` with `valid: false` and one or more `{field, message, severity}` issues. Malformed JSON, an oversized body, or an unsupported `resourceType` returns `400`.
+Invalid YAML, unresolved variables, and invalid resource fields also return `200` with `valid: false` and one or more `{field, message, severity}` issues. An issue may include `line` when the failure names a source line. Malformed JSON, an oversized body, or an unsupported `resourceType` returns `400`.
 
 For MCP servers with valid execution declarations, this response includes the same desired-only `execution` map as full-stack validation. Review uses these backend-normalized settings from the proposed YAML.
 
@@ -1400,7 +1400,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/stack/spec
 
 Rereads the active stack configuration and returns semantic YAML without resolving environment or stored values. Authored references, including `$NAME`, `${NAME}`, `${var:KEY}`, and `${vault:KEY}`, retain their decoded content. The additive `notice` explains the authored-literal review requirement. When the exported stack has a `configs` `file` entry, `notice` appends a second line: `Referenced config files are not bundled; copy them alongside the exported stack.` The Stack spec view's Export YAML action uses this endpoint, displays its notice and value-free error message (including the field path and corrective action), and never downloads raw editor content as a substitute.
 
-Nonempty inline credentials in gateway auth, downstream token/value/client-secret, A2A bearer token (`a2a.auth.token`), tokenizer API key, source credential reference, and recognized sensitive environment keys reject the entire export. Nonempty default/replacement operands in those fields also reject export. Client IDs are not classified as secrets. Errors use the existing `{"error":"..."}` shape with HTTP 500 and bounded indexed locations, never credential values. No `content` is returned on failure.
+Nonempty inline credentials in gateway auth, downstream token/value/client-secret, A2A bearer token (`a2a.auth.token`), tokenizer API key, source credential reference, every `headers:` value, and recognized sensitive environment keys reject the entire export. Header paths use `mcp-servers[i].headers[j]`, a zero-based index into alphabetically sorted names. Nonempty default/replacement operands in those fields also reject export. Client IDs are not classified as secrets. Errors use the existing `{"error":"..."}` shape with HTTP 500 and bounded indexed locations, never credential values. No `content` is returned on failure.
 
 This policy does not detect arbitrary secrets in command arguments, encoded text, free-form strings, URL queries, or literal portions of mixed reference/literal strings. Review those before sharing. It never creates variables or rewrites the source. Recipients may need to supply variables and referenced files.
 
@@ -1654,7 +1654,7 @@ The body must be a JSON object with a `tools` field. An empty array (`[]`) clear
 
 **Errors:**
 - `400 unknown_tool` - Tool name not advertised by the server (whitelist is stale)
-- `400 hidden_tool_reference` - The candidate whitelist would hide a tool a group `tools:` entry or override names. Nothing is written. The body adds `issues`, each `{field, message}`, for the hidden-tool findings only. The hint is to remove the tool from the group or keep it exposed. Any other candidate validation failure is `400` without this code, and the file is left unchanged. The check uses the daemon's load pipeline, including `extends`
+- `400 hidden_tool_reference` - The candidate whitelist would hide a tool a group `tools:` entry or override names. Nothing is written. The nested `error` object adds `issues`, each `{field, message}`, for the hidden-tool findings only. The hint is to remove the tool from the group or keep it exposed. Any other candidate validation failure is `400` with `{"error": "<joined messages>"}` and without this code, and the file is left unchanged. The check uses the daemon's load pipeline, including `extends`
 - `400` - Body missing `tools` array, or contains an empty tool name
 - `404` - Server not found in the stack file
 - `409 stack_modified` - Stack file changed on disk between read and write
@@ -1666,7 +1666,7 @@ The body must be a JSON object with a `tools` field. An empty array (`[]`) clear
 
 Applies tool-whitelist changes to **multiple** servers in one atomic `stack.yaml` write and triggers a **single** hot reload, the fleet-bulk counterpart to the per-server endpoint above. Powers the Tools workspace Fleet actions (fleet-wide expose-all and hide-by-pattern), where applying N servers via N single-server calls would cost N reloads.
 
-**Write semantics: all-or-nothing.** Every server's tools are validated before anything is written; if any tool is unknown the whole batch is rejected (`400 unknown_tool`, naming the offending server) and the stack file is left untouched. The reload runs once after the single write. A subsequent reload rejection retains the saved file; the file write and live application are not one transaction.
+**Write semantics: all-or-nothing.** Every server's tools are validated before anything is written; if any tool is unknown the whole batch is rejected (`400 unknown_tool`, naming the offending server) and the stack file is left untouched. A candidate that would hide a tool a group `tools:` entry or override names is `400 hidden_tool_reference` and also writes nothing. The reload runs once after the single write. A subsequent reload rejection retains the saved file; the file write and live application are not one transaction.
 
 **Auth:** Yes
 
@@ -1699,6 +1699,7 @@ The body must be a JSON object with a non-empty `servers` array; each entry need
 
 **Errors:**
 - `400 unknown_tool` - A tool name is not advertised by its server (message names the server); nothing written
+- `400 hidden_tool_reference` - The candidate whitelist would hide a tool a group `tools:` entry or override names. Nothing is written. The nested `error` object adds `issues`, each `{field, message}`, for the hidden-tool findings only. Any other candidate validation failure is `400` with `{"error": "<joined messages>"}` and without this code. The check uses the daemon's load pipeline, including `extends`
 - `400` - Body missing/empty `servers`, an entry missing `name`/`tools`, a duplicate server, or an empty tool name
 - `404` - A named server is not in the stack file; nothing written
 - `409 stack_modified` - Stack file changed on disk between read and write; nothing written
@@ -1721,7 +1722,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8180/api/servers/probe
 ```
 
-The body mirrors the MCP server config (`name`, `image`, `source`, `url`, `port`, `transport`, `command`, `env`, `build_args`, `network`, `ssh`, `openapi`, `tools`, `output_format`, `ready_timeout`, `replicas`, `auth`). The `auth` block uses the stack YAML shape (`type`, `token`, `header`, `value`, `scopes`, `client_id`, `client_secret`) so Test Connection can probe protected external servers; a `type: oauth` server with no stored broker tokens returns the `needs_auth` code. The body is capped at 64 KiB.
+The body mirrors the MCP server config (`name`, `image`, `source`, `url`, `port`, `transport`, `command`, `env`, `build_args`, `network`, `ssh`, `openapi`, `tools`, `output_format`, `ready_timeout`, `replicas`, `auth`, `headers`). `headers` is sent on the probe request for an external URL server. Values are scrubbed from probe errors. The `auth` block uses the stack YAML shape (`type`, `token`, `header`, `value`, `scopes`, `client_id`, `client_secret`) so Discover tools can probe protected external servers; a `type: oauth` server with no stored broker tokens returns the `needs_auth` code. The body is capped at 64 KiB.
 
 `X-Session-ID` is optional; when absent, the remote address is used for per-session accounting. Concurrency is capped at **3 in-flight probes per session** and **10 globally** - excess requests get `429` (session) or `503` (global) with `Retry-After: 3`.
 
@@ -1757,7 +1758,7 @@ Error codes:
 - `internal` (500) - Unexpected probe failure
 - Other codes (422) - Probe ran but the upstream rejected the handshake
 
-Env-var values and auth secrets (`auth.token`, `auth.value`, `auth.client_secret`) present in the request body are scrubbed from error messages and hints to avoid leaking secrets.
+Env-var values, auth secrets (`auth.token`, `auth.value`, `auth.client_secret`), and every non-empty `headers` value present in the request body are scrubbed from error messages and hints to avoid leaking secrets.
 
 #### `POST /api/servers/card`
 

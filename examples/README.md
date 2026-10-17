@@ -60,7 +60,7 @@ gridctl apply examples/python-sources/pypi.yaml
 | local-mcp | stdio | Local host processes |
 | ssh-mcp | ssh+stdio | Remote servers over SSH |
 | external-mcp | http, sse | External URL servers |
-| external-auth | http | External-server auth: oauth, bearer, header |
+| external-auth | http | External-server auth: oauth, bearer, header, and extra headers |
 | atlassian-mcp | http (remote URL) | Hosted platform server with OAuth brokering |
 | chrome-devtools-mcp | stdio (host process) | Browser automation via npx |
 | context7-mcp | stdio (host process) | Library docs via npx |

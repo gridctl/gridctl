@@ -22,6 +22,10 @@ hidden by that server's `tools:` whitelist is also an error. Drop the
 reference, or add the tool back to the whitelist. A profile `tools:` entry
 or a group `exclude` entry that names a hidden tool is a warning.
 
+Leftover removed fields (`gateway.default_model`, a per-server `model:`,
+top-level `client_models:`, and `limits.budgets`) fail the same way. Delete
+them. `gridctl validate --policy` does not run this check.
+
 This check ships in the next 1.0.0 release candidate. A stack that validated
 before it because an unknown key was ignored will now fail until that key
 is fixed or removed.
@@ -594,7 +598,7 @@ Or an error names a `sensitive default/replacement operand`. The CLI exits `1` w
 
 **Resolution:**
 
-Store the value separately (for example, `gridctl var set GATEWAY_TOKEN` prompts for hidden input), then edit the reported source field to use `${var:GATEWAY_TOKEN}` without a literal fallback. Recipients must supply their own value. Export never creates a variable or edits the source for you. Environment errors use zero-based indexes into alphabetically sorted keys, such as `mcp-servers[0].env[1]`, rather than printing potentially sensitive names or values.
+Store the value separately (for example, `gridctl var set GATEWAY_TOKEN` prompts for hidden input), then edit the reported source field to use `${var:GATEWAY_TOKEN}` without a literal fallback. Recipients must supply their own value. Export never creates a variable or edits the source for you. Environment errors and header-value errors use zero-based indexes into alphabetically sorted keys, such as `mcp-servers[0].env[1]` or `mcp-servers[0].headers[0]`, rather than printing potentially sensitive names or values. Every header value is treated as sensitive, not only credential-looking names.
 
 The rule recognizes sensitive fields and environment-key spellings, not proven secrets; it can reject nonsecret literals under sensitive-looking keys. Unlocking the store does not fix this error, because export never reads variable values. Review unclassified literals and mixed reference/literal strings before sharing, and do not use raw spec/editor content as a sanitized substitute. See [export semantics](cli-reference.md#export-semantics).
 

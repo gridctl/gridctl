@@ -9,7 +9,7 @@ Examples demonstrating different MCP transport types.
 | `local-mcp.yaml` | stdio | Run MCP servers as local host processes |
 | `ssh-mcp.yaml` | ssh+stdio | Connect to MCP servers on remote machines via SSH |
 | `external-mcp.yaml` | http, sse | Connect to external HTTP and SSE MCP servers |
-| `external-auth.yaml` | http | Authenticate to external servers: OAuth brokering, bearer token, custom header |
+| `external-auth.yaml` | http | Authenticate to external servers: OAuth brokering, bearer token, custom auth header, and extra headers |
 
 ## ⚙️ Prerequisites
 
@@ -57,7 +57,7 @@ Local processes remain unsandboxed. Without `execution`, they inherit the daemon
 
 ### external-auth.yaml
 
-The bearer and header servers read their credentials from the variable store (`gridctl var set GITHUB_PAT`, `gridctl var set INTERNAL_API_KEY`); the OAuth server deploys in a "needs auth" state until you run `gridctl auth login notion`.
+The bearer and header servers read their credentials from the variable store (`gridctl var set GITHUB_PAT`, `gridctl var set INTERNAL_API_KEY`); the OAuth server deploys in a "needs auth" state until you run `gridctl auth login notion`. The `portainer` server adds `headers:` next to bearer auth. Set `PORTAINER_TOKEN`, `PORTAINER_API_KEY`, and `TENANT` the same way. Those header values are variable references, not literals.
 
 ## 💻 Usage
 
