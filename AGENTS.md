@@ -32,7 +32,7 @@ Always test local changes with `task build` followed by `./gridctl …`. The `gr
 
 `gridctl serve` and `gridctl apply` daemonize by default. If you need a process you can ctrl-C (or that a test script can kill), pass `-f` / `--foreground`.
 
-`task verify` is the local gate before a pull request. It runs the unit-lane capture and scenario verification, backend and frontend lint, frontend tests, and the Python policy tests (Python 3.11+, jsonschema 4.23.0, PyYAML 6.0.3), each once, and stops at the first failure. `task test` is the human-readable loop and is not needed before `task verify`. Gatekeeper starts the test, integration, conformance, podman-integration, and frontend jobs together; the required job still aggregates every gate. Each designated lane prints a slowest-tests summary of names and elapsed seconds. Raw captures stay on the runner and are not uploaded.
+`task verify` is the local gate before a pull request. It runs the unit-lane capture and scenario verification, backend and frontend lint, frontend tests, and the Python policy tests (Python 3.11+, jsonschema 4.23.0, PyYAML 6.0.3), each once, and stops at the first failure. `task test` is the human-readable loop and is not needed before `task verify`. Gatekeeper starts the test, integration, conformance, podman-integration, and frontend jobs together; the required job still aggregates every gate. A new push to the same pull request cancels the in-progress run. Other events, including pushes to main and the release workflow's Gatekeeper call, are not canceled. Each designated lane prints a slowest-tests summary of names and elapsed seconds. Raw captures stay on the runner and are not uploaded.
 
 Run a single Go test:
 

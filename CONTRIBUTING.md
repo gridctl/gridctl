@@ -203,7 +203,7 @@ All commits must be signed. If you haven't set up GPG signing, see [GitHub's gui
 
 1. **Create a feature branch** from `main`
 2. **Make your changes** following the guidelines above
-3. **Run tests** and ensure they pass
+3. **Run the local gate** (`task verify`) and ensure it passes
 4. **Push your branch** to your fork
 5. **Open a pull request** against the `main` branch
 
@@ -222,7 +222,7 @@ Your pull request should:
 
 Binary releases reuse these exact-commit gates before draft verification and publication. See [release verification and maintainer operations](docs/release-verification.md) for inventory scopes, credential boundaries, pin ownership, and recovery.
 
-Release-tooling changes also require the Python policy and scanner regressions, separate from `task test`. With Python 3.11+, `jsonschema==4.23.0`, `PyYAML==6.0.3`, Bash, and jq available, run from the repository root:
+Release-tooling changes also require the Python policy and scanner regressions. `task verify` runs that discovery once. It is not part of `task test`. With Python 3.11+, `jsonschema==4.23.0`, `PyYAML==6.0.3`, Bash, and jq available, run from the repository root:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_*.py' -v
@@ -243,7 +243,7 @@ Pull requests are automatically checked for:
 - Example stack validation
 - Successful binary build
 
-The five Gatekeeper jobs start together. The required check finishes when the slowest job finishes. Each designated lane prints its 25 slowest top-level tests. Raw JSON captures remain on the runner and are not uploaded.
+The five Gatekeeper jobs start together. The required check finishes when the slowest job finishes. A new push to the same pull request cancels the in-progress Gatekeeper run. Other events, including pushes to main and the release workflow's Gatekeeper call, use a group unique to that run and are not canceled. Each designated lane prints its 25 slowest top-level tests. Raw JSON captures remain on the runner and are not uploaded.
 
 ## 🚧 Issue Guidelines
 
