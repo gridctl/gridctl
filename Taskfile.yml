@@ -106,6 +106,20 @@ tasks:
     cmds:
       - bash scripts/run-verified-tests.sh --lane unit --index tests/adversarial/index.yaml -- ./...
 
+  verify:
+    desc: Canonical local gate (unit lane capture, lint, frontend tests, policy tests)
+    summary: |
+      Runs the same unit-lane capture and scenario verification Gatekeeper
+      uses, then backend and frontend lint, frontend tests, and the Python
+      policy tests (Python 3.11+, jsonschema 4.23.0, PyYAML 6.0.3). Each
+      runs once. `task test` is the human-readable loop and is not needed
+      before this. Integration suites stay separate: `task test:integration`.
+    cmds:
+      - task: test:verify
+      - task: lint
+      - task: test:frontend
+      - PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_*.py'
+
   scenarios:
     desc: List designated adversarial scenarios and focused commands
     summary: |
