@@ -211,6 +211,22 @@ class CheckCoverageTests(unittest.TestCase):
                 self.assertEqual(
                     f"FAIL  {path} has no recognized mode header\n", result.stderr)
 
+    def test_order_and_thresholds_name_the_same_packages(self):
+        text = Path(SCRIPT).read_text()
+        order = []
+        thresholds = []
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("ORDER=(") and stripped.endswith(")"):
+                order = stripped[len("ORDER=("):-1].split()
+            if stripped.startswith('["pkg/') and "]=" in stripped:
+                thresholds.append(stripped.split('"', 2)[1])
+        expected = [package for package, _ in THRESHOLDS]
+        self.assertEqual(expected, order)
+        self.assertEqual(expected, thresholds)
+        self.assertEqual(order, thresholds)
+        self.assertIn("check-coverage.sh: ORDER and THRESHOLDS differ", text)
+
     def test_does_not_call_go_when_go_is_hostile(self):
         with tempfile.TemporaryDirectory(dir=".", prefix=".coverage-test-") as directory:
             root = Path(directory)

@@ -33,9 +33,20 @@ declare -A THRESHOLDS=(
 # pkg/runtime include pkg/runtime/docker.
 ORDER=(pkg/controller pkg/runtime pkg/mcp pkg/reload pkg/config)
 
+# A key added to only one list would otherwise pass silently: the loop
+# follows ORDER and looks up THRESHOLDS.
+if (( ${#ORDER[@]} != ${#THRESHOLDS[@]} )); then
+  echo "check-coverage.sh: ORDER and THRESHOLDS differ" >&2
+  exit 1
+fi
+
 FAILED=0
 
 for PKG in "${ORDER[@]}"; do
+  if [[ ! -v "THRESHOLDS[$PKG]" ]]; then
+    echo "check-coverage.sh: ORDER and THRESHOLDS differ" >&2
+    exit 1
+  fi
   THRESHOLD=${THRESHOLDS[$PKG]}
   # Duplicate blocks (same file and range) merge before counting. set takes
   # the maximum count; count and atomic sum counts. A block is covered when
