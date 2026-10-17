@@ -109,7 +109,7 @@ require (
 	github.com/pjbgf/sha1cd v0.6.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect

@@ -134,6 +134,16 @@ func explanationFor(reason, subject string, facts CheckFacts) string {
 		return text
 	case "startup_unavailable":
 		return "Active startup security snapshot is unavailable."
+	case "origins_loopback_wildcard":
+		return "Startup origin mode is loopback-wildcard. The wildcard default applies only on loopback."
+	case "origins_loopback_allowlist":
+		return "Startup origin mode is loopback-allowlist."
+	case "origins_allowlist":
+		return "Startup origin mode is allowlist."
+	case "origins_wildcard_override":
+		return "Startup origin mode is wildcard-override. The insecure override is set."
+	case "origins_unspecified":
+		return "Startup origin mode is unspecified."
 	case "startup_auth_disabled":
 		text := "Startup snapshot reports authentication disabled."
 		if facts.EffectiveBind != "" {
@@ -210,6 +220,8 @@ var knownReasons = map[string]bool{
 	"membership_complete": true, "membership_unknown": true, "references_counted": true,
 	"references_partial": true, "declaration_unavailable": true, "auth_undeclared": true,
 	"auth_declared": true, "startup_unavailable": true, "startup_auth_disabled": true,
+	"origins_loopback_wildcard": true, "origins_loopback_allowlist": true,
+	"origins_allowlist": true, "origins_wildcard_override": true, "origins_unspecified": true,
 	"startup_auth_enabled": true, "execution_unavailable": true, "execution_available": true,
 	"execution_hygiene": true, "execution_failed": true, "execution_observed": true,
 	"execution_ineligible": true, "execution_eligible": true, "execution_outcome_unknown": true,

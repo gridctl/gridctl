@@ -32,6 +32,8 @@ var (
 	protocol         string
 	sseServerRequest bool
 	listChanged      bool
+	serverCard       bool
+	serverCardOrigin string
 	addedSeq         int
 	toolsMu          sync.Mutex
 	pongMu           sync.Mutex
@@ -51,6 +53,8 @@ func init() {
 	flag.StringVar(&protocol, "protocol", "", "Protocol generation: empty for legacy handshake, 2026-07-28 for stateless")
 	flag.BoolVar(&sseServerRequest, "sse-server-request", false, "In SSE mode, emit a ping and a notification before tools/call and wait for the pong")
 	flag.BoolVar(&listChanged, "list-changed", false, "Declare tools.listChanged and emit notifications/tools/list_changed on the POST SSE stream")
+	flag.BoolVar(&serverCard, "server-card", false, "Serve /mcp/server-card and /.well-known/ai-catalog.json without the bearer check")
+	flag.StringVar(&serverCardOrigin, "server-card-origin", "", "Emit this URL as the card remote instead of this process's /mcp URL")
 }
 
 // serverRequestMode is the opt-in SSE preamble. MOCK_SSE_SERVER_REQUEST
@@ -621,6 +625,10 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
+	if serverCard {
+		mux.HandleFunc("/mcp/server-card", handleServerCard)
+		mux.HandleFunc("/.well-known/ai-catalog.json", handleAICatalog)
+	}
 	mux.HandleFunc("/mcp", requireBearer(handleMCP))
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/", requireBearer(handleHealth)) // Root returns health for ping
@@ -644,6 +652,72 @@ func main() {
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func mockProtocolVersion() string {
+	if modernMode() {
+		return "2026-07-28"
+	}
+	return "2024-11-05"
+}
+
+func mockMCPURL() string {
+	if serverCardOrigin != "" {
+		return serverCardOrigin
+	}
+	return fmt.Sprintf("http://127.0.0.1:%d/mcp", port)
+}
+
+func handleServerCard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	card := map[string]any{
+		"$schema":     "https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json",
+		"name":        "io.example/mock",
+		"title":       "Mock MCP",
+		"description": "Mock MCP server for card discovery",
+		"version":     "2.0.0",
+		"remotes": []map[string]any{{
+			"type":                      "streamable-http",
+			"url":                       mockMCPURL(),
+			"supportedProtocolVersions": []string{mockProtocolVersion()},
+			"headers": []map[string]any{{
+				"name":       "Authorization",
+				"value":      "Bearer {token}",
+				"isRequired": true,
+				"isSecret":   true,
+				"variables": map[string]any{
+					"token": map[string]any{
+						"description": "Gateway bearer token",
+						"isRequired":  true,
+						"isSecret":    true,
+					},
+				},
+			}},
+		}},
+	}
+	w.Header().Set("Content-Type", "application/mcp-server-card+json")
+	_ = json.NewEncoder(w).Encode(card)
+}
+
+func handleAICatalog(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	origin := fmt.Sprintf("http://127.0.0.1:%d", port)
+	body := map[string]any{
+		"specVersion": "1.0",
+		"entries": []map[string]any{{
+			"identifier": "urn:air:127.0.0.1:mcp:mock",
+			"type":       "application/mcp-server-card+json",
+			"url":        origin + "/mcp/server-card",
+		}},
+	}
+	w.Header().Set("Content-Type", "application/ai-catalog+json")
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 func toolNames() []string {

@@ -49,6 +49,7 @@ func TestGatewayAuth_RealRestart(t *testing.T) {
 	for _, key := range []string{"HOME", "GRIDCTL_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME", "DOCKER_CONFIG"} {
 		childEnv = append(childEnv, key+"="+os.Getenv(key))
 	}
+	testGatewayAuthWidenedOrigins(t, ctx, bin, childEnv, dir)
 	backendPort := freePort(t)
 	backend := exec.CommandContext(ctx, backendBin, "-port", strconv.Itoa(backendPort))
 	backend.Env = childEnv
@@ -418,4 +419,105 @@ func TestGatewayAuth_RealRestart(t *testing.T) {
 		}
 	}
 	stop(stackless)
+}
+
+// testGatewayAuthWidenedOrigins is the widened-bind origin refusal and the
+// unlisted-origin preflight. It runs inside TestGatewayAuth_RealRestart so
+// the required -run filter executes it on the race-built child.
+func testGatewayAuthWidenedOrigins(t *testing.T, ctx context.Context, bin string, childEnv []string, dir string) {
+	t.Helper()
+	refusePath := filepath.Join(dir, "origins-refuse.yaml")
+	refuse := "name: origins-refuse\ngateway:\n  auth:\n    type: bearer\n    token: ${GRIDCTL_AUTH_FIXTURE}\n"
+	if err := os.WriteFile(refusePath, []byte(refuse), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	refusePort := freePort(t)
+	refuseLog := filepath.Join(dir, "origins-refuse.log")
+	logFile, err := os.Create(refuseLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(ctx, bin, "apply", refusePath, "--daemon-child", "--bind", "0.0.0.0", "--port", strconv.Itoa(refusePort))
+	cmd.Env = childEnv
+	cmd.Stderr = logFile
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waitErr := cmd.Wait()
+	_ = logFile.Close()
+	if waitErr == nil {
+		t.Fatal("widened bind without allowed_origins started")
+	}
+	logged, err := os.ReadFile(refuseLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(logged), "gateway.allowed_origins") {
+		t.Fatalf("refusal log missing gateway.allowed_origins:\n%s", logged)
+	}
+
+	allowPath := filepath.Join(dir, "origins-allow.yaml")
+	allow := "name: origins-allow\ngateway:\n  auth:\n    type: bearer\n    token: ${GRIDCTL_AUTH_FIXTURE}\n  allowed_origins:\n    - https://ui.example\n"
+	if err := os.WriteFile(allowPath, []byte(allow), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	port := freePort(t)
+	allowLog, err := os.Create(filepath.Join(dir, "origins-allow.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer allowLog.Close()
+	daemon := exec.CommandContext(ctx, bin, "apply", allowPath, "--daemon-child", "--bind", "0.0.0.0", "--port", strconv.Itoa(port))
+	daemon.Env = childEnv
+	daemon.Stderr = allowLog
+	if err := daemon.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if daemon.ProcessState == nil {
+			_ = daemon.Process.Kill()
+			_ = daemon.Wait()
+		}
+	})
+	waitForPort(t, ctx, port)
+	client := &http.Client{Timeout: 5 * time.Second}
+	preflight := func(path string) {
+		t.Helper()
+		req, err := http.NewRequestWithContext(ctx, http.MethodOptions, fmt.Sprintf("http://127.0.0.1:%d%s", port, path), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Origin", "https://untrusted.invalid")
+		res, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = res.Body.Close()
+		if res.Header.Get("Access-Control-Allow-Origin") != "" {
+			t.Fatalf("%s preflight set Access-Control-Allow-Origin", path)
+		}
+	}
+	preflight("/mcp")
+	preflight("/api/status")
+	cardReq, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/mcp/server-card", port), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cardReq.Header.Set("Origin", "https://untrusted.invalid")
+	cardRes, err := client.Do(cardReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(cardRes.Body)
+	_ = cardRes.Body.Close()
+	if cardRes.StatusCode != http.StatusOK {
+		t.Fatalf("server card status %d: %s", cardRes.StatusCode, body)
+	}
+	if cardRes.Header.Get("Access-Control-Allow-Origin") != "*" {
+		t.Fatalf("server card ACAO = %q", cardRes.Header.Get("Access-Control-Allow-Origin"))
+	}
+	if err := daemon.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	_ = daemon.Wait()
 }

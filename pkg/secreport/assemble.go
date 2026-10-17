@@ -553,6 +553,7 @@ func gatewayChecks(in Inputs) []Check {
 	}
 	if in.Startup == nil {
 		out = append(out, check("gateway.auth.startup.gateway", PredGatewayAuthStartup, gatewaySubject(), OutcomeUnknown, "startup_unavailable", "Active startup security snapshot is unavailable.", unknownEvidence(), []string{"Only declarations exist; enforcement remains unverified."}))
+		out = append(out, originsStartupCheck(nil))
 		return out
 	}
 	text := "Startup snapshot reports authentication disabled."
@@ -572,7 +573,51 @@ func gatewayChecks(in Inputs) []Check {
 	item := check("gateway.auth.startup.gateway", PredGatewayAuthStartup, gatewaySubject(), OutcomePass, reason, text, ev, []string{"Startup snapshot is not a proof of route correctness."})
 	item.Facts = CheckFacts{AuthType: SanitizeIdentifier(in.Startup.AuthType), EffectiveBind: SanitizeIdentifier(in.Startup.Bind)}
 	out = append(out, item)
+	out = append(out, originsStartupCheck(in.Startup))
 	return out
+}
+
+func originsStartupCheck(startup *StartupView) Check {
+	if startup == nil {
+		return check("gateway.origins.startup.gateway", PredGatewayOriginsStartup, gatewaySubject(), OutcomeUnknown, "startup_unavailable", "Active startup security snapshot is unavailable.", unknownEvidence(), []string{"Origin mode is unavailable without a startup snapshot."})
+	}
+	reason := originsReason(startup.OriginsMode)
+	outcome := OutcomePass
+	text := "Startup origin mode is " + SanitizeIdentifier(startup.OriginsMode) + "."
+	if reason == "" {
+		outcome = OutcomeUnknown
+		reason = "origins_unspecified"
+		text = "Startup origin mode is unspecified."
+	}
+	item := check("gateway.origins.startup.gateway", PredGatewayOriginsStartup, gatewaySubject(), outcome, reason, text, observedEvidence(time.Time{}), []string{"Origin mode is a count and a label, not the origin strings."})
+	routes := make([]string, 0, len(startup.DiscoveryRoutes))
+	for _, route := range startup.DiscoveryRoutes {
+		if cleaned := SanitizeIdentifier(route); cleaned != "" {
+			routes = append(routes, cleaned)
+		}
+	}
+	count := startup.AllowedOriginCount
+	item.Facts = CheckFacts{
+		OriginsMode:        SanitizeIdentifier(startup.OriginsMode),
+		AllowedOriginCount: intPtr(count),
+		DiscoveryRoutes:    routes,
+	}
+	return item
+}
+
+func originsReason(mode string) string {
+	switch mode {
+	case "loopback-wildcard":
+		return "origins_loopback_wildcard"
+	case "loopback-allowlist":
+		return "origins_loopback_allowlist"
+	case "allowlist":
+		return "origins_allowlist"
+	case "wildcard-override":
+		return "origins_wildcard_override"
+	default:
+		return ""
+	}
 }
 
 func executionChecks(in Inputs) []Check {

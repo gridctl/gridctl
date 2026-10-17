@@ -58,6 +58,7 @@ const (
 	PredVarReferences         = "var.references"
 	PredGatewayAuthDeclared   = "gateway.auth.declared"
 	PredGatewayAuthStartup    = "gateway.auth.startup"
+	PredGatewayOriginsStartup = "gateway.origins.startup"
 	PredExecutionAvailability = "execution.availability"
 	PredExecutionEnforcement  = "execution.enforcement"
 )
@@ -82,6 +83,7 @@ var PredicateInventory = []string{
 	PredVarReferences,
 	PredGatewayAuthDeclared,
 	PredGatewayAuthStartup,
+	PredGatewayOriginsStartup,
 	PredExecutionAvailability,
 	PredExecutionEnforcement,
 }
@@ -156,6 +158,9 @@ type CheckFacts struct {
 	AuthType           string   `json:"auth_type,omitempty"`
 	Bind               string   `json:"bind,omitempty"`
 	EffectiveBind      string   `json:"effective_bind,omitempty"`
+	OriginsMode        string   `json:"origins_mode,omitempty"`
+	AllowedOriginCount *int     `json:"allowed_origin_count,omitempty"`
+	DiscoveryRoutes    []string `json:"discovery_routes,omitempty"`
 	Kind               string   `json:"kind,omitempty"`
 	RecordedOutcome    string   `json:"recorded_outcome,omitempty"`
 	Instance           string   `json:"instance,omitempty"`
