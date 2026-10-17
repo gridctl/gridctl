@@ -176,11 +176,14 @@ func TestWorkflowFeedbackCycle(t *testing.T) {
 		if !strings.Contains(step, "if: always()") {
 			t.Fatalf("%s Slowest tests step lost if: always()", lane.job)
 		}
-		if !strings.Contains(step, capture) {
-			t.Fatalf("%s Slowest tests step does not read %s", lane.job, capture)
+		if !strings.Contains(step, "bash scripts/slowest-tests.sh \""+capture+"\"") {
+			t.Fatalf("%s Slowest tests step does not call slowest-tests.sh with %s", lane.job, capture)
+		}
+		if strings.Contains(step, "jq ") {
+			t.Fatalf("%s Slowest tests step pipelines jq; a failing jq is invisible under bash -e", lane.job)
 		}
 		if !strings.Contains(step, "|| echo") {
-			t.Fatalf("%s Slowest tests step does not guard the jq pipeline", lane.job)
+			t.Fatalf("%s Slowest tests step does not guard a script failure", lane.job)
 		}
 		if strings.Contains(step, "pipefail") {
 			t.Fatalf("%s Slowest tests step must not enable pipefail", lane.job)

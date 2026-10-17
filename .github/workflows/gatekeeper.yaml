@@ -18,7 +18,7 @@ on:
 #
 # Superseded pushes to the same pull request cancel the previous run. Every
 # other event (push to main, the release workflow's workflow_call) gets a
-# group unique to the run, so main commits are never queued or cancelled
+# group unique to the run, so main commits are never queued or canceled
 # and exact-commit evidence is never lost. github.workflow is deliberately
 # not used: under workflow_call it is the caller's name.
 concurrency:
@@ -72,14 +72,7 @@ jobs:
       - name: Slowest tests
         if: always()
         run: |
-          capture="${RUNNER_TEMP}/unit-capture.json"
-          if [[ ! -s "$capture" ]]; then
-            echo "no capture at $capture"
-            exit 0
-          fi
-          echo "Slowest top-level tests (elapsed seconds, result, name):"
-          jq -r 'select(.Test != null and (.Action == "pass" or .Action == "fail")) | select(.Test | test("/") | not) | "\(.Elapsed)\t\(.Action)\t\(.Test)"' "$capture" \
-            | sort -rn | head -25 \
+          bash scripts/slowest-tests.sh "${RUNNER_TEMP}/unit-capture.json" \
             || echo "slowest-tests summary failed; see the capture on the runner"
           exit 0
 
@@ -202,14 +195,7 @@ jobs:
       - name: Slowest tests
         if: always()
         run: |
-          capture="${RUNNER_TEMP}/integration-capture.json"
-          if [[ ! -s "$capture" ]]; then
-            echo "no capture at $capture"
-            exit 0
-          fi
-          echo "Slowest top-level tests (elapsed seconds, result, name):"
-          jq -r 'select(.Test != null and (.Action == "pass" or .Action == "fail")) | select(.Test | test("/") | not) | "\(.Elapsed)\t\(.Action)\t\(.Test)"' "$capture" \
-            | sort -rn | head -25 \
+          bash scripts/slowest-tests.sh "${RUNNER_TEMP}/integration-capture.json" \
             || echo "slowest-tests summary failed; see the capture on the runner"
           exit 0
 
@@ -393,14 +379,7 @@ jobs:
       - name: Slowest tests
         if: always()
         run: |
-          capture="${RUNNER_TEMP}/podman-integration-capture.json"
-          if [[ ! -s "$capture" ]]; then
-            echo "no capture at $capture"
-            exit 0
-          fi
-          echo "Slowest top-level tests (elapsed seconds, result, name):"
-          jq -r 'select(.Test != null and (.Action == "pass" or .Action == "fail")) | select(.Test | test("/") | not) | "\(.Elapsed)\t\(.Action)\t\(.Test)"' "$capture" \
-            | sort -rn | head -25 \
+          bash scripts/slowest-tests.sh "${RUNNER_TEMP}/podman-integration-capture.json" \
             || echo "slowest-tests summary failed; see the capture on the runner"
           exit 0
 
