@@ -3,7 +3,8 @@ import { GitCompareArrows, AlertCircle, CheckCircle2, AlertTriangle, FlaskConica
 import { useSpecStore } from '../../stores/useSpecStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { fetchStackSpec, fetchStackHealth, validateStackSpec, fetchStackExport } from '../../lib/api';
-import type { ValidationIssue, IssueSeverity } from '../../types';
+import type { IssueSeverity } from '../../types';
+import { getLineIssues } from '../../lib/lineIssues';
 
 // YAML syntax highlighting tokens
 interface HighlightedToken {
@@ -76,14 +77,6 @@ function severityIcon(severity: IssueSeverity) {
     case 'info':
       return <span className="w-2 h-2 rounded-full bg-status-running shadow-[0_0_6px_var(--color-status-running-glow)]" />;
   }
-}
-
-function getLineIssues(lineNum: number, issues: ValidationIssue[]): ValidationIssue[] {
-  return issues.filter((i) => {
-    // Match field names that reference line content
-    // Field format: "servers[0].name" or "name" etc.
-    return i.field.includes(`[${lineNum}]`) || i.field === `line:${lineNum}`;
-  });
 }
 
 export function SpecTab() {

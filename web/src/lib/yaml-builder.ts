@@ -48,6 +48,8 @@ export interface MCPServerFormData {
   // dynamic client registration when clientId is empty). Secret fields
   // should hold ${var:KEY} references, not literals.
   auth?: ExternalAuthFormData;
+  // Extra downstream headers for external URL and OpenAPI servers.
+  headers?: Record<string, string>;
   // SSH
   ssh?: {
     host: string;
@@ -281,6 +283,7 @@ function buildMCPServer(data: MCPServerFormData, indentLevel = 2): string {
         if (auth.clientId) lines.push(`${inner}  client_id: ${yamlValue(auth.clientId)}`);
         if (auth.clientSecret) lines.push(`${inner}  client_secret: ${yamlValue(auth.clientSecret)}`);
       }
+      emitHeaders(lines, inner, data.headers);
       break;
     case 'local':
       if (data.command?.length) {
@@ -352,6 +355,7 @@ function buildMCPServer(data: MCPServerFormData, indentLevel = 2): string {
           lines.push(serializeArray(ops.exclude, indentLevel + 8));
         }
       }
+      emitHeaders(lines, inner, data.headers);
       break;
   }
 
@@ -530,6 +534,51 @@ function buildStack(data: StackFormData): string {
   return lines.join('\n') + '\n';
 }
 
+function emitHeaders(lines: string[], inner: string, headers?: Record<string, string>) {
+  if (!headers || Object.keys(headers).filter((key) => key).length === 0) return;
+  lines.push(`${inner}headers:`);
+  lines.push(serializeMap(headers, inner.length + 2));
+}
+
+const RESERVED_HEADER_NAMES = new Set([
+  'content-type',
+  'accept',
+  'host',
+  'content-length',
+  'transfer-encoding',
+  'connection',
+]);
+
+// customHeaderErrors mirrors the server's reserved-name and Authorization
+// conflict rules so the form can block save before the round trip. The
+// server remains authoritative.
+// probeHeaders returns the headers map for a Test Connection payload, or
+// undefined when the form has no named headers.
+export function probeHeaders(headers?: Record<string, string>): Record<string, string> | undefined {
+  if (!headers || !Object.keys(headers).some((key) => key)) return undefined;
+  return headers;
+}
+
+export function customHeaderErrors(
+  headers: Record<string, string> | undefined,
+  authSet: boolean,
+): Record<string, string> {
+  const errors: Record<string, string> = {};
+  if (!headers) return errors;
+  for (const [name, value] of Object.entries(headers)) {
+    if (!name) continue;
+    const lower = name.toLowerCase();
+    if (lower.startsWith('mcp-') || RESERVED_HEADER_NAMES.has(lower)) {
+      errors[name] = `header '${name}' is reserved and set by the gateway`;
+    } else if (lower === 'authorization' && authSet) {
+      errors[name] = 'conflicts with auth; set the credential in auth or in headers, not both';
+    } else if (value === '') {
+      errors[name] = 'header value is empty';
+    }
+  }
+  return errors;
+}
+
 function detectServerType(result: Record<string, unknown>): ServerType {
   if (result.openapi) return 'openapi';
   if (result.ssh) return 'ssh';
@@ -617,6 +666,7 @@ export function parseYAMLToForm(yaml: string, resourceType: ResourceType): Wizar
         if (typeof result.url === 'string') data.url = result.url;
         data.command = strings(result.command);
         data.env = stringMap(result.env);
+        data.headers = stringMap(result.headers);
         data.buildArgs = stringMap(result.build_args);
         data.volumes = strings(result.volumes);
         data.tools = strings(result.tools);

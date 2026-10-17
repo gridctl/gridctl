@@ -247,6 +247,30 @@ describe('useToolsEditor', () => {
     expect(result.current.selected.has('insert')).toBe(true);
   });
 
+  it('reverts the checkbox and lists the group when a hidden tool reference is refused', async () => {
+    vi.spyOn(apiModule, 'setServerTools').mockRejectedValue(
+      new SetServerToolsError(
+        'hidden_tool_reference',
+        "groups[ops].tools[0]: tool 'vault__read_secret' is hidden by mcp-servers[vault].tools and can never be called",
+        'Remove the tool from the named group or keep it exposed on this server.',
+        400,
+        [{ field: 'groups[ops].tools[0]', message: "tool 'vault__read_secret' is hidden by mcp-servers[vault].tools and can never be called" }],
+      ),
+    );
+
+    const { result } = renderHook(() => useToolsEditor(SERVER, ['query', 'read_secret']));
+    act(() => result.current.toggle('read_secret'));
+    expect(result.current.selected.has('read_secret')).toBe(false);
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(result.current.selected.has('read_secret')).toBe(true);
+    expect(result.current.hiddenReference).toContain('groups ops (vault__read_secret)');
+    expect(result.current.hiddenReference).toContain('Remove the tool from the named group');
+  });
+
   it('surfaces a 409 stack_modified error as a conflict instead of throwing', async () => {
     vi.spyOn(apiModule, 'setServerTools').mockRejectedValue(
       new SetServerToolsError('stack_modified', 'File changed', 'Reload the file.', 409),

@@ -24,6 +24,21 @@ export interface ToolRow {
 // canonicalWhitelist normalizes a selection into the wire form: a sorted,
 // deduplicated array. Dirty comparison uses it on both sides so selection
 // order never triggers a spurious "unsaved changes" state.
+export function formatHiddenToolReference(
+  issues: { field: string; message: string }[] | undefined,
+  hint?: string,
+): string {
+  const parts = (issues ?? []).map((issue) => {
+    const group = issue.field.match(/^groups\[([^\]]+)\]/)?.[1] ?? issue.field;
+    const tool = issue.message.match(/tool '([^']+)'/)?.[1];
+    return tool ? `groups ${group} (${tool})` : `groups ${group}`;
+  });
+  const lead = parts.length
+    ? `Hidden by this change: ${parts.join(', ')}`
+    : 'Hidden by this change';
+  return hint ? `${lead}. ${hint}` : lead;
+}
+
 function canonicalWhitelist(names: string[]): string[] {
   return Array.from(new Set(names)).sort();
 }
@@ -58,6 +73,8 @@ export interface UseToolsEditor {
   isSaving: boolean;
   // Non-null when a 409 (stack file changed on disk) needs a reload affordance.
   conflict: string | null;
+  // Non-null when unchecking a tool would hide a group reference.
+  hiddenReference: string | null;
   // Non-null (the previous server name) when the user switched servers with a
   // dirty editor and must confirm before the edit is discarded.
   discardPrompt: string | null;
@@ -140,6 +157,7 @@ export function useToolsEditor(
   const [query, setQuery] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [conflict, setConflict] = useState<string | null>(null);
+  const [hiddenReference, setHiddenReference] = useState<string | null>(null);
   // When the user tries to switch servers with unsaved edits, we stash the name
   // of the server we were editing so the "Keep editing" affordance can re-
   // select it in the graph store.
@@ -297,6 +315,13 @@ export function useToolsEditor(
           case 'unknown_tool':
             showToast('error', err.message);
             return;
+          case 'hidden_tool_reference': {
+            setSelection(savedRef.current);
+            const notice = formatHiddenToolReference(err.issues, err.hint);
+            setHiddenReference(notice);
+            showToast('error', notice);
+            return;
+          }
           default:
             showToast('error', err.message);
             return;
@@ -386,6 +411,7 @@ export function useToolsEditor(
     diffCount,
     isSaving,
     conflict,
+    hiddenReference,
     discardPrompt,
     handleSave,
     disableTools,

@@ -1098,6 +1098,7 @@ function ServerDetail({
     diffCount,
     isSaving,
     conflict,
+    hiddenReference,
     handleSave,
     disableTools,
     handleReloadFromDisk,
@@ -1449,6 +1450,12 @@ function ServerDetail({
           </Command.List>
         </Command>
       </div>
+
+      {hiddenReference && (
+        <div role="alert" className="rounded-md border border-status-error/40 bg-status-error/[0.05] px-3 py-2">
+          <p className="text-[11px] text-status-error">{hiddenReference}</p>
+        </div>
+      )}
 
       {conflict && (
         <div

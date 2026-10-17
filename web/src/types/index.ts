@@ -771,6 +771,7 @@ export interface ValidationIssue {
   field: string;
   message: string;
   severity: IssueSeverity;
+  line?: number;
 }
 
 export interface ValidationResult {

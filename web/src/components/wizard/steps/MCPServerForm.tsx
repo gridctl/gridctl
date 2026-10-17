@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../../lib/cn';
-import type { AutoscaleFormData, ExternalAuthFormData, MCPServerFormData, ServerType } from '../../../lib/yaml-builder';
+import { customHeaderErrors, probeHeaders, type AutoscaleFormData, type ExternalAuthFormData, type MCPServerFormData, type ServerType } from '../../../lib/yaml-builder';
 import type { ProbeServerAuth, ProbeServerConfig } from '../../../lib/api';
 import { VariablesPopover } from '../VariablesPopover';
 import { TransportAdvisor } from '../TransportAdvisor';
@@ -180,6 +180,7 @@ function buildProbeConfig(data: MCPServerFormData): ProbeServerConfig | null {
     transport: data.transport || '',
     env: data.env,
     auth: buildProbeAuth(data.auth),
+    headers: probeHeaders(data.headers),
   };
 }
 
@@ -273,6 +274,34 @@ function FieldError({ error }: { error?: string }) {
       <AlertCircle size={10} className="inline mr-1 -mt-0.5" />
       {error}
     </p>
+  );
+}
+
+function CustomHeadersEditor({
+  headers,
+  authSet,
+  onChange,
+}: {
+  headers?: Record<string, string>;
+  authSet: boolean;
+  onChange: (headers: Record<string, string> | undefined) => void;
+}) {
+  const value = headers ?? {};
+  const rowErrors = customHeaderErrors(value, authSet);
+  return (
+    <div>
+      <KeyValueEditor
+        label="Custom headers"
+        value={value}
+        onChange={(next) => onChange(Object.keys(next).length ? next : undefined)}
+        placeholder={{ key: 'X-Tenant', value: '${var:TENANT}' }}
+        showSecrets
+      />
+      <p className="text-[10px] text-text-muted mt-1">Use a ${'{'}var:KEY{'}'} reference. Values are treated as sensitive.</p>
+      {Object.entries(rowErrors).map(([name, message]) => (
+        <FieldError key={name} error={`${name}: ${message}`} />
+      ))}
+    </div>
   );
 }
 
@@ -982,6 +1011,11 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                 />
                 <FieldError error={errors?.['openapi.spec']} />
               </div>
+              <CustomHeadersEditor
+                headers={data.headers}
+                authSet={Boolean(data.openapi?.auth)}
+                onChange={(headers) => onChange({ headers })}
+              />
               <div>
                 <label className={labelClass}>Base URL</label>
                 <input
@@ -1427,6 +1461,11 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
           <ExternalAuthFields
             auth={data.auth}
             onChange={(auth) => onChange({ auth })}
+          />
+          <CustomHeadersEditor
+            headers={data.headers}
+            authSet={Boolean(data.auth)}
+            onChange={(headers) => onChange({ headers })}
           />
         </Section>
       )}
