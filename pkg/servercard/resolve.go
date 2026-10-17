@@ -8,9 +8,10 @@ import (
 )
 
 // Resolve fetches <url>/server-card and, on 404, the origin catalog.
-// A selected remote on a different scheme, host, or port is refused.
-// URL templates are refused. The returned card is the one whose remote
-// was accepted.
+// Catalog entries on another host are skipped; they are not a selected
+// remote. A selected remote on a different scheme, host, or port is
+// refused. URL templates are refused. The returned card is the one whose
+// remote was accepted.
 func Resolve(ctx context.Context, submittedURL string, opts FetchOptions) (*ServerCard, error) {
 	cardURL, err := CardURLFor(submittedURL)
 	if err != nil {
@@ -53,10 +54,11 @@ func resolveFromCatalog(ctx context.Context, submittedURL, wantCard string, opts
 		if entry.URL == "" || strings.Contains(entry.URL, "{") {
 			continue
 		}
+		// A catalog often lists cards on other hosts. Those entries are not
+		// the selected remote, so skip them and keep looking for a match.
+		// ErrOffOrigin is reserved for a same-origin card whose remote is
+		// off-origin, which selectRemote reports below.
 		if !SameOrigin(entry.URL, submittedURL) {
-			if entry.URL == wantCard || strings.HasSuffix(entry.URL, ServerCardSuffix) {
-				return nil, fmt.Errorf("%w: catalog entry %s", ErrOffOrigin, entry.URL)
-			}
 			continue
 		}
 		card, ferr := Fetch(ctx, entry.URL, opts)

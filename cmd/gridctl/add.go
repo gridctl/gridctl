@@ -46,6 +46,13 @@ your stack.yaml: curated entries first ('gridctl add github'), then the
 official MCP Registry by full reverse-DNS name
 ('gridctl add io.github.user/weather').
 
+An http:// or https:// argument skips the catalog. gridctl fetches
+<url>/server-card and, when that card is missing, a same-origin entry from
+the origin AI Catalog. Entries on another host are skipped. A card writes
+the remote URL and an auth placeholder without probing. --no-card, a
+missing card, or an invalid card probes the URL and writes a plain url
+block. An off-origin remote is refused and is not followed.
+
 Required inputs are prompted for; secret values are masked and stored in
 the variable store, so the stack file only ever carries ${var:KEY}
 references. The stack file is backed up first and the post-add stack must
@@ -54,7 +61,8 @@ publications, not vetted by gridctl; review them before deploying.
 
 Exit codes:
   0  added
-  1  cancelled, unknown name, or the server was skipped (e.g. collision)
+  1  cancelled, unknown name, the server was skipped (e.g. collision),
+     a failed URL probe, or a refused server card
   2  infrastructure error (no stack file, parse or write failure,
      post-add validation failure)`,
 	Example: `  gridctl add github                Add the curated GitHub server
@@ -64,7 +72,9 @@ Exit codes:
   gridctl add io.github.user/tool --container
                                     Build an exact registry PyPI package
   gridctl add 'mcp-server-fetch==2026.8.18' --container
-                                    Build an exact public PyPI release`,
+                                    Build an exact public PyPI release
+  gridctl add https://host.example/mcp
+                                    Consume a server card, or probe`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		format, err := resolveFormat(addFormat, cmd.Flags().Changed("format"), *addAsJSON)

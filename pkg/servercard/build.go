@@ -173,6 +173,12 @@ func cardName(segment, group string) string {
 	return head + second
 }
 
+// Segment returns the sanitized gateway-name segment used in card names
+// and catalog identifiers. Dots are preserved. A group suffix is not appended.
+func Segment(name string) string {
+	return sanitizeSegment(name)
+}
+
 // sanitizeSegment maps a gateway or group name onto the schema's second
 // segment. Characters outside [a-zA-Z0-9._-] become "-", runs of "-"
 // collapse, and leading or trailing "-" and "." are trimmed. An empty

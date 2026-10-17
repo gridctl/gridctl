@@ -109,7 +109,7 @@ func (s *Server) buildCatalog(origin, prefix string) *servercard.Catalog {
 	if s.gateway != nil && s.gateway.ServerInfo().Name != "" {
 		name = s.gateway.ServerInfo().Name
 	}
-	segment := sanitizedGatewaySegment(name)
+	segment := servercard.Segment(name)
 	cards := map[string]string{}
 	var groups []string
 	if origin != "" {
@@ -122,21 +122,6 @@ func (s *Server) buildCatalog(origin, prefix string) *servercard.Catalog {
 		}
 	}
 	return servercard.BuildCatalog(origin, prefix, segment, groups, cards)
-}
-
-func sanitizedGatewaySegment(name string) string {
-	card, err := servercard.Build(servercard.Identity{GatewayName: name, StackName: "gridctl", Version: "dev"})
-	if err != nil {
-		return "gateway"
-	}
-	_, segment, _ := strings.Cut(card.Name, "/")
-	if i := strings.Index(segment, "."); i >= 0 {
-		segment = segment[:i]
-	}
-	if segment == "" {
-		return "gateway"
-	}
-	return segment
 }
 
 // cardOrigin returns the advertised origin, path prefix, and whether the

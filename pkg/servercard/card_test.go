@@ -116,6 +116,78 @@ func TestBuild_AuthHeaders(t *testing.T) {
 	}
 }
 
+func TestDraftFromCard_BearerWithExtraHeader(t *testing.T) {
+	card, err := Build(Identity{GatewayName: "lab", StackName: "lab", Version: "1", Origin: "http://127.0.0.1:1", AuthType: "bearer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	card.Remotes[0].Headers = append(card.Remotes[0].Headers, KeyValueInput{
+		Name:  "X-Api-Version",
+		Value: "2",
+	})
+	draft, err := DraftFromCard(card, "http://127.0.0.1:1/mcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draft.Entry.Install.AuthType != "bearer" {
+		t.Fatalf("auth type = %q", draft.Entry.Install.AuthType)
+	}
+	if len(draft.Entry.Inputs) != 1 || draft.Entry.Inputs[0].Name != "token" || !draft.Entry.Inputs[0].Required || !draft.Entry.Inputs[0].Secret {
+		t.Fatalf("inputs = %#v", draft.Entry.Inputs)
+	}
+	joined := strings.Join(draft.Warnings, "\n")
+	if !strings.Contains(joined, "X-Api-Version") {
+		t.Fatalf("warnings = %#v", draft.Warnings)
+	}
+	if strings.Contains(joined, "header Authorization was not written") {
+		t.Fatalf("bearer header dropped: %#v", draft.Warnings)
+	}
+	server, _, err := draft.ServerDraft("lab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if server.Auth == nil || server.Auth.Type != "bearer" || !strings.HasPrefix(server.Auth.Token, "${var:") {
+		t.Fatalf("auth = %#v", server.Auth)
+	}
+
+	// Bearer is selected by value, not by being the only or first header.
+	card.Remotes[0].Headers = []KeyValueInput{
+		{Name: "X-Api-Version", Value: "2", IsRequired: true},
+		card.Remotes[0].Headers[0],
+	}
+	draft, err = DraftFromCard(card, "http://127.0.0.1:1/mcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draft.Entry.Install.AuthType != "bearer" || len(draft.Entry.Inputs) != 1 {
+		t.Fatalf("reordered draft = %#v warnings %#v", draft.Entry, draft.Warnings)
+	}
+}
+
+func TestDraftFromCard_HeaderAuthRequiresSingleHeader(t *testing.T) {
+	card, err := Build(Identity{GatewayName: "lab", StackName: "lab", Version: "1", Origin: "http://127.0.0.1:1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	card.Remotes[0].Headers = []KeyValueInput{
+		{Name: "X-Api-Key", Value: "{key}", IsRequired: true, Variables: map[string]Input{"key": {IsRequired: true, IsSecret: true}}},
+		{Name: "X-Api-Version", Value: "2"},
+	}
+	draft, err := DraftFromCard(card, "http://127.0.0.1:1/mcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draft.Entry.Install.AuthType != "" {
+		t.Fatalf("auth type = %q", draft.Entry.Install.AuthType)
+	}
+}
+
+func TestSegment_KeepsDots(t *testing.T) {
+	if got := Segment("acme.mcp"); got != "acme.mcp" {
+		t.Fatalf("Segment = %q", got)
+	}
+}
+
 func TestProtocolGeneration_MixedVersions(t *testing.T) {
 	card, err := Build(Identity{
 		GatewayName: "lab", StackName: "lab", Version: "1", Origin: "http://127.0.0.1:1",

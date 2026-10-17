@@ -798,6 +798,28 @@ func TestGatewayBuilder_SetupHotReload_WithWatch(t *testing.T) {
 // TestGatewayBuilder_RefusesUnauthenticatedExposure is the regression case:
 // before this, a widened bind with no auth started and served the API to the
 // network with only a log warning.
+func TestStartupOriginsMode(t *testing.T) {
+	tests := []struct {
+		bind    string
+		origins []string
+		want    string
+		count   int
+	}{
+		{"127.0.0.1", nil, "loopback-wildcard", 0},
+		{"127.0.0.1", []string{"*"}, "loopback-wildcard", 1},
+		{"localhost", []string{"https://ui.example"}, "loopback-allowlist", 1},
+		{"0.0.0.0", []string{"https://ui.example", "https://ops.example"}, "allowlist", 2},
+		{"0.0.0.0", nil, "wildcard-override", 0},
+		{"0.0.0.0", []string{"*"}, "wildcard-override", 1},
+	}
+	for _, tt := range tests {
+		got, n := startupOriginsMode(tt.bind, tt.origins)
+		if got != tt.want || n != tt.count {
+			t.Errorf("startupOriginsMode(%q, %v) = %s %d, want %s %d", tt.bind, tt.origins, got, n, tt.want, tt.count)
+		}
+	}
+}
+
 func TestGatewayBuilder_RefusesUnauthenticatedExposure(t *testing.T) {
 	withAuth := func() *config.Stack {
 		return &config.Stack{Name: "test", Gateway: &config.GatewayConfig{

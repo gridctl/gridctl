@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"strings"
 	"testing"
 
@@ -23,29 +24,38 @@ func TestPublicDiscoveryRoutes_Invariants(t *testing.T) {
 	handler := s.Handler()
 
 	for _, pattern := range discoveryRoutePatterns() {
-		path := strings.ReplaceAll(pattern, "{name}", "release")
+		route := strings.ReplaceAll(pattern, "{name}", "release")
 		t.Run(pattern, func(t *testing.T) {
-			if isProtectedPath(path) || isProtectedPath("/"+strings.TrimPrefix(path, "/")) {
-				t.Fatalf("isProtectedPath(%s) = true", path)
+			if isProtectedPath(route) || isProtectedPath(path.Clean(route)) {
+				t.Fatalf("isProtectedPath(%s) = true", route)
 			}
-			req := loopbackRequest(http.MethodGet, path, nil)
+			req := loopbackRequest(http.MethodGet, route, nil)
 			req.Header.Set("Origin", "https://other.example")
 			w := httptest.NewRecorder()
 			handler.ServeHTTP(w, req)
 			if w.Code != http.StatusOK {
-				t.Fatalf("GET %s = %d, body %s", path, w.Code, w.Body.String())
+				t.Fatalf("GET %s = %d, body %s", route, w.Code, w.Body.String())
 			}
 			if got := w.Header().Get("Access-Control-Allow-Origin"); got != "*" {
 				t.Fatalf("ACAO = %q", got)
 			}
-			post := loopbackRequest(http.MethodPost, path, nil)
+			post := loopbackRequest(http.MethodPost, route, nil)
 			post.Header.Set("Origin", "https://other.example")
 			pw := httptest.NewRecorder()
 			handler.ServeHTTP(pw, post)
 			if pw.Code != http.StatusMethodNotAllowed {
-				t.Fatalf("POST %s = %d", path, pw.Code)
+				t.Fatalf("POST %s = %d", route, pw.Code)
 			}
 		})
+	}
+
+	// path.Clean("/api/../mcp/server-card") is the discovery route. A
+	// dot-segment that cleans to an operational route stays protected.
+	if isProtectedPath("/api/../mcp/server-card") || isProtectedPath(path.Clean("/api/../mcp/server-card")) {
+		t.Fatal("dot-segment discovery path is protected")
+	}
+	if !isProtectedPath(path.Clean("/mcp/server-card/../../mcp")) {
+		t.Fatal("cleaned operational path is not protected")
 	}
 
 	bad := []discoveryEntry{
@@ -130,6 +140,23 @@ func TestSecurityReport_OriginsMode(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("nil startup omitted gateway.origins.startup")
+	}
+}
+
+func TestCatalogIdentifier_KeepsDottedSegment(t *testing.T) {
+	gw := mcp.NewGateway()
+	gw.SetName("acme.mcp")
+	s := NewServer(gw, nil)
+	t.Cleanup(s.Close)
+	s.SetServerCard("", "https://gw.example")
+	req := loopbackRequest(http.MethodGet, "/.well-known/ai-catalog.json", nil)
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"identifier":"urn:air:gw.example:mcp:acme.mcp"`) {
+		t.Fatalf("catalog = %s", w.Body.String())
 	}
 }
 

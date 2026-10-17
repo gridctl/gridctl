@@ -50,6 +50,63 @@ func TestValidate_StackLevel(t *testing.T) {
 	}
 }
 
+func TestValidate_GatewayCardFields(t *testing.T) {
+	base := func() *Stack {
+		return &Stack{
+			Name:       "test",
+			Network:    Network{Name: "test-net"},
+			MCPServers: []MCPServer{{Name: "s1", Image: "alpine", Port: 3000}},
+			Gateway:    &GatewayConfig{},
+		}
+	}
+	tests := []struct {
+		name    string
+		mutate  func(*Stack)
+		wantErr string
+	}{
+		{name: "public_url with port and prefix", mutate: func(s *Stack) {
+			s.Gateway.PublicURL = "https://gw.example:8443/prefix"
+		}},
+		{name: "ftp scheme", mutate: func(s *Stack) {
+			s.Gateway.PublicURL = "ftp://gw.example"
+		}, wantErr: "gateway.public_url"},
+		{name: "missing host", mutate: func(s *Stack) {
+			s.Gateway.PublicURL = "https://"
+		}, wantErr: "gateway.public_url"},
+		{name: "userinfo", mutate: func(s *Stack) {
+			s.Gateway.PublicURL = "https://user:pass@gw.example"
+		}, wantErr: "gateway.public_url"},
+		{name: "query", mutate: func(s *Stack) {
+			s.Gateway.PublicURL = "https://gw.example/mcp?x=1"
+		}, wantErr: "gateway.public_url"},
+		{name: "fragment", mutate: func(s *Stack) {
+			s.Gateway.PublicURL = "https://gw.example/mcp#frag"
+		}, wantErr: "gateway.public_url"},
+		{name: "100-rune description", mutate: func(s *Stack) {
+			s.Gateway.Description = strings.Repeat("é", 100)
+		}},
+		{name: "101-rune description", mutate: func(s *Stack) {
+			s.Gateway.Description = strings.Repeat("é", 101)
+		}, wantErr: "gateway.description"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stack := base()
+			tt.mutate(stack)
+			err := Validate(stack)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error = %v, want %s", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestValidate_GatewayCodeMode(t *testing.T) {
 	base := func() *Stack {
 		return &Stack{

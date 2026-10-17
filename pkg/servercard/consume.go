@@ -114,23 +114,23 @@ func selectRemote(card *ServerCard, submittedURL string) (Remote, error) {
 	return remote, nil
 }
 
-// mapHeaders derives one input per variable. A simple Authorization
-// "Bearer {x}" or a single "{x}" header becomes the auth block. Any
-// further required header, or a literal value, is a warning and is not
-// written (headers: is not a stack field yet).
+// mapHeaders derives one input per variable on the header that becomes
+// the auth block. Authorization "Bearer {x}" maps to bearer even when
+// other headers are present. A single other header whose value is exactly
+// "{x}" maps to type header. Any further required header, or a literal
+// value, is a warning and is not written (headers: is not a stack field yet).
 func mapHeaders(headers []KeyValueInput) (warnings []string, inputs []catalog.Input, authType, authHeader, authVar string) {
-	simple, simpleVar := simpleAuth(headers)
+	authIdx, kind, variable := authHeaderIndex(headers)
 	for i, header := range headers {
 		headerInputs, headerWarnings := inputsForHeader(header)
 		warnings = append(warnings, headerWarnings...)
-		useAuth := simple.authType != "" && i == 0
-		if !useAuth && (header.IsRequired || len(headerInputs) > 0) {
-			warnings = append(warnings, fmt.Sprintf("header %s was not written; additional headers are not a stack field yet", header.Name))
+		if i != authIdx {
+			if header.IsRequired || len(headerInputs) > 0 {
+				warnings = append(warnings, fmt.Sprintf("header %s was not written; additional headers are not a stack field yet", header.Name))
+			}
 			continue
 		}
-		if useAuth {
-			authType, authHeader, authVar = simple.authType, simple.header, simpleVar
-		}
+		authType, authHeader, authVar = kind.authType, kind.header, variable
 		inputs = append(inputs, headerInputs...)
 	}
 	return warnings, inputs, authType, authHeader, authVar
@@ -141,20 +141,26 @@ type simpleAuthKind struct {
 	header   string
 }
 
-func simpleAuth(headers []KeyValueInput) (simpleAuthKind, string) {
-	if len(headers) != 1 {
-		return simpleAuthKind{}, ""
-	}
-	header := headers[0]
-	if strings.EqualFold(header.Name, "Authorization") {
+// authHeaderIndex selects the header written as the stack auth block.
+// The first Authorization value that is exactly "Bearer {x}" wins even
+// when other headers exist. The type:header mapping requires exactly one
+// header, so a second header does not become auth.type header.
+func authHeaderIndex(headers []KeyValueInput) (int, simpleAuthKind, string) {
+	for i, header := range headers {
+		if !strings.EqualFold(header.Name, "Authorization") {
+			continue
+		}
 		if m := bearerValuePattern.FindStringSubmatch(header.Value); m != nil && hasVariable(header, m[1]) {
-			return simpleAuthKind{authType: "bearer"}, m[1]
+			return i, simpleAuthKind{authType: "bearer"}, m[1]
 		}
 	}
-	if m := singleValuePattern.FindStringSubmatch(header.Value); m != nil && hasVariable(header, m[1]) {
-		return simpleAuthKind{authType: "header", header: header.Name}, m[1]
+	if len(headers) == 1 {
+		header := headers[0]
+		if m := singleValuePattern.FindStringSubmatch(header.Value); m != nil && hasVariable(header, m[1]) {
+			return 0, simpleAuthKind{authType: "header", header: header.Name}, m[1]
+		}
 	}
-	return simpleAuthKind{}, ""
+	return -1, simpleAuthKind{}, ""
 }
 
 func hasVariable(header KeyValueInput, name string) bool {
