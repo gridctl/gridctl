@@ -11,6 +11,20 @@ on:
   push:
     branches: [main]
 
+# The runtime lanes (integration, conformance, podman-integration) do not
+# depend on the test job: they consume nothing from it, and waiting for it
+# only added its duration to the critical path. The required job still
+# aggregates every gate.
+#
+# Superseded pushes to the same pull request cancel the previous run. Every
+# other event (push to main, the release workflow's workflow_call) gets a
+# group unique to the run, so main commits are never queued or cancelled
+# and exact-commit evidence is never lost. github.workflow is deliberately
+# not used: under workflow_call it is the caller's name.
+concurrency:
+  group: gatekeeper-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -50,9 +64,24 @@ jobs:
             --index tests/adversarial/index.yaml \
             --revision "${GITHUB_SHA}" \
             --summary "${RUNNER_TEMP}/unit-scenarios.json" \
+            --capture "${RUNNER_TEMP}/unit-capture.json" \
             -- \
             -coverprofile=coverage.out ./...
           go tool cover -func=coverage.out | tail -1
+
+      - name: Slowest tests
+        if: always()
+        run: |
+          capture="${RUNNER_TEMP}/unit-capture.json"
+          if [[ ! -s "$capture" ]]; then
+            echo "no capture at $capture"
+            exit 0
+          fi
+          echo "Slowest top-level tests (elapsed seconds, result, name):"
+          jq -r 'select(.Test != null and (.Action == "pass" or .Action == "fail")) | select(.Test | test("/") | not) | "\(.Elapsed)\t\(.Action)\t\(.Test)"' "$capture" \
+            | sort -rn | head -25 \
+            || echo "slowest-tests summary failed; see the capture on the runner"
+          exit 0
 
       - name: Check coverage threshold
         run: |
@@ -64,7 +93,7 @@ jobs:
           fi
 
       - name: Per-package coverage thresholds
-        run: bash scripts/check-coverage.sh
+        run: bash scripts/check-coverage.sh coverage.out
 
       - name: Go vulnerability check
         run: |
@@ -127,7 +156,6 @@ jobs:
     # package timeout before a genuinely hung test would. The job limit
     # leaves room for runtime setup on top of that budget.
     timeout-minutes: 25
-    needs: test
     env:
       GRIDCTL_RUNTIME: docker
 
@@ -167,13 +195,27 @@ jobs:
             --index tests/adversarial/index.yaml \
             --revision "${GITHUB_SHA}" \
             --summary "${RUNNER_TEMP}/integration-scenarios.json" \
+            --capture "${RUNNER_TEMP}/integration-capture.json" \
             -- \
             -tags=integration -timeout 20m ./tests/integration/...
+
+      - name: Slowest tests
+        if: always()
+        run: |
+          capture="${RUNNER_TEMP}/integration-capture.json"
+          if [[ ! -s "$capture" ]]; then
+            echo "no capture at $capture"
+            exit 0
+          fi
+          echo "Slowest top-level tests (elapsed seconds, result, name):"
+          jq -r 'select(.Test != null and (.Action == "pass" or .Action == "fail")) | select(.Test | test("/") | not) | "\(.Elapsed)\t\(.Action)\t\(.Test)"' "$capture" \
+            | sort -rn | head -25 \
+            || echo "slowest-tests summary failed; see the capture on the runner"
+          exit 0
 
   conformance:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: test
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -205,7 +247,6 @@ jobs:
     # below rather than inherited from the image (#1092).
     runs-on: ubuntu-24.04
     timeout-minutes: 25
-    needs: test
 
     env:
       # netavark and aardvark-dns release in lockstep and must stay on the same
@@ -345,8 +386,23 @@ jobs:
             --index tests/adversarial/index.yaml \
             --revision "${GITHUB_SHA}" \
             --summary "${RUNNER_TEMP}/podman-scenarios.json" \
+            --capture "${RUNNER_TEMP}/podman-integration-capture.json" \
             -- \
             -tags=integration -timeout 20m ./tests/integration/...
+
+      - name: Slowest tests
+        if: always()
+        run: |
+          capture="${RUNNER_TEMP}/podman-integration-capture.json"
+          if [[ ! -s "$capture" ]]; then
+            echo "no capture at $capture"
+            exit 0
+          fi
+          echo "Slowest top-level tests (elapsed seconds, result, name):"
+          jq -r 'select(.Test != null and (.Action == "pass" or .Action == "fail")) | select(.Test | test("/") | not) | "\(.Elapsed)\t\(.Action)\t\(.Test)"' "$capture" \
+            | sort -rn | head -25 \
+            || echo "slowest-tests summary failed; see the capture on the runner"
+          exit 0
 
       - name: Podman network diagnostics
         # This job has failed on image drift several times, and each round trip

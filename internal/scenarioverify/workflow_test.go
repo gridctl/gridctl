@@ -82,6 +82,148 @@ func TestWorkflowDesignatedInvocations(t *testing.T) {
 	}
 }
 
+func TestWorkflowFeedbackCycle(t *testing.T) {
+	root := repoRoot(t)
+	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "gatekeeper.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(workflow)
+
+	var groupLine string
+	concurrency := 0
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "concurrency:" {
+			concurrency++
+			if line != trimmed {
+				t.Fatalf("job-level concurrency is not allowed: %q", line)
+			}
+		}
+		if strings.HasPrefix(trimmed, "group:") {
+			if groupLine != "" {
+				t.Fatalf("multiple group lines: %q and %q", groupLine, trimmed)
+			}
+			groupLine = trimmed
+		}
+	}
+	if concurrency != 1 {
+		t.Fatalf("expected one top-level concurrency block, found %d", concurrency)
+	}
+	if groupLine == "" {
+		t.Fatal("concurrency group dropped")
+	}
+	for _, needle := range []string{"github.event.pull_request.number", "github.run_id"} {
+		if !strings.Contains(groupLine, needle) {
+			t.Fatalf("concurrency group missing %q: %s", needle, groupLine)
+		}
+	}
+	for _, banned := range []string{"github.workflow", "github.ref"} {
+		if strings.Contains(groupLine, banned) {
+			t.Fatalf("concurrency group must not use %s: %s", banned, groupLine)
+		}
+	}
+	if strings.Count(text, "cancel-in-progress: ${{ github.event_name == 'pull_request' }}") != 1 {
+		t.Fatal("cancel-in-progress contract dropped")
+	}
+	if !strings.Contains(text, "bash scripts/check-coverage.sh coverage.out") {
+		t.Fatal("per-package coverage step does not pass coverage.out")
+	}
+	for _, line := range strings.Split(text, "\n") {
+		if strings.TrimSpace(line) == "bash scripts/check-coverage.sh" {
+			t.Fatal("per-package coverage step does not pass the profile")
+		}
+	}
+	if !strings.Contains(text, `echo "$COVERAGE < 64" | bc -l`) {
+		t.Fatal("whole-suite coverage threshold changed")
+	}
+
+	required := workflowJob(text, "required")
+	if required == "" {
+		t.Fatal("required job body not found")
+	}
+	if !strings.Contains(required, "needs: [test, integration, conformance, podman-integration, frontend]") {
+		t.Fatal("required job needs list changed")
+	}
+	if !strings.Contains(required, "if: ${{ always() }}") {
+		t.Fatal("required job lost if: always()")
+	}
+
+	lanes := []struct {
+		job  string
+		lane string
+	}{
+		{"test", "unit"},
+		{"integration", "integration"},
+		{"podman-integration", "podman-integration"},
+	}
+	for _, lane := range lanes {
+		body := workflowJob(text, lane.job)
+		if body == "" {
+			t.Fatalf("%s job body not found", lane.job)
+		}
+		if hasNeedsMapping(body) {
+			t.Fatalf("%s job has a needs: mapping line", lane.job)
+		}
+		capture := `${RUNNER_TEMP}/` + lane.lane + `-capture.json`
+		if !strings.Contains(body, `--capture "`+capture+`"`) {
+			t.Fatalf("%s job does not pass --capture %s", lane.job, capture)
+		}
+		step := slowestStep(body)
+		if step == "" {
+			t.Fatalf("%s job has no Slowest tests step", lane.job)
+		}
+		if !strings.Contains(step, "if: always()") {
+			t.Fatalf("%s Slowest tests step lost if: always()", lane.job)
+		}
+		if !strings.Contains(step, capture) {
+			t.Fatalf("%s Slowest tests step does not read %s", lane.job, capture)
+		}
+		if !strings.Contains(step, "|| echo") {
+			t.Fatalf("%s Slowest tests step does not guard the jq pipeline", lane.job)
+		}
+		if strings.Contains(step, "pipefail") {
+			t.Fatalf("%s Slowest tests step must not enable pipefail", lane.job)
+		}
+		if strings.Contains(step, ".Output") {
+			t.Fatalf("%s Slowest tests step prints a test output payload", lane.job)
+		}
+		if !strings.HasSuffix(strings.TrimSpace(step), "exit 0") {
+			t.Fatalf("%s Slowest tests step does not end with exit 0", lane.job)
+		}
+	}
+
+	conformance := workflowJob(text, "conformance")
+	if conformance == "" {
+		t.Fatal("conformance job body not found")
+	}
+	if hasNeedsMapping(conformance) {
+		t.Fatal("conformance job has a needs: mapping line")
+	}
+}
+
+func hasNeedsMapping(body string) bool {
+	for _, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "needs:") {
+			return true
+		}
+	}
+	return false
+}
+
+func slowestStep(body string) string {
+	const marker = "- name: Slowest tests"
+	start := strings.Index(body, marker)
+	if start < 0 {
+		return ""
+	}
+	rest := body[start:]
+	if next := strings.Index(rest[len(marker):], "\n      - "); next >= 0 {
+		return rest[:len(marker)+next]
+	}
+	return rest
+}
+
 func workflowJob(text, name string) string {
 	marker := "\n  " + name + ":\n"
 	start := strings.Index(text, marker)
