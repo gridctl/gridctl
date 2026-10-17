@@ -122,7 +122,11 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The whole suite takes about 14 minutes on a hosted runner and the go
+    # test budget below is 20 minutes, so a slow runner cannot exhaust the
+    # package timeout before a genuinely hung test would. The job limit
+    # leaves room for runtime setup on top of that budget.
+    timeout-minutes: 25
     needs: test
     env:
       GRIDCTL_RUNTIME: docker
@@ -164,7 +168,7 @@ jobs:
             --revision "${GITHUB_SHA}" \
             --summary "${RUNNER_TEMP}/integration-scenarios.json" \
             -- \
-            -tags=integration -timeout 15m ./tests/integration/...
+            -tags=integration -timeout 20m ./tests/integration/...
 
   conformance:
     runs-on: ubuntu-latest
@@ -342,7 +346,7 @@ jobs:
             --revision "${GITHUB_SHA}" \
             --summary "${RUNNER_TEMP}/podman-scenarios.json" \
             -- \
-            -tags=integration -timeout 15m ./tests/integration/...
+            -tags=integration -timeout 20m ./tests/integration/...
 
       - name: Podman network diagnostics
         # This job has failed on image drift several times, and each round trip
