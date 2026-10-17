@@ -243,7 +243,7 @@ Pull requests are automatically checked for:
 - Example stack validation
 - Successful binary build
 
-The five Gatekeeper jobs start together. The required check finishes when the slowest job finishes. A new push to the same pull request cancels the in-progress Gatekeeper run. Other events, including pushes to main and the release workflow's Gatekeeper call, use a group unique to that run and are not canceled. Each designated lane prints its 25 slowest top-level tests. Raw JSON captures remain on the runner and are not uploaded.
+The five Gatekeeper jobs start together. The required check finishes when the slowest job finishes. A new push to the same pull request cancels the in-progress Gatekeeper run. Other events, including pushes to main and the release workflow's Gatekeeper call, use a group unique to that run and are not canceled. Each designated lane prints its 25 slowest top-level tests. A missing capture, a jq failure, or a sort failure prints a one-line notice and does not fail the job. Raw JSON captures remain on the runner and are not uploaded.
 
 ## 🚧 Issue Guidelines
 
