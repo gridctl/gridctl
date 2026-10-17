@@ -6,6 +6,26 @@ Start with `gridctl doctor`: it runs most of the environment checks below automa
 
 ---
 
+## Validation reports an unknown field
+
+`gridctl validate` rejects a key the schema does not declare. The message
+names the path, the key, and the line, for example
+`mcp-servers[0].headerz: unknown field "headerz" (line 31)`. The same text
+is in `gridctl validate --format json` as an issue with `line`, and in the
+`invalid_candidate` `errors` list from `POST /api/reload` and
+`POST /api/stack/initialize`.
+
+Remove the key, or rename it to a field the schema accepts. `headers:` and
+`description:` are accepted. `headers:` is only valid on external URL and
+OpenAPI servers. A group `tools:` or `overrides` entry that names a tool
+hidden by that server's `tools:` whitelist is also an error. Drop the
+reference, or add the tool back to the whitelist. A profile `tools:` entry
+or a group `exclude` entry that names a hidden tool is a warning.
+
+This check ships in the next 1.0.0 release candidate. A stack that validated
+before it because an unknown key was ignored will now fail until that key
+is fixed or removed.
+
 ## Gateway security requires a restart
 
 `restart_required` means the saved candidate differs from the listener's effective startup authentication, bind, Host/Origin allowlists, or insecure override. The active credential and accepted configuration remain unchanged, including when ordinary edits were saved alongside security changes. The edited file is not rolled back. Repeating reload cannot activate it.

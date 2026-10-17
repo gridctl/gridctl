@@ -648,6 +648,42 @@ mcp-servers:
 | `client_id` | string | oauth | Pre-registered OAuth client ID (skips dynamic registration) |
 | `client_secret` | string | oauth | Client secret, when the provider issued one |
 
+#### Custom headers
+
+External URL servers and OpenAPI servers accept an optional `headers:` map.
+Each entry is sent on every downstream request next to `auth:` or the
+OAuth-brokered `Authorization` header. Absent or empty means no extra
+headers. Values expand `${VAR}` and `${var:KEY}` the same way `auth.token`
+does. Treat every value as sensitive: logs, traces, run records, status,
+and probe errors redact them. A short literal such as `acme` is masked
+everywhere that string appears in logs, the same way an environment value is.
+
+`headers:` is rejected on image, source, local-process, SSH, and A2A
+servers. Names must be HTTP tokens. `Mcp-*`, `Content-Type`, `Accept`,
+`Host`, `Content-Length`, `Transfer-Encoding`, and `Connection` are
+reserved. `Authorization` is rejected when `auth:` is set; without `auth:`
+it is allowed. An empty name or value is an error.
+
+```yaml
+mcp-servers:
+  - name: portainer
+    url: https://portainer.example/mcp
+    auth:
+      type: bearer
+      token: ${var:PORTAINER_TOKEN}
+    headers:
+      X-Portainer-API-Key: ${var:PORTAINER_API_KEY}
+      X-Tenant: ${var:TENANT}
+    description: Portainer, read only
+```
+
+OpenAPI servers send the same map on operation requests and the readiness
+HEAD. The spec fetch stays unauthenticated and does not receive them.
+
+`description` is an operator note accepted on every server kind. It is
+exported and shown in `gridctl status --json` and `/api/mcp-servers`. It
+is not sent downstream and is not a credential.
+
 With `type: oauth`, an unauthorized server deploys in a `needs auth` state
 instead of failing the stack; run `gridctl auth login <name>` (or use the
 web UI) to authorize once. Tokens are stored encrypted under
@@ -730,6 +766,8 @@ In the web wizard, the OpenAPI Configuration section's Operations Filter loads t
 | `openapi` | object | Conditional | - | OpenAPI spec config (see [OpenAPI](#openapi)) |
 | `a2a` | object | Conditional | - | Experimental outbound Agent Card adapter (see [A2A](#a2a)); requires `experimental.a2a` |
 | `auth` | object | No | - | External-server authentication: `type: bearer`, `header`, or `oauth` (see [External Server Authentication](#external-server-authentication)). URL servers only |
+| `headers` | map | No | - | Extra HTTP headers for external URL and OpenAPI servers (see [Custom headers](#custom-headers)). Values are sensitive. Omitted means no extra headers |
+| `description` | string | No | - | Operator note. Accepted on every server kind, exported, and shown in status JSON. Not sent downstream |
 | `tools` | []string | No | - | Tool whitelist. Empty exposes all tools. Hidden tools are rejected on `tools/call` with the same error as an unknown tool. The web wizard populates this from the live stack for running servers, and offers an optional probe of external-URL servers to discover their tools before deploy. Container / stdio / local-process / SSH servers are curated from the Stack sidebar after deploy; OpenAPI servers are curated before deploy with the wizard's Operations Filter (see [OpenAPI](#openapi-server)). Editable live from the Stack sidebar's Tools editor - `PUT /api/mcp-servers/{name}/tools` rewrites this field atomically and triggers a hot reload |
 | `output_format` | string | No | - | Output format override: `"json"`, `"toon"`, `"csv"`, or `"text"`. Overrides `gateway.output_format` for this server |
 | `pin_schemas` | bool | No | - | Override tool schema pinning for this server. `false` disables tool pinning; `true` requires the global verifier to be enabled. Omit to inherit from `gateway.security.schema_pinning.enabled`. Mandatory A2A card trust is independent |
@@ -1379,7 +1417,9 @@ identity. Identity-based access control (IdP / OAuth / JWT) is out of scope.
 ### Scope coverage (v1)
 
 Tools are filtered by the intersection of the profile and each server's
-`tools:` whitelist, for both `tools/list` and `tools/call`. Downstream prompts
+`tools:` whitelist, for both `tools/list` and `tools/call`. A profile
+`tools:` entry that names a tool hidden by a non-empty server whitelist is
+a warning, not an error: `tool '<server__tool>' is hidden by mcp-servers[<server>].tools and can never be called; the profile may be wider than the whitelist on purpose`. `gridctl validate` exits 2 when that warning is the only finding. Downstream prompts
 and resources use the server-level rule above and are not filtered by that
 whitelist. Registry skill prompts and `skills://registry/` resources stay on
 the skill exposure policy only.
@@ -1484,6 +1524,14 @@ groups:
 
 Group names must match `^[a-z0-9][a-z0-9_-]{0,31}$`. A group must include at
 least one server or tool.
+
+A `tools:` entry or an `overrides` key that names a tool outside its
+server's non-empty `tools:` whitelist is an error. The message is
+`tool '<server__tool>' is hidden by mcp-servers[<server>].tools and can never be called`.
+Drop the reference or add the tool back to the server whitelist. An
+`exclude` entry that names a hidden tool is a warning
+(`excluding a hidden tool has no effect`) because it changes nothing.
+A server with an empty or omitted `tools:` list is not checked.
 
 On `/groups/{name}/mcp`, a server contributes prompts and resources only when
 at least one of its currently aggregated tools passes group membership.

@@ -50,6 +50,24 @@ Client identifiers are self-declared, so scoping is a guardrail for cooperating 
 
 See [docs/config-schema.md](../../docs/config-schema.md#clients-per-client-access-scoping) for the full reference, including client-identity reconciliation and reload semantics.
 
+## Verifying the whitelist
+
+After `gridctl apply` on a server whose `tools:` list exposes `list_paths`
+and hides `read_secret`:
+
+```bash
+gridctl call vault__list_paths   # exit 0
+gridctl call vault__read_secret  # exit 1
+```
+
+A raw stateless call for the hidden name expects `-32602 Unknown tool`.
+Hidden and unknown tools use the same wire error.
+
+`gridctl validate` now refuses a group `tools:` or `overrides` entry that
+names a hidden tool. Drop the reference, or add the tool back to the
+server whitelist. A profile `tools:` entry or a group `exclude` entry that
+names one is a warning.
+
 ## 💻 Usage
 
 ```bash
