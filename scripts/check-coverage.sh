@@ -18,14 +18,21 @@ FAILED=0
 for PKG in "${!THRESHOLDS[@]}"; do
   THRESHOLD=${THRESHOLDS[$PKG]}
   PROFILE=$(mktemp)
+  OUTPUT=$(mktemp)
 
-  # Run tests and capture coverage for this package
-  if ! go test -coverprofile="$PROFILE" "./$PKG/..." > /dev/null 2>&1; then
+  # Run tests and capture coverage for this package. Test output is kept
+  # and printed only on failure, so a failing or flaky test is named in the
+  # CI log instead of appearing as a bare "tests failed".
+  if ! go test -coverprofile="$PROFILE" "./$PKG/..." > "$OUTPUT" 2>&1; then
     echo "FAIL  $PKG — tests failed"
+    echo "----- go test output for $PKG -----"
+    cat "$OUTPUT"
+    echo "----- end of output for $PKG -----"
     FAILED=1
-    rm -f "$PROFILE"
+    rm -f "$PROFILE" "$OUTPUT"
     continue
   fi
+  rm -f "$OUTPUT"
 
   # Extract total coverage percentage
   COVERAGE=$(go tool cover -func="$PROFILE" | tail -1 | awk '{print $3}' | sed 's/%//')
