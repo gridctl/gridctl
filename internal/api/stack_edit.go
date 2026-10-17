@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -19,7 +20,32 @@ var (
 	errServerNotFound = errors.New("mcp server not found in stack")
 	errStackModified  = errors.New("stack file was modified on disk since read")
 	errStackFileEmpty = errors.New("no stack file configured")
+	// errCandidateInvalid marks a candidate the daemon refused to load.
+	// The file is unchanged. It is not an internal write failure.
+	errCandidateInvalid = errors.New("invalid candidate")
 )
+
+// candidateInvalidError wraps a candidate-load failure so handlers can map
+// it to 400 while errors.As still finds ValidationErrors in the cause.
+// Context cancellation is not wrapped: a cancelled request is not a refusal.
+type candidateInvalidError struct {
+	err error
+}
+
+func (e candidateInvalidError) Error() string { return e.err.Error() }
+
+func (e candidateInvalidError) Unwrap() error { return e.err }
+
+func (e candidateInvalidError) Is(target error) bool {
+	return target == errCandidateInvalid
+}
+
+func wrapCandidateInvalid(err error) error {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	return fmt.Errorf("validate candidate: %w", candidateInvalidError{err: err})
+}
 
 
 // stackEditBetweenReadsHook fires after the initial read and before the
@@ -100,7 +126,7 @@ func setServerTools(path, serverName string, tools []string, validate func([]byt
 	}
 	if validate != nil {
 		if err := validate(updated); err != nil {
-			return fmt.Errorf("validate candidate: %w", err)
+			return wrapCandidateInvalid(err)
 		}
 	}
 
@@ -156,7 +182,7 @@ func setServerToolsBatch(path string, updates []serverToolsUpdate, validate func
 	}
 	if validate != nil {
 		if err := validate(updated); err != nil {
-			return fmt.Errorf("validate candidate: %w", err)
+			return wrapCandidateInvalid(err)
 		}
 	}
 

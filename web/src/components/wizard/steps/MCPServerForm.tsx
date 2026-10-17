@@ -1011,9 +1011,10 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                 />
                 <FieldError error={errors?.['openapi.spec']} />
               </div>
+              {/* openapi.auth is not auth:; the server does not treat it as a conflict. */}
               <CustomHeadersEditor
                 headers={data.headers}
-                authSet={Boolean(data.openapi?.auth)}
+                authSet={Boolean(data.auth)}
                 onChange={(headers) => onChange({ headers })}
               />
               <div>

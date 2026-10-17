@@ -1339,6 +1339,21 @@ describe('custom headers', () => {
     expect(customHeaderErrors({ Authorization: 'Bearer x' }, false).Authorization).toBeUndefined();
   });
 
+  it('does not treat openapi.auth as an Authorization conflict', () => {
+    render(
+      <MCPServerForm
+        data={defaultData({
+          serverType: 'openapi',
+          openapi: { spec: 'https://example.test/openapi.json', auth: { type: 'bearer', tokenEnv: 'TOKEN' } },
+          headers: { Authorization: 'Bearer synthetic' },
+        })}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Custom headers')).toBeInTheDocument();
+    expect(screen.queryByText(/conflicts with auth/)).not.toBeInTheDocument();
+  });
+
   it('includes headers in the probe payload', () => {
     expect(probeHeaders({ 'X-Tenant': '${var:TENANT}' })).toEqual({ 'X-Tenant': '${var:TENANT}' });
     expect(probeHeaders(undefined)).toBeUndefined();

@@ -42,6 +42,9 @@ func parseStackIndex(ctx context.Context, path string, visited map[string]bool, 
 	if err != nil {
 		var ve ValidationErrors
 		if errors.As(err, &ve) {
+			if depth > 0 {
+				return nil, annotateInheritedErrors(err, path)
+			}
 			return nil, err
 		}
 		return nil, fmt.Errorf("parsing stack YAML: %w", err)

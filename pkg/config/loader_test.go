@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -1155,6 +1156,76 @@ mcp-servers:
 	}
 	if !contains(err.Error(), "circular dependency") {
 		t.Errorf("expected 'circular dependency' in error, got: %v", err)
+	}
+}
+
+func TestLoadStack_HiddenToolReference(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "stack.yaml")
+	writeFile(t, path, `
+version: "1"
+name: test-stack
+network:
+  name: test-net
+mcp-servers:
+  - name: vault
+    url: https://example.test/mcp
+    tools: ["list_paths"]
+groups:
+  ops:
+    tools: ["vault__read_secret"]
+`)
+	_, err := LoadStack(path)
+	if err == nil {
+		t.Fatal("expected hidden-tool rejection")
+	}
+	var ve ValidationErrors
+	if !errors.As(err, &ve) {
+		t.Fatalf("error = %T %v, want ValidationErrors", err, err)
+	}
+	found := false
+	for _, item := range ve {
+		if item.Field == "groups[ops].tools[0]" && strings.Contains(item.Message, "tool 'vault__read_secret' is hidden by mcp-servers[vault].tools") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("errors = %v", ve)
+	}
+}
+
+func TestLoadStack_ExtendsParentUnknownKey(t *testing.T) {
+	dir := t.TempDir()
+	parent := "version: \"1\"\nname: parent\nnetwork:\n  name: parent-net\n  type: bridge\nmcp-servers: []\n"
+	writeFile(t, filepath.Join(dir, "parent.yaml"), parent)
+	writeFile(t, filepath.Join(dir, "child.yaml"), `
+version: "1"
+name: child
+extends: parent.yaml
+network:
+  name: child-net
+mcp-servers:
+  - name: notes
+    url: https://example.test/mcp
+`)
+	_, err := LoadStack(filepath.Join(dir, "child.yaml"))
+	if err == nil {
+		t.Fatal("expected parent unknown-key rejection")
+	}
+	var ve ValidationErrors
+	if !errors.As(err, &ve) {
+		t.Fatalf("error = %T %v", err, err)
+	}
+	line := strings.Count(parent[:strings.Index(parent, "type:")], "\n") + 1
+	wantField := "extends[parent.yaml].network.type"
+	found := false
+	for _, item := range ve {
+		if item.Field == wantField && strings.Contains(item.Message, "unknown field \"type\"") && strings.Contains(item.Message, fmt.Sprintf("(line %d)", line)) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("errors = %v, want %s line %d", ve, wantField, line)
 	}
 }
 

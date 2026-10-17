@@ -477,6 +477,30 @@ func isURL(s string) bool {
 
 const maxExtendsDepth = 10
 
+// annotateInheritedErrors names the parent file on validation findings that
+// were decoded from an extends parent. The line number is the parent's line;
+// without the file name, validate prints it under the child path.
+func annotateInheritedErrors(err error, parentPath string) error {
+	var ve ValidationErrors
+	if !errors.As(err, &ve) {
+		return err
+	}
+	label := filepath.Base(parentPath)
+	if label == "" || label == "." {
+		label = "parent"
+	}
+	out := make(ValidationErrors, len(ve))
+	for i, item := range ve {
+		field := item.Field
+		if field == "" {
+			field = "yaml"
+		}
+		item.Field = "extends[" + label + "]." + field
+		out[i] = item
+	}
+	return out
+}
+
 // resolveExtends loads the parent stack referenced by child.Extends, merges it into
 // child, and clears child.Extends. Called recursively to support multi-level inheritance.
 // visited tracks absolute paths already in the chain to detect cycles.
@@ -514,7 +538,7 @@ func resolveExtends(child *Stack, childAbsPath string, visited map[string]bool, 
 	if err != nil {
 		var ve ValidationErrors
 		if errors.As(err, &ve) {
-			return err
+			return annotateInheritedErrors(err, absParentPath)
 		}
 		return fmt.Errorf("extends: parsing parent stack: %w", err)
 	}

@@ -160,3 +160,83 @@ groups:
 	require.NoError(t, err)
 	assert.Equal(t, original, got)
 }
+
+type emptyVault struct{}
+
+func (emptyVault) Get(string) (string, bool) { return "", false }
+
+func TestHandleSetServerTools_MissingVariableIs400(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "stack.yaml")
+	original := []byte(`version: "1"
+name: test-stack
+network:
+  name: test-net
+mcp-servers:
+  - name: vault
+    url: https://example.test/mcp
+    headers:
+      X-Tenant: "${vault:MISSING}"
+`)
+	require.NoError(t, os.WriteFile(path, original, 0o600))
+	s := &Server{}
+	s.SetStackFile(path)
+	s.SetReloadHandler(reload.NewHandler(path, &config.Stack{Name: "test-stack"}, mcp.NewGateway(), runtime.NewOrchestrator(nil, nil), 8180, 9000, emptyVault{}, nil))
+
+	body, _ := json.Marshal(map[string]any{"tools": []string{"list"}})
+	req := loopbackRequest(http.MethodPut, "/api/mcp-servers/vault/tools", strings.NewReader(string(body)))
+	req.SetPathValue("name", "vault")
+	w := httptest.NewRecorder()
+	s.handleSetServerTools(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	assert.NotContains(t, w.Body.String(), "hidden_tool_reference")
+	assert.Contains(t, w.Body.String(), "missing variable(s): MISSING")
+	assert.NotContains(t, w.Body.String(), "Failed to update stack")
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, original, got)
+}
+
+func TestHandleSetServerToolsBatch_UnreadableExtendsIs400(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "stack.yaml")
+	original := []byte(`version: "1"
+name: test-stack
+extends: missing-parent.yaml
+network:
+  name: test-net
+mcp-servers:
+  - name: vault
+    url: https://example.test/mcp
+`)
+	require.NoError(t, os.WriteFile(path, original, 0o600))
+	s := &Server{}
+	s.SetStackFile(path)
+	s.SetReloadHandler(reload.NewHandler(path, &config.Stack{Name: "test-stack"}, mcp.NewGateway(), runtime.NewOrchestrator(nil, nil), 8180, 9000, nil, nil))
+
+	body, _ := json.Marshal(map[string]any{
+		"servers": []map[string]any{{"name": "vault", "tools": []string{"list"}}},
+	})
+	req := loopbackRequest(http.MethodPut, "/api/mcp-servers/tools", strings.NewReader(string(body)))
+	w := httptest.NewRecorder()
+	s.handleSetServerToolsBatch(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	assert.NotContains(t, w.Body.String(), "hidden_tool_reference")
+	assert.Contains(t, w.Body.String(), "extends: reading parent stack")
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, original, got)
+}
+
+func TestHandleSetServerTools_ReadErrorStays500(t *testing.T) {
+	s := &Server{}
+	s.SetStackFile(filepath.Join(t.TempDir(), "missing.yaml"))
+	body, _ := json.Marshal(map[string]any{"tools": []string{}})
+	req := loopbackRequest(http.MethodPut, "/api/mcp-servers/vault/tools", strings.NewReader(string(body)))
+	req.SetPathValue("name", "vault")
+	w := httptest.NewRecorder()
+	s.handleSetServerTools(w, req)
+	assert.Equal(t, http.StatusInternalServerError, w.Code, w.Body.String())
+}

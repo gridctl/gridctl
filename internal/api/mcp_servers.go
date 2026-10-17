@@ -144,6 +144,10 @@ func (s *Server) handleSetServerTools(w http.ResponseWriter, r *http.Request) {
 		if writeCandidateValidation(w, err) {
 			return
 		}
+		if errors.Is(err, errCandidateInvalid) {
+			writeJSONError(w, candidateRefusalMessage(err), http.StatusBadRequest)
+			return
+		}
 		writeJSONError(w, "Failed to update stack: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -294,6 +298,10 @@ func (s *Server) handleSetServerToolsBatch(w http.ResponseWriter, r *http.Reques
 		if writeCandidateValidation(w, err) {
 			return
 		}
+		if errors.Is(err, errCandidateInvalid) {
+			writeJSONError(w, candidateRefusalMessage(err), http.StatusBadRequest)
+			return
+		}
 		writeJSONError(w, "Failed to update stack: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -343,10 +351,11 @@ func (s *Server) candidateValidator(ctx context.Context) func([]byte) error {
 	}
 }
 
-// writeCandidateValidation classifies a candidate-validation failure.
+// writeCandidateValidation classifies a ValidationErrors candidate failure.
 // Hidden-tool references get a dedicated code and issues array. Any other
-// validation failure is a generic 400 and does not write. Non-validation
-// errors return false so the caller can use its existing status mapping.
+// validation failure is a generic 400 and does not write. Other candidate
+// load failures are errCandidateInvalid and are mapped to 400 by the caller.
+// Filesystem errors are not candidate refusals and return false.
 func writeCandidateValidation(w http.ResponseWriter, err error) bool {
 	var ve config.ValidationErrors
 	if !errors.As(err, &ve) {
@@ -369,6 +378,16 @@ func writeCandidateValidation(w http.ResponseWriter, err error) bool {
 	}
 	writeJSONError(w, strings.Join(all, "; "), http.StatusBadRequest)
 	return true
+}
+
+// candidateRefusalMessage is the cause text of a non-validation candidate
+// refusal. The sentinel wrapper is not part of the client-facing message.
+func candidateRefusalMessage(err error) string {
+	var wrapped candidateInvalidError
+	if errors.As(err, &wrapped) {
+		return wrapped.Error()
+	}
+	return err.Error()
 }
 
 // validateToolsAgainstServer rejects any tool name not in the server's

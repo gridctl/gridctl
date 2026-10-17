@@ -188,6 +188,9 @@ export function useToolsEditor(
     const currentCanonical = canonicalWhitelist(selectionRef.current);
     const isDirty = !arraysEqual(currentCanonical, prevSaved);
 
+    if (prevServer !== serverName) {
+      setHiddenReference(null);
+    }
     if (prevServer !== serverName && isDirty) {
       // Server switched out from under a dirty editor. Freeze the incoming
       // render and surface a confirm dialog — until the user decides we keep
@@ -252,6 +255,7 @@ export function useToolsEditor(
     }
     setIsSaving(true);
     setConflict(null);
+    setHiddenReference(null);
     // Empty whitelist means "expose all tools" in stack YAML semantics. We
     // send an empty array when the selection covers every known tool so
     // the stack file stays clean of a redundant full-list whitelist.
@@ -363,6 +367,7 @@ export function useToolsEditor(
   // on top of the refreshed state.
   const handleReloadFromDisk = async () => {
     setConflict(null);
+    setHiddenReference(null);
     try {
       const [status, toolsList, catalogList] = await Promise.all([
         fetchStatus(),

@@ -55,6 +55,36 @@ func TestClient_ExtraHeadersBeforeAuth(t *testing.T) {
 	}
 }
 
+func TestApplyDownstreamHeaders_HeaderSource(t *testing.T) {
+	var mu sync.Mutex
+	var seen http.Header
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen = r.Header.Clone()
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","capabilities":{},"serverInfo":{"name":"t","version":"0"}}}`)
+	}))
+	defer ts.Close()
+
+	c := NewClient("api", ts.URL)
+	applyDownstreamHeaders(c, MCPServerConfig{
+		Headers:      map[string]string{"X-Portainer-API-Key": "k1"},
+		HeaderSource: NewStaticHeaderSource("Authorization", "Bearer synthetic"),
+	})
+	if err := c.Initialize(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if seen.Get("X-Portainer-API-Key") != "k1" {
+		t.Fatalf("X-Portainer-API-Key = %q", seen.Get("X-Portainer-API-Key"))
+	}
+	if seen.Get("Authorization") != "Bearer synthetic" {
+		t.Fatalf("Authorization = %q", seen.Get("Authorization"))
+	}
+}
+
 func TestOpenAPIClient_HeadersOnOperationAndHeadNotSpec(t *testing.T) {
 	var mu sync.Mutex
 	specHeaders := http.Header{}

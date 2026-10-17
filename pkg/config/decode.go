@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -64,6 +65,12 @@ func decodeStrict(data []byte, dest any) error {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 	if err := dec.Decode(dest); err != nil {
+		// A comment-only document has no value. yaml.Unmarshal treats that
+		// as an empty struct; Decoder.Decode returns io.EOF. Match the old
+		// behavior so validate still reports required fields instead of EOF.
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
 		return classifyDecodeError(err, &doc, reflect.TypeOf(dest).Elem())
 	}
 	return nil

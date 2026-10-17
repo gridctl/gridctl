@@ -94,6 +94,13 @@ func TestDecodeStack_Empty(t *testing.T) {
 	if stack == nil {
 		t.Fatal("nil stack")
 	}
+	stack, err = DecodeStack([]byte("# only a comment\n"))
+	if err != nil {
+		t.Fatalf("comment-only input: %v", err)
+	}
+	if stack == nil || stack.Name != "" {
+		t.Fatalf("comment-only stack = %+v", stack)
+	}
 }
 
 func TestDecodeStack_AcceptsDescriptionAndHeaders(t *testing.T) {

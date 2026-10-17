@@ -45,6 +45,21 @@ func TestValidate_Headers(t *testing.T) {
 			stack: externalServer(map[string]string{"Authorization": "Bearer synthetic"}, nil),
 		},
 		{
+			name: "openapi auth does not conflict with Authorization",
+			stack: &Stack{
+				Name:    "demo",
+				Network: Network{Name: "demo"},
+				MCPServers: []MCPServer{{
+					Name: "pet",
+					OpenAPI: &OpenAPIConfig{
+						Spec: "https://example.test/openapi.json",
+						Auth: &OpenAPIAuth{Type: "bearer", TokenEnv: "TOKEN"},
+					},
+					Headers: map[string]string{"Authorization": "Bearer synthetic"},
+				}},
+			},
+		},
+		{
 			name: "image rejected",
 			stack: &Stack{
 				Name: "demo",

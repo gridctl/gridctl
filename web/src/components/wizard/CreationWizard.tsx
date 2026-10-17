@@ -331,7 +331,9 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
       case 'form':
         if (selectedType === 'mcp-server') {
           const server = formData['mcp-server'];
-          const authSet = server.serverType === 'openapi' ? Boolean(server.openapi?.auth) : Boolean(server.auth);
+          // Conflict checks mirror the server: only top-level auth: counts.
+          // openapi.auth wins Authorization at request time and is not a conflict.
+          const authSet = Boolean(server.auth);
           if (server.serverType === 'external' || server.serverType === 'openapi') {
             return Object.keys(customHeaderErrors(server.headers, authSet)).length === 0;
           }

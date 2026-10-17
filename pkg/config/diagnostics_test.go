@@ -2,6 +2,8 @@ package config
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,5 +84,31 @@ func TestParseStackIndex_RejectsSpecialAndOversizeFiles(t *testing.T) {
 	cancel()
 	if _, err := ParseStackIndex(ctx, filepath.Join(dir, "missing.yaml")); err == nil {
 		t.Fatal("expected cancellation")
+	}
+}
+
+func TestParseStackIndex_ExtendsParentUnknownKey(t *testing.T) {
+	dir := t.TempDir()
+	parent := "version: \"1\"\nname: parent\nnetwork:\n  name: parent-net\n  type: bridge\nmcp-servers: []\n"
+	if err := os.WriteFile(filepath.Join(dir, "parent.yaml"), []byte(parent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	child := "version: \"1\"\nname: child\nextends: parent.yaml\nnetwork:\n  name: child-net\nmcp-servers:\n  - name: notes\n    url: https://example.test/mcp\n"
+	childPath := filepath.Join(dir, "child.yaml")
+	if err := os.WriteFile(childPath, []byte(child), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := ParseStackIndex(context.Background(), childPath)
+	if err == nil {
+		t.Fatal("expected parent unknown-key rejection")
+	}
+	var ve ValidationErrors
+	if !errors.As(err, &ve) {
+		t.Fatalf("error = %T %v", err, err)
+	}
+	line := strings.Count(parent[:strings.Index(parent, "type:")], "\n") + 1
+	want := fmt.Sprintf("extends[parent.yaml].network.type: unknown field \"type\" (line %d)", line)
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("error = %v, want %s", err, want)
 	}
 }

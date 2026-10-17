@@ -215,13 +215,23 @@ func TestTransport_RequireHeader(t *testing.T) {
 			startMockServer(t, mockHTTPServerBin, args...)
 			waitForPort(t, ctx, port)
 
-			client := mcp.NewClient("portainer", fmt.Sprintf("http://127.0.0.1:%d/mcp", port))
-			client.SetExtraHeaders(map[string]string{"X-Portainer-API-Key": "k1"})
-			client.SetHeaderSource(mcp.NewStaticHeaderSource("Authorization", "Bearer synthetic"))
-			if err := client.Initialize(ctx); err != nil {
-				t.Fatalf("Initialize: %v", err)
+			gw := mcp.NewGateway()
+			t.Cleanup(gw.Close)
+			transport := mcp.TransportHTTP
+			if sse {
+				transport = mcp.TransportSSE
 			}
-			if _, err := client.CallTool(ctx, "echo", map[string]any{"message": "hi"}); err != nil {
+			if err := gw.RegisterMCPServer(ctx, mcp.MCPServerConfig{
+				Name:      "portainer",
+				Transport: transport,
+				Endpoint:  fmt.Sprintf("http://127.0.0.1:%d/mcp", port),
+				External:  true,
+				Headers:   map[string]string{"X-Portainer-API-Key": "k1"},
+				Auth:      &mcp.ServerAuthConfig{Type: "bearer", Token: "synthetic"},
+			}); err != nil {
+				t.Fatalf("RegisterMCPServer: %v", err)
+			}
+			if _, err := gw.CallTool(ctx, "portainer__echo", map[string]any{"message": "hi"}); err != nil {
 				t.Fatalf("CallTool: %v", err)
 			}
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/debug/last-headers", port), nil)

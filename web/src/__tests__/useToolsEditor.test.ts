@@ -269,6 +269,64 @@ describe('useToolsEditor', () => {
     expect(result.current.selected.has('read_secret')).toBe(true);
     expect(result.current.hiddenReference).toContain('groups ops (vault__read_secret)');
     expect(result.current.hiddenReference).toContain('Remove the tool from the named group');
+
+    vi.spyOn(apiModule, 'setServerTools').mockResolvedValue({
+      server: SERVER,
+      tools: ['query'],
+      reloaded: true,
+      reloadedAt: 'now',
+    });
+    vi.spyOn(apiModule, 'fetchStatus').mockResolvedValue({
+      gateway: { name: 'x', version: '1' },
+      'mcp-servers': [],
+    });
+    vi.spyOn(apiModule, 'fetchTools').mockResolvedValue({ tools: [] });
+    vi.spyOn(apiModule, 'fetchToolCatalog').mockResolvedValue({ tools: [] });
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(result.current.hiddenReference).toBeNull();
+  });
+
+  it('clears a hidden-tool notice on reload and when the server changes', async () => {
+    vi.spyOn(apiModule, 'setServerTools').mockRejectedValue(
+      new SetServerToolsError(
+        'hidden_tool_reference',
+        "groups[ops].tools[0]: tool 'vault__read_secret' is hidden",
+        'Remove the tool from the named group or keep it exposed on this server.',
+        400,
+        [{ field: 'groups[ops].tools[0]', message: "tool 'vault__read_secret' is hidden" }],
+      ),
+    );
+    vi.spyOn(apiModule, 'fetchStatus').mockResolvedValue({
+      gateway: { name: 'x', version: '1' },
+      'mcp-servers': [],
+    });
+    vi.spyOn(apiModule, 'fetchTools').mockResolvedValue({ tools: [] });
+    vi.spyOn(apiModule, 'fetchToolCatalog').mockResolvedValue({ tools: [] });
+
+    const { result, rerender } = renderHook(
+      ({ name }: { name: string }) => useToolsEditor(name, ['query', 'read_secret']),
+      { initialProps: { name: SERVER } },
+    );
+    act(() => result.current.toggle('read_secret'));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(result.current.hiddenReference).toContain('groups ops');
+
+    await act(async () => {
+      await result.current.handleReloadFromDisk();
+    });
+    expect(result.current.hiddenReference).toBeNull();
+
+    act(() => result.current.toggle('read_secret'));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(result.current.hiddenReference).not.toBeNull();
+    rerender({ name: 'other' });
+    expect(result.current.hiddenReference).toBeNull();
   });
 
   it('surfaces a 409 stack_modified error as a conflict instead of throwing', async () => {
