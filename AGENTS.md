@@ -40,6 +40,8 @@ go test -v -race -tags=integration -run TestToolGroups_Authentication ./tests/in
 
 Gateway authentication lifecycle changes also require `go test -race -tags=integration -run 'TestGatewayAuth_RealRestart|TestToolGroups_Authentication' -count=1 -timeout 3m ./tests/integration` (Docker, non-Windows; the restart fixture builds child binaries with `-race`). Real-browser acceptance lives in `web/gateway-auth.browser.mjs`: run `node web/gateway-auth.browser.mjs <path-to-playwright/index.mjs>` from the repository root with Playwright and its Chromium installed separately. Set `PLAYWRIGHT_BROWSERS_PATH` when using a non-default browser cache. It uses isolated local fixtures and is separate from Vitest and `task test`.
 
+Server Card and public discovery route changes also require `go test -race -tags=integration -run 'TestServerCard' -count=1 -timeout 4m ./tests/integration` (real HTTP and a race-built CLI child; no Docker).
+
 MCP execution changes require the real race-enabled `TestExecution_` integration suites on Docker and Podman. Hardened admission currently needs Linux, a local Unix daemon endpoint, and instance-bound `/proc` and cgroup v2 observations; missing required evidence must refuse routing. Rootless Podman acceptance must actually execute the positive fixtures. Run `node web/execution.browser.mjs <path-to-playwright/index.mjs>` from the repository root for the separate real-browser Execution checks, using an independently installed Chromium and `PLAYWRIGHT_BROWSERS_PATH` when needed.
 
 Capability and sensitive-observation primitives have race coverage in `pkg/mcp`,
@@ -81,8 +83,10 @@ internal/api/       REST handlers backing the web UI (one file per resource: sta
                     Python source validation, resolution previews, generated files, and status provenance live in
                     python_sources.go. The Server struct in api.go wires together every pkg/* subsystem the UI needs.
                     Server.Handler assembles HTTP routes and CORS/Host/auth middleware; auth.go protects operational
-                    namespaces, including grouped MCP/SSE. UI files, probes, terminal preflight, and the exact
-                    state-validated downstream OAuth callback do not require the gateway token.
+                    namespaces, including grouped MCP/SSE. UI files, probes, terminal preflight, the exact
+                    state-validated downstream OAuth callback, and the enumerated public discovery GETs
+                    (`/mcp/server-card`, `/groups/{name}/mcp/server-card`, `/.well-known/ai-catalog.json`) do not
+                    require the gateway token. Those three are GET-only and are not configurable from the stack file.
                     Gateway credential denials carry Gridctl-Auth-Rejected: 1; reload_errors.go supplies shared
                     restart_required (409) and invalid_candidate (400) envelopes, including save-first callers.
 internal/probe/     Ephemeral MCP tool-list probe for the "add server" wizard (not registered with the gateway).
@@ -138,6 +142,9 @@ pkg/mcp/            MCP protocol: gateway (router, tool aggregation, downstream 
 pkg/a2aclient/      Bounded outbound A2A 1.0/0.3 JSON-RPC codecs, card compatibility, origin/redirect policy,
                     and registration-local freshness with a 30-second cap. AgentClient lives in pkg/mcp; no SDK dependency.
                     Versioned SDK reference fixtures and attribution live in testdata/.
+pkg/servercard/     SEP-2127 Server Cards and the draft AI Catalog: build, validate, and a bounded fetch
+                    that sends no credentials and refuses redirects. Advisory metadata only; not a trust
+                    or credential source. The vendored schema and NOTICE live in testdata/.
 pkg/mcpauth/        Downstream OAuth 2.1 brokering for external servers (discovery, dynamic client registration,
                     token store, callback listener). Backed by `gridctl auth`.
 pkg/registry/       Skills registry: discovers SKILL.md files, parses frontmatter, validates, serves as MCP prompts.
@@ -204,7 +211,9 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
                     the Python MCP runtime base and its derivatives, digest-cache lookup, optimize heuristics,
                     and CLI/REST live tool invocation. Grouped auth tests use real HTTP and a subprocess MCP backend.
                     auth_restart_test.go verifies actual process restart, saved/live-state rejection, CLI exits,
-                    sessions/streams, and preserved Docker identities with race-built child binaries.
+                    sessions/streams, preserved Docker identities, and the widened-bind origin refusal, with race-built child binaries.
+                    server_card_test.go checks the public card and catalog GETs, unlisted-origin CORS, and
+                    race-built `gridctl add` consume and refusal paths, without Docker.
                     capability_diagnostics_test.go checks REST log/trace/usage/run observations with a real MCP subprocess.
                     a2a_wire_test.go checks both wire dialects, origin-bound credentials, sessions, and redirects with real HTTP.
                     a2a_*_test.go adapter suites cover authority, atomic delivery, policy, trust, observation sinks,

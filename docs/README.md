@@ -58,7 +58,7 @@ New to gridctl? Read in this order:
 | [Security Evidence Report](security-evidence.md) | Included in v1.0.0-rc.2: passive `doctor --security` / `/api/security-report` scope, unknowns, and exit-zero limits |
 | [Stack Declaration Policy](stack-declaration-policy.md) | Opt-in included in v1.0.0-rc.2: offline `validate --policy` checks for captured declarations; not runtime admission |
 | [Adversarial Regression Gates](adversarial-regression-gates.md) | Scenario index and post-suite execution accounting; not comprehensive security testing |
-| [Troubleshooting](troubleshooting.md) | Common errors and resolutions - runtime, networking, vault, hot reload |
+| [Troubleshooting](troubleshooting.md) | Common errors and resolutions - runtime, networking, vault, hot reload, widened-bind startup refusal |
 
 ## Quick Links
 
