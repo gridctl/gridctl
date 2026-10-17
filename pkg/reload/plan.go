@@ -26,6 +26,35 @@ func (h *Handler) loadOptions() []config.LoadOption {
 	return loadOpts
 }
 
+// ValidateCandidate runs the daemon's load pipeline on candidate bytes
+// without writing them. It resolves the same vault references reload uses.
+func (h *Handler) ValidateCandidate(ctx context.Context, data []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	h.mu.Lock()
+	path := h.stackPath
+	opts := h.loadOptions()
+	h.mu.Unlock()
+	_, err := config.LoadStackData(data, path, opts...)
+	return err
+}
+
+func invalidCandidate(err error) *ReloadResult {
+	result := &ReloadResult{
+		Success: false,
+		Code:    "invalid_candidate",
+		Message: "candidate configuration could not be resolved or validated; active configuration is unchanged",
+	}
+	var ve config.ValidationErrors
+	if errors.As(err, &ve) {
+		for _, item := range ve {
+			result.Errors = append(result.Errors, item.Error())
+		}
+	}
+	return result
+}
+
 // Plan compares the stack file at h.stackPath with the configuration the
 // daemon loaded. It does not apply the candidate, run security preflight,
 // or modify currentCfg. Store-backed image, url, and network details are

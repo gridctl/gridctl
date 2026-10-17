@@ -2,14 +2,13 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
 // ExportNotice describes the bounded policy, not a guarantee about arbitrary text.
@@ -85,12 +84,9 @@ func readExportStack(ctx context.Context, path string, sources *[]string) (*Stac
 	if err != nil {
 		return nil, fmt.Errorf("export: cannot read source file at inheritance index %d", len(*sources)-1)
 	}
-	var stack Stack
-	if err := yaml.Unmarshal(data, &stack); err != nil {
-		location := ""
-		if match := exportErrorLine.FindStringSubmatch(err.Error()); match != nil {
-			location = " at line " + match[1]
-		}
+	stack, err := DecodeStack(data)
+	if err != nil {
+		location := exportSyntaxLocation(err)
 		return nil, fmt.Errorf("export: invalid stack syntax%s (inheritance index %d); check source locally", location, len(*sources)-1)
 	}
 	if stack.Extends != "" {
@@ -151,10 +147,25 @@ func readExportStack(ctx context.Context, path string, sources *[]string) (*Stac
 				*p = filepath.Join(filepath.Dir(parentPath), *p)
 			}
 		}
-		mergeStacks(&stack, parent)
+		mergeStacks(stack, parent)
 		stack.Extends = ""
 	}
-	return &stack, nil
+	return stack, nil
+}
+
+func exportSyntaxLocation(err error) string {
+	var ve ValidationErrors
+	if errors.As(err, &ve) {
+		for _, item := range ve {
+			if match := exportErrorLine.FindStringSubmatch(item.Message); match != nil {
+				return " at line " + match[1]
+			}
+		}
+	}
+	if match := exportErrorLine.FindStringSubmatch(err.Error()); match != nil {
+		return " at line " + match[1]
+	}
+	return ""
 }
 
 func checkExportCredentials(stack *Stack) error {
@@ -193,6 +204,19 @@ func checkExportCredentials(stack *Stack) error {
 		}
 		return nil
 	}
+	checkHeaders := func(path string, headers map[string]string) error {
+		names := make([]string, 0, len(headers))
+		for name := range headers {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for i, name := range names {
+			if err := check(fmt.Sprintf("%s[%d]", path, i), headers[name]); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	if g := stack.Gateway; g != nil {
 		if g.Auth != nil {
 			if err := check("gateway.auth.token", g.Auth.Token); err != nil {
@@ -223,6 +247,9 @@ func checkExportCredentials(stack *Stack) error {
 			}
 		}
 		if err := checkEnv(prefix+".env", srv.Env); err != nil {
+			return err
+		}
+		if err := checkHeaders(prefix+".headers", srv.Headers); err != nil {
 			return err
 		}
 	}

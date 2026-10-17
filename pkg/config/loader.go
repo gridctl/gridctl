@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -8,7 +9,6 @@ import (
 	"strings"
 
 	vaultpkg "github.com/gridctl/gridctl/pkg/vault"
-	"gopkg.in/yaml.v3"
 )
 
 // loadConfig holds options for LoadStack.
@@ -38,18 +38,29 @@ func WithVaultSets(v VaultSetLookup) LoadOption {
 
 // LoadStack reads and parses a stack file.
 func LoadStack(path string, opts ...LoadOption) (*Stack, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading stack file: %w", err)
+	}
+	return LoadStackData(data, path, opts...)
+}
+
+// LoadStackData runs the load pipeline on already-read stack bytes. path is
+// the file those bytes belong to: extends and relative paths resolve against
+// it. The pipeline is decode, extends, expand, defaults, relative paths,
+// validate, then optional secret-set injection.
+func LoadStackData(data []byte, path string, opts ...LoadOption) (*Stack, error) {
 	var cfg loadConfig
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 
-	data, err := os.ReadFile(path)
+	stack, err := DecodeStack(data)
 	if err != nil {
-		return nil, fmt.Errorf("reading stack file: %w", err)
-	}
-
-	var stack Stack
-	if err := yaml.Unmarshal(data, &stack); err != nil {
+		var ve ValidationErrors
+		if errors.As(err, &ve) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("parsing stack YAML: %w", err)
 	}
 
@@ -59,12 +70,12 @@ func LoadStack(path string, opts ...LoadOption) (*Stack, error) {
 		return nil, fmt.Errorf("resolving stack path: %w", err)
 	}
 	visited := map[string]bool{absPath: true}
-	if err := resolveExtends(&stack, absPath, visited, 0); err != nil {
+	if err := resolveExtends(stack, absPath, visited, 0); err != nil {
 		return nil, err
 	}
 
 	// Expand variable references in string values
-	unresolved, emptyVars, resolutionProblems := expandStackVarsResolved(&stack, newReferenceResolver(cfg.vault))
+	unresolved, emptyVars, resolutionProblems := expandStackVarsResolved(stack, newReferenceResolver(cfg.vault))
 	if len(resolutionProblems) > 0 {
 		return nil, fmt.Errorf("resolving stack variable: %w", resolutionProblems[0])
 	}
@@ -89,19 +100,19 @@ func LoadStack(path string, opts ...LoadOption) (*Stack, error) {
 
 	// Resolve relative paths based on stack file location
 	basePath := filepath.Dir(path)
-	resolveRelativePaths(&stack, basePath)
+	resolveRelativePaths(stack, basePath)
 
 	// Validate the stack
-	if err := Validate(&stack); err != nil {
+	if err := Validate(stack); err != nil {
 		return nil, err
 	}
 
 	// Inject variable set secrets into container env
 	if stack.Secrets != nil && len(stack.Secrets.Sets) > 0 && cfg.vaultSet != nil {
-		injectSetSecrets(&stack, cfg.vaultSet)
+		injectSetSecrets(stack, cfg.vaultSet)
 	}
 
-	return &stack, nil
+	return stack, nil
 }
 
 // injectSetSecrets resolves secrets from variable sets and injects them into
@@ -318,6 +329,9 @@ func expandStackVarsResolved(s *Stack, resolve referenceResolver) (unresolvedVau
 			srv.Auth.ClientID = expandField(site("auth.client_id"), srv.Auth.ClientID)
 			srv.Auth.ClientSecret = expandField(site("auth.client_secret"), srv.Auth.ClientSecret)
 		}
+		for name, value := range srv.Headers {
+			srv.Headers[name] = expandField(site("headers."+name), value)
+		}
 	}
 
 	for i := range s.Resources {
@@ -496,13 +510,17 @@ func resolveExtends(child *Stack, childAbsPath string, visited map[string]bool, 
 		return fmt.Errorf("extends: reading parent stack: %w", err)
 	}
 
-	var parent Stack
-	if err := yaml.Unmarshal(data, &parent); err != nil {
+	parent, err := DecodeStack(data)
+	if err != nil {
+		var ve ValidationErrors
+		if errors.As(err, &ve) {
+			return err
+		}
 		return fmt.Errorf("extends: parsing parent stack: %w", err)
 	}
 
 	// Recurse before merging so the full ancestor chain is resolved first
-	if err := resolveExtends(&parent, absParentPath, visited, depth+1); err != nil {
+	if err := resolveExtends(parent, absParentPath, visited, depth+1); err != nil {
 		return err
 	}
 	if err := checkDeclarationConflicts(child.Variables, parent.Variables); err != nil {
@@ -511,9 +529,9 @@ func resolveExtends(child *Stack, childAbsPath string, visited map[string]bool, 
 
 	// Resolve parent's relative paths against parent's directory before merging into child.
 	// Without this, inherited paths would be re-resolved against the child's directory.
-	resolveRelativePaths(&parent, filepath.Dir(absParentPath))
+	resolveRelativePaths(parent, filepath.Dir(absParentPath))
 
-	mergeStacks(child, &parent)
+	mergeStacks(child, parent)
 	child.Extends = ""
 	return nil
 }

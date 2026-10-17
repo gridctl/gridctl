@@ -51,6 +51,26 @@ func TestExportStack_CredentialInventory(t *testing.T) {
 	}
 }
 
+func TestExportStack_Headers(t *testing.T) {
+	t.Run("keeps reference", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "stack.yaml")
+		source := "name: test\nmcp-servers:\n  - name: api\n    url: https://example.test/mcp\n    headers:\n      X-Tenant: \"${var:TENANT}\"\n"
+		require.NoError(t, os.WriteFile(path, []byte(source), 0600))
+		stack, _, err := ExportStack(context.Background(), path)
+		require.NoError(t, err)
+		require.Equal(t, "${var:TENANT}", stack.MCPServers[0].Headers["X-Tenant"])
+	})
+	t.Run("rejects literal at sorted index", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "stack.yaml")
+		source := "name: test\nmcp-servers:\n  - name: api\n    url: https://example.test/mcp\n    headers:\n      X-Tenant: synthetic-literal-canary\n      A-Name: \"${var:OTHER}\"\n"
+		require.NoError(t, os.WriteFile(path, []byte(source), 0600))
+		_, _, err := ExportStack(context.Background(), path)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "mcp-servers[0].headers[1]")
+		require.NotContains(t, err.Error(), "synthetic-literal-canary")
+	})
+}
+
 func TestExportStack_PreservesStringsScopesAndDefaults(t *testing.T) {
 	t.Setenv("PROBE", "synthetic-ambient-canary")
 	path := filepath.Join(t.TempDir(), "stack.yaml")

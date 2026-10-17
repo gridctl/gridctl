@@ -79,7 +79,7 @@ func atomicWrite(path string, data []byte) error {
 // Returns errServerNotFound when the server name is absent, errStackModified
 // when the on-disk file changed between the initial read and the atomic write,
 // or a wrapped filesystem error on I/O failure.
-func setServerTools(path, serverName string, tools []string) error {
+func setServerTools(path, serverName string, tools []string, validate func([]byte) error) error {
 	if path == "" {
 		return errStackFileEmpty
 	}
@@ -97,6 +97,11 @@ func setServerTools(path, serverName string, tools []string) error {
 	updated, err := patchServerTools(original, serverName, tools)
 	if err != nil {
 		return err
+	}
+	if validate != nil {
+		if err := validate(updated); err != nil {
+			return fmt.Errorf("validate candidate: %w", err)
+		}
 	}
 
 	fireBetweenReadsHook()
@@ -130,7 +135,7 @@ type serverToolsUpdate struct {
 // Returns errServerNotFound (wrapped with the missing name) when any update
 // targets a server absent from the stack, errStackModified when the file
 // changed between the initial read and the write, or a filesystem error.
-func setServerToolsBatch(path string, updates []serverToolsUpdate) error {
+func setServerToolsBatch(path string, updates []serverToolsUpdate, validate func([]byte) error) error {
 	if path == "" {
 		return errStackFileEmpty
 	}
@@ -148,6 +153,11 @@ func setServerToolsBatch(path string, updates []serverToolsUpdate) error {
 	updated, err := patchMultipleServerTools(original, updates)
 	if err != nil {
 		return err
+	}
+	if validate != nil {
+		if err := validate(updated); err != nil {
+			return fmt.Errorf("validate candidate: %w", err)
+		}
 	}
 
 	fireBetweenReadsHook()

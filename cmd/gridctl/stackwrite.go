@@ -116,15 +116,15 @@ func writeServersToStack(stackPath string, servers []config.MCPServer, overwrite
 
 	// Article IX gate: the post-append stack must validate before a byte
 	// lands on disk.
-	var stack config.Stack
-	if err := yaml.Unmarshal(updated, &stack); err != nil {
+	stack, err := config.DecodeStack(updated)
+	if err != nil {
 		return "", fmt.Errorf("post-append stack does not parse: %w", err)
 	}
-	if err := config.ExpandStackVarsWithEnvChecked(&stack); err != nil {
+	if err := config.ExpandStackVarsWithEnvChecked(stack); err != nil {
 		return "", fmt.Errorf("post-append stack variable resolution failed; nothing written: %w", err)
 	}
 	stack.SetDefaults()
-	if result := config.ValidateWithIssues(&stack); !result.Valid {
+	if result := config.ValidateWithIssues(stack); !result.Valid {
 		var lines []string
 		for _, issue := range result.Issues {
 			lines = append(lines, fmt.Sprintf("%s: %s", issue.Field, issue.Message))

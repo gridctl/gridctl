@@ -78,6 +78,7 @@ func TestExpandStackVars_ReferenceIndexParity(t *testing.T) {
 			},
 			OpenAPI: &OpenAPIConfig{Spec: probe, BaseURL: probe},
 			A2A:     &A2AConfig{Card: probe, Endpoint: probe, Auth: &A2AAuth{Token: probe}},
+			Headers: map[string]string{"X-Tenant": probe},
 			Configs: []ConfigFile{{Target: "/etc/app.yaml", File: probe, Content: probe}},
 		}},
 		Resources: []Resource{{
@@ -118,6 +119,7 @@ func TestExpandStackVars_ReferenceIndexParity(t *testing.T) {
 		"mcp-server|ssh.knownHostsFile",
 		"mcp-server|ssh.jumpHost",
 		"mcp-server|openapi.spec",
+		"mcp-server|headers.X-Tenant",
 		"mcp-server|openapi.baseUrl",
 		"mcp-server|configs[0].content",
 		"mcp-server|configs[0].file",

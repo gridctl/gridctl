@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -187,6 +189,62 @@ func TestHTTPTransportConnect(t *testing.T) {
 	}
 	if !strings.Contains(result.Content[0].Text, "hello") {
 		t.Errorf("expected echo response to contain 'hello', got: %q", result.Content[0].Text)
+	}
+}
+
+// TestTransport_RequireHeader verifies custom headers and bearer auth are
+// delivered to a real mock server on initialize and tools/call, for both
+// HTTP and SSE. The debug endpoint returns names only.
+func TestTransport_RequireHeader(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	for _, sse := range []bool{false, true} {
+		t.Run(fmt.Sprintf("sse=%v", sse), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			port := freePort(t)
+			args := []string{
+				"-port", fmt.Sprintf("%d", port),
+				"-require-header", "X-Portainer-API-Key=k1",
+				"-require-header", "Authorization=Bearer synthetic",
+			}
+			if sse {
+				args = append(args, "-sse")
+			}
+			startMockServer(t, mockHTTPServerBin, args...)
+			waitForPort(t, ctx, port)
+
+			client := mcp.NewClient("portainer", fmt.Sprintf("http://127.0.0.1:%d/mcp", port))
+			client.SetExtraHeaders(map[string]string{"X-Portainer-API-Key": "k1"})
+			client.SetHeaderSource(mcp.NewStaticHeaderSource("Authorization", "Bearer synthetic"))
+			if err := client.Initialize(ctx); err != nil {
+				t.Fatalf("Initialize: %v", err)
+			}
+			if _, err := client.CallTool(ctx, "echo", map[string]any{"message": "hi"}); err != nil {
+				t.Fatalf("CallTool: %v", err)
+			}
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/debug/last-headers", port), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := strings.ToLower(string(body))
+			if strings.Contains(text, "k1") || strings.Contains(text, "synthetic") {
+				t.Fatalf("debug endpoint printed values: %s", body)
+			}
+			if !strings.Contains(text, "x-portainer-api-key") || !strings.Contains(text, "authorization") {
+				t.Fatalf("debug names = %s", body)
+			}
+		})
 	}
 }
 

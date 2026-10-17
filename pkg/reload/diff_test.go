@@ -415,6 +415,31 @@ func TestComputeDiff_AutoscaleWithUnrelatedChangeIsRestart(t *testing.T) {
 	}
 }
 
+func TestMCPServerEqual_HeaderChanges(t *testing.T) {
+	base := func(headers map[string]string) config.MCPServer {
+		return config.MCPServer{
+			Name:    "remote",
+			URL:     "https://mcp.example.com/mcp",
+			Headers: headers,
+		}
+	}
+	if !mcpServerEqual(base(nil), base(nil)) {
+		t.Fatal("nil headers should be equal")
+	}
+	if mcpServerEqual(base(nil), base(map[string]string{"X-Tenant": "a"})) {
+		t.Fatal("added header should be a change")
+	}
+	if mcpServerEqual(base(map[string]string{"X-Tenant": "a"}), base(nil)) {
+		t.Fatal("removed header should be a change")
+	}
+	if mcpServerEqual(base(map[string]string{"X-Tenant": "a"}), base(map[string]string{"X-Tenant": "b"})) {
+		t.Fatal("changed header value should be a change")
+	}
+	if !mcpServerEqual(base(map[string]string{"X-Tenant": "a"}), base(map[string]string{"X-Tenant": "a"})) {
+		t.Fatal("same headers should be equal")
+	}
+}
+
 func TestMCPServerEqual_AuthChanges(t *testing.T) {
 	base := func(auth *config.ServerAuth) config.MCPServer {
 		return config.MCPServer{

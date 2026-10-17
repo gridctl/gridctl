@@ -62,6 +62,8 @@ type MCPServerConfig struct {
 	OpenAPIConfig        *OpenAPIClientConfig // OpenAPI configuration (for OpenAPI servers)
 	Auth                 *ServerAuthConfig    // Downstream auth for external URL servers (nil = none)
 	HeaderSource         HeaderSource         // Live auth header source (OAuth broker); overrides Auth's static mapping
+	Headers              map[string]string    // Extra downstream headers; auth wins a same-name collision
+	Description          string               // Operator note; not a credential and not sent downstream
 	Tools                []string             // Tool whitelist (empty = all tools)
 	OutputFormat         string               // Output format: "json", "toon", "csv", "text"
 	PinSchemas           *bool                // Override gateway schema pinning (nil = inherit gateway default)
@@ -108,6 +110,10 @@ type OpenAPIClientConfig struct {
 	Include    []string // Operation IDs to include
 	Exclude    []string // Operation IDs to exclude
 	NoExpand   bool     // If true, skip environment variable expansion in spec file
+
+	// Headers are extra headers sent on operation and readiness requests.
+	// The spec fetch does not receive them. Auth wins a same-name collision.
+	Headers map[string]string
 
 	// Query param auth fields
 	AuthQueryParam string // Query parameter name for type: query
@@ -841,6 +847,20 @@ func (g *Gateway) attemptPendingRegistration(ctx context.Context, name, policy s
 	g.logger.Info("MCP server registered after retry", "name", name)
 }
 
+// applyDownstreamHeaders installs static headers independently of the auth
+// source so brokered servers still receive them. Auth is applied later, on
+// the request, and wins a same-name collision.
+func applyDownstreamHeaders(client *Client, cfg MCPServerConfig) {
+	if len(cfg.Headers) > 0 {
+		client.SetExtraHeaders(cfg.Headers)
+	}
+	if cfg.HeaderSource != nil {
+		client.SetHeaderSource(cfg.HeaderSource)
+	} else if hs := StaticHeaderSourceFor(cfg.Auth); hs != nil {
+		client.SetHeaderSource(hs)
+	}
+}
+
 // probePendingEndpoint pings an HTTP/SSE endpoint once with a short deadline
 // before a full retry attempt. Non-HTTP transports skip the probe: their
 // registration attempts fail fast on their own. The deadline lives on a
@@ -857,11 +877,7 @@ func (g *Gateway) probePendingEndpoint(ctx context.Context, cfg MCPServerConfig)
 	if cfg.Transport == TransportSSE && (cfg.ProtocolGeneration == "" || cfg.ProtocolGeneration == GenerationAuto) {
 		probe.SetGenerationPin(GenerationHandshake)
 	}
-	if cfg.HeaderSource != nil {
-		probe.SetHeaderSource(cfg.HeaderSource)
-	} else if hs := StaticHeaderSourceFor(cfg.Auth); hs != nil {
-		probe.SetHeaderSource(hs)
-	}
+	applyDownstreamHeaders(probe, cfg)
 	defer closeAgentClient(probe)
 	return probe.Ping(probeCtx)
 }
@@ -1764,11 +1780,7 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (re
 			if cfg.ProtocolGeneration == "" || cfg.ProtocolGeneration == GenerationAuto {
 				httpClient.SetGenerationPin(GenerationHandshake)
 			}
-			if cfg.HeaderSource != nil {
-				httpClient.SetHeaderSource(cfg.HeaderSource)
-			} else if hs := StaticHeaderSourceFor(cfg.Auth); hs != nil {
-				httpClient.SetHeaderSource(hs)
-			}
+			applyDownstreamHeaders(httpClient, cfg)
 			if len(cfg.Tools) > 0 {
 				httpClient.SetToolWhitelist(cfg.Tools)
 			}
@@ -1782,11 +1794,7 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (re
 			httpClient := NewClient(cfg.Name, cfg.Endpoint)
 			httpClient.SetLogger(clientLogger)
 			httpClient.SetPingTimeout(cfg.PingTimeout)
-			if cfg.HeaderSource != nil {
-				httpClient.SetHeaderSource(cfg.HeaderSource)
-			} else if hs := StaticHeaderSourceFor(cfg.Auth); hs != nil {
-				httpClient.SetHeaderSource(hs)
-			}
+			applyDownstreamHeaders(httpClient, cfg)
 			if len(cfg.Tools) > 0 {
 				httpClient.SetToolWhitelist(cfg.Tools)
 			}
@@ -3034,6 +3042,7 @@ type MCPServerStatus struct {
 	Capabilities          DownstreamCapabilityStatus `json:"capabilities"`
 	ResourceCollisions    int                        `json:"resourceCollisions"`
 	ResourceListError     string                     `json:"resourceListError,omitempty"`
+	Description           string                     `json:"description,omitempty"`
 	External              bool                       `json:"external"`          // True for external URL servers
 	LocalProcess          bool                       `json:"localProcess"`      // True for local process servers
 	SSH                   bool                       `json:"ssh"`               // True for SSH servers
@@ -3315,6 +3324,7 @@ func (g *Gateway) Status() []MCPServerStatus {
 			A2A:           meta.A2A,
 			OutputFormat:  outputFormat,
 			ToolWhitelist: meta.Tools,
+			Description:   meta.Description,
 		}
 		if meta.A2A {
 			status.Endpoint = ""

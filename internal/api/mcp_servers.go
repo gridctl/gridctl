@@ -1,11 +1,15 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"time"
+
+	"github.com/gridctl/gridctl/pkg/config"
 )
 
 const (
@@ -48,18 +52,26 @@ type structuredError struct {
 	Error structuredErrorPayload `json:"error"`
 }
 
-type structuredErrorPayload struct {
-	Code    string `json:"code"`
+type structuredIssue struct {
+	Field   string `json:"field"`
 	Message string `json:"message"`
-	Hint    string `json:"hint,omitempty"`
 }
 
-func writeStructuredError(w http.ResponseWriter, status int, code, message, hint string) {
+type structuredErrorPayload struct {
+	Code    string            `json:"code"`
+	Message string            `json:"message"`
+	Hint    string            `json:"hint,omitempty"`
+	Issues  []structuredIssue `json:"issues,omitempty"`
+}
+
+func writeStructuredError(w http.ResponseWriter, status int, code, message, hint string, issues ...structuredIssue) {
+	payload := structuredErrorPayload{Code: code, Message: message, Hint: hint}
+	if len(issues) > 0 {
+		payload.Issues = issues
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(structuredError{
-		Error: structuredErrorPayload{Code: code, Message: message, Hint: hint},
-	})
+	_ = json.NewEncoder(w).Encode(structuredError{Error: payload})
 }
 
 // handleSetServerTools updates a single MCP server's tool whitelist in the
@@ -117,7 +129,7 @@ func (s *Server) handleSetServerTools(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	switch err := setServerTools(s.stackFile, serverName, tools); {
+	switch err := setServerTools(s.stackFile, serverName, tools, s.candidateValidator(r.Context())); {
 	case err == nil:
 		// proceed
 	case errors.Is(err, errServerNotFound):
@@ -129,6 +141,9 @@ func (s *Server) handleSetServerTools(w http.ResponseWriter, r *http.Request) {
 			"Reload the file to see the latest contents, then re-apply your changes.")
 		return
 	default:
+		if writeCandidateValidation(w, err) {
+			return
+		}
 		writeJSONError(w, "Failed to update stack: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -263,7 +278,7 @@ func (s *Server) handleSetServerToolsBatch(w http.ResponseWriter, r *http.Reques
 		updates = append(updates, serverToolsUpdate{Server: entry.Name, Tools: tools})
 	}
 
-	switch err := setServerToolsBatch(s.stackFile, updates); {
+	switch err := setServerToolsBatch(s.stackFile, updates, s.candidateValidator(r.Context())); {
 	case err == nil:
 		// proceed
 	case errors.Is(err, errServerNotFound):
@@ -276,6 +291,9 @@ func (s *Server) handleSetServerToolsBatch(w http.ResponseWriter, r *http.Reques
 			"Reload the file to see the latest contents, then re-apply your changes.")
 		return
 	default:
+		if writeCandidateValidation(w, err) {
+			return
+		}
 		writeJSONError(w, "Failed to update stack: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -310,6 +328,47 @@ func (s *Server) handleSetServerToolsBatch(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, resp)
+}
+
+// candidateValidator checks patched stack bytes through the daemon's load
+// pipeline when a reload handler is present. Stackless servers skip the
+// check; the write path already fails without a stack file.
+func (s *Server) candidateValidator(ctx context.Context) func([]byte) error {
+	handler := s.ReloadHandler()
+	if handler == nil {
+		return nil
+	}
+	return func(data []byte) error {
+		return handler.ValidateCandidate(ctx, data)
+	}
+}
+
+// writeCandidateValidation classifies a candidate-validation failure.
+// Hidden-tool references get a dedicated code and issues array. Any other
+// validation failure is a generic 400 and does not write. Non-validation
+// errors return false so the caller can use its existing status mapping.
+func writeCandidateValidation(w http.ResponseWriter, err error) bool {
+	var ve config.ValidationErrors
+	if !errors.As(err, &ve) {
+		return false
+	}
+	var issues []structuredIssue
+	var hidden []string
+	var all []string
+	for _, item := range ve {
+		all = append(all, item.Error())
+		if config.IsHiddenToolReference(item) {
+			issues = append(issues, structuredIssue{Field: item.Field, Message: item.Message})
+			hidden = append(hidden, item.Error())
+		}
+	}
+	if len(issues) > 0 {
+		writeStructuredError(w, http.StatusBadRequest, "hidden_tool_reference", strings.Join(hidden, "; "),
+			"Remove the tool from the named group or keep it exposed on this server.", issues...)
+		return true
+	}
+	writeJSONError(w, strings.Join(all, "; "), http.StatusBadRequest)
+	return true
 }
 
 // validateToolsAgainstServer rejects any tool name not in the server's

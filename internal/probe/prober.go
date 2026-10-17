@@ -209,6 +209,11 @@ func (p *Prober) probeExternal(ctx context.Context, cfg config.MCPServer) (Resul
 			setter.SetHeaderSource(hs)
 		}
 	}
+	if len(cfg.Headers) > 0 {
+		if setter, ok := client.(interface{ SetExtraHeaders(map[string]string) }); ok {
+			setter.SetExtraHeaders(cfg.Headers)
+		}
+	}
 	return runClient(ctx, client)
 }
 

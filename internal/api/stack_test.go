@@ -41,12 +41,6 @@ mcp-servers:
     port: 3001
     env:
       AUTH_TOKEN: "${vault:AUTH_TOK}"
-agents:
-  - name: agent-1
-    runtime: claude-code
-    prompt: test
-    uses:
-      - server: server-a
 `
 	err := os.WriteFile(p, []byte(content), 0644)
 	assert.NoError(t, err)
@@ -432,7 +426,8 @@ func TestHandleStacksSave_InvalidYAML(t *testing.T) {
 	s.handleStacksSave(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Contains(t, w.Body.String(), "Invalid YAML")
+	assert.Contains(t, w.Body.String(), "cannot unmarshal")
+	assert.Contains(t, w.Body.String(), `"severity":"error"`)
 }
 
 func TestHandleStacksSave_MissingYAML(t *testing.T) {

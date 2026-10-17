@@ -97,7 +97,7 @@ func TestSetServerTools_AtomicAndPersisted(t *testing.T) {
 	path := filepath.Join(dir, "stack.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(exampleStack), 0o600))
 
-	require.NoError(t, setServerTools(path, "fs", []string{"read_file"}))
+	require.NoError(t, setServerTools(path, "fs", []string{"read_file"}, nil))
 
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -124,7 +124,7 @@ func TestSetServerTools_ConflictWhenDiskChanged(t *testing.T) {
 	})
 	defer swapBetweenReadsHook(nil)
 
-	err := setServerTools(path, "fs", []string{"read_file"})
+	err := setServerTools(path, "fs", []string{"read_file"}, nil)
 	assert.ErrorIs(t, err, errStackModified)
 
 	// Caller's intended write must not have landed.
@@ -135,7 +135,7 @@ func TestSetServerTools_ConflictWhenDiskChanged(t *testing.T) {
 }
 
 func TestSetServerTools_EmptyPath(t *testing.T) {
-	err := setServerTools("", "fs", []string{"x"})
+	err := setServerTools("", "fs", []string{"x"}, nil)
 	assert.ErrorIs(t, err, errStackFileEmpty)
 }
 
@@ -144,7 +144,7 @@ func TestSetServerTools_UnknownServer(t *testing.T) {
 	path := filepath.Join(dir, "stack.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(exampleStack), 0o600))
 
-	err := setServerTools(path, "missing", []string{"x"})
+	err := setServerTools(path, "missing", []string{"x"}, nil)
 	assert.True(t, errors.Is(err, errServerNotFound))
 }
 

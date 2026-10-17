@@ -295,6 +295,7 @@ func Validate(s *Stack) error {
 		if server.Auth != nil && !server.IsExternal() {
 			errs = append(errs, ValidationError{prefix + ".auth", "only valid for external URL servers"})
 		}
+		errs = append(errs, validateHeaders(server, prefix)...)
 
 		// External server validation (URL-only)
 		if server.IsExternal() {
@@ -608,14 +609,16 @@ func Validate(s *Stack) error {
 		// In simple mode, resource.Network is ignored (per design decision)
 	}
 
-	// Per-client access scoping validation
+	// Per-client access scoping validation. Profile references to a
+	// whitelist-hidden tool are warnings, not errors; see addWarnings.
 	errs = append(errs, validateClients(s, serverNames)...)
 
 	// Rate limit validation
 	errs = append(errs, validateLimits(s, serverNames)...)
 
-	// Tool group validation
-	errs = append(errs, validateGroups(s, serverNames)...)
+	// Tool group validation. A non-empty tools whitelist hides every other
+	// tool; a group that names one can never succeed.
+	errs = append(errs, validateGroups(s, serverNames, serverWhitelists(s))...)
 
 	// Skill exposure policy validation
 	errs = append(errs, validateSkillsPolicy(s)...)
@@ -830,7 +833,7 @@ const clientToolNameBudget = 64
 // budget. Tool existence stays a runtime property (mirroring
 // validateClients); references are validated structurally against declared
 // servers.
-func validateGroups(s *Stack, serverNames map[string]bool) ValidationErrors {
+func validateGroups(s *Stack, serverNames map[string]bool, whitelists map[string]map[string]bool) ValidationErrors {
 	var errs ValidationErrors
 	if len(s.Groups) == 0 {
 		return errs
@@ -871,8 +874,14 @@ func validateGroups(s *Stack, serverNames map[string]bool) ValidationErrors {
 			return server, true
 		}
 		for i, tool := range group.Tools {
-			if _, ok := checkPrefixed(fmt.Sprintf("%s.tools[%d]", prefix, i), tool); ok {
-				memberTools[tool] = true
+			field := fmt.Sprintf("%s.tools[%d]", prefix, i)
+			server, ok := checkPrefixed(field, tool)
+			if !ok {
+				continue
+			}
+			memberTools[tool] = true
+			if msg, hidden := hiddenToolMessage(whitelists, server, tool); hidden {
+				errs = append(errs, ValidationError{field, msg})
 			}
 		}
 		excluded := make(map[string]bool, len(group.Exclude))
@@ -925,6 +934,9 @@ func validateGroups(s *Stack, serverNames map[string]bool) ValidationErrors {
 			if !serverNames[server] {
 				errs = append(errs, ValidationError{field, fmt.Sprintf("references unknown MCP server '%s'", server)})
 				continue
+			}
+			if msg, hidden := hiddenToolMessage(whitelists, server, key); hidden {
+				errs = append(errs, ValidationError{field, msg})
 			}
 			isMember := (memberTools[key] || memberServers[server]) && !excluded[key]
 			if !isMember {
@@ -991,6 +1003,51 @@ func slugifyLimitClientKey(key string) string {
 		}
 	}
 	return strings.TrimRight(b.String(), "-")
+}
+
+// hiddenToolReferenceFragment is the stable text shared by hidden-tool
+// errors and warnings. IsHiddenToolReference matches it so REST callers
+// do not have to prefix-match group fields.
+const hiddenToolReferenceFragment = "is hidden by mcp-servers["
+
+// IsHiddenToolReference reports whether err is a group reference to a tool
+// hidden by a non-empty server whitelist.
+func IsHiddenToolReference(err ValidationError) bool {
+	return strings.Contains(err.Message, hiddenToolReferenceFragment)
+}
+
+func serverWhitelists(s *Stack) map[string]map[string]bool {
+	out := map[string]map[string]bool{}
+	if s == nil {
+		return out
+	}
+	for _, srv := range s.MCPServers {
+		if len(srv.Tools) == 0 {
+			continue
+		}
+		set := make(map[string]bool, len(srv.Tools))
+		for _, tool := range srv.Tools {
+			set[tool] = true
+		}
+		out[srv.Name] = set
+	}
+	return out
+}
+
+// hiddenToolMessage reports a hidden-tool finding when server has a
+// non-empty whitelist and the bare tool name is not in it. prefixed is the
+// server__tool reference. An unknown server or an empty whitelist is not a
+// hidden-tool finding.
+func hiddenToolMessage(whitelists map[string]map[string]bool, server, prefixed string) (string, bool) {
+	_, tool, ok := splitPrefixedToolName(prefixed)
+	if !ok {
+		return "", false
+	}
+	list, listed := whitelists[server]
+	if !listed || list[tool] {
+		return "", false
+	}
+	return fmt.Sprintf("tool '%s' %s%s].tools and can never be called", prefixed, hiddenToolReferenceFragment, server), true
 }
 
 // splitPrefixedToolName splits a "server__tool" name into its server and tool

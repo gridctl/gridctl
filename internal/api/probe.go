@@ -195,6 +195,7 @@ type probeRequest struct {
 	ReadyTimeout string                  `json:"ready_timeout,omitempty"`
 	Replicas     int                     `json:"replicas,omitempty"`
 	Auth         *serverAuthWire         `json:"auth,omitempty"`
+	Headers      map[string]string       `json:"headers,omitempty"`
 }
 
 // serverAuthWire mirrors config.ServerAuth with snake_case JSON tags so the
@@ -241,6 +242,7 @@ func (r probeRequest) toMCPServer() config.MCPServer {
 		ReadyTimeout: r.ReadyTimeout,
 		Replicas:     r.Replicas,
 		Auth:         auth,
+		Headers:      r.Headers,
 	}
 }
 
@@ -296,6 +298,11 @@ func configSecrets(cfg config.MCPServer) []string {
 			if v != "" {
 				secrets = append(secrets, v)
 			}
+		}
+	}
+	for _, v := range cfg.Headers {
+		if v != "" {
+			secrets = append(secrets, v)
 		}
 	}
 	return secrets

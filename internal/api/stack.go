@@ -24,6 +24,19 @@ import (
 // validStackName matches names that are safe to use as filenames (alphanumeric, hyphens, underscores).
 var validStackName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
+// writeValidationFailure writes a strict-decode or validation failure as
+// issues. It returns false when err is not a ValidationErrors value.
+func writeValidationFailure(w http.ResponseWriter, status int, err error) bool {
+	var ve config.ValidationErrors
+	if !errors.As(err, &ve) {
+		return false
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(config.ResultFromErrors(ve))
+	return true
+}
+
 // stackEntry describes a saved stack in the library.
 type stackEntry struct {
 	Name string `json:"name"`
@@ -106,8 +119,10 @@ func (s *Server) handleStacksSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate YAML parses into a Stack
-	var stack config.Stack
-	if err := yaml.Unmarshal([]byte(req.YAML), &stack); err != nil {
+	if _, err := config.DecodeStack([]byte(req.YAML)); err != nil {
+		if writeValidationFailure(w, http.StatusBadRequest, err) {
+			return
+		}
 		writeJSONError(w, "Invalid YAML: "+err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -218,8 +233,13 @@ func (s *Server) handleStackValidate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var stack config.Stack
-	if err := yaml.Unmarshal(body, &stack); err != nil {
+	stack, err := config.DecodeStack(body)
+	if err != nil {
+		var ve config.ValidationErrors
+		if errors.As(err, &ve) {
+			writeJSON(w, config.ResultFromErrors(ve))
+			return
+		}
 		writeJSON(w, &config.ValidationResult{
 			Valid:      false,
 			ErrorCount: 1,
@@ -233,7 +253,7 @@ func (s *Server) handleStackValidate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Match CLI validation: expand env vars, apply defaults
-	if err := config.ExpandStackVarsWithEnvChecked(&stack); err != nil {
+	if err := config.ExpandStackVarsWithEnvChecked(stack); err != nil {
 		writeJSON(w, &config.ValidationResult{
 			Valid:      false,
 			ErrorCount: 1,
@@ -244,7 +264,7 @@ func (s *Server) handleStackValidate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stack.SetDefaults()
-	result := config.ValidateWithIssues(&stack)
+	result := config.ValidateWithIssues(stack)
 	writeJSON(w, result)
 }
 
@@ -623,20 +643,30 @@ func (s *Server) handleStackAppend(w http.ResponseWriter, r *http.Request) {
 	)
 	switch req.ResourceType {
 	case "mcp-server":
-		if err := yaml.Unmarshal([]byte(req.YAML), &newServer); err != nil {
-			writeJSONError(w, "Invalid mcp-server YAML: "+err.Error(), http.StatusBadRequest)
+		decoded, decErr := config.DecodeMCPServer([]byte(req.YAML))
+		if decErr != nil {
+			if writeValidationFailure(w, http.StatusBadRequest, decErr) {
+				return
+			}
+			writeJSONError(w, "Invalid mcp-server YAML: "+decErr.Error(), http.StatusBadRequest)
 			return
 		}
+		newServer = *decoded
 		if newServer.Name == "" {
 			writeJSONError(w, "mcp-server name is required", http.StatusBadRequest)
 			return
 		}
 		resourceName = newServer.Name
 	case "resource":
-		if err := yaml.Unmarshal([]byte(req.YAML), &newResource); err != nil {
-			writeJSONError(w, "Invalid resource YAML: "+err.Error(), http.StatusBadRequest)
+		decoded, decErr := config.DecodeResource([]byte(req.YAML))
+		if decErr != nil {
+			if writeValidationFailure(w, http.StatusBadRequest, decErr) {
+				return
+			}
+			writeJSONError(w, "Invalid resource YAML: "+decErr.Error(), http.StatusBadRequest)
 			return
 		}
+		newResource = *decoded
 		if newResource.Name == "" {
 			writeJSONError(w, "resource name is required", http.StatusBadRequest)
 			return
@@ -661,8 +691,11 @@ func (s *Server) handleStackAppend(w http.ResponseWriter, r *http.Request) {
 	// Validate the post-append shape against the typed schema. We mutate a
 	// copy of the parsed struct so the YAML bytes the user wrote do not need
 	// to round-trip through canonical encoding for validation to run.
-	var stack config.Stack
-	if err := yaml.Unmarshal(original, &stack); err != nil {
+	stack, err := config.DecodeStack(original)
+	if err != nil {
+		if writeValidationFailure(w, http.StatusBadRequest, err) {
+			return
+		}
 		writeJSONError(w, "Failed to parse stack: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -672,12 +705,12 @@ func (s *Server) handleStackAppend(w http.ResponseWriter, r *http.Request) {
 	case "resource":
 		stack.Resources = append(stack.Resources, newResource)
 	}
-	if err := config.ExpandStackVarsWithEnvChecked(&stack); err != nil {
+	if err := config.ExpandStackVarsWithEnvChecked(stack); err != nil {
 		writeJSONError(w, "Stack variable resolution failed after append: "+err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
 	stack.SetDefaults()
-	if result := config.ValidateWithIssues(&stack); !result.Valid {
+	if result := config.ValidateWithIssues(stack); !result.Valid {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		_ = json.NewEncoder(w).Encode(map[string]any{

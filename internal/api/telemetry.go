@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"os"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/runs"
 	"github.com/gridctl/gridctl/pkg/telemetry"
@@ -312,17 +310,20 @@ func (s *Server) handleDeleteTelemetry(w http.ResponseWriter, r *http.Request) {
 // handleStackAppend and returns a sentinel non-nil error so the caller can
 // short-circuit. On success it returns nil with no body written.
 func (s *Server) validatePatchedStack(w http.ResponseWriter, updated []byte, label string) error {
-	var stack config.Stack
-	if err := yaml.Unmarshal(updated, &stack); err != nil {
+	stack, err := config.DecodeStack(updated)
+	if err != nil {
+		if writeValidationFailure(w, http.StatusBadRequest, err) {
+			return err
+		}
 		writeJSONError(w, "Failed to parse patched stack: "+err.Error(), http.StatusInternalServerError)
 		return err
 	}
-	if err := config.ExpandStackVarsWithEnvChecked(&stack); err != nil {
+	if err := config.ExpandStackVarsWithEnvChecked(stack); err != nil {
 		writeJSONError(w, "Stack variable resolution failed after "+label+": "+err.Error(), http.StatusUnprocessableEntity)
 		return err
 	}
 	stack.SetDefaults()
-	if result := config.ValidateWithIssues(&stack); !result.Valid {
+	if result := config.ValidateWithIssues(stack); !result.Valid {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		_ = json.NewEncoder(w).Encode(map[string]any{

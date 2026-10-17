@@ -6,8 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/gridctl/gridctl/pkg/execution"
 	"github.com/gridctl/gridctl/pkg/flags"
 	"github.com/gridctl/gridctl/pkg/registry"
@@ -27,6 +25,9 @@ type ValidationIssue struct {
 	Field    string        `json:"field"`
 	Message  string        `json:"message"`
 	Severity IssueSeverity `json:"severity"`
+	// Line is the 1-based source line for strict-decode findings. Omitted
+	// when the checker cannot name a line.
+	Line int `json:"line,omitempty"`
 }
 
 // ValidationResult holds the complete output of spec validation.
@@ -101,11 +102,7 @@ func ValidateWithIssues(s *Stack) *ValidationResult {
 		result.Valid = false
 		if ve, ok := err.(ValidationErrors); ok {
 			for _, e := range ve {
-				result.Issues = append(result.Issues, ValidationIssue{
-					Field:    e.Field,
-					Message:  e.Message,
-					Severity: SeverityError,
-				})
+				result.Issues = append(result.Issues, e.ToIssue(SeverityError))
 				result.ErrorCount++
 			}
 		} else {
@@ -192,9 +189,59 @@ func (r *ValidationResult) addWarnings(s *Stack) {
 		r.WarningCount++
 	}
 
+	r.addHiddenToolWarnings(s)
 	r.addExperimentalIssues(flags.Default(), s)
 	r.addSkillsPolicyIssues(s)
 	r.addModelPreferencesIssues(s)
+}
+
+// addHiddenToolWarnings warns when a profile or a group exclude names a tool
+// that a non-empty server whitelist hides. Those references cannot succeed,
+// but unlike a group tools or overrides entry they do not make a call fail
+// that would otherwise have been allowed.
+func (r *ValidationResult) addHiddenToolWarnings(s *Stack) {
+	whitelists := serverWhitelists(s)
+	if len(whitelists) == 0 {
+		return
+	}
+	if s.Clients != nil {
+		for id, profile := range s.Clients.Profiles {
+			for i, tool := range profile.Tools {
+				server, _, ok := splitPrefixedToolName(tool)
+				if !ok {
+					continue
+				}
+				msg, hidden := hiddenToolMessage(whitelists, server, tool)
+				if !hidden {
+					continue
+				}
+				r.Issues = append(r.Issues, ValidationIssue{
+					Field:    fmt.Sprintf("clients.profiles[%s].tools[%d]", id, i),
+					Message:  msg + "; the profile may be wider than the whitelist on purpose",
+					Severity: SeverityWarning,
+				})
+				r.WarningCount++
+			}
+		}
+	}
+	for name, group := range s.Groups {
+		for i, tool := range group.Exclude {
+			server, _, ok := splitPrefixedToolName(tool)
+			if !ok {
+				continue
+			}
+			msg, hidden := hiddenToolMessage(whitelists, server, tool)
+			if !hidden {
+				continue
+			}
+			r.Issues = append(r.Issues, ValidationIssue{
+				Field:    fmt.Sprintf("groups[%s].exclude[%d]", name, i),
+				Message:  msg + "; excluding a hidden tool has no effect",
+				Severity: SeverityWarning,
+			})
+			r.WarningCount++
+		}
+	}
 }
 
 // addModelPreferencesIssues reports on the `model_preferences:` block.
@@ -330,14 +377,14 @@ func ValidateStackFile(path string) (*Stack, *ValidationResult, error) {
 		return nil, nil, fmt.Errorf("reading stack file: %w", err)
 	}
 
-	var stack Stack
-	if err := yaml.Unmarshal(data, &stack); err != nil {
-		return nil, nil, fmt.Errorf("parsing stack YAML: %w", err)
+	stack, err := DecodeStack(data)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// Expand environment variables without allowing bootstrap credentials to
 	// cross into the parsed stack used by validation and export callers.
-	_, _, resolutionProblems := expandStackVarsResolved(&stack, newReferenceResolver(nil))
+	_, _, resolutionProblems := expandStackVarsResolved(stack, newReferenceResolver(nil))
 	if len(resolutionProblems) > 0 {
 		return nil, nil, fmt.Errorf("resolving stack variable: %w", resolutionProblems[0])
 	}
@@ -346,7 +393,7 @@ func ValidateStackFile(path string) (*Stack, *ValidationResult, error) {
 	stack.SetDefaults()
 
 	// Validate with severity
-	result := ValidateWithIssues(&stack)
+	result := ValidateWithIssues(stack)
 
-	return &stack, result, nil
+	return stack, result, nil
 }

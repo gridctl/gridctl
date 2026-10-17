@@ -17,7 +17,6 @@ import (
 	gitpkg "github.com/gridctl/gridctl/pkg/git"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	runtimedocker "github.com/gridctl/gridctl/pkg/runtime/docker"
-	"gopkg.in/yaml.v3"
 )
 
 const maxPythonAPIRequest = 1 << 20
@@ -126,19 +125,25 @@ func (s *Server) handleStackResourceValidate(w http.ResponseWriter, r *http.Requ
 	stack := config.Stack{Name: "wizard-preview", Network: config.Network{Name: "wizard-preview"}}
 	switch req.ResourceType {
 	case "mcp-server":
-		var server config.MCPServer
-		if err := yaml.Unmarshal([]byte(req.YAML), &server); err != nil {
-			writeResourceYAMLError(w, err)
+		server, decErr := config.DecodeMCPServer([]byte(req.YAML))
+		if decErr != nil {
+			if writeValidationFailure(w, http.StatusBadRequest, decErr) {
+				return
+			}
+			writeResourceYAMLError(w, decErr)
 			return
 		}
-		stack.MCPServers = []config.MCPServer{server}
+		stack.MCPServers = []config.MCPServer{*server}
 	case "resource":
-		var resource config.Resource
-		if err := yaml.Unmarshal([]byte(req.YAML), &resource); err != nil {
-			writeResourceYAMLError(w, err)
+		resource, decErr := config.DecodeResource([]byte(req.YAML))
+		if decErr != nil {
+			if writeValidationFailure(w, http.StatusBadRequest, decErr) {
+				return
+			}
+			writeResourceYAMLError(w, decErr)
 			return
 		}
-		stack.Resources = []config.Resource{resource}
+		stack.Resources = []config.Resource{*resource}
 	default:
 		writeJSONError(w, "Unsupported resourceType: "+req.ResourceType, http.StatusBadRequest)
 		return
@@ -362,8 +367,8 @@ func (s *Server) enrichMCPServerStatuses(ctx context.Context, statuses []MCPServ
 		slog.Warn("status: failed to read stack for MCP server provenance", "path", s.stackFile, "error", err)
 		return
 	}
-	var stack config.Stack
-	if err := yaml.Unmarshal(data, &stack); err != nil {
+	stack, err := config.DecodeStack(data)
+	if err != nil {
 		slog.Warn("status: failed to parse stack for MCP server provenance", "path", s.stackFile, "error", err)
 		return
 	}

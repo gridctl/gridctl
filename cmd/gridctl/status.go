@@ -320,6 +320,7 @@ type mcpServerAPI struct {
 	Replicas              []mcpReplicaAPI  `json:"replicas,omitempty"`
 	Autoscale             *autoscaleAPI    `json:"autoscale,omitempty"`
 	StderrTail            []string         `json:"stderrTail,omitempty"`
+	Description           string           `json:"description,omitempty"`
 }
 
 // mcpCapabilityAPI is the downstream capability projection on status JSON.
