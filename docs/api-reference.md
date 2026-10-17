@@ -1773,7 +1773,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 The body is `{ "url": "<absolute http or https URL>" }`, capped at 64 KiB. The handler shares the probe limiter. `X-Session-ID` is optional; when absent, the remote address is used. Concurrency is capped at 3 in-flight requests per session and 10 globally. Excess requests get `429` (session) or `503` (global) with `Retry-After: 3`.
 
-The handler fetches `<url>/server-card` with no credentials, no redirects, and a 64 KiB / 10 second bound, and falls back to the URL origin's `/.well-known/ai-catalog.json` when the card is missing. A remote whose scheme, host, or port differs from the submitted URL is refused. A URL template is refused with the same `off_origin` code and is not followed.
+The handler fetches `<url>/server-card` with no credentials, no redirects, and a 64 KiB / 10 second bound, and falls back to the URL origin's `/.well-known/ai-catalog.json` when the card is missing. Catalog entries whose card URL is on another host are skipped. A selected remote whose scheme, host, or port differs from the submitted URL is refused. A URL template is refused with the same `off_origin` code and is not followed.
 
 **Response:**
 ```json
@@ -1799,7 +1799,7 @@ The handler fetches `<url>/server-card` with no credentials, no redirects, and a
 }
 ```
 
-`server` uses stack field names (`url`, `transport`, `auth`, and `protocol_generation` when set) and contains no credential value. `auth` is omitted when the card has no mappable auth header. `protocol_generation` is set only when every listed protocol version is supported and those versions share one era. A further required header, or a header with a literal value, is named in `warnings` and is not written into `server`. `inputs` lists the variables the draft turned into placeholders. `warnings` and `inputs` are omitted when empty.
+`server` uses stack field names (`url`, `transport`, `auth`, and `protocol_generation` when set) and contains no credential value. `auth` is omitted when the card has no mappable auth header. `Authorization` whose value is exactly `Bearer {x}` maps to bearer auth even when the card lists other headers. A single other header whose value is exactly `{x}` maps to header auth. `protocol_generation` is set only when every listed protocol version is supported and those versions share one era. A further required header, or a header with a literal value, is named in `warnings` and is not written into `server`. `inputs` lists the variables the draft turned into placeholders. `warnings` and `inputs` are omitted when empty.
 
 **Error envelope:** same shape as the probe, `{ "error": { "code", "message", "hint" } }`.
 
