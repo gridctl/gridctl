@@ -233,6 +233,10 @@ export interface MCPServerStatus {
   image?: string;
   source?: MCPServerSourceStatus;
   stderrTail?: string[];
+  // False when the server is declared but not registered. Omitted means enabled.
+  enabled?: boolean;
+  // Field names applied from the active override file.
+  overrides?: string[];
 }
 
 // Per-server downstream authorization detail from GET /api/auth/servers.
@@ -383,6 +387,7 @@ export interface GatewayStatus {
   stack_name?: string;     // Active stack name; omitted in stackless mode
   features?: Record<string, boolean>; // Enabled experimental flags, name -> true (omitted when none)
   feature_details?: FeatureDetail[];  // Display metadata for the same flags (omitted when none)
+  override?: string;
 }
 
 // MCP tool annotations, matching mcp.ToolAnnotations. All fields are
@@ -533,6 +538,8 @@ export interface MCPServerNodeData extends NodeDataBase {
   source?: MCPServerSourceStatus;
   replicas?: ReplicaStatus[];
   stderrTail?: string[];
+  enabled?: boolean;
+  overrides?: string[];
 }
 
 export interface ResourceNodeData extends NodeDataBase {
@@ -819,6 +826,7 @@ export interface SpecHealth {
   validation: ValidationStatus;
   drift: DriftStatus;
   dependencies: DependencyStatus;
+  override?: string;
 }
 
 export interface StackSpec {

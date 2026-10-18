@@ -71,6 +71,11 @@ export function SpecHealthBadge() {
         <span className={cn('w-1.5 h-1.5 rounded-full', dotClass)} />
         <span className="font-medium">{label}</span>
       </span>
+      {health.override && (
+        <span className="text-text-muted font-normal" title={health.override}>
+          override: {health.override}
+        </span>
+      )}
     </button>
   );
 }

@@ -16,6 +16,7 @@ import {
   ArrowUpRight,
   ShieldCheck,
   SlidersHorizontal,
+  Power,
 } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { cn } from '../../lib/cn';
@@ -27,6 +28,7 @@ import { GatewaySidebar } from '../gateway/GatewaySidebar';
 import { ServerAuthSection } from '../sidebar/ServerAuthSection';
 import { TokenUsageSection } from '../sidebar/TokenUsageSection';
 import { ToolsEditor } from '../sidebar/ToolsEditor';
+import { ServerEnableControl } from '../sidebar/ServerEnableControl';
 import { AutoscalePanel } from '../status/AutoscalePanel';
 import { SidebarTelemetrySection } from '../telemetry/SidebarTelemetrySection';
 import { SourceProvenance } from '../sidebar/SourceProvenance';
@@ -84,6 +86,7 @@ export function Sidebar() {
   const isLocalProcess = serverData?.localProcess ?? false;
   const isSSH = serverData?.ssh ?? false;
   const isOpenAPI = serverData?.openapi ?? false;
+  const serverDisabled = serverData?.enabled === false;
 
   // Client-specific data
   const clientData = isClient ? (data as ClientNodeData) : null;
@@ -515,13 +518,23 @@ export function Sidebar() {
         )}
 
         {isServer && (
+          <InspectorSection title="Availability" icon={Power}>
+            <ServerEnableControl
+              name={data.name}
+              enabled={!serverDisabled}
+              overrides={(data as MCPServerNodeData).overrides}
+            />
+          </InspectorSection>
+        )}
+
+        {isServer && !serverDisabled && (
           <InspectorSection title="MCP catalog" icon={FileText}>
             <CatalogSummary data={data as MCPServerNodeData} />
           </InspectorSection>
         )}
 
-        {/* Tools Section (MCP servers only) */}
-        {isServer && (
+        {/* Tools Section (MCP servers only). Hidden while the server is disabled. */}
+        {isServer && !serverDisabled && (
           <InspectorSection title="Tools" icon={Wrench} count={(data as MCPServerNodeData).toolCount}>
             <ToolsEditor
               serverName={data.name}

@@ -354,6 +354,44 @@ export async function setServerTools(
   return data as SetServerToolsResponse;
 }
 
+export interface PatchServerEnabledResponse {
+  server: string;
+  enabled: boolean;
+  changed: boolean;
+  reloaded: boolean;
+  reloadedAt?: string;
+}
+
+// PATCH /api/mcp-servers/{name} with {"enabled": bool}.
+export async function patchServerEnabled(
+  name: string,
+  enabled: boolean,
+): Promise<PatchServerEnabledResponse> {
+  const response = await fetch(
+    `${API_BASE}/api/mcp-servers/${encodeURIComponent(name)}`,
+    {
+      method: 'PATCH',
+      headers: buildHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ enabled }),
+    },
+  );
+  if (response.status === 401) throw new AuthError('Authentication required');
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    const err = data?.error;
+    if (err && typeof err === 'object' && typeof err.code === 'string') {
+      throw new SetServerToolsError(
+        err.code,
+        err.message ?? 'Enable update failed',
+        err.hint,
+        response.status,
+      );
+    }
+    throw new Error(typeof data?.error === 'string' ? data.error : `Enable update failed: ${response.status}`);
+  }
+  return data as PatchServerEnabledResponse;
+}
+
 // One server's whitelist change in a batch request. tools = [] clears the
 // whitelist (expose all), matching the single-server semantics.
 export interface ServerToolsBatchEntry {
