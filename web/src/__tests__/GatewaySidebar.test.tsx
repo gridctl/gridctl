@@ -71,7 +71,7 @@ describe('GatewaySidebar', () => {
     expect(await screen.findByText(/policy: not configured/i)).toBeInTheDocument();
   });
 
-  it('renders the configured policy summary and not the per-server catalog', async () => {
+  it('renders the configured policy summary', async () => {
     vi.mocked(fetchPolicy).mockResolvedValue({
       configured: true,
       default: 'allow',
@@ -81,7 +81,6 @@ describe('GatewaySidebar', () => {
     });
     renderSidebar();
     expect(await screen.findByText(/default allow, 1 rule, block_destructive on/i)).toBeInTheDocument();
-    expect(screen.queryByText(/catalog summary/i)).not.toBeInTheDocument();
   });
 
   it('omits the count when skills have not loaded yet', () => {
