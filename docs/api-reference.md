@@ -1875,6 +1875,32 @@ Error codes:
 - `rate_limited` (429 / 503) - Session or global load cap exceeded
 - `internal` (500 / 503) - Unexpected failure, or preview not configured on this daemon
 
+#### `PATCH /api/mcp-servers/{name}`
+
+Sets `enabled` on one MCP server in the base stack file and reloads. The body is `{"enabled": <bool>}`.
+
+**Auth:** Yes
+
+When the write target is an override (pinned pack checkout, a daemon override path, or an existing `stack.override.yaml`), the handler writes nothing and returns `409` with code `override_required`. Use `gridctl enable` or `gridctl disable`.
+
+```bash
+curl -X PATCH -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": false}' \
+  http://localhost:8180/api/mcp-servers/github
+```
+
+**Response:** `{"server","enabled","changed","reloaded","reloadedAt"}`.
+
+Error codes:
+
+- `override_required` (409) - an override is the write target; nothing was written
+- `stack_modified` (409) - the file changed between read and write
+- `restart_required` (409) - saved security differs from startup
+- 404 - the server is not declared
+
+`GET /api/mcp-servers` and `GET /api/status` append disabled servers after registered ones, with `enabled: false`, transport from config, `initialized: false`, and empty tools. Entries may include `overrides`. `GET /api/status`, `GET /api/stack/health`, and `GET /api/stack/plan` add optional `override`. `GET /api/stack/export` keeps the CLI default: the base stack plus a notice when an override exists.
+
 #### `PATCH /api/mcp-servers/{name}/telemetry`
 
 Updates the per-server `telemetry.persist` overrides in the live stack YAML. Each signal (`logs`, `metrics`, `traces`) can be set to `true`, `false`, or `null` (clear the override and inherit the stack default). Send `persist: null` to remove the entire per-server telemetry block.

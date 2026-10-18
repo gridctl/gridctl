@@ -775,6 +775,7 @@ In the web wizard, the OpenAPI Configuration section's Operations Filter loads t
 | `auth` | object | No | - | External-server authentication: `type: bearer`, `header`, or `oauth` (see [External Server Authentication](#external-server-authentication)). URL servers only |
 | `headers` | map | No | - | Extra HTTP headers for external URL and OpenAPI servers (see [Custom headers](#custom-headers)). Values are sensitive. Omitted means no extra headers |
 | `description` | string | No | - | Operator note. Accepted on every server kind, exported, and shown in status JSON. Not sent downstream |
+| `enabled` | bool | No | `true` | When `false`, the server is validated but not built, started, registered, health-checked, or pinned. It is absent from `tools/list`, prompts, resources, and code-mode search, and it appears in status as `disabled`. `enabled: true` and an omitted key are the same state. A disabled container server consumes no `--base-port` index; `--base-port` is only the starting port, and a later enable takes the next free port |
 | `tools` | []string | No | - | Tool whitelist. Empty exposes all tools. Hidden tools are rejected on `tools/call` with the same error as an unknown tool. The web wizard populates this from the live stack for running servers, and offers an optional probe of external-URL servers to discover their tools before deploy. Container / stdio / local-process / SSH servers are curated from the Stack sidebar after deploy; OpenAPI servers are curated before deploy with the wizard's Operations Filter (see [OpenAPI](#openapi-server)). Editable live from the Stack sidebar's Tools editor and the Tools workspace. `PUT /api/mcp-servers/{name}/tools` rewrites this field atomically and triggers a hot reload. A candidate that would hide a tool a group `tools:` entry or override names is refused (`400 hidden_tool_reference`) and the file is left unchanged |
 | `output_format` | string | No | - | Output format override: `"json"`, `"toon"`, `"csv"`, or `"text"`. Overrides `gateway.output_format` for this server |
 | `pin_schemas` | bool | No | - | Override tool schema pinning for this server. `false` disables tool pinning; `true` requires the global verifier to be enabled. Omit to inherit from `gateway.security.schema_pinning.enabled`. Mandatory A2A card trust is independent |
@@ -1311,6 +1312,20 @@ Full decision-rule walkthrough, cold-start trade-offs, and observability details
 
 ---
 
+## Override files
+
+An override file merges on top of the stack after `extends`. For `<dir>/stack.yaml` the discovered file is `<dir>/stack.override.yaml`. A missing sibling is not an error. `--override <path>` selects another file and fails if that path does not exist. `--no-override` ignores every override. `apply`, `serve`, `plan`, and `validate` accept both flags; they are mutually exclusive. `reload` uses the selection the daemon started with.
+
+For a pack-carried stack the override is `~/.gridctl/overrides/<pack-name>.yaml`. `pack apply` passes that path. The file is optional.
+
+The document may contain only `mcp-servers`. Each named server must exist in the base. Scalars and lists replace. `env` and `headers` merge by key, and the override wins. The allowlist is `enabled`, `env`, `tools`, `replicas`, `restart`, `ping_timeout`, `ready_timeout`, `output_format`, and `headers`. Any other field, including `image`, `url`, `command`, `source`, `volumes`, `configs`, `execution`, `auth`, and `autoscale`, fails with `override: <path>: mcp-servers.<name>.<field> is not overridable`. A top-level key other than `mcp-servers` fails with `override: <path>: top-level key "<key>" is not allowed; only mcp-servers is`. An unknown server fails with `override: <path>: mcp-servers.<name> does not exist in the stack`.
+
+`gridctl validate` and a stopped-stack `gridctl plan` do not resolve `extends`. An override that names a server only a parent declares is an error when the file has no `extends`, and a warning when it does. `LoadStack` (`apply`, `serve`, and the daemon's reload) resolves `extends` first, so that name is an error only when it is absent from the merged stack.
+
+The override cannot change `gateway`, including bind, auth, and origins. `enable` and `disable` on a pinned checkout, or when an override is already the write target, write only `enabled` into the override. `export` emits the base and prints a notice unless `--with-override` is passed. The web UI does not edit the override.
+
+`--base-port` remains the starting port for container host ports. Skipping a disabled container server does not reserve its index.
+
 ## Resources
 
 Supporting containers such as databases, caches, and other services. MCP `execution` controls do not apply to resources; hardening one MCP server does not harden the whole stack.
@@ -1335,6 +1350,7 @@ resources:
 | `ports` | []string | No | - | Port mappings (e.g., `"5432:5432"`) |
 | `volumes` | []string | No | - | Volume mounts (e.g., `"data:/var/lib/postgres"`). A host part that starts with `./`, `../`, or `~` is resolved the same way as a server volume, including a value that becomes relative only after variable expansion. `gridctl validate` does not apply that resolution. `gridctl plan` resolves it only when a running daemon compares its own file, and it never prints the resolved path |
 | `network` | string | Conditional | - | Network to join (required in advanced network mode) |
+| `enabled` | bool | No | `true` | When `false`, the resource is validated but not started. CLI `enable` and `disable` and the REST toggle do not edit resources; change the file |
 
 **Constraints:**
 - Names must be unique and not conflict with MCP server names

@@ -6,7 +6,7 @@ A committed stack declares servers. A pack selects skills, agents, rules, and wi
 
 ## Stack
 
-A stack is the YAML file (`stack.yaml`, or any path you pass to `gridctl apply`) that declares MCP servers, the gateway, and optional policy; the `skills:` key is an exposure policy, not skill bodies. `gridctl apply` starts the workloads and the gateway, and `gridctl plan` previews deployment changes, not agent work ([Stack](config-schema.md#stack), [Skills (exposure policy)](config-schema.md#skills-exposure-policy)).
+A stack is the YAML file (`stack.yaml`, or any path you pass to `gridctl apply`) that declares MCP servers, the gateway, and optional policy; the `skills:` key is an exposure policy, not skill bodies. `enabled: false` parks a server or resource without removing it, and an optional override file can change that flag and a short allowlist of fields without editing a shared base ([Override files](config-schema.md#override-files)). `gridctl apply` starts the workloads and the gateway, and `gridctl plan` previews deployment changes, not agent work ([Stack](config-schema.md#stack), [Skills (exposure policy)](config-schema.md#skills-exposure-policy)).
 
 ## Pack
 
