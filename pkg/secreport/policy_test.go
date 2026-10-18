@@ -51,6 +51,49 @@ func TestAssemble_PolicyDeclaredAndUndeclared(t *testing.T) {
 	}
 }
 
+func TestPolicyDeclaredText_SingularAndImportedAgree(t *testing.T) {
+	cases := []struct {
+		count         int
+		destructive   bool
+		defaultAction string
+		want          string
+	}{
+		{0, false, "allow", "A per-tool call policy is declared with default allow and 0 rules."},
+		{1, false, "allow", "A per-tool call policy is declared with default allow and 1 rule."},
+		{1, true, "block", "A per-tool call policy is declared with default block and 1 rule. block_destructive is on."},
+		{2, true, "block", "A per-tool call policy is declared with default block and 2 rules. block_destructive is on."},
+	}
+	for _, tc := range cases {
+		live := policyExplanation(t, tc.defaultAction, tc.count, tc.destructive)
+		imported := explanationFor("policy_declared", "gateway", CheckFacts{
+			DefaultAction:    tc.defaultAction,
+			RuleCount:        intPtr(tc.count),
+			BlockDestructive: boolPtr(tc.destructive),
+		})
+		if live != tc.want || imported != tc.want {
+			t.Fatalf("count %d destructive %v: live=%q imported=%q want=%q", tc.count, tc.destructive, live, imported, tc.want)
+		}
+	}
+	// An imported snapshot can omit the default. One rule is still singular.
+	if got := explanationFor("policy_declared", "gateway", CheckFacts{RuleCount: intPtr(1)}); got != "A per-tool call policy is declared and 1 rule." {
+		t.Fatalf("imported singular without default = %q", got)
+	}
+}
+
+func policyExplanation(t *testing.T, defaultAction string, rules int, destructive bool) string {
+	t.Helper()
+	report := Assemble(time.Now(), Inputs{Stack: &StackView{Name: "demo", Policy: &PolicyDeclView{
+		Declared: true, Default: defaultAction, RuleCount: rules, BlockDestructive: destructive,
+	}}})
+	for _, c := range report.Checks {
+		if c.ID == "policy.declared.gateway" {
+			return c.Explanation
+		}
+	}
+	t.Fatal("missing policy.declared.gateway")
+	return ""
+}
+
 func TestStackView_PolicyFromConfig(t *testing.T) {
 	view := stackViewFromConfig(&config.Stack{
 		Name: "demo",

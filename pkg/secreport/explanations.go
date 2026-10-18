@@ -185,7 +185,7 @@ func explanationFor(reason, subject string, facts CheckFacts) string {
 			text += " with default " + facts.DefaultAction
 		}
 		if facts.RuleCount != nil {
-			text += " and " + strconv.Itoa(*facts.RuleCount) + " rules"
+			text += " and " + policyRuleCountText(*facts.RuleCount)
 		}
 		text += "."
 		if facts.BlockDestructive != nil && *facts.BlockDestructive {
@@ -197,6 +197,15 @@ func explanationFor(reason, subject string, facts CheckFacts) string {
 	default:
 		return "Unrecognized claim."
 	}
+}
+
+// policyRuleCountText is "1 rule" or "N rules". Zero uses the plural.
+func policyRuleCountText(count int) string {
+	noun := "rules"
+	if count == 1 {
+		noun = "rule"
+	}
+	return strconv.Itoa(count) + " " + noun
 }
 
 func joinCodes(codes []string) string {

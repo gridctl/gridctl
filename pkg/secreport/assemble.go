@@ -585,7 +585,7 @@ func policyDeclaredCheck(in Inputs) Check {
 		return check("policy.declared.gateway", PredPolicyDeclared, gatewaySubject(), OutcomePass, "policy_undeclared", "No per-tool call policy is declared.", declaredEvidence(), limitation)
 	}
 	p := in.Stack.Policy
-	text := "A per-tool call policy is declared with default " + p.Default + " and " + strconv.Itoa(p.RuleCount) + " rules."
+	text := "A per-tool call policy is declared with default " + p.Default + " and " + policyRuleCountText(p.RuleCount) + "."
 	if p.BlockDestructive {
 		text += " block_destructive is on."
 	}
