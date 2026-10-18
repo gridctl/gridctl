@@ -234,11 +234,16 @@ func samePath(a, b string) bool {
 	return filepath.Clean(aa) == filepath.Clean(bb)
 }
 
-func pinnedStackPath(st *skills.LockedStack) string {
+// PinnedStackPath is the absolute path of a pack's pinned stack file.
+func PinnedStackPath(st *skills.LockedStack) string {
 	if st == nil {
 		return ""
 	}
 	return filepath.Join(st.CheckoutDir, filepath.FromSlash(st.Path))
+}
+
+func pinnedStackPath(st *skills.LockedStack) string {
+	return PinnedStackPath(st)
 }
 
 func stackFileMissing(st *skills.LockedStack) (string, bool) {
