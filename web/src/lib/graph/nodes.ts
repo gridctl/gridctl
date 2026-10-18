@@ -125,6 +125,8 @@ export function createMCPServerNodes(mcpServers: MCPServerStatus[]): Node[] {
       ssh: server.ssh,
       sshHost: server.sshHost,
       healthy: server.healthy,
+      enabled: server.enabled,
+      overrides: server.overrides,
       lastCheck: server.lastCheck,
       healthError: server.healthError,
       protocolVersion: server.protocolVersion,

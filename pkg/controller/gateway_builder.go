@@ -448,7 +448,8 @@ func (b *GatewayBuilder) seedLogsFromDisk(buf *logging.LogBuffer, handler slog.H
 	logger := slog.New(handler)
 	for i := range b.stack.MCPServers {
 		srv := &b.stack.MCPServers[i]
-		if srv.Name == "" || !srv.PersistLogs(b.stack) {
+		// Telemetry seeding skips parked servers. They are not registered.
+		if srv.Name == "" || !srv.IsEnabled() || !srv.PersistLogs(b.stack) {
 			continue
 		}
 		path, perr := state.TelemetryServerPath(b.stack.Name, srv.Name, "logs")
@@ -473,7 +474,7 @@ func (b *GatewayBuilder) seedTracesFromDisk(handler slog.Handler) {
 	logger := slog.New(handler)
 	for i := range b.stack.MCPServers {
 		srv := &b.stack.MCPServers[i]
-		if srv.Name == "" || !srv.PersistTraces(b.stack) {
+		if srv.Name == "" || !srv.IsEnabled() || !srv.PersistTraces(b.stack) {
 			continue
 		}
 		path, perr := state.TelemetryServerPath(b.stack.Name, srv.Name, "traces")
@@ -500,7 +501,7 @@ func (b *GatewayBuilder) seedMetricsFromDisk(handler slog.Handler) {
 	logger := slog.New(handler)
 	for i := range b.stack.MCPServers {
 		srv := &b.stack.MCPServers[i]
-		if srv.Name == "" || !srv.PersistMetrics(b.stack) {
+		if srv.Name == "" || !srv.IsEnabled() || !srv.PersistMetrics(b.stack) {
 			continue
 		}
 		path, perr := state.TelemetryServerPath(b.stack.Name, srv.Name, "metrics")
@@ -569,7 +570,7 @@ func (b *GatewayBuilder) Run(ctx context.Context, inst *GatewayInstance, verbose
 		inst.Broker.SetOnAuthorized(func(name string) {
 			go func() {
 				for _, srv := range b.stack.MCPServers {
-					if srv.Name != name {
+					if srv.Name != name || !srv.IsEnabled() {
 						continue
 					}
 					if err := registrar.RegisterOne(context.WithoutCancel(ctx), srv, nil, b.stackPath); err != nil {
@@ -811,6 +812,7 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	}
 	server.SetStackName(b.stack.Name)
 	server.SetStackFile(b.config.StackPath)
+	server.SetOverrideSelection(b.config.OverridePath, b.config.NoOverride)
 	server.SetLogBuffer(logBuffer)
 	server.SetProvisionerRegistry(provisioner.NewRegistry(), "gridctl")
 	server.SetGatewayAddr(fmt.Sprintf("http://localhost:%d", b.config.Port))
@@ -1144,7 +1146,9 @@ func (b *GatewayBuilder) applyTelemetryConfig(apiServer *api.Server, handler slo
 	wantTraces := map[string]bool{}
 	for i := range stack.MCPServers {
 		srv := &stack.MCPServers[i]
-		if srv.Name == "" {
+		// Runtime telemetry writers follow registration. Disabled servers
+		// are not registered, so they do not get writers.
+		if srv.Name == "" || !srv.IsEnabled() {
 			continue
 		}
 		if srv.PersistLogs(stack) {
@@ -1497,6 +1501,7 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 	}
 
 	reloadHandler := reload.NewHandler(b.stackPath, b.stack, inst.Gateway, b.rt, b.config.Port, b.config.BasePort, vaultLookup, vaultSetLookup)
+	reloadHandler.SetOverride(b.config.OverridePath, b.config.NoOverride)
 	reloadHandler.SetSecurityPreflight(reload.NewSecurityPreflight(b.stack, b.config.Bind, b.config.AllowUnauthenticated))
 	reloadHandler.SetLogger(slog.New(handler))
 	reloadHandler.SetNoExpand(b.config.NoExpand)
@@ -1561,10 +1566,11 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 	// startWatcher starts a file watcher for the given stack path.
 	// It is called immediately when --watch is active, and exposed via SetStartWatcher
 	// so POST /api/stack/initialize can activate watching after cold-loading.
-	startWatcher := func(stackPath string) {
+	var overrideWatchMu sync.Mutex
+	overrideWatched := map[string]bool{}
+	startOne := func(watchPath string, extra ...string) {
 		watchCtx, watchCancel := context.WithCancel(ctx)
-
-		watcher := reload.NewWatcher(stackPath, func() error {
+		watcher := reload.NewWatcher(watchPath, func() error {
 			result, err := reloadHandler.Reload(watchCtx)
 			if err != nil {
 				return err
@@ -1578,14 +1584,36 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 			refreshRegistry(watchCtx, inst, projectionHome, slog.New(handler))
 			return nil
 		})
+		for _, name := range extra {
+			watcher.AddBasename(name)
+		}
 		watcher.SetLogger(slog.New(handler))
-
 		go func() {
 			defer watchCancel()
 			if err := watcher.Watch(watchCtx); err != nil && err != context.Canceled {
 				slog.New(handler).Error("file watcher error", "error", err)
 			}
 		}()
+	}
+	startWatcher := func(stackPath string) {
+		extra, separate := overrideWatchTargets(b.config, stackPath)
+		startOne(stackPath, extra...)
+		if separate == "" {
+			return
+		}
+		overrideWatchMu.Lock()
+		if overrideWatched[separate] {
+			overrideWatchMu.Unlock()
+			return
+		}
+		overrideWatched[separate] = true
+		overrideWatchMu.Unlock()
+		dir := filepath.Dir(separate)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			slog.New(handler).Warn("could not create override directory for watching", "path", dir, "error", err)
+			return
+		}
+		startOne(separate)
 	}
 
 	// Expose the watcher starter so initialize can activate it on demand.
@@ -1628,6 +1656,27 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 			fmt.Printf("\nFile watcher enabled for: %s\n", b.stackPath)
 		}
 	}
+}
+
+// overrideWatchTargets returns basenames to add to the stack watcher and,
+// when the override lives in another directory, that path. A missing pack
+// override directory is created by the caller before the second watcher starts.
+func overrideWatchTargets(cfg Config, stackPath string) (extra []string, separate string) {
+	if cfg.NoOverride || stackPath == "" {
+		return nil, ""
+	}
+	overridePath := cfg.OverridePath
+	if overridePath == "" {
+		overridePath = filepath.Join(filepath.Dir(stackPath), config.OverrideFileName)
+	}
+	if filepath.Clean(filepath.Dir(overridePath)) == filepath.Clean(filepath.Dir(stackPath)) {
+		name := filepath.Base(overridePath)
+		if name != filepath.Base(stackPath) {
+			extra = append(extra, name)
+		}
+		return extra, ""
+	}
+	return nil, overridePath
 }
 
 // refreshRegistry reloads the registry store from disk and re-syncs the

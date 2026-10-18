@@ -115,6 +115,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
         // Autoscale decision ring: inset so it does not fight selection highlighting.
         autoscale?.lastDecision === 'up' && 'ring-2 ring-inset ring-primary/40 animate-pulse-glow',
         autoscale?.lastDecision === 'down' && 'ring-2 ring-inset ring-secondary/40',
+        isServer && (data as MCPServerNodeData).enabled === false && 'opacity-60',
         !selected && 'hover:shadow-node-hover',
         !selected && isServer && !lensActiveForNode && 'hover:border-violet-400/60',
         !selected && !isServer && 'hover:border-secondary/70',
@@ -347,7 +348,13 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
           {/* Health indicator (MCP servers only). Suppressed while the
               server needs authorization: the amber needs-auth indicator below
               is the actionable state, and red must never co-render with it. */}
-          {isServer && (data as MCPServerNodeData).healthy === false &&
+          {isServer && (data as MCPServerNodeData).enabled === false && (
+            <div role="status" aria-label={`${data.name} is disabled`}>
+              <Badge status="stopped">disabled</Badge>
+            </div>
+          )}
+
+          {isServer && (data as MCPServerNodeData).enabled !== false && (data as MCPServerNodeData).healthy === false &&
             (data as MCPServerNodeData).authStatus !== 'needs_auth' && (
             <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-status-error/5 border border-status-error/15">
               <HeartPulse size={11} className="text-status-error flex-shrink-0" />
@@ -356,7 +363,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
               </span>
             </div>
           )}
-          {isServer && (data as MCPServerNodeData).healthy === true && (
+          {isServer && (data as MCPServerNodeData).enabled !== false && (data as MCPServerNodeData).healthy === true && (
             <div className="flex items-center gap-1.5 text-xs text-text-muted">
               <HeartPulse size={10} className="text-status-running" />
               <span>Healthy</span>
@@ -366,7 +373,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
           {/* Downstream authorization pending: actionable, amber, never an
               error. Click-through to the node selection opens the Sidebar's
               Authorization section with the Authorize button. */}
-          {isServer && (data as MCPServerNodeData).authStatus === 'needs_auth' && (
+          {isServer && (data as MCPServerNodeData).enabled !== false && (data as MCPServerNodeData).authStatus === 'needs_auth' && (
             <div
               className="flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-status-pending/5 border border-status-pending/20"
               role="status"

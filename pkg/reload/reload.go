@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"sync"
 
 	"github.com/gridctl/gridctl/pkg/config"
@@ -22,7 +23,11 @@ type ReloadResult struct {
 	Added         []string `json:"added,omitempty"`
 	Removed       []string `json:"removed,omitempty"`
 	Modified      []string `json:"modified,omitempty"`
-	Errors        []string `json:"errors,omitempty"`
+	// Disabled and Enabled name servers and resources whose enabled flag
+	// flipped. Dormant edits are applied to currentCfg only and are not listed.
+	Disabled []string `json:"disabled,omitempty"`
+	Enabled  []string `json:"enabled,omitempty"`
+	Errors   []string `json:"errors,omitempty"`
 }
 
 // Handler manages hot reload for a running stack.
@@ -38,6 +43,8 @@ type Handler struct {
 	noExpand          bool
 	vault             config.VaultLookup
 	vaultSet          config.VaultSetLookup
+	overridePath      string
+	noOverride        bool
 	securityPreflight func(*config.Stack) []string
 
 	// Callback for registering new MCP servers with gateway. replicas carries
@@ -86,6 +93,29 @@ func (h *Handler) SetLogger(logger *slog.Logger) {
 // SetNoExpand sets whether to skip OpenAPI env var expansion.
 func (h *Handler) SetNoExpand(noExpand bool) {
 	h.noExpand = noExpand
+}
+
+// SetOverride records the override selection shared by Plan, Reload, and
+// Initialize. An empty path with noOverride false discovers
+// stack.override.yaml beside the stack file. A path whose file is absent
+// is not an error; the merge is skipped until the file appears.
+func (h *Handler) SetOverride(path string, noOverride bool) {
+	if path != "" {
+		if abs, err := filepath.Abs(path); err == nil {
+			path = abs
+		}
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.overridePath = path
+	h.noOverride = noOverride
+}
+
+// OverridePath returns the selected override path, which may not exist yet.
+func (h *Handler) OverridePath() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.overridePath
 }
 
 // SetRegisterServerFunc sets the callback for registering MCP servers.
@@ -163,9 +193,15 @@ func (h *Handler) reload(ctx context.Context, stackPath string, initialize bool)
 		prevCfg = &config.Stack{}
 	}
 	diff := ComputeDiff(prevCfg, newCfg)
+	if isInitial {
+		// A disabled server that was never running lands in no list. It is
+		// carried into currentCfg by the swap below, including the empty-diff
+		// path when the stack contains only parked servers.
+		stripInitialDisabled(diff)
+	}
 
 	if diff.IsEmpty() {
-		if initialize {
+		if isInitial {
 			h.stackPath = stackPath
 			h.currentCfg = newCfg
 		}
@@ -254,6 +290,8 @@ func (h *Handler) reload(ctx context.Context, stackPath string, initialize bool)
 		"added", len(result.Added),
 		"removed", len(result.Removed),
 		"modified", len(result.Modified),
+		"disabled", len(result.Disabled),
+		"enabled", len(result.Enabled),
 		"errors", len(result.Errors))
 	for _, e := range result.Errors {
 		h.logger.Warn("reload: per-item error", "error", e)
@@ -317,6 +355,25 @@ func (h *Handler) applyMCPServerChanges(ctx context.Context, diff MCPServerDiff,
 		}
 
 		result.Removed = append(result.Removed, "mcp-server:"+server.Name)
+	}
+
+	// Disable retires the server without resetting pins. Other field edits
+	// that arrived with the flip are stored in currentCfg and applied if the
+	// server is enabled again.
+	for _, server := range diff.Disabled {
+		h.logger.Info("disabling MCP server", "name", server.Name)
+		if err := h.gateway.UnregisterMCPServerContext(ctx, server.Name); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("failed to retire %s: %v", server.Name, err))
+		}
+		if server.IsContainerBased() && h.currentCfg != nil {
+			for _, name := range replicaContainerNames(h.currentCfg.Name, &server) {
+				if err := h.stopAndRemoveContainer(ctx, name); err != nil {
+					h.logger.Warn("failed to remove container", "name", name, "error", err)
+					result.Errors = append(result.Errors, fmt.Sprintf("failed to remove container %s: %v", name, err))
+				}
+			}
+		}
+		result.Disabled = append(result.Disabled, "mcp-server:"+server.Name)
 	}
 
 	// Handle modified servers (stop old, start new)
@@ -447,7 +504,57 @@ func (h *Handler) applyMCPServerChanges(ctx context.Context, diff MCPServerDiff,
 		result.Added = append(result.Added, "mcp-server:"+server.Name)
 	}
 
+	// Enable follows the Added path: prepare, start, register. Pins are not
+	// reset here; registration reconciles them.
+	for _, server := range diff.Enabled {
+		h.logger.Info("enabling MCP server", "name", server.Name)
+		desiredImage, err := h.prepareMCPServer(ctx, server, newCfg)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("failed to enable %s: %v", server.Name, err))
+			h.gateway.RecordRegistrationFailure(server.Name, err)
+			// Leave the server disabled in the swapped config. The next
+			// reload classifies it as Enabled and tries again. Added does
+			// the same by removing the server; restoring the disabled copy
+			// keeps the transition on the enable path, including pins.
+			restoreDisabledMCPServer(newCfg, h.currentCfg, server.Name)
+			continue
+		}
+		if err := h.startMCPServer(ctx, server, newCfg, desiredImage); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("failed to enable %s: %v", server.Name, err))
+			h.gateway.RecordRegistrationFailure(server.Name, err)
+			continue
+		}
+		result.Enabled = append(result.Enabled, "mcp-server:"+server.Name)
+	}
+
 	return nil
+}
+
+// stripInitialDisabled removes disabled servers and resources that were not
+// in the previous config. Initial load carries them into currentCfg only.
+func stripInitialDisabled(diff *ConfigDiff) {
+	diff.MCPServers.Dormant = keepNamedChanges(diff.MCPServers.Dormant)
+	diff.Resources.Dormant = keepNamedResourceChanges(diff.Resources.Dormant)
+}
+
+func keepNamedChanges(changes []MCPServerChange) []MCPServerChange {
+	var out []MCPServerChange
+	for _, change := range changes {
+		if change.Old.Name != "" {
+			out = append(out, change)
+		}
+	}
+	return out
+}
+
+func keepNamedResourceChanges(changes []ResourceChange) []ResourceChange {
+	var out []ResourceChange
+	for _, change := range changes {
+		if change.Old.Name != "" {
+			out = append(out, change)
+		}
+	}
+	return out
 }
 
 func replaceMCPServer(stack *config.Stack, server config.MCPServer) {
@@ -468,6 +575,21 @@ func removeMCPServer(stack *config.Stack, name string) {
 	}
 }
 
+// restoreDisabledMCPServer puts the previous disabled copy back so a later
+// reload classifies the server as Enabled again. A missing disabled copy is
+// removed so the next reload treats the server as Added and still retries.
+func restoreDisabledMCPServer(stack, previous *config.Stack, name string) {
+	if previous != nil {
+		for i := range previous.MCPServers {
+			if previous.MCPServers[i].Name == name && !previous.MCPServers[i].IsEnabled() {
+				replaceMCPServer(stack, previous.MCPServers[i])
+				return
+			}
+		}
+	}
+	removeMCPServer(stack, name)
+}
+
 func (h *Handler) applyResourceChanges(ctx context.Context, diff ResourceDiff, newCfg *config.Stack, result *ReloadResult) error {
 	// Remove old resources
 	for _, res := range diff.Removed {
@@ -480,6 +602,18 @@ func (h *Handler) applyResourceChanges(ctx context.Context, diff ResourceDiff, n
 		}
 
 		result.Removed = append(result.Removed, "resource:"+res.Name)
+	}
+
+	for _, res := range diff.Disabled {
+		h.logger.Info("disabling resource", "name", res.Name)
+		if h.currentCfg != nil {
+			name := containerName(h.currentCfg.Name, res.Name)
+			if err := h.stopAndRemoveContainer(ctx, name); err != nil {
+				h.logger.Warn("failed to remove container", "name", res.Name, "error", err)
+				result.Errors = append(result.Errors, fmt.Sprintf("failed to remove resource %s: %v", res.Name, err))
+			}
+		}
+		result.Disabled = append(result.Disabled, "resource:"+res.Name)
 	}
 
 	// Handle modified resources
@@ -509,6 +643,15 @@ func (h *Handler) applyResourceChanges(ctx context.Context, diff ResourceDiff, n
 		}
 
 		result.Added = append(result.Added, "resource:"+res.Name)
+	}
+
+	for _, res := range diff.Enabled {
+		h.logger.Info("enabling resource", "name", res.Name)
+		if err := h.startResource(ctx, res, newCfg); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("failed to enable %s: %v", res.Name, err))
+			continue
+		}
+		result.Enabled = append(result.Enabled, "resource:"+res.Name)
 	}
 
 	return nil

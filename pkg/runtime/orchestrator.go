@@ -208,17 +208,21 @@ func (o *Orchestrator) Up(ctx context.Context, stack *config.Stack, opts UpOptio
 		}
 	}
 
-	// Start resources first (databases, etc.)
-	for _, res := range stack.Resources {
+	// Start resources first (databases, etc.). Disabled resources are not
+	// started and do not consume a result entry.
+	for _, res := range stack.ActiveResources() {
 		if err := o.startResource(ctx, stack, &res); err != nil {
 			return nil, fmt.Errorf("starting resource %s: %w", res.Name, err)
 		}
 	}
 
-	// Start MCP servers and collect info
+	// Start MCP servers and collect info. Disabled servers are not prepared,
+	// started, or added to the result. A skipped container server consumes
+	// no host-port index, so later servers take lower ports than in an
+	// all-enabled run. --base-port is the starting port only.
 	result := &UpResult{}
 	containerIndex := 0 // Track container-based servers for port allocation
-	for _, server := range stack.MCPServers {
+	for _, server := range stack.ActiveMCPServers() {
 		replicas := replicaCount(&server)
 		desiredImage := ""
 		if server.IsContainerBased() {

@@ -6,6 +6,7 @@ package stackedit
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,10 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+// ErrServerNotFound is returned when a stack or override edit names a server
+// that is not declared.
+var ErrServerNotFound = errors.New("server not found")
 
 // AppendResources appends one or more mapping snippets to the top-level
 // sequence at key in source, in order. The yaml.Node round-trip preserves
@@ -195,6 +200,209 @@ func RemoveResourceByName(source []byte, key, name string) ([]byte, error) {
 		}
 	}
 	return nil, fmt.Errorf("server %q not found in %s", name, key)
+}
+
+// SetServerEnabled sets or clears enabled on the named mcp-servers entry.
+// enabled false inserts enabled: false. enabled true removes the key so the
+// file does not accumulate enabled: true. Comments and ordering are preserved.
+// changed is false when the server is already in the requested state.
+// ErrServerNotFound is returned for an unknown server.
+func SetServerEnabled(source []byte, name string, enabled bool) ([]byte, bool, error) {
+	root, doc, err := parseStackDocument(source)
+	if err != nil {
+		return nil, false, err
+	}
+	seq := mappingValue(doc, "mcp-servers")
+	if seq == nil || seq.Kind != yaml.SequenceNode {
+		return nil, false, fmt.Errorf("%w: %s", ErrServerNotFound, name)
+	}
+	entry := sequenceEntryByName(seq, name)
+	if entry == nil {
+		return nil, false, fmt.Errorf("%w: %s", ErrServerNotFound, name)
+	}
+	changed := setEnabledKey(entry, enabled)
+	if !changed {
+		return source, false, nil
+	}
+	out, err := encodeNode(root)
+	if err != nil {
+		return nil, false, err
+	}
+	return out, true, nil
+}
+
+// SetOverrideEnabled sets enabled on mcp-servers.<name> in an override
+// document. A missing file body is created. Other keys are preserved.
+// Unlike the base stack, enabled: true is written explicitly: the override
+// must be able to turn a base enabled: false back on.
+func SetOverrideEnabled(source []byte, name string, enabled bool) ([]byte, bool, error) {
+	if name == "" {
+		return nil, false, fmt.Errorf("%w: empty name", ErrServerNotFound)
+	}
+	if len(bytes.TrimSpace(source)) == 0 {
+		source = []byte("mcp-servers:\n")
+	}
+	root, doc, err := parseStackDocument(source)
+	if err != nil {
+		return nil, false, err
+	}
+	servers := findOrCreateMapping(doc, "mcp-servers")
+	// An empty flow mapping (`mcp-servers: {}`) would keep that style and
+	// emit `mcp-servers: {name: {enabled: true}}`. New files are block style.
+	if len(servers.Content) == 0 {
+		servers.Style = 0
+	}
+	entry := findOrCreateMapping(servers, name)
+	if len(entry.Content) == 0 {
+		entry.Style = 0
+	}
+	changed := setOverrideEnabledKey(entry, enabled)
+	if !changed {
+		return source, false, nil
+	}
+	out, err := encodeNode(root)
+	if err != nil {
+		return nil, false, err
+	}
+	return out, true, nil
+}
+
+func parseStackDocument(source []byte) (*yaml.Node, *yaml.Node, error) {
+	var root yaml.Node
+	if err := yaml.Unmarshal(source, &root); err != nil {
+		return nil, nil, fmt.Errorf("parse stack yaml: %w", err)
+	}
+	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 {
+		return nil, nil, fmt.Errorf("parse stack yaml: not a document")
+	}
+	doc := root.Content[0]
+	if doc.Kind != yaml.MappingNode {
+		return nil, nil, fmt.Errorf("parse stack yaml: top-level not a mapping")
+	}
+	return &root, doc, nil
+}
+
+func mappingValue(doc *yaml.Node, key string) *yaml.Node {
+	if doc == nil || doc.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(doc.Content); i += 2 {
+		if doc.Content[i].Value == key {
+			return doc.Content[i+1]
+		}
+	}
+	return nil
+}
+
+func sequenceEntryByName(seq *yaml.Node, name string) *yaml.Node {
+	for _, entry := range seq.Content {
+		if entry.Kind != yaml.MappingNode {
+			continue
+		}
+		if mappingScalar(entry, "name") == name {
+			return entry
+		}
+	}
+	return nil
+}
+
+func mappingScalar(mapping *yaml.Node, key string) string {
+	node := mappingValue(mapping, key)
+	if node == nil || node.Kind != yaml.ScalarNode {
+		return ""
+	}
+	return node.Value
+}
+
+// setEnabledKey inserts enabled: false or removes the key when enabling.
+// Returns whether the node changed.
+func setEnabledKey(entry *yaml.Node, enabled bool) bool {
+	idx := mappingKeyIndex(entry, "enabled")
+	if enabled {
+		if idx < 0 {
+			return false
+		}
+		value := entry.Content[idx+1]
+		if value.Kind == yaml.ScalarNode && (value.Value == "true" || value.Value == "True" || value.Value == "yes") {
+			entry.Content = append(entry.Content[:idx], entry.Content[idx+2:]...)
+			return true
+		}
+		if value.Kind == yaml.ScalarNode && (value.Value == "false" || value.Value == "False" || value.Value == "no") {
+			entry.Content = append(entry.Content[:idx], entry.Content[idx+2:]...)
+			return true
+		}
+		entry.Content = append(entry.Content[:idx], entry.Content[idx+2:]...)
+		return true
+	}
+	if idx >= 0 {
+		value := entry.Content[idx+1]
+		if value.Kind == yaml.ScalarNode && (value.Value == "false" || value.Value == "False" || value.Value == "no") {
+			return false
+		}
+		entry.Content[idx+1] = boolScalar("false")
+		return true
+	}
+	entry.Content = append(entry.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "enabled"}, boolScalar("false"))
+	return true
+}
+
+// setOverrideEnabledKey writes an explicit enabled bool, including true.
+func setOverrideEnabledKey(entry *yaml.Node, enabled bool) bool {
+	want := "false"
+	if enabled {
+		want = "true"
+	}
+	idx := mappingKeyIndex(entry, "enabled")
+	if idx >= 0 {
+		value := entry.Content[idx+1]
+		if value.Kind == yaml.ScalarNode && value.Value == want {
+			return false
+		}
+		entry.Content[idx+1] = boolScalar(want)
+		return true
+	}
+	entry.Content = append(entry.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "enabled"}, boolScalar(want))
+	return true
+}
+
+func boolScalar(value string) *yaml.Node {
+	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: value}
+}
+
+func mappingKeyIndex(mapping *yaml.Node, key string) int {
+	if mapping == nil || mapping.Kind != yaml.MappingNode {
+		return -1
+	}
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value == key {
+			return i
+		}
+	}
+	return -1
+}
+
+func findOrCreateMapping(parent *yaml.Node, key string) *yaml.Node {
+	if parent.Kind != yaml.MappingNode {
+		parent.Kind = yaml.MappingNode
+		parent.Tag = "!!map"
+		parent.Content = nil
+	}
+	for i := 0; i+1 < len(parent.Content); i += 2 {
+		if parent.Content[i].Value != key {
+			continue
+		}
+		v := parent.Content[i+1]
+		if v.Kind == yaml.MappingNode {
+			return v
+		}
+		mapping := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+		parent.Content[i+1] = mapping
+		return mapping
+	}
+	keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}
+	mapping := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	parent.Content = append(parent.Content, keyNode, mapping)
+	return mapping
 }
 
 // encodeNode marshals a patched document with the package-standard two-space

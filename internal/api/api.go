@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,6 +68,8 @@ type Server struct {
 	runMu              sync.RWMutex
 	runRecorder        *runs.Recorder
 	stackFile          string
+	overridePath       string
+	noOverride         bool
 	allowedOrigins     []string
 	allowedHosts       []string
 	authType           string
@@ -340,6 +343,18 @@ func (s *Server) SetStackFile(path string) {
 	s.stackFile = path
 }
 
+// SetOverrideSelection records the daemon's startup override selection.
+// An empty path discovers stack.override.yaml. noOverride suppresses it.
+func (s *Server) SetOverrideSelection(path string, noOverride bool) {
+	if path != "" {
+		if abs, err := filepath.Abs(path); err == nil {
+			path = abs
+		}
+	}
+	s.overridePath = path
+	s.noOverride = noOverride
+}
+
 // SetMetricsAccumulator sets the token metrics accumulator.
 func (s *Server) SetMetricsAccumulator(acc *metrics.Accumulator) {
 	s.metricsAccumulator = acc
@@ -572,6 +587,7 @@ func (s *Server) Handler() http.Handler {
 	// Telemetry persistence endpoints — opt-in disk persistence inventory
 	// and wipe; the per-server PATCH lives under /api/mcp-servers/{name}/.
 	mux.HandleFunc("PATCH /api/mcp-servers/{name}/telemetry", s.handlePatchServerTelemetry)
+	mux.HandleFunc("PATCH /api/mcp-servers/{name}", s.handlePatchServerEnabled)
 	mux.HandleFunc("GET /api/telemetry/inventory", s.handleGetTelemetryInventory)
 	mux.HandleFunc("DELETE /api/telemetry", s.handleDeleteTelemetry)
 
@@ -742,6 +758,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		// Home is the resolved home directory this daemon runs under, so
 		// CLI subcommands can detect a GRIDCTL_HOME mismatch (add-only).
 		Home string `json:"home,omitempty"`
+		// Override is the override file merged into the running stack.
+		Override string `json:"override,omitempty"`
 		// Features maps each ENABLED experimental flag name to true —
 		// the capability-bit view for UI gating. Omitted when nothing is
 		// enabled so the no-flags payload is byte-identical to before.
@@ -767,6 +785,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	if home, err := state.Home(); err == nil {
 		status.Home = home
+	}
+	if override := s.effectiveOverridePath(); override != "" {
+		status.Override = override
 	}
 	if cm := s.gateway.CodeModeStatus(); cm != "off" {
 		status.CodeMode = cm
@@ -932,6 +953,13 @@ type MCPServerStatus struct {
 	// unhealthy server. Healthy servers omit it. Lines have already passed
 	// through the gateway logger, including redaction.
 	StderrTail []string `json:"stderrTail,omitempty"`
+
+	// Enabled is false for a server that is declared but not registered.
+	// Omitted on registered servers so existing payloads stay unchanged.
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// Overrides lists field names applied from the active override file.
+	Overrides []string `json:"overrides,omitempty"`
 }
 
 // MCPServerSourceStatus reports declared source identity plus immutable
@@ -993,7 +1021,7 @@ func (s *Server) getMCPServerStatuses(ctx context.Context) []MCPServerStatus {
 	}
 	s.enrichMCPServerStatuses(ctx, statuses)
 	s.fillStderrTails(statuses)
-	return statuses
+	return s.appendDisabledServers(statuses)
 }
 
 // fillStderrTails copies the last redacted stderr lines for unhealthy servers.

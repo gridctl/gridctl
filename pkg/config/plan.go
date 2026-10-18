@@ -20,6 +20,8 @@ type DiffItem struct {
 	Kind    string     `json:"kind"` // "mcp-server", "resource", "gateway", "network"
 	Name    string     `json:"name"`
 	Details []string   `json:"details,omitempty"` // human-readable change descriptions
+	// Override is true when a changed detail comes from an override file.
+	Override bool `json:"override,omitempty"`
 }
 
 // BuildAction describes the resolved image work associated with a source
@@ -60,6 +62,8 @@ type PlanDiff struct {
 	Summary             string                  `json:"summary"`
 	VariableDiagnostics []DeclarationDiagnostic `json:"variableDiagnostics,omitempty"`
 	Builds              []BuildAction           `json:"builds,omitempty"`
+	// Override is the override file merged into the proposed stack.
+	Override string `json:"override,omitempty"`
 }
 
 // ComputePlan compares a new spec against the currently running spec and returns a structured diff.
@@ -87,6 +91,7 @@ func ComputePlan(proposed, current *Stack) *PlanDiff {
 
 	diff.HasChanges = len(diff.Items) > 0
 	diff.Summary = buildSummary(diff.Items)
+	AnnotatePlanOverride(diff, proposed)
 
 	return diff
 }
@@ -155,6 +160,9 @@ func compareMCPServers(a, b MCPServer) []string {
 		return nil
 	}
 	var details []string
+	if a.IsEnabled() != b.IsEnabled() {
+		details = append(details, fmt.Sprintf("enabled: %t → %t", b.IsEnabled(), a.IsEnabled()))
+	}
 	if !ExecutionEqual(a, b) {
 		details = append(details, "execution changed: recreate; review resolved restrictions and relaxations")
 	}
@@ -202,6 +210,9 @@ func compareMCPServers(a, b MCPServer) []string {
 
 func compareResources(a, b Resource) []string {
 	var details []string
+	if a.IsEnabled() != b.IsEnabled() {
+		details = append(details, fmt.Sprintf("enabled: %t → %t", b.IsEnabled(), a.IsEnabled()))
+	}
 	if a.Image != b.Image {
 		details = append(details, fmt.Sprintf("image: %s → %s", b.Image, a.Image))
 	}

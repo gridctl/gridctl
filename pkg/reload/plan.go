@@ -23,6 +23,11 @@ func (h *Handler) loadOptions() []config.LoadOption {
 	if h.vaultSet != nil {
 		loadOpts = append(loadOpts, config.WithVaultSets(h.vaultSet))
 	}
+	if h.noOverride {
+		loadOpts = append(loadOpts, config.WithoutOverride())
+	} else if h.overridePath != "" {
+		loadOpts = append(loadOpts, config.WithOverride(h.overridePath))
+	}
 	return loadOpts
 }
 

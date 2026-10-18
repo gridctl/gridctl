@@ -72,6 +72,22 @@ type Stack struct {
 	// list is a superset that callers narrow by checking the vault themselves
 	// (see the drift endpoint). Computed, never persisted.
 	UnresolvedRefs []string `yaml:"-" json:"-"`
+
+	// Overrides records field names applied from an override file, keyed by
+	// server name. Computed during merge; never persisted.
+	Overrides map[string][]string `yaml:"-" json:"-"`
+
+	// OverridePath is the override file merged into this stack. Empty when
+	// no override was applied. Computed, never persisted.
+	OverridePath string `yaml:"-" json:"-"`
+
+	// DiscoveredOverride is an override file found beside an export source
+	// and not merged. ExportNotices reads it. Never persisted.
+	DiscoveredOverride string `yaml:"-" json:"-"`
+
+	// overrideWarnings collects validate-only notices about an override
+	// that names a server declared only by an unresolved parent.
+	overrideWarnings []string
 }
 
 // VariableDeclaration documents one stack or pack variable prerequisite.
@@ -610,6 +626,12 @@ type MCPServer struct {
 	// Description is an operator note. It is accepted on every server kind,
 	// preserved by export, and shown in status JSON. It is not a credential.
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+
+	// Enabled controls whether this server is started and registered.
+	// Nil and true are equivalent. False parks the server: it is still
+	// validated, but it is not built, started, registered, health-checked,
+	// or pinned. Absent preserves today's behavior (Article IX).
+	Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 }
 
 // ServerAuth defines downstream authentication for an external URL MCP server.
@@ -806,6 +828,12 @@ type SSHConfig struct {
 	JumpHost       string `yaml:"jumpHost,omitempty"`       // Optional: bastion/jump host ([user@]host[:port])
 }
 
+// IsEnabled reports whether the server should be started and registered.
+// A nil receiver and a nil Enabled pointer are enabled.
+func (s *MCPServer) IsEnabled() bool {
+	return s == nil || s.Enabled == nil || *s.Enabled
+}
+
 // IsExternal returns true if this is an external MCP server (URL-only, no container).
 func (s *MCPServer) IsExternal() bool {
 	return s.URL != "" && s.Image == "" && s.Source == nil
@@ -904,36 +932,89 @@ type Resource struct {
 	Ports   []string          `yaml:"ports,omitempty"`
 	Volumes []string          `yaml:"volumes,omitempty"`
 	Network string            `yaml:"network,omitempty"` // Network to join (for multi-network mode)
+
+	// Enabled controls whether this resource is started. Nil and true are
+	// equivalent. False parks the resource: it is still validated, but it
+	// is not started. Absent preserves today's behavior (Article IX).
+	Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 }
 
-// NeedsContainerRuntime returns true if the stack has workloads requiring a container runtime.
+// IsEnabled reports whether the resource should be started. A nil receiver
+// and a nil Enabled pointer are enabled.
+func (r *Resource) IsEnabled() bool {
+	return r == nil || r.Enabled == nil || *r.Enabled
+}
+
+// ActiveMCPServers returns enabled servers in declaration order.
+func (s *Stack) ActiveMCPServers() []MCPServer {
+	if s == nil {
+		return nil
+	}
+	out := make([]MCPServer, 0, len(s.MCPServers))
+	for _, srv := range s.MCPServers {
+		if srv.IsEnabled() {
+			out = append(out, srv)
+		}
+	}
+	return out
+}
+
+// ActiveResources returns enabled resources in declaration order.
+func (s *Stack) ActiveResources() []Resource {
+	if s == nil {
+		return nil
+	}
+	out := make([]Resource, 0, len(s.Resources))
+	for _, res := range s.Resources {
+		if res.IsEnabled() {
+			out = append(out, res)
+		}
+	}
+	return out
+}
+
+// NeedsContainerRuntime returns true if the stack has enabled workloads requiring a container runtime.
+// Disabled container servers and resources do not count: a stack whose only
+// container workloads are parked demands no runtime and creates no network.
 func (s *Stack) NeedsContainerRuntime() bool {
-	if len(s.Resources) > 0 {
-		return true
+	if s == nil {
+		return false
+	}
+	for _, res := range s.Resources {
+		if res.IsEnabled() {
+			return true
+		}
 	}
 	for _, srv := range s.MCPServers {
-		if srv.IsContainerBased() {
+		if srv.IsEnabled() && srv.IsContainerBased() {
 			return true
 		}
 	}
 	return false
 }
 
-// ContainerWorkloads returns human-readable descriptions of workloads that require a container runtime.
+// ContainerWorkloads returns human-readable descriptions of enabled workloads that require a container runtime.
 func (s *Stack) ContainerWorkloads() []string {
+	if s == nil {
+		return nil
+	}
 	var workloads []string
 	for _, srv := range s.MCPServers {
-		if srv.IsContainerBased() {
-			detail := "container"
-			if srv.Image != "" {
-				detail = "image: " + srv.Image
-			} else if srv.Source != nil {
-				detail = "source: " + srv.Source.Type
-			}
-			workloads = append(workloads, fmt.Sprintf("  - %-20s (%s)", srv.Name, detail))
+		if !srv.IsEnabled() || !srv.IsContainerBased() {
+			continue
 		}
+		detail := "container"
+		if srv.Image != "" {
+			detail = "image: " + srv.Image
+		} else if srv.Source != nil {
+			detail = "source: " + srv.Source.Type
+		}
+		workloads = append(workloads, fmt.Sprintf("  - %-20s (%s)", srv.Name, detail))
 	}
 	for _, res := range s.Resources {
+		if !res.IsEnabled() {
+			continue
+		}
 		workloads = append(workloads, fmt.Sprintf("  - %-20s (resource)", res.Name))
 	}
 	return workloads
@@ -943,6 +1024,11 @@ func (s *Stack) ContainerWorkloads() []string {
 func (s *Stack) NonContainerWorkloads() []string {
 	var workloads []string
 	for _, srv := range s.MCPServers {
+		// Disabled servers are not running workloads. Spec health and
+		// validation still include them; this list is a deploy summary.
+		if !srv.IsEnabled() {
+			continue
+		}
 		var kind string
 		switch {
 		case srv.IsExternal():

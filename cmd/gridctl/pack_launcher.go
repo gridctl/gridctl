@@ -23,13 +23,14 @@ func (packStackLauncher) Launch(ctx context.Context, opts packops.LaunchOptions)
 		port = 8180
 	}
 	sc := controller.New(controller.Config{
-		StackPath: opts.StackPath,
-		Port:      port,
-		Replace:   opts.Replace,
-		Quiet:     true,
-		Silent:    true,
-		Runtime:   runtimeFlag,
-		LogLevel:  logLevel,
+		StackPath:    opts.StackPath,
+		Port:         port,
+		Replace:      opts.Replace,
+		Quiet:        true,
+		Silent:       true,
+		Runtime:      runtimeFlag,
+		LogLevel:     logLevel,
+		OverridePath: opts.OverridePath,
 	})
 	if err := sc.Deploy(ctx); err != nil {
 		return packops.LaunchResult{}, err

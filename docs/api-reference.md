@@ -174,6 +174,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
 | `sessions` | int | Active Streamable HTTP session count (see [`/api/sessions`](#get-apisessions)) |
 | `stack_name` | string | Active stack name (omitted in stackless mode) |
 | `home` | string | Resolved home directory this daemon runs under (omitted when unresolvable); lets CLI subcommands detect a `GRIDCTL_HOME` mismatch |
+| `override` | string | Override file merged into the running stack (omitted when none) |
 | `registry` | object | Registry skill counts (omitted if empty) |
 | `code_mode` | string | Code mode status (omitted if `"off"`) |
 | `token_usage` | object | Token usage metrics (omitted if no metrics accumulator) |
@@ -214,7 +215,7 @@ A server includes `stderrTail` only when `healthy` is false: up to the last 10 r
 
 Each registered server also reports `promptCount`, `mcpResourceCount`, and `resourceTemplateCount` from the last successful list. Computing status does not list downstream servers again. `mcpResourceCount` counts MCP resources, not the infrastructure `resources` array on this response. `capabilities` reports the booleans the downstream declared: `prompts`, `resources`, `resourcesSubscribe`, `resourcesListChanged`, and `toolsListChanged`. Resource subscribe and resource list-changed are reported but not advertised upstream. `toolsListChanged` is what the downstream declared; handshake clients are separately told that the gateway itself emits tool list changes. `resourceCollisions` counts resource URIs, identical templates, and `ui://` index entries this server lost to another server. `resourceListError` is omitted when the last resource list succeeded; otherwise it is `timeout`, `canceled`, `rpc`, or `transport`. It covers `resources/list` and `resources/templates/list` only. A `prompts/list` failure is logged with the server name and category and is not stored on this field. An upstream disconnect is not recorded as a server fault. The Stack sidebar labels the counts Prompts, MCP resources, and Templates, shows a tools list changed badge when `toolsListChanged` is true, and shows a warning row for a list error or a non-zero collision count.
 
-Each registered server also reports `description` (string, omitted when unset) from the stack server's `description` field. Headers are not included. Each registered server also reports `protocolVersion` (string, omitted when the server did not report one or has no MCP handshake, as with OpenAPI adapters) carrying the MCP protocol version negotiated at initialize, and `protocolGeneration` (string, `"handshake"` or `"stateless"`, omitted for OpenAPI adapters) carrying the resolved MCP protocol generation. `/api/sessions` responses carry `entries`, one `{id, generation, protocolVersion}` object per active session, alongside the legacy bare `sessions` ID list. A server that failed gateway registration (unreachable endpoint, initialize failure, or unsupported protocol version) still appears in the list with `registrationFailed: true`, `healthy: false`, the failure reason in `healthError`, `initialized: false`, and no replicas, so declared servers are never silently absent. A retryable failure (the server was not reachable) is not terminal: the gateway re-attempts registration on the health-monitor cadence with exponential backoff, `healthError` carries a `retrying in Ns` hint while the loop runs, and the row flips to a normal registered server once the backend becomes reachable. Authorization failures and configuration errors are not retried, and `POST /api/mcp-servers/{name}/restart` on a retrying server forces an immediate attempt instead of returning 404.
+Each registered server also reports `description` (string, omitted when unset) from the stack server's `description` field. Headers are not included. Each registered server also reports `protocolVersion` (string, omitted when the server did not report one or has no MCP handshake, as with OpenAPI adapters) carrying the MCP protocol version negotiated at initialize, and `protocolGeneration` (string, `"handshake"` or `"stateless"`, omitted for OpenAPI adapters) carrying the resolved MCP protocol generation. `/api/sessions` responses carry `entries`, one `{id, generation, protocolVersion}` object per active session, alongside the legacy bare `sessions` ID list. A disabled server is appended after registered servers, in stack order, with `enabled: false`, `initialized: false`, transport from config, and an empty `tools` array. `transport` is `http`, `stdio`, or `sse` when the config names one of those. An empty value on a URL or container server is `http`. Local, SSH, OpenAPI, and A2A rows leave `transport` empty, matching a registered row of that kind. Kind stays on the existing booleans. It is omitted when no reload handler is installed. `enabled` is omitted on an enabled server. `overrides` (string array, omitted when empty) names fields the active override set, such as `enabled` and `env`. A server that failed gateway registration (unreachable endpoint, initialize failure, or unsupported protocol version) still appears in the list with `registrationFailed: true`, `healthy: false`, the failure reason in `healthError`, `initialized: false`, and no replicas, so declared servers are never silently absent. A retryable failure (the server was not reachable) is not terminal: the gateway re-attempts registration on the health-monitor cadence with exponential backoff, `healthError` carries a `retrying in Ns` hint while the loop runs, and the row flips to a normal registered server once the backend becomes reachable. Authorization failures and configuration errors are not retried, and `POST /api/mcp-servers/{name}/restart` on a retrying server forces an immediate attempt instead of returning 404.
 
 A2A sources add `a2a: true` to their server status row; the field is omitted
 for other sources. Registered adapters add `a2aStatus` with optional published
@@ -1138,7 +1139,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/reload
 }
 ```
 
-Security differences return HTTP `409` with the [restart-required envelope](#reload-security-results), even if no ordinary configuration changed. Other application failures return `400` with `success: false`, a `message`, and optional per-item `errors`; they can leave partially applied ordinary changes. Returns `503` while the reload handler is unavailable, including early startup. Empty change/error lists are omitted.
+Security differences return HTTP `409` with the [restart-required envelope](#reload-security-results), even if no ordinary configuration changed. Other application failures return `400` with `success: false`, a `message`, and optional per-item `errors`; they can leave partially applied ordinary changes. Returns `503` while the reload handler is unavailable, including early startup. Empty change/error lists are omitted. Nonempty `disabled` and `enabled` lists name servers and resources whose `enabled` flag flipped (`mcp-server:<name>` or `resource:<name>`). A field edit on a workload that stays disabled updates the loaded config and is not listed.
 
 ---
 
@@ -1345,7 +1346,7 @@ Malformed requests and resolution failures return `422` as described for `/api/p
 
 Compares the on-disk stack file against the configuration the daemon loaded and returns a plan diff. Nothing in the UI calls this endpoint. The spec-mode overlay reads drift from [`/api/stack/health`](#get-apistackhealth).
 
-Store-backed `image`, `url`, and `network` details on an `mcp-server` item are reported as `image changed`, `url changed`, and `network changed`, without old or new values. A `resource` item uses that same form for store-backed `image` and `network`. Other details are unchanged. A candidate that cannot be loaded returns `500` with `Failed to load stack file: ...` and a value-free message. Missing variable names may appear. Resolved values never do.
+Optional `override` is the path the daemon merged, omitted when none. A change item adds `override: true` when a detail comes from an overridden field. Store-backed `image`, `url`, and `network` details on an `mcp-server` item are reported as `image changed`, `url changed`, and `network changed`, without old or new values. A `resource` item uses that same form for store-backed `image` and `network`. Other details are unchanged. A candidate that cannot be loaded returns `500` with `Failed to load stack file: ...` and a value-free message. Missing variable names may appear. Resolved values never do.
 
 **Auth:** Yes
 
@@ -1379,7 +1380,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/stack/health
 }
 ```
 
-`validation.status` is `valid`, `warnings`, or `errors`. `drift.status` is `in-sync`, `drifted`, or `unknown`. Replica entries here do not include `exit` or server `stderrTail`. Those fields are on [`/api/mcp-servers`](#get-apimcp-servers) and [`/api/status`](#get-apistatus). Multi-replica entries do include `restartPolicy`, `restartExhausted`, and `containerRestarts` when set, with the same meaning as on `/api/mcp-servers`. An autoscaled server omits `restartPolicy`.
+Optional `override` is the override file active for this check, omitted when none. `validation.status` is `valid`, `warnings`, or `errors`. `drift.status` is `in-sync`, `drifted`, or `unknown`. Replica entries here do not include `exit` or server `stderrTail`. Those fields are on [`/api/mcp-servers`](#get-apimcp-servers) and [`/api/status`](#get-apistatus). Multi-replica entries do include `restartPolicy`, `restartExhausted`, and `containerRestarts` when set, with the same meaning as on `/api/mcp-servers`. An autoscaled server omits `restartPolicy`.
 
 #### `GET /api/stack/spec`
 
@@ -1398,7 +1399,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/stack/spec
 
 #### `GET /api/stack/export`
 
-Rereads the active stack configuration and returns semantic YAML without resolving environment or stored values. Authored references, including `$NAME`, `${NAME}`, `${var:KEY}`, and `${vault:KEY}`, retain their decoded content. The additive `notice` explains the authored-literal review requirement. When the exported stack has a `configs` `file` entry, `notice` appends a second line: `Referenced config files are not bundled; copy them alongside the exported stack.` The Stack spec view's Export YAML action uses this endpoint, displays its notice and value-free error message (including the field path and corrective action), and never downloads raw editor content as a substitute.
+Rereads the active stack configuration and returns semantic YAML without resolving environment or stored values. Authored references, including `$NAME`, `${NAME}`, `${var:KEY}`, and `${vault:KEY}`, retain their decoded content. The additive `notice` explains the authored-literal review requirement. When the exported stack has a `configs` `file` entry, `notice` appends a second line: `Referenced config files are not bundled; copy them alongside the exported stack.` When `stack.override.yaml` exists beside the stack file, `notice` appends `an override file exists at <path>; pass --with-override to include it`. This endpoint does not merge that file. A pack override under `~/.gridctl/overrides/` is not discovered. The Stack spec view's Export YAML action uses this endpoint, displays its notice and value-free error message (including the field path and corrective action), and never downloads raw editor content as a substitute.
 
 Nonempty inline credentials in gateway auth, downstream token/value/client-secret, A2A bearer token (`a2a.auth.token`), tokenizer API key, source credential reference, every `headers:` value, and recognized sensitive environment keys reject the entire export. Header paths use `mcp-servers[i].headers[j]`, a zero-based index into alphabetically sorted names. Nonempty default/replacement operands in those fields also reject export. Client IDs are not classified as secrets. Errors use the existing `{"error":"..."}` shape with HTTP 500 and bounded indexed locations, never credential values. No `content` is returned on failure.
 
@@ -1874,6 +1875,36 @@ Error codes:
 - `parse_failed` (422) - Document served but not valid OpenAPI 3.x, including a disallowed external `$ref` or an unexpanded `${VAR}` in the path
 - `rate_limited` (429 / 503) - Session or global load cap exceeded
 - `internal` (500 / 503) - Unexpected failure, or preview not configured on this daemon
+
+#### `PATCH /api/mcp-servers/{name}`
+
+Sets `enabled` on one MCP server in the base stack file and reloads. The body is `{"enabled": <bool>}`. Enabling removes the key. Disabling inserts `enabled: false`. The handler never edits an override file.
+
+**Auth:** Yes
+
+When the write target would be an override (a configured override path, the daemon's merged path, a pinned pack checkout, or an existing sibling `stack.override.yaml`), the handler writes nothing and returns `409` with code `override_required`. A pinned checkout is refused even when the daemon was started with `--no-override`. That check runs before the unknown-server check. The message is `This stack writes enable and disable to an override file.` The hint names `gridctl enable` or `gridctl disable` and the override path.
+
+```bash
+curl -X PATCH -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": false}' \
+  http://localhost:8180/api/mcp-servers/github
+```
+
+**Response:** `{"server","enabled","changed","reloaded","reloadedAt"}`. `reloadedAt` is omitted when the reload did not run. An unchanged server returns `changed: false` and `reloaded: false` without writing.
+
+Error codes:
+
+- `override_required` (409) - an override is the write target; nothing was written
+- `stack_modified` (409) - the file changed between read and write; nothing was written
+- `restart_required` (409) - the file was saved, and saved security differs from startup
+- `invalid_candidate` (400) - the edited file failed validation; nothing was written
+- `reload_failed` (502) - the file was saved and the hot reload failed
+- 404 - the server is not declared, and no override target was required
+- 400 - the body is not JSON, or `enabled` is missing
+- 503 - no stack file is configured
+
+Disabled servers, `overrides`, and the optional `override` path are described on [`GET /api/status`](#get-apistatus), [`GET /api/stack/health`](#get-apistackhealth), [`GET /api/stack/plan`](#get-apistackplan), and [`GET /api/stack/export`](#get-apistackexport).
 
 #### `PATCH /api/mcp-servers/{name}/telemetry`
 
@@ -3451,7 +3482,7 @@ A pack name claimed by more than one imported source carries `"collision": true`
 
 #### `GET /api/packs/{name}`
 
-One pack's identity (`info`, the list item's fields) plus its per-resource state rows and `needs_attention`. A carried stack is the first row: `in-sync` (running `StackFile` matches the pin), `stale` (running from an older checkout under `~/.gridctl/packs/<name>/`; attention, detail names the commit when known), `drifted` (running from any other path; attention), `missing` (nothing running; not attention), or `target-missing` (checkout or stack file absent; attention, remediation `re-run 'gridctl pack add'`). Then one `source` row per pinned external source, in name order: `in-sync` (pinned as recorded, not verified current) or `stale` (attention; the update cache lists a newer commit for one of its skills; remediation `re-run 'gridctl pack add <pack-repo>'`). A vault-token source, or a source that recorded no skills, stays `in-sync` and appends `, freshness not checked`. Then skill rows. Skill, agent, and wiring rows are per-client; rule rows are per-client once applied (state joined from the pack-tagged projection lock entries and the context engine's per-fragment status; coverage is per fragment-file projection, so compiled clients' whole-document state stays on `GET /api/context`), with a single store-presence row for a rule that was imported but never projected. An unresolved stack is an `unresolved` row named `stack:<path>`, not a `stack` row, and its `detail` is the export or path error when one was recorded.
+One pack's identity (`info`, the list item's fields) plus its per-resource state rows and `needs_attention`. A carried stack is the first row: `in-sync` (running `StackFile` matches the pin), `stale` (running from an older checkout under `~/.gridctl/packs/<name>/`; attention, detail names the commit when known), `drifted` (running from any other path; attention), `missing` (nothing running; not attention), or `target-missing` (checkout or stack file absent; attention, remediation `re-run 'gridctl pack add'`). An `in-sync` stack row whose `~/.gridctl/overrides/<pack>.yaml` exists sets `detail` to `override: <path>` and is not attention. Then one `source` row per pinned external source, in name order: `in-sync` (pinned as recorded, not verified current) or `stale` (attention; the update cache lists a newer commit for one of its skills; remediation `re-run 'gridctl pack add <pack-repo>'`). A vault-token source, or a source that recorded no skills, stays `in-sync` and appends `, freshness not checked`. Then skill rows. Skill, agent, and wiring rows are per-client; rule rows are per-client once applied (state joined from the pack-tagged projection lock entries and the context engine's per-fragment status; coverage is per fragment-file projection, so compiled clients' whole-document state stays on `GET /api/context`), with a single store-presence row for a rule that was imported but never projected. An unresolved stack is an `unresolved` row named `stack:<path>`, not a `stack` row, and its `detail` is the export or path error when one was recorded.
 
 **Auth:** Yes
 

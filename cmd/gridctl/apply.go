@@ -87,6 +87,7 @@ func init() {
 	applyCmd.Flags().BoolVar(&applyFlash, "flash", false, "Auto-link detected LLM clients after apply")
 	applyCmd.Flags().BoolVar(&applyCodeMode, "code-mode", false, "Enable gateway code mode (replaces tools with search + execute meta-tools)")
 	applyCmd.Flags().StringVar(&applyLogFile, "log-file", "", "Path to log file for structured JSON output with automatic rotation")
+	addOverrideFlags(applyCmd)
 }
 
 // resolveBindFlag turns the --bind / --bind-all pair into a single address.
@@ -106,7 +107,7 @@ func resolveBindFlag() string {
 // runServeStackless starts the API server and web UI without a stack file.
 // Vault and wizard endpoints are active; stack-dependent endpoints return 503.
 func runServeStackless() error {
-	ctrl := controller.New(controller.Config{
+	cfg := controller.Config{
 		Port:                 applyPort,
 		Bind:                 resolveBindFlag(),
 		AllowUnauthenticated: applyAllowUnauth,
@@ -114,7 +115,11 @@ func runServeStackless() error {
 		DaemonChild:          applyDaemonChild,
 		LogFile:              applyLogFile,
 		LogLevel:             logLevel,
-	})
+	}
+	if err := applyOverrideFlags(&cfg); err != nil {
+		return err
+	}
+	ctrl := controller.New(cfg)
 	ctrl.SetVersion(version)
 	ctrl.SetWebFS(WebFS)
 
@@ -145,6 +150,9 @@ func runApply(stackPath string) error {
 		Runtime:              runtimeFlag,
 		LogFile:              applyLogFile,
 		LogLevel:             logLevel,
+	}
+	if err := applyOverrideFlags(&cfg); err != nil {
+		return err
 	}
 
 	// Cancel ctx on SIGINT/SIGTERM so daemon goroutines exit cleanly.

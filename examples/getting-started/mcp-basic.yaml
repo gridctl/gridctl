@@ -37,6 +37,7 @@ mcp-servers:
     port: 8080
     command: ["sh", "-c", "while true; do sleep 3600; done"]
     tools: ["read", "list", "search"]  # Only these tools are exposed to clients
+    # enabled: false  # Park this server: validated, not started, listed as disabled
     # telemetry:
     #   persist:
     #     traces: false   # explicit override: skip traces for this server only

@@ -67,6 +67,11 @@ func canonicalizeMCPServer(server *MCPServer) {
 	if server.ReplicaPolicy == "" {
 		server.ReplicaPolicy = "round-robin"
 	}
+	// An explicit enabled: true is the default. Treating it as omitted keeps
+	// "key added with value true" from looking like a modification.
+	if server.Enabled != nil && *server.Enabled {
+		server.Enabled = nil
+	}
 	if len(server.Command) == 0 {
 		server.Command = nil
 	}

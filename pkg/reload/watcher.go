@@ -12,21 +12,44 @@ import (
 
 // Watcher monitors a stack file for changes and triggers reload.
 type Watcher struct {
-	path     string
-	onChange func() error
-	logger   *slog.Logger
-	debounce time.Duration
+	path      string
+	basenames map[string]struct{}
+	onChange  func() error
+	logger    *slog.Logger
+	debounce  time.Duration
 }
 
 // NewWatcher creates a file watcher for the given stack path.
 // onChange is called when the file changes (after debouncing).
 func NewWatcher(path string, onChange func() error) *Watcher {
+	name := filepath.Base(path)
 	return &Watcher{
-		path:     path,
-		onChange: onChange,
-		logger:   logging.NewDiscardLogger(),
-		debounce: 300 * time.Millisecond,
+		path:      path,
+		basenames: map[string]struct{}{name: {}},
+		onChange:  onChange,
+		logger:    logging.NewDiscardLogger(),
+		debounce:  300 * time.Millisecond,
 	}
+}
+
+// AddBasename watches another file in the same directory. A non-member
+// basename is ignored. Used for stack.override.yaml beside the stack file.
+func (w *Watcher) AddBasename(name string) {
+	if w == nil || name == "" {
+		return
+	}
+	if w.basenames == nil {
+		w.basenames = map[string]struct{}{}
+	}
+	w.basenames[name] = struct{}{}
+}
+
+func (w *Watcher) watches(name string) bool {
+	if w == nil || w.basenames == nil {
+		return false
+	}
+	_, ok := w.basenames[name]
+	return ok
 }
 
 // SetLogger sets the logger for watcher events.
@@ -58,7 +81,6 @@ func (w *Watcher) Watch(ctx context.Context) error {
 	// Watch the directory containing the file, not the file itself.
 	// This handles atomic saves where editors rename temp files over the target.
 	dir := filepath.Dir(w.path)
-	filename := filepath.Base(w.path)
 
 	if err := watcher.Add(dir); err != nil {
 		return err
@@ -80,15 +102,15 @@ func (w *Watcher) Watch(ctx context.Context) error {
 				return nil
 			}
 
-			// Only process events for our target file
-			if filepath.Base(event.Name) != filename {
+			// Only process events for a watched basename. Delete and rename
+			// matter for an override file: removing it reloads the base stack.
+			if !w.watches(filepath.Base(event.Name)) {
 				continue
 			}
 
-			// Trigger on write or create events.
-			// Create handles atomic saves where a temp file is renamed over target.
-			// Write handles direct writes to the file.
-			if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
+			// Write and Create cover direct writes and atomic saves.
+			// Remove and Rename cover deleting or replacing the file.
+			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Remove|fsnotify.Rename) != 0 {
 				w.logger.Debug("config file changed", "event", event.Op.String())
 
 				// Debounce: reset timer on each change

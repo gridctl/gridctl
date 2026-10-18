@@ -17,12 +17,21 @@ const ExportNotice = "Export preserves authored references without resolving val
 // ExportConfigFilesNotice is appended when the export contains file-backed configs.
 const ExportConfigFilesNotice = "Referenced config files are not bundled; copy them alongside the exported stack."
 
+// ExportOverrideNotice is appended when an override exists and was not merged.
+func ExportOverrideNotice(path string) string {
+	return "an override file exists at " + path + "; pass --with-override to include it"
+}
+
 // ExportNotices returns the stderr and REST notice for an exported stack.
 func ExportNotices(stack *Stack) string {
-	if !stackReferencesConfigFiles(stack) {
-		return ExportNotice
+	notice := ExportNotice
+	if stackReferencesConfigFiles(stack) {
+		notice += "\n" + ExportConfigFilesNotice
 	}
-	return ExportNotice + "\n" + ExportConfigFilesNotice
+	if stack != nil && stack.DiscoveredOverride != "" {
+		notice += "\n" + ExportOverrideNotice(stack.DiscoveredOverride)
+	}
+	return notice
 }
 
 func stackReferencesConfigFiles(stack *Stack) bool {
@@ -41,11 +50,41 @@ func stackReferencesConfigFiles(stack *Stack) bool {
 
 // ExportStack reads an unresolved export projection and returns every source path
 // for destination collision checks. It does not access stores or runtime values.
+// A discovered override is not merged; ExportNotices names it.
 func ExportStack(ctx context.Context, path string) (*Stack, []string, error) {
+	return exportStack(ctx, path, "")
+}
+
+// ExportWithOverride merges overridePath onto the unresolved projection after
+// the extends read and before credential checks. It does not route through
+// LoadStack, so authored references stay unresolved.
+func ExportWithOverride(ctx context.Context, path, overridePath string) (*Stack, []string, error) {
+	if overridePath == "" {
+		return nil, nil, fmt.Errorf("override: path is required")
+	}
+	if _, err := os.Stat(overridePath); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil, fmt.Errorf("override: %s: file does not exist", overridePath)
+		}
+		return nil, nil, fmt.Errorf("override: %s: %w", overridePath, err)
+	}
+	return exportStack(ctx, path, overridePath)
+}
+
+func exportStack(ctx context.Context, path, overridePath string) (*Stack, []string, error) {
 	var sources []string
 	stack, err := readExportStack(ctx, path, &sources)
 	if err != nil {
 		return nil, nil, err
+	}
+	if overridePath != "" {
+		if err := mergeOverrideFile(stack, overridePath, false); err != nil {
+			return nil, nil, err
+		}
+	} else if discovered, found, discErr := DiscoverOverride(path, OverrideSelection{}); discErr != nil {
+		return nil, nil, discErr
+	} else if found {
+		stack.DiscoveredOverride = discovered
 	}
 	if err := checkExportCredentials(stack); err != nil {
 		return nil, nil, err

@@ -65,6 +65,14 @@ func (d *DaemonManager) Fork(stack *config.Stack) (int, error) {
 	if d.config.Watch {
 		args = append(args, "--watch")
 	}
+	if d.config.NoOverride {
+		args = append(args, "--no-override")
+	} else if d.config.OverridePath != "" {
+		args = append(args, "--override", d.config.OverridePath)
+		if !d.config.OverrideRequired {
+			args = append(args, "--override-optional")
+		}
+	}
 	if d.config.LogFile != "" {
 		args = append(args, "--log-file", d.config.LogFile)
 	}

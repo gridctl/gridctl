@@ -40,6 +40,8 @@ type statusGatewayJSON struct {
 	// Features mirrors /api/status features: each enabled experimental
 	// flag mapped to true. Omitted when nothing is enabled.
 	Features map[string]bool `json:"features,omitempty"`
+	// Override is the override file the daemon merged, when one is active.
+	Override string `json:"override,omitempty"`
 }
 
 // statusContainerJSON is one container entry of `gridctl status --json`.
@@ -140,8 +142,9 @@ func runStatus(stack string, showReplicas, asJSON, plain bool) error {
 		}
 		// Query the running gateway for code mode and experimental flag status
 		var features map[string]bool
+		var override string
 		if status == "running" {
-			gw.CodeMode, features = queryGatewayStatus(s.Port)
+			gw.CodeMode, features, override = queryGatewayStatus(s.Port)
 		}
 		gateways = append(gateways, gw)
 		gatewaysJSON = append(gatewaysJSON, statusGatewayJSON{
@@ -152,6 +155,7 @@ func runStatus(stack string, showReplicas, asJSON, plain bool) error {
 			StartedAt: s.StartedAt,
 			CodeMode:  gw.CodeMode,
 			Features:  features,
+			Override:  override,
 		})
 	}
 
@@ -243,6 +247,11 @@ func runStatus(stack string, showReplicas, asJSON, plain bool) error {
 
 	// Print tables
 	printer.Gateways(gateways)
+	for _, gw := range gatewaysJSON {
+		if gw.Override != "" {
+			printer.Info("override", "stack", gw.Name, "path", gw.Override)
+		}
+	}
 	printer.Containers(containers)
 
 	// MCP server tables: query each running gateway for replica info. If
@@ -321,6 +330,8 @@ type mcpServerAPI struct {
 	Autoscale             *autoscaleAPI    `json:"autoscale,omitempty"`
 	StderrTail            []string         `json:"stderrTail,omitempty"`
 	Description           string           `json:"description,omitempty"`
+	Enabled               *bool            `json:"enabled,omitempty"`
+	Overrides             []string         `json:"overrides,omitempty"`
 }
 
 // mcpCapabilityAPI is the downstream capability projection on status JSON.
@@ -395,6 +406,11 @@ func buildMCPRollup(servers []mcpServerAPI) []output.MCPServerRollup {
 			Autoscale: formatAutoscaleCell(srv.Autoscale),
 			Prompts:   srv.PromptCount,
 			Resources: srv.MCPResourceCount,
+		}
+		if srv.Enabled != nil && !*srv.Enabled {
+			row.State = "disabled"
+			rows = append(rows, row)
+			continue
 		}
 		n := len(srv.Replicas)
 		if n == 0 {
@@ -641,22 +657,23 @@ func warnDaemonHomeMismatch(printer *output.Printer, resolvedHome string, states
 // queryGatewayStatus queries a running gateway's API for code mode status
 // ("on" if active, empty otherwise) and the enabled experimental flag map
 // (nil when nothing is enabled).
-func queryGatewayStatus(port int) (codeMode string, features map[string]bool) {
+func queryGatewayStatus(port int) (codeMode string, features map[string]bool, override string) {
 	api := newDaemonAPI(port, 2*time.Second)
 	resp, err := api.Get(api.URL("/api/status"))
 	if err != nil {
-		return "", nil
+		return "", nil, ""
 	}
 	defer resp.Body.Close()
 
 	var status struct {
 		CodeMode string          `json:"code_mode"`
 		Features map[string]bool `json:"features"`
+		Override string          `json:"override"`
 	}
 	if json.NewDecoder(resp.Body).Decode(&status) == nil {
-		return status.CodeMode, status.Features
+		return status.CodeMode, status.Features, status.Override
 	}
-	return "", nil
+	return "", nil, ""
 }
 
 // loadPinLabels loads pin status for all provided stacks and returns a map

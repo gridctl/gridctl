@@ -1,6 +1,6 @@
 # Configuration Reference
 
-This document describes every field in the gridctl stack YAML configuration.
+This document describes every field in the gridctl stack YAML configuration. An optional override file is a separate document; see [Override files](#override-files).
 
 ## Stack
 
@@ -775,6 +775,7 @@ In the web wizard, the OpenAPI Configuration section's Operations Filter loads t
 | `auth` | object | No | - | External-server authentication: `type: bearer`, `header`, or `oauth` (see [External Server Authentication](#external-server-authentication)). URL servers only |
 | `headers` | map | No | - | Extra HTTP headers for external URL and OpenAPI servers (see [Custom headers](#custom-headers)). Values are sensitive. Omitted means no extra headers |
 | `description` | string | No | - | Operator note. Accepted on every server kind, exported, and shown in status JSON. Not sent downstream |
+| `enabled` | bool | No | `true` | When `false`, the server is validated but not built, started, registered, health-checked, or pinned. It is absent from `tools/list`, prompts, resources, and code-mode search, and it appears in status as `disabled`. `enabled: true` and an omitted key are the same state. A `groups:`, `clients:`, or `limits:` entry that names it stays valid. A disabled container server consumes no `--base-port` index; `--base-port` is only the starting port, and a later enable takes the next free port |
 | `tools` | []string | No | - | Tool whitelist. Empty exposes all tools. Hidden tools are rejected on `tools/call` with the same error as an unknown tool. The web wizard populates this from the live stack for running servers, and offers an optional probe of external-URL servers to discover their tools before deploy. Container / stdio / local-process / SSH servers are curated from the Stack sidebar after deploy; OpenAPI servers are curated before deploy with the wizard's Operations Filter (see [OpenAPI](#openapi-server)). Editable live from the Stack sidebar's Tools editor and the Tools workspace. `PUT /api/mcp-servers/{name}/tools` rewrites this field atomically and triggers a hot reload. A candidate that would hide a tool a group `tools:` entry or override names is refused (`400 hidden_tool_reference`) and the file is left unchanged |
 | `output_format` | string | No | - | Output format override: `"json"`, `"toon"`, `"csv"`, or `"text"`. Overrides `gateway.output_format` for this server |
 | `pin_schemas` | bool | No | - | Override tool schema pinning for this server. `false` disables tool pinning; `true` requires the global verifier to be enabled. Omit to inherit from `gateway.security.schema_pinning.enabled`. Mandatory A2A card trust is independent |
@@ -1311,6 +1312,32 @@ Full decision-rule walkthrough, cold-start trade-offs, and observability details
 
 ---
 
+## Override files
+
+An override file merges on top of the stack after `extends` and before variable expansion, so its values may contain `${VAR}` and `${var:KEY}`. For `<dir>/stack.yaml` the discovered file is `<dir>/stack.override.yaml`. A missing sibling is not an error. `--override <path>` selects another file. The selected path is stored and reported as an absolute path. An explicit path that does not exist fails with `override: <path>: file does not exist`. A directory fails with `override: <path>: is a directory`. `--no-override` ignores every override. `apply`, `serve`, `plan`, and `validate` accept both flags; they are mutually exclusive. `reload` does not accept them. It uses the selection the daemon started with. A daemon started with `--watch` also watches the selected override file. Creating, editing, and deleting it all reload. When that file is in another directory, gridctl creates the directory (mode 0700) before watching it. `--no-override` watches no override file.
+
+For a pack-carried stack the override is `~/.gridctl/overrides/<pack-name>.yaml`. `pack apply` passes that path. The file is optional. `enable` and `disable` on a checkout under a locked pack write that file instead of the checkout, even with `--no-override`. `--override` that names the same path is accepted. A different `--override` is refused and nothing is written. The web toggle also refuses a pinned checkout when the daemon was started with `--no-override`.
+
+The document may contain only `mcp-servers`, and that value is a mapping keyed by server name, not the list shape used in `stack.yaml`. A list fails with `override: <path>: mcp-servers must be a mapping of server names`.
+
+```yaml
+mcp-servers:
+  github:
+    enabled: true
+    env:
+      GITHUB_TOKEN: ${var:GITHUB_TOKEN}
+```
+
+Each named server must exist in the base. Scalars and lists replace. `env` and `headers` merge by key, and the override wins. The allowlist is `enabled`, `env`, `tools`, `replicas`, `restart`, `ping_timeout`, `ready_timeout`, `output_format`, and `headers`. Any other field, including `image`, `url`, `command`, `source`, `volumes`, `configs`, `execution`, `auth`, and `autoscale`, fails with `override: <path>: mcp-servers.<name>.<field> is not overridable`. A top-level key other than `mcp-servers` fails with `override: <path>: top-level key "<key>" is not allowed; only mcp-servers is`. A repeated top-level key fails with `override: <path>: top-level key "<key>" is declared more than once`. A repeated server name fails with `override: <path>: mcp-servers.<name> is declared more than once`. An unknown server fails with `override: <path>: mcp-servers.<name> does not exist in the stack`. A new override file written by `enable` or `disable` uses block style.
+
+`gridctl validate` and a stopped-stack `gridctl plan` do not resolve `extends`. An override that names a server only a parent declares is an error when the file has no `extends`. When the file has `extends`, `validate` reports that name as a warning (exit 2 when it is the only finding). A stopped `plan` does not fail when that warning is the only finding, and it does not print a warning-only result. `apply`, a stack loaded into `serve`, and the daemon's reload resolve `extends` first, so that name is an error only when it is absent from the merged stack.
+
+The override cannot change `gateway`, including bind, auth, and origins. `enable` and `disable` write only `enabled`. On the base file, enable removes the key and disable inserts `enabled: false`. On an override, both write the key, including `enabled: true`, because that is how a base `enabled: false` is turned back on. `export` discovers only a sibling `stack.override.yaml`. It emits the base and appends `an override file exists at <path>; pass --with-override to include it` unless `--with-override` is passed. That flag fails with `override: no override file beside <path>; pass nothing to export the base` when the sibling is absent. A pack override under `~/.gridctl/overrides/` is not part of export discovery.
+
+The canvas shows a disabled server muted, with a `disabled` chip. The inspector offers Enable or Disable, hides Tools and the MCP catalog while the server is disabled, and lists each overridden field with an `overridden locally` chip. The spec health badge shows `override: <path>` when one is active. A toggle that would write an override returns `override_required` and points at `gridctl enable` or `gridctl disable`. The web UI does not edit the override file.
+
+`--base-port` remains the starting port for container host ports. Skipping a disabled container server does not reserve its index.
+
 ## Resources
 
 Supporting containers such as databases, caches, and other services. MCP `execution` controls do not apply to resources; hardening one MCP server does not harden the whole stack.
@@ -1335,6 +1362,7 @@ resources:
 | `ports` | []string | No | - | Port mappings (e.g., `"5432:5432"`) |
 | `volumes` | []string | No | - | Volume mounts (e.g., `"data:/var/lib/postgres"`). A host part that starts with `./`, `../`, or `~` is resolved the same way as a server volume, including a value that becomes relative only after variable expansion. `gridctl validate` does not apply that resolution. `gridctl plan` resolves it only when a running daemon compares its own file, and it never prints the resolved path |
 | `network` | string | Conditional | - | Network to join (required in advanced network mode) |
+| `enabled` | bool | No | `true` | When `false`, the resource is validated but not started. CLI `enable` and `disable` and the REST toggle do not edit resources; change the file |
 
 **Constraints:**
 - Names must be unique and not conflict with MCP server names
@@ -1838,7 +1866,7 @@ String values in the configuration support variable expansion:
 | `${var:KEY}` | Variable store reference (error if key not found). Canonical syntax. |
 | `${vault:KEY}` | Deprecated alias for `${var:KEY}`. Logs a one-shot warning per process. Removed at v1.0. |
 
-Variable expansion is applied to string values across all configuration sections including `env`, `token`, `url`, MCP-server and resource `volumes` entries, and `configs` `content` and `file` paths.
+Variable expansion is applied to string values across all configuration sections including `env`, `token`, `url`, MCP-server and resource `volumes` entries, `configs` `content` and `file` paths, and values merged from an override file. A `${var:KEY}` whose every consumer is a server or resource with `enabled: false` does not block apply when a store is present. A key with any enabled consumer still refuses with `missing variable(s)`.
 
 Stack export is a separate, non-resolving operation: the CLI, REST export endpoint, and web Export YAML action preserve authored expressions instead of substituting values. Nonempty inline literals and default/replacement operands in recognized sensitive fields block export, even when a sensitive-looking environment key actually holds nonsecret configuration. Use references without literal fallback operands in those fields, and provision recipient variables separately. Ordinary defaults and mixed reference/literal strings are preserved, so review authored literals before sharing. This does not change runtime expansion or raw spec editing. See [export semantics](cli-reference.md#export-semantics) for the field policy and inheritance limits.
 
