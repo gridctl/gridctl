@@ -355,7 +355,7 @@ Invoke one canonical live tool through the same dispatch core as MCP `tools/call
 
 `client` is a caller-declared scope and accounting label, not an authenticated principal. Empty, whitespace, control characters, values over 128 bytes, and labels that normalize to empty are invalid. The selected profile and its gates always apply. `cli` has no scope exemption.
 
-A valid dispatch returns HTTP `200` with a versioned envelope even when the outcome is a policy denial or tool error. Request validation is `400`, oversized bodies `413`, wrong content type `415`, and a missing gateway `503`. Authentication remains the existing middleware (`401` with `Gridctl-Auth-Rejected: 1` and a plain-text body). Endpoint errors use `schema_version`, typed `outcome`, `result: null`, and `error: {"code","message"}` rather than the legacy string-valued `{"error":"..."}` shape. `name` and `client` appear only when valid and available.
+A valid dispatch returns HTTP `200` with a versioned envelope even when the outcome is a policy denial (`error.code` `policy_blocked`, `outcome.gate` `policy`) or tool error. Request validation is `400`, oversized bodies `413`, wrong content type `415`, and a missing gateway `503`. Authentication remains the existing middleware (`401` with `Gridctl-Auth-Rejected: 1` and a plain-text body). Endpoint errors use `schema_version`, typed `outcome`, `result: null`, and `error: {"code","message"}` rather than the legacy string-valued `{"error":"..."}` shape. `name` and `client` appear only when valid and available.
 
 **Auth:** Yes
 
@@ -893,6 +893,33 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/limits
 ```
 
 `kind` is always `"rate"`; it stays on the wire so consumers written against the earlier mixed budget/rate era keep parsing. `state` is `ok` or `exceeded` (the token bucket is currently empty). Hot-reload edits to the `limits:` block are reflected on the next request.
+
+#### `GET /api/policy`
+
+Returns the authored `policy:` block and the verdict each pre-whitelist catalog tool would receive. Always `200`. With no block the payload is `configured: false` and empty `rules` and `tools` collections, never null. A hidden tool is included with `exposed: false` and the verdict dispatch would apply if the tool were exposed. Dispatch itself rejects that name as unknown before any gate.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/policy
+```
+
+**Response:**
+```json
+{
+  "configured": true,
+  "default": "allow",
+  "block_destructive": false,
+  "rules": [{"index": 0, "match": "vault__*", "action": "block"}],
+  "tools": {
+    "vault__read_secret": {"action": "block", "source": "rule", "rule_index": 0, "rule": "vault__*", "exposed": true}
+  }
+}
+```
+
+`action` is the authored action, including `require_approval`. That action is enforced as block. `source` is `rule`, `block_destructive`, or `default`. `rule` and `rule_index` are omitted unless a rule matched. `rule_index` is zero-based, as authored. `block_destructive` is present whenever the block is configured, including when it is false.
+
+`POST /api/tools/call` uses `error.code` `policy_blocked` and `outcome.reason` `policy_blocked` when this gate denies. HTTP status stays `200`. `outcome.disposition` is `denied`, `outcome.stage` is `gate`, `outcome.gate` is `policy`, `outcome.completion` is `not_started`, and `result` is null. The safe message is `tool blocked by policy` and does not include the rule pattern. Rate-limit denials remain `gate_denied`.
 
 ---
 

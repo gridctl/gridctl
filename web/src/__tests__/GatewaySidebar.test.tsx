@@ -21,10 +21,12 @@ vi.mock('../lib/api', async (importActual) => {
       pass_count: 0,
     }),
     fetchOptimizeReport: vi.fn().mockResolvedValue({ findings: [], health_score: 0, generated_at: '2026-09-13T00:00:00Z' }),
+    fetchPolicy: vi.fn().mockResolvedValue({ configured: false, rules: [], tools: {} }),
   };
 });
 
 import { GatewaySidebar } from '../components/gateway/GatewaySidebar';
+import { fetchPolicy } from '../lib/api';
 import { useRegistryStore } from '../stores/useRegistryStore';
 import { useStackStore } from '../stores/useStackStore';
 import type { AgentSkill } from '../types';
@@ -62,6 +64,23 @@ describe('GatewaySidebar', () => {
     renderSidebar();
     const link = screen.getByRole('link', { name: /manage skills/i });
     expect(link.textContent).toContain('(3)');
+  });
+
+  it('renders not configured when the policy block is absent', async () => {
+    renderSidebar();
+    expect(await screen.findByText(/policy: not configured/i)).toBeInTheDocument();
+  });
+
+  it('renders the configured policy summary', async () => {
+    vi.mocked(fetchPolicy).mockResolvedValue({
+      configured: true,
+      default: 'allow',
+      block_destructive: true,
+      rules: [{ index: 0, match: 'vault__*', action: 'block' }],
+      tools: {},
+    });
+    renderSidebar();
+    expect(await screen.findByText(/default allow, 1 rule, block_destructive on/i)).toBeInTheDocument();
   });
 
   it('omits the count when skills have not loaded yet', () => {

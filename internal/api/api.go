@@ -36,6 +36,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/runtime/docker"
 	"github.com/gridctl/gridctl/pkg/skillpins"
 	"github.com/gridctl/gridctl/pkg/state"
+	"github.com/gridctl/gridctl/pkg/toolpolicy"
 	"github.com/gridctl/gridctl/pkg/tracing"
 	"github.com/gridctl/gridctl/pkg/vault"
 	"github.com/gridctl/gridctl/pkg/wiring"
@@ -94,6 +95,12 @@ type Server struct {
 	// endpoint then reports configured: false). Must be safe for concurrent
 	// calls and must reflect hot-reload policy swaps.
 	limitsStatus func() limits.StatusReport
+
+	// policyStatus returns the per-tool policy snapshot for GET /api/policy.
+	// Nil means the builder wired no policy support (the endpoint then
+	// reports configured: false). Must be safe for concurrent calls and
+	// must reflect hot-reload policy swaps.
+	policyStatus func() toolpolicy.StatusReport
 
 	// startWatcher, when set, starts a file watcher on the given stack path.
 	// Injected by GatewayBuilder so POST /api/stack/initialize can activate live reload.
@@ -576,6 +583,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/stack/recipes", s.handleStackRecipes)
 	mux.HandleFunc("GET /api/catalog", s.handleCatalog)
 	mux.HandleFunc("GET /api/limits", s.handleLimits)
+	mux.HandleFunc("GET /api/policy", s.handlePolicy)
 	mux.HandleFunc("GET /api/groups", s.handleGroups)
 	mux.HandleFunc("POST /api/stack/append", s.handleStackAppend)
 	mux.HandleFunc("POST /api/stack/initialize", s.handleStackInitialize)

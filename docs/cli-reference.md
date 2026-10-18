@@ -148,7 +148,7 @@ These commands talk to a selected running gateway using state-recorded credentia
 
 Matching is lexical substring search against live names, generated descriptions, and property names, including the generated prefix `MCP server: <server>. Call using the exact tool name "<canonical-name>".`. Queries such as `mcp`, `server`, and `call` therefore match every scoped tool in the selected server subset, if any, before limits. This is not semantic search.
 
-Inline JSON may appear in shell history and process arguments. `@file.json` reads a local object of at most 1 MiB and does not encrypt it. There is no stdin shorthand, URL fetch, or environment interpolation. Arguments must be a single JSON object; omitted arguments are `{}`. An explicit empty or whitespace-only source, including an empty file, is invalid JSON and does not default to `{}`. Discovery and help never invoke a tool, consume call gates, start replicas, or record a run. Visibility is not a guarantee that a later call passes pins, rate limits, or execution admission.
+Inline JSON may appear in shell history and process arguments. `@file.json` reads a local object of at most 1 MiB and does not encrypt it. There is no stdin shorthand, URL fetch, or environment interpolation. Arguments must be a single JSON object; omitted arguments are `{}`. An explicit empty or whitespace-only source, including an empty file, is invalid JSON and does not default to `{}`. Discovery and help never invoke a tool, consume call gates, start replicas, or record a run. Visibility is not a guarantee that a later call passes pins, rate limits, per-tool policy, or execution admission.
 
 ```bash
 gridctl tools search "message" --limit 20 --as automation
@@ -178,6 +178,7 @@ JSON stdout is one document, including recognized flag and argument errors; diag
 | 1 | Gateway auth rejected | Stage `auth`, reason `gateway_auth_rejected` |
 | 1 | Host or Origin policy rejected the request | Stage `auth`, reason `host_rejected` |
 | 1 | Client scope or call gate denied | `denied/scope/client_scope` or `denied/gate/gate_denied` (`outcome.gate` names the denying gate) |
+| 1 | Per-tool policy blocked the call | `denied/gate/policy_blocked` (`outcome.gate` is `policy`) |
 | 1 | Schema pin blocked | `denied/pin/schema_pin` |
 | 1 | Unknown or whitelist-hidden target | `routing_failed/routing/unknown_tool` |
 | 1 | No replica or failed configured cold start | Existing routing disposition with `no_replica` or `cold_start` |

@@ -1,6 +1,6 @@
 // Pure helpers for the tool-groups overlay in the Tools workspace. JSX-free
 // (the metricsData/limitsData split) so Fast Refresh stays happy.
-import type { GroupsReport } from './api';
+import type { GroupsReport, PolicyToolStatus } from './api';
 
 // groupsForTool returns the names of groups whose surface includes the
 // canonical server__tool name, for the membership badges on tool rows.
@@ -71,4 +71,35 @@ export function annotationChips(annotations?: {
     );
   }
   return chips;
+}
+
+// policyChip is the Tools workspace denial chip. allow renders nothing.
+// require_approval is labeled APPROVAL; every other denial is BLOCKED.
+// The title names the source the same way the gateway denial does.
+export function policyChip(verdict?: PolicyToolStatus): AnnotationChip | null {
+  if (!verdict || verdict.action === 'allow') return null;
+  if (verdict.action !== 'block' && verdict.action !== 'require_approval') return null;
+  const label = verdict.action === 'require_approval' ? 'APPROVAL' : 'BLOCKED';
+  return { label, title: policyChipTitle(verdict), tone: 'danger' };
+}
+
+export function policyChipTitle(verdict: PolicyToolStatus): string {
+  if (verdict.source === 'rule') {
+    const index = (verdict.rule_index ?? 0) + 1;
+    const pattern = verdict.rule ? `: ${verdict.rule}` : '';
+    return `blocked by policy rule ${index}${pattern}`;
+  }
+  if (verdict.source === 'block_destructive') {
+    return 'blocked by policy: block_destructive';
+  }
+  return 'blocked by policy default';
+}
+
+export function policyDetailText(verdict?: PolicyToolStatus): string | null {
+  if (!verdict || verdict.action === 'allow') return null;
+  const title = policyChipTitle(verdict);
+  if (verdict.action === 'require_approval') {
+    return `${title} (requires approval, enforced as block)`;
+  }
+  return title;
 }

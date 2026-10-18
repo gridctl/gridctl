@@ -166,6 +166,7 @@ pkg/pack/           gridctl-pack.yaml manifest schema, including named external 
 pkg/skillpins/      TOFU pins over skill documents (per-file digests, findings); the `gridctl skill pins` store.
 pkg/runs/           Metadata-only persisted dispatch records (`gridctl runs`). Opt-in stack-level JSONL with a bounded queue, single writer, retention, and coordinated wipe.
 pkg/limits/         Enforces the `limits:` block: token-bucket rate limits on the tool-call dispatch path.
+pkg/toolpolicy/     Enforces the optional `policy:` block: last-match-wins call rules on the tool-call dispatch path, ahead of rate limits.
 pkg/provisioner/    LLM-client config writers (claude, claudecode, cursor, windsurf, gemini, antigravity, opencode, grok, goose,
                     cline, anythingllm, lmstudio, roo, zed, continue, vscode). JSON and TOML helpers in json.go / toml.go.
                     Backed by `gridctl link` / `gridctl unlink`. `projectsources.go` discovers project MCP files for `gridctl import`.

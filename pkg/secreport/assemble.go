@@ -554,6 +554,7 @@ func gatewayChecks(in Inputs) []Check {
 	if in.Startup == nil {
 		out = append(out, check("gateway.auth.startup.gateway", PredGatewayAuthStartup, gatewaySubject(), OutcomeUnknown, "startup_unavailable", "Active startup security snapshot is unavailable.", unknownEvidence(), []string{"Only declarations exist; enforcement remains unverified."}))
 		out = append(out, originsStartupCheck(nil))
+		out = append(out, policyDeclaredCheck(in))
 		return out
 	}
 	text := "Startup snapshot reports authentication disabled."
@@ -574,8 +575,30 @@ func gatewayChecks(in Inputs) []Check {
 	item.Facts = CheckFacts{AuthType: SanitizeIdentifier(in.Startup.AuthType), EffectiveBind: SanitizeIdentifier(in.Startup.Bind)}
 	out = append(out, item)
 	out = append(out, originsStartupCheck(in.Startup))
+	out = append(out, policyDeclaredCheck(in))
 	return out
 }
+
+func policyDeclaredCheck(in Inputs) Check {
+	limitation := []string{"A declared policy is name-based; tool output is not inspected."}
+	if in.Stack == nil || in.Stack.Policy == nil || !in.Stack.Policy.Declared {
+		return check("policy.declared.gateway", PredPolicyDeclared, gatewaySubject(), OutcomePass, "policy_undeclared", "No per-tool call policy is declared.", declaredEvidence(), limitation)
+	}
+	p := in.Stack.Policy
+	text := "A per-tool call policy is declared with default " + p.Default + " and " + policyRuleCountText(p.RuleCount) + "."
+	if p.BlockDestructive {
+		text += " block_destructive is on."
+	}
+	item := check("policy.declared.gateway", PredPolicyDeclared, gatewaySubject(), OutcomePass, "policy_declared", text, declaredEvidence(), limitation)
+	item.Facts = CheckFacts{
+		DefaultAction:    p.Default,
+		RuleCount:        intPtr(p.RuleCount),
+		BlockDestructive: boolPtr(p.BlockDestructive),
+	}
+	return item
+}
+
+func boolPtr(v bool) *bool { return &v }
 
 func originsStartupCheck(startup *StartupView) Check {
 	if startup == nil {

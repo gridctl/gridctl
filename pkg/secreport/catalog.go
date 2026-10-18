@@ -128,6 +128,7 @@ var limitationCatalog = map[string]bool{
 	"This is a launch/admission snapshot, not continuous protection.":                                              true,
 	"Observed execution evidence is not continuous monitoring.":                                                    true,
 	"Imported snapshots cannot authenticate verification claims.":                                                  true,
+	"A declared policy is name-based; tool output is not inspected.":                                               true,
 }
 
 func sanitizeFacts(in CheckFacts) CheckFacts {
@@ -137,6 +138,7 @@ func sanitizeFacts(in CheckFacts) CheckFacts {
 		Bind:               SanitizeIdentifier(in.Bind),
 		EffectiveBind:      SanitizeIdentifier(in.EffectiveBind),
 		Kind:               SanitizeIdentifier(in.Kind),
+		DefaultAction:      SanitizeIdentifier(in.DefaultAction),
 		RecordedOutcome:    SanitizeIdentifier(in.RecordedOutcome),
 		Instance:           SanitizeIdentifier(in.Instance),
 		Revision:           SanitizeIdentifier(in.Revision),
@@ -164,6 +166,17 @@ func sanitizeFacts(in CheckFacts) CheckFacts {
 			v = 0
 		}
 		out.UnscopedConsumers = intPtr(v)
+	}
+	if in.RuleCount != nil {
+		v := *in.RuleCount
+		if v < 0 {
+			v = 0
+		}
+		out.RuleCount = intPtr(v)
+	}
+	if in.BlockDestructive != nil {
+		v := *in.BlockDestructive
+		out.BlockDestructive = &v
 	}
 	return out
 }

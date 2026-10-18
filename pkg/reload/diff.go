@@ -21,6 +21,11 @@ type ConfigDiff struct {
 	// changed. Like ClientsChanged it needs only an in-memory policy rebuild
 	// via the onConfigApplied hook (in-memory bucket state rebuilds) but must still mark the diff non-empty.
 	LimitsChanged bool
+	// PolicyChanged indicates the per-tool call (`policy:`) block changed.
+	// Like LimitsChanged it needs only an in-memory gate rebuild via the
+	// onConfigApplied hook and must still mark the diff non-empty. A
+	// policy-only edit does not recreate containers.
+	PolicyChanged bool
 	// GroupsChanged indicates the tool-group (`groups:`) block changed.
 	// Like ClientsChanged it needs only an in-memory policy rebuild via the
 	// onConfigApplied hook but must still mark the diff non-empty.
@@ -110,6 +115,7 @@ func (d *ConfigDiff) IsEmpty() bool {
 		!d.NetworkChanged &&
 		!d.ClientsChanged &&
 		!d.LimitsChanged &&
+		!d.PolicyChanged &&
 		!d.GroupsChanged &&
 		!d.ExperimentalChanged &&
 		!d.SkillsPolicyChanged &&
@@ -135,6 +141,9 @@ func ComputeDiff(old, new *config.Stack) *ConfigDiff {
 
 	// Detect rate-limit (`limits:`) changes
 	diff.LimitsChanged = limitsChanged(old, new)
+
+	// Detect per-tool call policy (`policy:`) changes
+	diff.PolicyChanged = policyChanged(old, new)
 
 	// Detect tool-group (`groups:`) changes
 	diff.GroupsChanged = groupsChanged(old, new)
@@ -195,6 +204,15 @@ func groupsChanged(old, new *config.Stack) bool {
 // DeepEqual handles the nil-to-set transitions directly.
 func limitsChanged(old, new *config.Stack) bool {
 	return !reflect.DeepEqual(old.Limits, new.Limits)
+}
+
+// policyChanged reports whether the `policy:` block differs between two
+// stacks. A change needs only the gateway's in-memory call gates rebuilt
+// (via the reload's onConfigApplied hook); no containers are touched.
+// DeepEqual handles the nil-to-set transitions directly. The helpers in
+// pkg/config/equality.go compare servers and sources and do not apply here.
+func policyChanged(old, new *config.Stack) bool {
+	return !reflect.DeepEqual(old.Policy, new.Policy)
 }
 
 // clientsChanged reports whether the per-client access (`clients:`) block

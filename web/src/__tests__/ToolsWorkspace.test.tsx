@@ -39,6 +39,7 @@ beforeEach(() => {
   // The workspace mounts the groups poll unconditionally; keep the test
   // hermetic instead of letting a real fetch fail in jsdom.
   vi.spyOn(api, 'fetchGroups').mockResolvedValue({ configured: false, groups: [] });
+  vi.spyOn(api, 'fetchPolicy').mockResolvedValue({ configured: false, rules: [], tools: {} });
   // Same for the optimize poll behind the header's convergence line.
   vi.spyOn(api, 'fetchOptimizeReport').mockResolvedValue({
     findings: [],
@@ -94,6 +95,30 @@ function renderWithProbe(path = '/tools') {
 }
 
 describe('ToolsWorkspace', () => {
+  it('renders a BLOCKED chip and detail text from GET /api/policy', async () => {
+    vi.mocked(api.fetchPolicy).mockResolvedValue({
+      configured: true,
+      default: 'allow',
+      block_destructive: false,
+      rules: [{ index: 0, match: 'github__*', action: 'block' }],
+      tools: {
+        [`${GITHUB}${TOOL_NAME_DELIMITER}create_issue`]: {
+          action: 'block',
+          source: 'rule',
+          rule_index: 0,
+          rule: 'github__*',
+          exposed: true,
+        },
+      },
+    });
+    renderAt('/tools?server=github');
+    const chip = await screen.findByText('BLOCKED');
+    expect(chip).toHaveAttribute('title', 'blocked by policy rule 1: github__*');
+    fireEvent.click(screen.getByRole('option', { name: /create_issue/i }));
+    expect(await screen.findByRole('heading', { name: 'Policy' })).toBeInTheDocument();
+    expect(screen.getByText(/blocked by policy rule 1: github__\*/)).toBeInTheDocument();
+  });
+
   it('renders a rail pill per server with an enabled/total badge', () => {
     renderAt();
     // github is curated 1/2; atlassian exposes all 1/1.

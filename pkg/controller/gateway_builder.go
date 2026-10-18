@@ -43,6 +43,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/telemetry"
 	"github.com/gridctl/gridctl/pkg/token"
+	"github.com/gridctl/gridctl/pkg/toolpolicy"
 	"github.com/gridctl/gridctl/pkg/tracing"
 	"github.com/gridctl/gridctl/pkg/vault"
 )
@@ -130,10 +131,12 @@ type GatewayBuilder struct {
 	runStack    string
 
 	// limitsPolicy is the compiled rate-limits policy (nil when no
-	// limits: block is configured). Guarded by limitsMu: it is swapped by
-	// the hot-reload hook and read by the /api/limits status closure.
+	// limits: block is configured). toolPolicy is the compiled per-tool
+	// policy (nil when the key was omitted). Guarded by limitsMu: both are
+	// swapped together by the hot-reload hook and read by the status closures.
 	limitsMu     sync.Mutex
 	limitsPolicy *limits.Policy
+	toolPolicy   *toolpolicy.Policy
 
 	// experimentalFlags holds the resolved experimental flag display list
 	// (enabled flags only, sorted). Stored behind an atomic pointer so the
@@ -583,6 +586,7 @@ func (b *GatewayBuilder) Run(ctx context.Context, inst *GatewayInstance, verbose
 		})
 	}
 	registrar.RegisterAll(ctx, b.result, b.stack, b.stackPath)
+	lintPolicyRules(b.stack, gateway.Router(), slog.New(bufferHandler))
 
 	// Start periodic health monitoring and autoscaler tick loop.
 	gateway.StartHealthMonitor(ctx, mcp.DefaultHealthCheckInterval)
@@ -889,9 +893,12 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	if handler != nil {
 		limitsLogger = slog.New(handler)
 	}
-	b.applyLimitsPolicy(gateway, b.stack, limitsLogger)
+	b.applyCallGates(gateway, b.stack, limitsLogger)
 	server.SetLimitsStatusFunc(func() limits.StatusReport {
 		return b.currentLimitsPolicy().Status()
+	})
+	server.SetPolicyStatusFunc(func() toolpolicy.StatusReport {
+		return b.policyStatus(gateway)
 	})
 
 	// Wire the wizard's "Discover tools" probe. Scope: external URL
@@ -1074,27 +1081,105 @@ func skillMentionsTool(body, toolName string) bool {
 	return re.MatchString(body)
 }
 
-// applyLimitsPolicy compiles the stack's limits: block and installs it on
-// the gateway, replacing any previous policy. CarryOver adopts live rate
-// buckets so enforcement survives hot reloads (an unrelated stack edit must
-// not refill a drained bucket). A stack without a limits block installs nil
-// gates, which is the zero-cost legacy path.
-func (b *GatewayBuilder) applyLimitsPolicy(gateway *mcp.Gateway, stack *config.Stack, logger *slog.Logger) {
+// applyCallGates compiles the stack's policy: and limits: blocks and
+// installs them as one slice, policy ahead of rate limits. CarryOver adopts
+// live rate buckets so enforcement survives hot reloads. Both absent
+// installs nil gates, the zero-cost legacy path. An empty policy: block
+// still installs its gate.
+func (b *GatewayBuilder) applyCallGates(gateway *mcp.Gateway, stack *config.Stack, logger *slog.Logger) {
 	b.limitsMu.Lock()
 	old := b.limitsPolicy
 	b.limitsMu.Unlock()
 
-	newPol := limits.NewPolicy(stack.Limits, logger)
-	newPol.CarryOver(old)
-	if newPol != nil {
-		gateway.SetCallGates(newPol.Gates())
-	} else {
-		gateway.SetCallGates(nil)
-	}
+	newLimits, newPolicy := ApplyCallGates(gateway, stack, logger, old)
 
 	b.limitsMu.Lock()
-	b.limitsPolicy = newPol
+	b.limitsPolicy = newLimits
+	b.toolPolicy = newPolicy
 	b.limitsMu.Unlock()
+}
+
+// ApplyCallGates is the production gate installer. Policy runs before rate
+// limits so a blocked call does not consume a token. A nil result means that
+// block was omitted. Integration tests call this so they share the daemon's
+// order instead of assembling the slice by hand.
+func ApplyCallGates(gateway *mcp.Gateway, stack *config.Stack, logger *slog.Logger, previousLimits *limits.Policy) (*limits.Policy, *toolpolicy.Policy) {
+	if stack == nil {
+		if gateway != nil {
+			gateway.SetCallGates(nil)
+		}
+		return nil, nil
+	}
+	newLimits := limits.NewPolicy(stack.Limits, logger)
+	newLimits.CarryOver(previousLimits)
+	newPolicy := toolpolicy.NewPolicy(stack.Policy, logger)
+	var gates []mcp.CallGate
+	if g := newPolicy.Gates(); len(g) > 0 {
+		gates = append(gates, g...)
+	}
+	if g := newLimits.Gates(); len(g) > 0 {
+		gates = append(gates, g...)
+	}
+	if gateway != nil {
+		if len(gates) == 0 {
+			gateway.SetCallGates(nil)
+		} else {
+			gateway.SetCallGates(gates)
+		}
+	}
+	return newLimits, newPolicy
+}
+
+// policyStatus evaluates the pre-whitelist catalog with the live policy.
+// Hidden tools appear with the verdict dispatch would apply if they were
+// exposed, and exposed is false. Dispatch itself rejects those names before
+// any gate.
+func (b *GatewayBuilder) policyStatus(gateway *mcp.Gateway) toolpolicy.StatusReport {
+	pol := b.currentToolPolicy()
+	if pol == nil || gateway == nil || gateway.Router() == nil {
+		return toolpolicy.EmptyStatus()
+	}
+	exposed := map[string]bool{}
+	for _, tool := range gateway.Router().AggregatedTools() {
+		exposed[tool.Name] = true
+	}
+	catalog := gateway.Router().AllCatalogTools()
+	entries := make([]toolpolicy.CatalogEntry, 0, len(catalog))
+	for _, tool := range catalog {
+		entries = append(entries, toolpolicy.CatalogEntry{
+			Name:        tool.Name,
+			Annotations: tool.Annotations,
+			Exposed:     exposed[tool.Name],
+		})
+	}
+	return pol.StatusWithCatalog(entries)
+}
+
+// lintPolicyRules warns once per literal rule whose name is absent from the
+// pre-whitelist catalog. It never lints AggregatedTools: a rule naming a
+// whitelist-hidden tool is defense in depth and must not warn. A
+// never-started or scaled-to-zero server can still warn because the catalog
+// falls back to the filtered cache. Never an error.
+func lintPolicyRules(stack *config.Stack, router *mcp.Router, logger *slog.Logger) {
+	if stack == nil || stack.Policy == nil || router == nil || logger == nil {
+		return
+	}
+	known := map[string]struct{}{}
+	for _, tool := range router.AllCatalogTools() {
+		known[tool.Name] = struct{}{}
+	}
+	for i, rule := range stack.Policy.Rules {
+		if !config.PolicyMatchLiteral(rule.Match) {
+			continue
+		}
+		if _, ok := known[rule.Match]; ok {
+			continue
+		}
+		logger.Warn("policy rule matches no known tool",
+			"rule", i+1,
+			"match", rule.Match,
+			"hint", "the tool may arrive when its server starts; a never-started or scaled-to-zero server may only have its filtered cache")
+	}
 }
 
 // currentLimitsPolicy returns the live policy under the swap lock.
@@ -1102,6 +1187,13 @@ func (b *GatewayBuilder) currentLimitsPolicy() *limits.Policy {
 	b.limitsMu.Lock()
 	defer b.limitsMu.Unlock()
 	return b.limitsPolicy
+}
+
+// currentToolPolicy returns the live per-tool policy under the swap lock.
+func (b *GatewayBuilder) currentToolPolicy() *toolpolicy.Policy {
+	b.limitsMu.Lock()
+	defer b.limitsMu.Unlock()
+	return b.toolPolicy
 }
 
 // applyTelemetryConfig walks the stack's MCP servers and registers per-
@@ -1529,9 +1621,11 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 		// Re-resolve experimental flags so `experimental:` edits reach
 		// /api/status (and everything gated on a flag) without restart.
 		b.refreshExperimentalFlags(flags.Default(), newCfg, slog.New(handler))
-		// Rebuild the limits policy so `limits:` edits enforce on the next
-		// call. Live rate buckets carry over for unchanged entries.
-		b.applyLimitsPolicy(inst.Gateway, newCfg, slog.New(handler))
+		// Rebuild policy and rate-limit gates so edits enforce on the next
+		// call. Policy stays ahead of rate limits. Live rate buckets carry
+		// over for unchanged entries.
+		b.applyCallGates(inst.Gateway, newCfg, slog.New(handler))
+		lintPolicyRules(newCfg, inst.Gateway.Router(), slog.New(handler))
 		// Rebuild the group policy so `groups:` edits change endpoint
 		// surfaces on the next request. Stateless recompile, no carry-over.
 		// Re-lint skills afterward: a reload can introduce renames whose

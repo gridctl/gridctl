@@ -45,7 +45,7 @@ A2A `input-required` and `auth-required` are remote states inside an ordinary
 completed tool result, not the run's `input_required` disposition. Run records
 cannot recover task or context handles. See [A2A result delivery](config-schema.md#tools-and-capability-delivery).
 
-The allowlist is generated IDs, timestamps, total dispatch duration, bounded target names, disposition/stage/reason, optional replica and sampled trace IDs, and optional caller-declared labels. Argument and result values, hashes, code, raw errors, tokens, headers, URLs, and host paths are excluded. Names and labels may still be sensitive. Labels are not authenticated principals.
+A policy denial is recorded as disposition `denied`, stage `gate`, reason `policy_blocked`. Rate-limit denials stay `gate_denied`. The allowlist is generated IDs, timestamps, total dispatch duration, bounded target names, disposition/stage/reason, optional replica and sampled trace IDs, and optional caller-declared labels. Argument and result values, hashes, code, raw errors, tokens, headers, URLs, and host paths are excluded. Names and labels may still be sensitive. Labels are not authenticated principals.
 
 Default retention is seven days and 100 MiB of logical record bytes per stack, including the active file and rotated segments. Age pruning runs at writer start and hourly while the process is up, compacting old records out of the active file. Physical filesystem overhead is extra. Wipe is stack-wide, is not secure erasure, and does not remove exports or backups. Disabling recording does not delete retained history. A stalled disk syscall can outlive the two-second shutdown drain; remaining queued events are counted as dropped.
 

@@ -305,7 +305,7 @@ Learn more → [Configuration Reference](docs/config-schema.md)
 
 ### Tool Surface Control
 
-A large stack floods the client's context with tools it will never call. Three axes compose: the per-server `tools:` whitelist narrows what exists, `groups:` bundle tools across servers behind their own endpoint at `/groups/{name}/mcp`, and `clients:` restricts what each linked client may touch.
+A large stack floods the client's context with tools it will never call. Three axes compose: the per-server `tools:` whitelist narrows what exists, `groups:` bundle tools across servers behind their own endpoint at `/groups/{name}/mcp`, and `clients:` restricts what each linked client may touch. Those three decide what is listed. A listed tool can still be blocked by the [per-tool call policy](docs/config-schema.md#policy-per-tool-call-policy).
 
 ```yaml
 groups:
@@ -370,6 +370,22 @@ gridctl limits                     # Every rate limit and its state
 ```
 
 Learn more → [Configuration Reference](docs/config-schema.md)
+
+### Per-tool call policy
+
+Decide whether a listed tool may be called, independent of the whitelist. Omitting the block allows every listed tool. Rules are ordered and the last match wins, so a broad block can keep a later exception. A denial does not reach the downstream server. This block is not the offline `gridctl validate --policy` check.
+
+```yaml
+policy:
+  default: allow
+  rules:
+    - match: "vault__*"
+      action: block
+    - match: "vault__list_paths"
+      action: allow
+```
+
+Learn more → [Policy](docs/config-schema.md#policy-per-tool-call-policy)
 
 ### Schema Pinning
 
@@ -477,6 +493,7 @@ Learn more → [Packs guide](docs/packs.md)
 | [`registry-basic.yaml`](examples/registry/registry-basic.yaml) | Skills registry with a single server |
 | [`var-basic.yaml`](examples/secrets-vault/var-basic.yaml) | Reference variable-store secrets with `${var:KEY}` syntax |
 | [`per-client-scoping.yaml`](examples/access-control/per-client-scoping.yaml) | Restrict which servers and tools each linked client may touch |
+| [`read-only-secrets.yaml`](examples/access-control/read-only-secrets.yaml) | Per-tool `policy:` block; substitute a real Vault image before calling tools |
 | [`declarative-link/stack.yaml`](examples/declarative-link/stack.yaml) | Auto-link LLM clients on apply with a `link:` block |
 | [`autoscale-basic.yaml`](examples/autoscale/autoscale-basic.yaml) | Reactive replica autoscaling for a stdio server |
 | [`python-sources/`](examples/python-sources/) | Generate non-root Python containers from exact PyPI and Git sources |

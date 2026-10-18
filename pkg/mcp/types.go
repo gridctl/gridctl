@@ -154,6 +154,12 @@ type GateCall struct {
 	PrefixedTool   string
 	ServerName     string
 	ClientAccessID string
+	// Annotations are the downstream server's own hints for this prefixed
+	// name, as indexed at the last Router.RefreshTools. Nil when the tool
+	// has no annotations or is not in the dispatch index. Group override
+	// hints are not included. Hidden tools are rejected before gates, so
+	// they are absent here.
+	Annotations *ToolAnnotations
 }
 
 // GateDecision is a CallGate verdict. A denied call short-circuits dispatch
@@ -163,13 +169,27 @@ type GateCall struct {
 type GateDecision struct {
 	Allow   bool
 	Message string
+	// Reason, when non-empty, overrides the run-record and CallOutcome
+	// reason for a denial. Empty keeps the historical gate_denied reason
+	// so existing gates are unchanged.
+	Reason string
+	// Rule identifies the denying rule for logs. It never includes
+	// arguments. Empty for gates that do not name a rule.
+	Rule string
 }
 
 // GateAllow is the affirmative decision.
 func GateAllow() GateDecision { return GateDecision{Allow: true} }
 
-// GateDeny denies the call with a model-readable message.
+// GateDeny denies the call with a model-readable message. Reason and Rule
+// stay empty so existing gates keep the gate_denied outcome.
 func GateDeny(message string) GateDecision { return GateDecision{Allow: false, Message: message} }
+
+// GateDenyWithReason denies the call and records an optional reason and
+// rule identifier. An empty reason keeps the historical gate_denied outcome.
+func GateDenyWithReason(message, reason, rule string) GateDecision {
+	return GateDecision{Allow: false, Message: message, Reason: reason, Rule: rule}
+}
 
 // CallGate is a veto-capable pre-call policy check on the tools/call dispatch
 // path. Gates run after the per-client access scope check and before routing;

@@ -7,7 +7,8 @@ import { ZoomControls } from '../ui/ZoomControls';
 import { InspectorHeader, PaneAnchor } from '../inspector';
 import { InspectorStat } from '../metrics/metricsShared';
 import { formatLastUsed, type AuditState } from '../../lib/toolAudit';
-import { CHIP_TONE_CLASS, annotationChips } from '../../lib/groups';
+import { CHIP_TONE_CLASS, annotationChips, policyChip, policyDetailText } from '../../lib/groups';
+import type { PolicyToolStatus } from '../../lib/api';
 import { useTextZoom } from '../../hooks/useTextZoom';
 import type { ToolRow } from '../../hooks/useToolsEditor';
 import type { ToolUsageStat } from '../../types';
@@ -33,6 +34,8 @@ interface ToolDetailPanelProps {
   // recorded. Shown whenever present — not gated on Audit Mode.
   usage?: ToolUsageStat;
   lastCalledAt?: string;
+  // Verdict from GET /api/policy for this prefixed tool, when a block is configured.
+  policy?: PolicyToolStatus;
   onClose: () => void;
 }
 
@@ -49,6 +52,7 @@ export function ToolDetailPanel({
   auditState,
   usage,
   lastCalledAt,
+  policy,
   onClose,
 }: ToolDetailPanelProps) {
   // Content text-size control for the description + JSON schema, scoped to this
@@ -133,6 +137,8 @@ export function ToolDetailPanel({
               <HintsBlock annotations={tool.annotations} />
             </Section>
 
+            <PolicyBlock policy={policy} />
+
             {(usage || (auditMode && auditState)) && (
               <Section title="Usage">
                 <div className="space-y-2">
@@ -208,6 +214,28 @@ function HintsBlock({ annotations }: { annotations?: ToolRow['annotations'] }) {
         Reported by the server, not verified by gridctl.
       </p>
     </div>
+  );
+}
+
+function PolicyBlock({ policy }: { policy?: PolicyToolStatus }) {
+  const text = policyDetailText(policy);
+  const chip = policyChip(policy);
+  if (!text || !chip) return null;
+  return (
+    <Section title="Policy">
+      <div className="flex items-start gap-2">
+        <span
+          title={chip.title}
+          className={cn(
+            'flex-shrink-0 px-1.5 py-px rounded text-[9px] font-medium mt-px',
+            CHIP_TONE_CLASS[chip.tone],
+          )}
+        >
+          {chip.label}
+        </span>
+        <span className="text-[11px] text-text-secondary leading-relaxed">{text}</span>
+      </div>
+    </Section>
   );
 }
 

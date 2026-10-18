@@ -47,6 +47,7 @@ const (
 	ReasonGroupMembership  = "group_membership"
 	ReasonClientScope      = "client_scope"
 	ReasonGateDenied       = "gate_denied"
+	ReasonPolicyBlocked    = "policy_blocked"
 	ReasonSchemaPin        = "schema_pin"
 	ReasonUnknownTool      = "unknown_tool"
 	ReasonNoReplica        = "no_replica"

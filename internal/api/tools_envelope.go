@@ -34,6 +34,7 @@ const (
 	errCodeGatewayUnavailable = "gateway_unavailable"
 	errCodeClientScope        = "client_scope"
 	errCodeGateDenied         = "gate_denied"
+	errCodePolicyBlocked      = "policy_blocked"
 	errCodeSchemaPin          = "schema_pin"
 	errCodeToolError          = "tool_error"
 	errCodeTransportError     = "transport_error"
@@ -136,6 +137,8 @@ func outcomeErrorCode(out mcp.CallOutcome) string {
 		return errCodeClientScope
 	case runs.ReasonGateDenied:
 		return errCodeGateDenied
+	case runs.ReasonPolicyBlocked:
+		return errCodePolicyBlocked
 	case runs.ReasonSchemaPin:
 		return errCodeSchemaPin
 	case runs.ReasonUnknownTool:
@@ -168,6 +171,8 @@ func safeOutcomeMessage(out mcp.CallOutcome) string {
 		return "tool is not in this client's access scope"
 	case runs.ReasonGateDenied:
 		return "tool call denied by a call gate"
+	case runs.ReasonPolicyBlocked:
+		return "tool blocked by policy"
 	case runs.ReasonSchemaPin:
 		return "server is blocked pending schema approval"
 	case runs.ReasonUnknownTool:

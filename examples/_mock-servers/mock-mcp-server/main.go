@@ -34,7 +34,10 @@ var (
 	listChanged      bool
 	serverCard       bool
 	serverCardOrigin string
+	destructiveTool  bool
 	requiredHeaders  headerFlags
+	callMu           sync.Mutex
+	callCounts       = map[string]int{}
 	lastHeaderMu     sync.Mutex
 	lastHeaderNames  []string
 	addedSeq         int
@@ -57,6 +60,7 @@ func init() {
 	flag.BoolVar(&sseServerRequest, "sse-server-request", false, "In SSE mode, emit a ping and a notification before tools/call and wait for the pong")
 	flag.BoolVar(&listChanged, "list-changed", false, "Declare tools.listChanged and emit notifications/tools/list_changed on the POST SSE stream")
 	flag.BoolVar(&serverCard, "server-card", false, "Serve /mcp/server-card and /.well-known/ai-catalog.json without the bearer check")
+	flag.BoolVar(&destructiveTool, "destructive-tool", false, "Append a purge tool with destructiveHint true; existing fixtures keep their tool counts without this flag")
 	flag.StringVar(&serverCardOrigin, "server-card-origin", "", "Emit this URL as the card remote instead of this process's /mcp URL")
 	flag.Var(&requiredHeaders, "require-header", "Require NAME=VALUE on /mcp (repeatable); 401 when missing or wrong")
 }
@@ -108,10 +112,17 @@ type ToolsCapability struct {
 }
 
 type Tool struct {
-	Name         string         `json:"name"`
-	Description  string         `json:"description,omitempty"`
-	InputSchema  map[string]any `json:"inputSchema"`
-	OutputSchema map[string]any `json:"outputSchema,omitempty"`
+	Name         string           `json:"name"`
+	Description  string           `json:"description,omitempty"`
+	InputSchema  map[string]any   `json:"inputSchema"`
+	OutputSchema map[string]any   `json:"outputSchema,omitempty"`
+	Annotations  *ToolAnnotations `json:"annotations,omitempty"`
+}
+
+// ToolAnnotations carries the MCP hint fields this mock advertises.
+type ToolAnnotations struct {
+	DestructiveHint *bool `json:"destructiveHint,omitempty"`
+	ReadOnlyHint    *bool `json:"readOnlyHint,omitempty"`
 }
 
 type ToolsListResult struct {
@@ -258,6 +269,7 @@ func handleMCP(w http.ResponseWriter, r *http.Request) {
 		if err := json.Unmarshal(req.Params, &params); err != nil {
 			rpcErr = &Error{Code: -32602, Message: "Invalid params"}
 		} else {
+			recordToolCall(params.Name)
 			callResult, mutated := handleToolCall(params)
 			result = callResult
 			notifyListChanged = mutated && listChanged && sseMode
@@ -412,6 +424,7 @@ func handleModernMCP(w http.ResponseWriter, req Request) {
 			sendError(w, req.ID, -32602, "Invalid params")
 			return
 		}
+		recordToolCall(params.Name)
 		if params.Name == "ask_secret" {
 			sendResult(w, req.ID, handleAskSecret(params))
 			return
@@ -498,6 +511,11 @@ func handleToolCall(params ToolCallParams) (ToolCallResult, bool) {
 			Content: []Content{{Type: "text", Text: "Current time: 2024-01-15T10:30:00Z (mock)"}},
 		}, false
 
+	case "purge":
+		return ToolCallResult{
+			Content: []Content{{Type: "text", Text: "purged"}},
+		}, false
+
 	case "mutate_tools":
 		return mutateTools(params)
 
@@ -575,6 +593,23 @@ func sendSSE(w http.ResponseWriter, resp Response) {
 	fmt.Fprintf(w, "data: %s\n\n", data)
 }
 
+func recordToolCall(name string) {
+	callMu.Lock()
+	callCounts[name]++
+	callMu.Unlock()
+}
+
+func handleCalls(w http.ResponseWriter, r *http.Request) {
+	callMu.Lock()
+	defer callMu.Unlock()
+	out := make(map[string]int, len(callCounts))
+	for name, n := range callCounts {
+		out[name] = n
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out)
+}
+
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "healthy"})
@@ -616,6 +651,16 @@ func main() {
 		})
 	}
 
+	if destructiveTool {
+		destr := true
+		sampleTools = append(sampleTools, Tool{
+			Name:        "purge",
+			Description: "Purges stored data",
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
+			Annotations: &ToolAnnotations{DestructiveHint: &destr},
+		})
+	}
+
 	if modernMode() {
 		sampleTools = append(sampleTools, Tool{
 			Name:        "ask_secret",
@@ -635,6 +680,7 @@ func main() {
 	}
 	mux.HandleFunc("/mcp", requireBearer(requireHeaders(handleMCP)))
 	mux.HandleFunc("/debug/last-headers", handleLastHeaders)
+	mux.HandleFunc("/debug/calls", handleCalls)
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/", requireBearer(handleHealth)) // Root returns health for ping
 	if oauthMode {

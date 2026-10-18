@@ -23,6 +23,7 @@ type StackView struct {
 	Gateway          *GatewayDeclView
 	Scan             *ScanDeclView
 	Pinning          *PinningDeclView
+	Policy           *PolicyDeclView
 }
 
 // ServerView is authored server identity without commands or credentials.
@@ -71,6 +72,17 @@ type ScanDeclView struct {
 // PinningDeclView is schema-pinning enablement as declared.
 type PinningDeclView struct {
 	Enabled bool
+}
+
+// PolicyDeclView is the authored per-tool policy block, never match
+// patterns that could be confused with arguments. Declared is false when
+// the key was omitted. An empty block is declared.
+type PolicyDeclView struct {
+	Declared          bool
+	Default           string
+	RuleCount         int
+	BlockDestructive  bool
+	ApprovalRuleCount int
 }
 
 // PinView is a stored pin snapshot. Presence is independent of Verify.

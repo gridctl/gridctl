@@ -56,7 +56,9 @@ import { FleetActions } from './FleetActions';
 import { ClientAccessEditor } from './ClientAccessEditor';
 import { GroupsPanel } from './GroupsPanel';
 import { useGroups } from '../../hooks/useGroups';
-import { CHIP_TONE_CLASS, annotationChips, groupsForTool } from '../../lib/groups';
+import { usePolicy } from '../../hooks/usePolicy';
+import { CHIP_TONE_CLASS, annotationChips, groupsForTool, policyChip } from '../../lib/groups';
+import type { PolicyToolStatus } from '../../lib/api';
 import { ToolDetailPanel } from './ToolDetailPanel';
 import type { MCPServerStatus, NodeStatus, Tool, ToolUsageStat } from '../../types';
 
@@ -318,6 +320,7 @@ export function ToolsWorkspace() {
   // Tool groups panel (the curation axis: bundles served at /groups/{name}/mcp).
   const [groupsOpen, setGroupsOpen] = useState(false);
   const { report: groupsReport } = useGroups(true);
+  const { report: policyReport } = usePolicy(true);
 
   // ---- Audit Mode ---------------------------------------------------------
   // An overlay that classifies each tool as used / configured-but-unused /
@@ -530,6 +533,7 @@ export function ToolsWorkspace() {
       auditState={selectedAuditState}
       usage={selectedUsage}
       lastCalledAt={selectedLastCalled}
+      policy={selectedTool ? policyReport?.tools?.[`${activeServerName}${TOOL_NAME_DELIMITER}${selectedTool}`] : undefined}
       onClose={() => applyTool(null)}
     />
   );
@@ -599,6 +603,7 @@ export function ToolsWorkspace() {
                 groupsFor={(tool) =>
                   groupsForTool(groupsReport, `${activeServer.name}${TOOL_NAME_DELIMITER}${tool}`)
                 }
+                policyTools={policyReport?.tools}
               />
             ) : null}
           </div>
@@ -1064,6 +1069,24 @@ interface ServerDetailProps {
   // Names of tool groups whose surface includes this (canonical) tool, for
   // the curation-axis badges on each row.
   groupsFor: (tool: string) => string[];
+  // Prefixed-name verdicts from GET /api/policy. Absent when unconfigured.
+  policyTools?: Record<string, PolicyToolStatus>;
+}
+
+function PolicyRowChip({ verdict }: { verdict?: PolicyToolStatus }) {
+  const chip = policyChip(verdict);
+  if (!chip) return null;
+  return (
+    <span
+      title={chip.title}
+      className={cn(
+        'flex-shrink-0 px-1.5 py-px rounded text-[9px] font-medium',
+        CHIP_TONE_CLASS[chip.tone],
+      )}
+    >
+      {chip.label}
+    </span>
+  );
 }
 
 function ServerDetail({
@@ -1083,6 +1106,7 @@ function ServerDetail({
   onRisk,
   onClearFacets,
   groupsFor,
+  policyTools,
 }: ServerDetailProps) {
   const {
     allTools: rows,
@@ -1408,6 +1432,9 @@ function ServerDetail({
                             {chip.label}
                           </span>
                         ))}
+                        <PolicyRowChip
+                          verdict={policyTools?.[`${server.name}${TOOL_NAME_DELIMITER}${opt.name}`]}
+                        />
                       </div>
                       {opt.description && (
                         <div className="text-[10px] text-text-muted truncate">{opt.description}</div>

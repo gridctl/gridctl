@@ -616,6 +616,10 @@ func Validate(s *Stack) error {
 	// Rate limit validation
 	errs = append(errs, validateLimits(s, serverNames)...)
 
+	// Per-tool call policy validation. A literal match must name a declared
+	// server; a glob is not checked against the catalog.
+	errs = append(errs, validatePolicy(s, serverNames)...)
+
 	// Tool group validation. A non-empty tools whitelist hides every other
 	// tool; a group that names one can never succeed.
 	errs = append(errs, validateGroups(s, serverNames, serverWhitelists(s))...)
@@ -808,6 +812,59 @@ func validateLimits(s *Stack, serverNames map[string]bool) ValidationErrors {
 		}
 		if r.Burst < 0 {
 			errs = append(errs, ValidationError{prefix + ".burst", "must not be negative"})
+		}
+	}
+	return errs
+}
+
+// validatePolicy checks the optional `policy:` block. Globs must compile
+// (an unparseable pattern would otherwise fail open at evaluation). A
+// literal match (no `*`, `?`, or `[`) must be a server__tool name whose
+// server half is declared. A glob is not checked against server names.
+// Naming a whitelist-hidden tool is deliberate defense in depth and is
+// not an error. require_approval is a valid action; the warning that it
+// is enforced as block lives in addWarnings.
+func validatePolicy(s *Stack, serverNames map[string]bool) ValidationErrors {
+	var errs ValidationErrors
+	if s.Policy == nil {
+		return errs
+	}
+
+	switch s.Policy.Default {
+	case "", "allow", "block":
+		// valid
+	default:
+		errs = append(errs, ValidationError{"policy.default", "must be 'allow' or 'block'"})
+	}
+
+	for i, rule := range s.Policy.Rules {
+		prefix := fmt.Sprintf("policy.rules[%d]", i)
+		if rule.Match == "" {
+			errs = append(errs, ValidationError{prefix + ".match", "pattern must not be empty"})
+		} else if _, err := path.Match(rule.Match, ""); err != nil {
+			errs = append(errs, ValidationError{
+				prefix + ".match",
+				fmt.Sprintf("invalid glob pattern '%s'", rule.Match),
+			})
+		} else if PolicyMatchLiteral(rule.Match) {
+			srv, _, wellFormed := splitPrefixedToolName(rule.Match)
+			if !wellFormed {
+				errs = append(errs, ValidationError{
+					prefix + ".match",
+					fmt.Sprintf("tool '%s' must be a prefixed name (server__tool)", rule.Match),
+				})
+			} else if !serverNames[srv] {
+				errs = append(errs, ValidationError{
+					prefix + ".match",
+					fmt.Sprintf("tool '%s' references unknown MCP server '%s'", rule.Match, srv),
+				})
+			}
+		}
+		switch rule.Action {
+		case "allow", "block", "require_approval":
+			// valid
+		default:
+			errs = append(errs, ValidationError{prefix + ".action", "must be 'allow', 'block', or 'require_approval'"})
 		}
 	}
 	return errs

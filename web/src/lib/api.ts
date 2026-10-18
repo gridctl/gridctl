@@ -1526,6 +1526,41 @@ export async function fetchLimits(): Promise<LimitsReport> {
   return fetchJSON<LimitsReport>('/api/limits');
 }
 
+// === Per-tool policy API ===
+
+/** One authored policy rule. Index is 0-based as written in stack.yaml. */
+export interface PolicyRuleStatus {
+  index: number;
+  match: string;
+  action: 'allow' | 'block' | 'require_approval' | string;
+}
+
+/** The verdict dispatch would apply if the tool were exposed. */
+export interface PolicyToolStatus {
+  action: 'allow' | 'block' | 'require_approval' | string;
+  source: 'rule' | 'block_destructive' | 'default' | string;
+  rule_index?: number;
+  rule?: string;
+  exposed: boolean;
+}
+
+/** GET /api/policy. Rules and tools are always arrays/objects, never null. */
+export interface PolicyStatus {
+  configured: boolean;
+  default?: 'allow' | 'block' | string;
+  block_destructive?: boolean;
+  rules: PolicyRuleStatus[];
+  tools: Record<string, PolicyToolStatus>;
+}
+
+/**
+ * Get the authored per-tool policy and each catalog tool's verdict.
+ * GET /api/policy
+ */
+export async function fetchPolicy(): Promise<PolicyStatus> {
+  return fetchJSON<PolicyStatus>('/api/policy');
+}
+
 // === Tool Groups API ===
 
 /**

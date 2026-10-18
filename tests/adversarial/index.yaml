@@ -359,6 +359,21 @@ scenarios:
     budgets:
       max_payload_bytes: 4096
       max_duration: 5s
+  - id: policy-block-every-path
+    owner_package: pkg/mcp
+    owner_issue: "1383"
+    package: github.com/gridctl/gridctl/pkg/mcp
+    test: TestDispatch_PolicyBlockedOnEveryPath
+    lanes: [unit]
+    expected_boundary: a policy-blocked tool is rejected after inventory and before rate limits on the MCP, group, code-mode, and canonical paths without a downstream call
+    nonclaims:
+      - not argument-level rules or tool-output inspection
+      - not credential-bound per-client authorization
+      - group override annotations are not the destructiveHint source
+      - a never-started server has no downstream annotations yet, so block_destructive does not apply until refresh
+    budgets:
+      max_payload_bytes: 4096
+      max_duration: 5s
   - id: cli-call-legacy-error-shape
     owner_package: internal/api
     owner_issue: "1154"
