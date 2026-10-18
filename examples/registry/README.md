@@ -30,6 +30,8 @@ The registry stores Agent Skills as SKILL.md files - markdown documents with YAM
         └── AGENT.md          # Imported verbatim from agents/*.md repos
 ```
 
+Those three directories are conventions, not the full install set, except for a git skill whose `SKILL.md` sits at the clone root. See [Git-imported skills](../../docs/skills.md#git-imported-skills).
+
 Each skill has a lifecycle state:
 - **draft** - stored but not exposed via MCP (default)
 - **active** - exposed as an MCP prompt and resource

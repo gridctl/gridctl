@@ -1064,10 +1064,10 @@ func TestStore_SafeFilePath_TraversalPrevention(t *testing.T) {
 	s := newTestStore(t)
 
 	tests := []struct {
-		name     string
-		skill    string
-		path     string
-		wantErr  bool
+		name    string
+		skill   string
+		path    string
+		wantErr bool
 	}{
 		{
 			name:    "parent directory traversal",
@@ -1242,15 +1242,34 @@ func TestCountSupportingFiles_Recursive(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Files outside the three managed trees are not counted.
+	// LICENSE.txt is an installed supporting file and counts. SKILL.md,
+	// dot-prefixed paths, and SKILL.md backups do not. A nested skill
+	// directory is not absorbed into the parent count.
 	if err := os.WriteFile(filepath.Join(dir, "LICENSE.txt"), []byte("x"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("x"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, ".origin.json"), []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md.pre-abc"), []byte("old"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	nested := filepath.Join(dir, "nested")
+	if err := os.MkdirAll(nested, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "SKILL.md"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "tool.py"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
-	if count := countSupportingFiles(dir); count != len(files) {
-		t.Errorf("expected %d, got %d", len(files), count)
+	// The five tree files plus LICENSE.txt. The exclusions above stay out.
+	if count := countSupportingFiles(dir); count != len(files)+1 {
+		t.Errorf("expected %d, got %d", len(files)+1, count)
 	}
 }

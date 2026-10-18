@@ -3090,7 +3090,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/registry/skills
 | `allowedTools` | Frontmatter `allowed-tools`, omitted when unset |
 | `acceptanceCriteria` | Given/When/Then scenarios, omitted when empty |
 | `state` | `draft`, `active`, or `disabled` |
-| `fileCount` | Number of supporting files (`scripts/`, `references/`, `assets/`) |
+| `fileCount` | Number of installed supporting files (every regular file except `SKILL.md`, names starting with `SKILL.md.`, dot-prefixed path components, and files under a nested skill directory) |
 | `dir` | Path relative to the skills root, omitted for a root-level skill |
 
 #### `POST /api/registry/skills`

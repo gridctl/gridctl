@@ -140,6 +140,40 @@ func TestCanonicalSkillHash_BodyChangeMoves(t *testing.T) {
 	}
 }
 
+// TestComputeDigests_IncludesRootHelper confirms a root helper is part of
+// the pin digest set and a dotfile beside it is not.
+func TestComputeDigests_IncludesRootHelper(t *testing.T) {
+	store := newTestRegistry(t)
+	writeSkill(t, store, "pcap-analysis", fixtureSkill)
+	writeSupportingFile(t, store, "pcap-analysis", "pcap_utils.py", []byte("def load():\n    return None\n"))
+	writeSupportingFile(t, store, "pcap-analysis", ".DS_Store", []byte("junk"))
+
+	sk, err := store.GetSkill("pcap-analysis")
+	if err != nil {
+		t.Fatalf("get skill: %v", err)
+	}
+	_, files, err := ComputeDigests(store, sk)
+	if err != nil {
+		t.Fatalf("computing digests: %v", err)
+	}
+	var paths []string
+	for _, f := range files {
+		paths = append(paths, f.Path)
+	}
+	found := false
+	for _, p := range paths {
+		if p == "pcap_utils.py" {
+			found = true
+		}
+		if p == ".DS_Store" || len(p) > 0 && p[0] == '.' {
+			t.Fatalf("dotfile must not be digested: %+v", files)
+		}
+	}
+	if !found {
+		t.Fatalf("digest set = %+v, want pcap_utils.py", files)
+	}
+}
+
 func TestComputeDigests_FiltersNonContent(t *testing.T) {
 	store := newTestRegistry(t)
 	writeSkill(t, store, "demo", fixtureSkill)

@@ -6,20 +6,33 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
-// Supporting content is installed from an allowlist rather than by copying
-// the discovered skill directory and excluding known-bad paths. The allowlist
-// is what keeps a repo-root skill (Path == ".") from installing .git, and what
-// keeps a parent skill from absorbing a nested skill that lives beside it.
+// Supporting files are selected by layout, not by one allowlist for every
+// skill.
+//
+// layoutOwnDirectory copies the skill directory whole. It applies when the
+// discovered path is not the clone root, and to every local-directory import
+// even when that path is ".". Dot-prefixed entries, nested skill directories,
+// symlinks, irregular files, and reserved root names (SKILL.md.*) are
+// excluded. That is what keeps .git out of a normal package and what keeps a
+// parent from absorbing a nested skill.
+//
+// layoutRoot keeps the three-directory allowlist. It applies only when a
+// non-local import discovers SKILL.md at the clone root, because that
+// directory is the repository, not the skill. Dot-prefixed entries are
+// excluded in both layouts.
 var supportingDirs = []string{"scripts", "references", "assets"}
 
 // metadataFilePattern matches top-level package metadata copied verbatim
-// alongside the supporting trees. Deliberately an exact basename match with
-// an optional extension: a prefix match would both let a repo smuggle
-// arbitrary files into the skill root by naming them "license-*" and make
-// pruning delete a user's own "license-notes.md" on every sync.
+// alongside the supporting trees in the root layout. Deliberately an exact
+// basename match with an optional extension: a prefix match would both let a
+// repo smuggle arbitrary files into the skill root by naming them "license-*"
+// and make pruning delete a user's own "license-notes.md" on every sync.
+// Own-directory imports copy these files as ordinary root files; the pattern
+// is not widened for that layout.
 var metadataFilePattern = regexp.MustCompile(`^(LICENSE|LICENCE|NOTICE|COPYING)(\.[A-Za-z0-9]+)?$`)
 
 const (
@@ -39,7 +52,34 @@ const (
 	// installTmpDir stages a new tree inside the skill directory so the
 	// existing one is only removed once the replacement is fully written.
 	installTmpDir = ".gridctl-install-tmp"
+
+	// maxRootOmissionNames caps the repository-root omission warning so a
+	// large clone does not dump every leftover path into one line.
+	maxRootOmissionNames = 5
 )
+
+// treeLayout selects how supporting files are collected and pruned.
+type treeLayout int
+
+const (
+	// layoutOwnDirectory copies the skill directory, minus the exclusions
+	// documented above. Local-directory imports always use this layout.
+	layoutOwnDirectory treeLayout = iota
+	// layoutRoot keeps the scripts/, references/, and assets/ allowlist.
+	// It applies only to a non-local import whose SKILL.md is at the clone root.
+	layoutRoot
+)
+
+// layoutFor returns layoutRoot only when the source is not a local directory
+// and the discovered skill path is the clone root. kind is ImportOptions.Kind
+// (empty for git and for pack preview). discoveredPath is DiscoveredSkill.Path.
+// filepath.Clean("") is ".", so an empty path is the clone root.
+func layoutFor(kind, discoveredPath string) treeLayout {
+	if kind != SourceKindLocal && filepath.Clean(discoveredPath) == "." {
+		return layoutRoot
+	}
+	return layoutOwnDirectory
+}
 
 // supportingFile is one file selected for installation, carrying everything
 // needed to scan and copy it without re-walking the source tree.
@@ -56,21 +96,26 @@ type limitError struct{ reason string }
 
 func (e *limitError) Error() string { return e.reason }
 
-// collectSupportingFiles walks the allowlisted subtrees under srcDir and
-// returns the files that should be installed alongside SKILL.md.
+// collectSupportingFiles returns the files that should be installed alongside
+// SKILL.md. layout selects the walk; see treeLayout.
 //
 // The traversal is deliberately conservative because srcDir is untrusted
 // remote content:
-//   - only supportingDirs and top-level metadata files are considered
-//   - any directory carrying its own SKILL.md is skipped, so a parent skill
-//     never absorbs a nested one, and a stray SKILL.md is never copied
+//   - root layout considers only supportingDirs, top-level metadata files,
+//     and reports other root entries in one warning
+//   - own-directory layout considers every regular file, with one warning
+//     per excluded entry
+//   - any directory other than the walk root that carries its own SKILL.md
+//     is skipped, so a parent skill never absorbs a nested one
 //   - symlinks are skipped entirely; remote skills have no legitimate need
 //     for them, and following one is how a copy escapes the skill directory
+//   - dot-prefixed entries are skipped in both layouts
 //   - per-file, per-skill, and aggregate size limits are enforced
 //
 // Warnings describe content that was deliberately not installed. A limitError
-// means the skill should be skipped rather than partially installed.
-func collectSupportingFiles(srcDir string) ([]supportingFile, []string, error) {
+// means the skill should be skipped rather than partially installed. Files
+// outside the old allowlist count toward the caps in the own-directory layout.
+func collectSupportingFiles(srcDir string, layout treeLayout) ([]supportingFile, []string, error) {
 	var (
 		files    []supportingFile
 		warnings []string
@@ -106,18 +151,33 @@ func collectSupportingFiles(srcDir string) ([]supportingFile, []string, error) {
 		return nil
 	}
 
+	var err error
+	if layout == layoutRoot {
+		err = collectRootLayout(srcDir, add, &warnings)
+	} else {
+		err = collectOwnDirectory(srcDir, add, &warnings)
+	}
+	if err != nil {
+		return nil, warnings, err
+	}
+	return files, warnings, nil
+}
+
+// collectRootLayout walks the allowlisted subtrees and top-level metadata,
+// then reports other non-dot root entries in one warning.
+func collectRootLayout(srcDir string, add func(rel, abs string, d fs.DirEntry) error, warnings *[]string) error {
 	for _, sub := range supportingDirs {
 		root, ok, why := managedTreeRoot(srcDir, sub)
 		if !ok {
 			if why != "" {
-				warnings = append(warnings, why)
+				*warnings = append(*warnings, why)
 			}
 			continue
 		}
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				rel, _ := filepath.Rel(srcDir, path)
-				warnings = append(warnings, fmt.Sprintf("%s: cannot walk: %v", filepath.ToSlash(rel), err))
+				*warnings = append(*warnings, fmt.Sprintf("%s: cannot walk: %v", filepath.ToSlash(rel), err))
 				return nil //nolint:nilerr // an unreadable subtree is skipped, not fatal
 			}
 			rel, rerr := filepath.Rel(srcDir, path)
@@ -125,19 +185,27 @@ func collectSupportingFiles(srcDir string) ([]supportingFile, []string, error) {
 				return rerr
 			}
 			switch {
+			case strings.HasPrefix(d.Name(), "."):
+				*warnings = append(*warnings, fmt.Sprintf("%s: skipped dot entry", filepath.ToSlash(rel)))
+				if d.IsDir() {
+					return fs.SkipDir
+				}
+				return nil
 			case d.Type()&fs.ModeSymlink != 0:
-				warnings = append(warnings, fmt.Sprintf("%s: skipped symlink", filepath.ToSlash(rel)))
+				*warnings = append(*warnings, fmt.Sprintf("%s: skipped symlink", filepath.ToSlash(rel)))
 				return nil
 			case d.IsDir():
 				// Any directory carrying its own SKILL.md is a separate
-				// skill, including the tree root itself.
+				// skill, including the tree root itself. The own-directory
+				// walk cannot reuse this branch unchanged: its root is the
+				// skill directory, which always contains SKILL.md.
 				if _, serr := os.Lstat(filepath.Join(path, "SKILL.md")); serr == nil {
-					warnings = append(warnings, fmt.Sprintf("%s: skipped nested skill directory", filepath.ToSlash(rel)))
+					*warnings = append(*warnings, fmt.Sprintf("%s: skipped nested skill directory", filepath.ToSlash(rel)))
 					return fs.SkipDir
 				}
 				return nil
 			case !d.Type().IsRegular():
-				warnings = append(warnings, fmt.Sprintf("%s: skipped irregular file", filepath.ToSlash(rel)))
+				*warnings = append(*warnings, fmt.Sprintf("%s: skipped irregular file", filepath.ToSlash(rel)))
 				return nil
 			case d.Name() == "SKILL.md":
 				// The rendered SKILL.md is written by the store; a stray one
@@ -148,29 +216,131 @@ func collectSupportingFiles(srcDir string) ([]supportingFile, []string, error) {
 			}
 		})
 		if err != nil {
-			return nil, warnings, err
+			return err
 		}
 	}
 
-	// Top-level metadata files.
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {
-		return nil, warnings, fmt.Errorf("reading %s: %w", srcDir, err)
+		return fmt.Errorf("reading %s: %w", srcDir, err)
 	}
 	for _, e := range entries {
 		if !metadataFilePattern.MatchString(e.Name()) {
 			continue
 		}
 		if e.Type()&fs.ModeSymlink != 0 || !e.Type().IsRegular() {
-			warnings = append(warnings, fmt.Sprintf("%s: skipped non-regular metadata file", e.Name()))
+			*warnings = append(*warnings, fmt.Sprintf("%s: skipped non-regular metadata file", e.Name()))
 			continue
 		}
 		if err := add(e.Name(), filepath.Join(srcDir, e.Name()), e); err != nil {
-			return nil, warnings, err
+			return err
 		}
 	}
+	if w := rootOmissionWarning(entries); w != "" {
+		*warnings = append(*warnings, w)
+	}
+	return nil
+}
 
-	return files, warnings, nil
+// rootOmissionWarning reports root entries the allowlist did not install.
+// Dot entries, SKILL.md, the allowlisted directory names, and metadata files
+// are excluded; each of those has its own rule. At most five names are listed.
+func rootOmissionWarning(entries []os.DirEntry) string {
+	allow := make(map[string]struct{}, len(supportingDirs))
+	for _, sub := range supportingDirs {
+		allow[sub] = struct{}{}
+	}
+	var names []string
+	for _, e := range entries {
+		name := e.Name()
+		if name == "SKILL.md" || strings.HasPrefix(name, ".") {
+			continue
+		}
+		if _, ok := allow[name]; ok {
+			continue
+		}
+		if metadataFilePattern.MatchString(name) {
+			continue
+		}
+		if e.IsDir() && e.Type()&fs.ModeSymlink == 0 {
+			names = append(names, name+"/")
+		} else {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	sort.Strings(names)
+	shown := names
+	extra := ""
+	if len(shown) > maxRootOmissionNames {
+		shown = shown[:maxRootOmissionNames]
+		extra = ", ..."
+	}
+	return fmt.Sprintf("repository-root skill: %d entries outside scripts/, references/, and assets/ were not installed (%s%s)",
+		len(names), strings.Join(shown, ", "), extra)
+}
+
+// collectOwnDirectory walks srcDir and selects every regular file that is
+// part of this skill. The walk root is the skill directory, so the first
+// callback (rel == ".") must return nil and never SkipDir.
+func collectOwnDirectory(srcDir string, add func(rel, abs string, d fs.DirEntry) error, warnings *[]string) error {
+	return filepath.WalkDir(srcDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if path == srcDir {
+				return fmt.Errorf("reading %s: %w", srcDir, err)
+			}
+			rel, _ := filepath.Rel(srcDir, path)
+			*warnings = append(*warnings, fmt.Sprintf("%s: cannot walk: %v", filepath.ToSlash(rel), err))
+			return nil //nolint:nilerr // an unreadable subtree is skipped, not fatal
+		}
+		rel, rerr := filepath.Rel(srcDir, path)
+		if rerr != nil {
+			return rerr
+		}
+		rel = filepath.ToSlash(rel)
+		// The skill directory itself contains SKILL.md. Skipping it would
+		// select nothing.
+		if rel == "." {
+			return nil
+		}
+		base := d.Name()
+		if rel == "SKILL.md" {
+			// The store writes the rendered SKILL.md.
+			return nil
+		}
+		if strings.HasPrefix(base, ".") {
+			*warnings = append(*warnings, fmt.Sprintf("%s: skipped dot entry", rel))
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !strings.Contains(rel, "/") && strings.HasPrefix(base, "SKILL.md.") {
+			*warnings = append(*warnings, fmt.Sprintf("%s: skipped reserved name", rel))
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			*warnings = append(*warnings, fmt.Sprintf("%s: skipped symlink", rel))
+			return nil
+		}
+		if d.IsDir() {
+			if _, serr := os.Lstat(filepath.Join(path, "SKILL.md")); serr == nil {
+				*warnings = append(*warnings, fmt.Sprintf("%s: skipped nested skill directory", rel))
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			*warnings = append(*warnings, fmt.Sprintf("%s: skipped irregular file", rel))
+			return nil
+		}
+		return add(rel, path, d)
+	})
 }
 
 // managedTreeRoot resolves one supporting directory under srcDir, reporting
@@ -178,6 +348,7 @@ func collectSupportingFiles(srcDir string) ([]supportingFile, []string, error) {
 // exactly against the directory listing rather than trusted to the
 // filesystem, so a case-insensitive volume cannot silently install a
 // "Scripts/" tree as "scripts/" while a case-sensitive one installs nothing.
+// Used by the root layout only.
 func managedTreeRoot(srcDir, sub string) (root string, ok bool, warning string) {
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {
@@ -198,7 +369,8 @@ func managedTreeRoot(srcDir, sub string) (root string, ok bool, warning string) 
 	return "", false, ""
 }
 
-// installSupportingFiles replaces the managed content of dstDir with files.
+// installSupportingFiles replaces the managed content of dstDir with files
+// and returns the relative paths it removed that are not in the new set.
 //
 // The replacement is staged: everything is written into a temp directory
 // inside dstDir first, and the existing managed content is only removed once
@@ -206,26 +378,35 @@ func managedTreeRoot(srcDir, sub string) (root string, ok bool, warning string) 
 // previous install intact rather than a half-deleted skill whose SKILL.md
 // still references scripts that no longer exist.
 //
-// Pruning is allowlist-scoped: the supportingDirs are replaced wholesale and
-// managed metadata basenames are removed, so content deleted upstream does
-// not linger. Nothing outside those paths is touched — .origin.json,
-// SKILL.md, and SKILL.md.pre-<sha> backups all survive. The registry store
-// has no provenance to tell a user-authored scripts/helper.sh from an
-// imported one, so files a user adds under a managed directory are replaced
-// on the next import; that is the documented trade-off rather than an
-// oversight.
-func installSupportingFiles(dstDir string, files []supportingFile) (int, error) {
+// Root layout pruning is allowlist-scoped: the supportingDirs are replaced
+// wholesale and managed metadata basenames are removed. Nothing outside those
+// paths is touched, so .origin.json, SKILL.md, and SKILL.md.pre-<sha> backups
+// survive, as does a hand-added file beside them.
+//
+// Own-directory pruning replaces the whole directory except SKILL.md, names
+// starting with SKILL.md., dot-prefixed entries, and any directory below the
+// skill root that carries its own SKILL.md. Those nested directories are
+// separate registry skills (skills/git-workflow/branch-fork, or a deeper
+// a/b/SKILL.md). They are left in place, at any depth, and are not reported
+// as removed. Dot-prefixed entries include .origin.json and the staging
+// directory, which is created before the prune and must not be deleted out
+// from under the install. The registry has no per-file manifest, so a
+// hand-added file that is not inside a nested skill is replaced on the next
+// import; that is the documented trade-off rather than an oversight. A
+// replacement that shares a parent with a spared nested skill is merged into
+// that parent rather than renaming the parent away.
+func installSupportingFiles(dstDir string, files []supportingFile, layout treeLayout) (int, []string, error) {
 	if err := os.MkdirAll(dstDir, 0o755); err != nil {
-		return 0, fmt.Errorf("creating %s: %w", dstDir, err)
+		return 0, nil, fmt.Errorf("creating %s: %w", dstDir, err)
 	}
 
 	staging := filepath.Join(dstDir, installTmpDir)
 	if err := os.RemoveAll(staging); err != nil {
-		return 0, fmt.Errorf("clearing staging dir: %w", err)
+		return 0, nil, fmt.Errorf("clearing staging dir: %w", err)
 	}
 	if len(files) > 0 {
 		if err := os.MkdirAll(staging, 0o755); err != nil {
-			return 0, fmt.Errorf("creating staging dir: %w", err)
+			return 0, nil, fmt.Errorf("creating staging dir: %w", err)
 		}
 	}
 	defer func() { _ = os.RemoveAll(staging) }()
@@ -235,37 +416,376 @@ func installSupportingFiles(dstDir string, files []supportingFile) (int, error) 
 		// Defense in depth: the walk cannot produce an escaping path, but the
 		// copy target is derived from remote input so verify containment.
 		if !withinDir(staging, out) {
-			return 0, fmt.Errorf("refusing to write outside skill directory: %s", f.rel)
+			return 0, nil, fmt.Errorf("refusing to write outside skill directory: %s", f.rel)
 		}
 		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
-			return 0, fmt.Errorf("creating %s: %w", filepath.Dir(out), err)
+			return 0, nil, fmt.Errorf("creating %s: %w", filepath.Dir(out), err)
 		}
 		if err := os.WriteFile(out, f.content, f.mode); err != nil {
-			return 0, fmt.Errorf("writing %s: %w", f.rel, err)
+			return 0, nil, fmt.Errorf("writing %s: %w", f.rel, err)
 		}
+	}
+
+	keep := make(map[string]struct{}, len(files))
+	for _, f := range files {
+		keep[f.rel] = struct{}{}
 	}
 
 	// Staging succeeded; now it is safe to replace the live content.
-	if err := pruneManagedContent(dstDir); err != nil {
-		return 0, err
+	var (
+		removed []string
+		err     error
+	)
+	if layout == layoutRoot {
+		removed, err = removedByRootPrune(dstDir, keep)
+		if err != nil {
+			return 0, nil, err
+		}
+		if err := pruneManagedContent(dstDir); err != nil {
+			return 0, nil, err
+		}
+	} else {
+		// Refuse before prune so a path that would enter a nested skill
+		// leaves the previous install intact.
+		if err := nestedSkillOverwrite(staging, dstDir); err != nil {
+			return 0, nil, err
+		}
+		removed, err = pruneOwnDirectory(dstDir, keep)
+		if err != nil {
+			return 0, nil, err
+		}
 	}
 	if len(files) == 0 {
-		return 0, nil
+		return 0, removed, nil
+	}
+	if layout == layoutOwnDirectory {
+		if err := placeStagedTree(staging, dstDir); err != nil {
+			return 0, nil, err
+		}
+		return len(files), removed, nil
 	}
 	staged, err := os.ReadDir(staging)
 	if err != nil {
-		return 0, fmt.Errorf("reading staging dir: %w", err)
+		return 0, nil, fmt.Errorf("reading staging dir: %w", err)
 	}
 	for _, e := range staged {
 		if err := os.Rename(filepath.Join(staging, e.Name()), filepath.Join(dstDir, e.Name())); err != nil {
-			return 0, fmt.Errorf("installing %s: %w", e.Name(), err)
+			return 0, nil, fmt.Errorf("installing %s: %w", e.Name(), err)
 		}
 	}
-	return len(files), nil
+	return len(files), removed, nil
+}
+
+// nestedSkillOverwrite reports a staged path that would replace or enter a
+// destination directory carrying its own SKILL.md. The skill root is not a
+// nested skill. A missing staging directory is not a collision.
+func nestedSkillOverwrite(staging, dstDir string) error {
+	info, err := os.Lstat(staging)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("reading staging dir: %w", err)
+	}
+	if !info.IsDir() {
+		return nil
+	}
+	return filepath.WalkDir(staging, func(path string, _ fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == staging {
+			return nil
+		}
+		rel, rerr := filepath.Rel(staging, path)
+		if rerr != nil {
+			return rerr
+		}
+		if skill, ok := enclosingNestedSkill(dstDir, filepath.Join(dstDir, rel)); ok {
+			return fmt.Errorf("refusing to replace nested skill directory %s", skill)
+		}
+		return nil
+	})
+}
+
+// enclosingNestedSkill reports the slash-separated path, relative to dstDir,
+// of a real directory at or above dest that carries its own SKILL.md. dest
+// may not exist. The skill root itself is not a nested skill, and a symlink
+// is not treated as one.
+func enclosingNestedSkill(dstDir, dest string) (string, bool) {
+	cur := dest
+	for {
+		rel, err := filepath.Rel(dstDir, cur)
+		if err != nil {
+			return "", false
+		}
+		relSlash := filepath.ToSlash(rel)
+		if relSlash == "." || relSlash == ".." || strings.HasPrefix(relSlash, "../") {
+			return "", false
+		}
+		info, err := os.Lstat(cur)
+		if err == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+			if _, serr := os.Lstat(filepath.Join(cur, "SKILL.md")); serr == nil {
+				return relSlash, true
+			}
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return "", false
+		}
+		cur = parent
+	}
+}
+
+// placeStagedTree moves staging into dstDir. A missing destination is renamed
+// into place. A directory that remains because it holds a nested skill is
+// merged, so a replacement beside that skill still lands.
+func placeStagedTree(staging, dstDir string) error {
+	entries, err := os.ReadDir(staging)
+	if err != nil {
+		return fmt.Errorf("reading staging dir: %w", err)
+	}
+	for _, e := range entries {
+		if err := placeStagedEntry(filepath.Join(staging, e.Name()), filepath.Join(dstDir, e.Name()), e.Name()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func placeStagedEntry(src, dest, rel string) error {
+	info, err := os.Lstat(dest)
+	if os.IsNotExist(err) {
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+			return fmt.Errorf("installing %s: %w", rel, err)
+		}
+		if err := os.Rename(src, dest); err != nil {
+			return fmt.Errorf("installing %s: %w", rel, err)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("installing %s: %w", rel, err)
+	}
+	if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+		if _, serr := os.Lstat(filepath.Join(dest, "SKILL.md")); serr == nil {
+			return fmt.Errorf("refusing to replace nested skill directory %s", filepath.ToSlash(rel))
+		}
+		srcInfo, serr := os.Lstat(src)
+		if serr != nil {
+			return fmt.Errorf("installing %s: %w", rel, serr)
+		}
+		if !srcInfo.IsDir() {
+			return fmt.Errorf("installing %s: destination is a directory", rel)
+		}
+		children, rerr := os.ReadDir(src)
+		if rerr != nil {
+			return fmt.Errorf("installing %s: %w", rel, rerr)
+		}
+		for _, child := range children {
+			childRel := rel + "/" + child.Name()
+			if err := placeStagedEntry(filepath.Join(src, child.Name()), filepath.Join(dest, child.Name()), childRel); err != nil {
+				return err
+			}
+		}
+		if err := os.Remove(src); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("installing %s: %w", rel, err)
+		}
+		return nil
+	}
+	if err := os.Remove(dest); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("installing %s: %w", rel, err)
+	}
+	if err := os.Rename(src, dest); err != nil {
+		return fmt.Errorf("installing %s: %w", rel, err)
+	}
+	return nil
+}
+
+// removedByRootPrune lists regular files pruneManagedContent will delete that
+// are not in the replacement set. It does not delete; the caller still calls
+// pruneManagedContent so the root-layout deletion set stays in one place.
+func removedByRootPrune(dstDir string, keep map[string]struct{}) ([]string, error) {
+	var removed []string
+	for _, sub := range supportingDirs {
+		files, err := regularRelFiles(dstDir, filepath.Join(dstDir, sub))
+		if err != nil {
+			return nil, fmt.Errorf("pruning %s: %w", sub, err)
+		}
+		for _, rel := range files {
+			if _, ok := keep[rel]; !ok {
+				removed = append(removed, rel)
+			}
+		}
+	}
+	entries, err := os.ReadDir(dstDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			sort.Strings(removed)
+			return removed, nil
+		}
+		return nil, fmt.Errorf("reading %s: %w", dstDir, err)
+	}
+	for _, e := range entries {
+		if e.IsDir() || !metadataFilePattern.MatchString(e.Name()) {
+			continue
+		}
+		if e.Type()&fs.ModeSymlink != 0 || !e.Type().IsRegular() {
+			continue
+		}
+		if _, ok := keep[e.Name()]; !ok {
+			removed = append(removed, e.Name())
+		}
+	}
+	sort.Strings(removed)
+	return removed, nil
+}
+
+// pruneOwnDirectory removes installed content that the own-directory layout
+// does not keep, and returns the regular files that deletion dropped that are
+// not in the replacement set.
+//
+// It walks the destination instead of RemoveAll on each top-level entry. A
+// directory below the skill root that carries its own SKILL.md is a separate
+// registry skill: the walk skips it, leaves it in place, and does not report
+// its files. Top-level SKILL.md, SKILL.md.* backups, and dot-prefixed names
+// are spared the same way, including the staging directory. Other regular
+// files and symlinks are deleted. Directories left empty are removed
+// afterward, deepest first, so a parent that only held a nested skill remains.
+func pruneOwnDirectory(dstDir string, keep map[string]struct{}) ([]string, error) {
+	info, err := os.Lstat(dstDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading %s: %w", dstDir, err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("reading %s: not a directory", dstDir)
+	}
+
+	var removed []string
+	var dirs []string
+	err = filepath.WalkDir(dstDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, rerr := filepath.Rel(dstDir, path)
+		if rerr != nil {
+			return rerr
+		}
+		relSlash := filepath.ToSlash(rel)
+		if relSlash == "." {
+			return nil
+		}
+		if !strings.Contains(relSlash, "/") && sparedInstallName(d.Name()) {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		// A symlink is not a nested skill, even when its target contains
+		// SKILL.md. Delete the link; do not follow it.
+		if d.IsDir() && d.Type()&fs.ModeSymlink == 0 {
+			if _, serr := os.Lstat(filepath.Join(path, "SKILL.md")); serr == nil {
+				return fs.SkipDir
+			}
+			dirs = append(dirs, path)
+			return nil
+		}
+		if d.Type().IsRegular() {
+			if _, ok := keep[relSlash]; !ok {
+				removed = append(removed, relSlash)
+			}
+		}
+		if rerr := os.Remove(path); rerr != nil && !os.IsNotExist(rerr) {
+			return fmt.Errorf("pruning %s: %w", relSlash, rerr)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	for i := len(dirs) - 1; i >= 0; i-- {
+		if err := removeIfEmpty(dirs[i]); err != nil {
+			rel, _ := filepath.Rel(dstDir, dirs[i])
+			return nil, fmt.Errorf("pruning %s: %w", filepath.ToSlash(rel), err)
+		}
+	}
+	sort.Strings(removed)
+	return removed, nil
+}
+
+// removeIfEmpty removes path when it has no entries. A missing path, or a
+// directory that still holds a nested skill, is not an error.
+func removeIfEmpty(path string) error {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if len(entries) > 0 {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// sparedInstallName reports top-level names the own-directory prune must not
+// delete. Dot-prefixed names include .origin.json and the staging directory.
+// Nested skill directories are spared by the walk, not by this name check.
+func sparedInstallName(name string) bool {
+	return name == "SKILL.md" || strings.HasPrefix(name, "SKILL.md.") || strings.HasPrefix(name, ".")
+}
+
+// regularRelFiles lists slash-separated regular files at abs or beneath it,
+// relative to dstDir. Symlinks are not followed and are not listed. A missing
+// path contributes nothing.
+func regularRelFiles(dstDir, abs string) ([]string, error) {
+	info, err := os.Lstat(abs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if info.Mode().IsRegular() {
+		rel, rerr := filepath.Rel(dstDir, abs)
+		if rerr != nil {
+			return nil, rerr
+		}
+		return []string{filepath.ToSlash(rel)}, nil
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return nil, nil
+	}
+	var out []string
+	err = filepath.WalkDir(abs, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.Type()&fs.ModeSymlink != 0 || !d.Type().IsRegular() {
+			return nil
+		}
+		rel, rerr := filepath.Rel(dstDir, path)
+		if rerr != nil {
+			return rerr
+		}
+		out = append(out, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // pruneManagedContent removes the managed subtrees and metadata files from
-// dstDir. Missing paths are not an error.
+// dstDir. Missing paths are not an error. Root layout only.
 func pruneManagedContent(dstDir string) error {
 	for _, sub := range supportingDirs {
 		if err := os.RemoveAll(filepath.Join(dstDir, sub)); err != nil && !os.IsNotExist(err) {

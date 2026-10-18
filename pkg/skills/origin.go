@@ -26,7 +26,7 @@ type Origin struct {
 	InstalledHash string       `json:"installedHash,omitempty"`
 	Fingerprint   *Fingerprint `json:"fingerprint,omitempty"`
 	// SupportingFilesInstalled records that the importer evaluated and
-	// installed the complete allowlisted package tree, even when it was empty.
+	// installed the complete supporting-file set, even when it was empty.
 	// Its absence identifies imports created before supporting-file installs.
 	SupportingFilesInstalled bool `json:"supportingFilesInstalled,omitempty"`
 	// CredentialRef is an opaque reference like "${vault:GIT_TOKEN}" used to
