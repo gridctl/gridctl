@@ -58,6 +58,21 @@ func (l *Lock) Get(kind Kind, client, source string) *Entry {
 	return l.index[key{kind: kind, client: client, source: source}]
 }
 
+// Owner returns the entry that owns path, or nil. Callers use it to
+// refuse a dry-run conflict check without mutating the lock: Set is the
+// write-path enforcement, and a dry-run lock must not be Set.
+func (l *Lock) Owner(path string) *Entry {
+	if l == nil || l.file == nil || path == "" {
+		return nil
+	}
+	for _, e := range l.file.Projections {
+		if e != nil && e.Path == path {
+			return e
+		}
+	}
+	return nil
+}
+
 // Entries returns the entries of one kind in deterministic
 // (source, client) order.
 func (l *Lock) Entries(kind Kind) []*Entry {

@@ -48,6 +48,13 @@ const (
 	// knows KindContext must never be able to drop or clobber fragment
 	// records it cannot represent.
 	KindContextFragment Kind = "context-fragment"
+	// KindService records a user-scoped supervisor unit (pkg/service).
+	// It uses Client (platform: systemd or launchd), Source (raw stack
+	// name), Path (unit file), CreatedByGridctl, InstalledHash, Pack,
+	// and Extra keys stack_file, port, base_port, binary, label, and
+	// service_name. An older gridctl keeps these records as an unknown
+	// kind and never removes the unit.
+	KindService Kind = "service"
 )
 
 // Projection states shared by every kind. Kinds may extend the
