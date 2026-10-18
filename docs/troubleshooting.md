@@ -6,6 +6,32 @@ Start with `gridctl doctor`: it runs most of the environment checks below automa
 
 ---
 
+## Validation reports an unknown field
+
+`gridctl validate` rejects a key the schema does not declare. The message
+names the path, the key, and the line, for example
+`mcp-servers[0].headerz: unknown field "headerz" (line 31)`. The same text
+is in `gridctl validate --format json` as an issue with `line`, and in the
+`invalid_candidate` `errors` list from `POST /api/reload` and
+`POST /api/stack/initialize`. An unknown key in an `extends` parent is
+reported as `extends[<file>].<path>`, and the line is that file's line, not
+the child's.
+
+Remove the key, or rename it to a field the schema accepts. `headers:` and
+`description:` are accepted. `headers:` is only valid on external URL and
+OpenAPI servers. A group `tools:` or `overrides` entry that names a tool
+hidden by that server's `tools:` whitelist is also an error. Drop the
+reference, or add the tool back to the whitelist. A profile `tools:` entry
+or a group `exclude` entry that names a hidden tool is a warning.
+
+Leftover removed fields (`gateway.default_model`, a per-server `model:`,
+top-level `client_models:`, and `limits.budgets`) fail the same way. Delete
+them. `gridctl validate --policy` does not run this check.
+
+This check ships in the next 1.0.0 release candidate. A stack that validated
+before it because an unknown key was ignored will now fail until that key
+is fixed or removed.
+
 ## Gateway security requires a restart
 
 `restart_required` means the saved candidate differs from the listener's effective startup authentication, bind, Host/Origin allowlists, or insecure override. The active credential and accepted configuration remain unchanged, including when ordinary edits were saved alongside security changes. The edited file is not rolled back. Repeating reload cannot activate it.
@@ -574,7 +600,7 @@ Or an error names a `sensitive default/replacement operand`. The CLI exits `1` w
 
 **Resolution:**
 
-Store the value separately (for example, `gridctl var set GATEWAY_TOKEN` prompts for hidden input), then edit the reported source field to use `${var:GATEWAY_TOKEN}` without a literal fallback. Recipients must supply their own value. Export never creates a variable or edits the source for you. Environment errors use zero-based indexes into alphabetically sorted keys, such as `mcp-servers[0].env[1]`, rather than printing potentially sensitive names or values.
+Store the value separately (for example, `gridctl var set GATEWAY_TOKEN` prompts for hidden input), then edit the reported source field to use `${var:GATEWAY_TOKEN}` without a literal fallback. Recipients must supply their own value. Export never creates a variable or edits the source for you. Environment errors and header-value errors use zero-based indexes into alphabetically sorted keys, such as `mcp-servers[0].env[1]` or `mcp-servers[0].headers[0]`, rather than printing potentially sensitive names or values. Every header value is treated as sensitive, not only credential-looking names.
 
 The rule recognizes sensitive fields and environment-key spellings, not proven secrets; it can reject nonsecret literals under sensitive-looking keys. Unlocking the store does not fix this error, because export never reads variable values. Review unclassified literals and mixed reference/literal strings before sharing, and do not use raw spec/editor content as a sanitized substitute. See [export semantics](cli-reference.md#export-semantics).
 

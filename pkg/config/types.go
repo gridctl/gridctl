@@ -601,6 +601,15 @@ type MCPServer struct {
 	// handled by the gateway. nil (the default) preserves the existing
 	// unauthenticated behavior. Only valid on external URL servers.
 	Auth *ServerAuth `yaml:"auth,omitempty" json:"auth,omitempty"`
+
+	// Headers are extra HTTP headers sent on every downstream request for
+	// external URL and OpenAPI servers. Absent or empty preserves today's
+	// behavior. Values are treated as sensitive.
+	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
+
+	// Description is an operator note. It is accepted on every server kind,
+	// preserved by export, and shown in status JSON. It is not a credential.
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 }
 
 // ServerAuth defines downstream authentication for an external URL MCP server.

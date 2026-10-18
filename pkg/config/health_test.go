@@ -118,7 +118,9 @@ func TestValidateStackFile_InvalidYAML(t *testing.T) {
 
 	_, _, err := ValidateStackFile(path)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "parsing stack YAML")
+	var ve ValidationErrors
+	assert.ErrorAs(t, err, &ve)
+	assert.Contains(t, err.Error(), "cannot unmarshal")
 }
 
 func TestValidateStackFile_MissingFile(t *testing.T) {

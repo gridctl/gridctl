@@ -341,7 +341,7 @@ func TestServerRegistrar_BuildOpenAPIConfig_WithBearerAuth(t *testing.T) {
 		},
 	}
 
-	cfg := r.buildOpenAPIConfig("api-server", openAPICfg, []string{"getUser"})
+	cfg := r.buildOpenAPIConfig("api-server", openAPICfg, []string{"getUser"}, nil)
 
 	if !cfg.OpenAPI {
 		t.Error("expected OpenAPI to be true")
@@ -374,7 +374,7 @@ func TestServerRegistrar_BuildOpenAPIConfig_WithHeaderAuth(t *testing.T) {
 		},
 	}
 
-	cfg := r.buildOpenAPIConfig("header-server", openAPICfg, nil)
+	cfg := r.buildOpenAPIConfig("header-server", openAPICfg, nil, nil)
 
 	if cfg.OpenAPIConfig.AuthType != "header" {
 		t.Errorf("expected auth type 'header', got '%s'", cfg.OpenAPIConfig.AuthType)
@@ -483,7 +483,7 @@ func TestServerRegistrar_BuildOpenAPIConfig_NoAuth(t *testing.T) {
 		Spec: "/path/to/spec.json",
 	}
 
-	cfg := r.buildOpenAPIConfig("simple-api", openAPICfg, nil)
+	cfg := r.buildOpenAPIConfig("simple-api", openAPICfg, nil, nil)
 
 	if !cfg.OpenAPI {
 		t.Error("expected OpenAPI to be true")
@@ -500,7 +500,7 @@ func TestServerRegistrar_BuildOpenAPIConfig_NoOperations(t *testing.T) {
 		Spec: "/spec.json",
 	}
 
-	cfg := r.buildOpenAPIConfig("api", openAPICfg, nil)
+	cfg := r.buildOpenAPIConfig("api", openAPICfg, nil, nil)
 
 	if cfg.OpenAPIConfig.Include != nil {
 		t.Error("expected nil Include")

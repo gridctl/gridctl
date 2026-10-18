@@ -30,7 +30,7 @@ The authentication middleware marks its own credential denials with `Gridctl-Aut
 
 ### Reload security results
 
-Unsupported static-security changes return HTTP `409`, `success: false`, `code: "restart_required"`, a value-free `message`, and `changed_fields` containing field names only. This applies to `/api/reload`, `/api/stack/initialize`, and save-first tool-scope, client-scope, and telemetry mutations. All these preflight responses also carry the structured `error` envelope with the same code, message, and fields. The saved file is preserved; it may differ from active startup settings. No reload side effects occur on this rejection. Resolution or validation failure returns `invalid_candidate` with HTTP `400` and `changed_fields: null`, preserving active state. Initialization's existing already-loaded conflict remains distinct from restart-required.
+Unsupported static-security changes return HTTP `409`, `success: false`, `code: "restart_required"`, a value-free `message`, and `changed_fields` containing field names only. This applies to `/api/reload`, `/api/stack/initialize`, and save-first tool-scope, client-scope, and telemetry mutations. All these preflight responses also carry the structured `error` envelope with the same code, message, and fields. The saved file is preserved; it may differ from active startup settings. No reload side effects occur on this rejection. Resolution or validation failure returns `invalid_candidate` with HTTP `400` and `changed_fields: null`, preserving active state. When the failure is a stack validation error, both the top-level body and the nested `error` object include `errors`, each entry `field: message`. Other load failures omit `errors` so a resolved value is not echoed. Initialization's existing already-loaded conflict remains distinct from restart-required.
 
 Changed field names are `gateway.auth.enabled` (a diagnostic name, not a YAML key), `gateway.auth.type`, `gateway.auth.token`, `gateway.auth.header`, `gateway.bind`, `gateway.allowed_hosts`, `gateway.allowed_origins`, and `gateway.insecure_allow_unauthenticated`. Only differing fields are listed, in that order. Compare `code`, not message text. Recovery uses a [gateway process restart](troubleshooting.md#gateway-security-requires-a-restart) with the original startup options.
 
@@ -214,7 +214,7 @@ A server includes `stderrTail` only when `healthy` is false: up to the last 10 r
 
 Each registered server also reports `promptCount`, `mcpResourceCount`, and `resourceTemplateCount` from the last successful list. Computing status does not list downstream servers again. `mcpResourceCount` counts MCP resources, not the infrastructure `resources` array on this response. `capabilities` reports the booleans the downstream declared: `prompts`, `resources`, `resourcesSubscribe`, `resourcesListChanged`, and `toolsListChanged`. Resource subscribe and resource list-changed are reported but not advertised upstream. `toolsListChanged` is what the downstream declared; handshake clients are separately told that the gateway itself emits tool list changes. `resourceCollisions` counts resource URIs, identical templates, and `ui://` index entries this server lost to another server. `resourceListError` is omitted when the last resource list succeeded; otherwise it is `timeout`, `canceled`, `rpc`, or `transport`. It covers `resources/list` and `resources/templates/list` only. A `prompts/list` failure is logged with the server name and category and is not stored on this field. An upstream disconnect is not recorded as a server fault. The Stack sidebar labels the counts Prompts, MCP resources, and Templates, shows a tools list changed badge when `toolsListChanged` is true, and shows a warning row for a list error or a non-zero collision count.
 
-Each registered server also reports `protocolVersion` (string, omitted when the server did not report one or has no MCP handshake, as with OpenAPI adapters) carrying the MCP protocol version negotiated at initialize, and `protocolGeneration` (string, `"handshake"` or `"stateless"`, omitted for OpenAPI adapters) carrying the resolved MCP protocol generation. `/api/sessions` responses carry `entries`, one `{id, generation, protocolVersion}` object per active session, alongside the legacy bare `sessions` ID list. A server that failed gateway registration (unreachable endpoint, initialize failure, or unsupported protocol version) still appears in the list with `registrationFailed: true`, `healthy: false`, the failure reason in `healthError`, `initialized: false`, and no replicas, so declared servers are never silently absent. A retryable failure (the server was not reachable) is not terminal: the gateway re-attempts registration on the health-monitor cadence with exponential backoff, `healthError` carries a `retrying in Ns` hint while the loop runs, and the row flips to a normal registered server once the backend becomes reachable. Authorization failures and configuration errors are not retried, and `POST /api/mcp-servers/{name}/restart` on a retrying server forces an immediate attempt instead of returning 404.
+Each registered server also reports `description` (string, omitted when unset) from the stack server's `description` field. Headers are not included. Each registered server also reports `protocolVersion` (string, omitted when the server did not report one or has no MCP handshake, as with OpenAPI adapters) carrying the MCP protocol version negotiated at initialize, and `protocolGeneration` (string, `"handshake"` or `"stateless"`, omitted for OpenAPI adapters) carrying the resolved MCP protocol generation. `/api/sessions` responses carry `entries`, one `{id, generation, protocolVersion}` object per active session, alongside the legacy bare `sessions` ID list. A server that failed gateway registration (unreachable endpoint, initialize failure, or unsupported protocol version) still appears in the list with `registrationFailed: true`, `healthy: false`, the failure reason in `healthError`, `initialized: false`, and no replicas, so declared servers are never silently absent. A retryable failure (the server was not reachable) is not terminal: the gateway re-attempts registration on the health-monitor cadence with exponential backoff, `healthError` carries a `retrying in Ns` hint while the loop runs, and the row flips to a normal registered server once the backend becomes reachable. Authorization failures and configuration errors are not retried, and `POST /api/mcp-servers/{name}/restart` on a retrying server forces an immediate attempt instead of returning 404.
 
 A2A sources add `a2a: true` to their server status row; the field is omitted
 for other sources. Registered adapters add `a2aStatus` with optional published
@@ -1128,10 +1128,12 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/reload
   "code": "invalid_candidate",
   "message": "candidate configuration could not be resolved or validated; active configuration is unchanged",
   "changed_fields": null,
+  "errors": ["groups[ops].tools[0]: tool 'vault__read_secret' is hidden by mcp-servers[vault].tools and can never be called"],
   "error": {
     "code": "invalid_candidate",
     "message": "candidate configuration could not be resolved or validated; active configuration is unchanged",
-    "changed_fields": null
+    "changed_fields": null,
+    "errors": ["groups[ops].tools[0]: tool 'vault__read_secret' is hidden by mcp-servers[vault].tools and can never be called"]
   }
 }
 ```
@@ -1211,7 +1213,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8180/api/stack/validate
 ```
 
-**Response:** `ValidationResult` JSON (`valid`, `errorCount`, `warningCount`, `issues[]`, and optional `execution`). The `execution` map is keyed by server name and contains normalized requested reports with `outcome: "pending"`, configured controls, and `eligible: false`; it does not establish runtime enforcement.
+**Response:** `ValidationResult` JSON (`valid`, `errorCount`, `warningCount`, `issues[]`, and optional `execution`). Each issue is `{field, message, severity}` and may include `line` when the failure names a source line. Unknown keys are issues, not a single `yaml` error. This endpoint does not follow `extends`. The `execution` map is keyed by server name and contains normalized requested reports with `outcome: "pending"`, configured controls, and `eligible: false`; it does not establish runtime enforcement.
 
 #### `POST /api/stack/resource/validate`
 
@@ -1236,7 +1238,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 }
 ```
 
-Invalid YAML, unresolved variables, and invalid resource fields also return `200` with `valid: false` and one or more `{field, message, severity}` issues. Malformed JSON, an oversized body, or an unsupported `resourceType` returns `400`.
+Invalid YAML, unresolved variables, and invalid resource fields also return `200` with `valid: false` and one or more `{field, message, severity}` issues. An issue may include `line` when the failure names a source line. Malformed JSON, an oversized body, or an unsupported `resourceType` returns `400`.
 
 For MCP servers with valid execution declarations, this response includes the same desired-only `execution` map as full-stack validation. Review uses these backend-normalized settings from the proposed YAML.
 
@@ -1398,7 +1400,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/stack/spec
 
 Rereads the active stack configuration and returns semantic YAML without resolving environment or stored values. Authored references, including `$NAME`, `${NAME}`, `${var:KEY}`, and `${vault:KEY}`, retain their decoded content. The additive `notice` explains the authored-literal review requirement. When the exported stack has a `configs` `file` entry, `notice` appends a second line: `Referenced config files are not bundled; copy them alongside the exported stack.` The Stack spec view's Export YAML action uses this endpoint, displays its notice and value-free error message (including the field path and corrective action), and never downloads raw editor content as a substitute.
 
-Nonempty inline credentials in gateway auth, downstream token/value/client-secret, A2A bearer token (`a2a.auth.token`), tokenizer API key, source credential reference, and recognized sensitive environment keys reject the entire export. Nonempty default/replacement operands in those fields also reject export. Client IDs are not classified as secrets. Errors use the existing `{"error":"..."}` shape with HTTP 500 and bounded indexed locations, never credential values. No `content` is returned on failure.
+Nonempty inline credentials in gateway auth, downstream token/value/client-secret, A2A bearer token (`a2a.auth.token`), tokenizer API key, source credential reference, every `headers:` value, and recognized sensitive environment keys reject the entire export. Header paths use `mcp-servers[i].headers[j]`, a zero-based index into alphabetically sorted names. Nonempty default/replacement operands in those fields also reject export. Client IDs are not classified as secrets. Errors use the existing `{"error":"..."}` shape with HTTP 500 and bounded indexed locations, never credential values. No `content` is returned on failure.
 
 This policy does not detect arbitrary secrets in command arguments, encoded text, free-form strings, URL queries, or literal portions of mixed reference/literal strings. Review those before sharing. It never creates variables or rewrites the source. Recipients may need to supply variables and referenced files.
 
@@ -1652,6 +1654,7 @@ The body must be a JSON object with a `tools` field. An empty array (`[]`) clear
 
 **Errors:**
 - `400 unknown_tool` - Tool name not advertised by the server (whitelist is stale)
+- `400 hidden_tool_reference` - The candidate whitelist would hide a tool a group `tools:` entry or override names. Nothing is written. The nested `error` object adds `issues`, each `{field, message}`, for the hidden-tool findings only. The hint is to remove the tool from the group or keep it exposed. Any other candidate load failure, including a validation error, a missing vault variable, or an unreadable `extends` parent, is `400` with `{"error": "<message>"}` and without this code, and the file is left unchanged. The check uses the daemon's load pipeline, including `extends`
 - `400` - Body missing `tools` array, or contains an empty tool name
 - `404` - Server not found in the stack file
 - `409 stack_modified` - Stack file changed on disk between read and write
@@ -1663,7 +1666,7 @@ The body must be a JSON object with a `tools` field. An empty array (`[]`) clear
 
 Applies tool-whitelist changes to **multiple** servers in one atomic `stack.yaml` write and triggers a **single** hot reload, the fleet-bulk counterpart to the per-server endpoint above. Powers the Tools workspace Fleet actions (fleet-wide expose-all and hide-by-pattern), where applying N servers via N single-server calls would cost N reloads.
 
-**Write semantics: all-or-nothing.** Every server's tools are validated before anything is written; if any tool is unknown the whole batch is rejected (`400 unknown_tool`, naming the offending server) and the stack file is left untouched. The reload runs once after the single write. A subsequent reload rejection retains the saved file; the file write and live application are not one transaction.
+**Write semantics: all-or-nothing.** Every server's tools are validated before anything is written; if any tool is unknown the whole batch is rejected (`400 unknown_tool`, naming the offending server) and the stack file is left untouched. A candidate that would hide a tool a group `tools:` entry or override names is `400 hidden_tool_reference` and also writes nothing. The reload runs once after the single write. A subsequent reload rejection retains the saved file; the file write and live application are not one transaction.
 
 **Auth:** Yes
 
@@ -1696,6 +1699,7 @@ The body must be a JSON object with a non-empty `servers` array; each entry need
 
 **Errors:**
 - `400 unknown_tool` - A tool name is not advertised by its server (message names the server); nothing written
+- `400 hidden_tool_reference` - The candidate whitelist would hide a tool a group `tools:` entry or override names. Nothing is written. The nested `error` object adds `issues`, each `{field, message}`, for the hidden-tool findings only. Any other candidate load failure, including a validation error, a missing vault variable, or an unreadable `extends` parent, is `400` with `{"error": "<message>"}` and without this code, and the file is left unchanged. The check uses the daemon's load pipeline, including `extends`
 - `400` - Body missing/empty `servers`, an entry missing `name`/`tools`, a duplicate server, or an empty tool name
 - `404` - A named server is not in the stack file; nothing written
 - `409 stack_modified` - Stack file changed on disk between read and write; nothing written
@@ -1718,7 +1722,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8180/api/servers/probe
 ```
 
-The body mirrors the MCP server config (`name`, `image`, `source`, `url`, `port`, `transport`, `command`, `env`, `build_args`, `network`, `ssh`, `openapi`, `tools`, `output_format`, `ready_timeout`, `replicas`, `auth`). The `auth` block uses the stack YAML shape (`type`, `token`, `header`, `value`, `scopes`, `client_id`, `client_secret`) so Test Connection can probe protected external servers; a `type: oauth` server with no stored broker tokens returns the `needs_auth` code. The body is capped at 64 KiB.
+The body mirrors the MCP server config (`name`, `image`, `source`, `url`, `port`, `transport`, `command`, `env`, `build_args`, `network`, `ssh`, `openapi`, `tools`, `output_format`, `ready_timeout`, `replicas`, `auth`, `headers`). `headers` is sent on the probe request for an external URL server. Values are scrubbed from probe errors. The `auth` block uses the stack YAML shape (`type`, `token`, `header`, `value`, `scopes`, `client_id`, `client_secret`) so Discover tools can probe protected external servers; a `type: oauth` server with no stored broker tokens returns the `needs_auth` code. The body is capped at 64 KiB.
 
 `X-Session-ID` is optional; when absent, the remote address is used for per-session accounting. Concurrency is capped at **3 in-flight probes per session** and **10 globally** - excess requests get `429` (session) or `503` (global) with `Retry-After: 3`.
 
@@ -1754,7 +1758,7 @@ Error codes:
 - `internal` (500) - Unexpected probe failure
 - Other codes (422) - Probe ran but the upstream rejected the handshake
 
-Env-var values and auth secrets (`auth.token`, `auth.value`, `auth.client_secret`) present in the request body are scrubbed from error messages and hints to avoid leaking secrets.
+Env-var values, auth secrets (`auth.token`, `auth.value`, `auth.client_secret`), and every non-empty `headers` value present in the request body are scrubbed from error messages and hints to avoid leaking secrets.
 
 #### `POST /api/servers/card`
 

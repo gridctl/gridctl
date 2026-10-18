@@ -911,6 +911,10 @@ type MCPServerStatus struct {
 	// gateway; the UI shows it as failed instead of omitting the node.
 	RegistrationFailed bool `json:"registrationFailed,omitempty"`
 
+	// Description is the operator note from the stack. Empty when unset.
+	// Headers are not projected here.
+	Description string `json:"description,omitempty"`
+
 	Replicas  []mcp.ReplicaStatus  `json:"replicas,omitempty"`
 	Autoscale *mcp.AutoscaleStatus `json:"autoscale,omitempty"`
 
@@ -974,6 +978,7 @@ func (s *Server) getMCPServerStatuses(ctx context.Context) []MCPServerStatus {
 			ProtocolVersion:       ms.ProtocolVersion,
 			ProtocolGeneration:    ms.ProtocolGeneration,
 			RegistrationFailed:    ms.RegistrationFailed,
+			Description:           ms.Description,
 			Replicas:              ms.Replicas,
 			Autoscale:             ms.Autoscale,
 			AuthStatus:            ms.AuthStatus,

@@ -17,6 +17,8 @@ A server with no `tools:` whitelist in `stack.yaml` exposes every tool it advert
 
 Saves write `stack.yaml` once and trigger a single reload. If the file changed on disk since the UI loaded it, the save is refused with a Reload file affordance instead of overwriting your edits.
 
+Unchecking a tool that a group `tools:` entry or override names is refused. The checkbox reverts, and the notice names the group and tool (`Hidden by this change: groups ops (vault__read_secret)`), with a hint to remove it from the group or keep it exposed. The file is left unchanged. A profile `tools:` entry or a group `exclude` entry does not block the save. The Stack sidebar's Tools editor uses the same refusal. A Fleet batch that would hide such a tool is also refused and writes nothing; that panel shows the joined validation messages rather than the checkbox notice.
+
 If that saved stack also changes effective gateway security, reload returns `restart_required`: the file retains the edit, but live tool and client scopes remain unchanged. Follow [gateway restart recovery](troubleshooting.md#gateway-security-requires-a-restart). Gateway credential re-entry resumes reads without automatically repeating a save or Fleet action.
 
 ## Audit Mode

@@ -30,14 +30,31 @@ type Client struct {
 	sessionID       string        // MCP session ID for stateful servers
 	protocolVersion string        // negotiated at initialize; stamped on subsequent requests
 	pingTimeout     time.Duration // 0 = use DefaultPingTimeout
-	headerSource    HeaderSource  // optional downstream auth header (nil = none)
-	reconnMu        sync.Mutex    // serializes Reconnect (stdio/process precedent)
+	headerSource    HeaderSource      // optional downstream auth header (nil = none)
+	extraHeaders    map[string]string // static headers applied before auth
+	reconnMu        sync.Mutex        // serializes Reconnect (stdio/process precedent)
 }
 
 // SetHeaderSource installs the downstream auth header source. Must be called
 // before Connect/Initialize; the client does not synchronize this field.
 func (c *Client) SetHeaderSource(hs HeaderSource) {
 	c.headerSource = hs
+}
+
+// SetExtraHeaders installs static headers sent on every downstream POST.
+// Must be called before Connect/Initialize; the client does not synchronize
+// this field. applyAuthHeader runs after these headers, so the auth source
+// wins a same-name collision.
+func (c *Client) SetExtraHeaders(headers map[string]string) {
+	if len(headers) == 0 {
+		c.extraHeaders = nil
+		return
+	}
+	copied := make(map[string]string, len(headers))
+	for name, value := range headers {
+		copied[name] = value
+	}
+	c.extraHeaders = copied
 }
 
 // applyAuthHeader attaches the downstream auth header when a source is set.
@@ -257,6 +274,9 @@ func (c *Client) newPOSTRequest(ctx context.Context, body []byte, method string,
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json, text/event-stream")
+	for name, value := range c.extraHeaders {
+		httpReq.Header.Set(name, value)
+	}
 
 	if err := c.applyAuthHeader(ctx, httpReq); err != nil {
 		return nil, err

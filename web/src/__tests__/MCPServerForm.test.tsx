@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MCPServerForm } from '../components/wizard/steps/MCPServerForm';
 import type { MCPServerFormData } from '../lib/yaml-builder';
-import { buildYAML, parseYAMLToForm } from '../lib/yaml-builder';
+import { buildYAML, customHeaderErrors, parseYAMLToForm, probeHeaders } from '../lib/yaml-builder';
 
 function defaultData(overrides?: Partial<MCPServerFormData>): MCPServerFormData {
   return { name: '', serverType: 'container', ...overrides };
@@ -1311,6 +1311,52 @@ describe('YAML serialization — external auth', () => {
       data: { name: 'plain', serverType: 'external', url: 'https://mcp.example.com/mcp' },
     });
     expect(yaml).not.toContain('auth:');
+  });
+});
+
+describe('custom headers', () => {
+  it('round-trips headers between form and YAML', () => {
+    const original: MCPServerFormData = {
+      name: 'api',
+      serverType: 'external',
+      url: 'https://example.test/mcp',
+      auth: { type: 'bearer', token: '${var:TOKEN}' },
+      headers: { 'X-Tenant': '${var:TENANT}' },
+    };
+    const yaml = buildYAML({ type: 'mcp-server', data: original });
+    expect(yaml).toContain('headers:');
+    expect(yaml).toContain('X-Tenant:');
+    const parsed = parseYAMLToForm(yaml, 'mcp-server');
+    expect('error' in parsed).toBe(false);
+    if ('error' in parsed) return;
+    expect((parsed.data as MCPServerFormData).headers).toEqual({ 'X-Tenant': '${var:TENANT}' });
+    expect(buildYAML(parsed)).toContain('X-Tenant:');
+  });
+
+  it('shows reserved-name and authorization conflict errors', () => {
+    expect(customHeaderErrors({ 'Mcp-Session-Id': 'x' }, false)['Mcp-Session-Id']).toMatch(/reserved/);
+    expect(customHeaderErrors({ Authorization: 'Bearer x' }, true).Authorization).toMatch(/conflicts with auth/);
+    expect(customHeaderErrors({ Authorization: 'Bearer x' }, false).Authorization).toBeUndefined();
+  });
+
+  it('does not treat openapi.auth as an Authorization conflict', () => {
+    render(
+      <MCPServerForm
+        data={defaultData({
+          serverType: 'openapi',
+          openapi: { spec: 'https://example.test/openapi.json', auth: { type: 'bearer', tokenEnv: 'TOKEN' } },
+          headers: { Authorization: 'Bearer synthetic' },
+        })}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Custom headers')).toBeInTheDocument();
+    expect(screen.queryByText(/conflicts with auth/)).not.toBeInTheDocument();
+  });
+
+  it('includes headers in the probe payload', () => {
+    expect(probeHeaders({ 'X-Tenant': '${var:TENANT}' })).toEqual({ 'X-Tenant': '${var:TENANT}' });
+    expect(probeHeaders(undefined)).toBeUndefined();
   });
 });
 

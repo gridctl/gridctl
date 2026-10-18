@@ -21,8 +21,6 @@ import (
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/wiring"
-
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -434,8 +432,8 @@ func (s *Server) declaredLinks() []config.LinkEntry {
 	if err != nil {
 		return nil
 	}
-	var st config.Stack
-	if err := yaml.Unmarshal(data, &st); err != nil {
+	st, err := config.DecodeStack(data)
+	if err != nil {
 		return nil
 	}
 	return st.Link
@@ -444,8 +442,8 @@ func (s *Server) declaredLinks() []config.LinkEntry {
 // declaredEntryFromBytes returns the declared entry for slug from already
 // read stack bytes, so lock-holding callers never re-read the file.
 func declaredEntryFromBytes(data []byte, slug string) (config.LinkEntry, bool) {
-	var st config.Stack
-	if err := yaml.Unmarshal(data, &st); err != nil {
+	st, err := config.DecodeStack(data)
+	if err != nil {
 		return config.LinkEntry{}, false
 	}
 	for _, e := range st.Link {
@@ -458,8 +456,8 @@ func declaredEntryFromBytes(data []byte, slug string) (config.LinkEntry, bool) {
 
 // stackDeclaresGroup reports whether the stack bytes declare the group.
 func stackDeclaresGroup(data []byte, group string) bool {
-	var st config.Stack
-	if err := yaml.Unmarshal(data, &st); err != nil {
+	st, err := config.DecodeStack(data)
+	if err != nil {
 		return false
 	}
 	_, ok := st.Groups[group]

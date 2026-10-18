@@ -554,6 +554,9 @@ func (b *GatewayBuilder) Run(ctx context.Context, inst *GatewayInstance, verbose
 	// Register MCP servers (after HTTP server is running for health checks)
 	registrar := NewServerRegistrar(gateway, b.config.NoExpand)
 	registrar.SetLogger(slog.New(bufferHandler))
+	if rh, ok := bufferHandler.(*logging.RedactingHandler); ok {
+		registrar.SetRedactor(rh.RegisterRedactValues)
+	}
 	if b.rt != nil {
 		registrar.SetRuntime(b.rt.Runtime())
 	}

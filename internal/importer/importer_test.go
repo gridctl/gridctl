@@ -157,6 +157,91 @@ func TestMapEntry_HeadersToAuth(t *testing.T) {
 	}
 }
 
+func TestMapEntry_HeadersSplit(t *testing.T) {
+	server, warnings, err := MapEntry("cursor", entry("api", map[string]any{
+		"url": "https://api.example.com/mcp",
+		"headers": map[string]any{
+			"Authorization": "Bearer x",
+			"X-Tenant":      "acme",
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if server.Auth == nil || server.Auth.Type != "bearer" || server.Auth.Token != "x" {
+		t.Fatalf("auth = %+v", server.Auth)
+	}
+	if server.Headers["X-Tenant"] != "acme" || len(server.Headers) != 1 {
+		t.Fatalf("headers = %#v", server.Headers)
+	}
+	if len(warnings) == 0 || !strings.Contains(warnings[0], "api: Authorization -> auth (bearer); X-Tenant -> headers") {
+		t.Fatalf("warnings = %v", warnings)
+	}
+
+	server, warnings, err = MapEntry("cursor", entry("api", map[string]any{
+		"url": "https://api.example.com/mcp",
+		"headers": map[string]any{
+			"X-API-Key": "k",
+			"X-Tenant":  "acme",
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if server.Auth == nil || server.Auth.Type != "header" || server.Auth.Header != "X-API-Key" || server.Auth.Value != "k" {
+		t.Fatalf("auth = %+v", server.Auth)
+	}
+	if server.Headers["X-Tenant"] != "acme" {
+		t.Fatalf("headers = %#v", server.Headers)
+	}
+	if len(warnings) == 0 || !strings.Contains(warnings[0], "X-API-Key -> auth (header); X-Tenant -> headers") {
+		t.Fatalf("warnings = %v", warnings)
+	}
+
+	server, _, err = MapEntry("cursor", entry("api", map[string]any{
+		"url":     "https://api.example.com/mcp",
+		"headers": map[string]any{"X-API-Key": "k"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if server.Auth == nil || server.Auth.Type != "header" || server.Headers != nil {
+		t.Fatalf("lone credential auth=%+v headers=%#v", server.Auth, server.Headers)
+	}
+
+	server, warnings, err = MapEntry("cursor", entry("api", map[string]any{
+		"url":     "https://api.example.com/mcp",
+		"headers": map[string]any{"X-Tenant": "acme"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if server.Auth != nil || server.Headers["X-Tenant"] != "acme" {
+		t.Fatalf("auth=%+v headers=%#v", server.Auth, server.Headers)
+	}
+	if len(warnings) == 0 || !strings.Contains(warnings[0], "api: X-Tenant -> headers") {
+		t.Fatalf("warnings = %v", warnings)
+	}
+
+	server, warnings, err = MapEntry("cursor", entry("api", map[string]any{
+		"url": "https://api.example.com/mcp",
+		"headers": map[string]any{
+			"X-API-Key": "k",
+			"X-Token":   "t",
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if server.Auth != nil || server.Headers["X-API-Key"] != "k" || server.Headers["X-Token"] != "t" {
+		t.Fatalf("auth=%+v headers=%#v", server.Auth, server.Headers)
+	}
+	joined := strings.Join(warnings, "\n")
+	if !strings.Contains(joined, "X-API-Key") || !strings.Contains(joined, "X-Token") || !strings.Contains(joined, "not promoted") {
+		t.Fatalf("warnings = %v", warnings)
+	}
+}
+
 func TestMapEntry_NameSanitization(t *testing.T) {
 	server, warnings, err := MapEntry("t", entry("Figma Desktop", map[string]any{"command": "figma-mcp"}))
 	if err != nil {

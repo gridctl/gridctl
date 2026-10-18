@@ -10,8 +10,6 @@ import (
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/wiring"
-
-	"gopkg.in/yaml.v3"
 )
 
 // loadDeclaredLinks reads the stack's link: block with a raw parse. The
@@ -26,8 +24,8 @@ func loadDeclaredLinks(stackPath string) []config.LinkEntry {
 	if err != nil {
 		return nil
 	}
-	var s config.Stack
-	if err := yaml.Unmarshal(data, &s); err != nil {
+	s, err := config.DecodeStack(data)
+	if err != nil {
 		return nil
 	}
 	return s.Link

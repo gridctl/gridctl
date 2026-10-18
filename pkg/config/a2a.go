@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/a2aclient"
@@ -26,17 +27,53 @@ type A2AAuth struct {
 	Token string `yaml:"token"`
 }
 
-// UnmarshalYAML refuses caller-selected sessions, including empty overrides.
+// a2aAuthKeys are the mapping keys A2AAuth accepts. session_id is named
+// separately so the existing unsupported-session error stays specific.
+var a2aAuthKeys = map[string]bool{
+	"type":  true,
+	"token": true,
+}
+
+// UnmarshalYAML refuses caller-selected sessions, including empty overrides
+// and merge-key injections, and rejects any other key the schema does not
+// declare.
 func (a *A2AAuth) UnmarshalYAML(node *yaml.Node) error {
-	var fields map[string]yaml.Node
-	if err := node.Decode(&fields); err != nil {
+	if node.Kind != yaml.MappingNode {
 		return errors.New("a2a.auth must be a mapping")
 	}
-	if _, present := fields["session_id"]; present {
-		return errors.New("a2a.auth.session_id is unsupported; sessions are generated")
+	if err := checkA2AAuthKeys(node); err != nil {
+		return err
 	}
 	type plain A2AAuth
 	return node.Decode((*plain)(a))
+}
+
+func checkA2AAuthKeys(node *yaml.Node) error {
+	if node == nil {
+		return nil
+	}
+	if node.Kind == yaml.AliasNode {
+		return checkA2AAuthKeys(node.Alias)
+	}
+	if node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key := node.Content[i]
+		if key.Value == "<<" {
+			if err := checkA2AAuthKeys(node.Content[i+1]); err != nil {
+				return err
+			}
+			continue
+		}
+		if key.Value == "session_id" {
+			return errors.New("a2a.auth.session_id is unsupported; sessions are generated")
+		}
+		if !a2aAuthKeys[key.Value] {
+			return fmt.Errorf("a2a.auth has unknown field %q (line %d)", key.Value, key.Line)
+		}
+	}
+	return nil
 }
 
 // IsA2A reports whether this is an outbound A2A source without another source.

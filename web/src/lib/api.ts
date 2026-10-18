@@ -26,7 +26,10 @@ async function fetch(input: string, init?: RequestInit): Promise<Response> {
       throw new RestartRequiredError(Array.isArray(data.changed_fields) ? data.changed_fields.filter((f: unknown) => typeof f === 'string') : []);
     }
     if (data?.code === 'invalid_candidate') {
-      throw new HTTPError(response.status, 'Candidate configuration could not be resolved or validated; active configuration is unchanged.', { code: 'invalid_candidate' });
+      const errors = Array.isArray(data.errors)
+        ? data.errors.filter((item: unknown): item is string => typeof item === 'string')
+        : undefined;
+      throw new HTTPError(response.status, 'Candidate configuration could not be resolved or validated; active configuration is unchanged.', { code: 'invalid_candidate', errors });
     }
   }
   return response;
@@ -61,16 +64,19 @@ export class HTTPError extends Error {
    * to HTTPS. Absent when the input was not SSH-form.
    */
   httpsEquivalent?: string;
+  /** Field/message lines from an invalid_candidate envelope, when present. */
+  errors?: string[];
   constructor(
     status: number,
     message: string,
-    extra?: { code?: string; httpsEquivalent?: string },
+    extra?: { code?: string; httpsEquivalent?: string; errors?: string[] },
   ) {
     super(message);
     this.status = status;
     this.name = 'HTTPError';
     this.code = extra?.code;
     this.httpsEquivalent = extra?.httpsEquivalent;
+    this.errors = extra?.errors;
   }
 }
 
@@ -269,17 +275,30 @@ export interface SetServerToolsResponse {
 //     returned an error. The save persisted; only the reload failed.
 //   - "unknown_tool" (400): a tool name in the request is not advertised by
 //     the server. Surface the message directly so the operator can fix it.
+export interface SetServerToolsIssue {
+  field: string;
+  message: string;
+}
+
 export class SetServerToolsError extends Error {
   code: string;
   hint?: string;
   httpStatus: number;
+  issues?: SetServerToolsIssue[];
 
-  constructor(code: string, message: string, hint: string | undefined, httpStatus: number) {
+  constructor(
+    code: string,
+    message: string,
+    hint: string | undefined,
+    httpStatus: number,
+    issues?: SetServerToolsIssue[],
+  ) {
     super(message);
     this.name = 'SetServerToolsError';
     this.code = code;
     this.hint = hint;
     this.httpStatus = httpStatus;
+    this.issues = issues;
   }
 }
 
@@ -312,11 +331,18 @@ export async function setServerTools(
   if (!response.ok) {
     const err = data?.error;
     if (err && typeof err === 'object' && typeof err.code === 'string') {
+      const issues = Array.isArray(err.issues)
+        ? err.issues.filter((item: unknown): item is SetServerToolsIssue => {
+            const issue = item as { field?: unknown; message?: unknown };
+            return typeof issue?.field === 'string' && typeof issue?.message === 'string';
+          })
+        : undefined;
       throw new SetServerToolsError(
         err.code,
         err.message ?? 'Set tools failed',
         err.hint,
         response.status,
+        issues,
       );
     }
     // Plain {error: "..."} envelope — fall through to a generic Error.
@@ -2470,6 +2496,7 @@ export interface ProbeServerConfig {
   openapi?: { spec: string };
   ready_timeout?: string;
   auth?: ProbeServerAuth;
+  headers?: Record<string, string>;
 }
 
 // Downstream auth block for external URL probes. Snake_case matches the

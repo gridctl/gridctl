@@ -229,9 +229,12 @@ func mapEntryPrepared(slug string, entry provisioner.ServerEntry, raw map[string
 		if _, ok := raw["httpUrl"]; ok {
 			server.Transport = "http"
 		}
-		auth, authWarnings := mapHeaders(raw)
+		auth, headers, authWarnings := mapHeaders(raw)
 		server.Auth = auth
-		warnings = append(warnings, authWarnings...)
+		server.Headers = headers
+		for _, warning := range authWarnings {
+			warnings = append(warnings, name+": "+warning)
+		}
 		return server, warnings, nil
 	}
 
@@ -476,35 +479,103 @@ func unwrapMCPRemote(command []string) (string, bool) {
 	return "", false
 }
 
-// mapHeaders converts a client entry's headers object into gridctl's
-// single-header auth model: an Authorization bearer header becomes bearer
-// auth, exactly one other header becomes custom-header auth, and anything
-// beyond that is reported rather than guessed at.
-func mapHeaders(raw map[string]any) (*config.ServerAuth, []string) {
+// credentialHeaderParts match header names that look like credentials after
+// uppercasing and replacing hyphens with underscores. There is no bare KEY
+// part, so X-Idempotency-Key is not a credential.
+var credentialHeaderParts = []string{
+	"PASSWORD", "SECRET", "TOKEN", "API_KEY", "APIKEY", "PRIVATE_KEY", "ACCESS_KEY", "AUTH", "CREDENTIAL",
+}
+
+// mapHeaders splits a client entry's headers into auth plus extra headers.
+// A Bearer authorization becomes bearer auth. Otherwise exactly one
+// credential-looking header becomes custom-header auth. Every header that
+// is not promoted, including a lone non-credential header, goes to headers.
+func mapHeaders(raw map[string]any) (*config.ServerAuth, map[string]string, []string) {
 	headers, ok := raw["headers"].(map[string]any)
 	if !ok || len(headers) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
-	for name, v := range headers {
-		if strings.EqualFold(name, "authorization") {
-			value := fmt.Sprintf("%v", v)
-			token := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(value), "Bearer"))
-			if token != value && token != "" {
-				warnings := []string{"Authorization header imported as bearer auth; consider a ${var:KEY} reference for the token"}
-				if len(headers) > 1 {
-					warnings = append(warnings, fmt.Sprintf("%d additional header(s) were not imported (gridctl supports one auth header)", len(headers)-1))
+	names := make([]string, 0, len(headers))
+	for name := range headers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var auth *config.ServerAuth
+	var authName string
+	extra := map[string]string{}
+	var credentialNames []string
+	literal := false
+
+	for _, name := range names {
+		value := fmt.Sprintf("%v", headers[name])
+		if !strings.Contains(value, "${") {
+			literal = true
+		}
+		if auth == nil && strings.EqualFold(name, "authorization") {
+			trimmed := strings.TrimSpace(value)
+			if len(trimmed) > len("Bearer ") && strings.EqualFold(trimmed[:len("Bearer ")], "Bearer ") {
+				token := strings.TrimSpace(trimmed[len("Bearer "):])
+				if token != "" {
+					auth = &config.ServerAuth{Type: "bearer", Token: token}
+					authName = name
+					continue
 				}
-				return &config.ServerAuth{Type: "bearer", Token: token}, warnings
 			}
 		}
+		if headerLooksLikeCredential(name) {
+			credentialNames = append(credentialNames, name)
+		}
+		extra[name] = value
 	}
-	if len(headers) == 1 {
-		for name, v := range headers {
-			return &config.ServerAuth{Type: "header", Header: name, Value: fmt.Sprintf("%v", v)},
-				[]string{"header imported as custom-header auth; consider a ${var:KEY} reference for the value"}
+
+	if auth == nil && len(credentialNames) == 1 {
+		name := credentialNames[0]
+		auth = &config.ServerAuth{Type: "header", Header: name, Value: extra[name]}
+		authName = name
+		delete(extra, name)
+	}
+	if len(extra) == 0 {
+		extra = nil
+	}
+
+	var parts []string
+	if auth != nil {
+		kind := "header"
+		if auth.Type == "bearer" {
+			kind = "bearer"
+		}
+		parts = append(parts, fmt.Sprintf("%s -> auth (%s)", authName, kind))
+	}
+	if len(extra) > 0 {
+		extraNames := make([]string, 0, len(extra))
+		for name := range extra {
+			extraNames = append(extraNames, name)
+		}
+		sort.Strings(extraNames)
+		parts = append(parts, strings.Join(extraNames, ", ")+" -> headers")
+	}
+	var warnings []string
+	if len(parts) > 0 {
+		warnings = append(warnings, strings.Join(parts, "; "))
+	}
+	if auth == nil && len(credentialNames) > 1 {
+		warnings = append(warnings, fmt.Sprintf("credential headers %s were not promoted to auth; more than one matched", strings.Join(credentialNames, ", ")))
+	}
+	if literal && (auth != nil || len(extra) > 0) {
+		warnings = append(warnings, "consider a ${var:KEY} reference for the value")
+	}
+	return auth, extra, warnings
+}
+
+func headerLooksLikeCredential(name string) bool {
+	normalized := strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
+	for _, part := range credentialHeaderParts {
+		if strings.Contains(normalized, part) {
+			return true
 		}
 	}
-	return nil, []string{fmt.Sprintf("%d header(s) were not imported (gridctl supports one auth header per server)", len(headers))}
+	return false
 }
 
 func envMap(raw map[string]any) map[string]string {

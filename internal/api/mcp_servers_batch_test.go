@@ -207,7 +207,7 @@ func TestSetServerToolsBatch_SingleWriteAppliesAll(t *testing.T) {
 	err := setServerToolsBatch(path, []serverToolsUpdate{
 		{Server: "github", Tools: []string{"a", "b"}},
 		{Server: "atlassian", Tools: []string{}}, // expose all → drop key
-	})
+	}, nil)
 	require.NoError(t, err)
 
 	data, err := os.ReadFile(path)
@@ -218,6 +218,6 @@ func TestSetServerToolsBatch_SingleWriteAppliesAll(t *testing.T) {
 	assert.NotContains(t, out, "get_page")
 
 	// Unknown server in the batch fails the whole thing.
-	err = setServerToolsBatch(path, []serverToolsUpdate{{Server: "nope", Tools: []string{"x"}}})
+	err = setServerToolsBatch(path, []serverToolsUpdate{{Server: "nope", Tools: []string{"x"}}}, nil)
 	require.ErrorIs(t, err, errServerNotFound)
 }

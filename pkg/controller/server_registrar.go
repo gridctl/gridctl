@@ -38,6 +38,10 @@ type ServerRegistrar struct {
 	// per-server authorization state. nil disables brokering (such servers
 	// register with no auth and land in needs-auth on the first 401).
 	broker *mcpauth.Broker
+
+	// redactor registers sensitive header values before a client connects.
+	// Nil skips registration (tests and stackless paths).
+	redactor func([]string)
 }
 
 // NewServerRegistrar creates a ServerRegistrar.
@@ -73,6 +77,27 @@ func (r *ServerRegistrar) SetBasePort(p int) {
 // with auth type "oauth".
 func (r *ServerRegistrar) SetAuthBroker(b *mcpauth.Broker) {
 	r.broker = b
+}
+
+// SetRedactor wires the log redactor that masks header values. The shape
+// matches mcpauth.Broker.SetRedactor. Nil disables registration.
+func (r *ServerRegistrar) SetRedactor(fn func([]string)) {
+	r.redactor = fn
+}
+
+func (r *ServerRegistrar) redactHeaderValues(headers map[string]string) {
+	if r.redactor == nil || len(headers) == 0 {
+		return
+	}
+	values := make([]string, 0, len(headers))
+	for _, value := range headers {
+		if value != "" {
+			values = append(values, value)
+		}
+	}
+	if len(values) > 0 {
+		r.redactor(values)
+	}
 }
 
 // wireOAuth registers an external oauth-type server with the broker and
@@ -315,7 +340,11 @@ func (r *ServerRegistrar) buildReplicaConfigs(server runtime.MCPServerResult, se
 // and its corresponding stack config. This handles all transport types:
 // external, local process, SSH, OpenAPI, container stdio, and container HTTP/SSE.
 func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serverCfg config.MCPServer, stackPath string) (cfg mcp.MCPServerConfig) {
-	defer func() { wireExecution(&cfg, serverCfg, r.runtime, string(server.WorkloadID)) }()
+	defer func() {
+		wireExecution(&cfg, serverCfg, r.runtime, string(server.WorkloadID))
+		cfg.Description = serverCfg.Description
+		r.redactHeaderValues(serverCfg.Headers)
+	}()
 	transport := resolveTransport(serverCfg.Transport)
 
 	if server.External {
@@ -326,6 +355,7 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 			External:           true,
 			Auth:               mapServerAuth(serverCfg.Auth),
 			HeaderSource:       r.wireOAuth(server.Name, server.URL, &serverCfg),
+			Headers:            serverCfg.Headers,
 			Tools:              serverCfg.Tools,
 			OutputFormat:       serverCfg.OutputFormat,
 			PinSchemas:         serverCfg.PinSchemas,
@@ -377,7 +407,7 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 		return buildA2AConfig(serverCfg)
 	}
 	if server.OpenAPI {
-		cfg := r.buildOpenAPIConfig(server.Name, server.OpenAPIConfig, serverCfg.Tools)
+		cfg := r.buildOpenAPIConfig(server.Name, server.OpenAPIConfig, serverCfg.Tools, serverCfg.Headers)
 		cfg.OutputFormat = serverCfg.OutputFormat
 		cfg.PinSchemas = serverCfg.PinSchemas
 		cfg.PingTimeout = serverCfg.ResolvedPingTimeout()
@@ -406,7 +436,11 @@ func (r *ServerRegistrar) buildServerConfig(server runtime.MCPServerResult, serv
 // containerID identifies stdio transport and binds selected HTTP execution
 // evidence to the inspected replica.
 func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, hostPort int, containerID, stackPath string) (cfg mcp.MCPServerConfig) {
-	defer func() { wireExecution(&cfg, server, r.runtime, containerID) }()
+	defer func() {
+		wireExecution(&cfg, server, r.runtime, containerID)
+		cfg.Description = server.Description
+		r.redactHeaderValues(server.Headers)
+	}()
 	transport := resolveTransport(server.Transport)
 
 	if server.IsExternal() {
@@ -417,6 +451,7 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 			External:           true,
 			Auth:               mapServerAuth(server.Auth),
 			HeaderSource:       r.wireOAuth(server.Name, server.URL, &server),
+			Headers:            server.Headers,
 			Tools:              server.Tools,
 			OutputFormat:       server.OutputFormat,
 			PinSchemas:         server.PinSchemas,
@@ -465,7 +500,7 @@ func (r *ServerRegistrar) buildConfigFromMCPServer(server config.MCPServer, host
 		return buildA2AConfig(server)
 	}
 	if server.IsOpenAPI() {
-		cfg := r.buildOpenAPIConfig(server.Name, server.OpenAPI, server.Tools)
+		cfg := r.buildOpenAPIConfig(server.Name, server.OpenAPI, server.Tools, server.Headers)
 		cfg.OutputFormat = server.OutputFormat
 		cfg.PinSchemas = server.PinSchemas
 		cfg.PingTimeout = server.ResolvedPingTimeout()
@@ -514,7 +549,7 @@ func (r *ServerRegistrar) buildContainerHTTPConfig(name string, transport mcp.Tr
 }
 
 // buildOpenAPIConfig constructs an MCPServerConfig for OpenAPI-backed servers.
-func (r *ServerRegistrar) buildOpenAPIConfig(name string, openAPICfg *config.OpenAPIConfig, tools []string) mcp.MCPServerConfig {
+func (r *ServerRegistrar) buildOpenAPIConfig(name string, openAPICfg *config.OpenAPIConfig, tools []string, headers map[string]string) mcp.MCPServerConfig {
 	cfg := mcp.MCPServerConfig{
 		Name:    name,
 		OpenAPI: true,
@@ -522,6 +557,7 @@ func (r *ServerRegistrar) buildOpenAPIConfig(name string, openAPICfg *config.Ope
 			Spec:     openAPICfg.Spec,
 			BaseURL:  openAPICfg.BaseURL,
 			NoExpand: r.noExpand,
+			Headers:  headers,
 		},
 		Tools: tools,
 	}

@@ -30,6 +30,15 @@ type LinkEntry struct {
 	Name     string `yaml:"name,omitempty" json:"name,omitempty"`
 }
 
+// linkEntryKeys are the mapping keys LinkEntry accepts. Node.Decode is not
+// strict, so an unknown key has to be rejected here or it is dropped.
+var linkEntryKeys = map[string]bool{
+	"client":    true,
+	"group":     true,
+	"client_id": true,
+	"name":      true,
+}
+
 // UnmarshalYAML accepts the scalar shorthand ("- cursor") or the mapping
 // form. Any other node kind is rejected so a stray nested sequence fails
 // loudly instead of decoding to an empty entry.
@@ -38,6 +47,12 @@ func (e *LinkEntry) UnmarshalYAML(value *yaml.Node) error {
 	case yaml.ScalarNode:
 		return value.Decode(&e.Client)
 	case yaml.MappingNode:
+		for i := 0; i+1 < len(value.Content); i += 2 {
+			key := value.Content[i].Value
+			if !linkEntryKeys[key] {
+				return fmt.Errorf("link entry has unknown field %q (line %d)", key, value.Content[i].Line)
+			}
+		}
 		type rawLinkEntry LinkEntry // shed the method to avoid recursion
 		return value.Decode((*rawLinkEntry)(e))
 	default:

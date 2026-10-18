@@ -34,6 +34,9 @@ var (
 	listChanged      bool
 	serverCard       bool
 	serverCardOrigin string
+	requiredHeaders  headerFlags
+	lastHeaderMu     sync.Mutex
+	lastHeaderNames  []string
 	addedSeq         int
 	toolsMu          sync.Mutex
 	pongMu           sync.Mutex
@@ -55,6 +58,7 @@ func init() {
 	flag.BoolVar(&listChanged, "list-changed", false, "Declare tools.listChanged and emit notifications/tools/list_changed on the POST SSE stream")
 	flag.BoolVar(&serverCard, "server-card", false, "Serve /mcp/server-card and /.well-known/ai-catalog.json without the bearer check")
 	flag.StringVar(&serverCardOrigin, "server-card-origin", "", "Emit this URL as the card remote instead of this process's /mcp URL")
+	flag.Var(&requiredHeaders, "require-header", "Require NAME=VALUE on /mcp (repeatable); 401 when missing or wrong")
 }
 
 // serverRequestMode is the opt-in SSE preamble. MOCK_SSE_SERVER_REQUEST
@@ -629,7 +633,8 @@ func main() {
 		mux.HandleFunc("/mcp/server-card", handleServerCard)
 		mux.HandleFunc("/.well-known/ai-catalog.json", handleAICatalog)
 	}
-	mux.HandleFunc("/mcp", requireBearer(handleMCP))
+	mux.HandleFunc("/mcp", requireBearer(requireHeaders(handleMCP)))
+	mux.HandleFunc("/debug/last-headers", handleLastHeaders)
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/", requireBearer(handleHealth)) // Root returns health for ping
 	if oauthMode {

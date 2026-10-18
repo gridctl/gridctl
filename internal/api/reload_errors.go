@@ -16,7 +16,7 @@ func writePreflightFailure(w http.ResponseWriter, result *reload.ReloadResult) b
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	writeJSON(w, map[string]any{
+	body := map[string]any{
 		"success":        false,
 		"code":           result.Code,
 		"message":        result.Message,
@@ -26,6 +26,11 @@ func writePreflightFailure(w http.ResponseWriter, result *reload.ReloadResult) b
 			"message":        result.Message,
 			"changed_fields": result.ChangedFields,
 		},
-	})
+	}
+	if len(result.Errors) > 0 {
+		body["errors"] = result.Errors
+		body["error"].(map[string]any)["errors"] = result.Errors
+	}
+	writeJSON(w, body)
 	return true
 }

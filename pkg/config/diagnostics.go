@@ -2,13 +2,12 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
-
-	"gopkg.in/yaml.v3"
 )
 
 const maxIndexFileBytes = 1 << 20
@@ -39,15 +38,22 @@ func parseStackIndex(ctx context.Context, path string, visited map[string]bool, 
 	if err != nil {
 		return nil, fmt.Errorf("reading stack file: %w", err)
 	}
-	var child Stack
-	if err := yaml.Unmarshal(data, &child); err != nil {
+	child, err := DecodeStack(data)
+	if err != nil {
+		var ve ValidationErrors
+		if errors.As(err, &ve) {
+			if depth > 0 {
+				return nil, annotateInheritedErrors(err, path)
+			}
+			return nil, err
+		}
 		return nil, fmt.Errorf("parsing stack YAML: %w", err)
 	}
-	var indexCopy Stack
-	if err := yaml.Unmarshal(data, &indexCopy); err != nil {
+	indexCopy, err := DecodeStack(data)
+	if err != nil {
 		return nil, fmt.Errorf("parsing stack YAML for reference index: %w", err)
 	}
-	_, _, problems := expandStackVarsResolved(&indexCopy, func(string, bool) ResolutionResult { return ResolutionResult{Verdict: ResolutionUnset} })
+	_, _, problems := expandStackVarsResolved(indexCopy, func(string, bool) ResolutionResult { return ResolutionResult{Verdict: ResolutionUnset} })
 	if len(problems) > 0 {
 		return nil, problems[0]
 	}
@@ -59,7 +65,7 @@ func parseStackIndex(ctx context.Context, path string, visited map[string]bool, 
 		child.References[key] = consumers
 	}
 	if child.Extends == "" {
-		return &child, nil
+		return child, nil
 	}
 	parentPath := child.Extends
 	if !filepath.IsAbs(parentPath) {
@@ -77,13 +83,13 @@ func parseStackIndex(ctx context.Context, path string, visited map[string]bool, 
 		return nil, err
 	}
 	childRefs := child.References
-	mergeStacks(&child, parent)
+	mergeStacks(child, parent)
 	child.Extends = ""
 	for key, consumers := range parent.References {
 		childRefs[key] = append(childRefs[key], consumers...)
 	}
 	child.References = childRefs
-	return &child, nil
+	return child, nil
 }
 
 func checkDeclarationConflicts(child, parent map[string]VariableDeclaration) error {

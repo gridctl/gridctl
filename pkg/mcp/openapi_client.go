@@ -38,6 +38,7 @@ type OpenAPIClient struct {
 	authToken  string
 	authHeader string
 	authValue  string
+	headers    map[string]string
 	includeOps map[string]bool
 	excludeOps map[string]bool
 	httpClient *http.Client
@@ -87,6 +88,7 @@ func NewOpenAPIClient(name string, cfg *OpenAPIClientConfig) (*OpenAPIClient, er
 		authToken:      cfg.AuthToken,
 		authHeader:     cfg.AuthHeader,
 		authValue:      cfg.AuthValue,
+		headers:        copyHeaderMap(cfg.Headers),
 		authQueryParam: cfg.AuthQueryParam,
 		authQueryValue: cfg.AuthQueryValue,
 		basicUsername:  cfg.BasicUsername,
@@ -297,6 +299,7 @@ func (c *OpenAPIClient) Ping(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
+	c.applyExtraHeaders(req)
 
 	if err := c.applyAuth(req); err != nil {
 		return err
@@ -665,6 +668,9 @@ func (c *OpenAPIClient) executeOperation(ctx context.Context, op *OpenAPIOperati
 			req.Header.Set(paramName, fmt.Sprintf("%v", val))
 		}
 	}
+	// Configured headers follow spec header parameters and precede auth,
+	// so auth wins a same-name collision.
+	c.applyExtraHeaders(req)
 
 	// Apply authentication
 	if err := c.applyAuth(req); err != nil {
@@ -686,6 +692,23 @@ func (c *OpenAPIClient) executeOperation(ctx context.Context, op *OpenAPIOperati
 	}
 
 	return string(respBody), resp.StatusCode, nil
+}
+
+func copyHeaderMap(headers map[string]string) map[string]string {
+	if len(headers) == 0 {
+		return nil
+	}
+	copied := make(map[string]string, len(headers))
+	for name, value := range headers {
+		copied[name] = value
+	}
+	return copied
+}
+
+func (c *OpenAPIClient) applyExtraHeaders(req *http.Request) {
+	for name, value := range c.headers {
+		req.Header.Set(name, value)
+	}
 }
 
 // applyAuth applies authentication to the request.

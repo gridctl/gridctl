@@ -141,11 +141,7 @@ func (h *Handler) reload(ctx context.Context, stackPath string, initialize bool)
 	// Load new config with the same options Plan uses.
 	newCfg, err := config.LoadStack(stackPath, h.loadOptions()...)
 	if err != nil {
-		return &ReloadResult{
-			Success: false,
-			Code:    "invalid_candidate",
-			Message: "candidate configuration could not be resolved or validated; active configuration is unchanged",
-		}, nil
+		return invalidCandidate(err), nil
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err

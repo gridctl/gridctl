@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -76,6 +77,9 @@ func runValidate(ctx context.Context, stackPath string, checkMutableRefs, policy
 	}
 	stack, result, err := config.ValidateStackFile(stackPath)
 	if err != nil {
+		if renderValidationErrors(stackPath, err) {
+			os.Exit(1)
+		}
 		// File read or YAML parse error — not a validation issue
 		if validateFormat == "json" {
 			out := map[string]any{
@@ -117,6 +121,9 @@ func runValidate(ctx context.Context, stackPath string, checkMutableRefs, policy
 	}
 	indexed, err := config.ParseStackIndex(ctx, stackPath)
 	if err != nil {
+		if renderValidationErrors(stackPath, err) {
+			os.Exit(1)
+		}
 		return fmt.Errorf("indexing stack declarations: %w", err)
 	}
 	appendDeclarationValidationIssues(result, declarationDiagnostics(indexed))
@@ -204,6 +211,25 @@ func appendDeclarationValidationIssues(result *config.ValidationResult, diagnost
 		})
 		result.WarningCount++
 	}
+}
+
+// renderValidationErrors prints strict-decode failures as validation issues
+// and reports whether it handled the error. Read failures stay on the
+// caller's parse-error path.
+func renderValidationErrors(path string, err error) bool {
+	var ve config.ValidationErrors
+	if !errors.As(err, &ve) {
+		return false
+	}
+	result := config.ResultFromErrors(ve)
+	if validateFormat == "json" {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(result)
+		return true
+	}
+	printValidationResultMode(os.Stdout, path, result, false)
+	return true
 }
 
 func printValidationResult(path string, result *config.ValidationResult) {

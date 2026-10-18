@@ -23,7 +23,7 @@ import { Button } from '../ui/Button';
 import { useWizardStore, type WizardStep } from '../../stores/useWizardStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { useRegistryStore } from '../../stores/useRegistryStore';
-import { buildYAML, parseYAMLToForm, type ResourceType, type WizardFormData, type MCPServerFormData } from '../../lib/yaml-builder';
+import { buildYAML, customHeaderErrors, parseYAMLToForm, type ResourceType, type WizardFormData, type MCPServerFormData } from '../../lib/yaml-builder';
 import { formatOperationsSummary } from '../../lib/openapiOperations';
 import { catalogEntryToFormData, type CatalogContainerOptions } from '../../lib/catalog';
 import type { CatalogEntry } from '../../lib/api';
@@ -329,6 +329,15 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
       case 'template':
         return selectedTemplate !== null;
       case 'form':
+        if (selectedType === 'mcp-server') {
+          const server = formData['mcp-server'];
+          // Conflict checks mirror the server: only top-level auth: counts.
+          // openapi.auth wins Authorization at request time and is not a conflict.
+          const authSet = Boolean(server.auth);
+          if (server.serverType === 'external' || server.serverType === 'openapi') {
+            return Object.keys(customHeaderErrors(server.headers, authSet)).length === 0;
+          }
+        }
         return true;
       default:
         return false;

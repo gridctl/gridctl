@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -19,7 +20,32 @@ var (
 	errServerNotFound = errors.New("mcp server not found in stack")
 	errStackModified  = errors.New("stack file was modified on disk since read")
 	errStackFileEmpty = errors.New("no stack file configured")
+	// errCandidateInvalid marks a candidate the daemon refused to load.
+	// The file is unchanged. It is not an internal write failure.
+	errCandidateInvalid = errors.New("invalid candidate")
 )
+
+// candidateInvalidError wraps a candidate-load failure so handlers can map
+// it to 400 while errors.As still finds ValidationErrors in the cause.
+// Context cancellation is not wrapped: a cancelled request is not a refusal.
+type candidateInvalidError struct {
+	err error
+}
+
+func (e candidateInvalidError) Error() string { return e.err.Error() }
+
+func (e candidateInvalidError) Unwrap() error { return e.err }
+
+func (e candidateInvalidError) Is(target error) bool {
+	return target == errCandidateInvalid
+}
+
+func wrapCandidateInvalid(err error) error {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	return fmt.Errorf("validate candidate: %w", candidateInvalidError{err: err})
+}
 
 
 // stackEditBetweenReadsHook fires after the initial read and before the
@@ -79,7 +105,7 @@ func atomicWrite(path string, data []byte) error {
 // Returns errServerNotFound when the server name is absent, errStackModified
 // when the on-disk file changed between the initial read and the atomic write,
 // or a wrapped filesystem error on I/O failure.
-func setServerTools(path, serverName string, tools []string) error {
+func setServerTools(path, serverName string, tools []string, validate func([]byte) error) error {
 	if path == "" {
 		return errStackFileEmpty
 	}
@@ -97,6 +123,11 @@ func setServerTools(path, serverName string, tools []string) error {
 	updated, err := patchServerTools(original, serverName, tools)
 	if err != nil {
 		return err
+	}
+	if validate != nil {
+		if err := validate(updated); err != nil {
+			return wrapCandidateInvalid(err)
+		}
 	}
 
 	fireBetweenReadsHook()
@@ -130,7 +161,7 @@ type serverToolsUpdate struct {
 // Returns errServerNotFound (wrapped with the missing name) when any update
 // targets a server absent from the stack, errStackModified when the file
 // changed between the initial read and the write, or a filesystem error.
-func setServerToolsBatch(path string, updates []serverToolsUpdate) error {
+func setServerToolsBatch(path string, updates []serverToolsUpdate, validate func([]byte) error) error {
 	if path == "" {
 		return errStackFileEmpty
 	}
@@ -148,6 +179,11 @@ func setServerToolsBatch(path string, updates []serverToolsUpdate) error {
 	updated, err := patchMultipleServerTools(original, updates)
 	if err != nil {
 		return err
+	}
+	if validate != nil {
+		if err := validate(updated); err != nil {
+			return wrapCandidateInvalid(err)
+		}
 	}
 
 	fireBetweenReadsHook()
