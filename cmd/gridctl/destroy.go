@@ -13,12 +13,39 @@ import (
 	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	_ "github.com/gridctl/gridctl/pkg/runtime/docker" // Register DockerRuntime factory
+	"github.com/gridctl/gridctl/pkg/service"
 	"github.com/gridctl/gridctl/pkg/state"
 
 	"github.com/spf13/cobra"
 )
 
 var destroyUnlink bool
+
+// stopSupervisedService stops a gateway through its supervisor when a
+// service entry exists. Tests replace it. killDaemonForDestroy is the
+// unsupervised path; a supervised stop must not call it.
+var (
+	stopSupervisedService = defaultStopSupervised
+	killDaemonForDestroy  = state.KillDaemon
+)
+
+func defaultStopSupervised(ctx context.Context, name string) (stopped bool, kind, path string, err error) {
+	home, homeErr := state.Home()
+	if homeErr != nil {
+		return false, "", "", homeErr
+	}
+	entry, lookErr := service.Lookup(ctx, home, name)
+	if lookErr != nil || entry == nil {
+		return false, "", "", lookErr
+	}
+	kind = "systemd unit"
+	if entry.Client == string(service.PlatformLaunchd) {
+		kind = "launchd agent"
+	}
+	mgr := service.NewManager(home, newServiceSupervisor())
+	stopped, path, err = mgr.Stop(ctx, name)
+	return stopped, kind, path, err
+}
 
 var destroyCmd = &cobra.Command{
 	Use:   "destroy <stack.yaml|stack-name>",
@@ -97,6 +124,17 @@ func runDestroy(target string) error {
 
 	printer.Info("Stopping stack", "name", name)
 
+	// A supervised gateway is stopped through the supervisor. KillDaemon
+	// escalates to SIGKILL after five seconds, and Restart=on-failure
+	// would start the unit again.
+	supervised, kind, unitPath, stopErr := stopSupervisedService(context.Background(), name)
+	if stopErr != nil && supervised {
+		return fmt.Errorf("could not stop supervised gateway %s: %w", unitPath, stopErr)
+	}
+	if supervised {
+		fmt.Printf("Stopped %s %s; it stays enabled and starts again at the next user-manager start (login, or boot when linger is enabled). Run 'gridctl service uninstall %s' to remove it.\n", kind, unitPath, name)
+	}
+
 	// Check for running daemon (with lock to prevent races with deploy)
 	err = state.WithLock(name, 5*time.Second, func() error {
 		st, loadErr := state.Load(name)
@@ -104,10 +142,9 @@ func runDestroy(target string) error {
 			return nil // No state file, nothing to kill
 		}
 
-		// Kill daemon process (SIGTERM, wait 5s, SIGKILL if needed)
-		if state.IsRunning(st) {
+		if !supervised && state.IsRunning(st) {
 			printer.Info("Stopping gateway daemon", "pid", st.PID)
-			if killErr := state.KillDaemon(st); killErr != nil {
+			if killErr := killDaemonForDestroy(st); killErr != nil {
 				printer.Warn("could not kill daemon", "error", killErr)
 			}
 		}

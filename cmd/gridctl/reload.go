@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/reload"
+	"github.com/gridctl/gridctl/pkg/service"
 	"github.com/gridctl/gridctl/pkg/state"
 
 	"github.com/spf13/cobra"
@@ -145,8 +147,25 @@ func callReloadAPI(st *state.DaemonState) error {
 	if result.Message != "" && reloadListCount(result) == 0 {
 		fmt.Printf("  %s\n", result.Message)
 	}
-
+	noteSupervisedReload(st.StackName)
 	return nil
+}
+
+func noteSupervisedReload(name string) {
+	home, err := state.Home()
+	if err != nil {
+		return
+	}
+	entry, err := service.Lookup(context.Background(), home, name)
+	if err != nil || entry == nil {
+		return
+	}
+	msg := fmt.Sprintf("This gateway is supervised by %s; it was reloaded in place and not restarted.", entry.Path)
+	if reloadFormat == "json" {
+		fmt.Fprintln(os.Stderr, msg)
+		return
+	}
+	fmt.Println(msg)
 }
 
 func writeReloadLists(w io.Writer, result *reload.ReloadResult) {

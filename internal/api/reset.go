@@ -107,6 +107,11 @@ func (s *Server) resetMgr() (*resetops.Managers, error) {
 		} else {
 			m.Missing = append(m.Missing, "wiring")
 		}
+		if svc := resetops.NewServiceResetter(home); svc != nil {
+			m.Services = svc
+		} else {
+			m.Missing = append(m.Missing, "service")
+		}
 		if s.resetRuntime != nil {
 			m.Runtime = s.resetRuntime
 		}

@@ -96,7 +96,7 @@ type Options struct {
 
 // Row is one artifact line in reset output.
 type Row struct {
-	Kind   string `json:"kind"` // skill | agent | context | wiring | daemon | containers | state-file | gridctl-dir
+	Kind   string `json:"kind"` // skill | agent | context | wiring | service | daemon | containers | state-file | gridctl-dir
 	Name   string `json:"name"`
 	Client string `json:"client,omitempty"`
 	Path   string `json:"path,omitempty"`
@@ -167,6 +167,13 @@ type wireManager interface {
 	Registry() *provisioner.Registry
 }
 
+// ServiceResetter removes installed user services. Nil means the surface
+// is unavailable (Windows, or the manager could not be built).
+type ServiceResetter interface {
+	Preview(ctx context.Context) ([]Row, error)
+	Remove(ctx context.Context, force bool) ([]Row, error)
+}
+
 // Runtime is the container-teardown slice of pkg/runtime. Nil in
 // Managers means container cleanup is skipped with a reported row
 // (e.g. Docker unavailable).
@@ -182,6 +189,7 @@ type Managers struct {
 	Contexts contextSyncer
 	Wiring   wireManager
 	Runtime  Runtime
+	Services ServiceResetter
 	Home     string
 
 	// Missing names surfaces whose manager could not be constructed
@@ -199,6 +207,7 @@ type inventory struct {
 	agents       []agentsync.ProjectionStatus
 	contextRows  []contexts.ClientStatus
 	wiringRows   []wiring.Row
+	services     []Row
 	stacks       []state.DaemonState
 	keptSkills   map[string]bool
 	keptAgents   map[string]bool
@@ -240,6 +249,11 @@ func (m *Managers) collect(ctx context.Context, opts Options) (*inventory, error
 	if m.Wiring != nil {
 		if inv.wiringRows, err = m.Wiring.Statuses(ctx, wiring.StatusOptions{}); err != nil {
 			return nil, fmt.Errorf("reading wiring records: %w", err)
+		}
+	}
+	if m.Services != nil {
+		if inv.services, err = m.Services.Preview(ctx); err != nil {
+			return nil, fmt.Errorf("reading service units: %w", err)
 		}
 	}
 	if inv.stacks, err = state.List(); err != nil {
@@ -338,6 +352,8 @@ func (inv *inventory) rows(opts Options) ([]Row, []string) {
 		}
 		rows = append(rows, Row{Kind: "context", Name: c.Slug, Client: c.Slug, Path: c.TargetPath, Action: ActionWouldRemove})
 	}
+
+	rows = append(rows, inv.services...)
 
 	for _, w := range inv.wiringRows {
 		action, detail, _ := wiringDisposition(w.State, opts.Force)

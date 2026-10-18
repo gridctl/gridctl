@@ -18,6 +18,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	_ "github.com/gridctl/gridctl/pkg/runtime/docker" // Register DockerRuntime factory
+	"github.com/gridctl/gridctl/pkg/service"
 	"github.com/gridctl/gridctl/pkg/state"
 
 	"github.com/spf13/cobra"
@@ -69,6 +70,22 @@ func init() {
 }
 
 func runLogs(ctx context.Context, w io.Writer, name string) error {
+	if platform, platErr := service.HostPlatform(); platErr == nil && platform == service.PlatformSystemd {
+		resolved := name
+		if resolved == "" {
+			if picked, pickErr := resolveLogsStack(name); pickErr == nil {
+				resolved = picked
+			}
+		}
+		if resolved != "" {
+			if home, homeErr := state.Home(); homeErr == nil {
+				if entry, lookErr := service.Lookup(ctx, home, resolved); lookErr == nil && entry != nil && entry.Client == string(service.PlatformSystemd) {
+					fmt.Fprintf(w, "Logs for the service go to the journal; run 'gridctl service logs %s'\n", resolved)
+					return nil
+				}
+			}
+		}
+	}
 	name, err := resolveLogsStack(name)
 	if err != nil {
 		return err

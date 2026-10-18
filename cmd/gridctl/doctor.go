@@ -16,6 +16,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	"github.com/gridctl/gridctl/pkg/runtime/docker"
+	"github.com/gridctl/gridctl/pkg/service"
 	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/vault"
 	"github.com/gridctl/gridctl/pkg/wiring"
@@ -69,9 +70,9 @@ var doctorCmd = &cobra.Command{
 	Long: `Runs opinionated health checks against the local environment: container
 runtime, socket reachability, gateway port, Node.js availability for client
 bridges, advisory uvx availability for host package workflows, state directory
-hygiene, vault status, projection lockfile generation, wiring ownership, and
-per-server MCP protocol generation. Each check renders a verdict with a
-remediation hint.
+hygiene, vault status, projection lockfile generation, wiring ownership,
+installed services, and per-server MCP protocol generation. Each check renders
+a verdict with a remediation hint.
 
 --security emits a separate passive security evidence report. It does not run
 these environment probes. Source selection is explicit and has no fallback:
@@ -145,6 +146,7 @@ func runDoctorChecks(ctx context.Context) doctorReport {
 	checkStaleState(ctx, &checks)
 	checkProjectLockfile(ctx, &checks)
 	checkClientWiring(ctx, &checks)
+	checkServices(ctx, &checks)
 	checkProtocolGenerations(ctx, &checks)
 	checkVault(ctx, &checks)
 
@@ -437,6 +439,59 @@ func checkClientWiring(ctx context.Context, checks *[]doctorCheck) {
 			*checks = append(*checks, doctorCheck{ID: id, Status: doctorStatusWarn, Message: msg})
 		}
 	}
+}
+
+// checkServices reports one service.<name> row per installed unit, and on
+// Linux one service.linger row. Warnings do not fail doctor.
+func checkServices(ctx context.Context, checks *[]doctorCheck) {
+	if err := ctx.Err(); err != nil {
+		*checks = append(*checks, doctorCheck{ID: "service", Status: doctorStatusInfo, Message: "skipped (cancelled)"})
+		return
+	}
+	platform, err := service.HostPlatform()
+	if err != nil {
+		return
+	}
+	home, err := state.Home()
+	if err != nil {
+		*checks = append(*checks, doctorCheck{ID: "service", Status: doctorStatusWarn, Message: fmt.Sprintf("home directory unavailable: %v", err)})
+		return
+	}
+	mgr := service.NewManager(home, service.NewSupervisor())
+	rows, err := mgr.Status(ctx, "")
+	if err != nil {
+		*checks = append(*checks, doctorCheck{ID: "service", Status: doctorStatusWarn, Message: err.Error()})
+		return
+	}
+	for _, row := range rows {
+		id := "service." + row.Name
+		if row.State == "running" && row.Enabled == "yes" {
+			*checks = append(*checks, doctorCheck{ID: id, Status: doctorStatusOK, Message: fmt.Sprintf("%s is running and enabled (%s)", row.Name, row.Unit)})
+			continue
+		}
+		msg := fmt.Sprintf("%s is %s", row.Name, row.State)
+		if row.Remediation != "" {
+			msg += "; " + row.Remediation
+		}
+		*checks = append(*checks, doctorCheck{ID: id, Status: doctorStatusWarn, Message: msg})
+	}
+	if platform != service.PlatformSystemd {
+		return
+	}
+	if len(rows) == 0 {
+		*checks = append(*checks, doctorCheck{ID: "service.linger", Status: doctorStatusInfo, Message: "no installed services"})
+		return
+	}
+	linger, err := mgr.Linger(ctx)
+	if err != nil || linger == "" || linger == "unknown" {
+		*checks = append(*checks, doctorCheck{ID: "service.linger", Status: doctorStatusWarn, Message: "could not read linger; run 'loginctl show-user' to check"})
+		return
+	}
+	if linger == "yes" {
+		*checks = append(*checks, doctorCheck{ID: "service.linger", Status: doctorStatusOK, Message: "linger is enabled; services keep running after logout"})
+		return
+	}
+	*checks = append(*checks, doctorCheck{ID: "service.linger", Status: doctorStatusWarn, Message: "linger is off; run 'loginctl enable-linger' so services keep running after logout"})
 }
 
 // checkProtocolGenerations reports each running stack's per-server
