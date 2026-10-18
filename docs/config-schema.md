@@ -22,6 +22,7 @@ mcp-servers: ...
 resources: ...
 clients: ...
 limits: ...
+policy: ...
 groups: ...
 link: ...
 skills: ...
@@ -1548,6 +1549,8 @@ policy:
 | `rules[].match` | string | Yes | - | `path.Match` glob over the canonical prefixed name (`server__tool`), or a literal prefixed name |
 | `rules[].action` | string | Yes | - | `allow`, `block`, or `require_approval` |
 
+`gridctl validate` rejects a `default` other than `allow` or `block`, an empty or unparseable `match`, a literal `match` that is not a `server__tool` name, a literal whose server is not declared, and an unknown `action`. A glob is not checked against server names. Naming a whitelist-hidden tool is not an error. A `require_approval` rule warns (`require_approval is enforced as block until call approvals are supported`) and exits 2 when that is the only issue.
+
 ### Evaluation order
 
 Rules are walked in order. The last match wins, and that action decides. This is not the `skills:` order. A `skills:` deny match always beats an allow match, so that block cannot say "block `vault__*` except `vault__list_paths`". A policy rule can, because the later allow is the last match.
@@ -1556,13 +1559,20 @@ If no rule matched and `block_destructive` is true, a tool whose downstream anno
 
 `block_destructive` reads the downstream server's own annotations as indexed at the last tool refresh, not group override hints. A never-started idle-to-zero server has no annotations yet, so its first call is allowed unless an explicit rule matches. Both limits are deliberate.
 
-`require_approval` is parsed and reported as authored. It is enforced as block, with a distinct message, until call approvals exist. `gridctl validate` warns and still exits 2 when that is the only issue.
+`require_approval` is parsed and reported as authored. It is enforced as block, with a distinct message, until call approvals exist.
 
 Group sessions resolve exposure-layer aliases to canonical names before the gate. Rules match canonical `server__tool` names only, not a group's rename.
 
 ### Denial shape
 
-A denial is an in-band `isError` tool result on both protocol generations, group endpoints, code-mode inner calls, `gridctl call`, and `POST /api/tools/call`. It is not JSON-RPC `-32602`. That code means unknown tool, and a blocked tool is still listed. The text begins `Error: tool blocked by policy` and ends with the source and "do not retry". It never includes arguments. A denied call does not reach the downstream server, does not consume a rate-limit token, and does not cold-start a scaled-to-zero server.
+A denial on `/mcp` (both protocol generations), group endpoints, and code-mode inner calls is an in-band `isError` tool result. It is not JSON-RPC `-32602`. That code means unknown tool, and a blocked tool is still listed. The text never includes arguments:
+
+- rule: `Error: tool blocked by policy (rule 1: vault__*); do not retry` (one-based index and the pattern)
+- `require_approval`: `Error: tool blocked by policy (rule 3 requires approval, which this gateway does not yet support); do not retry`
+- `block_destructive`: `Error: tool blocked by policy (block_destructive: destructiveHint is true); do not retry`
+- default: `Error: tool blocked by policy (default: block); do not retry`
+
+`gridctl call` exits 1 and prints the safe message `tool blocked by policy`. `--format json` carries `outcome.reason` `policy_blocked` and `outcome.gate` `policy`. `POST /api/tools/call` returns HTTP 200 with `error.code` `policy_blocked` and that same safe message, which does not include the rule pattern. A denied call does not reach the downstream server, does not consume a rate-limit token, and does not cold-start a scaled-to-zero server.
 
 Listing is the whitelist's job. `tools/list`, code-mode `search`, and `GET /api/tools/catalog` still list a blocked tool. A whitelist-hidden name is rejected as unknown before the policy gate runs, even when a rule names it. That is defense in depth: the rule still blocks the tool if a later Tools workspace edit exposes it again.
 
@@ -1584,7 +1594,9 @@ are the curation axis. The three axes compose in one sentence: the
 per-server `tools:` whitelist narrows what exists, groups curate what an
 endpoint shows, client scoping restricts what a client may touch, and all
 three intersect. Omitting the block changes nothing; the default `/mcp`
-endpoint always serves the full surface.
+endpoint always serves the full surface. A listed tool can still be
+blocked by [policy](#policy-per-tool-call-policy). That gate does not
+change the listing.
 
 With `gateway.auth` configured, `/groups/{name}/mcp` and the legacy negotiation hint at `/groups/{name}/sse` require the same credential as `/mcp` on every request. Authentication precedes the group lookup: missing or incorrect credentials return HTTP 401 even for unknown groups; authenticated requests to unknown groups return 404. Group selection is not credential-bound authorization. See [Auth](#auth).
 

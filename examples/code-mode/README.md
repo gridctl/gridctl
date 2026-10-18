@@ -50,7 +50,7 @@ trace/attempt IDs for diagnostic correlation. See [diagnostic privacy](../../doc
 
 ### ACL Enforcement
 
-Tool access is enforced inside the sandbox using the connecting client's allowed-tool set. A client restricted via `clients:` scoping or connected through a group endpoint can only reach its permitted tools, even through `mcp.callTool()`. See [access-control/](../access-control/) for scoping examples.
+Tool access is enforced inside the sandbox using the connecting client's allowed-tool set. A client restricted via `clients:` scoping or connected through a group endpoint can only reach its permitted tools, even through `mcp.callTool()`. A listed tool that policy blocks stays in that set. The inner `mcp.callTool` re-enters gateway dispatch and is denied by the policy gate, with the policy message, rather than the sandbox `access denied` error. See [access-control/](../access-control/) for scoping and policy examples.
 
 ## ⚙️ Configuration
 

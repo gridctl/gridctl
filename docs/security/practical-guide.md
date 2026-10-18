@@ -72,6 +72,8 @@ The CLI's daemon state contains the resolved token in a `0600` file. Browser cre
 
 Review the server's executable or image, credentials, writable state, network destinations, and exposed tools before applying a stack. Per-server tool lists, groups, and client policies reduce the tool surface. Client names and selectors are self-declared, so they are not authenticated user identities. `gridctl call --as` and the REST `client` field are the same kind of label: they select a configured profile and do not authenticate as that client. Rate limits are opt-in call-rate controls, not workload memory or CPU limits.
 
+An unreleased `policy:` block, included in the next release candidate, blocks or allows a listed tool by canonical name after the inventory check and before rate limits. It does not hide the tool, and it does not inspect output. `block_destructive` uses the downstream server's own annotations from the last refresh, so a never-started server has none yet. See [Policy](../config-schema.md#policy-per-tool-call-policy).
+
 Execution profiles are included in v1.0.0-rc.2. Omitting `execution` preserves compatibility behavior. Read the [execution guide](../execution.md) before selecting a profile:
 
 | Server type | Operator choice | What to verify |

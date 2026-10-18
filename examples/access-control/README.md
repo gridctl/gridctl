@@ -51,6 +51,10 @@ Client identifiers are self-declared, so scoping is a guardrail for cooperating 
 
 See [docs/config-schema.md](../../docs/config-schema.md#clients-per-client-access-scoping) for the full reference, including client-identity reconciliation and reload semantics.
 
+### Per-tool call policy
+
+The top-level `policy:` block blocks or allows a listed tool by canonical name. It does not hide the tool. The last matching rule wins, so a broad block can keep one exception. See [Policy](../../docs/config-schema.md#policy-per-tool-call-policy).
+
 ## Verifying the policy
 
 `read-only-secrets.yaml` puts the policy on a `vault` server with no `tools:`
@@ -60,11 +64,11 @@ a real Vault MCP image, apply, and then:
 
 ```bash
 gridctl call vault__list_paths                  # exit 0
-gridctl call vault__read_secret                 # exit 1, denied/gate/policy_blocked
-gridctl call vault__read_secret --format json   # outcome.gate is "policy"
+gridctl call vault__read_secret                 # exit 1; prints "tool blocked by policy"
+gridctl call vault__read_secret --format json   # outcome.reason is policy_blocked; outcome.gate is "policy"
 ```
 
-A raw stateless call returns an in-band `isError` result, not JSON-RPC `-32602`:
+A raw stateless call returns an in-band `isError` result, not JSON-RPC `-32602`. Expect HTTP 200 and text beginning `Error: tool blocked by policy (rule 1: vault__*)`:
 
 ```bash
 curl -s localhost:8180/mcp \
@@ -110,5 +114,6 @@ names one is a warning.
 
 ```bash
 gridctl apply examples/access-control/tool-filtering.yaml
+gridctl apply examples/access-control/read-only-secrets.yaml
 gridctl apply examples/access-control/per-client-scoping.yaml
 ```

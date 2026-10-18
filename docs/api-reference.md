@@ -917,7 +917,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/policy
 }
 ```
 
-`action` is the authored action, including `require_approval`. That action is enforced as block. `source` is `rule`, `block_destructive`, or `default`.
+`action` is the authored action, including `require_approval`. That action is enforced as block. `source` is `rule`, `block_destructive`, or `default`. `rule` and `rule_index` are omitted unless a rule matched. `rule_index` is zero-based, as authored. `block_destructive` is present whenever the block is configured, including when it is false.
 
 `POST /api/tools/call` uses `error.code` `policy_blocked` and `outcome.reason` `policy_blocked` when this gate denies. HTTP status stays `200`. `outcome.disposition` is `denied`, `outcome.stage` is `gate`, `outcome.gate` is `policy`, `outcome.completion` is `not_started`, and `result` is null. The safe message is `tool blocked by policy` and does not include the rule pattern. Rate-limit denials remain `gate_denied`.
 

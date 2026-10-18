@@ -6,7 +6,7 @@ A committed stack declares servers. A pack selects skills, agents, rules, and wi
 
 ## Stack
 
-A stack is the YAML file (`stack.yaml`, or any path you pass to `gridctl apply`) that declares MCP servers, the gateway, and optional policy; the `skills:` key is an exposure policy, not skill bodies. `enabled: false` parks a server or resource without removing it, and an optional override file can change that flag and a short allowlist of fields without editing a shared base ([Override files](config-schema.md#override-files)). `gridctl apply` starts the workloads and the gateway, and `gridctl plan` previews deployment changes, not agent work ([Stack](config-schema.md#stack), [Skills (exposure policy)](config-schema.md#skills-exposure-policy)).
+A stack is the YAML file (`stack.yaml`, or any path you pass to `gridctl apply`) that declares MCP servers, the gateway, and optional controls. The `policy:` key is the per-tool call policy. The `skills:` key is an exposure policy, not skill bodies. `enabled: false` parks a server or resource without removing it, and an optional override file can change that flag and a short allowlist of fields without editing a shared base ([Override files](config-schema.md#override-files)). `gridctl apply` starts the workloads and the gateway, and `gridctl plan` previews deployment changes, not agent work ([Stack](config-schema.md#stack), [Skills (exposure policy)](config-schema.md#skills-exposure-policy)).
 
 ## Pack
 
@@ -47,6 +47,10 @@ A group is a named subset of tools under `groups:` in the stack file, served at 
 ## Client profile
 
 A client profile is an allow-list under `clients.profiles` in the stack file that limits which servers and tools a connecting client can see. `gridctl link --client-id <id>` embeds that identifier on the gateway URL, and with no `clients:` block a connecting client sees every tool ([Clients](config-schema.md#clients-per-client-access-scoping)).
+
+## Call policy
+
+A call policy is the optional top-level `policy:` block. It allows or blocks a listed tool by canonical name and does not remove the tool from listings. It is not the offline `gridctl validate --policy` check, and it is not the `skills:` exposure policy ([Policy](config-schema.md#policy-per-tool-call-policy)).
 
 ## Link
 

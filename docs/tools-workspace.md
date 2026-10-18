@@ -60,7 +60,7 @@ Treat these as claims, not guarantees: they are reported by the server and not v
 - **Access**: per-client scoping. Without a `clients:` block in `stack.yaml`, every linked client reaches every server; creating one flips unlisted clients to deny-by-default, and the editor warns before you do that. Server grants and per-server tool selections are both editable here; the same tool axis is available in the Stack workspace's Access Lens. Downstream prompts and resources follow the server grant, not the tool selection.
 - **Groups**: curated tool bundles served at `/groups/{name}/mcp`, configured via the `groups:` block. The Groups panel teaches the configuration when none exists yet.
 
-A configured `policy:` block adds a `BLOCKED` chip (or `APPROVAL`, when the matched action is `require_approval`) beside the annotation chips. The title names the source: a rule, `block_destructive`, or the default. The detail rail repeats that text under Policy. The chip is a verdict, not an edit. Changing the whitelist does not clear the policy. The gateway inspector in the Stack sidebar shows the same block as a read-only summary (default, rule count, and whether `block_destructive` is on) or "not configured". It is not mounted on the per-server inspector.
+A configured `policy:` block adds a `BLOCKED` chip (or `APPROVAL`, when the matched action is `require_approval`) beside the annotation chips. The title is `blocked by policy rule 1: vault__*` (one-based index and pattern), `blocked by policy: block_destructive`, or `blocked by policy default`. The detail rail repeats that text under Policy, and appends `(requires approval, enforced as block)` for an approval rule. An allow verdict has no chip. The chip is a verdict, not an edit. Changing the whitelist does not clear the policy. The gateway inspector in the Stack sidebar shows the same block as a read-only summary (default, rule count, and whether `block_destructive` is on) or `Policy: not configured`. It is not mounted on the per-server inspector.
 
 Where they overlap: whitelists (this workspace) decide what the gateway exposes at all; the policy decides whether a listed tool may be called; Access decides which client sees which servers and tools; Groups publish named subsets at separate endpoints. A tool must survive all applicable layers for a client to call it. Downstream prompts and resources follow server membership. A tool whitelist or a partial tool selection does not filter them. A group exposes a server's prompts and resources only when at least one of that server's tools is a member.
 
@@ -70,6 +70,6 @@ A tool that survives exposure filters can still be blocked by required container
 
 ## Related
 
-- [Configuration Reference](config-schema.md) - `tools:`, `clients:`, and `groups:` blocks
+- [Configuration Reference](config-schema.md) - `tools:`, `policy:`, `clients:`, and `groups:` blocks
 - [Usage Observability](usage-observability.md) - the usage metrics behind the Tools data and `gridctl optimize`
 - [REST API Reference](api-reference.md) - the endpoints backing this workspace

@@ -24,7 +24,7 @@ gridctl apply examples/python-sources/pypi.yaml
 | [🔗 openapi/](openapi/) | Turn REST APIs into MCP tools via OpenAPI specs |
 | [A2A](a2a/) | Experimental outbound Agent Card adapter, included in v1.0.0-rc.2, with secret task/context handles |
 | [MCP Apps](mcp-apps/) | Remote MCP App server with the UI client extension |
-| [🔐 access-control/](access-control/) | Tool filtering and per-client scoping |
+| [🔐 access-control/](access-control/) | Tool filtering, per-tool call policy, and per-client scoping |
 | [⚡ code-mode/](code-mode/) | Reduce context window with search + execute meta-tools |
 | [🔒 gateways/](gateways/) | Bridge to existing infrastructure |
 | [🖇️ declarative-link/](declarative-link/) | Auto-link LLM clients on apply with a `link:` block |
@@ -77,6 +77,7 @@ gridctl apply examples/python-sources/pypi.yaml
 | a2a/stack | A2A JSON-RPC | Off-by-default remote agent tools, card trust, and capability-based task access |
 | mcp-apps/stack | http (remote URL) | Downstream resources and prompts, MCP Apps client extension |
 | tool-filtering | http (containers) | Server-level tool whitelists |
+| read-only-secrets | http (container) | Per-tool `policy:` that blocks `vault__*` and allows `vault__list_paths`; alpine placeholder |
 | per-client-scoping | http (containers) | `clients:` blocks restricting servers and tools per client |
 | code-mode-basic | http (containers) | Search + execute meta-tools |
 | gateway-basic | http | Gateway to an existing MCP server, tokenizer config |
