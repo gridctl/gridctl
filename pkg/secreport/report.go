@@ -61,6 +61,7 @@ const (
 	PredGatewayOriginsStartup = "gateway.origins.startup"
 	PredExecutionAvailability = "execution.availability"
 	PredExecutionEnforcement  = "execution.enforcement"
+	PredPolicyDeclared        = "policy.declared"
 )
 
 // PredicateInventory is the finite named check catalog. Coverage "complete"
@@ -86,6 +87,7 @@ var PredicateInventory = []string{
 	PredGatewayOriginsStartup,
 	PredExecutionAvailability,
 	PredExecutionEnforcement,
+	PredPolicyDeclared,
 }
 
 // FailPredicates are the only predicates that may produce exit-one failures.
@@ -162,6 +164,9 @@ type CheckFacts struct {
 	AllowedOriginCount *int     `json:"allowed_origin_count,omitempty"`
 	DiscoveryRoutes    []string `json:"discovery_routes,omitempty"`
 	Kind               string   `json:"kind,omitempty"`
+	DefaultAction      string   `json:"default_action,omitempty"`
+	RuleCount          *int     `json:"rule_count,omitempty"`
+	BlockDestructive   *bool    `json:"block_destructive,omitempty"`
 	RecordedOutcome    string   `json:"recorded_outcome,omitempty"`
 	Instance           string   `json:"instance,omitempty"`
 	Revision           string   `json:"revision,omitempty"`

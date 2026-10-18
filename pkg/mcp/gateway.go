@@ -2512,15 +2512,25 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 		}, state.outcome, nil
 	}
 
-	// Run the pre-call policy gates (rate limits; see callGates).
+	// Run the pre-call policy gates (policy, then rate limits; see callGates).
 	// The first denial short-circuits with the gate's model-readable message.
 	// Code-mode inner calls re-enter this function per callTool, so gates
-	// cover the sandboxed path without extra wiring.
+	// cover the sandboxed path without extra wiring. A denial never reaches
+	// routing, so it does not cold-start a scaled-to-zero server.
 	if gateCall, gate, decision := g.checkCallGates(ctx, params.Name); gate != "" {
-		g.logger.Debug("tool call denied by gate",
-			"gate", gate, "client", gateCall.ClientAccessID, "tool", params.Name)
+		reason := runs.ReasonGateDenied
+		if decision.Reason != "" {
+			reason = decision.Reason
+		}
+		if reason == runs.ReasonPolicyBlocked {
+			g.logger.Info("tool call blocked by policy",
+				"tool", params.Name, "rule", decision.Rule)
+		} else {
+			g.logger.Debug("tool call denied by gate",
+				"gate", gate, "client", gateCall.ClientAccessID, "tool", params.Name)
+		}
 		state.setGate(gate)
-		state.set(runs.DispositionDenied, runs.StageGate, runs.ReasonGateDenied, CompletionNotStarted)
+		state.set(runs.DispositionDenied, runs.StageGate, reason, CompletionNotStarted)
 		return &ToolCallResult{
 			Content: []Content{NewTextContent(decision.Message)},
 			IsError: true,
@@ -2794,6 +2804,7 @@ func (g *Gateway) checkCallGates(ctx context.Context, prefixedName string) (Gate
 		PrefixedTool:   prefixedName,
 		ServerName:     serverName,
 		ClientAccessID: ClientAccessIDFromContext(ctx),
+		Annotations:    g.router.ToolAnnotations(prefixedName),
 	}
 	for _, gate := range gates {
 		if decision := gate.CheckToolCall(ctx, call); !decision.Allow {

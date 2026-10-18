@@ -19,6 +19,11 @@ type Router struct {
 	mu    sync.RWMutex
 	sets  map[string]*ReplicaSet // serverName -> replica set
 	tools map[string]string      // prefixedToolName -> serverName
+	// annotations is the dispatch index of downstream tool hints, keyed by
+	// prefixed name and rebuilt in the same critical section as tools.
+	// Hidden tools are absent. Status and the policy lint read the
+	// pre-whitelist catalog instead of this map.
+	annotations map[string]*ToolAnnotations
 	// surfaceKnown is the set of servers whose filtered tool surface the
 	// last RefreshTools could answer from: a live replica, or a non-empty
 	// scale-to-zero cache. A server that has never presented either is
@@ -74,6 +79,7 @@ func NewRouter() *Router {
 	return &Router{
 		sets:             make(map[string]*ReplicaSet),
 		tools:            make(map[string]string),
+		annotations:      make(map[string]*ToolAnnotations),
 		surfaceKnown:     make(map[string]struct{}),
 		resources:        make(map[string]string),
 		uiResources:      make(map[string]string),
@@ -227,6 +233,7 @@ func (r *Router) RefreshTools() {
 	r.mu.Lock()
 	// Clear existing tool mappings
 	r.tools = make(map[string]string)
+	r.annotations = make(map[string]*ToolAnnotations)
 	r.serverUI = make(map[string][]string)
 	r.surfaceKnown = make(map[string]struct{}, len(r.sets))
 
@@ -242,6 +249,9 @@ func (r *Router) RefreshTools() {
 		for _, tool := range tools {
 			prefixedName := PrefixTool(name, tool.Name)
 			r.tools[prefixedName] = name
+			if tool.Annotations != nil {
+				r.annotations[prefixedName] = tool.Annotations.Clone()
+			}
 			ui = append(ui, uiResourceURIs(tool.Meta)...)
 		}
 		if len(ui) > 0 {
@@ -251,6 +261,19 @@ func (r *Router) RefreshTools() {
 	r.rebuildResourceWinnersLocked()
 	r.mu.Unlock()
 	r.fireOnChange()
+}
+
+// ToolAnnotations returns the downstream annotations indexed for a prefixed
+// name at the last RefreshTools, or nil when the name is absent or has no
+// annotations. Callers must not mutate the result. The index is the
+// post-whitelist dispatch surface; hidden tools are not present.
+func (r *Router) ToolAnnotations(prefixedName string) *ToolAnnotations {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.annotations[prefixedName]
 }
 
 // HasTool reports whether a prefixed name routes to a live aggregated tool.

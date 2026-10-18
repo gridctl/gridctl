@@ -662,7 +662,7 @@ func resolveExtends(child *Stack, childAbsPath string, visited map[string]bool, 
 //   - Gateway, Logging, Secrets, Network/Networks: inherited from parent when child omits them
 //
 // Everything absent from this switchboard is deliberately NOT inherited
-// across `extends`: clients, groups, limits, skills, link, telemetry,
+// across `extends`: clients, groups, limits, policy, skills, link, telemetry,
 // experimental, and model_preferences all stay child-only (a policy
 // block silently inherited from a parent stack is a policy the operator
 // never sees). A new block needs an explicit decision here either way.

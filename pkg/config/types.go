@@ -9,22 +9,39 @@ import (
 
 // Stack represents the complete gridctl configuration.
 type Stack struct {
-	Version    string                 `yaml:"version"`
-	Name       string                 `yaml:"name"`
-	Extends    string                 `yaml:"extends,omitempty"` // Path to a parent stack file for composition
-	Gateway    *GatewayConfig         `yaml:"gateway,omitempty"`
-	Logging    *LoggingConfig         `yaml:"logging,omitempty"`
-	Telemetry  *TelemetryConfig       `yaml:"telemetry,omitempty"` // Opt-in disk persistence for logs/metrics/traces
-	Runs       *RunsConfig            `yaml:"runs,omitempty"`      // Opt-in metadata-only persisted dispatch records
-	Secrets    *Secrets               `yaml:"secrets,omitempty"`   // Variable set references
-	Network    Network                `yaml:"network"`             // Single network (simple mode)
-	Networks   []Network              `yaml:"networks,omitempty"`  // Multiple networks (advanced mode)
-	MCPServers []MCPServer            `yaml:"mcp-servers"`
-	Resources  []Resource             `yaml:"resources,omitempty"`
-	Clients    *ClientsConfig         `yaml:"clients,omitempty"`                        // Optional per-client access scoping (NetworkPolicy semantics)
-	Limits     *LimitsConfig          `yaml:"limits,omitempty" json:"limits,omitempty"` // Optional rate limits enforced at dispatch
-	Groups     map[string]GroupConfig `yaml:"groups,omitempty" json:"groups,omitempty"` // Optional named tool bundles, each at /groups/{name}/mcp
-	Skills     *SkillsPolicyConfig    `yaml:"skills,omitempty" json:"skills,omitempty"` // Optional global skill exposure policy (allow/deny name globs)
+	Version    string           `yaml:"version"`
+	Name       string           `yaml:"name"`
+	Extends    string           `yaml:"extends,omitempty"` // Path to a parent stack file for composition
+	Gateway    *GatewayConfig   `yaml:"gateway,omitempty"`
+	Logging    *LoggingConfig   `yaml:"logging,omitempty"`
+	Telemetry  *TelemetryConfig `yaml:"telemetry,omitempty"` // Opt-in disk persistence for logs/metrics/traces
+	Runs       *RunsConfig      `yaml:"runs,omitempty"`      // Opt-in metadata-only persisted dispatch records
+	Secrets    *Secrets         `yaml:"secrets,omitempty"`   // Variable set references
+	Network    Network          `yaml:"network"`             // Single network (simple mode)
+	Networks   []Network        `yaml:"networks,omitempty"`  // Multiple networks (advanced mode)
+	MCPServers []MCPServer      `yaml:"mcp-servers"`
+	Resources  []Resource       `yaml:"resources,omitempty"`
+	Clients    *ClientsConfig   `yaml:"clients,omitempty"`                        // Optional per-client access scoping (NetworkPolicy semantics)
+	Limits     *LimitsConfig    `yaml:"limits,omitempty" json:"limits,omitempty"` // Optional rate limits enforced at dispatch
+	// Policy is the optional top-level `policy:` block: ordered per-tool
+	// call rules enforced as a CallGate on every tools/call path. Omitting
+	// the block preserves legacy behavior: every listed tool is allowed
+	// (Article IX). An empty `policy: {}` is present and permissive
+	// (`default` allow, no rules) and still reports configured.
+	//
+	// Rules are evaluated in order and the last match wins. That differs
+	// from the `skills:` deny-then-allow order, so a later allow can carve
+	// an exception out of an earlier block. `block_destructive` applies
+	// only when no rule matched, and only to a tool whose downstream
+	// annotations set destructiveHint. `default` decides the rest ("block"
+	// denies; anything else, including omitted, allows).
+	//
+	// Not inherited across `extends` (matching clients/groups/limits/skills).
+	// Distinct from `gridctl validate --policy`, an offline declaration
+	// check that does not read this block.
+	Policy *PolicyConfig          `yaml:"policy,omitempty" json:"policy,omitempty"`
+	Groups map[string]GroupConfig `yaml:"groups,omitempty" json:"groups,omitempty"` // Optional named tool bundles, each at /groups/{name}/mcp
+	Skills *SkillsPolicyConfig    `yaml:"skills,omitempty" json:"skills,omitempty"` // Optional global skill exposure policy (allow/deny name globs)
 
 	// ModelPreferences is the optional top-level `model_preferences:`
 	// block: per-scope model preference defaults and overrides applied to
@@ -227,6 +244,46 @@ type ModelPreferenceScope struct {
 // server name; tool is the router's prefixed name ("github__search_code").
 type LimitsConfig struct {
 	RateLimits []RateLimit `yaml:"rate_limits,omitempty" json:"rate_limits,omitempty"`
+}
+
+// PolicyConfig is the optional top-level `policy:` block. Nil means the
+// key was omitted. A non-nil value, including `policy: {}`, is a declared
+// policy: zero rules, `default` allow, and `block_destructive` false
+// change no dispatch outcome, but the block is still configured.
+//
+// Default is "allow" (the Article IX default when empty) or "block".
+// BlockDestructive denies a tool whose downstream annotations set
+// destructiveHint, after explicit rules and before default. Rules are
+// path.Match globs over the canonical prefixed name (`server__tool`);
+// the last match wins. Group exposure renames are resolved before the
+// gate, so rules never see an alias.
+type PolicyConfig struct {
+	// Default is the fate of a call matching no rule and not caught by
+	// block_destructive: "allow" (the default when empty) or "block".
+	Default string `yaml:"default,omitempty" json:"default,omitempty"`
+	// BlockDestructive denies tools whose downstream annotations set
+	// destructiveHint. It does not read group override hints. Default false.
+	BlockDestructive bool `yaml:"block_destructive,omitempty" json:"block_destructive,omitempty"`
+	// Rules are evaluated in order. The last matching rule wins.
+	Rules []PolicyRule `yaml:"rules,omitempty" json:"rules,omitempty"`
+}
+
+// PolicyRule is one ordered match. Action is "allow", "block", or
+// "require_approval". require_approval is parsed and reported as authored,
+// and enforced as block until call approvals exist.
+type PolicyRule struct {
+	// Match is a path.Match glob over the canonical prefixed tool name,
+	// or a literal `server__tool` name.
+	Match string `yaml:"match" json:"match"`
+	// Action is "allow", "block", or "require_approval".
+	Action string `yaml:"action" json:"action"`
+}
+
+// PolicyMatchLiteral reports whether match contains none of the path.Match
+// metacharacters `*`, `?`, and `[`. A literal must name a declared server.
+// A glob is not checked against server names.
+func PolicyMatchLiteral(match string) bool {
+	return !strings.ContainsAny(match, "*?[")
 }
 
 // RateLimit is a token-bucket call rate for one scope. Burst is the bucket

@@ -179,6 +179,21 @@ func explanationFor(reason, subject string, facts CheckFacts) string {
 		return "Recorded execution evidence is eligible for " + name + "."
 	case "execution_outcome_unknown":
 		return "Execution enforcement outcome for " + name + " is unknown."
+	case "policy_declared":
+		text := "A per-tool call policy is declared"
+		if facts.DefaultAction != "" {
+			text += " with default " + facts.DefaultAction
+		}
+		if facts.RuleCount != nil {
+			text += " and " + strconv.Itoa(*facts.RuleCount) + " rules"
+		}
+		text += "."
+		if facts.BlockDestructive != nil && *facts.BlockDestructive {
+			text += " block_destructive is on."
+		}
+		return text
+	case "policy_undeclared":
+		return "No per-tool call policy is declared."
 	default:
 		return "Unrecognized claim."
 	}
@@ -225,4 +240,5 @@ var knownReasons = map[string]bool{
 	"startup_auth_enabled": true, "execution_unavailable": true, "execution_available": true,
 	"execution_hygiene": true, "execution_failed": true, "execution_observed": true,
 	"execution_ineligible": true, "execution_eligible": true, "execution_outcome_unknown": true,
+	"policy_declared": true, "policy_undeclared": true,
 }

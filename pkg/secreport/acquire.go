@@ -245,6 +245,7 @@ func stackViewFromConfig(stack *config.Stack) *StackView {
 		Gateway: gatewayDecl(stack),
 		Scan:    scanDecl(stack),
 		Pinning: pinningDecl(stack),
+		Policy:  policyDecl(stack),
 	}
 	for _, srv := range stack.MCPServers {
 		// Runtime security evidence covers servers that can run. Validation
@@ -373,6 +374,27 @@ func scanDecl(stack *config.Stack) *ScanDeclView {
 		}
 	}
 	return &ScanDeclView{Enabled: enabled, Ignore: ignore}
+}
+
+func policyDecl(stack *config.Stack) *PolicyDeclView {
+	if stack == nil || stack.Policy == nil {
+		return &PolicyDeclView{}
+	}
+	view := &PolicyDeclView{
+		Declared:         true,
+		Default:          stack.Policy.Default,
+		RuleCount:        len(stack.Policy.Rules),
+		BlockDestructive: stack.Policy.BlockDestructive,
+	}
+	if view.Default == "" {
+		view.Default = "allow"
+	}
+	for _, rule := range stack.Policy.Rules {
+		if rule.Action == "require_approval" {
+			view.ApprovalRuleCount++
+		}
+	}
+	return view
 }
 
 func pinningDecl(stack *config.Stack) *PinningDeclView {

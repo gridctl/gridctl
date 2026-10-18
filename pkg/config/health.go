@@ -198,7 +198,29 @@ func (r *ValidationResult) addWarnings(s *Stack) {
 	r.addHiddenToolWarnings(s)
 	r.addExperimentalIssues(flags.Default(), s)
 	r.addSkillsPolicyIssues(s)
+	r.addPolicyApprovalWarnings(s)
 	r.addModelPreferencesIssues(s)
+}
+
+// addPolicyApprovalWarnings warns for every require_approval rule. The
+// action is parsed and reported as authored, and enforced as block until
+// call approvals exist. Warnings do not change validate's exit codes
+// beyond the documented 2 for warnings-only.
+func (r *ValidationResult) addPolicyApprovalWarnings(s *Stack) {
+	if s == nil || s.Policy == nil {
+		return
+	}
+	for i, rule := range s.Policy.Rules {
+		if rule.Action != "require_approval" {
+			continue
+		}
+		r.Issues = append(r.Issues, ValidationIssue{
+			Field:    fmt.Sprintf("policy.rules[%d].action", i),
+			Message:  "require_approval is enforced as block until call approvals are supported",
+			Severity: SeverityWarning,
+		})
+		r.WarningCount++
+	}
 }
 
 // addHiddenToolWarnings warns when a profile or a group exclude names a tool
