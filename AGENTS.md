@@ -101,7 +101,9 @@ pkg/config/         stack.yaml schema, defaults and validation, variable/env exp
                     a2a.go owns experimental Agent Card declarations and validation. A2A is external/non-container,
                     rejects replicas > 1, autoscale, and execution. Its flag is off by default.
                     export.go owns the shared non-resolving ExportStack projection for CLI/API exports, with bounded
-                    sensitive-literal rejection and source ancestry for CLI destination checks. Runtime loaders stay separate.
+                    sensitive-literal rejection and source ancestry for CLI destination checks. A discovered
+                    sibling override is named, not merged, unless the caller passes an override path.
+                    override.go owns the allowlisted merge, after extends and before expansion. Runtime loaders stay separate.
                     mutablerefs.go is the CLI-only advisory path for literal image and npx/uvx selectors; default
                     ValidateWithIssues is unchanged.
 pkg/depcheck/       Pure literal image and npx/uvx classifier used by advisory mutable-ref diagnostics. No I/O,
