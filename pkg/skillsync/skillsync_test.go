@@ -218,6 +218,49 @@ func TestSyncCreatesAgentsDirOnBareHome(t *testing.T) {
 	}
 }
 
+// TestSyncCopyPlacesRootHelperAndHashesIt confirms a copy-channel sync
+// places a root helper on the client path and that the recorded tree hash
+// moves when the helper changes.
+func TestSyncCopyPlacesRootHelperAndHashesIt(t *testing.T) {
+	f := newFixture(t)
+	helper := filepath.Join(f.regDir, "skills", "alpha", "helper.py")
+	if err := os.WriteFile(helper, []byte("print('a')\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	results := f.mustSync(t, []string{"alpha"}, SyncOptions{Clients: []string{"antigravity"}})
+	if got := actionOf(t, results, "alpha", "antigravity"); got != ActionCopied {
+		t.Fatalf("action = %s, want copied", got)
+	}
+	dest := filepath.Join(f.dest(t, "antigravity", "alpha"), "helper.py")
+	if _, err := os.Stat(dest); err != nil {
+		t.Fatalf("root helper must be projected: %v", err)
+	}
+	lf, err := f.mgr.loadView(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := lf.entry("alpha", "antigravity")
+	if first == nil || first.TreeHash == "" {
+		t.Fatalf("expected a recorded tree hash, got %+v", first)
+	}
+
+	if err := os.WriteFile(helper, []byte("print('b')\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	again := f.mustSync(t, []string{"alpha"}, SyncOptions{Clients: []string{"antigravity"}})
+	if got := actionOf(t, again, "alpha", "antigravity"); got != ActionUpdated {
+		t.Fatalf("re-sync action = %s, want updated", got)
+	}
+	lf, err = f.mgr.loadView(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := lf.entry("alpha", "antigravity")
+	if second == nil || second.TreeHash == first.TreeHash {
+		t.Fatalf("changing the root helper must change the recorded tree hash: %+v", second)
+	}
+}
+
 func TestSyncCopyForcedForAntigravity(t *testing.T) {
 	f := newFixture(t)
 	results := f.mustSync(t, []string{"alpha"}, SyncOptions{Clients: []string{"antigravity"}})

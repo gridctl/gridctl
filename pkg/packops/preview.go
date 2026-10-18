@@ -179,7 +179,7 @@ func scanResources(clone *skills.CloneResult, resolved resolvedSelection, discov
 				// Body plus supporting files: the same gate the importer
 				// applies, so a clean SKILL.md over a dangerous script
 				// cannot slip past a refuse-before-import caller.
-				findings, blocking := skills.ScanSkillTree(ds.Skill, filepath.Join(skillClone.RepoPath, ds.Path))
+				findings, blocking := skills.ScanSkillTree(ds.Skill, filepath.Join(skillClone.RepoPath, ds.Path), "", ds.Path)
 				pr.Findings = findings
 				pr.Blocking = blocking
 				break

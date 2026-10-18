@@ -167,8 +167,9 @@ type ImportedSkill struct {
 	Name   string  `json:"name"`
 	Path   string  `json:"path"`
 	Origin *Origin `json:"origin,omitempty"`
-	// FilesCopied counts supporting files installed alongside SKILL.md
-	// (scripts/, references/, assets/, and package metadata).
+	// FilesCopied counts supporting files installed alongside SKILL.md.
+	// An own-directory skill counts every installed file. A repository-root
+	// skill counts the allowlisted trees plus package metadata.
 	FilesCopied int               `json:"filesCopied"`
 	Findings    []SecurityFinding `json:"findings,omitempty"`
 }
@@ -404,7 +405,8 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportRes
 			// scan below has to run against the source so a rejected skill never
 			// leaves a partial install behind.
 			srcDir := filepath.Join(result.RepoPath, discovered.Path)
-			supporting, copyWarnings, err := collectSupportingFiles(srcDir)
+			layout := layoutFor(opts.Kind, discovered.Path)
+			supporting, copyWarnings, err := collectSupportingFiles(srcDir, layout)
 			// Surface what was excluded even when collection then failed, so the
 			// skip reason is not the only thing the user sees.
 			for _, w := range copyWarnings {
@@ -480,10 +482,13 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportRes
 
 			// Then install supporting files beside the rendered SKILL.md, and
 			// refresh the cached count so it reflects what actually landed.
-			filesCopied, err := installSupportingFiles(skillDir, supporting)
+			filesCopied, removed, err := installSupportingFiles(skillDir, supporting, layout)
 			if err != nil {
 				importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("failed to install supporting files for %s: %v", skillName, err))
 				continue
+			}
+			for _, path := range removed {
+				importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("%s: %s: removed (no longer in source)", skillName, path))
 			}
 			if err := imp.store.RefreshFileCount(skillName); err != nil {
 				importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("failed to refresh file count for %s: %v", skillName, err))

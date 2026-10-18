@@ -42,6 +42,78 @@ func TestWriteLockFile_LocalStampsVersion6(t *testing.T) {
 	require.ErrorIs(t, err, ErrNewerImportLockVersion)
 }
 
+// TestSkillTreeHash_IncludesRootHelper guards update detection for a helper
+// that sits beside SKILL.md. Editing it must move the hash, and a local
+// source must report an update.
+func TestSkillTreeHash_IncludesRootHelper(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+	dir := filepath.Join(home, "src", "pcap")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("skill"), 0o644))
+	helper := filepath.Join(dir, "helper.py")
+	require.NoError(t, os.WriteFile(helper, []byte("v1"), 0o644))
+
+	hash, err := SkillTreeHash(context.Background(), dir)
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(helper, []byte("v2"), 0o644))
+	changed, err := SkillTreeHash(context.Background(), dir)
+	require.NoError(t, err)
+	assert.NotEqual(t, hash, changed)
+
+	src := LockedSource{
+		Kind: SourceKindLocal,
+		Repo: filepath.Dir(dir),
+		Skills: map[string]LockedSkill{
+			"pcap": {Path: "pcap", TreeHash: hash},
+		},
+	}
+	hasUpdate, err := LocalSourceHasUpdate(context.Background(), src)
+	require.NoError(t, err)
+	assert.True(t, hasUpdate)
+}
+
+// TestUpdate_LocalRootHelperChange confirms skill update reports and
+// re-imports a root helper change on a local source.
+func TestUpdate_LocalRootHelperChange(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+	store, regDir := setupTestRegistry(t)
+	lockPath := filepath.Join(regDir, "skills.lock.yaml")
+	root := filepath.Join(home, "src", "pcap-analysis")
+	writeSkillDir(t, root, "pcap-analysis", "body")
+	helper := filepath.Join(root, "pcap_utils.py")
+	require.NoError(t, os.WriteFile(helper, []byte("v1"), 0o644))
+
+	imp := NewImporter(store, regDir, lockPath, slog.Default())
+	result, err := imp.Import(context.Background(), ImportOptions{Repo: root, Kind: SourceKindLocal, Trust: true})
+	require.NoError(t, err)
+	require.Len(t, result.Imported, 1)
+	assert.Equal(t, 1, result.Imported[0].FilesCopied)
+
+	installed := filepath.Join(regDir, "skills", "pcap-analysis", "pcap_utils.py")
+	require.FileExists(t, installed)
+
+	current, err := imp.Update(context.Background(), "pcap-analysis", true, false, true)
+	require.NoError(t, err)
+	assert.Contains(t, strings.Join(current.Warnings, "\n"), "already up to date")
+
+	require.NoError(t, os.WriteFile(helper, []byte("v2"), 0o644))
+	dry, err := imp.Update(context.Background(), "pcap-analysis", true, false, true)
+	require.NoError(t, err)
+	assert.Contains(t, strings.Join(dry.Warnings, "\n"), "update available (local content changed)")
+
+	applied, err := imp.Update(context.Background(), "pcap-analysis", false, false, true)
+	require.NoError(t, err)
+	require.Len(t, applied.Imported, 1)
+	got, err := os.ReadFile(installed)
+	require.NoError(t, err)
+	assert.Equal(t, "v2", string(got))
+}
+
 func TestSkillTreeHash_SortedAndExcludesSidecar(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("skill"), 0o644))

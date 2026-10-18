@@ -254,10 +254,10 @@ func ResolveLocalRoot(path string) (string, error) {
 	return resolved, nil
 }
 
-// SkillTreeHash returns a sha256:-prefixed hash of SKILL.md and allowlisted
+// SkillTreeHash returns a sha256:-prefixed hash of SKILL.md and installed
 // supporting files, sorted by relative path. Modification times are not
-// hashed. .origin.json, backups, and install temporary files are outside
-// the allowlist and are excluded.
+// hashed. .origin.json, backups, and install temporary files are excluded.
+// Every caller is a local source, so the own-directory layout applies.
 func SkillTreeHash(ctx context.Context, skillDir string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
@@ -267,7 +267,7 @@ func SkillTreeHash(ctx context.Context, skillDir string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("reading SKILL.md: %w", err)
 	}
-	supporting, _, err := collectSupportingFiles(skillDir)
+	supporting, _, err := collectSupportingFiles(skillDir, layoutOwnDirectory)
 	if err != nil {
 		return "", err
 	}

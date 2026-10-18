@@ -211,7 +211,7 @@ func (s LockedSource) StoredAuth() StoredAuth {
 type LockedSkill struct {
 	Path        string `yaml:"path"`
 	ContentHash string `yaml:"content_hash"`
-	// TreeHash is the sha256:-prefixed hash of SKILL.md plus allowlisted
+	// TreeHash is the sha256:-prefixed hash of SKILL.md plus installed
 	// supporting files. Set only for local sources.
 	TreeHash    string       `yaml:"tree_hash,omitempty"`
 	Fingerprint *Fingerprint `yaml:"fingerprint,omitempty"`

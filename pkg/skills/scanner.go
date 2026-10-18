@@ -172,13 +172,16 @@ func FormatFindings(findings []SecurityFinding) string {
 // discovered skill: the SKILL.md body (any finding blocks) plus the
 // supporting-file tree (danger-severity findings block; lower severities
 // surface without blocking). srcDir is the skill's directory in the
-// clone. Callers that refuse before importing (the pack REST surface)
-// use this so their refusal covers exactly what the importer would skip.
-func ScanSkillTree(sk *registry.AgentSkill, srcDir string) (findings []SecurityFinding, blocking bool) {
+// clone. kind and discoveredPath select the same layout the importer
+// uses (see layoutFor). Pack preview passes an empty kind, which is git,
+// and the discovered path. Callers that refuse before importing (the
+// pack REST surface) use this so their refusal covers exactly what the
+// importer would skip.
+func ScanSkillTree(sk *registry.AgentSkill, srcDir, kind, discoveredPath string) (findings []SecurityFinding, blocking bool) {
 	scan := ScanSkill(sk)
 	findings = append(findings, scan.Findings...)
 	blocking = !scan.Safe
-	supporting, _, err := collectSupportingFiles(srcDir)
+	supporting, _, err := collectSupportingFiles(srcDir, layoutFor(kind, discoveredPath))
 	if err != nil {
 		// A tree the importer would refuse to install (over limits) is
 		// not a scan finding; the import itself reports it.

@@ -17,7 +17,7 @@ var ErrNotFound = errors.New("not found")
 
 // Store manages skill directories on disk.
 // Each skill is a directory containing a required SKILL.md and optional
-// supporting files (scripts/, references/, assets/).
+// supporting files.
 type Store struct {
 	baseDir string
 	mu      sync.RWMutex
@@ -501,28 +501,48 @@ func (s *Store) checkLegacyFiles() {
 	}
 }
 
-// countSupportingFiles counts files anywhere beneath the scripts/,
-// references/, and assets/ subdirectories of a skill directory.
+// countSupportingFiles counts installed supporting files in a skill directory.
 //
-// The walk is recursive: real skill packages nest (scripts/office/pack.py),
-// and counting only direct children reported 3 files for a package holding
-// 59. Directory entries themselves are not counted. Top-level metadata files
-// such as LICENSE.txt sit outside these three trees and are deliberately not
-// counted; FileCount measures supporting content, not packaging.
+// Every regular file counts, including root helpers and files outside
+// scripts/, references/, and assets/. Excluded: SKILL.md, names starting
+// with SKILL.md., any path with a dot-prefixed component, and anything under
+// a subdirectory that contains its own SKILL.md. Directory entries are not
+// counted. An unreadable subtree contributes zero; this returns a count, not
+// an error, because it runs under the store lock.
 func countSupportingFiles(skillDir string) int {
 	count := 0
-	for _, subdir := range []string{"scripts", "references", "assets"} {
-		dir := filepath.Join(skillDir, subdir)
-		_ = filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return nil //nolint:nilerr // an unreadable subtree contributes zero, not an error
-			}
-			if !d.IsDir() {
-				count++
+	_ = filepath.WalkDir(skillDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil //nolint:nilerr // an unreadable subtree contributes zero, not an error
+		}
+		rel, rerr := filepath.Rel(skillDir, path)
+		if rerr != nil || rel == "." {
+			return nil
+		}
+		name := d.Name()
+		if strings.HasPrefix(name, ".") {
+			if d.IsDir() {
+				return fs.SkipDir
 			}
 			return nil
-		})
-	}
+		}
+		if d.IsDir() {
+			// The walk root contains SKILL.md; only a subdirectory that
+			// carries its own is a nested skill.
+			if _, serr := os.Lstat(filepath.Join(path, "SKILL.md")); serr == nil {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		if name == "SKILL.md" || strings.HasPrefix(name, "SKILL.md.") {
+			return nil
+		}
+		count++
+		return nil
+	})
 	return count
 }
 
