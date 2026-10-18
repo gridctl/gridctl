@@ -178,6 +178,7 @@ JSON stdout is one document, including recognized flag and argument errors; diag
 | 1 | Gateway auth rejected | Stage `auth`, reason `gateway_auth_rejected` |
 | 1 | Host or Origin policy rejected the request | Stage `auth`, reason `host_rejected` |
 | 1 | Client scope or call gate denied | `denied/scope/client_scope` or `denied/gate/gate_denied` (`outcome.gate` names the denying gate) |
+| 1 | Per-tool policy blocked the call | `denied/gate/policy_blocked` (`outcome.gate` is `policy`) |
 | 1 | Schema pin blocked | `denied/pin/schema_pin` |
 | 1 | Unknown or whitelist-hidden target | `routing_failed/routing/unknown_tool` |
 | 1 | No replica or failed configured cold start | Existing routing disposition with `no_replica` or `cold_start` |

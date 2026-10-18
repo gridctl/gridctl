@@ -51,7 +51,7 @@ experimental: ...
 | `skills` | object | No | - | Global skill exposure policy: allow/deny name globs (see [Skills](#skills-exposure-policy)) |
 | `model_preferences` | object | No | - | Model preference defaults and overrides for skill and agent projections (see [Model Preferences](#model-preferences)) |
 | `experimental` | object | No | - | Feature flags for experimental behavior (see [Experimental](#experimental-feature-flags)) |
-| `policy` | object | No | - | Reserved. Not interpreted by stack load, validate, apply, or reload. Offline declaration checks use a separate file with `gridctl validate --policy` (see [Stack declaration policy](stack-declaration-policy.md)) |
+| `policy` | object | No | - | Per-tool call policy enforced at dispatch (see [Policy](#policy-per-tool-call-policy)). Distinct from `gridctl validate --policy` |
 
 ---
 
@@ -1518,6 +1518,61 @@ Earlier releases also supported dollar `budgets:` in this block; that layer
 has been removed (see [Usage Observability](usage-observability.md)). A
 leftover `budgets:` key is an unknown field. Delete it. `gridctl validate`
 names the path and line.
+
+---
+
+## Policy (per-tool call policy)
+
+The optional top-level `policy:` block decides whether a listed tool may be called. It is not `gridctl validate --policy`. That flag evaluates an offline declaration-policy file and does not read this block. Omitting `policy:` preserves legacy dispatch: every listed tool is allowed. An empty `policy: {}` is valid and reports configured, with zero rules and `default: allow`, which also changes no call outcome.
+
+```yaml
+policy:
+  default: allow
+  block_destructive: false
+  rules:
+    - match: "vault__*"
+      action: block
+    - match: "vault__list_paths"
+      action: allow
+    - match: "pagerduty__manage_incidents"
+      action: require_approval
+```
+
+### Policy fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `default` | string | No | `allow` | Fate of a call that matches no rule and is not caught by `block_destructive`: `allow` or `block` |
+| `block_destructive` | bool | No | `false` | After rules, deny a tool whose downstream annotations set `destructiveHint: true` |
+| `rules` | []object | No | empty | Ordered matches. The last match wins |
+| `rules[].match` | string | Yes | - | `path.Match` glob over the canonical prefixed name (`server__tool`), or a literal prefixed name |
+| `rules[].action` | string | Yes | - | `allow`, `block`, or `require_approval` |
+
+### Evaluation order
+
+Rules are walked in order. The last match wins, and that action decides. This is not the `skills:` order. A `skills:` deny match always beats an allow match, so that block cannot say "block `vault__*` except `vault__list_paths`". A policy rule can, because the later allow is the last match.
+
+If no rule matched and `block_destructive` is true, a tool whose downstream annotations set `destructiveHint` is blocked. Otherwise `default` decides. A tool with no annotations is unaffected by `block_destructive`.
+
+`block_destructive` reads the downstream server's own annotations as indexed at the last tool refresh, not group override hints. A never-started idle-to-zero server has no annotations yet, so its first call is allowed unless an explicit rule matches. Both limits are deliberate.
+
+`require_approval` is parsed and reported as authored. It is enforced as block, with a distinct message, until call approvals exist. `gridctl validate` warns and still exits 2 when that is the only issue.
+
+Group sessions resolve exposure-layer aliases to canonical names before the gate. Rules match canonical `server__tool` names only, not a group's rename.
+
+### Denial shape
+
+A denial is an in-band `isError` tool result on both protocol generations, group endpoints, code-mode inner calls, `gridctl call`, and `POST /api/tools/call`. It is not JSON-RPC `-32602`. That code means unknown tool, and a blocked tool is still listed. The text begins `Error: tool blocked by policy` and ends with the source and "do not retry". It never includes arguments. A denied call does not reach the downstream server, does not consume a rate-limit token, and does not cold-start a scaled-to-zero server.
+
+Listing is the whitelist's job. `tools/list`, code-mode `search`, and `GET /api/tools/catalog` still list a blocked tool. A whitelist-hidden name is rejected as unknown before the policy gate runs, even when a rule names it. That is defense in depth: the rule still blocks the tool if a later Tools workspace edit exposes it again.
+
+### Reload, status, and inheritance
+
+A policy-only edit hot-reloads through file watch, `gridctl reload`, and `POST /api/reload` without restarting or recreating a container. `GET /api/policy` returns the authored block and the verdict each pre-whitelist catalog tool would receive, including hidden tools (`exposed: false`). The block is not inherited across `extends`.
+
+A literal rule whose name is absent from the pre-whitelist catalog logs one warning, `policy rule matches no known tool`. A never-started or scaled-to-zero server can still warn, because that catalog falls back to the filtered cache. A rule that names a whitelist-hidden tool does not warn. The warning is not an error.
+
+Releases before this block ignore the key, so a downgrade fails open. A release that rejects unknown keys and does not know `policy:` refuses the file instead.
 
 ---
 

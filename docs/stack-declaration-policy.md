@@ -35,7 +35,7 @@ enabled:
 
 The report includes checker version `1`, the policy version, the enabled rule IDs, coverage counts, and a `sha256:<hex>` digest of the policy bytes. The digest identifies those bytes. It is not a signature, trusted origin, or proof that the policy was independently reviewed.
 
-Keep the top-level stack `policy:` key unused. That namespace is reserved for a separate runtime-authority feature.
+The top-level stack `policy:` key is the runtime per-tool call policy, documented in [Policy (per-tool call policy)](config-schema.md#policy-per-tool-call-policy). This page's `--policy` file is a separate offline declaration check and does not read that block.
 
 ## Candidate inputs
 

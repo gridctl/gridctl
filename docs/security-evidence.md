@@ -50,6 +50,7 @@ Coverage "complete" refers only to this named inventory, not to complete securit
 | `gateway.origins.startup` | Startup origin mode (`loopback-wildcard`, `loopback-allowlist`, `allowlist`, or `wildcard-override`) and the sanitized discovery-route list. Counts and modes only; origin strings are not included. Brace characters are stripped, so the group pattern is listed as `/groups/name/mcp/server-card`. Unknown when no startup snapshot is available. Not a fail predicate |
 | `execution.availability` | Per-replica execution evidence availability |
 | `execution.enforcement` | Recorded execution outcome. Container predicates are N/A for non-container subjects |
+| `policy.declared` | Whether a per-tool `policy:` block is declared. Pass with `policy_declared` or `policy_undeclared`. Not a fail predicate. A declared policy is name-based; tool output is not inspected |
 
 Fail predicates (exit `1`): `pin.schema.continuity` when stored status is drift, `skill.pin.continuity` when stored status is drift, and `execution.enforcement` when recorded outcome is failed, refused, or ineligible. Heuristic findings are warnings. Pins are not explicit approvals.
 

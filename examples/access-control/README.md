@@ -7,6 +7,7 @@ Examples demonstrating tool filtering and per-client scoping for least-privilege
 | File | Description |
 |------|-------------|
 | `tool-filtering.yaml` | Server-level tool filtering (applies to all clients) |
+| `read-only-secrets.yaml` | Per-tool `policy:` block that blocks `vault__*` and allows `vault__list_paths` |
 | `per-client-scoping.yaml` | Per-client allow-lists via the `clients:` block |
 
 ## 💡 Concepts
@@ -49,6 +50,32 @@ gridctl link cursor --client-id cursor
 Client identifiers are self-declared, so scoping is a guardrail for cooperating clients, not authentication against a hostile client. Configured `gateway.auth` separately requires the shared credential on every operational request, including grouped MCP endpoints. See [gateway authentication](../../docs/config-schema.md#auth).
 
 See [docs/config-schema.md](../../docs/config-schema.md#clients-per-client-access-scoping) for the full reference, including client-identity reconciliation and reload semantics.
+
+## Verifying the policy
+
+`read-only-secrets.yaml` puts the policy on a `vault` server with no `tools:`
+whitelist, so a blocked call is a policy denial rather than the whitelist's
+unknown-tool outcome. The alpine placeholder does not speak MCP. Substitute
+a real Vault MCP image, apply, and then:
+
+```bash
+gridctl call vault__list_paths                  # exit 0
+gridctl call vault__read_secret                 # exit 1, denied/gate/policy_blocked
+gridctl call vault__read_secret --format json   # outcome.gate is "policy"
+```
+
+A raw stateless call returns an in-band `isError` result, not JSON-RPC `-32602`:
+
+```bash
+curl -s localhost:8180/mcp \
+  -H 'content-type: application/json' \
+  -H 'MCP-Protocol-Version: 2026-07-28' \
+  -H 'Mcp-Method: tools/call' \
+  -H 'Mcp-Name: vault__read_secret' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"vault__read_secret","arguments":{},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
+```
+
+The optional layered form keeps both controls. Add `tools: [list_paths]` beside the same policy. In that form `vault__read_secret` returns `unknown tool` from the whitelist, and the policy denial becomes observable only after the tool is exposed again.
 
 ## Verifying the whitelist
 
