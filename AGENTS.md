@@ -165,6 +165,7 @@ pkg/wiring/         Key-level ownership of gateway entries merged into client MC
 pkg/pack/           gridctl-pack.yaml manifest schema, including named external `sources` and an optional relative `stack` path; pkg/packops owns orchestration shared by the CLI and REST handlers, including per-source clone and auth. The CLI injects stack launch; REST leaves the launcher nil and does not start or stop a carried daemon.
 pkg/skillpins/      TOFU pins over skill documents (per-file digests, findings); the `gridctl skill pins` store.
 pkg/runs/           Metadata-only persisted dispatch records (`gridctl runs`). Opt-in stack-level JSONL with a bounded queue, single writer, retention, and coordinated wipe.
+pkg/service/        User-scoped systemd and launchd units (`gridctl service`): render, lockfile ownership (kind `service`), and supervisor control. Foreground apply and serve record a daemon state file so status and destroy see them.
 pkg/limits/         Enforces the `limits:` block: token-bucket rate limits on the tool-call dispatch path.
 pkg/toolpolicy/     Enforces the optional `policy:` block: last-match-wins call rules on the tool-call dispatch path, ahead of rate limits.
 pkg/provisioner/    LLM-client config writers (claude, claudecode, cursor, windsurf, gemini, antigravity, opencode, grok, goose,

@@ -75,6 +75,39 @@ If gridctl was installed via Homebrew, `gridctl upgrade` detects that and recomm
 
 Updating does not automatically verify attestations. To require origin verification for a standalone update, follow [Release Verification](release-verification.md) and install the verified local archive instead of asking `gridctl upgrade` to download it again.
 
+## Run as a service
+
+`gridctl service install` writes a user-scoped supervisor unit that runs the gateway in the foreground and brings it back after logout and reboot.
+
+```bash
+gridctl service install --stack stack.yaml
+gridctl service status
+gridctl service logs netops
+gridctl service uninstall netops
+```
+
+On Linux the unit is `~/.config/systemd/user/gridctl-<name>.service`. On macOS it is `~/Library/LaunchAgents/dev.gridctl.<name>.plist`. A launch agent starts at login, not at boot. A reboot restores it once you log in.
+
+The unit runs `gridctl apply <stack> --foreground` with a clean environment. It does not inherit `GRIDCTL_VAULT_PASSPHRASE`, `SSH_AUTH_SOCK` from `/tmp`, or other credentials from the shell that ran install. `GRIDCTL_HOME` is set to the home install resolved. The global `--runtime` flag is forwarded when you set it.
+
+Install records the unit in `~/.gridctl/project.lock.yaml` before writing the file, then enables it. `--dry-run` prints the unit and writes nothing. `--no-enable` writes the unit and leaves it disabled. A hand-edited unit is drift: install and uninstall refuse it unless you pass `--force`, which backs the file up first.
+
+Linux user units cannot depend on the system Docker socket. The unit restarts on failure (30 attempts in 600 seconds) so a runtime that is not ready at login is retried. Only rootless Podman adds `After=podman.socket`. There is no `network-online.target` dependency. `sd_notify` readiness and `LoadCredential=` are follow-ups, not part of this install.
+
+If the variable store is encrypted and the stack references stored variables, install refuses until you pass `--passphrase-file`. Create that file yourself, mode `0600`, owned by you. The unit stores the path. Gridctl never creates, copies, or templates the file. Install reads it once to verify the passphrase. `status` and `doctor` do not read it. The daemon reads `GRIDCTL_VAULT_PASSPHRASE_FILE` at start. A `0644` file, a file owned by someone else, a symlink, or a directory is refused, and the error does not echo the contents.
+
+`gridctl serve -f` logs a bad passphrase file and starts with the store locked. `gridctl apply -f` refuses to start.
+
+After logout, a Linux user service stops unless linger is enabled. Install prints the hint and does not run `loginctl enable-linger` for you:
+
+```bash
+loginctl enable-linger "$USER"
+```
+
+`gridctl destroy <name>` stops a supervised gateway through the supervisor and leaves the unit enabled, so the next login (or boot, when linger is on) starts it again. Remove it with `gridctl service uninstall <name>`. `gridctl reset` removes installed services before it stops daemons. A pack whose pin moved is reported as `stale` by `gridctl service status`; re-run install. The pin is not rewritten automatically.
+
+`gridctl service` is not supported on Windows. Run `gridctl apply` from a login session, or use WSL2.
+
 ## Uninstalling
 
 Before removing the binary, remove what gridctl placed elsewhere on the
