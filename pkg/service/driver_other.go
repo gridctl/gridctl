@@ -41,6 +41,10 @@ func (unsupportedSupervisor) DaemonReload(context.Context) error {
 	return unsupportedErr()
 }
 
+func (unsupportedSupervisor) Restart(context.Context, Spec) error {
+	return unsupportedErr()
+}
+
 func unsupportedErr() error {
 	return fmt.Errorf("gridctl service is not supported on this operating system")
 }

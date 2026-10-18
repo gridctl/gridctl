@@ -170,7 +170,7 @@ type wireManager interface {
 // ServiceResetter removes installed user services. Nil means the surface
 // is unavailable (Windows, or the manager could not be built).
 type ServiceResetter interface {
-	Preview(ctx context.Context) ([]Row, error)
+	Preview(ctx context.Context, force bool) ([]Row, error)
 	Remove(ctx context.Context, force bool) ([]Row, error)
 }
 
@@ -252,7 +252,7 @@ func (m *Managers) collect(ctx context.Context, opts Options) (*inventory, error
 		}
 	}
 	if m.Services != nil {
-		if inv.services, err = m.Services.Preview(ctx); err != nil {
+		if inv.services, err = m.Services.Preview(ctx, opts.Force); err != nil {
 			return nil, fmt.Errorf("reading service units: %w", err)
 		}
 	}

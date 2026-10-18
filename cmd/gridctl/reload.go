@@ -138,6 +138,7 @@ func callReloadAPI(st *state.DaemonState) error {
 		return fmt.Errorf("reload failed: %s", result.Message)
 	}
 	if reloadFormat == "json" {
+		noteSupervisedReload(st.StackName)
 		return nil
 	}
 

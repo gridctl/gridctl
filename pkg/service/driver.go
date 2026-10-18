@@ -43,6 +43,10 @@ type Supervisor interface {
 	// DaemonReload refreshes the user manager after a unit file is
 	// removed. Non-Linux supervisors return nil.
 	DaemonReload(ctx context.Context) error
+	// Restart reloads unit text and restarts a unit the supervisor
+	// already owns. It is not KillDaemon: a five-second SIGKILL would
+	// trip Restart=on-failure.
+	Restart(ctx context.Context, spec Spec) error
 }
 
 // NewSupervisor returns the host supervisor. A missing binary is reported

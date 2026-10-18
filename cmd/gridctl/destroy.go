@@ -21,30 +21,47 @@ import (
 
 var destroyUnlink bool
 
-// stopSupervisedService stops a gateway through its supervisor when a
-// service entry exists. Tests replace it. killDaemonForDestroy is the
-// unsupervised path; a supervised stop must not call it.
+// supervisedStop is the destroy view of one service entry. A lock entry
+// is not ownership: OwnedPID is set only when the supervisor's main PID
+// is the recorded daemon, or the unit was active. KillDaemon must not
+// run on that PID.
+type supervisedStop struct {
+	present     bool
+	kind        string
+	path        string
+	ownedPID    int
+	stoppedUnit bool
+}
+
+// stopSupervisedService stops a loaded unit through its supervisor when
+// a service entry exists. Tests replace it. killDaemonForDestroy is the
+// path for a PID the supervisor does not own.
 var (
 	stopSupervisedService = defaultStopSupervised
 	killDaemonForDestroy  = state.KillDaemon
 )
 
-func defaultStopSupervised(ctx context.Context, name string) (stopped bool, kind, path string, err error) {
+func defaultStopSupervised(ctx context.Context, name string) (supervisedStop, error) {
 	home, homeErr := state.Home()
 	if homeErr != nil {
-		return false, "", "", homeErr
+		return supervisedStop{}, homeErr
 	}
 	entry, lookErr := service.Lookup(ctx, home, name)
 	if lookErr != nil || entry == nil {
-		return false, "", "", lookErr
+		return supervisedStop{}, lookErr
 	}
-	kind = "systemd unit"
+	kind := "systemd unit"
 	if entry.Client == string(service.PlatformLaunchd) {
 		kind = "launchd agent"
 	}
-	mgr := service.NewManager(home, newServiceSupervisor())
-	stopped, path, err = mgr.Stop(ctx, name)
-	return stopped, kind, path, err
+	report, err := service.NewManager(home, newServiceSupervisor()).Stop(ctx, name)
+	return supervisedStop{
+		present:     report.Present,
+		kind:        kind,
+		path:        report.Path,
+		ownedPID:    report.OwnedPID,
+		stoppedUnit: report.StoppedUnit,
+	}, err
 }
 
 var destroyCmd = &cobra.Command{
@@ -124,15 +141,17 @@ func runDestroy(target string) error {
 
 	printer.Info("Stopping stack", "name", name)
 
-	// A supervised gateway is stopped through the supervisor. KillDaemon
-	// escalates to SIGKILL after five seconds, and Restart=on-failure
-	// would start the unit again.
-	supervised, kind, unitPath, stopErr := stopSupervisedService(context.Background(), name)
-	if stopErr != nil && supervised {
-		return fmt.Errorf("could not stop supervised gateway %s: %w", unitPath, stopErr)
+	// A PID the supervisor owns is stopped through the supervisor.
+	// KillDaemon escalates to SIGKILL after five seconds, and
+	// Restart=on-failure would start that unit again. A lock entry
+	// alone is not ownership: an inactive or not-loaded unit does not
+	// own a daemon the user started by hand.
+	stop, stopErr := stopSupervisedService(context.Background(), name)
+	if stopErr != nil && stop.present {
+		return fmt.Errorf("could not stop supervised gateway %s: %w", stop.path, stopErr)
 	}
-	if supervised {
-		fmt.Printf("Stopped %s %s; it stays enabled and starts again at the next user-manager start (login, or boot when linger is enabled). Run 'gridctl service uninstall %s' to remove it.\n", kind, unitPath, name)
+	if stop.stoppedUnit {
+		fmt.Printf("Stopped %s %s; it stays enabled and starts again at the next user-manager start (login, or boot when linger is enabled). Run 'gridctl service uninstall %s' to remove it.\n", stop.kind, stop.path, name)
 	}
 
 	// Check for running daemon (with lock to prevent races with deploy)
@@ -142,7 +161,9 @@ func runDestroy(target string) error {
 			return nil // No state file, nothing to kill
 		}
 
-		if !supervised && state.IsRunning(st) {
+		// Reload after the supervisor stop. Kill a recorded PID the
+		// supervisor did not own; leave an owned PID alone.
+		if state.IsRunning(st) && st.PID != stop.ownedPID {
 			printer.Info("Stopping gateway daemon", "pid", st.PID)
 			if killErr := killDaemonForDestroy(st); killErr != nil {
 				printer.Warn("could not kill daemon", "error", killErr)

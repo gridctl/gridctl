@@ -21,8 +21,8 @@ type serviceResetter struct {
 	m *service.Manager
 }
 
-func (s serviceResetter) Preview(ctx context.Context) ([]Row, error) {
-	rows, err := s.m.Preview(ctx)
+func (s serviceResetter) Preview(ctx context.Context, force bool) ([]Row, error) {
+	rows, err := s.m.Preview(ctx, force)
 	if err != nil {
 		return nil, err
 	}

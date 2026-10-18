@@ -23,6 +23,10 @@ func (e *InfraError) Error() string {
 	return e.Msg
 }
 
+// ErrUnitNotLoaded means the user manager does not have the unit. Destroy
+// treats that as unsupervised: there is no Restart=on-failure to trip.
+var ErrUnitNotLoaded = errors.New("unit not loaded")
+
 // AttentionError is an exit-1 condition: the user has to choose or finish
 // a step. The unit and lock entry are left as the message describes.
 type AttentionError struct {
@@ -34,6 +38,11 @@ func (e *AttentionError) Error() string {
 		return ""
 	}
 	return e.Msg
+}
+
+func isInfra(err error) bool {
+	var infra *InfraError
+	return errors.As(err, &infra)
 }
 
 func runSupervisor(ctx context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {

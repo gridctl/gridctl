@@ -457,7 +457,7 @@ func checkServices(ctx context.Context, checks *[]doctorCheck) {
 		*checks = append(*checks, doctorCheck{ID: "service", Status: doctorStatusWarn, Message: fmt.Sprintf("home directory unavailable: %v", err)})
 		return
 	}
-	mgr := service.NewManager(home, service.NewSupervisor())
+	mgr := service.NewManager(home, newServiceSupervisor())
 	rows, err := mgr.Status(ctx, "")
 	if err != nil {
 		*checks = append(*checks, doctorCheck{ID: "service", Status: doctorStatusWarn, Message: err.Error()})

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,12 +17,14 @@ type fakeSupervisor struct {
 	enableErr   error
 	disableErr  error
 	stopErr     error
+	restartErr  error
 	query       RuntimeState
 	queryErr    error
 	linger      string
 	enabled     []string
 	disabled    []string
 	stopped     []string
+	restarted   []string
 	reloaded    int
 	logsCalled  bool
 }
@@ -63,6 +66,11 @@ func (f *fakeSupervisor) Linger(context.Context) (string, error) {
 func (f *fakeSupervisor) DaemonReload(context.Context) error {
 	f.reloaded++
 	return nil
+}
+
+func (f *fakeSupervisor) Restart(_ context.Context, spec Spec) error {
+	f.restarted = append(f.restarted, spec.Name)
+	return f.restartErr
 }
 
 func testHome(t *testing.T) string {
@@ -287,6 +295,285 @@ func TestStatus_NotRunning(t *testing.T) {
 	}
 	if rows[0].Remediation == "" {
 		t.Fatal("missing remediation")
+	}
+}
+
+func TestInstall_ForeignFileRefused(t *testing.T) {
+	home := testHome(t)
+	spec := testSpec(home)
+	if err := os.MkdirAll(filepath.Dir(spec.UnitPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(spec.UnitPath, []byte("user unit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mgr := NewManager(home, &fakeSupervisor{})
+	_, err := mgr.Install(t.Context(), InstallOptions{Spec: spec, NoEnable: true})
+	if err == nil || !strings.Contains(err.Error(), "not recorded") {
+		t.Fatalf("err = %v", err)
+	}
+	got, err := os.ReadFile(spec.UnitPath)
+	if err != nil || string(got) != "user unit\n" {
+		t.Fatalf("unit = %q, err = %v", got, err)
+	}
+	_, err = mgr.Install(t.Context(), InstallOptions{Spec: spec, NoEnable: true, DryRun: true})
+	if err == nil || !strings.Contains(err.Error(), "not recorded") {
+		t.Fatalf("dry-run err = %v", err)
+	}
+}
+
+func TestInstall_ForeignFileForceBacksUp(t *testing.T) {
+	home := testHome(t)
+	spec := testSpec(home)
+	if err := os.MkdirAll(filepath.Dir(spec.UnitPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(spec.UnitPath, []byte("user unit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mgr := NewManager(home, &fakeSupervisor{})
+	if _, err := mgr.Install(t.Context(), InstallOptions{Spec: spec, NoEnable: true, Force: true}); err != nil {
+		t.Fatal(err)
+	}
+	matches, err := filepath.Glob(spec.UnitPath + ".gridctl-backup-*")
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("backups = %v, err = %v", matches, err)
+	}
+	backed, err := os.ReadFile(matches[0])
+	if err != nil || string(backed) != "user unit\n" {
+		t.Fatalf("backup = %q, err = %v", backed, err)
+	}
+	l, err := mgr.store.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := l.Get(project.KindService, "systemd", "netops")
+	if entry == nil || !entry.CreatedByGridctl {
+		t.Fatalf("entry = %+v, want created_by_gridctl after the replacement", entry)
+	}
+}
+
+func TestInstall_DriftRefusedBeforeReplace(t *testing.T) {
+	home := testHome(t)
+	spec := testSpec(home)
+	mgr := NewManager(home, &fakeSupervisor{})
+	if _, err := mgr.Install(t.Context(), InstallOptions{Spec: spec, NoEnable: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(spec.UnitPath, []byte("hand edit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := startSleep(t)
+	go func() { _ = cmd.Wait() }()
+	if err := state.Save(&state.DaemonState{
+		StackName: "netops", PID: cmd.Process.Pid, Port: 8180, StartedAt: time.Now(), Home: home,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := mgr.Install(t.Context(), InstallOptions{Spec: spec, NoEnable: true, Replace: true})
+	if err == nil || !strings.Contains(err.Error(), "edited") {
+		t.Fatalf("err = %v", err)
+	}
+	if !state.IsRunning(&state.DaemonState{PID: cmd.Process.Pid}) {
+		t.Fatal("drift refusal killed the daemon")
+	}
+}
+
+func TestInstall_ReinstallOwnedRestarts(t *testing.T) {
+	home := testHome(t)
+	cmd := startSleep(t)
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+	fake := &fakeSupervisor{query: RuntimeState{State: "running", Enabled: true, PID: cmd.Process.Pid}}
+	mgr := NewManager(home, fake)
+	spec := testSpec(home)
+	if _, err := mgr.Install(t.Context(), InstallOptions{Spec: spec, NoEnable: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.Save(&state.DaemonState{
+		StackName: "netops", PID: cmd.Process.Pid, Port: 8180, StartedAt: time.Now(), Home: home,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mgr.Install(t.Context(), InstallOptions{Spec: spec, NoEnable: true}); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.restarted) != 1 {
+		t.Fatalf("restart calls = %v", fake.restarted)
+	}
+	if !state.IsRunning(&state.DaemonState{PID: cmd.Process.Pid}) {
+		t.Fatal("reinstall killed the supervised process")
+	}
+}
+
+func TestInstall_WriteFailureRollsBack(t *testing.T) {
+	home := testHome(t)
+	spec := testSpec(home)
+	dir := filepath.Dir(spec.UnitPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	mgr := NewManager(home, &fakeSupervisor{})
+	if _, err := mgr.Install(t.Context(), InstallOptions{Spec: spec, NoEnable: true}); err == nil {
+		t.Fatal("expected write failure")
+	}
+	l, err := mgr.store.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry := l.Get(project.KindService, "systemd", "netops"); entry != nil {
+		t.Fatalf("lock entry remained after write failure: %+v", entry)
+	}
+}
+
+func TestStatus_StalePack(t *testing.T) {
+	home := testHome(t)
+	spec := testSpec(home)
+	spec.Pack = "team"
+	spec.StackFile = filepath.Join(home, "old", "stack.yaml")
+	mgr := NewManager(home, &fakeSupervisor{})
+	if _, err := mgr.Install(t.Context(), InstallOptions{Spec: spec, NoEnable: true}); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(home, ".gridctl", "skills.lock.yaml")
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "version: 5\nsources:\n  pack:\n    repo: https://example.com/p\n    pack:\n      name: team\n      stack:\n        path: stack.yaml\n        name: team\n        content_hash: abc\n        checkout_dir: " + filepath.Join(home, "new") + "\n"
+	if err := os.WriteFile(lockPath, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := mgr.Status(t.Context(), "netops")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].State != "stale" {
+		t.Fatalf("rows = %+v", rows)
+	}
+	if !strings.Contains(rows[0].Remediation, "gridctl service install --pack team") {
+		t.Fatalf("remediation = %q", rows[0].Remediation)
+	}
+}
+
+func TestStatus_MissingSupervisor(t *testing.T) {
+	home := testHome(t)
+	fake := &fakeSupervisor{queryErr: &InfraError{Msg: "systemctl not found"}}
+	mgr := NewManager(home, fake)
+	if _, err := mgr.Install(t.Context(), InstallOptions{Spec: testSpec(home), NoEnable: true}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := mgr.Status(t.Context(), "")
+	if !isInfra(err) {
+		t.Fatalf("err = %v, want infra", err)
+	}
+}
+
+func TestUninstall_AlreadyGone(t *testing.T) {
+	home := testHome(t)
+	mgr := NewManager(home, &fakeSupervisor{})
+	spec := testSpec(home)
+	if _, err := mgr.Install(t.Context(), InstallOptions{Spec: spec, NoEnable: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(spec.UnitPath); err != nil {
+		t.Fatal(err)
+	}
+	res, err := mgr.Uninstall(t.Context(), "netops", UninstallOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Action != "already-gone" {
+		t.Fatalf("action = %s", res.Action)
+	}
+}
+
+func TestPreview_ForceRemovesDrift(t *testing.T) {
+	home := testHome(t)
+	mgr := NewManager(home, &fakeSupervisor{})
+	spec := testSpec(home)
+	if _, err := mgr.Install(t.Context(), InstallOptions{Spec: spec, NoEnable: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(spec.UnitPath, []byte("edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	kept, err := mgr.Preview(t.Context(), false)
+	if err != nil || len(kept) != 1 || kept[0].Action != "kept-drift" {
+		t.Fatalf("preview = %+v, err = %v", kept, err)
+	}
+	forced, err := mgr.Preview(t.Context(), true)
+	if err != nil || len(forced) != 1 || forced[0].Action != "would-remove" {
+		t.Fatalf("force preview = %+v, err = %v", forced, err)
+	}
+}
+
+func TestStop_NotLoadedIsUnsupervised(t *testing.T) {
+	home := testHome(t)
+	fake := &fakeSupervisor{query: RuntimeState{State: "not-loaded"}}
+	mgr := NewManager(home, fake)
+	if _, err := mgr.Install(t.Context(), InstallOptions{Spec: testSpec(home), NoEnable: true}); err != nil {
+		t.Fatal(err)
+	}
+	report, err := mgr.Stop(t.Context(), "netops")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.Present || !report.NotLoaded || report.OwnedPID != 0 || report.StoppedUnit {
+		t.Fatalf("report = %+v", report)
+	}
+	if len(fake.stopped) != 0 {
+		t.Fatalf("stop calls = %v", fake.stopped)
+	}
+}
+
+func TestStop_InactiveDoesNotOwnManualPID(t *testing.T) {
+	home := testHome(t)
+	cmd := startSleep(t)
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+	fake := &fakeSupervisor{query: RuntimeState{State: "inactive", PID: 0}}
+	mgr := NewManager(home, fake)
+	if _, err := mgr.Install(t.Context(), InstallOptions{Spec: testSpec(home), NoEnable: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.Save(&state.DaemonState{
+		StackName: "netops", PID: cmd.Process.Pid, Port: 8180, StartedAt: time.Now(), Home: home,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	report, err := mgr.Stop(t.Context(), "netops")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.OwnedPID != 0 || !report.StoppedUnit || report.NotLoaded {
+		t.Fatalf("report = %+v", report)
+	}
+	if len(fake.stopped) != 1 {
+		t.Fatalf("stop calls = %v", fake.stopped)
+	}
+}
+
+func TestInstall_LaunchdCreatesLogDir(t *testing.T) {
+	home := testHome(t)
+	spec := testSpec(home)
+	spec.Platform = PlatformLaunchd
+	spec.UnitPath = filepath.Join(home, "Library", "LaunchAgents", "dev.gridctl.netops.plist")
+	spec.LogPath = filepath.Join(home, ".gridctl", "logs", "netops.log")
+	mgr := NewManager(home, &fakeSupervisor{})
+	if _, err := mgr.Install(t.Context(), InstallOptions{Spec: spec, NoEnable: true}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Dir(spec.LogPath))
+	if err != nil || !info.IsDir() {
+		t.Fatalf("log dir: %v", err)
 	}
 }
 

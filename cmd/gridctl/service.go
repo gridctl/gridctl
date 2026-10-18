@@ -64,7 +64,8 @@ var serviceCmd = &cobra.Command{
 	Use:   "service",
 	Short: "Install the gateway as a user service that survives logout and reboot",
 	Long: `Installs a user-scoped systemd unit or launchd agent that runs the
-gateway in the foreground and restarts it after logout and reboot.
+gateway in the foreground. On Linux it comes back at the next
+user-manager start (login, or boot when linger is enabled).
 
 The unit is recorded in the project lockfile before it is written. It
 runs 'gridctl apply <stack> --foreground' with a clean environment.
@@ -146,6 +147,7 @@ var serviceLogsCmd = &cobra.Command{
 		if code := refuseUnsupportedService(os.Stderr); code != 0 {
 			os.Exit(code)
 		}
+		serviceFormatChanged = cmd.Flags().Changed("format")
 		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		code := runServiceLogs(ctx, os.Stdout, os.Stderr, args[0])
@@ -181,6 +183,7 @@ func init() {
 
 	serviceLogsCmd.Flags().BoolVarP(&serviceLogsFollow, "follow", "f", false, "Follow log output")
 	serviceLogsCmd.Flags().IntVarP(&serviceLogsTail, "tail", "n", 100, "Number of lines to show")
+	addServiceFormatFlags(serviceLogsCmd)
 }
 
 // addServiceFormatFlags registers --format and --json. Status registers
@@ -203,11 +206,25 @@ func refuseUnsupportedService(w io.Writer) int {
 	return 0
 }
 
-func runServiceInstall(ctx context.Context, stdout, stderr io.Writer) int {
+func resolveServiceFormat(stderr io.Writer) (string, int) {
 	format, err := resolveFormat(serviceFormat, serviceFormatChanged, serviceJSON)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
-		return serviceExitInfra
+		return "", serviceExitInfra
+	}
+	switch strings.ToLower(format) {
+	case "", "table", "json":
+		return format, 0
+	default:
+		fmt.Fprintf(stderr, "invalid --format %q (want table or json)\n", format)
+		return "", serviceExitInfra
+	}
+}
+
+func runServiceInstall(ctx context.Context, stdout, stderr io.Writer) int {
+	format, code := resolveServiceFormat(stderr)
+	if code != 0 {
+		return code
 	}
 	if (serviceStack == "") == (servicePack == "") {
 		fmt.Fprintln(stderr, "install requires exactly one of --stack or --pack")
@@ -327,10 +344,9 @@ func runServiceInstall(ctx context.Context, stdout, stderr io.Writer) int {
 }
 
 func runServiceStatus(ctx context.Context, stdout, stderr io.Writer, name string) int {
-	format, err := resolveFormat(serviceFormat, serviceFormatChanged, serviceJSON)
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return serviceExitInfra
+	format, code := resolveServiceFormat(stderr)
+	if code != 0 {
+		return code
 	}
 	home, err := state.Home()
 	if err != nil {
@@ -370,10 +386,9 @@ func runServiceStatus(ctx context.Context, stdout, stderr io.Writer, name string
 }
 
 func runServiceUninstall(ctx context.Context, stdout, stderr io.Writer, name string) int {
-	format, err := resolveFormat(serviceFormat, serviceFormatChanged, serviceJSON)
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return serviceExitInfra
+	format, code := resolveServiceFormat(stderr)
+	if code != 0 {
+		return code
 	}
 	home, err := state.Home()
 	if err != nil {
@@ -411,6 +426,9 @@ func runServiceUninstall(ctx context.Context, stdout, stderr io.Writer, name str
 }
 
 func runServiceLogs(ctx context.Context, stdout, stderr io.Writer, name string) int {
+	if _, code := resolveServiceFormat(stderr); code != 0 {
+		return code
+	}
 	home, err := state.Home()
 	if err != nil {
 		fmt.Fprintln(stderr, err)
@@ -466,7 +484,19 @@ func resolveServiceTarget(stderr io.Writer) (stackPath, stackName, packName stri
 		return abs, "", "", 0
 	}
 	locked, err := packops.LoadLockedPack(servicePack)
-	if err != nil || locked == nil || locked.Stack == nil {
+	if err != nil {
+		if errors.Is(err, skills.ErrNewerImportLockVersion) || errors.Is(err, project.ErrNewerLockVersion) {
+			fmt.Fprintln(stderr, err)
+			return "", "", "", serviceExitInfra
+		}
+		if !errors.Is(err, packops.ErrNotImported) && !errors.Is(err, packops.ErrNameCollision) {
+			fmt.Fprintln(stderr, err)
+			return "", "", "", serviceExitInfra
+		}
+		fmt.Fprintf(stderr, "pack %q has no stack\nRun 'gridctl pack add' to import a pack that carries a stack.\n", servicePack)
+		return "", "", "", serviceExitAttention
+	}
+	if locked == nil || locked.Stack == nil {
 		fmt.Fprintf(stderr, "pack %q has no stack\nRun 'gridctl pack add' to import a pack that carries a stack.\n", servicePack)
 		return "", "", "", serviceExitAttention
 	}
@@ -559,7 +589,7 @@ func serviceVaultGate(stderr io.Writer, stack *config.Stack) (notes []string, pa
 		}
 		return nil, "", serviceExitAttention
 	}
-	if len(needs) == 0 && passFile == "" {
+	if len(needs) == 0 && passFile == "" && store.IsLocked() {
 		notes = append(notes, "the variable store stays locked in the service")
 	}
 	return notes, passFile, 0

@@ -37,6 +37,18 @@ func (s *systemdSupervisor) Disable(ctx context.Context, spec Spec) error {
 func (s *systemdSupervisor) Stop(ctx context.Context, spec Spec) error {
 	unit := UnitFileName(spec.Name)
 	_, err := runSupervisor(ctx, supervisorTimeout, "systemctl", "--user", "stop", unit)
+	if err != nil && unitNotLoaded(err) {
+		return fmt.Errorf("%w: %v", ErrUnitNotLoaded, err)
+	}
+	return err
+}
+
+func (s *systemdSupervisor) Restart(ctx context.Context, spec Spec) error {
+	unit := UnitFileName(spec.Name)
+	if _, err := runSupervisor(ctx, supervisorTimeout, "systemctl", "--user", "daemon-reload"); err != nil {
+		return err
+	}
+	_, err := runSupervisor(ctx, supervisorTimeout, "systemctl", "--user", "restart", unit)
 	return err
 }
 
@@ -88,7 +100,7 @@ func (s *systemdSupervisor) DaemonReload(ctx context.Context) error {
 }
 
 func unitNotLoaded(err error) bool {
-	if err == nil {
+	if err == nil || isInfra(err) {
 		return false
 	}
 	msg := strings.ToLower(err.Error())

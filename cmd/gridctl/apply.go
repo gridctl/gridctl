@@ -300,6 +300,6 @@ func showLinkHint(stackPath string) {
 		output.New().Hint("Tip: run 'gridctl link' to connect your LLM client, or 'gridctl open' for the web UI")
 	}
 	if stackPath != "" {
-		output.New().Hint("Tip: 'gridctl service install --stack %s' keeps this gateway running across reboots", stackPath)
+		output.New().Hint("Tip: 'gridctl service install --stack %s' brings this gateway back at the next login, or at boot on Linux when linger is enabled", stackPath)
 	}
 }

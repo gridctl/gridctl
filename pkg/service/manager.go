@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -126,40 +127,50 @@ func (m *Manager) Install(ctx context.Context, opts InstallOptions) (InstallResu
 	if opts.DryRun {
 		result.Text = text
 	}
+	// Conflict, drift, and a foreign file are refused before any process
+	// is stopped. A later refusal must not have already killed the gateway.
+	if err := m.preflight(ctx, spec, text, opts.Force); err != nil {
+		return result, err
+	}
+	restartOwned := false
 	if !opts.DryRun {
-		if err := m.stopReplacedDaemon(spec.StackName, opts.Replace); err != nil {
-			return result, err
+		var stopErr error
+		restartOwned, stopErr = m.stopReplacedDaemon(ctx, spec, opts.Replace)
+		if stopErr != nil {
+			return result, stopErr
 		}
 	}
 
 	client := string(spec.Platform)
 	source := spec.StackName
 	err = m.store.Mutate(ctx, opts.DryRun, func(l *project.Lock) error {
-		if err := rejectPathConflict(l, spec.UnitPath, client, source); err != nil {
+		if err := checkInstall(l, spec, text, opts.Force); err != nil {
 			return err
-		}
-		prev := l.Get(project.KindService, client, source)
-		drifted, err := unitDrifted(prev)
-		if err != nil {
-			return err
-		}
-		if drifted && !opts.Force {
-			return &AttentionError{Msg: fmt.Sprintf("unit %s was edited after gridctl wrote it; re-run with --force to replace it", prev.Path)}
 		}
 		if opts.DryRun {
 			return nil
 		}
-		if drifted && opts.Force {
+		prev := l.Get(project.KindService, client, source)
+		if drifted, driftErr := unitDrifted(prev); driftErr != nil {
+			return driftErr
+		} else if drifted && opts.Force {
 			if err := backupUnit(prev.Path, m.now()); err != nil {
 				return err
 			}
 		}
-		created := true
-		if same, sameErr := fileMatches(spec.UnitPath, text); sameErr != nil {
-			return sameErr
-		} else if same && (prev == nil || !prev.CreatedByGridctl) {
-			created = false
+		exists, identical, fileErr := classifyUnitFile(spec.UnitPath, text)
+		if fileErr != nil {
+			return fileErr
 		}
+		if prev == nil && exists && !identical && opts.Force {
+			if err := backupUnit(spec.UnitPath, m.now()); err != nil {
+				return err
+			}
+		}
+		// An identical pre-existing file is adopted, not created. A
+		// --force replacement is our bytes; CreatedByGridctl stays true
+		// so reset can remove the unit. The backup holds the foreign content.
+		created := !identical || (prev != nil && prev.CreatedByGridctl)
 		entry := &project.Entry{
 			Kind:             project.KindService,
 			Client:           client,
@@ -196,7 +207,12 @@ func (m *Manager) Install(ctx context.Context, opts InstallOptions) (InstallResu
 	if err != nil {
 		return result, err
 	}
-	if opts.DryRun || opts.NoEnable {
+	if !opts.DryRun {
+		if err := ensureServiceLogDir(spec); err != nil {
+			return result, err
+		}
+	}
+	if opts.DryRun || (opts.NoEnable && !restartOwned) {
 		if !opts.DryRun && spec.Platform == PlatformSystemd {
 			result.Linger = m.linger(ctx)
 		}
@@ -205,17 +221,23 @@ func (m *Manager) Install(ctx context.Context, opts InstallOptions) (InstallResu
 	if m.sup == nil {
 		return result, &InfraError{Msg: "no service supervisor is available"}
 	}
-	if err := m.sup.Enable(ctx, spec); err != nil {
-		msg := fmt.Sprintf("wrote %s but enable failed: %v\nFinish by hand: %s", spec.UnitPath, err, manualEnableCommand(spec))
-		if spec.Platform == PlatformSystemd && opts.HomeOverridden {
-			msg += "\nThe unit is outside the user manager's search path because the home is overridden."
-		}
-		return result, &AttentionError{Msg: msg}
+	start := m.sup.Enable
+	if restartOwned {
+		// The supervisor already owns this PID. Restart through it so
+		// the new unit text is what runs. KillDaemon would trip
+		// Restart=on-failure.
+		start = m.sup.Restart
+	}
+	if err := start(ctx, spec); err != nil {
+		return result, enableFailure(spec, opts.HomeOverridden, err)
 	}
 	result.Enabled = true
 	if rt, qerr := m.sup.Query(ctx, spec); qerr == nil {
 		result.Running = rt.State == "running"
 		result.PID = rt.PID
+		if !rt.Enabled && opts.NoEnable {
+			result.Enabled = false
+		}
 	}
 	if spec.Platform == PlatformSystemd {
 		result.Linger = m.linger(ctx)
@@ -242,7 +264,11 @@ func (m *Manager) Status(ctx context.Context, name string) ([]Row, error) {
 		if name != "" && !entryMatches(e, name) {
 			continue
 		}
-		rows = append(rows, m.rowFor(ctx, e, linger))
+		row, rowErr := m.rowFor(ctx, e, linger)
+		if rowErr != nil {
+			return nil, rowErr
+		}
+		rows = append(rows, row)
 	}
 	if name != "" && len(rows) == 0 {
 		return nil, &AttentionError{Msg: fmt.Sprintf("no installed service %q", name)}
@@ -293,6 +319,9 @@ func (m *Manager) Uninstall(ctx context.Context, name string, opts UninstallOpti
 	spec := specFromEntry(entry)
 	if m.sup != nil {
 		if err := m.sup.Disable(ctx, spec); err != nil {
+			if isInfra(err) {
+				return res, err
+			}
 			return res, &AttentionError{Msg: fmt.Sprintf("could not stop %s: %v; the record was left in place so the command can be re-run", entry.Path, err)}
 		}
 	}
@@ -328,20 +357,70 @@ func (m *Manager) Uninstall(ctx context.Context, name string, opts UninstallOpti
 	return res, nil
 }
 
-// Stop stops a supervised unit without disabling it and without
-// KillDaemon. A missing entry reports stopped=false.
-func (m *Manager) Stop(ctx context.Context, name string) (bool, string, error) {
+// StopReport is what destroy needs after asking the supervisor to stop.
+type StopReport struct {
+	// Present is true when a service lock entry exists.
+	Present bool
+	Path    string
+	// OwnedPID is the supervisor's main PID when that process is the
+	// recorded daemon, or the unit was active. Zero means the supervisor
+	// does not own the recorded process. Destroy must not KillDaemon an
+	// owned PID: Restart=on-failure would start it again.
+	OwnedPID int
+	// StoppedUnit is true when a loaded unit was stopped. Destroy prints
+	// the re-enable message only then.
+	StoppedUnit bool
+	// NotLoaded means the user manager does not have the unit, or no
+	// supervisor binary is installed. Destroy continues as unsupervised.
+	NotLoaded bool
+}
+
+// Stop stops a loaded unit without disabling it and without KillDaemon.
+// A missing entry reports Present false. A unit that is not loaded is
+// not a stop failure: the supervisor does not own the process.
+func (m *Manager) Stop(ctx context.Context, name string) (StopReport, error) {
 	entry, err := Lookup(ctx, m.home, name)
 	if err != nil || entry == nil {
-		return false, "", err
+		return StopReport{}, err
 	}
+	res := StopReport{Present: true, Path: entry.Path}
 	if m.sup == nil {
-		return true, entry.Path, &InfraError{Msg: "no service supervisor is available"}
+		return res, &InfraError{Msg: "no service supervisor is available"}
 	}
-	if err := m.sup.Stop(ctx, specFromEntry(entry)); err != nil {
-		return true, entry.Path, err
+	spec := specFromEntry(entry)
+	rt, qerr := m.sup.Query(ctx, spec)
+	if qerr != nil {
+		if isInfra(qerr) {
+			// No user manager is installed, so nothing can restart a
+			// killed process. Destroy takes the unsupervised path.
+			res.NotLoaded = true
+			return res, nil
+		}
+		return res, qerr
 	}
-	return true, entry.Path, nil
+	if rt.State == "not-loaded" {
+		res.NotLoaded = true
+		return res, nil
+	}
+	st, _ := state.Load(name)
+	ownsPID := rt.PID > 0 && st != nil && rt.PID == st.PID
+	if rt.State == "running" || ownsPID {
+		if rt.PID > 0 {
+			res.OwnedPID = rt.PID
+		} else if st != nil && st.PID > 0 {
+			res.OwnedPID = st.PID
+		}
+	}
+	if err := m.sup.Stop(ctx, spec); err != nil {
+		if errors.Is(err, ErrUnitNotLoaded) || isInfra(err) {
+			res.NotLoaded = true
+			res.OwnedPID = 0
+			return res, nil
+		}
+		return res, err
+	}
+	res.StoppedUnit = true
+	return res, nil
 }
 
 // Linger reports the user-manager linger state.
@@ -352,8 +431,10 @@ func (m *Manager) Linger(ctx context.Context) (string, error) {
 	return m.sup.Linger(ctx)
 }
 
-// Preview lists the units reset would touch. It does not call the supervisor.
-func (m *Manager) Preview(ctx context.Context) ([]ResetRow, error) {
+// Preview lists the units reset would touch. force matches Remove, so a
+// dry-run with --force does not report kept-drift for a unit Remove
+// would delete. It does not call the supervisor.
+func (m *Manager) Preview(ctx context.Context, force bool) ([]ResetRow, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -363,7 +444,7 @@ func (m *Manager) Preview(ctx context.Context) ([]ResetRow, error) {
 	}
 	var rows []ResetRow
 	for _, e := range l.Entries(project.KindService) {
-		rows = append(rows, previewResetRow(e))
+		rows = append(rows, previewResetRow(e, force))
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
 	return rows, nil
@@ -372,7 +453,7 @@ func (m *Manager) Preview(ctx context.Context) ([]ResetRow, error) {
 // Remove disables and stops each unit, removes the file when the hash
 // matches (or force), and drops the record. Per-item failures are rows.
 func (m *Manager) Remove(ctx context.Context, force bool) ([]ResetRow, error) {
-	preview, err := m.Preview(ctx)
+	preview, err := m.Preview(ctx, force)
 	if err != nil {
 		return nil, err
 	}
@@ -473,31 +554,51 @@ func HasEntries(ctx context.Context, home string) (bool, error) {
 	return len(l.Entries(project.KindService)) > 0, nil
 }
 
-func (m *Manager) stopReplacedDaemon(name string, replace bool) error {
-	st, err := state.Load(name)
+// stopReplacedDaemon reports whether the supervisor already owns the
+// running process. That process is restarted after the write. KillDaemon
+// is only for a daemon the supervisor does not own.
+func (m *Manager) stopReplacedDaemon(ctx context.Context, spec Spec, replace bool) (bool, error) {
+	st, err := state.Load(spec.StackName)
 	if err != nil || st == nil || !state.IsRunning(st) {
-		return nil
+		return false, nil
 	}
 	home, homeErr := state.Home()
 	if homeErr == nil && st.Home != "" && st.Home != home {
-		return &AttentionError{Msg: fmt.Sprintf("stack %q is running under a different home (%s, pid %d, port %d); not touched", name, st.Home, st.PID, st.Port)}
+		return false, &AttentionError{Msg: fmt.Sprintf("stack %q is running under a different home (%s, pid %d, port %d); not touched", spec.StackName, st.Home, st.PID, st.Port)}
+	}
+	if m.supervisorOwns(ctx, spec, st.PID) {
+		return true, nil
 	}
 	if !replace {
-		return &AttentionError{Msg: fmt.Sprintf("stack %q is already running (pid %d, port %d); re-run with --replace to stop it first", name, st.PID, st.Port)}
+		return false, &AttentionError{Msg: fmt.Sprintf("stack %q is already running (pid %d, port %d); re-run with --replace to stop it first", spec.StackName, st.PID, st.Port)}
 	}
-	return state.WithLock(name, 5*time.Second, func() error {
-		current, loadErr := state.Load(name)
+	return false, state.WithLock(spec.StackName, 5*time.Second, func() error {
+		current, loadErr := state.Load(spec.StackName)
 		if loadErr != nil || current == nil || !state.IsRunning(current) {
 			return nil
 		}
 		if homeErr == nil && current.Home != "" && current.Home != home {
-			return &AttentionError{Msg: fmt.Sprintf("stack %q is running under a different home (%s, pid %d, port %d); not touched", name, current.Home, current.PID, current.Port)}
+			return &AttentionError{Msg: fmt.Sprintf("stack %q is running under a different home (%s, pid %d, port %d); not touched", spec.StackName, current.Home, current.PID, current.Port)}
+		}
+		if m.supervisorOwns(ctx, spec, current.PID) {
+			return nil
 		}
 		if err := state.KillDaemon(current); err != nil {
-			return fmt.Errorf("stopping running stack %q: %w", name, err)
+			return fmt.Errorf("stopping running stack %q: %w", spec.StackName, err)
 		}
-		return state.Delete(name)
+		return state.Delete(spec.StackName)
 	})
+}
+
+func (m *Manager) supervisorOwns(ctx context.Context, spec Spec, pid int) bool {
+	if m.sup == nil || pid <= 0 {
+		return false
+	}
+	rt, err := m.sup.Query(ctx, spec)
+	if err != nil || rt.State == "not-loaded" || rt.PID <= 0 {
+		return false
+	}
+	return rt.PID == pid
 }
 
 func (m *Manager) linger(ctx context.Context) string {
@@ -511,7 +612,7 @@ func (m *Manager) linger(ctx context.Context) string {
 	return value
 }
 
-func (m *Manager) rowFor(ctx context.Context, e *project.Entry, linger string) Row {
+func (m *Manager) rowFor(ctx context.Context, e *project.Entry, linger string) (Row, error) {
 	spec := specFromEntry(e)
 	row := Row{
 		Name:     e.Source,
@@ -526,41 +627,52 @@ func (m *Manager) rowFor(ctx context.Context, e *project.Entry, linger string) R
 	}
 	if _, err := os.Stat(e.Path); os.IsNotExist(err) {
 		row.State = "target-missing"
-		row.Remediation = reinstallRemediation(e)
+		row.Remediation = reinstallRemediation(e, m.manualDaemon(e.Source, 0))
 		row.Detail = "unit file is gone"
-		return row
+		return row, nil
 	}
 	if drifted, err := unitDrifted(e); err != nil {
 		row.State = "unknown"
 		row.Detail = err.Error()
-		return row
+		return row, nil
 	} else if drifted {
 		row.State = "drifted"
 		row.Remediation = "the unit was edited after gridctl wrote it; re-run 'gridctl service install' with --force"
-		return row
+		return row, nil
 	}
 	if e.Pack != "" {
 		if stale, detail := packStale(e); stale {
 			row.State = "stale"
 			row.Detail = detail
-			row.Remediation = fmt.Sprintf("re-run 'gridctl service install --pack %s'", e.Pack)
-			return row
+			owned := 0
+			if m.sup != nil {
+				if rt, qerr := m.sup.Query(ctx, spec); qerr == nil {
+					owned = rt.PID
+				} else if isInfra(qerr) {
+					return row, qerr
+				}
+			}
+			row.Remediation = reinstallRemediation(e, m.manualDaemon(e.Source, owned))
+			return row, nil
 		}
 	}
 	if m.sup == nil {
 		row.State = "unknown"
 		row.Detail = "no service supervisor is available"
-		return row
+		return row, nil
 	}
 	rt, err := m.sup.Query(ctx, spec)
 	if err != nil {
+		if isInfra(err) {
+			return row, err
+		}
 		row.State = "unknown"
 		row.Detail = err.Error()
-		row.Remediation = reinstallRemediation(e)
-		return row
+		row.Remediation = reinstallRemediation(e, m.manualDaemon(e.Source, 0))
+		return row, nil
 	}
 	row.State = rt.State
-	if rt.State == "" {
+	if row.State == "" {
 		row.State = "unknown"
 	}
 	row.PID = rt.PID
@@ -568,12 +680,12 @@ func (m *Manager) rowFor(ctx context.Context, e *project.Entry, linger string) R
 		row.Enabled = "yes"
 	}
 	if row.State != "running" || row.Enabled != "yes" {
-		row.Remediation = reinstallRemediation(e)
+		row.Remediation = reinstallRemediation(e, m.manualDaemon(e.Source, rt.PID))
 	}
-	return row
+	return row, nil
 }
 
-func previewResetRow(e *project.Entry) ResetRow {
+func previewResetRow(e *project.Entry, force bool) ResetRow {
 	row := ResetRow{
 		Name:   e.Source,
 		Client: e.Client,
@@ -586,6 +698,11 @@ func previewResetRow(e *project.Entry) ResetRow {
 		return row
 	}
 	if drifted, err := unitDrifted(e); err == nil && drifted {
+		if force {
+			row.Action = "would-remove"
+			row.Detail = "the unit was edited after gridctl wrote it; --force removes it"
+			return row
+		}
 		row.Action = "kept-drift"
 		row.Detail = "the unit was edited after gridctl wrote it; kept (re-run with --force to remove)"
 	}
@@ -617,15 +734,88 @@ func sameCleanPath(a, b string) bool {
 	return filepath.Clean(aa) == filepath.Clean(bb)
 }
 
-func reinstallRemediation(e *project.Entry) string {
+func reinstallRemediation(e *project.Entry, manual bool) string {
+	extra := ""
+	if manual {
+		extra = " --replace"
+	}
 	if e.Pack != "" {
-		return fmt.Sprintf("re-run 'gridctl service install --pack %s'", e.Pack)
+		return fmt.Sprintf("re-run 'gridctl service install --pack %s%s'", e.Pack, extra)
 	}
 	stack := extraString(e.Extra["stack_file"])
 	if stack == "" {
-		return fmt.Sprintf("re-run 'gridctl service install' for %s", e.Source)
+		return fmt.Sprintf("re-run 'gridctl service install' for %s%s", e.Source, extra)
 	}
-	return fmt.Sprintf("re-run 'gridctl service install --stack %s'", stack)
+	return fmt.Sprintf("re-run 'gridctl service install --stack %s%s'", stack, extra)
+}
+
+func (m *Manager) manualDaemon(name string, ownedPID int) bool {
+	st, err := state.Load(name)
+	if err != nil || st == nil || !state.IsRunning(st) {
+		return false
+	}
+	if ownedPID > 0 && st.PID == ownedPID {
+		return false
+	}
+	return true
+}
+
+func (m *Manager) preflight(ctx context.Context, spec Spec, text string, force bool) error {
+	l, err := m.store.Load(ctx)
+	if err != nil {
+		return err
+	}
+	return checkInstall(l, spec, text, force)
+}
+
+func checkInstall(l *project.Lock, spec Spec, text string, force bool) error {
+	client := string(spec.Platform)
+	if err := rejectPathConflict(l, spec.UnitPath, client, spec.StackName); err != nil {
+		return err
+	}
+	prev := l.Get(project.KindService, client, spec.StackName)
+	drifted, err := unitDrifted(prev)
+	if err != nil {
+		return err
+	}
+	if drifted && !force {
+		return &AttentionError{Msg: fmt.Sprintf("unit %s was edited after gridctl wrote it; re-run with --force to replace it", prev.Path)}
+	}
+	if prev != nil {
+		return nil
+	}
+	exists, identical, err := classifyUnitFile(spec.UnitPath, text)
+	if err != nil {
+		return err
+	}
+	if exists && !identical && !force {
+		return &AttentionError{Msg: fmt.Sprintf("unit %s exists but was not recorded by gridctl; kept (re-run with --force to back it up and replace it)", spec.UnitPath)}
+	}
+	return nil
+}
+
+func enableFailure(spec Spec, homeOverridden bool, err error) error {
+	msg := fmt.Sprintf("wrote %s but enable failed: %v", spec.UnitPath, err)
+	if !isInfra(err) {
+		msg += "\nFinish by hand: " + manualEnableCommand(spec)
+	}
+	if spec.Platform == PlatformSystemd && homeOverridden {
+		msg += "\nThe unit is outside the user manager's search path because the home is overridden."
+	}
+	if isInfra(err) {
+		return &InfraError{Msg: msg}
+	}
+	return &AttentionError{Msg: msg}
+}
+
+func ensureServiceLogDir(spec Spec) error {
+	if spec.Platform != PlatformLaunchd || spec.LogPath == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(spec.LogPath), 0o755); err != nil {
+		return fmt.Errorf("creating log directory: %w", err)
+	}
+	return nil
 }
 
 func rejectPathConflict(l *project.Lock, path, client, source string) error {
@@ -658,15 +848,15 @@ func mustKeepDrift(e *project.Entry) bool {
 	return err == nil && drifted
 }
 
-func fileMatches(path, text string) (bool, error) {
+func classifyUnitFile(path, text string) (exists, identical bool, err error) {
 	data, err := os.ReadFile(path) // #nosec G304 -- path is the unit being installed
 	if err != nil {
 		if os.IsNotExist(err) {
-			return false, nil
+			return false, false, nil
 		}
-		return false, err
+		return false, false, err
 	}
-	return string(data) == text, nil
+	return true, string(data) == text, nil
 }
 
 func writeUnit(path string, data []byte) error {

@@ -43,19 +43,41 @@ func (s *launchdSupervisor) Enable(ctx context.Context, spec Spec) error {
 
 func (s *launchdSupervisor) Disable(ctx context.Context, spec Spec) error {
 	out, err := runSupervisor(ctx, supervisorTimeout, "launchctl", "bootout", s.target(spec))
-	if err != nil && launchctlNotLoaded(string(out)+err.Error()) {
-		return nil
+	if err != nil {
+		if isInfra(err) {
+			return err
+		}
+		if launchctlNotLoaded(string(out) + err.Error()) {
+			return nil
+		}
 	}
 	return err
 }
 
 func (s *launchdSupervisor) Stop(ctx context.Context, spec Spec) error {
-	return s.Disable(ctx, spec)
+	out, err := runSupervisor(ctx, supervisorTimeout, "launchctl", "bootout", s.target(spec))
+	if err != nil {
+		if isInfra(err) {
+			return err
+		}
+		if launchctlNotLoaded(string(out) + err.Error()) {
+			return fmt.Errorf("%w: %s", ErrUnitNotLoaded, err.Error())
+		}
+	}
+	return err
+}
+
+func (s *launchdSupervisor) Restart(ctx context.Context, spec Spec) error {
+	// bootout plus bootstrap is how a running agent picks up a new plist.
+	return s.Enable(ctx, spec)
 }
 
 func (s *launchdSupervisor) Query(ctx context.Context, spec Spec) (RuntimeState, error) {
 	out, err := runSupervisor(ctx, supervisorTimeout, "launchctl", "print", s.target(spec))
 	if err != nil {
+		if isInfra(err) {
+			return RuntimeState{}, err
+		}
 		if launchctlNotLoaded(string(out) + err.Error()) {
 			return RuntimeState{State: "not-loaded"}, nil
 		}

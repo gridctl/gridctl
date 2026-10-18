@@ -15,7 +15,7 @@ type fakeServiceResetter struct {
 	removed []Row
 }
 
-func (f fakeServiceResetter) Preview(context.Context) ([]Row, error) {
+func (f fakeServiceResetter) Preview(context.Context, bool) ([]Row, error) {
 	return f.preview, nil
 }
 

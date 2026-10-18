@@ -134,20 +134,32 @@ func TestRejectInternalCredentials(t *testing.T) {
 }
 
 func TestQuoteSystemd(t *testing.T) {
-	if got := quoteSystemd("/usr/bin"); got != "/usr/bin" {
-		t.Fatalf("plain = %q", got)
+	got, err := quoteSystemd("/usr/bin")
+	if err != nil || got != "/usr/bin" {
+		t.Fatalf("plain = %q, %v", got, err)
 	}
-	if got := quoteSystemd("/opt/100%/bin"); got != "/opt/100%%/bin" {
-		t.Fatalf("percent = %q", got)
+	got, err = quoteSystemd("/opt/100%/bin")
+	if err != nil || got != "/opt/100%%/bin" {
+		t.Fatalf("percent = %q, %v", got, err)
 	}
-	if got := quoteSystemd("/opt/grid ctl/bin"); got != `"/opt/grid ctl/bin"` {
-		t.Fatalf("space = %q", got)
+	got, err = quoteSystemd("/opt/grid ctl/bin")
+	if err != nil || got != `"/opt/grid ctl/bin"` {
+		t.Fatalf("space = %q, %v", got, err)
 	}
-	if got := quoteSystemd(`/tmp/say"hi`); got != `"/tmp/say\"hi"` {
-		t.Fatalf("quote = %q", got)
+	got, err = quoteSystemd(`/tmp/say"hi`)
+	if err != nil || got != `"/tmp/say\"hi"` {
+		t.Fatalf("quote = %q, %v", got, err)
 	}
-	if got := quoteSystemd(`/tmp/my dir 100%`); got != `"/tmp/my dir 100%%"` {
-		t.Fatalf("space and percent = %q", got)
+	got, err = quoteSystemd(`/tmp/my dir 100%`)
+	if err != nil || got != `"/tmp/my dir 100%%"` {
+		t.Fatalf("space and percent = %q, %v", got, err)
+	}
+	got, err = quoteSystemd("/opt/$HOME/bin")
+	if err != nil || got != "/opt/$$HOME/bin" {
+		t.Fatalf("dollar = %q, %v", got, err)
+	}
+	if _, err := quoteSystemd("/tmp/has\nnewline"); err == nil {
+		t.Fatal("newline was accepted")
 	}
 }
 
