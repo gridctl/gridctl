@@ -96,6 +96,13 @@ type Config struct {
 	LogFile     string     // Path to log file (overrides stack.yaml logging.file)
 	LogLevel    slog.Level // Minimum slog level (global --log-level; zero value is info)
 
+	// OverridePath selects an override file. Empty discovers
+	// stack.override.yaml beside the stack. A missing explicit path is not
+	// an error unless OverrideRequired is set.
+	OverridePath     string
+	NoOverride       bool
+	OverrideRequired bool
+
 	// OnReady fires once the gateway HTTP listener is serving and MCP server
 	// registration has run — the same readiness the daemon parent polls via
 	// /ready. Only the foreground path invokes it (the daemon parent
@@ -337,8 +344,15 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 
 	sc.vaultStore = vaultStore
 
-	// Load stack with vault resolution and set injection
-	stack, err := config.LoadStack(cfg.StackPath, config.WithVault(vaultStore), config.WithVaultSets(newVaultSetAdapter(vaultStore)))
+	// Load stack with vault resolution, set injection, and the startup
+	// override selection. Plan, Reload, and Initialize reuse the same
+	// selection through the reload handler.
+	loadOpts := []config.LoadOption{
+		config.WithVault(vaultStore),
+		config.WithVaultSets(newVaultSetAdapter(vaultStore)),
+	}
+	loadOpts = append(loadOpts, overrideLoadOptions(cfg)...)
+	stack, err := config.LoadStack(cfg.StackPath, loadOpts...)
 	if err != nil {
 		return fmt.Errorf("failed to load stack: %w", err)
 	}
@@ -548,6 +562,10 @@ func (sc *StackController) createPrinter(stack *config.Stack) *output.Printer {
 			"code_mode_enabled", stack.Gateway != nil && stack.Gateway.CodeMode == "on",
 			"gateway_auth_configured", stack.Gateway != nil && stack.Gateway.Auth != nil)
 		for i, server := range stack.MCPServers {
+			// Deploy summaries skip parked servers. Validation still includes them.
+			if !server.IsEnabled() {
+				continue
+			}
 			transport := server.Transport
 			switch transport {
 			case "stdio", "http", "sse", "streamable-http", "":
@@ -893,6 +911,9 @@ func BuildWorkloadSummaries(stack *config.Stack, result *runtime.UpResult) []out
 	}
 
 	for _, res := range stack.Resources {
+		if !res.IsEnabled() {
+			continue
+		}
 		summaries = append(summaries, output.WorkloadSummary{
 			Name:      res.Name,
 			Type:      "resource",
@@ -904,18 +925,48 @@ func BuildWorkloadSummaries(stack *config.Stack, result *runtime.UpResult) []out
 	return summaries
 }
 
+func hasDisabledContainer(stack *config.Stack) bool {
+	if stack == nil {
+		return false
+	}
+	for _, srv := range stack.MCPServers {
+		if !srv.IsEnabled() && srv.IsContainerBased() {
+			return true
+		}
+	}
+	for _, res := range stack.Resources {
+		if !res.IsEnabled() {
+			return true
+		}
+	}
+	return false
+}
+
 // getRunningContainers retrieves info about already-running containers and external servers.
 func getRunningContainers(ctx context.Context, rt *runtime.Orchestrator, stack *config.Stack) (*runtime.UpResult, error) {
 	result := &runtime.UpResult{}
 	foundServers := make(map[string]bool)
 
-	// Only query Docker for container statuses when the stack has container workloads
+	// Query the runtime when an enabled container workload exists, and also
+	// when a disabled container server might have left a container behind.
+	// A missing runtime is fatal only when an enabled container workload
+	// still needs it.
 	var statuses []runtime.WorkloadStatus
-	if stack.NeedsContainerRuntime() {
+	if stack.NeedsContainerRuntime() || hasDisabledContainer(stack) {
 		var err error
 		statuses, err = rt.Status(ctx, stack.Name)
-		if err != nil {
+		if err != nil && stack.NeedsContainerRuntime() {
 			return nil, err
+		}
+		if err != nil {
+			slog.Warn("could not list containers for disabled servers", "error", err)
+		}
+	}
+
+	disabledServers := map[string]bool{}
+	for _, s := range stack.MCPServers {
+		if !s.IsEnabled() {
+			disabledServers[s.Name] = true
 		}
 	}
 
@@ -930,6 +981,13 @@ func getRunningContainers(ctx context.Context, rt *runtime.Orchestrator, stack *
 		}
 
 		if status.Type == runtime.WorkloadTypeMCPServer {
+			if disabledServers[workloadName] {
+				// A leftover from a failed stop or a restart between a file
+				// edit and a reload. Do not attach it.
+				slog.Warn("skipping container for disabled MCP server",
+					"server", workloadName, "container", string(status.ID))
+				continue
+			}
 			var containerPort int
 			for _, s := range stack.MCPServers {
 				if s.Name == workloadName {
@@ -949,9 +1007,10 @@ func getRunningContainers(ctx context.Context, rt *runtime.Orchestrator, stack *
 		}
 	}
 
-	// Add non-container MCP servers from config
+	// Add non-container MCP servers from config. Disabled servers are not
+	// registered after a restart.
 	for _, server := range stack.MCPServers {
-		if foundServers[server.Name] {
+		if foundServers[server.Name] || !server.IsEnabled() {
 			continue
 		}
 		switch {
@@ -981,6 +1040,22 @@ func getRunningContainers(ctx context.Context, rt *runtime.Orchestrator, stack *
 	}
 
 	return result, nil
+}
+
+// overrideLoadOptions returns the loader options for the controller's
+// override selection. An empty selection discovers the sibling file.
+func overrideLoadOptions(cfg Config) []config.LoadOption {
+	if cfg.NoOverride {
+		return []config.LoadOption{config.WithoutOverride()}
+	}
+	if cfg.OverridePath == "" {
+		return nil
+	}
+	opts := []config.LoadOption{config.WithOverride(cfg.OverridePath)}
+	if cfg.OverrideRequired {
+		opts = append(opts, config.RequireOverride())
+	}
+	return opts
 }
 
 // authStateFrom copies the gateway's inbound auth settings into the daemon

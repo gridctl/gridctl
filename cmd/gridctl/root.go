@@ -170,6 +170,8 @@ func init() {
 		planCmd:      groupStack,
 		validateCmd:  groupStack,
 		reloadCmd:    groupStack,
+		enableCmd:    groupStack,
+		disableCmd:   groupStack,
 		destroyCmd:   groupStack,
 		exportCmd:    groupStack,
 		statusCmd:    groupStack,
@@ -328,4 +330,5 @@ func init() {
 	serveCmd.Flags().BoolVarP(&applyForeground, "foreground", "f", false, "Run in foreground (don't daemonize)")
 	serveCmd.Flags().BoolVar(&applyDaemonChild, "daemon-child", false, "Internal flag for daemon process")
 	_ = serveCmd.Flags().MarkHidden("daemon-child")
+	addOverrideFlags(serveCmd)
 }

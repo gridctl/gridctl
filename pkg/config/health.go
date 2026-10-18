@@ -37,6 +37,8 @@ type ValidationResult struct {
 	ErrorCount   int                          `json:"errorCount"`
 	WarningCount int                          `json:"warningCount"`
 	Issues       []ValidationIssue            `json:"issues"`
+	// Override is the override file merged or discovered during validation.
+	Override string `json:"override,omitempty"`
 }
 
 // SpecHealth aggregates validation, drift, and dependency status.
@@ -50,6 +52,9 @@ type SpecHealth struct {
 	// omitted so the shape is backward compatible with single-replica
 	// deployments. Keyed by server name.
 	Replicas map[string][]ReplicaHealth `json:"replicas,omitempty"`
+
+	// Override is the override file active for this health check.
+	Override string `json:"override,omitempty"`
 }
 
 // ReplicaHealth describes the live state of one replica in a server's
@@ -116,7 +121,8 @@ func ValidateWithIssues(s *Stack) *ValidationResult {
 		}
 	}
 
-	// Add warning-level checks
+	// Add warning-level checks. Disabled servers stay in scope: a parked
+	// server is still a spec, and warnings about it remain useful.
 	result.addWarnings(s)
 	for _, server := range s.MCPServers {
 		if server.Execution == nil {
@@ -371,7 +377,19 @@ func ExpandStackVarsWithEnvChecked(s *Stack) error {
 
 // ValidateStackFile loads a stack file and validates it without deploying.
 // Returns the parsed stack (for further use) and the validation result.
-func ValidateStackFile(path string) (*Stack, *ValidationResult, error) {
+// Optional LoadOption values select or suppress an override file. The
+// override is merged after decode and before environment expansion. This
+// parser does not resolve extends, so an override that names a server only
+// a parent declares is an error when the file has no extends and a warning
+// when it does.
+func ValidateStackFile(path string, opts ...LoadOption) (*Stack, *ValidationResult, error) {
+	var cfg loadConfig
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&cfg)
+		}
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("reading stack file: %w", err)
@@ -379,6 +397,10 @@ func ValidateStackFile(path string) (*Stack, *ValidationResult, error) {
 
 	stack, err := DecodeStack(data)
 	if err != nil {
+		return nil, nil, err
+	}
+
+	if err := mergeValidateOverride(stack, path, &cfg); err != nil {
 		return nil, nil, err
 	}
 
@@ -392,8 +414,40 @@ func ValidateStackFile(path string) (*Stack, *ValidationResult, error) {
 	// Apply defaults
 	stack.SetDefaults()
 
-	// Validate with severity
+	// Validate with severity. Disabled servers stay in scope.
 	result := ValidateWithIssues(stack)
+	for _, warning := range stack.overrideWarnings {
+		result.Issues = append(result.Issues, ValidationIssue{
+			Field:    "override",
+			Message:  warning,
+			Severity: SeverityWarning,
+		})
+		result.WarningCount++
+	}
+	if stack.OverridePath != "" {
+		result.Override = stack.OverridePath
+	}
 
 	return stack, result, nil
+}
+
+// mergeValidateOverride applies the same selection LoadStack uses, but does
+// not resolve extends. Unknown servers are errors unless the file declares
+// extends, in which case they are warnings: the parent may declare them.
+func mergeValidateOverride(stack *Stack, path string, cfg *loadConfig) error {
+	if cfg.noOverride && cfg.overridePath != "" {
+		return fmt.Errorf("override: --override and --no-override are mutually exclusive")
+	}
+	if cfg.noOverride {
+		return nil
+	}
+	overridePath, found, err := DiscoverOverride(path, OverrideSelection{
+		Path:     cfg.overridePath,
+		Required: cfg.overrideRequired,
+	})
+	if err != nil || !found {
+		return err
+	}
+	warnUnknown := stack.Extends != ""
+	return mergeOverrideFile(stack, overridePath, warnUnknown)
 }

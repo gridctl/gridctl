@@ -31,9 +31,10 @@ type StackLauncher interface {
 
 // LaunchOptions is one pack-stack deploy.
 type LaunchOptions struct {
-	StackPath string
-	Port      int
-	Replace   bool
+	StackPath    string
+	Port         int
+	Replace      bool
+	OverridePath string
 }
 
 // LaunchResult is the daemon a launch left running.
@@ -52,6 +53,38 @@ type StackSummary struct {
 // PackCheckoutRoot is ~/.gridctl/packs/<pack> under home.
 func PackCheckoutRoot(home, pack string) string {
 	return filepath.Join(home, ".gridctl", "packs", pack)
+}
+
+// OverridePath is ~/.gridctl/overrides/<pack>.yaml under home. The file is
+// optional; its absence leaves the pinned checkout unchanged.
+func OverridePath(home, pack string) string {
+	return filepath.Join(home, ".gridctl", "overrides", pack+".yaml")
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+// LockedPackOverride reports the override path when stackFile is under a
+// locked pack checkout. The lock file is read from lockPath.
+func LockedPackOverride(home, lockPath, stackFile string) (pack, path string, ok bool) {
+	if home == "" || stackFile == "" || lockPath == "" {
+		return "", "", false
+	}
+	lock, err := skills.ReadLockFile(lockPath)
+	if err != nil || lock == nil {
+		return "", "", false
+	}
+	for _, src := range lock.Sources {
+		if src.Pack == nil || src.Pack.Name == "" {
+			continue
+		}
+		if IsPackOwnedPath(home, src.Pack.Name, stackFile) {
+			return src.Pack.Name, OverridePath(home, src.Pack.Name), true
+		}
+	}
+	return "", "", false
 }
 
 // PackCheckoutDir is the pinned checkout for one commit.
@@ -306,7 +339,11 @@ func (m *Managers) applyStack(ctx context.Context, name, repo string, locked *sk
 		out.action = action
 		return Row{Kind: "stack", Name: rowName, Action: action}, out
 	}
-	res, launchErr := m.Launcher.Launch(ctx, LaunchOptions{StackPath: pinned, Port: opts.Port, Replace: replace})
+	override := ""
+	if home != "" && name != "" {
+		override = OverridePath(home, name)
+	}
+	res, launchErr := m.Launcher.Launch(ctx, LaunchOptions{StackPath: pinned, Port: opts.Port, Replace: replace, OverridePath: override})
 	if launchErr != nil {
 		if keys, ok := missingVariablesFromError(launchErr); ok {
 			out.action = "skipped-variables"
@@ -457,7 +494,13 @@ func statusStackRow(home, packName string, st *skills.LockedStack) (Row, bool) {
 		return Row{Kind: "stack", Name: name, State: "missing"}, false
 	}
 	if run.pinned {
-		return Row{Kind: "stack", Name: name, State: "in-sync"}, false
+		row := Row{Kind: "stack", Name: name, State: "in-sync"}
+		if home != "" {
+			if override := OverridePath(home, packName); fileExists(override) {
+				row.Detail = "override: " + override
+			}
+		}
+		return row, false
 	}
 	if run.owned {
 		detail := "daemon is running from an older pack checkout"

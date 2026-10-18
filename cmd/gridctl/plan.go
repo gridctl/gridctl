@@ -65,12 +65,13 @@ func init() {
 	planCmd.Flags().BoolVar(&planAutoApproveCI, "auto-approve", false, "Auto-approve and apply changes (CI/CD equivalent of -y)")
 	planCmd.Flags().StringVar(&planFormat, "format", "", "Output format: json for machine-readable output")
 	planCmd.Flags().BoolVar(&planShowDockerfile, "show-dockerfile", false, "Show generated Python Dockerfiles")
+	addOverrideFlags(planCmd)
 	planJSON = addJSONAlias(planCmd)
 }
 
 func runPlan(ctx context.Context, stackPath string) error {
 	// Load and validate the proposed spec
-	proposed, result, err := config.ValidateStackFile(stackPath)
+	proposed, result, err := config.ValidateStackFile(stackPath, planOverrideOptions()...)
 	if err != nil {
 		return fmt.Errorf("loading proposed spec: %w", err)
 	}
@@ -144,7 +145,7 @@ func runPlan(ctx context.Context, stackPath string) error {
 
 	// Apply with Replace to handle running stacks
 	fmt.Println("\nApplying changes...")
-	ctrl := controller.New(controller.Config{
+	applyCfg := controller.Config{
 		StackPath:  stackPath,
 		Port:       applyPort,
 		BasePort:   applyBasePort,
@@ -152,7 +153,11 @@ func runPlan(ctx context.Context, stackPath string) error {
 		Runtime:    runtimeFlag,
 		Replace:    true,
 		LogLevel:   logLevel,
-	})
+	}
+	if err := applyOverrideFlags(&applyCfg); err != nil {
+		return err
+	}
+	ctrl := controller.New(applyCfg)
 	ctrl.SetVersion(version)
 	ctrl.SetWebFS(WebFS)
 
@@ -185,7 +190,7 @@ func resolvePlanBuilds(ctx context.Context, stack *config.Stack, showDockerfile 
 	var resolutionErrors []error
 	for i := range stack.MCPServers {
 		server := &stack.MCPServers[i]
-		if server.Source == nil {
+		if server.Source == nil || !server.IsEnabled() {
 			continue
 		}
 		opts := buildOptionsForServer(stack.Name, server)
@@ -444,17 +449,45 @@ func printLinkActions(w io.Writer, links []linkAction) {
 	}
 }
 
+func planChangeLabel(item config.DiffItem) string {
+	for _, detail := range item.Details {
+		switch {
+		case strings.HasPrefix(detail, "enabled: true → false"):
+			return "disable"
+		case strings.HasPrefix(detail, "enabled: false → true"):
+			return "enable"
+		}
+	}
+	return "update"
+}
+
+func detailFromPrintedOverride(detail string) bool {
+	for _, field := range config.OverridableServerFields() {
+		if detail == field+" changed" || strings.HasPrefix(detail, field+":") || strings.HasPrefix(detail, field+" ") {
+			return true
+		}
+	}
+	return false
+}
+
 // printPlanDiff renders the human plan view. Symbols mirror the Terraform
 // convention: + add (green), - destroy (red), ~ update (amber). Colors
 // follow the color contract, so piped output stays plain.
 func printPlanDiff(w io.Writer, diff *config.PlanDiff) {
 	if !diff.HasChanges {
-		fmt.Fprintln(w, "No changes. Stack is up to date.")
+		line := "No changes. Stack is up to date."
+		if diff.Override != "" {
+			line += " (override: " + diff.Override + ")"
+		}
+		fmt.Fprintln(w, line)
 		return
 	}
 
 	color := output.ColorEnabled(w)
 	header := fmt.Sprintf("Plan: %s", diff.Summary)
+	if diff.Override != "" {
+		header += " (override: " + diff.Override + ")"
+	}
 	if color {
 		header = lipgloss.NewStyle().Foreground(output.ColorAmber).Bold(true).Render(header)
 	}
@@ -470,7 +503,7 @@ func printPlanDiff(w io.Writer, diff *config.PlanDiff) {
 		case config.DiffRemove:
 			symbol, label, symbolColor = "-", "destroy", output.ColorRed
 		case config.DiffChange:
-			symbol, label, symbolColor = "~", "update", output.ColorAmber
+			symbol, label, symbolColor = "~", planChangeLabel(item), output.ColorAmber
 		}
 
 		line := fmt.Sprintf("%s %s %q (%s)", symbol, item.Kind, item.Name, label)
@@ -479,6 +512,9 @@ func printPlanDiff(w io.Writer, diff *config.PlanDiff) {
 		}
 		fmt.Fprintf(w, "  %s\n", line)
 		for _, detail := range item.Details {
+			if item.Override && detailFromPrintedOverride(detail) {
+				detail += " (override)"
+			}
 			if color {
 				detail = muted.Render(detail)
 			}

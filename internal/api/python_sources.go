@@ -373,6 +373,8 @@ func (s *Server) enrichMCPServerStatuses(ctx context.Context, statuses []MCPServ
 		return
 	}
 	declared := make(map[string]config.MCPServer, len(stack.MCPServers))
+	// Include disabled servers so a parked status row can still carry
+	// declared provenance. This loop does not register or start anything.
 	for _, server := range stack.MCPServers {
 		declared[server.Name] = server
 	}

@@ -68,6 +68,8 @@ func setConsumersFor(ref config.SecretSetRef, spec *config.Stack) []config.Consu
 	}
 
 	var out []config.Consumer
+	// Variable usage includes disabled servers. A parked server can still
+	// reference a variable, and the usage view should name that consumer.
 	for _, srv := range spec.MCPServers {
 		if ref.InjectsIntoServer(srv.Name) {
 			c := base

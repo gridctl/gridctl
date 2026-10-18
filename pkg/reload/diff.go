@@ -49,6 +49,18 @@ type MCPServerDiff struct {
 	Added    []config.MCPServer
 	Removed  []config.MCPServer
 	Modified []MCPServerChange
+	// Disabled lists servers whose enabled flag flipped true to false.
+	// Other field edits on the same flip stay here: the server is retired
+	// and is not restarted, and pins are kept.
+	Disabled []config.MCPServer
+	// Enabled lists servers whose enabled flag flipped false to true.
+	// They follow the Added start path.
+	Enabled []config.MCPServer
+	// Dormant lists servers that are disabled on both sides and whose other
+	// fields differ. No runtime work runs. A server added while disabled is
+	// also recorded here (Old.Name empty) so a non-initial reload still
+	// swaps currentCfg; initial load strips those entries.
+	Dormant []MCPServerChange
 	// AutoscalePolicyChanges lists servers whose autoscale block fields
 	// changed but whose other config is stable. The reload handler applies
 	// these via Autoscaler.UpdatePolicy without restarting the server.
@@ -67,6 +79,10 @@ type ResourceDiff struct {
 	Added    []config.Resource
 	Removed  []config.Resource
 	Modified []ResourceChange
+	// Disabled, Enabled, and Dormant mirror MCPServerDiff for resources.
+	Disabled []config.Resource
+	Enabled  []config.Resource
+	Dormant  []ResourceChange
 }
 
 // ResourceChange represents a modification to an existing resource.
@@ -81,10 +97,16 @@ func (d *ConfigDiff) IsEmpty() bool {
 	return len(d.MCPServers.Added) == 0 &&
 		len(d.MCPServers.Removed) == 0 &&
 		len(d.MCPServers.Modified) == 0 &&
+		len(d.MCPServers.Disabled) == 0 &&
+		len(d.MCPServers.Enabled) == 0 &&
+		len(d.MCPServers.Dormant) == 0 &&
 		len(d.MCPServers.AutoscalePolicyChanges) == 0 &&
 		len(d.Resources.Added) == 0 &&
 		len(d.Resources.Removed) == 0 &&
 		len(d.Resources.Modified) == 0 &&
+		len(d.Resources.Disabled) == 0 &&
+		len(d.Resources.Enabled) == 0 &&
+		len(d.Resources.Dormant) == 0 &&
 		!d.NetworkChanged &&
 		!d.ClientsChanged &&
 		!d.LimitsChanged &&
@@ -223,11 +245,34 @@ func diffMCPServers(oldServers, newServers []config.MCPServer) MCPServerDiff {
 		newMap[s.Name] = s
 	}
 
-	// Find added and modified
+	// Find added and modified. An enable flip is classified before field
+	// equality so a disable is never a Modified restart and never resets pins.
 	for _, newServer := range newServers {
 		oldServer, exists := oldMap[newServer.Name]
 		if !exists {
-			diff.Added = append(diff.Added, newServer)
+			if newServer.IsEnabled() {
+				diff.Added = append(diff.Added, newServer)
+			} else {
+				diff.Dormant = append(diff.Dormant, MCPServerChange{Name: newServer.Name, New: newServer})
+			}
+			continue
+		}
+		oldOn, newOn := oldServer.IsEnabled(), newServer.IsEnabled()
+		switch {
+		case oldOn && !newOn:
+			diff.Disabled = append(diff.Disabled, oldServer)
+			continue
+		case !oldOn && newOn:
+			diff.Enabled = append(diff.Enabled, newServer)
+			continue
+		case !oldOn && !newOn:
+			if !mcpServerEqual(oldServer, newServer) {
+				diff.Dormant = append(diff.Dormant, MCPServerChange{
+					Name: newServer.Name,
+					Old:  oldServer,
+					New:  newServer,
+				})
+			}
 			continue
 		}
 		if mcpServerEqual(oldServer, newServer) {
@@ -313,12 +358,36 @@ func diffResources(oldResources, newResources []config.Resource) ResourceDiff {
 		newMap[r.Name] = r
 	}
 
-	// Find added and modified
+	// Find added and modified. Enable flips are not Added or Modified.
 	for _, newRes := range newResources {
 		oldRes, exists := oldMap[newRes.Name]
 		if !exists {
-			diff.Added = append(diff.Added, newRes)
-		} else if !resourceEqual(oldRes, newRes) {
+			if newRes.IsEnabled() {
+				diff.Added = append(diff.Added, newRes)
+			} else {
+				diff.Dormant = append(diff.Dormant, ResourceChange{Name: newRes.Name, New: newRes})
+			}
+			continue
+		}
+		oldOn, newOn := oldRes.IsEnabled(), newRes.IsEnabled()
+		switch {
+		case oldOn && !newOn:
+			diff.Disabled = append(diff.Disabled, oldRes)
+			continue
+		case !oldOn && newOn:
+			diff.Enabled = append(diff.Enabled, newRes)
+			continue
+		case !oldOn && !newOn:
+			if !resourceEqual(oldRes, newRes) {
+				diff.Dormant = append(diff.Dormant, ResourceChange{
+					Name: newRes.Name,
+					Old:  oldRes,
+					New:  newRes,
+				})
+			}
+			continue
+		}
+		if !resourceEqual(oldRes, newRes) {
 			diff.Modified = append(diff.Modified, ResourceChange{
 				Name: newRes.Name,
 				Old:  oldRes,
@@ -344,7 +413,8 @@ func mcpServerEqual(a, b config.MCPServer) bool {
 
 // resourceEqual checks if two resource configs are equivalent.
 func resourceEqual(a, b config.Resource) bool {
-	if a.Name != b.Name || a.Image != b.Image || a.Network != b.Network {
+	// enabled: true and an omitted key are the same state.
+	if a.Name != b.Name || a.Image != b.Image || a.Network != b.Network || a.IsEnabled() != b.IsEnabled() {
 		return false
 	}
 

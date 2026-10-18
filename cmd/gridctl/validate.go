@@ -60,6 +60,7 @@ func init() {
 	validateCmd.Flags().StringVar(&validateFormat, "format", "", "Output format: json for machine-readable output")
 	validateCmd.Flags().BoolVar(&validateCheckMutableRefs, "check-mutable-refs", false, "Report mutable image tags and unpinned package selectors (advisory, off by default)")
 	validateCmd.Flags().StringVar(&validatePolicy, "policy", "", "Evaluate captured declarations against a versioned offline policy file")
+	addOverrideFlags(validateCmd)
 	validateJSON = addJSONAlias(validateCmd)
 }
 
@@ -75,7 +76,10 @@ func runValidate(ctx context.Context, stackPath string, checkMutableRefs, policy
 	if policySet {
 		return runValidatePolicy(ctx, stackPath, policyPath)
 	}
-	stack, result, err := config.ValidateStackFile(stackPath)
+	if overrideFlag != "" && noOverrideFlag {
+		return fmt.Errorf("--override and --no-override are mutually exclusive")
+	}
+	stack, result, err := config.ValidateStackFile(stackPath, planOverrideOptions()...)
 	if err != nil {
 		if renderValidationErrors(stackPath, err) {
 			os.Exit(1)
@@ -242,6 +246,9 @@ func printValidationResultMode(w io.Writer, path string, result *config.Validati
 		okMark, warnMark, errMark, infoMark = "OK", "warning", "error", "info"
 	}
 
+	if result.Override != "" {
+		fmt.Fprintf(w, "override: %s\n", result.Override)
+	}
 	switch {
 	case result.Valid && result.WarningCount == 0:
 		fmt.Fprintf(w, "%s %s is valid\n", okMark, path)

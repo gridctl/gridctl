@@ -19,8 +19,9 @@ import (
 )
 
 var (
-	exportOutputDir string
-	exportFormat    string
+	exportOutputDir    string
+	exportFormat       string
+	exportWithOverride bool
 )
 
 var exportCmd = &cobra.Command{
@@ -40,6 +41,7 @@ and the same relative file layout. YAML directory exports may include skills.yam
 func init() {
 	exportCmd.Flags().StringVarP(&exportOutputDir, "output", "o", "", "Output directory (default: stdout)")
 	exportCmd.Flags().StringVar(&exportFormat, "format", "yaml", "Output format: yaml or json")
+	exportCmd.Flags().BoolVar(&exportWithOverride, "with-override", false, "Merge a discovered override file into the export")
 }
 
 func runExportContext(ctx context.Context, stdout, stderr io.Writer) error {
@@ -59,7 +61,23 @@ func exportStackFile(ctx context.Context, path string, stdout, stderr io.Writer)
 	if exportFormat != "yaml" && exportFormat != "json" {
 		return fmt.Errorf("export format must be yaml or json")
 	}
-	stack, sources, err := config.ExportStack(ctx, path)
+	var (
+		stack   *config.Stack
+		sources []string
+		err     error
+	)
+	if exportWithOverride {
+		overridePath, found, discErr := config.DiscoverOverride(path, config.OverrideSelection{})
+		if discErr != nil {
+			return discErr
+		}
+		if !found {
+			return fmt.Errorf("override: no override file beside %s; pass nothing to export the base", path)
+		}
+		stack, sources, err = config.ExportWithOverride(ctx, path, overridePath)
+	} else {
+		stack, sources, err = config.ExportStack(ctx, path)
+	}
 	if err != nil {
 		return err
 	}

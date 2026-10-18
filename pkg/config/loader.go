@@ -13,9 +13,12 @@ import (
 
 // loadConfig holds options for LoadStack.
 type loadConfig struct {
-	quiet    bool
-	vault    VaultLookup
-	vaultSet VaultSetLookup
+	quiet            bool
+	vault            VaultLookup
+	vaultSet         VaultSetLookup
+	overridePath     string
+	noOverride       bool
+	overrideRequired bool
 }
 
 // LoadOption configures LoadStack behavior.
@@ -34,6 +37,24 @@ func WithVault(v VaultLookup) LoadOption {
 // WithVaultSets enables secrets.sets injection during stack loading.
 func WithVaultSets(v VaultSetLookup) LoadOption {
 	return func(c *loadConfig) { c.vaultSet = v }
+}
+
+// WithOverride selects an override file instead of discovering
+// stack.override.yaml beside the stack. A missing file is not an error
+// unless RequireOverride is also set.
+func WithOverride(path string) LoadOption {
+	return func(c *loadConfig) { c.overridePath = path }
+}
+
+// WithoutOverride suppresses override discovery and merge.
+func WithoutOverride() LoadOption {
+	return func(c *loadConfig) { c.noOverride = true }
+}
+
+// RequireOverride makes a WithOverride path mandatory. An explicit
+// --override flag uses this so a missing file fails the load.
+func RequireOverride() LoadOption {
+	return func(c *loadConfig) { c.overrideRequired = true }
 }
 
 // LoadStack reads and parses a stack file.
@@ -74,11 +95,22 @@ func LoadStackData(data []byte, path string, opts ...LoadOption) (*Stack, error)
 		return nil, err
 	}
 
+	// Merge the override after extends and before expansion so override
+	// env values may carry ${var:} references and the merged result is
+	// defaulted and validated exactly once.
+	if err := mergeLoadOverride(stack, absPath, &cfg); err != nil {
+		return nil, err
+	}
+
 	// Expand variable references in string values
 	unresolved, emptyVars, resolutionProblems := expandStackVarsResolved(stack, newReferenceResolver(cfg.vault))
 	if len(resolutionProblems) > 0 {
 		return nil, fmt.Errorf("resolving stack variable: %w", resolutionProblems[0])
 	}
+
+	// A key consumed only by disabled servers or resources does not block
+	// deploy. A key with any enabled consumer still refuses.
+	unresolved = dropDisabledOnlyUnresolved(stack, unresolved)
 
 	// Fail on unresolved variable references only if a store was provided.
 	if cfg.vault != nil && len(unresolved) > 0 {
@@ -113,6 +145,65 @@ func LoadStackData(data []byte, path string, opts ...LoadOption) (*Stack, error)
 	}
 
 	return stack, nil
+}
+
+// dropDisabledOnlyUnresolved removes keys whose every consumer is a
+// disabled server or resource. A key with no consumers, or with any
+// enabled or non-workload consumer, still blocks deploy. Exempted keys
+// are logged with the consumer names.
+func dropDisabledOnlyUnresolved(stack *Stack, unresolved []string) []string {
+	if stack == nil || len(unresolved) == 0 {
+		return unresolved
+	}
+	blocking := make([]string, 0, len(unresolved))
+	for _, key := range unresolved {
+		consumers := stack.References[key]
+		if !allConsumersDisabled(stack, consumers) {
+			blocking = append(blocking, key)
+			continue
+		}
+		names := make([]string, 0, len(consumers))
+		for _, c := range consumers {
+			names = append(names, string(c.Kind)+":"+c.Name)
+		}
+		slog.Info("skipping unresolved variable consumed only by disabled workloads",
+			"var", key, "consumers", strings.Join(names, ", "))
+	}
+	return blocking
+}
+
+func allConsumersDisabled(stack *Stack, consumers []Consumer) bool {
+	if len(consumers) == 0 {
+		return false
+	}
+	for _, c := range consumers {
+		switch c.Kind {
+		case RefKindMCPServer:
+			idx := indexMCPServer(stack, c.Name)
+			if idx < 0 || stack.MCPServers[idx].IsEnabled() {
+				return false
+			}
+		case RefKindResource:
+			if res := resourceByName(stack, c.Name); res == nil || res.IsEnabled() {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func resourceByName(stack *Stack, name string) *Resource {
+	if stack == nil {
+		return nil
+	}
+	for i := range stack.Resources {
+		if stack.Resources[i].Name == name {
+			return &stack.Resources[i]
+		}
+	}
+	return nil
 }
 
 // injectSetSecrets resolves secrets from variable sets and injects them into
@@ -153,6 +244,9 @@ func injectSetSecrets(s *Stack, vault VaultSetLookup) {
 
 	for i := range s.MCPServers {
 		srv := &s.MCPServers[i]
+		if !srv.IsEnabled() {
+			continue
+		}
 		for _, ref := range s.Secrets.Sets {
 			values := secretsFor[ref.Name]
 			if len(values) == 0 || !ref.InjectsIntoServer(srv.Name) {
@@ -167,6 +261,9 @@ func injectSetSecrets(s *Stack, vault VaultSetLookup) {
 
 	for i := range s.Resources {
 		res := &s.Resources[i]
+		if !res.IsEnabled() {
+			continue
+		}
 		for _, ref := range s.Secrets.Sets {
 			values := secretsFor[ref.Name]
 			if len(values) == 0 || !ref.InjectsIntoResource(res.Name) {

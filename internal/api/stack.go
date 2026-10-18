@@ -311,7 +311,7 @@ func (s *Server) handleStackHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validation status
-	_, result, err := config.ValidateStackFile(s.stackFile)
+	_, result, err := config.ValidateStackFile(s.stackFile, s.overrideLoadOptions()...)
 	if err != nil {
 		health.Validation.Status = "errors"
 		writeJSON(w, health)
@@ -357,6 +357,11 @@ func (s *Server) handleStackHealth(w http.ResponseWriter, r *http.Request) {
 	// are intentionally omitted so the response shape is unchanged when no
 	// server is configured for horizontal scaling.
 	health.Replicas = s.collectReplicaHealth()
+	if result != nil && result.Override != "" {
+		health.Override = result.Override
+	} else if path := s.effectiveOverridePath(); path != "" {
+		health.Override = path
+	}
 
 	writeJSON(w, health)
 }
@@ -762,7 +767,7 @@ func (s *Server) planAgainstRunning(ctx context.Context) (*config.PlanDiff, erro
 	if h := s.ReloadHandler(); h != nil {
 		return h.Plan(ctx)
 	}
-	proposed, _, err := config.ValidateStackFile(s.stackFile)
+	proposed, _, err := config.ValidateStackFile(s.stackFile, s.overrideLoadOptions()...)
 	if err != nil {
 		return nil, err
 	}

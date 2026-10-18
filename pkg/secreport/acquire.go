@@ -247,6 +247,11 @@ func stackViewFromConfig(stack *config.Stack) *StackView {
 		Pinning: pinningDecl(stack),
 	}
 	for _, srv := range stack.MCPServers {
+		// Runtime security evidence covers servers that can run. Validation
+		// and variable usage still include disabled servers.
+		if !srv.IsEnabled() {
+			continue
+		}
 		view.Servers = append(view.Servers, serverViewFromConfig(srv))
 	}
 	if stack.Secrets != nil && len(stack.Secrets.Sets) > 0 {
