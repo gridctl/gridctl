@@ -56,9 +56,13 @@ A call policy is the optional top-level `policy:` block. It allows or blocks a l
 
 Link writes the gateway URL into one installed client's MCP config, with `gridctl link` or a `link:` block that `gridctl apply` reconciles, and it does not install skills, agents, or rules. An explicit `gridctl link <client>` fails when that client is not installed; a declared `link:` entry warns and skips ([LLM clients](cli-reference.md#llm-clients), [Link (declared clients)](config-schema.md#link-declared-clients)).
 
+## Service
+
+A service is a user-scoped supervisor unit written by `gridctl service install`, recorded in `~/.gridctl/project.lock.yaml` as kind `service` before the file is written. It runs `gridctl apply --foreground` and is not created by `gridctl apply` itself. Linux uses a systemd user unit. macOS uses a launch agent that starts at login, not at boot. There is no start or stop API for it. `POST /api/reset` removes installed units with the rest of a reset ([Run as a service](installation.md#run-as-a-service)).
+
 ## How they compose
 
-`gridctl apply` recreates the gateway and its workloads from the stack file. It does not recreate instruction files or variable values. A `link:` block links installed clients. Projection is separate. See [Stack lifecycle](cli-reference.md#stack-lifecycle).
+`gridctl apply` recreates the gateway and its workloads from the stack file. It does not recreate instruction files or variable values, and it does not install a user service. A `link:` block links installed clients. Projection is separate. See [Stack lifecycle](cli-reference.md#stack-lifecycle).
 
 `gridctl pack add` imports the manifest's selection and pins a carried stack checkout under `~/.gridctl/packs/<name>/<commit>/`. `gridctl pack apply` starts that stack from the CLI and projects the selected skills, agents, rules, and wiring. REST and the web UI can project those resources. They do not start or stop the daemon. See [Carrying a stack](packs.md#carrying-a-stack).
 

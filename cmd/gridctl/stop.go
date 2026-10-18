@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/service"
 	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/spf13/cobra"
 )
@@ -42,6 +44,7 @@ func init() {
 
 func runStop() error {
 	const name = "gridctl"
+	defer noteInstalledServices()
 
 	return state.WithLock(name, 5*time.Second, func() error {
 		st, err := state.Load(name)
@@ -63,6 +66,18 @@ func runStop() error {
 		fmt.Println("gridctl stopped")
 		return nil
 	})
+}
+
+func noteInstalledServices() {
+	home, err := state.Home()
+	if err != nil {
+		return
+	}
+	has, err := service.HasEntries(context.Background(), home)
+	if err != nil || !has {
+		return
+	}
+	fmt.Println("gridctl stop does not manage installed services; use 'gridctl destroy <name>' or 'gridctl service uninstall <name>'.")
 }
 
 // runStopOrphanFallback handles the missing-state-file case. If we

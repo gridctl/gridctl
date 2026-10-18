@@ -115,6 +115,11 @@ func newResetManagers(printer *output.Printer) (*resetops.Managers, func(), erro
 	} else {
 		m.Wiring = wm
 	}
+	if svc := resetops.NewServiceResetter(home); svc != nil {
+		m.Services = svc
+	} else {
+		m.Missing = append(m.Missing, "service")
+	}
 	cleanup := func() {}
 	if rt, err := runtime.New(); err != nil {
 		printer.Warn("container runtime unavailable; container teardown is skipped", "error", err)
@@ -183,7 +188,7 @@ func runReset(ctx context.Context, format string) error {
 		progressOut = os.Stderr
 	}
 	phaseTitles := map[string]string{
-		"backup": "Writing backup", "daemons": "Stopping daemons",
+		"backup": "Writing backup", "services": "Removing installed services", "daemons": "Stopping daemons",
 		"projections": "Removing skill and agent projections",
 		"contexts":    "Removing context rules",
 		"wiring":      "Removing gateway entries from client configs",

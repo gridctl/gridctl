@@ -205,10 +205,8 @@ func (sc *StackController) Serve(ctx context.Context) error {
 	if vaultDir, err := state.VaultDir(); err == nil {
 		vaultStore := vault.NewStore(vaultDir)
 		if err := vaultStore.Load(); err == nil {
-			if vaultStore.IsLocked() {
-				if pass := os.Getenv("GRIDCTL_VAULT_PASSPHRASE"); pass != "" {
-					_ = vaultStore.Unlock(pass)
-				}
+			if err := unlockFromEnvironment(vaultStore); err != nil {
+				slog.Warn("vault passphrase from the environment was not applied; the store stays locked", "error", err)
 			}
 			sc.vaultStore = vaultStore
 		}
@@ -216,6 +214,11 @@ func (sc *StackController) Serve(ctx context.Context) error {
 
 	// Foreground mode: run gateway directly without daemonizing.
 	if cfg.Foreground {
+		cleanup, err := sc.saveForegroundState("gridctl", "", nil)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
 		return sc.buildAndRunStackless(ctx, !cfg.Quiet)
 	}
 
@@ -230,10 +233,8 @@ func (sc *StackController) runStacklessDaemonChild(ctx context.Context) error {
 	if vaultDir, err := state.VaultDir(); err == nil {
 		vaultStore := vault.NewStore(vaultDir)
 		if err := vaultStore.Load(); err == nil {
-			if vaultStore.IsLocked() {
-				if pass := os.Getenv("GRIDCTL_VAULT_PASSPHRASE"); pass != "" {
-					_ = vaultStore.Unlock(pass)
-				}
+			if err := unlockFromEnvironment(vaultStore); err != nil {
+				slog.Warn("vault passphrase from the environment was not applied; the store stays locked", "error", err)
 			}
 			sc.vaultStore = vaultStore
 		}
@@ -342,13 +343,10 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 		return fmt.Errorf("loading vault: %w", err)
 	}
 
-	// Automatically unlock if encrypted and passphrase is provided via environment
-	if vaultStore.IsLocked() {
-		if pass := os.Getenv("GRIDCTL_VAULT_PASSPHRASE"); pass != "" {
-			if err := vaultStore.Unlock(pass); err != nil {
-				return fmt.Errorf("unlocking vault: %w", err)
-			}
-		}
+	// Automatically unlock if encrypted and a passphrase is provided via
+	// the environment or a user-owned passphrase file.
+	if err := unlockFromEnvironment(vaultStore); err != nil {
+		return fmt.Errorf("unlocking vault: %w", err)
 	}
 
 	sc.vaultStore = vaultStore
@@ -446,8 +444,15 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 	}
 	reporter.EndPhase(true)
 
-	// Foreground mode: run gateway directly
+	// Foreground mode: run gateway directly. The state file is saved before
+	// any return path so status and destroy see the process, and deleted
+	// when this call returns, including a BuildAndRun error.
 	if cfg.Foreground {
+		cleanup, err := sc.saveForegroundState(stack.Name, cfg.StackPath, stack)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
 		builder, err := sc.newGatewayBuilder(stack, rt, result)
 		if err != nil {
 			return err

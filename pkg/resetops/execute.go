@@ -80,7 +80,28 @@ func (m *Managers) Execute(ctx context.Context, opts Options, progress Progress)
 		doc.Rows = append(doc.Rows, emit(r))
 	}
 
-	// Phase 1: stop daemons (self deferred when SelfPID matches).
+	// Phase 1: installed services, before daemons. A supervised process
+	// restarted by KillDaemon's SIGKILL must be stopped through the
+	// supervisor first. A stop failure leaves the lock entry, and the
+	// daemon phase then skips that PID rather than killing it.
+	if m.Services != nil {
+		progress("services", nil)
+		rows, rmErr := m.Services.Remove(ctx, opts.Force)
+		if rmErr != nil {
+			fail(Row{Kind: "service", Name: "services"}, rmErr)
+		} else {
+			for _, r := range rows {
+				if r.Action == ActionFailed || r.Error != "" {
+					doc.Failed++
+					doc.Rows = append(doc.Rows, emit(r))
+					continue
+				}
+				ok(r)
+			}
+		}
+	}
+
+	// Phase 2: stop daemons (self deferred when SelfPID matches).
 	progress("daemons", nil)
 	var selfStack *state.DaemonState
 	for i := range inv.stacks {
@@ -96,6 +117,15 @@ func (m *Managers) Execute(ctx context.Context, opts Options, progress Progress)
 			continue
 		}
 		row := Row{Kind: "daemon", Name: s.StackName, Detail: fmt.Sprintf("pid %d", s.PID)}
+		if supervised, lookErr := serviceStillInstalled(ctx, m.Home, s.StackName); lookErr != nil {
+			fail(row, lookErr)
+			continue
+		} else if supervised {
+			row.Action = ActionSkipped
+			row.Detail = "supervised by an installed service; not killed, because killing it would restart it"
+			ok(row)
+			continue
+		}
 		err := state.WithLock(s.StackName, stateLockTimeout, func() error {
 			return state.KillDaemon(&s)
 		})

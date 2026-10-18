@@ -231,11 +231,65 @@ Importing a skill, agent, or pack from an SSH URL when the gridctl process has n
    gridctl serve --foreground
    ```
 
+A service installed with `gridctl service install` does not inherit the shell's `SSH_AUTH_SOCK`. A socket under `/tmp` is skipped because it does not survive reboot, and install prints the path. A socket under `$XDG_RUNTIME_DIR`, `/run/user/`, or `.ssh/` in the resolved home or `$HOME` is kept. For a private git source, import it with `--ssh-key` (the path is stored) or use an HTTPS URL with a stored credential, then pass `--passphrase-file` on the service. `gridctl service install` has no `--ssh-key` flag.
+
 3. Or name the key directly, which bypasses the agent:
    ```bash
    gridctl pack add git@github.com:acme/pack.git --ssh-key ~/.ssh/id_ed25519
    # the absolute path is stored; a later pack add or skill update reuses it
    ```
+
+---
+
+## Services
+
+### Gateway is gone after a reboot
+
+**Symptoms:** `gridctl status` is empty after a reboot, even though `gridctl apply` succeeded yesterday.
+
+**Causes:** `gridctl apply` daemonizes a process. That process does not come back at boot. A user service does.
+
+**Resolution:**
+
+```bash
+gridctl service install --stack stack.yaml
+gridctl service status
+```
+
+On macOS the launch agent starts at login, not at boot. Log in after a reboot. On Linux, enable linger if the service should run with nobody logged in (see below).
+
+### Service stops at logout
+
+**Symptoms:** the gateway runs while you are logged in and stops when you log out.
+
+**Causes:** a systemd user service stops at logout unless linger is enabled. Install never runs `loginctl enable-linger`.
+
+**Resolution:**
+
+```bash
+loginctl enable-linger "$USER"
+gridctl service status
+```
+
+`service.linger` in `gridctl doctor` warns when services are installed and linger is off.
+
+### Store is locked when the service starts
+
+**Symptoms:** the service restarts, and the log says the variable store is locked or a vault key is missing.
+
+**Causes:** the unit does not inherit `GRIDCTL_VAULT_PASSPHRASE`. If the stack references stored variables (`${var:}` or `${vault:}`), uses `secrets.sets`, or has a `source.auth.credential_ref` store reference, a locked store cannot start it.
+
+**Resolution:** create a passphrase file you own and point the unit at it. Gridctl does not create the file.
+
+```bash
+umask 077
+printf '%s\n' 'your passphrase' > ~/.gridctl-passphrase
+gridctl service install --stack stack.yaml --passphrase-file ~/.gridctl-passphrase
+```
+
+The file must be a regular file, mode `0600` or stricter, owned by you, and at most 4 KiB. A `0644` file, a file owned by someone else, a symlink, a directory, or a file larger than 4 KiB is refused, and the error does not echo the contents. The other option is a plaintext store (`gridctl var ...`), which leaves values readable on disk.
+
+`gridctl apply -f` and `gridctl serve -f` honor `GRIDCTL_VAULT_PASSPHRASE_FILE` the same way. Apply refuses a bad file. Serve logs it and starts with the store locked.
 
 ---
 
@@ -641,6 +695,8 @@ Or set the passphrase as an environment variable for non-interactive use:
 ```bash
 export GRIDCTL_VAULT_PASSPHRASE="your-passphrase"
 ```
+
+A user service does not inherit that variable. Point install at a file you own with `--passphrase-file`, or set `GRIDCTL_VAULT_PASSPHRASE_FILE` for `gridctl apply -f` and `gridctl serve -f`. See [Store is locked when the service starts](#store-is-locked-when-the-service-starts).
 
 ### Wrong passphrase
 

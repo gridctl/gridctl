@@ -1172,7 +1172,7 @@ Security differences return HTTP `409` with the [restart-required envelope](#rel
 
 ### Reset
 
-REST half of `gridctl reset`: removes everything gridctl placed on the machine (projected skills, agents, and context rules, owned gateway entries in client MCP configs, and every stack's daemons, containers, and networks). The default tier preserves `~/.gridctl`; `purge: true` deletes it too. Both endpoints share the same engine and guards as the CLI; the web UI's Reset dialog is built on them.
+REST half of `gridctl reset`: removes everything gridctl placed on the machine (projected skills, agents, and context rules, owned gateway entries in client MCP configs, installed user services, and every stack's daemons, containers, and networks). Services are disabled and stopped before daemons. The default tier preserves `~/.gridctl`; `purge: true` deletes it too. Both endpoints share the same engine and guards as the CLI; the web UI's Reset dialog is built on them.
 
 **Transport guards (both endpoints):** requests are accepted only from loopback connections; a request carrying an `Origin` header must be same-origin; and `Content-Type: application/json` is required (so the request can never be a CORS simple request). Violations return `403` (or `415` for the content type). These guards apply on top of gateway auth.
 

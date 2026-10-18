@@ -213,7 +213,7 @@ func runApply(stackPath string) error {
 		default:
 			// Post-apply hint: suggest `gridctl link` if no clients are linked
 			if !applyQuiet {
-				showLinkHint()
+				showLinkHint(stackPath)
 			}
 		}
 	}
@@ -294,9 +294,12 @@ func flashLinkClients(ctx context.Context, port int) {
 }
 
 // showLinkHint prints a one-line hint about `gridctl link` if no clients are linked.
-func showLinkHint() {
+func showLinkHint(stackPath string) {
 	registry := provisioner.NewRegistry()
 	if !registry.IsAnyLinked("gridctl") {
 		output.New().Hint("Tip: run 'gridctl link' to connect your LLM client, or 'gridctl open' for the web UI")
+	}
+	if stackPath != "" {
+		output.New().Hint("Tip: 'gridctl service install --stack %s' brings this gateway back at the next login, or at boot on Linux when linger is enabled", stackPath)
 	}
 }
