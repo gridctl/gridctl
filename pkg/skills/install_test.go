@@ -845,6 +845,102 @@ func TestInstallSupportingFiles_OwnDirectoryPrunesWholeTreeAndReportsRemovals(t 
 	})
 }
 
+// TestInstallSupportingFiles_OwnDirectoryPreservesNestedRegistrySkill confirms
+// the own-directory prune does not delete a separate registry skill that
+// lives under the destination, at the top level or deeper, and does not
+// report that skill as removed.
+func TestInstallSupportingFiles_OwnDirectoryPreservesNestedRegistrySkill(t *testing.T) {
+	skillDir := t.TempDir()
+	first := []supportingFile{
+		{rel: "helper.py", mode: 0o644, content: []byte("h")},
+		{rel: "a/notes.txt", mode: 0o644, content: []byte("n")},
+	}
+	_, _, err := installSupportingFiles(skillDir, first, layoutOwnDirectory)
+	require.NoError(t, err)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(skillDir, "branch-fork"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "branch-fork", "SKILL.md"), []byte("branch"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "branch-fork", "tool.py"), []byte("t"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(skillDir, "a", "b"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "a", "b", "SKILL.md"), []byte("deep"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "a", "b", "tool.py"), []byte("d"), 0o644))
+
+	second := []supportingFile{
+		{rel: "helper.py", mode: 0o644, content: []byte("h2")},
+		{rel: "a/other.txt", mode: 0o644, content: []byte("o")},
+	}
+	_, removed, err := installSupportingFiles(skillDir, second, layoutOwnDirectory)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a/notes.txt"}, removed)
+	assert.FileExists(t, filepath.Join(skillDir, "branch-fork", "SKILL.md"))
+	assert.FileExists(t, filepath.Join(skillDir, "branch-fork", "tool.py"))
+	assert.FileExists(t, filepath.Join(skillDir, "a", "b", "SKILL.md"))
+	assert.FileExists(t, filepath.Join(skillDir, "a", "b", "tool.py"))
+	assert.NoFileExists(t, filepath.Join(skillDir, "a", "notes.txt"))
+	assert.FileExists(t, filepath.Join(skillDir, "a", "other.txt"))
+	got, err := os.ReadFile(filepath.Join(skillDir, "helper.py"))
+	require.NoError(t, err)
+	assert.Equal(t, "h2", string(got))
+
+	// A staged path inside an existing nested skill must fail before the
+	// prune, so the previous helper and the nested skill both survive.
+	_, _, err = installSupportingFiles(skillDir, []supportingFile{
+		{rel: "branch-fork/helper.py", mode: 0o644, content: []byte("nope")},
+	}, layoutOwnDirectory)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "branch-fork")
+	assert.FileExists(t, filepath.Join(skillDir, "helper.py"))
+	assert.FileExists(t, filepath.Join(skillDir, "branch-fork", "SKILL.md"))
+	assert.NoFileExists(t, filepath.Join(skillDir, "branch-fork", "helper.py"))
+}
+
+// TestImport_GroupDirectoryPreservesNestedRegistrySkill confirms importing a
+// skill whose name matches a group directory does not delete the registry
+// skills nested under that directory, and does not report them as removed.
+func TestImport_GroupDirectoryPreservesNestedRegistrySkill(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+
+	store, regDir := setupTestRegistry(t)
+	nested := filepath.Join(regDir, "skills", "git-workflow", "branch-fork")
+	require.NoError(t, os.MkdirAll(nested, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(nested, "SKILL.md"), []byte("---\nname: branch-fork\ndescription: branch skill\n---\n\nBranch.\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(nested, "tool.py"), []byte("tool\n"), 0o644))
+	require.NoError(t, store.Load())
+	existing, err := store.GetSkill("branch-fork")
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join("git-workflow", "branch-fork"), existing.Dir)
+
+	src := filepath.Join(t.TempDir(), "git-workflow")
+	writeSkillDir(t, src, "git-workflow", "Use helper.py.")
+	require.NoError(t, os.WriteFile(filepath.Join(src, "helper.py"), []byte("print(1)\n"), 0o644))
+
+	imp := NewImporter(store, regDir, filepath.Join(regDir, "skills.lock.yaml"), slog.Default())
+	result, err := imp.Import(context.Background(), ImportOptions{Repo: src, Kind: SourceKindLocal, Trust: true})
+	require.NoError(t, err)
+	require.Len(t, result.Imported, 1)
+	assert.Equal(t, "git-workflow", result.Imported[0].Name)
+	assert.Equal(t, 1, result.Imported[0].FilesCopied)
+	joined := joinWarnings(result.Warnings)
+	assert.NotContains(t, joined, "removed (no longer in source)")
+	assert.FileExists(t, filepath.Join(regDir, "skills", "git-workflow", "helper.py"))
+	assert.FileExists(t, filepath.Join(regDir, "skills", "git-workflow", "branch-fork", "SKILL.md"))
+	assert.FileExists(t, filepath.Join(regDir, "skills", "git-workflow", "branch-fork", "tool.py"))
+
+	parent, err := store.GetSkill("git-workflow")
+	require.NoError(t, err)
+	assert.Equal(t, 1, parent.FileCount)
+	_, err = store.GetSkill("branch-fork")
+	require.NoError(t, err)
+
+	reloaded := registry.NewStore(regDir)
+	require.NoError(t, reloaded.Load())
+	got, err := reloaded.GetSkill("branch-fork")
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join("git-workflow", "branch-fork"), got.Dir)
+}
+
 // TestImport_ReimportRemovesDeletedRootHelper confirms an upstream deletion
 // of a root helper is removed locally and named in a warning.
 func TestImport_ReimportRemovesDeletedRootHelper(t *testing.T) {
