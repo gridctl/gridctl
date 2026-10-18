@@ -42,8 +42,19 @@ func TestSetOverrideEnabled_CreatesAndPreserves(t *testing.T) {
 	if err != nil || !changed {
 		t.Fatalf("create: changed=%v err=%v body=%s", changed, err, updated)
 	}
-	if !strings.Contains(string(updated), "enabled: false") {
+	created := string(updated)
+	if !strings.Contains(created, "enabled: false") {
 		t.Fatalf("body = %s", updated)
+	}
+	if strings.Contains(created, "{") || !strings.Contains(created, "mcp-servers:\n") {
+		t.Fatalf("new override should be block style, body = %s", created)
+	}
+	flow, changed, err := SetOverrideEnabled([]byte("mcp-servers: {}\n"), "demo", true)
+	if err != nil || !changed {
+		t.Fatalf("flow seed: changed=%v err=%v", changed, err)
+	}
+	if strings.Contains(string(flow), "{") {
+		t.Fatalf("empty flow mapping stayed flow style: %s", flow)
 	}
 	withOther := []byte("mcp-servers:\n  other:\n    replicas: 2\n")
 	updated, changed, err = SetOverrideEnabled(withOther, "demo", true)

@@ -196,6 +196,14 @@ func (s *Server) serverDeclared(name string) bool {
 // override instead of the base file. The REST toggle never edits either
 // file in that case.
 func (s *Server) overrideWriteRequired() (string, bool) {
+	// A pinned checkout is never a write target, including when the daemon
+	// was started with --no-override. That flag suppresses discovery; it
+	// does not authorize an edit of the checkout.
+	if s.stackFile != "" {
+		if _, path, ok := packOverrideTarget(s.stackFile); ok {
+			return path, true
+		}
+	}
 	if s.noOverride {
 		return "", false
 	}
@@ -206,9 +214,6 @@ func (s *Server) overrideWriteRequired() (string, bool) {
 		return path, true
 	}
 	if s.stackFile != "" {
-		if _, path, ok := packOverrideTarget(s.stackFile); ok {
-			return path, true
-		}
 		sibling := filepath.Join(filepath.Dir(s.stackFile), config.OverrideFileName)
 		if info, err := os.Stat(sibling); err == nil && !info.IsDir() {
 			return sibling, true
@@ -222,14 +227,29 @@ func (s *Server) effectiveOverridePath() string {
 		return ""
 	}
 	if h := s.ReloadHandler(); h != nil && h.CurrentConfig() != nil && h.CurrentConfig().OverridePath != "" {
-		return h.CurrentConfig().OverridePath
+		return absoluteOverride(h.CurrentConfig().OverridePath)
 	}
 	if s.overridePath != "" {
-		if info, err := os.Stat(s.overridePath); err == nil && !info.IsDir() {
-			return s.overridePath
+		path := absoluteOverride(s.overridePath)
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			return path
 		}
 	}
 	return ""
+}
+
+// absoluteOverride resolves path against the daemon's working directory.
+// enable|disable writes the reported override, so a relative value would
+// land in the caller's cwd instead of the file the daemon loaded.
+func absoluteOverride(path string) string {
+	if path == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	return abs
 }
 
 func (s *Server) appendDisabledServers(statuses []MCPServerStatus) []MCPServerStatus {
@@ -275,23 +295,21 @@ func disabledStatus(srv config.MCPServer, overrides []string) MCPServerStatus {
 	return status
 }
 
+// disabledTransport reports a transport value registered rows already use.
+// Kind stays on the external, localProcess, ssh, openapi, and a2a booleans.
+// Local, SSH, OpenAPI, and A2A registration leave transport empty. URL and
+// container servers default to http unless the config names stdio or sse.
 func disabledTransport(srv config.MCPServer) string {
-	switch {
-	case srv.IsExternal():
-		return "external"
-	case srv.IsLocalProcess():
-		return "local"
-	case srv.IsSSH():
-		return "ssh"
-	case srv.IsOpenAPI():
-		return "openapi"
-	case srv.IsA2A():
-		return "a2a"
-	}
-	if srv.Transport != "" {
+	switch srv.Transport {
+	case "http", "stdio", "sse":
 		return srv.Transport
 	}
-	return "http"
+	switch {
+	case srv.IsLocalProcess(), srv.IsSSH(), srv.IsOpenAPI(), srv.IsA2A():
+		return ""
+	default:
+		return "http"
+	}
 }
 
 func (s *Server) overrideLoadOptions() []config.LoadOption {

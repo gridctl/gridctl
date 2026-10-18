@@ -141,21 +141,38 @@ func callReloadAPI(st *state.DaemonState) error {
 
 	// Print results
 	fmt.Printf("Stack '%s' reloaded successfully\n", st.StackName)
-	if len(result.Added) > 0 {
-		fmt.Printf("  Added: %v\n", result.Added)
-	}
-	if len(result.Removed) > 0 {
-		fmt.Printf("  Removed: %v\n", result.Removed)
-	}
-	if len(result.Modified) > 0 {
-		fmt.Printf("  Modified: %v\n", result.Modified)
-	}
-	if len(result.Errors) > 0 {
-		fmt.Printf("  Errors: %v\n", result.Errors)
-	}
-	if result.Message != "" && len(result.Added)+len(result.Removed)+len(result.Modified) == 0 {
+	writeReloadLists(os.Stdout, &result)
+	if result.Message != "" && reloadListCount(result) == 0 {
 		fmt.Printf("  %s\n", result.Message)
 	}
 
 	return nil
+}
+
+func writeReloadLists(w io.Writer, result *reload.ReloadResult) {
+	if result == nil {
+		return
+	}
+	if len(result.Added) > 0 {
+		fmt.Fprintf(w, "  Added: %v\n", result.Added)
+	}
+	if len(result.Removed) > 0 {
+		fmt.Fprintf(w, "  Removed: %v\n", result.Removed)
+	}
+	if len(result.Modified) > 0 {
+		fmt.Fprintf(w, "  Modified: %v\n", result.Modified)
+	}
+	if len(result.Disabled) > 0 {
+		fmt.Fprintf(w, "  Disabled: %v\n", result.Disabled)
+	}
+	if len(result.Enabled) > 0 {
+		fmt.Fprintf(w, "  Enabled: %v\n", result.Enabled)
+	}
+	if len(result.Errors) > 0 {
+		fmt.Fprintf(w, "  Errors: %v\n", result.Errors)
+	}
+}
+
+func reloadListCount(result reload.ReloadResult) int {
+	return len(result.Added) + len(result.Removed) + len(result.Modified) + len(result.Disabled) + len(result.Enabled)
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,7 +34,7 @@ func init() {
 	for _, cmd := range []*cobra.Command{enableCmd, disableCmd} {
 		cmd.Flags().StringVar(&enableFormat, "format", "text", "Output format: text or json")
 		cmd.Flags().StringVar(&enableOverride, "override", "", "Write enabled to this override file instead of the stack")
-		cmd.Flags().BoolVar(&enableNoOverride, "no-override", false, "Write the base stack file even when an override exists")
+		cmd.Flags().BoolVar(&enableNoOverride, "no-override", false, "Write the base stack file instead of a sibling or daemon override")
 	}
 }
 
@@ -45,11 +46,13 @@ var enableCmd = &cobra.Command{
 The stack argument is a running stack name or a stack file path. The change
 is written to the base file, or to the override file when the stack is a
 pinned pack checkout, an override is already active, or --override is set.
-A running stack is reloaded. A stopped stack applies the change on the next
-gridctl apply.
+A pack checkout always writes ~/.gridctl/overrides/<pack>.yaml. A different
+--override is refused. A running stack is reloaded. A stopped stack applies
+the change on the next gridctl apply.
 
 Exit 0 when the server is enabled or was already enabled. Exit 1 when the
-write or reload fails. Exit 2 when the server is unknown or the edited
+write or reload fails, including a concurrent edit. Exit 2 when the server
+is unknown, --override does not match the pack override, or the edited
 stack does not validate.`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -165,14 +168,17 @@ func resolveEnableStack(arg string) (string, *state.DaemonState, error) {
 }
 
 func selectEnableTarget(stackFile string, running *state.DaemonState) (path, kind string, err error) {
-	if enableOverride != "" {
-		return enableOverride, "override", nil
-	}
 	home, homeErr := state.Home()
 	if homeErr == nil {
 		if _, override, ok := packops.LockedPackOverride(home, skills.LockFilePath(), stackFile); ok {
+			if enableOverride != "" && !sameOverridePath(enableOverride, override) {
+				return "", "", fmt.Errorf("--override %s does not match the pack override %s", enableOverride, override)
+			}
 			return override, "override", nil
 		}
+	}
+	if enableOverride != "" {
+		return enableOverride, "override", nil
 	}
 	if !enableNoOverride && running != nil {
 		if reported := daemonOverride(running); reported != "" {
@@ -186,6 +192,15 @@ func selectEnableTarget(stackFile string, running *state.DaemonState) (path, kin
 		}
 	}
 	return stackFile, "stack", nil
+}
+
+func sameOverridePath(a, b string) bool {
+	aa, errA := filepath.Abs(a)
+	bb, errB := filepath.Abs(b)
+	if errA != nil || errB != nil {
+		return filepath.Clean(a) == filepath.Clean(b)
+	}
+	return aa == bb
 }
 
 func daemonOverride(st *state.DaemonState) string {
@@ -227,16 +242,12 @@ func writeEnabled(stackFile, targetPath, kind, server string, enabled bool) (*en
 	mu.Lock()
 	defer mu.Unlock()
 
-	var original []byte
-	if info, err := os.Stat(targetPath); err == nil && !info.IsDir() {
-		original, err = os.ReadFile(targetPath)
-		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", targetPath, err)
-		}
+	original, originalHash, existed, err := readEnableTarget(targetPath)
+	if err != nil {
+		return nil, err
 	}
 	var updated []byte
 	var changed bool
-	var err error
 	if kind == "override" {
 		updated, changed, err = stackedit.SetOverrideEnabled(original, server, enabled)
 	} else {
@@ -263,6 +274,9 @@ func writeEnabled(stackFile, targetPath, kind, server string, enabled bool) (*en
 	} else if err := validateEditedOverride(stackFile, updated, targetPath); err != nil {
 		return nil, fmt.Errorf("%w: %s", errEnableRefused, err.Error())
 	}
+	if err := confirmEnableUnchanged(targetPath, originalHash, existed); err != nil {
+		return nil, err
+	}
 	if len(original) > 0 {
 		backup, err := provisioner.CreateBackup(targetPath)
 		if err != nil {
@@ -277,6 +291,56 @@ func writeEnabled(stackFile, targetPath, kind, server string, enabled bool) (*en
 		return nil, err
 	}
 	return report, nil
+}
+
+// enableBetweenReadsHook runs after validation and before the re-read that
+// guards the write. Tests use it to simulate a concurrent edit. Production
+// leaves it nil.
+var enableBetweenReadsHook func()
+
+func readEnableTarget(path string) (data []byte, sum [32]byte, exists bool, err error) {
+	info, statErr := os.Stat(path)
+	if statErr != nil {
+		if os.IsNotExist(statErr) {
+			return nil, sha256.Sum256(nil), false, nil
+		}
+		return nil, sum, false, fmt.Errorf("read %s: %w", path, statErr)
+	}
+	if info.IsDir() {
+		return nil, sum, false, fmt.Errorf("read %s: is a directory", path)
+	}
+	data, err = os.ReadFile(path)
+	if err != nil {
+		return nil, sum, false, fmt.Errorf("read %s: %w", path, err)
+	}
+	return data, sha256.Sum256(data), true, nil
+}
+
+func confirmEnableUnchanged(path string, originalHash [32]byte, existed bool) error {
+	if enableBetweenReadsHook != nil {
+		enableBetweenReadsHook()
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			if !existed {
+				return nil
+			}
+			return fmt.Errorf("stack file changed on disk during the write; re-run to work from the current contents")
+		}
+		return fmt.Errorf("re-read %s: %w", path, err)
+	}
+	if info.IsDir() || !existed {
+		return fmt.Errorf("stack file changed on disk during the write; re-run to work from the current contents")
+	}
+	current, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("re-read %s: %w", path, err)
+	}
+	if sha256.Sum256(current) != originalHash {
+		return fmt.Errorf("stack file changed on disk during the write; re-run to work from the current contents")
+	}
+	return nil
 }
 
 func serverDeclared(stackFile, name string) error {
@@ -389,4 +453,5 @@ func printEnableReport(report *enableReport, enabled bool) {
 	} else if report.Reload == nil {
 		fmt.Println("change applies on the next apply")
 	}
+	writeReloadLists(os.Stdout, report.Reload)
 }

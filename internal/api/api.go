@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -345,6 +346,11 @@ func (s *Server) SetStackFile(path string) {
 // SetOverrideSelection records the daemon's startup override selection.
 // An empty path discovers stack.override.yaml. noOverride suppresses it.
 func (s *Server) SetOverrideSelection(path string, noOverride bool) {
+	if path != "" {
+		if abs, err := filepath.Abs(path); err == nil {
+			path = abs
+		}
+	}
 	s.overridePath = path
 	s.noOverride = noOverride
 }

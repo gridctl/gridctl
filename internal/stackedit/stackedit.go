@@ -240,14 +240,22 @@ func SetOverrideEnabled(source []byte, name string, enabled bool) ([]byte, bool,
 		return nil, false, fmt.Errorf("%w: empty name", ErrServerNotFound)
 	}
 	if len(bytes.TrimSpace(source)) == 0 {
-		source = []byte("mcp-servers: {}\n")
+		source = []byte("mcp-servers:\n")
 	}
 	root, doc, err := parseStackDocument(source)
 	if err != nil {
 		return nil, false, err
 	}
 	servers := findOrCreateMapping(doc, "mcp-servers")
+	// An empty flow mapping (`mcp-servers: {}`) would keep that style and
+	// emit `mcp-servers: {name: {enabled: true}}`. New files are block style.
+	if len(servers.Content) == 0 {
+		servers.Style = 0
+	}
 	entry := findOrCreateMapping(servers, name)
+	if len(entry.Content) == 0 {
+		entry.Style = 0
+	}
 	changed := setOverrideEnabledKey(entry, enabled)
 	if !changed {
 		return source, false, nil

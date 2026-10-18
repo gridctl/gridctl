@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"sync"
 
 	"github.com/gridctl/gridctl/pkg/config"
@@ -99,6 +100,11 @@ func (h *Handler) SetNoExpand(noExpand bool) {
 // stack.override.yaml beside the stack file. A path whose file is absent
 // is not an error; the merge is skipped until the file appears.
 func (h *Handler) SetOverride(path string, noOverride bool) {
+	if path != "" {
+		if abs, err := filepath.Abs(path); err == nil {
+			path = abs
+		}
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.overridePath = path
@@ -506,6 +512,11 @@ func (h *Handler) applyMCPServerChanges(ctx context.Context, diff MCPServerDiff,
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("failed to enable %s: %v", server.Name, err))
 			h.gateway.RecordRegistrationFailure(server.Name, err)
+			// Leave the server disabled in the swapped config. The next
+			// reload classifies it as Enabled and tries again. Added does
+			// the same by removing the server; restoring the disabled copy
+			// keeps the transition on the enable path, including pins.
+			restoreDisabledMCPServer(newCfg, h.currentCfg, server.Name)
 			continue
 		}
 		if err := h.startMCPServer(ctx, server, newCfg, desiredImage); err != nil {
@@ -562,6 +573,21 @@ func removeMCPServer(stack *config.Stack, name string) {
 			return
 		}
 	}
+}
+
+// restoreDisabledMCPServer puts the previous disabled copy back so a later
+// reload classifies the server as Enabled again. A missing disabled copy is
+// removed so the next reload treats the server as Added and still retries.
+func restoreDisabledMCPServer(stack, previous *config.Stack, name string) {
+	if previous != nil {
+		for i := range previous.MCPServers {
+			if previous.MCPServers[i].Name == name && !previous.MCPServers[i].IsEnabled() {
+				replaceMCPServer(stack, previous.MCPServers[i])
+				return
+			}
+		}
+	}
+	removeMCPServer(stack, name)
 }
 
 func (h *Handler) applyResourceChanges(ctx context.Context, diff ResourceDiff, newCfg *config.Stack, result *ReloadResult) error {

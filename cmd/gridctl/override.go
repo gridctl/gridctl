@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/controller"
@@ -37,11 +38,18 @@ func applyOverrideFlags(cfg *controller.Config) error {
 	if overrideFlag == "" {
 		return nil
 	}
-	info, err := os.Stat(overrideFlag)
+	// Store an absolute path. A relative value is resolved against this
+	// process's working directory, then forwarded to the daemon child.
+	// Status and enable|disable must not depend on a later caller's cwd.
+	abs, err := filepath.Abs(overrideFlag)
+	if err != nil {
+		return fmt.Errorf("override: %s: %w", overrideFlag, err)
+	}
+	info, err := os.Stat(abs)
 	if err != nil {
 		if os.IsNotExist(err) {
 			if overrideOptional {
-				cfg.OverridePath = overrideFlag
+				cfg.OverridePath = abs
 				return nil
 			}
 			return fmt.Errorf("override: %s: file does not exist", overrideFlag)
@@ -51,7 +59,7 @@ func applyOverrideFlags(cfg *controller.Config) error {
 	if info.IsDir() {
 		return fmt.Errorf("override: %s: is a directory", overrideFlag)
 	}
-	cfg.OverridePath = overrideFlag
+	cfg.OverridePath = abs
 	cfg.OverrideRequired = !overrideOptional
 	return nil
 }

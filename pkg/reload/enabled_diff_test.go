@@ -2,9 +2,11 @@ package reload
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/gridctl/gridctl/pkg/config"
+	"github.com/gridctl/gridctl/pkg/mcp"
 )
 
 func TestComputeDiff_EnableTransitions(t *testing.T) {
@@ -134,6 +136,41 @@ func TestSecurityPreflight_OverrideCannotChangeBind(t *testing.T) {
 	changed := NewSecurityPreflight(startup, "", false)(&candidate)
 	if len(changed) != 0 {
 		t.Fatalf("override changed security fields: %v", changed)
+	}
+}
+
+func TestApplyMCPServerChanges_EnablePrepareFailureRestoresDisabled(t *testing.T) {
+	off := false
+	old := config.MCPServer{Name: "s", Image: "alpine", Enabled: &off}
+	enabled := config.MCPServer{Name: "s", Image: "alpine"}
+	current := &config.Stack{Name: "demo", MCPServers: []config.MCPServer{old}}
+	newCfg := &config.Stack{Name: "demo", MCPServers: []config.MCPServer{enabled}}
+	h := NewHandler("stack.yaml", current, mcp.NewGateway(), nil, 0, 0, nil, nil)
+	result := &ReloadResult{Success: true}
+	err := h.applyMCPServerChanges(context.Background(), MCPServerDiff{Enabled: []config.MCPServer{enabled}}, newCfg, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Enabled) != 0 {
+		t.Fatalf("enabled = %v", result.Enabled)
+	}
+	if len(result.Errors) == 0 {
+		t.Fatal("expected prepare error")
+	}
+	if len(newCfg.MCPServers) != 1 || newCfg.MCPServers[0].IsEnabled() {
+		t.Fatalf("failed enable left the server enabled: %+v", newCfg.MCPServers)
+	}
+}
+
+func TestSetOverride_Absolutizes(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	h := NewHandler("stack.yaml", nil, nil, nil, 0, 0, nil, nil)
+	h.SetOverride("local.yaml", false)
+	got := h.OverridePath()
+	want := filepath.Join(dir, "local.yaml")
+	if got != want {
+		t.Fatalf("override = %s, want %s", got, want)
 	}
 }
 

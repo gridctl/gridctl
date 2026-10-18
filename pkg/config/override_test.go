@@ -107,6 +107,34 @@ func TestValidateStackFile_OverrideExtendsWarning(t *testing.T) {
 	}
 }
 
+func TestDecodeOverride_RejectsDuplicateKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "stack.override.yaml")
+	_, err := DecodeOverride([]byte("mcp-servers:\n  a:\n    enabled: true\n  a:\n    enabled: false\n"), path)
+	if err == nil || !strings.Contains(err.Error(), "mcp-servers.a is declared more than once") {
+		t.Fatalf("err = %v", err)
+	}
+	_, err = DecodeOverride([]byte("mcp-servers:\n  a:\n    enabled: true\nmcp-servers:\n  b:\n    enabled: false\n"), path)
+	if err == nil || !strings.Contains(err.Error(), `top-level key "mcp-servers" is declared more than once`) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestDiscoverOverride_RelativePathIsAbsolute(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "local.yaml"), []byte("mcp-servers: {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	got, found, err := DiscoverOverride(filepath.Join(dir, "stack.yaml"), OverrideSelection{Path: "local.yaml", Required: true})
+	if err != nil || !found {
+		t.Fatalf("found=%v err=%v", found, err)
+	}
+	want := filepath.Join(dir, "local.yaml")
+	if !filepath.IsAbs(got) || got != want {
+		t.Fatalf("path = %s, want %s", got, want)
+	}
+}
+
 func TestDiscoverOverride_MissingExplicit(t *testing.T) {
 	_, _, err := DiscoverOverride(filepath.Join(t.TempDir(), "stack.yaml"), OverrideSelection{
 		Path:     filepath.Join(t.TempDir(), "missing.yaml"),

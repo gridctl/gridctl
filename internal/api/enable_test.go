@@ -13,6 +13,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/reload"
 	"github.com/gridctl/gridctl/pkg/runtime"
+	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -97,4 +98,57 @@ func TestAppendDisabledServers_Order(t *testing.T) {
 	assert.False(t, got[1].Initialized)
 	assert.Empty(t, got[1].Tools)
 	assert.Nil(t, got[1].Healthy)
+	assert.Equal(t, "stdio", got[1].Transport)
+}
+
+func TestHandlePatchServerEnabled_PinnedPackRefused(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("GRIDCTL_HOME", home)
+	checkout := filepath.Join(home, ".gridctl", "packs", "demo", "abc")
+	require.NoError(t, os.MkdirAll(checkout, 0o755))
+	stackPath := filepath.Join(checkout, "stack.yaml")
+	body := "version: \"1\"\nname: demo\nnetwork:\n  name: n\nmcp-servers:\n  - name: ext\n    url: https://example.com/mcp\n"
+	require.NoError(t, os.WriteFile(stackPath, []byte(body), 0o600))
+	require.NoError(t, skills.WriteLockFile(skills.LockFilePath(), &skills.LockFile{Sources: map[string]skills.LockedSource{
+		"demo": {Pack: &skills.LockedPack{Name: "demo"}},
+	}}))
+
+	for _, noOverride := range []bool{false, true} {
+		s := &Server{}
+		s.SetStackFile(stackPath)
+		s.SetOverrideSelection("", noOverride)
+		req := loopbackRequest(http.MethodPatch, "/api/mcp-servers/ext", strings.NewReader(`{"enabled":false}`))
+		req.SetPathValue("name", "ext")
+		w := httptest.NewRecorder()
+		s.handlePatchServerEnabled(w, req)
+		assert.Equal(t, http.StatusConflict, w.Code, "noOverride=%v body=%s", noOverride, w.Body.String())
+		assert.Contains(t, w.Body.String(), "override_required")
+		data, err := os.ReadFile(stackPath)
+		require.NoError(t, err)
+		assert.NotContains(t, string(data), "enabled:")
+		override := filepath.Join(home, ".gridctl", "overrides", "demo.yaml")
+		if _, err := os.Stat(override); !os.IsNotExist(err) {
+			t.Fatalf("override was written: %v", err)
+		}
+	}
+}
+
+func TestDisabledTransport_UsesRegisteredVocabulary(t *testing.T) {
+	cases := []struct {
+		name string
+		srv  config.MCPServer
+		want string
+	}{
+		{name: "explicit sse", srv: config.MCPServer{Transport: "sse", URL: "https://example.com"}, want: "sse"},
+		{name: "url default", srv: config.MCPServer{URL: "https://example.com"}, want: "http"},
+		{name: "command", srv: config.MCPServer{Command: []string{"/bin/true"}}, want: ""},
+		{name: "container", srv: config.MCPServer{Image: "alpine"}, want: "http"},
+		{name: "container stdio", srv: config.MCPServer{Image: "alpine", Transport: "stdio"}, want: "stdio"},
+		{name: "ssh", srv: config.MCPServer{Command: []string{"/bin/true"}, SSH: &config.SSHConfig{Host: "h", User: "u"}}, want: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, disabledTransport(tc.srv))
+		})
+	}
 }

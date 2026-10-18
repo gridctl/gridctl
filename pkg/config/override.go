@@ -84,20 +84,24 @@ func DiscoverOverride(stackPath string, sel OverrideSelection) (path string, fou
 		return "", false, nil
 	}
 	if sel.Path != "" {
-		info, statErr := os.Stat(sel.Path)
+		abs, err := filepath.Abs(sel.Path)
+		if err != nil {
+			return "", false, fmt.Errorf("override: %s: %w", sel.Path, err)
+		}
+		info, statErr := os.Stat(abs)
 		if statErr != nil {
 			if os.IsNotExist(statErr) {
 				if sel.Required {
 					return "", false, fmt.Errorf("override: %s: file does not exist", sel.Path)
 				}
-				return sel.Path, false, nil
+				return abs, false, nil
 			}
 			return "", false, fmt.Errorf("override: %s: %w", sel.Path, statErr)
 		}
 		if info.IsDir() {
 			return "", false, fmt.Errorf("override: %s: is a directory", sel.Path)
 		}
-		return sel.Path, true, nil
+		return abs, true, nil
 	}
 	candidate := filepath.Join(filepath.Dir(stackPath), OverrideFileName)
 	info, statErr := os.Stat(candidate)
@@ -110,7 +114,11 @@ func DiscoverOverride(stackPath string, sel OverrideSelection) (path string, fou
 	if info.IsDir() {
 		return "", false, fmt.Errorf("override: %s: is a directory", candidate)
 	}
-	return candidate, true, nil
+	abs, err := filepath.Abs(candidate)
+	if err != nil {
+		return "", false, fmt.Errorf("override: %s: %w", candidate, err)
+	}
+	return abs, true, nil
 }
 
 var overrideUnknownField = regexp.MustCompile(`field ([^ ]+) not found in type`)
@@ -137,8 +145,13 @@ func DecodeOverride(data []byte, path string) (*Override, error) {
 		return nil, fmt.Errorf("override: %s: top-level value must be a mapping", path)
 	}
 	ov := &Override{MCPServers: map[string]ServerOverride{}}
+	seenTop := map[string]bool{}
 	for i := 0; i+1 < len(root.Content); i += 2 {
 		key := root.Content[i].Value
+		if seenTop[key] {
+			return nil, fmt.Errorf("override: %s: top-level key %q is declared more than once", path, key)
+		}
+		seenTop[key] = true
 		if key != "mcp-servers" {
 			return nil, fmt.Errorf("override: %s: top-level key %q is not allowed; only mcp-servers is", path, key)
 		}
@@ -149,11 +162,16 @@ func DecodeOverride(data []byte, path string) (*Override, error) {
 		if servers.Kind != yaml.MappingNode {
 			return nil, fmt.Errorf("override: %s: mcp-servers must be a mapping of server names", path)
 		}
+		seenServers := map[string]bool{}
 		for j := 0; j+1 < len(servers.Content); j += 2 {
 			name := servers.Content[j].Value
 			if name == "" {
 				return nil, fmt.Errorf("override: %s: mcp-servers entry name is empty", path)
 			}
+			if seenServers[name] {
+				return nil, fmt.Errorf("override: %s: mcp-servers.%s is declared more than once", path, name)
+			}
+			seenServers[name] = true
 			decoded, err := decodeServerOverride(servers.Content[j+1], path, name)
 			if err != nil {
 				return nil, err

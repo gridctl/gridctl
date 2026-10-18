@@ -315,12 +315,21 @@ func (sc *StackController) buildAndRunStackless(ctx context.Context, verbose boo
 func (sc *StackController) Deploy(ctx context.Context) error {
 	cfg := sc.config
 
-	// Resolve absolute path for daemon child
+	// Resolve absolute paths for the daemon child. A relative --override
+	// must not be reported verbatim: enable|disable writes the reported
+	// path, and a later caller in another directory would create a stray file.
 	absPath, err := filepath.Abs(cfg.StackPath)
 	if err != nil {
 		return fmt.Errorf("failed to resolve path: %w", err)
 	}
 	cfg.StackPath = absPath
+	if cfg.OverridePath != "" {
+		absOverride, err := filepath.Abs(cfg.OverridePath)
+		if err != nil {
+			return fmt.Errorf("failed to resolve override path: %w", err)
+		}
+		cfg.OverridePath = absOverride
+	}
 	sc.config = cfg
 
 	// Load vault
