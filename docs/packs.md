@@ -113,7 +113,7 @@ Over REST, `POST /api/packs` and `POST /api/packs/preview` accept the same optio
 
 ### The daemon and ssh-agent
 
-`gridctl apply` and `gridctl serve` daemonize by re-spawning with the environment of the shell that launched them, so the daemon has a usable `SSH_AUTH_SOCK` only if that shell did, and a long-running daemon can outlive the agent it inherited. Every import driven from the web UI or the REST API runs in the daemon's environment, not in the shell of whoever is using the browser. If you rely on an agent, start it before the daemon and restart the daemon after restarting the agent.
+`gridctl apply` and `gridctl serve` daemonize by re-spawning with the environment of the shell that launched them, so the daemon has a usable `SSH_AUTH_SOCK` only if that shell did, and a long-running daemon can outlive the agent it inherited. Every import driven from the web UI or the REST API runs in the daemon's environment, not in the shell of whoever is using the browser. If you rely on an agent, start it before the daemon and restart the daemon after restarting the agent. A gateway installed with `gridctl service install` does not inherit the shell. A `/tmp` agent socket is not written into the unit. See [Run as a service](installation.md#run-as-a-service) and [ssh agent not available](troubleshooting.md#ssh-agent-not-available).
 
 gridctl does not read `~/.ssh/config`. Per-host `IdentityFile` entries have no effect, which is why an SSH URL that works with the `git` CLI can still fail here. For a private pack the dependable options are an HTTPS URL with `--vault-key`, or `--ssh-key` naming the key explicitly.
 

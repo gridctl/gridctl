@@ -231,7 +231,7 @@ Importing a skill, agent, or pack from an SSH URL when the gridctl process has n
    gridctl serve --foreground
    ```
 
-A service installed with `gridctl service install` does not inherit the shell's `SSH_AUTH_SOCK`. A socket under `/tmp` is skipped because it does not survive reboot. A socket under `$XDG_RUNTIME_DIR`, `/run/user/`, or `~/.ssh/` is kept, and install prints a note when it skips one. For a private git source in a service, prefer `--ssh-key` (stored as a path) or an HTTPS URL with a stored credential and `--passphrase-file`.
+A service installed with `gridctl service install` does not inherit the shell's `SSH_AUTH_SOCK`. A socket under `/tmp` is skipped because it does not survive reboot, and install prints the path. A socket under `$XDG_RUNTIME_DIR`, `/run/user/`, or `.ssh/` in the resolved home or `$HOME` is kept. For a private git source, import it with `--ssh-key` (the path is stored) or use an HTTPS URL with a stored credential, then pass `--passphrase-file` on the service. `gridctl service install` has no `--ssh-key` flag.
 
 3. Or name the key directly, which bypasses the agent:
    ```bash
@@ -287,7 +287,7 @@ printf '%s\n' 'your passphrase' > ~/.gridctl-passphrase
 gridctl service install --stack stack.yaml --passphrase-file ~/.gridctl-passphrase
 ```
 
-The file must be a regular file, mode `0600` or stricter, and owned by you. A `0644` file, a file owned by someone else, a symlink, or a directory is refused, and the error does not echo the contents. The other option is a plaintext store (`gridctl var ...`), which leaves values readable on disk.
+The file must be a regular file, mode `0600` or stricter, owned by you, and at most 4 KiB. A `0644` file, a file owned by someone else, a symlink, a directory, or a file larger than 4 KiB is refused, and the error does not echo the contents. The other option is a plaintext store (`gridctl var ...`), which leaves values readable on disk.
 
 `gridctl apply -f` and `gridctl serve -f` honor `GRIDCTL_VAULT_PASSPHRASE_FILE` the same way. Apply refuses a bad file. Serve logs it and starts with the store locked.
 
@@ -695,6 +695,8 @@ Or set the passphrase as an environment variable for non-interactive use:
 ```bash
 export GRIDCTL_VAULT_PASSPHRASE="your-passphrase"
 ```
+
+A user service does not inherit that variable. Point install at a file you own with `--passphrase-file`, or set `GRIDCTL_VAULT_PASSPHRASE_FILE` for `gridctl apply -f` and `gridctl serve -f`. See [Store is locked when the service starts](#store-is-locked-when-the-service-starts).
 
 ### Wrong passphrase
 

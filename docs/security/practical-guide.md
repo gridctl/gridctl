@@ -108,7 +108,7 @@ Final exact-PR-head acceptance remains pending; fixture tests cannot replace it.
 
 ## Handle secrets and shared configuration deliberately
 
-The variable store supports plaintext operation. Enable encryption using the [variable commands](../cli-reference.md#variables) when you need encryption at rest, and check its lock state. An encrypted store loads locked; an unlocked daemon and an authorized recipient still hold plaintext values. Downstream OAuth grants use separate storage with a machine-local key; copying both key and ciphertext exposes the grants.
+The variable store supports plaintext operation. Enable encryption using the [variable commands](../cli-reference.md#variables) when you need encryption at rest, and check its lock state. An encrypted store loads locked; an unlocked daemon and an authorized recipient still hold plaintext values. A user service does not inherit `GRIDCTL_VAULT_PASSPHRASE`. Pass `--passphrase-file` when the stack needs the store. The file is yours (mode 0600 or stricter, at most 4 KiB); gridctl never creates it. See [Run as a service](../installation.md#run-as-a-service). Downstream OAuth grants use separate storage with a machine-local key; copying both key and ciphertext exposes the grants.
 
 Use references such as `${var:GITHUB_TOKEN}` in authored stack files. Select only necessary variables or sets for each workload. `gridctl var explain GITHUB_TOKEN` helps inspect resolution and consumers without printing its value. Variable declarations document prerequisites; they do not themselves supply values or enforce deployment admission.
 

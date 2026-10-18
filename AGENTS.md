@@ -165,13 +165,13 @@ pkg/wiring/         Key-level ownership of gateway entries merged into client MC
 pkg/pack/           gridctl-pack.yaml manifest schema, including named external `sources` and an optional relative `stack` path; pkg/packops owns orchestration shared by the CLI and REST handlers, including per-source clone and auth. The CLI injects stack launch; REST leaves the launcher nil and does not start or stop a carried daemon.
 pkg/skillpins/      TOFU pins over skill documents (per-file digests, findings); the `gridctl skill pins` store.
 pkg/runs/           Metadata-only persisted dispatch records (`gridctl runs`). Opt-in stack-level JSONL with a bounded queue, single writer, retention, and coordinated wipe.
-pkg/service/        User-scoped systemd and launchd units (`gridctl service`): render, lockfile ownership (kind `service`), and supervisor control. Foreground apply and serve record a daemon state file so status and destroy see them.
+pkg/service/        User-scoped systemd and launchd units (`gridctl service`): render, lockfile ownership (kind `service`), an allowlisted unit environment, and supervisor control.
 pkg/limits/         Enforces the `limits:` block: token-bucket rate limits on the tool-call dispatch path.
 pkg/toolpolicy/     Enforces the optional `policy:` block: last-match-wins call rules on the tool-call dispatch path, ahead of rate limits.
 pkg/provisioner/    LLM-client config writers (claude, claudecode, cursor, windsurf, gemini, antigravity, opencode, grok, goose,
                     cline, anythingllm, lmstudio, roo, zed, continue, vscode). JSON and TOML helpers in json.go / toml.go.
                     Backed by `gridctl link` / `gridctl unlink`. `projectsources.go` discovers project MCP files for `gridctl import`.
-pkg/vault/          Encrypted variable store (XChaCha20-Poly1305 + Argon2id). The `gridctl var` and (deprecated) `gridctl vault` CLIs.
+pkg/vault/          Encrypted variable store (XChaCha20-Poly1305 + Argon2id). The `gridctl var` and (deprecated) `gridctl vault` CLIs. `GRIDCTL_VAULT_PASSPHRASE_FILE` unlocks from a user-owned file; gridctl never creates it.
 pkg/varrun/         Explicit stored-variable delivery to child processes, including output redaction and signal forwarding.
 pkg/varscan/        Exact stored-secret scanning for working-tree files and staged Git blobs.
 pkg/pins/           TOFU schema pinning for tool definitions; drift surfaces in pkg/pins + `gridctl pins`.
@@ -194,6 +194,7 @@ pkg/reload/         Stack hot-reload (file watcher + diff-and-apply path). secur
                     or serialize resolved values.
 pkg/controller/     Application composition root: builds the gateway, mounts the API server, embedded UI, and MCP transports
                     (gateway_builder.go), and owns deploy/daemonize orchestration for `gridctl apply` and `gridctl serve`.
+                    Foreground apply and serve record a daemon state file so status and destroy see them.
                     Supplies the startup security snapshot and installs manual reload independently of --watch.
                     execution.go binds admission callbacks to the normalized contract, actual container ID, and inspected
                     IPv4 loopback HTTP endpoint.

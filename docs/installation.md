@@ -77,7 +77,7 @@ Updating does not automatically verify attestations. To require origin verificat
 
 ## Run as a service
 
-`gridctl service install` writes a user-scoped supervisor unit that runs the gateway in the foreground and brings it back after logout and reboot.
+`gridctl service install` writes a user-scoped supervisor unit that runs the gateway in the foreground. On Linux the unit comes back at the next user-manager start: login, or boot when linger is enabled. On macOS a launch agent starts at login, not at boot. A reboot restores it once you log in.
 
 ```bash
 gridctl service install --stack stack.yaml
@@ -86,15 +86,17 @@ gridctl service logs netops
 gridctl service uninstall netops
 ```
 
-On Linux the unit is `~/.config/systemd/user/gridctl-<name>.service`. On macOS it is `~/Library/LaunchAgents/dev.gridctl.<name>.plist`. A launch agent starts at login, not at boot. A reboot restores it once you log in.
+On Linux the unit is `~/.config/systemd/user/gridctl-<name>.service`. `XDG_CONFIG_HOME` is used when it is set, unless the home is overridden and that directory is outside the resolved home. An overridden home (`--home` or `GRIDCTL_HOME`) writes the unit under that home, and the user manager will not load a unit outside its search path. On macOS the unit is always `<home>/Library/LaunchAgents/dev.gridctl.<name>.plist`. The service name is the stack name with characters outside `[A-Za-z0-9._-]` replaced by `-`. Runs of `-` collapse, and leading or trailing `-` and `.` are trimmed.
 
-The unit runs `gridctl apply <stack> --foreground` with a clean environment. It does not inherit `GRIDCTL_VAULT_PASSPHRASE`, `SSH_AUTH_SOCK` from `/tmp`, or other credentials from the shell that ran install. `GRIDCTL_HOME` is set to the home install resolved. The global `--runtime` flag is forwarded when you set it.
+The unit runs an absolute `gridctl` path: the stable symlink when that is the binary you invoked, otherwise the executable itself. `--binary` overrides it. The command is `apply <stack> --foreground --quiet` with the chosen `--port` and `--base-port`. `--watch` and the global `--runtime` are added when set. The unit does not look up `gridctl` on `PATH` at start.
 
-Install records the unit in `~/.gridctl/project.lock.yaml` before writing the file, then enables it. `--dry-run` prints the unit and writes nothing. `--no-enable` writes the unit and leaves it disabled. A hand-edited unit is drift: install and uninstall refuse it unless you pass `--force`, which backs the file up first.
+The environment is an allowlist. It always sets `GRIDCTL_HOME` to the home install resolved. It keeps `PATH` (or `/usr/bin:/bin` when `PATH` was unset), `DOCKER_HOST`, `DOCKER_CONTEXT`, `CONTAINER_HOST`, `GRIDCTL_RUNTIME`, `GRIDCTL_NO_SKILL_UPDATE_CHECK`, any `GRIDCTL_EXPERIMENTAL_*`, and `SSH_AUTH_SOCK` only when the socket is under `$XDG_RUNTIME_DIR`, `/run/user/`, or `.ssh/` in the resolved home or `$HOME`. A socket under `/tmp` is skipped. `GRIDCTL_VAULT_PASSPHRASE`, `GRIDCTL_SSH_KEY_PASSPHRASE`, and other credentials are not copied.
 
-Linux user units cannot depend on the system Docker socket. The unit restarts on failure (30 attempts in 600 seconds) so a runtime that is not ready at login is retried. Only rootless Podman adds `After=podman.socket`. There is no `network-online.target` dependency. `sd_notify` readiness and `LoadCredential=` are follow-ups, not part of this install.
+Install records the unit in `~/.gridctl/project.lock.yaml` (kind `service`) before writing the file, then enables it. `--dry-run` prints the unit and writes nothing. `--no-enable` writes the unit and leaves it disabled. A hand-edited unit is drift. Install refuses it unless `--force`, which backs the file up first. Uninstall refuses it unless `--force`, which removes the file and does not keep a backup. If enable fails, the unit and the lock entry stay, the command prints the manual enable line, and it exits 1.
 
-If the variable store is encrypted and the stack references stored variables, install refuses until you pass `--passphrase-file`. Create that file yourself, mode `0600`, owned by you. The unit stores the path. Gridctl never creates, copies, or templates the file. Install reads it once to verify the passphrase. `status` and `doctor` do not read it. The daemon reads `GRIDCTL_VAULT_PASSPHRASE_FILE` at start. A `0644` file, a file owned by someone else, a symlink, or a directory is refused, and the error does not echo the contents.
+Linux user units cannot depend on the system Docker socket. The unit restarts on failure (30 attempts in 600 seconds) so a runtime that is not ready at login is retried. Only rootless Podman adds `After=podman.socket`. A detection error, Docker, or rootful Podman adds no socket dependency. There is no `network-online.target` dependency. `sd_notify` readiness and `LoadCredential=` are follow-ups, not part of this install.
+
+If the variable store is encrypted and the stack needs it (a `${var:}` reference, a `secrets.sets` entry, or a `source.auth.credential_ref` that contains `${var:` or `${vault:`), install refuses until you pass `--passphrase-file`. Create that file yourself, mode `0600` or stricter, owned by you, at most 4 KiB. The unit stores the path as `GRIDCTL_VAULT_PASSPHRASE_FILE`. Gridctl never creates, copies, or templates the file. Install reads it once to verify the passphrase. `status` and `doctor` do not read it. The daemon reads it at start. A `0644` file, a file owned by someone else, a symlink, a directory, or a file larger than 4 KiB is refused, and the error does not echo the contents. When both variables are set, `GRIDCTL_VAULT_PASSPHRASE` wins and the file is not read. A stack that does not need the store installs with a note that the store stays locked.
 
 `gridctl serve -f` logs a bad passphrase file and starts with the store locked. `gridctl apply -f` refuses to start.
 
@@ -104,7 +106,7 @@ After logout, a Linux user service stops unless linger is enabled. Install print
 loginctl enable-linger "$USER"
 ```
 
-`gridctl destroy <name>` stops a supervised gateway through the supervisor and leaves the unit enabled, so the next login (or boot, when linger is on) starts it again. Remove it with `gridctl service uninstall <name>`. `gridctl reset` removes installed services before it stops daemons. A pack whose pin moved is reported as `stale` by `gridctl service status`; re-run install. The pin is not rewritten automatically.
+`gridctl destroy <name>` stops a supervised gateway through the supervisor and leaves the unit enabled, so the next login (or boot, when linger is on) starts it again. A supervisor stop failure is an error and does not kill the process. Remove the unit with `gridctl service uninstall <name>`. `gridctl reset` disables and stops installed services before it stops daemons. A pack whose pin moved is reported as `stale` by `gridctl service status`; re-run install. The pin is not rewritten automatically. On Linux, `gridctl logs <name>` points at `gridctl service logs` instead of tailing a stale daemon log.
 
 `gridctl service` is not supported on Windows. Run `gridctl apply` from a login session, or use WSL2.
 
@@ -112,7 +114,8 @@ loginctl enable-linger "$USER"
 
 Before removing the binary, remove what gridctl placed elsewhere on the
 machine: projected skills and rules in client directories, gateway
-entries in client MCP configs, and running containers. The installer's
+entries in client MCP configs, installed user services, and running
+containers. The installer's
 `--purge` removes only `~/.gridctl` and leaves all of that behind:
 
 ```bash
@@ -154,7 +157,7 @@ Import also reads project MCP files from the working directory up to the nearest
 
 ## Isolated and CI installs
 
-`GRIDCTL_HOME` (or the `--home <dir>` global flag) replaces the home directory every gridctl path derives from: `~/.gridctl` and the client projection targets alike. `GRIDCTL_HOME=/tmp/demo gridctl apply` runs a fully isolated instance that cannot touch real client configs, which is the right shape for CI jobs, demos, and trying gridctl without committing your machine to it. `gridctl doctor` reports the active home and its source. See [Home directory override](cli-reference.md#home-directory-override) for the full semantics.
+`GRIDCTL_HOME` (or the `--home <dir>` global flag) replaces the home directory every gridctl path derives from: `~/.gridctl` and the client projection targets alike. `GRIDCTL_HOME=/tmp/demo gridctl apply` runs a fully isolated instance that cannot touch real client configs, which is the right shape for CI jobs, demos, and trying gridctl without committing your machine to it. `gridctl service install` under an overridden home writes the unit inside that home. On Linux the user manager will not load it, and an `XDG_CONFIG_HOME` outside that home is ignored so the write cannot land in the real `~/.config`. `gridctl doctor` reports the active home and its source. See [Home directory override](cli-reference.md#home-directory-override) for the full semantics.
 
 ## Container runtime
 
