@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -173,6 +174,15 @@ func rejectFleetWholesale(t *testing.T, name, path string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if entry := fleetWholesaleEntry(name, raw); entry != "" {
+		t.Fatalf("%s wholesale-baselines %q; fleet aggregation scenarios must pass", name, entry)
+	}
+}
+
+func fleetWholesaleEntry(name string, raw []byte) string {
+	if !strings.Contains(name, "fleet") {
+		return ""
+	}
 	forbidden := map[string]bool{}
 	for _, scenario := range fleetAggregationScenarios {
 		forbidden[scenario] = true
@@ -187,7 +197,35 @@ func rejectFleetWholesale(t *testing.T, name, path string) {
 			entry = strings.TrimSpace(entry[:i])
 		}
 		if forbidden[entry] {
-			t.Fatalf("%s wholesale-baselines %q; fleet aggregation scenarios must pass", name, entry)
+			return entry
+		}
+		// The check id is not a scenario. A real excuse is
+		// tools-list:tools-list-deterministic-order.
+		if i := strings.Index(entry, ":"); i >= 0 && entry[i+1:] == "tools-list-deterministic-order" {
+			return entry
+		}
+	}
+	return ""
+}
+
+func TestFleetWholesaleEntry(t *testing.T) {
+	if got := fleetWholesaleEntry("conformance-baseline.yml", []byte("- tools-list # no\n")); got != "" {
+		t.Fatalf("non-fleet file flagged %q", got)
+	}
+	cases := []struct {
+		body string
+		want string
+	}{
+		{"- tools-list:wire-schema-valid # icon\n", ""},
+		{"- tools-list # hole\n", "tools-list"},
+		{"- tools-list-deterministic-order # hole\n", "tools-list-deterministic-order"},
+		{"- tools-list:tools-list-deterministic-order # hole\n", "tools-list:tools-list-deterministic-order"},
+		{"- caching:tools-list-deterministic-order # hole\n", "caching:tools-list-deterministic-order"},
+	}
+	for _, tc := range cases {
+		got := fleetWholesaleEntry("conformance-baseline-fleet.yml", []byte(tc.body))
+		if got != tc.want {
+			t.Errorf("body %q: got %q, want %q", tc.body, got, tc.want)
 		}
 	}
 }
@@ -261,14 +299,33 @@ func logFailingChecks(t *testing.T, outDir string) {
 	}
 }
 
+var conformanceResultTimestamp = regexp.MustCompile(`-\d{4}-\d{2}-\d{2}T[\d-]+Z$`)
+
 func scenarioFromResultDir(name string) string {
-	// server-<scenario>-<RFC3339 timestamp>. Scenario names can contain
-	// hyphens and years, so match the timestamp prefix the suite writes.
+	// server-<scenario>-<timestamp>. Scenario names can contain hyphens
+	// and years, so strip only a trailing timestamp.
 	rest := strings.TrimPrefix(name, "server-")
-	if i := strings.Index(rest, "-2026-"); i > 0 {
-		return rest[:i]
+	if loc := conformanceResultTimestamp.FindStringIndex(rest); loc != nil && loc[0] > 0 {
+		return rest[:loc[0]]
 	}
 	return rest
+}
+
+func TestScenarioFromResultDir(t *testing.T) {
+	cases := []struct {
+		name string
+		want string
+	}{
+		{"server-tools-call-image-2026-10-19T01-16-40-866Z", "tools-call-image"},
+		{"server-tools-call-image-2027-01-01T00-00-00-000Z", "tools-call-image"},
+		{"server-json-schema-2020-12-2026-10-19T01-16-40-866Z", "json-schema-2020-12"},
+		{"server-no-timestamp", "no-timestamp"},
+	}
+	for _, tc := range cases {
+		if got := scenarioFromResultDir(tc.name); got != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
+		}
+	}
 }
 
 func startConformanceDaemon(t *testing.T, bin, home string, port int, args ...string) conformanceDaemon {

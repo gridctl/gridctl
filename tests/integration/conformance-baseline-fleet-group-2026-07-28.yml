@@ -16,6 +16,18 @@
 # tools-list (including tools-list-deterministic-order), caching,
 # prompts-list, and resources-list pass on this surface. Do not add a
 # wholesale entry for those scenarios.
+#
+# A name outside the group, including a name that exists on no server,
+# is an in-band isError result, not the stateless -32602 unknown-tool
+# error. That is deliberate: the denial does not disclose whether the
+# name exists on another server. The suite then passes
+# tools-call-simple-text, tools-call-error, and
+# input-required-result-ignore-extra-params against tools this group
+# does not implement. Two server-stateless checks
+# (sep-2575-http-server-no-independent-requests-on-stream and
+# sep-2575-server-no-log-without-loglevel) also pass for that reason;
+# the scenario stays baselined for the checks that still fail. Those
+# passes are not implementations of the suite tools.
 server:
   - server-stateless:sep-2575-server-rejects-undeclared-capability # unknown tool is -32602, not the suite's -32021 missing-capability rejection
   - server-stateless:sep-2575-missing-capability-http-400 # suite tool test_missing_capability is not listed, so the HTTP status is untestable

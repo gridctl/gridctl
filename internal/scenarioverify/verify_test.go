@@ -286,6 +286,20 @@ func TestFocusedCommandEscapes(t *testing.T) {
 	if !strings.Contains(podman, "-tags=integration") || !strings.Contains(podman, "-timeout 15m") {
 		t.Fatalf("podman command missing suite flags: %q", podman)
 	}
+
+	conf := FocusedCommand(Scenario{
+		Package: "github.com/gridctl/gridctl/tests/integration",
+		Test:    "TestConformance/stackless/2025-11-25",
+	}, "conformance")
+	if !strings.Contains(conf, "-tags=integration") || !strings.Contains(conf, "-timeout 22m") {
+		t.Fatalf("conformance command = %q", conf)
+	}
+	if !strings.Contains(conf, "./tests/integration") {
+		t.Fatalf("conformance package dir missing: %q", conf)
+	}
+	if strings.Contains(conf, "GRIDCTL_RUNTIME") {
+		t.Fatalf("conformance command set a runtime: %q", conf)
+	}
 }
 
 func TestVerify_RejectsInvalidAndIncompleteCapture(t *testing.T) {
