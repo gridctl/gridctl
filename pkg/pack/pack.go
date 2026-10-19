@@ -14,6 +14,7 @@
 package pack
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path"
@@ -174,8 +175,118 @@ type Manifest struct {
 	// writes these declarations to a stack or variable store.
 	Variables map[string]VariableDeclaration `yaml:"variables,omitempty" json:"variables,omitempty"`
 	// Stack names a stack file inside this repository. Empty means the
-	// pack carries no stack and apply does not start a gateway.
-	Stack string `yaml:"stack,omitempty" json:"stack,omitempty"`
+	// pack carries no stack and apply does not start a gateway. A scalar
+	// is today's path. A mapping with extends names a fragment that
+	// composes onto another pack's stack.
+	Stack StackSpec `yaml:"stack,omitempty" json:"stack,omitempty"`
+}
+
+// StackSpec is a carried stack path, or a fragment that extends another
+// pack. Extends empty means a plain carried stack. JSON and YAML emit the
+// scalar path in that case so existing readers see today's shape.
+type StackSpec struct {
+	File    string `yaml:"file,omitempty" json:"file,omitempty"`
+	Extends string `yaml:"extends,omitempty" json:"extends,omitempty"`
+}
+
+// IsZero reports an empty stack so omitempty drops the field.
+func (s StackSpec) IsZero() bool {
+	return s.File == "" && s.Extends == ""
+}
+
+// UnmarshalYAML accepts a scalar path or a mapping with file and optional
+// extends. A mapping without file is an error that names the line. An
+// unknown mapping key is an error that names the key.
+func (s *StackSpec) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.ScalarNode:
+		var file string
+		if err := value.Decode(&file); err != nil {
+			return err
+		}
+		s.File = file
+		s.Extends = ""
+		return nil
+	case yaml.MappingNode:
+		allowed := map[string]bool{"file": true, "extends": true}
+		for i := 0; i < len(value.Content); i += 2 {
+			key := value.Content[i].Value
+			if !allowed[key] {
+				return fmt.Errorf("unknown stack field %q (line %d)", key, value.Content[i].Line)
+			}
+		}
+		var raw struct {
+			File    string `yaml:"file"`
+			Extends string `yaml:"extends"`
+		}
+		if err := value.Decode(&raw); err != nil {
+			return err
+		}
+		if raw.File == "" {
+			return fmt.Errorf("stack mapping requires file (line %d)", value.Line)
+		}
+		s.File = raw.File
+		s.Extends = raw.Extends
+		return nil
+	default:
+		return fmt.Errorf("stack must be a path or a mapping (line %d)", value.Line)
+	}
+}
+
+// MarshalYAML emits a scalar when Extends is empty so a round trip of
+// today's manifests stays a string.
+func (s StackSpec) MarshalYAML() (any, error) {
+	if s.Extends == "" {
+		return s.File, nil
+	}
+	return &struct {
+		File    string `yaml:"file"`
+		Extends string `yaml:"extends,omitempty"`
+	}{File: s.File, Extends: s.Extends}, nil
+}
+
+// MarshalJSON emits a JSON string when Extends is empty.
+func (s StackSpec) MarshalJSON() ([]byte, error) {
+	if s.Extends == "" {
+		return json.Marshal(s.File)
+	}
+	return json.Marshal(struct {
+		File    string `json:"file"`
+		Extends string `json:"extends,omitempty"`
+	}{File: s.File, Extends: s.Extends})
+}
+
+// UnmarshalJSON accepts a string or the object form.
+func (s *StackSpec) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		*s = StackSpec{}
+		return nil
+	}
+	var file string
+	if err := json.Unmarshal(data, &file); err == nil {
+		s.File = file
+		s.Extends = ""
+		return nil
+	}
+	var raw struct {
+		File    string `json:"file"`
+		Extends string `json:"extends"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw.File == "" {
+		return fmt.Errorf("stack mapping requires file")
+	}
+	s.File = raw.File
+	s.Extends = raw.Extends
+	return nil
+}
+
+// IsBooster reports whether this pack extends another pack's stack.
+// A booster's File is a fragment, not a standalone stack.
+func (m *Manifest) IsBooster() bool {
+	return m != nil && m.Stack.Extends != ""
 }
 
 // VariableDeclaration documents a pack prerequisite.
@@ -235,7 +346,10 @@ func (m *Manifest) Validate() error {
 			return fmt.Errorf("variable %q has unsupported type %q", key, declaration.Type)
 		}
 	}
-	if err := validateStackPath(m.Stack); err != nil {
+	if err := validateStackPath(m.Stack.File); err != nil {
+		return err
+	}
+	if err := m.validateExtends(); err != nil {
 		return err
 	}
 	if err := m.validateSources(); err != nil {
@@ -333,6 +447,19 @@ func (m *Manifest) validateSelections(selections []Selection, kind string) error
 			return fmt.Errorf("%s %q is selected more than once (%s and %s)", kind, sel.Name, prev, owner)
 		}
 		seen[sel.Name] = owner
+	}
+	return nil
+}
+
+func (m *Manifest) validateExtends() error {
+	if m.Stack.Extends == "" {
+		return nil
+	}
+	if !namePattern.MatchString(m.Stack.Extends) {
+		return fmt.Errorf("stack.extends %q must be lowercase letters, digits, and hyphens", m.Stack.Extends)
+	}
+	if m.Stack.Extends == m.Name {
+		return fmt.Errorf("stack.extends %q must not equal the pack name", m.Name)
 	}
 	return nil
 }
