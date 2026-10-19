@@ -32,6 +32,7 @@ type resolvedSource struct {
 	clone          *skills.CloneResult
 	auth           skills.AuthConfig
 	sha            string
+	locked         bool
 	skills         []string
 	agents         []string
 	importedSkills []string
@@ -84,6 +85,7 @@ func cloneDeclaredSources(ctx context.Context, manifest *pack.Manifest, opts Add
 		var clone *skills.CloneResult
 		var cerr error
 		if commit := opts.lockedCommits[name]; commit != "" {
+			rs.locked = true
 			clone, cerr = cloneAtCommit(spec.Repo, commit, spec.Path, auth, slog.Default())
 			if errors.Is(cerr, skills.ErrCommitUnreachable) {
 				cerr = fmt.Errorf("locked commit %s is not reachable at %s", skills.ShortSHA(commit), gitpkg.RedactURL(spec.Repo))
@@ -168,7 +170,17 @@ func recheckSourceCommit(rs *resolvedSource) error {
 	if head == rs.sha {
 		return nil
 	}
-	recloned, err := cloneAndDiscover(rs.spec.Repo, rs.sha, rs.spec.Path, rs.auth, slog.Default())
+	var recloned *skills.CloneResult
+	if rs.locked {
+		// A locked commit may be an ancestor of a moved branch. The depth-1
+		// ref clone cannot transfer it once the shared cache HEAD has moved.
+		recloned, err = cloneAtCommit(rs.spec.Repo, rs.sha, rs.spec.Path, rs.auth, slog.Default())
+		if errors.Is(err, skills.ErrCommitUnreachable) {
+			return fmt.Errorf("locked commit %s is not reachable at %s", skills.ShortSHA(rs.sha), gitpkg.RedactURL(rs.spec.Repo))
+		}
+	} else {
+		recloned, err = cloneAndDiscover(rs.spec.Repo, rs.sha, rs.spec.Path, rs.auth, slog.Default())
+	}
 	if err != nil {
 		return fmt.Errorf("re-clone at %s failed: %w", skills.ShortSHA(rs.sha), err)
 	}

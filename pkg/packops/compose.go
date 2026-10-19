@@ -79,7 +79,7 @@ func (m *Managers) applyBooster(ctx context.Context, name string, ps packSource,
 		return Row{Kind: "stack", Name: rowName, Action: "error", Detail: err.Error()}, stackOutcome{action: "error"}
 	}
 	if base.Pack.Stack == nil {
-		detail := fmt.Sprintf("base pack %q carries no stack", ps.Pack.Fragment.Base)
+		detail := fmt.Sprintf("base pack '%s' carries no stack", ps.Pack.Fragment.Base)
 		return Row{Kind: "stack", Name: rowName, Action: "error", Detail: detail}, stackOutcome{action: "error"}
 	}
 	boosters := attachedBoosters(lf, ps.Pack.Fragment.Base)
@@ -92,11 +92,18 @@ func (m *Managers) applyBooster(ctx context.Context, name string, ps packSource,
 	row.Kind = "stack"
 	row.Name = rowName
 	row.Action = "composed"
+	if opts.DryRun {
+		// Dry-run reports the would-* or unchanged action. "composed" would
+		// read as a completed write.
+		row.Action = inner
+	}
 	row.Detail = fmt.Sprintf("composed into %s (%s)", base.Pack.Name, inner)
 	if outcome.detail != "" && opts.PortSet {
 		row.Detail = row.Detail + "; " + outcome.detail
 	}
-	outcome.action = "composed"
+	if !opts.DryRun {
+		outcome.action = "composed"
+	}
 	return row, outcome
 }
 
@@ -222,6 +229,12 @@ func (m *Managers) composeAndDeploy(ctx context.Context, base packSource, booste
 			out.action = "error"
 			return Row{Kind: "stack", Name: rowName, Action: "error", Detail: reloadErr.Error()}, out
 		}
+		if perr := pruneCompositionCheckouts(home, base, boosters); perr != nil {
+			out.action = "reloaded"
+			out.port = run.port
+			out.portKnown = true
+			return Row{Kind: "stack", Name: rowName, Action: "reloaded", Detail: perr.Error()}, out
+		}
 		out.action = "reloaded"
 		out.port = run.port
 		out.portKnown = true
@@ -242,13 +255,11 @@ func (m *Managers) composeAndDeploy(ctx context.Context, base packSource, booste
 		out.action = "error"
 		return Row{Kind: "stack", Name: rowName, Action: "error", Detail: launchErr.Error()}, out
 	}
-	if replace {
-		if perr := pruneOtherCheckouts(home, base.Pack.Name, st.CheckoutDir); perr != nil {
-			out.action = action
-			out.port = res.Port
-			out.portKnown = res.Port != 0
-			return Row{Kind: "stack", Name: rowName, Action: action, Detail: perr.Error()}, out
-		}
+	if perr := pruneCompositionCheckouts(home, base, boosters); perr != nil {
+		out.action = action
+		out.port = res.Port
+		out.portKnown = res.Port != 0
+		return Row{Kind: "stack", Name: rowName, Action: action, Detail: perr.Error()}, out
 	}
 	out.action = action
 	out.port = res.Port
@@ -420,6 +431,28 @@ func (m *Managers) removeBooster(ctx context.Context, name string, locked *skill
 	return &Row{Kind: "stack", Name: rowName, Action: "removed", Detail: detail}, false, nil
 }
 
+// pruneCompositionCheckouts removes commit checkouts no running daemon
+// references. The current base checkout, each attached booster's current
+// checkout, and composed/ are kept. A reload does not replace the daemon
+// path, so the replace-only prune would leave the previous base and booster
+// checkouts in place.
+func pruneCompositionCheckouts(home string, base packSource, boosters []packSource) error {
+	if base.Pack != nil && base.Pack.Stack != nil {
+		if err := pruneOtherCheckouts(home, base.Pack.Name, base.Pack.Stack.CheckoutDir); err != nil {
+			return err
+		}
+	}
+	for _, booster := range boosters {
+		if booster.Pack == nil || booster.Pack.Fragment == nil {
+			continue
+		}
+		if err := pruneOtherCheckouts(home, booster.Pack.Name, booster.Pack.Fragment.CheckoutDir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func writeComposed(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -435,5 +468,3 @@ func writeComposed(path string, data []byte) error {
 	}
 	return nil
 }
-
-

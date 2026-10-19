@@ -259,7 +259,7 @@ func extendsFromLockfile(lockPath string, manifest *pack.Manifest) (map[string]p
 	base, err := findPack(lf, manifest.Stack.Extends)
 	if err != nil {
 		if errors.Is(err, ErrNotImported) {
-			return nil, fmt.Sprintf("base pack %q is not added; extends entry omitted", manifest.Stack.Extends), nil
+			return nil, fmt.Sprintf("base pack '%s' is not added; extends entry omitted", manifest.Stack.Extends), nil
 		}
 		return nil, "", err
 	}
@@ -337,7 +337,7 @@ func lockStaleError(reason string) error {
 // under --locked an error returned before any write.
 func extendsLockNote(base packSource, locked pack.LockedExtends, lockedFlag bool) (note, unresolved string, err error) {
 	if locked.Repo != "" && base.Source.Repo != locked.Repo {
-		return "", fmt.Sprintf("base pack %q is added from %s, lock expects %s", base.Pack.Name, redactRepo(base.Source.Repo), redactRepo(locked.Repo)), nil
+		return "", fmt.Sprintf("base pack '%s' is added from %s, lock expects %s", base.Pack.Name, redactRepo(base.Source.Repo), redactRepo(locked.Repo)), nil
 	}
 	if locked.Commit != "" && base.Source.CommitSHA != locked.Commit {
 		note = fmt.Sprintf("base %s at %s, lock expects %s", base.Pack.Name, skills.ShortSHA(base.Source.CommitSHA), skills.ShortSHA(locked.Commit))

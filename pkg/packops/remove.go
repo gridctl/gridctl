@@ -67,7 +67,7 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 			}
 			return nil, &packError{
 				reason: ErrBoostersAttached,
-				msg:    fmt.Sprintf("pack %q has attached boosters (%s); remove them first or pass --force", name, strings.Join(names, ", ")),
+				msg:    fmt.Sprintf("pack '%s' has attached boosters (%s); remove them first or pass --force", name, strings.Join(names, ", ")),
 			}
 		}
 	}

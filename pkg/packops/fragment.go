@@ -64,15 +64,15 @@ func (m *Managers) resolveFragment(ctx context.Context, clone *skills.CloneResul
 	base, err := findPack(lf, manifest.Stack.Extends)
 	if err != nil {
 		if errors.Is(err, ErrNotImported) {
-			return fail(fmt.Sprintf("base pack %q is not added", manifest.Stack.Extends))
+			return fail(fmt.Sprintf("base pack '%s' is not added", manifest.Stack.Extends))
 		}
 		return fail(err.Error())
 	}
 	if base.Pack.Fragment != nil {
-		return fail(fmt.Sprintf("base pack %q is a booster; a booster cannot extend a booster", manifest.Stack.Extends))
+		return fail(fmt.Sprintf("base pack '%s' is a booster; a booster cannot extend a booster", manifest.Stack.Extends))
 	}
 	if base.Pack.Stack == nil {
-		return fail(fmt.Sprintf("base pack %q carries no stack", manifest.Stack.Extends))
+		return fail(fmt.Sprintf("base pack '%s' carries no stack", manifest.Stack.Extends))
 	}
 	if resolved.lockExtends != nil {
 		if locked, ok := resolved.lockExtends[manifest.Stack.Extends]; ok {

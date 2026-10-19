@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/gridctl/gridctl/pkg/pack"
 	"github.com/gridctl/gridctl/pkg/packops"
 	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/skillsync"
@@ -149,6 +150,14 @@ func (s *Server) resolveSourceAuthMap(in map[string]*AuthRequest) (map[string]sk
 	return out, nil
 }
 
+// writeLockStale is the dedicated 409 body for a --locked refusal. writeJSONError
+// cannot carry code.
+func writeLockStale(w http.ResponseWriter, err error) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusConflict)
+	writeJSON(w, map[string]any{"error": err.Error(), "code": "lock_stale"})
+}
+
 // packErrorStatus maps pkg/packops sentinel errors to HTTP statuses.
 func packErrorStatus(err error) int {
 	var fe *packops.FindingsError
@@ -163,7 +172,8 @@ func packErrorStatus(err error) int {
 		return http.StatusUnprocessableEntity
 	case errors.Is(err, packops.ErrLockFlags):
 		return http.StatusBadRequest
-	case errors.Is(err, packops.ErrBoostersAttached):
+	case errors.Is(err, packops.ErrBoostersAttached), errors.Is(err, packops.ErrLockStale),
+		errors.Is(err, pack.ErrNewerPackLockVersion):
 		return http.StatusConflict
 	case errors.Is(err, skills.ErrImportLockBusy):
 		return http.StatusServiceUnavailable
@@ -292,9 +302,7 @@ func (s *Server) handlePackAdd(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, packops.ErrLockStale) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusConflict)
-			writeJSON(w, map[string]any{"error": err.Error(), "code": "lock_stale"})
+			writeLockStale(w, err)
 			return
 		}
 		var fe *packops.FindingsError
@@ -365,6 +373,10 @@ func (s *Server) handlePackPreview(w http.ResponseWriter, r *http.Request) {
 		Locked: req.Locked, IgnoreLock: req.IgnoreLock,
 	})
 	if err != nil {
+		if errors.Is(err, packops.ErrLockStale) {
+			writeLockStale(w, err)
+			return
+		}
 		if status := packErrorStatus(err); status != http.StatusInternalServerError {
 			writeJSONError(w, err.Error(), status)
 			return

@@ -67,6 +67,21 @@ func packFixture(t *testing.T, manifest string, extra map[string]string) string 
 	return dir
 }
 
+func TestPrintPackLock_Note(t *testing.T) {
+	var buf bytes.Buffer
+	printPackLock(&buf, &packops.LockSummary{
+		State: "honored",
+		Notes: []string{"base infra at aaaaaaaa, lock expects bbbbbbbb"},
+	})
+	want := "lock: honored\nlock: base infra at aaaaaaaa, lock expects bbbbbbbb\n"
+	if buf.String() != want {
+		t.Fatalf("got %q", buf.String())
+	}
+	if !packAddPartial(packops.AddDoc{Unresolved: []string{"stack:servers.yaml"}}) {
+		t.Fatal("unresolved fragment is not exit 1")
+	}
+}
+
 func TestPackAdd_StoredAuthFallback(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

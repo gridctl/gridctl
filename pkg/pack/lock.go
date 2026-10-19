@@ -40,7 +40,8 @@ type LockFile struct {
 	Extends        map[string]LockedExtends `yaml:"extends,omitempty"`
 }
 
-// LockedSource is one resolved sources: entry. Repo has no URL userinfo.
+// LockedSource is one resolved sources: entry. Repo carries no credential
+// userinfo. An ssh:// username with no password is a login name and is kept.
 type LockedSource struct {
 	Repo   string `yaml:"repo"`
 	Ref    string `yaml:"ref,omitempty"`
@@ -57,8 +58,10 @@ type LockedExtends struct {
 // ParseLockFile decodes a pack lock. version greater than LockVersion is
 // refused with ErrNewerPackLockVersion. A missing or non-positive version,
 // a commit that is not a 40-hex SHA, and a repo carrying URL userinfo are
-// refused. The newer-version message names LockFileName, which is the path
-// authors and the CLI print.
+// refused. An ssh:// URL may carry a username with no password; that is a
+// login name, not a credential. An https userinfo component and any SSH
+// password are refused. The newer-version message names LockFileName, which
+// is the path authors and the CLI print.
 func ParseLockFile(data []byte) (*LockFile, error) {
 	var lf LockFile
 	if err := yaml.Unmarshal(data, &lf); err != nil {
@@ -101,13 +104,29 @@ func rejectUserinfo(repo string) error {
 	if repo == "" {
 		return fmt.Errorf("repo is required")
 	}
-	if gitpkg.DetectProtocol(repo) == gitpkg.ProtocolSSH && !hasURLUserinfo(repo) {
+	if sshUsernameOnly(repo) {
 		return nil
 	}
 	if hasURLUserinfo(repo) {
 		return fmt.Errorf("repo %q must not carry URL userinfo", gitpkg.RedactURL(repo))
 	}
 	return nil
+}
+
+// sshUsernameOnly reports an ssh:// URL whose userinfo is a username and
+// not a password. The scp form git@host:path has no URL userinfo.
+func sshUsernameOnly(repo string) bool {
+	if gitpkg.DetectProtocol(repo) != gitpkg.ProtocolSSH {
+		return false
+	}
+	u, err := url.Parse(repo)
+	if err != nil || u.User == nil {
+		return false
+	}
+	if _, set := u.User.Password(); set {
+		return false
+	}
+	return u.User.Username() != ""
 }
 
 func hasURLUserinfo(raw string) bool {

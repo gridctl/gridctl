@@ -144,6 +144,14 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 	}
 	discoveredRules := discoverPackRules(clone.RepoPath)
 	resolved := resolvePackSelection(manifest, clone, sourceClones, discoveredRules)
+	// The extends check in resolveFragment reads these fields. Preview sets
+	// them before resolveCarriedStack; add must do the same or a base-repo
+	// mismatch is never reported.
+	if plan != nil {
+		resolved.lock = plan.Summary
+		resolved.honoredLock = plan.Summary != nil && plan.Summary.State == "honored"
+		resolved.lockExtends = plan.Extends
+	}
 	stackSummary, stackWarnings := m.resolveCarriedStack(ctx, clone, manifest, &resolved, opts.DryRun)
 	stackWarnings = append(stackWarnings, sourceWarnings...)
 	stackWarnings = append(stackWarnings, unknownSourceAuthWarnings(manifest, opts.SourceAuth)...)
@@ -174,11 +182,6 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 			Lock:          planSummary(plan),
 		},
 		Notes: []string{},
-	}
-	if plan != nil {
-		resolved.lock = plan.Summary
-		resolved.honoredLock = plan.Summary != nil && plan.Summary.State == "honored"
-		resolved.lockExtends = plan.Extends
 	}
 
 	if !opts.DryRun && len(manifest.Sources) == 0 && (len(resolved.skills) > 0 || len(resolved.agents) > 0) {

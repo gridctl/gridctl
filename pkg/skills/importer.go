@@ -994,6 +994,20 @@ func (imp *Importer) Update(ctx context.Context, skillName string, dryRun, force
 	return result, nil
 }
 
+// ErrSourceLocked marks an update of a member source pinned by a pack lock.
+// The documented prose is on lockedSourceError; callers match this sentinel.
+var ErrSourceLocked = errors.New("source is locked by a pack")
+
+type lockedSourceError struct {
+	pack string
+}
+
+func (e *lockedSourceError) Error() string {
+	return fmt.Sprintf("source is locked by %s; update the pack lock (gridctl pack lock in the pack repository, then gridctl pack add), or re-run with --ignore-lock", e.pack)
+}
+
+func (e *lockedSourceError) Unwrap() error { return ErrSourceLocked }
+
 // refuseLocked rejects an update of a member source pinned by a pack lock.
 // The background update checker does not call Update, so it is unchanged.
 func (imp *Importer) refuseLocked(name string, isSkill bool) error {
@@ -1011,7 +1025,7 @@ func (imp *Importer) refuseLocked(name string, isSkill bool) error {
 	if !ok || src == nil || src.LockedBy == "" {
 		return nil
 	}
-	return fmt.Errorf("source is locked by %s; update the pack lock (gridctl pack lock in the pack repository, then gridctl pack add), or re-run with --ignore-lock", src.LockedBy)
+	return &lockedSourceError{pack: src.LockedBy}
 }
 
 // RemoveAgent removes an imported agent and cleans up origin and lock

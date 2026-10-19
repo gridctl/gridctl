@@ -386,6 +386,55 @@ sources:
 	}
 }
 
+func TestHandlePackPreview_LockedStale409(t *testing.T) {
+	srv, home := setupPackTestServer(t)
+	manifest := `apiVersion: gridctl.dev/v1
+kind: Pack
+name: team-pack
+skills:
+  - { name: alpha, source: alpha }
+sources:
+  alpha:
+    repo: https://example.com/alpha.git
+    ref: main
+`
+	lock := "version: 1\npack: team-pack\nmanifestDigest: sha256:0000000000000000000000000000000000000000000000000000000000000000\nsources:\n  alpha:\n    repo: https://example.com/alpha.git\n    ref: main\n    commit: 0123456789abcdef0123456789abcdef01234567\n"
+	repo := packRepoFixture(t, manifest, map[string]string{"gridctl-pack.lock.yaml": lock})
+	rec := doJSON(t, srv, http.MethodPost, "/api/packs/preview", `{"repo":`+jsonQuote(repo)+`,"locked":true}`)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, body %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"code":"lock_stale"`) {
+		t.Fatalf("body = %s", rec.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(home, ".gridctl", "skills.lock.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("skills.lock.yaml written: %v", err)
+	}
+}
+
+func TestHandlePackAddAndPreview_NewerLockIs409(t *testing.T) {
+	srv, _ := setupPackTestServer(t)
+	manifest := `apiVersion: gridctl.dev/v1
+kind: Pack
+name: team-pack
+sources:
+  alpha:
+    repo: https://example.com/alpha.git
+    ref: main
+`
+	lock := "version: 2\npack: team-pack\nmanifestDigest: sha256:ab\nsources:\n  alpha:\n    repo: https://example.com/alpha.git\n    ref: main\n    commit: 0123456789abcdef0123456789abcdef01234567\n"
+	repo := packRepoFixture(t, manifest, map[string]string{"gridctl-pack.lock.yaml": lock})
+	for _, path := range []string{"/api/packs", "/api/packs/preview"} {
+		rec := doJSON(t, srv, http.MethodPost, path, `{"repo":`+jsonQuote(repo)+`}`)
+		if rec.Code != http.StatusConflict {
+			t.Fatalf("%s status = %d, body %s", path, rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "newer gridctl version") {
+			t.Fatalf("%s body = %s", path, rec.Body.String())
+		}
+	}
+}
+
 func TestHandlePackGet_LockAndFragmentRows(t *testing.T) {
 	srv, home := setupPackTestServer(t)
 	baseDir := filepath.Join(home, ".gridctl", "packs", "infra", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")

@@ -764,14 +764,14 @@ func loadLockedPack(name string) (*skills.LockedPack, error) {
 }
 
 var (
-	packLockCheck         bool
-	packLockFormat        string
-	packLockJSON          *bool
-	packLockAuthToken     string
+	packLockCheck          bool
+	packLockFormat         string
+	packLockJSON           *bool
+	packLockAuthToken      string
 	packLockAuthTokenStdin bool
-	packLockVaultKey      string
-	packLockSSHKey        string
-	packLockSourceAuth    []string
+	packLockVaultKey       string
+	packLockSSHKey         string
+	packLockSourceAuth     []string
 )
 
 var packLockCmd = &cobra.Command{

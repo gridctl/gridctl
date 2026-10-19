@@ -461,15 +461,15 @@ func statusBoosterStackRow(home string, homeErr error, p *skills.LockedPack, lf 
 		}, true
 	}
 	if lf == nil {
-		return Row{Kind: "stack", Name: name, State: "target-missing", Detail: fmt.Sprintf("base pack %q is not added", p.Fragment.Base), Remediation: readd}, true
+		return Row{Kind: "stack", Name: name, State: "target-missing", Detail: fmt.Sprintf("base pack '%s' is not added", p.Fragment.Base), Remediation: readd}, true
 	}
 	base, err := findPack(lf, p.Fragment.Base)
 	if err != nil {
-		detail := fmt.Sprintf("base pack %q is not added", p.Fragment.Base)
+		detail := fmt.Sprintf("base pack '%s' is not added", p.Fragment.Base)
 		return Row{Kind: "stack", Name: name, State: "target-missing", Detail: detail, Remediation: readd}, true
 	}
 	if base.Pack.Stack == nil {
-		return Row{Kind: "stack", Name: name, State: "target-missing", Detail: fmt.Sprintf("base pack %q carries no stack", p.Fragment.Base)}, true
+		return Row{Kind: "stack", Name: name, State: "target-missing", Detail: fmt.Sprintf("base pack '%s' carries no stack", p.Fragment.Base)}, true
 	}
 	run, err := classifyRunningStack(home, p.Fragment.Base, base.Pack.Stack.Name, ComposedStackPath(home, p.Fragment.Base))
 	if err != nil {
@@ -581,8 +581,6 @@ func fragmentStatusRows(home, base string, st *skills.LockedStack, boosters []pa
 	}
 	return rows
 }
-
-
 
 func sourceDetail(repo, ref, sha string) string {
 	repo = redactRepo(repo)

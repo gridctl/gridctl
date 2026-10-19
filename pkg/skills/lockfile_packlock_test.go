@@ -76,4 +76,3 @@ func TestLockFile_PackLockNewerRefused(t *testing.T) {
 	_, err := ReadLockFile(newer)
 	require.ErrorIs(t, err, ErrNewerImportLockVersion)
 }
-

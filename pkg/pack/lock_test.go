@@ -90,6 +90,7 @@ func TestParseLockFile_Rejects(t *testing.T) {
 		{"missing version", "pack: demo\n", "positive integer"},
 		{"zero version", "version: 0\npack: demo\n", "positive integer"},
 		{"userinfo", "version: 1\npack: demo\nmanifestDigest: sha256:ab\nsources:\n  netops:\n    repo: https://token@gitlab.example.com/netops.git\n    commit: 0123456789abcdef0123456789abcdef01234567\n", "userinfo"},
+		{"ssh password", "version: 1\npack: demo\nmanifestDigest: sha256:ab\nsources:\n  netops:\n    repo: ssh://git:secret@gitlab.example.com/netops.git\n    commit: 0123456789abcdef0123456789abcdef01234567\n", "userinfo"},
 		{"short commit", "version: 1\npack: demo\nmanifestDigest: sha256:ab\nsources:\n  netops:\n    repo: https://gitlab.example.com/netops.git\n    commit: abcdef\n", "40-character"},
 	}
 	for _, tc := range cases {
@@ -102,6 +103,34 @@ func TestParseLockFile_Rejects(t *testing.T) {
 	}
 }
 
+func TestLockFile_SSHUsernameRoundTrip(t *testing.T) {
+	const repo = "ssh://git@gitlab.example.com/network/netops.git"
+	raw := "version: 1\npack: demo\nmanifestDigest: sha256:ab\nsources:\n  netops:\n    repo: " + repo + "\n    commit: 0123456789abcdef0123456789abcdef01234567\n"
+	got, err := ParseLockFile([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Sources["netops"].Repo != repo {
+		t.Fatalf("repo = %s", got.Sources["netops"].Repo)
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, LockFileName)
+	if err := WriteLockFile(path, got); err != nil {
+		t.Fatal(err)
+	}
+	written, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := ParseLockFile(written)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Sources["netops"].Repo != repo {
+		t.Fatalf("written repo = %s", again.Sources["netops"].Repo)
+	}
+}
+
 func TestWriteLockFile_SortedAndAtomic(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, LockFileName)
@@ -110,7 +139,7 @@ func TestWriteLockFile_SortedAndAtomic(t *testing.T) {
 		Pack:           "demo",
 		ManifestDigest: "sha256:abc",
 		Sources: map[string]LockedSource{
-			"zeta": {Repo: "https://example.com/zeta.git", Commit: "0123456789abcdef0123456789abcdef01234567"},
+			"zeta":  {Repo: "https://example.com/zeta.git", Commit: "0123456789abcdef0123456789abcdef01234567"},
 			"alpha": {Repo: "https://example.com/alpha.git", Ref: "main", Commit: "abcdef0123456789abcdef0123456789abcdef01"},
 		},
 	}
@@ -190,4 +219,3 @@ stack:
 		t.Fatal("extends did not change the digest")
 	}
 }
-

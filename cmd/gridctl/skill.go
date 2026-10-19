@@ -894,7 +894,7 @@ func runSkillUpdate(ctx context.Context, name string) error {
 
 		result, err := imp.Update(ctx, sr.name, skillUpdateDryRun, skillUpdateForce, skillUpdateTrust, skillUpdateIgnoreLock)
 		if err != nil {
-			if strings.Contains(err.Error(), "source is locked by") {
+			if errors.Is(err, skills.ErrSourceLocked) {
 				printer.Warn(err.Error())
 				continue
 			}

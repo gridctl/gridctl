@@ -26,7 +26,7 @@ func TestUpdate_RefusesLockedSource(t *testing.T) {
 		return true, nil
 	}))
 	_, err = imp.Update(context.Background(), "test-skill", false, false, true)
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrSourceLocked)
 	require.Contains(t, err.Error(), "source is locked by netops-team")
 	_, err = imp.Update(context.Background(), "test-skill", false, false, true, true)
 	require.NoError(t, err)
