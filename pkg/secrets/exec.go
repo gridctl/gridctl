@@ -65,9 +65,6 @@ func (p *execProvider) Resolve(ctx context.Context, path string) (string, error)
 }
 
 func filterInternalEnv(env []string) []string {
-	if len(env) == 0 {
-		return nil
-	}
 	out := make([]string, 0, len(env))
 	for _, entry := range env {
 		key, _, ok := strings.Cut(entry, "=")
@@ -90,6 +87,10 @@ func runProvider(ctx context.Context, ref Reference, timeout time.Duration, argv
 	}
 	// #nosec G204 -- stack-authored argv, never a shell; path is substituted inside elements
 	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...)
+	// A nil Env inherits the daemon environment. An empty allowlist must not.
+	if env == nil {
+		env = []string{}
+	}
 	cmd.Env = env
 	cmd.Stdin = nil
 	cmd.WaitDelay = waitDelay

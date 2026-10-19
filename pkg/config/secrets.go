@@ -379,8 +379,18 @@ func (p SecretProvider) ProviderTimeout() (time.Duration, error) {
 }
 
 func validateSecretReferenceUses(s *Stack) ValidationErrors {
-	if s == nil || len(s.SecretRefs) == 0 {
+	if s == nil {
 		return nil
+	}
+	var errs ValidationErrors
+	for _, c := range s.emptySecretSites {
+		errs = append(errs, ValidationError{
+			secretConsumerField(s, c),
+			"secret reference path is empty",
+		})
+	}
+	if len(s.SecretRefs) == 0 {
+		return errs
 	}
 	declared := map[string]bool{}
 	if s.Secrets != nil {
@@ -388,7 +398,6 @@ func validateSecretReferenceUses(s *Stack) ValidationErrors {
 			declared[p.Name] = true
 		}
 	}
-	var errs ValidationErrors
 	for _, ref := range s.SecretRefs {
 		if strings.Contains(ref.Path, ":-") || strings.Contains(ref.Path, ":+") {
 			for _, c := range s.References[ref.Key] {

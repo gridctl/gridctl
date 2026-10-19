@@ -522,9 +522,6 @@ func secretExplainExit(doc secretExplainDocument) int {
 	if doc.Resolved != nil && !*doc.Resolved {
 		return 1
 	}
-	if len(doc.Problems) > 0 && (doc.Resolved == nil || !*doc.Resolved) && !doc.Declared {
-		return 1
-	}
 	return 0
 }
 

@@ -303,6 +303,9 @@ func expandStackVarsResolved(s *Stack, resolve referenceResolver) (unresolvedVau
 	index := ReferenceIndex{}
 	var secretRefs []SecretRef
 	seenSecret := map[string]bool{}
+	if s != nil {
+		s.emptySecretSites = nil
+	}
 
 	// expandField expands one field's value and records every ${var:KEY}
 	// and ${secret:} reference it contains against the consumer site c.
@@ -318,6 +321,9 @@ func expandStackVarsResolved(s *Stack, resolve referenceResolver) (unresolvedVau
 				provider, path, _ := ParseSecretRefKey(key)
 				secretRefs = append(secretRefs, SecretRef{Provider: provider, Path: path, Key: key})
 			}
+		}
+		if result.emptySecretPath {
+			s.emptySecretSites = append(s.emptySecretSites, c)
 		}
 		unresolvedVault = append(unresolvedVault, result.unresolvedVault...)
 		emptyEnvVars = append(emptyEnvVars, result.emptyEnvVars...)

@@ -100,7 +100,7 @@ func validateOPPath(path string) error {
 }
 
 func filterOPEnv(env []string) []string {
-	var out []string
+	out := make([]string, 0)
 	for _, entry := range env {
 		key, _, ok := strings.Cut(entry, "=")
 		if !ok || !opEnvAllow[key] {

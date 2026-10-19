@@ -93,6 +93,7 @@ func TestValidateSecrets_ProvidersAndOperands(t *testing.T) {
 		{"timeout", base("secrets:\n  providers:\n    - name: op\n      type: exec\n      command: [\"echo\", \"{{path}}\"]\n      timeout: 1ms\n"), "secrets.providers[0].timeout", "between 1s and 5m"},
 		{"relative token", base("secrets:\n  providers:\n    - name: op\n      type: onepassword\n      token_file: relative/op\n"), "secrets.providers[0].token_file", "token_file must be absolute or start with ~/"},
 		{"operand", "version: \"1\"\nname: demo\nsecrets:\n  providers:\n    - name: op\n      type: onepassword\nmcp-servers:\n  - name: netbox\n    command: [\"true\"]\n    env:\n      TOKEN: ${secret:op/a/b:-fallback}\n", "mcp-servers[0].env.TOKEN", "do not take default or replacement operands"},
+		{"empty path", "version: \"1\"\nname: demo\nsecrets:\n  providers:\n    - name: op\n      type: onepassword\nmcp-servers:\n  - name: netbox\n    command: [\"true\"]\n    env:\n      TOKEN: ${secret:op/   }\n", "mcp-servers[0].env.TOKEN", "secret reference path is empty"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

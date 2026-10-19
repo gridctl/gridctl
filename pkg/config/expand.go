@@ -184,6 +184,7 @@ type expansionResult struct {
 	secretRefs      []string
 	unresolvedVault []string
 	emptyEnvVars    []string
+	emptySecretPath bool
 }
 
 func expandGroup(parts []string, name string) string {
@@ -262,6 +263,7 @@ func expandStringRefs(s string, resolve referenceResolver) (expansionResult, []e
 		if provider := expandGroup(parts, "sprov"); provider != "" {
 			path := strings.TrimSpace(expandGroup(parts, "spath"))
 			if path == "" {
+				result.emptySecretPath = true
 				return match
 			}
 			result.secretRefs = append(result.secretRefs, SecretRefKey(provider, path))

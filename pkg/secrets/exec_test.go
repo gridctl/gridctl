@@ -165,6 +165,50 @@ func TestOnePassword_TokenFile(t *testing.T) {
 	}
 }
 
+func TestExec_EmptyFilterDoesNotInherit(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "show.sh")
+	body := "#!/bin/sh\nif [ -n \"${GRIDCTL_SECRET_PROBE+x}\" ]; then printf 'leaked'; else printf 'clean'; fi\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GRIDCTL_SECRET_PROBE", "should-not-leak")
+	provider := NewExec(config.SecretProvider{
+		Name:    "fake",
+		Type:    "exec",
+		Command: []string{script, "{{path}}"},
+	}, []string{"GRIDCTL_SECRET_PROBE=from-input"})
+	got, err := provider.Resolve(context.Background(), "alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "clean" {
+		t.Fatalf("child inherited the process environment: %q", got)
+	}
+}
+
+func TestOnePassword_EmptyAllowlistDoesNotInherit(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "op")
+	body := "#!/bin/sh\nif [ -n \"${GRIDCTL_SECRET_PROBE+x}\" ]; then printf 'leaked'; exit 0; fi\nprintf 'clean'\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GRIDCTL_SECRET_PROBE", "should-not-leak")
+	provider := NewOnePassword(config.SecretProvider{Name: "op", Type: "onepassword"}, []string{
+		"GRIDCTL_SECRET_PROBE=should-not-leak",
+		"UNRELATED=nope",
+	})
+	got, err := provider.Resolve(context.Background(), "vault/item/field")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "clean" {
+		t.Fatalf("child inherited the process environment: %q", got)
+	}
+}
+
 func TestOnePassword_Allowlist(t *testing.T) {
 	env := filterOPEnv([]string{
 		"PATH=/usr/bin",
@@ -250,6 +294,59 @@ func expandForTest(stack *config.Stack) {
 		provider, path, _ := config.ParseSecretRefKey(refKey)
 		stack.SecretRefs = append(stack.SecretRefs, config.SecretRef{Provider: provider, Path: path, Key: refKey})
 		stack.References[refKey] = []config.Consumer{{Kind: config.RefKindGateway, Field: "auth.token"}}
+	}
+}
+
+func TestResolver_ParkedWorkloadIsNotFailedOrStarted(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "bad.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho ran > \""+filepath.Join(dir, "ran")+"\"\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	enabled := false
+	pin := false
+	uid := uint32(0)
+	gid := 0
+	inherit := []string{}
+	stack := &config.Stack{
+		Name:    "demo",
+		Secrets: &config.Secrets{Providers: []config.SecretProvider{{Name: "bad", Type: "exec", Command: []string{script, "{{path}}"}}}},
+		MCPServers: []config.MCPServer{{
+			Name:       "parked",
+			Enabled:    &enabled,
+			PinSchemas: &pin,
+			Command:    []string{"true"},
+			Env:        map[string]string{"TOKEN": "${secret:bad/alpha}"},
+			Execution:  &config.ExecutionConfig{Mode: "hardened", UID: &uid, Inherit: &inherit},
+			Configs:    []config.ConfigFile{{Target: "/etc/app", UID: &gid}},
+		}},
+	}
+	expandForTest(stack)
+	resolved, failures, _, err := NewResolver(stack.Secrets.Providers, nil).ResolveStack(context.Background(), stack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ran := os.Stat(filepath.Join(dir, "ran")); !os.IsNotExist(ran) {
+		t.Fatal("parked reference was resolved")
+	}
+	if failures["parked"] != nil {
+		t.Fatalf("parked failure = %v", failures["parked"])
+	}
+	if len(resolved.MCPServers) != 1 || resolved.MCPServers[0].IsEnabled() {
+		t.Fatalf("resolved servers = %#v", resolved.MCPServers)
+	}
+	got := resolved.MCPServers[0]
+	if got.Enabled == nil || *got.Enabled || got.PinSchemas == nil || *got.PinSchemas {
+		t.Fatalf("flags did not survive resolve: enabled %v pin %v", got.Enabled, got.PinSchemas)
+	}
+	if got.Execution == nil || got.Execution.UID == nil || *got.Execution.UID != 0 || got.Execution.Inherit == nil {
+		t.Fatalf("execution did not survive resolve: %#v", got.Execution)
+	}
+	if got.Configs[0].UID == nil || *got.Configs[0].UID != 0 {
+		t.Fatalf("config uid did not survive resolve: %v", got.Configs[0].UID)
+	}
+	if got.Env["TOKEN"] != "${secret:bad/alpha}" {
+		t.Fatalf("parked reference was substituted: %q", got.Env["TOKEN"])
 	}
 }
 
