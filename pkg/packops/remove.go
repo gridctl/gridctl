@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/gridctl/gridctl/pkg/agentsync"
 	"github.com/gridctl/gridctl/pkg/contexts"
@@ -53,7 +54,35 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 
 	var rows []Row
 	var kept []string
+	lf, lerr := skills.ReadLockFile(m.lockPath())
+	if lerr != nil {
+		return nil, lerr
+	}
 	if locked.Stack != nil {
+		boosters := attachedBoosters(lf, name)
+		if len(boosters) > 0 && !opts.Force {
+			names := make([]string, len(boosters))
+			for i, b := range boosters {
+				names[i] = b.Pack.Name
+			}
+			return nil, &packError{
+				reason: ErrBoostersAttached,
+				msg:    fmt.Sprintf("pack %q has attached boosters (%s); remove them first or pass --force", name, strings.Join(names, ", ")),
+			}
+		}
+	}
+	if locked.Fragment != nil {
+		row, block, rerr := m.removeBooster(ctx, name, locked, lf, opts)
+		if rerr != nil {
+			return nil, rerr
+		}
+		if row != nil {
+			rows = append(rows, *row)
+		}
+		if block {
+			return &RemoveDoc{SchemaVersion: SchemaVersion, Pack: name, DryRun: opts.DryRun, Rows: rows, Kept: kept}, nil
+		}
+	} else if locked.Stack != nil {
 		row, block, rerr := m.removeStack(ctx, name, locked.Stack, opts.DryRun)
 		if rerr != nil {
 			return nil, rerr
@@ -64,10 +93,6 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 		if block {
 			return &RemoveDoc{SchemaVersion: SchemaVersion, Pack: name, DryRun: opts.DryRun, Rows: rows, Kept: kept}, nil
 		}
-	}
-	lf, lerr := skills.ReadLockFile(m.lockPath())
-	if lerr != nil {
-		return nil, lerr
 	}
 	memberSkills, memberAgents := memberOwnedNames(lf, name)
 	removableSkills := splitKept(unionNames(locked.Skills, memberSkills), driftedSkills, opts.Force, "skill", &rows, &kept)

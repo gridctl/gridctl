@@ -104,11 +104,13 @@ func runPlan(ctx context.Context, stackPath string) error {
 		links = computeLinkActions(provisioner.NewRegistry(), proposed.Link)
 	}
 
+	layers := planLayers(stackPath)
 	if planFormat == "json" {
 		if err := output.EncodeJSON(os.Stdout, struct {
 			*config.PlanDiff
 			ClientLinks []linkAction `json:"clientLinks,omitempty"`
-		}{diff, links}); err != nil {
+			Layers      []planLayer  `json:"layers,omitempty"`
+		}{diff, links, layers}); err != nil {
 			return err
 		}
 		if buildErr != nil {
@@ -117,6 +119,7 @@ func runPlan(ctx context.Context, stackPath string) error {
 		return nil
 	}
 
+	printPlanLayers(os.Stdout, layers)
 	printPlanDiff(os.Stdout, diff)
 	printPlanBuilds(os.Stdout, diff.Builds, planShowDockerfile)
 	for _, diagnostic := range diagnostics {
@@ -162,6 +165,34 @@ func runPlan(ctx context.Context, stackPath string) error {
 	ctrl.SetWebFS(WebFS)
 
 	return ctrl.Deploy(context.Background())
+}
+
+type planLayer struct {
+	Pack   string `json:"pack"`
+	Commit string `json:"commit"`
+	File   string `json:"file"`
+}
+
+func planLayers(stackPath string) []planLayer {
+	layers, ok, err := config.ReadComposedHeader(stackPath)
+	if err != nil || !ok {
+		return nil
+	}
+	out := make([]planLayer, 0, len(layers))
+	for _, layer := range layers {
+		out = append(out, planLayer{Pack: layer.Pack, Commit: layer.Commit, File: layer.Path})
+	}
+	return out
+}
+
+func printPlanLayers(w io.Writer, layers []planLayer) {
+	if len(layers) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "Layers:")
+	for _, layer := range layers {
+		fmt.Fprintf(w, "  %s %s %s\n", layer.Pack, layer.Commit, layer.File)
+	}
 }
 
 func resolvePlanBuilds(ctx context.Context, stack *config.Stack, showDockerfile bool) ([]config.BuildAction, error) {

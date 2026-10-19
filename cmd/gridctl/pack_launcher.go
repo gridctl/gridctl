@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/config"
@@ -49,6 +52,38 @@ func (packStackLauncher) Launch(ctx context.Context, opts packops.LaunchOptions)
 		}
 	}
 	return packops.LaunchResult{}, fmt.Errorf("stack launched but no running daemon state was recorded for %s", opts.StackPath)
+}
+
+func (packStackLauncher) Reload(ctx context.Context, stackName string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	st, err := state.Load(stackName)
+	if err != nil {
+		return err
+	}
+	if st == nil || !state.IsRunning(st) {
+		return fmt.Errorf("stack %q is not running", stackName)
+	}
+	url := fmt.Sprintf("http://localhost:%d/api/reload", st.Port)
+	api := newDaemonAPIFor(*st, reloadHTTPTimeout)
+	resp, err := api.Do(http.MethodPost, url, nil)
+	if err != nil {
+		return fmt.Errorf("calling reload API: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("reading reload response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		msg := strings.TrimSpace(string(body))
+		if msg == "" {
+			msg = fmt.Sprintf("HTTP %d", resp.StatusCode)
+		}
+		return fmt.Errorf("reload failed: %s", msg)
+	}
+	return nil
 }
 
 func (packStackLauncher) Stop(ctx context.Context, stackName string) error {

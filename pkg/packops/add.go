@@ -44,6 +44,12 @@ type AddOptions struct {
 	// Resolver expands manifest and stored credential references. Nil means
 	// a credential_ref on a source is an error for that source.
 	Resolver skills.CredentialResolver
+	// Locked refuses a stale or missing pack lock before any source clone
+	// or write. IgnoreLock reads the lock for reporting and resolves refs.
+	Locked     bool
+	IgnoreLock bool
+	// lockedCommits, when set, clones those sources at the locked commit.
+	lockedCommits map[string]string
 }
 
 // orEmpty returns a non-nil slice so encoding/json emits [] rather than null.
@@ -72,6 +78,7 @@ type AddDoc struct {
 	UnmetVariables []VariableRequirement                       `json:"unmet_variables,omitempty"`
 	Stack          *StackSummary                               `json:"stack,omitempty"`
 	Sources        []SourceSummary                             `json:"sources,omitempty"`
+	Lock           *LockSummary                                `json:"lock,omitempty"`
 }
 
 // VariableRequirement is a value-free prerequisite reported after import.
@@ -121,6 +128,16 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 			return nil, err
 		}
 	}
+	plan, err := decideLock(clone.RepoPath, manifest, opts)
+	if err != nil {
+		return nil, err
+	}
+	if err := m.refuseLockedExtends(manifest, plan, opts); err != nil {
+		return nil, err
+	}
+	if plan != nil && plan.Commits != nil {
+		opts.lockedCommits = plan.Commits
+	}
 	sourceClones, sourceWarnings, err := cloneDeclaredSources(ctx, manifest, opts, m.lockPath())
 	if err != nil {
 		return nil, err
@@ -154,8 +171,14 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 			Variables:     lockedVariableDeclarations(manifest.Variables),
 			Stack:         stackSummary,
 			Sources:       sourceSummaries(resolved, false),
+			Lock:          planSummary(plan),
 		},
 		Notes: []string{},
+	}
+	if plan != nil {
+		resolved.lock = plan.Summary
+		resolved.honoredLock = plan.Summary != nil && plan.Summary.State == "honored"
+		resolved.lockExtends = plan.Extends
 	}
 
 	if !opts.DryRun && len(manifest.Sources) == 0 && (len(resolved.skills) > 0 || len(resolved.agents) > 0) {
@@ -254,6 +277,10 @@ type resolvedSelection struct {
 	// createdCheckout is a directory this add created. A later lockfile
 	// write failure deletes it. A reused checkout is left alone.
 	createdCheckout string
+	fragment        *skills.LockedFragment
+	lock            *LockSummary
+	honoredLock     bool
+	lockExtends     map[string]pack.LockedExtends
 }
 
 // pendingStack is a carried stack waiting for SnapshotWorktree.
@@ -264,6 +291,8 @@ type pendingStack struct {
 	stackPath     string
 	name          string
 	manifestStack string
+	fragment      bool
+	baseName      string
 }
 
 // PackRuleFile is one discovered rule fragment in a pack repo.
@@ -562,12 +591,20 @@ func recordLockedPack(ctx context.Context, lockPath string, m *pack.Manifest, re
 			Variables:         lockedVariableDeclarations(m.Variables),
 			Stack:             resolved.stack,
 			UnresolvedDetails: resolved.unresolvedDetails,
+			Fragment:          resolved.fragment,
+		}
+		if resolved.lock != nil && (len(m.Sources) > 0 || m.Stack.Extends != "") {
+			packRecord.Lock = &skills.LockedPackLock{
+				State:  resolved.lock.State,
+				Digest: resolved.lock.Digest,
+				Path:   pack.LockFileName,
+			}
 		}
 		if len(resolved.sources) > 0 {
 			packRecord.Sources = lockedPackSources(m.Name, resolved)
 			for _, sourceName := range slices.Sorted(maps.Keys(resolved.sources)) {
 				rs := resolved.sources[sourceName]
-				if err := ensureMemberSource(lf, m.Name, sourceName, rs); err != nil {
+				if err := ensureMemberSource(lf, m.Name, sourceName, rs, resolved.honoredLock); err != nil {
 					return false, err
 				}
 				entry := packRecord.Sources[sourceName]
@@ -616,7 +653,7 @@ func pinnedFailureRepo(lf *skills.LockFile, packName, sourceName string, rs *res
 	return entry
 }
 
-func ensureMemberSource(lf *skills.LockFile, packName, sourceName string, rs *resolvedSource) error {
+func ensureMemberSource(lf *skills.LockFile, packName, sourceName string, rs *resolvedSource, honored bool) error {
 	key := memberKey(packName, sourceName)
 	member, ok := lf.Sources[key]
 	if ok && member.IsLocal() {
@@ -637,6 +674,11 @@ func ensureMemberSource(lf *skills.LockFile, packName, sourceName string, rs *re
 	member.PackMember = packName
 	if member.Repo == "" {
 		member.Repo = rs.spec.Repo
+	}
+	if honored && rs != nil && rs.err == nil && rs.sha != "" {
+		member.LockedBy = packName
+	} else if !honored {
+		member.LockedBy = ""
 	}
 	lf.SetSource(key, member)
 	return nil
@@ -756,11 +798,14 @@ func persistedPackSSH(cfg skills.AuthConfig) (method, user, path string) {
 // A successful read records a pending checkout; Add copies it only after
 // the findings gate and the import succeed.
 func (m *Managers) resolveCarriedStack(ctx context.Context, clone *skills.CloneResult, manifest *pack.Manifest, resolved *resolvedSelection, dryRun bool) (*StackSummary, []string) {
-	if manifest.Stack == "" {
+	if manifest.Stack.File == "" {
 		return nil, nil
 	}
-	token := "stack:" + manifest.Stack
-	rel := filepath.FromSlash(manifest.Stack)
+	if manifest.IsBooster() {
+		return m.resolveFragment(ctx, clone, manifest, resolved, dryRun)
+	}
+	token := "stack:" + manifest.Stack.File
+	rel := filepath.FromSlash(manifest.Stack.File)
 	stackPath := filepath.Join(clone.RepoPath, rel)
 	var warnings []string
 	fail := func(detail string) (*StackSummary, []string) {
@@ -774,7 +819,7 @@ func (m *Managers) resolveCarriedStack(ctx context.Context, clone *skills.CloneR
 	}
 	info, err := os.Stat(stackPath)
 	if err != nil || info.IsDir() {
-		return fail(fmt.Sprintf("stack file %q not found in the pack repository", manifest.Stack))
+		return fail(fmt.Sprintf("stack file %q not found in the pack repository", manifest.Stack.File))
 	}
 	exported, sources, err := config.ExportStack(ctx, stackPath)
 	if err != nil {
@@ -806,7 +851,7 @@ func (m *Managers) resolveCarriedStack(ctx context.Context, clone *skills.CloneR
 			return fail(fmt.Sprintf("stack config file not found in the pack repository: %s", rel))
 		}
 	}
-	summary := &StackSummary{Path: manifest.Stack, Name: exported.Name, Servers: len(exported.MCPServers)}
+	summary := &StackSummary{Path: manifest.Stack.File, Name: exported.Name, Servers: len(exported.MCPServers)}
 	if dryRun {
 		return summary, warnings
 	}
@@ -824,7 +869,7 @@ func (m *Managers) resolveCarriedStack(ctx context.Context, clone *skills.CloneR
 		rel:           rel,
 		stackPath:     stackPath,
 		name:          exported.Name,
-		manifestStack: manifest.Stack,
+		manifestStack: manifest.Stack.File,
 	}
 	return summary, warnings
 }
@@ -869,6 +914,17 @@ func (m *Managers) materializeCarriedStack(ctx context.Context, resolved *resolv
 	if err != nil {
 		discardCheckout(resolved.createdCheckout)
 		return fail(err.Error())
+	}
+	if pending.fragment {
+		resolved.fragment = &skills.LockedFragment{
+			Base:        pending.baseName,
+			Path:        pending.manifestStack,
+			Name:        pending.name,
+			ContentHash: hash,
+			CheckoutDir: pending.dest,
+		}
+		resolved.stack = nil
+		return nil
 	}
 	resolved.stack = &skills.LockedStack{
 		Path:        pending.manifestStack,

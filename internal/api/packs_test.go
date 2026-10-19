@@ -357,6 +357,77 @@ func TestHandlePackGet_CollisionIs409(t *testing.T) {
 	}
 }
 
+func TestHandlePackAdd_LockedStale409(t *testing.T) {
+	srv, home := setupPackTestServer(t)
+	manifest := `apiVersion: gridctl.dev/v1
+kind: Pack
+name: team-pack
+skills:
+  - { name: alpha, source: alpha }
+sources:
+  alpha:
+    repo: https://example.com/alpha.git
+    ref: main
+`
+	lock := "version: 1\npack: team-pack\nmanifestDigest: sha256:0000000000000000000000000000000000000000000000000000000000000000\nsources:\n  alpha:\n    repo: https://example.com/alpha.git\n    ref: main\n    commit: 0123456789abcdef0123456789abcdef01234567\n"
+	repo := packRepoFixture(t, manifest, map[string]string{"gridctl-pack.lock.yaml": lock})
+	rec := doJSON(t, srv, http.MethodPost, "/api/packs", `{"repo":`+jsonQuote(repo)+`,"locked":true}`)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, body %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"code":"lock_stale"`) {
+		t.Fatalf("body = %s", rec.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(home, ".gridctl", "skills.lock.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("skills.lock.yaml written: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".gridctl", "packs")); !os.IsNotExist(err) {
+		t.Fatalf("packs dir created: %v", err)
+	}
+}
+
+func TestHandlePackGet_LockAndFragmentRows(t *testing.T) {
+	srv, home := setupPackTestServer(t)
+	baseDir := filepath.Join(home, ".gridctl", "packs", "infra", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	boosterDir := filepath.Join(home, ".gridctl", "packs", "booster", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(boosterDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(baseDir, "stack.yaml"), []byte("version: \"1\"\nname: infra\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(boosterDir, "servers.yaml"), []byte("version: \"1\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sha := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	lf := &skills.LockFile{Sources: map[string]skills.LockedSource{
+		"infra": {Repo: "https://example.com/infra.git", CommitSHA: sha, Pack: &skills.LockedPack{
+			Name:  "infra",
+			Lock:  &skills.LockedPackLock{State: "honored", Path: "gridctl-pack.lock.yaml", Digest: "sha256:ab"},
+			Stack: &skills.LockedStack{Path: "stack.yaml", Name: "infra", CheckoutDir: baseDir},
+		}},
+		"booster": {Repo: "https://example.com/booster.git", CommitSHA: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Pack: &skills.LockedPack{
+			Name:     "booster",
+			Lock:     &skills.LockedPackLock{State: "absent", Path: "gridctl-pack.lock.yaml"},
+			Fragment: &skills.LockedFragment{Base: "infra", Path: "servers.yaml", Name: "infra", CheckoutDir: boosterDir},
+		}},
+	}}
+	if err := skills.WriteLockFile(skills.LockFilePath(), lf); err != nil {
+		t.Fatal(err)
+	}
+	rec := doJSON(t, srv, http.MethodGet, "/api/packs/infra", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"kind":"fragment"`) || !strings.Contains(body, `"kind":"lock"`) {
+		t.Fatalf("rows missing: %s", body)
+	}
+}
+
 // strconv JSON-quotes a string (paths carry no exotic characters in
 // these tests, but backslashes on other platforms would).
 func jsonQuote(s string) string {

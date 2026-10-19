@@ -27,6 +27,10 @@ type PreviewOptions struct {
 	LockPath string
 	// Resolver expands manifest and stored credential references.
 	Resolver skills.CredentialResolver
+	// Locked and IgnoreLock match pack add. Preview honors a matching lock
+	// so the review step matches the import.
+	Locked     bool
+	IgnoreLock bool
 }
 
 // PreviewResource is one resolved resource with its scan findings.
@@ -59,6 +63,7 @@ type PreviewResult struct {
 	Warnings    []string          `json:"warnings,omitempty"`
 	Stack       *StackSummary     `json:"stack,omitempty"`
 	Sources     []SourceSummary   `json:"sources,omitempty"`
+	Lock        *LockSummary      `json:"lock,omitempty"`
 }
 
 // FindingsError blocks an import whose resolved selection carries
@@ -101,15 +106,30 @@ func Preview(ctx context.Context, opts PreviewOptions) (*PreviewResult, error) {
 	if lockPath == "" {
 		lockPath = skills.LockFilePath()
 	}
-	sourceClones, sourceWarnings, err := cloneDeclaredSources(ctx, manifest, AddOptions{
+	addOpts := AddOptions{
 		Auth: opts.Auth, SourceAuth: opts.SourceAuth, Resolver: opts.Resolver,
-	}, lockPath)
+		Locked: opts.Locked, IgnoreLock: opts.IgnoreLock,
+	}
+	plan, err := decideLock(clone.RepoPath, manifest, addOpts)
+	if err != nil {
+		return nil, err
+	}
+	if plan != nil && plan.Commits != nil {
+		addOpts.lockedCommits = plan.Commits
+	}
+	sourceClones, sourceWarnings, err := cloneDeclaredSources(ctx, manifest, addOpts, lockPath)
 	if err != nil {
 		return nil, err
 	}
 	discoveredRules := discoverPackRules(clone.RepoPath)
 	resolved := resolvePackSelection(manifest, clone, sourceClones, discoveredRules)
 	var scratch Managers
+	scratch.LockPath = lockPath
+	resolved.lockExtends = nil
+	if plan != nil {
+		resolved.lock = plan.Summary
+		resolved.lockExtends = plan.Extends
+	}
 	stackSummary, stackWarnings := scratch.resolveCarriedStack(ctx, clone, manifest, &resolved, true)
 	stackWarnings = append(stackWarnings, sourceWarnings...)
 	stackWarnings = append(stackWarnings, unknownSourceAuthWarnings(manifest, opts.SourceAuth)...)
@@ -128,6 +148,7 @@ func Preview(ctx context.Context, opts PreviewOptions) (*PreviewResult, error) {
 		Warnings:    append(manifest.Warnings(), stackWarnings...),
 		Stack:       stackSummary,
 		Sources:     sourceSummaries(resolved, false),
+		Lock:        planSummary(plan),
 	}
 	for _, pr := range scanResources(clone, resolved, discoveredRules, false) {
 		switch pr.Kind {

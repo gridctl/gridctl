@@ -44,10 +44,12 @@ mcp-servers:
 `
 
 type fakeLauncher struct {
-	result  LaunchResult
-	err     error
-	calls   []LaunchOptions
-	stopped []string
+	result    LaunchResult
+	err       error
+	reloadErr error
+	calls     []LaunchOptions
+	stopped   []string
+	reloaded  []string
 }
 
 func (f *fakeLauncher) Launch(_ context.Context, opts LaunchOptions) (LaunchResult, error) {
@@ -64,6 +66,11 @@ func (f *fakeLauncher) Launch(_ context.Context, opts LaunchOptions) (LaunchResu
 func (f *fakeLauncher) Stop(_ context.Context, name string) error {
 	f.stopped = append(f.stopped, name)
 	return nil
+}
+
+func (f *fakeLauncher) Reload(_ context.Context, name string) error {
+	f.reloaded = append(f.reloaded, name)
+	return f.reloadErr
 }
 
 func TestAdd_CarriedStack(t *testing.T) {

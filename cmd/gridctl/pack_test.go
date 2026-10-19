@@ -204,7 +204,7 @@ func TestPackAddApplyStatusRemove_EndToEnd(t *testing.T) {
 	// Apply: skills + agents project (wiring skips, no gateway) with
 	// pack tags; exit 1 because the wiring row needs attention.
 	stdout.Reset()
-	exit := runPackApply(ctx, &stdout, &stderr, freshManagers(), "team-pack", false, false, nil, 8180, "json", false)
+	exit := runPackApply(ctx, &stdout, &stderr, freshManagers(), "team-pack", false, false, nil, 8180, false, "json", false)
 	if exit != ctxExitAttention {
 		t.Fatalf("apply exit = %d\n%s%s", exit, stdout.String(), stderr.String())
 	}
@@ -349,7 +349,7 @@ func TestPackApply_ForeignPackRefusal(t *testing.T) {
 	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, repoA, "", "", false, false, "text", skills.AuthConfig{}, nil); exit != ctxExitOK {
 		t.Fatal(stderr.String())
 	}
-	if exit := runPackApply(ctx, &stdout, &stderr, freshManagers(), "team-pack", false, false, nil, 8180, "text", true); exit == ctxExitInfrastructure {
+	if exit := runPackApply(ctx, &stdout, &stderr, freshManagers(), "team-pack", false, false, nil, 8180, false, "text", true); exit == ctxExitInfrastructure {
 		t.Fatal(stderr.String())
 	}
 
@@ -366,7 +366,7 @@ func TestPackApply_ForeignPackRefusal(t *testing.T) {
 	}
 
 	stdout.Reset()
-	exit := runPackApply(ctx, &stdout, &stderr, freshManagers(), "other-pack", false, false, nil, 8180, "json", false)
+	exit := runPackApply(ctx, &stdout, &stderr, freshManagers(), "other-pack", false, false, nil, 8180, false, "json", false)
 	if exit != ctxExitAttention {
 		t.Fatalf("apply exit = %d, want 1 (foreign refusal)\n%s", exit, stdout.String())
 	}
@@ -397,7 +397,7 @@ func TestPackRemove_DriftedResourceKept(t *testing.T) {
 	if exit := runPackAdd(ctx, &stdout, &stderr, freshManagers(), imp, repo, "", "", false, false, "text", skills.AuthConfig{}, nil); exit != ctxExitOK {
 		t.Fatal(stderr.String())
 	}
-	if exit := runPackApply(ctx, &stdout, &stderr, freshManagers(), "team-pack", false, false, nil, 8180, "text", true); exit != ctxExitOK {
+	if exit := runPackApply(ctx, &stdout, &stderr, freshManagers(), "team-pack", false, false, nil, 8180, false, "text", true); exit != ctxExitOK {
 		t.Fatalf("apply: %s%s", stdout.String(), stderr.String())
 	}
 

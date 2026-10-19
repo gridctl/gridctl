@@ -24,6 +24,9 @@ type ApplyOptions struct {
 	// Port is the gateway port passed to the stack launcher. Zero means
 	// the launcher's default (the CLI passes 8180).
 	Port int
+	// PortSet is true when the caller passed --port. A booster apply ignores
+	// it while the base daemon is running and prints a note.
+	PortSet bool
 }
 
 // ApplyDoc is the machine-readable apply document.
@@ -56,8 +59,8 @@ func (m *Managers) Apply(ctx context.Context, name string, opts ApplyOptions) (*
 
 	var rows []Row
 	var stack *stackOutcome
-	if locked.Stack != nil {
-		row, outcome := m.applyStack(ctx, name, ps.Source.Repo, locked, opts)
+	if locked.Stack != nil || locked.Fragment != nil {
+		row, outcome := m.applyPackStack(ctx, name, ps, opts)
 		rows = append(rows, row)
 		stack = &outcome
 	}
@@ -178,7 +181,7 @@ func (m *Managers) applyWiring(ctx context.Context, name string, locked *skills.
 
 func stackWiringReady(action string) bool {
 	switch action {
-	case "started", "replaced", "unchanged", "would-start", "would-replace":
+	case "started", "replaced", "unchanged", "reloaded", "composed", "would-start", "would-replace", "would-reload":
 		return true
 	default:
 		return false

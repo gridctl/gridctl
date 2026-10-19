@@ -37,6 +37,15 @@ var (
 	// ErrNameCollision marks a pack name claimed by more than one
 	// imported source; operations must refuse rather than pick one.
 	ErrNameCollision = errors.New("pack name is claimed by multiple sources")
+	// ErrLockStale marks a --locked add whose pack lock is missing or
+	// does not match the manifest. Nothing is written.
+	ErrLockStale = errors.New("pack lock is stale")
+	// ErrLockFlags marks --locked and --ignore-lock used together.
+	ErrLockFlags = errors.New("locked and ignore-lock are mutually exclusive")
+	// ErrBoostersAttached marks removal of a base that still has boosters.
+	ErrBoostersAttached = errors.New("pack has attached boosters")
+	// ErrBaseNotAdded marks a booster whose base pack is not imported.
+	ErrBaseNotAdded = errors.New("base pack is not added")
 )
 
 // packError pairs a sentinel with exact user-facing prose, so errors.Is

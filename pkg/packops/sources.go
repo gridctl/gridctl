@@ -18,6 +18,10 @@ import (
 // cloneAndDiscover clones a repository. Tests replace it to observe auth.
 var cloneAndDiscover = skills.CloneAndDiscover
 
+// cloneAtCommit checks out a locked commit. Tests replace it. It is for
+// lock honoring only and must not replace cloneAndDiscover for ref resolution.
+var cloneAtCommit = skills.CloneAtCommit
+
 // beforeExternalImport, when set, runs after clones and before each external
 // import's commit re-check. Tests mutate the cache worktree here.
 var beforeExternalImport func(name string, clone *skills.CloneResult)
@@ -77,7 +81,16 @@ func cloneDeclaredSources(ctx context.Context, manifest *pack.Manifest, opts Add
 			continue
 		}
 		rs.auth = auth
-		clone, cerr := cloneAndDiscover(spec.Repo, spec.Ref, spec.Path, auth, slog.Default())
+		var clone *skills.CloneResult
+		var cerr error
+		if commit := opts.lockedCommits[name]; commit != "" {
+			clone, cerr = cloneAtCommit(spec.Repo, commit, spec.Path, auth, slog.Default())
+			if errors.Is(cerr, skills.ErrCommitUnreachable) {
+				cerr = fmt.Errorf("locked commit %s is not reachable at %s", skills.ShortSHA(commit), gitpkg.RedactURL(spec.Repo))
+			}
+		} else {
+			clone, cerr = cloneAndDiscover(spec.Repo, spec.Ref, spec.Path, auth, slog.Default())
+		}
 		if cerr != nil {
 			rs.err = cerr
 			warnings = append(warnings, sourceWarning(name, cerr))

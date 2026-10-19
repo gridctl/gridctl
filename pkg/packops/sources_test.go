@@ -146,8 +146,11 @@ sources:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), "version: 7") {
-		t.Fatalf("lockfile stamp = %q, want version 7", firstLine(string(raw)))
+	if !strings.Contains(string(raw), "version: 8") {
+		t.Fatalf("lockfile stamp = %q, want version 8", firstLine(string(raw)))
+	}
+	if packSrc, ok := lf.Sources[skills.RepoToName(repo)]; !ok || packSrc.Pack == nil || packSrc.Pack.Lock == nil || packSrc.Pack.Lock.State != "absent" {
+		t.Fatalf("lock record = %+v", packSrc.Pack)
 	}
 	_, packSrc, ok := lf.FindPackSource("team-pack")
 	if !ok || packSrc.Pack == nil || len(packSrc.Pack.Sources) != 2 {
