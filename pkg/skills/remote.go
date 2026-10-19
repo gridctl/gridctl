@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -89,6 +90,10 @@ func authMethodFor(cfg AuthConfig, url string) (transport.AuthMethod, error) {
 	return auther.AuthFor(url)
 }
 
+// ErrCommitUnreachable means a locked commit is not present after a full
+// clone. Transport and auth failures are not this error.
+var ErrCommitUnreachable = errors.New("locked commit is not reachable")
+
 // CloneAndDiscover clones a repo and discovers all SKILL.md files plus
 // any agents/*.md definitions it ships.
 func CloneAndDiscover(repo, ref, subPath string, auth AuthConfig, logger *slog.Logger) (*CloneResult, error) {
@@ -96,20 +101,137 @@ func CloneAndDiscover(repo, ref, subPath string, auth AuthConfig, logger *slog.L
 	if err != nil {
 		return nil, fmt.Errorf("cloning repository: %w", gitpkg.RedactError(err))
 	}
+	return discoverAt(repoPath, subPath, logger)
+}
 
+// CloneAtCommit transfers commit and checks it out. It is for lock honoring
+// only: it may disagree with a depth-1 ref clone and must not replace
+// CloneAndDiscover for ordinary ref resolution.
+//
+// Under the same per-repo cache lock cloneShallow uses: when the cache repo
+// exists, fetch every branch and tag and try to check out the hash. When the
+// object is still absent, or the cache does not exist, remove the cache and
+// clone at full depth, then check out the hash. Head must equal commit.
+// A transport or auth failure is returned redacted and is not
+// ErrCommitUnreachable.
+func CloneAtCommit(repo, commit, subPath string, auth AuthConfig, logger *slog.Logger) (*CloneResult, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	if err := builder.EnsureReposCacheDir(); err != nil {
+		return nil, fmt.Errorf("creating cache dir: %w", err)
+	}
+	repoPath, err := builder.URLToPath(repo)
+	if err != nil {
+		return nil, fmt.Errorf("getting cache path: %w", err)
+	}
+	unlock := lockRepoPath(repoPath)
+	defer unlock()
+
+	var landed string
+	err = withLockFileFlock(context.Background(), repoPath, func() error {
+		var ferr error
+		landed, ferr = checkoutCommit(repoPath, repo, commit, auth, logger)
+		return ferr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return discoverAt(landed, subPath, logger)
+}
+
+func checkoutCommit(repoPath, url, commit string, auth AuthConfig, logger *slog.Logger) (string, error) {
+	if _, statErr := os.Stat(repoPath); statErr == nil {
+		if err := fetchAndCheckout(repoPath, url, commit, auth, logger); err == nil {
+			return verifyCommit(repoPath, url, commit, nil)
+		} else if !errors.Is(err, errObjectAbsent) {
+			return "", err
+		}
+		if rmErr := os.RemoveAll(repoPath); rmErr != nil {
+			return "", fmt.Errorf("removing stale cache: %w", rmErr)
+		}
+	}
+	if err := cloneFullAtCommit(repoPath, url, commit, auth, logger); err != nil {
+		return "", err
+	}
+	return verifyCommit(repoPath, url, commit, nil)
+}
+
+// errObjectAbsent is internal: the commit object is not in the cache after
+// a fetch. Callers fall back to a full clone rather than reporting unreachable.
+var errObjectAbsent = errors.New("commit object absent")
+
+func fetchAndCheckout(repoPath, url, commit string, auth AuthConfig, logger *slog.Logger) error {
+	authMethod, err := authMethodFor(auth, url)
+	if err != nil {
+		return gitpkg.RedactError(err)
+	}
+	if err := gitpkg.Fetch(context.Background(), repoPath, gitpkg.FetchOptions{
+		AllTags: true, AllBranches: true, Auth: authMethod,
+	}, logger); err != nil {
+		return gitpkg.RedactError(gitpkg.ClassifyError(err))
+	}
+	r, err := gitpkg.Open(repoPath)
+	if err != nil {
+		return errObjectAbsent
+	}
+	if err := gitpkg.Checkout(context.Background(), r, commit); err != nil {
+		return errObjectAbsent
+	}
+	head, err := gitpkg.HeadCommit(repoPath)
+	if err != nil || head != commit {
+		return errObjectAbsent
+	}
+	return nil
+}
+
+func cloneFullAtCommit(repoPath, url, commit string, auth AuthConfig, logger *slog.Logger) error {
+	authMethod, err := authMethodFor(auth, url)
+	if err != nil {
+		return gitpkg.RedactError(err)
+	}
+	r, err := gitpkg.Clone(context.Background(), repoPath, gitpkg.CloneOptions{
+		URL:     url,
+		Depth:   0,
+		AllTags: true,
+		Auth:    authMethod,
+	}, logger)
+	if err != nil {
+		return fmt.Errorf("cloning repository: %w", gitpkg.RedactError(gitpkg.ClassifyError(err)))
+	}
+	if err := gitpkg.Checkout(context.Background(), r, commit); err != nil {
+		return fmt.Errorf("%w: %s", ErrCommitUnreachable, gitpkg.RedactError(err).Error())
+	}
+	return nil
+}
+
+func verifyCommit(repoPath, url, commit string, cause error) (string, error) {
+	head, err := gitpkg.HeadCommit(repoPath)
+	if err != nil || head != commit {
+		detail := fmt.Sprintf("locked commit %s is not reachable at %s", ShortSHA(commit), gitpkg.RedactURL(url))
+		if cause != nil {
+			return "", fmt.Errorf("%w: %s: %s", ErrCommitUnreachable, detail, gitpkg.RedactError(cause).Error())
+		}
+		if err != nil {
+			return "", fmt.Errorf("%w: %s: %s", ErrCommitUnreachable, detail, gitpkg.RedactError(err).Error())
+		}
+		return "", fmt.Errorf("%w: %s", ErrCommitUnreachable, detail)
+	}
+	return repoPath, nil
+}
+
+func discoverAt(repoPath, subPath string, logger *slog.Logger) (*CloneResult, error) {
 	commitSHA, err := gitpkg.HeadCommit(repoPath)
 	if err != nil {
 		return nil, fmt.Errorf("getting HEAD commit: %w", err)
 	}
-
 	searchDir := repoPath
 	if subPath != "" {
 		searchDir = filepath.Join(repoPath, subPath)
-		if _, err := os.Stat(searchDir); err != nil {
-			return nil, fmt.Errorf("path %q not found in repository: %w", subPath, err)
+		if _, statErr := os.Stat(searchDir); statErr != nil {
+			return nil, fmt.Errorf("path %q not found in repository: %w", subPath, statErr)
 		}
 	}
-
 	skills, malformed, err := discoverSkills(searchDir, repoPath)
 	if err != nil {
 		return nil, fmt.Errorf("discovering skills: %w", err)
@@ -117,7 +239,6 @@ func CloneAndDiscover(repo, ref, subPath string, auth AuthConfig, logger *slog.L
 	for _, m := range malformed {
 		logger.Warn("skipping malformed SKILL.md", "path", m.Path, "error", m.Err)
 	}
-
 	agents, malformedAgents, err := discoverAgents(searchDir, repoPath)
 	if err != nil {
 		return nil, fmt.Errorf("discovering agents: %w", err)
@@ -125,7 +246,6 @@ func CloneAndDiscover(repo, ref, subPath string, auth AuthConfig, logger *slog.L
 	for _, m := range malformedAgents {
 		logger.Warn("skipping malformed agent definition", "path", m.Path, "error", m.Err)
 	}
-
 	return &CloneResult{
 		RepoPath:        repoPath,
 		CommitSHA:       commitSHA,
