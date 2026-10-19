@@ -106,6 +106,9 @@ func FocusedCommand(sc Scenario, lane string) string {
 	switch lane {
 	case "integration", "podman-integration":
 		args = append(args, "-tags=integration", "-race", "-count=1", "-timeout", "15m", "-run", run, pkgDir)
+	case "conformance":
+		// conformance_test.go is //go:build integration. 22m matches the lane's go test -timeout.
+		args = append(args, "-tags=integration", "-race", "-count=1", "-timeout", "22m", "-run", run, pkgDir)
 	default:
 		args = append(args, "-race", "-count=1", "-run", run, pkgDir)
 	}

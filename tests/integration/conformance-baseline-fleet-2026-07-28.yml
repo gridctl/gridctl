@@ -1,0 +1,52 @@
+# Expected-failures baseline for @modelcontextprotocol/conformance
+# 0.2.0-alpha.12, scored with --requirements 2026-07-28 against the
+# fleet daemon on /mcp. The group endpoint has its own file. With
+# --expected-failures the suite is strict (warnings count as failures)
+# and a listed pass is stale.
+#
+# An entry is one line. A per-check entry is `<scenario>:<check-id>` with
+# no space after the colon. `- tools-list: wire-schema-valid` is a YAML
+# mapping and is rejected; `- tools-list:wire-schema-valid` is the check
+# id. Use a per-check entry when only one check fails.
+#
+# A failure listed here is expected. A failure not listed is a regression.
+# A pass for a listed entry is stale. not_scored scenarios are omitted.
+#
+# tools-list, caching, prompts-list, and resources-list pass aside from
+# the schema checks below. tools-list-deterministic-order passed and is
+# not listed. Do not add a wholesale entry for those scenarios.
+server:
+  - server-stateless:sep-2575-server-rejects-undeclared-capability # suite tool test_missing_capability is not implemented
+  - server-stateless:sep-2575-missing-capability-http-400 # suite tool test_missing_capability is not implemented
+  - server-stateless:sep-2575-http-server-no-independent-requests-on-stream # suite tool test_streaming_elicitation is not implemented
+  - server-stateless:sep-2575-server-no-log-without-loglevel # suite tool test_logging_tool is not implemented
+  - completion-complete:completion-complete # completion/complete is not implemented
+  - tools-list:wire-schema-valid # zeta__mixed_content icons[0].src is "icon.png", not a URI; forwarded unchanged
+  - tools-call-simple-text:tools-call-simple-text # suite tool test_simple_text is not implemented
+  - tools-call-image:tools-call-image # suite tool test_image_content is not implemented
+  - tools-call-audio:tools-call-audio # suite tool test_audio_content is not implemented
+  - tools-call-embedded-resource:tools-call-embedded-resource # suite tool test_embedded_resource is not implemented
+  - tools-call-mixed-content:tools-call-mixed-content # suite tool test_multiple_content_types is not implemented
+  - tools-call-error:tools-call-error # suite tool test_error_handling is not implemented
+  - tools-call-with-progress:tools-call-with-progress # suite tool test_tool_with_progress is not implemented
+  - resources-read-text:resources-read-text # suite resource test://static-text is not implemented
+  - resources-read-binary:resources-read-binary # suite resource test://static-binary is not implemented
+  - resources-templates-read:resources-templates-read # suite template test://template/123/data is not implemented
+  - prompts-get-simple:prompts-get-simple # suite prompt test_simple_prompt is not a registry skill
+  - prompts-get-with-args:prompts-get-with-args # suite prompt test_prompt_with_arguments is not a registry skill
+  - prompts-get-embedded-resource:prompts-get-embedded-resource # suite prompt test_prompt_with_embedded_resource is not a registry skill
+  - prompts-get-with-image:prompts-get-with-image # suite prompt test_prompt_with_image is not a registry skill
+  - caching:wire-schema-valid # zeta__mixed_content icons[0].src is "icon.png", not a URI; forwarded unchanged
+  - input-required-result-basic-elicitation:sep-2322-elicitation-incomplete # suite tool test_input_required_result_elicitation is not implemented
+  - input-required-result-basic-sampling:sep-2322-sampling-incomplete # suite tool test_input_required_result_sampling is not implemented
+  - input-required-result-basic-list-roots:sep-2322-list-roots-incomplete # suite tool test_input_required_result_list_roots is not implemented
+  - input-required-result-request-state:sep-2322-request-state-incomplete # suite tool test_input_required_result_request_state is not implemented
+  - input-required-result-multiple-input-requests:sep-2322-multiple-inputs-incomplete # suite tool test_input_required_result_multiple_inputs is not implemented
+  - input-required-result-multi-round:sep-2322-multi-round-r1 # suite multi-round input tool is not implemented
+  - input-required-result-missing-input-response:sep-2322-missing-response-rerequests # unknown suite tool returns -32602 instead of re-requesting
+  - input-required-result-non-tool-request:sep-2322-non-tool-incomplete # suite prompt test_input_required_result_prompt is not a registry skill
+  - input-required-result-result-type:sep-2322-result-type-included # suite tool test_input_required_result_elicitation is not implemented
+  - input-required-result-unsupported-methods:wire-schema-valid # zeta__mixed_content icons[0].src is "icon.png", not a URI; forwarded unchanged
+  - input-required-result-tampered-state:sep-2322-reject-tampered-state # prerequisite suite tool is not implemented
+  - input-required-result-capability-check:sep-2322-respect-client-capabilities # suite tool test_input_required_result_capabilities is not implemented
+  - input-required-result-ignore-extra-params:sep-2322-ignore-unexpected-params # unknown suite tool is a protocol error, not an ignored extra param

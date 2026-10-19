@@ -1,49 +1,46 @@
-# Expected-failures baseline for the @modelcontextprotocol/conformance
-# suite (pinned at 0.2.0-alpha.10) run against a stackless gridctl
-# daemon with --spec-version 2025-11-25. The 2026-07-28 runs have their
-# own baseline (conformance-baseline-2026-07-28.yml): with
-# --expected-failures the suite runs strict (warnings count as
-# failures) and a few multi-version scenarios fail on exactly one
-# generation, which one shared file cannot express.
+# Expected-failures baseline for @modelcontextprotocol/conformance
+# 0.2.0-alpha.12, scored with --requirements 2025-11-25 against a
+# stackless gridctl daemon on /mcp. The 2026-07-28 run and the fleet
+# surfaces have their own files: with --expected-failures the suite is
+# strict (warnings count as failures) and a listed pass is stale.
 #
-# Almost every entry here fails by design, not by defect: the suite
-# tests a reference MCP server that implements its own test tools,
-# resources, prompts, and completion endpoints, while gridctl is an
-# aggregating gateway whose surface is whatever the downstream fleet
-# provides. A stackless daemon has no fleet, so scenarios that call
-# suite-defined tools (image/audio/logging/progress variants), read
-# suite-defined resources, or exercise completion cannot pass.
-# Sampling, elicitation, and subscription scenarios additionally rely on
-# server-initiated requests, which gridctl deliberately does not relay
-# (deprecated in 2026-07-28; MRTR is the replacement on the stateless
-# path).
+# An entry is one line. A per-check entry is `<scenario>:<check-id>` with
+# no space after the colon. `- tools-list: wire-schema-valid` is a YAML
+# mapping and is rejected; `- tools-list:wire-schema-valid` is the check
+# id. A wholesale scenario name excuses every check in that scenario.
+# Use a per-check entry when only one check fails.
 #
-# logging-set-level fails because gridctl has never implemented
-# logging/setLevel on any generation (2026-07-28 removes it outright).
+# A failure listed here is expected (exit 0). A failure not listed is a
+# regression (exit 1). A pass for a listed entry is a stale baseline
+# (exit 1). An entry whose scenario does not run is neither. not_scored
+# scenarios (server-session-lifecycle, json-schema-2020-12,
+# server-sse-polling) are outside this file: a requirements run does not
+# report a baselined not_scored pass as stale.
 #
-# Baseline semantics: a failure listed here is expected (exit 0); a
-# failure not listed is a regression (exit 1); a PASS for a listed entry
-# is a stale baseline (exit 1), so this file cannot rot silently. An
-# entry whose scenario does not run at all is neither.
+# Almost every entry fails by design. The suite calls its own diagnostic
+# tools, resources, prompts, and completion endpoints. A stackless gateway
+# has no fleet. Sampling, elicitation, and subscriptions need
+# server-initiated requests, which gridctl does not relay. logging/setLevel
+# has never been implemented; 2026-07-28 removes it.
 server:
-  - completion-complete
-  - tools-call-image
-  - tools-call-audio
-  - tools-call-embedded-resource
-  - tools-call-mixed-content
-  - tools-call-with-logging
-  - tools-call-with-progress
-  - tools-call-sampling
-  - tools-call-elicitation
-  - elicitation-sep1034-defaults
-  - elicitation-sep1330-enums
-  - resources-read-text
-  - resources-read-binary
-  - resources-templates-read
-  - resources-subscribe
-  - resources-unsubscribe
-  - prompts-get-simple
-  - prompts-get-with-args
-  - prompts-get-embedded-resource
-  - prompts-get-with-image
-  - logging-set-level
+  - logging-set-level:logging-set-level # logging/setLevel is not implemented
+  - completion-complete:completion-complete # completion/complete is not implemented
+  - tools-call-image:tools-call-image # suite tool test_image_content is not implemented
+  - tools-call-audio:tools-call-audio # suite tool test_audio_content is not implemented
+  - tools-call-embedded-resource:tools-call-embedded-resource # suite tool test_embedded_resource is not implemented
+  - tools-call-mixed-content:tools-call-mixed-content # suite tool test_multiple_content_types is not implemented
+  - tools-call-with-logging:tools-call-with-logging # suite tool calls logging/setLevel, which is not implemented
+  - tools-call-with-progress:tools-call-with-progress # suite tool test_tool_with_progress is not implemented
+  - tools-call-sampling:tools-call-sampling # sampling is not relayed
+  - tools-call-elicitation:tools-call-elicitation # elicitation is not relayed
+  - elicitation-sep1034-defaults:elicitation-sep1034-general # elicitation is not relayed
+  - elicitation-sep1330-enums:elicitation-sep1330-general # elicitation is not relayed
+  - resources-read-text:resources-read-text # suite resource test://static-text is not implemented
+  - resources-read-binary:resources-read-binary # suite resource test://static-binary is not implemented
+  - resources-templates-read:resources-templates-read # suite template test://template/123/data is not implemented
+  - resources-subscribe:resources-subscribe # resources/subscribe is not implemented
+  - resources-unsubscribe:resources-unsubscribe # resources/unsubscribe is not implemented
+  - prompts-get-simple:prompts-get-simple # no registry skill and no suite prompt
+  - prompts-get-with-args:prompts-get-with-args # no registry skill and no suite prompt
+  - prompts-get-embedded-resource:prompts-get-embedded-resource # no registry skill and no suite prompt
+  - prompts-get-with-image:prompts-get-with-image # no registry skill and no suite prompt
