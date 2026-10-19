@@ -1,0 +1,7 @@
+apiVersion: gridctl.dev/v1
+kind: Pack
+name: booster-pack
+description: Fragment that adds one server to the network-eng pack
+stack:
+  extends: network-eng
+  file: servers.yaml

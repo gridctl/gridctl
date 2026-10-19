@@ -143,8 +143,61 @@ Projection and import are available over HTTP: `GET /api/packs` (list), `GET /ap
 
 Status rows for rules report per-client projection state once a pack is applied (drift and staleness per fragment-file projection; a compiled client's whole-document state stays in `gridctl ctx status`), with a store-presence row for a rule that was imported but never projected.
 
+## Extending another pack's stack
+
+A booster declares a fragment instead of a standalone stack:
+
+```yaml
+stack:
+  extends: network-eng
+  file: servers.yaml
+```
+
+`extends` is another pack's name, not a file path, and it cannot name the booster itself. The fragment may declare `mcp-servers`, `resources`, and `variables` only. `gateway`, `network`, `name`, stack-level `extends`, `groups`, `clients`, `limits`, and the other stack blocks are rejected at `pack add` with `fragment <file>: '<key>' is not allowed in a stack fragment`. A fragment with no servers and no resources is rejected. A scalar `stack: stack.yaml` is unchanged.
+
+`pack add` of a booster requires the base to be imported and to carry a stack. A missing base, a base that is itself a booster, or a server name already declared by the base or another attached booster is unresolved. The collision names both owners (`server 'netbox' is declared by pack 'infra' and pack 'netops-team'`). The fragment is pinned under `~/.gridctl/packs/<booster>/<commit>/` and recorded as `fragment`, not `stack`.
+
+`pack apply` of the base or any booster composes the base plus every attached booster in pack-name order into `~/.gridctl/packs/<base>/composed/stack.yaml`. Relative paths are rewritten against each layer's checkout. The first apply while the base daemon is running from its pinned file replaces that daemon (one restart). Later fragment edits reload. An unchanged compose is `unchanged`. `--port` on a booster apply is ignored while the base is running; the daemon stays on the port it already has. When nothing is running, `--port` (default 8180) is used. Leave `wiring` off on boosters. The base owns the `gridctl` entry; a booster with `wiring: true` gets `skipped-foreign` when that entry is already owned.
+
+`pack remove <base>` with attached boosters exits 1 and writes nothing: `pack '<base>' has attached boosters (<a>, <b>); remove them first or pass --force`. `--force` removes the base and leaves each booster's fragment record. Their status becomes `target-missing` with detail `base pack '<base>' is not added`. Removing a booster recomposes the base and reloads, or replaces back onto the pinned path and deletes `composed/` when it was the last booster. A reload failure blocks removal the same way a failed stop does.
+
+`pack status <base>` lists one `fragment` row per booster after the stack row. `in-sync` means the composed header records that booster's pinned commit. `stale` means the header differs, or the daemon is still on the pinned path while boosters are attached. `missing` means the booster checkout is gone (attention). `pack status <booster>` reports the stack row as `composed`, `stale`, `missing` (not attention when the base daemon is stopped), or `target-missing`.
+
+Groups and profiles are not composed. A fragment cannot add them, and a booster does not merge the base's `groups:` or client profiles.
+
+## Lock file
+
+`gridctl-pack.lock.yaml` sits next to the manifest. `gridctl pack lock` writes it. `pack add` and every reconcile never do. The digest is `sha256:` over the canonical JSON of `sources` (with `auth` stripped) and `stack.extends`. Comments, formatting, credential references, and every other manifest field do not stale the lock and never appear in it.
+
+```yaml
+version: 1
+pack: netops-team
+manifestDigest: sha256:…
+sources:
+  netops:
+    repo: https://gitlab.example.com/network/netops-copilot.git
+    ref: v2.3.0
+    commit: 7f3a1b2c…
+```
+
+A matching lock is `honored`: each source is cloned at its locked commit, not its ref. A stale lock (digest differs, a source was added or removed, or the file is missing under `--check`) is reported and refs are resolved as today, unless `--locked`, which exits 1 before any write. `--ignore-lock` reports `ignored` and resolves refs. `--locked` and `--ignore-lock` together are exit 2. A lock with `version` greater than 1 is exit 2. An unreachable locked commit is unresolved (`locked commit <short> is not reachable at <repo>`); the lock is not bypassed for that source. A transport failure stays a source error, not unreachable.
+
+`skill update` of a lock-pinned member refuses with `source is locked by <pack>; update the pack lock ...`. `--ignore-lock` updates it. `skill update` with no name prints that refusal as a warning and continues. The background update checker is unchanged.
+
+A booster's lock may record `extends` (the base repo and commit on the author's machine). A base added from a different repo is unresolved. A different commit is a note, and an error under `--locked`.
+
+CI:
+
+```bash
+gridctl pack lock --check
+```
+
+Exit 1 means the lock is missing or the source set changed. Run `gridctl pack lock`, commit the file, and `--check` exits 0. Editing a comment does not stale the lock.
+
+`skills.lock.yaml` stamps version 8 when a pack record has `lock` or `fragment`, or a member source has `locked_by`. Packs without those keep their previous stamp. An older gridctl refuses a version 8 file, including unrelated skill updates. Remove the pack with this build before downgrading.
+
 ## What packs deliberately do not have
 
-No enable/disable state (imported and projected are the only states), no inter-pack dependencies (an external source is a git repository the pack author declared, not another pack, and it is not discovered), no interactive configuration prompts (secrets flow through the existing `${var:KEY}` vault mechanism), no gateway start or stop from the REST API or the web UI, and no marketplace or index (`pack add` points at a git repo you chose, with the same trust gate as `skill add`, and each external source is pinned by commit).
+No enable/disable state (imported and projected are the only states), one declared dependency (a booster's base; sources still cannot be packs), no interactive configuration prompts (secrets flow through the existing `${var:KEY}` vault mechanism), no gateway start, stop, or reload from the REST API or the web UI, and no marketplace or index (`pack add` points at a git repo you chose, with the same trust gate as `skill add`, and each external source is pinned by commit).
 
 See `examples/portable-pack/` for a complete pack repo layout.

@@ -10,7 +10,7 @@ A stack is the YAML file (`stack.yaml`, or any path you pass to `gridctl apply`)
 
 ## Pack
 
-A pack is a git repository with a `gridctl-pack.yaml` manifest: a versioned selection of skills, agents, rule fragments, gateway wiring, and an optional stack file, pinned on add at `~/.gridctl/packs/<name>/<commit>/`. `gridctl pack add` imports that selection, and `gridctl pack apply` starts a carried stack from the CLI only, then projects the selected resources; REST and the web UI project resources but do not start or stop the daemon ([Packs](packs.md), [Carrying a stack](packs.md#carrying-a-stack)).
+A pack is a git repository with a `gridctl-pack.yaml` manifest: a versioned selection of skills, agents, rule fragments, gateway wiring, and an optional stack file, pinned on add at `~/.gridctl/packs/<name>/<commit>/`. A booster pack extends another pack's stack with a fragment; `pack apply` composes them into one gateway on the base pack's port. `gridctl-pack.lock.yaml`, written by `gridctl pack lock`, pins each external source commit so two machines import the same revisions. `gridctl pack add` imports that selection, and `gridctl pack apply` starts a carried stack from the CLI only, then projects the selected resources; REST and the web UI project resources but do not start or stop the daemon ([Packs](packs.md), [Carrying a stack](packs.md#carrying-a-stack)).
 
 ## Skill
 

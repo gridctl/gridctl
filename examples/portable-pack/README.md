@@ -9,4 +9,8 @@ gridctl pack status
 gridctl pack remove network-eng
 ```
 
+## Lock file
+
+`gridctl pack lock` writes `gridctl-pack.lock.yaml` next to the manifest. This example's `sources:` block is commented out, so the lock has no sources. The file becomes meaningful once sources are declared: two machines that add the same pack commit then record the same source commits. `gridctl pack lock --check` exits 1 when the lock is missing or the source set changed, and 0 when it matches.
+
 The `rules:` selection is opt-in (an empty list means none). Installing a pack with rules activates the global-context fragments mode if it is not already on; an existing canonical AGENTS.md is migrated to `fragments/00-default.md` with a backup and an explicit message. Removal retracts only resources tagged with this pack's name; your own skills, agents, and fragments are never touched.
