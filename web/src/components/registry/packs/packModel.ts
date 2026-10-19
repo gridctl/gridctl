@@ -2,10 +2,12 @@ import type { PackApplyDoc, PackListItem, PackRow } from '../../../lib/api';
 import type { ProjectionState } from '../../ui/StatePill';
 
 /** Kind order matches the manifest's own axis. */
-export const PACK_KIND_ORDER = ['stack', 'source', 'skill', 'agent', 'rule', 'wiring', 'unresolved'] as const;
+export const PACK_KIND_ORDER = ['stack', 'fragment', 'lock', 'source', 'skill', 'agent', 'rule', 'wiring', 'unresolved'] as const;
 
 const KIND_LABELS: Record<(typeof PACK_KIND_ORDER)[number], string> = {
   stack: 'Stack',
+  fragment: 'Fragments',
+  lock: 'Lock',
   source: 'Sources',
   skill: 'Skills',
   agent: 'Agents',
@@ -26,9 +28,9 @@ export function rowNeedsAttention(row: PackRow): boolean {
     // missing as a real problem, which the backend encodes as attention
     // at the pack level, but row-level ordering treats rule missing as
     // attention so it sorts first.
-    return row.kind === 'rule' && v === 'missing';
+    return (row.kind === 'rule' || row.kind === 'fragment') && v === 'missing';
   }
-  return !['synced', 'updated', 'created', 'unchanged', 'removed', 'would-remove', 'adopted', 'linked', 'started', 'replaced', 'would-start', 'would-replace'].includes(v);
+  return !['synced', 'updated', 'created', 'unchanged', 'removed', 'would-remove', 'adopted', 'linked', 'started', 'replaced', 'reloaded', 'composed', 'would-start', 'would-replace', 'would-reload', 'honored', 'ignored', 'absent'].includes(v);
 }
 
 /** The list's attention signal: backend attention, a collision, or an
