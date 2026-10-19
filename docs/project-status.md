@@ -63,7 +63,7 @@ Release baseline: **v1.0.0-rc.2** (see [CHANGELOG.md](../CHANGELOG.md) for relea
 | Client config import (import) | Stable | `--kind`, included in v1.0.0-rc.2, composes server, skill, agent, and context import for one client. Omitting `--kind`, or passing `servers`, keeps the previous output and exit codes. Context is never overwritten, and a fragments-mode home is not adopted into. Project-scope discovery for seven clients adds a `Sources:` block (including under `--scope user`) and optional JSON origin fields. Project and local placeholders are replaced with a project directory, so the imported command is machine-specific. A non-OpenCode working directory at project or local scope is skipped. OpenCode native-array import still changes text diagnostics, and disabled servers and working directories are skipped on every OpenCode shape. Stack schema is unchanged. The project-scope text output change is included in v1.0.0-rc.2, and the JSON additions are optional fields. `--kind` itself is additive. |
 | Machine reset (`gridctl reset`, reset REST + web UI dialog) | Stable | Backward compatible in 0.x |
 | Home directory override (`GRIDCTL_HOME`, `--home`) | Stable | Backward compatible in 0.x |
-| MCP protocol generation dual-stack (handshake + 2026-07-28 stateless) | Stable | Both generations served and auto-negotiated per client and per server |
+| MCP protocol generation dual-stack (handshake + 2026-07-28 stateless) | Stable | Both generations served and auto-negotiated per client and per server. List order is documented and unchanged. Protocol conformance is pinned to `@modelcontextprotocol/conformance@0.2.0-alpha.12`; see [Protocol conformance](#protocol-conformance) |
 | Downstream prompt and resource aggregation | Implemented | Included in v1.0.0-rc.2. Registry skill names, URIs, and skill-policy visibility are unchanged. Handshake-era `resources/read` not-found is `-32002` with `data.uri` instead of `-32603`; stateless not-found stays `-32602`. See [POST /mcp](api-reference.md#post-mcp) |
 | Declarative client linking (`link:`) | Stable | Backward compatible in 0.x |
 | Wiring ownership (link / unlink recording, project) | Stable | Backward compatible in 0.x |
@@ -80,6 +80,10 @@ Release baseline: **v1.0.0-rc.2** (see [CHANGELOG.md](../CHANGELOG.md) for relea
 | Multi-agent orchestrator (A2A) | Removed in v0.1.x | Use an external agent runtime (LangGraph, CrewAI, AutoGen, OpenAI Agents SDK) over gridctl as the MCP gateway |
 | Agent IDE JSONL run ledger + resume | Removed in v0.1.x | Distinct from metadata-only dispatch records included in v1.0.0-rc.2 |
 | LLM provider abstraction | Removed in v0.1.x | Was internal to the playground |
+
+## Protocol conformance
+
+The CI conformance job pins `@modelcontextprotocol/conformance@0.2.0-alpha.12` and scores each generation against its frozen requirement set. 2026-07-28, stackless: 9 of 37 required; fleet `/mcp`: 6 of 37; fleet `/groups/dev/mcp`: 11 of 37; 2025-11-25, stackless: 9 of 30; fleet: 8 of 30. Baselined failures remain failures against the requirement set. A stackless pass is not aggregation coverage. Counts are required scenarios with no failing check and no warning, from a local run on 2026-10-19.
 
 ## Known limitations
 

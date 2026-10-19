@@ -19,6 +19,12 @@ All notable changes to gridctl will be documented in this file.
 
 ### Documentation
 
+- Document the list-ordering guarantee for `tools/list` (including group endpoints and the code-mode `search` exception), `prompts/list`, `resources/list`, `resources/templates/list`, and `GET /api/tools/discover`. Behavior is unchanged.
+
+### Maintenance
+
+- Pin the MCP conformance suite to `@modelcontextprotocol/conformance@0.2.0-alpha.12` and score each protocol generation against its frozen requirement set. The CI job also runs a Docker-free fleet (two mock servers, two active registry skills, and `/groups/dev/mcp`) and is a verifier lane, so a skip fails the job. Baseline entries are per-check where one check fails, each with a reason. The three 2026-07-28 scenarios that stay unscored still run one at a time under a strict baseline.
+
 - Sync the agent guidance, project status, threat model, and feature guides with the amended Constitution (#1376). Articles III, IV, VIII, and XII are summarized as amended: coverage is per exported behavior, real stand-in processes are allowed in integration tests when the external service cannot run in CI, "breaking" is limited to machine-readable contracts and failing stack files or invocations, and secure defaults are stated as the loopback-bind and widened-bind rules the gateway enforces. Notes that labeled v1.0.0-rc.2 log-wording and human status-text changes as breaking now say those are not versioned contracts. The threat model's Article XII section now records the widened-bind origin refusal. The previous open gap, a wildcard fallback on every bind, is closed.
 
 ### Bug Fixes
