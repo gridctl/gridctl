@@ -78,10 +78,17 @@ func sortStrings(in []string) {
 }
 
 func (b *GatewayBuilder) SetResolved(stack *config.Stack, values map[string]string, unresolved map[string]error) {
-	b.resolved = stack
+	b.storeResolved(stack)
 	b.secretValues = values
 	b.secretUnresolved = unresolved
 	logging.RegisterSensitiveValues(valuesSlice(values)...)
+}
+
+func (b *GatewayBuilder) storeResolved(stack *config.Stack) {
+	if stack == nil {
+		return
+	}
+	b.resolved.Store(stack)
 }
 
 func valuesSlice(values map[string]string) []string {
@@ -93,10 +100,20 @@ func valuesSlice(values map[string]string) []string {
 }
 
 func (b *GatewayBuilder) listenerStack() *config.Stack {
-	if b.resolved != nil {
-		return b.resolved
+	if resolved := b.resolved.Load(); resolved != nil {
+		return resolved
 	}
 	return b.stack
+}
+
+// applyGatewayAuth installs listener credentials from the resolved stack.
+// The applied-config hook must keep assigning the literal stack elsewhere.
+func applyGatewayAuth(stack *config.Stack, set func(authType, token, header string)) {
+	if set == nil || stack == nil || stack.Gateway == nil || stack.Gateway.Auth == nil {
+		return
+	}
+	auth := stack.Gateway.Auth
+	set(auth.Type, auth.Token, auth.Header)
 }
 
 func (b *GatewayBuilder) recordStartupSecretFailures(gateway *mcp.Gateway) {

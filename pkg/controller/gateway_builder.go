@@ -90,7 +90,7 @@ func (inst *GatewayInstance) CurrentModelPolicies() (skills, agents *registry.Mo
 type GatewayBuilder struct {
 	config   Config
 	stack    *config.Stack
-	resolved *config.Stack
+	resolved atomic.Pointer[config.Stack]
 	// secretValues and secretUnresolved are the startup resolve pass.
 	// Values stay in memory. Unresolved names are recorded on the gateway.
 	secretValues     map[string]string
@@ -857,9 +857,7 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 		server.SetAllowedHosts(runtimeStack.Gateway.AllowedHosts)
 	}
 
-	if runtimeStack != nil && runtimeStack.Gateway != nil && runtimeStack.Gateway.Auth != nil {
-		server.SetAuth(runtimeStack.Gateway.Auth.Type, runtimeStack.Gateway.Auth.Token, runtimeStack.Gateway.Auth.Header)
-	}
+	applyGatewayAuth(runtimeStack, server.SetAuth)
 
 	if registryServer != nil {
 		server.SetRegistryServer(registryServer)
@@ -1616,6 +1614,7 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 		return secrets.NewResolver(providers, os.Environ())
 	})
 	reloadHandler.SeedResolved(b.secretValues, b.secretUnresolved)
+	reloadHandler.SeedResolvedStack(b.listenerStack())
 	reloadHandler.SetSecurityPreflight(reload.NewSecurityPreflight(b.listenerStack(), b.config.Bind, b.config.AllowUnauthenticated))
 	reloadHandler.SetLogger(slog.New(handler))
 	reloadHandler.SetNoExpand(b.config.NoExpand)
@@ -1636,9 +1635,7 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 	// YAML-toggled persist setting takes effect without restart. The
 	// callback fires under reload.Handler.mu — keep it allocation-light.
 	reloadHandler.SetOnResolvedApplied(func(resolved *config.Stack) {
-		if resolved != nil {
-			b.resolved = resolved
-		}
+		b.storeResolved(resolved)
 	})
 	reloadHandler.SetOnConfigApplied(func(newCfg *config.Stack) {
 		b.stack = newCfg

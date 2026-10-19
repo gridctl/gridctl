@@ -41,6 +41,24 @@ func (h *Handler) SetOnResolvedApplied(fn func(*config.Stack)) {
 	h.onResolvedApplied = fn
 }
 
+// SeedResolvedStack records the startup resolved stack so a later recovery
+// can merge a server into it instead of replacing the running definitions.
+func (h *Handler) SeedResolvedStack(stack *config.Stack) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.resolvedStack = stack
+}
+
+func (h *Handler) publishResolved(resolved, literal *config.Stack) {
+	if resolved == nil || resolved == literal {
+		return
+	}
+	h.resolvedStack = resolved
+	if h.onResolvedApplied != nil {
+		h.onResolvedApplied(resolved)
+	}
+}
+
 // HasUnresolved reports whether a secret failure is waiting to be retried.
 func (h *Handler) HasUnresolved() bool {
 	h.mu.Lock()
@@ -78,7 +96,19 @@ type secretPass struct {
 
 func (h *Handler) resolveCandidate(ctx context.Context, literal *config.Stack) secretPass {
 	pass := secretPass{resolved: literal}
-	if h.secretFactory == nil || literal == nil || len(literal.SecretRefs) == 0 {
+	if literal == nil {
+		return pass
+	}
+	if len(literal.SecretRefs) == 0 {
+		// A successful load with no references drops the previous pass.
+		// Leaving unresolved set would retry a server that no longer has one.
+		if h.secretFactory != nil || h.resolvedValues != nil || len(h.unresolved) > 0 {
+			pass.byRef = map[string]string{}
+			pass.failures = map[string]error{}
+		}
+		return pass
+	}
+	if h.secretFactory == nil {
 		return pass
 	}
 	resolver := h.secretFactory(literal)
@@ -168,14 +198,14 @@ func (h *Handler) noteRecovery(diff *ConfigDiff, literal, resolved *config.Stack
 		if _, failed := failures[name]; failed {
 			continue
 		}
-		if srv, ok := serverByName(resolved, name); ok && !serverInDiff(diff, name) {
-			if _, declared := serverByName(literal, name); declared {
+		if srv, ok := serverByName(resolved, name); ok && srv.IsEnabled() && !serverInDiff(diff, name) {
+			if declared, ok := serverByName(literal, name); ok && declared.IsEnabled() {
 				diff.MCPServers.Added = append(diff.MCPServers.Added, srv)
 			}
 			continue
 		}
-		if res, ok := resourceByName(resolved, name); ok && !resourceInDiff(diff, name) {
-			if _, declared := resourceByName(literal, name); declared {
+		if res, ok := resourceByName(resolved, name); ok && res.IsEnabled() && !resourceInDiff(diff, name) {
+			if declared, ok := resourceByName(literal, name); ok && declared.IsEnabled() {
 				diff.Resources.Added = append(diff.Resources.Added, res)
 			}
 		}
@@ -312,12 +342,18 @@ func (h *Handler) RetrySecrets(ctx context.Context) (recovered []string, still [
 			still = append(still, names...)
 			return recovered, still
 		}
-		if h.retryWorkload(ctx, name) {
-			recovered = append(recovered, name)
+		started, drop := h.retryWorkload(ctx, name)
+		if drop || started {
 			delete(h.unresolved, name)
 			if h.gateway != nil {
 				h.gateway.ClearRegistrationFailure(name)
 			}
+		}
+		if started {
+			recovered = append(recovered, name)
+			continue
+		}
+		if drop {
 			continue
 		}
 		still = append(still, name)
@@ -325,7 +361,10 @@ func (h *Handler) RetrySecrets(ctx context.Context) (recovered []string, still [
 	return recovered, still
 }
 
-func (h *Handler) retryWorkload(ctx context.Context, name string) bool {
+func (h *Handler) retryWorkload(ctx context.Context, name string) (started bool, drop bool) {
+	if h.currentCfg == nil {
+		return false, true
+	}
 	mini := &config.Stack{
 		Name:       h.currentCfg.Name,
 		Secrets:    h.currentCfg.Secrets,
@@ -337,6 +376,9 @@ func (h *Handler) retryWorkload(ctx context.Context, name string) bool {
 	var wantServer bool
 	for _, srv := range h.currentCfg.MCPServers {
 		if srv.Name == name {
+			if !srv.IsEnabled() {
+				return false, true
+			}
 			mini.MCPServers = []config.MCPServer{srv}
 			wantServer = true
 			break
@@ -345,17 +387,23 @@ func (h *Handler) retryWorkload(ctx context.Context, name string) bool {
 	if !wantServer {
 		for _, res := range h.currentCfg.Resources {
 			if res.Name == name {
+				if !res.IsEnabled() {
+					return false, true
+				}
 				mini.Resources = []config.Resource{res}
 				break
 			}
 		}
 	}
 	if len(mini.MCPServers) == 0 && len(mini.Resources) == 0 {
-		return false
+		return false, true
+	}
+	if len(mini.SecretRefs) == 0 {
+		return false, true
 	}
 	resolver := h.secretFactory(mini)
 	if resolver == nil {
-		return false
+		return false, false
 	}
 	resolved, failures, values, err := resolver.ResolveStack(ctx, mini)
 	logging.RegisterSensitiveValues(values...)
@@ -366,7 +414,7 @@ func (h *Handler) retryWorkload(ctx context.Context, name string) bool {
 				h.gateway.RecordRegistrationFailure(name, failures[name])
 			}
 		}
-		return false
+		return false, false
 	}
 	for key, value := range resolver.Values() {
 		if h.resolvedValues == nil {
@@ -380,8 +428,8 @@ func (h *Handler) retryWorkload(ctx context.Context, name string) bool {
 	}
 	if wantServer {
 		srv, ok := serverByName(resolved, name)
-		if !ok {
-			return false
+		if !ok || !srv.IsEnabled() {
+			return false, true
 		}
 		image, prepErr := h.prepareMCPServer(ctx, srv, resolved)
 		if prepErr != nil {
@@ -389,26 +437,76 @@ func (h *Handler) retryWorkload(ctx context.Context, name string) bool {
 			if h.gateway != nil {
 				h.gateway.RecordRegistrationFailure(name, prepErr)
 			}
-			return false
+			return false, false
 		}
 		if startErr := h.startMCPServer(ctx, srv, resolved, image); startErr != nil {
 			h.unresolved[name] = startErr
 			if h.gateway != nil {
 				h.gateway.RecordRegistrationFailure(name, startErr)
 			}
-			return false
+			return false, false
 		}
-		return true
+		h.publishRecoveredServer(srv)
+		return true, false
 	}
 	res, ok := resourceByName(resolved, name)
-	if !ok {
-		return false
+	if !ok || !res.IsEnabled() {
+		return false, true
 	}
 	if startErr := h.startResource(ctx, res, resolved); startErr != nil {
 		h.unresolved[name] = startErr
-		return false
+		return false, false
 	}
-	return true
+	h.publishRecoveredResource(res)
+	return true, false
+}
+
+func (h *Handler) publishRecoveredServer(srv config.MCPServer) {
+	h.resolvedStack = mergeRecoveredServer(h.resolvedStack, srv)
+	if h.onResolvedApplied != nil {
+		h.onResolvedApplied(h.resolvedStack)
+	}
+}
+
+func (h *Handler) publishRecoveredResource(res config.Resource) {
+	h.resolvedStack = mergeRecoveredResource(h.resolvedStack, res)
+	if h.onResolvedApplied != nil {
+		h.onResolvedApplied(h.resolvedStack)
+	}
+}
+
+func mergeRecoveredServer(base *config.Stack, srv config.MCPServer) *config.Stack {
+	next := cloneOrEmpty(base)
+	for i := range next.MCPServers {
+		if next.MCPServers[i].Name == srv.Name {
+			next.MCPServers[i] = srv
+			return next
+		}
+	}
+	next.MCPServers = append(next.MCPServers, srv)
+	return next
+}
+
+func mergeRecoveredResource(base *config.Stack, res config.Resource) *config.Stack {
+	next := cloneOrEmpty(base)
+	for i := range next.Resources {
+		if next.Resources[i].Name == res.Name {
+			next.Resources[i] = res
+			return next
+		}
+	}
+	next.Resources = append(next.Resources, res)
+	return next
+}
+
+func cloneOrEmpty(base *config.Stack) *config.Stack {
+	if base == nil {
+		return &config.Stack{}
+	}
+	if next := base.Clone(); next != nil {
+		return next
+	}
+	return &config.Stack{Name: base.Name}
 }
 
 func refsFor(stack *config.Stack, kind config.ReferenceKind, name string) []config.SecretRef {

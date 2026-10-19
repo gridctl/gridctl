@@ -53,6 +53,7 @@ type Handler struct {
 	resolvedAt        map[string]time.Time
 	unresolved        map[string]error
 	onResolvedApplied func(*config.Stack)
+	resolvedStack     *config.Stack
 
 	// Callback for registering new MCP servers with gateway. replicas carries
 	// one entry per replica in replica-id order (ContainerID and HostPort per
@@ -241,9 +242,7 @@ func (h *Handler) reload(ctx context.Context, stackPath string, initialize bool)
 		} else {
 			h.logger.Info("no configuration changes detected")
 		}
-		if h.onResolvedApplied != nil && resolved != literal {
-			h.onResolvedApplied(resolved)
-		}
+		h.publishResolved(resolved, literal)
 		return result, nil
 	}
 
@@ -308,9 +307,7 @@ func (h *Handler) reload(ctx context.Context, stackPath string, initialize bool)
 	if h.onConfigApplied != nil {
 		h.onConfigApplied(literal)
 	}
-	if h.onResolvedApplied != nil && resolved != literal {
-		h.onResolvedApplied(resolved)
-	}
+	h.publishResolved(resolved, literal)
 
 	// Per-item failures collected during applyMCPServerChanges /
 	// applyResourceChanges must flip Success so callers (HTTP handler, file

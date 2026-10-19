@@ -150,6 +150,9 @@ func (r *Resolver) ResolveStack(ctx context.Context, stack *config.Stack) (*conf
 	}
 	var wg sync.WaitGroup
 	for _, ref := range stack.SecretRefs {
+		if !refRunnable(stack, ref) {
+			continue
+		}
 		ref := ref
 		wg.Add(1)
 		go func() {
@@ -181,6 +184,9 @@ func (r *Resolver) ResolveStack(ctx context.Context, stack *config.Stack) (*conf
 			continue
 		}
 		for _, site := range sites {
+			if !siteEnabled(stack, site) {
+				continue
+			}
 			name, workload := workloadOf(site)
 			if _, seen := failures[name]; seen {
 				continue
@@ -209,6 +215,45 @@ func (r *Resolver) ResolveStack(ctx context.Context, stack *config.Stack) (*conf
 	}
 	r.mu.Unlock()
 	return clone, failures, values, stackErr
+}
+
+// refRunnable reports whether a reference has an enabled consumer. A
+// reference used only by parked workloads is not resolved.
+func refRunnable(stack *config.Stack, ref config.SecretRef) bool {
+	sites := stack.References[ref.Key]
+	if len(sites) == 0 {
+		return true
+	}
+	for _, site := range sites {
+		if siteEnabled(stack, site) {
+			return true
+		}
+	}
+	return false
+}
+
+// siteEnabled reports whether a consumer should be resolved and recorded.
+// Gateway and network sites are always active. A missing workload is treated
+// as active so a dangling site is not hidden.
+func siteEnabled(stack *config.Stack, site config.Consumer) bool {
+	switch site.Kind {
+	case config.RefKindMCPServer:
+		for _, srv := range stack.MCPServers {
+			if srv.Name == site.Name {
+				return srv.IsEnabled()
+			}
+		}
+		return true
+	case config.RefKindResource:
+		for _, res := range stack.Resources {
+			if res.Name == site.Name {
+				return res.IsEnabled()
+			}
+		}
+		return true
+	default:
+		return true
+	}
 }
 
 func workloadOf(c config.Consumer) (string, bool) {
