@@ -29,6 +29,7 @@ import { NewSetForm } from '../vault/NewSetForm';
 import { VariableInspector } from '../vault/VariableInspector';
 import { VariableQuickAddForm } from '../vault/VariableQuickAddForm';
 import { VariableRow, VARIABLE_ROW_GRID } from '../vault/VariableRow';
+import { ProviderReferences } from '../vault/ProviderReferences';
 import { VaultEncryptForm } from '../vault/VaultEncryptForm';
 import { VaultLockPrompt } from '../vault/VaultLockPrompt';
 import { EnvImportModal } from '../vault/EnvImportModal';
@@ -766,6 +767,7 @@ export function VaultWorkspace() {
                     compact={compact}
                   />
                 )}
+                <ProviderReferences />
               </div>
             </>
           )}
