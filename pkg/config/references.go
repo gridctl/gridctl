@@ -1,5 +1,7 @@
 package config
 
+import "strings"
+
 // ReferenceKind identifies what kind of stack element references a variable.
 type ReferenceKind string
 
@@ -53,6 +55,11 @@ func BuildVariableUsage(spec *Stack, setMembers map[string][]string) (ReferenceI
 		return usage, true
 	}
 	for key, consumers := range spec.References {
+		// Secret references have no store row. explain and GET /api/secrets
+		// read SecretRefs and the raw index directly.
+		if strings.HasPrefix(key, "secret:") {
+			continue
+		}
 		usage[key] = append([]Consumer(nil), consumers...)
 	}
 	complete := true

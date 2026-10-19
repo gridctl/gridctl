@@ -3,9 +3,23 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
+
+const (
+	secretProviderTypeExec        = "exec"
+	secretProviderTypeOnePassword = "onepassword"
+	defaultSecretTimeout          = 10 * time.Second
+	minSecretTimeout              = time.Second
+	maxSecretTimeout              = 5 * time.Minute
+)
+
+var secretProviderNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
 // MarshalJSON retains explicit empty scopes instead of broadening delivery.
 func (r SecretSetRef) MarshalJSON() ([]byte, error) {
@@ -183,13 +197,16 @@ func containsName(names []string, want string) bool {
 	return false
 }
 
-// validateSecrets checks the optional `secrets:` block: every entry must name a
-// set, a set may be listed once, and a scoped entry may only name servers and
-// resources the stack declares. Unknown workload names are errors rather than
-// warnings because a typo silently withholds credentials from the workload that
-// needed them, which surfaces later as an opaque runtime auth failure.
+// validateSecrets checks the optional `secrets:` block and secret references.
+// Set checks: every entry must name a set, a set may be listed once, and a
+// scoped entry may only name servers and resources the stack declares.
+// Provider checks never run a subprocess. The declared-provider check is
+// skipped while Extends is set, because ValidateStackFile has not merged the
+// parent yet. LoadStack clears Extends after merging, so the check runs there.
 func validateSecrets(s *Stack) ValidationErrors {
 	var errs ValidationErrors
+	errs = append(errs, validateSecretProviders(s)...)
+	errs = append(errs, validateSecretReferenceUses(s)...)
 	if s.Secrets == nil {
 		return errs
 	}
@@ -280,4 +297,157 @@ func validateSecrets(s *Stack) ValidationErrors {
 		}
 	}
 	return errs
+}
+
+func validateSecretProviders(s *Stack) ValidationErrors {
+	if s == nil || s.Secrets == nil || len(s.Secrets.Providers) == 0 {
+		return nil
+	}
+	var errs ValidationErrors
+	seen := make(map[string]int, len(s.Secrets.Providers))
+	for i, p := range s.Secrets.Providers {
+		prefix := fmt.Sprintf("secrets.providers[%d]", i)
+		if !secretProviderNamePattern.MatchString(p.Name) {
+			errs = append(errs, ValidationError{prefix + ".name", "name must match ^[a-z][a-z0-9-]*$"})
+		} else if prev, ok := seen[p.Name]; ok {
+			errs = append(errs, ValidationError{
+				prefix + ".name",
+				fmt.Sprintf("provider name %q is already declared at secrets.providers[%d]", p.Name, prev),
+			})
+		} else {
+			seen[p.Name] = i
+		}
+		switch p.Type {
+		case secretProviderTypeExec:
+			if len(p.Command) == 0 {
+				errs = append(errs, ValidationError{prefix + ".command", "command is required"})
+			} else if !commandHasPathPlaceholder(p.Command) {
+				errs = append(errs, ValidationError{prefix + ".command", "command must contain {{path}}"})
+			}
+			if p.TokenFile != "" {
+				errs = append(errs, ValidationError{prefix + ".token_file", "token_file is not valid for type exec"})
+			}
+		case secretProviderTypeOnePassword:
+			if len(p.Command) > 0 {
+				errs = append(errs, ValidationError{prefix + ".command", "command is not valid for type onepassword"})
+			}
+			if p.TokenFile != "" && !validTokenFilePath(p.TokenFile) {
+				errs = append(errs, ValidationError{prefix + ".token_file", "token_file must be absolute or start with ~/"})
+			}
+		default:
+			errs = append(errs, ValidationError{prefix + ".type", "type must be exec or onepassword"})
+		}
+		if p.Timeout != "" {
+			d, err := time.ParseDuration(p.Timeout)
+			if err != nil || d < minSecretTimeout || d > maxSecretTimeout {
+				errs = append(errs, ValidationError{prefix + ".timeout", "timeout must be a duration between 1s and 5m"})
+			}
+		}
+	}
+	return errs
+}
+
+func commandHasPathPlaceholder(command []string) bool {
+	for _, el := range command {
+		if strings.Contains(el, "{{path}}") {
+			return true
+		}
+	}
+	return false
+}
+
+func validTokenFilePath(path string) bool {
+	if strings.HasPrefix(path, "~/") {
+		return true
+	}
+	return filepath.IsAbs(path)
+}
+
+// ProviderTimeout returns the configured timeout or the 10s default.
+func (p SecretProvider) ProviderTimeout() (time.Duration, error) {
+	if p.Timeout == "" {
+		return defaultSecretTimeout, nil
+	}
+	d, err := time.ParseDuration(p.Timeout)
+	if err != nil {
+		return 0, err
+	}
+	if d < minSecretTimeout || d > maxSecretTimeout {
+		return 0, fmt.Errorf("timeout must be a duration between 1s and 5m")
+	}
+	return d, nil
+}
+
+func validateSecretReferenceUses(s *Stack) ValidationErrors {
+	if s == nil || len(s.SecretRefs) == 0 {
+		return nil
+	}
+	declared := map[string]bool{}
+	if s.Secrets != nil {
+		for _, p := range s.Secrets.Providers {
+			declared[p.Name] = true
+		}
+	}
+	var errs ValidationErrors
+	for _, ref := range s.SecretRefs {
+		if strings.Contains(ref.Path, ":-") || strings.Contains(ref.Path, ":+") {
+			for _, c := range s.References[ref.Key] {
+				errs = append(errs, ValidationError{
+					secretConsumerField(s, c),
+					"secret references do not take default or replacement operands; supply the fallback outside the stack",
+				})
+			}
+			if len(s.References[ref.Key]) == 0 {
+				errs = append(errs, ValidationError{
+					"secrets",
+					"secret references do not take default or replacement operands; supply the fallback outside the stack",
+				})
+			}
+		}
+		if s.Extends != "" || declared[ref.Provider] {
+			continue
+		}
+		msg := fmt.Sprintf("references undeclared secret provider %q; declare it under secrets.providers", ref.Provider)
+		sites := s.References[ref.Key]
+		if len(sites) == 0 {
+			errs = append(errs, ValidationError{"secrets", msg})
+			continue
+		}
+		for _, c := range sites {
+			errs = append(errs, ValidationError{secretConsumerField(s, c), msg})
+		}
+	}
+	return errs
+}
+
+func secretConsumerField(s *Stack, c Consumer) string {
+	switch c.Kind {
+	case RefKindMCPServer:
+		for i := range s.MCPServers {
+			if s.MCPServers[i].Name == c.Name {
+				return fmt.Sprintf("mcp-servers[%d].%s", i, c.Field)
+			}
+		}
+		return "mcp-servers." + c.Field
+	case RefKindResource:
+		for i := range s.Resources {
+			if s.Resources[i].Name == c.Name {
+				return fmt.Sprintf("resources[%d].%s", i, c.Field)
+			}
+		}
+		return "resources." + c.Field
+	case RefKindGateway:
+		return "gateway." + c.Field
+	case RefKindNetwork:
+		if c.Name != "" {
+			for i := range s.Networks {
+				if s.Networks[i].Name == c.Name {
+					return fmt.Sprintf("networks[%d].%s", i, c.Field)
+				}
+			}
+		}
+		return "network." + c.Field
+	default:
+		return c.Field
+	}
 }

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"regexp"
+	"strings"
 
 	"github.com/gridctl/gridctl/pkg/vault"
 )
@@ -115,12 +116,18 @@ func exactInternalCredential(name string) bool {
 //   - ${VAR:+replacement} — use replacement if defined and non-empty
 //   - ${var:KEY}          — variable store reference (canonical)
 //   - ${vault:KEY}        — alias for ${var:KEY}, retained for back-compat
+//   - ${secret:prov/path} — external secret reference, left literal at load
 //
-// The alternation tries the braced form first (longer match), then the bare $VAR form.
+// The braced form cannot consume ${secret:prov/path} (its operator class is
+// [+-]), so the secret alternation is appended rather than ordered ahead of
+// it. Consumers look groups up by name. Positional indexes shift if a group
+// is added, and export credential checks used to read them by position.
 var expandRegex = regexp.MustCompile(
-	`\$\{(?:(vault|var):)?([a-zA-Z_][a-zA-Z0-9_]*)(?::([+-])([^}]*))?\}` + // ${...} forms
+	`\$\{(?:(?P<prefix>vault|var):)?(?P<name>[a-zA-Z_][a-zA-Z0-9_]*)(?::(?P<op>[+-])(?P<operand>[^}]*))?\}` +
 		`|` +
-		`\$([a-zA-Z_][a-zA-Z0-9_]*)`, // $VAR form
+		`\$(?P<bare>[a-zA-Z_][a-zA-Z0-9_]*)` +
+		`|` +
+		`\$\{secret:(?P<sprov>[a-z][a-z0-9-]*)/(?P<spath>[^}]+)\}`,
 )
 
 // ContainsExpansion reports whether s includes a recognized $VAR or ${...} form,
@@ -174,8 +181,71 @@ func ExpandStringRefs(s string, resolve Resolver) (expanded string, storeRefs []
 type expansionResult struct {
 	expanded        string
 	storeRefs       []string
+	secretRefs      []string
 	unresolvedVault []string
 	emptyEnvVars    []string
+}
+
+func expandGroup(parts []string, name string) string {
+	idx := expandRegex.SubexpIndex(name)
+	if idx < 0 || idx >= len(parts) {
+		return ""
+	}
+	return parts[idx]
+}
+
+// SecretRefKey returns the index key for a provider and path.
+func SecretRefKey(provider, path string) string {
+	return "secret:" + provider + "/" + path
+}
+
+// ParseSecretRefKey splits a secret:<provider>/<path> key. The path may
+// contain slashes.
+func ParseSecretRefKey(key string) (provider, path string, ok bool) {
+	rest, found := strings.CutPrefix(key, "secret:")
+	if !found {
+		return "", "", false
+	}
+	provider, path, found = strings.Cut(rest, "/")
+	if !found || provider == "" || strings.TrimSpace(path) == "" {
+		return "", "", false
+	}
+	return provider, path, true
+}
+
+func containsSecretRef(s string) bool {
+	if !strings.Contains(s, "${secret:") {
+		return false
+	}
+	matches := expandRegex.FindAllStringSubmatch(s, -1)
+	prov := expandRegex.SubexpIndex("sprov")
+	for _, match := range matches {
+		if prov >= 0 && prov < len(match) && match[prov] != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func replaceSecretRefs(s string, values map[string]string) string {
+	if !strings.Contains(s, "${secret:") || len(values) == 0 {
+		return s
+	}
+	return expandRegex.ReplaceAllStringFunc(s, func(match string) string {
+		parts := expandRegex.FindStringSubmatch(match)
+		provider := expandGroup(parts, "sprov")
+		if provider == "" {
+			return match
+		}
+		path := strings.TrimSpace(expandGroup(parts, "spath"))
+		if path == "" {
+			return match
+		}
+		if value, ok := values[SecretRefKey(provider, path)]; ok {
+			return value
+		}
+		return match
+	})
 }
 
 func expandStringRefs(s string, resolve referenceResolver) (expansionResult, []error) {
@@ -184,13 +254,22 @@ func expandStringRefs(s string, resolve referenceResolver) (expansionResult, []e
 
 	result.expanded = expandRegex.ReplaceAllStringFunc(s, func(match string) string {
 		parts := expandRegex.FindStringSubmatch(match)
-		if len(parts) < 6 {
+		if len(parts) == 0 {
 			return match
 		}
 
-		// Check if this is a bare $VAR match (group 5)
-		if parts[5] != "" {
-			varName := parts[5]
+		// Secret references stay literal. Resolution is a later pass.
+		if provider := expandGroup(parts, "sprov"); provider != "" {
+			path := strings.TrimSpace(expandGroup(parts, "spath"))
+			if path == "" {
+				return match
+			}
+			result.secretRefs = append(result.secretRefs, SecretRefKey(provider, path))
+			return match
+		}
+
+		// Check if this is a bare $VAR match.
+		if varName := expandGroup(parts, "bare"); varName != "" {
 			resolution := resolve(varName, false)
 			if resolution.Error != nil {
 				denied = append(denied, resolution.Error)
@@ -207,11 +286,11 @@ func expandStringRefs(s string, resolve referenceResolver) (expansionResult, []e
 		// Braced ${...} form. `var` and `vault` are both store-prefixed
 		// references; `var` is canonical and `vault` is a back-compat alias
 		// that resolves identically.
-		prefix := parts[1]
+		prefix := expandGroup(parts, "prefix")
 		isStoreRef := prefix == "vault" || prefix == "var"
-		varName := parts[2]
-		op := parts[3]
-		operand := parts[4]
+		varName := expandGroup(parts, "name")
+		op := expandGroup(parts, "op")
+		operand := expandGroup(parts, "operand")
 
 		// Record the reference up front, independent of resolution outcome,
 		// so usage tracing sees every ${var:KEY} site even when the key is
