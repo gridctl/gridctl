@@ -83,7 +83,7 @@ Release baseline: **v1.0.0-rc.2** (see [CHANGELOG.md](../CHANGELOG.md) for relea
 
 ## Protocol conformance
 
-The CI conformance job pins `@modelcontextprotocol/conformance@0.2.0-alpha.12` and scores each generation against its frozen requirement set. 2026-07-28, stackless: 9 of 37 required; fleet `/mcp`: 6 of 37; fleet `/groups/dev/mcp`: 11 of 37; 2025-11-25, stackless: 9 of 30; fleet: 8 of 30. Baselined failures remain failures against the requirement set. A stackless pass is not aggregation coverage. Counts are required scenarios with no failing check and no warning, from a local run on 2026-10-19.
+The CI conformance job pins `@modelcontextprotocol/conformance@0.2.0-alpha.12` and scores each generation against its frozen requirement set. 2026-07-28, stackless: 9 of 37 required; fleet `/mcp`: 6 of 37; fleet `/groups/dev/mcp`: 11 of 37; 2025-11-25, stackless: 9 of 30; fleet: 8 of 30. Baselined failures remain failures against the requirement set. A stackless pass is not aggregation coverage. Counts are required scenarios with no failing check and no warning, from a local run on 2026-10-19. The group count of 11 includes `tools-call-simple-text`, `tools-call-error`, and `input-required-result-ignore-extra-params`, which pass because a name outside the group is an in-band error result rather than the stateless `-32602` unknown-tool error, including when the name exists on no server. That denial does not disclose whether the name exists elsewhere, and those passes are not implementations of the suite tools.
 
 ## Known limitations
 
