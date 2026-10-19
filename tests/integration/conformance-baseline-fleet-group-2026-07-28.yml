@@ -1,0 +1,47 @@
+# Expected-failures baseline for @modelcontextprotocol/conformance
+# 0.2.0-alpha.12, scored with --requirements 2026-07-28 against the
+# fleet daemon on /groups/dev/mcp. That group serves alpha only, so it
+# does not list zeta__mixed_content and does not share the /mcp baseline.
+# With --expected-failures the suite is strict (warnings count as
+# failures) and a listed pass is stale.
+#
+# An entry is one line. A per-check entry is `<scenario>:<check-id>` with
+# no space after the colon. `- tools-list: wire-schema-valid` is a YAML
+# mapping and is rejected; `- tools-list:wire-schema-valid` is the check
+# id. Use a per-check entry when only one check fails.
+#
+# A failure listed here is expected. A failure not listed is a regression.
+# A pass for a listed entry is stale. not_scored scenarios are omitted.
+#
+# tools-list (including tools-list-deterministic-order), caching,
+# prompts-list, and resources-list pass on this surface. Do not add a
+# wholesale entry for those scenarios.
+server:
+  - server-stateless:sep-2575-server-rejects-undeclared-capability # unknown tool is -32602, not the suite's -32021 missing-capability rejection
+  - server-stateless:sep-2575-missing-capability-http-400 # suite tool test_missing_capability is not listed, so the HTTP status is untestable
+  - completion-complete:completion-complete # completion/complete is not implemented
+  - tools-call-image:tools-call-image # suite tool test_image_content is not implemented
+  - tools-call-audio:tools-call-audio # suite tool test_audio_content is not implemented
+  - tools-call-embedded-resource:tools-call-embedded-resource # suite tool test_embedded_resource is not implemented
+  - tools-call-mixed-content:tools-call-mixed-content # suite tool test_multiple_content_types is not implemented
+  - tools-call-with-progress:tools-call-with-progress # suite tool test_tool_with_progress is not implemented
+  - resources-read-text:resources-read-text # suite resource test://static-text is not implemented
+  - resources-read-binary:resources-read-binary # suite resource test://static-binary is not implemented
+  - resources-templates-read:resources-templates-read # suite template test://template/123/data is not implemented
+  - prompts-get-simple:prompts-get-simple # suite prompt test_simple_prompt is not a registry skill
+  - prompts-get-with-args:prompts-get-with-args # suite prompt test_prompt_with_arguments is not a registry skill
+  - prompts-get-embedded-resource:prompts-get-embedded-resource # suite prompt test_prompt_with_embedded_resource is not a registry skill
+  - prompts-get-with-image:prompts-get-with-image # suite prompt test_prompt_with_image is not a registry skill
+  - input-required-result-basic-elicitation:sep-2322-elicitation-incomplete # suite tool returns a complete error result, not input_required
+  - input-required-result-basic-sampling:sep-2322-sampling-incomplete # suite tool returns a complete error result, not input_required
+  - input-required-result-basic-list-roots:sep-2322-list-roots-incomplete # suite tool returns a complete error result, not input_required
+  - input-required-result-request-state:sep-2322-request-state-incomplete # suite tool returns a complete error result, not input_required
+  - input-required-result-multiple-input-requests:sep-2322-multiple-inputs-incomplete # suite tool returns a complete error result, not input_required
+  - input-required-result-multi-round:sep-2322-multi-round-r1 # suite tool returns a complete error result, not input_required
+  - input-required-result-missing-input-response:sep-2322-missing-response-rerequests # suite tool returns a complete result instead of re-requesting
+  - input-required-result-non-tool-request:sep-2322-non-tool-incomplete # suite prompt test_input_required_result_prompt is not a registry skill
+  - input-required-result-result-type:sep-2322-result-type-included # suite tool returns resultType complete, not input_required
+  - input-required-result-tampered-state:sep-2322-reject-tampered-state # prerequisite suite tool does not return requestState
+  - input-required-result-capability-check:sep-2322-respect-client-capabilities # suite tool returns a complete result, not input_required
+  - input-required-result-validate-input:sep-2322-validate-input-responses # unknown suite tool returns a complete error instead of rejecting the payload
+  - input-required-result-validate-input:sep-2322-error-on-protocol-error # unknown suite tool returns a complete error instead of a protocol error

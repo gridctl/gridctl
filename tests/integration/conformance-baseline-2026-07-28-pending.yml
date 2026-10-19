@@ -1,0 +1,18 @@
+# Strict baseline for the three 2026-07-28 scenarios that stay not_scored
+# (reason pending). They run one at a time with --spec-version 2026-07-28
+# --scenario, because a requirements run cannot fail on them. A listed
+# pass is stale here. Do not copy these entries into a requirements
+# baseline: that run ignores not_scored names and will not report a pass
+# as stale.
+#
+# Per-check entries have no space after the colon. A repeated check id
+# excuses every occurrence of that id.
+server:
+  - json-schema-2020-12:json-schema-2020-12-tool-found # suite tool json_schema_2020_12_tool is not implemented
+  - http-header-validation:sep-2243-server-reject-invalid-headers # no tools, so the Mcp-Name cases are untestable
+  - http-header-validation:sep-2243-server-accepts-whitespace-header-value # no tools, so the Mcp-Name cases are untestable
+  - http-custom-header-server-validation:sep-2243-server-no-xmcp-tool # no tool declares x-mcp-header
+  - http-custom-header-server-validation:sep-2243-server-decode-base64 # no tool declares x-mcp-header
+  - http-custom-header-server-validation:sep-2243-server-validate-param-match # no tool declares x-mcp-header
+  - http-custom-header-server-validation:sep-2243-server-reject-invalid-param-chars # no tool declares x-mcp-header
+  - http-custom-header-server-validation:sep-2243-server-reject-param-mismatch # no tool declares x-mcp-header

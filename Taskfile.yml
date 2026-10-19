@@ -130,6 +130,7 @@ tasks:
       - go run ./cmd/scenarioverify -list -lane unit -index tests/adversarial/index.yaml
       - go run ./cmd/scenarioverify -list -lane integration -index tests/adversarial/index.yaml
       - go run ./cmd/scenarioverify -list -lane podman-integration -index tests/adversarial/index.yaml
+      - go run ./cmd/scenarioverify -list -lane conformance -index tests/adversarial/index.yaml
 
   test:coverage:
     desc: Run unit tests with a coverage report
@@ -156,13 +157,16 @@ tasks:
   test:conformance:
     desc: Run the MCP conformance suite against a live gateway (requires Node 22+)
     summary: |
-      Builds gridctl, starts a stackless daemon, and drives the official
-      @modelcontextprotocol/conformance suite against it, once per spec
-      generation. Deliberate deviations live in
-      tests/integration/conformance-baseline.yml; the suite fails on both
-      unexpected failures and stale baseline entries.
+      Builds gridctl and drives @modelcontextprotocol/conformance
+      0.2.0-alpha.12 against two daemons. The stackless daemon scores the
+      frozen 2025-11-25 and 2026-07-28 requirement sets, then runs the three
+      not_scored 2026-07-28 scenarios one at a time. The fleet daemon (HTTP
+      and stdio mocks, two active registry skills, group dev) scores
+      2025-11-25 on /mcp and 2026-07-28 on /mcp and /groups/dev/mcp. Each
+      surface has its own baseline. The suite fails on unexpected failures
+      and stale baseline entries. No Docker.
     cmds:
-      - go test -tags=integration -race -timeout 10m -run TestConformance ./tests/integration/...
+      - go test -tags=integration -race -timeout 22m -run TestConformance ./tests/integration/...
 
   images:python-runtime:
     desc: Validate the MCP Python runtime recipe and workflow policy

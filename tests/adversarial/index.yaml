@@ -3,6 +3,7 @@ lanes:
   - unit
   - integration
   - podman-integration
+  - conformance
 scenarios:
   - id: mcp-correlation
     owner_package: pkg/mcp
@@ -438,3 +439,115 @@ scenarios:
     budgets:
       max_payload_bytes: 65536
       max_duration: 120s
+  - id: conformance-stackless-2025-11-25
+    owner_package: tests/integration
+    owner_issue: "1385"
+    package: github.com/gridctl/gridctl/tests/integration
+    test: TestConformance/stackless/2025-11-25
+    lanes: [conformance]
+    prerequisites: [subprocess, node]
+    expected_boundary: a stackless daemon scores the frozen 2025-11-25 requirement set against its baseline
+    nonclaims:
+      - a stackless pass is not aggregation coverage
+      - a baseline pass is not a requirement-set pass
+    budgets:
+      max_payload_bytes: 1048576
+      max_duration: 4m
+  - id: conformance-stackless-2026-07-28
+    owner_package: tests/integration
+    owner_issue: "1385"
+    package: github.com/gridctl/gridctl/tests/integration
+    test: TestConformance/stackless/2026-07-28
+    lanes: [conformance]
+    prerequisites: [subprocess, node]
+    expected_boundary: a stackless daemon scores the frozen 2026-07-28 requirement set against its baseline
+    nonclaims:
+      - a stackless pass is not aggregation coverage
+      - a baseline pass is not a requirement-set pass
+    budgets:
+      max_payload_bytes: 1048576
+      max_duration: 4m
+  - id: conformance-pending-json-schema
+    owner_package: tests/integration
+    owner_issue: "1385"
+    package: github.com/gridctl/gridctl/tests/integration
+    test: TestConformance/stackless/2026-07-28-pending/json-schema-2020-12
+    lanes: [conformance]
+    prerequisites: [subprocess, node]
+    expected_boundary: the not_scored json-schema-2020-12 scenario still runs strict against the pending baseline
+    nonclaims:
+      - a stackless pass is not aggregation coverage
+      - a baseline pass is not a requirement-set pass
+    budgets:
+      max_payload_bytes: 1048576
+      max_duration: 2m
+  - id: conformance-pending-http-header
+    owner_package: tests/integration
+    owner_issue: "1385"
+    package: github.com/gridctl/gridctl/tests/integration
+    test: TestConformance/stackless/2026-07-28-pending/http-header-validation
+    lanes: [conformance]
+    prerequisites: [subprocess, node]
+    expected_boundary: the not_scored http-header-validation scenario still runs strict against the pending baseline
+    nonclaims:
+      - a stackless pass is not aggregation coverage
+      - a baseline pass is not a requirement-set pass
+    budgets:
+      max_payload_bytes: 1048576
+      max_duration: 2m
+  - id: conformance-pending-custom-header
+    owner_package: tests/integration
+    owner_issue: "1385"
+    package: github.com/gridctl/gridctl/tests/integration
+    test: TestConformance/stackless/2026-07-28-pending/http-custom-header-server-validation
+    lanes: [conformance]
+    prerequisites: [subprocess, node]
+    expected_boundary: the not_scored http-custom-header-server-validation scenario still runs strict against the pending baseline
+    nonclaims:
+      - a stackless pass is not aggregation coverage
+      - a baseline pass is not a requirement-set pass
+    budgets:
+      max_payload_bytes: 1048576
+      max_duration: 2m
+  - id: conformance-fleet-2025-11-25
+    owner_package: tests/integration
+    owner_issue: "1385"
+    package: github.com/gridctl/gridctl/tests/integration
+    test: TestConformance/fleet/2025-11-25
+    lanes: [conformance]
+    prerequisites: [subprocess, node]
+    expected_boundary: a two-server fleet with two active skills scores the 2025-11-25 requirement set on /mcp
+    nonclaims:
+      - a stackless pass is not aggregation coverage
+      - a baseline pass is not a requirement-set pass
+    budgets:
+      max_payload_bytes: 1048576
+      max_duration: 4m
+  - id: conformance-fleet-2026-07-28
+    owner_package: tests/integration
+    owner_issue: "1385"
+    package: github.com/gridctl/gridctl/tests/integration
+    test: TestConformance/fleet/2026-07-28
+    lanes: [conformance]
+    prerequisites: [subprocess, node]
+    expected_boundary: a two-server fleet with two active skills scores the 2026-07-28 requirement set on /mcp
+    nonclaims:
+      - a stackless pass is not aggregation coverage
+      - a baseline pass is not a requirement-set pass
+    budgets:
+      max_payload_bytes: 1048576
+      max_duration: 4m
+  - id: conformance-fleet-group-2026-07-28
+    owner_package: tests/integration
+    owner_issue: "1385"
+    package: github.com/gridctl/gridctl/tests/integration
+    test: TestConformance/fleet/2026-07-28-group
+    lanes: [conformance]
+    prerequisites: [subprocess, node]
+    expected_boundary: the same fleet scores the 2026-07-28 requirement set on /groups/dev/mcp
+    nonclaims:
+      - a stackless pass is not aggregation coverage
+      - a baseline pass is not a requirement-set pass
+    budgets:
+      max_payload_bytes: 1048576
+      max_duration: 4m
