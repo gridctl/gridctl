@@ -39,7 +39,11 @@ jobs:
       - name: Capture current advisories
         working-directory: web
         run: |
-          npm audit --json > /tmp/audit-before.json || true
+          status=0
+          npm audit --json > /tmp/audit-before.json || status=$?
+          cat /tmp/audit-before.json
+          if (( status > 1 )); then exit "$status"; fi
+          jq -e '(.error == null) and (.metadata.vulnerabilities.total | type == "number")' /tmp/audit-before.json > /dev/null
           jq -r '
             [.vulnerabilities[]?.via[]? | objects
              | {id: (.url // "" | split("/") | last), title, severity}]
@@ -55,7 +59,20 @@ jobs:
       # the PR step below no-ops.
       - name: Apply compatible fixes
         working-directory: web
-        run: npm audit fix
+        run: |
+          status=0
+          npm audit fix --json > /tmp/audit-after.json || status=$?
+          cat /tmp/audit-after.json
+          if (( status > 1 )); then exit "$status"; fi
+          # Exit 1 also means fixes succeeded but advisories remain. npm
+          # install/registry errors must still fail, even with that exit code.
+          jq -e '(.error == null) and (.audit.error == null) and (.audit.metadata.vulnerabilities.total | type == "number")' /tmp/audit-after.json > /dev/null
+          echo "REMAINING=$(jq '.audit.metadata.vulnerabilities.total' /tmp/audit-after.json)" >> "$GITHUB_ENV"
+          {
+            echo "### NPM audit fix"
+            echo "Vulnerable paths before: ${TOTAL}; remaining: $(jq '.audit.metadata.vulnerabilities.total' /tmp/audit-after.json)."
+            echo 'Compatible fixes can proceed to a PR; remaining advisories need manual review.'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Compose pull request body
         run: |
@@ -67,6 +84,8 @@ jobs:
             echo "| Advisory | Severity | Title |"
             echo "|---|---|---|"
             cat /tmp/advisories.md
+            echo
+            echo "Remaining vulnerable paths after compatible fixes: ${REMAINING}."
             echo
             echo "Only semver-compatible updates are applied (no \`--force\`);"
             echo "anything needing a major bump is still listed by the frontend"
