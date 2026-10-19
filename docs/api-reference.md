@@ -3524,7 +3524,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project
 
 ### Packs
 
-The REST face of `gridctl pack add|apply|status|remove`, plus a read-only preview for import flows. A pack is one git repository carrying a `gridctl-pack.yaml` manifest selecting skills, agents, context rule fragments, optional gateway wiring, and an optional stack file (see the [Packs guide](packs.md)). Named `sources:` select skills and agents from other git repositories. Per-resource rows use the shared projection-state vocabulary (`in-sync`, `stale`, `drifted`, `target-missing`, `foreign`, `missing`), plus `unresolved` for manifest selections the matching repository does not ship. A carried stack is a `stack` row, first in kind order, then one `source` row per pinned external source. This release does not start or stop that daemon over REST. Apply returns `skipped-unavailable` and the CLI command, and wiring is `skipped-unavailable` with `pack stack is not running`. Delete of a running pack-owned daemon is `skipped-unavailable` and keeps the pack record; see the delete endpoint below.
+The REST face of `gridctl pack add|apply|status|remove`, plus a read-only preview for import flows. A pack is one git repository carrying a `gridctl-pack.yaml` manifest selecting skills, agents, context rule fragments, optional gateway wiring, and an optional stack file (see the [Packs guide](packs.md)). Named `sources:` select skills and agents from other git repositories. Per-resource rows use the shared projection-state vocabulary (`in-sync`, `stale`, `drifted`, `target-missing`, `foreign`, `missing`), plus `unresolved` for manifest selections the matching repository does not ship. A carried stack is a `stack` row, first in kind order, then one `fragment` row per attached booster, then a `lock` row when one was recorded, then one `source` row per pinned external source. This release does not start, stop, or reload that daemon over REST, and it does not write `gridctl-pack.lock.yaml`. Apply returns `skipped-unavailable` and the CLI command, and wiring is `skipped-unavailable` with `pack stack is not running`. Delete of a running pack-owned daemon is `skipped-unavailable` and keeps the pack record; see the delete endpoint below.
 
 #### `GET /api/packs`
 
@@ -3556,7 +3556,7 @@ Lists installed packs: identity, origin, per-kind resource counts, and aggregate
 }
 ```
 
-A pack name claimed by more than one imported source carries `"collision": true` with `collision_repos` listing them, and counts as attention. `counts.stack` is true when a resolved stack record is present and is omitted otherwise. `counts.sources` and `sources` are present when the pack pins external repositories and are omitted otherwise. `sources` entries are `{name, repo, ref, commit_sha, skills, agents}` in name order. `applied` is true when any row has a client, and also when the stack row is `in-sync` or `stale`, so a stack-only pack can report applied. A projected pack without a stack is unchanged.
+A pack name claimed by more than one imported source carries `"collision": true` with `collision_repos` listing them, and counts as attention. `counts.stack` is true when a resolved stack or fragment record is present and is omitted otherwise. `extends` is the base pack name for a booster and is omitted otherwise. `counts.sources` and `sources` are present when the pack pins external repositories and are omitted otherwise. `sources` entries are `{name, repo, ref, commit_sha, skills, agents}` in name order. `applied` is true when any row has a client, and also when the stack row is `in-sync` or `stale`, so a stack-only pack can report applied. A projected pack without a stack is unchanged.
 
 #### `GET /api/packs/{name}`
 
@@ -3620,10 +3620,10 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/packs/p
 | `path` | string | Subdirectory within the repository |
 | `auth` | object | Credentials for the pack repository (see below). A token here is not sent to an external source. |
 | `sourceAuth` | object | Map of source name to the same auth object. Omitted sources use stored member auth, then the manifest `auth` block. An unknown name is a warning (`source-auth "<name>" does not match a declared source`), not an error. |
-| `locked` | bool | Same as add. Default false. |
+| `locked` | bool | Fail the preview when the pack lock is missing or stale. Default false. The dedicated `409` `lock_stale` body is on add, not this endpoint. |
 | `ignoreLock` | bool | Same as add. Default false. Both true is `400`. |
 
-**Errors:** `400` when `auth.credentialRef` or a `sourceAuth` credential cannot be resolved, or when `auth.sshKeyPath` or a `sourceAuth` key path is relative. A source entry's error is prefixed `source "<name>":`. `422` when the repository has no manifest (the body suggests the Skill import flow for plain skill repos), or when an SSH URL has no reachable ssh-agent.
+**Errors:** `400` when `auth.credentialRef` or a `sourceAuth` credential cannot be resolved, or when `auth.sshKeyPath` or a `sourceAuth` key path is relative. A source entry's error is prefixed `source "<name>":`. `422` when the repository has no manifest (the body suggests the Skill import flow for plain skill repos), or when an SSH URL has no reachable ssh-agent. A stale or missing lock with `locked: true` is HTTP 500. The body is `Pack preview failed:` plus the stale message, and it does not set `code`. `POST /api/packs` is the endpoint that returns `409` `lock_stale`.
 
 #### Pack authentication
 
@@ -3676,11 +3676,11 @@ An empty or absent body is a plain apply. **Response:** the apply document: `app
 
 Cascade removal in dependency order: the stack step first when a stack record exists, then pack-tagged projections are unsynced, pack-tagged wiring records removed through the ownership manager, then registry entries and the pack record. `?dry_run=1` returns the cascade preview (`would-remove` rows plus the drift-kept list) without executing; `?force=1` removes hand-edited projections too. A partial removal trims the pack record to the kept resources rather than deleting it, so the response's `kept` list is the truth about what remains.
 
-This release cannot stop a daemon. If a pack-owned daemon is running, a real delete returns a first `stack` row of `skipped-unavailable` with detail `stack deploy is not available over this interface` and remediation `gridctl destroy <name>`, and leaves that daemon, `~/.gridctl/packs/<name>/`, and the pack record in place so `gridctl pack remove` can finish the job. `?dry_run=1` still reports `would-remove` and a stop for that daemon; the preview does not mean REST can perform the stop. A same-named daemon running from another path is not stopped. A real delete gets no stack row for it and still removes the pack checkout. `?dry_run=1` reports `would-remove` for that checkout and says the daemon is left running. When nothing is running, delete removes the checkout. Stop the daemon with `gridctl pack remove` before deleting the pack here.
+This release cannot stop a daemon. If a pack-owned daemon is running, a real delete returns a first `stack` row of `skipped-unavailable` with detail `stack deploy is not available over this interface` and remediation `gridctl destroy <name>`, and leaves that daemon, `~/.gridctl/packs/<name>/`, and the pack record in place so `gridctl pack remove` can finish the job. `?dry_run=1` still reports `would-remove` and a stop for that daemon; the preview does not mean REST can perform the stop. A same-named daemon running from another path is not stopped. A real delete gets no stack row for it and still removes the pack checkout. `?dry_run=1` reports `would-remove` for that checkout and says the daemon is left running. When nothing is running, delete removes the checkout. Stop the daemon with `gridctl pack remove` before deleting the pack here. Deleting a base with attached boosters is refused before any write. `?force=1` removes the base and leaves each booster's fragment record. Deleting a booster while the base daemon is running from the composed file does not reload: the stack row is `skipped-unavailable` with remediation `run 'gridctl pack remove <name>' from the CLI`, and the pack record stays.
 
 **Auth:** Yes
 
-**Errors:** `404` - Pack not imported; `409` - Name collision.
+**Errors:** `404` - Pack not imported; `409` - Name collision, or a base with attached boosters (`pack '<name>' has attached boosters (<a>, <b>); remove them first or pass --force`).
 
 ---
 

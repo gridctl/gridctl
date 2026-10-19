@@ -32,6 +32,7 @@ gridctl apply examples/python-sources/pypi.yaml
 | [📈 autoscale/](autoscale/) | Reactive autoscaling of MCP server replicas |
 | [🧳 portable-stack/](portable-stack/) | Stack that stays committable by keeping every per-environment value in the variable store |
 | [🎒 portable-pack/](portable-pack/) | Pack repo: skills, agents, rules, a local-process stack, and a commented external source example behind one `gridctl-pack.yaml` |
+| [booster-pack/](booster-pack/) | Fragment pack that composes one local-process server onto the `network-eng` pack |
 | [🔭 tracing/](tracing/) | Distributed tracing and OTLP export |
 | [Run records](runs/) | Included in v1.0.0-rc.2: opt-in metadata-only persisted dispatch records |
 | [📋 registry/](registry/) | Skills and agents registry ([agentskills.io](https://agentskills.io) spec) |
@@ -45,7 +46,7 @@ gridctl apply examples/python-sources/pypi.yaml
 4. **Platforms**: `platforms/github-mcp.yaml` - third-party MCP servers
 5. **OpenAPI**: `openapi/openapi-basic.yaml` - turn any REST API into MCP tools
 6. **Registry**: `registry/registry-basic.yaml` - Skills as MCP prompts (imports also discover agents)
-7. **Packs**: `portable-pack/` - one manifest importing skills, agents, rules, and a local-process stack as a unit, with a commented external source example
+7. **Packs**: `portable-pack/` - one manifest importing skills, agents, rules, and a local-process stack as a unit, with a commented external source example. `booster-pack/` composes a fragment onto that pack
 8. **Scaling**: `autoscale/autoscale-basic.yaml` - reactive autoscaling of MCP replicas
 
 > **Note:** Getting-started examples use digest-pinned `alpine:3.22` placeholders (`sleep`) to focus on infrastructure concepts, not MCP server logic. The first example that serves a tool is `python-sources/pypi.yaml`.
@@ -98,6 +99,7 @@ gridctl apply examples/python-sources/pypi.yaml
 | declarative-link | stdio (container) | `link:` block, `groups:` endpoints |
 | portable-stack | http (containers) | Committable stack, all values from the variable store |
 | portable-pack | - (pack manifest) | Skills, agents, rules, wiring, a local-process stack, and a commented external source example from one manifest |
+| booster-pack | - (pack fragment) | One local-process server composed onto the `network-eng` pack; not a standalone stack |
 | declaration-policy-demo | http (container) | Offline `validate --policy` against digest-pinned images and pinning block |
 
 ## Dependency references
