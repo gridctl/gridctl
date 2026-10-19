@@ -884,7 +884,7 @@ func provenanceFor(opts ImportOptions, relPath, destDir string) (string, string)
 // every sync refreshed upstream content with the scan gate disabled, harmless
 // while only the SKILL.md body was scanned, but not once supporting files are
 // installed too.
-func (imp *Importer) Update(ctx context.Context, skillName string, dryRun, force, trust bool) (*ImportResult, error) {
+func (imp *Importer) Update(ctx context.Context, skillName string, dryRun, force, trust bool, ignoreLock ...bool) (*ImportResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -904,6 +904,11 @@ func (imp *Importer) Update(ctx context.Context, skillName string, dryRun, force
 	}
 	if origin.IsLocal() {
 		return imp.updateLocal(ctx, skillName, skillDir, origin, isSkill, dryRun, force, trust)
+	}
+	if len(ignoreLock) == 0 || !ignoreLock[0] {
+		if err := imp.refuseLocked(skillName, isSkill); err != nil {
+			return nil, err
+		}
 	}
 
 	// Rebuild the stored auth (vault reference or ssh-key path).
@@ -987,6 +992,26 @@ func (imp *Importer) Update(ctx context.Context, skillName string, dryRun, force
 	}
 
 	return result, nil
+}
+
+// refuseLocked rejects an update of a member source pinned by a pack lock.
+// The background update checker does not call Update, so it is unchanged.
+func (imp *Importer) refuseLocked(name string, isSkill bool) error {
+	lf, err := ReadLockFile(imp.lockPath)
+	if err != nil {
+		return err
+	}
+	var src *LockedSource
+	var ok bool
+	if isSkill {
+		_, src, ok = lf.FindSkillSource(name)
+	} else {
+		_, src, ok = lf.FindAgentSource(name)
+	}
+	if !ok || src == nil || src.LockedBy == "" {
+		return nil
+	}
+	return fmt.Errorf("source is locked by %s; update the pack lock (gridctl pack lock in the pack repository, then gridctl pack add), or re-run with --ignore-lock", src.LockedBy)
 }
 
 // RemoveAgent removes an imported agent and cleans up origin and lock
