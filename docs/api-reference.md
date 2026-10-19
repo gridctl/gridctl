@@ -3598,7 +3598,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/packs \
 
 **Errors:**
 - `400` - Missing repo, invalid body, an unresolvable `auth.credentialRef` or `sourceAuth` credential, or a relative `auth.sshKeyPath` or `sourceAuth` key path. A source entry's error is prefixed `source "<name>":`
-- `409` - Security findings without trust: `{ "error", "pack", "findings": [{kind, name, source, findings}] }`; `source` is set for an external resource and omitted for the pack repository; nothing was imported. A stale or missing lock with `locked: true` is `{ "error", "code": "lock_stale" }` and writes nothing.
+- `409` - Security findings without trust: `{ "error", "pack", "findings": [{kind, name, source, findings}] }`; `source` is set for an external resource and omitted for the pack repository; nothing was imported. A stale or missing lock with `locked: true` is `{ "error", "code": "lock_stale" }` and writes nothing. A pack lock written by a newer gridctl is `409` with the newer-version message.
 - `422` - No `gridctl-pack.yaml` at the repository root, or no reachable ssh-agent (see [pack auth](#pack-authentication))
 
 #### `POST /api/packs/preview`
@@ -3620,10 +3620,10 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/packs/p
 | `path` | string | Subdirectory within the repository |
 | `auth` | object | Credentials for the pack repository (see below). A token here is not sent to an external source. |
 | `sourceAuth` | object | Map of source name to the same auth object. Omitted sources use stored member auth, then the manifest `auth` block. An unknown name is a warning (`source-auth "<name>" does not match a declared source`), not an error. |
-| `locked` | bool | Fail the preview when the pack lock is missing or stale. Default false. The dedicated `409` `lock_stale` body is on add, not this endpoint. |
+| `locked` | bool | Fail with `409` `lock_stale` when the pack lock is missing or stale. Default false. |
 | `ignoreLock` | bool | Same as add. Default false. Both true is `400`. |
 
-**Errors:** `400` when `auth.credentialRef` or a `sourceAuth` credential cannot be resolved, or when `auth.sshKeyPath` or a `sourceAuth` key path is relative. A source entry's error is prefixed `source "<name>":`. `422` when the repository has no manifest (the body suggests the Skill import flow for plain skill repos), or when an SSH URL has no reachable ssh-agent. A stale or missing lock with `locked: true` is HTTP 500. The body is `Pack preview failed:` plus the stale message, and it does not set `code`. `POST /api/packs` is the endpoint that returns `409` `lock_stale`.
+**Errors:** `400` when `auth.credentialRef` or a `sourceAuth` credential cannot be resolved, or when `auth.sshKeyPath` or a `sourceAuth` key path is relative. A source entry's error is prefixed `source "<name>":`. `422` when the repository has no manifest (the body suggests the Skill import flow for plain skill repos), or when an SSH URL has no reachable ssh-agent. A stale or missing lock with `locked: true` is `409` `{ "error", "code": "lock_stale" }` and writes nothing, the same body as add. A pack lock with `version` greater than 1 is `409` with the newer-version message.
 
 #### Pack authentication
 
