@@ -24,6 +24,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Maintenance
 
+- Fix the scheduled NPM Audit Fix workflow to open a PR for compatible updates when advisories remain, report the remaining count, and still fail on npm execution or registry errors.
 - Pin the MCP conformance suite to `@modelcontextprotocol/conformance@0.2.0-alpha.12` and score each protocol generation against its frozen requirement set. The CI job also runs a Docker-free fleet (two mock servers, two active registry skills, and `/groups/dev/mcp`) and is a verifier lane, so a skip fails the job. Baseline entries are per-check where one check fails, each with a reason. The three 2026-07-28 scenarios that stay unscored still run one at a time under a strict baseline.
 
 ### Bug Fixes
