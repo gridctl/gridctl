@@ -23,6 +23,7 @@ const (
 	lockVersionStack       = 5
 	lockVersionLocal       = 6
 	lockVersionPackSources = 7
+	lockVersionPackLock    = 8
 )
 
 // ImportLockVersion is the highest skills.lock.yaml schema version this
@@ -32,14 +33,19 @@ const (
 // ssh_user, ssh_key_path); version 5 added pack stack records and
 // unresolved-detail maps; version 6 added local directory sources
 // (kind: local and per-skill tree_hash); version 7 added pack external
-// sources (LockedPack.Sources and LockedSource.PackMember). Files are
+// sources (LockedPack.Sources and LockedSource.PackMember); version 8
+// added pack lock state (LockedPack.Lock), member lock pins
+// (LockedSource.LockedBy), and booster fragment records
+// (LockedPack.Fragment). Files are
 // written at the lowest version that can represent them (see WriteLockFile).
 // A reader whose maximum is 4 understands SSH fields only and must refuse a
 // file that carries a stack record or an unresolved-detail map rather than
 // drop those keys on the next write. A reader whose maximum is 5 must refuse
 // a file that carries a local source. A reader whose maximum is 6 must refuse
-// a file that carries pack sources or a pack member marker.
-const ImportLockVersion = lockVersionPackSources
+// a file that carries pack sources or a pack member marker. A reader whose
+// maximum is 7 must refuse a file that carries a pack lock state, a member
+// locked by a pack lock, or a booster fragment record.
+const ImportLockVersion = lockVersionPackLock
 
 // ErrNewerImportLockVersion signals a skills.lock.yaml written by a
 // newer gridctl. Callers must never paper over it: acting on state a
@@ -88,6 +94,10 @@ type LockedSource struct {
 	// basename and never contains a slash. GuardSourceKey is what stops
 	// an explicit --source-name from re-keying the member to another repo.
 	PackMember string `yaml:"pack_member,omitempty"`
+	// LockedBy is the pack whose committed lock pinned this member source.
+	// Empty when the last add did not honor a lock. A non-empty value
+	// stamps lockVersionPackLock.
+	LockedBy string `yaml:"locked_by,omitempty"`
 }
 
 // LockedPack is the recorded state of an imported pack: the manifest
@@ -134,6 +144,30 @@ type LockedPack struct {
 	// non-empty map stamps lockVersionPackSources. An older reader has no
 	// field for the key and would drop it on the next write.
 	Sources map[string]LockedPackSource `yaml:"sources,omitempty"`
+	// Lock records whether pack add honored, ignored, or found a stale or
+	// absent gridctl-pack.lock.yaml. Nil when the manifest declares neither
+	// sources nor stack.extends. A non-nil value stamps lockVersionPackLock.
+	Lock *LockedPackLock `yaml:"lock,omitempty"`
+	// Fragment records a booster's pinned stack fragment. Nil for a base
+	// pack and for a booster whose fragment did not resolve. A non-nil
+	// value stamps lockVersionPackLock.
+	Fragment *LockedFragment `yaml:"fragment,omitempty"`
+}
+
+// LockedPackLock is the pack-lock state recorded at add time.
+type LockedPackLock struct {
+	State  string `yaml:"state,omitempty"`
+	Digest string `yaml:"digest,omitempty"`
+	Path   string `yaml:"path,omitempty"`
+}
+
+// LockedFragment is a booster fragment pinned under the booster checkout.
+type LockedFragment struct {
+	Base        string `yaml:"base,omitempty"`
+	Path        string `yaml:"path,omitempty"`
+	Name        string `yaml:"name,omitempty"`
+	ContentHash string `yaml:"content_hash,omitempty"`
+	CheckoutDir string `yaml:"checkout_dir,omitempty"`
 }
 
 // LockedPackSource is one external repository pinned by a pack import.
@@ -331,6 +365,13 @@ func WriteLockFile(path string, lf *LockFile) error {
 		}
 		if src.Pack != nil && len(src.Pack.Sources) > 0 && lf.Version < lockVersionPackSources {
 			lf.Version = lockVersionPackSources
+		}
+		if src.LockedBy != "" && lf.Version < lockVersionPackLock {
+			lf.Version = lockVersionPackLock
+		}
+		if src.Pack != nil && lf.Version < lockVersionPackLock &&
+			(src.Pack.Lock != nil || src.Pack.Fragment != nil) {
+			lf.Version = lockVersionPackLock
 		}
 	}
 

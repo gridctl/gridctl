@@ -126,6 +126,25 @@ describe('packModel', () => {
     expect(groups[0].rows[0].remediation).toContain('gridctl pack apply');
   });
 
+  it('groups fragment and lock rows between the stack and sources', () => {
+    const groups = groupPackRows([
+      { kind: 'source', name: 'netops', state: 'in-sync', detail: 'https://example.com/netops (abc)' },
+      { kind: 'lock', name: 'gridctl-pack.lock.yaml', state: 'honored' },
+      { kind: 'fragment', name: 'netops-team', state: 'in-sync', detail: 'servers.yaml (abc)', remediation: "re-run 'gridctl pack apply infra'" },
+      { kind: 'stack', name: 'infra', state: 'in-sync' },
+    ]);
+    expect(groups.map((g) => g.kind)).toEqual(['stack', 'fragment', 'lock', 'source']);
+    expect(groups[1].rows[0].detail).toBe('servers.yaml (abc)');
+    expect(groups[1].rows[0].remediation).toContain('gridctl pack apply');
+    expect(groups[2].rows[0].name).toBe('gridctl-pack.lock.yaml');
+  });
+
+  it('treats a missing fragment checkout as attention', () => {
+    expect(rowNeedsAttention({ kind: 'fragment', name: 'netops-team', state: 'missing' })).toBe(true);
+    expect(rowNeedsAttention({ kind: 'lock', name: 'gridctl-pack.lock.yaml', state: 'stale' })).toBe(true);
+    expect(rowNeedsAttention({ kind: 'lock', name: 'gridctl-pack.lock.yaml', state: 'honored' })).toBe(false);
+  });
+
   it('groups a source row after the stack row and before skills', () => {
     const groups = groupPackRows([
       { kind: 'skill', name: 'ok', client: 'claude', state: 'in-sync' },
@@ -364,6 +383,21 @@ describe('PackImportWizard', () => {
     });
     fireEvent.click(screen.getByText('Preview pack'));
     expect(await screen.findByText(/alpha from netops/)).toBeInTheDocument();
+  });
+
+  it('shows the lock state on the review step', async () => {
+    vi.mocked(previewPack).mockResolvedValue({
+      ...previewResult,
+      rules: [],
+      lock: { state: 'honored' },
+      sources: [{ name: 'netops', repo: 'https://example.com/netops.git', skills: [], agents: [] }],
+    });
+    renderWizard();
+    fireEvent.change(screen.getByLabelText('Pack repository URL'), {
+      target: { value: 'https://github.com/acme/team-pack' },
+    });
+    fireEvent.click(screen.getByText('Preview pack'));
+    expect(await screen.findByText('Lock: honored')).toBeInTheDocument();
   });
 
   it('previews, gates on the pack-wide trust ack, and installs', async () => {

@@ -5,11 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
+	"path/filepath"
 	"slices"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/agentsync"
+	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/contexts"
+	"github.com/gridctl/gridctl/pkg/pack"
 	"github.com/gridctl/gridctl/pkg/project"
 	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/skillsync"
@@ -69,6 +73,8 @@ type PackInfo struct {
 	Collision      bool            `json:"collision,omitempty"`
 	CollisionRepos []string        `json:"collision_repos,omitempty"`
 	Sources        []SourceSummary `json:"sources,omitempty"`
+	// Extends is the base pack a booster composes onto.
+	Extends string `json:"extends,omitempty"`
 }
 
 // PackStatus is one pack's identity plus its per-resource state rows.
@@ -156,7 +162,8 @@ func (m *Managers) Statuses(ctx context.Context, opts StatusOptions) ([]PackStat
 				CommitSHA: ps.Source.CommitSHA,
 				FetchedAt: ps.Source.FetchedAt,
 			},
-			Counts:     Counts{Skills: len(p.Skills), Agents: len(p.Agents), Rules: len(p.Rules), Wiring: p.Wiring, Stack: p.Stack != nil, Sources: len(p.Sources)},
+			Counts:     Counts{Skills: len(p.Skills), Agents: len(p.Agents), Rules: len(p.Rules), Wiring: p.Wiring, Stack: p.Stack != nil || p.Fragment != nil, Sources: len(p.Sources)},
+			Extends:    packExtends(p),
 			Sources:    statusSourceSummaries(p),
 			Unresolved: p.Unresolved,
 		}
@@ -230,16 +237,43 @@ func (m *Managers) loadRuleStatusDeps(ctx context.Context, sources []packSource)
 func (m *Managers) statusRowsFor(p *skills.LockedPack, packRepo string, members map[string]skills.LockedSource, cache *skills.UpdateStatus, skillStatuses []skillsync.ProjectionStatus, agentStatuses []agentsync.ProjectionStatus, wiringRows []wiring.Row, ruleDeps *ruleStatusDeps) ([]Row, bool) {
 	var rows []Row
 	attention := false
-	if p.Stack != nil {
-		home, err := m.homeDir()
-		if err != nil {
-			rows = append(rows, Row{Kind: "stack", Name: p.Stack.Name, State: "target-missing", Detail: err.Error(), Remediation: "re-run 'gridctl pack add'"})
+	home, homeErr := m.homeDir()
+	lf, _ := skills.ReadLockFile(m.lockPath())
+	if p.Fragment != nil {
+		row, fragmentAttention := statusBoosterStackRow(home, homeErr, p, lf, packRepo)
+		rows = append(rows, row)
+		attention = attention || fragmentAttention
+	} else if p.Stack != nil {
+		if homeErr != nil {
+			rows = append(rows, Row{Kind: "stack", Name: p.Stack.Name, State: "target-missing", Detail: homeErr.Error(), Remediation: "re-run 'gridctl pack add'"})
 			attention = true
 		} else {
-			row, stackAttention := statusStackRow(home, p.Name, p.Stack)
+			target := pinnedStackPath(p.Stack)
+			if lf != nil {
+				if boosters := attachedBoosters(lf, p.Name); len(boosters) > 0 {
+					target = composeTarget(home, p.Name, p.Stack, boosters)
+				}
+			}
+			row, stackAttention := statusStackRow(home, p.Name, p.Stack, target)
 			rows = append(rows, row)
 			attention = attention || stackAttention
+			if lf != nil {
+				for _, row := range fragmentStatusRows(home, p.Name, p.Stack, attachedBoosters(lf, p.Name)) {
+					rows = append(rows, row)
+					if row.State == "stale" || row.State == "missing" {
+						attention = true
+					}
+				}
+			}
 		}
+	}
+	if p.Lock != nil {
+		row := Row{Kind: "lock", Name: pack.LockFileName, State: p.Lock.State}
+		if p.Lock.State == "stale" {
+			row.Remediation = fmt.Sprintf("run 'gridctl pack lock' in the pack repository, then re-run 'gridctl pack add %s'", packRepo)
+			attention = true
+		}
+		rows = append(rows, row)
 	}
 	for _, name := range slices.Sorted(maps.Keys(p.Sources)) {
 		row, sourceAttention := sourceStatusRow(packRepo, name, p.Sources[name], members[name], cache)
@@ -376,6 +410,19 @@ func sourceStatusRow(packRepo, name string, ps skills.LockedPackSource, member s
 	if !checkable {
 		return Row{Kind: "source", Name: name, State: "in-sync", Detail: detail + ", freshness not checked"}, false
 	}
+	if member.LockedBy != "" {
+		detail += ", locked"
+		if cache != nil {
+			for _, skillName := range ps.Skills {
+				upd, ok := cache.Updates[skillName]
+				if ok && upd.Repo == ps.Repo && upd.LatestSHA != "" && upd.LatestSHA != ps.CommitSHA {
+					detail += ", newer upstream " + skills.ShortSHA(upd.LatestSHA)
+					break
+				}
+			}
+		}
+		return Row{Kind: "source", Name: name, State: "in-sync", Detail: detail}, false
+	}
 	if cache != nil {
 		for _, skillName := range ps.Skills {
 			upd, ok := cache.Updates[skillName]
@@ -391,6 +438,148 @@ func sourceStatusRow(packRepo, name string, ps skills.LockedPackSource, member s
 		}
 	}
 	return Row{Kind: "source", Name: name, State: "in-sync", Detail: detail}, false
+}
+
+func packExtends(p *skills.LockedPack) string {
+	if p == nil || p.Fragment == nil {
+		return ""
+	}
+	return p.Fragment.Base
+}
+
+func statusBoosterStackRow(home string, homeErr error, p *skills.LockedPack, lf *skills.LockFile, packRepo string) (Row, bool) {
+	name := p.Fragment.Path
+	readd := fmt.Sprintf("re-add the base, then re-run 'gridctl pack add %s'", packRepo)
+	if homeErr != nil {
+		return Row{Kind: "stack", Name: name, State: "target-missing", Detail: homeErr.Error(), Remediation: "re-run 'gridctl pack add'"}, true
+	}
+	if _, absent := fragmentCheckoutMissing(p.Fragment); absent {
+		return Row{
+			Kind: "stack", Name: name, State: "target-missing",
+			Detail:      fmt.Sprintf("checkout or stack file is missing: %s", p.Fragment.CheckoutDir),
+			Remediation: fmt.Sprintf("re-run 'gridctl pack add %s'", packRepo),
+		}, true
+	}
+	if lf == nil {
+		return Row{Kind: "stack", Name: name, State: "target-missing", Detail: fmt.Sprintf("base pack '%s' is not added", p.Fragment.Base), Remediation: readd}, true
+	}
+	base, err := findPack(lf, p.Fragment.Base)
+	if err != nil {
+		detail := fmt.Sprintf("base pack '%s' is not added", p.Fragment.Base)
+		return Row{Kind: "stack", Name: name, State: "target-missing", Detail: detail, Remediation: readd}, true
+	}
+	if base.Pack.Stack == nil {
+		return Row{Kind: "stack", Name: name, State: "target-missing", Detail: fmt.Sprintf("base pack '%s' carries no stack", p.Fragment.Base)}, true
+	}
+	run, err := classifyRunningStack(home, p.Fragment.Base, base.Pack.Stack.Name, ComposedStackPath(home, p.Fragment.Base))
+	if err != nil {
+		return Row{Kind: "stack", Name: name, State: "target-missing", Detail: err.Error()}, true
+	}
+	if !run.running {
+		return Row{Kind: "stack", Name: name, State: "missing"}, false
+	}
+	layers, ok, err := config.ReadComposedHeader(run.stackFile)
+	if err != nil || !ok {
+		return Row{
+			Kind: "stack", Name: name, State: "stale",
+			Detail:      fmt.Sprintf("not listed in %s", p.Fragment.Base),
+			Remediation: fmt.Sprintf("re-run 'gridctl pack apply %s'", p.Fragment.Base),
+		}, true
+	}
+	for _, layer := range layers {
+		if layer.Pack != p.Name {
+			continue
+		}
+		if layer.Commit == baseCommit(p, lf) || layer.Commit == checkoutCommit(home, p.Name, p.Fragment.CheckoutDir) || layer.Commit == fragmentCommit(lf, p.Name) {
+			return Row{Kind: "stack", Name: name, State: "composed", Detail: fmt.Sprintf("composed into %s", p.Fragment.Base)}, false
+		}
+		return Row{
+			Kind: "stack", Name: name, State: "stale",
+			Detail:      fmt.Sprintf("listed at %s, pinned %s", skills.ShortSHA(layer.Commit), skills.ShortSHA(fragmentCommit(lf, p.Name))),
+			Remediation: fmt.Sprintf("re-run 'gridctl pack apply %s'", p.Fragment.Base),
+		}, true
+	}
+	return Row{
+		Kind: "stack", Name: name, State: "stale",
+		Detail:      fmt.Sprintf("not listed while %s is running", p.Fragment.Base),
+		Remediation: fmt.Sprintf("re-run 'gridctl pack apply %s'", p.Fragment.Base),
+	}, true
+}
+
+func fragmentCommit(lf *skills.LockFile, name string) string {
+	if lf == nil {
+		return ""
+	}
+	ps, err := findPack(lf, name)
+	if err != nil {
+		return ""
+	}
+	return ps.Source.CommitSHA
+}
+
+func baseCommit(p *skills.LockedPack, lf *skills.LockFile) string {
+	return fragmentCommit(lf, p.Name)
+}
+
+func fragmentCheckoutMissing(frag *skills.LockedFragment) (string, bool) {
+	if frag == nil || frag.CheckoutDir == "" {
+		return "", true
+	}
+	info, err := os.Stat(frag.CheckoutDir)
+	if err != nil || !info.IsDir() {
+		return frag.CheckoutDir, true
+	}
+	path := filepath.Join(frag.CheckoutDir, filepath.FromSlash(frag.Path))
+	info, err = os.Stat(path)
+	if err != nil || info.IsDir() {
+		return path, true
+	}
+	return "", false
+}
+
+func fragmentStatusRows(home, base string, st *skills.LockedStack, boosters []packSource) []Row {
+	if len(boosters) == 0 {
+		return nil
+	}
+	composed := ComposedStackPath(home, base)
+	layers, headerOK, _ := config.ReadComposedHeader(composed)
+	listed := map[string]string{}
+	for _, layer := range layers {
+		listed[layer.Pack] = layer.Commit
+	}
+	var daemonFromPinned bool
+	if st != nil {
+		run, runErr := classifyRunningStack(home, base, st.Name, composed)
+		daemonFromPinned = runErr == nil && run.running && run.owned && !run.pinned
+	}
+	var rows []Row
+	for _, booster := range boosters {
+		name := booster.Pack.Name
+		file := booster.Pack.Fragment.Path
+		short := skills.ShortSHA(booster.Source.CommitSHA)
+		if _, absent := fragmentCheckoutMissing(booster.Pack.Fragment); absent {
+			rows = append(rows, Row{
+				Kind: "fragment", Name: name, State: "missing",
+				Detail:      fmt.Sprintf("%s (%s)", file, short),
+				Remediation: fmt.Sprintf("re-run 'gridctl pack add %s'", booster.Source.Repo),
+			})
+			continue
+		}
+		commit, ok := listed[name]
+		if daemonFromPinned || !headerOK || !ok || commit != booster.Source.CommitSHA {
+			rows = append(rows, Row{
+				Kind: "fragment", Name: name, State: "stale",
+				Detail:      fmt.Sprintf("%s (%s)", file, short),
+				Remediation: fmt.Sprintf("re-run 'gridctl pack apply %s'", base),
+			})
+			continue
+		}
+		rows = append(rows, Row{
+			Kind: "fragment", Name: name, State: "in-sync",
+			Detail: fmt.Sprintf("%s (%s)", file, short),
+		})
+	}
+	return rows
 }
 
 func sourceDetail(repo, ref, sha string) string {

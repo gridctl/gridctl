@@ -305,6 +305,14 @@ export function PackImportWizard() {
         <ResolvedKind label="Skills" resources={preview.skills} />
         <ResolvedKind label="Agents" resources={preview.agents} />
         <ResolvedKind label="Rules" resources={preview.rules} />
+        {(preview.sources ?? []).length > 0 && (
+          <p className="text-[11px] text-text-muted">
+            Sources: {(preview.sources ?? []).map((s) => s.name).join(', ')}
+          </p>
+        )}
+        {preview.lock?.state && (
+          <p className="text-[11px] text-text-muted">Lock: {preview.lock.state}</p>
+        )}
         {preview.wiring && (
           <p className="text-[11px] text-text-muted">
             Includes gateway wiring

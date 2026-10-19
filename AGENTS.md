@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repository. Follows the [agents.md
 
 ## What gridctl is
 
-Gridctl is an MCP (Model Context Protocol) gateway with a built-in skills and agents registry. A user declares a stack of MCP servers (containerized stdio, SSE/HTTP, OpenAPI-backed, local processes, SaaS proxies) in `stack.yaml`, runs `gridctl apply`, and gridctl orchestrates the containers, fans tool calls to the right server, aggregates downstream prompts and resources with registry skills, and surfaces every active `SKILL.md` to upstream clients as an MCP prompt. A projection engine (`pkg/project`, one lockfile at `~/.gridctl/project.lock.yaml`) also places skills, agents, global-context rules, and gateway wiring onto disk for file-reading clients, and packs (`gridctl-pack.yaml`) import skills, agents, rules, and wiring from one git repo, may select skills and agents from declared external git sources pinned by commit, and can start an optional carried stack from a pinned checkout under `~/.gridctl/packs/`. The same process embeds a React web UI on `:8180`. Inspired by Containerlab.
+Gridctl is an MCP (Model Context Protocol) gateway with a built-in skills and agents registry. A user declares a stack of MCP servers (containerized stdio, SSE/HTTP, OpenAPI-backed, local processes, SaaS proxies) in `stack.yaml`, runs `gridctl apply`, and gridctl orchestrates the containers, fans tool calls to the right server, aggregates downstream prompts and resources with registry skills, and surfaces every active `SKILL.md` to upstream clients as an MCP prompt. A projection engine (`pkg/project`, one lockfile at `~/.gridctl/project.lock.yaml`) also places skills, agents, global-context rules, and gateway wiring onto disk for file-reading clients, and packs (`gridctl-pack.yaml`) import skills, agents, rules, and wiring from one git repo, may select skills and agents from declared external git sources pinned by commit (`gridctl pack lock` writes `gridctl-pack.lock.yaml`), can start an optional carried stack from a pinned checkout under `~/.gridctl/packs/`, and can compose booster fragments onto that base daemon. The same process embeds a React web UI on `:8180`. Inspired by Containerlab.
 
 ## Build and run
 
@@ -98,6 +98,7 @@ internal/scenarioverify/ Post-suite Go JSON execution verifier for tests/adversa
 pkg/catalog/        MCP server catalog behind `gridctl search` / `gridctl add`: curated embedded entries plus the
                     official MCP Registry, with install-shape mapping into stack.yaml server blocks.
 pkg/config/         stack.yaml schema, defaults and validation, variable/env expansion, plan diffing, health-check parsing.
+                    compose.go validates stack fragments and writes the composed stack header. Pure merge; no stores or expansion.
                     a2a.go owns experimental Agent Card declarations and validation. A2A is external/non-container,
                     rejects replicas > 1, autoscale, and execution. Its flag is off by default.
                     export.go owns the shared non-resolving ExportStack projection for CLI/API exports, with bounded
@@ -162,7 +163,7 @@ pkg/agentsync/      Projects imported agents to clients: identity copy for Claud
 pkg/contexts/       Global agent-context projection (`gridctl ctx`): one canonical file, or opt-in rule fragments
                     with multi-file and compiled per-client assembly.
 pkg/wiring/         Key-level ownership of gateway entries merged into client MCP configs (`gridctl project`, link/unlink).
-pkg/pack/           gridctl-pack.yaml manifest schema, including named external `sources` and an optional relative `stack` path; pkg/packops owns orchestration shared by the CLI and REST handlers, including per-source clone and auth. The CLI injects stack launch; REST leaves the launcher nil and does not start or stop a carried daemon.
+pkg/pack/           gridctl-pack.yaml manifest schema, including named external `sources`, a scalar or mapping `stack` (`file` and optional `extends`), and `gridctl-pack.lock.yaml`; pkg/packops owns add, lock honoring, and composition against the lockfile and launcher, including per-source clone and auth. The CLI injects stack launch and reload; REST leaves the launcher nil and does not start, stop, or reload a carried daemon, and it does not write the pack lock.
 pkg/skillpins/      TOFU pins over skill documents (per-file digests, findings); the `gridctl skill pins` store.
 pkg/runs/           Metadata-only persisted dispatch records (`gridctl runs`). Opt-in stack-level JSONL with a bounded queue, single writer, retention, and coordinated wipe.
 pkg/service/        User-scoped systemd and launchd units (`gridctl service`): render, lockfile ownership (kind `service`), an allowlisted unit environment, and supervisor control.
@@ -233,10 +234,12 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
                     a2a_*_test.go adapter suites cover authority, atomic delivery, policy, trust, observation sinks,
                     overlapping cancel, and actual daemon restart/reload with real HTTP and subprocesses.
                     pack_stack_test.go (`integration && !windows`) drives a real pack-carried local-process daemon through add, CLI launch, status, replace, and remove.
+                    pack_composition_test.go (`integration && !windows`) drives booster composition through a real local-process daemon.
+                    pack_lock_test.go (`integration && !windows`) covers lock honoring across homes against a local git HTTP fixture.
                     secret_providers_test.go covers exec apply, redaction, export, plan, rotation reload, failure, and recovery with real subprocesses.
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, a2a, mcp-apps, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
-                    portable-pack, python-sources, python-runtime, execution, security-evidence, stack-configs, stack-declaration-policy, runs).
+                    portable-pack, booster-pack, python-sources, python-runtime, execution, security-evidence, stack-configs, stack-declaration-policy, runs).
                     examples/_mock-servers/ is the source for `task mock:servers`.
 scripts/            Build/test helpers and release tooling: release.py owns gate, inventory, verification, draft/public,
                     and tap policy; release-tools.py pins executables and the SPDX schema; check_goreleaser_cask.py runs

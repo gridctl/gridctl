@@ -27,6 +27,9 @@ type StackLauncher interface {
 	// containers. It must only be called for a daemon whose state file
 	// StackFile is under the pack checkout directory.
 	Stop(ctx context.Context, stackName string) error
+	// Reload asks a running daemon to re-read its stack file. Composition
+	// uses it only when that file is already the composed path.
+	Reload(ctx context.Context, stackName string) error
 }
 
 // LaunchOptions is one pack-stack deploy.
@@ -45,9 +48,11 @@ type LaunchResult struct {
 
 // StackSummary is the carried stack as add and preview report it.
 type StackSummary struct {
-	Path    string `json:"path"`
-	Name    string `json:"name"`
-	Servers int    `json:"servers"`
+	Path     string `json:"path"`
+	Name     string `json:"name"`
+	Servers  int    `json:"servers"`
+	Fragment bool   `json:"fragment,omitempty"`
+	Extends  string `json:"extends,omitempty"`
 }
 
 // PackCheckoutRoot is ~/.gridctl/packs/<pack> under home.
@@ -267,6 +272,7 @@ type stackOutcome struct {
 	port      int
 	portKnown bool
 	checkout  string
+	detail    string
 }
 
 func (m *Managers) applyStack(ctx context.Context, name, repo string, locked *skills.LockedPack, opts ApplyOptions) (Row, stackOutcome) {
@@ -434,6 +440,10 @@ func pruneOtherCheckouts(home, pack, keepDir string) error {
 		if !entry.IsDir() {
 			continue
 		}
+		// composed/ is the base pack's composed stack, not a commit checkout.
+		if entry.Name() == composedDirName {
+			continue
+		}
 		dir := filepath.Join(root, entry.Name())
 		if samePath(dir, keepDir) || checkoutReferenced(states, dir) {
 			continue
@@ -476,7 +486,7 @@ func pathWithin(root, path string) bool {
 
 // statusStackRow is the stack row for one pack, or nil when the pack
 // carries no stack. attention is true for stale, drifted, and target-missing.
-func statusStackRow(home, packName string, st *skills.LockedStack) (Row, bool) {
+func statusStackRow(home, packName string, st *skills.LockedStack, target string) (Row, bool) {
 	if st == nil {
 		return Row{}, false
 	}
@@ -491,7 +501,7 @@ func statusStackRow(home, packName string, st *skills.LockedStack) (Row, bool) {
 			Remediation: "re-run 'gridctl pack add'",
 		}, true
 	}
-	run, err := classifyRunningStack(home, packName, st.Name, pinnedStackPath(st))
+	run, err := classifyRunningStack(home, packName, st.Name, target)
 	if err != nil {
 		return Row{Kind: "stack", Name: name, State: "target-missing", Detail: err.Error(), Remediation: "re-run 'gridctl pack add'"}, true
 	}

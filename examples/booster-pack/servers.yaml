@@ -1,0 +1,7 @@
+# Fragment carried by this booster. The command is a development
+# wrapper, not a published image, so it needs no digest pin.
+version: "1"
+
+mcp-servers:
+  - name: team-tools
+    command: ["sh", "-c", "while true; do sleep 3600; done"]

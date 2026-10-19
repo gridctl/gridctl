@@ -146,8 +146,11 @@ sources:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), "version: 7") {
-		t.Fatalf("lockfile stamp = %q, want version 7", firstLine(string(raw)))
+	if !strings.Contains(string(raw), "version: 8") {
+		t.Fatalf("lockfile stamp = %q, want version 8", firstLine(string(raw)))
+	}
+	if packSrc, ok := lf.Sources[skills.RepoToName(repo)]; !ok || packSrc.Pack == nil || packSrc.Pack.Lock == nil || packSrc.Pack.Lock.State != "absent" {
+		t.Fatalf("lock record = %+v", packSrc.Pack)
 	}
 	_, packSrc, ok := lf.FindPackSource("team-pack")
 	if !ok || packSrc.Pack == nil || len(packSrc.Pack.Sources) != 2 {
@@ -1036,6 +1039,87 @@ func mustHome(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return home
+}
+
+func TestRecheckSourceCommit_LockHonoredUsesCloneAtCommit(t *testing.T) {
+	moved := commitRepo(t, "moved")
+	pinned := commitRepo(t, "pinned")
+	pinnedRepo, err := git.PlainOpen(pinned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := pinnedRepo.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	locked := head.Hash().String()
+	const unreachable = "cccccccccccccccccccccccccccccccccccccccc"
+	var atCommit []string
+	prevAt := cloneAtCommit
+	cloneAtCommit = func(repo, commit, path string, auth skills.AuthConfig, logger *slog.Logger) (*skills.CloneResult, error) {
+		atCommit = append(atCommit, commit)
+		if commit == unreachable {
+			return nil, skills.ErrCommitUnreachable
+		}
+		return &skills.CloneResult{RepoPath: pinned, CommitSHA: commit}, nil
+	}
+	t.Cleanup(func() { cloneAtCommit = prevAt })
+	discoverCalled := false
+	prevDiscover := cloneAndDiscover
+	cloneAndDiscover = func(string, string, string, skills.AuthConfig, *slog.Logger) (*skills.CloneResult, error) {
+		discoverCalled = true
+		return nil, errors.New("depth-1 re-clone")
+	}
+	t.Cleanup(func() { cloneAndDiscover = prevDiscover })
+
+	rs := &resolvedSource{
+		spec:   pack.Source{Repo: "https://example.com/netops.git"},
+		clone:  &skills.CloneResult{RepoPath: moved},
+		sha:    locked,
+		locked: true,
+	}
+	if err := recheckSourceCommit(rs); err != nil {
+		t.Fatal(err)
+	}
+	if discoverCalled {
+		t.Fatal("lock-honored re-check used cloneAndDiscover")
+	}
+	if len(atCommit) != 1 || atCommit[0] != locked {
+		t.Fatalf("cloneAtCommit commits = %v", atCommit)
+	}
+	if rs.clone.RepoPath != pinned {
+		t.Fatalf("clone path = %s", rs.clone.RepoPath)
+	}
+
+	rs.clone = &skills.CloneResult{RepoPath: moved}
+	rs.sha = unreachable
+	err = recheckSourceCommit(rs)
+	if err == nil || err.Error() != "locked commit cccccccc is not reachable at https://example.com/netops.git" {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func commitRepo(t *testing.T, body string) string {
+	t.Helper()
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Add("SKILL.md"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Commit("initial", &git.CommitOptions{Author: &object.Signature{Name: "test", Email: "test@test.com"}}); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }
 
 func firstLine(s string) string {

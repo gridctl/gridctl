@@ -56,6 +56,7 @@ var (
 	skillInfoKind          string
 	skillUpdateDryRun      bool
 	skillUpdateForce       bool
+	skillUpdateIgnoreLock  bool
 	skillUpdateTrust       bool
 	skillTryDuration       string
 	skillTryAuthToken      string
@@ -213,6 +214,7 @@ func init() {
 	skillUpdateCmd.Flags().BoolVar(&skillUpdateDryRun, "dry-run", false, "Show changes without applying")
 	skillUpdateCmd.Flags().BoolVar(&skillUpdateForce, "force", false, "Force update even if no changes detected")
 	skillUpdateCmd.Flags().BoolVar(&skillUpdateTrust, "trust", false, "Skip security scan confirmation for updated content")
+	skillUpdateCmd.Flags().BoolVar(&skillUpdateIgnoreLock, "ignore-lock", false, "Update a skill pinned by a pack lock")
 
 	skillTryCmd.Flags().StringVar(&skillTryDuration, "duration", "10m", "Duration before auto-cleanup")
 	skillTryCmd.Flags().StringVar(&skillTryAuthToken, "auth-token", "", "Personal Access Token (HTTPS only; not persisted). Pass \"-\" to read it from stdin")
@@ -799,7 +801,7 @@ func runSkillUpdate(ctx context.Context, name string) error {
 	}
 
 	if name != "" {
-		result, err := imp.Update(ctx, name, skillUpdateDryRun, skillUpdateForce, skillUpdateTrust)
+		result, err := imp.Update(ctx, name, skillUpdateDryRun, skillUpdateForce, skillUpdateTrust, skillUpdateIgnoreLock)
 		if err != nil {
 			return err
 		}
@@ -890,8 +892,12 @@ func runSkillUpdate(ctx context.Context, name string) error {
 			continue
 		}
 
-		result, err := imp.Update(ctx, sr.name, skillUpdateDryRun, skillUpdateForce, skillUpdateTrust)
+		result, err := imp.Update(ctx, sr.name, skillUpdateDryRun, skillUpdateForce, skillUpdateTrust, skillUpdateIgnoreLock)
 		if err != nil {
+			if errors.Is(err, skills.ErrSourceLocked) {
+				printer.Warn(err.Error())
+				continue
+			}
 			printer.Warn("Failed to update", "skill", sr.name, "error", err)
 			failedSources[sr.source] = true
 			continue

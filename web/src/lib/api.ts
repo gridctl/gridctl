@@ -3250,7 +3250,7 @@ export async function deleteContextFragment(name: string): Promise<{ name: strin
 
 /** One resource line in a pack document (status, apply, or remove). */
 export interface PackRow {
-  kind: 'stack' | 'source' | 'skill' | 'agent' | 'rule' | 'wiring' | 'unresolved';
+  kind: 'stack' | 'fragment' | 'lock' | 'source' | 'skill' | 'agent' | 'rule' | 'wiring' | 'unresolved';
   name: string;
   client?: string;
   action?: string;
@@ -3358,6 +3358,14 @@ export interface PackPreviewResource {
   source?: string;
 }
 
+export interface PackLockSummary {
+  state: string;
+  path?: string;
+  digest?: string;
+  reason?: string;
+  notes?: string[];
+}
+
 export interface PackPreview {
   pack: string;
   version?: string;
@@ -3372,6 +3380,7 @@ export interface PackPreview {
   warnings?: string[];
   stack?: PackStackSummary;
   sources?: PackSourceSummary[];
+  lock?: PackLockSummary;
 }
 
 /** The 409 body a blocked-on-findings pack import carries. */

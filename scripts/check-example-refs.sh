@@ -61,11 +61,14 @@ is_excepted() {
   return 1
 }
 
+# booster-pack/servers.yaml is a stack fragment, not a runnable stack.
+# Fragments cannot declare name or network, so validate would reject it.
 mapfile -t files < <(find "$CHECK_ROOT/examples" -name "*.yaml" \
   -not -name "skills.yaml" \
   -not -name "gridctl-pack.yaml" \
   -not -name "gateway-remote.yaml" \
-  -not -path "*/stack-declaration-policy/policy.yaml" | sort)
+  -not -path "*/stack-declaration-policy/policy.yaml" \
+  -not -path "*/booster-pack/servers.yaml" | sort)
 
 if [ "${#files[@]}" -eq 0 ]; then
   echo "No example stacks found" >&2

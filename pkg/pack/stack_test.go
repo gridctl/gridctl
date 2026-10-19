@@ -11,8 +11,8 @@ func TestParse_StackPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Stack != "stacks/team.yaml" {
-		t.Fatalf("stack = %q", m.Stack)
+	if m.Stack.File != "stacks/team.yaml" || m.Stack.Extends != "" {
+		t.Fatalf("stack = %+v", m.Stack)
 	}
 
 	empty := validManifest
@@ -20,8 +20,8 @@ func TestParse_StackPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Stack != "" {
-		t.Fatalf("empty stack = %q", m.Stack)
+	if m.Stack.File != "" || m.Stack.Extends != "" {
+		t.Fatalf("empty stack = %+v", m.Stack)
 	}
 
 	for _, bad := range []string{"/abs.yaml", "../out.yaml", "foo/../../x.yaml", "foo/../x.yaml", `dir\file.yaml`, ".."} {

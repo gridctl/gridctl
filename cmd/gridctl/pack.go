@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -89,6 +90,8 @@ var (
 	packAddVaultKey       string
 	packAddSSHKey         string
 	packAddSourceAuth     []string
+	packAddLocked         bool
+	packAddIgnoreLock     bool
 )
 
 var packAddCmd = &cobra.Command{
@@ -179,6 +182,10 @@ func storedPackAuthFromLock(lockPath, repo string) (skills.AuthConfig, error) {
 
 // runPackAdd clones, resolves the manifest selection, and imports.
 func validatePackAddFlags(cmd *cobra.Command, args []string) error {
+	if packAddLocked && packAddIgnoreLock {
+		fmt.Fprintln(os.Stderr, "--locked and --ignore-lock cannot be used together")
+		os.Exit(ctxExitInfrastructure)
+	}
 	if err := validateSkillAuthFlags(&packAddAuthToken, &packAddVaultKey, &packAddAuthTokenStdin)(cmd, args); err != nil {
 		return err
 	}
@@ -250,8 +257,17 @@ func runPackAdd(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Man
 	res, err := mgrs.Add(ctx, imp, packops.AddOptions{
 		Repo: repo, Ref: ref, Path: path, Trust: trust, DryRun: dryRun, Auth: auth,
 		SourceAuth: sourceAuth, Resolver: cliCredentialResolver,
+		Locked: packAddLocked, IgnoreLock: packAddIgnoreLock,
 	})
 	if err != nil {
+		if errors.Is(err, packops.ErrLockStale) {
+			fmt.Fprintln(stderr, err.Error())
+			return ctxExitAttention
+		}
+		if errors.Is(err, packops.ErrLockFlags) {
+			fmt.Fprintln(stderr, err.Error())
+			return ctxExitInfrastructure
+		}
 		// Same classify-hint-redact path as 'skill add'. Printing the raw
 		// error here used to leak a token embedded in the repo URL and told
 		// the user nothing about how to authenticate.
@@ -289,8 +305,13 @@ func runPackAdd(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Man
 		}
 		printPackSources(stdout, stderr, doc.Sources)
 		if doc.Stack != nil {
-			fmt.Fprintf(stdout, "Stack: %s (%s, %s)\n", doc.Stack.Path, doc.Stack.Name, serverCountLabel(doc.Stack.Servers))
+			if doc.Stack.Fragment {
+				fmt.Fprintf(stdout, "Stack: %s (fragment, extends %s, %s)\n", doc.Stack.Path, doc.Stack.Extends, serverCountLabel(doc.Stack.Servers))
+			} else {
+				fmt.Fprintf(stdout, "Stack: %s (%s, %s)\n", doc.Stack.Path, doc.Stack.Name, serverCountLabel(doc.Stack.Servers))
+			}
 		}
+		printPackLock(stdout, doc.Lock)
 		for _, w := range doc.Warnings {
 			fmt.Fprintf(stdout, "Warning: %s\n", w)
 		}
@@ -335,6 +356,27 @@ func packAddPartial(doc packops.AddDoc) bool {
 		}
 	}
 	return false
+}
+
+func printPackLock(stdout io.Writer, lock *packops.LockSummary) {
+	if lock == nil || lock.State == "" {
+		return
+	}
+	switch lock.State {
+	case "honored":
+		fmt.Fprintln(stdout, "lock: honored")
+	case "stale":
+		fmt.Fprintln(stdout, "lock: stale (run 'gridctl pack lock')")
+	case "absent":
+		fmt.Fprintln(stdout, "lock: absent")
+	case "ignored":
+		fmt.Fprintln(stdout, "lock: ignored")
+	default:
+		fmt.Fprintf(stdout, "lock: %s\n", lock.State)
+	}
+	for _, note := range lock.Notes {
+		fmt.Fprintf(stdout, "lock: %s\n", note)
+	}
 }
 
 func printPackSources(stdout, stderr io.Writer, sources []packops.SourceSummary) {
@@ -443,7 +485,7 @@ Exit codes:
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
 		}
-		if exit := runPackApply(cmd.Context(), os.Stdout, os.Stderr, mgrs, args[0], packApplyForce, packApplyDryRun, packApplyClients, packApplyPort, format, *packApplyPlain); exit != ctxExitOK {
+		if exit := runPackApply(cmd.Context(), os.Stdout, os.Stderr, mgrs, args[0], packApplyForce, packApplyDryRun, packApplyClients, packApplyPort, cmd.Flags().Changed("port"), format, *packApplyPlain); exit != ctxExitOK {
 			os.Exit(exit)
 		}
 		return nil
@@ -451,8 +493,8 @@ Exit codes:
 }
 
 // runPackApply projects one pack across every kind it selects.
-func runPackApply(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Managers, name string, force, dryRun bool, clientOverride []string, port int, format string, plain bool) int {
-	doc, err := mgrs.Apply(ctx, name, packops.ApplyOptions{Force: force, DryRun: dryRun, Clients: clientOverride, Port: port})
+func runPackApply(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Managers, name string, force, dryRun bool, clientOverride []string, port int, portSet bool, format string, plain bool) int {
+	doc, err := mgrs.Apply(ctx, name, packops.ApplyOptions{Force: force, DryRun: dryRun, Clients: clientOverride, Port: port, PortSet: portSet})
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return ctxExitInfrastructure
@@ -721,6 +763,107 @@ func loadLockedPack(name string) (*skills.LockedPack, error) {
 	return packops.LoadLockedPack(name)
 }
 
+var (
+	packLockCheck          bool
+	packLockFormat         string
+	packLockJSON           *bool
+	packLockAuthToken      string
+	packLockAuthTokenStdin bool
+	packLockVaultKey       string
+	packLockSSHKey         string
+	packLockSourceAuth     []string
+)
+
+var packLockCmd = &cobra.Command{
+	Use:   "lock [path]",
+	Short: "Write gridctl-pack.lock.yaml for a pack repository",
+	Long: `Resolves every sources: entry and writes gridctl-pack.lock.yaml next to
+the manifest. --check compares the lock with the manifest and does not
+clone or write. A missing lock under --check is stale.
+
+Exit codes:
+  0  written or unchanged
+  1  stale (under --check) or a source failed to resolve
+  2  unreadable manifest, invalid lock, or write failure`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		format, err := resolveFormat(packLockFormat, cmd.Flags().Changed("format"), *packLockJSON)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(ctxExitInfrastructure)
+		}
+		dir := "."
+		if len(args) == 1 {
+			dir = args[0]
+		}
+		authCfg, err := buildAuthConfigFromFlags(os.Stderr, os.Stdin, packLockAuthToken, packLockAuthTokenStdin, packLockVaultKey, packLockSSHKey)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(ctxExitInfrastructure)
+		}
+		sourceAuth, err := sourceAuthFromFlags(packLockSourceAuth)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(ctxExitInfrastructure)
+		}
+		doc, err := packops.Lock(cmd.Context(), packops.LockOptions{
+			Dir: dir, Check: packLockCheck, Auth: authCfg, SourceAuth: sourceAuth, Resolver: cliCredentialResolver,
+		})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(ctxExitInfrastructure)
+		}
+		if strings.EqualFold(format, "json") {
+			if err := output.EncodeJSON(os.Stdout, doc); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(ctxExitInfrastructure)
+			}
+		} else {
+			printPackLockDoc(os.Stdout, doc)
+		}
+		switch doc.Status {
+		case "written", "unchanged":
+			return nil
+		case "stale", "unresolved":
+			os.Exit(ctxExitAttention)
+		default:
+			os.Exit(ctxExitInfrastructure)
+		}
+		return nil
+	},
+}
+
+func printPackLockDoc(w io.Writer, doc *packops.LockDoc) {
+	if doc == nil {
+		return
+	}
+	switch doc.Status {
+	case "unchanged":
+		fmt.Fprintf(w, "%s is up to date\n", pack.LockFileName)
+	case "stale":
+		fmt.Fprintf(w, "%s is stale: %s\n", pack.LockFileName, doc.Reason)
+	case "unresolved":
+		fmt.Fprintf(w, "%s was not written (%s)\n", pack.LockFileName, doc.Status)
+	default:
+		n := len(doc.Sources)
+		label := "sources"
+		if n == 1 {
+			label = "source"
+		}
+		fmt.Fprintf(w, "Wrote %s (%d %s)\n", pack.LockFileName, n, label)
+	}
+	for _, src := range doc.Sources {
+		if src.Error != "" {
+			fmt.Fprintf(w, "  %s %s: %s\n", src.Name, src.Repo, src.Error)
+			continue
+		}
+		fmt.Fprintf(w, "  %s %s\n", src.Name, formatSourceLine(packops.SourceSummary{Repo: src.Repo, Ref: src.Ref, CommitSHA: src.Commit}))
+	}
+	for _, warning := range doc.Warnings {
+		fmt.Fprintf(w, "Warning: %s\n", warning)
+	}
+}
+
 func init() {
 	packAddCmd.Flags().StringVar(&packAddRef, "ref", "", "Git ref to import (branch, tag, or commit; default: the default branch)")
 	packAddCmd.Flags().StringVar(&packAddPath, "path", "", "Subdirectory within the repository to import from")
@@ -732,6 +875,8 @@ func init() {
 	packAddCmd.Flags().StringVar(&packAddVaultKey, "vault-key", "", "Resolve the PAT from this vault key (e.g. GIT_TOKEN)")
 	packAddCmd.Flags().StringVar(&packAddSSHKey, "ssh-key", "", "Use an SSH private key at this path (SSH URLs only)")
 	packAddCmd.Flags().StringArrayVar(&packAddSourceAuth, "source-auth", nil, "Per-source auth as <name>=vault-key:<KEY> or <name>=ssh-key:<path> (repeatable; unknown names warn)")
+	packAddCmd.Flags().BoolVar(&packAddLocked, "locked", false, "Fail if gridctl-pack.lock.yaml is missing or does not match the manifest")
+	packAddCmd.Flags().BoolVar(&packAddIgnoreLock, "ignore-lock", false, "Resolve source refs even when a pack lock is present")
 	packAddJSON = addJSONAlias(packAddCmd)
 
 	packApplyCmd.Flags().BoolVar(&packApplyForce, "force", false, "Overwrite drifted or foreign resources, and replace a same-named daemon that was not started from this pack")
@@ -751,5 +896,14 @@ func init() {
 	packRemoveCmd.Flags().StringVar(&packRemoveFormat, "format", "text", "Output format: text or json")
 	packRemoveJSON = addJSONAlias(packRemoveCmd)
 
-	packCmd.AddCommand(packAddCmd, packApplyCmd, packStatusCmd, packRemoveCmd)
+	packLockCmd.Flags().BoolVar(&packLockCheck, "check", false, "Compare the lock with the manifest and write nothing")
+	packLockCmd.Flags().StringVar(&packLockFormat, "format", "text", "Output format: text or json")
+	packLockCmd.Flags().StringVar(&packLockAuthToken, "auth-token", "", "Personal Access Token (HTTPS only; not persisted)")
+	packLockCmd.Flags().BoolVar(&packLockAuthTokenStdin, "auth-token-stdin", false, "Read the Personal Access Token from stdin")
+	packLockCmd.Flags().StringVar(&packLockVaultKey, "vault-key", "", "Resolve the PAT from this vault key")
+	packLockCmd.Flags().StringVar(&packLockSSHKey, "ssh-key", "", "Use an SSH private key at this path")
+	packLockCmd.Flags().StringArrayVar(&packLockSourceAuth, "source-auth", nil, "Per-source auth as <name>=vault-key:<KEY> or <name>=ssh-key:<path>")
+	packLockJSON = addJSONAlias(packLockCmd)
+
+	packCmd.AddCommand(packAddCmd, packApplyCmd, packStatusCmd, packRemoveCmd, packLockCmd)
 }
