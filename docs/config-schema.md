@@ -401,7 +401,7 @@ The recording boundary is gateway `tools/call` entry through its normal return. 
 
 ## Secrets
 
-References variable sets from the encrypted variable store (`gridctl var`) for automatic secret injection into containers. The `secrets:` field name is kept for compatibility; the store behind it is the unified variable store, and the deprecated `${vault:KEY}` reference syntax is a compatibility alias for `${var:KEY}` (see [Variable Expansion](#variable-expansion)).
+References variable sets from the encrypted variable store (`gridctl var`) for automatic secret injection into containers, and optional external secret providers resolved at apply and reload. The `secrets:` field name is kept for compatibility; the store behind it is the unified variable store, and the deprecated `${vault:KEY}` reference syntax is a compatibility alias for `${var:KEY}` (see [Variable Expansion](#variable-expansion)). Omitting `providers:` changes nothing.
 
 ```yaml
 secrets:
@@ -413,6 +413,37 @@ secrets:
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `sets` | []entry | No | - | Variable sets to inject. Explicit `env` values take precedence |
+| `providers` | []provider | No | - | External secret providers. Resolved at apply and reload, not at validate, plan, or export |
+
+### Providers
+
+```yaml
+secrets:
+  providers:
+    - name: op
+      type: onepassword
+      # token_file: ~/.config/gridctl/op-service-account
+    - name: bao
+      type: exec
+      command: ["bao", "kv", "get", "-field=value", "{{path}}"]
+      timeout: 10s
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `name` | string | Yes | - | Provider name. Must match `^[a-z][a-z0-9-]*$` and be unique |
+| `type` | string | Yes | - | `exec` or `onepassword` |
+| `command` | []string | exec | - | Argv. At least one element must contain `{{path}}`. Not a shell |
+| `timeout` | duration | No | `10s` | Between `1s` and `5m` |
+| `token_file` | string | No | - | `onepassword` only. Absolute path or `~/...`. Not joined to the stack directory |
+
+A reference is `${secret:<provider>/<path>}`. Mixed strings are allowed. `:-` and `:+` inside the path are rejected. `gridctl validate` reports an undeclared provider, a bad timeout, a missing `{{path}}`, a relative `token_file`, and an operand. It does not run the provider.
+
+Resolution runs at apply and reload, one subprocess per distinct reference, at most four at a time. A failed reference excludes that server, prints `secret <provider>/<path>: <category>`, and records `registrationFailed`. The rest of the apply continues. `gridctl reload`, or the health-check cadence, starts the server when the reference resolves. `gridctl plan` prints `secret changed` when the reference text changes and does not detect a rotated provider value. A rotated `gateway.auth.token` on reload is `restart_required`.
+
+`exec` is trusted exactly as much as the command and the stack author, the same trust class as a local-process `command:`. Its environment drops `GRIDCTL_*`, `OP_CONNECT_TOKEN`, and `OP_SERVICE_ACCOUNT_TOKEN`. `onepassword` passes only `PATH`, `HOME`, `XDG_CONFIG_HOME`, `OP_SERVICE_ACCOUNT_TOKEN`, `OP_CONNECT_HOST`, `OP_CONNECT_TOKEN`, and `OP_ACCOUNT`, and reads `token_file` into `OP_SERVICE_ACCOUNT_TOKEN` when set.
+
+The daemon state file still stores the resolved gateway token at mode 0600, as it does for `${var:}`. Nothing else resolved is persisted, exported, or served by the API.
 
 ### Scoping a set to named workloads
 

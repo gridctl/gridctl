@@ -14,6 +14,7 @@ Manage secrets and configuration with `gridctl var` instead of exporting environ
 | `var-sets-scoped.yaml` | Scope a set to named servers and resources (least privilege) |
 | `vault-basic.yaml` | Deprecated `${vault:KEY}` syntax (kept as a regression example) |
 | `vault-sets.yaml` | Deprecated variable-set example using the `vault` aliases |
+| `providers.yaml` | External `exec` and `onepassword` providers with `${secret:}` references |
 
 > [!WARNING]
 > `gridctl vault …` and the `${vault:KEY}` reference syntax are deprecated aliases for `gridctl var …` and `${var:KEY}`. Both resolve through the same store during the beta cycle and are removed at v1.0. New stacks should use `var`.

@@ -1,0 +1,22 @@
+# External secret providers. References stay literal in this file.
+# `gridctl apply` and `gridctl reload` resolve them on the host.
+# `gridctl plan` does not detect rotation of a provider value.
+version: "1"
+name: secret-providers-example
+
+secrets:
+  providers:
+    - name: fake
+      type: exec
+      command: ["./fake-provider.sh", "{{path}}"]
+      timeout: 10s
+    - name: op
+      type: onepassword
+      # token_file: ~/.config/gridctl/op-service-account
+
+mcp-servers:
+  - name: demo
+    command: ["printf", "token is set\n"]
+    env:
+      DEMO_TOKEN: ${secret:fake/alpha}
+      OP_ITEM: ${secret:op/Infra/demo/token}

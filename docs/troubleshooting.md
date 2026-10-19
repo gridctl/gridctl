@@ -574,6 +574,18 @@ The entry key written by `gridctl link --name` / `--group` is a client-local ali
 
 ---
 
+## Secret provider exited
+
+`apply` or `reload` prints `secret <provider>/<path>: provider exited <n>` when the declared command exits nonzero. The message does not include stdout or stderr.
+
+**Resolution:**
+
+1. Run the provider command by hand with the same environment the gateway has. A daemonized gateway inherits the launching shell. A supervised gateway has the unit allowlist and needs `token_file` for 1Password.
+2. Confirm `secrets.providers` names the provider and that an `exec` command contains `{{path}}`.
+3. Fix the provider, then run `gridctl reload` or wait one health interval. The failed server starts without a daemon restart.
+
+---
+
 ## A2A calls
 
 The experimental adapter requires `experimental.a2a: true` or
