@@ -492,6 +492,7 @@ Learn more → [Packs guide](docs/packs.md)
 | [`github-mcp.yaml`](examples/platforms/github-mcp.yaml) | GitHub MCP server integration |
 | [`registry-basic.yaml`](examples/registry/registry-basic.yaml) | Skills registry with a single server |
 | [`var-basic.yaml`](examples/secrets-vault/var-basic.yaml) | Reference variable-store secrets with `${var:KEY}` syntax |
+| [`providers.yaml`](examples/secrets-vault/providers.yaml) | External `exec` and `onepassword` providers with `${secret:}` references |
 | [`per-client-scoping.yaml`](examples/access-control/per-client-scoping.yaml) | Restrict which servers and tools each linked client may touch |
 | [`read-only-secrets.yaml`](examples/access-control/read-only-secrets.yaml) | Per-tool `policy:` block; substitute a real Vault image before calling tools |
 | [`declarative-link/stack.yaml`](examples/declarative-link/stack.yaml) | Auto-link LLM clients on apply with a `link:` block |

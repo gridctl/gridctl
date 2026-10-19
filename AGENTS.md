@@ -171,6 +171,10 @@ pkg/toolpolicy/     Enforces the optional `policy:` block: last-match-wins call 
 pkg/provisioner/    LLM-client config writers (claude, claudecode, cursor, windsurf, gemini, antigravity, opencode, grok, goose,
                     cline, anythingllm, lmstudio, roo, zed, continue, vscode). JSON and TOML helpers in json.go / toml.go.
                     Backed by `gridctl link` / `gridctl unlink`. `projectsources.go` discovers project MCP files for `gridctl import`.
+pkg/secrets/        Host resolution of `${secret:<provider>/<path>}` at apply and reload. `exec` runs
+                    stack-authored argv; `onepassword` runs `op read`. Load, validate, plan, and export
+                    do not call it. Resolved values stay in memory except the gateway token already stored
+                    in the daemon state file.
 pkg/vault/          Encrypted variable store (XChaCha20-Poly1305 + Argon2id). The `gridctl var` and (deprecated) `gridctl vault` CLIs. `GRIDCTL_VAULT_PASSPHRASE_FILE` unlocks from a user-owned file; gridctl never creates it.
 pkg/varrun/         Explicit stored-variable delivery to child processes, including output redaction and signal forwarding.
 pkg/varscan/        Exact stored-secret scanning for working-tree files and staged Git blobs.
@@ -191,7 +195,8 @@ pkg/reload/         Stack hot-reload (file watcher + diff-and-apply path). secur
                     desired intent, and execution-only recreation preserves schema pins, including combined pool tuning.
                     A2A edits and removal preserve card pins; external-source handling skips container operations.
                     Handler.Plan compares the stack file with the loaded configuration and does not apply, preflight,
-                    or serialize resolved values.
+                    or serialize resolved values. Reload resolves `${secret:}` references before preflight and the
+                    no-change return. Plan does not.
 pkg/controller/     Application composition root: builds the gateway, mounts the API server, embedded UI, and MCP transports
                     (gateway_builder.go), and owns deploy/daemonize orchestration for `gridctl apply` and `gridctl serve`.
                     Foreground apply and serve record a daemon state file so status and destroy see them.
@@ -200,7 +205,8 @@ pkg/controller/     Application composition root: builds the gateway, mounts the
                     IPv4 loopback HTTP endpoint.
                     a2a.go maps declarations into runtime client config. Mandatory card storage is installed on the
                     gateway and API independently of legacy pin switches, including stackless startup.
-pkg/logging/        Shared structured log handlers and redaction, including typed capability strings in messages,
+pkg/logging/        Shared structured log handlers and redaction, including a process-wide exact-value registry
+                    used by the slog handler and RedactString, and typed capability strings in messages,
                     field/group names, and nested JSON-compatible values. Diagnostic copies do not alter policy inputs.
 pkg/token/, pkg/format/, pkg/output/, pkg/jsonrpc/, pkg/state/, pkg/git/, pkg/dockerclient/   Supporting libs.
 
@@ -227,6 +233,7 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
                     a2a_*_test.go adapter suites cover authority, atomic delivery, policy, trust, observation sinks,
                     overlapping cancel, and actual daemon restart/reload with real HTTP and subprocesses.
                     pack_stack_test.go (`integration && !windows`) drives a real pack-carried local-process daemon through add, CLI launch, status, replace, and remove.
+                    secret_providers_test.go covers exec apply, redaction, export, plan, rotation reload, failure, and recovery with real subprocesses.
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, a2a, mcp-apps, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
                     portable-pack, python-sources, python-runtime, execution, security-evidence, stack-configs, stack-declaration-policy, runs).

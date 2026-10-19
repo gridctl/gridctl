@@ -103,6 +103,25 @@ gridctl var scan --staged
 is an exact-value check, not a pattern or history scanner; pair it with tools
 such as Gitleaks or TruffleHog when those checks are required.
 
+### External providers
+
+`providers.yaml` declares an `exec` provider and a `onepassword` provider.
+References stay literal until apply or reload. Validate and explain do not
+require `op`:
+
+```bash
+cd examples/secrets-vault
+gridctl validate providers.yaml
+gridctl var explain 'secret:fake/alpha' --file providers.yaml --no-resolve
+sh ./fake-provider.sh alpha
+```
+
+`./fake-provider.sh` is resolved from the process working directory, not from
+the stack file directory. The `onepassword` server needs the `op` CLI and a
+readable item. A failed reference excludes that server only. `demo` and
+`op-demo` use `printf` as a placeholder process, not a live MCP server. See
+[Providers](../../docs/config-schema.md#providers).
+
 ### Bulk Import
 
 Import multiple variables at once from `.env` or `.json` files:
