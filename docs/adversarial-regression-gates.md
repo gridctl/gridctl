@@ -56,7 +56,7 @@ Next: inspect earlier suite failure, build tags, and selector drift
 
 ## Updating a conformance baseline
 
-Run `task test:conformance`. Copy the failing check id from the runner output and add a per-check entry with a reason. Write it as `<scenario>:<check-id>` with no space after the colon. Never add a scenario that passes on the fleet run. Bump the suite pin and the baselines together. A listed pass fails the run, so remove an entry that starts passing. A baselined failure is still a failure against the requirement set.
+Run `task test:conformance`. Copy the failing check id from the runner output and add a per-check entry with a reason. Write it as `<scenario>:<check-id>` with no space after the colon. Never add a scenario that passes on the fleet run. Bump the suite pin and every baseline file together. A listed pass fails the run, so remove an entry that starts passing. A baselined failure is still a failure against the requirement set. A not_scored scenario cannot fail a requirements run, and a baselined pass is not reported stale there, so keep those entries in `tests/integration/conformance-baseline-2026-07-28-pending.yml` only.
 
 ## Local workflow
 
