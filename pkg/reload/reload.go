@@ -6,12 +6,14 @@ import (
 	"log/slog"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/execution"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/runtime"
+	"github.com/gridctl/gridctl/pkg/secrets"
 )
 
 // ReloadResult contains the result of a reload operation.
@@ -46,6 +48,11 @@ type Handler struct {
 	overridePath      string
 	noOverride        bool
 	securityPreflight func(*config.Stack) []string
+	secretFactory     func(*config.Stack) secrets.StackResolver
+	resolvedValues    map[string]string
+	resolvedAt        map[string]time.Time
+	unresolved        map[string]error
+	onResolvedApplied func(*config.Stack)
 
 	// Callback for registering new MCP servers with gateway. replicas carries
 	// one entry per replica in replica-id order (ContainerID and HostPort per
@@ -168,16 +175,26 @@ func (h *Handler) reload(ctx context.Context, stackPath string, initialize bool)
 
 	h.logger.Info("reloading configuration", "path", h.stackPath)
 
-	// Load new config with the same options Plan uses.
-	newCfg, err := config.LoadStack(stackPath, h.loadOptions()...)
+	// Load new config with the same options Plan uses. The loaded stack stays
+	// reference-literal. A resolved copy is used only for preflight and apply.
+	literal, err := config.LoadStack(stackPath, h.loadOptions()...)
 	if err != nil {
 		return invalidCandidate(err), nil
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	pass := h.resolveCandidate(ctx, literal)
+	if pass.err != nil {
+		return &ReloadResult{
+			Success: false,
+			Code:    "invalid_candidate",
+			Message: pass.err.Error(),
+		}, nil
+	}
+	resolved := pass.resolved
 	if h.securityPreflight != nil {
-		if fields := h.securityPreflight(newCfg); len(fields) != 0 {
+		if fields := h.securityPreflight(resolved); len(fields) != 0 {
 			return &ReloadResult{
 				Code:          "restart_required",
 				ChangedFields: fields,
@@ -187,12 +204,18 @@ func (h *Handler) reload(ctx context.Context, stackPath string, initialize bool)
 	}
 
 	// Compute diff; treat a nil currentCfg as an empty stack (initial load).
+	// Diff uses the literal stacks. Rotation and recovery run before the
+	// empty return so an unchanged file with a new provider value still applies.
 	isInitial := initialize || h.currentCfg == nil
 	prevCfg := h.currentCfg
 	if isInitial {
 		prevCfg = &config.Stack{}
 	}
-	diff := ComputeDiff(prevCfg, newCfg)
+	diff := ComputeDiff(prevCfg, literal)
+	rotated := h.noteRotation(diff, literal, resolved, pass.byRef)
+	h.noteRecovery(diff, literal, resolved, pass.failures)
+	h.dropFailed(diff, pass.failures)
+	h.rewriteResolved(diff, resolved)
 	if isInitial {
 		// A disabled server that was never running lands in no list. It is
 		// carried into currentCfg by the swap below, including the empty-diff
@@ -203,13 +226,25 @@ func (h *Handler) reload(ctx context.Context, stackPath string, initialize bool)
 	if diff.IsEmpty() {
 		if isInitial {
 			h.stackPath = stackPath
-			h.currentCfg = newCfg
+			h.currentCfg = literal
 		}
-		h.logger.Info("no configuration changes detected")
-		return &ReloadResult{
-			Success: true,
-			Message: "no changes detected",
-		}, nil
+		h.commitSecretPass(pass.byRef, pass.failures)
+		result := &ReloadResult{Success: true, Message: "no changes detected"}
+		h.recordSecretFailures(literal, result, pass.failures)
+		if len(result.Errors) > 0 {
+			result.Success = false
+			if len(result.Errors) == 1 {
+				result.Message = result.Errors[0]
+			} else {
+				result.Message = fmt.Sprintf("%d errors during reload", len(result.Errors))
+			}
+		} else {
+			h.logger.Info("no configuration changes detected")
+		}
+		if h.onResolvedApplied != nil && resolved != literal {
+			h.onResolvedApplied(resolved)
+		}
+		return result, nil
 	}
 
 	// Network changes require full restart — skip this check on initial load
@@ -235,8 +270,8 @@ func (h *Handler) reload(ctx context.Context, stackPath string, initialize bool)
 	// never been created. Ensure them now before applyMCPServerChanges tries
 	// to start any container — otherwise Docker rejects ContainerCreate with
 	// "network X not found".
-	if isInitial && newCfg.NeedsContainerRuntime() {
-		if err := h.ensureNetworks(ctx, newCfg); err != nil {
+	if isInitial && resolved.NeedsContainerRuntime() {
+		if err := h.ensureNetworks(ctx, resolved); err != nil {
 			return &ReloadResult{
 				Success: false,
 				Message: fmt.Sprintf("failed to ensure network: %v", err),
@@ -245,7 +280,7 @@ func (h *Handler) reload(ctx context.Context, stackPath string, initialize bool)
 	}
 
 	// Apply MCP server changes
-	if err := h.applyMCPServerChanges(ctx, diff.MCPServers, newCfg, result); err != nil {
+	if err := h.applyMCPServerChanges(ctx, diff.MCPServers, resolved, result); err != nil {
 		result.Success = false
 		result.Message = fmt.Sprintf("failed to apply MCP server changes: %v", err)
 		return result, nil
@@ -255,19 +290,26 @@ func (h *Handler) reload(ctx context.Context, stackPath string, initialize bool)
 	h.applyAutoscalePolicyUpdates(diff.MCPServers, result)
 
 	// Apply resource changes
-	if err := h.applyResourceChanges(ctx, diff.Resources, newCfg, result); err != nil {
+	if err := h.applyResourceChanges(ctx, diff.Resources, resolved, result); err != nil {
 		result.Success = false
 		result.Message = fmt.Sprintf("failed to apply resource changes: %v", err)
 		return result, nil
 	}
 
-	// Update current config
-	h.currentCfg = newCfg
+	// Update current config. Policies and the applied-config hook see the
+	// literal stack. Registration already consumed the resolved copy.
+	h.currentCfg = literal
+	h.commitSecretPass(pass.byRef, pass.failures)
+	h.recordSecretFailures(literal, result, pass.failures)
+	labelRotated(result, rotated)
 
 	// Notify any registered post-reload hook (telemetry writer refresh).
 	// Runs under h.mu — hooks must not re-enter the handler.
 	if h.onConfigApplied != nil {
-		h.onConfigApplied(newCfg)
+		h.onConfigApplied(literal)
+	}
+	if h.onResolvedApplied != nil && resolved != literal {
+		h.onResolvedApplied(resolved)
 	}
 
 	// Per-item failures collected during applyMCPServerChanges /

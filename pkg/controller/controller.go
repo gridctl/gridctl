@@ -363,19 +363,27 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to load stack: %w", err)
 	}
+	deployed, err := resolveDeploy(ctx, stack)
+	if err != nil {
+		return fmt.Errorf("%w", err)
+	}
+	literal := deployed.literal
+	resolved := deployed.resolved
 
-	// Check state lock and existing daemon
-	if err := sc.checkState(stack); err != nil {
+	// Check state lock and existing daemon. The lock key is the literal name.
+	if err := sc.checkState(literal); err != nil {
 		return err
 	}
 
-	// Daemon child path: run gateway directly
+	// Daemon child path: run gateway directly. It resolves again on its own
+	// load above, then attaches using the child's resolved stack.
 	if cfg.DaemonChild {
-		return sc.runDaemonChild(ctx, stack)
+		return sc.runDaemonChild(ctx, literal, resolved, deployed)
 	}
 
 	// Create output printer and phase reporter
-	printer := sc.createPrinter(stack)
+	printer := sc.createPrinter(literal)
+	printSecretFailures(printer, deployed.failures)
 	reporter := sc.createReporter()
 
 	// Surface experimental flag issues (unknown names, concluded flags,
@@ -434,7 +442,7 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 	// Run workloads. The pull/build window streams orchestrator logs, so
 	// this phase renders static lines only (no spinner interleave).
 	reporter.StartPhase("Pulling images & starting workloads", false)
-	result, err := rt.Up(ctx, stack, runtime.UpOptions{
+	result, err := rt.Up(ctx, resolved, runtime.UpOptions{
 		NoCache:  cfg.NoCache,
 		BasePort: cfg.BasePort,
 	})
@@ -448,21 +456,22 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 	// any return path so status and destroy see the process, and deleted
 	// when this call returns, including a BuildAndRun error.
 	if cfg.Foreground {
-		cleanup, err := sc.saveForegroundState(stack.Name, cfg.StackPath, stack)
+		cleanup, err := sc.saveForegroundState(literal.Name, cfg.StackPath, resolved)
 		if err != nil {
 			return err
 		}
 		defer cleanup()
-		builder, err := sc.newGatewayBuilder(stack, rt, result)
+		builder, err := sc.newGatewayBuilder(literal, rt, result)
 		if err != nil {
 			return err
 		}
+		builder.SetResolved(resolved, deployed.byRef, deployed.failures)
 		builder.SetExistingLogInfra(logBuffer, bufferHandler)
 		return builder.BuildAndRun(ctx, !cfg.Quiet)
 	}
 
 	// Daemon mode: fork child process
-	return sc.runDaemonMode(ctx, stack, result, printer, reporter)
+	return sc.runDaemonMode(ctx, literal, result, printer, reporter)
 }
 
 // checkState acquires a lock, cleans stale state, and checks if already running.
@@ -524,21 +533,23 @@ func (sc *StackController) checkState(stack *config.Stack) error {
 }
 
 // runDaemonChild runs the gateway as a daemon child process.
-func (sc *StackController) runDaemonChild(ctx context.Context, stack *config.Stack) error {
+func (sc *StackController) runDaemonChild(ctx context.Context, literal, resolved *config.Stack, deployed *deploySecrets) error {
 	rt, err := sc.createRuntime()
 	if err != nil {
 		return fmt.Errorf("failed to create runtime: %w", err)
 	}
 	defer rt.Close()
 
-	result, err := getRunningContainers(ctx, rt, stack)
+	result, err := getRunningContainers(ctx, rt, resolved)
 	if err != nil {
 		return fmt.Errorf("failed to get container info: %w", err)
 	}
 
-	token, header, authType := authStateFrom(stack)
+	// The state file keeps the resolved gateway token, matching ${var:} today.
+	// Nothing else resolved is written here.
+	token, header, authType := authStateFrom(resolved)
 	st := &state.DaemonState{
-		StackName:  stack.Name,
+		StackName:  literal.Name,
 		StackFile:  sc.config.StackPath,
 		PID:        os.Getpid(),
 		Port:       sc.config.Port,
@@ -551,11 +562,14 @@ func (sc *StackController) runDaemonChild(ctx context.Context, stack *config.Sta
 		return fmt.Errorf("failed to save state: %w", err)
 	}
 	// State-file lifetime tracks process lifetime; see runStacklessDaemonChild.
-	defer func() { _ = state.Delete(stack.Name) }()
+	defer func() { _ = state.Delete(literal.Name) }()
 
-	builder, err := sc.newGatewayBuilder(stack, rt, result)
+	builder, err := sc.newGatewayBuilder(literal, rt, result)
 	if err != nil {
 		return err
+	}
+	if deployed != nil {
+		builder.SetResolved(resolved, deployed.byRef, deployed.failures)
 	}
 	return builder.BuildAndRun(ctx, false)
 }
@@ -613,6 +627,7 @@ func (sc *StackController) setupOrchestratorLogging(rt *runtime.Orchestrator) (*
 	registerVault := func(h *logging.RedactingHandler) {
 		if sc.vaultStore != nil {
 			h.RegisterRedactValues(sc.vaultStore.Values())
+			logging.RegisterSensitiveValues(sc.vaultStore.Values()...)
 		}
 	}
 
