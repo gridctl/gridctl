@@ -112,6 +112,10 @@ type Stack struct {
 	// overrideWarnings collects validate-only notices about an override
 	// that names a server declared only by an unresolved parent.
 	overrideWarnings []string
+
+	// emptySecretSites records ${secret:} references whose path is empty
+	// after trimming. Validation emits them. Never persisted.
+	emptySecretSites []Consumer
 }
 
 // VariableDeclaration documents one stack or pack variable prerequisite.
