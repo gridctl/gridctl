@@ -23,10 +23,14 @@ import (
 //     paths, where ~ means the user's actual home.
 //   - pkg/runtime/detect.go: ~/.docker context detection; Docker state
 //     is machine-level, not gridctl state.
+//   - pkg/secrets/onepassword.go: token_file ~/ expansion. The path is a
+//     host credential file, not gridctl state, so GRIDCTL_HOME must not
+//     redirect it.
 var homeGuardAllowlist = map[string]bool{
-	"pkg/state/home.go":     true,
-	"pkg/config/loader.go":  true,
-	"pkg/runtime/detect.go": true,
+	"pkg/state/home.go":          true,
+	"pkg/config/loader.go":       true,
+	"pkg/runtime/detect.go":      true,
+	"pkg/secrets/onepassword.go": true,
 }
 
 // TestNoUserHomeDirOutsideResolver walks every production Go file in the
