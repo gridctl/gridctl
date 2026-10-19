@@ -301,13 +301,29 @@ func expandStackVars(s *Stack, resolve Resolver) (unresolvedVault []string, empt
 
 func expandStackVarsResolved(s *Stack, resolve referenceResolver) (unresolvedVault []string, emptyEnvVars []string, resolutionProblems []error) {
 	index := ReferenceIndex{}
+	var secretRefs []SecretRef
+	seenSecret := map[string]bool{}
+	if s != nil {
+		s.emptySecretSites = nil
+	}
 
 	// expandField expands one field's value and records every ${var:KEY}
-	// reference it contains against the consumer site c.
+	// and ${secret:} reference it contains against the consumer site c.
 	expandField := func(c Consumer, val string) string {
 		result, denied := expandStringRefs(val, resolve)
 		for _, key := range result.storeRefs {
 			index.add(key, c)
+		}
+		for _, key := range result.secretRefs {
+			index.add(key, c)
+			if !seenSecret[key] {
+				seenSecret[key] = true
+				provider, path, _ := ParseSecretRefKey(key)
+				secretRefs = append(secretRefs, SecretRef{Provider: provider, Path: path, Key: key})
+			}
+		}
+		if result.emptySecretPath {
+			s.emptySecretSites = append(s.emptySecretSites, c)
 		}
 		unresolvedVault = append(unresolvedVault, result.unresolvedVault...)
 		emptyEnvVars = append(emptyEnvVars, result.emptyEnvVars...)
@@ -315,119 +331,127 @@ func expandStackVarsResolved(s *Stack, resolve referenceResolver) (unresolvedVau
 		return result.expanded
 	}
 
-	s.Name = expandField(Consumer{Kind: RefKindStack, Field: "name"}, s.Name)
+	walkExpandedStrings(s, expandField)
+
+	s.References = index
+	s.SecretRefs = secretRefs
+	s.UnresolvedRefs = dedupeStrings(unresolvedVault)
+	return unresolvedVault, emptyEnvVars, resolutionProblems
+}
+
+// SubstituteSecretRefs rewrites ${secret:} tokens in every field
+// expandStackVarsResolved covers. Missing keys stay literal. The walk matches
+// the loader so a newly expandable field is substituted when it is indexed.
+func SubstituteSecretRefs(s *Stack, values map[string]string) {
+	if s == nil || len(values) == 0 {
+		return
+	}
+	walkExpandedStrings(s, func(_ Consumer, val string) string {
+		return replaceSecretRefs(val, values)
+	})
+}
+
+// walkExpandedStrings visits every expandable string field. fn returns the
+// replacement. CredentialRef is intentionally omitted, matching expansion.
+func walkExpandedStrings(s *Stack, fn func(Consumer, string) string) {
+	s.Name = fn(Consumer{Kind: RefKindStack, Field: "name"}, s.Name)
 
 	if s.Gateway != nil {
 		for i := range s.Gateway.AllowedOrigins {
-			s.Gateway.AllowedOrigins[i] = expandField(
+			s.Gateway.AllowedOrigins[i] = fn(
 				Consumer{Kind: RefKindGateway, Field: fmt.Sprintf("allowed_origins[%d]", i)},
 				s.Gateway.AllowedOrigins[i])
 		}
-		s.Gateway.Bind = expandField(
-			Consumer{Kind: RefKindGateway, Field: "bind"}, s.Gateway.Bind)
+		s.Gateway.Bind = fn(Consumer{Kind: RefKindGateway, Field: "bind"}, s.Gateway.Bind)
 		for i := range s.Gateway.AllowedHosts {
-			s.Gateway.AllowedHosts[i] = expandField(
+			s.Gateway.AllowedHosts[i] = fn(
 				Consumer{Kind: RefKindGateway, Field: fmt.Sprintf("allowed_hosts[%d]", i)},
 				s.Gateway.AllowedHosts[i])
 		}
 		if s.Gateway.Auth != nil {
-			s.Gateway.Auth.Token = expandField(
-				Consumer{Kind: RefKindGateway, Field: "auth.token"}, s.Gateway.Auth.Token)
+			s.Gateway.Auth.Token = fn(Consumer{Kind: RefKindGateway, Field: "auth.token"}, s.Gateway.Auth.Token)
 		}
 	}
 
-	s.Network.Name = expandField(Consumer{Kind: RefKindNetwork, Field: "name"}, s.Network.Name)
-
+	s.Network.Name = fn(Consumer{Kind: RefKindNetwork, Field: "name"}, s.Network.Name)
 	for i := range s.Networks {
-		s.Networks[i].Name = expandField(
+		s.Networks[i].Name = fn(
 			Consumer{Kind: RefKindNetwork, Name: s.Networks[i].Name, Field: "name"}, s.Networks[i].Name)
 	}
 
 	for i := range s.MCPServers {
 		srv := &s.MCPServers[i]
-		// site builds a consumer for srv. srv.Name is read at call time, so
-		// every site after the name field below reflects the expanded name.
 		site := func(field string) Consumer {
 			return Consumer{Kind: RefKindMCPServer, Name: srv.Name, Field: field}
 		}
-
-		srv.Name = expandField(site("name"), srv.Name)
-		srv.Image = expandField(site("image"), srv.Image)
-		srv.URL = expandField(site("url"), srv.URL)
-		srv.Network = expandField(site("network"), srv.Network)
-
+		srv.Name = fn(site("name"), srv.Name)
+		srv.Image = fn(site("image"), srv.Image)
+		srv.URL = fn(site("url"), srv.URL)
+		srv.Network = fn(site("network"), srv.Network)
 		for j := range srv.Command {
-			srv.Command[j] = expandField(site(fmt.Sprintf("command[%d]", j)), srv.Command[j])
+			srv.Command[j] = fn(site(fmt.Sprintf("command[%d]", j)), srv.Command[j])
 		}
-
 		if srv.Source != nil {
-			srv.Source.URL = expandField(site("source.url"), srv.Source.URL)
-			srv.Source.Path = expandField(site("source.path"), srv.Source.Path)
-			srv.Source.ProjectPath = expandField(site("source.project_path"), srv.Source.ProjectPath)
-			srv.Source.Ref = expandField(site("source.ref"), srv.Source.Ref)
-			srv.Source.Dockerfile = expandField(site("source.dockerfile"), srv.Source.Dockerfile)
-			srv.Source.Package = expandField(site("source.package"), srv.Source.Package)
-			srv.Source.Python = expandField(site("source.python"), srv.Source.Python)
+			srv.Source.URL = fn(site("source.url"), srv.Source.URL)
+			srv.Source.Path = fn(site("source.path"), srv.Source.Path)
+			srv.Source.ProjectPath = fn(site("source.project_path"), srv.Source.ProjectPath)
+			srv.Source.Ref = fn(site("source.ref"), srv.Source.Ref)
+			srv.Source.Dockerfile = fn(site("source.dockerfile"), srv.Source.Dockerfile)
+			srv.Source.Package = fn(site("source.package"), srv.Source.Package)
+			srv.Source.Python = fn(site("source.python"), srv.Source.Python)
 			for j := range srv.Source.Extras {
-				srv.Source.Extras[j] = expandField(site(fmt.Sprintf("source.extras[%d]", j)), srv.Source.Extras[j])
+				srv.Source.Extras[j] = fn(site(fmt.Sprintf("source.extras[%d]", j)), srv.Source.Extras[j])
 			}
 			for j := range srv.Source.With {
-				srv.Source.With[j] = expandField(site(fmt.Sprintf("source.with[%d]", j)), srv.Source.With[j])
+				srv.Source.With[j] = fn(site(fmt.Sprintf("source.with[%d]", j)), srv.Source.With[j])
 			}
 			for j := range srv.Source.Packages {
-				srv.Source.Packages[j] = expandField(site(fmt.Sprintf("source.packages[%d]", j)), srv.Source.Packages[j])
+				srv.Source.Packages[j] = fn(site(fmt.Sprintf("source.packages[%d]", j)), srv.Source.Packages[j])
 			}
-			// Source.Auth.CredentialRef intentionally NOT expanded here:
-			// vault references stay literal until clone time so the
-			// orchestrator can resolve them against the live vault.
 			if srv.Source.Auth != nil {
-				srv.Source.Auth.SSHKeyPath = expandField(site("source.auth.ssh_key_path"), srv.Source.Auth.SSHKeyPath)
-				srv.Source.Auth.SSHUser = expandField(site("source.auth.ssh_user"), srv.Source.Auth.SSHUser)
+				srv.Source.Auth.SSHKeyPath = fn(site("source.auth.ssh_key_path"), srv.Source.Auth.SSHKeyPath)
+				srv.Source.Auth.SSHUser = fn(site("source.auth.ssh_user"), srv.Source.Auth.SSHUser)
 			}
 		}
-
 		for k, v := range srv.Env {
-			srv.Env[k] = expandField(site("env."+k), v)
+			srv.Env[k] = fn(site("env."+k), v)
 		}
 		for k, v := range srv.BuildArgs {
-			srv.BuildArgs[k] = expandField(site("build_args."+k), v)
+			srv.BuildArgs[k] = fn(site("build_args."+k), v)
 		}
 		for j := range srv.Volumes {
-			srv.Volumes[j] = expandField(site(fmt.Sprintf("volumes[%d]", j)), srv.Volumes[j])
+			srv.Volumes[j] = fn(site(fmt.Sprintf("volumes[%d]", j)), srv.Volumes[j])
 		}
 		for j := range srv.Configs {
-			srv.Configs[j].Content = expandField(site(fmt.Sprintf("configs[%d].content", j)), srv.Configs[j].Content)
-			srv.Configs[j].File = expandField(site(fmt.Sprintf("configs[%d].file", j)), srv.Configs[j].File)
+			srv.Configs[j].Content = fn(site(fmt.Sprintf("configs[%d].content", j)), srv.Configs[j].Content)
+			srv.Configs[j].File = fn(site(fmt.Sprintf("configs[%d].file", j)), srv.Configs[j].File)
 		}
-
 		if srv.SSH != nil {
-			srv.SSH.Host = expandField(site("ssh.host"), srv.SSH.Host)
-			srv.SSH.User = expandField(site("ssh.user"), srv.SSH.User)
-			srv.SSH.IdentityFile = expandField(site("ssh.identityFile"), srv.SSH.IdentityFile)
-			srv.SSH.KnownHostsFile = expandField(site("ssh.knownHostsFile"), srv.SSH.KnownHostsFile)
-			srv.SSH.JumpHost = expandField(site("ssh.jumpHost"), srv.SSH.JumpHost)
+			srv.SSH.Host = fn(site("ssh.host"), srv.SSH.Host)
+			srv.SSH.User = fn(site("ssh.user"), srv.SSH.User)
+			srv.SSH.IdentityFile = fn(site("ssh.identityFile"), srv.SSH.IdentityFile)
+			srv.SSH.KnownHostsFile = fn(site("ssh.knownHostsFile"), srv.SSH.KnownHostsFile)
+			srv.SSH.JumpHost = fn(site("ssh.jumpHost"), srv.SSH.JumpHost)
 		}
-
 		if srv.A2A != nil {
-			srv.A2A.Card = expandField(site("a2a.card"), srv.A2A.Card)
-			srv.A2A.Endpoint = expandField(site("a2a.endpoint"), srv.A2A.Endpoint)
+			srv.A2A.Card = fn(site("a2a.card"), srv.A2A.Card)
+			srv.A2A.Endpoint = fn(site("a2a.endpoint"), srv.A2A.Endpoint)
 			if srv.A2A.Auth != nil {
-				srv.A2A.Auth.Token = expandField(site("a2a.auth.token"), srv.A2A.Auth.Token)
+				srv.A2A.Auth.Token = fn(site("a2a.auth.token"), srv.A2A.Auth.Token)
 			}
 		}
 		if srv.OpenAPI != nil {
-			srv.OpenAPI.Spec = expandField(site("openapi.spec"), srv.OpenAPI.Spec)
-			srv.OpenAPI.BaseURL = expandField(site("openapi.baseUrl"), srv.OpenAPI.BaseURL)
+			srv.OpenAPI.Spec = fn(site("openapi.spec"), srv.OpenAPI.Spec)
+			srv.OpenAPI.BaseURL = fn(site("openapi.baseUrl"), srv.OpenAPI.BaseURL)
 		}
-
 		if srv.Auth != nil {
-			srv.Auth.Token = expandField(site("auth.token"), srv.Auth.Token)
-			srv.Auth.Value = expandField(site("auth.value"), srv.Auth.Value)
-			srv.Auth.ClientID = expandField(site("auth.client_id"), srv.Auth.ClientID)
-			srv.Auth.ClientSecret = expandField(site("auth.client_secret"), srv.Auth.ClientSecret)
+			srv.Auth.Token = fn(site("auth.token"), srv.Auth.Token)
+			srv.Auth.Value = fn(site("auth.value"), srv.Auth.Value)
+			srv.Auth.ClientID = fn(site("auth.client_id"), srv.Auth.ClientID)
+			srv.Auth.ClientSecret = fn(site("auth.client_secret"), srv.Auth.ClientSecret)
 		}
 		for name, value := range srv.Headers {
-			srv.Headers[name] = expandField(site("headers."+name), value)
+			srv.Headers[name] = fn(site("headers."+name), value)
 		}
 	}
 
@@ -436,22 +460,16 @@ func expandStackVarsResolved(s *Stack, resolve referenceResolver) (unresolvedVau
 		site := func(field string) Consumer {
 			return Consumer{Kind: RefKindResource, Name: res.Name, Field: field}
 		}
-
-		res.Name = expandField(site("name"), res.Name)
-		res.Image = expandField(site("image"), res.Image)
-		res.Network = expandField(site("network"), res.Network)
-
+		res.Name = fn(site("name"), res.Name)
+		res.Image = fn(site("image"), res.Image)
+		res.Network = fn(site("network"), res.Network)
 		for k, v := range res.Env {
-			res.Env[k] = expandField(site("env."+k), v)
+			res.Env[k] = fn(site("env."+k), v)
 		}
 		for j := range res.Volumes {
-			res.Volumes[j] = expandField(site(fmt.Sprintf("volumes[%d]", j)), res.Volumes[j])
+			res.Volumes[j] = fn(site(fmt.Sprintf("volumes[%d]", j)), res.Volumes[j])
 		}
 	}
-
-	s.References = index
-	s.UnresolvedRefs = dedupeStrings(unresolvedVault)
-	return unresolvedVault, emptyEnvVars, resolutionProblems
 }
 
 // dedupeStrings returns the input with duplicates removed, preserving first-seen
@@ -659,7 +677,10 @@ func resolveExtends(child *Stack, childAbsPath string, visited map[string]bool, 
 
 // mergeStacks merges parent into child using child-wins semantics:
 //   - MCPServers and Resources: child entries kept as-is; parent-only entries appended
-//   - Gateway, Logging, Secrets, Network/Networks: inherited from parent when child omits them
+//   - Gateway, Logging, Secrets sets, Network/Networks: inherited from parent when child omits them
+//   - secrets.providers: parent entries whose name the child does not declare are appended,
+//     whether or not the child has a secrets block. A same-named child provider wins.
+//     secrets.sets stays whole-block and is inherited only when the child omits secrets.
 //
 // Everything absent from this switchboard is deliberately NOT inherited
 // across `extends`: clients, groups, limits, policy, skills, link, telemetry,
@@ -703,6 +724,18 @@ func mergeStacks(child, parent *Stack) {
 	}
 	if child.Secrets == nil {
 		child.Secrets = parent.Secrets
+	} else if parent.Secrets != nil {
+		declared := make(map[string]bool, len(child.Secrets.Providers))
+		for _, p := range child.Secrets.Providers {
+			declared[p.Name] = true
+		}
+		for _, p := range parent.Secrets.Providers {
+			if p.Name == "" || declared[p.Name] {
+				continue
+			}
+			child.Secrets.Providers = append(child.Secrets.Providers, p)
+			declared[p.Name] = true
+		}
 	}
 	if child.Network.Name == "" && len(child.Networks) == 0 {
 		child.Network = parent.Network

@@ -572,6 +572,7 @@ func (s *Server) Handler() http.Handler {
 	// /api/vault surface, which is frozen until its v1.0 removal. The literal
 	// pattern outranks GET /api/var/{key}, so "drift" is never read as a key.
 	mux.HandleFunc("GET /api/var/drift", s.handleVariableDrift)
+	mux.HandleFunc("GET /api/secrets", s.handleSecrets)
 
 	// Stack spec endpoints
 	mux.HandleFunc("POST /api/stack/validate", s.handleStackValidate)

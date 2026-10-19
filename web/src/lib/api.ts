@@ -1192,6 +1192,33 @@ export async function fetchVariableUsage(): Promise<Record<string, Consumer[]>> 
   return fetchJSON<Record<string, Consumer[]>>('/api/var/usage');
 }
 
+export interface SecretProviderInfo {
+  name: string;
+  type: string;
+  command: string[] | null;
+  timeout: string;
+  token_file: boolean;
+}
+
+export interface SecretReferenceInfo {
+  key: string;
+  provider: string;
+  path: string;
+  consumers: Consumer[];
+  status: 'resolved' | 'error' | 'pending';
+  error: string | null;
+  last_resolved: string | null;
+}
+
+export interface SecretsResponse {
+  providers: SecretProviderInfo[];
+  references: SecretReferenceInfo[];
+}
+
+export async function fetchSecrets(): Promise<SecretsResponse> {
+  return fetchJSON<SecretsResponse>('/api/secrets');
+}
+
 export interface CreateVariableInput {
   key: string;
   value: string;

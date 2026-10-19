@@ -37,6 +37,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/reload"
 	"github.com/gridctl/gridctl/pkg/runs"
 	"github.com/gridctl/gridctl/pkg/runtime"
+	"github.com/gridctl/gridctl/pkg/secrets"
 	"github.com/gridctl/gridctl/pkg/skillpins"
 	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/skillsync"
@@ -87,13 +88,18 @@ func (inst *GatewayInstance) CurrentModelPolicies() (skills, agents *registry.Mo
 
 // GatewayBuilder constructs and runs the MCP gateway from a stack config.
 type GatewayBuilder struct {
-	config    Config
-	stack     *config.Stack
-	stackPath string
-	rt        *runtime.Orchestrator
-	result    *runtime.UpResult
-	version   string
-	webFS     WebFSFunc
+	config   Config
+	stack    *config.Stack
+	resolved atomic.Pointer[config.Stack]
+	// secretValues and secretUnresolved are the startup resolve pass.
+	// Values stay in memory. Unresolved names are recorded on the gateway.
+	secretValues     map[string]string
+	secretUnresolved map[string]error
+	stackPath        string
+	rt               *runtime.Orchestrator
+	result           *runtime.UpResult
+	version          string
+	webFS            WebFSFunc
 
 	// Pre-created log infrastructure (for foreground mode where orchestrator
 	// events should also be captured before gateway starts).
@@ -572,7 +578,11 @@ func (b *GatewayBuilder) Run(ctx context.Context, inst *GatewayInstance, verbose
 		// from the login request's context: registration outlives it.
 		inst.Broker.SetOnAuthorized(func(name string) {
 			go func() {
-				for _, srv := range b.stack.MCPServers {
+				stack := b.listenerStack()
+				if stack == nil {
+					return
+				}
+				for _, srv := range stack.MCPServers {
 					if srv.Name != name || !srv.IsEnabled() {
 						continue
 					}
@@ -585,7 +595,8 @@ func (b *GatewayBuilder) Run(ctx context.Context, inst *GatewayInstance, verbose
 			}()
 		})
 	}
-	registrar.RegisterAll(ctx, b.result, b.stack, b.stackPath)
+	registrar.RegisterAll(ctx, b.result, b.listenerStack(), b.stackPath)
+	b.recordStartupSecretFailures(gateway)
 	lintPolicyRules(b.stack, gateway.Router(), slog.New(bufferHandler))
 
 	// Start periodic health monitoring and autoscaler tick loop.
@@ -669,6 +680,7 @@ func (b *GatewayBuilder) buildLogging(verbose bool) (*logging.LogBuffer, slog.Ha
 	// Register vault values for redaction
 	if b.vaultStore != nil {
 		redactHandler.RegisterRedactValues(b.vaultStore.Values())
+		logging.RegisterSensitiveValues(b.vaultStore.Values()...)
 	}
 
 	// Log startup entry when writing to a file
@@ -699,7 +711,7 @@ func (b *GatewayBuilder) buildLogging(verbose bool) (*logging.LogBuffer, slog.Ha
 // effectiveBind resolves the listen address across both sources: the CLI
 // flag wins, then the stack's gateway.bind, then the loopback default.
 func (b *GatewayBuilder) effectiveBind() string {
-	return reload.EffectiveBind(b.stack, b.config.Bind)
+	return reload.EffectiveBind(b.listenerStack(), b.config.Bind)
 }
 
 // ErrUnauthenticatedExposure is returned when the gateway would listen
@@ -722,8 +734,9 @@ func (b *GatewayBuilder) checkExposure(log *slog.Logger) error {
 	if bindIsLoopback(b.effectiveBind()) {
 		return nil
 	}
-	authConfigured := b.stack != nil && b.stack.Gateway != nil &&
-		b.stack.Gateway.Auth != nil && b.stack.Gateway.Auth.Token != ""
+	authStack := b.listenerStack()
+	authConfigured := authStack != nil && authStack.Gateway != nil &&
+		authStack.Gateway.Auth != nil && authStack.Gateway.Auth.Token != ""
 	if !authConfigured {
 		if b.allowUnauthenticated() {
 			// The override is deliberately noisy on every start: a one-time
@@ -740,7 +753,7 @@ func (b *GatewayBuilder) checkExposure(log *slog.Logger) error {
 				ErrUnauthenticatedExposure, b.effectiveBind(), b.config.Port)
 		}
 	}
-	if originsUnrestricted(b.stack) {
+	if originsUnrestricted(b.listenerStack()) {
 		if b.allowUnauthenticated() {
 			log.Warn("gateway is reachable from other hosts with unrestricted CORS origins; continuing because --insecure-allow-unauthenticated is set",
 				"bind", b.effectiveBind(), "port", b.config.Port)
@@ -802,7 +815,7 @@ func startupOriginsMode(bind string, origins []string) (string, int) {
 // whose arguments a user replaces), and losing the override silently turns
 // into a daemon that will not start.
 func (b *GatewayBuilder) allowUnauthenticated() bool {
-	return reload.AllowUnauthenticated(b.stack, b.config.AllowUnauthenticated)
+	return reload.AllowUnauthenticated(b.listenerStack(), b.config.AllowUnauthenticated)
 }
 
 // buildAPIServer creates and configures the API server.
@@ -821,9 +834,10 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	server.SetProvisionerRegistry(provisioner.NewRegistry(), "gridctl")
 	server.SetGatewayAddr(fmt.Sprintf("http://localhost:%d", b.config.Port))
 
+	runtimeStack := b.listenerStack()
 	var configuredOrigins []string
-	if b.stack.Gateway != nil {
-		configuredOrigins = b.stack.Gateway.AllowedOrigins
+	if runtimeStack != nil && runtimeStack.Gateway != nil {
+		configuredOrigins = runtimeStack.Gateway.AllowedOrigins
 	}
 	if len(configuredOrigins) > 0 {
 		server.SetAllowedOrigins(configuredOrigins)
@@ -839,13 +853,11 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	}
 
 	// Unset means loopback-only, so an absent Gateway block needs no branch.
-	if b.stack.Gateway != nil {
-		server.SetAllowedHosts(b.stack.Gateway.AllowedHosts)
+	if runtimeStack != nil && runtimeStack.Gateway != nil {
+		server.SetAllowedHosts(runtimeStack.Gateway.AllowedHosts)
 	}
 
-	if b.stack.Gateway != nil && b.stack.Gateway.Auth != nil {
-		server.SetAuth(b.stack.Gateway.Auth.Type, b.stack.Gateway.Auth.Token, b.stack.Gateway.Auth.Header)
-	}
+	applyGatewayAuth(runtimeStack, server.SetAuth)
 
 	if registryServer != nil {
 		server.SetRegistryServer(registryServer)
@@ -1594,7 +1606,16 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 
 	reloadHandler := reload.NewHandler(b.stackPath, b.stack, inst.Gateway, b.rt, b.config.Port, b.config.BasePort, vaultLookup, vaultSetLookup)
 	reloadHandler.SetOverride(b.config.OverridePath, b.config.NoOverride)
-	reloadHandler.SetSecurityPreflight(reload.NewSecurityPreflight(b.stack, b.config.Bind, b.config.AllowUnauthenticated))
+	reloadHandler.SetSecretResolverFactory(func(stack *config.Stack) secrets.StackResolver {
+		var providers []config.SecretProvider
+		if stack != nil && stack.Secrets != nil {
+			providers = stack.Secrets.Providers
+		}
+		return secrets.NewResolver(providers, os.Environ())
+	})
+	reloadHandler.SeedResolved(b.secretValues, b.secretUnresolved)
+	reloadHandler.SeedResolvedStack(b.listenerStack())
+	reloadHandler.SetSecurityPreflight(reload.NewSecurityPreflight(b.listenerStack(), b.config.Bind, b.config.AllowUnauthenticated))
 	reloadHandler.SetLogger(slog.New(handler))
 	reloadHandler.SetNoExpand(b.config.NoExpand)
 	// stackPath is threaded through the callback by the reload handler rather
@@ -1613,6 +1634,9 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 	// After a successful reload, refresh per-server telemetry writers so a
 	// YAML-toggled persist setting takes effect without restart. The
 	// callback fires under reload.Handler.mu — keep it allocation-light.
+	reloadHandler.SetOnResolvedApplied(func(resolved *config.Stack) {
+		b.storeResolved(resolved)
+	})
 	reloadHandler.SetOnConfigApplied(func(newCfg *config.Stack) {
 		b.stack = newCfg
 		// Re-resolve the per-client access policy from the reloaded config so a
@@ -1715,6 +1739,22 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 	// Publish only after the initialization callback is configured. The API's
 	// synchronized getter permits requests while startup registration runs.
 	inst.APIServer.SetReloadHandler(reloadHandler)
+	go func() {
+		ticker := time.NewTicker(mcp.DefaultHealthCheckInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if !reloadHandler.HasUnresolved() {
+					continue
+				}
+				recovered, still := reloadHandler.RetrySecrets(ctx)
+				slog.New(handler).Info("secret resolution retried", "recovered", len(recovered), "still", len(still))
+			}
+		}
+	}()
 
 	// Watch the registry skills directory so skills added to disk out-of-band
 	// (hand-authored, or written by `gridctl skill add/update/remove` while the

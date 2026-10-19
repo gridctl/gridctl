@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // Patterns that match sensitive values in log output.
@@ -177,16 +178,67 @@ func (h *RedactingHandler) redactString(s string) string {
 	for _, v := range h.redactValues {
 		s = strings.ReplaceAll(s, v, "[REDACTED]")
 	}
+	return applySensitiveValues(s)
+}
+
+var (
+	sensitiveMu     sync.RWMutex
+	sensitiveValues []string
+)
+
+// RegisterSensitiveValues adds exact values to the process-wide redaction
+// registry. Both slog records and RedactString apply the registry after
+// their pattern pass. Values are deduplicated and ordered longest-first.
+// Empty values are ignored. A one-character secret over-redacts; providers
+// should not return such values, and there is no length floor.
+func RegisterSensitiveValues(values ...string) {
+	sensitiveMu.Lock()
+	defer sensitiveMu.Unlock()
+	seen := make(map[string]bool, len(sensitiveValues)+len(values))
+	merged := make([]string, 0, len(sensitiveValues)+len(values))
+	for _, v := range sensitiveValues {
+		if v != "" && !seen[v] {
+			merged = append(merged, v)
+			seen[v] = true
+		}
+	}
+	for _, v := range values {
+		if v != "" && !seen[v] {
+			merged = append(merged, v)
+			seen[v] = true
+		}
+	}
+	sort.Slice(merged, func(i, j int) bool {
+		return len(merged[i]) > len(merged[j])
+	})
+	sensitiveValues = merged
+}
+
+// SensitiveValues returns a copy of the process-wide exact-value registry.
+func SensitiveValues() []string {
+	sensitiveMu.RLock()
+	defer sensitiveMu.RUnlock()
+	return append([]string(nil), sensitiveValues...)
+}
+
+func applySensitiveValues(s string) string {
+	sensitiveMu.RLock()
+	values := sensitiveValues
+	sensitiveMu.RUnlock()
+	for _, v := range values {
+		s = strings.ReplaceAll(s, v, "[REDACTED]")
+	}
 	return s
 }
 
-// RedactString applies the default redaction patterns to a string.
-// Use this for redacting secrets in non-slog output (e.g., verbose JSON dumps).
+// RedactString applies the default redaction patterns and the process-wide
+// exact-value registry to a string. Use this for redacting secrets in
+// non-slog output (for example, trace attributes).
 func RedactString(s string) string {
 	for _, p := range defaultRedactPatterns {
 		s = p.ReplaceAllString(s, "${1}[REDACTED]")
 	}
-	return s
+	return applySensitiveValues(s)
 }
 
 // attrsToAny converts []slog.Attr to []any for slog.Group().

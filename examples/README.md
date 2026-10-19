@@ -28,7 +28,7 @@ gridctl apply examples/python-sources/pypi.yaml
 | [⚡ code-mode/](code-mode/) | Reduce context window with search + execute meta-tools |
 | [🔒 gateways/](gateways/) | Bridge to existing infrastructure |
 | [🖇️ declarative-link/](declarative-link/) | Auto-link LLM clients on apply with a `link:` block |
-| [🔑 secrets-vault/](secrets-vault/) | Encrypted variables and variable sets |
+| [🔑 secrets-vault/](secrets-vault/) | Encrypted variables, variable sets, and external secret providers |
 | [📈 autoscale/](autoscale/) | Reactive autoscaling of MCP server replicas |
 | [🧳 portable-stack/](portable-stack/) | Stack that stays committable by keeping every per-environment value in the variable store |
 | [🎒 portable-pack/](portable-pack/) | Pack repo: skills, agents, rules, a local-process stack, and a commented external source example behind one `gridctl-pack.yaml` |
@@ -85,6 +85,7 @@ gridctl apply examples/python-sources/pypi.yaml
 | var-basic | stdio, http | `${var:KEY}` references and value-free `variables:` declarations |
 | var-sets | http (containers) | Variable sets fanning out to all workloads |
 | var-sets-scoped | stdio | Variable sets scoped to named servers and resources |
+| providers | stdio | External `exec` and `onepassword` providers with `${secret:}` references |
 | vault-basic | stdio, http | Deprecated `${vault:}` alias (regression fixture) |
 | vault-sets | http (container) | Deprecated vault sets (regression fixture) |
 | autoscale-basic | stdio | Reactive autoscaling with `autoscale:` |

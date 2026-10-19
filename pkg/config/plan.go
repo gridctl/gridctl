@@ -184,8 +184,13 @@ func compareMCPServers(a, b MCPServer) []string {
 	if a.OutputFormat != b.OutputFormat {
 		details = append(details, fmt.Sprintf("output_format: %s → %s", b.OutputFormat, a.OutputFormat))
 	}
-	if !envEqual(a.Env, b.Env) {
-		details = append(details, "env changed")
+	if envChanged, secretChanged := classifyEnvChange(a.Env, b.Env); envChanged || secretChanged {
+		if secretChanged {
+			details = append(details, "secret changed")
+		}
+		if envChanged {
+			details = append(details, "env changed")
+		}
 	}
 	if !envEqual(a.Headers, b.Headers) {
 		details = append(details, "headers changed")
@@ -219,8 +224,13 @@ func compareResources(a, b Resource) []string {
 	if a.Network != b.Network {
 		details = append(details, fmt.Sprintf("network: %s → %s", b.Network, a.Network))
 	}
-	if !envEqual(a.Env, b.Env) {
-		details = append(details, "env changed")
+	if envChanged, secretChanged := classifyEnvChange(a.Env, b.Env); envChanged || secretChanged {
+		if secretChanged {
+			details = append(details, "secret changed")
+		}
+		if envChanged {
+			details = append(details, "env changed")
+		}
 	}
 	if !stringSliceEqual(a.Ports, b.Ports) {
 		details = append(details, "ports changed")
@@ -301,6 +311,30 @@ func diffNetworks(diff *PlanDiff, proposed, current *Stack) {
 }
 
 // Helper comparison functions
+
+// classifyEnvChange reports whether differing env entries are ordinary
+// values, secret references, or both. Values are never included in the
+// detail strings the caller prints.
+func classifyEnvChange(a, b map[string]string) (envChanged, secretChanged bool) {
+	keys := make(map[string]struct{}, len(a)+len(b))
+	for k := range a {
+		keys[k] = struct{}{}
+	}
+	for k := range b {
+		keys[k] = struct{}{}
+	}
+	for k := range keys {
+		if a[k] == b[k] {
+			continue
+		}
+		if containsSecretRef(a[k]) || containsSecretRef(b[k]) {
+			secretChanged = true
+		} else {
+			envChanged = true
+		}
+	}
+	return envChanged, secretChanged
+}
 
 func envEqual(a, b map[string]string) bool {
 	if len(a) != len(b) {

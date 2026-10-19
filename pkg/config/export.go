@@ -216,10 +216,14 @@ func checkExportCredentials(stack *Stack) error {
 		if len(matches) == 0 {
 			return fmt.Errorf("export: %s: recognized sensitive field contains an inline literal; use an authored variable reference", path)
 		}
+		opIdx := expandRegex.SubexpIndex("op")
+		operandIdx := expandRegex.SubexpIndex("operand")
 		for _, match := range matches {
 			// Expansion is single-pass: operands are literal even when they
-			// themselves contain dollar signs.
-			if match[3] != "" && match[4] != "" {
+			// themselves contain dollar signs. A secret reference has no
+			// operand group, so it exports as a reference.
+			if opIdx >= 0 && operandIdx >= 0 && opIdx < len(match) && operandIdx < len(match) &&
+				match[opIdx] != "" && match[operandIdx] != "" {
 				return fmt.Errorf("export: %s: sensitive default/replacement operand; remove the operand and supply the variable separately", path)
 			}
 		}

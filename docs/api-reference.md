@@ -2353,7 +2353,8 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/usage
 }
 ```
 
-Returns `{}` when no stack is deployed.
+Returns `{}` when no stack is deployed. Keys with the `secret:` prefix are omitted.
+Provider references are [`GET /api/secrets`](#get-apisecrets), not store rows.
 
 Variables injected in bulk through `secrets.sets` also appear, as a synthetic
 consumer of kind `secrets-set` whose `name` is the set. When that set is scoped
@@ -2418,6 +2419,56 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/drift
 
 Returns `[]` when no stack is deployed. Canonical path only: this endpoint is
 not mirrored onto the deprecated `/api/vault` surface.
+
+#### `GET /api/secrets`
+
+Lists declared secret providers and `${secret:}` references for the loaded
+stack. Values, token-file contents, and provider stdout are not included.
+Does not require the variable store to be unlocked. Not a `/api/var` route
+and not mirrored onto `/api/vault`.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/secrets
+```
+
+**Response:**
+```json
+{
+  "providers": [
+    {
+      "name": "bao",
+      "type": "exec",
+      "command": ["bao", "kv", "get", "-field=value", "{{path}}"],
+      "timeout": "10s",
+      "token_file": false
+    }
+  ],
+  "references": [
+    {
+      "key": "secret:bao/secret/pagerduty/token",
+      "provider": "bao",
+      "path": "secret/pagerduty/token",
+      "consumers": [
+        { "kind": "mcp-server", "name": "netbox", "field": "env.PD_TOKEN" }
+      ],
+      "status": "resolved",
+      "error": null,
+      "last_resolved": "2026-10-19T12:00:00Z"
+    }
+  ]
+}
+```
+
+`command` is the authored argv with `{{path}}` intact, or `null` when the
+provider has no command. `timeout` is the authored duration, or `10s` when
+omitted. `token_file` is true when a path is set and never includes that path.
+`status` is `resolved`, `error`, or `pending`. `pending` means the reference is
+in the loaded stack and has not been recorded as resolved or failed. `error`
+is a value-free category message, or `null`. `last_resolved` is UTC RFC3339, or
+`null`. `consumers` uses the same shape as [`GET /api/var/usage`](#get-apivarusage).
+Returns `{"providers":[],"references":[]}` when no stack is loaded.
 
 #### `POST /api/var/import`
 

@@ -71,10 +71,17 @@ type Stack struct {
 	Variables map[string]VariableDeclaration `yaml:"variables,omitempty" json:"variables,omitempty"`
 
 	// References is the variable-usage index, derived during expandStackVars:
-	// which consumers reference each ${var:KEY}/${vault:KEY} key. It is computed
-	// from the stack, not persisted with it — the yaml/json "-" tags keep it out
-	// of every existing serialization path. Nil until a stack is loaded/expanded.
+	// which consumers reference each ${var:KEY}/${vault:KEY} key. Secret
+	// references are indexed under secret:<provider>/<path> as well. It is
+	// computed from the stack, not persisted with it. The yaml/json "-" tags
+	// keep it out of every existing serialization path. Nil until a stack is
+	// loaded/expanded.
 	References ReferenceIndex `yaml:"-" json:"-"`
+
+	// SecretRefs lists distinct ${secret:<provider>/<path>} references in
+	// first-seen order. Computed during expansion, never persisted. The
+	// reference text stays literal in the field until a later resolve pass.
+	SecretRefs []SecretRef `yaml:"-" json:"-"`
 
 	// UnresolvedRefs lists the ${var:KEY}/${vault:KEY} keys that the resolver
 	// used at expansion time could not satisfy and that carry no default
@@ -105,6 +112,10 @@ type Stack struct {
 	// overrideWarnings collects validate-only notices about an override
 	// that names a server declared only by an unresolved parent.
 	overrideWarnings []string
+
+	// emptySecretSites records ${secret:} references whose path is empty
+	// after trimming. Validation emits them. Never persisted.
+	emptySecretSites []Consumer
 }
 
 // VariableDeclaration documents one stack or pack variable prerequisite.
@@ -448,11 +459,32 @@ type RunsRetention struct {
 	MaxAgeDays int `yaml:"max_age_days,omitempty" json:"max_age_days,omitempty"`
 }
 
-// Secrets configures automatic secret injection from variable sets.
-// Each entry is a set name (fan-out to every workload) or a mapping that
+// Secrets configures automatic secret injection from variable sets and
+// optional external secret providers. Omitting providers changes nothing.
+// Each set entry is a set name (fan-out to every workload) or a mapping that
 // scopes the set to named servers and resources. See SecretSetRef.
 type Secrets struct {
-	Sets []SecretSetRef `yaml:"sets,omitempty" json:"sets,omitempty"`
+	Sets      []SecretSetRef   `yaml:"sets,omitempty" json:"sets,omitempty"`
+	Providers []SecretProvider `yaml:"providers,omitempty" json:"providers,omitempty"`
+}
+
+// SecretProvider is one entry in secrets.providers. Resolution runs at apply
+// and reload, not at load. token_file is a path, not a credential, and is
+// not joined to the stack directory.
+type SecretProvider struct {
+	Name      string   `yaml:"name" json:"name"`
+	Type      string   `yaml:"type" json:"type"`
+	Command   []string `yaml:"command,omitempty" json:"command,omitempty"`
+	Timeout   string   `yaml:"timeout,omitempty" json:"timeout,omitempty"`
+	TokenFile string   `yaml:"token_file,omitempty" json:"token_file,omitempty"`
+}
+
+// SecretRef is one distinct ${secret:<provider>/<path>} site group. Key is
+// secret:<provider>/<path> and matches the References index key.
+type SecretRef struct {
+	Provider string `yaml:"-" json:"-"`
+	Path     string `yaml:"-" json:"-"`
+	Key      string `yaml:"-" json:"-"`
 }
 
 // TracingConfig configures distributed tracing for the gateway.

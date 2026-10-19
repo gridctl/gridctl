@@ -14,6 +14,7 @@ Manage secrets and configuration with `gridctl var` instead of exporting environ
 | `var-sets-scoped.yaml` | Scope a set to named servers and resources (least privilege) |
 | `vault-basic.yaml` | Deprecated `${vault:KEY}` syntax (kept as a regression example) |
 | `vault-sets.yaml` | Deprecated variable-set example using the `vault` aliases |
+| `providers.yaml` | External `exec` and `onepassword` providers with `${secret:}` references |
 
 > [!WARNING]
 > `gridctl vault …` and the `${vault:KEY}` reference syntax are deprecated aliases for `gridctl var …` and `${var:KEY}`. Both resolve through the same store during the beta cycle and are removed at v1.0. New stacks should use `var`.
@@ -101,6 +102,25 @@ gridctl var scan --staged
 `var run` redacts exact secret values from non-TTY output by default. `var scan`
 is an exact-value check, not a pattern or history scanner; pair it with tools
 such as Gitleaks or TruffleHog when those checks are required.
+
+### External providers
+
+`providers.yaml` declares an `exec` provider and a `onepassword` provider.
+References stay literal until apply or reload. Validate and explain do not
+require `op`:
+
+```bash
+cd examples/secrets-vault
+gridctl validate providers.yaml
+gridctl var explain 'secret:fake/alpha' --file providers.yaml --no-resolve
+sh ./fake-provider.sh alpha
+```
+
+`./fake-provider.sh` is resolved from the process working directory, not from
+the stack file directory. The `onepassword` server needs the `op` CLI and a
+readable item. A failed reference excludes that server only. `demo` and
+`op-demo` use `printf` as a placeholder process, not a live MCP server. See
+[Providers](../../docs/config-schema.md#providers).
 
 ### Bulk Import
 

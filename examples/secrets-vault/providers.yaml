@@ -1,0 +1,36 @@
+# External secret providers. References stay literal in this file.
+# `gridctl apply` and `gridctl reload` resolve them on the host.
+# `gridctl validate` and `gridctl plan` do not run the provider.
+# `gridctl plan` does not detect rotation of a provider value.
+#
+# The exec command is not a shell. `./fake-provider.sh` is resolved from
+# the process working directory, not the stack file directory:
+#   cd examples/secrets-vault
+#   gridctl validate providers.yaml
+#   gridctl var explain 'secret:fake/alpha' --file providers.yaml --no-resolve
+#
+# The onepassword server needs the `op` CLI and a readable item. A failed
+# reference excludes that server only. The exec server does not depend on it.
+# `demo` and `op-demo` use `printf` as a placeholder process, not a live MCP server.
+version: "1"
+name: secret-providers-example
+
+secrets:
+  providers:
+    - name: fake
+      type: exec
+      command: ["./fake-provider.sh", "{{path}}"]
+      timeout: 10s
+    - name: op
+      type: onepassword
+      # token_file: ~/.config/gridctl/op-service-account
+
+mcp-servers:
+  - name: demo
+    command: ["printf", "token is set\n"]
+    env:
+      DEMO_TOKEN: ${secret:fake/alpha}
+  - name: op-demo
+    command: ["printf", "op token is set\n"]
+    env:
+      OP_ITEM: ${secret:op/Infra/demo/token}

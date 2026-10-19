@@ -223,12 +223,12 @@ func TestRedactingHandler_ErrorAttr(t *testing.T) {
 
 func TestRedactEnv(t *testing.T) {
 	env := map[string]string{
-		"GITHUB_TOKEN":       "ghp_secret123",
-		"API_KEY":            "sk-abc",
-		"LOG_LEVEL":          "debug",
-		"POSTGRES_PASSWORD":  "p@ssw0rd",
-		"DATABASE_URL":       "postgres://localhost:5432/db",
-		"AUTH_TOKEN":         "bearer-xyz",
+		"GITHUB_TOKEN":      "ghp_secret123",
+		"API_KEY":           "sk-abc",
+		"LOG_LEVEL":         "debug",
+		"POSTGRES_PASSWORD": "p@ssw0rd",
+		"DATABASE_URL":      "postgres://localhost:5432/db",
+		"AUTH_TOKEN":        "bearer-xyz",
 	}
 
 	redacted := RedactEnv(env)
@@ -256,5 +256,19 @@ func TestRedactEnv(t *testing.T) {
 func TestRedactEnv_Nil(t *testing.T) {
 	if RedactEnv(nil) != nil {
 		t.Error("expected nil for nil input")
+	}
+}
+
+func TestRegisterSensitiveValues_BothSanitizers(t *testing.T) {
+	secret := "provider-secret-value-9f3c"
+	RegisterSensitiveValues(secret)
+	if got := RedactString("trace " + secret); strings.Contains(got, secret) || !strings.Contains(got, "[REDACTED]") {
+		t.Fatalf("RedactString = %q", got)
+	}
+	var buf bytes.Buffer
+	logger := slog.New(NewRedactingHandler(slog.NewTextHandler(&buf, nil)))
+	logger.Info("saw " + secret)
+	if strings.Contains(buf.String(), secret) {
+		t.Fatalf("slog record leaked: %s", buf.String())
 	}
 }

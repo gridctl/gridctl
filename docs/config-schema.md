@@ -401,7 +401,7 @@ The recording boundary is gateway `tools/call` entry through its normal return. 
 
 ## Secrets
 
-References variable sets from the encrypted variable store (`gridctl var`) for automatic secret injection into containers. The `secrets:` field name is kept for compatibility; the store behind it is the unified variable store, and the deprecated `${vault:KEY}` reference syntax is a compatibility alias for `${var:KEY}` (see [Variable Expansion](#variable-expansion)).
+References variable sets from the encrypted variable store (`gridctl var`) for automatic secret injection into containers, and optional external secret providers resolved at apply and reload. The `secrets:` field name is kept for compatibility; the store behind it is the unified variable store, and the deprecated `${vault:KEY}` reference syntax is a compatibility alias for `${var:KEY}` (see [Variable Expansion](#variable-expansion)). Omitting `providers:` changes nothing.
 
 ```yaml
 secrets:
@@ -413,6 +413,49 @@ secrets:
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `sets` | []entry | No | - | Variable sets to inject. Explicit `env` values take precedence |
+| `providers` | []provider | No | - | External secret providers. Resolved at apply and reload, not at validate, plan, or export |
+
+### Providers
+
+```yaml
+secrets:
+  providers:
+    - name: op
+      type: onepassword
+      # token_file: ~/.config/gridctl/op-service-account
+    - name: bao
+      type: exec
+      command: ["bao", "kv", "get", "-field=value", "{{path}}"]
+      timeout: 10s
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `name` | string | Yes | - | Provider name. Must match `^[a-z][a-z0-9-]*$` and be unique |
+| `type` | string | Yes | - | `exec` or `onepassword` |
+| `command` | []string | exec | - | Argv. At least one element must contain `{{path}}`. Not a shell |
+| `timeout` | duration | No | `10s` | Between `1s` and `5m` |
+| `token_file` | string | No | - | `onepassword` only. Absolute path or `~/...`. Not joined to the stack directory |
+
+A reference is `${secret:<provider>/<path>}`. The path is trimmed and must be non-empty; a whitespace-only path is rejected with `secret reference path is empty`. It may contain slashes. Mixed strings such as `Bearer ${secret:op/a/b}` are allowed. `:-` and `:+` are not operands. A path that contains either is rejected with `secret references do not take default or replacement operands; supply the fallback outside the stack`. The reference is accepted in the same string fields as `${var:KEY}` and stays literal in the loaded stack, in `gridctl validate`, `gridctl plan`, `gridctl export`, and the API. Omitting `providers:` and every `${secret:}` reference leaves those commands unchanged.
+
+A string that already contained `${secret:` as ordinary text now validates as a reference. There is no escape. Rewrite that string if it was not meant to be one.
+
+`gridctl validate` reports an undeclared provider, a bad timeout, a missing `{{path}}`, a relative `token_file`, a `command` on `onepassword`, a `token_file` on `exec`, an operand, and an empty path. Field paths are `secrets.providers[i].<field>` or the consumer field, such as `mcp-servers[i].env.KEY`. It does not run the provider. While `extends` is set, validate does not merge the parent, so the undeclared-provider check is skipped. Apply merges first and then rejects a provider that neither file declares.
+
+Across `extends`, parent providers whose names the child does not declare are appended, even when the child has a `secrets:` block. A same-named child provider wins. `secrets.sets` inheritance is unchanged: the whole block is inherited only when the child omits `secrets:`.
+
+Resolution runs at apply and reload, one subprocess per distinct reference, at most four at a time. A daemonized apply resolves in the parent and again in the child, so `op read` can run twice. `gridctl plan` does not resolve. It prints `secret changed` when the reference text in `env` changes, and `env changed` as well when other environment values differ. It does not print the value and does not detect a rotated provider value.
+
+A failed server reference excludes that server, prints `<server>: secret <provider>/<path>: <category>`, and records `registrationFailed` with that message in `healthError`. The rest of the apply continues. A reference consumed only by a disabled server or resource is not resolved, not recorded as a failure, and not started by reload or the cadence. A failed resource has no status row; apply and reload report the same value-free line. A failed reference outside a server or resource, including the stack name, gateway token, bind, or allowed origins, fails the deploy. `gridctl reload`, or the health-check cadence (default 30 seconds), starts the workload when the reference resolves and logs `secret resolution retried` with counts only. An unchanged stack with an unchanged provider value reports no changes. An unchanged stack with a rotated workload value reports `mcp-server:<name> (secret rotated)` or `resource:<name> (secret rotated)` and recreates that workload. A rotated `gateway.auth.token` on reload is `restart_required` with `gateway.auth.token` in the changed fields. The listener keeps the startup value until the process restarts.
+
+The message never includes stdout, stderr, or the value. Categories are `provider exited <n>`, `timeout after <duration>`, `<binary> not found on PATH`, `op not found on PATH`, `empty value`, `output too large`, `invalid path`, `undeclared provider`, `canceled`, and `token file <reason>` (`symlink`, `mode`, `owner`, `not regular`, `unreadable`, `too large`, `empty`, `home`).
+
+`exec` is trusted exactly as much as the command and the stack author, the same trust class as a local-process `command:`. `{{path}}` is replaced inside each argv element. The command is not a shell and is not resolved against the stack file directory; the process working directory is the gateway's. Its environment drops the `GRIDCTL_` prefix, `OP_CONNECT_TOKEN`, and `OP_SERVICE_ACCOUNT_TOKEN`. An empty filtered environment is empty; it does not inherit the daemon environment. An empty value after trimming one trailing newline is a failure.
+
+`onepassword` runs `op read --no-newline op://<path>`. The path is `vault/item/field` or `vault/item/section/field`, with no `op://` prefix. It passes only `PATH`, `HOME`, `XDG_CONFIG_HOME`, `OP_SERVICE_ACCOUNT_TOKEN`, `OP_CONNECT_HOST`, `OP_CONNECT_TOKEN`, and `OP_ACCOUNT`. If none of those are set, the subprocess environment is empty rather than the daemon environment. `token_file` is absolute or starts with `~/`. A leading `~/` expands against the user home directory at resolve time, not `GRIDCTL_HOME`, and is not joined to the stack directory. Any other relative path fails validation with `token_file must be absolute or start with ~/`. The file is read on every resolve, must be a regular file, and must not be a symlink. On POSIX it must be owned by the current user with mode 0600 or stricter. Windows checks only that it is a regular file. Its content replaces `OP_SERVICE_ACCOUNT_TOKEN` for that subprocess. Manual acceptance against a real `op` service account and Connect, including `token_file` on macOS and Linux, remains.
+
+Export keeps `${secret:}` and the `providers:` block literally, including `token_file` and `{{path}}`. Nothing else resolved is persisted, exported, or served by the API. The daemon state file is the exception: it still stores the resolved gateway token at mode 0600, as it does for `${var:}`. `GET /api/var/usage` omits `secret:` keys. [`GET /api/secrets`](api-reference.md#get-apisecrets) and the Variables workspace list references and status without values. That section is hidden when `providers` is empty and has no value, copy, edit, or delete control. Resolved values are registered for exact-match redaction. A one-character value over-redacts; providers should not return one.
 
 ### Scoping a set to named workloads
 
@@ -1932,6 +1975,7 @@ String values in the configuration support variable expansion:
 | `${VAR:+replacement}` | Use replacement if variable is defined and non-empty |
 | `${var:KEY}` | Variable store reference (error if key not found). Canonical syntax. |
 | `${vault:KEY}` | Deprecated alias for `${var:KEY}`. Logs a one-shot warning per process. Removed at v1.0. |
+| `${secret:<provider>/<path>}` | External provider reference. Stays literal until apply or reload. No `:-` or `:+` operand. See [Providers](#providers). |
 
 Variable expansion is applied to string values across all configuration sections including `env`, `token`, `url`, MCP-server and resource `volumes` entries, `configs` `content` and `file` paths, and values merged from an override file. A `${var:KEY}` whose every consumer is a server or resource with `enabled: false` does not block apply when a store is present. A key with any enabled consumer still refuses with `missing variable(s)`.
 
