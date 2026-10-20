@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
@@ -35,13 +36,14 @@ func TestOAuthMetadataPath_Exact(t *testing.T) {
 	require.False(t, oauthMetadataPath("/.well-known/agent.json"))
 	require.False(t, oauthMetadataPath("/.well-known/oauth-protected-resource/extra"))
 	require.False(t, oauthMetadataPath("/.well-known/oauth-protected-resource/groups/release/mcp/extra"))
+	require.False(t, oauthMetadataPath("/.well-known/oauth-protected-resource/groups/mcp"))
 	require.True(t, isProtectedPath("/.well-known/agent.json"))
 	require.True(t, isProtectedPath("/.well-known/oauth-protected-resource/extra"))
 }
 
 func TestOAuthHandler_MetadataCORSAndChallenge(t *testing.T) {
 	iss := startAPIIssuer(t)
-	s := NewServer(groupsGateway(), nil)
+	s := NewServer(groupsGateway(), fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<html>ui</html>")}})
 	t.Cleanup(s.Close)
 	s.SetAllowedOrigins([]string{"https://ui.example"})
 	s.SetServerCard("", "")
@@ -59,6 +61,12 @@ func TestOAuthHandler_MetadataCORSAndChallenge(t *testing.T) {
 		"/.well-known/oauth-protected-resource/mcp",
 		"/.well-known/oauth-protected-resource/groups/release/mcp",
 	} {
+		for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodHead} {
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, loopbackRequest(method, path, nil))
+			require.Equal(t, http.StatusMethodNotAllowed, w.Code, method+" "+path)
+			require.Equal(t, "GET, OPTIONS", w.Header().Get("Allow"))
+		}
 		for _, method := range []string{http.MethodGet, http.MethodOptions} {
 			badHost := loopbackRequest(method, path, nil)
 			badHost.Host = "untrusted.invalid"
@@ -109,7 +117,7 @@ func TestOAuthHandler_MetadataCORSAndChallenge(t *testing.T) {
 	h.ServeHTTP(uw, unknown)
 	require.Equal(t, http.StatusNotFound, uw.Code)
 
-	for _, path := range []string{"/mcp", "/groups/release/mcp", "/api/status", "/sse", "/message", "/a2a/x"} {
+	for _, path := range []string{"/mcp", "/groups/release/mcp", "/api/status", "/sse", "/message", "/a2a/x", "/.well-known/oauth-protected-resource/groups/mcp"} {
 		req := loopbackRequest(http.MethodGet, path, nil)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, req)

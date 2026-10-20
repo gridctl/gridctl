@@ -43,6 +43,39 @@ func TestNewPolicy_NilAndEmpty(t *testing.T) {
 	}
 }
 
+func TestRateGate_PrincipalProfile(t *testing.T) {
+	p := newTestPolicy(t, &config.LimitsConfig{RateLimits: []config.RateLimit{
+		{Client: "alice", CallsPerMinute: 1, Burst: 1},
+		{Client: "bob", CallsPerMinute: 1, Burst: 1},
+		{Client: "cursor", CallsPerMinute: 1, Burst: 1},
+	}})
+	gate := p.Gates()[0]
+	for _, tc := range []struct{ principal, profile string }{
+		{"Subject+/=", "alice"}, {"subject+/=", "bob"},
+	} {
+		ctx := mcp.WithPrincipal(context.Background(), tc.principal)
+		ctx = mcp.WithClientID(ctx, "cursor")
+		call := githubCall(tc.principal)
+		call.ClientProfileKey = tc.profile
+		if d := gate.CheckToolCall(ctx, call); !d.Allow {
+			t.Fatalf("independent profile %s denied first call: %s", tc.profile, d.Message)
+		}
+		if d := gate.CheckToolCall(ctx, call); d.Allow {
+			t.Fatalf("aliased profile %s escaped its rate limit", tc.profile)
+		}
+	}
+	// An unlisted principal is not treated as a declared client or raw slug.
+	ctx := mcp.WithPrincipal(context.Background(), "cursor")
+	for range 2 {
+		if d := gate.CheckToolCall(ctx, githubCall("cursor")); !d.Allow {
+			t.Fatalf("unlisted principal matched a client limit: %s", d.Message)
+		}
+	}
+	if d := gate.CheckToolCall(context.Background(), githubCall("cursor")); !d.Allow {
+		t.Fatalf("OAuth display label consumed legacy bucket: %s", d.Message)
+	}
+}
+
 func TestGates_SingleRateGate(t *testing.T) {
 	p := newTestPolicy(t, &config.LimitsConfig{
 		RateLimits: []config.RateLimit{{Server: "github", CallsPerMinute: 30}},

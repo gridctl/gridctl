@@ -549,11 +549,11 @@ func (sc *StackController) runDaemonChild(ctx context.Context, literal, resolved
 	// Nothing else resolved is written here.
 	token, header, authType, issuerHost := authStateFrom(resolved)
 	st := &state.DaemonState{
-		StackName:  literal.Name,
-		StackFile:  sc.config.StackPath,
-		PID:        os.Getpid(),
-		Port:       sc.config.Port,
-		StartedAt:  time.Now(),
+		StackName:      literal.Name,
+		StackFile:      sc.config.StackPath,
+		PID:            os.Getpid(),
+		Port:           sc.config.Port,
+		StartedAt:      time.Now(),
 		AuthToken:      token,
 		AuthHeader:     header,
 		AuthType:       authType,

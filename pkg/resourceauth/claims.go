@@ -39,8 +39,8 @@ func checkTyp(raw string) error {
 	if header.Alg == "" || header.Alg == "none" || strings.HasPrefix(header.Alg, "HS") {
 		return invalidToken(CategoryAlgorithm)
 	}
-	switch header.Typ {
-	case "", "JWT", "at+jwt", "application/at+jwt":
+	switch strings.ToLower(header.Typ) {
+	case "", "jwt", "at+jwt", "application/at+jwt":
 		return nil
 	default:
 		return invalidToken(CategoryTyp)

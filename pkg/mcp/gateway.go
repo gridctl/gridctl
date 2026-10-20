@@ -2820,6 +2820,13 @@ func (g *Gateway) checkCallGates(ctx context.Context, prefixedName string) (Gate
 		ClientAccessID: ClientAccessIDFromContext(ctx),
 		Annotations:    g.router.ToolAnnotations(prefixedName),
 	}
+	if PrincipalFromContext(ctx) != "" {
+		if policy := g.clientAccessPolicy().forPrincipal(true); policy != nil {
+			if key, listed := policy.resolveKey(call.ClientAccessID); listed {
+				call.ClientProfileKey = key
+			}
+		}
+	}
 	for _, gate := range gates {
 		if decision := gate.CheckToolCall(ctx, call); !decision.Allow {
 			return call, gate.Name(), decision

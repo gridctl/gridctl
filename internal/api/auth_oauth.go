@@ -26,7 +26,7 @@ func oauthMetadataPath(cleaned string) bool {
 	}
 	const prefix = oauthMetadataRoot + "/groups/"
 	const suffix = "/mcp"
-	if !strings.HasPrefix(cleaned, prefix) || !strings.HasSuffix(cleaned, suffix) {
+	if len(cleaned) <= len(prefix)+len(suffix) || !strings.HasPrefix(cleaned, prefix) || !strings.HasSuffix(cleaned, suffix) {
 		return false
 	}
 	name := strings.TrimSuffix(strings.TrimPrefix(cleaned, prefix), suffix)

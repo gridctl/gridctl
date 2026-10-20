@@ -278,6 +278,10 @@ End-to-end for `gridctl call` and `gridctl tools search`: CLI → non-empty `GRI
 
 In OAuth mode, the verified raw identity claim controls client scope on MCP and REST tool paths. Exact raw profile aliases precede normalized matches; declared client values stay display-only. Handshake sessions bind to their creator, and a different principal receives 404 `session expired` on POST, GET, or DELETE without changing the session. Run access labels, traces, and usage use the principal subject to existing observation bounds and sensitive-call exclusions. Bearer/API-key and unauthenticated identity resolution remain self-declared. All five OAuth fields join the restart-only security snapshot.
 
+OAuth client rate limits use the resolved profile key, with exact raw alias
+precedence, while GateCall retains the raw access ID. Unlisted principals match
+no client-scoped bucket; server and tool limits still apply.
+
 Gateway diagnostics sanitize recognizable typed capability strings before log,
 trace, usage, and run recording. Code-mode failure logs contain local categories
 without source excerpts or thrown values, while caller-delivered execution

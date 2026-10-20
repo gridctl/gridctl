@@ -1599,6 +1599,15 @@ limits:
 
 ### Enforcement semantics
 
+In OAuth mode, a `client:` rate limit matches the principal's resolved
+`clients.profiles` key: exact raw aliases take precedence over normalized
+profile and alias matches. Map subjects to profiles and name those profiles in
+the limits. Subjects mapped to the same profile share its bucket; distinct
+profiles have separate buckets even when their raw aliases normalize alike.
+Declared client labels never select a bucket. An unlisted principal matches no
+client-scoped limit, so use server- or tool-scoped limits for default coverage.
+Bearer, API-key, and unauthenticated modes retain normalized access-ID matching.
+
 Each entry is a token bucket checked at `tools/call` dispatch. Prompt gets and resource reads are not gated. A call that finds the
 bucket empty is denied as an in-band tool error carrying the configured
 rate, the scope that tripped, and retry guidance, so agent LLMs stop

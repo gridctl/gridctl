@@ -28,11 +28,11 @@ func (sc *StackController) saveForegroundState(name, stackFile string, stack *co
 				name, existing.Port, existing.PID, name)
 		}
 		st := &state.DaemonState{
-			StackName:  name,
-			StackFile:  stackFile,
-			PID:        os.Getpid(),
-			Port:       sc.config.Port,
-			StartedAt:  time.Now(),
+			StackName:      name,
+			StackFile:      stackFile,
+			PID:            os.Getpid(),
+			Port:           sc.config.Port,
+			StartedAt:      time.Now(),
 			AuthToken:      token,
 			AuthHeader:     header,
 			AuthType:       authType,

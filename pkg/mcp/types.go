@@ -154,6 +154,9 @@ type GateCall struct {
 	PrefixedTool   string
 	ServerName     string
 	ClientAccessID string
+	// ClientProfileKey is the resolved profile for an authenticated principal.
+	// Empty means no configured profile matched. ClientAccessID stays raw.
+	ClientProfileKey string
 	// Annotations are the downstream server's own hints for this prefixed
 	// name, as indexed at the last Router.RefreshTools. Nil when the tool
 	// has no annotations or is not in the dispatch index. Group override

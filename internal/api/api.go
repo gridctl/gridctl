@@ -712,9 +712,9 @@ func (s *Server) Handler() http.Handler {
 	// registered before the SPA catch-all. Bearer and API-key modes leave
 	// these paths on the protected /.well-known/ classification.
 	if s.oauthEnabled {
-		mux.HandleFunc("GET /.well-known/oauth-protected-resource", s.handleOAuthProtectedResource)
-		mux.HandleFunc("GET /.well-known/oauth-protected-resource/mcp", s.handleOAuthProtectedResource)
-		mux.HandleFunc("GET /.well-known/oauth-protected-resource/groups/{name}/mcp", s.handleOAuthProtectedResource)
+		mux.HandleFunc("/.well-known/oauth-protected-resource", s.handleOAuthProtectedResource)
+		mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", s.handleOAuthProtectedResource)
+		mux.HandleFunc("/.well-known/oauth-protected-resource/groups/{name}/mcp", s.handleOAuthProtectedResource)
 	}
 
 	// Static files (UI) - served at root

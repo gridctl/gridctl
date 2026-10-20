@@ -359,7 +359,7 @@ func configPathForSlug(prov provisioner.ClientProvisioner) string {
 	return path
 }
 
-// portFromURL extracts the port from a URL like "http://localhost:8180/sse".
+// oauthLinkNote describes credential-free linking for an OAuth gateway.
 func oauthLinkNote(gatewayURL string) string {
 	port, err := strconv.Atoi(portFromURL(gatewayURL))
 	if err != nil || port == 0 {
@@ -372,6 +372,7 @@ func oauthLinkNote(gatewayURL string) string {
 	return "The client will complete the OAuth login itself against the issuer advertised by the gateway, and gridctl wrote no credential. The client query parameter is display-only in OAuth mode."
 }
 
+// portFromURL extracts the port from a URL like "http://localhost:8180/sse".
 func portFromURL(url string) string {
 	// Find the port between : and /
 	start := strings.LastIndex(url, ":")

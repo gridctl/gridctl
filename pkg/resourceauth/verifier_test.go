@@ -312,6 +312,9 @@ func TestVerifier_AcceptAndReject(t *testing.T) {
 		{name: "alg none", spec: tokenSpec{alg: jose.SignatureAlgorithm("none")}, cat: CategoryAlgorithm},
 		{name: "alg hs256", spec: tokenSpec{alg: jose.HS256}, cat: CategoryAlgorithm},
 		{name: "typ id-jag", spec: tokenSpec{typ: "id-jag+jwt"}, cat: CategoryTyp},
+		{name: "typ uppercase access token", spec: tokenSpec{typ: "AT+JWT"}},
+		{name: "typ lowercase jwt", spec: tokenSpec{typ: "jwt"}},
+		{name: "typ mixed case media type", spec: tokenSpec{typ: "Application/AT+JWT"}},
 		{name: "malformed", spec: tokenSpec{raw: "a.b"}, cat: CategoryMalformed},
 		{name: "opaque", spec: tokenSpec{opaque: true}, cat: CategoryMalformed},
 		{name: "missing sub", spec: tokenSpec{sub: 12}, cat: CategoryIdentity},
@@ -373,6 +376,9 @@ func TestVerifier_AdvertisedAlgs(t *testing.T) {
 	hs := newTestIssuer(t, ec)
 	hs.signingAlgs = []string{"HS256"}
 	v3 := newVerifierFor(t, hs, Config{Issuer: hs.issuerURL})
+	if _, err := v3.Verify(context.Background(), hs.mint(t, ec, tokenSpec{})); err != nil {
+		t.Fatalf("HS256-only advertisement falls back to ES256 support: %v", err)
+	}
 	_, err := v3.Verify(context.Background(), hs.mint(t, ec, tokenSpec{alg: jose.HS256}))
 	requireCategory(t, mustInvalid(t, nil, err), CategoryAlgorithm)
 }
