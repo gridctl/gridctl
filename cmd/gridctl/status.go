@@ -39,7 +39,8 @@ type statusGatewayJSON struct {
 	CodeMode  string    `json:"code_mode,omitempty"`
 	// Features mirrors /api/status features: each enabled experimental
 	// flag mapped to true. Omitted when nothing is enabled.
-	Features map[string]bool `json:"features,omitempty"`
+	Features   map[string]bool `json:"features,omitempty"`
+	Extensions []string        `json:"extensions,omitempty"`
 	// Override is the override file the daemon merged, when one is active.
 	Override string `json:"override,omitempty"`
 }
@@ -142,24 +143,26 @@ func runStatus(stack string, showReplicas, asJSON, plain bool) error {
 		}
 		// Query the running gateway for code mode and experimental flag status
 		var features map[string]bool
+		var extensions []string
 		var override string
 		var authWarn string
 		if status == "running" {
-			gw.CodeMode, features, override, authWarn = queryGatewayStatus(s.Port)
+			gw.CodeMode, features, extensions, override, authWarn = queryGatewayStatus(s.Port)
 		}
 		if authWarn != "" {
 			printer.Warn(authWarn, "stack", s.StackName)
 		}
 		gateways = append(gateways, gw)
 		gatewaysJSON = append(gatewaysJSON, statusGatewayJSON{
-			Name:      s.StackName,
-			Port:      s.Port,
-			PID:       s.PID,
-			Status:    status,
-			StartedAt: s.StartedAt,
-			CodeMode:  gw.CodeMode,
-			Features:  features,
-			Override:  override,
+			Name:       s.StackName,
+			Port:       s.Port,
+			PID:        s.PID,
+			Status:     status,
+			StartedAt:  s.StartedAt,
+			CodeMode:   gw.CodeMode,
+			Features:   features,
+			Extensions: extensions,
+			Override:   override,
 		})
 	}
 
@@ -671,26 +674,27 @@ func warnDaemonHomeMismatch(printer *output.Printer, resolvedHome string, states
 // queryGatewayStatus queries a running gateway's API for code mode status
 // ("on" if active, empty otherwise) and the enabled experimental flag map
 // (nil when nothing is enabled).
-func queryGatewayStatus(port int) (codeMode string, features map[string]bool, override, authWarn string) {
+func queryGatewayStatus(port int) (codeMode string, features map[string]bool, extensions []string, override, authWarn string) {
 	api := newDaemonAPI(port, 2*time.Second)
 	resp, err := api.Get(api.URL("/api/status"))
 	if err != nil {
-		return "", nil, "", ""
+		return "", nil, nil, "", ""
 	}
 	defer resp.Body.Close()
 	if authErr := api.describeUnauthorized(resp); authErr != nil {
-		return "", nil, "", authErr.Error()
+		return "", nil, nil, "", authErr.Error()
 	}
 
 	var status struct {
-		CodeMode string          `json:"code_mode"`
-		Features map[string]bool `json:"features"`
-		Override string          `json:"override"`
+		CodeMode   string          `json:"code_mode"`
+		Features   map[string]bool `json:"features"`
+		Extensions []string        `json:"extensions"`
+		Override   string          `json:"override"`
 	}
 	if json.NewDecoder(resp.Body).Decode(&status) == nil {
-		return status.CodeMode, status.Features, status.Override, ""
+		return status.CodeMode, status.Features, status.Extensions, status.Override, ""
 	}
-	return "", nil, "", ""
+	return "", nil, nil, "", ""
 }
 
 // loadPinLabels loads pin status for all provided stacks and returns a map

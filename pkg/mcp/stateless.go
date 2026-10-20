@@ -228,6 +228,13 @@ func (s *StreamableHTTPServer) handleStateless(w http.ResponseWriter, r *http.Re
 		writeStatelessResponse(w, http.StatusOK, jsonrpc.NewSuccessResponse(req.ID, result))
 	case "tools/call":
 		s.handleStatelessToolsCall(ctx, w, req, meta)
+	case "skills/list", "skills/get", "resources/directory/read":
+		response := s.handleSkillsRequest(ctx, req, false)
+		status := http.StatusOK
+		if response.Error != nil && response.Error.Code == jsonrpc.MethodNotFound {
+			status = http.StatusNotFound
+		}
+		writeStatelessResponse(w, status, response)
 	case "prompts/list":
 		result, err := s.gateway.HandlePromptsList(ctx)
 		if err != nil {
@@ -495,9 +502,10 @@ func (s *StreamableHTTPServer) handleStatelessTask(ctx context.Context, w http.R
 func (g *Gateway) HandleServerDiscover(ctx context.Context) *DiscoverResult {
 	caps := g.advertisedCapabilities(EraStateless)
 	if name := g.taskCapableServerName(); name != "" {
-		caps.Extensions = map[string]json.RawMessage{
-			TasksExtensionID: json.RawMessage(`{}`),
+		if caps.Extensions == nil {
+			caps.Extensions = make(map[string]json.RawMessage)
 		}
+		caps.Extensions[TasksExtensionID] = json.RawMessage(`{}`)
 	}
 
 	info := g.ServerInfo()
@@ -591,6 +599,9 @@ func (g *Gateway) advertisedCapabilities(era ProtocolEra) Capabilities {
 	}
 	if g.promptProvider() != nil || g.downstreamDeclares(wantsResources) {
 		caps.Resources = &ResourcesCapability{}
+	}
+	if era == EraStateless && g.skillProvider() != nil {
+		caps.Extensions = map[string]json.RawMessage{SkillsExtensionID: json.RawMessage(`{"directoryRead":true}`)}
 	}
 	return caps
 }

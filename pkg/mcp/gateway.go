@@ -280,7 +280,8 @@ type Gateway struct {
 	// filter for prompts/resources. nil means no block was configured and
 	// every active skill is exposed (legacy behavior). Guarded by mu;
 	// replaced wholesale on apply and hot-reload.
-	skillPolicy *SkillPolicy
+	skillPolicy    *SkillPolicy
+	skillsProvider SkillProvider
 
 	listChanges *listChangeNotifier
 
@@ -2302,7 +2303,8 @@ func (g *Gateway) HandleInitialize(params InitializeParams, accessID, group stri
 	// the client decides whether to disconnect). Never fail for version reasons.
 	protocolVersion := NegotiateProtocolVersion(params.ProtocolVersion)
 	session := g.sessions.Create(params.ClientInfo, accessID, group, protocolVersion)
-	return g.finishInitialize(session, protocolVersion, group)
+	_, declared := params.Capabilities.Extensions[SkillsExtensionID]
+	return g.finishInitialize(session, protocolVersion, group, declared)
 }
 
 // HandleInitializePrincipal is HandleInitialize for a verified OAuth principal.
@@ -2310,13 +2312,18 @@ func (g *Gateway) HandleInitialize(params InitializeParams, accessID, group stri
 func (g *Gateway) HandleInitializePrincipal(params InitializeParams, declared, principal, group string) (*InitializeResult, *Session, error) {
 	protocolVersion := NegotiateProtocolVersion(params.ProtocolVersion)
 	session := g.sessions.CreatePrincipal(params.ClientInfo, declared, principal, group, protocolVersion)
-	return g.finishInitialize(session, protocolVersion, group)
+	_, skillsDeclared := params.Capabilities.Extensions[SkillsExtensionID]
+	return g.finishInitialize(session, protocolVersion, group, skillsDeclared)
 }
 
-func (g *Gateway) finishInitialize(session *Session, protocolVersion, group string) (*InitializeResult, *Session, error) {
+func (g *Gateway) finishInitialize(session *Session, protocolVersion, group string, skillsDeclared bool) (*InitializeResult, *Session, error) {
+	g.sessions.setSkillsExtension(session.ID, skillsDeclared)
 	g.sessions.SetToolFingerprint(session.ID, fingerprintTools(g.visibleToolsFor(session.AccessID, session.Group, session.Principal != "")))
 
 	caps := g.advertisedCapabilities(EraHandshake)
+	if skillsDeclared && g.skillProvider() != nil {
+		caps.Extensions = map[string]json.RawMessage{SkillsExtensionID: json.RawMessage(`{"directoryRead":true}`)}
+	}
 
 	// Group endpoints announce a group-suffixed identity so several linked
 	// endpoints of the same gateway are distinguishable in clients that

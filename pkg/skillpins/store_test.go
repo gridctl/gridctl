@@ -1,6 +1,7 @@
 package skillpins
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -278,7 +279,7 @@ func TestReset_NextSyncRepins(t *testing.T) {
 }
 
 // TestSync_UnreadableFileFailsClosed: a pinned skill whose content cannot be
-// hashed (dangling symlink) must surface as pin drift, never stay quietly
+// hashed must surface as pin drift, never stay quietly
 // pinned or read as "missing from the registry" — the fail-open path would
 // let a tampered skill keep serving.
 func TestSync_UnreadableFileFailsClosed(t *testing.T) {
@@ -289,19 +290,12 @@ func TestSync_UnreadableFileFailsClosed(t *testing.T) {
 		t.Fatalf("first sync: %v", err)
 	}
 
-	// A dangling symlink inside the skill dir: listable, unreadable.
-	link := filepath.Join(reg.Dir(), "skills", "benign", "scripts", "gone.sh")
-	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(filepath.Join(reg.Dir(), "nonexistent"), link); err != nil {
-		t.Fatal(err)
-	}
-	if err := reg.Load(); err != nil {
-		t.Fatal(err)
-	}
+	// Simulate a regular file disappearing between listing and reading.
+	// Symlinks are excluded from the digest set, including dangling links.
+	writeSupportingFile(t, reg, "benign", "scripts/gone.sh", []byte("content"))
+	src := unreadableSkillSource{reg}
 
-	res, err := ps.Sync(reg)
+	res, err := ps.Sync(src)
 	if err != nil {
 		t.Fatalf("sync with unreadable file: %v", err)
 	}
@@ -317,13 +311,23 @@ func TestSync_UnreadableFileFailsClosed(t *testing.T) {
 	}
 
 	// The verify path reports the distinct sentinel, never ErrNotFound.
-	_, err = ps.Verify("benign", reg)
+	_, err = ps.Verify("benign", src)
 	if !errors.Is(err, ErrDigestUnavailable) {
 		t.Fatalf("verify err = %v, want ErrDigestUnavailable", err)
 	}
 	if errors.Is(err, registry.ErrNotFound) {
 		t.Fatal("digest failure leaked registry.ErrNotFound")
 	}
+}
+
+type unreadableSkillSource struct{ *registry.Store }
+
+func (s unreadableSkillSource) ReadFile(_, _ string) ([]byte, error) {
+	return nil, registry.ErrNotFound
+}
+
+func (s unreadableSkillSource) ReadManifestFile(context.Context, string, string) ([]byte, error) {
+	return nil, registry.ErrNotFound
 }
 
 // TestSync_StateToggleIsNotDrift: activating or disabling a skill through

@@ -405,6 +405,15 @@ func (g *Gateway) registryResourceEntries() ([]json.RawMessage, bool) {
 			continue
 		}
 		entries = append(entries, raw)
+		if g.skillProvider() != nil {
+			raw, err = json.Marshal(MCPResource{
+				URI: SkillURI(p.Name, "SKILL.md"), Name: p.Name,
+				Description: p.Description, MimeType: "text/markdown",
+			})
+			if err == nil {
+				entries = append(entries, raw)
+			}
+		}
 	}
 	return entries, len(entries) > 0
 }
@@ -421,6 +430,9 @@ func (g *Gateway) HandleResourcesRead(ctx context.Context, params ResourcesReadP
 }
 
 func (g *Gateway) relayResourcesRead(ctx context.Context, params ResourcesReadParams, rawParams json.RawMessage) (relayResult, error) {
+	if strings.HasPrefix(params.URI, "skill://registry/") {
+		return g.readSkillResource(ctx, params.URI)
+	}
 	if isRegistryResourceURI(params.URI) {
 		return g.readRegistryResource(params.URI)
 	}
@@ -432,7 +444,7 @@ func (g *Gateway) relayResourcesRead(ctx context.Context, params ResourcesReadPa
 }
 
 func isRegistryResourceURI(uri string) bool {
-	return strings.HasPrefix(uri, "skills://registry/") || strings.HasPrefix(uri, "prompt://")
+	return strings.HasPrefix(uri, "skill://registry/") || strings.HasPrefix(uri, "skills://registry/") || strings.HasPrefix(uri, "prompt://")
 }
 
 func (g *Gateway) readRegistryResource(uri string) (relayResult, error) {

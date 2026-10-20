@@ -19,9 +19,10 @@ var ErrNotFound = errors.New("not found")
 // Each skill is a directory containing a required SKILL.md and optional
 // supporting files.
 type Store struct {
-	baseDir string
-	mu      sync.RWMutex
-	skills  map[string]*AgentSkill
+	baseDir    string
+	mu         sync.RWMutex
+	skills     map[string]*AgentSkill
+	generation uint64
 }
 
 // NewStore creates a store rooted at the given directory.
@@ -37,11 +38,19 @@ func (s *Store) Dir() string {
 	return s.baseDir
 }
 
+// Generation identifies the current registry snapshot for derived caches.
+func (s *Store) Generation() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.generation
+}
+
 // Load scans the skills/ subdirectory for SKILL.md files and checks for
 // legacy YAML registry files.
 func (s *Store) Load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.generation++
 
 	s.skills = make(map[string]*AgentSkill)
 
@@ -150,6 +159,7 @@ func (s *Store) SaveSkill(sk *AgentSkill) error {
 	canonical.Dir = sk.Dir
 	canonical.FileCount = countSupportingFiles(skillDir)
 	s.skills[canonical.Name] = canonical
+	s.generation++
 	*sk = *canonical
 	return nil
 }
@@ -167,6 +177,7 @@ func (s *Store) RefreshFileCount(name string) error {
 		return fmt.Errorf("skill %q: %w", name, ErrNotFound)
 	}
 	sk.FileCount = countSupportingFiles(filepath.Join(s.baseDir, "skills", sk.Dir))
+	s.generation++
 	return nil
 }
 
@@ -181,6 +192,7 @@ func (s *Store) DeleteSkill(name string) error {
 	}
 
 	delete(s.skills, name)
+	s.generation++
 	return nil
 }
 
@@ -250,6 +262,7 @@ func (s *Store) RenameSkill(oldName, newName string) error {
 
 	delete(s.skills, oldName)
 	s.skills[newName] = sk
+	s.generation++
 	return nil
 }
 
@@ -273,10 +286,14 @@ func (s *Store) ListFiles(skillName string) ([]SkillFile, error) {
 		if err != nil {
 			return nil // skip files we can't stat
 		}
+		if !d.IsDir() && !info.Mode().IsRegular() && d.Type()&fs.ModeSymlink == 0 {
+			return nil // device nodes, sockets, and pipes are not skill documents
+		}
 		files = append(files, SkillFile{
-			Path:  rel,
-			Size:  info.Size(),
-			IsDir: d.IsDir(),
+			Symlink: d.Type()&fs.ModeSymlink != 0,
+			Path:    rel,
+			Size:    info.Size(),
+			IsDir:   d.IsDir(),
 		})
 		return nil
 	})
@@ -327,6 +344,7 @@ func (s *Store) WriteFile(skillName, filePath string, data []byte) error {
 	if err := os.WriteFile(absPath, data, 0644); err != nil {
 		return fmt.Errorf("writing file: %w", err)
 	}
+	s.generation++
 
 	// Update file count in cache
 	if sk, ok := s.skills[skillName]; ok {
@@ -351,6 +369,7 @@ func (s *Store) DeleteFile(skillName, filePath string) error {
 		}
 		return fmt.Errorf("deleting file: %w", err)
 	}
+	s.generation++
 
 	// Update file count in cache
 	if sk, ok := s.skills[skillName]; ok {

@@ -1,12 +1,88 @@
 package skillpins
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gridctl/gridctl/pkg/registry"
 )
+
+func TestComputeManifest_DigestAgreement(t *testing.T) {
+	store := newTestRegistry(t)
+	writeSkill(t, store, "parent", fixtureSkill)
+	contents := map[string]string{
+		"helper.py":                "print('hello')\n",
+		"scripts/run.sh":           "#!/bin/sh\n",
+		"references/deep/notes.md": "notes",
+		".hidden":                  "hidden", "notes.tmp": "temporary",
+		"child/SKILL.md":  "---\nname: child\ndescription: child\n---\n",
+		"child/helper.py": "child content",
+	}
+	for path, data := range contents {
+		writeSupportingFile(t, store, "parent", path, []byte(data))
+	}
+	if err := os.Symlink(filepath.Join(store.Dir(), "missing"), filepath.Join(store.Dir(), "skills", "parent", "scripts", "link")); err != nil {
+		t.Fatal(err)
+	}
+	sk, err := store.GetSkill("parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := ComputeManifest(t.Context(), store, sk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, files, err := ComputeDigests(store, sk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Files) != 4 || len(files) != 3 {
+		t.Fatalf("unexpected file set: %+v", manifest.Files)
+	}
+	if hash != "s1:"+manifest.Files[0].Digest {
+		t.Fatal("canonical digest differs")
+	}
+	if strings.Contains(string(manifest.SkillMD), "\nstate:") {
+		t.Fatal("canonical bytes contain state")
+	}
+	for i, file := range manifest.Files {
+		data := manifest.SkillMD
+		if i > 0 {
+			data = []byte(contents[file.Path])
+			if files[i-1].Path != file.Path || files[i-1].Digest != "s1:"+file.Digest {
+				t.Fatalf("pin differs: %+v", file)
+			}
+		}
+		sum := sha256.Sum256(data)
+		if hex.EncodeToString(sum[:]) != file.Digest || int64(len(data)) != file.Size {
+			t.Fatalf("bytes differ: %+v", file)
+		}
+	}
+	// Independently construct the legacy projection to protect composite approvals.
+	want := []FileDigest{
+		{Path: "helper.py", Digest: hashBytes([]byte(contents["helper.py"]))},
+		{Path: "references/deep/notes.md", Digest: hashBytes([]byte(contents["references/deep/notes.md"]))},
+		{Path: "scripts/run.sh", Digest: hashBytes([]byte(contents["scripts/run.sh"]))},
+	}
+	if CompositeHash(hash, files) != CompositeHash(hash, want) {
+		t.Fatal("composite hash changed")
+	}
+}
+
+func TestComputeManifest_Canceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := ComputeManifest(ctx, nil, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("got %v", err)
+	}
+}
 
 // newTestRegistry writes skills into a temp registry tree and loads a real
 // registry.Store over it, so hashing exercises the production parse path.

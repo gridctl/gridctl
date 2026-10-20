@@ -47,6 +47,7 @@ type Session struct {
 	// latest supported version).
 	ProtocolVersion string
 	Initialized     bool
+	SkillsExtension bool
 	CreatedAt       time.Time
 	LastSeen        time.Time
 
@@ -60,6 +61,14 @@ type Session struct {
 type SessionManager struct {
 	mu       sync.RWMutex
 	sessions map[string]*Session
+}
+
+func (m *SessionManager) setSkillsExtension(id string, declared bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if session := m.sessions[id]; session != nil {
+		session.SkillsExtension = declared
+	}
 }
 
 // NewSessionManager creates a new session manager.

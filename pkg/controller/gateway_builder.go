@@ -41,6 +41,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/secrets"
 	"github.com/gridctl/gridctl/pkg/skillpins"
 	"github.com/gridctl/gridctl/pkg/skills"
+	"github.com/gridctl/gridctl/pkg/skillsext"
 	"github.com/gridctl/gridctl/pkg/skillsync"
 	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/telemetry"
@@ -344,6 +345,7 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 	}
 	registryStore := registry.NewStore(regDir)
 	registryServer := registry.New(registryStore)
+	inst.Gateway.SetSkillProvider(skillsext.New(registryStore))
 	inst.RegistryServer = registryServer
 
 	// Phase 2: Configure logging

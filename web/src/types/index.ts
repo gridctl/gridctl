@@ -383,6 +383,7 @@ export interface GatewayStatus {
   resources?: ResourceStatus[];
   sessions?: number;       // Active MCP session count
   code_mode?: string;      // "on" when code mode is active (omitted when off)
+  extensions?: string[];
   token_usage?: TokenUsage; // Token usage metrics (omitted if no accumulator)
   stack_name?: string;     // Active stack name; omitted in stackless mode
   features?: Record<string, boolean>; // Enabled experimental flags, name -> true (omitted when none)

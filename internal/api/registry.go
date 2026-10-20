@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/skills"
@@ -406,7 +405,7 @@ func (s *Server) handleRegistrySkillFileGet(w http.ResponseWriter, r *http.Reque
 		}
 		return
 	}
-	w.Header().Set("Content-Type", detectContentType(filePath))
+	w.Header().Set("Content-Type", registry.ContentTypeForPath(filePath))
 	_, _ = w.Write(data)
 }
 
@@ -461,26 +460,6 @@ func (s *Server) handleRegistrySkillFileDelete(w http.ResponseWriter, r *http.Re
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// detectContentType returns a MIME type based on file extension.
-func detectContentType(path string) string {
-	switch filepath.Ext(path) {
-	case ".md":
-		return "text/markdown"
-	case ".sh":
-		return "text/x-shellscript"
-	case ".py":
-		return "text/x-python"
-	case ".json":
-		return "application/json"
-	case ".yaml", ".yml":
-		return "text/yaml"
-	case ".csv":
-		return "text/csv"
-	default:
-		return "application/octet-stream"
-	}
 }
 
 // handleRegistryValidate validates SKILL.md content without saving.

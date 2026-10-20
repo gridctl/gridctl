@@ -683,6 +683,12 @@ func withSessionIdentity(ctx context.Context, session *Session) context.Context 
 // handleRequest dispatches a JSON-RPC request to the appropriate gateway handler.
 func (s *StreamableHTTPServer) handleRequest(ctx context.Context, session *StreamableSession, req *jsonrpc.Request) jsonrpc.Response {
 	switch req.Method {
+	case "skills/list", "skills/get", "resources/directory/read":
+		gSession := s.gateway.sessions.Get(session.ID)
+		if gSession == nil || !gSession.SkillsExtension {
+			return jsonrpc.NewErrorResponse(req.ID, jsonrpc.MethodNotFound, fmt.Sprintf("Unknown method: %s", req.Method))
+		}
+		return s.handleSkillsRequest(ctx, req, true)
 	case "notifications/initialized":
 		return jsonrpc.NewSuccessResponse(req.ID, nil)
 	case "tools/list":
