@@ -3779,7 +3779,12 @@ URIs return `-32602` with `data.uri` on both generations. `skills/get` reports
 `No skill is served at <uri>`. File-read misses retain `-32002` on handshake
 and `-32602` on stateless, with `data.uri`. Directory URIs have no trailing
 slash. All these methods use the global skill exposure policy, including on
-group endpoints. `GET /api/status` adds optional `extensions` listing declared
+group endpoints. Policy is applied before a skill is hashed, so a denied skill
+costs no manifest I/O. `skills/list` omits a skill whose manifest cannot be
+built and still returns the other visible skills. `skills/get`,
+`resources/directory/read`, and `resources/read` for the omitted skill return
+the underlying error.
+`GET /api/status` adds optional `extensions` listing declared
 extension identifiers.
 
 `skills/list` returns entries under `skills`; `skills/get` returns one under

@@ -52,7 +52,11 @@ disappears when the registry client is removed.
 
 `skills/list` returns active, policy-visible skills in name order. Each entry
 contains `uri`, the served document's `frontmatter`, and a `resources` manifest
-of file URIs, SHA-256 digests, and byte sizes. Read
+of file URIs, SHA-256 digests, and byte sizes. A skill whose manifest cannot
+be built is omitted, with one daemon warning per skill per registry generation,
+and the other skills are still listed. `skills/get`, directory reads, and file
+reads for that skill return the error. Denied skills are filtered before any
+manifest hash. Read
 `skill://registry/<name>/SKILL.md` and its supporting files with `resources/read`;
 this read path also works for handshake clients without extension negotiation.
 `resources/list` includes this document alongside `skills://registry/<name>`.
@@ -84,7 +88,9 @@ pins, but conforming hosts may decline to load a dynamic skill. The daemon
 warns once per skill per registry generation, and `gridctl skill list` prints
 a warning after its table. `gridctl skill list --json` adds `manifest.digest`
 (the composite hex used by `skill pins approve --expect`), `manifest.files`,
-`manifest.bytes`, and `manifest.dynamic`. `GET /api/status` and each gateway
+`manifest.bytes`, and `manifest.dynamic` when the manifest can be hashed. An
+unreadable skill keeps its row, omits `manifest`, sets `manifest_error`, and
+does not fail the command. `GET /api/status` and each gateway
 entry in `gridctl status --json` report declared `extensions`.
 
 Not every linked client can use every channel. Skills over MCP support in the

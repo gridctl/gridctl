@@ -9,7 +9,8 @@ Gridctl is an MCP (Model Context Protocol) gateway with a built-in skills and ag
 Registry skills also expose `io.modelcontextprotocol/skills` through the existing MCP endpoints.
 Handshake sessions opt in; stateless discovery declares it while the registry provider is available.
 The global skill policy governs manifests and reads, including grouped endpoints. CLI skill lists
-report local manifest summaries; status reports declared extensions. The compatibility baseline is
+report local manifest summaries, including a per-row error when one skill cannot be hashed; status
+reports declared extensions. The compatibility baseline is
 `tests/integration/skills-extension-baseline.md`.
 
 ## Build and run

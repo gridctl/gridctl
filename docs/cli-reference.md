@@ -312,14 +312,16 @@ The same import pipeline also handles agent definitions: `skill add` discovers `
 | `gridctl skill project adopt <skill>` | Pull a hand-edited copy projection back into the registry skill (`--client <slug>`, singular: adopt operates on one pair; `--format json` or `--json`; exit `0`/`1`/`2`). Backs up the registry `SKILL.md` as `.pre-<sha>`, re-syncs the pair to in-sync, and marks the skill locally edited for `skill update`. Symlinked projections are refused: the registry copy is already the source of truth. `--kind agent` adopts a hand-edited `~/.claude/agents/<name>.md` back into the canonical `AGENT.md` the same way; rendered targets (opencode, copilot, gemini) refuse adopt, since their dialects dropped keys at render time. |
 | `gridctl activate <skill-name>` | Promote a skill from draft to active (exit `0`/`1`/`2`); `-s` / `--stack` to target a stack (auto-detected when only one runs), `--format json` or `--json` for machine output, `-q` / `--quiet` to suppress the success line. |
 
-`gridctl skill list --json` includes `manifest` on skill rows: `digest` is the
-composite hex accepted by `skill pins approve --expect`, `files` includes
-`SKILL.md`, `bytes` totals the served bytes, and `dynamic` indicates more than
-512 files or 16,777,216 bytes. These summaries hash local registry content,
-including draft, disabled, and policy-hidden skills; they are not the gateway's
-visible skill list. Agent rows do not carry manifests. Human output adds a
-warning after the table for each over-limit skill. An unreadable manifest
-fails the command with exit one and `skill "<name>" manifest: <cause>`.
+`gridctl skill list --json` includes `manifest` on skill rows that can be
+hashed: `digest` is the composite hex accepted by `skill pins approve --expect`,
+`files` includes `SKILL.md`, `bytes` totals the served bytes, and `dynamic`
+indicates more than 512 files or 16,777,216 bytes. A skill whose manifest
+cannot be read keeps its row, omits `manifest`, and sets `manifest_error` to
+`digest_unavailable` or `manifest_unavailable`. The command still exits 0 and
+lists the other skills. These summaries hash local registry content, including
+draft, disabled, and policy-hidden skills; they are not the gateway's visible
+skill list. Agent rows do not carry manifests. Human output adds a warning
+after the table for each over-limit skill and for each unreadable manifest.
 
 ## Variables
 
