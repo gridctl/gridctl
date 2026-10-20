@@ -1,0 +1,21 @@
+# OAuth gateway behind an HTTPS reverse proxy. Replace the example issuer,
+# audience, public URL, and origins with your deployment's values.
+# The issuer must support client registration or pre-registration for your host.
+# Keep port 8180 private to the proxy; authentication does not encrypt HTTP.
+version: "1"
+name: gateway-oauth
+gateway:
+  bind: "0.0.0.0"
+  public_url: https://gateway.example.com
+  allowed_hosts:
+    - gateway.example.com
+  # Explicit placeholder UI origins; wildcard origins are refused on this bind.
+  allowed_origins:
+    - https://gateway.example.com
+  auth:
+    type: oauth
+    issuer: https://auth.example.com
+    audience: https://gateway.example.com/mcp
+    required_scopes: [mcp:tools]
+# Add your MCP servers here. No gateway credential is written to client files.
+mcp-servers: []

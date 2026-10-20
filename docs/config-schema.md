@@ -122,15 +122,45 @@ gateway:
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `type` | string | **Yes** | - | Auth mechanism: `"bearer"` or `"api_key"` |
-| `token` | string | **Yes** | - | Expected token value. Supports `${VAR}` and `${var:KEY}` references |
+| `type` | string | **Yes** | - | Auth mechanism: `"bearer"`, `"api_key"`, or `"oauth"` |
+| `token` | string | bearer/api_key | - | Expected token value. Supports `${VAR}` and `${var:KEY}` references; forbidden for OAuth |
 | `header` | string | No | `"Authorization"` | Header name. Only applicable when type is `"api_key"` |
+| `issuer` | string | oauth | - | Absolute HTTP(S) issuer URL, with no query or fragment; must equal the discovered issuer |
+| `audience` | string | oauth | - | Non-empty value the issuer places in `aud` |
+| `jwks_url` | string | No | - | Absolute HTTP(S) JWKS URL; skips discovery when set |
+| `required_scopes` | []string | No | `[]` | Every entry must appear in `scope` or `scp`; entries must be non-empty |
+| `identity_claim` | string | No | `sub` | Top-level string claim used as the authenticated access identifier |
 
 **Constraints:**
 - `header` can only be set when `type` is `"api_key"`
 - Token comparison uses constant-time equality to prevent timing attacks
 
+#### OAuth resource-server mode
+
+OAuth adds the public metadata routes below to the three public discovery documents listed above. Metadata OPTIONS requests also pass Host validation, unlike terminal preflight on operational routes.
+
+```yaml
+gateway:
+  auth:
+    type: oauth
+    issuer: https://auth.example.com
+    audience: https://gateway.example.com/mcp
+    required_scopes: [mcp:tools]
+```
+
+The five OAuth fields are forbidden in bearer and API-key modes; OAuth rejects `token` and `header`. Gridctl validates issuer-signed JWTs and does not issue tokens, register users, or implement login or refresh. The issuer must let the MCP host obtain a client ID through dynamic registration, Client ID Metadata Documents, or pre-registration. Configure the audience at the issuer: a Keycloak audience mapper, an Okta custom authorization server audience, an Entra application ID URI, an Auth0 API identifier, or a Dex static client ID.
+
+An unauthenticated MCP host receives a Bearer challenge pointing to RFC 9728 metadata at `/.well-known/oauth-protected-resource` (or the group-suffixed document). OAuth also exposes `/mcp`-suffixed and `/groups/{name}/mcp`-suffixed metadata paths. These documents are public, accept GET and OPTIONS with wildcard CORS, and retain Host checks. Other methods return 405; unknown groups return 404. They remain protected in other auth modes. The resource is the audience when it is an HTTP(S) URL; otherwise it is the MCP endpoint under `gateway.public_url`, or the request Host with scheme `http`.
+
+Send only `Authorization: Bearer <jwt>`; query tokens are ignored. Signatures, issuer, audience, expiry (30-second leeway), optional `nbf` (five-minute leeway), and token type are checked. `at+jwt` and `application/at+jwt` are accepted; absent `typ` or `JWT` is tolerated. Invalid tokens return 401 `invalid_token`; missing required scopes return 403 `insufficient_scope`. Both carry `Gridctl-Auth-Rejected: 1`. Issuer discovery failure lets the daemon start but returns 503 without a challenge until retry succeeds, with exponential backoff capped at 60 seconds.
+
+For CLI access, export `GRIDCTL_GATEWAY_TOKEN` with an issuer-minted token. It overrides the recorded credential in every auth mode. OAuth daemon state stores only the issuer host, never a token. `gridctl link` writes a URL-only entry; a compatible MCP host completes login itself. In the web UI, choose Bearer and paste the issuer-minted token. Expiry causes the existing credential prompt to request a replacement.
+
+Keys are cached, with a refresh for an unknown signing key. Removing a key at the issuer does not immediately revoke tokens validated with a cached key. Validation is per request; existing SSE streams are not torn down at token expiry. Opaque tokens and introspection are follow-up work. When the audience is a client ID, an ID token with that audience and absent `typ` can also pass verification (including Dex). Prefer production issuers that mint `at+jwt` access tokens with resource-specific audiences. Remote access still requires HTTPS or an encrypted tunnel and an explicit origin allowlist; see [the OAuth example](../examples/gateways/gateway-oauth.yaml).
+
 #### Restart-only settings
+
+OAuth `issuer`, `audience`, `jwks_url`, `required_scopes`, and `identity_claim` are restart-only too. Changing any of them rejects reload or stackless initialization with `restart_required` and its `gateway.auth.<field>` name.
 
 Authentication enablement, type, resolved token, header, bind address, allowed Hosts/Origins, and the insecure unauthenticated override are fixed for the listener's lifetime. Reload compares resolved candidate values against an immutable startup snapshot, using the original CLI overrides. Security-only changes and mixed security/ordinary edits return `restart_required` before applying any change. An observable variable-store rotation is detected even if the reference text is unchanged. A different invoking shell does not update the daemon's environment.
 
@@ -386,7 +416,7 @@ runs:
 
 Records are saved after dispatch returns. Recording is best-effort: a crash may leave no record. The writer queue holds 1024 records (8 KiB maximum each). Queue overflow, write failure, and capacity exhaustion leave tool results unchanged and increment independent drop counters. Saturation warnings are asynchronous and do not block dispatch. A successful append is not a sync; the writer fsyncs about every two seconds, and a synced watermark requires an actual `fsync`. Shutdown drain is two seconds; a blocked `write`/`fsync` syscall may outlive that bound and remaining queued events are counted as dropped. An unopenable destination keeps recording enabled and reports writer health `degraded`. Disabling recording does not delete retained history.
 
-The allowlist is generated IDs, timestamps, total dispatch duration, bounded target names, disposition/stage/reason, optional replica and sampled trace IDs, and optional caller-declared labels. Argument and result values, hashes, code, raw errors, tokens, headers, URLs, and host paths are excluded. Names and labels may still be sensitive. Labels are not authenticated principals.
+The allowlist is generated IDs, timestamps, total dispatch duration, bounded target names, disposition/stage/reason, optional replica and sampled trace IDs, and optional attribution labels. Argument and result values, hashes, code, raw errors, tokens, headers, and host paths are excluded. Names and labels may still be sensitive. In OAuth mode, the access label is the verified raw identity claim, which can contain URL-like text or base64 punctuation. Other modes use caller-declared labels. Access labels retain the 128-byte bound and omit invalid UTF-8 or control characters.
 
 Recognizable typed capability strings are masked in recorded names and labels,
 including early denials. This sanitizes observation copies, not policy inputs.
@@ -1469,6 +1499,19 @@ indistinguishable from an absent one.
 
 ### Client identity
 
+In OAuth mode, the verified `identity_claim` (default `sub`) is the access
+identifier on handshake, stateless, grouped, and REST tool paths. Raw subjects
+are case-sensitive. Map a subject to a readable profile key through `aliases:`:
+exact raw aliases take precedence, followed by normalized profile-key and alias
+matching. The principal stays unchanged in sessions and access attribution.
+The query parameter, header, `clientInfo.name`, REST `client`, and CLI `--as`
+are display labels only. They cannot widen the token principal's scope. Each
+handshake session is bound to its creator; another principal gets 404
+`session expired` on POST, GET, and DELETE without touching the session.
+
+In bearer, API-key, and unauthenticated modes, the following self-declared
+identity rules continue to apply.
+
 Enforcement keys on a **stable client identifier** that reconciles the wire
 identity with the configuration and UI identity. It is resolved per session, in
 priority order:
@@ -1491,7 +1534,7 @@ same kind of caller-declared label (default `cli`) and do not take it from
 conflicting query or header identities. Per-client scoping is
 therefore a least-privilege guardrail for cooperating clients, not an
 authentication boundary against a hostile client that can choose its own
-identity. Identity-based access control (IdP / OAuth / JWT) is out of scope.
+identity. OAuth mode uses the authenticated branch above instead.
 
 ### Scope coverage (v1)
 

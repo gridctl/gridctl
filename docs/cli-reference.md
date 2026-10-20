@@ -144,7 +144,7 @@ Install MCP servers by name instead of hand-writing `command`/`args`/`env`. The 
 
 ## Live tools
 
-These commands talk to a selected running gateway using state-recorded credentials. They never start a daemon, unlock the vault, or load stack YAML. `--as` sets a caller-declared scope and accounting label; it does not authenticate as that client and can select a broader configured profile than `cli`. A denied `cli` call does not fall back to another profile. File input, discovery, and JSON mode never prompt.
+These commands talk to a selected running gateway using `GRIDCTL_GATEWAY_TOKEN` when non-empty, otherwise state-recorded credentials. OAuth mode requires an issuer-minted token in that environment variable. They never start a daemon, unlock the vault, or load stack YAML. In OAuth mode, `--as` is display-only; the verified identity claim controls scope and usage attribution. In other modes, `--as` sets a caller-declared scope and accounting label; it does not authenticate as that client and can select a broader configured profile than `cli`. A denied `cli` call does not fall back to another profile. File input, discovery, and JSON mode never prompt.
 
 Matching is lexical substring search against live names, generated descriptions, and property names, including the generated prefix `MCP server: <server>. Call using the exact tool name "<canonical-name>".`. Queries such as `mcp`, `server`, and `call` therefore match every scoped tool in the selected server subset, if any, before limits. This is not semantic search.
 

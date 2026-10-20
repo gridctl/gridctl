@@ -4,6 +4,15 @@ The gridctl gateway exposes a REST API for managing stacks, secrets, skills, pac
 
 ## Authentication
 
+With `gateway.auth.type: oauth`, send an issuer-minted JWT as a Bearer token.
+The 401 challenge advertises RFC 9728 resource metadata and includes
+`error="invalid_token"` for rejected tokens. Missing required scopes return
+403 `insufficient_scope`; both denials carry `Gridctl-Auth-Rejected: 1`.
+Unavailable issuer discovery returns 503 `authorization server unavailable`
+without a challenge or rejection marker. Validated claims select client scope;
+the REST `client` field is display-only. CLI users supply
+`GRIDCTL_GATEWAY_TOKEN`, which takes precedence over daemon state in every mode.
+
 When `gateway.auth` is configured, authentication is required for `/api/`, `/groups/`, `/a2a/`, and `/.well-known/` namespaces, plus `/mcp`, `/sse`, and `/message`. This includes `/groups/{name}/mcp` and `/groups/{name}/sse`, as well as unknown paths within protected namespaces. Missing or incorrect credentials return HTTP `401` with a plain-text `Unauthorized` body before operational handling.
 
 The UI shell, assets, and deep links, `/health`, and `/ready` do not require the gateway token. `OPTIONS` terminates in the CORS layer without dispatching an operation. When downstream OAuth brokering is enabled, the exact `GET /oauth/callback` route validates single-use OAuth state instead of the gateway token; `/api/auth/` and `/api/servers/{name}/auth/` remain protected. Host checks and MCP Origin checks apply independently of authentication; native clients may omit Origin.
@@ -32,7 +41,26 @@ The authentication middleware marks its own credential denials with `Gridctl-Aut
 
 Unsupported static-security changes return HTTP `409`, `success: false`, `code: "restart_required"`, a value-free `message`, and `changed_fields` containing field names only. This applies to `/api/reload`, `/api/stack/initialize`, and save-first tool-scope, client-scope, and telemetry mutations. All these preflight responses also carry the structured `error` envelope with the same code, message, and fields. The saved file is preserved; it may differ from active startup settings. No reload side effects occur on this rejection. Resolution or validation failure returns `invalid_candidate` with HTTP `400` and `changed_fields: null`, preserving active state. When the failure is a stack validation error, both the top-level body and the nested `error` object include `errors`, each entry `field: message`. Other load failures omit `errors` so a resolved value is not echoed. Initialization's existing already-loaded conflict remains distinct from restart-required.
 
-Changed field names are `gateway.auth.enabled` (a diagnostic name, not a YAML key), `gateway.auth.type`, `gateway.auth.token`, `gateway.auth.header`, `gateway.bind`, `gateway.allowed_hosts`, `gateway.allowed_origins`, and `gateway.insecure_allow_unauthenticated`. Only differing fields are listed, in that order. Compare `code`, not message text. Recovery uses a [gateway process restart](troubleshooting.md#gateway-security-requires-a-restart) with the original startup options.
+Changed field names are `gateway.auth.enabled` (a diagnostic name, not a YAML key), `gateway.auth.type`, `gateway.auth.token`, `gateway.auth.header`, `gateway.auth.issuer`, `gateway.auth.audience`, `gateway.auth.jwks_url`, `gateway.auth.required_scopes`, `gateway.auth.identity_claim`, `gateway.bind`, `gateway.allowed_hosts`, `gateway.allowed_origins`, and `gateway.insecure_allow_unauthenticated`. Only differing fields are listed, in that order. Compare `code`, not message text. Recovery uses a [gateway process restart](troubleshooting.md#gateway-security-requires-a-restart) with the original startup options.
+
+### OAuth protected resource metadata
+
+#### `GET /.well-known/oauth-protected-resource`
+#### `GET /.well-known/oauth-protected-resource/mcp`
+#### `GET /.well-known/oauth-protected-resource/groups/{name}/mcp`
+
+**Auth:** No, only when OAuth resource-server mode is active. Other modes keep
+these paths protected. Owned by the gateway authentication layer.
+
+Returns RFC 9728 JSON with `resource`, `authorization_servers: [issuer]`,
+`bearer_methods_supported: ["header"]`, and configured `scopes_supported`
+(omitted when empty). The resource is the HTTP(S) audience, or the MCP endpoint
+under `gateway.public_url` or the request's HTTP Host. No credential, session,
+or user data is included. Unknown groups return 404. GET and OPTIONS use
+`Access-Control-Allow-Origin: *` regardless of the operational origin allowlist.
+OPTIONS returns 200 with methods `GET, OPTIONS` and allowed header
+`Content-Type`, without Authorization or credentials. Other methods return
+405. Host checks still apply. Operational preflight retains its allowlist.
 
 ### Health & Readiness
 
@@ -353,7 +381,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/tools/catalog
 
 Invoke one canonical live tool through the same dispatch core as MCP `tools/call`, with strict catalog admission. The body is a single JSON object: `name` (required `server__tool`), `arguments` (object; omitted becomes `{}`; null is invalid), and optional `client` (caller-declared label, default `cli`). Unknown fields, trailing documents, arrays, and non-objects are rejected. Envelope limit is 2 MiB. The handler does not accept group, approval, retry, or execution-bypass options.
 
-`client` is a caller-declared scope and accounting label, not an authenticated principal. Empty, whitespace, control characters, values over 128 bytes, and labels that normalize to empty are invalid. The selected profile and its gates always apply. `cli` has no scope exemption.
+`client` is a caller-declared label. In OAuth mode it is display-only: the verified identity claim selects the profile and attributes usage. In other modes it selects scope and accounting without authenticating a principal. Empty, whitespace, control characters, values over 128 bytes, and labels that normalize to empty are invalid. The selected profile and its gates always apply. `cli` has no scope exemption.
 
 A valid dispatch returns HTTP `200` with a versioned envelope even when the outcome is a policy denial (`error.code` `policy_blocked`, `outcome.gate` `policy`) or tool error. Request validation is `400`, oversized bodies `413`, wrong content type `415`, and a missing gateway `503`. Authentication remains the existing middleware (`401` with `Gridctl-Auth-Rejected: 1` and a plain-text body). Endpoint errors use `schema_version`, typed `outcome`, `result: null`, and `error: {"code","message"}` rather than the legacy string-valued `{"error":"..."}` shape. `name` and `client` appear only when valid and available.
 

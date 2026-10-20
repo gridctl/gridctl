@@ -64,7 +64,7 @@ A configured `policy:` block adds a `BLOCKED` chip (or `APPROVAL`, when the matc
 
 Where they overlap: whitelists (this workspace) decide what the gateway exposes at all; the policy decides whether a listed tool may be called; Access decides which client sees which servers and tools; Groups publish named subsets at separate endpoints. A tool must survive all applicable layers for a client to call it. Downstream prompts and resources follow server membership. A tool whitelist or a partial tool selection does not filter them. A group exposes a server's prompts and resources only when at least one of that server's tools is a member.
 
-These filters are separate from [gateway authentication](config-schema.md#auth). When configured, the gateway credential is required on every grouped MCP request, just as on `/mcp`. Client selectors are self-declared, and group names are not authenticated identities; the filters are guardrails for cooperating clients.
+These filters are separate from [gateway authentication](config-schema.md#auth). When configured, the gateway credential is required on every grouped MCP request, just as on `/mcp`. OAuth uses the verified identity claim for client scope and binds sessions to that principal. In other modes, client selectors are self-declared, so client filters are guardrails for cooperating clients. Group names are not authenticated identities.
 
 A tool that survives exposure filters can still be blocked by required container execution evidence. Inspect the server's Execution evidence in the Stack sidebar; MCP health and an enabled tool checkbox do not establish eligibility. [Execution controls](execution.md) also cover code-mode inner tool calls through the same gateway dispatch path.
 
