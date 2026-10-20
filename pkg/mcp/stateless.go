@@ -183,12 +183,24 @@ func (s *StreamableHTTPServer) handleStateless(w http.ResponseWriter, r *http.Re
 	// normalized _meta clientInfo name.
 	ctx := r.Context()
 	clientID := NormalizeClientID(meta.ClientInfo.Name)
-	accessID := NormalizeClientID(clientAccessIDFromRequest(r))
-	if accessID == "" {
-		accessID = clientID
+	principal := PrincipalFromContext(r.Context())
+	var accessID string
+	if principal != "" {
+		accessID = principal
+		if declared := NormalizeClientID(declaredClientAccessID(r)); declared != "" {
+			clientID = declared
+		}
+	} else {
+		accessID = NormalizeClientID(declaredClientAccessID(r))
+		if accessID == "" {
+			accessID = clientID
+		}
 	}
 	ctx = WithClientID(ctx, clientID)
 	ctx = WithClientAccessID(ctx, accessID)
+	if principal != "" {
+		ctx = WithPrincipal(ctx, principal)
+	}
 	ctx = withMcpParamHeaders(ctx, collectMcpParamHeaders(r))
 	// Relay the client's declared capabilities to the downstream leg so
 	// modern servers know which input requests the far end can fulfill.

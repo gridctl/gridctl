@@ -148,7 +148,7 @@ func (n *listChangeNotifier) flushFired(fired *time.Timer) {
 		if n.aborted() {
 			return
 		}
-		fp := fingerprintTools(n.g.visibleToolsFor(sess.AccessID, sess.Group))
+		fp := fingerprintTools(n.g.visibleToolsFor(sess.AccessID, sess.Group, sess.Principal != ""))
 		prev, ok := n.g.sessions.SwapToolFingerprint(sess.ID, fp)
 		if !ok || prev == "" || prev == fp {
 			continue
@@ -203,7 +203,7 @@ func (g *Gateway) codeModeOn() bool {
 // visibleToolsFor is the non-code-mode body of HandleToolsList: the
 // aggregated list after client-profile and group filtering. Policies are
 // snapshotted so the caller does not hold g.mu across the router read.
-func (g *Gateway) visibleToolsFor(accessID, group string) []Tool {
+func (g *Gateway) visibleToolsFor(accessID, group string, principal bool) []Tool {
 	g.mu.RLock()
 	policy := g.clientPolicy
 	groups := g.groupPolicy
@@ -211,7 +211,7 @@ func (g *Gateway) visibleToolsFor(accessID, group string) []Tool {
 
 	tools := g.router.AggregatedTools()
 	if policy != nil {
-		tools = policy.Filter(accessID, tools)
+		tools = policy.forPrincipal(principal).Filter(accessID, tools)
 	}
 	if group != "" {
 		tools = groups.FilterAndRewrite(group, tools)

@@ -227,6 +227,9 @@ func explainUsage(cmd *cobra.Command, stackFile string, store *vault.Store) (*co
 			resp, requestErr := api.Get(api.URL("/api/var/usage"))
 			if requestErr == nil {
 				defer resp.Body.Close()
+				if err := api.describeUnauthorized(resp); err != nil {
+					return nil, nil, false, err
+				}
 				if resp.StatusCode == http.StatusOK {
 					usage := config.ReferenceIndex{}
 					if err := json.NewDecoder(resp.Body).Decode(&usage); err == nil {

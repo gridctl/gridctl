@@ -352,7 +352,7 @@ func gatewayDecl(stack *config.Stack) *GatewayDeclView {
 		Bind:     authoredIdentity(stack.Gateway.Bind),
 		Insecure: stack.Gateway.InsecureAllowUnauthenticated,
 	}
-	if stack.Gateway.Auth != nil && stack.Gateway.Auth.Token != "" {
+	if stack.Gateway.Auth != nil && stack.Gateway.Auth.Configured() {
 		decl.AuthDeclared = true
 		decl.AuthType = SanitizeIdentifier(stack.Gateway.Auth.Type)
 	}

@@ -31,7 +31,13 @@ type Session struct {
 	// identifier when the client declares one (the `client` query parameter or
 	// X-Gridctl-Client-Id header), otherwise it falls back to ClientID. Both are
 	// normalized so configuration, the wire, and the UI reconcile on one form.
+	// In OAuth mode AccessID is the raw principal and is not normalized.
 	AccessID string
+	// Principal is the verified OAuth identity claim that created this session.
+	// Empty outside OAuth mode. It is the source of truth for AccessID and is
+	// compared on every later request. Raw subjects are case-sensitive; map
+	// them with clients.profiles aliases.
+	Principal string
 	// Group is the tool group this session is bound to, set when the client
 	// connected through a /groups/{name}/mcp endpoint. Empty for the default
 	// full-surface /mcp endpoint. Frozen at initialize, like AccessID.
@@ -83,25 +89,52 @@ func (m *SessionManager) Create(clientInfo ClientInfo, accessID, group, protocol
 		m.evictOldest()
 	}
 
+	session := m.create(clientInfo, accessID, "", group, protocolVersion)
+	m.sessions[session.ID] = session
+	return session
+}
+
+// create builds a session. principal, when set, is stored verbatim as AccessID
+// and is not passed through NormalizeClientID. The declared accessID is then
+// only the display label.
+func (m *SessionManager) create(clientInfo ClientInfo, accessID, principal, group, protocolVersion string) *Session {
 	normalized := NormalizeClientID(clientInfo.Name)
 	resolvedAccess := NormalizeClientID(accessID)
-	if resolvedAccess == "" {
+	clientID := normalized
+	if principal != "" {
+		resolvedAccess = principal
+		if declared := NormalizeClientID(accessID); declared != "" {
+			clientID = declared
+		}
+	} else if resolvedAccess == "" {
 		resolvedAccess = normalized
 	}
 
 	id := generateSessionID()
-	session := &Session{
+	return &Session{
 		ID:              id,
 		ClientInfo:      clientInfo,
-		ClientID:        normalized,
+		ClientID:        clientID,
 		AccessID:        resolvedAccess,
+		Principal:       principal,
 		Group:           group,
 		ProtocolVersion: protocolVersion,
 		Initialized:     true,
 		CreatedAt:       time.Now(),
 		LastSeen:        time.Now(),
 	}
-	m.sessions[id] = session
+}
+
+// CreatePrincipal is Create for a verified OAuth principal. AccessID is the
+// raw principal. declared is the display label (query, header, or empty).
+func (m *SessionManager) CreatePrincipal(clientInfo ClientInfo, declared, principal, group, protocolVersion string) *Session {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.sessions) >= maxSessions {
+		m.evictOldest()
+	}
+	session := m.create(clientInfo, declared, principal, group, protocolVersion)
+	m.sessions[session.ID] = session
 	return session
 }
 

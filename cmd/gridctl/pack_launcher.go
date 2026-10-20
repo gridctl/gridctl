@@ -72,6 +72,9 @@ func (packStackLauncher) Reload(ctx context.Context, stackName string) error {
 		return fmt.Errorf("calling reload API: %w", err)
 	}
 	defer resp.Body.Close()
+	if err := api.describeUnauthorized(resp); err != nil {
+		return err
+	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("reading reload response: %w", err)

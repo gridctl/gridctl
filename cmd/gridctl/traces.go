@@ -142,6 +142,9 @@ func fetchTraces(port int) (apiTraceList, error) {
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
+	if authErr := api.describeUnauthorized(resp); authErr != nil {
+		return list, authErr
+	}
 	if err != nil {
 		return list, fmt.Errorf("traces: reading response: %w", err)
 	}
@@ -262,6 +265,9 @@ func runTraceDetail(port int, traceID string) error {
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
 		return fmt.Errorf("traces: trace %s not found", traceID)
+	}
+	if err := api.describeUnauthorized(resp); err != nil {
+		return err
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

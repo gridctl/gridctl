@@ -476,7 +476,7 @@ func (g *Gateway) clientAccessPolicy() *ClientAccessPolicy {
 // from ctx) is allowed to see. It is the single chokepoint every tool-exposure
 // path funnels through so the code-mode universe cannot bypass the filter.
 func (g *Gateway) scopeToolsForContext(ctx context.Context, tools []Tool) []Tool {
-	policy := g.clientAccessPolicy()
+	policy := g.clientAccessPolicy().forPrincipal(PrincipalFromContext(ctx) != "")
 	if policy == nil {
 		return tools
 	}
@@ -486,7 +486,7 @@ func (g *Gateway) scopeToolsForContext(ctx context.Context, tools []Tool) []Tool
 // clientAllowsToolCall reports whether the connecting client (resolved from
 // ctx) may invoke the given prefixed tool. Always true when no policy is set.
 func (g *Gateway) clientAllowsToolCall(ctx context.Context, prefixedName string) bool {
-	policy := g.clientAccessPolicy()
+	policy := g.clientAccessPolicy().forPrincipal(PrincipalFromContext(ctx) != "")
 	if policy == nil {
 		return true
 	}
@@ -2302,7 +2302,19 @@ func (g *Gateway) HandleInitialize(params InitializeParams, accessID, group stri
 	// the client decides whether to disconnect). Never fail for version reasons.
 	protocolVersion := NegotiateProtocolVersion(params.ProtocolVersion)
 	session := g.sessions.Create(params.ClientInfo, accessID, group, protocolVersion)
-	g.sessions.SetToolFingerprint(session.ID, fingerprintTools(g.visibleToolsFor(session.AccessID, session.Group)))
+	return g.finishInitialize(session, protocolVersion, group)
+}
+
+// HandleInitializePrincipal is HandleInitialize for a verified OAuth principal.
+// declared is the display label. principal is stored verbatim as AccessID.
+func (g *Gateway) HandleInitializePrincipal(params InitializeParams, declared, principal, group string) (*InitializeResult, *Session, error) {
+	protocolVersion := NegotiateProtocolVersion(params.ProtocolVersion)
+	session := g.sessions.CreatePrincipal(params.ClientInfo, declared, principal, group, protocolVersion)
+	return g.finishInitialize(session, protocolVersion, group)
+}
+
+func (g *Gateway) finishInitialize(session *Session, protocolVersion, group string) (*InitializeResult, *Session, error) {
+	g.sessions.SetToolFingerprint(session.ID, fingerprintTools(g.visibleToolsFor(session.AccessID, session.Group, session.Principal != "")))
 
 	caps := g.advertisedCapabilities(EraHandshake)
 
@@ -2336,7 +2348,7 @@ func (g *Gateway) HandleToolsList(ctx context.Context) (*ToolsListResult, error)
 		return cm.ToolsList(), nil
 	}
 
-	tools := g.visibleToolsFor(ClientAccessIDFromContext(ctx), GroupFromContext(ctx))
+	tools := g.visibleToolsFor(ClientAccessIDFromContext(ctx), GroupFromContext(ctx), PrincipalFromContext(ctx) != "")
 	g.logToolCountHint(len(tools))
 	if tools == nil {
 		// The spec requires an array; a nil slice would marshal as
@@ -2656,7 +2668,9 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 	if sc := trace.SpanFromContext(ctx).SpanContext(); sc.IsValid() {
 		logger = logging.WithTraceID(logger, sc.TraceID().String())
 	}
-	if clientID := ClientIDFromContext(ctx); clientID != "" {
+	if principal := PrincipalFromContext(ctx); principal != "" {
+		logger.Debug("authenticated tool call", "principal", principal)
+	} else if clientID := ClientIDFromContext(ctx); clientID != "" {
 		logger = logger.With("client", clientID)
 	}
 
@@ -2753,7 +2767,7 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 	obs := g.toolCallObserver
 	g.mu.RUnlock()
 	if obs != nil && !isSensitiveExecution(ctx) {
-		clientID := logging.RedactString(ClientIDFromContext(ctx))
+		clientID := logging.RedactString(attributionID(ctx))
 		if co, ok := obs.(ClientObserver); ok {
 			summary := co.ObserveToolCallWithClient(ctx, ToolCallObservation{
 				ServerName: logging.RedactString(client.Name()),
@@ -2805,6 +2819,13 @@ func (g *Gateway) checkCallGates(ctx context.Context, prefixedName string) (Gate
 		ServerName:     serverName,
 		ClientAccessID: ClientAccessIDFromContext(ctx),
 		Annotations:    g.router.ToolAnnotations(prefixedName),
+	}
+	if PrincipalFromContext(ctx) != "" {
+		if policy := g.clientAccessPolicy().forPrincipal(true); policy != nil {
+			if key, listed := policy.resolveKey(call.ClientAccessID); listed {
+				call.ClientProfileKey = key
+			}
+		}
 	}
 	for _, gate := range gates {
 		if decision := gate.CheckToolCall(ctx, call); !decision.Allow {

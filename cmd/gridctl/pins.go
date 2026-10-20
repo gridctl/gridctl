@@ -217,6 +217,9 @@ func fetchPinsRecords(st *state.DaemonState, server string) (map[string]*pins.Se
 		return nil, fmt.Errorf("calling pins API: %w", err)
 	}
 	defer resp.Body.Close()
+	if err := api.describeUnauthorized(resp); err != nil {
+		return nil, err
+	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("reading response: %w", err)
@@ -569,6 +572,9 @@ func fetchPinsDiff(st *state.DaemonState, server string) (*pinsDiffServer, error
 		return nil, fmt.Errorf("calling pins API: %w", err)
 	}
 	defer resp.Body.Close()
+	if err := api.describeUnauthorized(resp); err != nil {
+		return nil, err
+	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -833,6 +839,9 @@ func runPinsApprove(server, expectHash string) error {
 		return fmt.Errorf("calling pins API: %w", err)
 	}
 	defer resp.Body.Close()
+	if err := api.describeUnauthorized(resp); err != nil {
+		return err
+	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -876,6 +885,9 @@ func runPinsReset(server string) error {
 		return fmt.Errorf("calling pins API: %w", err)
 	}
 	defer resp.Body.Close()
+	if err := api.describeUnauthorized(resp); err != nil {
+		return err
+	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

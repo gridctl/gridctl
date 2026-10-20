@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -616,14 +617,64 @@ type SchemaPinningConfig struct {
 }
 
 // AuthConfig configures gateway authentication.
-// When configured, all requests (except /health and /ready) must include a valid token.
+// When configured, operational routes require a credential. bearer and api_key
+// compare a shared secret. oauth validates issuer-minted JWT access tokens and
+// does not store a gateway token.
 type AuthConfig struct {
-	// Type is the auth mechanism: "bearer" or "api_key".
+	// Type is the auth mechanism: "bearer", "api_key", or "oauth".
 	Type string `yaml:"type"`
 	// Token is the expected token value (supports env var references via $VAR or ${VAR}).
-	Token string `yaml:"token"`
+	// Rejected when type is oauth.
+	Token string `yaml:"token,omitempty"`
 	// Header is the header name for api_key auth (default: "Authorization").
+	// Rejected when type is oauth.
 	Header string `yaml:"header,omitempty"`
+	// Issuer is the authorization server issuer URL. Required when type is oauth.
+	Issuer string `yaml:"issuer,omitempty"`
+	// Audience is the expected aud value. Required when type is oauth.
+	Audience string `yaml:"audience,omitempty"`
+	// JWKSURL skips discovery and uses this key set. Optional.
+	JWKSURL string `yaml:"jwks_url,omitempty"`
+	// RequiredScopes lists scopes that must be present on an accepted token.
+	RequiredScopes []string `yaml:"required_scopes,omitempty"`
+	// IdentityClaim is the top-level string claim used as the access identifier.
+	// Empty means "sub".
+	IdentityClaim string `yaml:"identity_claim,omitempty"`
+}
+
+// Configured reports whether inbound authentication is active. OAuth mode is
+// configured when type is oauth, even though token is empty. bearer and
+// api_key stay configured only when a token is set.
+func (a *AuthConfig) Configured() bool {
+	if a == nil {
+		return false
+	}
+	if a.Type == "oauth" {
+		return true
+	}
+	return a.Token != ""
+}
+
+// IdentityClaimOrDefault returns the configured identity claim, or "sub".
+func (a *AuthConfig) IdentityClaimOrDefault() string {
+	if a == nil || a.IdentityClaim == "" {
+		return "sub"
+	}
+	return a.IdentityClaim
+}
+
+// IssuerHost returns the issuer URL's host, including a port when one is
+// present. The result has no scheme, path, query, or userinfo. It carries
+// no credential.
+func (a *AuthConfig) IssuerHost() string {
+	if a == nil || a.Issuer == "" {
+		return ""
+	}
+	u, err := url.Parse(a.Issuer)
+	if err != nil {
+		return ""
+	}
+	return u.Host
 }
 
 // Network defines the Docker network configuration.

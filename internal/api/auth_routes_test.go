@@ -17,6 +17,7 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/mcpauth"
+	"github.com/gridctl/gridctl/pkg/resourceauth"
 	"github.com/stretchr/testify/require"
 )
 
@@ -110,6 +111,7 @@ func TestAuthHandler_RouteMatrix(t *testing.T) {
 		{"bearer", "bearer", ""},
 		{"api-key", "api_key", ""},
 		{"custom-header", "api_key", "X-Gateway-Key"},
+		{"oauth", "oauth", ""},
 	} {
 		t.Run(mode.name, func(t *testing.T) {
 			s := NewServer(groupsGateway(), fstest.MapFS{
@@ -119,6 +121,14 @@ func TestAuthHandler_RouteMatrix(t *testing.T) {
 			t.Cleanup(s.Close)
 			credential := rand.Text()
 			s.SetAuth(mode.kind, credential, mode.header)
+			if mode.kind == "oauth" {
+				issuer := startAPIIssuer(t)
+				cfg := resourceauth.Config{Issuer: issuer.URL, Audience: "gridctl"}
+				verifier, err := resourceauth.New(context.Background(), cfg, issuer.Client())
+				require.NoError(t, err)
+				s.SetOAuth(verifier, cfg)
+				credential = issuer.mint(t, nil)
+			}
 			h := s.Handler()
 			header := mode.header
 			if header == "" {
@@ -138,7 +148,7 @@ func TestAuthHandler_RouteMatrix(t *testing.T) {
 						t.Run(method+path, func(t *testing.T) {
 							r := loopbackRequest(method, path, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`))
 							if value != "" {
-								if mode.kind == "bearer" {
+								if mode.kind == "bearer" || mode.kind == "oauth" {
 									value = "Bearer " + value
 								}
 								r.Header.Set(header, value)
@@ -190,7 +200,7 @@ func TestAuthHandler_RouteMatrix(t *testing.T) {
 			} {
 				r := loopbackRequest(route.method, route.path, nil)
 				value := credential
-				if mode.kind == "bearer" {
+				if mode.kind == "bearer" || mode.kind == "oauth" {
 					value = "Bearer " + value
 				}
 				r.Header.Set(header, value)
@@ -203,7 +213,7 @@ func TestAuthHandler_RouteMatrix(t *testing.T) {
 				for _, defense := range []string{"Host", "Origin"} {
 					r := loopbackRequest(http.MethodPost, path, strings.NewReader(`{"method":"initialize"}`))
 					value := credential
-					if mode.kind == "bearer" {
+					if mode.kind == "bearer" || mode.kind == "oauth" {
 						value = "Bearer " + value
 					}
 					r.Header.Set(header, value)

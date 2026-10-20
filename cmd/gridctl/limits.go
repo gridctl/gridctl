@@ -105,6 +105,9 @@ func fetchLimitsReport(port int) (limits.StatusReport, error) {
 		return limits.StatusReport{}, fmt.Errorf("limits: %w", err)
 	}
 	defer resp.Body.Close()
+	if err := api.describeUnauthorized(resp); err != nil {
+		return limits.StatusReport{}, err
+	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return limits.StatusReport{}, fmt.Errorf("limits: reading response: %w", err)
@@ -118,7 +121,6 @@ func fetchLimitsReport(port int) (limits.StatusReport, error) {
 	}
 	return report, nil
 }
-
 
 // renderLimitsTable prints the state table, or a configuration hint when no
 // limits block exists.

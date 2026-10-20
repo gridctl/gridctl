@@ -416,8 +416,13 @@ func (s *StreamableHTTPServer) handlePost(w http.ResponseWriter, r *http.Request
 	// Expired (manager-reaped) sessions 404 immediately so the client
 	// re-initializes cleanly, instead of continuing on a session no
 	// status surface counts and no observer can attribute.
-	if s.gateway.sessions.Get(sessionID) == nil {
+	gSession := s.gateway.sessions.Get(sessionID)
+	if gSession == nil {
 		s.pruneExpired(sessionID)
+		http.Error(w, "session expired", http.StatusNotFound)
+		return
+	}
+	if principalMismatch(r, gSession) {
 		http.Error(w, "session expired", http.StatusNotFound)
 		return
 	}
@@ -427,17 +432,12 @@ func (s *StreamableHTTPServer) handlePost(w http.ResponseWriter, r *http.Request
 	// Thread the originating client ID into the request context so tool-call
 	// observers can attribute calls per client. Sessions created before
 	// PR 2 may have an empty ClientID; WithClientID is a no-op in that case.
-	ctx := r.Context()
-	if gSession := s.gateway.sessions.Get(sessionID); gSession != nil {
-		ctx = WithClientID(ctx, gSession.ClientID)
-		ctx = WithClientAccessID(ctx, gSession.AccessID)
-		// The session's group is authoritative over the request path, in
-		// BOTH directions: a session created on /groups/x/mcp stays bound
-		// to x wherever it posts, and a default /mcp session posting to a
-		// group path stays full-surface. The value is stored even when
-		// empty so it shadows anything a route wrapper injected.
-		ctx = context.WithValue(ctx, groupKey{}, gSession.Group)
-	}
+	// The session's group is authoritative over the request path, in
+	// BOTH directions: a session created on /groups/x/mcp stays bound
+	// to x wherever it posts, and a default /mcp session posting to a
+	// group path stays full-surface. The value is stored even when
+	// empty so it shadows anything a route wrapper injected.
+	ctx := withSessionIdentity(r.Context(), gSession)
 
 	resp := s.handleRequest(ctx, session, &req)
 	w.Header().Set("Content-Type", "application/json")
@@ -475,7 +475,14 @@ func (s *StreamableHTTPServer) handleInitialize(w http.ResponseWriter, r *http.R
 
 	// The group (if any) was injected into the request context by the
 	// /groups/{name}/mcp route wrapper, which already validated it exists.
-	result, gSession, err := s.gateway.HandleInitialize(params, clientAccessIDFromRequest(r), GroupFromContext(r.Context()))
+	var result *InitializeResult
+	var gSession *Session
+	var err error
+	if principal := PrincipalFromContext(r.Context()); principal != "" {
+		result, gSession, err = s.gateway.HandleInitializePrincipal(params, declaredClientAccessID(r), principal, GroupFromContext(r.Context()))
+	} else {
+		result, gSession, err = s.gateway.HandleInitialize(params, clientAccessIDFromRequest(r), GroupFromContext(r.Context()))
+	}
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(jsonrpc.NewErrorResponse(req.ID, jsonrpc.InternalError, err.Error()))
@@ -523,8 +530,13 @@ func (s *StreamableHTTPServer) handleGet(w http.ResponseWriter, r *http.Request)
 	// expired session: tear it down and 404 so the client re-initializes,
 	// rather than serving an unattributed stream that no status surface
 	// counts.
-	if s.gateway.sessions.Get(sessionID) == nil {
+	gSession := s.gateway.sessions.Get(sessionID)
+	if gSession == nil {
 		s.pruneExpired(sessionID)
+		http.Error(w, "session expired", http.StatusNotFound)
+		return
+	}
+	if principalMismatch(r, gSession) {
 		http.Error(w, "session expired", http.StatusNotFound)
 		return
 	}
@@ -536,7 +548,7 @@ func (s *StreamableHTTPServer) handleGet(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Register this SSE stream; cancel any previous stream for this session
-	ctx, cancel := context.WithCancel(r.Context())
+	ctx, cancel := context.WithCancel(withSessionIdentity(r.Context(), gSession))
 	session.setStream(cancel)
 	defer session.clearStream()
 
@@ -611,6 +623,16 @@ func (s *StreamableHTTPServer) handleDelete(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
+	gSession := s.gateway.sessions.Get(sessionID)
+	if gSession == nil {
+		s.pruneExpired(sessionID)
+		http.Error(w, "session expired", http.StatusNotFound)
+		return
+	}
+	if principalMismatch(r, gSession) {
+		http.Error(w, "session expired", http.StatusNotFound)
+		return
+	}
 
 	s.deleteSession(sessionID)
 	w.WriteHeader(http.StatusOK)
@@ -635,6 +657,27 @@ func (s *StreamableHTTPServer) deleteSession(sessionID string) {
 		session.streamMu.Unlock()
 	}
 	s.gateway.sessions.Delete(sessionID)
+}
+
+func principalMismatch(r *http.Request, session *Session) bool {
+	if r == nil || session == nil || session.Principal == "" {
+		return false
+	}
+	return PrincipalFromContext(r.Context()) != session.Principal
+}
+
+func withSessionIdentity(ctx context.Context, session *Session) context.Context {
+	if session == nil {
+		return ctx
+	}
+	ctx = WithClientID(ctx, session.ClientID)
+	if session.Principal != "" {
+		ctx = WithPrincipal(ctx, session.Principal)
+		ctx = WithClientAccessID(ctx, session.Principal)
+	} else {
+		ctx = WithClientAccessID(ctx, session.AccessID)
+	}
+	return context.WithValue(ctx, groupKey{}, session.Group)
 }
 
 // handleRequest dispatches a JSON-RPC request to the appropriate gateway handler.

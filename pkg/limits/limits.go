@@ -134,8 +134,11 @@ type rateGate struct{ p *Policy }
 
 func (g *rateGate) Name() string { return "rate-limits" }
 
-func (g *rateGate) CheckToolCall(_ context.Context, call mcp.GateCall) mcp.GateDecision {
+func (g *rateGate) CheckToolCall(ctx context.Context, call mcp.GateCall) mcp.GateDecision {
 	normClient := mcp.NormalizeClientID(call.ClientAccessID)
+	if mcp.PrincipalFromContext(ctx) != "" {
+		normClient = call.ClientProfileKey
+	}
 	for _, e := range g.p.rates {
 		if !e.matches(call, normClient) {
 			continue

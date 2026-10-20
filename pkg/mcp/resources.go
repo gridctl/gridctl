@@ -121,7 +121,7 @@ func errorCategory(err error) string {
 // access. Registry entries do not pass through it. A nil client policy allows
 // every server. Group membership reuses groupDef.isMember so exclude wins.
 func (g *Gateway) serverVisible(ctx context.Context, server string) bool {
-	if !g.clientAccessPolicy().AllowsServer(ClientAccessIDFromContext(ctx), server) {
+	if !g.clientAccessPolicy().forPrincipal(PrincipalFromContext(ctx) != "").AllowsServer(ClientAccessIDFromContext(ctx), server) {
 		return false
 	}
 	if group := GroupFromContext(ctx); group != "" {

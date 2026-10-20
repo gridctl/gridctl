@@ -122,6 +122,9 @@ func postActivate(baseURL, name string) (*registry.AgentSkill, int, []byte, erro
 		return nil, 0, nil, fmt.Errorf("activate: %w", err)
 	}
 	defer resp.Body.Close()
+	if err := api.describeUnauthorized(resp); err != nil {
+		return nil, resp.StatusCode, nil, err
+	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

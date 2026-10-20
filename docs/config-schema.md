@@ -83,7 +83,7 @@ gateway:
 | `bind` | string | No | `127.0.0.1` | Address the HTTP listener binds. Loopback by default, so the API, web UI, and gateway are unreachable from other hosts and from containers. Set `0.0.0.0` to listen on every interface. The `--bind` and `--bind-all` flags override this. A non-loopback bind requires `auth` and an explicit `allowed_origins` list. gridctl refuses to start without them unless the insecure override is set |
 | `insecure_allow_unauthenticated` | bool | No | `false` | Permit a non-loopback bind with no `auth`, or with no explicit origin allowlist. One override covers both refusals. Without it gridctl refuses to start in either combination. Exists as a config field as well as the `--insecure-allow-unauthenticated` flag, because a flag can be dropped by whatever wraps the process (launchd, a Homebrew service, a Dockerfile `CMD`). Warns loudly on every start |
 | `allowed_origins` | []string | No | `["*"]` on loopback | CORS allowed origins. On a loopback bind, empty or unset defaults to `["*"]`. A non-loopback bind requires an explicit list, or the insecure override. `"*"` is not an allowlist: on a widened bind it is refused unless the override is set |
-| `allowed_hosts` | []string | No | `[]` | Extra `Host` header values accepted for loopback-arriving connections across the HTTP surface, including MCP, REST, the UI, and the OAuth callback (DNS rebinding protection). Probes and terminal CORS preflight are exempt. Unset accepts only loopback hosts on those connections; non-loopback-arriving connections skip this check. Set when a reverse proxy forwards a non-loopback hostname. A matching Host can also be the origin the Server Card advertises when `public_url` is unset. Unlike `allowed_origins`, `"*"` is **not** a wildcard here and matches nothing |
+| `allowed_hosts` | []string | No | `[]` | Extra `Host` header values accepted for loopback-arriving connections across the HTTP surface, including MCP, REST, the UI, and the OAuth callback (DNS rebinding protection). Probes and terminal operational CORS preflight are exempt; OAuth metadata preflight is checked. Unset accepts only loopback hosts on those connections; non-loopback-arriving connections skip this check. Set when a reverse proxy forwards a non-loopback hostname. A matching Host can also be the origin the Server Card advertises when `public_url` is unset. Unlike `allowed_origins`, `"*"` is **not** a wildcard here and matches nothing |
 | `auth` | object | No | - | Authentication configuration |
 | `code_mode` | string | No | `"off"` | Enable code mode: `"on"` or `"off"` |
 | `code_mode_timeout` | int | No | `30` | Code mode execution timeout in seconds. Must be >= 0 |
@@ -91,7 +91,7 @@ gateway:
 | `maxToolResultBytes` | int | No | `65536` | Maximum size of a tool-result text block in bytes before truncation. The limit applies to text blocks. Image, audio, resource link, embedded resource, and other non-text blocks are exempt and are not dropped. Ordinary text over the limit is truncated with a suffix noting the original size; [A2A envelopes](#tools-and-capability-delivery) retain atomic JSON and mark omitted content. `0` uses the default (64 KB) |
 | `name` | string | No | `"gridctl-gateway"` | Identity announced to MCP clients in the initialize response (`serverInfo.name`). Some clients (VS Code / GitHub Copilot) display this instead of the entry key in their own config, so give distinct gateways distinct names. Group endpoints announce `<name>/<group>`. The Server Card sanitizes this value for its `name` and does not require it to already match that pattern. Requires a restart to propagate |
 | `description` | string | No | generated | Optional Server Card description, 1 to 100 characters when set. Unset uses `MCP gateway for stack <name>`, truncated to 100 characters. Read only by the card builder. Requires a restart to propagate |
-| `public_url` | string | No | - | Absolute `http` or `https` URL the Server Card advertises, with an optional port and path prefix and no userinfo, query, or fragment. Unset leaves the card to a loopback Host or a Host in `allowed_hosts`, and omits `remotes` otherwise. Not used for link URLs or the gateway address. Requires a restart to propagate |
+| `public_url` | string | No | - | Absolute `http` or `https` URL the Server Card advertises, with an optional port and path prefix and no userinfo, query, or fragment. Unset leaves the card to a loopback Host or a Host in `allowed_hosts`, and omits `remotes` otherwise. OAuth uses it as the base for metadata challenges and for the resource URL when the audience is not an HTTP(S) URL; its fallback is the request Host with scheme `http`. Not used for link URLs or the gateway address. Requires a restart to propagate |
 | `security` | object | No | - | Security settings (see [Security](#security)) |
 | `tokenizer` | string | No | `"embedded"` | Token counting mode: `"embedded"` (cl100k_base approximation) or `"api"` (exact counts via Anthropic `count_tokens` endpoint) |
 | `tokenizer_api_key` | string | No | - | Anthropic API key for `tokenizer: api`. Falls back to `ANTHROPIC_API_KEY` env var. Supports `${VAR}` and `${var:KEY}` references |
@@ -122,15 +122,49 @@ gateway:
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `type` | string | **Yes** | - | Auth mechanism: `"bearer"` or `"api_key"` |
-| `token` | string | **Yes** | - | Expected token value. Supports `${VAR}` and `${var:KEY}` references |
+| `type` | string | **Yes** | - | Auth mechanism: `"bearer"`, `"api_key"`, or `"oauth"` |
+| `token` | string | bearer/api_key | - | Expected token value. Supports `${VAR}` and `${var:KEY}` references; forbidden for OAuth |
 | `header` | string | No | `"Authorization"` | Header name. Only applicable when type is `"api_key"` |
+| `issuer` | string | oauth | - | Absolute HTTP(S) issuer URL, with no query or fragment; must equal the discovered issuer |
+| `audience` | string | oauth | - | Non-empty value the issuer places in `aud` |
+| `jwks_url` | string | No | - | Absolute HTTP(S) JWKS URL; skips discovery when set |
+| `required_scopes` | []string | No | `[]` | Every entry must appear in `scope` or `scp`; entries must be non-empty |
+| `identity_claim` | string | No | `sub` | Top-level non-empty string claim used as the authenticated access identifier |
 
 **Constraints:**
 - `header` can only be set when `type` is `"api_key"`
-- Token comparison uses constant-time equality to prevent timing attacks
+- Shared-token comparison uses constant-time equality to prevent timing attacks
+
+#### OAuth resource-server mode
+
+OAuth adds the public metadata routes below to the three public discovery documents listed above. Metadata OPTIONS requests also pass Host validation, unlike terminal preflight on operational routes.
+
+```yaml
+gateway:
+  auth:
+    type: oauth
+    issuer: https://auth.example.com
+    audience: https://gateway.example.com/mcp
+    required_scopes: [mcp:tools]
+```
+
+The five OAuth fields are forbidden in bearer and API-key modes; OAuth rejects `token` and `header`. Gridctl validates issuer-signed JWTs and does not issue tokens, register users, or implement login or refresh. The issuer must let the MCP host obtain a client ID through dynamic registration, Client ID Metadata Documents, or pre-registration. Configure the audience at the issuer: a Keycloak audience mapper, an Okta custom authorization server audience, an Entra application ID URI, an Auth0 API identifier, or a Dex static client ID.
+
+An unauthenticated MCP host receives a Bearer challenge pointing to RFC 9728 metadata at `/.well-known/oauth-protected-resource` (or the group-suffixed document). OAuth also exposes `/mcp`-suffixed and `/groups/{name}/mcp`-suffixed metadata paths. These documents are public, accept GET and OPTIONS with wildcard CORS, and retain Host checks. Other methods return 405; unknown groups return 404. They remain protected in other auth modes. The resource is the audience when it is an HTTP(S) URL; otherwise it is the MCP endpoint under `gateway.public_url`, or the request Host with scheme `http`.
+
+Send only `Authorization: Bearer <jwt>`; query tokens are ignored. Signatures, issuer, audience, expiry (30-second leeway), optional `nbf` (five-minute leeway), and token type are checked. `at+jwt` and `application/at+jwt` are accepted; absent `typ` or `JWT` is tolerated. Invalid tokens return 401 `invalid_token`; missing required scopes return 403 `insufficient_scope`. Both carry `Gridctl-Auth-Rejected: 1`. Issuer discovery failure lets the daemon start but returns 503 without a challenge until retry succeeds, with exponential backoff capped at 60 seconds.
+
+For CLI access, export `GRIDCTL_GATEWAY_TOKEN` with an issuer-minted token. It overrides the recorded credential in every auth mode. OAuth daemon state stores only the issuer host, never a token. `gridctl link` writes a URL-only entry; a compatible MCP host completes login itself. In the web UI, choose Bearer and paste the issuer-minted token. Expiry causes the existing credential prompt to request a replacement.
+
+Keys are cached, with a refresh for an unknown signing key. Removing a key at the issuer does not immediately revoke tokens validated with a cached key. Validation is per request; existing SSE streams are not torn down at token expiry. Opaque tokens and introspection are unsupported. When the audience is a client ID, an ID token with that audience and absent `typ` can also pass verification (including Dex). Prefer production issuers that mint `at+jwt` access tokens with resource-specific audiences. Remote access still requires HTTPS or an encrypted tunnel and an explicit origin allowlist; see [the OAuth example](../examples/gateways/gateway-oauth.yaml).
+
+Signing algorithms follow the issuer's advertised `id_token_signing_alg_values_supported`, filtered to supported asymmetric algorithms. If none remain, or `jwks_url` skips discovery, the defaults are RS256, ES256, ES384, ES512, PS256, and EdDSA. HMAC and unsigned tokens are rejected. Required scopes are combined from the space-delimited `scope` string and `scp` (a string or string array). These scopes admit requests; `clients:` profiles separately restrict tools. A valid token also permits operational REST management, so a tool profile is not a management-access boundary.
+
+To migrate a shared-credential gateway, replace its auth block with the OAuth fields, remove `token` and `header`, and map each intended principal to a profile alias before restarting. Existing client selectors will become display-only. Supply an issuer token to CLI and browser clients; compatible MCP hosts obtain their own tokens. Gridctl does not refresh CLI or browser tokens.
 
 #### Restart-only settings
+
+OAuth `issuer`, `audience`, `jwks_url`, `required_scopes`, and `identity_claim` are restart-only too. Changing any of them rejects reload or stackless initialization with `restart_required` and its `gateway.auth.<field>` name.
 
 Authentication enablement, type, resolved token, header, bind address, allowed Hosts/Origins, and the insecure unauthenticated override are fixed for the listener's lifetime. Reload compares resolved candidate values against an immutable startup snapshot, using the original CLI overrides. Security-only changes and mixed security/ordinary edits return `restart_required` before applying any change. An observable variable-store rotation is detected even if the reference text is unchanged. A different invoking shell does not update the daemon's environment.
 
@@ -380,13 +414,13 @@ runs:
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `enabled` | bool | No | `false` | Record one final disposition per returning `tools/call` while enabled |
-| `omit_labels` | bool | No | `false` | Drop caller-declared client and access labels from stored records |
+| `omit_labels` | bool | No | `false` | Drop client and access labels from stored records, including OAuth principals |
 | `retention.max_size_mb` | int | No | `100` | Total logical record-byte budget per stack, including the active file and rotated segments |
 | `retention.max_age_days` | int | No | `7` | Age policy for the active file and closed segments at startup and hourly. No exact deletion while the process is offline |
 
 Records are saved after dispatch returns. Recording is best-effort: a crash may leave no record. The writer queue holds 1024 records (8 KiB maximum each). Queue overflow, write failure, and capacity exhaustion leave tool results unchanged and increment independent drop counters. Saturation warnings are asynchronous and do not block dispatch. A successful append is not a sync; the writer fsyncs about every two seconds, and a synced watermark requires an actual `fsync`. Shutdown drain is two seconds; a blocked `write`/`fsync` syscall may outlive that bound and remaining queued events are counted as dropped. An unopenable destination keeps recording enabled and reports writer health `degraded`. Disabling recording does not delete retained history.
 
-The allowlist is generated IDs, timestamps, total dispatch duration, bounded target names, disposition/stage/reason, optional replica and sampled trace IDs, and optional caller-declared labels. Argument and result values, hashes, code, raw errors, tokens, headers, URLs, and host paths are excluded. Names and labels may still be sensitive. Labels are not authenticated principals.
+The allowlist is generated IDs, timestamps, total dispatch duration, bounded target names, disposition/stage/reason, optional replica and sampled trace IDs, and optional attribution labels. Argument and result values, hashes, code, raw errors, tokens, headers, and host paths are excluded. Names and labels may still be sensitive. In OAuth mode, the access label is the verified raw identity claim, which can contain URL-like text or base64 punctuation. Other modes use caller-declared labels. Access labels retain the 128-byte bound and omit invalid UTF-8 or control characters.
 
 Recognizable typed capability strings are masked in recorded names and labels,
 including early denials. This sanitizes observation copies, not policy inputs.
@@ -1450,7 +1484,7 @@ clients:
 | `profiles` | map | No | - | Map of stable client identifier → allow-list |
 | `profiles.<id>.servers` | []string | No | - | Allowed server names. Empty means all servers |
 | `profiles.<id>.tools` | []string | No | - | Allowed prefixed tool names (`server__tool`). Empty means all tools within the allowed servers |
-| `profiles.<id>.aliases` | []string | No | - | Raw `clientInfo.name` values that resolve to this profile |
+| `profiles.<id>.aliases` | []string | No | - | Raw OAuth identity claims or self-declared client names that resolve to this profile |
 
 A profile's effective scope is the intersection of its `servers:` and `tools:`
 allow-lists with each server's own `tools:` whitelist, for both `tools/list`
@@ -1468,6 +1502,19 @@ that server's prompts or resources. An out-of-scope read or get is
 indistinguishable from an absent one.
 
 ### Client identity
+
+In OAuth mode, the verified `identity_claim` (default `sub`) is the access
+identifier on handshake, stateless, grouped, and REST tool paths. Raw subjects
+are case-sensitive. Map a subject to a readable profile key through `aliases:`:
+exact raw aliases take precedence, followed by normalized profile-key and alias
+matching. The principal stays unchanged in sessions and access attribution.
+The query parameter, header, `clientInfo.name`, REST `client`, and CLI `--as`
+are display labels only. They cannot widen the token principal's scope. Each
+handshake session is bound to its creator; another principal gets 404
+`session expired` on POST, GET, and DELETE without touching the session.
+
+In bearer, API-key, and unauthenticated modes, the following self-declared
+identity rules continue to apply.
 
 Enforcement keys on a **stable client identifier** that reconciles the wire
 identity with the configuration and UI identity. It is resolved per session, in
@@ -1491,7 +1538,7 @@ same kind of caller-declared label (default `cli`) and do not take it from
 conflicting query or header identities. Per-client scoping is
 therefore a least-privilege guardrail for cooperating clients, not an
 authentication boundary against a hostile client that can choose its own
-identity. Identity-based access control (IdP / OAuth / JWT) is out of scope.
+identity. OAuth mode uses the authenticated branch above instead.
 
 ### Scope coverage (v1)
 
@@ -1551,6 +1598,15 @@ limits:
 | `burst` | int | No | max(5, rate/6) | Token-bucket capacity: how many calls may land at once before the sustained rate applies |
 
 ### Enforcement semantics
+
+In OAuth mode, a `client:` rate limit matches the principal's resolved
+`clients.profiles` key: exact raw aliases take precedence over normalized
+profile and alias matches. Map subjects to profiles and name those profiles in
+the limits. Subjects mapped to the same profile share its bucket; distinct
+profiles have separate buckets even when their raw aliases normalize alike.
+Declared client labels never select a bucket. An unlisted principal matches no
+client-scoped limit, so use server- or tool-scoped limits for default coverage.
+Bearer, API-key, and unauthenticated modes retain normalized access-ID matching.
 
 Each entry is a token bucket checked at `tools/call` dispatch. Prompt gets and resource reads are not gated. A call that finds the
 bucket empty is denied as an in-band tool error carrying the configured
@@ -1812,7 +1868,7 @@ link:
 |-------|------|----------|---------|-------------|
 | `client` | string | **Yes** | - | Client slug (same set as `gridctl link`: claude, claude-code, cursor, windsurf, vscode, gemini, antigravity, opencode, grok, continue, cline, anythingllm, lmstudio, roo, zed, goose) |
 | `group` | string | No | - | Tool group whose endpoint to link; must exist in `groups:`. The entry name defaults to `gridctl-<group>` |
-| `client_id` | string | No | - | Stable client identifier embedded on the gateway URL for per-client access scoping. Not defaulted: existing imperative links carry no identifier, and defaulting one would conflict with them on first reconcile |
+| `client_id` | string | No | - | Client identifier embedded on the gateway URL: display-only in OAuth mode, otherwise a per-client scope selector. Not defaulted: existing imperative links carry no identifier, and defaulting one would conflict with them on first reconcile |
 | `name` | string | No | `gridctl` | Server entry name in the client config |
 
 Reconcile semantics:

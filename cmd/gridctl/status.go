@@ -143,8 +143,12 @@ func runStatus(stack string, showReplicas, asJSON, plain bool) error {
 		// Query the running gateway for code mode and experimental flag status
 		var features map[string]bool
 		var override string
+		var authWarn string
 		if status == "running" {
-			gw.CodeMode, features, override = queryGatewayStatus(s.Port)
+			gw.CodeMode, features, override, authWarn = queryGatewayStatus(s.Port)
+		}
+		if authWarn != "" {
+			printer.Warn(authWarn, "stack", s.StackName)
 		}
 		gateways = append(gateways, gw)
 		gatewaysJSON = append(gatewaysJSON, statusGatewayJSON{
@@ -292,6 +296,9 @@ func queryTraceCount(port int) int {
 		return -1
 	}
 	defer resp.Body.Close()
+	if api.describeUnauthorized(resp) != nil {
+		return -1
+	}
 	var traces []struct{}
 	if json.NewDecoder(resp.Body).Decode(&traces) == nil {
 		return len(traces)
@@ -384,6 +391,9 @@ func queryMCPServers(port int) []mcpServerAPI {
 		return nil
 	}
 	defer resp.Body.Close()
+	if api.describeUnauthorized(resp) != nil {
+		return nil
+	}
 
 	var servers []mcpServerAPI
 	if err := json.NewDecoder(resp.Body).Decode(&servers); err != nil {
@@ -641,6 +651,10 @@ func warnDaemonHomeMismatch(printer *output.Printer, resolvedHome string, states
 		return
 	}
 	defer resp.Body.Close()
+	if err := api.describeUnauthorized(resp); err != nil {
+		printer.Warn(err.Error())
+		return
+	}
 	var st struct {
 		Home string `json:"home"`
 	}
@@ -657,13 +671,16 @@ func warnDaemonHomeMismatch(printer *output.Printer, resolvedHome string, states
 // queryGatewayStatus queries a running gateway's API for code mode status
 // ("on" if active, empty otherwise) and the enabled experimental flag map
 // (nil when nothing is enabled).
-func queryGatewayStatus(port int) (codeMode string, features map[string]bool, override string) {
+func queryGatewayStatus(port int) (codeMode string, features map[string]bool, override, authWarn string) {
 	api := newDaemonAPI(port, 2*time.Second)
 	resp, err := api.Get(api.URL("/api/status"))
 	if err != nil {
-		return "", nil, ""
+		return "", nil, "", ""
 	}
 	defer resp.Body.Close()
+	if authErr := api.describeUnauthorized(resp); authErr != nil {
+		return "", nil, "", authErr.Error()
+	}
 
 	var status struct {
 		CodeMode string          `json:"code_mode"`
@@ -671,9 +688,9 @@ func queryGatewayStatus(port int) (codeMode string, features map[string]bool, ov
 		Override string          `json:"override"`
 	}
 	if json.NewDecoder(resp.Body).Decode(&status) == nil {
-		return status.CodeMode, status.Features, status.Override
+		return status.CodeMode, status.Features, status.Override, ""
 	}
-	return "", nil, ""
+	return "", nil, "", ""
 }
 
 // loadPinLabels loads pin status for all provided stacks and returns a map

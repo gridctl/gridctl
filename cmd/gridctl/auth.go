@@ -210,13 +210,17 @@ func authAPIURL(port int, path string) string {
 
 // fetchAuthServers pulls per-server authorization state from the daemon.
 func fetchAuthServers(port int) ([]authServerInfo, error) {
-	resp, err := newDaemonAPI(port, 15*time.Second).Get(authAPIURL(port, "/api/auth/servers"))
+	api := newDaemonAPI(port, 15*time.Second)
+	resp, err := api.Get(authAPIURL(port, "/api/auth/servers"))
 	if err != nil {
 		return nil, fmt.Errorf("gateway unreachable: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotImplemented {
 		return nil, fmt.Errorf("this gateway has OAuth brokering disabled")
+	}
+	if err := api.describeUnauthorized(resp); err != nil {
+		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("gateway returned HTTP %d", resp.StatusCode)
@@ -251,6 +255,9 @@ func authPostJSON(api *daemonAPI, apiURL string, body, out any) error {
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err := api.describeUnauthorized(resp); err != nil {
+		return err
+	}
 	if resp.StatusCode != http.StatusOK {
 		var apiErr struct {
 			Error string `json:"error"`

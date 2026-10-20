@@ -43,6 +43,8 @@ go test -v -race -tags=integration -run TestToolGroups_Authentication ./tests/in
 
 Gateway authentication lifecycle changes also require `go test -race -tags=integration -run 'TestGatewayAuth_RealRestart|TestToolGroups_Authentication' -count=1 -timeout 3m ./tests/integration` (Docker, non-Windows; the restart fixture builds child binaries with `-race`). Real-browser acceptance lives in `web/gateway-auth.browser.mjs`: run `node web/gateway-auth.browser.mjs <path-to-playwright/index.mjs>` from the repository root with Playwright and its Chromium installed separately. Set `PLAYWRIGHT_BROWSERS_PATH` when using a non-default browser cache. It uses isolated local fixtures and is separate from Vitest and `task test`.
 
+OAuth resource-server acceptance also uses `go test -race -tags=integration -run '^TestOAuthResource_Dex$' -count=1 -timeout 4m ./tests/integration` with real digest-pinned Dex containers on Docker. It covers JWT validation, metadata, claim-derived scope, and cross-principal session refusal. It does not establish hosted-issuer compatibility or an actual MCP host login; those remain manual acceptance.
+
 Server Card and public discovery route changes also require `go test -race -tags=integration -run 'TestServerCard' -count=1 -timeout 4m ./tests/integration` (real HTTP and a race-built CLI child; no Docker).
 
 MCP execution changes require the real race-enabled `TestExecution_` integration suites on Docker and Podman. Hardened admission currently needs Linux, a local Unix daemon endpoint, and instance-bound `/proc` and cgroup v2 observations; missing required evidence must refuse routing. Rootless Podman acceptance must actually execute the positive fixtures. Run `node web/execution.browser.mjs <path-to-playwright/index.mjs>` from the repository root for the separate real-browser Execution checks, using an independently installed Chromium and `PLAYWRIGHT_BROWSERS_PATH` when needed.
@@ -85,11 +87,16 @@ cmd/scenarioverify/ Repository test utility that checks designated Go test ident
 internal/api/       REST handlers backing the web UI (one file per resource: stack, skills, vault, pins, telemetry, traces, runs, tools_call, tools_discover, …).
                     Python source validation, resolution previews, generated files, and status provenance live in
                     python_sources.go. The Server struct in api.go wires together every pkg/* subsystem the UI needs.
-                    Server.Handler assembles HTTP routes and CORS/Host/auth middleware; auth.go protects operational
+                    Server.Handler assembles HTTP routes and CORS/Host/auth middleware; wrapAuth selects
+                    shared-token auth.go or JWT auth_oauth.go to protect operational
                     namespaces, including grouped MCP/SSE. UI files, probes, terminal preflight, the exact
                     state-validated downstream OAuth callback, and the enumerated public discovery GETs
                     (`/mcp/server-card`, `/groups/{name}/mcp/server-card`, `/.well-known/ai-catalog.json`) do not
                     require the gateway token. Those three are GET-only and are not configurable from the stack file.
+                    auth_oauth.go adds issuer JWT authentication and public RFC 9728 metadata at
+                    `/.well-known/oauth-protected-resource`, its `/mcp` suffix, and `/groups/{name}/mcp` suffix
+                    in OAuth mode only. Metadata GET/OPTIONS use wildcard CORS and retain Host validation,
+                    including the preflight that terminates before ordinary Host middleware.
                     Gateway credential denials carry Gridctl-Auth-Rejected: 1; reload_errors.go supplies shared
                     restart_required (409) and invalid_candidate (400) envelopes, including save-first callers.
 internal/probe/     Ephemeral MCP tool-list probe for the "add server" wizard (not registered with the gateway).
@@ -153,6 +160,9 @@ pkg/servercard/     SEP-2127 Server Cards and the draft AI Catalog: build, valid
                     or credential source. The vendored schema and NOTICE live in testdata/.
 pkg/mcpauth/        Downstream OAuth 2.1 brokering for external servers (discovery, dynamic client registration,
                     token store, callback listener). Backed by `gridctl auth`.
+pkg/resourceauth/   Inbound OAuth resource-server JWT verification through go-oidc, MCP SDK issuer discovery,
+                    cached JWKS, bounded discovery retries, required scopes, and raw identity claims.
+                    Server.Close cancels verifier-owned JWKS work. No token issuance, refresh, or user store.
 pkg/registry/       Skills registry: discovers SKILL.md files, parses frontmatter, validates, serves as MCP prompts.
 pkg/skills/         Skill and agent management: git import, local directory import, client skill-location import, lockfile, fingerprinting, updater, security scan.
 pkg/project/        Unified projection engine: one lockfile (~/.gridctl/project.lock.yaml), flock, hashing, backups,
@@ -202,6 +212,9 @@ pkg/controller/     Application composition root: builds the gateway, mounts the
                     (gateway_builder.go), and owns deploy/daemonize orchestration for `gridctl apply` and `gridctl serve`.
                     Foreground apply and serve record a daemon state file so status and destroy see them.
                     Supplies the startup security snapshot and installs manual reload independently of --watch.
+                    gateway_builder.go installs the OAuth verifier independently of downstream brokering.
+                    OAuth state records auth_type and issuer host, with no token or auth header; CLI requests
+                    prefer non-empty GRIDCTL_GATEWAY_TOKEN as Bearer in every auth mode.
                     execution.go binds admission callbacks to the normalized contract, actual container ID, and inspected
                     IPv4 loopback HTTP endpoint.
                     a2a.go maps declarations into runtime client config. Mandatory card storage is installed on the
@@ -227,6 +240,8 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
                     and CLI/REST live tool invocation. Grouped auth tests use real HTTP and a subprocess MCP backend.
                     auth_restart_test.go verifies actual process restart, saved/live-state rejection, CLI exits,
                     sessions/streams, preserved Docker identities, and the widened-bind origin refusal, with race-built child binaries.
+                    oauth_resource_test.go uses real Dex containers for upstream OAuth, raw subject aliases,
+                    handshake/stateless/REST scoping, and principal-bound POST/GET/DELETE sessions.
                     server_card_test.go checks the public card and catalog GETs, unlisted-origin CORS, and
                     race-built `gridctl add` consume and refusal paths, without Docker.
                     capability_diagnostics_test.go checks REST log/trace/usage/run observations with a real MCP subprocess.
@@ -259,7 +274,13 @@ images/             OCI recipes that are not the gateway binary. images/mcp-runt
 
 End-to-end request flow for an upstream HTTP MCP tool call: client → HTTP listener built by `pkg/controller` (gateway_builder.go) → `internal/api.Server.Handler` (CORS, Host validation, configured auth, and route/group selection) → `pkg/mcp` Streamable HTTP transport (Host/Origin checks and protocol handling) → `mcp.Gateway` router → per-server `mcp.AgentClient` (process/stdio/SSE/HTTP/OpenAPI/A2A) → response, with telemetry, tracing, optional run recording, schema pinning, and (optional) output-format conversion attached on the way back. A2A dispatch additionally validates capabilities and card trust, uses payload-free observations, and bypasses format conversion for its atomic JSON envelope. Legacy SSE routes return a negotiation hint rather than dispatching tools.
 
-End-to-end for `gridctl call` and `gridctl tools search`: CLI → state-recorded credentials on the selected daemon origin (redirects refused) → `POST /api/tools/call` or `GET /api/tools/discover` on `internal/api.Server.Handler` → `mcp.Gateway` canonical dispatch or `DiscoverTools` → versioned envelope. Discovery does not dispatch tools. REST success is not proof of upstream MCP protocol negotiation.
+End-to-end for `gridctl call` and `gridctl tools search`: CLI → non-empty `GRIDCTL_GATEWAY_TOKEN` as Bearer, otherwise state-recorded credentials, on the selected daemon origin (redirects refused) → `POST /api/tools/call` or `GET /api/tools/discover` on `internal/api.Server.Handler` → `mcp.Gateway` canonical dispatch or `DiscoverTools` → versioned envelope. Discovery does not dispatch tools. REST success is not proof of upstream MCP protocol negotiation.
+
+In OAuth mode, the verified raw identity claim controls client scope on MCP and REST tool paths. Exact raw profile aliases precede normalized matches; declared client values stay display-only. Handshake sessions bind to their creator, and a different principal receives 404 `session expired` on POST, GET, or DELETE without changing the session. Run access labels, traces, and usage use the principal subject to existing observation bounds and sensitive-call exclusions. Bearer/API-key and unauthenticated identity resolution remain self-declared. All five OAuth fields join the restart-only security snapshot.
+
+OAuth client rate limits use the resolved profile key, with exact raw alias
+precedence, while GateCall retains the raw access ID. Unlisted principals match
+no client-scoped bucket; server and tool limits still apply.
 
 Gateway diagnostics sanitize recognizable typed capability strings before log,
 trace, usage, and run recording. Code-mode failure logs contain local categories

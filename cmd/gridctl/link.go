@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/output"
@@ -277,6 +278,9 @@ func doLink(ctx context.Context, printer *output.Printer, prov provisioner.Clien
 		for _, note := range provisioner.PostLinkNotesFor(prov) {
 			printer.Print("  %s\n", note)
 		}
+		if note := oauthLinkNote(opts.GatewayURL); note != "" {
+			printer.Print("  %s\n", note)
+		}
 		return nil
 	case wiring.ActionSkippedForeign, wiring.ActionSkippedDrift:
 		printer.Warn(fmt.Sprintf("Skipped %s: %s. %s", prov.Name(), res.Detail, capitalizeFirst(res.Remediation)))
@@ -353,6 +357,19 @@ func resolveGatewayPort(flagPort int) int {
 func configPathForSlug(prov provisioner.ClientProvisioner) string {
 	path, _ := prov.Detect()
 	return path
+}
+
+// oauthLinkNote describes credential-free linking for an OAuth gateway.
+func oauthLinkNote(gatewayURL string) string {
+	port, err := strconv.Atoi(portFromURL(gatewayURL))
+	if err != nil || port == 0 {
+		return ""
+	}
+	st, ok := daemonStateForPort(port)
+	if !ok || st.AuthType != "oauth" {
+		return ""
+	}
+	return "The client will complete the OAuth login itself against the issuer advertised by the gateway, and gridctl wrote no credential. The client query parameter is display-only in OAuth mode."
 }
 
 // portFromURL extracts the port from a URL like "http://localhost:8180/sse".

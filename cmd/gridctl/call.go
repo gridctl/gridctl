@@ -133,7 +133,7 @@ func runCall(cmd *cobra.Command, args []string) error {
 		return mapResponseRead(asJSON, client, name, err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return classifyHTTPFailure(resp, body, asJSON, client, name)
+		return classifyHTTPFailureFor(api, resp, body, asJSON, client, name)
 	}
 	if !isJSONContentType(resp.Header.Get("Content-Type")) {
 		return uncertainFailure(asJSON, client, name, runs.DispositionTransportError, reasonMalformedResponse, "malformed gateway response")

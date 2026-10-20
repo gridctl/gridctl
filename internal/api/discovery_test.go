@@ -79,7 +79,7 @@ func TestCORSMiddleware_AllowlistUnlistedOrigin(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	h := corsMiddleware([]string{"https://ui.example"}, nil, next)
+	h := corsMiddleware([]string{"https://ui.example"}, nil, nil, next)
 	for _, path := range []string{"/mcp", "/api/status"} {
 		req := httptest.NewRequest(http.MethodOptions, path, nil)
 		req.Header.Set("Origin", "https://untrusted.invalid")

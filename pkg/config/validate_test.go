@@ -399,7 +399,7 @@ func TestValidate_GatewayAuth(t *testing.T) {
 			name: "invalid auth type",
 			stack: func() *Stack {
 				s := base()
-				s.Gateway = &GatewayConfig{Auth: &AuthConfig{Type: "oauth", Token: "secret"}}
+				s.Gateway = &GatewayConfig{Auth: &AuthConfig{Type: "basic", Token: "secret"}}
 				return s
 			}(),
 			wantErr: true,
