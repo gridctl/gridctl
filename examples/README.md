@@ -45,7 +45,7 @@ gridctl apply examples/python-sources/pypi.yaml
 3. **Real MCP servers**: `transports/local-mcp.yaml` - actual MCP server logic via stdio transport
 4. **Platforms**: `platforms/github-mcp.yaml` - third-party MCP servers
 5. **OpenAPI**: `openapi/openapi-basic.yaml` - turn any REST API into MCP tools
-6. **Registry**: `registry/registry-basic.yaml` - Skills as MCP prompts (imports also discover agents)
+6. **Registry**: `registry/registry-basic.yaml` - Skills as MCP prompts, resources, and Skills over MCP manifests (imports also discover agents)
 7. **Packs**: `portable-pack/` - one manifest importing skills, agents, rules, and a local-process stack as a unit, with a commented external source example. `booster-pack/` composes a fragment onto that pack
 8. **Scaling**: `autoscale/autoscale-basic.yaml` - reactive autoscaling of MCP replicas
 
@@ -93,7 +93,7 @@ gridctl apply examples/python-sources/pypi.yaml
 | autoscale-basic | stdio | Reactive autoscaling with `autoscale:` |
 | otlp-jaeger | - | Gateway OTLP trace export |
 | runs/stack | - | Opt-in metadata-only persisted dispatch records |
-| registry-basic | stdio | Skills as MCP prompts, single server |
+| registry-basic | stdio | Skills as MCP prompts, resources, and Skills over MCP manifests, single server |
 | registry-advanced | stdio | Two servers; comments show cross-server `allowed-tools` |
 | model-preferences | http | Model preference defaults for projected skills and agents |
 | skills.yaml | - (skill sources) | Remote git skill sources; Library auto-update display, not `skill update` |

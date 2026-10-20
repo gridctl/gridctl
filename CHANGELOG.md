@@ -31,6 +31,10 @@ All notable changes to gridctl will be documented in this file.
 
 - Registry REST file GETs and Skills over MCP share a deterministic MIME table. Images (`.png`, `.jpg`, `.jpeg`, `.gif`, `.svg`, `.webp`), `.txt`, `.html`, `.css`, `.js`, `.toml`, `.xml`, and `.pdf` now receive explicit content types instead of `application/octet-stream`. Existing mapped types, including `.md` as `text/markdown`, are unchanged; unknown extensions keep the binary fallback.
 
+### Changed
+
+- Breaking compatibility changes in this Unreleased delivery: skill pins omit symlinks, and registry REST file GETs return specific MIME types for the extensions listed above. Review affected pins with `skill pins diff` before approving the new composite hash; replace required linked content with regular files inside the skill directory. Update REST consumers that require `application/octet-stream` to accept the specific content types. See [skill pin migration](docs/skills.md#skill-pins-and-exposure-policy). No release version is assigned here.
+
 ### Documentation
 
 - The process-wide exact-value redaction registry now covers `logging.RedactString` as well as slog records, so a `${var:}` value registered with the gateway is redacted in trace attributes too.

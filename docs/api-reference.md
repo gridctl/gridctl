@@ -200,6 +200,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
 | `mcp-servers` | []object | Status of each MCP server |
 | `resources` | []object | Resource container status |
 | `sessions` | int | Active Streamable HTTP session count (see [`/api/sessions`](#get-apisessions)) |
+| `extensions` | []string | Sorted declared extension identifiers, including `io.modelcontextprotocol/skills` when the registry provider is available; omitted when none are declared |
 | `stack_name` | string | Active stack name (omitted in stackless mode) |
 | `home` | string | Resolved home directory this daemon runs under (omitted when unresolvable); lets CLI subcommands detect a `GRIDCTL_HOME` mismatch |
 | `override` | string | Override file merged into the running stack (omitted when none) |
@@ -3341,9 +3342,19 @@ Lists files in a skill directory.
 
 **Auth:** Yes
 
+Entries include `symlink: true` for symbolic links (otherwise omitted). Special
+filesystem nodes are omitted. This authoring listing is not the filtered Skills
+over MCP manifest; links are excluded from manifests and skill pins.
+
 #### `GET /api/registry/skills/{name}/files/{path...}`
 
 Reads a file from a skill directory. Content-Type is detected from file extension. The `{path...}` segment is variadic, so nested sub-paths (e.g. `references/api/spec.json`) are supported.
+
+The fixed, case-sensitive extension table is shared with Skills over MCP;
+unknown extensions use `application/octet-stream`. Images, text, HTML, CSS,
+JavaScript, TOML, XML, and PDF now have explicit types. Consumers that previously
+required the binary fallback for these files must accept their specific types.
+This authoring endpoint remains separate from the manifest-constrained MCP read path.
 
 **Auth:** Yes
 
@@ -3771,6 +3782,13 @@ slash. All these methods use the global skill exposure policy, including on
 group endpoints. `GET /api/status` adds optional `extensions` listing declared
 extension identifiers.
 
+`skills/list` returns entries under `skills`; `skills/get` returns one under
+`skill`. Directory results use `resources`, with direct children sorted by
+`name`: files have `uri`, `name`, and `mimeType`; directories use
+`mimeType: "inode/directory"`. The `SKILL.md` child's name and description
+come from frontmatter. A file URI or a directory with no served children is
+not a readable directory.
+
 OAuth handshake sessions retain the raw principal that initialized them. A
 different verified principal on POST, GET, or DELETE receives HTTP 404 with
 body `session expired\n`, leaving the original session untouched. Declared
@@ -3794,7 +3812,7 @@ JSON-RPC 2.0 endpoint for MCP protocol operations.
 | `skills/get` | Refresh one entry by its exact `skill://registry/<name>/SKILL.md` URI |
 | `resources/directory/read` | List direct children of `skill://registry/<name>` or a supporting directory, without a trailing slash; rejects non-empty cursors |
 | `prompts/get` | Get a registry skill or a prefixed downstream prompt. Downstream messages are relayed verbatim |
-| `resources/list` | List registry `skills://registry/` entries, then downstream resources with unchanged URIs |
+| `resources/list` | List paired registry `skills://registry/<name>` and `skill://registry/<name>/SKILL.md` entries, then downstream resources with unchanged URIs |
 | `resources/read` | Read a registry skill or a downstream resource. URIs are not rewritten. Handshake not-found is `-32002` with `data.uri`; stateless not-found is `-32602` with `data.uri` |
 | `resources/read` (`skill://registry/`) | Read canonical `SKILL.md` or a manifest supporting file; UTF-8 without NUL uses `text`, other bytes use base64 `blob` |
 | `resources/templates/list` | List downstream resource templates. The registry contributes none |

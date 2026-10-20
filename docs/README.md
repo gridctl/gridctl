@@ -36,7 +36,7 @@ New to gridctl? Read in this order:
 | Document | Description |
 |----------|-------------|
 | [Concepts](concepts.md) | Stack, pack, skill, agent, rule fragment, global context, wiring, registry, projection, group, client profile, call policy, link, and service |
-| [Skills](skills.md) | Author `SKILL.md` files, serve them as MCP prompts, import from git, a local directory, or a client home (local and client-home import are in v1.0.0-rc.2), and project skills and agents onto disk via `gridctl skill project` |
+| [Skills](skills.md) | Author `SKILL.md` files, serve prompts, resources, and Skills over MCP manifests, import from git, a local directory, or a client home, and project skills and agents onto disk via `gridctl skill project` |
 | [Packs](packs.md) | One `gridctl-pack.yaml` manifest importing skills, agents (including from declared external repositories), rule fragments, wiring, and an optional stack as a unit, with tag-exact removal, booster fragments, and `gridctl-pack.lock.yaml` |
 | [Tools Workspace](tools-workspace.md) | Curate the exposed tool surface - whitelists, policy verdicts, Audit Mode, annotation hints, fleet actions, per-client access, and groups |
 | [Gateway authentication](config-schema.md#auth) | Shared credentials and unreleased OAuth resource-server mode, issuer setup, authenticated client profiles, and credential recovery |

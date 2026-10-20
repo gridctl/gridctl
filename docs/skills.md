@@ -57,7 +57,7 @@ of file URIs, SHA-256 digests, and byte sizes. Read
 this read path also works for handshake clients without extension negotiation.
 `resources/list` includes this document alongside `skills://registry/<name>`.
 The global `skills:` policy applies on every call, including group endpoints;
-per-client registry scoping is deferred. No resource-change notifications are
+per-client registry scoping is not supported. No resource-change notifications are
 advertised or sent.
 
 Served `SKILL.md` bytes are the canonical `registry.RenderSkillMD` rendering
@@ -288,6 +288,15 @@ Skills are natural-language documents that agents obey, and after import nothing
 
 **Review.** `gridctl skill pins list|verify|diff|approve|reset` mirrors the `gridctl pins` contract: `--format json` with a `schema_version`, exit codes `0` (clean) / `1` (pin drift) / `2` (infrastructure), an opt-in `--fail-on-findings warn|critical` gate for CI, and `approve --expect <composite_hash>` to bind an approval to the reviewed diff. The same surface exists at `/api/skill-pins`. Not to be confused with `gridctl skill pin <name> <ref>` (singular), which pins a git *source* to a ref.
 
+Pins and extension manifests use the same file set: dot-prefixed components,
+`.tmp` files, symlinks, special filesystem nodes, and nested skill trees are
+excluded. Skipping symlinks changes existing pins that included them. After
+upgrading, run `gridctl skill pins verify`, inspect affected skills with
+`gridctl skill pins diff <skill> --json`, and approve only the reviewed composite
+with `gridctl skill pins approve <skill> --expect <composite_hash>` (plus
+`--reason` when required). Copy a needed link target into a regular supporting
+file inside the skill directory before reviewing if it must remain served.
+
 **Exposure policy.** An optional `skills:` block in stack.yaml globally filters which registry skills are exposed and projected — see the [config schema](./config-schema.md#skills-exposure-policy). Denied skills disappear from `prompts/list`/`resources/list` and are skipped by projection sync, but they keep their registry state, stay visible in the Library and API flagged with the matching rule, and `gridctl apply` warns for every active skill the policy hides. Denial is never silent.
 
 ## Agent definitions
@@ -324,7 +333,7 @@ A short list of choices worth knowing about.
 
 **Execution.** gridctl 0.1.x removed the typed-skill execution surface (TS sandbox, Go plugins, run ledger, approval gates, agent IDE). Skills are prose; upstream clients are responsible for using them. If you need an agent runtime, reach for LangGraph / CrewAI / AutoGen / OpenAI Agents SDK and let gridctl be the MCP gateway underneath. The retired surfaces were `gridctl agent {init,dev,build,validate}`, `gridctl run`, the Agent IDE run ledger, `/api/agent/*`, `/api/playground/*`, and the Stage / Runs / Playground UI workspaces, while today's `gridctl runs` is the separate metadata-only record included in v1.0.0-rc.2, described in [Run records](usage-observability.md#run-records).
 
-**`kind:` in the frontmatter.** File presence used to be the discriminator between flavors. With execution removed there is only one skill flavor (prompt-only); a `kind:` field would carry no information. (Agents are a separate registry kind with their own `AGENT.md` convention, not a skill flavor.)
+**`kind:` in the frontmatter.** File presence used to be the discriminator between flavors. With execution removed, skills are instruction documents delivered through the channels above; a `kind:` field does not select an execution mode. (Agents are a separate registry kind with their own `AGENT.md` convention, not a skill flavor.)
 
 **Template expansion in the body.** The agentskills.io spec is permissive about body content; clients are free to interpret `{{...}}` placeholders however they like. gridctl does not template-expand them server-side; that policy belongs in the client, where the model and the conversation context live.
 

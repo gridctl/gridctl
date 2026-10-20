@@ -34,7 +34,7 @@ Those three directories are conventions, not the full install set, except for a 
 
 Each skill has a lifecycle state:
 - **draft** - stored but not exposed via MCP (default)
-- **active** - exposed as an MCP prompt and resource
+- **active** - exposed as an MCP prompt, resource, and Skills over MCP entry, subject to the global `skills:` policy
 - **disabled** - temporarily hidden without deletion
 
 Agents have no lifecycle state; they project to clients via `gridctl skill project sync --kind agent`. Skill documents are also pinned trust-on-first-use (`gridctl skill pins`), so later content changes surface as reviewable drift.
@@ -150,14 +150,37 @@ For example, a server named `local-tools` with an `echo` tool becomes `local-too
 
 ### MCP Protocol
 
-```bash
-# List active skills as MCP prompts
-curl -X POST http://localhost:8180/mcp \
-  -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"prompts/list"}'
+After Quick Start, use the stateless protocol with complete per-request metadata.
+These requests target the example's default unauthenticated loopback listener;
+configured gateways also require their credential on every request.
 
-# Get a specific skill prompt
+```bash
+# List skill frontmatter and file manifests
 curl -X POST http://localhost:8180/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":2,"method":"prompts/get","params":{"name":"code-review"}}'
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: skills/list' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"skills/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
+
+# Read the canonical skill document
+curl -X POST http://localhost:8180/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: resources/read' \
+  -H 'Mcp-Name: skill://registry/code-review/SKILL.md' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"skill://registry/code-review/SKILL.md","_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
+
+# Browse direct children of the skill root
+curl -X POST http://localhost:8180/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: resources/directory/read' \
+  -d '{"jsonrpc":"2.0","id":3,"method":"resources/directory/read","params":{"uri":"skill://registry/code-review","_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
 ```
+
+Use a listed document URI with `skills/get` to refresh its manifest. Legacy
+`prompts/list` and `prompts/get` remain available with the same metadata envelope
+and matching method/name headers.
+Handshake clients must declare the extension during initialization to use its
+three methods. See [Skills](../../docs/skills.md#how-skills-reach-the-model) for
+limits, nested skill boundaries, and pin agreement.

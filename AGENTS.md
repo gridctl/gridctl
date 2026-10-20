@@ -6,6 +6,12 @@ Guidance for AI coding agents working in this repository. Follows the [agents.md
 
 Gridctl is an MCP (Model Context Protocol) gateway with a built-in skills and agents registry. A user declares a stack of MCP servers (containerized stdio, SSE/HTTP, OpenAPI-backed, local processes, SaaS proxies) in `stack.yaml`, runs `gridctl apply`, and gridctl orchestrates the containers, fans tool calls to the right server, aggregates downstream prompts and resources with registry skills, and surfaces every active `SKILL.md` to upstream clients as an MCP prompt. A projection engine (`pkg/project`, one lockfile at `~/.gridctl/project.lock.yaml`) also places skills, agents, global-context rules, and gateway wiring onto disk for file-reading clients, and packs (`gridctl-pack.yaml`) import skills, agents, rules, and wiring from one git repo, may select skills and agents from declared external git sources pinned by commit (`gridctl pack lock` writes `gridctl-pack.lock.yaml`), can start an optional carried stack from a pinned checkout under `~/.gridctl/packs/`, and can compose booster fragments onto that base daemon. The same process embeds a React web UI on `:8180`. Inspired by Containerlab.
 
+Registry skills also expose `io.modelcontextprotocol/skills` through the existing MCP endpoints.
+Handshake sessions opt in; stateless discovery declares it while the registry provider is available.
+The global skill policy governs manifests and reads, including grouped endpoints. CLI skill lists
+report local manifest summaries; status reports declared extensions. The compatibility baseline is
+`tests/integration/skills-extension-baseline.md`.
+
 ## Build and run
 
 Task (https://taskfile.dev) is the entry point for development builds and Go/frontend checks; tasks live in `Taskfile.yml`. Run `task --list` for the full catalog and `task --summary <name>` for per-task notes. Install with `brew install go-task/tap/go-task` (or `npm install -g @go-task/cli`, or `go install github.com/go-task/task/v3/cmd/task@latest`). A transitional Makefile shim forwards the old `make <target>` names. Common tasks:
@@ -163,7 +169,11 @@ pkg/mcpauth/        Downstream OAuth 2.1 brokering for external servers (discove
 pkg/resourceauth/   Inbound OAuth resource-server JWT verification through go-oidc, MCP SDK issuer discovery,
                     cached JWKS, bounded discovery retries, required scopes, and raw identity claims.
                     Server.Close cancels verifier-owned JWKS work. No token issuance, refresh, or user store.
-pkg/registry/       Skills registry: discovers SKILL.md files, parses frontmatter, validates, serves as MCP prompts.
+pkg/registry/       Skills registry: discovers SKILL.md files, parses frontmatter, validates, and serves MCP prompts.
+                    Tracks content generations; supplies rooted, symlink-refusing manifest reads and deterministic MIME types.
+pkg/skillsext/      Registry Skills over MCP provider: generation-cached canonical documents, complete manifests,
+                    supporting-file reads, and directory children. pkg/mcp owns global policy, URI validation,
+                    handshake opt-in, stateless declaration, and protocol error mapping. No downstream skills aggregation.
 pkg/skills/         Skill and agent management: git import, local directory import, client skill-location import, lockfile, fingerprinting, updater, security scan.
 pkg/project/        Unified projection engine: one lockfile (~/.gridctl/project.lock.yaml), flock, hashing, backups,
                     drift states, and migrate-on-read. The kind packages below are its tenants.
@@ -175,6 +185,8 @@ pkg/contexts/       Global agent-context projection (`gridctl ctx`): one canonic
 pkg/wiring/         Key-level ownership of gateway entries merged into client MCP configs (`gridctl project`, link/unlink).
 pkg/pack/           gridctl-pack.yaml manifest schema, including named external `sources`, a scalar or mapping `stack` (`file` and optional `extends`), and `gridctl-pack.lock.yaml`; pkg/packops owns add, lock honoring, and composition against the lockfile and launcher, including per-source clone and auth. The CLI injects stack launch and reload; REST leaves the launcher nil and does not start, stop, or reload a carried daemon, and it does not write the pack lock.
 pkg/skillpins/      TOFU pins over skill documents (per-file digests, findings); the `gridctl skill pins` store.
+                    ComputeManifest is the shared complete hash walk for pins and Skills over MCP, excluding links,
+                    dotfiles, temporary files, and nested skills. Publication limits live in pkg/skillsext, not hashing.
 pkg/runs/           Metadata-only persisted dispatch records (`gridctl runs`). Opt-in stack-level JSONL with a bounded queue, single writer, retention, and coordinated wipe.
 pkg/service/        User-scoped systemd and launchd units (`gridctl service`): render, lockfile ownership (kind `service`), an allowlisted unit environment, and supervisor control.
 pkg/limits/         Enforces the `limits:` block: token-bucket rate limits on the tool-call dispatch path.
@@ -237,7 +249,9 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
                     replicas, transports (incl. Podman), private git auth, generated Python source builds,
                     downstream prompt and resource aggregation,
                     the Python MCP runtime base and its derivatives, digest-cache lookup, optimize heuristics,
-                    and CLI/REST live tool invocation. Grouped auth tests use real HTTP and a subprocess MCP backend.
+                    and CLI/REST live tool invocation. Skills extension tests use real HTTP and a race-built foreground
+                    daemon for manifests, pin agreement, both protocol generations, reporting, and disk refresh.
+                    Grouped auth tests use real HTTP and a subprocess MCP backend.
                     auth_restart_test.go verifies actual process restart, saved/live-state rejection, CLI exits,
                     sessions/streams, preserved Docker identities, and the widened-bind origin refusal, with race-built child binaries.
                     oauth_resource_test.go uses real Dex containers for upstream OAuth, raw subject aliases,
