@@ -44,7 +44,7 @@ func (s *Server) passiveSecurityReport(ctx context.Context) *secreport.Report {
 	in.SkillPins = secreport.SkillPinViewFromStore(s.skillPinStore)
 	if s.authType != "" || s.authToken != "" || s.gatewayAddr != "" || s.originsMode != "" {
 		in.Startup = &secreport.StartupView{
-			AuthEnabled:        s.authToken != "",
+			AuthEnabled:        s.oauthEnabled || s.authToken != "",
 			AuthType:           s.authType,
 			Bind:               secreportDisplayHost(s.gatewayAddr),
 			OriginsMode:        s.originsMode,

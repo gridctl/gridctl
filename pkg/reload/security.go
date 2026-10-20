@@ -18,6 +18,8 @@ func NewSecurityPreflight(startup *config.Stack, bind string, insecure bool) fun
 		var changed []string
 		for _, field := range []string{
 			"gateway.auth.enabled", "gateway.auth.type", "gateway.auth.token", "gateway.auth.header",
+			"gateway.auth.issuer", "gateway.auth.audience", "gateway.auth.jwks_url",
+			"gateway.auth.required_scopes", "gateway.auth.identity_claim",
 			"gateway.bind", "gateway.allowed_hosts", "gateway.allowed_origins", "gateway.insecure_allow_unauthenticated",
 		} {
 			if !slices.Equal(active[field], next[field]) {
@@ -67,15 +69,27 @@ func effectiveSecurity(stack *config.Stack, bind string, insecure bool) map[stri
 	if AllowUnauthenticated(stack, insecure) {
 		result["gateway.insecure_allow_unauthenticated"] = []string{"true"}
 	}
-	if auth := gateway.Auth; auth != nil && auth.Token != "" {
+	if auth := gateway.Auth; auth != nil && auth.Configured() {
 		result["gateway.auth.enabled"] = []string{"true"}
 		result["gateway.auth.type"] = []string{auth.Type}
-		result["gateway.auth.token"] = []string{auth.Token}
-		header := strings.ToLower(auth.Header)
-		if header == "" {
-			header = "authorization"
+		if auth.Type == "oauth" {
+			result["gateway.auth.issuer"] = []string{auth.Issuer}
+			result["gateway.auth.audience"] = []string{auth.Audience}
+			if auth.JWKSURL != "" {
+				result["gateway.auth.jwks_url"] = []string{auth.JWKSURL}
+			}
+			if len(auth.RequiredScopes) > 0 {
+				result["gateway.auth.required_scopes"] = slices.Clone(auth.RequiredScopes)
+			}
+			result["gateway.auth.identity_claim"] = []string{auth.IdentityClaimOrDefault()}
+		} else {
+			result["gateway.auth.token"] = []string{auth.Token}
+			header := strings.ToLower(auth.Header)
+			if header == "" {
+				header = "authorization"
+			}
+			result["gateway.auth.header"] = []string{header}
 		}
-		result["gateway.auth.header"] = []string{header}
 	}
 	return result
 }

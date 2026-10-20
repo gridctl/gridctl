@@ -14,9 +14,9 @@ import (
 // deletes the file and must run on every return path, including errors from
 // BuildAndRun, or the next apply reports a stale state file.
 func (sc *StackController) saveForegroundState(name, stackFile string, stack *config.Stack) (func(), error) {
-	token, header, authType := "", "", ""
+	token, header, authType, issuerHost := "", "", "", ""
 	if stack != nil {
-		token, header, authType = authStateFrom(stack)
+		token, header, authType, issuerHost = authStateFrom(stack)
 	}
 	err := state.WithLock(name, 5*time.Second, func() error {
 		if _, cleanErr := state.CheckAndClean(name); cleanErr != nil {
@@ -33,9 +33,10 @@ func (sc *StackController) saveForegroundState(name, stackFile string, stack *co
 			PID:        os.Getpid(),
 			Port:       sc.config.Port,
 			StartedAt:  time.Now(),
-			AuthToken:  token,
-			AuthHeader: header,
-			AuthType:   authType,
+			AuthToken:      token,
+			AuthHeader:     header,
+			AuthType:       authType,
+			AuthIssuerHost: issuerHost,
 		}
 		if err := state.Save(st); err != nil {
 			return fmt.Errorf("failed to save state: %w", err)

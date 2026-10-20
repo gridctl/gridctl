@@ -547,16 +547,17 @@ func (sc *StackController) runDaemonChild(ctx context.Context, literal, resolved
 
 	// The state file keeps the resolved gateway token, matching ${var:} today.
 	// Nothing else resolved is written here.
-	token, header, authType := authStateFrom(resolved)
+	token, header, authType, issuerHost := authStateFrom(resolved)
 	st := &state.DaemonState{
 		StackName:  literal.Name,
 		StackFile:  sc.config.StackPath,
 		PID:        os.Getpid(),
 		Port:       sc.config.Port,
 		StartedAt:  time.Now(),
-		AuthToken:  token,
-		AuthHeader: header,
-		AuthType:   authType,
+		AuthToken:      token,
+		AuthHeader:     header,
+		AuthType:       authType,
+		AuthIssuerHost: issuerHost,
 	}
 	if err := state.Save(st); err != nil {
 		return fmt.Errorf("failed to save state: %w", err)
@@ -1091,10 +1092,13 @@ func overrideLoadOptions(cfg Config) []config.LoadOption {
 // state so local subcommands can authenticate against the API. The token is
 // already resolved here: the config loader expands ${VAR} before it reaches
 // this point, so the CLI never needs the stack file or the vault.
-func authStateFrom(stack *config.Stack) (token, header, authType string) {
+func authStateFrom(stack *config.Stack) (token, header, authType, issuerHost string) {
 	if stack == nil || stack.Gateway == nil || stack.Gateway.Auth == nil {
-		return "", "", ""
+		return "", "", "", ""
 	}
 	a := stack.Gateway.Auth
-	return a.Token, a.Header, a.Type
+	if a.Type == "oauth" {
+		return "", "", "oauth", a.IssuerHost()
+	}
+	return a.Token, a.Header, a.Type, ""
 }

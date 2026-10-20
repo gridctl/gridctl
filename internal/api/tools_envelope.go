@@ -128,6 +128,9 @@ func (e errSentinel) Error() string { return string(e) }
 
 func withDeclaredClient(ctx context.Context, client string) context.Context {
 	ctx = mcp.WithClientID(ctx, client)
+	if p := mcp.PrincipalFromContext(ctx); p != "" {
+		return mcp.WithClientAccessID(ctx, p)
+	}
 	return mcp.WithClientAccessID(ctx, client)
 }
 

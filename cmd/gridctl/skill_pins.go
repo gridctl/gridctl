@@ -558,6 +558,9 @@ func approveSkillPinViaAPI(st *state.DaemonState, skill, expectHash, reason stri
 		return fmt.Errorf("calling skill pins API: %w", err)
 	}
 	defer resp.Body.Close()
+	if err := api.describeUnauthorized(resp); err != nil {
+		return err
+	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("reading response: %w", err)
@@ -606,6 +609,9 @@ func resetSkillPinViaAPI(st *state.DaemonState, skill string) error {
 		return fmt.Errorf("calling skill pins API: %w", err)
 	}
 	defer resp.Body.Close()
+	if err := api.describeUnauthorized(resp); err != nil {
+		return err
+	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("reading response: %w", err)

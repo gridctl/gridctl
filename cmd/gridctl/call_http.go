@@ -18,11 +18,11 @@ import (
 const callResponseMaxBytes = 16 << 20
 
 var (
-	errRedirectRefused     = errors.New("redirect refused")
-	errInvalidRequestPath  = errors.New("invalid request path")
-	errResponseTooLarge    = errors.New("response exceeds 16 MiB")
-	errMalformedResponse   = errors.New("malformed gateway response")
-	errIncompatibleSchema  = errors.New("incompatible gateway response")
+	errRedirectRefused    = errors.New("redirect refused")
+	errInvalidRequestPath = errors.New("invalid request path")
+	errResponseTooLarge   = errors.New("response exceeds 16 MiB")
+	errMalformedResponse  = errors.New("malformed gateway response")
+	errIncompatibleSchema = errors.New("incompatible gateway response")
 )
 
 func (a *daemonAPI) originDo(ctx context.Context, method, path string, body io.Reader, contentType string) (*http.Response, error) {
@@ -73,6 +73,17 @@ func isJSONContentType(ct string) bool {
 }
 
 func classifyHTTPFailure(resp *http.Response, body []byte, asJSON bool, client, name string) *commandError {
+	return classifyHTTPFailureFor(nil, resp, body, asJSON, client, name)
+}
+
+func classifyHTTPFailureFor(api *daemonAPI, resp *http.Response, body []byte, asJSON bool, client, name string) *commandError {
+	if api != nil {
+		if authErr := api.describeUnauthorized(resp); authErr != nil {
+			text := authErr.Error()
+			env := localFailureEnvelope(client, name, "auth", reasonGatewayAuthRejected, text)
+			return newCommandError(asJSON, env, text, false)
+		}
+	}
 	if resp.Header.Get("Gridctl-Auth-Rejected") == "1" {
 		env := localFailureEnvelope(client, name, "auth", reasonGatewayAuthRejected, "gateway authentication rejected")
 		return newCommandError(asJSON, env, "gateway authentication rejected", false)

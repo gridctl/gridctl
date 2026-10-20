@@ -20,6 +20,38 @@ type clientIDKey struct{}
 // operator configures under stack.yaml `clients:`.
 type clientAccessIDKey struct{}
 
+// principalKey carries the verified OAuth identity claim. It is the access
+// identifier in OAuth mode and is never normalized.
+type principalKey struct{}
+
+// WithPrincipal returns a child context carrying a verified access principal.
+// An empty id leaves the context unchanged.
+func WithPrincipal(ctx context.Context, id string) context.Context {
+	if id == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, principalKey{}, id)
+}
+
+// PrincipalFromContext returns the verified principal, or "" when the request
+// was not authenticated with an access token.
+func PrincipalFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	v, _ := ctx.Value(principalKey{}).(string)
+	return v
+}
+
+// attributionID uses authenticated identity for observations while leaving the
+// caller's display label available separately in the request context.
+func attributionID(ctx context.Context) string {
+	if principal := PrincipalFromContext(ctx); principal != "" {
+		return principal
+	}
+	return ClientIDFromContext(ctx)
+}
+
 // WithClientID returns a child context carrying the given normalized client ID.
 // An empty id leaves the context unchanged so callers do not have to pre-check.
 func WithClientID(ctx context.Context, id string) context.Context {
@@ -86,6 +118,19 @@ const ClientAccessIDHeader = "X-Gridctl-Client-Id"
 // then the X-Gridctl-Client-Id header. Returns "" when neither is present, in
 // which case the gateway falls back to NormalizeClientID(clientInfo.name).
 func clientAccessIDFromRequest(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if p := PrincipalFromContext(r.Context()); p != "" {
+		return p
+	}
+	return declaredClientAccessID(r)
+}
+
+// declaredClientAccessID is the self-declared identifier from the client
+// query parameter or X-Gridctl-Client-Id header. In OAuth mode it is a
+// display label only.
+func declaredClientAccessID(r *http.Request) string {
 	if r == nil {
 		return ""
 	}

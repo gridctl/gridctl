@@ -112,6 +112,9 @@ func callReloadAPI(st *state.DaemonState) error {
 	}
 	defer resp.Body.Close()
 
+	if authErr := api.describeUnauthorized(resp); authErr != nil {
+		return authErr
+	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("reading response: %w", err)

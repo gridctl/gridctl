@@ -32,6 +32,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/reload"
 	"github.com/gridctl/gridctl/pkg/resetops"
+	"github.com/gridctl/gridctl/pkg/resourceauth"
 	"github.com/gridctl/gridctl/pkg/runs"
 	"github.com/gridctl/gridctl/pkg/runtime/docker"
 	"github.com/gridctl/gridctl/pkg/skillpins"
@@ -76,6 +77,9 @@ type Server struct {
 	authType           string
 	authToken          string
 	authHeader         string
+	oauthEnabled       bool
+	oauthVerifier      *resourceauth.Verifier
+	oauthCfg           resourceauth.Config
 	originsMode        string
 	originsCount       int
 	cardDescription    string
@@ -293,6 +297,18 @@ func (s *Server) SetAuth(authType, token, header string) {
 	s.authHeader = header
 }
 
+// SetOAuth enables resource-server mode. The verifier may still be waiting
+// on discovery; protected routes answer 503 until a key set is available.
+// AuthEnabled is true even though no gateway token is stored.
+func (s *Server) SetOAuth(v *resourceauth.Verifier, cfg resourceauth.Config) {
+	s.authType = "oauth"
+	s.authToken = ""
+	s.authHeader = ""
+	s.oauthVerifier = v
+	s.oauthCfg = cfg
+	s.oauthEnabled = true
+}
+
 // SetOAuthBroker wires the downstream OAuth broker: enables the
 // /api/servers/{name}/auth/* endpoints and mounts the /oauth/callback
 // route (outside the inbound auth middleware).
@@ -440,6 +456,9 @@ func (s *Server) RegistryServer() *registry.Server {
 
 // Close performs cleanup of the API server's managed resources.
 func (s *Server) Close() {
+	if s.oauthVerifier != nil {
+		s.oauthVerifier.Close()
+	}
 	if s.sseServer != nil {
 		s.sseServer.Close()
 	}
@@ -689,13 +708,22 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/packs/{name}/apply", s.handlePackApply)
 	mux.HandleFunc("DELETE /api/packs/{name}", s.handlePackRemove)
 
+	// RFC 9728 protected resource metadata. Served only in OAuth mode, and
+	// registered before the SPA catch-all. Bearer and API-key modes leave
+	// these paths on the protected /.well-known/ classification.
+	if s.oauthEnabled {
+		mux.HandleFunc("GET /.well-known/oauth-protected-resource", s.handleOAuthProtectedResource)
+		mux.HandleFunc("GET /.well-known/oauth-protected-resource/mcp", s.handleOAuthProtectedResource)
+		mux.HandleFunc("GET /.well-known/oauth-protected-resource/groups/{name}/mcp", s.handleOAuthProtectedResource)
+	}
+
 	// Static files (UI) - served at root
 	if s.staticFS != nil {
 		fileServer := http.FileServer(http.FS(s.staticFS))
 		mux.Handle("/", spaHandler(fileServer, s.staticFS))
 	}
 
-	handler := authMiddleware(s.authType, s.authToken, s.authHeader, mux)
+	handler := s.wrapAuth(mux)
 
 	// The OAuth authorization callback mounts OUTSIDE the inbound auth
 	// middleware: the browser performing the redirect carries no gateway
@@ -719,8 +747,17 @@ func (s *Server) Handler() http.Handler {
 	if s.authHeader != "" && s.authHeader != "Authorization" {
 		extraHeaders = append(extraHeaders, s.authHeader)
 	}
-	handler = corsMiddleware(s.allowedOrigins, extraHeaders, handler)
-	return handler
+	handler = corsMiddleware(s.allowedOrigins, extraHeaders, s.oauthPublicMetadata, handler)
+	return s.oauthMetadataPreflightHost(handler)
+}
+
+// wrapAuth selects the inbound authenticator. OAuth is selected by type, not
+// by token presence: an empty token must not pass protected routes through.
+func (s *Server) wrapAuth(next http.Handler) http.Handler {
+	if s.authType == "oauth" {
+		return s.oauthAuthMiddleware(next)
+	}
+	return authMiddleware(s.authType, s.authToken, s.authHeader, next)
 }
 
 // hostExemptPath reports paths that must answer regardless of Host. The
@@ -1082,7 +1119,7 @@ func writeJSONError(w http.ResponseWriter, message string, statusCode int) {
 
 // corsMiddleware adds CORS headers to responses based on allowed origins.
 // extraHeaders are additional headers to include in Access-Control-Allow-Headers.
-func corsMiddleware(allowedOrigins []string, extraHeaders []string, next http.Handler) http.Handler {
+func corsMiddleware(allowedOrigins []string, extraHeaders []string, oauthPublic func(string) bool, next http.Handler) http.Handler {
 	originSet := make(map[string]bool, len(allowedOrigins))
 	allowAll := false
 	for _, o := range allowedOrigins {
@@ -1097,7 +1134,11 @@ func corsMiddleware(allowedOrigins []string, extraHeaders []string, next http.Ha
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if origin != "" && publicDiscoveryRoute(r.URL.Path) {
+		if origin != "" && oauthPublic != nil && oauthPublic(r.URL.Path) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		} else if origin != "" && publicDiscoveryRoute(r.URL.Path) {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Methods", "GET")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, If-None-Match")

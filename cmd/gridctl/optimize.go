@@ -131,6 +131,9 @@ func fetchOptimizeReport(port int, stack string, minImpact int64, severity strin
 		return optimize.OptimizeReport{}, fmt.Errorf("optimize: %w", err)
 	}
 	defer resp.Body.Close()
+	if err := api.describeUnauthorized(resp); err != nil {
+		return optimize.OptimizeReport{}, err
+	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return optimize.OptimizeReport{}, fmt.Errorf("optimize: reading response: %w", err)

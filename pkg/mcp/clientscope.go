@@ -61,9 +61,21 @@ func (p clientProfile) allowsTool(prefixedName string) bool {
 // applies NetworkPolicy semantics — a client matching no profile is governed by
 // the default (deny unless `default: allow`).
 type ClientAccessPolicy struct {
-	defaultAllow bool
-	profiles     map[string]clientProfile // keyed by normalized access id
-	aliasIndex   map[string]string        // normalized alias -> profile key
+	defaultAllow    bool
+	profiles        map[string]clientProfile // keyed by normalized access id
+	aliasIndex      map[string]string        // normalized alias -> profile key
+	exactAliasIndex map[string]string        // raw alias -> profile key
+	principal       bool
+}
+
+// forPrincipal selects exact-alias precedence without changing the shared policy.
+func (p *ClientAccessPolicy) forPrincipal(authenticated bool) *ClientAccessPolicy {
+	if p == nil || !authenticated {
+		return p
+	}
+	copy := *p
+	copy.principal = true
+	return &copy
 }
 
 // NewClientAccessPolicy builds a policy from a spec. A nil spec returns a nil
@@ -75,9 +87,10 @@ func NewClientAccessPolicy(spec *ClientAccessSpec) *ClientAccessPolicy {
 		return nil
 	}
 	p := &ClientAccessPolicy{
-		defaultAllow: spec.Default == "allow",
-		profiles:     make(map[string]clientProfile, len(spec.Profiles)),
-		aliasIndex:   make(map[string]string),
+		defaultAllow:    spec.Default == "allow",
+		profiles:        make(map[string]clientProfile, len(spec.Profiles)),
+		aliasIndex:      make(map[string]string),
+		exactAliasIndex: make(map[string]string),
 	}
 	for name, prof := range spec.Profiles {
 		key := NormalizeClientID(name)
@@ -93,6 +106,9 @@ func NewClientAccessPolicy(spec *ClientAccessSpec) *ClientAccessPolicy {
 		}
 		p.profiles[key] = cp
 		for _, alias := range prof.Aliases {
+			if alias != "" {
+				p.exactAliasIndex[alias] = key
+			}
 			if na := NormalizeClientID(alias); na != "" {
 				p.aliasIndex[na] = key
 			}
@@ -106,6 +122,11 @@ func NewClientAccessPolicy(spec *ClientAccessSpec) *ClientAccessPolicy {
 // profile match, then a configured alias, then the normalized id itself (which
 // will not be listed and so falls to the default policy).
 func (p *ClientAccessPolicy) resolveKey(accessID string) (key string, listed bool) {
+	if p.principal {
+		if k, ok := p.exactAliasIndex[accessID]; ok {
+			return k, true
+		}
+	}
 	n := NormalizeClientID(accessID)
 	if _, ok := p.profiles[n]; ok {
 		return n, true

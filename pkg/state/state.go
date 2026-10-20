@@ -55,6 +55,9 @@ type DaemonState struct {
 	AuthToken  string `json:"auth_token,omitempty"`
 	AuthHeader string `json:"auth_header,omitempty"`
 	AuthType   string `json:"auth_type,omitempty"`
+	// AuthIssuerHost is the OAuth issuer URL's host, optionally with a port.
+	// It carries no scheme, path, query, or token. Empty in bearer and api_key modes.
+	AuthIssuerHost string `json:"auth_issuer_host,omitempty"`
 }
 
 // BaseDir returns the base gridctl directory (<home>/.gridctl). It errors

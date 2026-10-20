@@ -181,7 +181,11 @@ func selectEnableTarget(stackFile string, running *state.DaemonState) (path, kin
 		return enableOverride, "override", nil
 	}
 	if !enableNoOverride && running != nil {
-		if reported := daemonOverride(running); reported != "" {
+		reported, err := daemonOverride(running)
+		if err != nil {
+			return "", "", err
+		}
+		if reported != "" {
 			return reported, "override", nil
 		}
 	}
@@ -203,23 +207,26 @@ func sameOverridePath(a, b string) bool {
 	return aa == bb
 }
 
-func daemonOverride(st *state.DaemonState) string {
+func daemonOverride(st *state.DaemonState) (string, error) {
 	if st == nil {
-		return ""
+		return "", nil
 	}
 	api := newDaemonAPIFor(*st, 2*time.Second)
 	resp, err := api.Get(fmt.Sprintf("http://localhost:%d/api/status", st.Port))
 	if err != nil {
-		return ""
+		return "", nil
 	}
 	defer resp.Body.Close()
+	if err := api.describeUnauthorized(resp); err != nil {
+		return "", err
+	}
 	var body struct {
 		Override string `json:"override"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return ""
+		return "", nil
 	}
-	return body.Override
+	return body.Override, nil
 }
 
 func writeEnabled(stackFile, targetPath, kind, server string, enabled bool) (*enableReport, error) {
@@ -417,6 +424,9 @@ func postReload(st *state.DaemonState) (*reload.ReloadResult, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if err := api.describeUnauthorized(resp); err != nil {
+		return nil, err
+	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err

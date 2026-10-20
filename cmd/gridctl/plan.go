@@ -435,6 +435,9 @@ func fetchDaemonPlan(ctx context.Context, st *state.DaemonState) (*config.PlanDi
 		return nil, daemonPlanError(st, err)
 	}
 	defer resp.Body.Close()
+	if err := api.describeUnauthorized(resp); err != nil {
+		return nil, err
+	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

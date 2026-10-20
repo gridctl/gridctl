@@ -109,6 +109,9 @@ func fetchGroupsReport(port int) (mcp.GroupsReport, error) {
 		return mcp.GroupsReport{}, fmt.Errorf("groups: %w", err)
 	}
 	defer resp.Body.Close()
+	if err := api.describeUnauthorized(resp); err != nil {
+		return mcp.GroupsReport{}, err
+	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return mcp.GroupsReport{}, fmt.Errorf("groups: reading response: %w", err)

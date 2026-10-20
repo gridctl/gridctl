@@ -294,6 +294,9 @@ func runRunsListLive(format string, filter runs.Filter, cursor *runs.Cursor) err
 	if err != nil {
 		return fmt.Errorf("runs: live query failed")
 	}
+	if authErr := api.describeUnauthorized(resp); authErr != nil {
+		return authErr
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("runs: live query failed (%s)", strings.TrimSpace(string(body)))
 	}
@@ -417,6 +420,9 @@ func runRunsStatus(ctx context.Context, format string) error {
 	if err != nil {
 		return fmt.Errorf("runs: live status failed")
 	}
+	if authErr := api.describeUnauthorized(resp); authErr != nil {
+		return authErr
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("runs: live status failed")
 	}
@@ -468,6 +474,9 @@ func runRunsWipe(ctx context.Context, format string) error {
 		}
 		defer resp.Body.Close()
 		body, _ := io.ReadAll(resp.Body)
+		if authErr := api.describeUnauthorized(resp); authErr != nil {
+			return authErr
+		}
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("runs: live wipe failed")
 		}

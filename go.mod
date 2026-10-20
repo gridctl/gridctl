@@ -48,7 +48,11 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require go.opentelemetry.io/otel/log v1.47.0 // indirect
+require (
+	github.com/coreos/go-oidc/v3 v3.16.0 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
+	go.opentelemetry.io/otel/log v1.47.0 // indirect
+)
 
 require (
 	dario.cat/mergo v1.0.0 // indirect

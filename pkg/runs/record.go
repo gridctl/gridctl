@@ -90,7 +90,7 @@ const LossUnknown = "unknown"
 // Record is the schema-versioned metadata-only final-disposition record.
 // It is the allowlist: generated IDs, times/duration, bounded target
 // identifiers, disposition/stage/reason, optional replica and genuine
-// trace correlation, and optional caller-declared labels. Argument and
+// trace correlation, and optional caller-declared or OAuth principal labels. Argument and
 // result values, hashes, code, raw errors, tokens, headers, URLs, host
 // paths, and approval claims are excluded by construction.
 type Record struct {

@@ -22,6 +22,108 @@ var sourceExtraPattern = regexp.MustCompile(`^[a-z0-9]+(?:[-_.][a-z0-9]+)*$`)
 var sourceDependencyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*(?:\[[A-Za-z0-9,._-]+\])?(?:\s*(?:===|==|!=|~=|<=|>=|<|>)\s*[A-Za-z0-9*+.!_-]+)?(?:\s*;\s*[A-Za-z0-9_. -]+(?:==|!=|<=|>=|<|>)\s*["'][A-Za-z0-9_. -]+["'])?$`)
 var sourceDebianPackagePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*$`)
 
+func validateGatewayAuth(auth *AuthConfig) []ValidationError {
+	if auth == nil {
+		return nil
+	}
+	prefix := "gateway.auth"
+	var errs []ValidationError
+	switch auth.Type {
+	case "":
+		errs = append(errs, ValidationError{prefix + ".type", "is required"})
+	case "bearer", "api_key":
+		if auth.Token == "" {
+			errs = append(errs, ValidationError{prefix + ".token", "is required"})
+		}
+		if auth.Header != "" && auth.Type != "api_key" {
+			errs = append(errs, ValidationError{prefix + ".header", "only applicable when type is 'api_key'"})
+		}
+		errs = append(errs, rejectOAuthFields(prefix, auth)...)
+	case "oauth":
+		if auth.Token != "" {
+			errs = append(errs, ValidationError{prefix + ".token", "is not used when type is 'oauth'; remove it and set issuer and audience"})
+		}
+		if auth.Header != "" {
+			errs = append(errs, ValidationError{prefix + ".header", "is not used when type is 'oauth'; remove it"})
+		}
+		if err := validateOAuthIssuer(auth.Issuer); err != nil {
+			errs = append(errs, ValidationError{prefix + ".issuer", err.Error()})
+		}
+		if strings.TrimSpace(auth.Audience) == "" {
+			errs = append(errs, ValidationError{prefix + ".audience", "is required when type is 'oauth'; set it to the value the issuer places in aud"})
+		}
+		if auth.JWKSURL != "" {
+			if err := validateAbsoluteHTTPURL(auth.JWKSURL, true); err != nil {
+				errs = append(errs, ValidationError{prefix + ".jwks_url", "must be an absolute http or https URL; " + err.Error()})
+			}
+		}
+		for _, scope := range auth.RequiredScopes {
+			if strings.TrimSpace(scope) == "" {
+				errs = append(errs, ValidationError{prefix + ".required_scopes", "entries must be non-empty strings; remove the blank entry"})
+				break
+			}
+		}
+		if auth.IdentityClaim != "" && strings.TrimSpace(auth.IdentityClaim) == "" {
+			errs = append(errs, ValidationError{prefix + ".identity_claim", "must be a non-empty claim name, or omit it to use sub"})
+		}
+	default:
+		errs = append(errs, ValidationError{prefix + ".type", "must be 'bearer', 'api_key', or 'oauth'"})
+	}
+	return errs
+}
+
+func rejectOAuthFields(prefix string, auth *AuthConfig) []ValidationError {
+	var errs []ValidationError
+	if auth.Issuer != "" {
+		errs = append(errs, ValidationError{prefix + ".issuer", "is only valid when type is 'oauth'; remove it or set type to 'oauth'"})
+	}
+	if auth.Audience != "" {
+		errs = append(errs, ValidationError{prefix + ".audience", "is only valid when type is 'oauth'; remove it or set type to 'oauth'"})
+	}
+	if auth.JWKSURL != "" {
+		errs = append(errs, ValidationError{prefix + ".jwks_url", "is only valid when type is 'oauth'; remove it or set type to 'oauth'"})
+	}
+	if len(auth.RequiredScopes) > 0 {
+		errs = append(errs, ValidationError{prefix + ".required_scopes", "is only valid when type is 'oauth'; remove it or set type to 'oauth'"})
+	}
+	if auth.IdentityClaim != "" {
+		errs = append(errs, ValidationError{prefix + ".identity_claim", "is only valid when type is 'oauth'; remove it or set type to 'oauth'"})
+	}
+	return errs
+}
+
+func validateOAuthIssuer(raw string) error {
+	if strings.TrimSpace(raw) == "" {
+		return fmt.Errorf("is required when type is 'oauth'; set it to the issuer's absolute http or https URL")
+	}
+	if err := validateAbsoluteHTTPURL(raw, false); err != nil {
+		return fmt.Errorf("must be an absolute http or https URL with no query or fragment; %s", err.Error())
+	}
+	return nil
+}
+
+// validateAbsoluteHTTPURL checks an absolute http(s) URL. allowQuery permits a
+// query string (JWKS URLs sometimes use one). Fragments and userinfo are rejected.
+func validateAbsoluteHTTPURL(raw string, allowQuery bool) error {
+	u, err := url.Parse(raw)
+	if err != nil || !u.IsAbs() || u.Host == "" {
+		return fmt.Errorf("must be an absolute http or https URL")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("must use http or https")
+	}
+	if u.User != nil {
+		return fmt.Errorf("must not include userinfo")
+	}
+	if u.Fragment != "" {
+		return fmt.Errorf("must not include a fragment")
+	}
+	if !allowQuery && u.RawQuery != "" {
+		return fmt.Errorf("must not include a query")
+	}
+	return nil
+}
+
 func validatePublicURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil || !u.IsAbs() || u.Host == "" {
@@ -171,19 +273,7 @@ func Validate(s *Stack) error {
 
 	// Gateway auth validation
 	if s.Gateway != nil && s.Gateway.Auth != nil {
-		auth := s.Gateway.Auth
-		authPrefix := "gateway.auth"
-		if auth.Type == "" {
-			errs = append(errs, ValidationError{authPrefix + ".type", "is required"})
-		} else if auth.Type != "bearer" && auth.Type != "api_key" {
-			errs = append(errs, ValidationError{authPrefix + ".type", "must be 'bearer' or 'api_key'"})
-		}
-		if auth.Token == "" {
-			errs = append(errs, ValidationError{authPrefix + ".token", "is required"})
-		}
-		if auth.Header != "" && auth.Type != "api_key" {
-			errs = append(errs, ValidationError{authPrefix + ".header", "only applicable when type is 'api_key'"})
-		}
+		errs = append(errs, validateGatewayAuth(s.Gateway.Auth)...)
 	}
 	if s.Gateway != nil && s.Gateway.Description != "" {
 		if n := utf8.RuneCountInString(s.Gateway.Description); n < 1 || n > 100 {

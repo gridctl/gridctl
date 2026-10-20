@@ -5,11 +5,16 @@ import (
 	"io"
 	"net/http"
 	neturl "net/url"
+	"os"
 	"strconv"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/state"
 )
+
+// gatewayTokenEnv is the access token sent to an OAuth-mode gateway. It is
+// also accepted in bearer and api_key mode and wins over the recorded state token.
+const gatewayTokenEnv = "GRIDCTL_GATEWAY_TOKEN" // #nosec G101 -- Environment variable name, not a credential.
 
 // daemonAPI issues authenticated requests against a running gateway's local
 // API. Every subcommand that talks to /api/* goes through here, because
@@ -21,11 +26,13 @@ import (
 // port these calls need. The daemon records the token there already
 // resolved, so the CLI never loads the stack or unlocks the vault.
 type daemonAPI struct {
-	port   int
-	token  string
-	header string
-	scheme string // "bearer" or an API-key style raw header value
-	client *http.Client
+	port       int
+	token      string
+	header     string
+	scheme     string // "bearer", "api_key", or "oauth"
+	issuerHost string
+	envBearer  bool
+	client     *http.Client
 }
 
 // newDaemonAPI builds a client for the daemon on the given port, adopting
@@ -34,17 +41,31 @@ type daemonAPI struct {
 func newDaemonAPI(port int, timeout time.Duration) *daemonAPI {
 	api := &daemonAPI{port: port, client: &http.Client{Timeout: timeout}}
 	if st, ok := daemonStateForPort(port); ok {
-		api.token, api.header, api.scheme = st.AuthToken, st.AuthHeader, st.AuthType
+		api.adoptState(st)
 	}
+	api.applyEnvToken()
 	return api
 }
 
 // newDaemonAPIFor builds a client from an already-loaded state, avoiding a
 // second read for callers that have one.
 func newDaemonAPIFor(st state.DaemonState, timeout time.Duration) *daemonAPI {
-	return &daemonAPI{
-		port: st.Port, token: st.AuthToken, header: st.AuthHeader, scheme: st.AuthType,
-		client: &http.Client{Timeout: timeout},
+	api := &daemonAPI{port: st.Port, client: &http.Client{Timeout: timeout}}
+	api.adoptState(st)
+	api.applyEnvToken()
+	return api
+}
+
+func (a *daemonAPI) adoptState(st state.DaemonState) {
+	a.token, a.header, a.scheme = st.AuthToken, st.AuthHeader, st.AuthType
+	a.issuerHost = st.AuthIssuerHost
+}
+
+func (a *daemonAPI) applyEnvToken() {
+	if tok := os.Getenv(gatewayTokenEnv); tok != "" {
+		a.token = tok
+		a.header = "Authorization"
+		a.envBearer = true
 	}
 }
 
@@ -92,15 +113,41 @@ func (a *daemonAPI) authorize(req *http.Request) {
 	if a.token == "" {
 		return
 	}
+	if a.envBearer || a.scheme == "bearer" || a.scheme == "oauth" || a.scheme == "" {
+		req.Header.Set("Authorization", "Bearer "+a.token)
+		return
+	}
 	header := a.header
 	if header == "" {
 		header = "Authorization"
 	}
-	value := a.token
-	if a.scheme == "bearer" || a.scheme == "" {
-		value = "Bearer " + a.token
+	req.Header.Set(header, a.token)
+}
+
+// describeUnauthorized reports a marked 401. In OAuth mode the text tells the
+// operator to set GRIDCTL_GATEWAY_TOKEN. Other modes return nil so callers
+// keep their existing wording.
+func (a *daemonAPI) describeUnauthorized(resp *http.Response) error {
+	if a == nil || resp == nil || resp.StatusCode != http.StatusUnauthorized {
+		return nil
 	}
-	req.Header.Set(header, value)
+	if resp.Header.Get("Gridctl-Auth-Rejected") != "1" {
+		return nil
+	}
+	if a.scheme != "oauth" {
+		return nil
+	}
+	host := a.issuerHost
+	if host == "" {
+		host = "the authorization server"
+	}
+	return &oauthCredentialError{host: host}
+}
+
+type oauthCredentialError struct{ host string }
+
+func (e *oauthCredentialError) Error() string {
+	return fmt.Sprintf("set GRIDCTL_GATEWAY_TOKEN to a token issued by %s", e.host)
 }
 
 // newDaemonAPIForBaseURL builds a client for a daemon addressed by base URL

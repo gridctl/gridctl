@@ -40,7 +40,11 @@ func runSecurityDoctor(ctx context.Context) (*secreport.Report, error) {
 	if ref.Kind == secreport.SourceGateway {
 		doer = gatewaySecurityDoer(ref.Value)
 	}
-	return secreport.Load(ctx, ref, doer)
+	report, err := secreport.Load(ctx, ref, doer)
+	if d, ok := doer.(authorizedDoer); ok && d.authErr != nil && *d.authErr != nil {
+		return nil, *d.authErr
+	}
+	return report, err
 }
 
 func gatewaySecurityDoer(base string) secreport.HTTPDoer {
@@ -53,7 +57,7 @@ func gatewaySecurityDoer(base string) secreport.HTTPDoer {
 	}
 	api := newDaemonAPIForBaseURL(base, 15*time.Second)
 	api.client = client
-	return authorizedDoer{api: api}
+	return authorizedDoer{api: api, authErr: new(error)}
 }
 
 func localControlPlaneOrigin(base string) bool {
@@ -79,11 +83,18 @@ func (d unauthenticatedDoer) Do(req *http.Request) (*http.Response, error) {
 	return d.client.Do(req)
 }
 
-type authorizedDoer struct{ api *daemonAPI }
+type authorizedDoer struct {
+	api     *daemonAPI
+	authErr *error
+}
 
 func (d authorizedDoer) Do(req *http.Request) (*http.Response, error) {
 	d.api.authorize(req)
-	return d.api.client.Do(req)
+	resp, err := d.api.client.Do(req)
+	if err == nil && d.authErr != nil {
+		*d.authErr = d.api.describeUnauthorized(resp)
+	}
+	return resp, err
 }
 
 func renderSecurityReport(w io.Writer, report *secreport.Report, asJSON, quiet bool) int {
@@ -105,6 +116,10 @@ func renderSecurityReport(w io.Writer, report *secreport.Report, asJSON, quiet b
 }
 
 func securityDoctorMessage(err error) string {
+	var credentialErr *oauthCredentialError
+	if errors.As(err, &credentialErr) {
+		return "doctor: " + credentialErr.Error()
+	}
 	switch {
 	case err == nil:
 		return ""

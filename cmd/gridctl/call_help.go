@@ -107,7 +107,7 @@ func discoverRequest(ctx context.Context, asJSON bool, client, name string, q ur
 		return mcp.ToolDiscoverResult{}, mapResponseRead(asJSON, client, name, err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return mcp.ToolDiscoverResult{}, classifyHTTPFailure(resp, body, asJSON, client, name)
+		return mcp.ToolDiscoverResult{}, classifyHTTPFailureFor(api, resp, body, asJSON, client, name)
 	}
 	if !isJSONContentType(resp.Header.Get("Content-Type")) {
 		return mcp.ToolDiscoverResult{}, uncertainFailure(asJSON, client, name, "transport_error", reasonMalformedResponse, "malformed gateway response")

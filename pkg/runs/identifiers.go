@@ -72,3 +72,17 @@ func validSelector(value string) bool {
 	}
 	return true
 }
+
+// boundAccessLabel preserves opaque subjects, including base64 punctuation.
+// Labels are data, never paths; retain the size and control-character bounds.
+func boundAccessLabel(value string) string {
+	if len(value) > MaxIdentifierBytes || !utf8.ValidString(value) {
+		return ""
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) {
+			return ""
+		}
+	}
+	return value
+}

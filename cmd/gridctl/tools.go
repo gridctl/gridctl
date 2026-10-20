@@ -96,7 +96,7 @@ func runToolsSearch(cmd *cobra.Command, query string) error {
 		return mapResponseRead(asJSON, client, "", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return classifyHTTPFailure(resp, body, asJSON, client, "")
+		return classifyHTTPFailureFor(api, resp, body, asJSON, client, "")
 	}
 	if !isJSONContentType(resp.Header.Get("Content-Type")) {
 		return uncertainFailure(asJSON, client, "", "transport_error", reasonMalformedResponse, "malformed gateway response")

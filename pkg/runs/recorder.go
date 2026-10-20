@@ -412,13 +412,16 @@ func (a *Attempt) SetTraceID(id string) {
 	}
 }
 
-// SetLabels stores optional caller-declared labels. They are not authenticated principals.
+// SetLabels stores attribution labels. Outside OAuth mode they are
+// caller-declared and are not authenticated principals. In OAuth mode the
+// access label is the verified identity claim. Do not log either value at
+// INFO or above; DEBUG structured fields only.
 func (a *Attempt) SetLabels(client, access string) {
 	if a == nil {
 		return
 	}
 	a.clientLabel, _ = BoundIdentifier(client)
-	a.accessLabel, _ = BoundIdentifier(access)
+	a.accessLabel = boundAccessLabel(access)
 }
 
 // SetPreviousAttemptID links a resumed round when trusted internal correlation exists.

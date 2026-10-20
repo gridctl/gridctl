@@ -108,11 +108,16 @@ func (b *GatewayBuilder) listenerStack() *config.Stack {
 
 // applyGatewayAuth installs listener credentials from the resolved stack.
 // The applied-config hook must keep assigning the literal stack elsewhere.
+// OAuth mode is installed by installGatewayOAuth; this path skips it so a
+// shared token is not required.
 func applyGatewayAuth(stack *config.Stack, set func(authType, token, header string)) {
 	if set == nil || stack == nil || stack.Gateway == nil || stack.Gateway.Auth == nil {
 		return
 	}
 	auth := stack.Gateway.Auth
+	if auth.Type == "oauth" {
+		return
+	}
 	set(auth.Type, auth.Token, auth.Header)
 }
 

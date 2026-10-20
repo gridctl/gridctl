@@ -35,6 +35,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/reload"
+	"github.com/gridctl/gridctl/pkg/resourceauth"
 	"github.com/gridctl/gridctl/pkg/runs"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	"github.com/gridctl/gridctl/pkg/secrets"
@@ -708,6 +709,26 @@ func (b *GatewayBuilder) buildLogging(verbose bool) (*logging.LogBuffer, slog.Ha
 	return logBuffer, router, nil
 }
 
+func installGatewayOAuth(server *api.Server, auth *config.AuthConfig) {
+	if server == nil || auth == nil {
+		return
+	}
+	cfg := resourceauth.Config{
+		Issuer:         auth.Issuer,
+		Audience:       auth.Audience,
+		JWKSURL:        auth.JWKSURL,
+		RequiredScopes: append([]string(nil), auth.RequiredScopes...),
+		IdentityClaim:  auth.IdentityClaimOrDefault(),
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	verifier, err := resourceauth.New(context.Background(), cfg, client)
+	if err != nil {
+		slog.Warn("oauth discovery failed; protected routes answer 503 until the issuer is reachable",
+			"issuer_host", auth.IssuerHost(), "category", resourceauth.CategoryDiscoveryUnavailable)
+	}
+	server.SetOAuth(verifier, cfg)
+}
+
 // effectiveBind resolves the listen address across both sources: the CLI
 // flag wins, then the stack's gateway.bind, then the loopback default.
 func (b *GatewayBuilder) effectiveBind() string {
@@ -736,7 +757,7 @@ func (b *GatewayBuilder) checkExposure(log *slog.Logger) error {
 	}
 	authStack := b.listenerStack()
 	authConfigured := authStack != nil && authStack.Gateway != nil &&
-		authStack.Gateway.Auth != nil && authStack.Gateway.Auth.Token != ""
+		authStack.Gateway.Auth.Configured()
 	if !authConfigured {
 		if b.allowUnauthenticated() {
 			// The override is deliberately noisy on every start: a one-time
@@ -857,7 +878,11 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 		server.SetAllowedHosts(runtimeStack.Gateway.AllowedHosts)
 	}
 
-	applyGatewayAuth(runtimeStack, server.SetAuth)
+	if runtimeStack != nil && runtimeStack.Gateway != nil && runtimeStack.Gateway.Auth != nil && runtimeStack.Gateway.Auth.Type == "oauth" {
+		installGatewayOAuth(server, runtimeStack.Gateway.Auth)
+	} else {
+		applyGatewayAuth(runtimeStack, server.SetAuth)
+	}
 
 	if registryServer != nil {
 		server.SetRegistryServer(registryServer)
