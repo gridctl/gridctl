@@ -46,7 +46,7 @@ Remote authentication still requires HTTPS or an encrypted tunnel with a private
 
 A listener on `0.0.0.0`, or any other non-loopback address, refuses to start in two cases. Authentication is checked first.
 
-1. No `gateway.auth` token is configured. The error is the unauthenticated-exposure refusal. Set `gateway.auth`, drop `--bind`, `--bind-all`, and `gateway.bind` so the listener stays on loopback, or pass `--insecure-allow-unauthenticated` (or set `gateway.insecure_allow_unauthenticated: true`).
+1. Neither a shared `gateway.auth` token nor OAuth mode is configured. The error is the unauthenticated-exposure refusal. Set `gateway.auth`, drop `--bind`, `--bind-all`, and `gateway.bind` so the listener stays on loopback, or pass `--insecure-allow-unauthenticated` (or set `gateway.insecure_allow_unauthenticated: true`).
 2. Auth is configured, but `gateway.allowed_origins` is empty or contains `*`. The error names `gateway.allowed_origins`, loopback, and `insecure-allow-unauthenticated`. Set `gateway.allowed_origins` to the origins that will load the UI. `"*"` is not an allowlist on a widened bind.
 
 One override covers both refusals. With the override set, startup continues, the wildcard stays in place, and each refusal that was skipped logs one warning. A non-loopback start with `gateway.public_url` unset also logs one warning that the server card advertises an endpoint only for Hosts in `gateway.allowed_hosts`. Loopback binds do not refuse and do not log those warnings.
@@ -890,6 +890,16 @@ The UI keeps showing the authentication prompt after entering a valid token.
 Unsupported or corrupt saved metadata is not interpreted as a credential. Re-enter and verify; if the entry cannot be replaced safely, the visible window-only notice explains refresh and detached-window limits. Protected reads resume after verification, but saves and other mutations are not automatically repeated. See [browser credentials](config-schema.md#browser-credentials).
 
 ---
+
+## Gateway OAuth
+
+For `gateway.auth.type: oauth`, CLI commands need an issuer-minted token in `GRIDCTL_GATEWAY_TOKEN`. A marked 401 reports `set GRIDCTL_GATEWAY_TOKEN to a token issued by <issuer host>`. `status` keeps the gateway row and exits successfully with a warning; commands such as `call` and `runs` fail. A non-empty variable overrides saved credentials in every mode, including API-key mode, and always sends Bearer. Unset it when returning to state-recorded shared credentials.
+
+In the browser, select Bearer and paste the token without the prefix. Gridctl does not refresh it. A 401 `invalid_token` can mean expiry, wrong issuer or audience, rejected signature/type, or a missing identity claim. A 403 `insufficient_scope` means the token lacks a configured required scope; request a token with all required scopes rather than changing CORS. Inspect the `WWW-Authenticate` challenge to distinguish scope rejection from Host/Origin refusal.
+
+A 503 `authorization server unavailable` without a challenge means verification infrastructure is unavailable. Check issuer discovery and JWKS reachability and the exact configured issuer. The daemon retries failed discovery with backoff capped at 60 seconds. Public resource metadata and health probes can still work during this failure.
+
+OAuth issuer, audience, JWKS URL, required scopes, and identity claim are restart-only. Follow [restart recovery](#gateway-security-requires-a-restart) after changing them. A different principal cannot reuse an existing handshake session: POST, GET, and DELETE return 404 `session expired`; initialize a new session with the intended principal. See [OAuth configuration](config-schema.md#oauth-resource-server-mode) for issuer setup and limitations.
 
 ## Downstream OAuth
 

@@ -56,7 +56,7 @@ Returns RFC 9728 JSON with `resource`, `authorization_servers: [issuer]`,
 `bearer_methods_supported: ["header"]`, and configured `scopes_supported`
 (omitted when empty). The resource is the HTTP(S) audience, or the MCP endpoint
 under `gateway.public_url` or the request's HTTP Host. No credential, session,
-or user data is included. Unknown groups return 404. GET and OPTIONS use
+or user data is included. GET for unknown groups returns 404. GET and OPTIONS use
 `Access-Control-Allow-Origin: *` regardless of the operational origin allowlist.
 OPTIONS returns 200 with methods `GET, OPTIONS` and allowed header
 `Content-Type`, without Authorization or credentials. Other methods return
@@ -383,7 +383,7 @@ Invoke one canonical live tool through the same dispatch core as MCP `tools/call
 
 `client` is a caller-declared label. In OAuth mode it is display-only: the verified identity claim selects the profile and attributes usage. In other modes it selects scope and accounting without authenticating a principal. Empty, whitespace, control characters, values over 128 bytes, and labels that normalize to empty are invalid. The selected profile and its gates always apply. `cli` has no scope exemption.
 
-A valid dispatch returns HTTP `200` with a versioned envelope even when the outcome is a policy denial (`error.code` `policy_blocked`, `outcome.gate` `policy`) or tool error. Request validation is `400`, oversized bodies `413`, wrong content type `415`, and a missing gateway `503`. Authentication remains the existing middleware (`401` with `Gridctl-Auth-Rejected: 1` and a plain-text body). Endpoint errors use `schema_version`, typed `outcome`, `result: null`, and `error: {"code","message"}` rather than the legacy string-valued `{"error":"..."}` shape. `name` and `client` appear only when valid and available.
+A valid dispatch returns HTTP `200` with a versioned envelope even when the outcome is a policy denial (`error.code` `policy_blocked`, `outcome.gate` `policy`) or tool error. Request validation is `400`, oversized bodies `413`, wrong content type `415`, and a missing gateway `503`. Authentication runs before this envelope: `401` credential rejection and OAuth `403` insufficient scope carry `Gridctl-Auth-Rejected: 1` and plain-text bodies; unavailable OAuth verification returns plain-text `503` without the marker. Endpoint errors use `schema_version`, typed `outcome`, `result: null`, and `error: {"code","message"}` rather than the legacy string-valued `{"error":"..."}` shape. `name` and `client` appear only when valid and available.
 
 **Auth:** Yes
 
@@ -3733,8 +3733,9 @@ per request:
   plus a matching `MCP-Protocol-Version` header and an `Mcp-Method` header
   mirroring the body method (`Mcp-Name` mirrors `params.name`/`params.uri`
   where present, plain or base64-sentinel encoded). Identity derives per
-  request from `_meta` `clientInfo`, the `client` query parameter, or the
-  `X-Gridctl-Client-Id` header. Rejections are typed at HTTP 400: missing or
+  request from the verified OAuth claim, or in other modes from `_meta`
+  `clientInfo`, the `client` query parameter, or the `X-Gridctl-Client-Id`
+  header. Rejections are typed at HTTP 400: missing or
   incomplete `_meta` is `-32602`, a header/body mismatch is `-32020`
   (HeaderMismatch), and an unsupported version is `-32022`
   (UnsupportedProtocolVersion) carrying the supported set. Unknown or removed
@@ -3743,6 +3744,12 @@ per request:
   metadata on list and read responses.
 
 #### `POST /mcp`
+
+OAuth handshake sessions retain the raw principal that initialized them. A
+different verified principal on POST, GET, or DELETE receives HTTP 404 with
+body `session expired\n`, leaving the original session untouched. Declared
+client labels do not change this identity. Token validation is per request;
+an already-open SSE stream is not closed at token expiry.
 
 JSON-RPC 2.0 endpoint for MCP protocol operations.
 
@@ -3900,14 +3907,14 @@ HTTP middleware and routing errors can be plain text, including `401 Unauthorize
 | `204` | Success, no content |
 | `400` | Invalid input or request |
 | `401` | Missing or invalid authentication |
-| `403` | Host, MCP Origin, or endpoint-specific access check rejected the request |
+| `403` | Host, MCP Origin, OAuth required scope, or endpoint-specific access check rejected the request |
 | `404` | Resource not found, including exact live-tool lookup of an unknown or hidden target |
 | `405` | HTTP method not allowed |
 | `409` | Resource conflict (e.g., duplicate name), or `restart_required` for gateway security changes |
 | `413` | Request body exceeds the `/api/tools/call` 2 MiB envelope |
 | `415` | Unsupported content type on `/api/tools/call` (must be `application/json`) |
 | `423` | Vault is locked |
-| `503` | Service unavailable (runtime not configured, reload or initialization handler unavailable, or tools call/discover with no gateway) |
+| `503` | Service unavailable (OAuth verification unavailable, runtime not configured, reload or initialization handler unavailable, or tools call/discover with no gateway) |
 
 ## CORS
 
@@ -3920,9 +3927,13 @@ Access-Control-Allow-Headers: Content-Type, Authorization
 Vary: Origin
 ```
 
-`OPTIONS` requests return `200 OK` without authentication and never dispatch an operation. CORS response headers are present only when the request supplies an allowed Origin; a custom `gateway.auth.header` is also included in `Access-Control-Allow-Headers`. Preflight success does not authenticate the subsequent request. An unlisted Origin on `/mcp`, `/api/*`, and other operational routes receives no `Access-Control-Allow-Origin`.
+Operational `OPTIONS` requests return `200 OK` without authentication and never dispatch an operation. CORS response headers are present only when the request supplies an allowed Origin; a custom `gateway.auth.header` is also included in `Access-Control-Allow-Headers`. Preflight success does not authenticate the subsequent request. An unlisted Origin on `/mcp`, `/api/*`, and other operational routes receives no `Access-Control-Allow-Origin`. OAuth metadata preflight also requires an accepted Host.
 
 ### Public discovery routes
+
+OAuth mode also exposes the [RFC 9728 metadata routes](#oauth-protected-resource-metadata).
+Those accept GET and OPTIONS with wildcard CORS and Host checks, including
+preflight. The card and catalog rules below are separate.
 
 These GET routes are enumerated, unauthenticated, and not configurable from the stack file. They carry no credential, session, or user data. Host checks still apply. With an `Origin` header they answer `Access-Control-Allow-Origin: *`, `Access-Control-Allow-Methods: GET`, `Access-Control-Allow-Headers: Content-Type, If-None-Match`, and `Access-Control-Expose-Headers: ETag`, regardless of `gateway.allowed_origins`. `OPTIONS` returns 200 and does not dispatch. Other methods return 405. Responses use `Cache-Control: public, max-age=3600` and a strong ETag. A matching `If-None-Match` returns 304. Card responses use `Content-Type: application/mcp-server-card+json`. The catalog uses `Content-Type: application/ai-catalog+json`.
 
@@ -3940,6 +3951,6 @@ The advertised origin is `gateway.public_url` when set. Otherwise it is the requ
 
 When an origin exists, a catalog entry's `identifier` is `urn:air:<hostname without port>:mcp:<segment>` (a group uses `<segment>.<group>`), `type` is `application/mcp-server-card+json`, and `url` is the absolute card URL. A path prefix on `gateway.public_url` is included in that URL.
 
-When auth is configured, `remotes[].headers` names a placeholder and a `variables` entry. Bearer uses `Authorization: Bearer {token}`. API-key auth uses the configured header, or `Authorization` when `gateway.auth.header` is empty, with value `{key}` and no Bearer prefix. The token value is never emitted.
+When shared-credential auth is configured, `remotes[].headers` names a placeholder and a `variables` entry. Bearer uses `Authorization: Bearer {token}`. API-key auth uses the configured header, or `Authorization` when `gateway.auth.header` is empty, with value `{key}` and no Bearer prefix. The token value is never emitted. OAuth mode adds no card credential placeholder; hosts discover authorization through the Bearer challenge and RFC 9728 metadata.
 
 Consuming a foreign card is [`POST /api/servers/card`](#post-apiserverscard). That route is protected, shares the probe limiter, and is not one of the public discovery documents above.

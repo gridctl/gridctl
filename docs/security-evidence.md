@@ -22,6 +22,8 @@ gridctl doctor --security --source gateway:http://localhost:8180 --json
 
 Unreadable, invalid, or unsupported primary input exits `2`. Missing optional evidence yields unknown checks and partial coverage, not an empty stack substitute.
 
+For a loopback `gateway:` source, non-empty `GRIDCTL_GATEWAY_TOKEN` overrides recorded credentials as Bearer, including in OAuth mode. It is not sent to remote report origins. OAuth reports `auth_type: oauth` as configured in the file-declared view and enabled in the startup view without requiring a stored token. This does not prove issuer reachability or token acceptance.
+
 `--json -q` still emits the full DTO. Human quiet output keeps failures, warnings, unknowns, source identity, and coverage.
 
 ## Predicate inventory

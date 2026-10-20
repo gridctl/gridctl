@@ -19,6 +19,7 @@ The finite baseline covers installation, listener access, workload authority, se
 |---|---|
 | Included in `v1.0.0-rc.1` | Grouped-route authentication, non-resolving stack export, scoped variable delivery, internal-credential filtering, and authenticated binary-release tooling |
 | Included in v1.0.0-rc.2 | Restart-required authentication preflight and browser credential verification, opt-in execution profiles, passive security evidence reports, mutable-reference diagnostics, offline declaration policy, opt-in persisted run records, live CLI/REST tool invocation, and the Python MCP runtime base recipe |
+| Unreleased | Upstream OAuth resource-server mode with external issuer JWTs and claim-derived client profiles. Hosted-issuer and actual MCP host login acceptance remain manual. |
 | Outside this baseline | A published, supported Gridctl Python MCP runtime image. This guide provides no GHCR tags or pull commands for that image. See [Python MCP runtime base](../mcp-runtime-python.md). |
 
 Implementation in a checkout does not establish release publication or runtime support. Follow the [execution support requirements](../execution.md#evidence-and-lifecycle) for your actual host and daemon.
@@ -47,7 +48,7 @@ gateway:
 
 Supply the credential separately through each client's authentication settings. Linking a client selects an endpoint but does not provision credentials. Bearer auth uses `Authorization: Bearer <token>`; API-key auth sends the raw value in the configured header. See the [authentication schema](../config-schema.md#auth).
 
-With auth configured, a request to `/api/status` without a credential should return `401`. Run this read-only check against your selected local port:
+With shared-token auth configured, a request to `/api/status` without a credential should return `401`. OAuth mode also returns `401` once discovery is available; unavailable discovery returns `503`. Run this read-only check against your selected local port:
 
 ```bash
 curl --silent --output /dev/null --write-out '%{http_code}\n' \
@@ -56,7 +57,7 @@ curl --silent --output /dev/null --write-out '%{http_code}\n' \
 
 Verify authenticated access through your configured client as well. A successful `/health`, `/ready`, or UI-shell request does not test authentication: those surfaces are public. The unreleased public discovery GETs (`/mcp/server-card`, `/groups/{name}/mcp/server-card`, and `/.well-known/ai-catalog.json`) are also public and do not test authentication. Grouped MCP routes require the same gateway credential. Possession of that shared credential also grants operational API access; selecting a group is not a management-access restriction.
 
-For remote use, keep the backend private to a TLS-terminating proxy or encrypted tunnel. Restrict who can reach the proxy and management surface, and set `gateway.allowed_origins` to the browser origins that load the UI. A non-loopback bind with no auth token, or with no explicit origin list (including `["*"]`), refuses to start. That origin-allowlist refusal is unreleased and ships in the next 1.0.0 release candidate. Plain remote HTTP exposes the shared token in transit. The refusal is a guardrail, not TLS. `--insecure-allow-unauthenticated` bypasses both the missing-auth refusal and the missing-allowlist refusal, and should not be used to resolve a setup failure.
+For remote use, keep the backend private to a TLS-terminating proxy or encrypted tunnel. Restrict who can reach the proxy and management surface, and set `gateway.allowed_origins` to the browser origins that load the UI. A non-loopback bind without shared-token or OAuth authentication, or with no explicit origin list (including `["*"]`), refuses to start. That origin-allowlist refusal is unreleased and ships in the next 1.0.0 release candidate. Plain remote HTTP exposes credentials in transit. The refusal is a guardrail, not TLS. `--insecure-allow-unauthenticated` bypasses both the missing-auth refusal and the missing-allowlist refusal, and should not be used to resolve a setup failure.
 
 Host validation helps defend loopback arrivals against DNS rebinding. CORS controls browser response access, not authorization. On a loopback bind, unset origins default to a wildcard. On a non-loopback bind, an explicit list is required and `"*"` is not an allowlist. An unlisted REST Origin does not prevent handler execution. Neither replaces a gateway credential or a private listener. Downstream OAuth login is a separate authorization flow and does not authenticate upstream clients.
 
@@ -66,7 +67,9 @@ In the v1.0.0-rc.2 lifecycle implementation, authentication, bind, Host/Origin a
 
 Follow [restart recovery](../troubleshooting.md#gateway-security-requires-a-restart) with the original startup options. Verify the new credential works and the old credential is rejected after restarting. Applying while the old daemon is still running is not a process restart.
 
-The CLI's daemon state contains the resolved token in a `0600` file. Browser credentials are verified before persistence and stored in same-origin localStorage; origin scripts can read them. Protect the state directory, workstation, browser profile, and scripts served on that origin. See [browser credentials](../config-schema.md#browser-credentials) for custom-header and storage limits.
+For shared-credential modes, the CLI's daemon state contains the resolved token in a `0600` file. OAuth state records the issuer host without a token; supply an issuer-minted token through `GRIDCTL_GATEWAY_TOKEN`. A non-empty value overrides state credentials in every mode and sends Bearer. Browser credentials are verified before persistence and stored in same-origin localStorage; origin scripts can read them. Protect the state directory, workstation, browser profile, and scripts served on that origin. See [browser credentials](../config-schema.md#browser-credentials) for custom-header and storage limits.
+
+OAuth configuration changes require the same restart, but replacing an expired caller token does not. In the browser, use Bearer with the issuer token. Compatible MCP hosts discover the issuer through public RFC 9728 metadata and complete login themselves. Gridctl does not issue or refresh these tokens. See [OAuth configuration](../config-schema.md#oauth-resource-server-mode) for issuer registration, key-cache limits, and per-request validation. A valid OAuth token grants operational API access as well as its permitted tools.
 
 ## Restrict downstream authority
 

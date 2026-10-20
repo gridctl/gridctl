@@ -47,7 +47,7 @@ The scope is enforced on `tools/list`, `tools/call`, and the code-mode search/ex
 gridctl link cursor --client-id cursor
 ```
 
-Client identifiers are self-declared, so scoping is a guardrail for cooperating clients, not authentication against a hostile client. Configured `gateway.auth` separately requires the shared credential on every operational request, including grouped MCP endpoints. See [gateway authentication](../../docs/config-schema.md#auth).
+This example uses self-declared client identifiers, so scoping is a guardrail for cooperating clients, not authentication against a hostile client. With `gateway.auth.type: oauth`, the verified identity claim selects profiles instead; map raw, case-sensitive subjects through `aliases:`. The linked `--client-id` then becomes display-only. Configured authentication is required on every operational request, including grouped MCP endpoints. See [gateway authentication](../../docs/config-schema.md#auth).
 
 See [docs/config-schema.md](../../docs/config-schema.md#clients-per-client-access-scoping) for the full reference, including client-identity reconciliation and reload semantics.
 

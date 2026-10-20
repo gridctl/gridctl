@@ -46,7 +46,7 @@ A group is a named subset of tools under `groups:` in the stack file, served at 
 
 ## Client profile
 
-A client profile is an allow-list under `clients.profiles` in the stack file that limits which servers and tools a connecting client can see. `gridctl link --client-id <id>` embeds that identifier on the gateway URL, and with no `clients:` block a connecting client sees every tool ([Clients](config-schema.md#clients-per-client-access-scoping)).
+A client profile is an allow-list under `clients.profiles` in the stack file that limits which servers and tools a connecting client can see. OAuth mode selects the profile using the verified identity claim, with raw subjects mapped through aliases. In other modes, `gridctl link --client-id <id>` embeds a self-declared profile selector on the gateway URL; in OAuth mode it is display-only. With no `clients:` block a connecting client sees every tool ([Clients](config-schema.md#clients-per-client-access-scoping)).
 
 ## Call policy
 

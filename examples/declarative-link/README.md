@@ -13,7 +13,7 @@ Once the gateway is healthy, apply links each declared client exactly as
 endpoint, and Cursor gets the `dev` group's endpoint under the entry name
 `gridctl-dev`, bound to a `clients:` access profile via `client_id`.
 
-This example uses the default loopback listener without gateway auth. If you add `gateway.auth`, clients must send its credential on every request, including grouped requests. Linking does not provision credentials into client files; configure authentication in each client separately. `client_id` is a self-declared selector, not an authenticated identity. See [gateway authentication](../../docs/config-schema.md#auth).
+This example uses the default loopback listener without gateway auth. If you add `gateway.auth`, clients must send its credential on every request, including grouped requests. Linking does not provision credentials into client files; configure authentication in each client separately. `client_id` is a self-declared selector, not an authenticated identity. In OAuth mode it is display-only: the verified claim selects the profile, and compatible hosts complete login against the advertised issuer. See [gateway authentication](../../docs/config-schema.md#auth).
 
 Reconcile is additive and idempotent. Already-linked clients are silent
 no-ops; clients not installed on this machine warn and skip, so the same
