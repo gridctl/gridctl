@@ -653,14 +653,15 @@ func runSkillList() error {
 	}
 
 	type skillEntry struct {
-		Name     string                    `json:"name"`
-		State    string                    `json:"state"`
-		Source   string                    `json:"source"`
-		Model    string                    `json:"model,omitempty"`
-		Repo     string                    `json:"repo,omitempty"`
-		Ref      string                    `json:"ref,omitempty"`
-		Kind     string                    `json:"kind,omitempty"`
-		Manifest skillsext.ManifestSummary `json:"manifest"`
+		Name          string                     `json:"name"`
+		State         string                     `json:"state"`
+		Source        string                     `json:"source"`
+		Model         string                     `json:"model,omitempty"`
+		Repo          string                     `json:"repo,omitempty"`
+		Ref           string                     `json:"ref,omitempty"`
+		Kind          string                     `json:"kind,omitempty"`
+		Manifest      *skillsext.ManifestSummary `json:"manifest,omitempty"`
+		ManifestError string                     `json:"manifest_error,omitempty"`
 	}
 
 	var entries []skillEntry
@@ -690,11 +691,14 @@ func runSkillList() error {
 		if skillListRemote && entry.Source == "local" {
 			continue
 		}
+		// One unreadable skill must not hide the rest of the registry.
 		manifest, err := skillpins.ComputeManifest(context.Background(), store, sk)
 		if err != nil {
-			return fmt.Errorf("skill %q manifest: %w", sk.Name, err)
+			entry.ManifestError = skillsext.ManifestErrorCategory(err)
+		} else {
+			summary := skillsext.Summarize(manifest)
+			entry.Manifest = &summary
 		}
-		entry.Manifest = skillsext.Summarize(manifest)
 
 		entries = append(entries, entry)
 	}
@@ -716,7 +720,11 @@ func runSkillList() error {
 	}
 	t.Render()
 	for _, entry := range entries {
-		if entry.Manifest.Dynamic {
+		if entry.ManifestError != "" {
+			fmt.Printf("warning: skill %s manifest could not be read (%s); it is listed without a manifest and skills/list omits it until the file is readable\n", entry.Name, entry.ManifestError)
+			continue
+		}
+		if entry.Manifest != nil && entry.Manifest.Dynamic {
 			fmt.Printf("warning: skill %s exceeds the Skills over MCP limits (%d files, %d bytes); it is listed without a manifest and conforming hosts may refuse to load it\n", entry.Name, entry.Manifest.Files, entry.Manifest.Bytes)
 		}
 	}

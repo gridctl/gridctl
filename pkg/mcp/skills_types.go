@@ -54,8 +54,11 @@ type SkillDirectoryEntry struct {
 var ErrSkillNotFound = errors.New("skill not found")
 
 // SkillProvider owns registry content; the gateway applies exposure policy.
+// ListSkillEntries receives the caller's name filter so a denied skill is not
+// hashed. A nil filter includes every active skill. The gateway still drops
+// denied names from the returned slice.
 type SkillProvider interface {
-	ListSkillEntries(context.Context) ([]SkillEntry, error)
+	ListSkillEntries(context.Context, func(string) bool) ([]SkillEntry, error)
 	GetSkillEntry(context.Context, string) (*SkillEntry, error)
 	ReadSkillFile(context.Context, string, string) (*SkillFileContent, error)
 	ReadSkillDirectory(context.Context, string, string) ([]SkillDirectoryEntry, error)

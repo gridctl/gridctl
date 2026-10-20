@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -50,7 +51,7 @@ func TestProvider_ManifestAndReads(t *testing.T) {
 	if err := os.Symlink(store.Dir(), filepath.Join(store.Dir(), "skills", "alpha", "scripts", "link")); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := provider.ListSkillEntries(t.Context())
+	entries, err := provider.ListSkillEntries(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +181,7 @@ func TestProvider_GenerationCache(t *testing.T) {
 	if _, err := provider.GetSkillEntry(t.Context(), "alpha"); !errors.Is(err, mcp.ErrSkillNotFound) {
 		t.Fatalf("disabled get: %v", err)
 	}
-	entries, err := provider.ListSkillEntries(t.Context())
+	entries, err := provider.ListSkillEntries(t.Context(), nil)
 	if err != nil || entries == nil || len(entries) != 0 {
 		t.Fatalf("disabled list: %+v, %v", entries, err)
 	}
@@ -202,7 +203,7 @@ func TestProvider_DynamicLimits(t *testing.T) {
 			slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 			t.Cleanup(func() { slog.SetDefault(old) })
 			for i := 0; i < 2; i++ {
-				entries, err := provider.ListSkillEntries(t.Context())
+				entries, err := provider.ListSkillEntries(t.Context(), nil)
 				if err != nil || len(entries) != 1 || !entries[0].Dynamic {
 					t.Fatalf("dynamic entries = %+v, %v", entries, err)
 				}
@@ -257,7 +258,7 @@ func TestProvider_CancellationAndFrontmatterErrors(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	for _, call := range []func() error{
-		func() error { _, err := provider.ListSkillEntries(ctx); return err },
+		func() error { _, err := provider.ListSkillEntries(ctx, nil); return err },
 		func() error { _, err := provider.GetSkillEntry(ctx, "alpha"); return err },
 		func() error { _, err := provider.ReadSkillFile(ctx, "alpha", "SKILL.md"); return err },
 		func() error { _, err := provider.ReadSkillDirectory(ctx, "alpha", ""); return err },
@@ -270,5 +271,68 @@ func TestProvider_CancellationAndFrontmatterErrors(t *testing.T) {
 		if _, err := frontmatterJSON([]byte(data)); err == nil {
 			t.Fatalf("accepted invalid JSON frontmatter: %s", data)
 		}
+	}
+}
+
+func TestProvider_UnreadableSkillDoesNotFailList(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("mode 000 is not a reliable deny on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root can read mode 000")
+	}
+	store, provider := fixture(t)
+	if err := store.SaveSkill(&registry.AgentSkill{Name: "beta", Description: "Beta", State: registry.StateActive, Body: "Beta\n"}); err != nil {
+		t.Fatal(err)
+	}
+	write(t, store, "scripts/locked.sh", []byte("echo locked\n"))
+	locked := filepath.Join(store.Dir(), "skills", "alpha", "scripts", "locked.sh")
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o644) })
+
+	var logs bytes.Buffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(old) })
+
+	entries, err := provider.ListSkillEntries(t.Context(), nil)
+	if err != nil || len(entries) != 1 || entries[0].Name != "beta" {
+		t.Fatalf("list: %+v, %v", entries, err)
+	}
+	if _, err := provider.GetSkillEntry(t.Context(), "alpha"); !errors.Is(err, skillpins.ErrDigestUnavailable) {
+		t.Fatalf("get alpha: %v", err)
+	}
+	if _, err := provider.ReadSkillFile(t.Context(), "alpha", "SKILL.md"); err == nil {
+		t.Fatal("read of unreadable skill succeeded")
+	}
+	if _, err := provider.ReadSkillDirectory(t.Context(), "alpha", ""); err == nil {
+		t.Fatal("directory read of unreadable skill succeeded")
+	}
+	if _, err := provider.ListSkillEntries(t.Context(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(logs.String(), "level=WARN") != 1 || !strings.Contains(logs.String(), "skill=alpha") || !strings.Contains(logs.String(), "category=digest_unavailable") {
+		t.Fatalf("warnings: %s", logs.String())
+	}
+	if err := store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.ListSkillEntries(t.Context(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(logs.String(), "level=WARN") != 2 {
+		t.Fatalf("generation warning: %s", logs.String())
+	}
+
+	logs.Reset()
+	fresh := New(store)
+	filtered, err := fresh.ListSkillEntries(t.Context(), func(name string) bool { return name != "alpha" })
+	if err != nil || len(filtered) != 1 || filtered[0].Name != "beta" {
+		t.Fatalf("filtered list: %+v, %v", filtered, err)
+	}
+	if strings.Contains(logs.String(), "level=WARN") {
+		t.Fatalf("filtered name was hashed: %s", logs.String())
 	}
 }

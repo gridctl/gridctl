@@ -64,12 +64,14 @@ func (g *Gateway) HandleSkillsList(ctx context.Context, cursor string) (*SkillsL
 	if cursor != "" {
 		return nil, errSkillCursor
 	}
-	entries, err := provider.ListSkillEntries(ctx)
+	// Policy is applied before the provider hashes. The returned slice is
+	// filtered again so a provider that ignores the callback cannot leak.
+	policy := g.CurrentSkillPolicy()
+	entries, err := provider.ListSkillEntries(ctx, policy.Allows)
 	if err != nil {
 		return nil, err
 	}
 	result := &SkillsListResult{Skills: make([]SkillEntry, 0, len(entries))}
-	policy := g.CurrentSkillPolicy()
 	for _, entry := range entries {
 		if policy.Allows(entry.Name) {
 			result.Skills = append(result.Skills, entry)

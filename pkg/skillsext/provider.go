@@ -63,6 +63,8 @@ type Provider struct {
 	mu         sync.Mutex
 	generation uint64
 	cache      map[string]*cachedSkill
+	// listWarned records the generation of the last skills/list skip warning.
+	listWarned map[string]uint64
 }
 
 func New(store *registry.Store) *Provider {
@@ -151,15 +153,27 @@ func cloneEntry(entry mcp.SkillEntry) mcp.SkillEntry {
 	return entry
 }
 
-func (p *Provider) ListSkillEntries(ctx context.Context) ([]mcp.SkillEntry, error) {
+func (p *Provider) ListSkillEntries(ctx context.Context, allow func(string) bool) ([]mcp.SkillEntry, error) {
 	entries := make([]mcp.SkillEntry, 0)
 	for _, sk := range p.store.ActiveSkills() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if allow != nil && !allow(sk.Name) {
+			continue
+		}
 		entry, err := p.GetSkillEntry(ctx, sk.Name)
 		if errors.Is(err, mcp.ErrSkillNotFound) {
 			continue
 		}
 		if err != nil {
-			return nil, err
+			// One unreadable skill must not hide the rest of the registry.
+			// Cancellation still fails the list. Get and read keep the error.
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil, err
+			}
+			p.warnListSkip(sk.Name, err)
+			continue
 		}
 		entries = append(entries, *entry)
 	}
@@ -167,6 +181,30 @@ func (p *Provider) ListSkillEntries(ctx context.Context) ([]mcp.SkillEntry, erro
 		return nil, err
 	}
 	return entries, nil
+}
+
+// ManifestErrorCategory classifies a manifest build failure for operator output.
+// digest_unavailable means the file set could not be hashed. Other failures,
+// including frontmatter that cannot be encoded, are manifest_unavailable.
+func ManifestErrorCategory(err error) string {
+	if errors.Is(err, skillpins.ErrDigestUnavailable) {
+		return "digest_unavailable"
+	}
+	return "manifest_unavailable"
+}
+
+func (p *Provider) warnListSkip(name string, err error) {
+	generation := p.store.Generation()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.listWarned == nil {
+		p.listWarned = make(map[string]uint64)
+	}
+	if prev, ok := p.listWarned[name]; ok && prev == generation {
+		return
+	}
+	p.listWarned[name] = generation
+	slog.Warn("skill manifest omitted from skills/list", "skill", name, "category", ManifestErrorCategory(err))
 }
 
 func (p *Provider) GetSkillEntry(ctx context.Context, name string) (*mcp.SkillEntry, error) {

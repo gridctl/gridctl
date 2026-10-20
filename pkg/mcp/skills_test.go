@@ -12,9 +12,15 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-type testSkillProvider struct{ reads []string }
+type testSkillProvider struct {
+	reads     []string
+	listAllow func(string) bool
+}
 
-func (p *testSkillProvider) ListSkillEntries(context.Context) ([]SkillEntry, error) {
+func (p *testSkillProvider) ListSkillEntries(_ context.Context, allow func(string) bool) ([]SkillEntry, error) {
+	if allow != nil {
+		p.listAllow = allow
+	}
 	return []SkillEntry{
 		{Name: "denied", URI: SkillURI("denied", "SKILL.md"), Frontmatter: json.RawMessage(`{"name":"denied","description":"Hidden"}`)},
 		{Name: "alpha", URI: SkillURI("alpha", "SKILL.md"), Frontmatter: json.RawMessage(`{"name":"alpha","description":"Alpha"}`)},
@@ -22,7 +28,7 @@ func (p *testSkillProvider) ListSkillEntries(context.Context) ([]SkillEntry, err
 }
 func (p *testSkillProvider) GetSkillEntry(ctx context.Context, name string) (*SkillEntry, error) {
 	p.reads = append(p.reads, name)
-	entries, _ := p.ListSkillEntries(ctx)
+	entries, _ := p.ListSkillEntries(ctx, nil)
 	for _, entry := range entries {
 		if entry.Name == name {
 			return &entry, nil
@@ -124,6 +130,9 @@ func TestSkills_PolicyAndResources(t *testing.T) {
 	list, err := g.HandleSkillsList(ctx, "")
 	if err != nil || len(list.Skills) != 1 || list.Skills[0].Name != "alpha" {
 		t.Fatalf("list: %+v %v", list, err)
+	}
+	if p.listAllow == nil || p.listAllow("denied") || !p.listAllow("alpha") {
+		t.Fatal("skills/list did not apply policy before the provider")
 	}
 	a, _ := json.Marshal(list)
 	list, _ = g.HandleSkillsList(ctx, "")
