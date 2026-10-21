@@ -33,7 +33,7 @@ gridctl apply examples/python-sources/pypi.yaml
 | [🧳 portable-stack/](portable-stack/) | Stack that stays committable by keeping every per-environment value in the variable store |
 | [🎒 portable-pack/](portable-pack/) | Pack repo: skills, agents, rules, a local-process stack, and a commented external source example behind one `gridctl-pack.yaml` |
 | [booster-pack/](booster-pack/) | Fragment pack that composes one local-process server onto the `network-eng` pack |
-| [🔭 tracing/](tracing/) | Distributed tracing and OTLP export |
+| [🔭 tracing/](tracing/) | Distributed tracing, OTLP trace export, and opt-in OTLP metrics |
 | [Run records](runs/) | Included in v1.0.0-rc.2: opt-in metadata-only persisted dispatch records |
 | [📋 registry/](registry/) | Skills and agents registry ([agentskills.io](https://agentskills.io) spec) |
 | [🧪 _mock-servers/](_mock-servers/) | Test servers for development |
@@ -92,6 +92,7 @@ gridctl apply examples/python-sources/pypi.yaml
 | vault-sets | http (container) | Deprecated vault sets (regression fixture) |
 | autoscale-basic | stdio | Reactive autoscaling with `autoscale:` |
 | otlp-jaeger | - | Gateway OTLP trace export |
+| otel-collector | - | Gateway OTLP trace and metrics export to a local collector |
 | runs/stack | - | Opt-in metadata-only persisted dispatch records |
 | registry-basic | stdio | Skills as MCP prompts, resources, and Skills over MCP manifests, single server |
 | registry-advanced | stdio | Two servers; comments show cross-server `allowed-tools` |

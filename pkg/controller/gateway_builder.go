@@ -685,6 +685,7 @@ func (b *GatewayBuilder) buildLogging(verbose bool) (*logging.LogBuffer, slog.Ha
 		redactHandler.RegisterRedactValues(b.vaultStore.Values())
 		logging.RegisterSensitiveValues(b.vaultStore.Values()...)
 	}
+	registerOTLPHeaderValues(b.stack)
 
 	// Log startup entry when writing to a file
 	if logFilePath != "" {
@@ -964,15 +965,30 @@ func (b *GatewayBuilder) buildAPIServer(gateway *mcp.Gateway, logBuffer *logging
 	server.SetOpenAPIPreviewer(openapipreview.New(
 		openapipreview.NewCache(openapipreview.DefaultTTL), previewLogger))
 
-	// Wire distributed tracing
+	// Wire distributed tracing and optional OTLP metrics. Both are read at
+	// startup; a later edit requires a restart, matching the existing tracing
+	// block.
 	tracingCfg := buildTracingConfig(b.stack.Gateway)
+	tracingCfg.Metrics = buildMetricsConfig(b.stack.Gateway)
 	tracingProvider := tracing.NewProvider(tracingCfg)
+	serviceName := ""
+	if b.stack != nil {
+		serviceName = b.stack.Name
+	}
+	tracingProvider.SetResourceIdentity(serviceName, b.version)
 	if handler != nil {
 		tracingProvider.SetLogger(slog.New(handler))
 	}
 	if err := tracingProvider.Init(context.Background()); err != nil {
 		slog.New(handler).Warn("tracing init failed", "error", err)
 	}
+	otelObserver := metrics.NewOTelObserver(func() []metrics.ReplicaSample {
+		return replicaSamples(gateway)
+	}, runsDropCallback(b.runRecorder))
+	if eh := tracingProvider.ErrorHandler(); eh != nil {
+		eh.SetRecorder(otelObserver.NoteExportFailure)
+	}
+	gateway.SetDispatchObserver(otelObserver)
 	b.tracingProvider = tracingProvider
 	server.SetTraceBuffer(tracingProvider.Buffer)
 
@@ -1594,11 +1610,95 @@ func buildTracingConfig(gw *config.GatewayConfig) *tracing.Config {
 	}
 	cfg.Export = t.Export
 	cfg.Endpoint = t.Endpoint
+	cfg.Headers = copyStringMap(t.Headers)
 	if t.MaxTraces > 0 {
 		cfg.MaxTraces = t.MaxTraces
 	}
 	cfg.IncludeInfra = t.IncludeInfra
 	return cfg
+}
+
+func buildMetricsConfig(gw *config.GatewayConfig) *tracing.MetricsConfig {
+	if gw == nil || gw.Metrics == nil || gw.Metrics.OTLP == nil {
+		return nil
+	}
+	otlp := gw.Metrics.OTLP
+	cfg := &tracing.MetricsConfig{
+		Endpoint: otlp.Endpoint,
+		Headers:  copyStringMap(otlp.Headers),
+		Interval: tracing.DefaultMetricsInterval,
+		Timeout:  tracing.DefaultMetricsTimeout,
+	}
+	if otlp.Interval != "" {
+		if d, err := time.ParseDuration(otlp.Interval); err == nil {
+			cfg.Interval = d
+		}
+	}
+	if otlp.Timeout != "" {
+		if d, err := time.ParseDuration(otlp.Timeout); err == nil {
+			cfg.Timeout = d
+		}
+	}
+	return cfg
+}
+
+func copyStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func replicaSamples(g *mcp.Gateway) []metrics.ReplicaSample {
+	if g == nil {
+		return nil
+	}
+	statuses := g.Status()
+	var out []metrics.ReplicaSample
+	for _, st := range statuses {
+		for _, replica := range st.Replicas {
+			out = append(out, metrics.ReplicaSample{Server: st.Name, State: replica.State})
+		}
+	}
+	return out
+}
+
+func runsDropCallback(rec *runs.Recorder) func() map[string]uint64 {
+	if rec == nil {
+		return nil
+	}
+	return func() map[string]uint64 {
+		st := rec.Status()
+		if !st.Enabled && !st.Effective {
+			return nil
+		}
+		if st.Drops == nil {
+			return map[string]uint64{}
+		}
+		return st.Drops
+	}
+}
+
+func registerOTLPHeaderValues(stack *config.Stack) {
+	if stack == nil || stack.Gateway == nil {
+		return
+	}
+	var values []string
+	if stack.Gateway.Tracing != nil {
+		for _, v := range stack.Gateway.Tracing.Headers {
+			values = append(values, v)
+		}
+	}
+	if stack.Gateway.Metrics != nil && stack.Gateway.Metrics.OTLP != nil {
+		for _, v := range stack.Gateway.Metrics.OTLP.Headers {
+			values = append(values, v)
+		}
+	}
+	logging.RegisterSensitiveValues(values...)
 }
 
 // setupHotReload configures file watching and reload for the stack.

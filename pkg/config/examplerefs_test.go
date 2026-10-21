@@ -34,7 +34,7 @@ func TestExampleStacks_PinnedOrExcepted(t *testing.T) {
 			return relErr
 		}
 		rel = filepath.ToSlash(rel)
-		if rel == "examples/stack-declaration-policy/policy.yaml" {
+		if rel == "examples/stack-declaration-policy/policy.yaml" || rel == "examples/tracing/otel-collector-config.yaml" {
 			return nil
 		}
 		stacks = append(stacks, rel)

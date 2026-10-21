@@ -488,6 +488,29 @@ type SecretRef struct {
 	Key      string `yaml:"-" json:"-"`
 }
 
+// MetricsConfig configures gateway metrics export.
+type MetricsConfig struct {
+	// OTLP is the HTTP/protobuf exporter. Required fields are validated when
+	// the block is present.
+	OTLP *OTLPMetricsConfig `yaml:"otlp,omitempty" json:"otlp,omitempty"`
+}
+
+// OTLPMetricsConfig is the gateway.metrics.otlp block. HTTP/protobuf only;
+// there is no protocol field.
+type OTLPMetricsConfig struct {
+	// Endpoint is the OTLP endpoint URL. Required when the block is present.
+	// A pathless URL is posted to /v1/metrics. Any other path is used as-is.
+	Endpoint string `yaml:"endpoint" json:"endpoint"`
+	// Headers are sent on the export request. Values expand and are redacted
+	// the same way as tracing headers.
+	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
+	// Interval is how often the reader exports. Go duration string. Default 60s.
+	// Minimum 1s.
+	Interval string `yaml:"interval,omitempty" json:"interval,omitempty"`
+	// Timeout is the export timeout. Go duration string. Default 10s.
+	Timeout string `yaml:"timeout,omitempty" json:"timeout,omitempty"`
+}
+
 // TracingConfig configures distributed tracing for the gateway.
 type TracingConfig struct {
 	// Enabled controls whether tracing is active. Default: true.
@@ -502,7 +525,11 @@ type TracingConfig struct {
 	// Export selects an exporter: "otlp" or "" (none).
 	Export string `yaml:"export,omitempty" json:"export,omitempty"`
 	// Endpoint is the OTLP endpoint URL (e.g. "http://localhost:4318").
+	// A pathless URL is posted to /v1/traces. Any other path is used as-is.
 	Endpoint string `yaml:"endpoint,omitempty" json:"endpoint,omitempty"`
+	// Headers are sent on the OTLP trace export request. Values expand
+	// ${var:KEY} and ${secret:} and are registered for log redaction.
+	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
 	// MaxTraces is the in-memory ring buffer capacity (number of traces). Default: 1000.
 	MaxTraces int `yaml:"max_traces,omitempty" json:"max_traces,omitempty"`
 	// IncludeInfra admits spans from non-gridctl instrumentation scopes (e.g.
@@ -575,7 +602,12 @@ type GatewayConfig struct {
 	MaxToolResultBytes int `yaml:"maxToolResultBytes,omitempty" json:"maxToolResultBytes,omitempty"`
 
 	// Tracing configures distributed tracing. When nil, tracing is enabled with defaults.
+	// The block, including headers, is read at startup. A change requires a restart.
 	Tracing *TracingConfig `yaml:"tracing,omitempty" json:"tracing,omitempty"`
+
+	// Metrics configures optional OTLP metrics export. When nil, no metrics are exported.
+	// The block is read at startup, same as tracing. A change requires a restart.
+	Metrics *MetricsConfig `yaml:"metrics,omitempty" json:"metrics,omitempty"`
 
 	// Security configures security features such as schema pinning. When nil, defaults apply.
 	Security *GatewaySecurityConfig `yaml:"security,omitempty" json:"security,omitempty"`

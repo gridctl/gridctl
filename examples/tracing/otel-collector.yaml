@@ -1,0 +1,35 @@
+# Traces and metrics to a local OpenTelemetry Collector.
+#
+# The endpoints are pathless. gridctl appends /v1/traces and /v1/metrics.
+# Header values are variable references, never literals.
+#
+# Start the collector (see otel-collector-config.yaml):
+#   docker run --rm -p 4318:4318 \
+#     -v "$PWD/examples/tracing/otel-collector-config.yaml:/etc/otelcol/config.yaml:ro" \
+#     otel/opentelemetry-collector:0.163.1@sha256:f0e23036dce3db3f9cb80d907c75a0d034cd32e93511a1943482d46129b9ae9c \
+#     --config /etc/otelcol/config.yaml
+#
+# Then: gridctl var set OTEL_HEADER <token>
+#       gridctl apply examples/tracing/otel-collector.yaml
+
+version: "1"
+name: otel-collector-example
+
+gateway:
+  tracing:
+    export: otlp
+    endpoint: http://localhost:4318
+    headers:
+      X-Scope-OrgID: ${var:OTEL_HEADER}
+  metrics:
+    otlp:
+      endpoint: http://localhost:4318
+      interval: 60s
+      headers:
+        X-Scope-OrgID: ${var:OTEL_HEADER}
+
+network:
+  name: otel-collector-net
+  driver: bridge
+
+mcp-servers: []

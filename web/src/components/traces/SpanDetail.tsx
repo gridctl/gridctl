@@ -35,19 +35,29 @@ function spanEndIso(span: Span): string | undefined {
 // MCP-first promotion: these attributes render as named fields at the top;
 // anything else collapses under "Other attributes".
 const PROMOTED_FIELDS: { label: string; keys: string[]; format?: (v: string) => string }[] = [
-  { label: 'Tool', keys: ['mcp.tool.name', 'gen_ai.tool.name', 'tool.name'] },
-  { label: 'Server', keys: ['server.name', 'mcp.server.name'] },
-  { label: 'Client', keys: ['mcp.client.name'] },
-  { label: 'Transport', keys: ['network.transport'] },
-  { label: 'Replica', keys: ['mcp.replica.id'] },
+  { label: 'Tool', keys: ['gen_ai.tool.name', 'mcp.tool.name', 'tool.name'] },
+  { label: 'Server', keys: ['gridctl.server.name', 'server.name', 'mcp.server.name'] },
+  { label: 'Client', keys: ['gridctl.client.name', 'mcp.client.name'] },
+  { label: 'Transport', keys: ['gridctl.transport', 'network.transport'] },
+  { label: 'Replica', keys: ['gridctl.replica.id', 'mcp.replica.id'] },
   {
     label: 'Input tokens',
-    keys: ['gen_ai.usage.input_tokens'],
+    keys: ['gridctl.usage.input_tokens', 'gen_ai.usage.input_tokens'],
     format: (v) => formatCompactNumber(Number(v)),
   },
   {
     label: 'Output tokens',
-    keys: ['gen_ai.usage.output_tokens'],
+    keys: ['gridctl.usage.output_tokens', 'gen_ai.usage.output_tokens'],
+    format: (v) => formatCompactNumber(Number(v)),
+  },
+  {
+    label: 'Cache read tokens',
+    keys: ['gridctl.usage.cache_read_tokens', 'gen_ai.usage.cache_read.input_tokens'],
+    format: (v) => formatCompactNumber(Number(v)),
+  },
+  {
+    label: 'Cache creation tokens',
+    keys: ['gridctl.usage.cache_creation_tokens', 'gen_ai.usage.cache_creation.input_tokens'],
     format: (v) => formatCompactNumber(Number(v)),
   },
 ];

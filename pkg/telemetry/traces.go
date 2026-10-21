@@ -11,12 +11,9 @@ import (
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"gopkg.in/natefinch/lumberjack.v2"
-)
 
-// serverNameAttrKey is the OTel attribute used today by the gateway tracer
-// to tag every server-bound span (see pkg/tracing). It mirrors the
-// well-known `server.name` semantic convention.
-const serverNameAttrKey = "server.name"
+	"github.com/gridctl/gridctl/pkg/tracing"
+)
 
 // TracesFileClient implements otlptrace.Client by writing each batch as one
 // OTLP-JSON line per configured server. The OTel SDK calls UploadTraces with
@@ -214,22 +211,19 @@ func (c *TracesFileClient) logWarn(msg string, args ...any) {
 	}
 }
 
-// extractServerNameFromAttrs walks an attribute slice and returns the value
-// of `server.name` if present. Match strategy is by key only — proto
-// AnyValue strings are accepted; non-string values are coerced to "".
+// extractServerNameFromAttrs walks an attribute slice and returns the server
+// name. New keys win; seeded spans keep the old keys.
 func extractServerNameFromAttrs(attrs []*commonpb.KeyValue) string {
+	values := map[string]string{}
 	for _, kv := range attrs {
-		if kv.Key != serverNameAttrKey {
+		if kv == nil || kv.Value == nil {
 			continue
 		}
-		if kv.Value == nil {
-			return ""
-		}
-		if sv, ok := kv.Value.Value.(*commonpb.AnyValue_StringValue); ok {
-			return sv.StringValue
+		if sv, ok := kv.Value.Value.(*commonpb.AnyValue_StringValue); ok && sv.StringValue != "" {
+			values[kv.Key] = sv.StringValue
 		}
 	}
-	return ""
+	return tracing.FirstString(values, tracing.ServerNameKeys()...)
 }
 
 // Verify that TracesFileClient satisfies the otlptrace.Client interface at

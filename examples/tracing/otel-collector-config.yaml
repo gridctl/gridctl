@@ -1,0 +1,21 @@
+# Collector config for examples/tracing/otel-collector.yaml.
+# OTLP HTTP on 4318, debug exporter at detailed verbosity, traces and metrics.
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [debug]
+    metrics:
+      receivers: [otlp]
+      exporters: [debug]

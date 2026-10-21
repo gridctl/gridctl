@@ -205,6 +205,29 @@ func TestWorkflowFeedbackCycle(t *testing.T) {
 	}
 }
 
+func TestWorkflowExampleStackExclusions(t *testing.T) {
+	root := repoRoot(t)
+	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "gatekeeper.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(workflow)
+	// These files live under examples/ but are not stacks. Stack validation
+	// rejects them on purpose; the gatekeeper find must skip them.
+	for _, path := range []string{
+		"examples/stack-declaration-policy/policy.yaml",
+		"examples/booster-pack/servers.yaml",
+		"examples/tracing/otel-collector-config.yaml",
+	} {
+		if !strings.Contains(text, `-not -path "`+path+`"`) {
+			t.Errorf("example stack validation does not exclude non-stack %s", path)
+		}
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(path))); err != nil {
+			t.Errorf("excluded example path missing: %s", path)
+		}
+	}
+}
+
 func hasNeedsMapping(body string) bool {
 	for _, line := range strings.Split(body, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "needs:") {

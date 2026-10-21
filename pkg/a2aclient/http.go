@@ -14,6 +14,10 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/gridctl/gridctl/pkg/tracing"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 const (
@@ -234,6 +238,8 @@ func (c *Client) RPC(ctx context.Context, endpoint, version, session string, bod
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("A2A-Version", version)
 	c.credentials(req, session)
+	// A2A is not MCP. Trace context goes in the JSON-RPC POST headers only.
+	otel.GetTextMapPropagator().Inject(ctx, tracing.NewCappedCarrier(propagation.HeaderCarrier(req.Header)))
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, 0, transportError(ctx, "rpc_transport_failed", err)

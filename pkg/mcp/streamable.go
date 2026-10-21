@@ -438,6 +438,10 @@ func (s *StreamableHTTPServer) handlePost(w http.ResponseWriter, r *http.Request
 	// group path stays full-surface. The value is stored even when
 	// empty so it shadows anything a route wrapper injected.
 	ctx := withSessionIdentity(r.Context(), gSession)
+	ctx = WithUpstreamProtocolVersion(ctx, gSession.ProtocolVersion)
+	if req.Method == "tools/call" {
+		ctx = parentContextFromRequest(ctx, req.Params, r.Header)
+	}
 
 	resp := s.handleRequest(ctx, session, &req)
 	w.Header().Set("Content-Type", "application/json")

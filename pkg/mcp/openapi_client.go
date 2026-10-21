@@ -16,6 +16,9 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/gridctl/gridctl/pkg/logging"
+	"github.com/gridctl/gridctl/pkg/tracing"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 )
@@ -676,6 +679,8 @@ func (c *OpenAPIClient) executeOperation(ctx context.Context, op *OpenAPIOperati
 	if err := c.applyAuth(req); err != nil {
 		return "", 0, err
 	}
+	// OpenAPI is not MCP. Trace context goes in headers only.
+	otel.GetTextMapPropagator().Inject(ctx, tracing.NewCappedCarrier(propagation.HeaderCarrier(req.Header)))
 
 	// Execute request
 	resp, err := c.httpClient.Do(req)

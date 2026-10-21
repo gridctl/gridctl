@@ -333,6 +333,58 @@ describe('TracesWorkspace', () => {
     expect(screen.queryByText('mcp.client.name')).toBeNull();
   });
 
+  it('prefers gridctl attribute keys and does not derive a server from the span name', async () => {
+    vi.mocked(fetchTraceDetail).mockResolvedValue({
+      traceId: 'abc123def4567890',
+      spans: [
+        {
+          spanId: 's1',
+          parentSpanId: '',
+          name: 'tools/call ping',
+          startTime: '2026-07-23T10:00:00.000Z',
+          endTime: '2026-07-23T10:00:00.042Z',
+          duration: 42,
+          status: 'ok',
+          attributes: {
+            'gridctl.server.name': 'primary',
+            'server.name': 'legacy',
+            'gridctl.usage.cache_read_tokens': '12',
+            'gridctl.usage.cache_creation_tokens': '7',
+          },
+          events: [],
+        },
+        {
+          spanId: 's2',
+          parentSpanId: 's1',
+          name: 'tools/call echo',
+          startTime: '2026-07-23T10:00:00.005Z',
+          duration: 35,
+          status: 'ok',
+          attributes: {},
+          events: [],
+        },
+      ],
+    });
+    renderAt('/traces?trace=abc123def4567890');
+    await waitFor(() => {
+      expect(screen.getByText('tools/call ping')).toBeInTheDocument();
+    });
+    expect(screen.getByText('primary')).toBeInTheDocument();
+    expect(screen.queryByText('legacy')).toBeNull();
+    // The old waterfall fallback split span.name and would label this row
+    // with the whole name. The legend must not grow a second copy.
+    expect(screen.getAllByText('tools/call echo')).toHaveLength(1);
+
+    fireEvent.click(screen.getByText('tools/call ping'));
+    const drawer = await screen.findByTestId('span-detail');
+    expect(within(drawer).getByText('primary')).toBeInTheDocument();
+    expect(within(drawer).queryByText('legacy')).toBeNull();
+    expect(within(drawer).getByText('Cache read tokens')).toBeInTheDocument();
+    expect(within(drawer).getByText('12')).toBeInTheDocument();
+    expect(within(drawer).getByText('Cache creation tokens')).toBeInTheDocument();
+    expect(within(drawer).getByText('7')).toBeInTheDocument();
+  });
+
   it('drops empty-string attributes and collapses the rest under Other', async () => {
     renderAt('/traces?trace=abc123def4567890');
     await waitFor(() => {

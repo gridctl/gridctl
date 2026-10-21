@@ -10,12 +10,13 @@
 # Open Jaeger UI: http://localhost:16686
 #
 # For HTTPS backends (Honeycomb, Grafana Cloud, Grafana Tempo Cloud), set
-# endpoint to an https:// URL — TLS is enabled automatically by the scheme:
+# endpoint to an https:// URL. TLS is enabled automatically by the scheme:
 #   endpoint: https://api.honeycomb.io/v1/traces
 #
-# Note: most cloud backends require auth headers (e.g. x-honeycomb-team).
-# Use an OTel Collector as a proxy to inject headers without embedding
-# credentials in stack.yaml.
+# A pathless URL is posted to /v1/traces. Any other path is used as-is.
+# Most cloud backends require auth headers. Set headers with a ${var:KEY}
+# reference, or use an OTel Collector as a proxy. Do not embed a literal
+# secret. See otel-collector.yaml.
 
 version: "1"
 name: otlp-jaeger-example

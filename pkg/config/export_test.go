@@ -71,6 +71,36 @@ func TestExportStack_Headers(t *testing.T) {
 	})
 }
 
+func TestExportStack_GatewayOTLPHeaders(t *testing.T) {
+	t.Run("rejects tracing literal", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "stack.yaml")
+		source := "name: test\ngateway:\n  tracing:\n    headers:\n      x-honeycomb-team: synthetic-literal-canary\n"
+		require.NoError(t, os.WriteFile(path, []byte(source), 0600))
+		_, _, err := ExportStack(context.Background(), path)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "gateway.tracing.headers[0]")
+		require.NotContains(t, err.Error(), "synthetic-literal-canary")
+	})
+	t.Run("rejects metrics literal", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "stack.yaml")
+		source := "name: test\ngateway:\n  metrics:\n    otlp:\n      endpoint: http://localhost:4318\n      headers:\n        x-honeycomb-team: synthetic-literal-canary\n"
+		require.NoError(t, os.WriteFile(path, []byte(source), 0600))
+		_, _, err := ExportStack(context.Background(), path)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "gateway.metrics.otlp.headers[0]")
+		require.NotContains(t, err.Error(), "synthetic-literal-canary")
+	})
+	t.Run("keeps references", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "stack.yaml")
+		source := "name: test\ngateway:\n  tracing:\n    headers:\n      x-honeycomb-team: \"${var:OTEL_HEADER}\"\n  metrics:\n    otlp:\n      endpoint: http://localhost:4318\n      headers:\n        x-metric: \"${var:OTEL_METRIC}\"\n"
+		require.NoError(t, os.WriteFile(path, []byte(source), 0600))
+		stack, _, err := ExportStack(context.Background(), path)
+		require.NoError(t, err)
+		require.Equal(t, "${var:OTEL_HEADER}", stack.Gateway.Tracing.Headers["x-honeycomb-team"])
+		require.Equal(t, "${var:OTEL_METRIC}", stack.Gateway.Metrics.OTLP.Headers["x-metric"])
+	})
+}
+
 func TestExportStack_PreservesStringsScopesAndDefaults(t *testing.T) {
 	t.Setenv("PROBE", "synthetic-ambient-canary")
 	path := filepath.Join(t.TempDir(), "stack.yaml")

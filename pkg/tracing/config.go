@@ -1,6 +1,7 @@
 // Package tracing provides distributed tracing for the gridctl MCP gateway.
 // It initializes the OpenTelemetry SDK, propagates W3C trace context, stores
-// completed traces in an in-memory ring buffer, and optionally exports to OTLP.
+// completed traces in an in-memory ring buffer, and optionally exports traces
+// and metrics to OTLP.
 package tracing
 
 import "time"
@@ -21,8 +22,12 @@ type Config struct {
 	Export string `yaml:"export,omitempty"`
 
 	// Endpoint is the OTLP endpoint URL (e.g. "http://localhost:4318").
-	// Required when Export is "otlp".
+	// Required when Export is "otlp". A pathless URL is posted to /v1/traces.
 	Endpoint string `yaml:"endpoint,omitempty"`
+
+	// Headers are sent on the OTLP trace export request. Values are redacted
+	// in logs. Names only are logged at startup.
+	Headers map[string]string `yaml:"headers,omitempty"`
 
 	// MaxTraces is the ring buffer capacity. Default: 1000.
 	MaxTraces int `yaml:"max_traces,omitempty"`
@@ -31,6 +36,15 @@ type Config struct {
 	// (e.g. Docker SDK HTTP self-instrumentation) into the in-memory buffer.
 	// The OTLP export path is unaffected. Default: false.
 	IncludeInfra bool `yaml:"include_infra,omitempty"`
+
+	// ServiceName is the resource service.name. Empty falls back to gridctl-gateway.
+	ServiceName string `yaml:"-"`
+
+	// ServiceVersion is the resource service.version.
+	ServiceVersion string `yaml:"-"`
+
+	// Metrics configures the optional OTLP metrics exporter. Nil disables it.
+	Metrics *MetricsConfig `yaml:"-"`
 }
 
 // DefaultConfig returns a Config with sensible defaults.

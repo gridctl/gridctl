@@ -148,7 +148,7 @@ Read the [declaration policy](../stack-declaration-policy.md) and [security evid
 
 ## Protect operational evidence
 
-Logs, traces, metrics, run records, exports, and screenshots can disclose operational data. Review tracing configuration and exporter destinations before enabling external collection. Apply access and retention controls at those destinations. Redaction of recognized patterns or registered values does not cover every transformed or unknown secret, and truncation limits size rather than sensitivity. Run records omit argument and result values, but names and caller-declared labels may still be sensitive.
+Logs, traces, metrics, run records, exports, and screenshots can disclose operational data. Review tracing configuration and exporter destinations before enabling external collection. Apply access and retention controls at those destinations. Redaction of recognized patterns or registered values does not cover every transformed or unknown secret, and truncation limits size rather than sensitivity. Run records omit argument and result values, but names and caller-declared labels may still be sensitive. Upstream baggage is forwarded to every downstream transport and is not copied into traces, logs, or run records. OTLP header values are redacted in logs. Exported labels can still carry a tool name. See [trace context](../usage-observability.md#trace-context).
 
 Recognizable typed capability strings are now masked in gateway diagnostic
 names, labels, and errors. Code-mode logs omit source excerpts and thrown values;
