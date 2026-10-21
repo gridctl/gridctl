@@ -46,7 +46,17 @@ type listChangeNotifier struct {
 	// have changed. Prompt and resource changes live in changed so a
 	// prompts-only flush does not emit tool events.
 	toolsDirty bool
-	changed    map[string]listenKinds
+	changed    map[string]notedChange
+}
+
+// notedChange is one server's prompt or resource change waiting for the
+// next flush. snap is set when tools were captured at trigger time, which
+// unregister needs because the router no longer has the server's tools
+// when the flush runs.
+type notedChange struct {
+	kinds listenKinds
+	tools []string
+	snap  bool
 }
 
 func newListChangeNotifier(g *Gateway, ctx context.Context) *listChangeNotifier {
@@ -97,18 +107,39 @@ func (n *listChangeNotifier) triggerResources(server string) {
 }
 
 func (n *listChangeNotifier) noteChange(server string, prompts, resources bool) {
+	n.noteServerChange(server, prompts, resources, nil, false)
+}
+
+// noteRemoved records a prompt or resource change for a server that is
+// leaving the router. tools is the prefixed tool list captured before
+// removal, so a group subscriber is still told when that server was a
+// member. A later note without a snapshot clears it: the server is
+// present again and live tool names are the membership source.
+func (n *listChangeNotifier) noteRemoved(server string, prompts, resources bool, tools []string) {
+	copied := append([]string(nil), tools...)
+	n.arm(func() { n.noteServerChange(server, prompts, resources, copied, true) })
+}
+
+func (n *listChangeNotifier) noteServerChange(server string, prompts, resources bool, tools []string, snap bool) {
 	if server == "" || (!prompts && !resources) {
 		return
 	}
 	if n.changed == nil {
-		n.changed = make(map[string]listenKinds)
+		n.changed = make(map[string]notedChange)
 	}
 	k := n.changed[server]
 	if prompts {
-		k.prompts = true
+		k.kinds.prompts = true
 	}
 	if resources {
-		k.resources = true
+		k.kinds.resources = true
+	}
+	if snap {
+		k.tools = append([]string(nil), tools...)
+		k.snap = true
+	} else {
+		k.tools = nil
+		k.snap = false
 	}
 	n.changed[server] = k
 }
@@ -256,7 +287,7 @@ func (n *listChangeNotifier) skipToolSubscribers(reason string) {
 	}
 }
 
-func (n *listChangeNotifier) deliverListSubscribers(changes map[string]listenKinds) {
+func (n *listChangeNotifier) deliverListSubscribers(changes map[string]notedChange) {
 	if n.g == nil || n.g.listeners == nil || len(changes) == 0 {
 		return
 	}
@@ -265,16 +296,16 @@ func (n *listChangeNotifier) deliverListSubscribers(changes map[string]listenKin
 			return
 		}
 		var prompts, resources bool
-		for name, kinds := range changes {
-			visible := name == "registry" || n.g.serverVisibleFor(sub.accessID, sub.group, name, sub.principal)
-			if kinds.prompts && sub.kinds.prompts {
+		for name, change := range changes {
+			visible := n.changeVisible(sub, name, change)
+			if change.kinds.prompts && sub.kinds.prompts {
 				if visible {
 					prompts = true
 				} else {
 					n.g.logger.Debug("list_changed skipped", "subscription", string(sub.id), "kind", "prompts", "server", name, "reason", "not visible")
 				}
 			}
-			if kinds.resources && sub.kinds.resources {
+			if change.kinds.resources && sub.kinds.resources {
 				if visible {
 					resources = true
 				} else {
@@ -284,6 +315,16 @@ func (n *listChangeNotifier) deliverListSubscribers(changes map[string]listenKin
 		}
 		n.g.listeners.noteLists(sub.key, prompts, resources)
 	}
+}
+
+func (n *listChangeNotifier) changeVisible(sub *listenSubscriber, name string, change notedChange) bool {
+	if name == "registry" {
+		return true
+	}
+	if change.snap {
+		return n.g.serverVisibleForTools(sub.accessID, sub.group, name, sub.principal, change.tools)
+	}
+	return n.g.serverVisibleFor(sub.accessID, sub.group, name, sub.principal)
 }
 
 // NotifyRegistryChanged tells upstream subscribers that registry prompts,

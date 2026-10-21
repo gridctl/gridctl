@@ -204,11 +204,12 @@ func (c *Client) openListen(ctx context.Context, kinds listenKinds) (*listenStre
 }
 
 // readListenEvents reads the listen stream. The first event must be the
-// acknowledgement. Later notifications are dispatched only when their
-// subscription id matches the request id and allow reports the registration
-// is still current. A false allow, or a cancelled context, stops the read
-// without calling handlers.
-func (c *Client) readListenEvents(ctx context.Context, stream *listenStream, allow func() bool) error {
+// acknowledgement. onAck, when set, runs once that acknowledgement has
+// been accepted, before later events are read. Later notifications are
+// dispatched only when their subscription id matches the request id and
+// allow reports the registration is still current. A false allow, or a
+// cancelled context, stops the read without calling handlers.
+func (c *Client) readListenEvents(ctx context.Context, stream *listenStream, allow func() bool, onAck func()) error {
 	if stream == nil || stream.body == nil {
 		return errors.New("no listen stream")
 	}
@@ -230,7 +231,7 @@ func (c *Client) readListenEvents(ctx context.Context, stream *listenStream, all
 					payload := strings.Join(dataLines, "\n")
 					dataLines = nil
 					if payload != "" {
-						if rerr := c.handleListenPayload(payload, stream.reqID, &sawAck, allow); rerr != nil {
+						if rerr := c.handleListenPayload(payload, stream.reqID, &sawAck, allow, onAck); rerr != nil {
 							return rerr
 						}
 					}
@@ -245,7 +246,7 @@ func (c *Client) readListenEvents(ctx context.Context, stream *listenStream, all
 			}
 			if errors.Is(err, io.EOF) && len(dataLines) > 0 {
 				payload := strings.Join(dataLines, "\n")
-				if rerr := c.handleListenPayload(payload, stream.reqID, &sawAck, allow); rerr != nil {
+				if rerr := c.handleListenPayload(payload, stream.reqID, &sawAck, allow, onAck); rerr != nil {
 					return rerr
 				}
 			}
@@ -257,7 +258,7 @@ func (c *Client) readListenEvents(ctx context.Context, stream *listenStream, all
 	}
 }
 
-func (c *Client) handleListenPayload(payload string, reqID json.RawMessage, sawAck *bool, allow func() bool) error {
+func (c *Client) handleListenPayload(payload string, reqID json.RawMessage, sawAck *bool, allow func() bool, onAck func()) error {
 	message, err := classifyPeerMessage([]byte(payload))
 	if err != nil {
 		if c.logger != nil {
@@ -285,6 +286,9 @@ func (c *Client) handleListenPayload(payload string, reqID json.RawMessage, sawA
 			return errors.New("listen acknowledgement subscription id mismatch")
 		}
 		*sawAck = true
+		if onAck != nil {
+			onAck()
+		}
 		return nil
 	}
 	if !listenSubscriptionMatches(payload, reqID) {
@@ -454,6 +458,19 @@ func listenJitter(base time.Duration) time.Duration {
 	return delay
 }
 
+// listenWait sleeps for one reconnect delay. Tests replace it to record
+// the delay the loop chose without waiting out the production backoff.
+var listenWait = func(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
 // startListenLoop opens a downstream subscriptions/listen stream after a
 // registration commit. It does not start when pin verification failed,
 // the client is not the HTTP transport, the era is not stateless, or the
@@ -502,6 +519,7 @@ func (l *listenLoop) run(ctx context.Context, g *Gateway, client *Client, kinds 
 	initial, max := g.listenBackoff()
 	delay := initial
 	var attempt int
+	var consecutive int
 	for {
 		if ctx.Err() != nil || !g.registrationGenIs(l.name, l.gen) {
 			return
@@ -511,12 +529,10 @@ func (l *listenLoop) run(ctx context.Context, g *Gateway, client *Client, kinds 
 			return
 		}
 		attempt++
-		if attempt == 1 {
-			g.logger.Info("listen stream opened", "server", l.name, "attempt", attempt)
-		} else {
+		if attempt > 1 {
 			g.logger.Info("listen stream reconnecting", "server", l.name, "attempt", attempt)
 		}
-		err := g.readDownstreamListen(ctx, l, client, kinds, attempt)
+		acked, err := g.readDownstreamListen(ctx, l, client, kinds, attempt)
 		if ctx.Err() != nil || !g.registrationGenIs(l.name, l.gen) {
 			return
 		}
@@ -525,48 +541,65 @@ func (l *listenLoop) run(ctx context.Context, g *Gateway, client *Client, kinds 
 			return
 		}
 		l.setState(subscriptionStreamClosed)
-		if attempt > 1 {
-			g.logger.Warn("listen stream reconnect failed", "server", l.name, "attempt", attempt, "error", err)
+		// An acknowledged stream, however long it lived, starts the next
+		// wait at the initial delay. Only a connect that never reached
+		// the acknowledgement counts as a failure, and only a second
+		// consecutive failure is a repeated failure.
+		if acked {
+			delay = initial
+			consecutive = 0
+		} else {
+			consecutive++
+			if consecutive > 1 {
+				g.logger.Warn("listen stream reconnect failed", "server", l.name, "attempt", attempt, "error", err)
+			}
 		}
-		timer := time.NewTimer(listenJitter(delay))
-		select {
-		case <-ctx.Done():
-			timer.Stop()
+		if err := listenWait(ctx, listenJitter(delay)); err != nil {
 			return
-		case <-timer.C:
 		}
-		delay *= 2
-		if delay > max {
-			delay = max
+		if !acked {
+			delay *= 2
+			if delay > max {
+				delay = max
+			}
 		}
 	}
 }
 
-func (g *Gateway) readDownstreamListen(ctx context.Context, loop *listenLoop, client *Client, kinds listenKinds, attempt int) error {
+// readDownstreamListen opens one listen stream and reads it. The bool is
+// true when the acknowledgement was accepted. subscriptionStream becomes
+// open only then, and the opened log is written only for the first
+// acknowledged attempt.
+func (g *Gateway) readDownstreamListen(ctx context.Context, loop *listenLoop, client *Client, kinds listenKinds, attempt int) (bool, error) {
 	stream, err := client.openListen(ctx, kinds)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer stream.Close()
 	defer client.clearListenCancel(stream.slot)
 	if ctx.Err() != nil || !g.registrationGenIs(loop.name, loop.gen) || client.Era() != EraStateless {
-		return errStaleRegistration
+		return false, errStaleRegistration
 	}
-	loop.setState(subscriptionStreamOpen)
-	// Events may have been missed while the stream was down. Tool delivery
-	// is fingerprinted, so an unchanged list does not emit a second
-	// upstream event. The first connect follows registration, which already
-	// notified resources; a later connect reindexes so a gap is not silent.
-	g.refreshServerToolsFromNotification(ctx, loop.name)
-	if attempt > 1 && kinds.resources {
-		g.reindexResources(loop.name)
-	}
-	if ctx.Err() != nil || !g.registrationGenIs(loop.name, loop.gen) {
-		return errStaleRegistration
-	}
-	return client.readListenEvents(ctx, stream, func() bool {
+	var acked bool
+	err = client.readListenEvents(ctx, stream, func() bool {
 		return g.registrationGenIs(loop.name, loop.gen) && client.Era() == EraStateless
+	}, func() {
+		acked = true
+		loop.setState(subscriptionStreamOpen)
+		if attempt == 1 {
+			g.logger.Info("listen stream opened", "server", loop.name, "attempt", attempt)
+		}
+		// Events may have been missed while the stream was down. Tool
+		// delivery is fingerprinted, so an unchanged list does not emit a
+		// second upstream event. The first connect follows registration,
+		// which already notified resources; a later connect reindexes so a
+		// missed resource event is not silent.
+		g.refreshServerToolsFromNotification(ctx, loop.name)
+		if attempt > 1 && kinds.resources {
+			g.reindexResources(loop.name)
+		}
 	})
+	return acked, err
 }
 
 // reindexResources rebuilds one server's resource index and then notifies

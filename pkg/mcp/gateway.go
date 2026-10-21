@@ -1962,9 +1962,13 @@ func (g *Gateway) UnregisterMCPServerContext(ctx context.Context, name string) e
 	g.capabilities.retireServer(name)
 	set := g.router.GetReplicaSet(name)
 	var promptDecl, resourceDecl bool
+	var memberTools []string
 	if set != nil && set.Client() != nil {
 		promptDecl = declares(set.Client(), wantsPrompts)
 		resourceDecl = declares(set.Client(), wantsResources)
+		if promptDecl || resourceDecl {
+			memberTools = g.router.ServerToolNames(name)
+		}
 	}
 	g.router.RemoveClient(name)
 	if set != nil {
@@ -1987,10 +1991,10 @@ func (g *Gateway) UnregisterMCPServerContext(ctx context.Context, name string) e
 	g.router.RefreshTools()
 	if g.listChanges != nil {
 		if promptDecl {
-			g.listChanges.triggerPrompts(name)
+			g.listChanges.noteRemoved(name, true, false, memberTools)
 		}
 		if resourceDecl {
-			g.listChanges.triggerResources(name)
+			g.listChanges.noteRemoved(name, false, true, memberTools)
 		}
 	}
 	var cleanupErrors []error

@@ -61,7 +61,7 @@ func init() {
 	flag.BoolVar(&sseMode, "sse", false, "Enable SSE response format")
 	flag.StringVar(&protocol, "protocol", "", "Protocol generation: empty for legacy handshake, 2026-07-28 for stateless")
 	flag.BoolVar(&sseServerRequest, "sse-server-request", false, "In SSE mode, emit a ping and a notification before tools/call and wait for the pong")
-	flag.BoolVar(&listChanged, "list-changed", false, "Declare tools.listChanged and emit notifications/tools/list_changed on the POST SSE stream")
+	flag.BoolVar(&listChanged, "list-changed", false, "Declare tools.listChanged and add mutate_tools; handshake mode emits the notification on the POST SSE stream, modern mode serves subscriptions/listen")
 	flag.BoolVar(&serverCard, "server-card", false, "Serve /mcp/server-card and /.well-known/ai-catalog.json without the bearer check")
 	flag.BoolVar(&destructiveTool, "destructive-tool", false, "Append a purge tool with destructiveHint true; existing fixtures keep their tool counts without this flag")
 	flag.StringVar(&serverCardOrigin, "server-card-origin", "", "Emit this URL as the card remote instead of this process's /mcp URL")
@@ -311,9 +311,8 @@ func handleMCP(w http.ResponseWriter, r *http.Request) {
 }
 
 type parkedListener struct {
-	id      json.RawMessage
-	w       http.ResponseWriter
-	flusher http.Flusher
+	id     json.RawMessage
+	notify chan struct{}
 }
 
 func handleSubscriptionsListen(w http.ResponseWriter, r *http.Request, req Request) {
@@ -337,7 +336,10 @@ func handleSubscriptionsListen(w http.ResponseWriter, r *http.Request, req Reque
 	if len(id) == 0 {
 		id = json.RawMessage("null")
 	}
-	listener := &parkedListener{id: append(json.RawMessage(nil), id...), w: w, flusher: flusher}
+	// Writes stay on this handler. notifyParkedListeners only signals, so
+	// a mutate call cannot use the ResponseWriter after this handler
+	// returns or race a second mutate on the same writer.
+	listener := &parkedListener{id: append(json.RawMessage(nil), id...), notify: make(chan struct{}, 1)}
 	listenMu.Lock()
 	parked = append(parked, listener)
 	listenMu.Unlock()
@@ -358,7 +360,15 @@ func handleSubscriptionsListen(w http.ResponseWriter, r *http.Request, req Reque
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/subscriptions/acknowledged\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/subscriptionId\":%s},\"notifications\":{\"toolsListChanged\":true}}}\n\n", id)
 	flusher.Flush()
-	<-r.Context().Done()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-listener.notify:
+			fmt.Fprintf(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/subscriptionId\":%s}}}\n\n", id)
+			flusher.Flush()
+		}
+	}
 }
 
 func notifyParkedListeners() {
@@ -366,8 +376,10 @@ func notifyParkedListeners() {
 	current := append([]*parkedListener(nil), parked...)
 	listenMu.Unlock()
 	for _, listener := range current {
-		fmt.Fprintf(listener.w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/subscriptionId\":%s}}}\n\n", listener.id)
-		listener.flusher.Flush()
+		select {
+		case listener.notify <- struct{}{}:
+		default:
+		}
 	}
 }
 

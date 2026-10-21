@@ -3,6 +3,7 @@ package mcp
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -321,11 +323,11 @@ func TestListen_ScopeGroupRegistryAndClose(t *testing.T) {
 	g.SetClientAccessPolicy(NewClientAccessPolicy(&ClientAccessSpec{
 		Default: "deny",
 		Profiles: map[string]ClientProfileSpec{
-			"alice": {Servers: []string{"alpha"}},
+			"alice": {Servers: []string{"alpha", "meta"}},
 		},
 	}))
 	g.SetGroupPolicy(NewGroupPolicy(GroupsSpec{
-		"release": {Servers: []string{"alpha"}},
+		"release": {Servers: []string{"alpha", "meta"}},
 		"other":   {Servers: []string{"beta"}},
 	}))
 	ts := openListenServer(t, g)
@@ -359,22 +361,168 @@ func TestListen_ScopeGroupRegistryAndClose(t *testing.T) {
 	if !strings.Contains(string(groupedGot[0]), MethodToolsListChanged) {
 		t.Fatalf("group event = %s", groupedGot[0])
 	}
-	assertNoListChanged(t, hidden.Body, 150*time.Millisecond)
-	assertNoListChanged(t, other.Body, 150*time.Millisecond)
+	// Collect from here so a quiet check cannot leave a second reader on
+	// the same body. hidden and other have had no list-changed event yet.
+	visibleEvents := collectSSE(t, visible.Body)
+	groupedEvents := collectSSE(t, grouped.Body)
+	hiddenEvents := collectSSE(t, hidden.Body)
+	otherEvents := collectSSE(t, other.Body)
+	toolsEvents := collectSSE(t, toolsOnly.Body)
 
 	g.NotifyRegistryChanged()
-	reg := readSSEData(t, visible.Body, 2, 2*time.Second)
-	joined := string(reg[0]) + string(reg[1])
-	if strings.Count(joined, MethodPromptsListChanged) != 1 || strings.Count(joined, MethodResourcesListChanged) != 1 {
-		t.Fatalf("registry events = %s", joined)
+	reg := visibleEvents.wait(t, 2, 2*time.Second)
+	if countSubstr(reg, MethodPromptsListChanged) != 1 || countSubstr(reg, MethodResourcesListChanged) != 1 {
+		t.Fatalf("registry events = %v", reg)
 	}
-	assertNoListChanged(t, toolsOnly.Body, 150*time.Millisecond)
+	if toolsEvents.waitCount(t, 0, 150*time.Millisecond) != 0 {
+		t.Fatalf("tools-only registry events = %v", toolsEvents.snapshot())
+	}
+	for _, events := range []*sseCollect{groupedEvents, hiddenEvents, otherEvents} {
+		got := events.wait(t, 2, 2*time.Second)
+		if countSubstr(got, MethodPromptsListChanged) != 1 || countSubstr(got, MethodResourcesListChanged) != 1 {
+			t.Fatalf("registry events = %v", got)
+		}
+	}
+
+	g.listChanges.triggerPrompts("meta")
+	g.listChanges.triggerResources("meta")
+	for _, events := range []*sseCollect{visibleEvents, groupedEvents} {
+		got := events.wait(t, 4, 2*time.Second)
+		if countSubstr(got[2:], MethodPromptsListChanged) != 1 || countSubstr(got[2:], MethodResourcesListChanged) != 1 {
+			t.Fatalf("meta events = %v", got)
+		}
+	}
+	if hiddenEvents.waitCount(t, 2, 150*time.Millisecond) != 2 || otherEvents.waitCount(t, 2, 150*time.Millisecond) != 2 {
+		t.Fatalf("hidden=%v other=%v", hiddenEvents.snapshot(), otherEvents.snapshot())
+	}
+	if toolsEvents.waitCount(t, 0, 150*time.Millisecond) != 0 {
+		t.Fatalf("tools-only meta events = %v", toolsEvents.snapshot())
+	}
+
+	beforeCode := visibleEvents.waitCount(t, 4, time.Second)
+	beforeGroup := groupedEvents.waitCount(t, 4, time.Second)
+	g.SetCodeMode(time.Second)
+	g.Router().AddClient(&listChangedStub{name: "alpha", tools: []Tool{testTool("echo", "changed")}})
+	g.Router().RefreshTools()
+	if visibleEvents.waitCount(t, beforeCode, 150*time.Millisecond) != beforeCode || groupedEvents.waitCount(t, beforeGroup, 150*time.Millisecond) != beforeGroup {
+		t.Fatalf("code mode delivered tools: visible=%v grouped=%v", visibleEvents.snapshot(), groupedEvents.snapshot())
+	}
+	g.mu.Lock()
+	g.codeMode = nil
+	g.codeModeStr = "off"
+	g.mu.Unlock()
+	g.Router().AddClient(&listChangedStub{name: "alpha", tools: []Tool{testTool("echo", "again")}})
+	g.Router().RefreshTools()
+	resumed := visibleEvents.wait(t, beforeCode+1, 2*time.Second)
+	if !strings.Contains(resumed[len(resumed)-1], MethodToolsListChanged) {
+		t.Fatalf("code mode resume = %s", resumed[len(resumed)-1])
+	}
+	groupedResume := groupedEvents.wait(t, beforeGroup+1, 2*time.Second)
+	if !strings.Contains(groupedResume[len(groupedResume)-1], MethodToolsListChanged) {
+		t.Fatalf("group code mode resume = %s", groupedResume[len(groupedResume)-1])
+	}
+
+	if err := g.UnregisterMCPServerContext(context.Background(), "meta"); err != nil {
+		t.Fatal(err)
+	}
+	// Removal also drops meta's tools, so a subscriber that could see meta
+	// gets tools, prompts, and resources. Group membership uses the tool
+	// names captured before RemoveClient.
+	removed := groupedEvents.wait(t, beforeGroup+4, 2*time.Second)
+	tail := removed[beforeGroup+1:]
+	if countSubstr(tail, MethodPromptsListChanged) != 1 || countSubstr(tail, MethodResourcesListChanged) != 1 {
+		t.Fatalf("group unregister events = %v", tail)
+	}
+	if hiddenEvents.waitCount(t, 2, 150*time.Millisecond) != 2 || otherEvents.waitCount(t, 2, 150*time.Millisecond) != 2 {
+		t.Fatalf("hidden=%v other=%v", hiddenEvents.snapshot(), otherEvents.snapshot())
+	}
+	visibleRemoved := visibleEvents.wait(t, beforeCode+4, 2*time.Second)
+	if countSubstr(visibleRemoved[beforeCode+1:], MethodPromptsListChanged) != 1 {
+		t.Fatalf("visible unregister events = %v", visibleRemoved[beforeCode+1:])
+	}
 
 	g.Close()
-	final := readSSEData(t, visible.Body, 1, 2*time.Second)
-	if !strings.Contains(string(final[0]), `"resultType":"complete"`) {
-		t.Fatalf("close result = %s", final[0])
+	final := visibleEvents.wait(t, beforeCode+5, 2*time.Second)
+	if !strings.Contains(final[len(final)-1], `"resultType":"complete"`) {
+		t.Fatalf("close result = %s", final[len(final)-1])
 	}
+}
+
+type sseCollect struct {
+	mu     sync.Mutex
+	events []string
+}
+
+func collectSSE(t *testing.T, body io.Reader) *sseCollect {
+	t.Helper()
+	c := &sseCollect{}
+	go func() {
+		reader := bufio.NewReader(body)
+		var lines []string
+		for {
+			line, err := reader.ReadString('\n')
+			if len(line) > 0 {
+				trimmed := strings.TrimRight(line, "\r\n")
+				if trimmed == "" && len(lines) > 0 {
+					payload := strings.Join(lines, "\n")
+					lines = nil
+					c.mu.Lock()
+					c.events = append(c.events, payload)
+					c.mu.Unlock()
+				} else if value, ok := sseDataField([]byte(trimmed)); ok {
+					lines = append(lines, value)
+				}
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	return c
+}
+
+func (c *sseCollect) snapshot() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.events...)
+}
+
+func (c *sseCollect) wait(t *testing.T, n int, timeout time.Duration) []string {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		got := c.snapshot()
+		if len(got) >= n {
+			return got
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("got %d SSE events, want %d: %v", len(got), n, got)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func (c *sseCollect) waitCount(t *testing.T, n int, timeout time.Duration) int {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		got := len(c.snapshot())
+		if n > 0 && got >= n {
+			return got
+		}
+		if time.Now().After(deadline) {
+			return got
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func countSubstr(events []string, sub string) int {
+	n := 0
+	for _, event := range events {
+		n += strings.Count(event, sub)
+	}
+	return n
 }
 
 func assertNoListChanged(t *testing.T, body io.Reader, quiet time.Duration) {

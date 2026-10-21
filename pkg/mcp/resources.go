@@ -130,13 +130,21 @@ func (g *Gateway) serverVisible(ctx context.Context, server string) bool {
 // group check. The name "registry" is not special here; callers that treat
 // registry changes as universally visible do that themselves.
 func (g *Gateway) serverVisibleFor(accessID, group, server string, principal bool) bool {
+	if group == "" {
+		return g.clientAccessPolicy().forPrincipal(principal).AllowsServer(accessID, server)
+	}
+	return g.serverVisibleForTools(accessID, group, server, principal, g.router.ServerToolNames(server))
+}
+
+// serverVisibleForTools is serverVisibleFor with a caller-supplied tool
+// list. Unregister passes the names captured before RemoveClient, because
+// the router no longer has them when the flush decides group membership.
+func (g *Gateway) serverVisibleForTools(accessID, group, server string, principal bool, tools []string) bool {
 	if !g.clientAccessPolicy().forPrincipal(principal).AllowsServer(accessID, server) {
 		return false
 	}
-	if group != "" {
-		if !g.CurrentGroupPolicy().ServerIsMember(group, server, g.router.ServerToolNames(server)) {
-			return false
-		}
+	if group != "" && !g.CurrentGroupPolicy().ServerIsMember(group, server, tools) {
+		return false
 	}
 	return true
 }
