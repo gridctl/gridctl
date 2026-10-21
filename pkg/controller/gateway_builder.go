@@ -1859,6 +1859,7 @@ func refreshRegistry(ctx context.Context, inst *GatewayInstance, home string, lo
 		inst.Gateway.Router().RemoveClient("registry")
 	}
 	inst.Gateway.Router().RefreshTools()
+	inst.Gateway.NotifyRegistryChanged()
 	syncSkillPins(inst, logger)
 	reconcileSkillProjections(ctx, inst, home, logger)
 }

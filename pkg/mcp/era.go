@@ -54,6 +54,10 @@ const (
 	metaKeyClientCapabilities = "io.modelcontextprotocol/clientCapabilities"
 	metaKeyClientInfo         = "io.modelcontextprotocol/clientInfo"
 	metaKeyServerInfo         = "io.modelcontextprotocol/serverInfo"
+	// metaKeySubscriptionID correlates a listen-stream notification with the
+	// subscriptions/listen request that opened the stream. The value is the
+	// request id as sent, not a server-minted token.
+	metaKeySubscriptionID = "io.modelcontextprotocol/subscriptionId"
 )
 
 // TasksExtensionID is the identifier of the official MCP tasks

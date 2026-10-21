@@ -31,6 +31,8 @@
 server:
   - server-stateless:sep-2575-server-rejects-undeclared-capability # unknown tool is -32602, not the suite's -32021 missing-capability rejection
   - server-stateless:sep-2575-missing-capability-http-400 # suite tool test_missing_capability is not listed, so the HTTP status is untestable
+  - server-stateless:sep-2575-server-sends-tools-list-changed-on-subscription # suite mutates tools the group does not host, so no list change is emitted
+  - server-stateless:sep-2575-server-sends-prompts-list-changed-on-subscription # suite mutates prompts the group does not host, so no list change is emitted
   - completion-complete:completion-complete # completion/complete is not implemented
   - tools-call-image:tools-call-image # suite tool test_image_content is not implemented
   - tools-call-audio:tools-call-audio # suite tool test_audio_content is not implemented

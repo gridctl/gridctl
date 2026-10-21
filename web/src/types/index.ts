@@ -237,6 +237,8 @@ export interface MCPServerStatus {
   enabled?: boolean;
   // Field names applied from the active override file.
   overrides?: string[];
+  // Downstream subscriptions/listen stream. Absent for handshake, stdio, process, OpenAPI, and A2A servers.
+  subscriptionStream?: 'open' | 'closed' | 'unsupported';
 }
 
 // Per-server downstream authorization detail from GET /api/auth/servers.
@@ -526,6 +528,7 @@ export interface MCPServerNodeData extends NodeDataBase {
   // Tool whitelist from the stack YAML — present when the operator has
   // curated a subset of the server's tools. Drives the canvas "curated" badge.
   toolWhitelist?: string[];
+  subscriptionStream?: 'open' | 'closed' | 'unsupported';
   // Live autoscale snapshot — drives the ×current/target badge and decision ring
   // on the canvas node, and powers the Sidebar Scaling section.
   autoscale?: AutoscaleStatus;

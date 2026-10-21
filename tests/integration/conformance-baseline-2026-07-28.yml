@@ -28,6 +28,7 @@ server:
   - server-stateless:sep-2575-missing-capability-http-400 # suite tool test_missing_capability is not implemented
   - server-stateless:sep-2575-http-server-no-independent-requests-on-stream # suite tool test_streaming_elicitation is not implemented
   - server-stateless:sep-2575-server-no-log-without-loglevel # suite tool test_logging_tool is not implemented
+  - server-stateless:sep-2575-server-sends-tools-list-changed-on-subscription # suite mutates tools the gateway does not host, so no list change is emitted
   - completion-complete:completion-complete # completion/complete is not implemented
   - tools-call-simple-text:tools-call-simple-text # suite tool test_simple_text is not implemented
   - tools-call-image:tools-call-image # suite tool test_image_content is not implemented

@@ -892,7 +892,12 @@ func (s *StreamableHTTPServer) pruneExpired(id string) {
 }
 
 // Close tears down all active sessions and cancels their SSE streams.
+// Open subscriptions/listen streams are ended the same way so a shutdown
+// can write the final result before the handler returns.
 func (s *StreamableHTTPServer) Close() {
+	if s.gateway != nil && s.gateway.listeners != nil {
+		s.gateway.listeners.CloseAll()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for id, session := range s.sessions {
