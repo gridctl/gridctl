@@ -62,12 +62,14 @@ is_excepted() {
 }
 
 # booster-pack/servers.yaml is a stack fragment, not a runnable stack.
+# otel-collector-config.yaml is a collector config, not a stack.
 # Fragments cannot declare name or network, so validate would reject it.
 mapfile -t files < <(find "$CHECK_ROOT/examples" -name "*.yaml" \
   -not -name "skills.yaml" \
   -not -name "gridctl-pack.yaml" \
   -not -name "gateway-remote.yaml" \
   -not -path "*/stack-declaration-policy/policy.yaml" \
+  -not -path "*/tracing/otel-collector-config.yaml" \
   -not -path "*/booster-pack/servers.yaml" | sort)
 
 if [ "${#files[@]}" -eq 0 ]; then

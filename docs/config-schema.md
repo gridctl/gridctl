@@ -240,7 +240,8 @@ gateway:
 | `sampling` | float | No | `1.0` | Head-based sampling rate `[0.0–1.0]`. `1.0` samples all traces |
 | `retention` | string | No | `"24h"` | How long completed traces are kept in the ring buffer. Accepts Go duration strings (e.g. `"1h"`, `"24h"`) |
 | `export` | string | No | `""` | Exporter type: `"otlp"` to enable OTLP HTTP export, or `""` to disable |
-| `endpoint` | string | No | `""` | OTLP HTTP endpoint URL. Required when `export` is `"otlp"`. `http://` uses plain HTTP; `https://` uses TLS |
+| `endpoint` | string | No | `""` | OTLP HTTP endpoint URL. Required when `export` is `"otlp"`. `http://` uses plain HTTP; `https://` uses TLS. A pathless URL, or a URL whose path is `/`, is posted to `/v1/traces`. Any other path is used as-is |
+| `headers` | map | No |  | Extra headers on the OTLP trace export request. Values expand `${var:KEY}` and `${secret:}`. Names are logged; values are redacted. Use a variable reference, not a literal |
 | `max_traces` | int | No | `1000` | Ring buffer capacity in number of traces |
 | `include_infra` | bool | No | `false` | Admit spans from non-gridctl instrumentation scopes (e.g. Docker SDK HTTP self-instrumentation) into the UI trace buffer. OTLP export is unaffected |
 
@@ -265,7 +266,46 @@ gateway:
 ```
 
 > Cloud backends typically require auth headers (e.g. `x-honeycomb-team` for Honeycomb).
-> Use an OTel Collector as a proxy to inject headers without embedding credentials in `stack.yaml`.
+> Set `headers` with a `${var:KEY}` reference, or use an OTel Collector as a proxy.
+> Do not put a literal secret in `stack.yaml`.
+
+`gateway.tracing`, including `headers` and `endpoint`, is read at startup. A change requires a restart.
+
+**Example - header from the variable store:**
+
+```yaml
+gateway:
+  tracing:
+    export: otlp
+    endpoint: http://localhost:4318
+    headers:
+      x-honeycomb-team: ${var:OTEL_HEADER}
+```
+
+### Metrics
+
+Optional OTLP metrics export. When the block is omitted, no metrics are exported and the in-memory token counters are unchanged. HTTP/protobuf only. There is no `protocol` field and no Prometheus scrape endpoint.
+
+The block is read at startup, the same as tracing. A change requires a restart. An unreachable collector does not block startup or tool calls.
+
+```yaml
+gateway:
+  metrics:
+    otlp:
+      endpoint: http://localhost:4318
+      interval: 60s
+      headers:
+        x-honeycomb-team: ${var:OTEL_HEADER}
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `endpoint` | string | Yes, when the block is present |  | OTLP HTTP endpoint URL. A pathless URL, or a URL whose path is `/`, is posted to `/v1/metrics`. Any other path is used as-is |
+| `headers` | map | No |  | Extra headers on the export request. Expanded and redacted like tracing headers. Use `${var:OTEL_HEADER}`, never a literal |
+| `interval` | string | No | `60s` | Go duration string. Minimum `1s` |
+| `timeout` | string | No | `10s` | Go duration string for one export |
+
+`gridctl validate` rejects a block with no `endpoint`, a non-duration `interval`, and an `interval` under one second, and names `gateway.metrics.otlp.<field>`.
 
 ---
 
