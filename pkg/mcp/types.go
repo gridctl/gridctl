@@ -822,6 +822,7 @@ type ResourceContents struct {
 	URI      string `json:"uri"`
 	MimeType string `json:"mimeType,omitempty"`
 	Text     string `json:"text,omitempty"`
+	Blob     string `json:"blob,omitempty"`
 }
 
 // ResourcesReadResult is the response to resources/read.

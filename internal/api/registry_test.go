@@ -902,13 +902,26 @@ func TestDetectContentType(t *testing.T) {
 		{"stack.yaml", "text/yaml"},
 		{"stack.yml", "text/yaml"},
 		{"data.csv", "text/csv"},
+		{"logo.png", "image/png"},
+		{"photo.jpg", "image/jpeg"},
+		{"photo.jpeg", "image/jpeg"},
+		{"animation.gif", "image/gif"},
+		{"icon.svg", "image/svg+xml"},
+		{"image.webp", "image/webp"},
+		{"notes.txt", "text/plain"},
+		{"index.html", "text/html"},
+		{"style.css", "text/css"},
+		{"script.js", "text/javascript"},
+		{"config.toml", "application/toml"},
+		{"data.xml", "application/xml"},
+		{"guide.pdf", "application/pdf"},
 		{"binary.bin", "application/octet-stream"},
 		{"noext", "application/octet-stream"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
-			ct := detectContentType(tt.path)
+			ct := registry.ContentTypeForPath(tt.path)
 			if ct != tt.expected {
 				t.Errorf("detectContentType(%q) = %q, want %q", tt.path, ct, tt.expected)
 			}
@@ -1010,7 +1023,6 @@ func TestHandleRegistry_SkillsBatch_EmptyArray(t *testing.T) {
 		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
-
 
 // TestHandleRegistry_SkillPut_PreservesExtra locks in parity between the JSON
 // and YAML entry points: unmodeled frontmatter keys round-trip through the

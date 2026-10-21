@@ -173,6 +173,15 @@ Selected local execution uses Unix process groups for ordinary descendant signal
 
 ## Imported Skills, Packs, and Projection
 
+Skills over MCP serves registry bytes read-only over `/mcp` and grouped MCP
+endpoints under the existing gateway authentication, Host/Origin checks, and
+global skill exposure policy. Only active, policy-visible skills and their
+manifest file set can be read. Dotfiles, symlinks, irregular files, and nested
+skill trees are excluded; rooted reads confine concurrent path replacements.
+Manifest digests prove consistency with the gateway's bytes, not that a
+publisher or skill is trustworthy. A host must still decide whether to load
+the instructions or execute a supporting script.
+
 Importing a skill installs instructions and potentially executable files. Projecting that package into an agent's search path makes the content available for later execution with the agent's permissions. Pack imports extend this boundary to agents, context rules, gateway wiring, and, when `stack:` is set, a pinned checkout that CLI `pack apply` starts as a gateway. A booster fragment is composed into that base gateway rather than started as its own daemon.
 
 | Control | Default and enforcement boundary | Evidence | Limitations |

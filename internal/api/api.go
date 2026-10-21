@@ -799,6 +799,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Sessions   int                      `json:"sessions"`
 		Registry   *registry.RegistryStatus `json:"registry,omitempty"`
 		CodeMode   string                   `json:"code_mode,omitempty"`
+		Extensions []string                 `json:"extensions,omitempty"`
 		TokenUsage *metrics.TokenUsage      `json:"token_usage,omitempty"`
 		StackName  string                   `json:"stack_name,omitempty"`
 		// Home is the resolved home directory this daemon runs under, so
@@ -822,6 +823,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		MCPServers: s.getMCPServerStatuses(r.Context()),
 		Resources:  s.getResourceStatuses(r.Context()),
 		Sessions:   s.gateway.SessionCount(),
+		Extensions: s.gateway.DeclaredExtensions(),
 	}
 	// Only expose stack_name when a user-defined stack is loaded.
 	// The embedded gateway uses "gridctl" as its default name even in stackless

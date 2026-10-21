@@ -61,9 +61,10 @@ func (s *AgentSkill) Validate() error {
 
 // SkillFile represents a file within a skill directory.
 type SkillFile struct {
-	Path  string `json:"path"`  // Relative path within the skill dir (e.g., "scripts/lint.sh")
-	Size  int64  `json:"size"`  // File size in bytes
-	IsDir bool   `json:"isDir"` // True for directories
+	Symlink bool   `json:"symlink,omitempty"`
+	Path    string `json:"path"`  // Relative path within the skill dir (e.g., "scripts/lint.sh")
+	Size    int64  `json:"size"`  // File size in bytes
+	IsDir   bool   `json:"isDir"` // True for directories
 }
 
 // RegistryStatus contains summary statistics.

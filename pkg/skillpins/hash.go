@@ -1,6 +1,7 @@
 package skillpins
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -29,7 +30,7 @@ type SkillSource interface {
 }
 
 // ErrDigestUnavailable marks a digest pass that could not read the skill's
-// content (an unreadable supporting file, e.g. a dangling symlink). It is
+// content (for example, a supporting file removed during hashing). It is
 // deliberately distinct from registry.ErrNotFound: consumers must never
 // confuse "cannot hash this skill" with "this skill does not exist" — the
 // former is a fail-closed condition, the latter a reset hint.
@@ -66,9 +67,9 @@ func hashBytes(data []byte) string {
 // digest set. Excluded: directories (walked, not hashed), dotfiles in any
 // path component (.origin.json mutates on every import/sync and would
 // manufacture drift; other dotfiles are tool metadata by convention), and
-// atomic-write temp files.
+// atomic-write temp files, and symbolic links.
 func digestedFile(f registry.SkillFile) bool {
-	if f.IsDir {
+	if f.IsDir || f.Symlink {
 		return false
 	}
 	if strings.HasSuffix(f.Path, ".tmp") {
@@ -89,14 +90,49 @@ func digestedFile(f registry.SkillFile) bool {
 // that chain leak would make an unreadable file indistinguishable from a
 // deleted skill.
 func ComputeDigests(src SkillSource, sk *registry.AgentSkill) (skillHash string, files []FileDigest, err error) {
-	skillHash, err = CanonicalSkillHash(sk)
+	manifest, err := ComputeManifest(context.Background(), src, sk)
 	if err != nil {
 		return "", nil, err
 	}
+	for _, f := range manifest.Files[1:] {
+		files = append(files, FileDigest{Path: f.Path, Digest: schemeV1Prefix + f.Digest})
+	}
+	return schemeV1Prefix + manifest.Files[0].Digest, files, nil
+}
+
+// Manifest contains canonical SKILL.md bytes and the complete served file set.
+// Files starts with SKILL.md, followed by supporting files sorted by path.
+type Manifest struct {
+	SkillMD []byte
+	Files   []ManifestFile
+}
+
+// ManifestFile describes the raw bytes hashed, with an unprefixed SHA-256 digest.
+type ManifestFile struct {
+	Path   string
+	Digest string
+	Size   int64
+}
+
+// ComputeManifest hashes all content without publication limits. Cancellation
+// is checked between reads; legacy pin callers use ComputeDigests.
+func ComputeManifest(ctx context.Context, src SkillSource, sk *registry.AgentSkill) (*Manifest, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	cp := *sk
+	cp.State = ""
+	data, err := registry.RenderSkillMD(&cp)
+	if err != nil {
+		return nil, fmt.Errorf("skillpins: rendering canonical SKILL.md for %q: %w", sk.Name, err)
+	}
+	manifest := &Manifest{SkillMD: data, Files: []ManifestFile{{
+		Path: "SKILL.md", Digest: strings.TrimPrefix(hashBytes(data), schemeV1Prefix), Size: int64(len(data)),
+	}}}
 
 	entries, err := src.ListFiles(sk.Name)
 	if err != nil {
-		return "", nil, fmt.Errorf("skillpins: %w: listing files for %q: %v", ErrDigestUnavailable, sk.Name, err)
+		return nil, fmt.Errorf("skillpins: %w: listing files for %q: %v", ErrDigestUnavailable, sk.Name, err)
 	}
 
 	// A subdirectory holding its own SKILL.md is a separate registered
@@ -119,18 +155,29 @@ func ComputeDigests(src SkillSource, sk *registry.AgentSkill) (skillHash string,
 	}
 
 	for _, f := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		p := filepath.ToSlash(f.Path)
 		if !digestedFile(f) || underNestedSkill(p) {
 			continue
 		}
-		data, err := src.ReadFile(sk.Name, f.Path)
-		if err != nil {
-			return "", nil, fmt.Errorf("skillpins: %w: reading %s in %q: %v", ErrDigestUnavailable, f.Path, sk.Name, err)
+		var data []byte
+		if rooted, ok := src.(interface {
+			ReadManifestFile(context.Context, string, string) ([]byte, error)
+		}); ok {
+			data, err = rooted.ReadManifestFile(ctx, sk.Name, f.Path)
+		} else {
+			data, err = src.ReadFile(sk.Name, f.Path)
 		}
-		files = append(files, FileDigest{Path: p, Digest: hashBytes(data)})
+		if err != nil {
+			return nil, fmt.Errorf("skillpins: %w: reading %s in %q: %v", ErrDigestUnavailable, f.Path, sk.Name, err)
+		}
+		manifest.Files = append(manifest.Files, ManifestFile{Path: p, Digest: strings.TrimPrefix(hashBytes(data), schemeV1Prefix), Size: int64(len(data))})
 	}
+	files := manifest.Files[1:]
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
-	return skillHash, files, nil
+	return manifest, nil
 }
 
 // CompositeHash folds a skill hash and its file digests into one fingerprint,

@@ -12,6 +12,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/reload"
+	"github.com/gridctl/gridctl/pkg/skillsext"
 )
 
 // writeSkill writes a minimal valid SKILL.md into <registryDir>/skills/<name>/.
@@ -39,6 +40,7 @@ func TestRegistryDiskWatch_PicksUpOutOfBandSkill(t *testing.T) {
 	store := registry.NewStore(registryDir)
 	srv := registry.New(store)
 	gw := mcp.NewGateway()
+	gw.SetSkillProvider(skillsext.New(store))
 
 	if err := srv.Initialize(context.Background()); err != nil {
 		t.Fatalf("Initialize: %v", err)
@@ -99,6 +101,28 @@ func TestRegistryDiskWatch_PicksUpOutOfBandSkill(t *testing.T) {
 	if gw.Router().GetClient("registry") == nil {
 		t.Error("registry client not registered with the router within deadline")
 	}
+	listed, err := gw.HandleSkillsList(ctx, "")
+	if err != nil || len(listed.Skills) != 1 {
+		t.Fatalf("extension after watcher refresh: %+v, %v", listed, err)
+	}
+	before := listed.Skills[0].Resources[0].Digest
+	file := filepath.Join(skillsDir, "node-state-snapshot", "SKILL.md")
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, append(data, []byte("\nUpdated instructions.\n")...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	deadline = time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		entry, err := gw.HandleSkillsGet(ctx, "skill://registry/node-state-snapshot/SKILL.md")
+		if err == nil && entry.Skill.Resources[0].Digest != before {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("extension manifest cache did not refresh after disk edit")
 }
 
 // TestRegistryDiskWatch_DebouncesMultiFileSkill verifies that writing a skill

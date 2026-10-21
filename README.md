@@ -446,7 +446,7 @@ Learn more → [CLI Reference](docs/cli-reference.md#variables) · [Variable dec
 
 ### Skill Library
 
-Every `SKILL.md` in your registry surfaces to upstream MCP clients as a prompt. Author a skill as `SKILL.md` in any editor, or in the Library workspace. It enters the registry through `gridctl skill add` (a git repo or a local directory), `gridctl skill import <client>`, `gridctl import <client> --kind all`, or a pack. Local-directory import, client-home import, and `--kind` are included in v1.0.0-rc.2. A draft is activated with `gridctl activate`. Which clients can use the prompt channel, and which need a file projection, is in the [per-client matrix](docs/skills.md#how-skills-reach-the-model).
+Active, policy-visible registry skills reach upstream MCP clients as prompts, resources, and through Skills over MCP (`io.modelcontextprotocol/skills`), with file manifests and directory browsing. Author a skill as `SKILL.md` in any editor, or in the Library workspace. It enters the registry through `gridctl skill add` (a git repo or a local directory), `gridctl skill import <client>`, `gridctl import <client> --kind all`, or a pack. Local-directory import, client-home import, and `--kind` are included in v1.0.0-rc.2. A draft is activated with `gridctl activate`. Client support and file projection options are in the [per-client matrix](docs/skills.md#how-skills-reach-the-model).
 
 ```bash
 gridctl skill list                        # Show what's in the registry

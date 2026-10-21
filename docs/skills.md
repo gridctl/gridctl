@@ -1,6 +1,6 @@
 # Skills
 
-Gridctl ships with a skill registry that delivers every active [`SKILL.md`](https://agentskills.io/specification) in your stack to upstream clients over two channels: as an MCP prompt served by the gateway, and (opt-in) as a file projection into each client's native skills directory via `gridctl skill project`. The Library workspace in the web UI is the authoring surface. Terms used here are defined in [Concepts](concepts.md).
+Gridctl ships with a skill registry that delivers active [`SKILL.md`](https://agentskills.io/specification) documents to clients through MCP prompts, the Skills over MCP extension, and opt-in file projection via `gridctl skill project`. The Library workspace in the web UI is the authoring surface. Terms used here are defined in [Concepts](concepts.md).
 
 Skills are prose. Author them as markdown with agentskills.io-compliant frontmatter and store them in the registry directory. Which channel reaches a given client depends on the client: prompt-rendering clients (Gemini CLI, Cursor, Windsurf) see skills as invocable prompts, file-based clients (Antigravity, Grok Build) only see projected files, and several clients support both. See the per-client matrix below.
 
@@ -34,7 +34,7 @@ Frontmatter keys gridctl does not model (client extensions like `argument-hint` 
 
 ## How skills reach the model
 
-Two channels, complementary and per-client.
+Three channels, complementary and per-client.
 
 **MCP prompts (always on).** The registry implements the MCP `prompts/list` and `prompts/get` endpoints. A connected client that renders prompts sees every active skill as a prompt the user can invoke; `prompts/get` returns the post-frontmatter body verbatim. Prompts are user-invoked: the model does not discover them on its own. When the stack declares a `skills:` exposure policy, denied skills are filtered from both prompt and resource surfaces; see [Skill pins and exposure policy](#skill-pins-and-exposure-policy).
 
@@ -42,19 +42,72 @@ Downstream MCP servers that declare `prompts` or `resources` are aggregated besi
 
 **File projection (opt-in).** `gridctl skill project sync <skill>` places selected active skills into native client skill directories, where clients that read skills from disk auto-trigger them from the frontmatter description. See [Projecting skills into clients](#projecting-skills-into-clients).
 
-Not every linked client can use both channels, and some cannot use either:
+**Skills over MCP (always on with registry content).** The gateway declares
+`io.modelcontextprotocol/skills` with `directoryRead: true` beside `resources`
+on `server/discover`. Handshake clients receive the declaration on `initialize`
+only if they declare that extension themselves. Such clients can call
+`skills/list`, `skills/get`, and `resources/directory/read`. The stateless
+generation supports these methods without session negotiation. The extension
+disappears when the registry client is removed.
 
-| Client | MCP prompts | Projected files |
-|---|---|---|
-| Gemini CLI, Cursor, Windsurf | ✓ (slash commands / picker) | — (no projection target in v1) |
-| Claude Code | ✓ | ✓ (`~/.claude/skills/`) |
-| Zed, Goose, OpenCode, VS Code, Grok Build | varies | ✓ (`~/.agents/skills/`) |
-| Antigravity | ✗ (tools-only MCP client) | ✓ (`~/.gemini/config/skills/`) |
-| Claude Desktop | partial (prompt attachments) | ✗ (skills are account-level uploads) |
-| AnythingLLM | ✗ (tools-only) | ✗ (plugin-based skills, no SKILL.md) |
-| LM Studio | unverified (no documented prompt UI in chat) | ✗ (no skills directory; system prompt is per-chat) |
+`skills/list` returns active, policy-visible skills in name order. Each entry
+contains `uri`, the served document's `frontmatter`, and a `resources` manifest
+of file URIs, SHA-256 digests, and byte sizes. A skill whose manifest cannot
+be built is omitted, with one daemon warning per skill per registry generation,
+and the other skills are still listed. `skills/get`, directory reads, and file
+reads for that skill return the error. Denied skills are filtered before any
+manifest hash. Read
+`skill://registry/<name>/SKILL.md` and its supporting files with `resources/read`;
+this read path also works for handshake clients without extension negotiation.
+`resources/list` includes this document alongside `skills://registry/<name>`.
+The global `skills:` policy applies on every call, including group endpoints;
+per-client registry scoping is not supported. No resource-change notifications are
+advertised or sent.
 
-For Antigravity and Grok Build, projection is the only way gridctl skills reach the client at all.
+Served `SKILL.md` bytes are the canonical `registry.RenderSkillMD` rendering
+with `state` removed, matching the skill pin's canonical hash. Frontmatter
+includes preserved extension keys and `acceptance_criteria`. Supporting files
+use their raw bytes. Dot-prefixed components, `.tmp` files, symlinks, irregular
+files, and nested skill trees are excluded. Files are read-only, and relative
+references in the body are not rewritten.
+
+Nested skills have two deviations from the extension specification. A child's
+URI is `skill://registry/<child>/SKILL.md`, rather than the spec's prefix-based
+`skill://registry/<parent>/<child>/SKILL.md`. Its files are absent from the
+parent's manifest, although the spec requires their inclusion. Hosts must take
+the child's URI from `skills/list`; the child's directory cannot be browsed
+under its parent's URI.
+
+The [compatibility baseline](../tests/integration/skills-extension-baseline.md)
+records these deviations, retained legacy resource entries, and the tested
+conformance version.
+
+A manifest exceeding 512 entries (including `SKILL.md`) or 16,777,216 bytes
+becomes `"resources": "dynamic"`. Files remain readable and fully hashed for
+pins, but conforming hosts may decline to load a dynamic skill. The daemon
+warns once per skill per registry generation, and `gridctl skill list` prints
+a warning after its table. `gridctl skill list --json` adds `manifest.digest`
+(the composite hex used by `skill pins approve --expect`), `manifest.files`,
+`manifest.bytes`, and `manifest.dynamic` when the manifest can be hashed. An
+unreadable skill keeps its row, omits `manifest`, sets `manifest_error`, and
+does not fail the command. `GET /api/status` and each gateway
+entry in `gridctl status --json` report declared `extensions`.
+
+Not every linked client can use every channel. Skills over MCP support in the
+following clients is unverified; server conformance alone does not establish
+host support:
+
+| Client | MCP prompts | Projected files | Skills over MCP |
+|---|---|---|---|
+| Gemini CLI, Cursor, Windsurf | ✓ (slash commands / picker) | No projection target in v1 | Unverified |
+| Claude Code | ✓ | ✓ (`~/.claude/skills/`) | Unverified |
+| Zed, Goose, OpenCode, VS Code, Grok Build | varies | ✓ (`~/.agents/skills/`) | Unverified |
+| Antigravity | ✗ (tools-only MCP client) | ✓ (`~/.gemini/config/skills/`) | Unverified |
+| Claude Desktop | partial (prompt attachments) | ✗ (skills are account-level uploads) | Unverified |
+| AnythingLLM | ✗ (tools-only) | ✗ (plugin-based skills, no SKILL.md) | Unverified |
+| LM Studio | unverified (no documented prompt UI in chat) | ✗ (no skills directory; system prompt is per-chat) | Unverified |
+
+For Antigravity and Grok Build, projection remains the documented skill delivery path.
 
 There is no template expansion, no variable substitution, no execution layer. The body is the artifact. If you write `{{servername}}` in your skill, it surfaces to the client as the literal string `{{servername}}`; the client may choose to fill it in, but gridctl never does.
 
@@ -241,6 +294,15 @@ Skills are natural-language documents that agents obey, and after import nothing
 
 **Review.** `gridctl skill pins list|verify|diff|approve|reset` mirrors the `gridctl pins` contract: `--format json` with a `schema_version`, exit codes `0` (clean) / `1` (pin drift) / `2` (infrastructure), an opt-in `--fail-on-findings warn|critical` gate for CI, and `approve --expect <composite_hash>` to bind an approval to the reviewed diff. The same surface exists at `/api/skill-pins`. Not to be confused with `gridctl skill pin <name> <ref>` (singular), which pins a git *source* to a ref.
 
+Pins and extension manifests use the same file set: dot-prefixed components,
+`.tmp` files, symlinks, special filesystem nodes, and nested skill trees are
+excluded. Skipping symlinks changes existing pins that included them. After
+upgrading, run `gridctl skill pins verify`, inspect affected skills with
+`gridctl skill pins diff <skill> --json`, and approve only the reviewed composite
+with `gridctl skill pins approve <skill> --expect <composite_hash>` (plus
+`--reason` when required). Copy a needed link target into a regular supporting
+file inside the skill directory before reviewing if it must remain served.
+
 **Exposure policy.** An optional `skills:` block in stack.yaml globally filters which registry skills are exposed and projected — see the [config schema](./config-schema.md#skills-exposure-policy). Denied skills disappear from `prompts/list`/`resources/list` and are skipped by projection sync, but they keep their registry state, stay visible in the Library and API flagged with the matching rule, and `gridctl apply` warns for every active skill the policy hides. Denial is never silent.
 
 ## Agent definitions
@@ -277,7 +339,7 @@ A short list of choices worth knowing about.
 
 **Execution.** gridctl 0.1.x removed the typed-skill execution surface (TS sandbox, Go plugins, run ledger, approval gates, agent IDE). Skills are prose; upstream clients are responsible for using them. If you need an agent runtime, reach for LangGraph / CrewAI / AutoGen / OpenAI Agents SDK and let gridctl be the MCP gateway underneath. The retired surfaces were `gridctl agent {init,dev,build,validate}`, `gridctl run`, the Agent IDE run ledger, `/api/agent/*`, `/api/playground/*`, and the Stage / Runs / Playground UI workspaces, while today's `gridctl runs` is the separate metadata-only record included in v1.0.0-rc.2, described in [Run records](usage-observability.md#run-records).
 
-**`kind:` in the frontmatter.** File presence used to be the discriminator between flavors. With execution removed there is only one skill flavor (prompt-only); a `kind:` field would carry no information. (Agents are a separate registry kind with their own `AGENT.md` convention, not a skill flavor.)
+**`kind:` in the frontmatter.** File presence used to be the discriminator between flavors. With execution removed, skills are instruction documents delivered through the channels above; a `kind:` field does not select an execution mode. (Agents are a separate registry kind with their own `AGENT.md` convention, not a skill flavor.)
 
 **Template expansion in the body.** The agentskills.io spec is permissive about body content; clients are free to interpret `{{...}}` placeholders however they like. gridctl does not template-expand them server-side; that policy belongs in the client, where the model and the conversation context live.
 

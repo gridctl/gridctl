@@ -135,6 +135,10 @@ Export is semantic, not byte-for-byte: comments and formatting are not preserved
 
 This breaking security correction is included in v1.0.0-rc.1, with a major-version increment under Article VIII. No resolved-export fallback is provided. Verbose apply diagnostics now show counts and transport/auth configuration summaries rather than resolved JSON.
 
+`gridctl status --json` gateway entries include optional `extensions`, the sorted
+extension identifiers reported by the live gateway. The field is omitted when
+none are reported; it describes server availability, not client support.
+
 ## Catalog
 
 Install MCP servers by name instead of hand-writing `command`/`args`/`env`. The catalog merges two sources: a curated set embedded in gridctl (vetted entries with correct inputs and secret flags) and the official [MCP Registry](https://registry.modelcontextprotocol.io) (community publications, not vetted by gridctl). Registry responses are cached for an hour under `~/.gridctl/cache/catalog`; when the registry is unreachable, commands fall back to cached or curated results with a warning. `gridctl search` searches this install catalog. Live tools on a running gateway are `gridctl tools search` and `gridctl call`. The `search` meta-tool a code-mode gateway exposes to LLM clients is unrelated.
@@ -286,7 +290,7 @@ When `gateway.auth` is configured, grouped MCP clients must send the same creden
 
 ## Skills
 
-Skills are prose; the registry surfaces every active `SKILL.md` to prompt-rendering MCP clients as a prompt, and `skill project` places selected skills into native client skill directories for clients that read skills from disk. See [`docs/skills.md`](./skills.md) for the authoring guide and the per-client channel matrix.
+Skills are prose; the registry serves active, policy-visible skills as MCP prompts, resources, and through Skills over MCP. `skill project` places selected skills into native client skill directories for clients that read skills from disk. See [`docs/skills.md`](./skills.md) for the authoring guide and the per-client channel matrix.
 
 The same import pipeline also handles agent definitions: `skill add` discovers `agents/*.md` files alongside `SKILL.md`, and the `--kind agent` flag on `skill list`, `skill remove`, `skill info`, and the `skill project` verbs that act on one kind (`sync`, `unsync`, `adopt`) operates on them. `skill project status` takes no `--kind`: it always reports both kinds in one table. `--kind` defaults to `skill` wherever it exists, so existing command lines behave exactly as before. In `skill project` JSON output every row carries a `kind` field (`"skill"` or `"agent"`); agent rows name their subject in an `agent` field where skill rows use `skill`.
 
@@ -307,6 +311,17 @@ The same import pipeline also handles agent definitions: `skill add` discovers `
 | `gridctl skill project unsync [skill...]` | Remove projections gridctl created (`--all`, `--clients`, `--dry-run`, `--format json` or `--json`; `--kind agent` for agent projections). Copies are backed up before removal; unmanaged files are never touched. |
 | `gridctl skill project adopt <skill>` | Pull a hand-edited copy projection back into the registry skill (`--client <slug>`, singular: adopt operates on one pair; `--format json` or `--json`; exit `0`/`1`/`2`). Backs up the registry `SKILL.md` as `.pre-<sha>`, re-syncs the pair to in-sync, and marks the skill locally edited for `skill update`. Symlinked projections are refused: the registry copy is already the source of truth. `--kind agent` adopts a hand-edited `~/.claude/agents/<name>.md` back into the canonical `AGENT.md` the same way; rendered targets (opencode, copilot, gemini) refuse adopt, since their dialects dropped keys at render time. |
 | `gridctl activate <skill-name>` | Promote a skill from draft to active (exit `0`/`1`/`2`); `-s` / `--stack` to target a stack (auto-detected when only one runs), `--format json` or `--json` for machine output, `-q` / `--quiet` to suppress the success line. |
+
+`gridctl skill list --json` includes `manifest` on skill rows that can be
+hashed: `digest` is the composite hex accepted by `skill pins approve --expect`,
+`files` includes `SKILL.md`, `bytes` totals the served bytes, and `dynamic`
+indicates more than 512 files or 16,777,216 bytes. A skill whose manifest
+cannot be read keeps its row, omits `manifest`, and sets `manifest_error` to
+`digest_unavailable` or `manifest_unavailable`. The command still exits 0 and
+lists the other skills. These summaries hash local registry content, including
+draft, disabled, and policy-hidden skills; they are not the gateway's visible
+skill list. Agent rows do not carry manifests. Human output adds a warning
+after the table for each over-limit skill and for each unreadable manifest.
 
 ## Variables
 

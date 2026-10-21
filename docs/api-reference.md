@@ -200,6 +200,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
 | `mcp-servers` | []object | Status of each MCP server |
 | `resources` | []object | Resource container status |
 | `sessions` | int | Active Streamable HTTP session count (see [`/api/sessions`](#get-apisessions)) |
+| `extensions` | []string | Sorted declared extension identifiers, including `io.modelcontextprotocol/skills` when the registry provider is available; omitted when none are declared |
 | `stack_name` | string | Active stack name (omitted in stackless mode) |
 | `home` | string | Resolved home directory this daemon runs under (omitted when unresolvable); lets CLI subcommands detect a `GRIDCTL_HOME` mismatch |
 | `override` | string | Override file merged into the running stack (omitted when none) |
@@ -3341,9 +3342,19 @@ Lists files in a skill directory.
 
 **Auth:** Yes
 
+Entries include `symlink: true` for symbolic links (otherwise omitted). Special
+filesystem nodes are omitted. This authoring listing is not the filtered Skills
+over MCP manifest; links are excluded from manifests and skill pins.
+
 #### `GET /api/registry/skills/{name}/files/{path...}`
 
 Reads a file from a skill directory. Content-Type is detected from file extension. The `{path...}` segment is variadic, so nested sub-paths (e.g. `references/api/spec.json`) are supported.
+
+The fixed, case-sensitive extension table is shared with Skills over MCP;
+unknown extensions use `application/octet-stream`. Images, text, HTML, CSS,
+JavaScript, TOML, XML, and PDF now have explicit types. Consumers that previously
+required the binary fallback for these files must accept their specific types.
+This authoring endpoint remains separate from the manifest-constrained MCP read path.
 
 **Auth:** Yes
 
@@ -3745,6 +3756,44 @@ per request:
 
 #### `POST /mcp`
 
+Registry Skills over MCP uses `io.modelcontextprotocol/skills` with
+`directoryRead: true` in `capabilities.extensions` on `server/discover`, and
+on `initialize` only for clients that declare the extension. An unavailable
+registry or a handshake session without that declaration receives `-32601`
+for `skills/list`, `skills/get`, and `resources/directory/read`. File reads
+remain available without extension negotiation.
+
+Each skill entry contains `uri`, `frontmatter` parsed from the served canonical
+`SKILL.md` (without `state`), and `resources`: a sorted manifest of `{uri,
+digest, size}` with `SKILL.md` first, or `"dynamic"` above 512 files or
+16,777,216 bytes. Digests use `sha256:<hex>` and sizes count raw bytes. Dynamic
+skills remain readable; hosts may decline them. `resources/list` includes
+both legacy and new document URIs. Nested skills use independent roots and
+are absent from parent manifests; see [Skills](skills.md#how-skills-reach-the-model).
+
+Stateless skills results and registry file reads carry `resultType: "complete"`,
+`ttlMs: 60000`, and `cacheScope: "private"`; handshake results omit these fields.
+There is no pagination. Non-empty skills/directory cursors return `-32602
+invalid cursor`. Missing, inactive, denied, and malformed skill/directory
+URIs return `-32602` with `data.uri` on both generations. `skills/get` reports
+`No skill is served at <uri>`. File-read misses retain `-32002` on handshake
+and `-32602` on stateless, with `data.uri`. Directory URIs have no trailing
+slash. All these methods use the global skill exposure policy, including on
+group endpoints. Policy is applied before a skill is hashed, so a denied skill
+costs no manifest I/O. `skills/list` omits a skill whose manifest cannot be
+built and still returns the other visible skills. `skills/get`,
+`resources/directory/read`, and `resources/read` for the omitted skill return
+the underlying error.
+`GET /api/status` adds optional `extensions` listing declared
+extension identifiers.
+
+`skills/list` returns entries under `skills`; `skills/get` returns one under
+`skill`. Directory results use `resources`, with direct children sorted by
+`name`: files have `uri`, `name`, and `mimeType`; directories use
+`mimeType: "inode/directory"`. The `SKILL.md` child's name and description
+come from frontmatter. A file URI or a directory with no served children is
+not a readable directory.
+
 OAuth handshake sessions retain the raw principal that initialized them. A
 different verified principal on POST, GET, or DELETE receives HTTP 404 with
 body `session expired\n`, leaving the original session untouched. Declared
@@ -3764,9 +3813,13 @@ JSON-RPC 2.0 endpoint for MCP protocol operations.
 | `tools/list` | List available tools |
 | `tools/call` | Call a tool (stateless generation adds MRTR relay: `input_required` results, `requestState`, `inputResponses`) |
 | `prompts/list` | List registry skills, then downstream prompts named `<server>__<prompt>` |
+| `skills/list` | List active registry skills allowed by the global policy, with frontmatter and manifests; rejects non-empty cursors |
+| `skills/get` | Refresh one entry by its exact `skill://registry/<name>/SKILL.md` URI |
+| `resources/directory/read` | List direct children of `skill://registry/<name>` or a supporting directory, without a trailing slash; rejects non-empty cursors |
 | `prompts/get` | Get a registry skill or a prefixed downstream prompt. Downstream messages are relayed verbatim |
-| `resources/list` | List registry `skills://registry/` entries, then downstream resources with unchanged URIs |
+| `resources/list` | List paired registry `skills://registry/<name>` and `skill://registry/<name>/SKILL.md` entries, then downstream resources with unchanged URIs |
 | `resources/read` | Read a registry skill or a downstream resource. URIs are not rewritten. Handshake not-found is `-32002` with `data.uri`; stateless not-found is `-32602` with `data.uri` |
+| `resources/read` (`skill://registry/`) | Read canonical `SKILL.md` or a manifest supporting file; UTF-8 without NUL uses `text`, other bytes use base64 `blob` |
 | `resources/templates/list` | List downstream resource templates. The registry contributes none |
 | `tasks/get`, `tasks/update`, `tasks/cancel` | Tasks-extension proxy, when exactly one stateless server declares the extension |
 | `ping` | Connectivity check (handshake generation only) |

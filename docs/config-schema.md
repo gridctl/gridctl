@@ -1496,8 +1496,8 @@ The same profile also gates downstream prompts and resources at the server
 level. A profile allows a server when `servers:` is empty or contains it, and
 `tools:` is empty or names at least one prefixed tool for that server. Servers
 that fail that test stay hidden. A profile that omits `registry` from
-`servers:` still receives registry skill prompts and `skills://registry/`
-resources. A server `tools:` whitelist narrows tools only; it does not filter
+`servers:` still receives registry skill prompts, resources, and Skills over MCP
+entries under the global skill policy. A server `tools:` whitelist narrows tools only; it does not filter
 that server's prompts or resources. An out-of-scope read or get is
 indistinguishable from an absent one.
 
@@ -1547,7 +1547,7 @@ Tools are filtered by the intersection of the profile and each server's
 `tools:` entry that names a tool hidden by a non-empty server whitelist is
 a warning, not an error: `tool '<server__tool>' is hidden by mcp-servers[<server>].tools and can never be called; the profile may be wider than the whitelist on purpose`. `gridctl validate` exits 2 when that warning is the only finding. Downstream prompts
 and resources use the server-level rule above and are not filtered by that
-whitelist. Registry skill prompts and `skills://registry/` resources stay on
+whitelist. Registry skill prompts, resources, and Skills over MCP stay on
 the skill exposure policy only.
 
 ### Reload semantics
@@ -1742,8 +1742,8 @@ or resource-only server stays hidden on every group endpoint.
 `exclude` is applied first, so a group whose every member tool is excluded
 exposes nothing from that server. A group that excludes only some of a
 server's tools still exposes that server's prompts and resources. Registry
-skill prompts and `skills://registry/` resources keep their current group
-behavior and are not filtered by group membership.
+skill prompts, resources, and Skills over MCP use the global skill policy
+and are not filtered by group membership.
 
 ### Override fields
 
@@ -1774,7 +1774,7 @@ appears in an active skill logs a warning at startup.
 Edits hot-reload: tool, prompt, and resource visibility change on the next
 request, and connected clients pick up membership changes on reconnect.
 Downstream prompts and resources follow the membership rule above. Registry
-skill prompts and `skills://registry/` resources stay visible as today.
+skill prompts, resources, and Skills over MCP remain governed by the global skill policy.
 Link a client to a group with `gridctl link <client> --group <name>`;
 consumption appears in `gridctl groups` and `GET /api/groups`.
 
@@ -1782,7 +1782,7 @@ consumption appears in `gridctl groups` and `GET /api/groups`.
 
 ## Skills (exposure policy)
 
-The optional top-level `skills:` block is a global exposure policy for registry skills: it filters which skills the gateway serves via MCP prompts/resources and which the daemon projects into client skill directories. Omitting the block preserves legacy behavior — every active skill is exposed.
+The optional top-level `skills:` block is a global exposure policy for registry skills: it filters which skills the gateway serves via MCP prompts, resources, and Skills over MCP, and which the daemon projects into client skill directories. Omitting the block exposes every active skill.
 
 Not to be confused with [Skill Sources](#skill-sources) (`~/.gridctl/skills.yaml`, a Library display list that `skill update` does not read); this block decides what an already-registered skill may reach.
 
@@ -1807,7 +1807,7 @@ skills:
 
 Evaluation order per skill name: a `deny` match denies (naming the glob as the rule), then an `allow` match admits, then `default` decides. A denied skill is excluded from `prompts/list`, `resources/list`, `prompts/get`/`resources/read` (indistinguishable from an absent skill on the wire), and projection sync — but denial is a filter, never a state change: the skill keeps its draft/active/disabled state, stays visible in the Library and registry API flagged with the matching rule, and `gridctl apply` prints a warning for every active skill the policy hides. Recorded projections of a newly denied skill are skipped and reported, never silently removed. Unparseable glob patterns are rejected at validation.
 
-The policy is global. Per-client skill scoping remains deferred: a `clients:` profile that omits `registry` still receives registry skill prompts and `skills://registry/` resources, while downstream prompts and resources follow server membership. Edits hot-reload without container restarts. The block is not inherited across `extends` (matching `clients`/`groups`/`limits`).
+The policy is global. A `clients:` profile that omits `registry` still receives registry skills allowed by this policy, while downstream prompts and resources follow server membership. This includes `skills/list`, `skills/get`, `resources/directory/read`, and reads under both `skills://registry/` and `skill://registry/`. Denied skills are absent from extension listings and indistinguishable from missing skills on reads. Group endpoints use the same policy without group-membership filtering. Edits hot-reload without container restarts and take effect on the next request. The block is not inherited across `extends` (matching `clients`/`groups`/`limits`). See [Skills over MCP](skills.md#how-skills-reach-the-model) for negotiation and manifest limits; no new stack field enables it.
 
 ## Model Preferences
 

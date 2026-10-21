@@ -19,7 +19,9 @@ import (
 	gitpkg "github.com/gridctl/gridctl/pkg/git"
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/registry"
+	"github.com/gridctl/gridctl/pkg/skillpins"
 	"github.com/gridctl/gridctl/pkg/skills"
+	"github.com/gridctl/gridctl/pkg/skillsext"
 	"github.com/gridctl/gridctl/pkg/state"
 
 	"github.com/jedib0t/go-pretty/v6/table"
@@ -651,13 +653,15 @@ func runSkillList() error {
 	}
 
 	type skillEntry struct {
-		Name   string `json:"name"`
-		State  string `json:"state"`
-		Source string `json:"source"`
-		Model  string `json:"model,omitempty"`
-		Repo   string `json:"repo,omitempty"`
-		Ref    string `json:"ref,omitempty"`
-		Kind   string `json:"kind,omitempty"`
+		Name          string                     `json:"name"`
+		State         string                     `json:"state"`
+		Source        string                     `json:"source"`
+		Model         string                     `json:"model,omitempty"`
+		Repo          string                     `json:"repo,omitempty"`
+		Ref           string                     `json:"ref,omitempty"`
+		Kind          string                     `json:"kind,omitempty"`
+		Manifest      *skillsext.ManifestSummary `json:"manifest,omitempty"`
+		ManifestError string                     `json:"manifest_error,omitempty"`
 	}
 
 	var entries []skillEntry
@@ -687,6 +691,14 @@ func runSkillList() error {
 		if skillListRemote && entry.Source == "local" {
 			continue
 		}
+		// One unreadable skill must not hide the rest of the registry.
+		manifest, err := skillpins.ComputeManifest(context.Background(), store, sk)
+		if err != nil {
+			entry.ManifestError = skillsext.ManifestErrorCategory(err)
+		} else {
+			summary := skillsext.Summarize(manifest)
+			entry.Manifest = &summary
+		}
 
 		entries = append(entries, entry)
 	}
@@ -707,6 +719,15 @@ func runSkillList() error {
 		t.AppendRow(table.Row{e.Name, e.State, e.Source, e.Model, repo})
 	}
 	t.Render()
+	for _, entry := range entries {
+		if entry.ManifestError != "" {
+			fmt.Printf("warning: skill %s manifest could not be read (%s); it is listed without a manifest and skills/list omits it until the file is readable\n", entry.Name, entry.ManifestError)
+			continue
+		}
+		if entry.Manifest != nil && entry.Manifest.Dynamic {
+			fmt.Printf("warning: skill %s exceeds the Skills over MCP limits (%d files, %d bytes); it is listed without a manifest and conforming hosts may refuse to load it\n", entry.Name, entry.Manifest.Files, entry.Manifest.Bytes)
+		}
+	}
 
 	// Show update notice if available
 	if notice := skills.FormatUpdateNotice(); notice != "" {
