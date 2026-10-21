@@ -284,6 +284,14 @@ type Gateway struct {
 	skillsProvider SkillProvider
 
 	listChanges *listChangeNotifier
+	listeners   *listenRegistry
+
+	// listenLoops is the downstream subscriptions/listen loop per logical
+	// server. Guarded by pendingMu, same as regGen, so cancel and the
+	// generation bump stay in one critical section.
+	listenLoops   map[string]*listenLoop
+	listenInitial time.Duration
+	listenMax     time.Duration
 
 	downstreamMu       sync.Mutex
 	downstreamTimers   map[string]*time.Timer
@@ -318,7 +326,9 @@ func NewGateway() *Gateway {
 		lifeCancel:           lifeCancel,
 		downstreamTimers:     make(map[string]*time.Timer),
 		downstreamDebounce:   defaultDownstreamDebounce,
+		listenLoops:          make(map[string]*listenLoop),
 	}
+	g.listeners = newListenRegistry()
 	g.listChanges = newListChangeNotifier(g, lifeCtx)
 	g.router.SetOnChange(g.listChanges.trigger)
 	return g
@@ -441,8 +451,9 @@ func (g *Gateway) CurrentGroupPolicy() *GroupPolicy {
 // immediately.
 func (g *Gateway) SetSkillPolicy(policy *SkillPolicy) {
 	g.mu.Lock()
-	defer g.mu.Unlock()
 	g.skillPolicy = policy
+	g.mu.Unlock()
+	g.NotifyRegistryChanged()
 }
 
 // CurrentSkillPolicy returns the current skill policy under a read lock.
@@ -1347,6 +1358,10 @@ func (g *Gateway) Close() {
 	if g.listChanges != nil {
 		g.listChanges.close()
 	}
+	g.cancelListenLoops()
+	if g.listeners != nil {
+		g.listeners.CloseAll()
+	}
 	g.stopDownstreamRefreshTimers()
 
 	if err := g.cardTrust.close(context.Background()); err != nil {
@@ -1520,6 +1535,7 @@ func (g *Gateway) RegisterMCPReplicaSet(ctx context.Context, name, policy string
 	// died mid-wait) does not permanently exit the retry loop.
 	g.pendingMu.Lock()
 	g.regGen[name]++
+	g.cancelListenLoopLocked(name)
 	if len(cfgs) > 0 && cfgs[0].A2A {
 		if g.a2aDeclarations == nil {
 			g.a2aDeclarations = make(map[string]bool)
@@ -1623,6 +1639,7 @@ func (g *Gateway) registerReplicaSet(ctx context.Context, name, policy string, c
 	}
 	g.router.AddReplicaSet(NewReplicaSet(name, policy, clients))
 	g.router.RefreshTools()
+	regGen := g.regGen[name]
 	g.pendingMu.Unlock()
 	for _, r := range replaced {
 		closeAgentClient(r.Client())
@@ -1638,7 +1655,27 @@ func (g *Gateway) registerReplicaSet(ctx context.Context, name, policy string, c
 
 	g.logger.Info("registered MCP server", "name", name, "transport", cfgs[0].Transport, "replicas", len(clients), "tools", len(clients[0].Tools()), "duration", time.Since(start))
 	g.scheduleResourceIndex(name)
+	if g.listChanges != nil {
+		if declares(clients[0], wantsPrompts) {
+			g.listChanges.triggerPrompts(name)
+		}
+		if declares(clients[0], wantsResources) {
+			g.listChanges.triggerResources(name)
+		}
+	}
+	// Block mode marks the server before this point. A drifted registration
+	// stays registered so calls fail closed, but it must not open a listen
+	// stream that would deliver the unapproved list.
+	if !g.serverBlocked(name) {
+		g.startListenLoop(name, regGen)
+	}
 	return nil
+}
+
+func (g *Gateway) serverBlocked(name string) bool {
+	g.blockedMu.RLock()
+	defer g.blockedMu.RUnlock()
+	return g.blockedServers[name]
 }
 
 // registrationGenIs reports whether the per-name registration generation
@@ -1852,6 +1889,20 @@ func (g *Gateway) buildAgentClient(ctx context.Context, cfg MCPServerConfig) (re
 			g.scheduleDownstreamToolRefresh(name)
 		})
 	}
+	if hook, ok := agentClient.(interface{ setPromptsChangedHandler(func()) }); ok {
+		name := cfg.Name
+		hook.setPromptsChangedHandler(func() {
+			if g.listChanges != nil {
+				g.listChanges.triggerPrompts(name)
+			}
+		})
+	}
+	if hook, ok := agentClient.(interface{ setResourcesChangedHandler(func()) }); ok {
+		name := cfg.Name
+		hook.setResourcesChangedHandler(func() {
+			g.reindexResources(name)
+		})
+	}
 	if cfg.ExecutionCheck != nil {
 		guarded := &executionClient{AgentClient: agentClient, check: cfg.ExecutionCheck, config: cfg}
 		if err := guarded.admit(ctx); err != nil {
@@ -1904,11 +1955,21 @@ func (g *Gateway) UnregisterMCPServerContext(ctx context.Context, name string) e
 		return err
 	}
 	g.regGen[name]++
+	g.cancelListenLoopLocked(name)
 	delete(g.a2aDeclarations, name)
 	delete(g.pending, name)
 	delete(g.cleanupRan, name)
 	g.capabilities.retireServer(name)
 	set := g.router.GetReplicaSet(name)
+	var promptDecl, resourceDecl bool
+	var memberTools []string
+	if set != nil && set.Client() != nil {
+		promptDecl = declares(set.Client(), wantsPrompts)
+		resourceDecl = declares(set.Client(), wantsResources)
+		if promptDecl || resourceDecl {
+			memberTools = g.router.ServerToolNames(name)
+		}
+	}
 	g.router.RemoveClient(name)
 	if set != nil {
 		set.retire()
@@ -1928,6 +1989,14 @@ func (g *Gateway) UnregisterMCPServerContext(ctx context.Context, name string) e
 	g.ClearServerAuthState(name)
 	g.pendingMu.Unlock()
 	g.router.RefreshTools()
+	if g.listChanges != nil {
+		if promptDecl {
+			g.listChanges.noteRemoved(name, true, false, memberTools)
+		}
+		if resourceDecl {
+			g.listChanges.noteRemoved(name, false, true, memberTools)
+		}
+	}
 	var cleanupErrors []error
 	if scaler != nil {
 		if err := scaler.retire(ctx); err != nil {
@@ -3132,9 +3201,14 @@ type MCPServerStatus struct {
 	// without tracked auth state. A needs_auth server is actionable (run
 	// 'gridctl auth login <name>'), not failed, and carries neither
 	// RegistrationFailed nor Healthy=false on that account.
-	AuthStatus string     `json:"authStatus,omitempty"`
-	AuthIssuer string     `json:"authIssuer,omitempty"` // authorization server issuer, when known
-	AuthExpiry *time.Time `json:"authExpiry,omitempty"` // access token expiry, when known
+	AuthStatus string `json:"authStatus,omitempty"`
+
+	// SubscriptionStream reports the downstream subscriptions/listen loop:
+	// "open", "closed", or "unsupported". Omitted for handshake-era,
+	// OpenAPI, A2A, stdio, and process servers.
+	SubscriptionStream string     `json:"subscriptionStream,omitempty"`
+	AuthIssuer         string     `json:"authIssuer,omitempty"` // authorization server issuer, when known
+	AuthExpiry         *time.Time `json:"authExpiry,omitempty"` // access token expiry, when known
 }
 
 // ReplicaStatus reports the live state of a single replica within a
@@ -3376,6 +3450,7 @@ func (g *Gateway) Status() []MCPServerStatus {
 			status.ProtocolVersion = protocolVersionOf(client)
 			status.ProtocolGeneration = protocolGenerationOf(client)
 			status.Capabilities = downstreamCapabilityStatus(client)
+			status.SubscriptionStream = g.subscriptionStreamFor(name, client)
 			if a2a, ok := client.(*A2AClient); ok {
 				status.A2AStatus = a2a.status()
 			}

@@ -43,8 +43,8 @@ Start the mock MCP server:
 
 ```bash
 cd examples/_mock-servers/mock-mcp-server
-go run main.go -port 9001           # HTTP mode
-go run main.go -port 9002 -sse      # SSE mode
+go run . -port 9001           # HTTP mode
+go run . -port 9002 -sse      # SSE mode
 ```
 
 </details>

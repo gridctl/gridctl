@@ -42,6 +42,9 @@ var (
 	lastHeaderNames  []string
 	addedSeq         int
 	toolsMu          sync.Mutex
+	listenMu         sync.Mutex
+	parked           []*parkedListener
+	listenAttempts   atomic.Int32
 	pongMu           sync.Mutex
 	pongWaiters      = map[string]chan struct{}{}
 	ssePingSeq       atomic.Int64
@@ -58,7 +61,7 @@ func init() {
 	flag.BoolVar(&sseMode, "sse", false, "Enable SSE response format")
 	flag.StringVar(&protocol, "protocol", "", "Protocol generation: empty for legacy handshake, 2026-07-28 for stateless")
 	flag.BoolVar(&sseServerRequest, "sse-server-request", false, "In SSE mode, emit a ping and a notification before tools/call and wait for the pong")
-	flag.BoolVar(&listChanged, "list-changed", false, "Declare tools.listChanged and emit notifications/tools/list_changed on the POST SSE stream")
+	flag.BoolVar(&listChanged, "list-changed", false, "Declare tools.listChanged and add mutate_tools; handshake mode emits the notification on the POST SSE stream, modern mode serves subscriptions/listen")
 	flag.BoolVar(&serverCard, "server-card", false, "Serve /mcp/server-card and /.well-known/ai-catalog.json without the bearer check")
 	flag.BoolVar(&destructiveTool, "destructive-tool", false, "Append a purge tool with destructiveHint true; existing fixtures keep their tool counts without this flag")
 	flag.StringVar(&serverCardOrigin, "server-card-origin", "", "Emit this URL as the card remote instead of this process's /mcp URL")
@@ -235,6 +238,10 @@ func handleMCP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if modernMode() {
+		if req.Method == "subscriptions/listen" {
+			handleSubscriptionsListen(w, r, req)
+			return
+		}
 		handleModernMCP(w, req)
 		return
 	}
@@ -301,6 +308,87 @@ func handleMCP(w http.ResponseWriter, r *http.Request) {
 		writeListChangedSSE(w)
 	}
 	sendResult(w, req.ID, result)
+}
+
+type parkedListener struct {
+	id     json.RawMessage
+	notify chan struct{}
+}
+
+func handleSubscriptionsListen(w http.ResponseWriter, r *http.Request, req Request) {
+	listenAttempts.Add(1)
+	if !listChanged {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(Response{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Error:   &Error{Code: -32601, Message: "Method not found"},
+		})
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "SSE not supported", http.StatusInternalServerError)
+		return
+	}
+	id := req.ID
+	if len(id) == 0 {
+		id = json.RawMessage("null")
+	}
+	// Writes stay on this handler. notifyParkedListeners only signals, so
+	// a mutate call cannot use the ResponseWriter after this handler
+	// returns or race a second mutate on the same writer.
+	listener := &parkedListener{id: append(json.RawMessage(nil), id...), notify: make(chan struct{}, 1)}
+	listenMu.Lock()
+	parked = append(parked, listener)
+	listenMu.Unlock()
+	defer func() {
+		listenMu.Lock()
+		next := parked[:0]
+		for _, item := range parked {
+			if item != listener {
+				next = append(next, item)
+			}
+		}
+		parked = next
+		listenMu.Unlock()
+	}()
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/subscriptions/acknowledged\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/subscriptionId\":%s},\"notifications\":{\"toolsListChanged\":true}}}\n\n", id)
+	flusher.Flush()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-listener.notify:
+			fmt.Fprintf(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/subscriptionId\":%s}}}\n\n", id)
+			flusher.Flush()
+		}
+	}
+}
+
+func notifyParkedListeners() {
+	listenMu.Lock()
+	current := append([]*parkedListener(nil), parked...)
+	listenMu.Unlock()
+	for _, listener := range current {
+		select {
+		case listener.notify <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func handleListeners(w http.ResponseWriter, r *http.Request) {
+	listenMu.Lock()
+	n := len(parked)
+	listenMu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]int{"parked": n, "attempts": int(listenAttempts.Load())})
 }
 
 func snapshotTools() []Tool {
@@ -402,7 +490,7 @@ func handleModernMCP(w http.ResponseWriter, req Request) {
 		sendResult(w, req.ID, DiscoverResult{
 			ResultType:        "complete",
 			SupportedVersions: []string{"2026-07-28"},
-			Capabilities:      Capabilities{Tools: &ToolsCapability{}},
+			Capabilities:      Capabilities{Tools: &ToolsCapability{ListChanged: listChanged}},
 			TTLMs:             60000,
 			CacheScope:        "public",
 			Meta: map[string]any{
@@ -415,7 +503,7 @@ func handleModernMCP(w http.ResponseWriter, req Request) {
 			ResultType: "complete",
 			TTLMs:      60000,
 			CacheScope: "public",
-			Tools:      sampleTools,
+			Tools:      snapshotTools(),
 		})
 
 	case "tools/call":
@@ -429,8 +517,11 @@ func handleModernMCP(w http.ResponseWriter, req Request) {
 			sendResult(w, req.ID, handleAskSecret(params))
 			return
 		}
-		result, _ := handleToolCall(params)
+		result, mutated := handleToolCall(params)
 		result.ResultType = "complete"
+		if mutated && listChanged {
+			notifyParkedListeners()
+		}
 		sendResult(w, req.ID, result)
 
 	case "initialize":
@@ -637,7 +728,7 @@ func main() {
 
 	// The modern generation carries an MRTR-exercising tool so tests
 	// can verify the requestState round trip through the gateway.
-	if listChanged && !modernMode() {
+	if listChanged {
 		sampleTools = append(sampleTools, Tool{
 			Name:        "mutate_tools",
 			Description: "Adds or modifies a tool and emits notifications/tools/list_changed",
@@ -681,6 +772,7 @@ func main() {
 	mux.HandleFunc("/mcp", requireBearer(requireHeaders(handleMCP)))
 	mux.HandleFunc("/debug/last-headers", handleLastHeaders)
 	mux.HandleFunc("/debug/calls", handleCalls)
+	mux.HandleFunc("/debug/listeners", handleListeners)
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/", requireBearer(handleHealth)) // Root returns health for ping
 	if oauthMode {

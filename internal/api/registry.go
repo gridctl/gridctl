@@ -510,6 +510,7 @@ func (s *Server) refreshRegistryRouter() {
 		s.gateway.Router().RemoveClient("registry")
 	}
 	s.gateway.Router().RefreshTools()
+	s.gateway.NotifyRegistryChanged()
 
 	// Keep skill pins in step with API-driven registry mutations (editor
 	// saves, imports) so drift state matches what the daemon's own refresh

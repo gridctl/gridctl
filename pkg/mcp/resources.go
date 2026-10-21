@@ -121,13 +121,30 @@ func errorCategory(err error) string {
 // access. Registry entries do not pass through it. A nil client policy allows
 // every server. Group membership reuses groupDef.isMember so exclude wins.
 func (g *Gateway) serverVisible(ctx context.Context, server string) bool {
-	if !g.clientAccessPolicy().forPrincipal(PrincipalFromContext(ctx) != "").AllowsServer(ClientAccessIDFromContext(ctx), server) {
+	return g.serverVisibleFor(ClientAccessIDFromContext(ctx), GroupFromContext(ctx), server, PrincipalFromContext(ctx) != "")
+}
+
+// serverVisibleFor is the identity-scoped form of serverVisible. principal
+// selects exact-alias precedence the same way a request context does, so
+// the notifier and the request path cannot drift. An empty group skips the
+// group check. The name "registry" is not special here; callers that treat
+// registry changes as universally visible do that themselves.
+func (g *Gateway) serverVisibleFor(accessID, group, server string, principal bool) bool {
+	if group == "" {
+		return g.clientAccessPolicy().forPrincipal(principal).AllowsServer(accessID, server)
+	}
+	return g.serverVisibleForTools(accessID, group, server, principal, g.router.ServerToolNames(server))
+}
+
+// serverVisibleForTools is serverVisibleFor with a caller-supplied tool
+// list. Unregister passes the names captured before RemoveClient, because
+// the router no longer has them when the flush decides group membership.
+func (g *Gateway) serverVisibleForTools(accessID, group, server string, principal bool, tools []string) bool {
+	if !g.clientAccessPolicy().forPrincipal(principal).AllowsServer(accessID, server) {
 		return false
 	}
-	if group := GroupFromContext(ctx); group != "" {
-		if !g.CurrentGroupPolicy().ServerIsMember(group, server, g.router.ServerToolNames(server)) {
-			return false
-		}
+	if group != "" && !g.CurrentGroupPolicy().ServerIsMember(group, server, tools) {
+		return false
 	}
 	return true
 }

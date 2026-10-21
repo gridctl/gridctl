@@ -342,6 +342,7 @@ type mcpServerAPI struct {
 	Description           string           `json:"description,omitempty"`
 	Enabled               *bool            `json:"enabled,omitempty"`
 	Overrides             []string         `json:"overrides,omitempty"`
+	SubscriptionStream    string           `json:"subscriptionStream,omitempty"`
 }
 
 // mcpCapabilityAPI is the downstream capability projection on status JSON.

@@ -286,6 +286,8 @@ func (s *StreamableHTTPServer) handleStateless(w http.ResponseWriter, r *http.Re
 		writeStatelessResponse(w, http.StatusOK, jsonrpc.NewSuccessResponse(req.ID, statelessRelayRaw(outcome)))
 	case "tasks/get", "tasks/update", "tasks/cancel":
 		s.handleStatelessTask(ctx, w, req)
+	case MethodSubscriptionsListen:
+		s.handleStatelessListen(ctx, w, r, req)
 	default:
 		// Removed handshake-era methods (ping, logging/setLevel,
 		// initialize, notifications/*) and anything else unknown get
@@ -585,20 +587,23 @@ func (g *Gateway) attachListCacheMeta(fields *StatelessResultFields) {
 }
 
 // advertisedCapabilities is the single source for what the gateway
-// declares to upstream clients. Handshake peers get tools.listChanged
-// because the gateway emits notifications/tools/list_changed on the
-// session GET stream. The stateless generation removed that notification,
-// so discover keeps tools without listChanged. Prompts and resources
-// listChanged stay unadvertised on both eras.
+// declares to upstream clients. A list-changed capability is advertised
+// only on a generation that emits it. Both generations emit
+// notifications/tools/list_changed (the handshake GET stream, and
+// subscriptions/listen on the stateless generation). Prompt and resource
+// listChanged are advertised only on the stateless generation, and only
+// when those capabilities are advertised at all, because only that
+// generation emits the matching notifications. resources.subscribe stays
+// false on both eras.
 func (g *Gateway) advertisedCapabilities(era ProtocolEra) Capabilities {
 	caps := Capabilities{
-		Tools: &ToolsCapability{ListChanged: era == EraHandshake},
+		Tools: &ToolsCapability{ListChanged: true},
 	}
 	if g.promptProvider() != nil || g.downstreamDeclares(wantsPrompts) {
-		caps.Prompts = &PromptsCapability{}
+		caps.Prompts = &PromptsCapability{ListChanged: era == EraStateless}
 	}
 	if g.promptProvider() != nil || g.downstreamDeclares(wantsResources) {
-		caps.Resources = &ResourcesCapability{}
+		caps.Resources = &ResourcesCapability{ListChanged: era == EraStateless}
 	}
 	if era == EraStateless && g.skillProvider() != nil {
 		caps.Extensions = map[string]json.RawMessage{SkillsExtensionID: json.RawMessage(`{"directoryRead":true}`)}

@@ -136,6 +136,7 @@ export function createMCPServerNodes(mcpServers: MCPServerStatus[]): Node[] {
       outputFormat: server.outputFormat,
       replicaCount: server.replicas?.length,
       toolWhitelist: server.toolWhitelist,
+      subscriptionStream: server.subscriptionStream,
       autoscale: server.autoscale,
       authStatus: server.authStatus,
       authIssuer: server.authIssuer,

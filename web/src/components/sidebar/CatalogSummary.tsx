@@ -7,6 +7,7 @@ interface CatalogFields {
   capabilities?: DownstreamCapabilityStatus;
   resourceCollisions?: number;
   resourceListError?: string;
+  subscriptionStream?: 'open' | 'closed' | 'unsupported';
 }
 
 const badges: { key: keyof DownstreamCapabilityStatus; label: string }[] = [
@@ -36,6 +37,14 @@ export function CatalogSummary({ data }: { data: CatalogFields }) {
         <span className="text-xs text-text-muted">Templates</span>
         <span className="text-xs font-mono text-text-secondary">{data.resourceTemplateCount ?? 0}</span>
       </div>
+      {data.subscriptionStream && (
+        <div className="flex justify-between items-center">
+          <span className="text-xs text-text-muted">Listen stream</span>
+          <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-violet-500/10 text-violet-300">
+            {data.subscriptionStream}
+          </span>
+        </div>
+      )}
       {declared.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {declared.map((badge) => (

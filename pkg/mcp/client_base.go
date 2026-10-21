@@ -63,8 +63,10 @@ type ClientBase struct {
 
 	// listChangedHandler is armed by the reader and must return without
 	// issuing a request. The reader goroutine is the one that completes
-	// pending calls.
-	listChangedHandler func()
+	// pending calls. Prompt and resource handlers follow the same rule.
+	listChangedHandler      func()
+	promptsChangedHandler   func()
+	resourcesChangedHandler func()
 }
 
 // Tools returns the cached tool list filtered by the whitelist, if any.
@@ -205,6 +207,36 @@ func (b *ClientBase) setListChangedHandler(fn func()) {
 func (b *ClientBase) notifyListChanged() {
 	b.mu.RLock()
 	fn := b.listChangedHandler
+	b.mu.RUnlock()
+	if fn != nil {
+		fn()
+	}
+}
+
+func (b *ClientBase) setPromptsChangedHandler(fn func()) {
+	b.mu.Lock()
+	b.promptsChangedHandler = fn
+	b.mu.Unlock()
+}
+
+func (b *ClientBase) notifyPromptsChanged() {
+	b.mu.RLock()
+	fn := b.promptsChangedHandler
+	b.mu.RUnlock()
+	if fn != nil {
+		fn()
+	}
+}
+
+func (b *ClientBase) setResourcesChangedHandler(fn func()) {
+	b.mu.Lock()
+	b.resourcesChangedHandler = fn
+	b.mu.Unlock()
+}
+
+func (b *ClientBase) notifyResourcesChanged() {
+	b.mu.RLock()
+	fn := b.resourcesChangedHandler
 	b.mu.RUnlock()
 	if fn != nil {
 		fn()

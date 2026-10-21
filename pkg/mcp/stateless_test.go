@@ -102,8 +102,8 @@ func TestStateless_ServerDiscover(t *testing.T) {
 	if result.CacheScope != CacheScopePrivate || result.TTLMs != 0 {
 		t.Errorf("empty fleet must aggregate to 0/private, got %d/%s", result.TTLMs, result.CacheScope)
 	}
-	if result.Capabilities.Tools == nil || result.Capabilities.Tools.ListChanged {
-		t.Error("discover capabilities must declare tools without listChanged")
+	if result.Capabilities.Tools == nil || !result.Capabilities.Tools.ListChanged {
+		t.Error("discover capabilities must declare tools.listChanged")
 	}
 }
 
@@ -290,7 +290,7 @@ func TestStateless_ToolsListEmptyIsArray(t *testing.T) {
 
 func TestStateless_RemovedMethodsAre404(t *testing.T) {
 	srv := NewStreamableHTTPServer(NewGateway(), nil)
-	for _, method := range []string{"ping", "logging/setLevel", "initialize", "subscriptions/listen", "no/such/method"} {
+	for _, method := range []string{"ping", "logging/setLevel", "initialize", "resources/subscribe", "no/such/method"} {
 		t.Run(method, func(t *testing.T) {
 			w, resp := doStateless(t, srv, statelessRequest(t, statelessBody(t, 1, method, nil)))
 			if w.Code != http.StatusNotFound {

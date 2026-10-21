@@ -64,14 +64,19 @@ A Go-based MCP server that supports HTTP and SSE transports.
 cd examples/_mock-servers/mock-mcp-server
 
 # HTTP mode (defaults to port 8080 when -port is omitted)
-go run main.go -port 9001
+go run . -port 9001
 
 # SSE mode
-go run main.go -port 9002 -sse
+go run . -port 9002 -sse
 
 # Stateless generation (2026-07-28: server/discover, no handshake)
-go run main.go -port 9001 -protocol 2026-07-28
+go run . -port 9001 -protocol 2026-07-28
+
+# Same generation, with tools.listChanged and subscriptions/listen
+go run . -port 9001 -protocol 2026-07-28 -list-changed
 ```
+
+With `-protocol 2026-07-28 -list-changed`, `server/discover` declares `tools.listChanged` and `subscriptions/listen` stays open until the client disconnects. `mutate_tools` emits a tagged `notifications/tools/list_changed` to each parked listener. Without `-list-changed`, that method is `-32601`. Handshake mode is unchanged: `-list-changed` still emits the notification on the POST SSE stream.
 
 ### OAuth Flags
 

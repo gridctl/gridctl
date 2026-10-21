@@ -1008,6 +1008,11 @@ type MCPServerStatus struct {
 
 	// Overrides lists field names applied from the active override file.
 	Overrides []string `json:"overrides,omitempty"`
+
+	// SubscriptionStream is the downstream subscriptions/listen state:
+	// "open", "closed", or "unsupported". Omitted for servers that do not
+	// use that stream.
+	SubscriptionStream string `json:"subscriptionStream,omitempty"`
 }
 
 // MCPServerSourceStatus reports declared source identity plus immutable
@@ -1060,6 +1065,7 @@ func (s *Server) getMCPServerStatuses(ctx context.Context) []MCPServerStatus {
 			AuthStatus:            ms.AuthStatus,
 			AuthIssuer:            ms.AuthIssuer,
 			AuthExpiry:            ms.AuthExpiry,
+			SubscriptionStream:    ms.SubscriptionStream,
 		}
 		if ms.LastCheck != nil {
 			ts := ms.LastCheck.Format(time.RFC3339)

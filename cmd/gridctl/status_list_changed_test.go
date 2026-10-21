@@ -14,3 +14,20 @@ func TestMCPCapabilityAPI_ToolsListChanged(t *testing.T) {
 		t.Fatal("toolsListChanged was not decoded")
 	}
 }
+
+func TestMCPServerAPI_SubscriptionStream(t *testing.T) {
+	var server mcpServerAPI
+	if err := json.Unmarshal([]byte(`{"name":"echo","subscriptionStream":"open"}`), &server); err != nil {
+		t.Fatal(err)
+	}
+	if server.SubscriptionStream != "open" {
+		t.Fatalf("subscriptionStream = %q", server.SubscriptionStream)
+	}
+	var omitted mcpServerAPI
+	if err := json.Unmarshal([]byte(`{"name":"legacy"}`), &omitted); err != nil {
+		t.Fatal(err)
+	}
+	if omitted.SubscriptionStream != "" {
+		t.Fatalf("omitted subscriptionStream = %q", omitted.SubscriptionStream)
+	}
+}

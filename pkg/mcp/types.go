@@ -423,6 +423,36 @@ type PromptsCapability struct {
 	ListChanged bool `json:"listChanged,omitempty"`
 }
 
+// Stateless listen methods and notifications (SEP-2575, 2026-07-28).
+const (
+	MethodSubscriptionsListen             = "subscriptions/listen"
+	NotificationSubscriptionsAcknowledged = "notifications/subscriptions/acknowledged"
+	MethodPromptsListChanged              = "notifications/prompts/list_changed"
+	MethodResourcesListChanged            = "notifications/resources/list_changed"
+)
+
+// NotificationSubscriptions is the subscriptions/listen filter. Each field is
+// an explicit opt-in. ResourceSubscriptions is accepted on the wire and never
+// honored: resource update notifications are out of scope.
+type NotificationSubscriptions struct {
+	ToolsListChanged      bool     `json:"toolsListChanged,omitempty"`
+	PromptsListChanged    bool     `json:"promptsListChanged,omitempty"`
+	ResourcesListChanged  bool     `json:"resourcesListChanged,omitempty"`
+	ResourceSubscriptions []string `json:"resourceSubscriptions,omitempty"`
+}
+
+// SubscriptionsListenParams is the subscriptions/listen request body.
+type SubscriptionsListenParams struct {
+	Notifications *NotificationSubscriptions `json:"notifications"`
+}
+
+// SubscriptionsAcknowledgedParams is the first message on a listen stream.
+// Meta is raw so the subscription id keeps the request id's JSON encoding.
+type SubscriptionsAcknowledgedParams struct {
+	Meta          json.RawMessage           `json:"_meta,omitempty"`
+	Notifications NotificationSubscriptions `json:"notifications"`
+}
+
 // InitializeParams contains parameters for the initialize request.
 type InitializeParams struct {
 	ProtocolVersion string       `json:"protocolVersion"`

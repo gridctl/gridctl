@@ -121,8 +121,16 @@ func TestResourceAggregation_BothEras(t *testing.T) {
 	if discCaps["prompts"] == nil || discCaps["resources"] == nil {
 		t.Fatalf("capabilities = %#v", discCaps)
 	}
-	if res, _ := discCaps["resources"].(map[string]any); res["subscribe"] == true || res["listChanged"] == true {
-		t.Fatalf("advertised subscribe/listChanged: %#v", res)
+	res, _ := discCaps["resources"].(map[string]any)
+	if res["subscribe"] == true {
+		t.Fatalf("advertised subscribe: %#v", res)
+	}
+	if res["listChanged"] != true {
+		t.Fatalf("stateless discover must advertise resources.listChanged: %#v", res)
+	}
+	promptCaps, _ := discCaps["prompts"].(map[string]any)
+	if promptCaps["listChanged"] != true {
+		t.Fatalf("stateless discover must advertise prompts.listChanged: %#v", promptCaps)
 	}
 }
 
@@ -256,12 +264,15 @@ func handshakePost(t *testing.T, handler http.Handler, session, method string, p
 	}{Error: func() *struct {
 		Code    int
 		Message string
-	} { if resp.Error == nil {
-		return nil
-	}; return &struct {
-		Code    int
-		Message string
-	}{resp.Error.Code, resp.Error.Message} }(), Result: resp.Result}
+	} {
+		if resp.Error == nil {
+			return nil
+		}
+		return &struct {
+			Code    int
+			Message string
+		}{resp.Error.Code, resp.Error.Message}
+	}(), Result: resp.Result}
 }
 
 func aggregationStateless(t *testing.T, handler http.Handler, method string, params map[string]any) (*httptest.ResponseRecorder, map[string]any) {

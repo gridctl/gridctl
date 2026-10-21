@@ -27,12 +27,16 @@ type Client struct {
 	endpoint        string
 	httpClient      *http.Client
 	requestID       atomic.Int64
-	sessionID       string        // MCP session ID for stateful servers
-	protocolVersion string        // negotiated at initialize; stamped on subsequent requests
-	pingTimeout     time.Duration // 0 = use DefaultPingTimeout
+	sessionID       string            // MCP session ID for stateful servers
+	protocolVersion string            // negotiated at initialize; stamped on subsequent requests
+	pingTimeout     time.Duration     // 0 = use DefaultPingTimeout
 	headerSource    HeaderSource      // optional downstream auth header (nil = none)
 	extraHeaders    map[string]string // static headers applied before auth
 	reconnMu        sync.Mutex        // serializes Reconnect (stdio/process precedent)
+	// listenHTTP has no overall Timeout. A listen stream outlives the
+	// 30-second request client. Dial and TLS handshake stay bounded.
+	listenHTTP *http.Client
+	listenSlot *listenCancelSlot
 }
 
 // SetHeaderSource installs the downstream auth header source. Must be called
@@ -621,6 +625,10 @@ func (c *Client) Reconnect(ctx context.Context) error {
 	defer c.reconnMu.Unlock()
 
 	c.logger.Info("reconnecting to HTTP server")
+	// The listen stream runs on its own client. Cancel it so the loop
+	// observes the loss and re-opens against the re-resolved era, or
+	// exits if the era is no longer stateless.
+	c.cancelActiveListen()
 
 	// Initialize resets the era and negotiated version, but the session is
 	// transport state it knows nothing about: a stale handshake-era session

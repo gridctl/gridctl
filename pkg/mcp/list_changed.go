@@ -42,6 +42,21 @@ type listChangeNotifier struct {
 	firstTrigger time.Time
 	closed       bool
 	sink         ListChangeSink
+	// toolsDirty is set by trigger and means the visible tool list may
+	// have changed. Prompt and resource changes live in changed so a
+	// prompts-only flush does not emit tool events.
+	toolsDirty bool
+	changed    map[string]notedChange
+}
+
+// notedChange is one server's prompt or resource change waiting for the
+// next flush. snap is set when tools were captured at trigger time, which
+// unregister needs because the router no longer has the server's tools
+// when the flush runs.
+type notedChange struct {
+	kinds listenKinds
+	tools []string
+	snap  bool
 }
 
 func newListChangeNotifier(g *Gateway, ctx context.Context) *listChangeNotifier {
@@ -77,6 +92,61 @@ func (n *listChangeNotifier) setTiming(quiet, maxLatency time.Duration) {
 }
 
 func (n *listChangeNotifier) trigger() {
+	n.arm(func() { n.toolsDirty = true })
+}
+
+// triggerPrompts records that server's prompt list may have changed.
+// The name "registry" is visible to every subscriber.
+func (n *listChangeNotifier) triggerPrompts(server string) {
+	n.arm(func() { n.noteChange(server, true, false) })
+}
+
+// triggerResources records that server's resource list may have changed.
+func (n *listChangeNotifier) triggerResources(server string) {
+	n.arm(func() { n.noteChange(server, false, true) })
+}
+
+func (n *listChangeNotifier) noteChange(server string, prompts, resources bool) {
+	n.noteServerChange(server, prompts, resources, nil, false)
+}
+
+// noteRemoved records a prompt or resource change for a server that is
+// leaving the router. tools is the prefixed tool list captured before
+// removal, so a group subscriber is still told when that server was a
+// member. A later note without a snapshot clears it: the server is
+// present again and live tool names are the membership source.
+func (n *listChangeNotifier) noteRemoved(server string, prompts, resources bool, tools []string) {
+	copied := append([]string(nil), tools...)
+	n.arm(func() { n.noteServerChange(server, prompts, resources, copied, true) })
+}
+
+func (n *listChangeNotifier) noteServerChange(server string, prompts, resources bool, tools []string, snap bool) {
+	if server == "" || (!prompts && !resources) {
+		return
+	}
+	if n.changed == nil {
+		n.changed = make(map[string]notedChange)
+	}
+	k := n.changed[server]
+	if prompts {
+		k.kinds.prompts = true
+	}
+	if resources {
+		k.kinds.resources = true
+	}
+	if snap {
+		k.tools = append([]string(nil), tools...)
+		k.snap = true
+	} else {
+		k.tools = nil
+		k.snap = false
+	}
+	n.changed[server] = k
+}
+
+// arm marks a change and (re)arms the coalescing timer. mark runs under
+// the notifier mutex. Safe to call while the caller holds pendingMu.
+func (n *listChangeNotifier) arm(mark func()) {
 	if n == nil {
 		return
 	}
@@ -84,6 +154,9 @@ func (n *listChangeNotifier) trigger() {
 	defer n.mu.Unlock()
 	if n.closed || n.ctx.Err() != nil {
 		return
+	}
+	if mark != nil {
+		mark()
 	}
 	now := time.Now()
 	if n.firstTrigger.IsZero() {
@@ -117,6 +190,13 @@ func (n *listChangeNotifier) close() {
 		n.timer.Stop()
 		n.timer = nil
 	}
+	n.mu.Unlock()
+	// Unlock before cancelling subscribers: their writers must not need
+	// this mutex to finish, and CloseAll takes the registry mutex.
+	if n.g != nil && n.g.listeners != nil {
+		n.g.listeners.CloseAll()
+	}
+	n.mu.Lock()
 }
 
 func (n *listChangeNotifier) aborted() bool {
@@ -139,29 +219,124 @@ func (n *listChangeNotifier) flushFired(fired *time.Timer) {
 	n.firstTrigger = time.Time{}
 	n.timer = nil
 	sink := n.sink
+	toolsDirty := n.toolsDirty
+	n.toolsDirty = false
+	changes := n.changed
+	n.changed = nil
 	n.mu.Unlock()
 
-	if n.g.codeModeOn() || n.aborted() {
+	if n.aborted() {
 		return
 	}
-	for _, sess := range n.g.sessions.List() {
-		if n.aborted() {
-			return
+	// Code mode replaces tools only. Prompt and resource delivery still
+	// runs; tool events, including the handshake GET stream, stay suppressed.
+	if toolsDirty && !n.g.codeModeOn() {
+		for _, sess := range n.g.sessions.List() {
+			if n.aborted() {
+				return
+			}
+			fp := fingerprintTools(n.g.visibleToolsFor(sess.AccessID, sess.Group, sess.Principal != ""))
+			prev, ok := n.g.sessions.SwapToolFingerprint(sess.ID, fp)
+			if !ok || prev == "" || prev == fp {
+				continue
+			}
+			if n.aborted() {
+				return
+			}
+			if sink == nil {
+				continue
+			}
+			sink.NotifyToolsListChanged(sess.ID)
+			n.g.logger.Debug("list_changed sent", "session", sess.ID)
 		}
-		fp := fingerprintTools(n.g.visibleToolsFor(sess.AccessID, sess.Group, sess.Principal != ""))
-		prev, ok := n.g.sessions.SwapToolFingerprint(sess.ID, fp)
-		if !ok || prev == "" || prev == fp {
-			continue
-		}
-		if n.aborted() {
-			return
-		}
-		if sink == nil {
-			continue
-		}
-		sink.NotifyToolsListChanged(sess.ID)
-		n.g.logger.Debug("list_changed sent", "session", sess.ID)
+		n.deliverToolSubscribers()
+	} else if toolsDirty && n.g.codeModeOn() {
+		n.skipToolSubscribers("code mode")
 	}
+	n.deliverListSubscribers(changes)
+}
+
+func (n *listChangeNotifier) deliverToolSubscribers() {
+	if n.g == nil || n.g.listeners == nil {
+		return
+	}
+	for _, sub := range n.g.listeners.list() {
+		if n.aborted() {
+			return
+		}
+		if !sub.kinds.tools {
+			continue
+		}
+		fp := fingerprintTools(n.g.visibleToolsFor(sub.accessID, sub.group, sub.principal))
+		n.g.listeners.noteTools(sub.key, fp)
+	}
+}
+
+func (n *listChangeNotifier) skipToolSubscribers(reason string) {
+	if n.g == nil || n.g.listeners == nil {
+		return
+	}
+	for _, sub := range n.g.listeners.list() {
+		if !sub.kinds.tools {
+			continue
+		}
+		fp := fingerprintTools(n.g.visibleToolsFor(sub.accessID, sub.group, sub.principal))
+		if n.g.listeners.toolsWouldChange(sub.key, fp) {
+			n.g.logger.Debug("list_changed skipped", "subscription", string(sub.id), "kind", "tools", "reason", reason)
+		}
+	}
+}
+
+func (n *listChangeNotifier) deliverListSubscribers(changes map[string]notedChange) {
+	if n.g == nil || n.g.listeners == nil || len(changes) == 0 {
+		return
+	}
+	for _, sub := range n.g.listeners.list() {
+		if n.aborted() {
+			return
+		}
+		var prompts, resources bool
+		for name, change := range changes {
+			visible := n.changeVisible(sub, name, change)
+			if change.kinds.prompts && sub.kinds.prompts {
+				if visible {
+					prompts = true
+				} else {
+					n.g.logger.Debug("list_changed skipped", "subscription", string(sub.id), "kind", "prompts", "server", name, "reason", "not visible")
+				}
+			}
+			if change.kinds.resources && sub.kinds.resources {
+				if visible {
+					resources = true
+				} else {
+					n.g.logger.Debug("list_changed skipped", "subscription", string(sub.id), "kind", "resources", "server", name, "reason", "not visible")
+				}
+			}
+		}
+		n.g.listeners.noteLists(sub.key, prompts, resources)
+	}
+}
+
+func (n *listChangeNotifier) changeVisible(sub *listenSubscriber, name string, change notedChange) bool {
+	if name == "registry" {
+		return true
+	}
+	if change.snap {
+		return n.g.serverVisibleForTools(sub.accessID, sub.group, name, sub.principal, change.tools)
+	}
+	return n.g.serverVisibleFor(sub.accessID, sub.group, name, sub.principal)
+}
+
+// NotifyRegistryChanged tells upstream subscribers that registry prompts,
+// resources, and tools may have changed. Registry entries are visible to
+// every subscriber. Callers are the registry refresh paths and SetSkillPolicy.
+func (g *Gateway) NotifyRegistryChanged() {
+	if g == nil || g.listChanges == nil {
+		return
+	}
+	g.listChanges.trigger()
+	g.listChanges.triggerPrompts("registry")
+	g.listChanges.triggerResources("registry")
 }
 
 // SetListChangeSink installs the transport that receives northbound

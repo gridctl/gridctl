@@ -138,7 +138,7 @@ pkg/builder/        Image building from git or local Dockerfiles and generated P
                     image tags, label-verified cache reuse, and non-secret provenance labels. Also owns bounded public-PyPI
                     resolution, static Python package/project metadata inspection, supported-interpreter selection,
                     console-script resolution, and deterministic digest-pinned uv Dockerfile generation.
-pkg/mcp/            MCP protocol: gateway (router, tool aggregation, downstream prompt and resource aggregation, and handshake tools/list_changed notifications), stdio/SSE/streamable transports, OpenAPI-as-MCP,
+pkg/mcp/            MCP protocol: gateway (router, tool aggregation, downstream prompt and resource aggregation, handshake tools/list_changed notifications, and stateless subscriptions/listen), stdio/SSE/streamable transports, OpenAPI-as-MCP,
                     autoscaler, code mode sandbox (goja), replica sets, schema pinning hooks, live tool discovery,
                     and typed call outcomes for canonical REST/CLI dispatch.
                     Container, local-process, and HTTP/SSE readers classify peer requests and notifications before response
@@ -146,9 +146,12 @@ pkg/mcp/            MCP protocol: gateway (router, tool aggregation, downstream 
                     HTTP and SSE replies are a separate POST that closes the response body without reading it and does not
                     update the session. Handshake upstream sessions are notified when their visible tool list
                     changes. The event is a payload-free `notifications/tools/list_changed` on the GET stream,
-                    coalesced per session. Downstream handshake notifications on stdio, process, and HTTP POST
-                    streams refresh that server and then follow the same path. Stateless traffic and prompt and
-                    resource list changes are unchanged. HTTP servers are not given a standalone GET listener.
+                    coalesced per session. Stateless clients receive that tool event, plus prompt and resource
+                    list-changed events, on `subscriptions/listen`, each tagged with the listen request id.
+                    Downstream handshake notifications on stdio, process, and HTTP POST streams refresh that
+                    server and then follow the same path. Stateless HTTP servers that declare `listChanged` are
+                    consumed on `subscriptions/listen`, including an SSE URL pinned to stateless. Stateless stdio
+                    and process servers are not. HTTP servers are not given a standalone GET listener.
                     a2a_capabilities.go owns the gateway's shared CapabilityStore, atomic reservations, and teardown
                     accounting; a2a_authority.go supplies private generation-bound authority and send/cancel slots.
                     These are internal primitives with no capability tuning option. card_trust.go
