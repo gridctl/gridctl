@@ -986,7 +986,7 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/traces?errors=
     {
       "traceId": "a1b2c3",
       "rootSpanId": "root-1",
-      "operation": "github › create_issue",
+      "operation": "tools/call create_issue",
       "tool": "create_issue",
       "client": "claude-code",
       "server": "github",
@@ -1004,7 +1004,7 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/traces?errors=
 }
 ```
 
-`duration` is in milliseconds. `status` is `"ok"` or `"error"`. `tool` is the resolved tool name (empty when the call failed before routing); `client` is the connecting client's name (empty when the client did not identify itself). `bufferSize` and `bufferCapacity` describe ring-buffer occupancy against `gateway.tracing.max_traces`. When no trace buffer is configured the envelope is empty with `"tracingEnabled": false`, which distinguishes disabled tracing from an enabled but quiet buffer.
+`duration` is in milliseconds. `status` is `"ok"` or `"error"`. `operation` is the root span name (`tools/call <tool>` after routing; `tools/call` when routing did not resolve a tool). `tool` is the resolved tool name (empty when the call failed before routing); `client` is the connecting client's name (empty when the client did not identify itself). `bufferSize` and `bufferCapacity` describe ring-buffer occupancy against `gateway.tracing.max_traces`. When no trace buffer is configured the envelope is empty with `"tracingEnabled": false`, which distinguishes disabled tracing from an enabled but quiet buffer. Span names are not a versioned contract. See [OpenTelemetry attributes](usage-observability.md#opentelemetry-attributes).
 
 #### `GET /api/traces/{traceId}`
 
@@ -1024,23 +1024,23 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/traces/a1b2c3
     {
       "spanId": "root-1",
       "parentSpanId": "",
-      "name": "github › create_issue",
+      "name": "tools/call create_issue",
       "startTime": "2026-05-29T17:00:00.123456789Z",
       "endTime": "2026-05-29T17:00:00.265456789Z",
       "duration": 142,
       "status": "ok",
-      "attributes": { "server.name": "github", "mcp.tool.name": "create_issue" },
+      "attributes": { "mcp.method.name": "tools/call", "gen_ai.tool.name": "create_issue", "gridctl.server.name": "github" },
       "events": []
     },
     {
       "spanId": "span-2",
       "parentSpanId": "root-1",
-      "name": "mcp.client.call_tool",
+      "name": "tools/call create_issue",
       "startTime": "2026-05-29T17:00:00.128456789Z",
       "endTime": "2026-05-29T17:00:00.260456789Z",
       "duration": 132,
       "status": "ok",
-      "attributes": { "server.name": "github", "tool.name": "create_issue" },
+      "attributes": { "gen_ai.tool.name": "create_issue", "gridctl.server.name": "github", "network.transport": "tcp" },
       "events": [
         { "name": "retry", "timestamp": "2026-05-29T17:00:00.150456789Z", "attributes": { "reason": "backoff" } }
       ]
@@ -1049,7 +1049,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/traces/a1b2c3
 }
 ```
 
-`parentSpanId` is empty for root spans. `endTime` is RFC3339Nano and may be absent for traces persisted before it was serialized; clients should derive `startTime + duration` in that case. Returns `404` when the trace ID is not in the buffer.
+`parentSpanId` is empty for root spans. `endTime` is RFC3339Nano and may be absent for traces persisted before it was serialized; clients should derive `startTime + duration` in that case. Returns `404` when the trace ID is not in the buffer. A new tool-call trace names the root and downstream spans `tools/call <tool>`. Routing stays `mcp.routing`, format conversion stays `mcp.format_conversion`, and cold start stays `mcp.autoscale.cold_start`. Attributes include the current keys and, until 1.1.0, each legacy alias. Seeded traces keep older names and keys. `network.transport` is `pipe` or `tcp` on a new trace.
 
 #### `GET /api/traces/{traceId}/otlp`
 

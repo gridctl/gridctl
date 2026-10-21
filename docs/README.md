@@ -45,7 +45,7 @@ New to gridctl? Read in this order:
 | [MCP execution controls](execution.md) | Included in v1.0.0-rc.2: opt-in container restrictions, local environment hygiene, and per-replica evidence |
 | [Outbound A2A](config-schema.md#a2a) | Experimental, included in v1.0.0-rc.2: remote agent tools, mandatory card trust, secret handles, and conversation lifecycle |
 | [Python MCP runtime base](mcp-runtime-python.md) | Recipe included in v1.0.0-rc.2: downstream Python 3.12 foundation image, derived-image recipes, and publication policy. Not a published supported image |
-| [Usage Observability](usage-observability.md) | Token and call metrics, tokenizer options, format savings, `gridctl optimize` heuristics, and opt-in run records included in v1.0.0-rc.2 |
+| [Usage Observability](usage-observability.md) | Token and call metrics, tokenizer options, format savings, `gridctl optimize` heuristics, opt-in run records included in v1.0.0-rc.2, and unreleased OpenTelemetry attribute conventions and OTLP metrics export |
 | [Capability and sensitive-call primitives](capability-primitives.md) | Included in v1.0.0-rc.2: internal shared authority accounting, generation lifecycle, payload-free observations, and diagnostic privacy |
 
 ## Operations

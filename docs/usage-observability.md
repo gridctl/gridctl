@@ -70,7 +70,7 @@ a versioned contract. See [diagnostic troubleshooting](troubleshooting.md#code-m
 
 ## OpenTelemetry attributes
 
-Span attributes follow the OpenTelemetry MCP semantic conventions where those conventions name a key, and use a `gridctl.*` key otherwise. The old keys are still emitted until 1.1.0 so existing dashboards keep working. Seeded traces on disk keep the old keys forever; the trace buffer, `gridctl traces`, per-server file routing, and the Traces waterfall read the new key first and fall back to the old one.
+Span attributes follow the OpenTelemetry MCP semantic conventions where those conventions name a key, and use a `gridctl.*` key otherwise. The old keys are still emitted until 1.1.0 so existing dashboards keep working. A span that sets a renamed key also sets every legacy alias of that key, including an alias that previously appeared only on a different span. Seeded traces on disk keep the old keys forever; the trace buffer, `gridctl traces`, per-server file routing, the Traces waterfall, and Span detail read the new key first and fall back to the old one.
 
 | Old key | New key | Span | Removal |
 |---------|---------|------|---------|
@@ -91,6 +91,8 @@ Span attributes follow the OpenTelemetry MCP semantic conventions where those co
 
 `gen_ai.usage.*` is emitted only as that legacy alias during the window. After 1.1.0 the UI fallback for those four keys goes away with the alias. `mcp.session.id` is never emitted. Token counts are tokenizer estimates, not a model call, so they live under `gridctl.usage.*`.
 
+Keys with no old name include `mcp.method.name`, `gen_ai.operation.name` (`execute_tool` on a tool call), `mcp.protocol.version` (the negotiated version), `error.type`, `rpc.response.status_code`, `server.address`, and `server.port`. `server.address` and `server.port` come from the endpoint URL for HTTP, SSE, OpenAPI, and A2A, and from `SSHHost` and `SSHPort` for SSH. An unset SSH port is recorded as 22. A URL with no explicit port omits `server.port`.
+
 `network.transport` keeps its key. Only the values change, so an alias cannot preserve the old label. Dashboards that filter on `stdio` or `http` need to move to `pipe` or `tcp` now. `gridctl.transport` keeps the gridctl label.
 
 | Old `network.transport` | New `network.transport` | `gridctl.transport` | Removal |
@@ -105,7 +107,7 @@ Span attributes follow the OpenTelemetry MCP semantic conventions where those co
 
 `error.type` is a partial adoption of the convention, not a copy of the runs vocabulary. When the downstream returned a JSON-RPC error whose code classifies as an error, the value is the decimal string of that code (for example `-32603`). The codes `-32700`, `-32600`, `-32601`, `-32602`, and `-32002` do not set `error.type`; `rpc.response.status_code` still records them. A downstream result with `isError` is `tool_error`. Every other failure uses the runs disposition when one was recorded (`denied`, `routing_failed`, `transport_error`, `cancelled`, `timeout`, and so on), and the runs reason only when no failure disposition was set (`deadline_exceeded`, `context_canceled`). There is no `canceled` value. The runs constant is `cancelled`.
 
-The root tool-call span is kind SERVER and is named `tools/call` before routing and `tools/call <tool>` after. The downstream span is kind CLIENT with the same name. Span names are not a versioned contract. The Traces list still shows the tool name, with the span name only as a fallback. A sensitive execution (an A2A server, or a server flagged for sensitive calls) sets `gen_ai.tool.name` to the operation category (`skill`, `send`, `task_get`, or `task_cancel`) on every span and metric row, and omits `gridctl.client.name`. The resolved tool name is not exported.
+The root tool-call span is kind SERVER and is named `tools/call` before routing and `tools/call <tool>` after. The downstream span is kind CLIENT with the same name. Routing stays `mcp.routing`, format conversion stays `mcp.format_conversion`, and cold start stays `mcp.autoscale.cold_start`. Span names are not a versioned contract. `GET /api/traces` returns that root name in `operation`. The Traces list still shows the tool name, with the span name only as a fallback. `gridctl traces` detail prints the span name, and its transport sub-line prints `network.transport` (`pipe` or `tcp` on a new trace). A sensitive execution (an A2A server, or a server flagged for sensitive calls) sets `gen_ai.tool.name` to the operation category (`skill`, `send`, `task_get`, or `task_cancel`) on every span and metric row, and omits `gridctl.client.name`. The resolved tool name is not exported.
 
 ### Trace context
 

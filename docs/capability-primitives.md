@@ -98,7 +98,9 @@ label, session, handle, or digest reference. Failures also count as observations
 The metrics observer supports this interface. Operation is `send`, `task_get`,
 or `task_cancel` for those exact local names, and `skill` otherwise. Usage is
 attributed to the server, replica, and operation category, without client or
-individual skill attribution.
+individual skill attribution. OTLP spans and metrics for a sensitive execution
+use that category as `gen_ai.tool.name` and omit the client label. The resolved
+tool name is not exported.
 
 Counting occurs locally before observation using the heuristic of four bytes
 per token. The configured counter is not invoked because implementations may

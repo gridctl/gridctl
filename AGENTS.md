@@ -210,11 +210,14 @@ pkg/pins/           TOFU schema pinning for tool definitions; drift surfaces in 
                     fail-closed, cross-process-locked card transactions using the existing pin-file format.
 pkg/secreport/      Passive security evidence report DTO and assembler for `gridctl doctor --security` and GET /api/security-report.
 pkg/optimize/       Usage analysis: feeds `gridctl optimize` and the UI's findings panel with token-denominated findings.
-pkg/metrics/        In-memory usage accounting and observers; sensitive observations record local numeric estimates
-                    without client attribution. Read via /api/metrics/tokens and /api/tools/usage.
+pkg/metrics/        In-memory usage accounting and observers, including the OTLP dispatch observer. Sensitive
+                    observations record local numeric estimates without client attribution. Read via
+                    /api/metrics/tokens and /api/tools/usage.
 pkg/telemetry/      Opt-in log, metric, and trace persistence, inventory, and wipe. Inventory is GET
                     /api/telemetry/inventory; DELETE /api/telemetry wipes persisted signals.
-pkg/tracing/        OTLP exporter + in-memory trace buffer for `gridctl traces` and the UI traces panel.
+pkg/tracing/        OTLP trace exporter, meter provider, semantic attribute keys, and the in-memory trace
+                    buffer for `gridctl traces` and the UI traces panel. `gateway.tracing` and
+                    `gateway.metrics.otlp` are read at startup.
 pkg/reload/         Stack hot-reload (file watcher + diff-and-apply path). security.go owns effective bind/insecure
                     precedence and immutable startup-security comparison. Reload and stackless Initialize run
                     preflight before no-op detection or mutation; rejected saved YAML is retained on disk.

@@ -95,7 +95,8 @@ gateway:
 | `security` | object | No | - | Security settings (see [Security](#security)) |
 | `tokenizer` | string | No | `"embedded"` | Token counting mode: `"embedded"` (cl100k_base approximation) or `"api"` (exact counts via Anthropic `count_tokens` endpoint) |
 | `tokenizer_api_key` | string | No | - | Anthropic API key for `tokenizer: api`. Falls back to `ANTHROPIC_API_KEY` env var. Supports `${VAR}` and `${var:KEY}` references |
-| `tracing` | object | No | - | Distributed tracing configuration (see [Tracing](#tracing)) |
+| `tracing` | object | No | - | Distributed tracing configuration (see [Tracing](#tracing)). Read at startup |
+| `metrics` | object | No | - | Optional OTLP metrics export (see [Metrics](#metrics)). Omitted exports nothing and leaves the in-memory token counters unchanged. Read at startup |
 
 The internal sensitive-call classification bypasses the configured tokenizer and
 format conversion, using local numeric estimates without client attribution.
@@ -240,7 +241,7 @@ gateway:
 | `sampling` | float | No | `1.0` | Head-based sampling rate `[0.0–1.0]`. `1.0` samples all traces |
 | `retention` | string | No | `"24h"` | How long completed traces are kept in the ring buffer. Accepts Go duration strings (e.g. `"1h"`, `"24h"`) |
 | `export` | string | No | `""` | Exporter type: `"otlp"` to enable OTLP HTTP export, or `""` to disable |
-| `endpoint` | string | No | `""` | OTLP HTTP endpoint URL. Required when `export` is `"otlp"`. `http://` uses plain HTTP; `https://` uses TLS. A pathless URL, or a URL whose path is `/`, is posted to `/v1/traces`. Any other path is used as-is |
+| `endpoint` | string | No | `""` | OTLP HTTP endpoint URL. Required when `export` is `"otlp"`. `http://` uses plain HTTP; `https://` uses TLS. A pathless URL, or a URL whose path is `/`, is posted to `/v1/traces`. Any other path is used as-is. Values expand `${var:KEY}` and `${secret:}` |
 | `headers` | map | No |  | Extra headers on the OTLP trace export request. Values expand `${var:KEY}` and `${secret:}`. Names are logged; values are redacted. Use a variable reference, not a literal |
 | `max_traces` | int | No | `1000` | Ring buffer capacity in number of traces |
 | `include_infra` | bool | No | `false` | Admit spans from non-gridctl instrumentation scopes (e.g. Docker SDK HTTP self-instrumentation) into the UI trace buffer. OTLP export is unaffected |
@@ -269,7 +270,7 @@ gateway:
 > Set `headers` with a `${var:KEY}` reference, or use an OTel Collector as a proxy.
 > Do not put a literal secret in `stack.yaml`.
 
-`gateway.tracing`, including `headers` and `endpoint`, is read at startup. A change requires a restart.
+`gateway.tracing`, including `headers` and `endpoint`, is read at startup. A change requires a restart. `gridctl validate` and `gridctl apply` reject a non-absolute endpoint, a scheme other than `http` or `https`, and userinfo, and name `gateway.tracing.endpoint`. An unexpanded reference skips that check.
 
 **Example - header from the variable store:**
 
@@ -300,12 +301,12 @@ gateway:
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `endpoint` | string | Yes, when the block is present |  | OTLP HTTP endpoint URL. A pathless URL, or a URL whose path is `/`, is posted to `/v1/metrics`. Any other path is used as-is |
+| `endpoint` | string | Yes, when the block is present |  | OTLP HTTP endpoint URL. A pathless URL, or a URL whose path is `/`, is posted to `/v1/metrics`. Any other path is used as-is. Values expand `${var:KEY}` and `${secret:}` |
 | `headers` | map | No |  | Extra headers on the export request. Expanded and redacted like tracing headers. Use `${var:OTEL_HEADER}`, never a literal |
 | `interval` | string | No | `60s` | Go duration string. Minimum `1s` |
 | `timeout` | string | No | `10s` | Go duration string for one export |
 
-`gridctl validate` rejects a block with no `endpoint`, a non-duration `interval`, and an `interval` under one second, and names `gateway.metrics.otlp.<field>`.
+`gridctl validate` and `gridctl apply` reject a block with no `endpoint`, an endpoint that is not an absolute `http` or `https` URL or that includes userinfo, a non-duration `interval` or `timeout`, and an `interval` under one second. Errors name `gateway.metrics.otlp.<field>`. An unexpanded reference skips the URL and duration checks.
 
 ---
 

@@ -501,6 +501,7 @@ Learn more → [Packs guide](docs/packs.md)
 | [`execution/`](examples/execution/) | Included in v1.0.0-rc.2: opt-in container restrictions and instance-bound execution evidence |
 | [`security-evidence/`](examples/security-evidence/) | Included in v1.0.0-rc.2: partial, unknown, and N/A states for `gridctl doctor --security` |
 | [`otlp-jaeger.yaml`](examples/tracing/otlp-jaeger.yaml) | Export traces to Jaeger via OTLP |
+| [`otel-collector.yaml`](examples/tracing/otel-collector.yaml) | Export traces and metrics to a local collector |
 | [`runs/stack.yaml`](examples/runs/stack.yaml) | Included in v1.0.0-rc.2: opt-in metadata-only persisted dispatch records |
 | [`portable-pack/`](examples/portable-pack) | Team pack: skills, agents, wiring, a local-process stack, and a commented external source example from one manifest |
 | [`booster-pack/`](examples/booster-pack) | Fragment pack that composes one local-process server onto the `network-eng` pack |

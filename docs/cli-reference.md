@@ -422,6 +422,11 @@ Recorded gateway names, attributes, and errors mask recognizable typed capabilit
 strings. Correlate by generated trace IDs rather than secret-bearing names. See
 [diagnostic privacy and migration](usage-observability.md#diagnostic-privacy-and-migration).
 
+The detail waterfall prints the span name (`tools/call <tool>` after routing).
+The transport sub-line prints `network.transport` (`pipe` or `tcp` on a new
+trace) and falls back to `gridctl.transport` only when that key is absent.
+See [OpenTelemetry attributes](usage-observability.md#opentelemetry-attributes).
+
 | Command | Purpose |
 |---|---|
 | `gridctl traces` | Show recent distributed traces (table view). |
