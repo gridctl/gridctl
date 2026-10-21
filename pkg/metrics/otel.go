@@ -60,7 +60,11 @@ func (o *OTelObserver) ObserveDispatch(ctx context.Context, obs mcp.DispatchObse
 	}
 	o.server.Record(ctx, obs.TotalDuration.Seconds(), metric.WithAttributes(serverAttrs...))
 
-	if obs.HasReplica {
+	// HasReplica is set as soon as routing picks a replica, including
+	// denials that never call the downstream client. Record this histogram
+	// only when that call was made, or a zero-duration sample looks like a
+	// completed downstream operation.
+	if obs.DownstreamAttempted {
 		clientAttrs := []attribute.KeyValue{
 			attribute.String(string(tracing.AttrMethodName), obs.MethodName),
 			attribute.String(string(tracing.AttrGenAIOperationName), obs.OperationName),
@@ -163,10 +167,22 @@ func (o *OTelObserver) registerObservables(meter metric.Meter) {
 	}
 	_, _ = meter.RegisterCallback(func(_ context.Context, observer metric.Observer) error {
 		if replicas != nil && o.replicas != nil {
+			// Last-value aggregation keeps one point per attribute set.
+			// Observing 1 once per replica would collapse a count of three
+			// to 1. Aggregate first, then observe each key once.
+			type replicaKey struct {
+				server string
+				state  string
+			}
+			counts := make(map[replicaKey]int64)
 			for _, sample := range o.replicas() {
-				observer.ObserveInt64(replicas, 1, metric.WithAttributes(
-					attribute.String(string(tracing.AttrServerName), logging.RedactString(sample.Server)),
-					attribute.String(string(tracing.AttrReplicaState), sample.State),
+				key := replicaKey{server: logging.RedactString(sample.Server), state: sample.State}
+				counts[key]++
+			}
+			for key, n := range counts {
+				observer.ObserveInt64(replicas, n, metric.WithAttributes(
+					attribute.String(string(tracing.AttrServerName), key.server),
+					attribute.String(string(tracing.AttrReplicaState), key.state),
 				))
 			}
 		}

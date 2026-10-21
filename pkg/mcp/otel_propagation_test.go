@@ -1,12 +1,14 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -370,6 +372,326 @@ func installTracer(t *testing.T, buf *tracing.Buffer) func() {
 		otel.SetTextMapPropagator(oldProp)
 	}
 }
+
+func TestStateless_UpstreamTraceContextReachesDownstream(t *testing.T) {
+	rec := &spanRecorder{}
+	restore := installRecordingTracer(t, rec)
+	defer restore()
+
+	const (
+		metaParent  = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+		wantParent  = "b7ad6b7169203331"
+		wantTrace   = "0af7651916cd43dd8448eb211c80319c"
+		wantState   = "vendor=1"
+		wantBaggage = "tenant=acme"
+	)
+	var (
+		body   []byte
+		header http.Header
+	)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		header = r.Header.Clone()
+		body, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"ok"}]}}`))
+	}))
+	defer ts.Close()
+
+	downstream := NewClient("echo", ts.URL)
+	downstream.allTools = []Tool{{Name: "ping"}}
+	downstream.initialized = true
+	downstream.SetEra(EraStateless)
+	downstream.SetProtocolVersion(StatelessProtocolVersion)
+
+	g := NewGateway()
+	g.Router().AddClient(downstream)
+	g.Router().RefreshTools()
+	g.SetServerMeta(MCPServerConfig{Name: "echo", Transport: TransportHTTP, Endpoint: ts.URL})
+
+	raw, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name":      "echo__ping",
+			"arguments": map[string]any{},
+			"_meta": map[string]any{
+				metaKeyProtocolVersion:    StatelessProtocolVersion,
+				metaKeyClientInfo:         map[string]any{"name": "Example Client", "version": "1.0.0"},
+				metaKeyClientCapabilities: map[string]any{},
+				"traceparent":             metaParent,
+				"tracestate":              wantState,
+				"baggage":                 wantBaggage,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := NewStreamableHTTPServer(g, nil)
+	w, resp := doStateless(t, srv, statelessRequest(t, raw))
+	if w.Code != http.StatusOK || resp.Error != nil {
+		t.Fatalf("status %d error %v body %s", w.Code, resp.Error, w.Body.String())
+	}
+
+	var got struct {
+		Meta   json.RawMessage `json:"_meta"`
+		Params struct {
+			Meta map[string]json.RawMessage `json:"_meta"`
+		} `json:"params"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("downstream body %s: %v", body, err)
+	}
+	if len(got.Meta) != 0 {
+		t.Fatalf("envelope root has _meta: %s", body)
+	}
+	if metaString(t, got.Params.Meta, "tracestate") != wantState {
+		t.Fatalf("params._meta tracestate = %q, body %s", metaString(t, got.Params.Meta, "tracestate"), body)
+	}
+	if !strings.Contains(metaString(t, got.Params.Meta, "baggage"), wantBaggage) {
+		t.Fatalf("params._meta baggage = %q", metaString(t, got.Params.Meta, "baggage"))
+	}
+	if header.Get("tracestate") != wantState {
+		t.Fatalf("header tracestate = %q", header.Get("tracestate"))
+	}
+	if !strings.Contains(header.Get("baggage"), wantBaggage) {
+		t.Fatalf("header baggage = %q", header.Get("baggage"))
+	}
+
+	if !rec.hasRemoteParent(wantTrace, wantParent) {
+		t.Fatalf("no root span parented on %s in %+v", wantParent, rec.snapshot())
+	}
+}
+
+func TestHandshake_MetaTraceparentParentsRoot(t *testing.T) {
+	rec := &spanRecorder{}
+	restore := installRecordingTracer(t, rec)
+	defer restore()
+
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+	client := setupMockAgentClient(ctrl, "server1", []Tool{{Name: "echo"}})
+	client.EXPECT().CallTool(gomock.Any(), "echo", gomock.Any()).Return(&ToolCallResult{Content: []Content{NewTextContent("ok")}}, nil)
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+	srv := NewStreamableHTTPServer(g, nil)
+	sessionID := initializeStreamable(t, srv)
+
+	const (
+		metaParent = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+		wantTrace  = "0af7651916cd43dd8448eb211c80319c"
+		wantParent = "b7ad6b7169203331"
+	)
+	params, err := json.Marshal(map[string]any{
+		"name":      "server1__echo",
+		"arguments": map[string]any{},
+		"_meta":     map[string]any{"traceparent": metaParent},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/call",
+		"params":  json.RawMessage(params),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := loopbackRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	req.Header.Set("Mcp-Session-Id", sessionID)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", w.Code, w.Body.String())
+	}
+
+	if !rec.hasRemoteParent(wantTrace, wantParent) {
+		t.Fatalf("handshake root was not parented on %s: %+v", wantParent, rec.snapshot())
+	}
+}
+
+func TestCodeMode_HeaderLinkStaysOnOuterRoot(t *testing.T) {
+	exp := &linkExporter{}
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sdktrace.NewSimpleSpanProcessor(exp)))
+	old := otel.GetTracerProvider()
+	oldProp := otel.GetTextMapPropagator()
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+	t.Cleanup(func() {
+		_ = tp.Shutdown(context.Background())
+		otel.SetTracerProvider(old)
+		otel.SetTextMapPropagator(oldProp)
+	})
+
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+	g.SetCodeMode(5 * time.Second)
+	client := setupMockAgentClient(ctrl, "echo", []Tool{{Name: "ping"}})
+	client.EXPECT().CallTool(gomock.Any(), "ping", gomock.Any()).Return(&ToolCallResult{Content: []Content{NewTextContent("ok")}}, nil)
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+
+	metaParent := "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+	headerParent := "00-11111111111111111111111111111111-2222222222222222-01"
+	params := json.RawMessage(`{"name":"execute","_meta":{"traceparent":"` + metaParent + `"}}`)
+	headers := http.Header{}
+	headers.Set("traceparent", headerParent)
+	ctx := parentContextFromRequest(context.Background(), params, headers)
+
+	if _, err := g.HandleToolsCall(ctx, ToolCallParams{
+		Name:      "execute",
+		Arguments: map[string]any{"code": `mcp.callTool("echo", "ping", {}); "ok";`},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	exp.mu.Lock()
+	defer exp.mu.Unlock()
+	var outer, inner int
+	for _, sp := range exp.spans {
+		switch sp.name {
+		case tracing.SpanNameToolsCall:
+			outer++
+			if sp.links != 1 {
+				t.Fatalf("outer root links = %d, want 1", sp.links)
+			}
+		case tracing.SpanNameToolsCall + " ping":
+			inner++
+			if sp.links != 0 {
+				t.Fatalf("inner span %q links = %d, want 0", sp.name, sp.links)
+			}
+		}
+	}
+	if outer == 0 || inner == 0 {
+		t.Fatalf("spans = %+v", exp.spans)
+	}
+}
+
+func TestPinBlock_DoesNotAttemptDownstream(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	g := NewGateway()
+	client := setupMockAgentClient(ctrl, "echo", []Tool{{Name: "ping"}})
+	g.Router().AddClient(client)
+	g.Router().RefreshTools()
+	g.blockedMu.Lock()
+	g.blockedServers["echo"] = true
+	g.blockedMu.Unlock()
+
+	var seen []DispatchObservation
+	g.SetDispatchObserver(dispatchSpy{fn: func(obs DispatchObservation) { seen = append(seen, obs) }})
+	result, err := g.HandleToolsCall(context.Background(), ToolCallParams{Name: "echo__ping"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result == nil || !result.IsError {
+		t.Fatalf("result = %+v, want pin denial", result)
+	}
+	if len(seen) != 1 {
+		t.Fatalf("observations = %d", len(seen))
+	}
+	if !seen[0].HasReplica || seen[0].DownstreamAttempted {
+		t.Fatalf("hasReplica=%v downstreamAttempted=%v", seen[0].HasReplica, seen[0].DownstreamAttempted)
+	}
+}
+
+func metaString(t *testing.T, meta map[string]json.RawMessage, key string) string {
+	t.Helper()
+	raw, ok := meta[key]
+	if !ok {
+		return ""
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		t.Fatalf("%s is not a string: %s", key, raw)
+	}
+	return value
+}
+
+type recordedSpan struct {
+	name         string
+	traceID      string
+	parentID     string
+	parentRemote bool
+}
+
+type spanRecorder struct {
+	mu    sync.Mutex
+	spans []recordedSpan
+}
+
+func (r *spanRecorder) ExportSpans(_ context.Context, spans []sdktrace.ReadOnlySpan) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, sp := range spans {
+		parent := sp.Parent()
+		r.spans = append(r.spans, recordedSpan{
+			name:         sp.Name(),
+			traceID:      sp.SpanContext().TraceID().String(),
+			parentID:     parent.SpanID().String(),
+			parentRemote: parent.IsRemote(),
+		})
+	}
+	return nil
+}
+
+func (r *spanRecorder) Shutdown(context.Context) error { return nil }
+
+func (r *spanRecorder) hasRemoteParent(traceID, parentID string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, sp := range r.spans {
+		if sp.traceID == traceID && sp.parentRemote && sp.parentID == parentID && strings.HasPrefix(sp.name, tracing.SpanNameToolsCall) {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *spanRecorder) snapshot() []recordedSpan {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]recordedSpan, len(r.spans))
+	copy(out, r.spans)
+	return out
+}
+
+func installRecordingTracer(t *testing.T, rec *spanRecorder) func() {
+	t.Helper()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sdktrace.NewSimpleSpanProcessor(rec)))
+	old := otel.GetTracerProvider()
+	oldProp := otel.GetTextMapPropagator()
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+	return func() {
+		_ = tp.Shutdown(context.Background())
+		otel.SetTracerProvider(old)
+		otel.SetTextMapPropagator(oldProp)
+	}
+}
+
+type linkSpan struct {
+	name  string
+	links int
+}
+
+type linkExporter struct {
+	mu    sync.Mutex
+	spans []linkSpan
+}
+
+func (e *linkExporter) ExportSpans(_ context.Context, spans []sdktrace.ReadOnlySpan) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, sp := range spans {
+		e.spans = append(e.spans, linkSpan{name: sp.Name(), links: len(sp.Links())})
+	}
+	return nil
+}
+
+func (e *linkExporter) Shutdown(context.Context) error { return nil }
 
 func installPropagator(t *testing.T) func() {
 	t.Helper()

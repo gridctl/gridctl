@@ -2506,6 +2506,9 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 	ctx, rootSpan := tracer.Start(ctx, tracing.SpanNameToolsCall,
 		trace.WithSpanKind(trace.SpanKindServer),
 		trace.WithLinks(links...))
+	// The header link belongs to this request's root only. Code-mode inner
+	// calls re-enter dispatch with this context and must not inherit it.
+	ctx = withoutTraceLinks(ctx)
 	defer rootSpan.End()
 	started := time.Now()
 	attempt := g.startRunAttempt(ctx, params.Name)
@@ -2520,38 +2523,40 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 		bareTool = tool
 	}
 	var (
-		rpcCode           *int
-		downstreamIsError bool
-		sensitive         bool
-		sensitiveCategory string
-		resolvedServer    string
-		resolvedTool      string
-		replicaID         int
-		hasReplica        bool
-		transport         transportAttrs
-		downstreamDur     time.Duration
-		usage             ToolCallSummary
-		hasUsage          bool
+		rpcCode             *int
+		downstreamIsError   bool
+		sensitive           bool
+		sensitiveCategory   string
+		resolvedServer      string
+		resolvedTool        string
+		replicaID           int
+		hasReplica          bool
+		downstreamAttempted bool
+		transport           transportAttrs
+		downstreamDur       time.Duration
+		usage               ToolCallSummary
+		hasUsage            bool
 	)
 	// Runs before rootSpan.End (registered above) so a sensitive re-stamp
 	// replaces the real tool name before the span is exported.
 	defer func() {
 		g.finishToolCallSpan(ctx, rootSpan, &state, toolCallFinish{
-			started:           started,
-			requestedName:     params.Name,
-			bareTool:          bareTool,
-			rpcCode:           rpcCode,
-			downstreamIsError: downstreamIsError,
-			sensitive:         sensitive,
-			sensitiveCategory: sensitiveCategory,
-			resolvedServer:    resolvedServer,
-			resolvedTool:      resolvedTool,
-			replicaID:         replicaID,
-			hasReplica:        hasReplica,
-			transport:         transport,
-			downstreamDur:     downstreamDur,
-			usage:             usage,
-			hasUsage:          hasUsage,
+			started:             started,
+			requestedName:       params.Name,
+			bareTool:            bareTool,
+			rpcCode:             rpcCode,
+			downstreamIsError:   downstreamIsError,
+			sensitive:           sensitive,
+			sensitiveCategory:   sensitiveCategory,
+			resolvedServer:      resolvedServer,
+			resolvedTool:        resolvedTool,
+			replicaID:           replicaID,
+			hasReplica:          hasReplica,
+			downstreamAttempted: downstreamAttempted,
+			transport:           transport,
+			downstreamDur:       downstreamDur,
+			usage:               usage,
+			hasUsage:            hasUsage,
 		})
 	}()
 	rootAttrs := []attribute.KeyValue{
@@ -2891,6 +2896,7 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 	replica.DecInFlight()
 	duration := time.Since(start)
 	downstreamDur = duration
+	downstreamAttempted = true
 	attempt.SetResolved(client.Name(), toolName, replicaID)
 	attempt.SetDownstreamDuration(duration)
 	if isSensitiveExecution(ctx) {

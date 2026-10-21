@@ -269,6 +269,16 @@ func checkExportCredentials(stack *Stack) error {
 		if err := check("gateway.tokenizer_api_key", g.TokenizerAPIKey); err != nil {
 			return err
 		}
+		if g.Tracing != nil {
+			if err := checkHeaders("gateway.tracing.headers", g.Tracing.Headers); err != nil {
+				return err
+			}
+		}
+		if g.Metrics != nil && g.Metrics.OTLP != nil {
+			if err := checkHeaders("gateway.metrics.otlp.headers", g.Metrics.OTLP.Headers); err != nil {
+				return err
+			}
+		}
 	}
 	for i, srv := range stack.MCPServers {
 		prefix := fmt.Sprintf("mcp-servers[%d]", i)

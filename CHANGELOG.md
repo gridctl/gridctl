@@ -38,6 +38,7 @@ All notable changes to gridctl will be documented in this file.
 ### Fixed
 
 - A pathless `gateway.tracing.endpoint` such as `http://localhost:4318` now posts to `/v1/traces`, matching the documented collector URL. Any other path is still used as-is. This is a fix of the documented contract, not a new configuration field.
+- `gridctl.gateway.replicas` reports the replica count for each server and state. `mcp.client.operation.duration` is recorded only when the downstream call was made. Export rejects an inline literal in `gateway.tracing.headers` and `gateway.metrics.otlp.headers`. An OTLP export failure that does not name its signal is counted as `unknown` rather than `traces`. A header-derived span link stays on the outer root and is not copied onto a code-mode inner call.
 - Registry REST file GETs and Skills over MCP share a deterministic MIME table. Images (`.png`, `.jpg`, `.jpeg`, `.gif`, `.svg`, `.webp`), `.txt`, `.html`, `.css`, `.js`, `.toml`, `.xml`, and `.pdf` now receive explicit content types instead of `application/octet-stream`. Existing mapped types, including `.md` as `text/markdown`, are unchanged; unknown extensions keep the binary fallback.
 
 ### Documentation

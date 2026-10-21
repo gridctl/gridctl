@@ -10,28 +10,32 @@ import (
 // ClientName, and include only local token estimates. The real tool name
 // never enters a sensitive observation.
 type DispatchObservation struct {
-	ServerName         string
-	ToolName           string
-	ClientName         string
-	ReplicaID          int
-	HasReplica         bool
-	Transport          string
-	NetworkTransport   string
-	ServerAddress      string
-	ServerPort         int
-	HasServerPort      bool
-	MethodName         string
-	OperationName      string
-	ProtocolVersion    string
-	TotalDuration      time.Duration
-	DownstreamDuration time.Duration
-	Disposition        string
-	Stage              string
-	Reason             string
-	ErrorType          string
-	Sensitive          bool
-	Usage              ToolCallSummary
-	HasUsage           bool
+	ServerName string
+	ToolName   string
+	ClientName string
+	ReplicaID  int
+	HasReplica bool
+	// DownstreamAttempted is true only after client.CallTool returns.
+	// HasReplica is earlier: a schema-pin block or an MRTR mismatch can
+	// select a replica and still never call it.
+	DownstreamAttempted bool
+	Transport           string
+	NetworkTransport    string
+	ServerAddress       string
+	ServerPort          int
+	HasServerPort       bool
+	MethodName          string
+	OperationName       string
+	ProtocolVersion     string
+	TotalDuration       time.Duration
+	DownstreamDuration  time.Duration
+	Disposition         string
+	Stage               string
+	Reason              string
+	ErrorType           string
+	Sensitive           bool
+	Usage               ToolCallSummary
+	HasUsage            bool
 }
 
 // DispatchObserver is notified once at the end of every tools/call return

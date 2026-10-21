@@ -14,21 +14,22 @@ import (
 )
 
 type toolCallFinish struct {
-	started           time.Time
-	requestedName     string
-	bareTool          string
-	rpcCode           *int
-	downstreamIsError bool
-	sensitive         bool
-	sensitiveCategory string
-	resolvedServer    string
-	resolvedTool      string
-	replicaID         int
-	hasReplica        bool
-	transport         transportAttrs
-	downstreamDur     time.Duration
-	usage             ToolCallSummary
-	hasUsage          bool
+	started             time.Time
+	requestedName       string
+	bareTool            string
+	rpcCode             *int
+	downstreamIsError   bool
+	sensitive           bool
+	sensitiveCategory   string
+	resolvedServer      string
+	resolvedTool        string
+	replicaID           int
+	hasReplica          bool
+	downstreamAttempted bool
+	transport           transportAttrs
+	downstreamDur       time.Duration
+	usage               ToolCallSummary
+	hasUsage            bool
 }
 
 func toolsCallSpanName(tool string) string {
@@ -109,28 +110,29 @@ func (g *Gateway) notifyDispatch(ctx context.Context, fin toolCallFinish, outcom
 		tool = logging.RedactString(tool)
 	}
 	record := DispatchObservation{
-		ServerName:         server,
-		ToolName:           tool,
-		ClientName:         clientName,
-		ReplicaID:          fin.replicaID,
-		HasReplica:         fin.hasReplica,
-		Transport:          fin.transport.Gridctl,
-		NetworkTransport:   fin.transport.Network,
-		ServerAddress:      fin.transport.Address,
-		ServerPort:         fin.transport.Port,
-		HasServerPort:      fin.transport.HasPort,
-		MethodName:         tracing.MethodToolsCall,
-		OperationName:      tracing.OperationExecuteTool,
-		ProtocolVersion:    upstreamProtocolVersion(ctx),
-		TotalDuration:      time.Since(fin.started),
-		DownstreamDuration: fin.downstreamDur,
-		Disposition:        outcome.Disposition,
-		Stage:              outcome.Stage,
-		Reason:             outcome.Reason,
-		ErrorType:          errorType,
-		Sensitive:          fin.sensitive,
-		Usage:              fin.usage,
-		HasUsage:           fin.hasUsage,
+		ServerName:          server,
+		ToolName:            tool,
+		ClientName:          clientName,
+		ReplicaID:           fin.replicaID,
+		HasReplica:          fin.hasReplica,
+		DownstreamAttempted: fin.downstreamAttempted,
+		Transport:           fin.transport.Gridctl,
+		NetworkTransport:    fin.transport.Network,
+		ServerAddress:       fin.transport.Address,
+		ServerPort:          fin.transport.Port,
+		HasServerPort:       fin.transport.HasPort,
+		MethodName:          tracing.MethodToolsCall,
+		OperationName:       tracing.OperationExecuteTool,
+		ProtocolVersion:     upstreamProtocolVersion(ctx),
+		TotalDuration:       time.Since(fin.started),
+		DownstreamDuration:  fin.downstreamDur,
+		Disposition:         outcome.Disposition,
+		Stage:               outcome.Stage,
+		Reason:              outcome.Reason,
+		ErrorType:           errorType,
+		Sensitive:           fin.sensitive,
+		Usage:               fin.usage,
+		HasUsage:            fin.hasUsage,
 	}
 	obs.ObserveDispatch(ctx, record)
 }

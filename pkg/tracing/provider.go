@@ -139,7 +139,7 @@ func (p *Provider) Init(ctx context.Context) error {
 					"endpoint_host", EndpointHost(endpoint), "error", expErr)
 			} else {
 				processors = append(processors,
-					sdktrace.NewBatchSpanProcessor(exp),
+					sdktrace.NewBatchSpanProcessor(classifyingSpanExporter{inner: exp}),
 				)
 				p.errors.SetHost(SignalTraces, EndpointHost(endpoint))
 				p.logger.Info("OTLP trace exporter configured",
@@ -227,6 +227,24 @@ func (p *Provider) RegisterExporter(exp sdktrace.SpanExporter) {
 		return
 	}
 	p.provider.RegisterSpanProcessor(sdktrace.NewBatchSpanProcessor(exp))
+}
+
+// classifyingSpanExporter prefixes export errors so the global handler
+// counts them against the traces signal. The metrics exporter uses the
+// same pattern. A URL that contains the word metric is not a signal.
+type classifyingSpanExporter struct {
+	inner sdktrace.SpanExporter
+}
+
+func (e classifyingSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
+	if err := e.inner.ExportSpans(ctx, spans); err != nil {
+		return fmt.Errorf("trace export: %w", err)
+	}
+	return nil
+}
+
+func (e classifyingSpanExporter) Shutdown(ctx context.Context) error {
+	return e.inner.Shutdown(ctx)
 }
 
 // bufferSize returns the effective ring buffer capacity from config.

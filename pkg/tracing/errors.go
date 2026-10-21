@@ -60,8 +60,8 @@ func (h *ExportErrorHandler) SetHost(signal, host string) {
 	h.mu.Unlock()
 }
 
-// Handle implements otel.ErrorHandler. SDK errors that do not name a metric
-// export are counted as traces.
+// Handle implements otel.ErrorHandler. Errors wrapped as "metric export:"
+// or "trace export:" are counted on that signal. Anything else is unknown.
 func (h *ExportErrorHandler) Handle(err error) {
 	if h == nil || err == nil {
 		return
@@ -110,9 +110,28 @@ func (h *ExportErrorHandler) Failures(signal string) uint64 {
 	return h.failures[signal]
 }
 
+const (
+	exportPrefixTraces  = "trace export:"
+	exportPrefixMetrics = "metric export:"
+)
+
+// classifyExportSignal counts a failure on the signal named by the exporter
+// wrapper. A collector host such as metrics.internal must not move a trace
+// failure onto the metrics signal, and an unrecognized SDK error is not
+// assumed to be traces.
 func classifyExportSignal(err error) string {
-	if strings.Contains(strings.ToLower(err.Error()), "metric") {
-		return SignalMetrics
+	if err == nil {
+		return SignalUnknown
 	}
-	return SignalTraces
+	msg := strings.ToLower(err.Error())
+	metricAt := strings.Index(msg, exportPrefixMetrics)
+	traceAt := strings.Index(msg, exportPrefixTraces)
+	switch {
+	case metricAt >= 0 && (traceAt < 0 || metricAt < traceAt):
+		return SignalMetrics
+	case traceAt >= 0:
+		return SignalTraces
+	default:
+		return SignalUnknown
+	}
 }

@@ -111,7 +111,7 @@ The root tool-call span is kind SERVER and is named `tools/call` before routing 
 
 ### Trace context
 
-Upstream extraction prefers `params._meta`. A valid `traceparent` there is the parent of the root span. When `_meta` has none, the HTTP `traceparent` header is the parent. When both are present, `_meta` is the parent and the header context is a span link. Handshake sessions and the stateless path both extract.
+Upstream extraction prefers `params._meta`. A valid `traceparent` there is the parent of the root span. When `_meta` has none, the HTTP `traceparent` header is the parent. When both are present, `_meta` is the parent and the header context is a span link on that request's root only. A code-mode inner call does not inherit the link. Handshake sessions and the stateless path both extract.
 
 Every downstream transport injects `traceparent`, `tracestate`, and `baggage`. Stdio and process inject them in `params._meta`. Streamable HTTP and SSE inject them in both the request headers and `params._meta`, composed with the stateless-era keys when that era is in use. OpenAPI and A2A inject headers only, because the far end is not MCP.
 
@@ -129,11 +129,11 @@ Baggage is forwarded verbatim and capped at 8192 bytes. A larger value is droppe
 | `mcp.client.operation.duration` | `s` | `mcp.method.name`, `gen_ai.operation.name`, `gen_ai.tool.name`, `gridctl.server.name`, `gridctl.transport`, `network.transport`, `server.address`, `server.port`, `error.type` |
 | `gridctl.gateway.tool.calls` | `{call}` | `gridctl.server.name`, `gen_ai.tool.name`, `gridctl.client.name`, `gridctl.dispatch.disposition`, `gridctl.dispatch.stage`, `gridctl.dispatch.reason` |
 | `gridctl.gateway.tokens` | `{token}` | `gridctl.usage.direction` (`input`, `output`, `cache_read`, or `cache_creation`), `gridctl.server.name`, `gen_ai.tool.name`, `gridctl.client.name` |
-| `gridctl.gateway.replicas` | `{replica}` | `gridctl.server.name`, `gridctl.replica.state` (`healthy`, `unhealthy`, or `restarting`) |
+| `gridctl.gateway.replicas` | `{replica}` | `gridctl.server.name`, `gridctl.replica.state` (`healthy`, `unhealthy`, or `restarting`). The value is the count of replicas in that state |
 | `gridctl.runs.dropped` | `{record}` | `gridctl.runs.drop_reason` (omitted when runs are disabled) |
-| `gridctl.otlp.export.failures` | `{failure}` | `gridctl.otlp.signal` (`traces` or `metrics`) |
+| `gridctl.otlp.export.failures` | `{failure}` | `gridctl.otlp.signal` (`traces`, `metrics`, or `unknown`) |
 
-Duration histograms use buckets 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30, 60, 120, and 300 seconds. Denials, rate limits, and policy rejections are rows of `gridctl.gateway.tool.calls`. Export failures log at warn with the endpoint host and signal, at most once per minute per distinct message, and increment the failure counter. Shutdown flushes both signals after the HTTP server stops and before the log router closes.
+Duration histograms use buckets 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 30, 60, 120, and 300 seconds. `mcp.client.operation.duration` is recorded only when the downstream call was made. A denial after a replica was selected, including a schema-pin block, does not add a sample. Denials, rate limits, and policy rejections are rows of `gridctl.gateway.tool.calls`. Export failures log at warn with the endpoint host and signal, at most once per minute per distinct message, and increment the failure counter. An error that does not carry the `trace export:` or `metric export:` prefix is counted as `unknown`. Shutdown flushes both signals after the HTTP server stops and before the log router closes.
 
 ## Metrics persistence
 

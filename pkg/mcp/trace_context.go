@@ -42,6 +42,15 @@ func traceLinksFromContext(ctx context.Context) []trace.Link {
 	return links
 }
 
+// withoutTraceLinks shadows a header-derived link so a nested dispatch does
+// not attach it again. The outer root already received the link.
+func withoutTraceLinks(ctx context.Context) context.Context {
+	if len(traceLinksFromContext(ctx)) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, traceLinksKey{}, []trace.Link(nil))
+}
+
 // extractMetaTraceContext extracts the configured propagator from params._meta.
 // Only the _meta object is decoded, and only its string members, so sibling
 // integers beyond 53 bits are never touched.

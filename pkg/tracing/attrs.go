@@ -5,8 +5,9 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// AliasRemovalRelease is the release that drops legacy attribute keys and
-// the old network.transport values. Both are emitted until that release.
+// AliasRemovalRelease is the release that drops legacy attribute keys.
+// Those keys are emitted until that release. The old network.transport
+// values are gone now; their mapping is documented until the same release.
 // Diagnostic output, not a versioned contract.
 const AliasRemovalRelease = "1.1.0"
 
@@ -99,6 +100,7 @@ const (
 const (
 	SignalTraces      = "traces"
 	SignalMetrics     = "metrics"
+	SignalUnknown     = "unknown"
 	SignalPathTraces  = "/v1/traces"
 	SignalPathMetrics = "/v1/metrics"
 )
