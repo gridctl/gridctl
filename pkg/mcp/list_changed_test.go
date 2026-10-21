@@ -53,6 +53,29 @@ func (s *recordingSink) waitQuiet(t *testing.T, want int, quiet time.Duration) [
 	return got
 }
 
+// waitSettled returns once at least n notifications have arrived and the
+// count has stayed unchanged for quiet. A flush notifies sessions one at a
+// time, so the first arrival is not the whole batch.
+func (s *recordingSink) waitSettled(t *testing.T, n int, timeout, quiet time.Duration) []string {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	prev := -1
+	var stableSince time.Time
+	for {
+		got := s.snapshot()
+		if len(got) != prev {
+			prev = len(got)
+			stableSince = time.Now()
+		} else if len(got) >= n && time.Since(stableSince) >= quiet {
+			return got
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("notifications did not settle at %d, want at least %d: %v", len(got), n, got)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 type listChangedStub struct {
 	name    string
 	tools   []Tool
@@ -60,9 +83,9 @@ type listChangedStub struct {
 	calls   atomic.Int32
 }
 
-func (s *listChangedStub) Name() string { return s.name }
+func (s *listChangedStub) Name() string                     { return s.name }
 func (s *listChangedStub) Initialize(context.Context) error { return nil }
-func (s *listChangedStub) IsInitialized() bool { return true }
+func (s *listChangedStub) IsInitialized() bool              { return true }
 func (s *listChangedStub) ServerInfo() ServerInfo {
 	return ServerInfo{Name: s.name, Version: "1"}
 }
@@ -265,7 +288,9 @@ func TestListChangeNotifier_AccessAndGroupScope(t *testing.T) {
 	g.Router().RefreshTools()
 	sink.waitQuiet(t, before, 20*time.Millisecond)
 	g.Router().RemoveClient("beta")
-	got = sink.waitFor(t, before+1, time.Second)
+	// bob and other both lose beta. Map iteration notifies them in either
+	// order, and waitFor can return after the first.
+	got = sink.waitSettled(t, before+1, time.Second, 40*time.Millisecond)
 	seen := map[string]int{}
 	for _, id := range got[before:] {
 		seen[id]++
@@ -274,7 +299,7 @@ func TestListChangeNotifier_AccessAndGroupScope(t *testing.T) {
 		t.Fatalf("unaffected group notified: %v", got[before:])
 	}
 	if seen[other.ID] != 1 {
-		t.Fatalf("group notifications = %v", got[before:])
+		t.Fatalf("group notifications = %v, want %s once", got[before:], other.ID)
 	}
 }
 
