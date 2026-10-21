@@ -13,6 +13,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/tracing"
 	"github.com/spf13/cobra"
 )
 
@@ -372,14 +373,16 @@ func printWaterfall(w io.Writer, detail apiTraceDetail) {
 			endMs,
 		)
 
-		// Print notable span attributes as a sub-line.
-		if transport, ok := span.Attributes["network.transport"]; ok {
+		// Print notable span attributes as a sub-line. New keys win; seeded
+		// traces keep the old server name keys.
+		transport := tracing.FirstString(span.Attributes, tracing.TransportKeys()...)
+		if transport != "" {
 			indent := "│  └─"
 			if isLast {
 				indent = "   └─"
 			}
 			parts := []string{"transport: " + transport}
-			if srv, ok2 := span.Attributes["server.name"]; ok2 {
+			if srv := tracing.FirstString(span.Attributes, tracing.ServerNameKeys()...); srv != "" {
 				parts = append(parts, "server: "+srv)
 			}
 			fmt.Fprintf(w, "%s %s\n", indent, strings.Join(parts, ", "))

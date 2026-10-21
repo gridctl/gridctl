@@ -14,9 +14,9 @@ import (
 )
 
 // TestHandleToolsCall_singleTraceTree pins the tool-call span topology: one
-// trace per call, with mcp.routing and mcp.client.call_tool parented under a
-// root span that carries the resolved server and tool. Regression test for
-// each gateway sub-span minting its own single-span root trace.
+// trace per call, with mcp.routing and the downstream tools/call span
+// parented under a SERVER root that carries the resolved server and tool.
+// Regression test for each gateway sub-span minting its own single-span root trace.
 func TestHandleToolsCall_singleTraceTree(t *testing.T) {
 	buf := tracing.NewBuffer(10, time.Hour)
 	tp := sdktrace.NewTracerProvider(
@@ -56,8 +56,8 @@ func TestHandleToolsCall_singleTraceTree(t *testing.T) {
 	if tr.ServerName != "github" {
 		t.Errorf("ServerName = %q, want %q", tr.ServerName, "github")
 	}
-	if tr.Operation != "github › create_issue" {
-		t.Errorf("Operation = %q, want %q", tr.Operation, "github › create_issue")
+	if tr.Operation != "tools/call create_issue" {
+		t.Errorf("Operation = %q, want %q", tr.Operation, "tools/call create_issue")
 	}
 
 	if tr.Tool != "create_issue" {
@@ -75,18 +75,18 @@ func TestHandleToolsCall_singleTraceTree(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	for _, sp := range tr.Spans {
-		switch sp.Name {
-		case "mcp.routing", "mcp.client.call_tool":
+		if sp.ParentID != "" && sp.ParentID != rootID {
+			t.Errorf("span %q ParentID = %q, want root %q", sp.Name, sp.ParentID, rootID)
+		}
+		if sp.ParentID == rootID {
 			seen[sp.Name] = true
-			if sp.ParentID != rootID {
-				t.Errorf("span %q ParentID = %q, want root %q", sp.Name, sp.ParentID, rootID)
-			}
 		}
 	}
-	for _, want := range []string{"mcp.routing", "mcp.client.call_tool"} {
-		if !seen[want] {
-			t.Errorf("trace is missing child span %q", want)
-		}
+	if !seen["mcp.routing"] {
+		t.Errorf("trace is missing child span mcp.routing; spans: %+v", tr.Spans)
+	}
+	if !seen["tools/call create_issue"] {
+		t.Errorf("trace is missing downstream tools/call span; spans: %+v", tr.Spans)
 	}
 }
 

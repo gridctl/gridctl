@@ -11,6 +11,8 @@ import (
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 	"google.golang.org/protobuf/encoding/protojson"
+
+	"github.com/gridctl/gridctl/pkg/tracing"
 )
 
 func TestTracesFileClient_RoutesByServerName(t *testing.T) {
@@ -158,7 +160,7 @@ func makeSpan(serverName, name string, seed byte) *tracepb.Span {
 	}
 	if serverName != "" {
 		s.Attributes = []*commonpb.KeyValue{{
-			Key: serverNameAttrKey,
+			Key: string(tracing.AttrLegacyServerName),
 			Value: &commonpb.AnyValue{
 				Value: &commonpb.AnyValue_StringValue{StringValue: serverName},
 			},

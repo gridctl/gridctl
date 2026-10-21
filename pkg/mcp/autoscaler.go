@@ -14,6 +14,9 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+
+	"github.com/gridctl/gridctl/pkg/logging"
+	"github.com/gridctl/gridctl/pkg/tracing"
 )
 
 // AutoscalePolicy controls reactive autoscaling for a single ReplicaSet.
@@ -432,10 +435,10 @@ func (a *Autoscaler) TriggerColdStart(ctx context.Context) error {
 
 	tracer := otel.Tracer("gridctl.autoscaler")
 	ctx, span := tracer.Start(ctx, "mcp.autoscale.cold_start")
-	span.SetAttributes(
-		attribute.String("server.name", a.name),
-		attribute.String("mcp.autoscale.direction", "up"),
-		attribute.String("mcp.autoscale.reason", "cold_start"),
+	tracing.SetAttributesWithAliases(span,
+		attribute.String(string(tracing.AttrServerName), logging.RedactString(a.name)),
+		attribute.String(string(tracing.AttrAutoscaleDirection), "up"),
+		attribute.String(string(tracing.AttrAutoscaleReason), "cold_start"),
 	)
 	defer span.End()
 
@@ -539,10 +542,10 @@ func (a *Autoscaler) scaleUp(ctx context.Context, now time.Time, current, target
 	added := 0
 	for i := 0; i < need; i++ {
 		ctx, span := tracer.Start(ctx, "mcp.autoscale.spawn")
-		span.SetAttributes(
-			attribute.String("server.name", a.name),
-			attribute.String("mcp.autoscale.direction", "up"),
-			attribute.String("mcp.autoscale.reason", reason),
+		tracing.SetAttributesWithAliases(span,
+			attribute.String(string(tracing.AttrServerName), logging.RedactString(a.name)),
+			attribute.String(string(tracing.AttrAutoscaleDirection), "up"),
+			attribute.String(string(tracing.AttrAutoscaleReason), reason),
 		)
 
 		client, err := a.spawner.Spawn(ctx)
@@ -566,7 +569,7 @@ func (a *Autoscaler) scaleUp(ctx context.Context, now time.Time, current, target
 			return DecisionScaleUp, errors.Join(fmt.Errorf("autoscaler retired during spawn"), a.reapRetired(ctx, client))
 		}
 		added++
-		span.SetAttributes(attribute.Int("mcp.replica.id", id))
+		tracing.SetAttributesWithAliases(span, attribute.Int(string(tracing.AttrReplicaID), id))
 		span.End()
 	}
 
@@ -638,11 +641,11 @@ func (a *Autoscaler) scaleDown(ctx context.Context, now time.Time, current, targ
 
 	tracer := otel.Tracer("gridctl.autoscaler")
 	ctx, span := tracer.Start(ctx, "mcp.autoscale.reap")
-	span.SetAttributes(
-		attribute.String("server.name", a.name),
-		attribute.String("mcp.autoscale.direction", "down"),
-		attribute.String("mcp.autoscale.reason", reason),
-		attribute.Int("mcp.replica.id", victim.ID()),
+	tracing.SetAttributesWithAliases(span,
+		attribute.String(string(tracing.AttrServerName), logging.RedactString(a.name)),
+		attribute.String(string(tracing.AttrAutoscaleDirection), "down"),
+		attribute.String(string(tracing.AttrAutoscaleReason), reason),
+		attribute.Int(string(tracing.AttrReplicaID), victim.ID()),
 	)
 	defer span.End()
 

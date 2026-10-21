@@ -58,10 +58,12 @@ function stableColor(key: string): string {
 
 function getSpanServer(span: Span): string {
   return (
-    span.attributes['server.name'] ??
-    span.attributes['mcp.server.name'] ??
-    span.attributes['peer.service'] ??
-    span.name.split('.')[0]
+    span.attributes['gridctl.server.name'] ||
+    span.attributes['server.name'] ||
+    span.attributes['mcp.server.name'] ||
+    span.attributes['mcp.server'] ||
+    span.attributes['peer.service'] ||
+    ''
   );
 }
 

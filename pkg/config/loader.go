@@ -371,6 +371,21 @@ func walkExpandedStrings(s *Stack, fn func(Consumer, string) string) {
 		if s.Gateway.Auth != nil {
 			s.Gateway.Auth.Token = fn(Consumer{Kind: RefKindGateway, Field: "auth.token"}, s.Gateway.Auth.Token)
 		}
+		if s.Gateway.Tracing != nil {
+			s.Gateway.Tracing.Endpoint = fn(Consumer{Kind: RefKindGateway, Field: "tracing.endpoint"}, s.Gateway.Tracing.Endpoint)
+			for name, value := range s.Gateway.Tracing.Headers {
+				s.Gateway.Tracing.Headers[name] = fn(
+					Consumer{Kind: RefKindGateway, Field: "tracing.headers." + name}, value)
+			}
+		}
+		if s.Gateway.Metrics != nil && s.Gateway.Metrics.OTLP != nil {
+			s.Gateway.Metrics.OTLP.Endpoint = fn(
+				Consumer{Kind: RefKindGateway, Field: "metrics.otlp.endpoint"}, s.Gateway.Metrics.OTLP.Endpoint)
+			for name, value := range s.Gateway.Metrics.OTLP.Headers {
+				s.Gateway.Metrics.OTLP.Headers[name] = fn(
+					Consumer{Kind: RefKindGateway, Field: "metrics.otlp.headers." + name}, value)
+			}
+		}
 	}
 
 	s.Network.Name = fn(Consumer{Kind: RefKindNetwork, Field: "name"}, s.Network.Name)

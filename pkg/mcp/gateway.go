@@ -25,6 +25,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/runs"
 	"github.com/gridctl/gridctl/pkg/token"
+	"github.com/gridctl/gridctl/pkg/tracing"
 )
 
 // ErrReadyTimeout indicates that an HTTP/SSE MCP server did not become reachable
@@ -237,6 +238,7 @@ type Gateway struct {
 	authState   map[string]ServerAuthState // name -> downstream authorization state
 
 	toolCallObserver  ToolCallObserver  // optional observer for tool call metrics
+	dispatchObserver  DispatchObserver  // optional OTel metrics observer; no metric SDK in this package
 	promptGetObserver PromptGetObserver // optional observer for prompt-get (skill usage) metrics
 	runSink           RunSink           // optional metadata-only dispatch recorder
 
@@ -353,6 +355,15 @@ func (g *Gateway) SetToolCallObserver(obs ToolCallObserver) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.toolCallObserver = obs
+}
+
+// SetDispatchObserver sets the observer notified once at the end of every
+// tools/call return path. Nil disables it. Sensitive executions pass the
+// operation category, never the resolved tool name.
+func (g *Gateway) SetDispatchObserver(obs DispatchObserver) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.dispatchObserver = obs
 }
 
 // SetRunSink installs the metadata-only run recorder. Passing nil disables
@@ -2491,8 +2502,12 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 	// buffer finalises one multi-span trace per call. Code-mode inner calls
 	// re-enter this function and nest their own root under the outer context.
 	tracer := otel.Tracer("gridctl.gateway")
-	ctx, rootSpan := tracer.Start(ctx, "mcp.tools.call")
+	links := traceLinksFromContext(ctx)
+	ctx, rootSpan := tracer.Start(ctx, tracing.SpanNameToolsCall,
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithLinks(links...))
 	defer rootSpan.End()
+	started := time.Now()
 	attempt := g.startRunAttempt(ctx, params.Name)
 	ctx = attempt.Context()
 	defer attempt.Finish()
@@ -2504,10 +2519,50 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 	if _, tool, err := ParsePrefixedTool(params.Name); err == nil {
 		bareTool = tool
 	}
-	rootSpan.SetAttributes(
-		attribute.String("mcp.method.name", "tools/call"),
-		attribute.String("mcp.tool.name", logging.RedactString(bareTool)),
+	var (
+		rpcCode           *int
+		downstreamIsError bool
+		sensitive         bool
+		sensitiveCategory string
+		resolvedServer    string
+		resolvedTool      string
+		replicaID         int
+		hasReplica        bool
+		transport         transportAttrs
+		downstreamDur     time.Duration
+		usage             ToolCallSummary
+		hasUsage          bool
 	)
+	// Runs before rootSpan.End (registered above) so a sensitive re-stamp
+	// replaces the real tool name before the span is exported.
+	defer func() {
+		g.finishToolCallSpan(ctx, rootSpan, &state, toolCallFinish{
+			started:           started,
+			requestedName:     params.Name,
+			bareTool:          bareTool,
+			rpcCode:           rpcCode,
+			downstreamIsError: downstreamIsError,
+			sensitive:         sensitive,
+			sensitiveCategory: sensitiveCategory,
+			resolvedServer:    resolvedServer,
+			resolvedTool:      resolvedTool,
+			replicaID:         replicaID,
+			hasReplica:        hasReplica,
+			transport:         transport,
+			downstreamDur:     downstreamDur,
+			usage:             usage,
+			hasUsage:          hasUsage,
+		})
+	}()
+	rootAttrs := []attribute.KeyValue{
+		attribute.String(string(tracing.AttrMethodName), tracing.MethodToolsCall),
+		attribute.String(string(tracing.AttrGenAIOperationName), tracing.OperationExecuteTool),
+		attribute.String(string(tracing.AttrGenAIToolName), logging.RedactString(bareTool)),
+	}
+	if version := upstreamProtocolVersion(ctx); version != "" {
+		rootAttrs = append(rootAttrs, attribute.String(string(tracing.AttrProtocolVersion), version))
+	}
+	tracing.SetAttributesWithAliases(rootSpan, rootAttrs...)
 
 	g.mu.RLock()
 	cm := g.codeMode
@@ -2627,7 +2682,7 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 
 	// Child span: routing decision.
 	_, routeSpan := tracer.Start(ctx, "mcp.routing")
-	routeSpan.SetAttributes(attribute.String("tool.name", logging.RedactString(params.Name)))
+	tracing.SetAttributesWithAliases(routeSpan, attribute.String(string(tracing.AttrGenAIToolName), logging.RedactString(params.Name)))
 	replica, toolName, err := g.router.RouteToolCallReplica(params.Name)
 	if err != nil {
 		// Cold-start trigger: if the target server is autoscaled and currently
@@ -2684,18 +2739,21 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 		}, state.outcome, nil
 	}
 	client := replica.Client()
-	replicaID := replica.ID()
-	routeSpan.SetAttributes(
-		attribute.String("server.name", logging.RedactString(client.Name())),
-		attribute.Int("mcp.replica.id", replicaID),
+	replicaID = replica.ID()
+	hasReplica = true
+	resolvedServer = client.Name()
+	resolvedTool = toolName
+	tracing.SetAttributesWithAliases(routeSpan,
+		attribute.String(string(tracing.AttrServerName), logging.RedactString(client.Name())),
+		attribute.Int(string(tracing.AttrReplicaID), replicaID),
 	)
-	routeSpan.End()
 
 	// Reject calls to servers blocked due to schema drift.
 	g.blockedMu.RLock()
 	isBlocked := g.blockedServers[client.Name()]
 	g.blockedMu.RUnlock()
 	if isBlocked {
+		routeSpan.End()
 		attempt.SetResolved(client.Name(), toolName, replicaID)
 		state.set(runs.DispositionDenied, runs.StagePin, runs.ReasonSchemaPin, CompletionNotStarted)
 		return &ToolCallResult{
@@ -2713,6 +2771,7 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 	// would hand one server another server's opaque blob; fail loudly
 	// instead.
 	if relay := mrtrRelayFromContext(ctx); relay != nil && relay.ExpectedServer != "" && relay.ExpectedServer != client.Name() {
+		routeSpan.End()
 		attempt.SetResolved(client.Name(), toolName, replicaID)
 		state.set(runs.DispositionRetryRejected, runs.StageMRTR, runs.ReasonMRTRMismatch, CompletionNotStarted)
 		return &ToolCallResult{
@@ -2726,14 +2785,13 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 
 	// Propagate the resolved server and tool to the root span so the
 	// trace-level record (built from root span attrs) carries them for UI
-	// filtering, and rename the root to the human-readable operation.
+	// filtering, and rename the root to tools/call <tool>.
 	if rootSpan.IsRecording() {
-		rootSpan.SetName(logging.RedactString(fmt.Sprintf("%s › %s", client.Name(), toolName)))
-		rootSpan.SetAttributes(
-			attribute.String("server.name", logging.RedactString(client.Name())),
-			// Overwrite the pre-routing prefixed name with the resolved tool.
-			attribute.String("mcp.tool.name", logging.RedactString(toolName)),
-			attribute.Int("mcp.replica.id", replicaID),
+		rootSpan.SetName(toolsCallSpanName(toolName))
+		tracing.SetAttributesWithAliases(rootSpan,
+			attribute.String(string(tracing.AttrServerName), logging.RedactString(client.Name())),
+			attribute.String(string(tracing.AttrGenAIToolName), logging.RedactString(toolName)),
+			attribute.Int(string(tracing.AttrReplicaID), replicaID),
 		)
 	}
 
@@ -2757,28 +2815,73 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 	g.mu.RUnlock()
 	if serverCfg.sensitiveCalls || serverCfg.A2A {
 		markSensitiveExecution(ctx)
+		sensitive = true
+		sensitiveCategory = sensitiveOperation(toolName)
+		// Replace the real tool name on the root span before any return,
+		// including the A2A number-preservation failure below.
+		if rootSpan.IsRecording() {
+			rootSpan.SetName(toolsCallSpanName(sensitiveCategory))
+			tracing.SetAttributesWithAliases(rootSpan,
+				attribute.String(string(tracing.AttrGenAIToolName), sensitiveCategory),
+			)
+		}
+		if routeSpan.IsRecording() {
+			tracing.SetAttributesWithAliases(routeSpan,
+				attribute.String(string(tracing.AttrGenAIToolName), sensitiveCategory),
+			)
+		}
 	}
+	routeSpan.End()
 	if serverCfg.A2A {
 		ctx = context.WithValue(ctx, a2aResultBudgetKey{}, resultLimit)
 		if err := params.preserveA2ANumbers(); err != nil {
 			return a2aErrorResult(err, ""), state.outcome, nil
 		}
 	}
-	networkTransport := resolveNetworkTransport(serverCfg, hasMeta)
-
-	// Child span: downstream client call.
-	ctx, span := tracer.Start(ctx, "mcp.client.call_tool")
-	defer span.End()
-	span.SetAttributes(
-		attribute.String("mcp.method.name", "tools/call"),
-		attribute.String("server.name", logging.RedactString(client.Name())),
-		attribute.Int("mcp.replica.id", replicaID),
-		attribute.String("tool.name", logging.RedactString(toolName)),
-		attribute.String("network.transport", networkTransport),
-	)
-	if generation := protocolGenerationOf(client); generation != "" {
-		span.SetAttributes(attribute.String("mcp.protocol.generation", generation))
+	transport = resolveTransportAttrs(serverCfg, hasMeta)
+	if rootSpan.IsRecording() {
+		rootAttrs := []attribute.KeyValue{
+			attribute.String(string(tracing.AttrTransport), transport.Gridctl),
+			attribute.String(string(tracing.AttrNetworkTransport), transport.Network),
+		}
+		if transport.Address != "" {
+			rootAttrs = append(rootAttrs, attribute.String(string(tracing.AttrServerAddress), transport.Address))
+		}
+		if transport.HasPort {
+			rootAttrs = append(rootAttrs, attribute.Int(string(tracing.AttrServerPort), transport.Port))
+		}
+		tracing.SetAttributesWithAliases(rootSpan, rootAttrs...)
 	}
+
+	toolLabel := toolName
+	if sensitive {
+		toolLabel = sensitiveCategory
+	}
+	// Child span: downstream client call.
+	ctx, span := tracer.Start(ctx, toolsCallSpanName(toolLabel), trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+	downAttrs := []attribute.KeyValue{
+		attribute.String(string(tracing.AttrMethodName), tracing.MethodToolsCall),
+		attribute.String(string(tracing.AttrGenAIOperationName), tracing.OperationExecuteTool),
+		attribute.String(string(tracing.AttrGenAIToolName), logging.RedactString(toolLabel)),
+		attribute.String(string(tracing.AttrServerName), logging.RedactString(client.Name())),
+		attribute.Int(string(tracing.AttrReplicaID), replicaID),
+		attribute.String(string(tracing.AttrTransport), transport.Gridctl),
+		attribute.String(string(tracing.AttrNetworkTransport), transport.Network),
+	}
+	if transport.Address != "" {
+		downAttrs = append(downAttrs, attribute.String(string(tracing.AttrServerAddress), transport.Address))
+	}
+	if transport.HasPort {
+		downAttrs = append(downAttrs, attribute.Int(string(tracing.AttrServerPort), transport.Port))
+	}
+	if version := protocolVersionOf(client); version != "" {
+		downAttrs = append(downAttrs, attribute.String(string(tracing.AttrProtocolVersion), version))
+	}
+	if generation := protocolGenerationOf(client); generation != "" {
+		downAttrs = append(downAttrs, attribute.String(string(tracing.AttrProtocolGeneration), generation))
+	}
+	tracing.SetAttributesWithAliases(span, downAttrs...)
 
 	logger.Info("tool call started", "server", client.Name(), "tool", toolName)
 	start := time.Now()
@@ -2787,6 +2890,7 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 	result, err := client.CallTool(ctx, toolName, params.Arguments)
 	replica.DecInFlight()
 	duration := time.Since(start)
+	downstreamDur = duration
 	attempt.SetResolved(client.Name(), toolName, replicaID)
 	attempt.SetDownstreamDuration(duration)
 	if isSensitiveExecution(ctx) {
@@ -2794,7 +2898,11 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 		if err != nil {
 			observedResult = nil
 		}
-		g.observeSensitiveCall(span, client.Name(), replicaID, toolName, duration, params.Arguments, observedResult)
+		observation := sensitiveObservation(client.Name(), replicaID, toolName, duration, params.Arguments, observedResult)
+		sensitiveCategory = observation.Operation
+		usage = observation.Usage
+		hasUsage = true
+		g.observeSensitiveCall(span, observation)
 	}
 
 	if err != nil {
@@ -2803,10 +2911,12 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 			err = safeCallError(err)
 			diagnosticErr = err
 		}
+		rpcCode = jsonRPCCode(err)
 		span.RecordError(diagnosticErr)
 		span.SetStatus(codes.Error, diagnosticErr.Error())
 		logger.Warn("tool call failed", "server", client.Name(), "tool", toolName, "duration", duration, "error", diagnosticErr)
 		state.classifyDownstream(nil, err, ctx)
+		stampCallError(span, ErrorTypeInput{RPCCode: rpcCode, Disposition: state.outcome.Disposition, Reason: state.outcome.Reason})
 		return &ToolCallResult{
 			Content: []Content{NewTextContent(fmt.Sprintf("Error calling tool: %v", err))},
 			IsError: true,
@@ -2814,7 +2924,9 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 	}
 
 	if result.IsError {
+		downstreamIsError = true
 		span.SetStatus(codes.Error, "tool returned error result")
+		stampCallError(span, ErrorTypeInput{ToolIsError: true, Disposition: runs.DispositionToolError, Reason: runs.ReasonToolError})
 	}
 	logger.Info("tool call finished", "server", client.Name(), "tool", toolName, "duration", duration, "is_error", result.IsError)
 
@@ -2853,6 +2965,8 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 				Arguments:  params.Arguments,
 				Result:     result,
 			})
+			usage = summary
+			hasUsage = true
 			setGenAISpanAttributes(span, client.Name(), toolName, clientID, summary, result)
 		} else {
 			go obs.ObserveToolCall(logging.RedactString(client.Name()), replicaID, params.Arguments, result)
@@ -2921,30 +3035,27 @@ func setGenAISpanAttributes(span trace.Span, serverName, toolName, clientID stri
 		return
 	}
 	attrs := []attribute.KeyValue{
-		attribute.String("mcp.server.name", logging.RedactString(serverName)),
-		attribute.String("mcp.tool.name", logging.RedactString(toolName)),
-		// Draft GenAI semconv name for the same value; kept alongside the
-		// gridctl-native key until the convention stabilizes.
-		attribute.String("gen_ai.tool.name", logging.RedactString(toolName)),
+		attribute.String(string(tracing.AttrServerName), logging.RedactString(serverName)),
+		attribute.String(string(tracing.AttrGenAIToolName), logging.RedactString(toolName)),
 	}
 	if clientID != "" {
-		attrs = append(attrs, attribute.String("mcp.client.name", logging.RedactString(clientID)))
+		attrs = append(attrs, attribute.String(string(tracing.AttrClientName), logging.RedactString(clientID)))
 	}
 	if summary.InputTokens > 0 {
-		attrs = append(attrs, attribute.Int64("gen_ai.usage.input_tokens", int64(summary.InputTokens)))
+		attrs = append(attrs, attribute.Int64(string(tracing.AttrUsageInputTokens), int64(summary.InputTokens)))
 	}
 	if summary.OutputTokens > 0 {
-		attrs = append(attrs, attribute.Int64("gen_ai.usage.output_tokens", int64(summary.OutputTokens)))
+		attrs = append(attrs, attribute.Int64(string(tracing.AttrUsageOutputTokens), int64(summary.OutputTokens)))
 	}
 	if result != nil && result.Usage != nil {
 		if result.Usage.CacheReadTokens > 0 {
-			attrs = append(attrs, attribute.Int64("gen_ai.usage.cache_read.input_tokens", int64(result.Usage.CacheReadTokens)))
+			attrs = append(attrs, attribute.Int64(string(tracing.AttrUsageCacheRead), int64(result.Usage.CacheReadTokens)))
 		}
 		if result.Usage.CacheCreationTokens > 0 {
-			attrs = append(attrs, attribute.Int64("gen_ai.usage.cache_creation.input_tokens", int64(result.Usage.CacheCreationTokens)))
+			attrs = append(attrs, attribute.Int64(string(tracing.AttrUsageCacheCreation), int64(result.Usage.CacheCreationTokens)))
 		}
 	}
-	span.SetAttributes(attrs...)
+	tracing.SetAttributesWithAliases(span, attrs...)
 }
 
 // maxFormatPayloadSize is the maximum text size for format conversion (1MB).
@@ -2965,9 +3076,9 @@ func (g *Gateway) applyFormatConversion(ctx context.Context, serverName string, 
 
 	// Child span: format conversion.
 	_, fmtSpan := otel.Tracer("gridctl.gateway").Start(ctx, "mcp.format_conversion")
-	fmtSpan.SetAttributes(
-		attribute.String("server.name", logging.RedactString(serverName)),
-		attribute.String("output.format", outputFormat),
+	tracing.SetAttributesWithAliases(fmtSpan,
+		attribute.String(string(tracing.AttrServerName), logging.RedactString(serverName)),
+		attribute.String(string(tracing.AttrOutputFormat), outputFormat),
 	)
 	defer fmtSpan.End()
 
@@ -3231,31 +3342,6 @@ type ReplicaStatus struct {
 	RestartPolicy     string            `json:"restartPolicy,omitempty"`
 	RestartExhausted  bool              `json:"restartExhausted,omitempty"`
 	ContainerRestarts uint32            `json:"containerRestarts,omitempty"`
-}
-
-// resolveNetworkTransport returns the network.transport attribute value for a
-// downstream MCP server based on its registered configuration.
-func resolveNetworkTransport(cfg MCPServerConfig, hasMeta bool) string {
-	if !hasMeta {
-		return string(TransportHTTP)
-	}
-	if cfg.SSH {
-		return "ssh"
-	}
-	if cfg.LocalProcess {
-		return "process"
-	}
-	if cfg.OpenAPI {
-		return string(TransportHTTP)
-	}
-	switch cfg.Transport {
-	case TransportStdio:
-		return string(TransportStdio)
-	case TransportSSE:
-		return string(TransportSSE)
-	default:
-		return string(TransportHTTP)
-	}
 }
 
 // buildSSHCommand constructs the ssh command with all options.

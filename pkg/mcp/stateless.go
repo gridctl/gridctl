@@ -205,6 +205,10 @@ func (s *StreamableHTTPServer) handleStateless(w http.ResponseWriter, r *http.Re
 	// Relay the client's declared capabilities to the downstream leg so
 	// modern servers know which input requests the far end can fulfill.
 	ctx = withUpstreamClientCapabilities(ctx, meta.ClientCapabilities)
+	ctx = WithUpstreamProtocolVersion(ctx, meta.ProtocolVersion)
+	if req.Method == "tools/call" {
+		ctx = parentContextFromRequest(ctx, req.Params, r.Header)
+	}
 
 	// Notifications are acknowledged with 202 and no body. The core
 	// protocol defines no client-to-server notifications over this

@@ -64,8 +64,8 @@ type TraceRecord struct {
 // Buffer stores completed traces in a thread-safe ring buffer and implements
 // sdktrace.SpanExporter so it can be registered with the OTel TracerProvider.
 type Buffer struct {
-	mu       sync.Mutex
-	pending  map[string][]SpanRecord // traceID -> spans not yet finalised
+	mu      sync.Mutex
+	pending map[string][]SpanRecord // traceID -> spans not yet finalised
 
 	bufMu    sync.RWMutex
 	traces   []TraceRecord
@@ -483,23 +483,18 @@ func buildTraceRecord(root SpanRecord, allSpans []SpanRecord) TraceRecord {
 	}
 
 	// Extract well-known attributes from the root span for top-level fields.
+	// New keys win; seeded traces keep the old keys forever.
 	if root.Attrs != nil {
-		if v, ok := root.Attrs["server.name"]; ok {
-			tr.ServerName = v
-		}
-		if v, ok := root.Attrs["mcp.method.name"]; ok {
-			tr.MethodName = v
-		}
-		if v, ok := root.Attrs["mcp.tool.name"]; ok {
-			tr.Tool = v
-		}
+		tr.ServerName = FirstString(root.Attrs, ServerNameKeys()...)
+		tr.MethodName = FirstString(root.Attrs, string(AttrMethodName))
+		tr.Tool = FirstString(root.Attrs, ToolNameKeys()...)
 	}
 
-	// Fallback: scan child spans for a non-empty server.name in case the root
+	// Fallback: scan child spans for a non-empty server name in case the root
 	// span was emitted before the gateway could stamp it (e.g. error paths).
 	if tr.ServerName == "" {
 		for _, sp := range allSpans {
-			if v, ok := sp.Attrs["server.name"]; ok && v != "" {
+			if v := FirstString(sp.Attrs, ServerNameKeys()...); v != "" {
 				tr.ServerName = v
 				break
 			}
@@ -508,19 +503,24 @@ func buildTraceRecord(root SpanRecord, allSpans []SpanRecord) TraceRecord {
 
 	if tr.Tool == "" {
 		for _, sp := range allSpans {
-			if v, ok := sp.Attrs["mcp.tool.name"]; ok && v != "" {
+			if v := FirstString(sp.Attrs, ToolNameKeys()...); v != "" {
 				tr.Tool = v
 				break
 			}
 		}
 	}
 
-	// The client name is only stamped on the downstream call span (the
-	// observer runs there, not on the root), so it always needs a child scan.
-	for _, sp := range allSpans {
-		if v, ok := sp.Attrs["mcp.client.name"]; ok && v != "" {
-			tr.ClientName = v
-			break
+	// The client name is stamped on the root when known and on the downstream
+	// span. Seeded traces only have it on the child, so scan both.
+	if tr.ClientName == "" {
+		tr.ClientName = FirstString(root.Attrs, ClientNameKeys()...)
+	}
+	if tr.ClientName == "" {
+		for _, sp := range allSpans {
+			if v := FirstString(sp.Attrs, ClientNameKeys()...); v != "" {
+				tr.ClientName = v
+				break
+			}
 		}
 	}
 

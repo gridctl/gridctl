@@ -22,6 +22,64 @@ var sourceExtraPattern = regexp.MustCompile(`^[a-z0-9]+(?:[-_.][a-z0-9]+)*$`)
 var sourceDependencyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*(?:\[[A-Za-z0-9,._-]+\])?(?:\s*(?:===|==|!=|~=|<=|>=|<|>)\s*[A-Za-z0-9*+.!_-]+)?(?:\s*;\s*[A-Za-z0-9_. -]+(?:==|!=|<=|>=|<|>)\s*["'][A-Za-z0-9_. -]+["'])?$`)
 var sourceDebianPackagePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*$`)
 
+func validateGatewayTracing(t *TracingConfig) []ValidationError {
+	if t == nil || t.Endpoint == "" || containsUnexpandedRef(t.Endpoint) {
+		return nil
+	}
+	if err := validateOTLPEndpoint(t.Endpoint); err != nil {
+		return []ValidationError{{"gateway.tracing.endpoint", err.Error()}}
+	}
+	return nil
+}
+
+func validateGatewayMetrics(m *MetricsConfig) []ValidationError {
+	if m == nil || m.OTLP == nil {
+		return nil
+	}
+	prefix := "gateway.metrics.otlp"
+	otlp := m.OTLP
+	var errs []ValidationError
+	if strings.TrimSpace(otlp.Endpoint) == "" {
+		errs = append(errs, ValidationError{prefix + ".endpoint", "is required"})
+	} else if !containsUnexpandedRef(otlp.Endpoint) {
+		if err := validateOTLPEndpoint(otlp.Endpoint); err != nil {
+			errs = append(errs, ValidationError{prefix + ".endpoint", err.Error()})
+		}
+	}
+	if otlp.Interval != "" && !containsUnexpandedRef(otlp.Interval) {
+		d, err := time.ParseDuration(otlp.Interval)
+		if err != nil {
+			errs = append(errs, ValidationError{prefix + ".interval", "must be a Go duration string"})
+		} else if d < time.Second {
+			errs = append(errs, ValidationError{prefix + ".interval", "must be at least 1s"})
+		}
+	}
+	if otlp.Timeout != "" && !containsUnexpandedRef(otlp.Timeout) {
+		if _, err := time.ParseDuration(otlp.Timeout); err != nil {
+			errs = append(errs, ValidationError{prefix + ".timeout", "must be a Go duration string"})
+		}
+	}
+	return errs
+}
+
+func validateOTLPEndpoint(raw string) error {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("must be an absolute http or https URL")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("must use http or https")
+	}
+	if u.User != nil {
+		return fmt.Errorf("must not include userinfo")
+	}
+	return nil
+}
+
+func containsUnexpandedRef(s string) bool {
+	return strings.Contains(s, "${")
+}
+
 func validateGatewayAuth(auth *AuthConfig) []ValidationError {
 	if auth == nil {
 		return nil
@@ -274,6 +332,10 @@ func Validate(s *Stack) error {
 	// Gateway auth validation
 	if s.Gateway != nil && s.Gateway.Auth != nil {
 		errs = append(errs, validateGatewayAuth(s.Gateway.Auth)...)
+	}
+	if s.Gateway != nil {
+		errs = append(errs, validateGatewayMetrics(s.Gateway.Metrics)...)
+		errs = append(errs, validateGatewayTracing(s.Gateway.Tracing)...)
 	}
 	if s.Gateway != nil && s.Gateway.Description != "" {
 		if n := utf8.RuneCountInString(s.Gateway.Description); n < 1 || n > 100 {

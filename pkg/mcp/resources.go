@@ -12,6 +12,9 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+
+	"github.com/gridctl/gridctl/pkg/logging"
+	"github.com/gridctl/gridctl/pkg/tracing"
 )
 
 // listFanoutTimeout bounds one prompt or resource list fan-out. A single
@@ -534,7 +537,10 @@ func (g *Gateway) relayToServer(ctx context.Context, server, method string, rawP
 		return relayResult{}, &DownstreamRelayError{Server: server, Category: "transport"}
 	}
 	ctx, span := otel.Tracer("gridctl.gateway").Start(ctx, method)
-	span.SetAttributes(attribute.String("mcp.server", server))
+	tracing.SetAttributesWithAliases(span,
+		attribute.String(string(tracing.AttrMethodName), method),
+		attribute.String(string(tracing.AttrServerName), logging.RedactString(server)),
+	)
 	defer span.End()
 
 	params := rawParams

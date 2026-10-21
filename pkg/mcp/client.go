@@ -19,6 +19,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/gridctl/gridctl/pkg/jsonrpc"
+	"github.com/gridctl/gridctl/pkg/tracing"
 )
 
 // Client communicates with a downstream MCP server.
@@ -128,10 +129,13 @@ func (c *Client) call(ctx context.Context, method string, params any, result any
 	}
 
 	// Stateless-era servers require version, capabilities, and identity
-	// in _meta on every request.
+	// in _meta on every request. Trace context is merged into the same
+	// object afterwards so the stateless keys and the W3C keys coexist.
+	// Handshake requests skip the stamp and still receive _meta injection.
 	if c.Era() == EraStateless {
 		paramsBytes = stampStatelessMeta(ctx, paramsBytes, c.ProtocolVersion(), c.copyProtocolExtensions())
 	}
+	paramsBytes = injectMetaTraceparent(ctx, paramsBytes)
 
 	req := jsonrpc.Request{
 		JSONRPC: "2.0",
@@ -286,8 +290,9 @@ func (c *Client) newPOSTRequest(ctx context.Context, body []byte, method string,
 		return nil, err
 	}
 
-	// Inject W3C traceparent/tracestate into outgoing request headers.
-	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(httpReq.Header))
+	// Inject W3C traceparent/tracestate/baggage into outgoing request headers.
+	// Oversized baggage is dropped by the capped carrier.
+	otel.GetTextMapPropagator().Inject(ctx, tracing.NewCappedCarrier(propagation.HeaderCarrier(httpReq.Header)))
 
 	// Include session ID if we have one (for stateful MCP servers) and the
 	// protocol version negotiated at initialize (required by the spec on all

@@ -74,12 +74,17 @@ func safeCallError(err error) error {
 	}
 }
 
-func sensitiveObservation(server string, replica int, tool string, duration time.Duration, args map[string]any, result *ToolCallResult) SensitiveToolCallObservation {
-	operation := "skill"
+func sensitiveOperation(tool string) string {
 	switch tool {
 	case "send", "task_get", "task_cancel":
-		operation = tool
+		return tool
+	default:
+		return "skill"
 	}
+}
+
+func sensitiveObservation(server string, replica int, tool string, duration time.Duration, args map[string]any, result *ToolCallResult) SensitiveToolCallObservation {
+	operation := sensitiveOperation(tool)
 	// Never use the configured counter here: it may send content to an API.
 	// This local counter does not retain text and reports approximate usage.
 	counter := token.NewHeuristicCounter(4)
@@ -97,8 +102,7 @@ func sensitiveObservation(server string, replica int, tool string, duration time
 	return obs
 }
 
-func (g *Gateway) observeSensitiveCall(span trace.Span, server string, replica int, tool string, duration time.Duration, args map[string]any, result *ToolCallResult) {
-	observation := sensitiveObservation(server, replica, tool, duration, args, result)
+func (g *Gateway) observeSensitiveCall(span trace.Span, observation SensitiveToolCallObservation) {
 	g.mu.RLock()
 	observer := g.toolCallObserver
 	g.mu.RUnlock()

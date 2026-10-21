@@ -44,12 +44,17 @@ func injectMetaTraceparent(ctx context.Context, paramsBytes json.RawMessage) jso
 	}
 
 	// Inject trace context into a fresh carrier (populates
-	// traceparent/tracestate), then graft its string values in.
+	// traceparent/tracestate/baggage), then graft its string values in.
+	// An oversized baggage value is dropped rather than forwarded.
 	carrier := tracing.NewMetaCarrier(nil)
-	otel.GetTextMapPropagator().Inject(ctx, carrier)
+	otel.GetTextMapPropagator().Inject(ctx, tracing.NewCappedCarrier(carrier))
 	for key, value := range carrier.Map() {
 		s, ok := value.(string)
 		if !ok {
+			continue
+		}
+		if _, dropped := tracing.CapBaggage(s); dropped {
+			delete(meta, key)
 			continue
 		}
 		encoded, err := json.Marshal(s)
@@ -57,6 +62,14 @@ func injectMetaTraceparent(ctx context.Context, paramsBytes json.RawMessage) jso
 			continue
 		}
 		meta[key] = encoded
+	}
+	if raw, ok := meta["baggage"]; ok {
+		var existing string
+		if json.Unmarshal(raw, &existing) == nil {
+			if _, dropped := tracing.CapBaggage(existing); dropped {
+				delete(meta, "baggage")
+			}
+		}
 	}
 
 	metaBytes, err := json.Marshal(meta)

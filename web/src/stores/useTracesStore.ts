@@ -150,5 +150,5 @@ export const useTracesStore = create<TracesState>()((set, get) => ({
  * root kept its pre-routing name (a call that errored before routing).
  */
 export function isToolCallTrace(tr: TraceSummary): boolean {
-  return tr.tool !== '' || tr.operation === 'mcp.tools.call';
+  return tr.tool !== '' || tr.operation === 'tools/call' || tr.operation === 'mcp.tools.call' || tr.operation.startsWith('tools/call ');
 }
