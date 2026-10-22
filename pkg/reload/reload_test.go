@@ -243,6 +243,62 @@ mcp-servers:
 	}
 }
 
+func TestHandler_Reload_ToolDiscoveryOnlyChange(t *testing.T) {
+	base := `
+name: test
+network:
+  name: test-net
+mcp-servers:
+  - name: server1
+    image: alpine:latest
+    port: 3000
+`
+	stackPath := writeStackFile(t, base)
+	initialCfg, err := config.LoadStack(stackPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, _ := setupHandler(t, stackPath, initialCfg)
+	hookFired := false
+	var applied *config.Stack
+	h.SetOnConfigApplied(func(newCfg *config.Stack) {
+		hookFired = true
+		applied = newCfg
+	})
+	h.SetRegisterServerFunc(func(ctx context.Context, server config.MCPServer, replicas []ReplicaRuntime, stackPath string) error {
+		t.Errorf("registerServer must not be called for a discovery-only change (server %q)", server.Name)
+		return nil
+	})
+	withDiscovery := base + `gateway:
+  tool_discovery:
+    mode: deferred
+    always_expose:
+      - server1__echo
+`
+	if err := os.WriteFile(stackPath, []byte(withDiscovery), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := h.Reload(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Success {
+		t.Fatalf("expected success, got: %s", result.Message)
+	}
+	if result.Message == "no changes detected" {
+		t.Fatal("discovery-only change should not be treated as no changes")
+	}
+	if len(result.Added) != 0 || len(result.Removed) != 0 || len(result.Modified) != 0 {
+		t.Fatalf("container work added=%v removed=%v modified=%v", result.Added, result.Removed, result.Modified)
+	}
+	if !hookFired {
+		t.Fatal("expected onConfigApplied to fire so discovery mode is installed")
+	}
+	if applied == nil || applied.Gateway == nil || applied.Gateway.ToolDiscovery == nil || applied.Gateway.ToolDiscovery.Mode != "deferred" {
+		t.Fatalf("applied discovery = %+v", applied)
+	}
+}
+
 func TestHandler_Reload_ConfigLoadFailure(t *testing.T) {
 	stackPath := writeStackFile(t, "invalid: yaml: content: [")
 

@@ -1100,6 +1100,17 @@ func groupsSpec(stack *config.Stack) mcp.GroupsSpec {
 	return spec
 }
 
+// applyReloadedToolDiscovery installs the stack discovery mode after a
+// reload. SetToolDiscovery re-fingerprints sessions and subscribers, so a
+// discovery-only edit notifies affected views without container work.
+func applyReloadedToolDiscovery(gw *mcp.Gateway, cfg *config.Stack) {
+	if gw == nil {
+		return
+	}
+	mode, pins := toolDiscoveryFrom(cfg)
+	gw.SetToolDiscovery(mode, pins)
+}
+
 // toolDiscoveryFrom returns the stack discovery mode and pinned set.
 // A nil block, an empty mode, and mode full all mean full. Stackless
 // startup (nil gateway) defaults to full.
@@ -1786,8 +1797,7 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 		// Re-resolve the per-client access policy from the reloaded config so a
 		// `clients:` change takes effect on the next tools/list and tools/call.
 		inst.Gateway.SetClientAccessPolicy(mcp.NewClientAccessPolicy(clientAccessSpec(newCfg)))
-		mode, pins := toolDiscoveryFrom(newCfg)
-		inst.Gateway.SetToolDiscovery(mode, pins)
+		applyReloadedToolDiscovery(inst.Gateway, newCfg)
 		// Re-resolve experimental flags so `experimental:` edits reach
 		// /api/status (and everything gated on a flag) without restart.
 		b.refreshExperimentalFlags(flags.Default(), newCfg, slog.New(handler))
