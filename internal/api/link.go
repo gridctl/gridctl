@@ -46,9 +46,10 @@ const (
 // linkClientRequest carries the optional entry fields for POST
 // /api/clients/{slug}/link and its preview.
 type linkClientRequest struct {
-	Group    string `json:"group,omitempty"`
-	ClientID string `json:"clientId,omitempty"`
-	Name     string `json:"name,omitempty"`
+	Group     string `json:"group,omitempty"`
+	ClientID  string `json:"clientId,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Discovery string `json:"discovery,omitempty"`
 	// Force overwrites a foreign or drifted entry (after the engine's
 	// backup), mirroring `gridctl link --force`. Without it those states
 	// 409 with an adopt-or-force hint.
@@ -389,7 +390,11 @@ func (s *Server) resolveLinkRequest(w http.ResponseWriter, r *http.Request) (pro
 		}
 	}
 
-	entry = config.LinkEntry{Client: slug, Group: req.Group, ClientID: req.ClientID, Name: req.Name}
+	if req.Discovery != "" && req.Discovery != "deferred" && req.Discovery != "full" {
+		writeJSONError(w, "discovery must be deferred or full", http.StatusBadRequest)
+		return nil, entry, zero, false
+	}
+	entry = config.LinkEntry{Client: slug, Group: req.Group, ClientID: req.ClientID, Name: req.Name, Discovery: req.Discovery}
 	return prov, entry, req, true
 }
 
@@ -402,11 +407,15 @@ func linkOptionsForDeclared(entry config.LinkEntry, port int) provisioner.LinkOp
 		baseURL = provisioner.GroupGatewayHTTPURL(port, entry.Group)
 	}
 	return provisioner.LinkOptions{
-		GatewayURL: provisioner.AppendClientParam(baseURL, entry.ClientID),
+		GatewayURL: provisioner.AppendQueryParams(baseURL, map[string]string{
+			"client":    entry.ClientID,
+			"discovery": entry.Discovery,
+		}),
 		Port:       port,
 		ServerName: entry.EffectiveName(),
 		ClientID:   entry.ClientID,
 		Group:      entry.Group,
+		Discovery:  entry.Discovery,
 	}
 }
 

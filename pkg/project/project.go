@@ -150,10 +150,13 @@ type Entry struct {
 	// file path so no consumer parses the composite. Hashes is the short
 	// history of canonical value hashes gridctl wrote, newest last, so a
 	// shape change by a newer gridctl never reads as user drift.
-	ConfigPath string   `yaml:"config_path,omitempty"`
-	Group      string   `yaml:"group,omitempty"`
-	ClientID   string   `yaml:"client_id,omitempty"`
-	Hashes     []string `yaml:"hashes,omitempty"`
+	ConfigPath string `yaml:"config_path,omitempty"`
+	Group      string `yaml:"group,omitempty"`
+	ClientID   string `yaml:"client_id,omitempty"`
+	// Discovery is the per-link discovery override ("deferred" or "full").
+	// Empty means the stack default. Revision 3.
+	Discovery string   `yaml:"discovery,omitempty"`
+	Hashes    []string `yaml:"hashes,omitempty"`
 
 	// Pack tags the projection with the pack that applied it (empty =
 	// not pack-managed). Any kind may carry it; `gridctl pack` uses it

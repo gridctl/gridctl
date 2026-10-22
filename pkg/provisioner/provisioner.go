@@ -67,6 +67,7 @@ type LinkOptions struct {
 	ServerName string // Key name in config (default: "gridctl")
 	ClientID   string // Stable client identifier embedded as the `client` query param (empty = none)
 	Group      string // Tool group whose endpoint to link (empty = the default full surface)
+	Discovery  string // Per-link discovery override ("deferred" or "full"; empty = stack default)
 	Force      bool   // Overwrite existing entry
 	DryRun     bool   // Show what would change without modifying files
 	// OwnershipResolved marks the caller (the pkg/wiring manager) as having
@@ -280,7 +281,10 @@ func gatewayHTTPURLForOpts(opts LinkOptions) string {
 	if opts.Group != "" {
 		base = GroupGatewayHTTPURL(opts.Port, opts.Group)
 	}
-	return AppendClientParam(base, opts.ClientID)
+	return AppendQueryParams(base, map[string]string{
+		"client":    opts.ClientID,
+		"discovery": opts.Discovery,
+	})
 }
 
 // AppendClientParam adds (or replaces) the `client` query parameter on a gateway
@@ -288,7 +292,14 @@ func gatewayHTTPURLForOpts(opts LinkOptions) string {
 // identifier from the wire. Returns the URL unchanged when clientID is empty or
 // the URL cannot be parsed.
 func AppendClientParam(rawURL, clientID string) string {
-	if clientID == "" {
+	return AppendQueryParams(rawURL, map[string]string{"client": clientID})
+}
+
+// AppendQueryParams adds or replaces the given query parameters. Empty values
+// are skipped. Returns the URL unchanged when it cannot be parsed or no
+// parameter is set.
+func AppendQueryParams(rawURL string, params map[string]string) string {
+	if len(params) == 0 {
 		return rawURL
 	}
 	u, err := url.Parse(rawURL)
@@ -296,7 +307,17 @@ func AppendClientParam(rawURL, clientID string) string {
 		return rawURL
 	}
 	q := u.Query()
-	q.Set("client", clientID)
+	set := false
+	for key, value := range params {
+		if value == "" {
+			continue
+		}
+		q.Set(key, value)
+		set = true
+	}
+	if !set {
+		return rawURL
+	}
 	u.RawQuery = q.Encode()
 	return u.String()
 }

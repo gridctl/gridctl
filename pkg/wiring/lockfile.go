@@ -26,8 +26,9 @@ type Entry struct {
 	ConfigPath string
 	// Group and ClientID reproduce the link's endpoint composition so
 	// status can rebuild the planned value against the current port.
-	Group    string
-	ClientID string
+	Group     string
+	ClientID  string
+	Discovery string
 	// Hashes is the canonical value-hash history, newest last. The
 	// current value matching any of them means gridctl wrote it.
 	Hashes []string
@@ -92,6 +93,7 @@ func viewFromLock(pl *project.Lock) *LockFile {
 			ConfigPath:       e.ConfigPath,
 			Group:            e.Group,
 			ClientID:         e.ClientID,
+			Discovery:        e.Discovery,
 			Hashes:           append([]string(nil), e.Hashes...),
 			CreatedByGridctl: e.CreatedByGridctl,
 			Pack:             e.Pack,
@@ -117,6 +119,7 @@ func saveView(pl *project.Lock, lf *LockFile) error {
 				ConfigPath:       e.ConfigPath,
 				Group:            e.Group,
 				ClientID:         e.ClientID,
+				Discovery:        e.Discovery,
 				Hashes:           e.Hashes,
 				InstalledHash:    e.latestHash(),
 				CreatedByGridctl: e.CreatedByGridctl,
