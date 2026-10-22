@@ -112,13 +112,13 @@ func (s *Server) optimizeStats() optimize.Stats {
 }
 
 // computeSchemaTokens estimates schema-overhead tokens by marshaling the
-// live tool list through the gateway and applying a chars-per-token
-// heuristic, aggregated per server (for schema_overhead) and per tool
-// (for unused_tool impact) in one pass. The pin store's PinRecord has
-// SHA256 hashes only, not byte counts, so we go to the live source. The
-// consuming heuristics treat this as a measurement, not a guess — every
-// byte counted here is a byte the gateway actually shipped on the last
-// tools/list response.
+// unscoped aggregated catalog (HandleToolsListUnscoped) and applying a
+// chars-per-token heuristic, aggregated per server (for schema_overhead)
+// and per tool (for unused_tool impact) in one pass. Deferred discovery
+// does not change this measurement: it is the operator catalog, not the
+// client tools/list payload. The pin store's PinRecord has SHA256 hashes
+// only, not byte counts, so we go to the live source. The consuming
+// heuristics treat this as a measurement, not a guess.
 func computeSchemaTokens(gateway *mcp.Gateway) (map[string]optimize.PinStat, map[string]map[string]int) {
 	if gateway == nil {
 		return nil, nil

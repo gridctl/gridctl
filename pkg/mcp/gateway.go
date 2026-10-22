@@ -2450,10 +2450,10 @@ func (g *Gateway) finishInitialize(session *Session, protocolVersion, group stri
 	}, session, nil
 }
 
-// HandleToolsList returns all aggregated tools, scoped to what the connecting
-// client (resolved from ctx) is allowed to see. When code mode is active,
-// returns the two meta-tools instead (the scoped universe is applied to the
-// code-mode search/execute path in HandleToolsCall).
+// HandleToolsList returns the composed client-visible list from
+// visibleToolsFor: the scoped catalog in full mode, the code-mode pair when
+// code mode is on, and search_tools, call_tool, and the pinned set when the
+// effective discovery mode is deferred.
 func (g *Gateway) HandleToolsList(ctx context.Context) (*ToolsListResult, error) {
 	tools := g.visibleToolsFor(
 		ClientAccessIDFromContext(ctx),
@@ -2471,10 +2471,10 @@ func (g *Gateway) HandleToolsList(ctx context.Context) (*ToolsListResult, error)
 }
 
 // HandleToolsListUnscoped returns the full aggregated tool surface, ignoring
-// any per-client access scope. It backs operator-facing, informational paths
-// (the web console tool list and the optimize schema-token measurement) that
-// must see every tool regardless of client scoping. Like HandleToolsList it
-// returns the code-mode meta-tools when code mode is active.
+// any per-client access scope and any discovery mode. It backs operator-facing
+// informational paths (the web console tool list and the optimize schema-token
+// measurement) that must see every tool regardless of client scoping or
+// deferred discovery. When code mode is active it returns the code-mode pair.
 func (g *Gateway) HandleToolsListUnscoped() (*ToolsListResult, error) {
 	g.mu.RLock()
 	cm := g.codeMode
