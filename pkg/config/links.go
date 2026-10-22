@@ -24,10 +24,11 @@ import (
 //	    client_id: cursor # stable identifier for per-client access scoping
 //	    name: gridctl     # server entry name override in the client config
 type LinkEntry struct {
-	Client   string `yaml:"client" json:"client"`
-	Group    string `yaml:"group,omitempty" json:"group,omitempty"`
-	ClientID string `yaml:"client_id,omitempty" json:"client_id,omitempty"`
-	Name     string `yaml:"name,omitempty" json:"name,omitempty"`
+	Client    string `yaml:"client" json:"client"`
+	Group     string `yaml:"group,omitempty" json:"group,omitempty"`
+	ClientID  string `yaml:"client_id,omitempty" json:"client_id,omitempty"`
+	Name      string `yaml:"name,omitempty" json:"name,omitempty"`
+	Discovery string `yaml:"discovery,omitempty" json:"discovery,omitempty"`
 }
 
 // linkEntryKeys are the mapping keys LinkEntry accepts. Node.Decode is not
@@ -37,6 +38,7 @@ var linkEntryKeys = map[string]bool{
 	"group":     true,
 	"client_id": true,
 	"name":      true,
+	"discovery": true,
 }
 
 // UnmarshalYAML accepts the scalar shorthand ("- cursor") or the mapping
@@ -63,7 +65,7 @@ func (e *LinkEntry) UnmarshalYAML(value *yaml.Node) error {
 // IsShorthand reports whether the entry carries nothing beyond the client
 // slug, so YAML emitters can round-trip it back to the scalar form.
 func (e LinkEntry) IsShorthand() bool {
-	return e.Group == "" && e.ClientID == "" && e.Name == ""
+	return e.Group == "" && e.ClientID == "" && e.Name == "" && e.Discovery == ""
 }
 
 // EffectiveName resolves the server entry name this link writes into the
@@ -145,6 +147,12 @@ func validateLinks(s *Stack) ValidationErrors {
 			continue
 		}
 		seen[entry.Client] = i
+		if entry.Discovery != "" && entry.Discovery != "deferred" && entry.Discovery != "full" {
+			errs = append(errs, ValidationError{
+				prefix + ".discovery",
+				"must be 'deferred' or 'full'",
+			})
+		}
 		if entry.Group != "" {
 			if _, ok := s.Groups[entry.Group]; !ok {
 				errs = append(errs, ValidationError{
