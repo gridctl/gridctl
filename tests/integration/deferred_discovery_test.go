@@ -237,28 +237,74 @@ func TestDeferredDiscovery_Contract(t *testing.T) {
 	})
 
 	t.Run("notifications", func(t *testing.T) {
+		defHS := openHandshakeGET(t, ts.URL+"/mcp")
+		fullHS := openHandshakeGET(t, ts.URL+"/mcp?discovery=full")
 		deferred, defBuf := openIntegrationListen(t, ts.URL, 21, true, false, false, "notes")
 		full, fullBuf := openDiscoveryListen(t, ts.URL, "full", 22)
 		defer deferred.Body.Close()
 		defer full.Body.Close()
 		waitSSE(t, defBuf, "notifications/subscriptions/acknowledged", 1, 3*time.Second)
 		waitSSE(t, fullBuf, "notifications/subscriptions/acknowledged", 1, 3*time.Second)
+
+		beforeDefHS := countListChanged(defHS)
+		beforeFullHS := countListChanged(fullHS)
 		beforeDef := strings.Count(defBuf.String(), "notifications/tools/list_changed")
 		beforeFull := strings.Count(fullBuf.String(), "notifications/tools/list_changed")
-		if _, err := gw.HandleToolsCall(context.Background(), mcp.ToolCallParams{
-			Name:      "beta__mutate_tools",
-			Arguments: map[string]any{"action": "add"},
-		}); err != nil {
-			t.Fatal(err)
-		}
+		mutateBeta(t, gw)
 		if err := gw.RefreshAllTools(context.Background()); err != nil {
 			t.Fatal(err)
 		}
+		waitListChanged(t, fullHS, beforeFullHS+1, 3*time.Second)
 		waitSSE(t, fullBuf, "notifications/tools/list_changed", beforeFull+1, 3*time.Second)
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(400 * time.Millisecond)
+		if got := countListChanged(defHS); got != beforeDefHS {
+			t.Fatalf("deferred handshake got %d tool events, want %d: %s", got, beforeDefHS, defHS.String())
+		}
 		if got := strings.Count(defBuf.String(), "notifications/tools/list_changed"); got != beforeDef {
 			t.Fatalf("deferred subscriber got %d tool events, want %d: %s", got, beforeDef, defBuf.String())
 		}
+		if !strings.Contains(fullBuf.String(), `"io.modelcontextprotocol/subscriptionId":22`) {
+			t.Fatalf("full listen event missing subscription id: %s", fullBuf.String())
+		}
+
+		gw.SetToolDiscovery(mcp.DiscoveryDeferred, []string{"alpha__echo"})
+		waitListChanged(t, defHS, beforeDefHS+1, 3*time.Second)
+		waitSSE(t, defBuf, "notifications/tools/list_changed", beforeDef+1, 3*time.Second)
+		time.Sleep(400 * time.Millisecond)
+		if got := countListChanged(fullHS); got != beforeFullHS+1 {
+			t.Fatalf("full handshake events after pin change = %d, want %d: %s", got, beforeFullHS+1, fullHS.String())
+		}
+		if got := strings.Count(fullBuf.String(), "notifications/tools/list_changed"); got != beforeFull+1 {
+			t.Fatalf("full subscriber events after pin change = %d, want %d: %s", got, beforeFull+1, fullBuf.String())
+		}
+		if got := countListChanged(defHS); got != beforeDefHS+1 {
+			t.Fatalf("deferred handshake pin events = %d, want %d: %s", got, beforeDefHS+1, defHS.String())
+		}
+		if got := strings.Count(defBuf.String(), "notifications/tools/list_changed"); got != beforeDef+1 {
+			t.Fatalf("deferred subscriber pin events = %d, want %d: %s", got, beforeDef+1, defBuf.String())
+		}
+
+		beforeDefHS = countListChanged(defHS)
+		beforeFullHS = countListChanged(fullHS)
+		beforeDef = strings.Count(defBuf.String(), "notifications/tools/list_changed")
+		beforeFull = strings.Count(fullBuf.String(), "notifications/tools/list_changed")
+		gw.SetToolDiscovery(mcp.DiscoveryFull, nil)
+		waitListChanged(t, defHS, beforeDefHS+1, 3*time.Second)
+		waitSSE(t, defBuf, "notifications/tools/list_changed", beforeDef+1, 3*time.Second)
+		time.Sleep(400 * time.Millisecond)
+		if got := countListChanged(fullHS); got != beforeFullHS {
+			t.Fatalf("full handshake notified on mode flip: %d vs %d: %s", got, beforeFullHS, fullHS.String())
+		}
+		if got := strings.Count(fullBuf.String(), "notifications/tools/list_changed"); got != beforeFull {
+			t.Fatalf("full subscriber notified on mode flip: %d vs %d: %s", got, beforeFull, fullBuf.String())
+		}
+		if got := countListChanged(defHS); got != beforeDefHS+1 {
+			t.Fatalf("stack-default handshake mode-flip events = %d, want %d", got, beforeDefHS+1)
+		}
+		if got := strings.Count(defBuf.String(), "notifications/tools/list_changed"); got != beforeDef+1 {
+			t.Fatalf("stack-default subscriber mode-flip events = %d, want %d", got, beforeDef+1)
+		}
+		gw.SetToolDiscovery(mcp.DiscoveryDeferred, []string{"alpha__add"})
 	})
 
 	t.Run("mrtr", func(t *testing.T) {
@@ -345,7 +391,7 @@ func TestDeferredDiscovery_Contract(t *testing.T) {
 			directArgs[k] = v
 		}
 		direct := deferredStatelessPost(t, ts.URL+"/mcp", "tools/call", directArgs, "")
-		if !strings.Contains(string(direct), "secret accepted") && !strings.Contains(string(direct), "requestState") {
+		if !strings.Contains(string(direct), "secret accepted") {
 			t.Fatalf("direct retry: %s", direct)
 		}
 		mismatch := deferredStatelessPost(t, ts.URL+"/mcp", "tools/call", map[string]any{
@@ -363,24 +409,174 @@ func TestDeferredDiscovery_Contract(t *testing.T) {
 	})
 
 	t.Run("bytes", func(t *testing.T) {
+		gw.SetToolDiscovery(mcp.DiscoveryDeferred, []string{"alpha__add"})
+		before := len(mustUnscoped(t, gw))
 		for i := 0; i < 8; i++ {
-			if _, err := gw.HandleToolsCall(context.Background(), mcp.ToolCallParams{
-				Name:      "beta__mutate_tools",
-				Arguments: map[string]any{"action": "add"},
-			}); err != nil {
-				t.Fatal(err)
-			}
+			mutateBeta(t, gw)
 		}
-		if err := gw.RefreshAllTools(context.Background()); err != nil {
-			t.Fatal(err)
-		}
+		waitStableUnscoped(t, gw, before+8)
 		fullRaw := handshakeInitialize(t, ts.URL+"/mcp?discovery=full", "tools/list")
 		defRaw := handshakeInitialize(t, ts.URL+"/mcp", "tools/list")
-		t.Logf("tools/list bytes full=%d deferred=%d", len(fullRaw), len(defRaw))
+		t.Logf("tools/list bytes full=%d deferred=%d tools=%d", len(fullRaw), len(defRaw), len(mustUnscoped(t, gw)))
 		if len(defRaw) >= len(fullRaw) {
 			t.Fatalf("deferred list is not smaller: full %d deferred %d", len(fullRaw), len(defRaw))
 		}
 	})
+
+	t.Run("code mode notifications", func(t *testing.T) {
+		gw.SetToolDiscovery(mcp.DiscoveryDeferred, []string{"alpha__add"})
+		gw.SetCodeMode(time.Second)
+		time.Sleep(200 * time.Millisecond)
+
+		_, listed, defHS := openHandshakeListAndGET(t, ts.URL+"/mcp")
+		if !strings.Contains(string(listed), "search_tools") || !strings.Contains(string(listed), "execute") {
+			t.Fatalf("deferred tools/list before catalog change: %s", listed)
+		}
+		fullHS := openHandshakeGET(t, ts.URL+"/mcp?discovery=full")
+		deferred, defBuf := openIntegrationListen(t, ts.URL, 23, true, false, false, "code-notes")
+		full, fullBuf := openDiscoveryListen(t, ts.URL, "full", 24)
+		defer deferred.Body.Close()
+		defer full.Body.Close()
+		waitSSE(t, defBuf, "notifications/subscriptions/acknowledged", 1, 3*time.Second)
+		waitSSE(t, fullBuf, "notifications/subscriptions/acknowledged", 1, 3*time.Second)
+
+		beforeDefHS := countListChanged(defHS)
+		beforeFullHS := countListChanged(fullHS)
+		beforeDef := strings.Count(defBuf.String(), "notifications/tools/list_changed")
+		beforeFull := strings.Count(fullBuf.String(), "notifications/tools/list_changed")
+		mutateBeta(t, gw)
+		if err := gw.RefreshAllTools(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(1200 * time.Millisecond)
+		if got := countListChanged(defHS); got != beforeDefHS {
+			t.Fatalf("catalog-only refresh notified deferred handshake: %s", defHS.String())
+		}
+		if got := countListChanged(fullHS); got != beforeFullHS {
+			t.Fatalf("catalog-only refresh notified full handshake under code mode: %s", fullHS.String())
+		}
+		if got := strings.Count(defBuf.String(), "notifications/tools/list_changed"); got != beforeDef {
+			t.Fatalf("catalog-only refresh notified deferred subscriber: %s", defBuf.String())
+		}
+		if got := strings.Count(fullBuf.String(), "notifications/tools/list_changed"); got != beforeFull {
+			t.Fatalf("catalog-only refresh notified full subscriber under code mode: %s", fullBuf.String())
+		}
+
+		gw.SetToolDiscovery(mcp.DiscoveryDeferred, []string{"alpha__echo"})
+		waitListChanged(t, defHS, beforeDefHS+1, 3*time.Second)
+		waitSSE(t, defBuf, "notifications/tools/list_changed", beforeDef+1, 3*time.Second)
+		time.Sleep(400 * time.Millisecond)
+		if got := countListChanged(fullHS); got != beforeFullHS {
+			t.Fatalf("full handshake under code mode notified on pin change: %s", fullHS.String())
+		}
+		if got := strings.Count(fullBuf.String(), "notifications/tools/list_changed"); got != beforeFull {
+			t.Fatalf("full subscriber under code mode notified on pin change: %s", fullBuf.String())
+		}
+		if got := countListChanged(defHS); got != beforeDefHS+1 {
+			t.Fatalf("deferred handshake pin events = %d, want %d: %s", got, beforeDefHS+1, defHS.String())
+		}
+		if got := strings.Count(defBuf.String(), "notifications/tools/list_changed"); got != beforeDef+1 {
+			t.Fatalf("deferred subscriber pin events = %d, want %d: %s", got, beforeDef+1, defBuf.String())
+		}
+	})
+}
+
+func mutateBeta(t *testing.T, gw *mcp.Gateway) {
+	t.Helper()
+	mutated, err := gw.HandleToolsCall(context.Background(), mcp.ToolCallParams{
+		Name:      "beta__mutate_tools",
+		Arguments: map[string]any{"action": "add"},
+	})
+	if err != nil || mutated == nil || mutated.IsError {
+		t.Fatalf("mutate_tools: %v %+v", err, mutated)
+	}
+}
+
+func countListChanged(buf *lockedBuffer) int {
+	return strings.Count(buf.String(), listChangedPayload)
+}
+
+func waitStableUnscoped(t *testing.T, gw *mcp.Gateway, want int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	var last int
+	var stableSince time.Time
+	for {
+		if err := gw.RefreshAllTools(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		n := len(mustUnscoped(t, gw))
+		now := time.Now()
+		if n != last {
+			last = n
+			stableSince = now
+		}
+		if n == want && now.Sub(stableSince) >= 400*time.Millisecond {
+			return
+		}
+		if now.After(deadline) {
+			t.Fatalf("catalog count %d, want %d", last, want)
+		}
+		time.Sleep(40 * time.Millisecond)
+	}
+}
+
+func openHandshakeGET(t *testing.T, url string) *lockedBuffer {
+	t.Helper()
+	session := handshakeSession(t, url)
+	return openSessionGET(t, strings.Split(url, "?")[0], session)
+}
+
+func openHandshakeListAndGET(t *testing.T, url string) (string, []byte, *lockedBuffer) {
+	t.Helper()
+	session := handshakeSession(t, url)
+	base := strings.Split(url, "?")[0]
+	req, err := http.NewRequest(http.MethodPost, base, strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Mcp-Session-Id", session)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("tools/list %d: %s", resp.StatusCode, raw)
+	}
+	return session, raw, openSessionGET(t, base, session)
+}
+
+func openSessionGET(t *testing.T, url, session string) *lockedBuffer {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	req.Header.Set("Mcp-Session-Id", session)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		cancel()
+		t.Fatalf("GET %s: %d %s", url, resp.StatusCode, raw)
+	}
+	buf := &lockedBuffer{}
+	go func() { _, _ = io.Copy(buf, resp.Body) }()
+	t.Cleanup(func() {
+		cancel()
+		resp.Body.Close()
+	})
+	time.Sleep(30 * time.Millisecond)
+	return buf
 }
 
 func mustUnscoped(t *testing.T, gw *mcp.Gateway) []mcp.Tool {

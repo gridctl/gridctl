@@ -374,6 +374,71 @@ func TestAdopt_RecordsCurrentValue(t *testing.T) {
 	}
 }
 
+func TestLink_DiscoveryStaysInSync(t *testing.T) {
+	m, f := testManager(t)
+	ctx := context.Background()
+	url := provisioner.AppendQueryParams(provisioner.GatewayHTTPURL(8180), map[string]string{"discovery": "deferred"})
+	opts := provisioner.LinkOptions{
+		GatewayURL: url,
+		Port:       8180,
+		ServerName: "gridctl",
+		Discovery:  "deferred",
+	}
+	if res := mustLink(t, m, f, opts); res.Action != ActionLinked {
+		t.Fatalf("action = %q, want linked", res.Action)
+	}
+	written, ok := f.entryValue(t, "gridctl")
+	if !ok || written["url"] != url {
+		t.Fatalf("written = %#v", written)
+	}
+
+	store := project.NewStore(m.home)
+	l, err := store.Load(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := l.Get(project.KindWiring, "fake", "gridctl")
+	if e == nil || e.Discovery != "deferred" {
+		t.Fatalf("recorded = %+v", e)
+	}
+	raw, err := os.ReadFile(store.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "revision: 3") || !strings.Contains(string(raw), "discovery: deferred") {
+		t.Fatalf("lockfile = %s", raw)
+	}
+
+	rows, err := m.Statuses(ctx, StatusOptions{Port: 8180})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].State != StateInSync {
+		t.Fatalf("rows = %+v, want in-sync", rows)
+	}
+
+	results, err := m.Sync(ctx, SyncOptions{
+		Clients:    []string{"fake"},
+		ServerName: "gridctl",
+		GatewayURL: url,
+		Port:       8180,
+		Discovery:  "deferred",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Action != ActionUnchanged {
+		t.Fatalf("second sync = %+v, want unchanged", results)
+	}
+	rows, err = m.Statuses(ctx, StatusOptions{Port: 8180})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].State != StateInSync {
+		t.Fatalf("rows after second sync = %+v, want in-sync", rows)
+	}
+}
+
 func TestAdopt_RefusesMissingEntry(t *testing.T) {
 	m, f := testManager(t)
 	_ = f
