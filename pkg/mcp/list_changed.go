@@ -282,14 +282,16 @@ func (n *listChangeNotifier) deliverToolSubscribers(codeMode bool) {
 	}
 }
 
-// skipToolSubscriber logs a suppressed tool event against the raw scoped
-// projection. It does not swap the subscriber fingerprint.
+// skipToolSubscriber logs a suppressed tool event when the raw scoped
+// projection changed. It does not swap the composed tool fingerprint.
+// The comparison uses the subscriber's stored scoped hash: toolFP is the
+// composed visible list, which never equals the scoped hash under code mode.
 func (n *listChangeNotifier) skipToolSubscriber(sub *listenSubscriber, reason string) {
 	if n.g == nil || n.g.listeners == nil || sub == nil || !sub.kinds.tools {
 		return
 	}
 	fp := fingerprintTools(n.g.scopedToolsFor(sub.accessID, sub.group, sub.principal))
-	if n.g.listeners.toolsWouldChange(sub.key, fp) {
+	if n.g.listeners.noteScopedChange(sub.key, fp) {
 		n.g.logger.Debug("list_changed skipped", "subscription", string(sub.id), "kind", "tools", "reason", reason)
 	}
 }

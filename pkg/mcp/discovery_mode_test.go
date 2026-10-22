@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -396,10 +398,7 @@ func (g gateFunc) CheckToolCall(ctx context.Context, call GateCall) GateDecision
 func TestDiscovery_FullModeRejectsMetaNames(t *testing.T) {
 	g := NewGateway()
 	t.Cleanup(g.Close)
-	res, out, err := g.CallCanonicalTool(context.Background(), ToolCallParams{Name: MetaToolSearchTools})
-	if err != nil || out.Reason != runs.ReasonUnknownTool || res == nil || !res.IsError {
-		t.Fatalf("canonical search_tools: %v %+v %+v", err, out, res)
-	}
+	assertCanonicalMetaRejected(t, g)
 	listed, err := g.HandleToolsList(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -407,6 +406,23 @@ func TestDiscovery_FullModeRejectsMetaNames(t *testing.T) {
 	for _, tool := range listed.Tools {
 		if isDeferredMetaTool(tool.Name) {
 			t.Fatalf("full mode listed %s", tool.Name)
+		}
+	}
+}
+
+func TestDiscovery_DeferredModeRejectsCanonicalMetaNames(t *testing.T) {
+	g := NewGateway()
+	t.Cleanup(g.Close)
+	g.SetToolDiscovery(DiscoveryDeferred, nil)
+	assertCanonicalMetaRejected(t, g)
+}
+
+func assertCanonicalMetaRejected(t *testing.T, g *Gateway) {
+	t.Helper()
+	for _, name := range []string{MetaToolSearchTools, MetaToolCallTool} {
+		res, out, err := g.CallCanonicalTool(context.Background(), ToolCallParams{Name: name})
+		if err != nil || out.Reason != runs.ReasonUnknownTool || res == nil || !res.IsError {
+			t.Fatalf("canonical %s: %v %+v %+v", name, err, out, res)
 		}
 	}
 }
@@ -552,6 +568,104 @@ func TestNotifier_CodeModeSkipsFullAndNotifiesDeferred(t *testing.T) {
 	got := sink.waitFor(t, 1, time.Second)
 	if len(got) != 1 || got[0] != deferredSession.ID {
 		t.Fatalf("pinned-set notifications = %v, want %s", got, deferredSession.ID)
+	}
+}
+
+func TestNotifier_CodeModeSkipsFullSubscriber(t *testing.T) {
+	g := NewGateway()
+	t.Cleanup(g.Close)
+	logs := &listenCopy{}
+	g.SetLogger(slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	g.SetCodeMode(time.Second)
+	g.SetToolDiscovery(DiscoveryFull, []string{"alpha__echo"})
+	g.SetListChangeTiming(15*time.Millisecond, time.Second)
+	stub := &listChangedStub{name: "alpha", tools: []Tool{testTool("echo", "hi"), testTool("add", "sum")}}
+	g.Router().AddClient(stub)
+	g.Router().RefreshTools()
+	time.Sleep(40 * time.Millisecond)
+	ts := openListenServer(t, g)
+
+	full := postListenQuery(t, ts.URL, "discovery=full", 11)
+	deferred := postListenQuery(t, ts.URL, "discovery=deferred", 12)
+	t.Cleanup(func() {
+		full.Body.Close()
+		deferred.Body.Close()
+	})
+	fullBuf := copyListenBody(full.Body)
+	defBuf := copyListenBody(deferred.Body)
+	waitListenText(t, defBuf, "notifications/subscriptions/acknowledged", 1, 2*time.Second)
+	waitListenText(t, fullBuf, "notifications/subscriptions/acknowledged", 1, 2*time.Second)
+
+	stub.tools = []Tool{testTool("echo", "changed"), testTool("add", "sum")}
+	g.Router().RefreshTools()
+
+	waitListenText(t, defBuf, "notifications/tools/list_changed", 1, 2*time.Second)
+	time.Sleep(80 * time.Millisecond)
+	if got := strings.Count(fullBuf.String(), "notifications/tools/list_changed"); got != 0 {
+		t.Fatalf("full subscriber notified: %s", fullBuf.String())
+	}
+	if !strings.Contains(logs.String(), "list_changed skipped") || !strings.Contains(logs.String(), "code mode") {
+		t.Fatalf("skip log missing: %s", logs.String())
+	}
+	var deferredSub, fullSub *listenSubscriber
+	for _, sub := range g.listeners.list() {
+		switch sub.discovery {
+		case DiscoveryDeferred:
+			deferredSub = sub
+		case DiscoveryFull:
+			fullSub = sub
+		}
+	}
+	if deferredSub == nil || fullSub == nil {
+		t.Fatal("missing subscriber")
+	}
+	want := fingerprintTools(g.visibleToolsFor(deferredSub.accessID, deferredSub.group, deferredSub.principal, DiscoveryDeferred))
+	if deferredSub.toolFP != want {
+		t.Fatalf("deferred fingerprint %s, want %s", deferredSub.toolFP, want)
+	}
+	fullWant := fingerprintTools(g.visibleToolsFor(fullSub.accessID, fullSub.group, fullSub.principal, DiscoveryFull))
+	if fullSub.toolFP != fullWant {
+		t.Fatalf("full fingerprint %s, want %s", fullSub.toolFP, fullWant)
+	}
+	if strings.Count(defBuf.String(), "notifications/tools/list_changed") != 1 {
+		t.Fatalf("deferred events: %s", defBuf.String())
+	}
+}
+
+type listenCopy struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *listenCopy) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *listenCopy) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func copyListenBody(r io.Reader) *listenCopy {
+	buf := &listenCopy{}
+	go func() { _, _ = io.Copy(buf, r) }()
+	return buf
+}
+
+func waitListenText(t *testing.T, buf *listenCopy, needle string, n int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		if strings.Count(buf.String(), needle) >= n {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("got %d %q, want %d: %s", strings.Count(buf.String(), needle), needle, n, buf.String())
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
