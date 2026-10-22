@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -261,9 +262,29 @@ func diffGateway(diff *PlanDiff, proposed, current *GatewayConfig) {
 	if proposed.CodeMode != current.CodeMode {
 		details = append(details, fmt.Sprintf("code_mode: %s → %s", current.CodeMode, proposed.CodeMode))
 	}
+	if toolDiscoveryMode(proposed) != toolDiscoveryMode(current) {
+		details = append(details, fmt.Sprintf("tool_discovery.mode: %s → %s", toolDiscoveryMode(current), toolDiscoveryMode(proposed)))
+	}
+	if !slices.Equal(toolDiscoveryPins(proposed), toolDiscoveryPins(current)) {
+		details = append(details, "tool_discovery.always_expose changed")
+	}
 	if len(details) > 0 {
 		diff.Items = append(diff.Items, DiffItem{Action: DiffChange, Kind: "gateway", Name: "gateway", Details: details})
 	}
+}
+
+func toolDiscoveryMode(g *GatewayConfig) string {
+	if g == nil || g.ToolDiscovery == nil || g.ToolDiscovery.Mode == "" || g.ToolDiscovery.Mode == "full" {
+		return "full"
+	}
+	return g.ToolDiscovery.Mode
+}
+
+func toolDiscoveryPins(g *GatewayConfig) []string {
+	if g == nil || g.ToolDiscovery == nil {
+		return nil
+	}
+	return g.ToolDiscovery.AlwaysExpose
 }
 
 func diffNetworks(diff *PlanDiff, proposed, current *Stack) {

@@ -47,9 +47,16 @@ type listenSubscriber struct {
 	accessID  string
 	group     string
 	principal bool
+	// discovery is the override captured when the stream opened. Empty
+	// means the stack default. Frozen for the stream's lifetime.
+	discovery string
 	kinds     listenKinds
 	toolFP    string
-	pending   listenKinds
+	// scopedFP is the raw scoped catalog hash, used only to decide the
+	// code-mode skip log. toolFP is the composed visible list, which does
+	// not change for a full-mode subscriber under code mode.
+	scopedFP string
+	pending  listenKinds
 	wake      chan struct{}
 	cancel    context.CancelFunc
 	graceful  atomic.Bool
@@ -178,11 +185,18 @@ func (reg *listenRegistry) noteTools(key uint64, fp string) bool {
 	return true
 }
 
-func (reg *listenRegistry) toolsWouldChange(key uint64, fp string) bool {
+// noteScopedChange reports whether fp differs from the subscriber's stored
+// scoped fingerprint and, when it does, stores fp. It does not touch toolFP
+// or wake the writer. A missing subscriber returns false.
+func (reg *listenRegistry) noteScopedChange(key uint64, fp string) bool {
 	reg.mu.Lock()
 	defer reg.mu.Unlock()
 	sub := reg.subs[key]
-	return sub != nil && sub.kinds.tools && sub.toolFP != fp
+	if sub == nil || !sub.kinds.tools || sub.scopedFP == fp {
+		return false
+	}
+	sub.scopedFP = fp
+	return true
 }
 
 func (reg *listenRegistry) noteLists(key uint64, prompts, resources bool) {
@@ -390,13 +404,16 @@ func (s *StreamableHTTPServer) handleStatelessListen(ctx context.Context, w http
 	}
 
 	accessID := ClientAccessIDFromContext(ctx)
+	discovery := discoveryFromContext(ctx)
 	sub := &listenSubscriber{
 		id:        id,
 		accessID:  accessID,
 		group:     GroupFromContext(ctx),
 		principal: PrincipalFromContext(ctx) != "",
+		discovery: discovery,
 		kinds:     honored,
-		toolFP:    fingerprintTools(s.gateway.visibleToolsFor(accessID, GroupFromContext(ctx), PrincipalFromContext(ctx) != "")),
+		toolFP:    fingerprintTools(s.gateway.visibleToolsFor(accessID, GroupFromContext(ctx), PrincipalFromContext(ctx) != "", s.gateway.effectiveDiscovery(discovery))),
+		scopedFP:  fingerprintTools(s.gateway.scopedToolsFor(accessID, GroupFromContext(ctx), PrincipalFromContext(ctx) != "")),
 		wake:      make(chan struct{}, 1),
 	}
 	streamCtx, cancel := context.WithCancel(ctx)

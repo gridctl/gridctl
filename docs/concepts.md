@@ -54,7 +54,7 @@ A call policy is the optional top-level `policy:` block. It allows or blocks a l
 
 ## Link
 
-Link writes the gateway URL into one installed client's MCP config, with `gridctl link` or a `link:` block that `gridctl apply` reconciles, and it does not install skills, agents, or rules. An explicit `gridctl link <client>` fails when that client is not installed; a declared `link:` entry warns and skips ([LLM clients](cli-reference.md#llm-clients), [Link (declared clients)](config-schema.md#link-declared-clients)).
+Link writes the gateway URL into one installed client's MCP config, with `gridctl link` or a `link:` block that `gridctl apply` reconciles, and it does not install skills, agents, or rules. A link can choose full or deferred discovery (`--discovery` or `link.discovery`). An explicit `gridctl link <client>` fails when that client is not installed; a declared `link:` entry warns and skips ([LLM clients](cli-reference.md#llm-clients), [Link (declared clients)](config-schema.md#link-declared-clients)).
 
 ## Service
 

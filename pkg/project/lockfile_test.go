@@ -217,6 +217,52 @@ func TestSetCarriesUnknownFieldsThroughReRecord(t *testing.T) {
 	}
 }
 
+func TestRevision2RewrittenAtRevision3WithDiscovery(t *testing.T) {
+	home := t.TempDir()
+	s := NewStore(home)
+	content := `version: 1
+revision: 2
+projections:
+    - kind: wiring
+      client: cursor
+      source: gridctl
+      path: /tmp/cursor.json#gridctl
+      channel: merge-key
+      config_path: /tmp/cursor.json
+      group: ""
+      client_id: cursor
+      synced_at: 2026-07-30T12:00:00Z
+`
+	if err := os.MkdirAll(filepath.Dir(s.Path()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.Path(), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Load(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	mustMutate(t, s, func(l *Lock) error {
+		e := l.Get(KindWiring, "cursor", "gridctl")
+		if e == nil {
+			return errors.New("revision 2 wiring entry did not load")
+		}
+		e.Discovery = "deferred"
+		if err := l.Set(e); err != nil {
+			return err
+		}
+		return l.Save()
+	})
+	data, err := os.ReadFile(s.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(data)
+	if !strings.Contains(out, "revision: 3") || !strings.Contains(out, "discovery: deferred") {
+		t.Fatalf("rewritten lockfile:\n%s", out)
+	}
+}
+
 func TestStaleBackups(t *testing.T) {
 	if got := StaleBackups([]string{"b", "a"}, 3); got != nil {
 		t.Errorf("within keep limit, nothing is stale: %v", got)

@@ -1,12 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   updateAutoscaleObservability,
   AUTOSCALE_HISTORY_CAP,
   AUTOSCALE_DECISIONS_CAP,
+  useStackStore,
   type AutoscaleSample,
   type AutoscaleDecision,
 } from '../stores/useStackStore';
-import type { MCPServerStatus, AutoscaleStatus } from '../types';
+import type { GatewayStatus, MCPServerStatus, AutoscaleStatus } from '../types';
 
 function makeServer(overrides: Partial<MCPServerStatus> = {}, autoscale?: AutoscaleStatus): MCPServerStatus {
   return {
@@ -32,6 +33,30 @@ function as(overrides: Partial<AutoscaleStatus> = {}): AutoscaleStatus {
     ...overrides,
   };
 }
+
+describe('setGatewayStatus tool discovery', () => {
+  beforeEach(() => {
+    useStackStore.setState({ toolDiscovery: 'stale', codeMode: 'stale' });
+  });
+
+  function status(toolDiscovery?: string): GatewayStatus {
+    return {
+      gateway: { name: 'gridctl-gateway', version: 'dev' },
+      'mcp-servers': [],
+      ...(toolDiscovery ? { tool_discovery: toolDiscovery } : {}),
+    };
+  }
+
+  it('maps tool_discovery deferred onto toolDiscovery', () => {
+    useStackStore.getState().setGatewayStatus(status('deferred'));
+    expect(useStackStore.getState().toolDiscovery).toBe('deferred');
+  });
+
+  it('sets toolDiscovery null when the status payload omits it', () => {
+    useStackStore.getState().setGatewayStatus(status());
+    expect(useStackStore.getState().toolDiscovery).toBeNull();
+  });
+});
 
 describe('updateAutoscaleObservability — ring buffer', () => {
   it('appends a sample per server on each poll', () => {

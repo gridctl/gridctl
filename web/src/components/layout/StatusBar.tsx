@@ -22,6 +22,7 @@ export function StatusBar() {
   // the fallback while entries are unfetched (backend keeps them equal).
   const sessions = sessionEntries !== null ? sessionEntries.length : statusSessions;
   const codeMode = useStackStore((s) => s.codeMode);
+  const toolDiscovery = useStackStore((s) => s.toolDiscovery);
   const featureDetails = useStackStore((s) => s.featureDetails);
   const tokenUsage = useStackStore((s) => s.tokenUsage);
   const tokenizerName = useStackStore((s) => s.gatewayInfo?.tokenizer);
@@ -105,6 +106,14 @@ export function StatusBar() {
           <div role="status" className="flex items-center gap-2 text-text-muted">
             <Code size={11} className="text-primary" />
             <span className="text-primary font-semibold">Code Mode</span>
+          </div>
+        )}
+
+        {/* Deferred discovery indicator. Read-only status, not an action
+            (tool_discovery is configured in stack.yaml or on the link URL). */}
+        {toolDiscovery && toolDiscovery !== 'off' && (
+          <div role="status" className="flex items-center gap-2 text-text-muted">
+            <span className="text-primary font-semibold">Deferred discovery</span>
           </div>
         )}
 

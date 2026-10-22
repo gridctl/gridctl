@@ -53,17 +53,18 @@ projections stay under 'gridctl skill project' for now.`,
 }
 
 var (
-	projectSyncKind     string
-	projectSyncClients  []string
-	projectSyncName     string
-	projectSyncGroup    string
-	projectSyncClientID string
-	projectSyncPort     int
-	projectSyncForce    bool
-	projectSyncDryRun   bool
-	projectSyncFormat   string
-	projectSyncJSON     *bool
-	projectSyncPlain    *bool
+	projectSyncKind      string
+	projectSyncClients   []string
+	projectSyncName      string
+	projectSyncGroup     string
+	projectSyncClientID  string
+	projectSyncDiscovery string
+	projectSyncPort      int
+	projectSyncForce     bool
+	projectSyncDryRun    bool
+	projectSyncFormat    string
+	projectSyncJSON      *bool
+	projectSyncPlain     *bool
 )
 
 var projectSyncCmd = &cobra.Command{
@@ -90,6 +91,10 @@ Exit codes:
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
 		}
+		if projectSyncDiscovery != "" && projectSyncDiscovery != "deferred" && projectSyncDiscovery != "full" {
+			fmt.Fprintln(os.Stderr, "--discovery must be deferred or full")
+			os.Exit(ctxExitInfrastructure)
+		}
 		if err := validTopProjectKind(projectSyncKind); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
@@ -111,12 +116,16 @@ Exit codes:
 		opts := wiring.SyncOptions{
 			Clients:    projectSyncClients,
 			ServerName: name,
-			GatewayURL: provisioner.AppendClientParam(baseURL, projectSyncClientID),
-			Port:       port,
-			Group:      projectSyncGroup,
-			ClientID:   projectSyncClientID,
-			Force:      projectSyncForce,
-			DryRun:     projectSyncDryRun,
+			GatewayURL: provisioner.AppendQueryParams(baseURL, map[string]string{
+				"client":    projectSyncClientID,
+				"discovery": projectSyncDiscovery,
+			}),
+			Port:      port,
+			Group:     projectSyncGroup,
+			ClientID:  projectSyncClientID,
+			Discovery: projectSyncDiscovery,
+			Force:     projectSyncForce,
+			DryRun:    projectSyncDryRun,
 		}
 		if exit := runWiringSync(cmd.Context(), os.Stdout, os.Stderr, mgr, opts, format, *projectSyncPlain); exit != ctxExitOK {
 			os.Exit(exit)
@@ -280,6 +289,7 @@ func init() {
 	projectSyncCmd.Flags().StringVarP(&projectSyncName, "name", "n", "gridctl", "Entry name to write")
 	projectSyncCmd.Flags().StringVar(&projectSyncGroup, "group", "", "Tool group whose endpoint to link")
 	projectSyncCmd.Flags().StringVar(&projectSyncClientID, "client-id", "", "Stable client identifier for access scoping")
+	projectSyncCmd.Flags().StringVar(&projectSyncDiscovery, "discovery", "", "Per-link tool discovery override: deferred or full")
 	projectSyncCmd.Flags().IntVarP(&projectSyncPort, "port", "p", 0, "Gateway port (auto-detected from a running stack)")
 	projectSyncCmd.Flags().BoolVar(&projectSyncForce, "force", false, "Overwrite foreign or drifted entries (after backup)")
 	projectSyncCmd.Flags().BoolVar(&projectSyncDryRun, "dry-run", false, "Show what would change without modifying files")

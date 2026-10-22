@@ -228,14 +228,21 @@ func (n *listChangeNotifier) flushFired(fired *time.Timer) {
 	if n.aborted() {
 		return
 	}
-	// Code mode replaces tools only. Prompt and resource delivery still
-	// runs; tool events, including the handshake GET stream, stay suppressed.
-	if toolsDirty && !n.g.codeModeOn() {
+	// Tool events are decided per session and per subscriber. A full-mode
+	// session under code mode keeps the constant pair and is not
+	// fingerprinted. Every other view, including deferred under code mode,
+	// is fingerprinted from the composed projection.
+	if toolsDirty {
+		codeMode := n.g.codeModeOn()
 		for _, sess := range n.g.sessions.List() {
 			if n.aborted() {
 				return
 			}
-			fp := fingerprintTools(n.g.visibleToolsFor(sess.AccessID, sess.Group, sess.Principal != ""))
+			mode := n.g.effectiveDiscovery(sess.Discovery)
+			if codeMode && mode != DiscoveryDeferred {
+				continue
+			}
+			fp := fingerprintTools(n.g.visibleToolsFor(sess.AccessID, sess.Group, sess.Principal != "", mode))
 			prev, ok := n.g.sessions.SwapToolFingerprint(sess.ID, fp)
 			if !ok || prev == "" || prev == fp {
 				continue
@@ -249,14 +256,12 @@ func (n *listChangeNotifier) flushFired(fired *time.Timer) {
 			sink.NotifyToolsListChanged(sess.ID)
 			n.g.logger.Debug("list_changed sent", "session", sess.ID)
 		}
-		n.deliverToolSubscribers()
-	} else if toolsDirty && n.g.codeModeOn() {
-		n.skipToolSubscribers("code mode")
+		n.deliverToolSubscribers(codeMode)
 	}
 	n.deliverListSubscribers(changes)
 }
 
-func (n *listChangeNotifier) deliverToolSubscribers() {
+func (n *listChangeNotifier) deliverToolSubscribers(codeMode bool) {
 	if n.g == nil || n.g.listeners == nil {
 		return
 	}
@@ -267,23 +272,27 @@ func (n *listChangeNotifier) deliverToolSubscribers() {
 		if !sub.kinds.tools {
 			continue
 		}
-		fp := fingerprintTools(n.g.visibleToolsFor(sub.accessID, sub.group, sub.principal))
+		mode := n.g.effectiveDiscovery(sub.discovery)
+		if codeMode && mode != DiscoveryDeferred {
+			n.skipToolSubscriber(sub, "code mode")
+			continue
+		}
+		fp := fingerprintTools(n.g.visibleToolsFor(sub.accessID, sub.group, sub.principal, mode))
 		n.g.listeners.noteTools(sub.key, fp)
 	}
 }
 
-func (n *listChangeNotifier) skipToolSubscribers(reason string) {
-	if n.g == nil || n.g.listeners == nil {
+// skipToolSubscriber logs a suppressed tool event when the raw scoped
+// projection changed. It does not swap the composed tool fingerprint.
+// The comparison uses the subscriber's stored scoped hash: toolFP is the
+// composed visible list, which never equals the scoped hash under code mode.
+func (n *listChangeNotifier) skipToolSubscriber(sub *listenSubscriber, reason string) {
+	if n.g == nil || n.g.listeners == nil || sub == nil || !sub.kinds.tools {
 		return
 	}
-	for _, sub := range n.g.listeners.list() {
-		if !sub.kinds.tools {
-			continue
-		}
-		fp := fingerprintTools(n.g.visibleToolsFor(sub.accessID, sub.group, sub.principal))
-		if n.g.listeners.toolsWouldChange(sub.key, fp) {
-			n.g.logger.Debug("list_changed skipped", "subscription", string(sub.id), "kind", "tools", "reason", reason)
-		}
+	fp := fingerprintTools(n.g.scopedToolsFor(sub.accessID, sub.group, sub.principal))
+	if n.g.listeners.noteScopedChange(sub.key, fp) {
+		n.g.logger.Debug("list_changed skipped", "subscription", string(sub.id), "kind", "tools", "reason", reason)
 	}
 }
 
@@ -375,10 +384,11 @@ func (g *Gateway) codeModeOn() bool {
 	return g.codeMode != nil
 }
 
-// visibleToolsFor is the non-code-mode body of HandleToolsList: the
-// aggregated list after client-profile and group filtering. Policies are
-// snapshotted so the caller does not hold g.mu across the router read.
-func (g *Gateway) visibleToolsFor(accessID, group string, principal bool) []Tool {
+// scopedToolsFor is the full-mode catalog for an identity: the aggregated
+// list after the principal-aware client-scope filter and the group
+// projection. Policies are snapshotted so the caller does not hold g.mu
+// across the router read.
+func (g *Gateway) scopedToolsFor(accessID, group string, principal bool) []Tool {
 	g.mu.RLock()
 	policy := g.clientPolicy
 	groups := g.groupPolicy
@@ -392,6 +402,32 @@ func (g *Gateway) visibleToolsFor(accessID, group string, principal bool) []Tool
 		tools = groups.FilterAndRewrite(group, tools)
 	}
 	return tools
+}
+
+// visibleToolsFor is the complete list a client sees, and the only input
+// to every tool fingerprint. mode is the effective discovery mode. Code
+// mode and the pinned set are read together so a reload cannot split the
+// composition.
+func (g *Gateway) visibleToolsFor(accessID, group string, principal bool, mode string) []Tool {
+	g.mu.RLock()
+	cm := g.codeMode
+	pins := append([]string(nil), g.alwaysExpose...)
+	g.mu.RUnlock()
+
+	if cm == nil && mode != DiscoveryDeferred {
+		return g.scopedToolsFor(accessID, group, principal)
+	}
+	var out []Tool
+	if cm != nil {
+		if listed := cm.ToolsList(); listed != nil {
+			out = append(out, listed.Tools...)
+		}
+	}
+	if mode == DiscoveryDeferred {
+		out = append(out, SearchToolsTool(), CallToolTool())
+		out = append(out, g.pinnedVisible(accessID, group, principal, pins)...)
+	}
+	return out
 }
 
 // fingerprintTools hashes a session's visible list. Nil and empty lists
@@ -521,4 +557,5 @@ func (g *Gateway) refreshServerToolsFromNotification(ctx context.Context, name s
 		return
 	}
 	g.router.RefreshTools()
+	g.lintAlwaysExpose()
 }

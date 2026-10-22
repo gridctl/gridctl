@@ -174,6 +174,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
     "disabled": 1
   },
   "code_mode": "on",
+  "tool_discovery": "deferred",
   "token_usage": {
     "session": {
       "input_tokens": 12400,
@@ -206,6 +207,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/status
 | `override` | string | Override file merged into the running stack (omitted when none) |
 | `registry` | object | Registry skill counts (omitted if empty) |
 | `code_mode` | string | Code mode status (omitted if `"off"`) |
+| `tool_discovery` | string | Deferred tool discovery (`deferred`). Omitted when full |
 | `token_usage` | object | Token usage metrics (omitted if no metrics accumulator) |
 
 **Token usage fields:**
@@ -593,8 +595,8 @@ reach). It is absent when no scoping is in effect.
 
 When the stack has a `link:` block, declared clients additionally carry
 `declared: true` and a `linkEntry` object with the declared options (`group`,
-`clientId`, `name`), so the UI can render desired state (declared) next to
-actual state (linked). For a declared entry whose resolved server name differs
+`clientId`, `name`, and `discovery` when set), so the UI can render desired state (declared) next to
+actual state (linked). `discovery` is `deferred` or `full` and is omitted when unset. For a declared entry whose resolved server name differs
 from the default (a `group` or `name` override), `linked` reflects that
 resolved entry name.
 
@@ -706,7 +708,11 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 **Request body (all optional):** `group` links the tool group's endpoint (the
 entry name defaults to `gridctl-<group>`), `clientId` binds the link to a
-`clients:` access profile, `name` overrides the server entry name.
+`clients:` access profile, `name` overrides the server entry name, and
+`discovery` (`deferred` or `full`) writes a `discovery` query parameter.
+`force` overwrites a foreign or drifted entry. A `discovery` value other than
+`deferred` or `full` is HTTP 400 with `discovery must be deferred or full`.
+The preview endpoint accepts the same body.
 
 **Response (200):**
 ```json
@@ -3849,13 +3855,13 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/mcp \
 }
 ```
 
-Tool names are namespaced as `{server}__{tool}` to prevent collisions. When this list returns downstream tools, each definition forwards `_meta`, `icons`, `execution`, and unknown annotation keys. `title` is the prefixed name when the downstream title is empty or equal to the bare tool name, and the downstream title otherwise. A group rename updates `title` only when it equals the aggregated name. `tools/list` returns servers in ascending name order and, within a server, tools in the order that server listed them. The order is identical across consecutive requests, across sessions, on `/groups/{name}/mcp`, and across gateway restarts when the downstream order is unchanged. Client-profile filtering, group projection, and `tools:` whitelist edits remove or rename entries but do not reorder the remaining ones. Code mode replaces this list with the `search` and `execute` meta-tools. When code mode is on, `tools/list` is those two meta-tools, and the ordering rule applies to what `search` returns: matches stay in the aggregated order. `search` still returns only `name`, `description`, and `inputSchema`.
+Tool names are namespaced as `{server}__{tool}` to prevent collisions. When this list returns downstream tools, each definition forwards `_meta`, `icons`, `execution`, and unknown annotation keys. `title` is the prefixed name when the downstream title is empty or equal to the bare tool name, and the downstream title otherwise. A group rename updates `title` only when it equals the aggregated name. `tools/list` returns servers in ascending name order and, within a server, tools in the order that server listed them. The order is identical across consecutive requests, across sessions, on `/groups/{name}/mcp`, and across gateway restarts when the downstream order is unchanged. Client-profile filtering, group projection, and `tools:` whitelist edits remove or rename entries but do not reorder the remaining ones. Code mode replaces this list with the `search` and `execute` meta-tools. When code mode is on, `tools/list` is those two meta-tools, and the ordering rule applies to what `search` returns: matches stay in the aggregated order. `search` still returns only `name`, `description`, and `inputSchema`. Deferred discovery (`gateway.tool_discovery.mode: deferred`, or `?discovery=deferred`) returns `search_tools`, `call_tool`, and the pinned set. With code mode also on, the list is `search`, `execute`, then that deferred projection. `search_tools` returns full tool definitions, unlike code-mode `search`. Direct calls by canonical name remain allowed.
 
 `prompts/list` and `resources/list` list registry entries first in name order, then downstream entries by server name, each server's entries in the server's own order. `resources/templates/list` is downstream only (the registry contributes none), by server name, each server's entries in its own order. Downstream prompts and resources come only from servers that declare the capability. OpenAPI and A2A servers contribute none. An upstream `cursor` is ignored and no `nextCursor` is emitted. Downstream lists are drained up to 64 pages per server; hitting the bound logs a warning and returns what was collected. When two servers publish the same URI, or the same `uriTemplate`, the alphabetically first is listed and served. The other is omitted and `resourceCollisions` increments. Different templates that match one URI resolve to the first server by name at read time. Exact URIs win over a `ui://` index taken from tool `_meta.ui.resourceUri` and the deprecated `_meta["ui/resourceUri"]`, which wins over template matches. A resource list that fails or exceeds the 10-second deadline is skipped. Other servers are still returned, and `resourceListError` is `timeout`, `canceled`, `rpc`, or `transport`. That field does not record `prompts/list` failures, and an upstream disconnect is not stored as a server fault. A read that misses the index refreshes both resource lists concurrently under one 10-second deadline.
 
 On the stateless path, these list results use `resultType: "complete"`. `ttlMs` is the minimum across contributing lists. The registry, when it contributed entries, counts as 60000 and private. A handshake-era contributor, or one that omitted `ttlMs`, pins the aggregate to 0. Servers that contributed no entries do not participate, so a handshake-era tool-only server does not change these values. `cacheScope` is `public` only when every contributor is public. With no downstream contributors the result is `ttlMs` 60000 and `private`. A stateless read passes through the downstream `ttlMs`, `cacheScope`, and `resultType`. A handshake client that receives `input_required` gets an internal error naming MRTR, using the same pattern as `tools/call`, with the noun matching the method (`prompt` or `resource`). Downstream JSON-RPC errors pass through with their original code. Timeouts and transport errors return `-32603` and name the server, not payload bytes. Unknown or out-of-scope prompt names keep the existing unknown-skill error.
 
-`resources/subscribe` and `resources/unsubscribe` stay unsupported (`-32601`). Handshake-era `initialize` on `/mcp` and `/groups/{name}/mcp` advertises `tools.listChanged` and does not advertise prompt or resource `listChanged`, because the GET stream emits only tool events. The stateless `server/discover` result advertises `tools.listChanged`, and advertises prompt and resource `listChanged` whenever those capabilities are advertised at all. `resources.subscribe` stays false on both generations. The gateway advertises `prompts` and `resources` when the registry is present or any downstream declares them. `limits:` and run recording cover `tools/call` only.
+`resources/subscribe` and `resources/unsubscribe` stay unsupported (`-32601`). Handshake-era `initialize` on `/mcp` and `/groups/{name}/mcp` advertises `tools.listChanged` and does not advertise prompt or resource `listChanged`, because the GET stream emits only tool events. The stateless `server/discover` result advertises `tools.listChanged`, and advertises prompt and resource `listChanged` whenever those capabilities are advertised at all. `resources.subscribe` stays false on both generations. The gateway advertises `prompts` and `resources` when the registry is present or any downstream declares them. `limits:` and run recording cover `tools/call` only. `instructions` on handshake `initialize` and stateless `server/discover` follow the effective discovery mode of that session or request. A stateless client that skips `server/discover` should pass the same `discovery` value on `tools/list`, `tools/call`, and `subscriptions/listen`.
 
 #### `subscriptions/listen`
 
@@ -3863,7 +3869,7 @@ Stateless clients open a long-lived notification stream with `POST /mcp` or `POS
 
 The response is `text/event-stream` with `Cache-Control: no-cache`. Headers are flushed before the first event. Every event, including the acknowledgement and the final result, is an SSE `message` event. The first event is `notifications/subscriptions/acknowledged`. Its `params.notifications` is the honored subset, and `params._meta["io.modelcontextprotocol/subscriptionId"]` is the listen request id as sent (number or string, not re-encoded). The gateway honors `toolsListChanged`, `promptsListChanged`, and `resourcesListChanged` only when the client requested that kind and the stateless advertisement has the matching `listChanged` flag. `resourceSubscriptions` is accepted and never honored. If nothing is honored, the acknowledgement is still sent and is followed immediately by the final result, then the stream closes.
 
-While the stream is open, the server writes a `: keepalive` comment every 30 seconds and one `message` event per delivered notification. Each notification is `notifications/tools/list_changed`, `notifications/prompts/list_changed`, or `notifications/resources/list_changed`, with no params other than `_meta["io.modelcontextprotocol/subscriptionId"]`. Delivery is coalesced with the same timing as the handshake GET stream (250 ms quiet, 2 second maximum latency). A burst produces at most one event per kind per subscriber. Nothing is replayed. Open the stream before the first list if you need the change that follows that list.
+While the stream is open, the server writes a `: keepalive` comment every 30 seconds and one `message` event per delivered notification. Each notification is `notifications/tools/list_changed`, `notifications/prompts/list_changed`, or `notifications/resources/list_changed`, with no params other than `_meta["io.modelcontextprotocol/subscriptionId"]`. Delivery is coalesced with the same timing as the handshake GET stream (250 ms quiet, 2 second maximum latency). A burst produces at most one event per kind per subscriber. Nothing is replayed. Open the stream before the first list if you need the change that follows that list. Tool events use the subscriber's effective discovery mode: a deferred subscriber is notified when the pinned set or the stack mode changes, and not when the catalog changes without touching that set. A full-mode subscriber under code mode is skipped. The stream keeps the `discovery` value it opened with.
 
 Tool events use the same visible-list fingerprint as the handshake path, including client profile, group, and code-mode suppression. Prompt and resource events are sent when the changed server is the registry, or when that server is visible to the subscriber's identity and group. Unregister decides group membership from the server's tool names before it leaves the router, so a group that could see it still gets the event. Triggers are registry refresh, skill-policy changes, registration and unregistration of a server that declares prompts or resources, a downstream list-changed notification, and a resource reindex after a missed event.
 
@@ -3893,8 +3899,9 @@ receives the same event on `GET /groups/{name}/mcp`. The SSE event type
 is `message`. The data is `{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}`,
 with no `id` and no `params`. Visible means the list `tools/list` would
 return for that session after client-profile and group filtering. A
-change the session cannot see produces no event. Code mode produces
-none. Triggers are coalesced: a 250 ms quiet window, and at least one
+change the session cannot see produces no event. A full-mode session
+under code mode produces none. A deferred session is fingerprinted from
+its effective mode, including when code mode is also on. Triggers are coalesced: a 250 ms quiet window, and at least one
 flush every 2 seconds while triggers continue. A session with no open
 stream gets nothing at the time of the change; the event is stored and
 replayed if the client reconnects with `Last-Event-ID`. Autoscaler cold

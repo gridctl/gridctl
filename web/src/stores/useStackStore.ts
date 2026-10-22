@@ -64,6 +64,7 @@ interface StackState {
   // when present, so the two surfaces read one array and cannot diverge.
   sessionEntries: SessionEntry[] | null;
   codeMode: string | null;  // Gateway code mode status ("on" when active)
+  toolDiscovery: string | null; // "deferred" when deferred discovery is active
   tokenUsage: TokenUsage | null; // Token usage metrics from status response
   stackName: string;        // Active stack name; empty string in stackless mode
   features: Record<string, boolean>;  // Enabled experimental flags, name -> true
@@ -129,6 +130,7 @@ export const useStackStore = create<StackState>()(
     sessions: 0,
     sessionEntries: null,
     codeMode: null,
+    toolDiscovery: null,
     tokenUsage: null,
     stackName: '',
     features: {},
@@ -185,6 +187,7 @@ export const useStackStore = create<StackState>()(
         resources: status.resources || [],
         sessions: status.sessions ?? 0,
         codeMode: status.code_mode || null,
+        toolDiscovery: status.tool_discovery || null,
         tokenUsage: status.token_usage ?? null,
         stackName: status.stack_name || '',
         features: status.features ?? {},
@@ -260,7 +263,7 @@ export const useStackStore = create<StackState>()(
     },
 
     refreshNodesAndEdges: () => {
-      const { gatewayInfo, mcpServers, resources, clients, sessions, codeMode, draggedPositions } = get();
+      const { gatewayInfo, mcpServers, resources, clients, sessions, codeMode, toolDiscovery, draggedPositions } = get();
       if (!gatewayInfo) return;
 
       const registryStatus = useRegistryStore.getState().status;
@@ -276,6 +279,7 @@ export const useStackStore = create<StackState>()(
         clients,
         registryStatus,
         codeMode,
+        toolDiscovery,
         isCompact,
       );
 
@@ -306,7 +310,7 @@ export const useStackStore = create<StackState>()(
     },
 
     resetLayout: () => {
-      const { gatewayInfo, mcpServers, resources, clients, sessions, codeMode } = get();
+      const { gatewayInfo, mcpServers, resources, clients, sessions, codeMode, toolDiscovery } = get();
       if (!gatewayInfo) return;
 
       const registryStatus = useRegistryStore.getState().status;
@@ -322,6 +326,7 @@ export const useStackStore = create<StackState>()(
         clients,
         registryStatus,
         codeMode,
+        toolDiscovery,
         isCompact,
       );
       // Re-derive tool fan-out from scratch too (positions are local to the

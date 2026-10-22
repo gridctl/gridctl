@@ -311,6 +311,8 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 		}
 		inst.Gateway.SetCodeMode(timeout)
 	}
+	mode, pins := toolDiscoveryFrom(b.stack)
+	inst.Gateway.SetToolDiscovery(mode, pins)
 
 	// Phase 1a2: Set default output format if configured
 	if b.stack.Gateway != nil && b.stack.Gateway.OutputFormat != "" {
@@ -1098,6 +1100,32 @@ func groupsSpec(stack *config.Stack) mcp.GroupsSpec {
 	return spec
 }
 
+// applyReloadedToolDiscovery installs the stack discovery mode after a
+// reload. SetToolDiscovery re-fingerprints sessions and subscribers, so a
+// discovery-only edit notifies affected views without container work.
+func applyReloadedToolDiscovery(gw *mcp.Gateway, cfg *config.Stack) {
+	if gw == nil {
+		return
+	}
+	mode, pins := toolDiscoveryFrom(cfg)
+	gw.SetToolDiscovery(mode, pins)
+}
+
+// toolDiscoveryFrom returns the stack discovery mode and pinned set.
+// A nil block, an empty mode, and mode full all mean full. Stackless
+// startup (nil gateway) defaults to full.
+func toolDiscoveryFrom(stack *config.Stack) (string, []string) {
+	if stack == nil || stack.Gateway == nil || stack.Gateway.ToolDiscovery == nil {
+		return mcp.DiscoveryFull, nil
+	}
+	td := stack.Gateway.ToolDiscovery
+	mode := td.Mode
+	if mode == "" {
+		mode = mcp.DiscoveryFull
+	}
+	return mode, append([]string(nil), td.AlwaysExpose...)
+}
+
 // lintGroupRenamesAgainstSkills warns when an active skill's SKILL.md still
 // references the ORIGINAL unprefixed name of a tool a group renames: agents
 // following the skill would call a name the group no longer exposes. A
@@ -1769,6 +1797,7 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 		// Re-resolve the per-client access policy from the reloaded config so a
 		// `clients:` change takes effect on the next tools/list and tools/call.
 		inst.Gateway.SetClientAccessPolicy(mcp.NewClientAccessPolicy(clientAccessSpec(newCfg)))
+		applyReloadedToolDiscovery(inst.Gateway, newCfg)
 		// Re-resolve experimental flags so `experimental:` edits reach
 		// /api/status (and everything gated on a flag) without restart.
 		b.refreshExperimentalFlags(flags.Default(), newCfg, slog.New(handler))

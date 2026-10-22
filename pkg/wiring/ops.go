@@ -91,6 +91,7 @@ type SyncOptions struct {
 	Port       int
 	Group      string
 	ClientID   string
+	Discovery  string
 	// Force overwrites foreign and drifted entries (after backup).
 	Force bool
 	// DryRun reports the plan without writing anything.
@@ -141,6 +142,7 @@ func (o SyncOptions) linkOptions() provisioner.LinkOptions {
 		ServerName: o.ServerName,
 		ClientID:   o.ClientID,
 		Group:      o.Group,
+		Discovery:  o.Discovery,
 		Force:      o.Force,
 		DryRun:     o.DryRun,
 	}
@@ -286,6 +288,7 @@ func (m *Manager) record(lf *LockFile, client, name, configPath string, opts pro
 		ConfigPath:       configPath,
 		Group:            opts.Group,
 		ClientID:         opts.ClientID,
+		Discovery:        opts.Discovery,
 		Hashes:           hashes,
 		CreatedByGridctl: createdByGridctl,
 		Pack:             packTag,
@@ -432,7 +435,7 @@ func (m *Manager) Adopt(ctx context.Context, client, name string) (Result, error
 		// a foreign adopt has neither and records the plain shape.
 		opts := provisioner.LinkOptions{}
 		if rec != nil {
-			opts.Group, opts.ClientID = rec.Group, rec.ClientID
+			opts.Group, opts.ClientID, opts.Discovery = rec.Group, rec.ClientID, rec.Discovery
 		} else if strings.HasPrefix(name, "gridctl-") {
 			opts.Group = strings.TrimPrefix(name, "gridctl-")
 		}

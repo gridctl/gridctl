@@ -2,6 +2,16 @@ package provisioner
 
 import "testing"
 
+func TestAppendQueryParamsDiscovery(t *testing.T) {
+	got := gatewayHTTPURLForOpts(LinkOptions{Port: 9090, ClientID: "cursor", Discovery: "deferred"})
+	if got != "http://localhost:9090/mcp?client=cursor&discovery=deferred" {
+		t.Fatalf("url = %q", got)
+	}
+	if bare := gatewayHTTPURLForOpts(LinkOptions{Port: 9090}); bare != "http://localhost:9090/mcp" {
+		t.Fatalf("bare url = %q", bare)
+	}
+}
+
 func TestAppendClientParam(t *testing.T) {
 	tests := []struct {
 		name     string

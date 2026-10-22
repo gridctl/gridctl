@@ -385,6 +385,7 @@ export interface GatewayStatus {
   resources?: ResourceStatus[];
   sessions?: number;       // Active MCP session count
   code_mode?: string;      // "on" when code mode is active (omitted when off)
+  tool_discovery?: string; // "deferred" when deferred discovery is active (omitted when full)
   extensions?: string[];
   token_usage?: TokenUsage; // Token usage metrics (omitted if no accumulator)
   stack_name?: string;     // Active stack name; omitted in stackless mode
@@ -482,6 +483,7 @@ export interface GatewayNodeData extends NodeDataBase {
   totalToolCount: number;
   sessions: number;
   codeMode: string | null;
+  toolDiscovery: string | null;
   totalSkills: number;
   activeSkills: number;
 }

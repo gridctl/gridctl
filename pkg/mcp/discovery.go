@@ -114,7 +114,7 @@ func (g *Gateway) DiscoverTools(ctx context.Context, opts DiscoverOptions) (*Too
 }
 
 func isMetaToolName(name string) bool {
-	return name == MetaToolSearch || name == MetaToolExecute
+	return name == MetaToolSearch || name == MetaToolExecute || isDeferredMetaTool(name)
 }
 
 func canonicalHalves(name string) (server, tool string, ok bool) {

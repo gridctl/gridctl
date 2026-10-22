@@ -85,6 +85,7 @@ gateway:
 | `allowed_origins` | []string | No | `["*"]` on loopback | CORS allowed origins. On a loopback bind, empty or unset defaults to `["*"]`. A non-loopback bind requires an explicit list, or the insecure override. `"*"` is not an allowlist: on a widened bind it is refused unless the override is set |
 | `allowed_hosts` | []string | No | `[]` | Extra `Host` header values accepted for loopback-arriving connections across the HTTP surface, including MCP, REST, the UI, and the OAuth callback (DNS rebinding protection). Probes and terminal operational CORS preflight are exempt; OAuth metadata preflight is checked. Unset accepts only loopback hosts on those connections; non-loopback-arriving connections skip this check. Set when a reverse proxy forwards a non-loopback hostname. A matching Host can also be the origin the Server Card advertises when `public_url` is unset. Unlike `allowed_origins`, `"*"` is **not** a wildcard here and matches nothing |
 | `auth` | object | No | - | Authentication configuration |
+| `tool_discovery` | object | No | full | Deferred tool discovery. See [Tool discovery](#tool-discovery). Omitted, empty, and `mode: full` keep today's `tools/list` |
 | `code_mode` | string | No | `"off"` | Enable code mode: `"on"` or `"off"` |
 | `code_mode_timeout` | int | No | `30` | Code mode execution timeout in seconds. Must be >= 0 |
 | `output_format` | string | No | `"json"` | Default output format for tool call results: `"json"`, `"toon"`, `"csv"`, or `"text"`. Conversion rewrites text blocks only; non-text blocks are left intact. Per-server `output_format` overrides this value |
@@ -103,6 +104,37 @@ format conversion, using local numeric estimates without client attribution.
 The A2A adapter selects it through trusted construction metadata, not a separate
 YAML option; other sources retain the ordinary path. See
 [sensitive-call counting](usage-observability.md#sensitive-call-counting).
+
+### Tool discovery
+
+`gateway.tool_discovery` changes what `tools/list` returns. It does not change what dispatch accepts. A direct `tools/call` by canonical name still works. Deferred mode does not change `GET /api/tools`, the Tools workspace, or optimize schema-token measurement.
+
+```yaml
+gateway:
+  tool_discovery:
+    mode: deferred
+    always_expose:
+      - github__search_repos
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `mode` | string | `full` | `full` or `deferred`. Empty means `full` |
+| `always_expose` | []string | none | Canonical `server__tool` names that stay on `tools/list` in deferred mode, after scope, group, and whitelist filters. Duplicates are rejected. A name absent from the pre-whitelist catalog is logged once per missing set at warn and does not block startup or reload. An empty catalog is skipped |
+
+In `deferred` mode, `tools/list` returns `search_tools`, `call_tool`, and the pinned set, in that order. `search_tools` takes optional `query` (substring), `server` (exact server name), `cursor`, and `limit` (default 20, maximum 200). An empty query lists the visible catalog. The result is a text header plus the same object in `structuredContent`: `tools` (full definitions), `total_visible`, `matched`, `returned`, and `nextCursor` when another page remains. Pages are name-sorted. The serialized `tools` array is cut by count and by half of `maxToolResultBytes` (default 32768). A definition is never truncated. A cursor is bound to the query, server, and catalog view that issued it. A stale cursor is an in-band error: `catalog or scope changed since this cursor was issued; restart from the first page`.
+
+`call_tool` takes required `name` and optional `arguments` (default `{}`). It dispatches that one tool through the ordinary path and returns the result. Calling a meta-tool returns `Error: call_tool cannot call a meta-tool; call the target tool by name`. Policy and rate limits apply to the inner call, not to the outer `search_tools` or `call_tool` frame. A policy-blocked tool is still listed. A denial begins `Error: tool blocked by policy`, does not reach the downstream server, and does not consume a rate-limit token. A `policy:` rule that names `search_tools` or `call_tool` never matches.
+
+A group session's pinned set and search results use that group's exposure names. Pinned names are matched on the canonical `server__tool` name before that rewrite, so `always_expose` stays canonical. Pass a returned name to `call_tool`. Scope, whitelist, and group membership still apply. A pinned name hidden by any of those is omitted.
+
+`?discovery=deferred` or `?discovery=full` overrides the stack mode for one handshake session (frozen at initialize) or one stateless request. Empty means the stack mode. A `subscriptions/listen` stream keeps the value it opened with. Stateless clients that want matching instructions pass the same value on `server/discover`, `tools/list`, `tools/call`, and `subscriptions/listen`. `server/discover` instructions follow the value on that request. Any other value is HTTP 400 with JSON-RPC `-32602` and `unsupported discovery mode "x" (accepted: deferred, full)`. The parameter is a presentation choice, not an identity or authorization claim.
+
+With code mode also on, `tools/list` is `search`, `execute`, `search_tools`, `call_tool`, then the pinned set. Use deferred discovery for small models and hosts without code execution. Use code mode when a capable model should compose several calls in one sandbox run.
+
+A `tool_discovery` edit hot-reloads. No container is restarted. Handshake sessions and listen subscribers are re-fingerprinted from their effective mode. `gridctl plan` reports a mode change as `tool_discovery.mode: full → deferred` and a pin-list change as `tool_discovery.always_expose changed`, without listing the names.
+
+On the stateless generation, continue an `input_required` result by retrying `call_tool` with the same `name` and `arguments` plus the standard top-level `requestState` and `inputResponses` fields, or by retrying the canonical tool directly. Handshake sessions keep the existing cross-era error. `call_tool` does not add continuation fields of its own.
 
 ### Auth
 
@@ -1572,6 +1604,8 @@ priority order:
 All identifiers are normalized (lowercased, hyphenated) so configuration, the
 wire, and the UI reconcile on one canonical form.
 
+`discovery` is a presentation choice, not an identity or authorization claim. It does not change `AccessID` or `Principal`.
+
 The identifier is self-declared by the connecting client (it sets its own
 `client` parameter, header, or `clientInfo.name`). `gridctl call --as` and the
 `client` field on `POST /api/tools/call` / `GET /api/tools/discover` send the
@@ -1714,7 +1748,7 @@ A denial on `/mcp` (both protocol generations), group endpoints, and code-mode i
 
 `gridctl call` exits 1 and prints the safe message `tool blocked by policy`. `--format json` carries `outcome.reason` `policy_blocked` and `outcome.gate` `policy`. `POST /api/tools/call` returns HTTP 200 with `error.code` `policy_blocked` and that same safe message, which does not include the rule pattern. A denied call does not reach the downstream server, does not consume a rate-limit token, and does not cold-start a scaled-to-zero server.
 
-Listing is the whitelist's job. `tools/list`, code-mode `search`, and `GET /api/tools/catalog` still list a blocked tool. A whitelist-hidden name is rejected as unknown before the policy gate runs, even when a rule names it. That is defense in depth: the rule still blocks the tool if a later Tools workspace edit exposes it again.
+Listing is the whitelist's job. `tools/list`, code-mode `search`, deferred `search_tools`, and `GET /api/tools/catalog` still list a blocked tool. A whitelist-hidden name is rejected as unknown before the policy gate runs, even when a rule names it. That is defense in depth: the rule still blocks the tool if a later Tools workspace edit exposes it again.
 
 ### Reload, status, and inheritance
 
@@ -1805,6 +1839,11 @@ Client scoping applies on group sessions exactly as on `/mcp`: a tool the
 caller's `clients:` profile excludes stays invisible and denied even under a
 rename. Code mode on a group session searches and executes only the group's
 surface, with renames shown server-prefixed so sandbox calls round-trip.
+Deferred discovery on a group session lists and searches that same surface
+under the group's exposure names. `always_expose` still names the canonical
+tool; the pinned entry is emitted under the rename. A rename of `search`,
+`execute`, `search_tools`, or `call_tool` is rejected. Those names are reserved
+for the meta-tools.
 
 Schema-pin fingerprints hash the downstream definitions, so group rewrites
 never cause drift; when an upstream tool does drift, `gridctl pins diff`
@@ -1902,6 +1941,7 @@ link:
   - client: cursor        # object form for options
     group: dev            # link the group endpoint; entry name defaults to gridctl-dev
     client_id: cursor     # stable identifier for a clients: access profile
+    discovery: deferred   # per-link tools/list projection; deferred or full
     name: gridctl         # server entry name override in the client config
 ```
 
@@ -1910,6 +1950,7 @@ link:
 | `client` | string | **Yes** | - | Client slug (same set as `gridctl link`: claude, claude-code, cursor, windsurf, vscode, gemini, antigravity, opencode, grok, continue, cline, anythingllm, lmstudio, roo, zed, goose) |
 | `group` | string | No | - | Tool group whose endpoint to link; must exist in `groups:`. The entry name defaults to `gridctl-<group>` |
 | `client_id` | string | No | - | Client identifier embedded on the gateway URL: display-only in OAuth mode, otherwise a per-client scope selector. Not defaulted: existing imperative links carry no identifier, and defaulting one would conflict with them on first reconcile |
+| `discovery` | string | No | stack mode | `deferred` or `full`. Written as a `discovery` query parameter. A presentation choice, not an authorization claim |
 | `name` | string | No | `gridctl` | Server entry name in the client config |
 
 Reconcile semantics:

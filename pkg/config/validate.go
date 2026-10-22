@@ -277,6 +277,26 @@ func Validate(s *Stack) error {
 		}
 	}
 
+	if s.Gateway != nil && s.Gateway.ToolDiscovery != nil {
+		td := s.Gateway.ToolDiscovery
+		if td.Mode != "" && td.Mode != "full" && td.Mode != "deferred" {
+			errs = append(errs, ValidationError{"gateway.tool_discovery.mode", "must be 'full' or 'deferred'"})
+		}
+		seen := make(map[string]int, len(td.AlwaysExpose))
+		for i, name := range td.AlwaysExpose {
+			field := fmt.Sprintf("gateway.tool_discovery.always_expose[%d]", i)
+			if _, _, ok := splitPrefixedToolName(name); !ok {
+				errs = append(errs, ValidationError{field, "must be a prefixed name (server__tool)"})
+				continue
+			}
+			if prev, dup := seen[name]; dup {
+				errs = append(errs, ValidationError{field, fmt.Sprintf("duplicate of gateway.tool_discovery.always_expose[%d]", prev)})
+				continue
+			}
+			seen[name] = i
+		}
+	}
+
 	// Gateway code_mode validation
 	if s.Gateway != nil && s.Gateway.CodeMode != "" {
 		validModes := map[string]bool{"off": true, "on": true}
@@ -1157,6 +1177,9 @@ func validateGroups(s *Stack, serverNames map[string]bool, whitelists map[string
 				}
 				if ov.Name == "search" || ov.Name == "execute" {
 					errs = append(errs, ValidationError{field + ".name", fmt.Sprintf("'%s' is reserved for the code-mode meta-tools", ov.Name)})
+				}
+				if ov.Name == "search_tools" || ov.Name == "call_tool" {
+					errs = append(errs, ValidationError{field + ".name", fmt.Sprintf("'%s' is reserved for the deferred-discovery meta-tools", ov.Name)})
 				}
 				if prev, dup := exposedNames[ov.Name]; dup {
 					errs = append(errs, ValidationError{field + ".name", fmt.Sprintf("exposed name '%s' collides with override for '%s'", ov.Name, prev)})

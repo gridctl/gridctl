@@ -216,7 +216,7 @@ Restart Claude Desktop after editing. All tools from your stack are now availabl
 }
 ```
 
-Antigravity borrows Windsurf's `serverUrl` field but speaks streamable HTTP, so point it at the `/mcp` endpoint (not `/sse`). The IDE and CLI share `~/.gemini/config/mcp_config.json` on Antigravity 2.0. Since Antigravity caps each MCP server at 100 tools, pair a large stack with `gateway.code_mode: on`.
+Antigravity borrows Windsurf's `serverUrl` field but speaks streamable HTTP, so point it at the `/mcp` endpoint (not `/sse`). The IDE and CLI share `~/.gemini/config/mcp_config.json` on Antigravity 2.0. Since Antigravity caps each MCP server at 100 tools, pair a large stack with `gateway.code_mode: on`, or with `gateway.tool_discovery.mode: deferred` when the host should not run code.
 
 </details>
 
@@ -489,6 +489,7 @@ Learn more → [Packs guide](docs/packs.md)
 | [`a2a/`](examples/a2a/) | Experimental outbound A2A tools, included in v1.0.0-rc.2, with card trust and secret task/context handles |
 | [`mcp-apps/`](examples/mcp-apps/) | Remote MCP App server with `protocol_extensions` |
 | [`code-mode-basic.yaml`](examples/code-mode/code-mode-basic.yaml) | Gateway code mode with search + execute meta-tools |
+| [`deferred-discovery.yaml`](examples/code-mode/deferred-discovery.yaml) | Deferred tool discovery: `search_tools` and `call_tool`, without code execution |
 | [`github-mcp.yaml`](examples/platforms/github-mcp.yaml) | GitHub MCP server integration |
 | [`registry-basic.yaml`](examples/registry/registry-basic.yaml) | Skills registry with a single server |
 | [`var-basic.yaml`](examples/secrets-vault/var-basic.yaml) | Reference variable-store secrets with `${var:KEY}` syntax |

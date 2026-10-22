@@ -126,11 +126,15 @@ func linkOptionsForEntry(entry config.LinkEntry, port int) provisioner.LinkOptio
 		baseURL = provisioner.GroupGatewayHTTPURL(port, entry.Group)
 	}
 	return provisioner.LinkOptions{
-		GatewayURL: provisioner.AppendClientParam(baseURL, entry.ClientID),
+		GatewayURL: provisioner.AppendQueryParams(baseURL, map[string]string{
+			"client":    entry.ClientID,
+			"discovery": entry.Discovery,
+		}),
 		Port:       port,
 		ServerName: entry.EffectiveName(),
 		ClientID:   entry.ClientID,
 		Group:      entry.Group,
+		Discovery:  entry.Discovery,
 	}
 }
 

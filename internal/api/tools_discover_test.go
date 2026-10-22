@@ -90,6 +90,23 @@ func TestHandleToolsDiscover_ScopedCounts(t *testing.T) {
 	}
 }
 
+func TestHandleToolsDiscover_DeferredModeUnchanged(t *testing.T) {
+	stub := &callStubClient{name: "echo", tools: []mcp.Tool{{Name: "echo", Description: "payload"}}}
+	srv := newCallServer(t, stub)
+	full := getDiscover(srv.Handler(), "")
+	if full.Code != http.StatusOK {
+		t.Fatalf("full status = %d %s", full.Code, full.Body.String())
+	}
+	srv.gateway.SetToolDiscovery(mcp.DiscoveryDeferred, []string{"echo__echo"})
+	deferred := getDiscover(srv.Handler(), "")
+	if deferred.Code != http.StatusOK {
+		t.Fatalf("deferred status = %d %s", deferred.Code, deferred.Body.String())
+	}
+	if full.Body.String() != deferred.Body.String() {
+		t.Fatalf("discover changed in deferred mode\nfull: %s\ndeferred: %s", full.Body.String(), deferred.Body.String())
+	}
+}
+
 func TestHandleToolsDiscover_CodeModeOn(t *testing.T) {
 	stub := &callStubClient{name: "echo", tools: []mcp.Tool{{Name: "echo", Description: "payload"}}}
 	srv := newCallServer(t, stub)

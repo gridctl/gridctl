@@ -7,8 +7,11 @@ Reduce context window consumption by replacing individual tool definitions with 
 | File | Description |
 |------|-------------|
 | `code-mode-basic.yaml` | Gateway code mode with search + execute meta-tools |
+| `deferred-discovery.yaml` | Deferred tool discovery without code execution |
 
 ## 💡 Concepts
+
+Code mode and deferred discovery both shrink `tools/list`. Code mode is for a model that can write JavaScript and call several tools in one `execute`. Deferred discovery is for a small model or a host that cannot run code: it exposes `search_tools` and `call_tool`, and the model calls one tool at a time. See `deferred-discovery.yaml`.
 
 ### Why Code Mode
 

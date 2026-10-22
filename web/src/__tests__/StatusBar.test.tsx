@@ -35,6 +35,7 @@ beforeEach(() => {
     resources: [],
     sessions: 0,
     codeMode: 'off',
+    toolDiscovery: null,
     tokenUsage: null,
     featureDetails: [],
     connectionStatus: 'connected',
@@ -64,6 +65,16 @@ describe('StatusBar', () => {
     renderBar();
     expect(screen.getByText('MCP')).toBeInTheDocument();
     expect(screen.queryByText('err')).not.toBeInTheDocument();
+  });
+
+  it('renders the deferred discovery pill from the store and hides it when null', () => {
+    useStackStore.setState({ toolDiscovery: 'deferred' });
+    renderBar();
+    expect(screen.getByText('Deferred discovery')).toBeInTheDocument();
+    cleanup();
+    useStackStore.setState({ toolDiscovery: null });
+    renderBar();
+    expect(screen.queryByText('Deferred discovery')).not.toBeInTheDocument();
   });
 
   it('shows an aggregate experimental chip when flags are enabled', () => {

@@ -207,11 +207,15 @@ func rebuildOptions(e *Entry, name string, port int) provisioner.LinkOptions {
 		base = provisioner.GroupGatewayHTTPURL(port, e.Group)
 	}
 	return provisioner.LinkOptions{
-		GatewayURL: provisioner.AppendClientParam(base, e.ClientID),
+		GatewayURL: provisioner.AppendQueryParams(base, map[string]string{
+			"client":    e.ClientID,
+			"discovery": e.Discovery,
+		}),
 		Port:       port,
 		ServerName: name,
 		ClientID:   e.ClientID,
 		Group:      e.Group,
+		Discovery:  e.Discovery,
 	}
 }
 

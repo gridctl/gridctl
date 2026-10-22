@@ -19,8 +19,9 @@ const LockVersion = 1
 // rewrites the file (entries it actively re-records are written fresh).
 // Revision 2 was introduced by the removed models kind. Those entry
 // attributes (acked_hash, include_ref, include_mode, include_original)
-// now ride in Entry.Extra on existing files. Never decrement this value.
-const lockRevision = 2
+// now ride in Entry.Extra on existing files. Revision 3 adds the wiring
+// discovery field. Never decrement this value.
+const lockRevision = 3
 
 // LockFile is the on-disk shape of the unified projection lockfile at
 // ~/.gridctl/project.lock.yaml. Absence of an entry means "unknown, do

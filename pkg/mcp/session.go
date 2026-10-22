@@ -3,6 +3,7 @@ package mcp
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"strings"
 	"sync"
 	"time"
 )
@@ -42,6 +43,10 @@ type Session struct {
 	// connected through a /groups/{name}/mcp endpoint. Empty for the default
 	// full-surface /mcp endpoint. Frozen at initialize, like AccessID.
 	Group string
+	// Discovery is the per-session discovery override ("deferred" or "full").
+	// Empty means the stack default. Frozen at initialize; later requests on
+	// this session ignore the query parameter.
+	Discovery string
 	// ProtocolVersion is the MCP protocol version negotiated at initialize
 	// (echo of the client's requested version when supported, otherwise the
 	// latest supported version).
@@ -90,7 +95,7 @@ func NewSessionManager() *SessionManager {
 // pass "" for the default /mcp endpoint.
 //
 // protocolVersion is the MCP protocol version negotiated for this session.
-func (m *SessionManager) Create(clientInfo ClientInfo, accessID, group, protocolVersion string) *Session {
+func (m *SessionManager) Create(clientInfo ClientInfo, accessID, group, protocolVersion, discovery string) *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -98,7 +103,7 @@ func (m *SessionManager) Create(clientInfo ClientInfo, accessID, group, protocol
 		m.evictOldest()
 	}
 
-	session := m.create(clientInfo, accessID, "", group, protocolVersion)
+	session := m.create(clientInfo, accessID, "", group, protocolVersion, discovery)
 	m.sessions[session.ID] = session
 	return session
 }
@@ -106,7 +111,7 @@ func (m *SessionManager) Create(clientInfo ClientInfo, accessID, group, protocol
 // create builds a session. principal, when set, is stored verbatim as AccessID
 // and is not passed through NormalizeClientID. The declared accessID is then
 // only the display label.
-func (m *SessionManager) create(clientInfo ClientInfo, accessID, principal, group, protocolVersion string) *Session {
+func (m *SessionManager) create(clientInfo ClientInfo, accessID, principal, group, protocolVersion, discovery string) *Session {
 	normalized := NormalizeClientID(clientInfo.Name)
 	resolvedAccess := NormalizeClientID(accessID)
 	clientID := normalized
@@ -127,6 +132,7 @@ func (m *SessionManager) create(clientInfo ClientInfo, accessID, principal, grou
 		AccessID:        resolvedAccess,
 		Principal:       principal,
 		Group:           group,
+		Discovery:       strings.TrimSpace(discovery),
 		ProtocolVersion: protocolVersion,
 		Initialized:     true,
 		CreatedAt:       time.Now(),
@@ -136,13 +142,13 @@ func (m *SessionManager) create(clientInfo ClientInfo, accessID, principal, grou
 
 // CreatePrincipal is Create for a verified OAuth principal. AccessID is the
 // raw principal. declared is the display label (query, header, or empty).
-func (m *SessionManager) CreatePrincipal(clientInfo ClientInfo, declared, principal, group, protocolVersion string) *Session {
+func (m *SessionManager) CreatePrincipal(clientInfo ClientInfo, declared, principal, group, protocolVersion, discovery string) *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if len(m.sessions) >= maxSessions {
 		m.evictOldest()
 	}
-	session := m.create(clientInfo, declared, principal, group, protocolVersion)
+	session := m.create(clientInfo, declared, principal, group, protocolVersion, discovery)
 	m.sessions[session.ID] = session
 	return session
 }

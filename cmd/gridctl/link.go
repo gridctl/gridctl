@@ -16,13 +16,14 @@ import (
 )
 
 var (
-	linkPort     int
-	linkAll      bool
-	linkName     string
-	linkClientID string
-	linkGroup    string
-	linkDryRun   bool
-	linkForce    bool
+	linkPort      int
+	linkAll       bool
+	linkName      string
+	linkClientID  string
+	linkGroup     string
+	linkDiscovery string
+	linkDryRun    bool
+	linkForce     bool
 )
 
 var linkCmd = &cobra.Command{
@@ -49,6 +50,9 @@ Supported clients: claude, claude-code, cursor, windsurf, vscode, gemini, antigr
 		if linkGroup != "" && !cmd.Flags().Changed("name") {
 			linkName = "gridctl-" + linkGroup
 		}
+		if linkDiscovery != "" && linkDiscovery != "deferred" && linkDiscovery != "full" {
+			return fmt.Errorf("--discovery must be deferred or full")
+		}
 		return runLink(cmd.Context(), client)
 	},
 }
@@ -59,6 +63,7 @@ func init() {
 	linkCmd.Flags().StringVarP(&linkName, "name", "n", "gridctl", "Server name in client config")
 	linkCmd.Flags().StringVar(&linkClientID, "client-id", "", "Stable client identifier for per-client access scoping (matches a stack.yaml clients: profile)")
 	linkCmd.Flags().StringVar(&linkGroup, "group", "", "Tool group whose endpoint to link (matches a stack.yaml groups: entry)")
+	linkCmd.Flags().StringVar(&linkDiscovery, "discovery", "", "Per-link tool discovery override: deferred or full (default: stack mode)")
 	linkCmd.Flags().BoolVar(&linkDryRun, "dry-run", false, "Show what would change without modifying files")
 	linkCmd.Flags().BoolVar(&linkForce, "force", false, "Overwrite existing gridctl entry even if present")
 }
@@ -78,7 +83,10 @@ func runLink(ctx context.Context, client string) error {
 	// Embed the stable client identifier (when set) on the gateway URL so the
 	// gateway resolves the connecting client's access scope from the wire rather
 	// than from the clientInfo.name normalization heuristic alone.
-	gatewayURL := provisioner.AppendClientParam(baseURL, linkClientID)
+	gatewayURL := provisioner.AppendQueryParams(baseURL, map[string]string{
+		"client":    linkClientID,
+		"discovery": linkDiscovery,
+	})
 
 	opts := provisioner.LinkOptions{
 		GatewayURL: gatewayURL,
@@ -86,6 +94,7 @@ func runLink(ctx context.Context, client string) error {
 		ServerName: linkName,
 		ClientID:   linkClientID,
 		Group:      linkGroup,
+		Discovery:  linkDiscovery,
 		Force:      linkForce,
 		DryRun:     linkDryRun,
 	}

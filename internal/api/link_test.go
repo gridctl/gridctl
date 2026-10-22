@@ -189,6 +189,37 @@ func TestHandleLinkClient_GroupOptions(t *testing.T) {
 	assert.Equal(t, "dev", st.Link[2].Group)
 }
 
+func TestHandleLinkClient_Discovery(t *testing.T) {
+	cursor := &linkFakeProv{slug: "cursor", detected: true}
+	path, s := newLinkHarness(t, cursor)
+
+	w := doLinkRequest(s, http.MethodPost, "cursor", "", `{"discovery":"deferred"}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Len(t, cursor.linkCalls, 1)
+	opts := cursor.linkCalls[0]
+	assert.Equal(t, "deferred", opts.Discovery)
+	assert.Contains(t, opts.GatewayURL, "discovery=deferred")
+
+	out, err := os.ReadFile(path)
+	require.NoError(t, err)
+	st := parseLinkStack(t, out)
+	var found bool
+	for _, entry := range st.Link {
+		if entry.Client == "cursor" && entry.Group == "" {
+			found = true
+			assert.Equal(t, "deferred", entry.Discovery)
+		}
+	}
+	if !found {
+		t.Fatalf("link entries = %+v", st.Link)
+	}
+	assert.Contains(t, string(out), "discovery: deferred")
+
+	bad := doLinkRequest(s, http.MethodPost, "cursor", "", `{"discovery":"lazy"}`)
+	require.Equal(t, http.StatusBadRequest, bad.Code)
+	assert.Contains(t, bad.Body.String(), "discovery must be deferred or full")
+}
+
 func TestHandleLinkClient_ConflictWritesNothing(t *testing.T) {
 	// A foreign entry (never recorded, not gridctl-shaped) occupies the
 	// gridctl key: the ownership manager refuses without writing.

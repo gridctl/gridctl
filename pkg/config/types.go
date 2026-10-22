@@ -585,6 +585,11 @@ type GatewayConfig struct {
 	AllowedHosts []string    `yaml:"allowed_hosts,omitempty"`
 	Auth         *AuthConfig `yaml:"auth,omitempty"`
 
+	// ToolDiscovery controls whether tools/list returns the full catalog
+	// (full, the default) or search_tools, call_tool, and the pinned set
+	// (deferred). A nil block preserves today's behavior.
+	ToolDiscovery *ToolDiscoveryConfig `yaml:"tool_discovery,omitempty" json:"tool_discovery,omitempty"`
+
 	// CodeMode controls whether the gateway replaces individual tool definitions
 	// with two meta-tools (search + execute). Values: "off" (default), "on".
 	CodeMode string `yaml:"code_mode,omitempty"`
@@ -620,6 +625,16 @@ type GatewayConfig struct {
 	// TokenizerAPIKey overrides ANTHROPIC_API_KEY for the api tokenizer mode.
 	// When unset, the api tokenizer falls back to the ANTHROPIC_API_KEY environment variable.
 	TokenizerAPIKey string `yaml:"tokenizer_api_key,omitempty"`
+}
+
+// ToolDiscoveryConfig is the gateway.tool_discovery block. A nil block,
+// an empty mode, and mode full all mean today's tools/list behavior.
+type ToolDiscoveryConfig struct {
+	// Mode is "full" (default) or "deferred".
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
+	// AlwaysExpose lists canonical server__tool names that stay on
+	// tools/list in deferred mode, after scope, group, and whitelist filters.
+	AlwaysExpose []string `yaml:"always_expose,omitempty" json:"always_expose,omitempty"`
 }
 
 // GatewaySecurityConfig holds gateway-level security settings.

@@ -181,5 +181,6 @@ func linkEntryNode(entry config.LinkEntry) *yaml.Node {
 	add("group", entry.Group)
 	add("client_id", entry.ClientID)
 	add("name", entry.Name)
+	add("discovery", entry.Discovery)
 	return m
 }
