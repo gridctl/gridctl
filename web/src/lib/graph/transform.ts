@@ -23,6 +23,7 @@ export interface TransformInput {
   clients?: ClientStatus[];
   registryStatus?: RegistryStatus | null;
   codeMode?: string | null;
+  toolDiscovery?: string | null;
   skills?: AgentSkill[];
 }
 
@@ -63,7 +64,7 @@ export function transformToGraph(
   input: TransformInput,
   options: TransformOptions = {}
 ): TransformOutput {
-  const { gatewayInfo, mcpServers, resources, sessions, clients = [], registryStatus, codeMode } = input;
+  const { gatewayInfo, mcpServers, resources, sessions, clients = [], registryStatus, codeMode, toolDiscovery } = input;
   const { layoutEngine = defaultLayoutEngine, preservedPositions, compact } = options;
 
   // Create nodes
@@ -75,6 +76,7 @@ export function transformToGraph(
     clients,
     registryStatus,
     codeMode,
+    toolDiscovery,
   );
 
   // Create edges
@@ -110,10 +112,11 @@ export function transformToNodesAndEdges(
   clients?: ClientStatus[],
   registryStatus?: RegistryStatus | null,
   codeMode?: string | null,
+  toolDiscovery?: string | null,
   compact?: boolean,
 ): TransformOutput {
   return transformToGraph(
-    { gatewayInfo, mcpServers, resources, sessions, clients, registryStatus, codeMode },
+    { gatewayInfo, mcpServers, resources, sessions, clients, registryStatus, codeMode, toolDiscovery },
     { preservedPositions: existingPositions, compact }
   );
 }

@@ -54,7 +54,8 @@ export function createGatewayNode(
   sessions?: number,
   clientCount?: number,
   codeMode?: string | null,
-  registryStatus?: RegistryStatus | null
+  registryStatus?: RegistryStatus | null,
+  toolDiscovery?: string | null,
 ): Node {
   const safeServers = mcpServers ?? [];
   const safeResources = resources ?? [];
@@ -75,6 +76,7 @@ export function createGatewayNode(
       totalToolCount,
       sessions: sessions ?? 0,
       codeMode: codeMode ?? null,
+      toolDiscovery: toolDiscovery ?? null,
       totalSkills: registryStatus?.totalSkills ?? 0,
       activeSkills: registryStatus?.activeSkills ?? 0,
     },
@@ -239,10 +241,11 @@ export function createAllNodes(
   clients: ClientStatus[] = [],
   registryStatus?: RegistryStatus | null,
   codeMode?: string | null,
+  toolDiscovery?: string | null,
 ): Node[] {
   const linkedClients = clients.filter((c) => c.linked);
   const nodes: Node[] = [
-    createGatewayNode(gatewayInfo, mcpServers, resources, sessions, linkedClients.length, codeMode, registryStatus),
+    createGatewayNode(gatewayInfo, mcpServers, resources, sessions, linkedClients.length, codeMode, registryStatus, toolDiscovery),
     ...createClientNodes(clients),
     ...createMCPServerNodes(mcpServers),
     ...createResourceNodes(resources),

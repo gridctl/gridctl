@@ -24,6 +24,7 @@ function makeGatewayData(overrides: Partial<GatewayNodeData> = {}): GatewayNodeD
     totalToolCount: 5,
     sessions: 0,
     codeMode: null,
+    toolDiscovery: null,
     totalSkills: 0,
     activeSkills: 0,
     ...overrides,
@@ -58,5 +59,10 @@ describe('createGatewayNode passes session data', () => {
   it('defaults sessions to 0 when omitted', () => {
     const node = createGatewayNode(gatewayInfo, mcpServers, []);
     expect(node.data.sessions).toBe(0);
+  });
+
+  it('carries toolDiscovery into node data', () => {
+    const node = createGatewayNode(gatewayInfo, mcpServers, [], 0, 0, null, null, 'deferred');
+    expect(node.data.toolDiscovery).toBe('deferred');
   });
 });

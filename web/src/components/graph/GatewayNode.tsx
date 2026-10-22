@@ -162,6 +162,15 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
               Code Mode
             </span>
           )}
+          {data.toolDiscovery && data.toolDiscovery !== 'off' && (
+            <span
+              role="status"
+              title="Deferred tool discovery is enabled (configured in stack.yaml)"
+              className="inline-flex items-center gap-1.5 text-[10px] px-1.5 py-0.5 rounded font-medium border bg-primary/10 border-primary/20 text-primary"
+            >
+              Deferred discovery
+            </span>
+          )}
         </div>
       </div>
 

@@ -22,6 +22,7 @@ const baseData: GatewayNodeData = {
   totalToolCount: 3,
   sessions: 0,
   codeMode: 'on',
+  toolDiscovery: null,
   totalSkills: 0,
   activeSkills: 0,
 };
@@ -53,6 +54,18 @@ describe('GatewayNode', () => {
   it('omits the Code Mode pill when code mode is off', () => {
     renderNode({ ...baseData, codeMode: 'off' });
     expect(screen.queryByText('Code Mode')).not.toBeInTheDocument();
+  });
+
+  it('renders the deferred discovery badge from data.toolDiscovery', () => {
+    renderNode({ ...baseData, toolDiscovery: 'deferred' });
+    const badge = screen.getByText('Deferred discovery').closest('[role="status"]');
+    expect(badge).not.toBeNull();
+    expect(badge!.tagName).toBe('SPAN');
+  });
+
+  it('omits the deferred discovery badge when toolDiscovery is null', () => {
+    renderNode({ ...baseData, toolDiscovery: null });
+    expect(screen.queryByText('Deferred discovery')).not.toBeInTheDocument();
   });
 
   it('keeps Gateway Active as a read-only status pill', () => {
