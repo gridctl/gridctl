@@ -26,6 +26,12 @@ type ConfigDiff struct {
 	// onConfigApplied hook and must still mark the diff non-empty. A
 	// policy-only edit does not recreate containers.
 	PolicyChanged bool
+	// ToolDiscoveryChanged indicates the gateway.tool_discovery block
+	// changed (mode and always_expose, order-sensitive). Like PolicyChanged
+	// it needs only an in-memory refresh via the onConfigApplied hook and
+	// must still mark the diff non-empty. A discovery-only edit does not
+	// recreate containers.
+	ToolDiscoveryChanged bool
 	// GroupsChanged indicates the tool-group (`groups:`) block changed.
 	// Like ClientsChanged it needs only an in-memory policy rebuild via the
 	// onConfigApplied hook but must still mark the diff non-empty.
@@ -116,6 +122,7 @@ func (d *ConfigDiff) IsEmpty() bool {
 		!d.ClientsChanged &&
 		!d.LimitsChanged &&
 		!d.PolicyChanged &&
+		!d.ToolDiscoveryChanged &&
 		!d.GroupsChanged &&
 		!d.ExperimentalChanged &&
 		!d.SkillsPolicyChanged &&
@@ -145,6 +152,9 @@ func ComputeDiff(old, new *config.Stack) *ConfigDiff {
 	// Detect per-tool call policy (`policy:`) changes
 	diff.PolicyChanged = policyChanged(old, new)
 
+	// Detect gateway.tool_discovery changes. Order-sensitive; no container work.
+	diff.ToolDiscoveryChanged = toolDiscoveryChanged(old, new)
+
 	// Detect tool-group (`groups:`) changes
 	diff.GroupsChanged = groupsChanged(old, new)
 
@@ -160,6 +170,17 @@ func ComputeDiff(old, new *config.Stack) *ConfigDiff {
 	diff.RunsChanged = runsChanged(old, new)
 
 	return diff
+}
+
+func toolDiscoveryChanged(old, new *config.Stack) bool {
+	return !reflect.DeepEqual(toolDiscoveryOf(old), toolDiscoveryOf(new))
+}
+
+func toolDiscoveryOf(s *config.Stack) *config.ToolDiscoveryConfig {
+	if s == nil || s.Gateway == nil {
+		return nil
+	}
+	return s.Gateway.ToolDiscovery
 }
 
 func runsChanged(old, new *config.Stack) bool {

@@ -31,12 +31,13 @@ var (
 // The schema is backward compatible within 0.x: fields may be added,
 // never removed or retyped without a clearly-labeled release.
 type statusGatewayJSON struct {
-	Name      string    `json:"name"`
-	Port      int       `json:"port"`
-	PID       int       `json:"pid"`
-	Status    string    `json:"status"`
-	StartedAt time.Time `json:"started_at"`
-	CodeMode  string    `json:"code_mode,omitempty"`
+	Name          string    `json:"name"`
+	Port          int       `json:"port"`
+	PID           int       `json:"pid"`
+	Status        string    `json:"status"`
+	StartedAt     time.Time `json:"started_at"`
+	CodeMode      string    `json:"code_mode,omitempty"`
+	ToolDiscovery string    `json:"tool_discovery,omitempty"`
 	// Features mirrors /api/status features: each enabled experimental
 	// flag mapped to true. Omitted when nothing is enabled.
 	Features   map[string]bool `json:"features,omitempty"`
@@ -146,23 +147,25 @@ func runStatus(stack string, showReplicas, asJSON, plain bool) error {
 		var extensions []string
 		var override string
 		var authWarn string
+		var toolDiscovery string
 		if status == "running" {
-			gw.CodeMode, features, extensions, override, authWarn = queryGatewayStatus(s.Port)
+			gw.CodeMode, toolDiscovery, features, extensions, override, authWarn = queryGatewayStatus(s.Port)
 		}
 		if authWarn != "" {
 			printer.Warn(authWarn, "stack", s.StackName)
 		}
 		gateways = append(gateways, gw)
 		gatewaysJSON = append(gatewaysJSON, statusGatewayJSON{
-			Name:       s.StackName,
-			Port:       s.Port,
-			PID:        s.PID,
-			Status:     status,
-			StartedAt:  s.StartedAt,
-			CodeMode:   gw.CodeMode,
-			Features:   features,
-			Extensions: extensions,
-			Override:   override,
+			Name:          s.StackName,
+			Port:          s.Port,
+			PID:           s.PID,
+			Status:        status,
+			StartedAt:     s.StartedAt,
+			CodeMode:      gw.CodeMode,
+			ToolDiscovery: toolDiscovery,
+			Features:      features,
+			Extensions:    extensions,
+			Override:      override,
 		})
 	}
 
@@ -675,27 +678,28 @@ func warnDaemonHomeMismatch(printer *output.Printer, resolvedHome string, states
 // queryGatewayStatus queries a running gateway's API for code mode status
 // ("on" if active, empty otherwise) and the enabled experimental flag map
 // (nil when nothing is enabled).
-func queryGatewayStatus(port int) (codeMode string, features map[string]bool, extensions []string, override, authWarn string) {
+func queryGatewayStatus(port int) (codeMode, toolDiscovery string, features map[string]bool, extensions []string, override, authWarn string) {
 	api := newDaemonAPI(port, 2*time.Second)
 	resp, err := api.Get(api.URL("/api/status"))
 	if err != nil {
-		return "", nil, nil, "", ""
+		return "", "", nil, nil, "", ""
 	}
 	defer resp.Body.Close()
 	if authErr := api.describeUnauthorized(resp); authErr != nil {
-		return "", nil, nil, "", authErr.Error()
+		return "", "", nil, nil, "", authErr.Error()
 	}
 
 	var status struct {
-		CodeMode   string          `json:"code_mode"`
-		Features   map[string]bool `json:"features"`
-		Extensions []string        `json:"extensions"`
-		Override   string          `json:"override"`
+		CodeMode      string          `json:"code_mode"`
+		ToolDiscovery string          `json:"tool_discovery"`
+		Features      map[string]bool `json:"features"`
+		Extensions    []string        `json:"extensions"`
+		Override      string          `json:"override"`
 	}
 	if json.NewDecoder(resp.Body).Decode(&status) == nil {
-		return status.CodeMode, status.Features, status.Extensions, status.Override, ""
+		return status.CodeMode, status.ToolDiscovery, status.Features, status.Extensions, status.Override, ""
 	}
-	return "", nil, nil, "", ""
+	return "", "", nil, nil, "", ""
 }
 
 // loadPinLabels loads pin status for all provided stacks and returns a map

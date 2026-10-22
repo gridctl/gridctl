@@ -793,15 +793,16 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := struct {
-		Gateway    ServerInfo               `json:"gateway"`
-		MCPServers []MCPServerStatus        `json:"mcp-servers"`
-		Resources  []ResourceStatus         `json:"resources"`
-		Sessions   int                      `json:"sessions"`
-		Registry   *registry.RegistryStatus `json:"registry,omitempty"`
-		CodeMode   string                   `json:"code_mode,omitempty"`
-		Extensions []string                 `json:"extensions,omitempty"`
-		TokenUsage *metrics.TokenUsage      `json:"token_usage,omitempty"`
-		StackName  string                   `json:"stack_name,omitempty"`
+		Gateway       ServerInfo               `json:"gateway"`
+		MCPServers    []MCPServerStatus        `json:"mcp-servers"`
+		Resources     []ResourceStatus         `json:"resources"`
+		Sessions      int                      `json:"sessions"`
+		Registry      *registry.RegistryStatus `json:"registry,omitempty"`
+		CodeMode      string                   `json:"code_mode,omitempty"`
+		ToolDiscovery string                   `json:"tool_discovery,omitempty"`
+		Extensions    []string                 `json:"extensions,omitempty"`
+		TokenUsage    *metrics.TokenUsage      `json:"token_usage,omitempty"`
+		StackName     string                   `json:"stack_name,omitempty"`
 		// Home is the resolved home directory this daemon runs under, so
 		// CLI subcommands can detect a GRIDCTL_HOME mismatch (add-only).
 		Home string `json:"home,omitempty"`
@@ -839,6 +840,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	if cm := s.gateway.CodeModeStatus(); cm != "off" {
 		status.CodeMode = cm
+	}
+	if td := s.gateway.ToolDiscoveryStatus(); td != "" && td != "full" {
+		status.ToolDiscovery = td
 	}
 	if s.registryServer != nil && s.registryServer.HasContent() {
 		regStatus := s.registryServer.Store().Status()
@@ -1523,9 +1527,10 @@ type ClientStatus struct {
 
 // LinkEntryInfo is the wire shape of a declared link: entry's options.
 type LinkEntryInfo struct {
-	Group    string `json:"group,omitempty"`
-	ClientID string `json:"clientId,omitempty"`
-	Name     string `json:"name,omitempty"`
+	Group     string `json:"group,omitempty"`
+	ClientID  string `json:"clientId,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Discovery string `json:"discovery,omitempty"`
 }
 
 // handleClients returns detected LLM clients and their link status.
@@ -1550,7 +1555,7 @@ func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
 
 	declared := make(map[string]LinkEntryInfo)
 	for _, e := range s.declaredLinks() {
-		declared[e.Client] = LinkEntryInfo{Group: e.Group, ClientID: e.ClientID, Name: e.Name}
+		declared[e.Client] = LinkEntryInfo{Group: e.Group, ClientID: e.ClientID, Name: e.Name, Discovery: e.Discovery}
 	}
 
 	infos := s.provisioners.AllClientInfo(serverName)
