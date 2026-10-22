@@ -55,6 +55,20 @@ func TestUpsertLinkEntry_ReplacesExistingByClient(t *testing.T) {
 	}
 }
 
+func TestUpsertLinkEntry_WritesDiscovery(t *testing.T) {
+	out, err := UpsertLinkEntry([]byte(linkSource), config.LinkEntry{Client: "cursor", Discovery: "deferred"})
+	if err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	text := string(out)
+	if !strings.Contains(text, "client: cursor") || !strings.Contains(text, "discovery: deferred") {
+		t.Errorf("discovery not written:\n%s", text)
+	}
+	if strings.Contains(text, "group: dev") {
+		t.Errorf("replaced entry kept the old group:\n%s", text)
+	}
+}
+
 func TestUpsertLinkEntry_UpdatesMappingEntry(t *testing.T) {
 	out, err := UpsertLinkEntry([]byte(linkSource), config.LinkEntry{Client: "cursor"})
 	if err != nil {
