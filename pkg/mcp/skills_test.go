@@ -85,7 +85,7 @@ func TestSkills_DeclarationAndNegotiation(t *testing.T) {
 		t.Fatal("tasks replaced skills declaration")
 	}
 	params := InitializeParams{ProtocolVersion: "2025-11-25", ClientInfo: ClientInfo{Name: "host"}}
-	with, session, err := g.HandleInitialize(params, "", "")
+	with, session, err := g.HandleInitialize(params, "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestSkills_DeclarationAndNegotiation(t *testing.T) {
 		t.Fatal("undeclared session opted in")
 	}
 	g.SetSkillProvider(nil)
-	without, _, err := g.HandleInitialize(params, "", "")
+	without, _, err := g.HandleInitialize(params, "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,9 +107,9 @@ func TestSkills_DeclarationAndNegotiation(t *testing.T) {
 	for _, principal := range []bool{false, true} {
 		var result *InitializeResult
 		if principal {
-			result, session, err = g.HandleInitializePrincipal(params, "host", "subject", "")
+			result, session, err = g.HandleInitializePrincipal(params, "host", "subject", "", "")
 		} else {
-			result, session, err = g.HandleInitialize(params, "", "")
+			result, session, err = g.HandleInitialize(params, "", "", "")
 		}
 		if err != nil || !session.SkillsExtension || result.Capabilities.Extensions[SkillsExtensionID] == nil {
 			t.Fatalf("negotiated: %+v, %v", result, err)
@@ -181,9 +181,9 @@ func TestSkills_EdgeGatingAndErrors(t *testing.T) {
 	s := NewStreamableHTTPServer(g, nil)
 	ctx := context.Background()
 	params := InitializeParams{ProtocolVersion: "2025-11-25"}
-	_, legacy, _ := g.HandleInitialize(params, "", "")
+	_, legacy, _ := g.HandleInitialize(params, "", "", "")
 	params.Capabilities.Extensions = map[string]json.RawMessage{SkillsExtensionID: json.RawMessage(`{}`)}
-	_, opted, _ := g.HandleInitialize(params, "", "")
+	_, opted, _ := g.HandleInitialize(params, "", "", "")
 	for _, tc := range []struct {
 		method, params string
 		code           int

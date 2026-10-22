@@ -38,6 +38,7 @@ const (
 	StageMRTR       = "mrtr"
 	StageDownstream = "downstream"
 	StageCodeMode   = "code_mode"
+	StageDiscovery  = "discovery"
 )
 
 // Reason codes set at the actual decision point. They are not parsed from
@@ -59,6 +60,8 @@ const (
 	ReasonDeadlineExceeded = "deadline_exceeded"
 	ReasonInputRequired    = "input_required"
 	ReasonCodeMode         = "code_mode"
+	ReasonSearchTools      = "search_tools"
+	ReasonCallTool         = "call_tool"
 )
 
 // Drop reasons for the independent recorder status. These never enter the

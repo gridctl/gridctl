@@ -175,6 +175,11 @@ func (s *StreamableHTTPServer) handleStateless(w http.ResponseWriter, r *http.Re
 			UnsupportedVersionErrorData{Supported: SupportedProtocolVersions, Requested: meta.ProtocolVersion}))
 		return
 	}
+	if discovery := discoveryFromRequest(r); discoveryValueRejected(discovery) {
+		writeStatelessResponse(w, http.StatusBadRequest, jsonrpc.NewErrorResponse(
+			req.ID, jsonrpc.InvalidParams, unsupportedDiscoveryMessage(discovery)))
+		return
+	}
 
 	// Per-request identity, feeding the same context keys the session
 	// path populates so access scoping, call gates, telemetry, cost
@@ -198,6 +203,7 @@ func (s *StreamableHTTPServer) handleStateless(w http.ResponseWriter, r *http.Re
 	}
 	ctx = WithClientID(ctx, clientID)
 	ctx = WithClientAccessID(ctx, accessID)
+	ctx = withDiscovery(ctx, discoveryFromRequest(r))
 	if principal != "" {
 		ctx = WithPrincipal(ctx, principal)
 	}
@@ -525,7 +531,7 @@ func (g *Gateway) HandleServerDiscover(ctx context.Context) *DiscoverResult {
 		ResultType:        ResultTypeComplete,
 		SupportedVersions: SupportedProtocolVersions,
 		Capabilities:      caps,
-		Instructions:      g.buildInstructions(),
+		Instructions:      g.buildInstructions(g.effectiveDiscovery(discoveryFromContext(ctx))),
 		TTLMs:             ttl,
 		CacheScope:        scope,
 		Meta: map[string]any{

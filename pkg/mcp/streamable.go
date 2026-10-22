@@ -482,10 +482,17 @@ func (s *StreamableHTTPServer) handleInitialize(w http.ResponseWriter, r *http.R
 	var result *InitializeResult
 	var gSession *Session
 	var err error
+	if discovery := discoveryFromRequest(r); discoveryValueRejected(discovery) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(jsonrpc.NewErrorResponse(req.ID, jsonrpc.InvalidParams, unsupportedDiscoveryMessage(discovery)))
+		return
+	}
+	discovery := discoveryFromRequest(r)
 	if principal := PrincipalFromContext(r.Context()); principal != "" {
-		result, gSession, err = s.gateway.HandleInitializePrincipal(params, declaredClientAccessID(r), principal, GroupFromContext(r.Context()))
+		result, gSession, err = s.gateway.HandleInitializePrincipal(params, declaredClientAccessID(r), principal, GroupFromContext(r.Context()), discovery)
 	} else {
-		result, gSession, err = s.gateway.HandleInitialize(params, clientAccessIDFromRequest(r), GroupFromContext(r.Context()))
+		result, gSession, err = s.gateway.HandleInitialize(params, clientAccessIDFromRequest(r), GroupFromContext(r.Context()), discovery)
 	}
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -681,6 +688,7 @@ func withSessionIdentity(ctx context.Context, session *Session) context.Context 
 	} else {
 		ctx = WithClientAccessID(ctx, session.AccessID)
 	}
+	ctx = withDiscovery(ctx, session.Discovery)
 	return context.WithValue(ctx, groupKey{}, session.Group)
 }
 

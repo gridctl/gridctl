@@ -212,6 +212,12 @@ type Gateway struct {
 	serverMeta  map[string]MCPServerConfig // name -> config for status reporting
 	codeMode    *CodeMode                  // nil when code mode is off
 	codeModeStr string                     // "off", "on" — for status reporting
+	// discoveryMode is "full" or "deferred". Empty means full.
+	discoveryMode string
+	// alwaysExpose is the stack-level pinned set (canonical server__tool names).
+	alwaysExpose []string
+	// alwaysExposeLint is the last missing-pin set already warned.
+	alwaysExposeLint string
 
 	healthMu      sync.RWMutex
 	health        map[string]*HealthStatus         // name -> rollup health (public API)
@@ -1652,6 +1658,7 @@ func (g *Gateway) registerReplicaSet(ctx context.Context, name, policy string, c
 	g.router.RefreshTools()
 	regGen := g.regGen[name]
 	g.pendingMu.Unlock()
+	g.lintAlwaysExpose()
 	for _, r := range replaced {
 		closeAgentClient(r.Client())
 	}
@@ -2320,8 +2327,10 @@ func (g *Gateway) waitForHTTPServer(ctx context.Context, client *Client, timeout
 
 // buildInstructions returns the instructions string for the MCP initialize
 // response. The string is built from current server metadata and reflects
-// whether code mode is active. Returns "" if no MCP servers are registered.
-func (g *Gateway) buildInstructions() string {
+// whether code mode is active. mode is the already-resolved effective
+// discovery mode of the session or request. Returns "" if no MCP servers
+// are registered. Full mode returns the historical text byte for byte.
+func (g *Gateway) buildInstructions(mode string) string {
 	// Get live client data from router first (acquires router lock).
 	clients := g.router.Clients()
 	toolCounts := make(map[string]int, len(clients))
@@ -2343,6 +2352,19 @@ func (g *Gateway) buildInstructions() string {
 	}
 
 	sort.Strings(mcpServers)
+	deferred := mode == DiscoveryDeferred
+
+	if isCodeMode && deferred {
+		totalTools := 0
+		for _, name := range mcpServers {
+			totalTools += toolCounts[name]
+		}
+		names := strings.Join(mcpServers, ", ")
+		return fmt.Sprintf(
+			"gridctl is an MCP gateway running in code mode with deferred tool discovery, aggregating tools from %d downstream MCP servers: %s (%d tools total, hidden behind meta-tools to save context). Four meta-tools are exposed: `search` and `execute` for JavaScript composition, and `search_tools` and `call_tool` for direct discovery. Call `search` or `search_tools` first (an empty query lists everything; `search_tools` is paged) before attempting any other operation. Call tools by the exact `name` a search returned, through `execute`, `call_tool`, or directly.",
+			len(mcpServers), names, totalTools,
+		)
+	}
 
 	if isCodeMode {
 		totalTools := 0
@@ -2359,6 +2381,12 @@ func (g *Gateway) buildInstructions() string {
 	parts := make([]string, len(mcpServers))
 	for i, name := range mcpServers {
 		parts[i] = fmt.Sprintf("`%s` (%d tools)", name, toolCounts[name])
+	}
+	if deferred {
+		return fmt.Sprintf(
+			"gridctl is an MCP gateway aggregating tools from %d downstream MCP servers: %s. Tool discovery is deferred. Two meta-tools are exposed: `search_tools` to find tools and `call_tool` to invoke one. Call `search_tools` first (an empty query lists everything, paged) before attempting any other operation. Call tools by the exact `name` a search returned, through `call_tool` or directly.",
+			len(mcpServers), strings.Join(parts, ", "),
+		)
 	}
 	return fmt.Sprintf(
 		"gridctl is an MCP gateway aggregating tools from %d downstream MCP servers: %s. Use these tools as the primary way to interact with the underlying systems in this session. Tool names are namespaced as `<server>__<tool>` — always invoke them by their full prefixed name (e.g. `%s__example_tool`). Call `tools/list` to see the full inventory.",
@@ -2377,28 +2405,28 @@ func (g *Gateway) buildInstructions() string {
 // group is the tool group of the endpoint the client connected through
 // (/groups/{name}/mcp); "" for the default /mcp endpoint. The transport
 // validates the group exists before calling this.
-func (g *Gateway) HandleInitialize(params InitializeParams, accessID, group string) (*InitializeResult, *Session, error) {
+func (g *Gateway) HandleInitialize(params InitializeParams, accessID, group, discovery string) (*InitializeResult, *Session, error) {
 	// Echo the client's requested protocol version when supported, otherwise
 	// counter-offer the latest supported version (per the MCP lifecycle spec,
 	// the client decides whether to disconnect). Never fail for version reasons.
 	protocolVersion := NegotiateProtocolVersion(params.ProtocolVersion)
-	session := g.sessions.Create(params.ClientInfo, accessID, group, protocolVersion)
+	session := g.sessions.Create(params.ClientInfo, accessID, group, protocolVersion, discovery)
 	_, declared := params.Capabilities.Extensions[SkillsExtensionID]
 	return g.finishInitialize(session, protocolVersion, group, declared)
 }
 
 // HandleInitializePrincipal is HandleInitialize for a verified OAuth principal.
 // declared is the display label. principal is stored verbatim as AccessID.
-func (g *Gateway) HandleInitializePrincipal(params InitializeParams, declared, principal, group string) (*InitializeResult, *Session, error) {
+func (g *Gateway) HandleInitializePrincipal(params InitializeParams, declared, principal, group, discovery string) (*InitializeResult, *Session, error) {
 	protocolVersion := NegotiateProtocolVersion(params.ProtocolVersion)
-	session := g.sessions.CreatePrincipal(params.ClientInfo, declared, principal, group, protocolVersion)
+	session := g.sessions.CreatePrincipal(params.ClientInfo, declared, principal, group, protocolVersion, discovery)
 	_, skillsDeclared := params.Capabilities.Extensions[SkillsExtensionID]
 	return g.finishInitialize(session, protocolVersion, group, skillsDeclared)
 }
 
 func (g *Gateway) finishInitialize(session *Session, protocolVersion, group string, skillsDeclared bool) (*InitializeResult, *Session, error) {
 	g.sessions.setSkillsExtension(session.ID, skillsDeclared)
-	g.sessions.SetToolFingerprint(session.ID, fingerprintTools(g.visibleToolsFor(session.AccessID, session.Group, session.Principal != "")))
+	g.sessions.SetToolFingerprint(session.ID, fingerprintTools(g.visibleToolsFor(session.AccessID, session.Group, session.Principal != "", g.effectiveDiscovery(session.Discovery))))
 
 	caps := g.advertisedCapabilities(EraHandshake)
 	if skillsDeclared && g.skillProvider() != nil {
@@ -2418,7 +2446,7 @@ func (g *Gateway) finishInitialize(session *Session, protocolVersion, group stri
 		ProtocolVersion: protocolVersion,
 		ServerInfo:      info,
 		Capabilities:    caps,
-		Instructions:    g.buildInstructions(),
+		Instructions:    g.buildInstructions(g.effectiveDiscovery(session.Discovery)),
 	}, session, nil
 }
 
@@ -2427,15 +2455,12 @@ func (g *Gateway) finishInitialize(session *Session, protocolVersion, group stri
 // returns the two meta-tools instead (the scoped universe is applied to the
 // code-mode search/execute path in HandleToolsCall).
 func (g *Gateway) HandleToolsList(ctx context.Context) (*ToolsListResult, error) {
-	g.mu.RLock()
-	cm := g.codeMode
-	g.mu.RUnlock()
-
-	if cm != nil {
-		return cm.ToolsList(), nil
-	}
-
-	tools := g.visibleToolsFor(ClientAccessIDFromContext(ctx), GroupFromContext(ctx), PrincipalFromContext(ctx) != "")
+	tools := g.visibleToolsFor(
+		ClientAccessIDFromContext(ctx),
+		GroupFromContext(ctx),
+		PrincipalFromContext(ctx) != "",
+		g.effectiveDiscovery(discoveryFromContext(ctx)),
+	)
 	g.logToolCountHint(len(tools))
 	if tools == nil {
 		// The spec requires an array; a nil slice would marshal as
@@ -2572,17 +2597,19 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 	g.mu.RLock()
 	cm := g.codeMode
 	g.mu.RUnlock()
+	effectiveMode := g.effectiveDiscovery(discoveryFromContext(ctx))
+	deferredMeta := effectiveMode == DiscoveryDeferred && isDeferredMetaTool(params.Name)
 
 	// Group sessions resolve exposure-layer names to canonical ones at the
 	// dispatch boundary, before anything else runs: everything downstream
 	// (scoping, gates, routing, telemetry) sees only canonical names. The
-	// code-mode meta-tools are exempt from membership (they are the group's
-	// window, not members of it); sandboxed inner calls re-enter here with
-	// the group still on ctx and are enforced normally. Canonical-only
-	// callers never establish a group and reject aliases by skipping
-	// resolution.
+	// code-mode and deferred meta-tools are exempt from membership (they
+	// are the group's window, not members of it); sandboxed inner calls
+	// re-enter here with the group still on ctx and are enforced normally.
+	// Canonical-only callers never establish a group and reject aliases by
+	// skipping resolution.
 	if !opts.CanonicalOnly {
-		if group := GroupFromContext(ctx); group != "" && (cm == nil || !cm.IsMetaTool(params.Name)) {
+		if group := GroupFromContext(ctx); group != "" && (cm == nil || !cm.IsMetaTool(params.Name)) && !deferredMeta {
 			canonical, ok := g.CurrentGroupPolicy().ResolveAlias(group, params.Name, g.router.HasTool)
 			if !ok {
 				g.logger.Debug("tool call denied by group membership",
@@ -2597,7 +2624,23 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 		}
 	}
 
-	if !opts.CanonicalOnly && cm != nil && cm.IsMetaTool(params.Name) {
+	if !opts.CanonicalOnly && ((cm != nil && cm.IsMetaTool(params.Name)) || deferredMeta) {
+		if deferredMeta && (cm == nil || !cm.IsMetaTool(params.Name)) {
+			var (
+				result *ToolCallResult
+				err    error
+				reason string
+			)
+			if params.Name == MetaToolCallTool {
+				reason = runs.ReasonCallTool
+				result, err = g.handleCallTool(ctx, params)
+			} else {
+				reason = runs.ReasonSearchTools
+				result, err = g.handleSearchTools(ctx, params)
+			}
+			setDiscoveryOutcome(&state, result, err, reason)
+			return result, state.outcome, err
+		}
 		// Never let an MRTR retry relay leak into sandbox inner calls: the
 		// envelope was minted for one specific origin call, not for
 		// whatever tools the sandboxed code happens to invoke.

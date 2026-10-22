@@ -120,7 +120,7 @@ func initSession(t *testing.T, g *Gateway, name, accessID, group string) *Sessio
 	_, session, err := g.HandleInitialize(InitializeParams{
 		ProtocolVersion: MCPProtocolVersion,
 		ClientInfo:      ClientInfo{Name: name, Version: "1"},
-	}, accessID, group)
+	}, accessID, group, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestFingerprintTools(t *testing.T) {
 
 func TestSessionManager_ToolFingerprint(t *testing.T) {
 	m := NewSessionManager()
-	s := m.Create(ClientInfo{Name: "c"}, "", "", MCPProtocolVersion)
+	s := m.Create(ClientInfo{Name: "c"}, "", "", MCPProtocolVersion, "")
 	m.SetToolFingerprint(s.ID, "one")
 	prev, ok := m.SwapToolFingerprint(s.ID, "two")
 	if !ok || prev != "one" {

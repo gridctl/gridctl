@@ -47,6 +47,9 @@ type listenSubscriber struct {
 	accessID  string
 	group     string
 	principal bool
+	// discovery is the override captured when the stream opened. Empty
+	// means the stack default. Frozen for the stream's lifetime.
+	discovery string
 	kinds     listenKinds
 	toolFP    string
 	pending   listenKinds
@@ -390,13 +393,15 @@ func (s *StreamableHTTPServer) handleStatelessListen(ctx context.Context, w http
 	}
 
 	accessID := ClientAccessIDFromContext(ctx)
+	discovery := discoveryFromContext(ctx)
 	sub := &listenSubscriber{
 		id:        id,
 		accessID:  accessID,
 		group:     GroupFromContext(ctx),
 		principal: PrincipalFromContext(ctx) != "",
+		discovery: discovery,
 		kinds:     honored,
-		toolFP:    fingerprintTools(s.gateway.visibleToolsFor(accessID, GroupFromContext(ctx), PrincipalFromContext(ctx) != "")),
+		toolFP:    fingerprintTools(s.gateway.visibleToolsFor(accessID, GroupFromContext(ctx), PrincipalFromContext(ctx) != "", s.gateway.effectiveDiscovery(discovery))),
 		wake:      make(chan struct{}, 1),
 	}
 	streamCtx, cancel := context.WithCancel(ctx)

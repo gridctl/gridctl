@@ -127,6 +127,38 @@ func clientAccessIDFromRequest(r *http.Request) string {
 	return declaredClientAccessID(r)
 }
 
+// discoveryKey carries the per-request discovery override. Empty means the
+// stack default. The value never leaves pkg/mcp.
+type discoveryKey struct{}
+
+// withDiscovery returns a child context carrying a discovery override.
+// An empty value leaves the context unchanged.
+func withDiscovery(ctx context.Context, v string) context.Context {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, discoveryKey{}, v)
+}
+
+// discoveryFromContext returns the discovery override, or "" for the stack default.
+func discoveryFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	v, _ := ctx.Value(discoveryKey{}).(string)
+	return v
+}
+
+// discoveryFromRequest reads the discovery query parameter. A header twin
+// is intentionally not accepted. Returns the trimmed value or empty.
+func discoveryFromRequest(r *http.Request) string {
+	if r == nil || r.URL == nil {
+		return ""
+	}
+	return strings.TrimSpace(r.URL.Query().Get("discovery"))
+}
+
 // declaredClientAccessID is the self-declared identifier from the client
 // query parameter or X-Gridctl-Client-Id header. In OAuth mode it is a
 // display label only.
