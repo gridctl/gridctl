@@ -8,8 +8,10 @@ two tools, or that a small model can use them.
 
 ## Procedure
 
-Use a separate `GRIDCTL_HOME` and port. Do not reuse the operator's daemon
-on `:8180`. Do not set `insecure_allow_unauthenticated`.
+Run the commands from the repository root. Use a separate `GRIDCTL_HOME`
+and port. Do not reuse the operator's daemon on `:8180`. Do not set
+`insecure_allow_unauthenticated`. Keep `GRIDCTL_HOME` exported for every
+`./gridctl` command below, including `runs` and `destroy`.
 
 Build the binary from the PR head and record the commit and hash:
 
@@ -18,6 +20,22 @@ git rev-parse HEAD
 task build
 sha256sum ./gridctl
 ```
+
+The acceptance mock is the HTTP server in
+`examples/_mock-servers/mock-mcp-server`. It is not a stdio local process.
+Start two copies beside the gateway. Do not put `command` and `url` on the
+same server. If `9101` or `9102` is taken, change the port in both the
+command and the stack URL.
+
+```bash
+go build -o /tmp/mock-mcp-server ./examples/_mock-servers/mock-mcp-server
+/tmp/mock-mcp-server -port 9101
+/tmp/mock-mcp-server -port 9102
+```
+
+Leave both processes running. The default protocol is the handshake
+generation, which is what Goose and LM Studio speak. Do not pass
+`-protocol 2026-07-28` unless the host is a stateless client.
 
 Fixture stack (`/tmp/deferred-discovery.yaml`):
 
@@ -31,35 +49,39 @@ runs:
   enabled: true
 mcp-servers:
   - name: alpha
-    command: ["./examples/_mock-servers/mock-mcp-server/mock-mcp-server", "-port", "9101"]
-    transport: http
     url: http://127.0.0.1:9101/mcp
-  - name: beta
-    command: ["./examples/_mock-servers/mock-mcp-server/mock-mcp-server", "-port", "9102"]
     transport: http
+  - name: beta
     url: http://127.0.0.1:9102/mcp
+    transport: http
 ```
 
-Start the mocks, then:
+`./gridctl validate /tmp/deferred-discovery.yaml` exits 2 with the usual
+no-auth warning. That is not a schema error. The bind stays loopback.
 
 ```bash
 export GRIDCTL_HOME=/tmp/gridctl-deferred-home
-./gridctl apply -f /tmp/deferred-discovery.yaml -p 8280
+./gridctl apply /tmp/deferred-discovery.yaml --port 8280
 ```
 
-Link or configure one host:
+Apply daemonizes. Stop it later with
+`./gridctl destroy deferred-discovery-accept` under the same `GRIDCTL_HOME`.
 
-- Goose: `./gridctl link goose --discovery deferred -p 8280`
-- LM Studio: `./gridctl link lmstudio --discovery deferred -p 8280`
-- Open WebUI: add an admin tool-server URL with `?discovery=deferred` against a gateway bound beyond loopback with `gateway.auth` and `gateway.allowed_origins` set
+Link or configure one host. The sample stack above is loopback. Do not reuse
+it for a bind beyond loopback.
+
+- Goose: `./gridctl link goose --discovery deferred --port 8280`
+- LM Studio: `./gridctl link lmstudio --discovery deferred --port 8280`
+- Open WebUI: add an admin tool-server URL with `?discovery=deferred` against a separate gateway bound beyond loopback with `gateway.auth` and `gateway.allowed_origins` set
 
 Prompt: ask the model to find a tool that adds two numbers and use it.
+The mock tool is `alpha__add` (`Adds two numbers together`).
 
 Capture:
 
 - the `tools/list` the host received, if the host exposes it
 - the transcript, limited to the tool-call sequence (no tokens or API keys)
-- `./gridctl runs list --format json` showing an outer attempt at stage `discovery` with reason `search_tools`, an outer attempt with reason `call_tool`, and an inner attempt whose `parent_attempt_id` is the `call_tool` attempt and whose tool is `alpha__add`
+- `./gridctl runs list --format json -s deferred-discovery-accept` showing an outer attempt at stage `discovery` with reason `search_tools`, an outer attempt with reason `call_tool`, and an inner attempt whose `parent_attempt_id` is the `call_tool` attempt and whose tool is `alpha__add`
 
 ## Evidence
 

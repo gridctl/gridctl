@@ -25,7 +25,7 @@ gridctl apply examples/python-sources/pypi.yaml
 | [A2A](a2a/) | Experimental outbound Agent Card adapter, included in v1.0.0-rc.2, with secret task/context handles |
 | [MCP Apps](mcp-apps/) | Remote MCP App server with the UI client extension |
 | [🔐 access-control/](access-control/) | Tool filtering, per-tool call policy, and per-client scoping |
-| [⚡ code-mode/](code-mode/) | Reduce context window with search + execute meta-tools |
+| [⚡ code-mode/](code-mode/) | Reduce context window with search + execute, or with deferred `search_tools` and `call_tool` |
 | [🔒 gateways/](gateways/) | Bridge to existing infrastructure |
 | [🖇️ declarative-link/](declarative-link/) | Auto-link LLM clients on apply with a `link:` block |
 | [🔑 secrets-vault/](secrets-vault/) | Encrypted variables, variable sets, and external secret providers |
@@ -81,6 +81,7 @@ gridctl apply examples/python-sources/pypi.yaml
 | read-only-secrets | http (container) | Per-tool `policy:` that blocks `vault__*` and allows `vault__list_paths`; alpine placeholder |
 | per-client-scoping | http (containers) | `clients:` blocks restricting servers and tools per client |
 | code-mode-basic | http (containers) | Search + execute meta-tools |
+| deferred-discovery | http (container) | Deferred `search_tools` and `call_tool` without code execution; placeholder container |
 | gateway-basic | http | Gateway to an existing MCP server, tokenizer config |
 | gateway-remote | http | Authenticated remote gateway access through HTTPS or an encrypted tunnel |
 | [gateway-oauth](gateways/gateway-oauth.yaml) | http behind HTTPS proxy | Unreleased OAuth resource-server mode, external issuer, resource audience, and explicit origins; replace deployment values before use |

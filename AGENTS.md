@@ -74,6 +74,11 @@ hosted AgentCore bearer rehearsal, including target identities and limitations.
 Final exact-PR-head external acceptance remains required before merge or
 manual-merge handoff; neither the rehearsal nor fixture suites close that gate.
 
+Deferred tool discovery acceptance uses real HTTP mock subprocesses without Docker:
+`go test -race -tags=integration -run '^TestDeferredDiscovery_' -count=1 -timeout 4m ./tests/integration`.
+`docs/deferred-discovery-verification.md` records the host procedure. Real-host
+interoperability remains required before merge; the fixture suite does not close that gate.
+
 Lint:
 
 ```bash
@@ -139,7 +144,7 @@ pkg/builder/        Image building from git or local Dockerfiles and generated P
                     resolution, static Python package/project metadata inspection, supported-interpreter selection,
                     console-script resolution, and deterministic digest-pinned uv Dockerfile generation.
 pkg/mcp/            MCP protocol: gateway (router, tool aggregation, downstream prompt and resource aggregation, handshake tools/list_changed notifications, and stateless subscriptions/listen), stdio/SSE/streamable transports, OpenAPI-as-MCP,
-                    autoscaler, code mode sandbox (goja), replica sets, schema pinning hooks, live tool discovery,
+                    autoscaler, code mode sandbox (goja), deferred tool discovery (`search_tools`, `call_tool`), replica sets, schema pinning hooks, live tool discovery,
                     and typed call outcomes for canonical REST/CLI dispatch.
                     Container, local-process, and HTTP/SSE readers classify peer requests and notifications before response
                     correlation. Stdio and process replies use the same context-bounded, serialized writer as outbound calls.
@@ -148,6 +153,7 @@ pkg/mcp/            MCP protocol: gateway (router, tool aggregation, downstream 
                     changes. The event is a payload-free `notifications/tools/list_changed` on the GET stream,
                     coalesced per session. Stateless clients receive that tool event, plus prompt and resource
                     list-changed events, on `subscriptions/listen`, each tagged with the listen request id.
+                    Deferred discovery fingerprints each session and listen subscriber from its effective mode.
                     Downstream handshake notifications on stdio, process, and HTTP POST streams refresh that
                     server and then follow the same path. Stateless HTTP servers that declare `listChanged` are
                     consumed on `subscriptions/listen`, including an SSE URL pinned to stateless. Stateless stdio
@@ -266,6 +272,7 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
                     server_card_test.go checks the public card and catalog GETs, unlisted-origin CORS, and
                     race-built `gridctl add` consume and refusal paths, without Docker.
                     capability_diagnostics_test.go checks REST log/trace/usage/run observations with a real MCP subprocess.
+                    deferred_discovery_test.go checks deferred `tools/list`, `search_tools`, `call_tool`, per-link mode, and both notification generations with real HTTP mock subprocesses.
                     a2a_wire_test.go checks both wire dialects, origin-bound credentials, sessions, and redirects with real HTTP.
                     a2a_*_test.go adapter suites cover authority, atomic delivery, policy, trust, observation sinks,
                     overlapping cancel, and actual daemon restart/reload with real HTTP and subprocesses.
@@ -289,6 +296,7 @@ docs/               User-facing documentation (cli-reference, config-schema, api
                     global-context, scaling, usage-observability, installation, release-verification,
                     project-status, troubleshooting, execution, mcp-runtime-python, security/threat-model, security-evidence,
                     stack-declaration-policy, adversarial-regression-gates, capability-primitives, a2a-verification,
+                    deferred-discovery-verification,
                     security/practical-guide).
 images/             OCI recipes that are not the gateway binary. images/mcp-runtime-python is the Python 3.12 runtime base.
 ```

@@ -54,6 +54,7 @@ New to gridctl? Read in this order:
 |----------|-------------|
 | [Project Status](project-status.md) | Per-feature stability tiers and currently known limitations |
 | [External A2A Verification](a2a-verification.md) | Real-agent rehearsal identities, workflow and session observations, limitations, and pending final acceptance |
+| [Deferred discovery verification](deferred-discovery-verification.md) | Host procedure for `search_tools` then `call_tool`. Evidence is pending; real-host interoperability remains required before merge |
 | [Practical Security Guide](security/practical-guide.md) | Operator workflow for verified installation, private deployment, credentials, execution, content review, and diagnostic privacy |
 | [Security Threat Model](security/threat-model.md) | Current trust boundaries, security defaults, source/test evidence, and residual risks |
 | [Security Evidence Report](security-evidence.md) | Included in v1.0.0-rc.2: passive `doctor --security` / `/api/security-report` scope, unknowns, and exit-zero limits |
@@ -63,6 +64,6 @@ New to gridctl? Read in this order:
 
 ## Quick Links
 
-- [Examples](../examples/) - example stacks and repos (transports, generated Python sources, OpenAPI, A2A, MCP Apps, skills registry, portable pack, variables, tracing, run records, autoscale, code mode, access control, declarative linking)
+- [Examples](../examples/) - example stacks and repos (transports, generated Python sources, OpenAPI, A2A, MCP Apps, skills registry, portable pack, variables, tracing, run records, autoscale, code mode, deferred discovery, access control, declarative linking)
 - [Contributing](../CONTRIBUTING.md) - development setup and conventions
 - [Changelog](../CHANGELOG.md) - release history

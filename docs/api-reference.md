@@ -595,8 +595,8 @@ reach). It is absent when no scoping is in effect.
 
 When the stack has a `link:` block, declared clients additionally carry
 `declared: true` and a `linkEntry` object with the declared options (`group`,
-`clientId`, `name`), so the UI can render desired state (declared) next to
-actual state (linked). For a declared entry whose resolved server name differs
+`clientId`, `name`, and `discovery` when set), so the UI can render desired state (declared) next to
+actual state (linked). `discovery` is `deferred` or `full` and is omitted when unset. For a declared entry whose resolved server name differs
 from the default (a `group` or `name` override), `linked` reflects that
 resolved entry name.
 
@@ -708,7 +708,11 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 **Request body (all optional):** `group` links the tool group's endpoint (the
 entry name defaults to `gridctl-<group>`), `clientId` binds the link to a
-`clients:` access profile, `name` overrides the server entry name.
+`clients:` access profile, `name` overrides the server entry name, and
+`discovery` (`deferred` or `full`) writes a `discovery` query parameter.
+`force` overwrites a foreign or drifted entry. A `discovery` value other than
+`deferred` or `full` is HTTP 400 with `discovery must be deferred or full`.
+The preview endpoint accepts the same body.
 
 **Response (200):**
 ```json
@@ -3851,7 +3855,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/mcp \
 }
 ```
 
-Tool names are namespaced as `{server}__{tool}` to prevent collisions. When this list returns downstream tools, each definition forwards `_meta`, `icons`, `execution`, and unknown annotation keys. `title` is the prefixed name when the downstream title is empty or equal to the bare tool name, and the downstream title otherwise. A group rename updates `title` only when it equals the aggregated name. `tools/list` returns servers in ascending name order and, within a server, tools in the order that server listed them. The order is identical across consecutive requests, across sessions, on `/groups/{name}/mcp`, and across gateway restarts when the downstream order is unchanged. Client-profile filtering, group projection, and `tools:` whitelist edits remove or rename entries but do not reorder the remaining ones. Code mode replaces this list with the `search` and `execute` meta-tools. When code mode is on, `tools/list` is those two meta-tools, and the ordering rule applies to what `search` returns: matches stay in the aggregated order. `search` still returns only `name`, `description`, and `inputSchema`. Deferred discovery (`gateway.tool_discovery.mode: deferred`, or `?discovery=deferred`) replaces the list with `search_tools`, `call_tool`, and the pinned set. `search_tools` returns full tool definitions, unlike code-mode `search`. Direct calls by canonical name remain allowed.
+Tool names are namespaced as `{server}__{tool}` to prevent collisions. When this list returns downstream tools, each definition forwards `_meta`, `icons`, `execution`, and unknown annotation keys. `title` is the prefixed name when the downstream title is empty or equal to the bare tool name, and the downstream title otherwise. A group rename updates `title` only when it equals the aggregated name. `tools/list` returns servers in ascending name order and, within a server, tools in the order that server listed them. The order is identical across consecutive requests, across sessions, on `/groups/{name}/mcp`, and across gateway restarts when the downstream order is unchanged. Client-profile filtering, group projection, and `tools:` whitelist edits remove or rename entries but do not reorder the remaining ones. Code mode replaces this list with the `search` and `execute` meta-tools. When code mode is on, `tools/list` is those two meta-tools, and the ordering rule applies to what `search` returns: matches stay in the aggregated order. `search` still returns only `name`, `description`, and `inputSchema`. Deferred discovery (`gateway.tool_discovery.mode: deferred`, or `?discovery=deferred`) returns `search_tools`, `call_tool`, and the pinned set. With code mode also on, the list is `search`, `execute`, then that deferred projection. `search_tools` returns full tool definitions, unlike code-mode `search`. Direct calls by canonical name remain allowed.
 
 `prompts/list` and `resources/list` list registry entries first in name order, then downstream entries by server name, each server's entries in the server's own order. `resources/templates/list` is downstream only (the registry contributes none), by server name, each server's entries in its own order. Downstream prompts and resources come only from servers that declare the capability. OpenAPI and A2A servers contribute none. An upstream `cursor` is ignored and no `nextCursor` is emitted. Downstream lists are drained up to 64 pages per server; hitting the bound logs a warning and returns what was collected. When two servers publish the same URI, or the same `uriTemplate`, the alphabetically first is listed and served. The other is omitted and `resourceCollisions` increments. Different templates that match one URI resolve to the first server by name at read time. Exact URIs win over a `ui://` index taken from tool `_meta.ui.resourceUri` and the deprecated `_meta["ui/resourceUri"]`, which wins over template matches. A resource list that fails or exceeds the 10-second deadline is skipped. Other servers are still returned, and `resourceListError` is `timeout`, `canceled`, `rpc`, or `transport`. That field does not record `prompts/list` failures, and an upstream disconnect is not stored as a server fault. A read that misses the index refreshes both resource lists concurrently under one 10-second deadline.
 
