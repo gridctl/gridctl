@@ -1,0 +1,32 @@
+# Deferred discovery example
+#
+# tools/list returns search_tools, call_tool, and the pinned set instead of
+# the full catalog. Direct calls by canonical name remain allowed. This
+# stack does not enable code mode.
+#
+# Usage:
+#   gridctl validate examples/code-mode/deferred-discovery.yaml
+#
+# The containers are placeholders. Replace them before apply.
+
+version: "1"
+name: deferred-discovery-demo
+
+gateway:
+  tool_discovery:
+    mode: deferred
+    always_expose:
+      - data-api__health
+
+network:
+  name: deferred-discovery-net
+
+mcp-servers:
+  - name: data-api
+    image: alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+    port: 8080
+    command: ["sh", "-c", "while true; do sleep 3600; done"]
+
+link:
+  - client: lmstudio
+    discovery: deferred
