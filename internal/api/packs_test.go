@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/gridctl/gridctl/pkg/agentsync"
+	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/contexts"
 	"github.com/gridctl/gridctl/pkg/packops"
 	"github.com/gridctl/gridctl/pkg/skills"
@@ -474,6 +475,38 @@ func TestHandlePackGet_LockAndFragmentRows(t *testing.T) {
 	body := rec.Body.String()
 	if !strings.Contains(body, `"kind":"fragment"`) || !strings.Contains(body, `"kind":"lock"`) {
 		t.Fatalf("rows missing: %s", body)
+	}
+}
+
+func TestHandlePackApply_UnsatisfiedRequiresIs422(t *testing.T) {
+	srv, _ := setupPackTestServer(t)
+	config.SetRunningVersion("1.0.0")
+	t.Cleanup(config.ResetRunningVersion)
+	lf := &skills.LockFile{Sources: map[string]skills.LockedSource{
+		"team-pack": {
+			Repo:      "https://example.com/team-pack.git",
+			CommitSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			Pack: &skills.LockedPack{
+				Name:     "team-pack",
+				Requires: ">=1.1.0",
+			},
+		},
+	}}
+	if err := skills.WriteLockFile(skills.LockFilePath(), lf); err != nil {
+		t.Fatal(err)
+	}
+	rec := doJSON(t, srv, http.MethodPost, "/api/packs/team-pack/apply", "")
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Error != "pack team-pack requires gridctl >=1.1.0, running 1.0.0" {
+		t.Fatalf("error = %q", body.Error)
 	}
 }
 
