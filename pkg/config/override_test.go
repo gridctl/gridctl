@@ -17,6 +17,7 @@ func TestDecodeOverride_RejectsDisallowedFields(t *testing.T) {
 		{"image", "mcp-servers:\n  demo:\n    image: alpine\n", "mcp-servers.demo.image is not overridable"},
 		{"add server is a field", "mcp-servers:\n  demo:\n    command: [true]\n", "mcp-servers.demo.command is not overridable"},
 		{"top level", "gateway:\n  bind: 0.0.0.0\n", `top-level key "gateway" is not allowed`},
+		{"requires", "requires:\n  gridctl: \">=1.1.0\"\n", `top-level key "requires" is not allowed`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

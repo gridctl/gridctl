@@ -7,6 +7,73 @@ import (
 	"testing"
 )
 
+func TestValidateFragment_RejectsRequires(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "servers.yaml")
+	body := "version: \"1\"\nrequires:\n  gridctl: \">=1.1.0\"\nmcp-servers:\n  - name: tools\n    command: [echo]\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := ValidateFragment(path)
+	if err == nil || !strings.Contains(err.Error(), "'requires' is not allowed in a stack fragment") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestCompose_PreservesBaseRequires(t *testing.T) {
+	ResetRunningVersion()
+	t.Cleanup(ResetRunningVersion)
+	SetRunningVersion("1.0.0")
+
+	base := &Stack{
+		Name:       "infra",
+		Requires:   &RequiresConfig{Gridctl: ">=1.1.0"},
+		MCPServers: []MCPServer{{Name: "base", Command: []string{"echo"}}},
+	}
+	frag := &Stack{MCPServers: []MCPServer{{Name: "extra", Command: []string{"echo"}}}}
+	out, err := Compose(
+		Layer{Pack: "infra", Path: "stack.yaml", Dir: t.TempDir(), Stack: base},
+		[]Layer{{Pack: "netops", Path: "servers.yaml", Dir: t.TempDir(), Stack: frag}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Requires == nil || out.Requires.Gridctl != base.Requires.Gridctl {
+		t.Fatalf("composed requires = %+v", out.Requires)
+	}
+	if base.Requires.Gridctl != ">=1.1.0" {
+		t.Fatal("compose mutated the base requires")
+	}
+	result := ValidateWithIssues(out)
+	found := false
+	for _, issue := range result.Issues {
+		if issue.Field == "requires.gridctl" && issue.Severity == SeverityError {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("composed validation = %+v", result.Issues)
+	}
+	rendered, err := RenderComposed(out, []Layer{{Pack: "infra", Commit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Path: "stack.yaml"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(rendered), ">=1.1.0") {
+		t.Fatalf("rendered composed file dropped requires:\n%s", rendered)
+	}
+	path := filepath.Join(t.TempDir(), "stack.yaml")
+	if err := WriteComposed(path, out, []Layer{{Pack: "infra", Commit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Path: "stack.yaml"}}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "requires:") || !strings.Contains(string(raw), ">=1.1.0") {
+		t.Fatalf("composed file = %s", raw)
+	}
+}
+
 func TestValidateFragment_Allowlist(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "servers.yaml")
@@ -58,7 +125,7 @@ func TestCompose_RewritesRelativePaths(t *testing.T) {
 	}}}
 	frag := &Stack{MCPServers: []MCPServer{{
 		Name: "extra", Command: []string{"echo"},
-		Source: &Source{Type: "local", Path: "./tools"},
+		Source:  &Source{Type: "local", Path: "./tools"},
 		Volumes: []string{"./data:/data"},
 	}}}
 	out, err := Compose(

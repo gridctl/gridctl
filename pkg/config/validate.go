@@ -266,6 +266,11 @@ func Validate(s *Stack) error {
 	if s.Name == "" {
 		errs = append(errs, ValidationError{"stack.name", "is required"})
 	}
+	if s.Requires != nil {
+		if err := CheckRequires(s.Requires.Gridctl); err != nil {
+			errs = append(errs, ValidationError{"requires.gridctl", err.Error()})
+		}
+	}
 	for key, declaration := range s.Variables {
 		if key == "" {
 			errs = append(errs, ValidationError{"variables", "declaration key cannot be empty"})

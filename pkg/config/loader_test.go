@@ -1489,3 +1489,44 @@ func TestLoadStack_RejectsDeclarationConflict(t *testing.T) {
 		t.Fatalf("LoadStack() error = %v", err)
 	}
 }
+
+func TestLoadStack_ExtendsRequires(t *testing.T) {
+	ResetRunningVersion()
+	t.Cleanup(ResetRunningVersion)
+	SetRunningVersion("1.0.0")
+
+	dir := t.TempDir()
+	parent := filepath.Join(dir, "parent.yaml")
+	child := filepath.Join(dir, "child.yaml")
+	writeFile(t, parent, "version: \"1\"\nname: parent\nrequires:\n  gridctl: \">=1.1.0\"\nmcp-servers:\n  - name: echo\n    command: [echo]\n")
+
+	t.Run("parent only", func(t *testing.T) {
+		writeFile(t, child, "version: \"1\"\nname: child\nextends: parent.yaml\nmcp-servers: []\n")
+		_, err := LoadStack(child)
+		want := "requires.gridctl: stack requires gridctl >=1.1.0, running 1.0.0 (gridctl upgrade --version v1.1.0)"
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("LoadStack() = %v", err)
+		}
+	})
+
+	t.Run("child satisfies itself but not parent", func(t *testing.T) {
+		writeFile(t, child, "version: \"1\"\nname: child\nextends: parent.yaml\nrequires:\n  gridctl: \">=0.1.0\"\nmcp-servers: []\n")
+		_, err := LoadStack(child)
+		if err == nil || !strings.Contains(err.Error(), ">=0.1.0, >=1.1.0") {
+			t.Fatalf("LoadStack() = %v", err)
+		}
+	})
+
+	t.Run("both satisfied", func(t *testing.T) {
+		SetRunningVersion("1.2.0")
+		t.Cleanup(func() { SetRunningVersion("1.0.0") })
+		writeFile(t, child, "version: \"1\"\nname: child\nextends: parent.yaml\nrequires:\n  gridctl: \">=1.1.0\"\nmcp-servers: []\n")
+		stack, err := LoadStack(child)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stack.Requires == nil || stack.Requires.Gridctl != ">=1.1.0, >=1.1.0" {
+			t.Fatalf("requires = %+v", stack.Requires)
+		}
+	})
+}

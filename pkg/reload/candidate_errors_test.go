@@ -79,6 +79,39 @@ mcp-servers:
 	}
 }
 
+func TestReload_UnsatisfiedRequiresKeepsConfig(t *testing.T) {
+	config.SetRunningVersion("1.0.0")
+	t.Cleanup(config.ResetRunningVersion)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "stack.yaml")
+	body := []byte(`version: "1"
+name: test-stack
+requires:
+  gridctl: ">=1.1.0"
+network:
+  name: test-net
+mcp-servers:
+  - name: echo
+    command: ["echo"]
+`)
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	baseline := &config.Stack{Name: "active"}
+	h := NewHandler(path, baseline, mcp.NewGateway(), runtime.NewOrchestrator(nil, nil), 8180, 9000, nil, nil)
+	result, err := h.Reload(context.Background())
+	if err != nil || result.Success || result.Code != "invalid_candidate" {
+		t.Fatalf("reload = %+v err=%v", result, err)
+	}
+	if h.CurrentConfig() != baseline {
+		t.Fatal("reload changed active config")
+	}
+	want := "requires.gridctl: stack requires gridctl >=1.1.0, running 1.0.0 (gridctl upgrade --version v1.1.0)"
+	if !strings.Contains(strings.Join(result.Errors, "\n"), want) {
+		t.Fatalf("errors = %#v", result.Errors)
+	}
+}
+
 type emptyCandidateVault struct{}
 
 func (emptyCandidateVault) Get(string) (string, bool) { return "", false }
