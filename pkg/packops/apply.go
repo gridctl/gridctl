@@ -52,6 +52,12 @@ func (m *Managers) Apply(ctx context.Context, name string, opts ApplyOptions) (*
 		return nil, err
 	}
 	locked := ps.Pack
+	// Before stack launch, skill and agent sync, wiring, and rules.
+	// A pack imported before this field existed has an empty Requires
+	// and is not checked.
+	if err := enforcePackRequires(locked.Name, locked.Requires); err != nil {
+		return nil, err
+	}
 	foreign, err := foreignPackTags(ctx, m.Home, name)
 	if err != nil {
 		return nil, err

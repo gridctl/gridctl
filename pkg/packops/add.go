@@ -119,6 +119,11 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 		}
 		return nil, err
 	}
+	// Before any source clone, skill import, projection, or stack launch.
+	// The pack repository itself is already cloned so the manifest can be read.
+	if err := enforcePackRequires(manifest.Name, packRequiresConstraint(manifest)); err != nil {
+		return nil, err
+	}
 
 	// A second pack with the same name would reuse member keys only by
 	// coincidence. Refuse before cloning sources. Packs without sources
@@ -595,6 +600,7 @@ func recordLockedPack(ctx context.Context, lockPath string, m *pack.Manifest, re
 			Stack:             resolved.stack,
 			UnresolvedDetails: resolved.unresolvedDetails,
 			Fragment:          resolved.fragment,
+			Requires:          packRequiresConstraint(m),
 		}
 		if resolved.lock != nil && (len(m.Sources) > 0 || m.Stack.Extends != "") {
 			packRecord.Lock = &skills.LockedPackLock{

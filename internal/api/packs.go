@@ -168,7 +168,7 @@ func packErrorStatus(err error) int {
 		return http.StatusConflict
 	case errors.As(err, &fe):
 		return http.StatusConflict
-	case errors.Is(err, packops.ErrNoManifest):
+	case errors.Is(err, packops.ErrNoManifest), errors.Is(err, packops.ErrPackRequires):
 		return http.StatusUnprocessableEntity
 	case errors.Is(err, packops.ErrLockFlags):
 		return http.StatusBadRequest

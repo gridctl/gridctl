@@ -102,6 +102,11 @@ func Preview(ctx context.Context, opts PreviewOptions) (*PreviewResult, error) {
 		}
 		return nil, err
 	}
+	// Report, do not abort. Preview starts nothing either way.
+	requiresProblem := ""
+	if err := enforcePackRequires(manifest.Name, packRequiresConstraint(manifest)); err != nil {
+		requiresProblem = err.Error()
+	}
 	lockPath := opts.LockPath
 	if lockPath == "" {
 		lockPath = skills.LockFilePath()
@@ -149,6 +154,9 @@ func Preview(ctx context.Context, opts PreviewOptions) (*PreviewResult, error) {
 		Stack:       stackSummary,
 		Sources:     sourceSummaries(resolved, false),
 		Lock:        planSummary(plan),
+	}
+	if requiresProblem != "" {
+		res.Warnings = append(res.Warnings, requiresProblem)
 	}
 	for _, pr := range scanResources(clone, resolved, discoveredRules, false) {
 		switch pr.Kind {

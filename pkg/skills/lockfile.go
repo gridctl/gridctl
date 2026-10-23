@@ -152,6 +152,11 @@ type LockedPack struct {
 	// pack and for a booster whose fragment did not resolve. A non-nil
 	// value stamps lockVersionPackLock.
 	Fragment *LockedFragment `yaml:"fragment,omitempty"`
+	// Requires is the manifest's requires.gridctl string, copied at import.
+	// Additive: no new import-lock version. An older reader drops it on the
+	// next write, which is acceptable because that reader is the version
+	// the constraint would have excluded.
+	Requires string `yaml:"requires,omitempty"`
 }
 
 // LockedPackLock is the pack-lock state recorded at add time.

@@ -252,3 +252,22 @@ func TestParse_SourceValidationNamesKey(t *testing.T) {
 		}
 	}
 }
+
+func TestParse_RequiresRoundTrip(t *testing.T) {
+	raw := validManifest + "requires:\n  gridctl: \">=1.1.0\"\n"
+	m, err := Parse([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Requires == nil || m.Requires.Gridctl != ">=1.1.0" {
+		t.Fatalf("requires = %+v", m.Requires)
+	}
+	// Unknown keys stay ignored. requires is known; an extra sibling is dropped.
+	ignored, err := Parse([]byte(raw + "future: true\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ignored.Requires == nil || ignored.Requires.Gridctl != ">=1.1.0" {
+		t.Fatalf("ignored-key requires = %+v", ignored.Requires)
+	}
+}
