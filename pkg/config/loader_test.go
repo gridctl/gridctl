@@ -1512,7 +1512,8 @@ func TestLoadStack_ExtendsRequires(t *testing.T) {
 	t.Run("child satisfies itself but not parent", func(t *testing.T) {
 		writeFile(t, child, "version: \"1\"\nname: child\nextends: parent.yaml\nrequires:\n  gridctl: \">=0.1.0\"\nmcp-servers: []\n")
 		_, err := LoadStack(child)
-		if err == nil || !strings.Contains(err.Error(), ">=0.1.0, >=1.1.0") {
+		want := "requires.gridctl: stack requires gridctl >=0.1.0, >=1.1.0, running 1.0.0 (gridctl upgrade --version v1.1.0)"
+		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Fatalf("LoadStack() = %v", err)
 		}
 	})
@@ -1526,6 +1527,44 @@ func TestLoadStack_ExtendsRequires(t *testing.T) {
 			t.Fatal(err)
 		}
 		if stack.Requires == nil || stack.Requires.Gridctl != ">=1.1.0, >=1.1.0" {
+			t.Fatalf("requires = %+v", stack.Requires)
+		}
+	})
+
+	t.Run("or on child does not drop parent floor", func(t *testing.T) {
+		SetRunningVersion("1.2.0")
+		t.Cleanup(func() { SetRunningVersion("1.0.0") })
+		writeFile(t, parent, "version: \"1\"\nname: parent\nrequires:\n  gridctl: \">=1.5.0\"\nmcp-servers:\n  - name: echo\n    command: [echo]\n")
+		writeFile(t, child, "version: \"1\"\nname: child\nextends: parent.yaml\nrequires:\n  gridctl: \">=1.0.0 || >=2.0.0\"\nmcp-servers: []\n")
+		_, err := LoadStack(child)
+		want := ">=1.0.0, >=1.5.0 || >=2.0.0, >=1.5.0"
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("LoadStack() = %v", err)
+		}
+	})
+
+	t.Run("or on parent does not drop child floor", func(t *testing.T) {
+		SetRunningVersion("1.2.0")
+		t.Cleanup(func() { SetRunningVersion("1.0.0") })
+		writeFile(t, parent, "version: \"1\"\nname: parent\nrequires:\n  gridctl: \">=1.0.0 || >=3.0.0\"\nmcp-servers:\n  - name: echo\n    command: [echo]\n")
+		writeFile(t, child, "version: \"1\"\nname: child\nextends: parent.yaml\nrequires:\n  gridctl: \">=1.5.0\"\nmcp-servers: []\n")
+		_, err := LoadStack(child)
+		want := ">=1.5.0, >=1.0.0 || >=1.5.0, >=3.0.0"
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("LoadStack() = %v", err)
+		}
+	})
+
+	t.Run("or intersection satisfied", func(t *testing.T) {
+		SetRunningVersion("1.6.0")
+		t.Cleanup(func() { SetRunningVersion("1.0.0") })
+		writeFile(t, parent, "version: \"1\"\nname: parent\nrequires:\n  gridctl: \">=1.5.0\"\nmcp-servers:\n  - name: echo\n    command: [echo]\n")
+		writeFile(t, child, "version: \"1\"\nname: child\nextends: parent.yaml\nrequires:\n  gridctl: \">=1.0.0 || >=2.0.0\"\nmcp-servers: []\n")
+		stack, err := LoadStack(child)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stack.Requires == nil || stack.Requires.Gridctl != ">=1.0.0, >=1.5.0 || >=2.0.0, >=1.5.0" {
 			t.Fatalf("requires = %+v", stack.Requires)
 		}
 	})

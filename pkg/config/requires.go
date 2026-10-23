@@ -25,8 +25,9 @@ var (
 	requiresSkipOnce sync.Once
 )
 
-// simpleGTE matches a constraint that is one >= clause. A comma, ||, or
-// a second comparison is not a simple floor, so the upgrade hint is omitted.
+// simpleGTE matches one >= clause. The upgrade hint uses the highest such
+// clause when the constraint has no "||" and that version satisfies the
+// whole constraint.
 var simpleGTE = regexp.MustCompile(`^>=\s*v?(\S+)\s*$`)
 
 // SetRunningVersion records the gridctl version used by requires.gridctl
@@ -63,7 +64,8 @@ func currentRunningVersion() string {
 type RequiresError struct {
 	Constraint string
 	Running    string
-	// Floor is set when Constraint is a single >= clause. It has no v prefix.
+	// Floor is the highest >= clause that satisfies Constraint, with no v
+	// prefix. Empty when Constraint uses ||, or when no such clause exists.
 	Floor  string
 	Syntax bool
 }
@@ -145,16 +147,74 @@ func warnRequiresSkipped(running string) {
 	})
 }
 
-// simpleFloor returns the version in a single >= clause, without a v prefix.
-// Any other shape has no floor hint.
+// simpleFloor returns the highest >= clause that satisfies constraint,
+// without a v prefix. A "||" constraint has no floor hint, and neither does
+// an AND whose other clauses exclude that version.
 func simpleFloor(constraint string) string {
-	match := simpleGTE.FindStringSubmatch(strings.TrimSpace(constraint))
-	if match == nil {
+	constraint = strings.TrimSpace(constraint)
+	if constraint == "" || strings.Contains(constraint, "||") {
 		return ""
 	}
-	version, err := semver.NewVersion(match[1])
+	parsed, err := semver.NewConstraint(constraint)
 	if err != nil {
 		return ""
 	}
-	return version.String()
+	parsed.IncludePrerelease = true
+	var best *semver.Version
+	for _, clause := range strings.Split(constraint, ",") {
+		match := simpleGTE.FindStringSubmatch(strings.TrimSpace(clause))
+		if match == nil {
+			continue
+		}
+		version, err := semver.NewVersion(match[1])
+		if err != nil {
+			continue
+		}
+		if best == nil || version.GreaterThan(best) {
+			best = version
+		}
+	}
+	if best == nil || !parsed.Check(best) {
+		return ""
+	}
+	return best.String()
+}
+
+// intersectConstraints encodes child AND parent as one Masterminds string.
+// "," binds tighter than "||", so joining the two strings with ", " is not
+// an intersection when either side uses "||": ">=1.0.0 || >=2.0.0, >=1.5.0"
+// accepts 1.2.0. The cross product is the OR of each child clause AND each
+// parent clause, which is the intersection. Two simple floors still join as
+// "<child>, <parent>". A side that does not parse is comma-joined so the
+// syntax error is preserved. An intersection Masterminds cannot represent
+// (too long, or too many OR groups) is still returned and fails closed at
+// check time; falling back to a comma join would drop a floor.
+func intersectConstraints(child, parent string) string {
+	if _, err := semver.NewConstraint(child); err != nil {
+		return child + ", " + parent
+	}
+	if _, err := semver.NewConstraint(parent); err != nil {
+		return child + ", " + parent
+	}
+	childGroups := splitOrGroups(child)
+	parentGroups := splitOrGroups(parent)
+	pairs := make([]string, 0, len(childGroups)*len(parentGroups))
+	for _, c := range childGroups {
+		for _, p := range parentGroups {
+			pairs = append(pairs, c+", "+p)
+		}
+	}
+	return strings.Join(pairs, " || ")
+}
+
+// splitOrGroups splits on "||", the same split NewConstraint uses, and
+// trims each group. Empty groups are kept so an invalid constraint is not
+// rewritten into a valid one.
+func splitOrGroups(constraint string) []string {
+	parts := strings.Split(constraint, "||")
+	out := make([]string, len(parts))
+	for i, part := range parts {
+		out[i] = strings.TrimSpace(part)
+	}
+	return out
 }

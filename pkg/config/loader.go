@@ -697,8 +697,10 @@ func resolveExtends(child *Stack, childAbsPath string, visited map[string]bool, 
 //     whether or not the child has a secrets block. A same-named child provider wins.
 //     secrets.sets stays whole-block and is inherited only when the child omits secrets.
 //   - requires.gridctl: both apply. The child's constraint is kept and the
-//     parent's is recorded, joined with ", " (Masterminds AND). A child that
-//     omits requires still carries the parent's floor.
+//     parent's is recorded. Two simple floors join with ", " (Masterminds
+//     AND). When either side uses "||", the merge is the OR of each child
+//     clause AND each parent clause, because "||" binds looser than ",".
+//     A child that omits requires still carries the parent's floor.
 //
 // Everything absent from this switchboard is deliberately NOT inherited
 // across `extends`: clients, groups, limits, policy, skills, link, telemetry,
@@ -763,9 +765,8 @@ func mergeStacks(child, parent *Stack) {
 }
 
 // mergeRequires keeps the child's floor and records the parent's so both
-// are checked. The joined string is a Masterminds AND. A constraint that
-// already contains "||" does not gain parentheses; authors should keep
-// each floor a simple range.
+// are checked. Two simple floors join with ", ". A side that uses "||" is
+// distributed so OR precedence does not drop the other side's floor.
 func mergeRequires(child, parent *Stack) {
 	if child == nil {
 		return
@@ -778,7 +779,7 @@ func mergeRequires(child, parent *Stack) {
 	case childC == "":
 		child.Requires = &RequiresConfig{Gridctl: parentC}
 	default:
-		child.Requires = &RequiresConfig{Gridctl: childC + ", " + parentC}
+		child.Requires = &RequiresConfig{Gridctl: intersectConstraints(childC, parentC)}
 	}
 }
 

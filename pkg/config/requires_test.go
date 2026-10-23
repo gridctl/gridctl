@@ -26,7 +26,12 @@ func TestCheckRequires(t *testing.T) {
 		{name: "prerelease floor passes", running: "1.1.0-rc.1", constraint: ">=1.1.0-rc.1", wantErr: ""},
 		{name: "unsatisfied simple floor", running: "1.0.0", constraint: ">=1.1.0", wantErr: "stack requires gridctl >=1.1.0, running 1.0.0 (gridctl upgrade --version v1.1.0)"},
 		{name: "spaced floor", running: "1.0.0", constraint: ">= 1.1.0", wantErr: "stack requires gridctl >= 1.1.0, running 1.0.0 (gridctl upgrade --version v1.1.0)"},
-		{name: "and range has no hint", running: "1.5.0", constraint: ">=1.0.0, <1.2.0", wantErr: "stack requires gridctl >=1.0.0, <1.2.0, running 1.5.0"},
+		{name: "and range hints the highest floor", running: "1.5.0", constraint: ">=1.0.0, <1.2.0", wantErr: "stack requires gridctl >=1.0.0, <1.2.0, running 1.5.0 (gridctl upgrade --version v1.0.0)"},
+		{name: "merged floors hint the highest", running: "1.0.0", constraint: ">=0.1.0, >=1.1.0", wantErr: "stack requires gridctl >=0.1.0, >=1.1.0, running 1.0.0 (gridctl upgrade --version v1.1.0)"},
+		{name: "or range has no hint", running: "0.5.0", constraint: ">=1.0.0 || >=2.0.0", wantErr: "stack requires gridctl >=1.0.0 || >=2.0.0, running 0.5.0"},
+		{name: "and whose floor is excluded has no hint", running: "1.2.0", constraint: ">=1.0.0, >1.5.0", wantErr: "stack requires gridctl >=1.0.0, >1.5.0, running 1.2.0"},
+		{name: "git describe dirty is enforced", running: "v1.0.0-rc.2-31-ga4c8f63-dirty", constraint: ">=1.0.0", wantErr: "stack requires gridctl >=1.0.0, running 1.0.0-rc.2-31-ga4c8f63-dirty (gridctl upgrade --version v1.0.0)"},
+		{name: "git describe dirty satisfies rc floor", running: "v1.0.0-rc.2-31-ga4c8f63-dirty", constraint: ">=1.0.0-rc.2", wantErr: ""},
 		{name: "invalid string", running: "1.0.0", constraint: "not a constraint", wantErr: `must be a semver constraint (e.g. ">=1.1.0")`},
 		{name: "invalid string on dev", running: "dev", constraint: "not a constraint", wantErr: `must be a semver constraint (e.g. ">=1.1.0")`},
 		{name: "dev skips satisfaction", running: "dev", constraint: ">=9.0.0", wantErr: ""},
@@ -124,6 +129,50 @@ func TestDecodeStack_RequiresUnknownKey(t *testing.T) {
 	_, err := DecodeStack([]byte("name: lab\nrequires:\n  gridctl: \">=1.1.0\"\n  extra: true\n"))
 	if err == nil || !strings.Contains(err.Error(), "extra") {
 		t.Fatalf("DecodeStack() = %v", err)
+	}
+}
+
+func TestIntersectConstraints(t *testing.T) {
+	cases := []struct {
+		name, child, parent, want string
+	}{
+		{name: "simple floors", child: ">=1.1.0", parent: ">=1.0.0", want: ">=1.1.0, >=1.0.0"},
+		{name: "or on child", child: ">=1.0.0 || >=2.0.0", parent: ">=1.5.0", want: ">=1.0.0, >=1.5.0 || >=2.0.0, >=1.5.0"},
+		{name: "or on parent", child: ">=1.0.0", parent: ">=1.5.0 || >=3.0.0", want: ">=1.0.0, >=1.5.0 || >=1.0.0, >=3.0.0"},
+		{name: "or on both", child: ">=1.0.0 || >=2.0.0", parent: ">=1.5.0 || >=3.0.0", want: ">=1.0.0, >=1.5.0 || >=1.0.0, >=3.0.0 || >=2.0.0, >=1.5.0 || >=2.0.0, >=3.0.0"},
+		{name: "and inside or", child: ">=1.0.0, <2.0.0 || >=3.0.0", parent: ">=1.5.0", want: ">=1.0.0, <2.0.0, >=1.5.0 || >=3.0.0, >=1.5.0"},
+		{name: "invalid child stays invalid", child: "not a constraint", parent: ">=1.0.0", want: "not a constraint, >=1.0.0"},
+		{name: "trailing or stays invalid", child: ">=1.0.0 ||", parent: ">=1.5.0", want: ">=1.0.0 ||, >=1.5.0"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := intersectConstraints(tc.child, tc.parent); got != tc.want {
+				t.Fatalf("intersectConstraints() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+
+	// A version that satisfies only the child's first OR clause must fail
+	// the intersection. 1.6.0 satisfies the child and the parent.
+	merged := intersectConstraints(">=1.0.0 || >=2.0.0", ">=1.5.0")
+	if err := checkRequires("1.2.0", merged); err == nil {
+		t.Fatal("1.2.0 satisfied a parent floor it misses")
+	}
+	if err := checkRequires("1.6.0", merged); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkRequires("2.1.0", merged); err != nil {
+		t.Fatal(err)
+	}
+
+	// Composing a second merge must keep every ancestor floor.
+	once := intersectConstraints(">=1.5.0", ">=1.0.0 || >=2.0.0")
+	twice := intersectConstraints(">=1.6.0", once)
+	if err := checkRequires("1.2.0", twice); err == nil {
+		t.Fatalf("1.2.0 satisfied %q", twice)
+	}
+	if err := checkRequires("1.7.0", twice); err != nil {
+		t.Fatalf("%q: %v", twice, err)
 	}
 }
 
