@@ -696,6 +696,11 @@ func resolveExtends(child *Stack, childAbsPath string, visited map[string]bool, 
 //   - secrets.providers: parent entries whose name the child does not declare are appended,
 //     whether or not the child has a secrets block. A same-named child provider wins.
 //     secrets.sets stays whole-block and is inherited only when the child omits secrets.
+//   - requires.gridctl: both apply. The child's constraint is kept and the
+//     parent's is recorded. Two simple floors join with ", " (Masterminds
+//     AND). When either side uses "||", the merge is the OR of each child
+//     clause AND each parent clause, because "||" binds looser than ",".
+//     A child that omits requires still carries the parent's floor.
 //
 // Everything absent from this switchboard is deliberately NOT inherited
 // across `extends`: clients, groups, limits, policy, skills, link, telemetry,
@@ -704,6 +709,7 @@ func resolveExtends(child *Stack, childAbsPath string, visited map[string]bool, 
 // never sees). A new block needs an explicit decision here either way.
 func mergeStacks(child, parent *Stack) {
 	mergeVariableDeclarations(child, parent)
+	mergeRequires(child, parent)
 	// MCPServers: child wins on name collision; parent-only servers appended
 	if len(parent.MCPServers) > 0 {
 		childNames := make(map[string]bool, len(child.MCPServers))
@@ -756,6 +762,32 @@ func mergeStacks(child, parent *Stack) {
 		child.Network = parent.Network
 		child.Networks = parent.Networks
 	}
+}
+
+// mergeRequires keeps the child's floor and records the parent's so both
+// are checked. Two simple floors join with ", ". A side that uses "||" is
+// distributed so OR precedence does not drop the other side's floor.
+func mergeRequires(child, parent *Stack) {
+	if child == nil {
+		return
+	}
+	childC := requiresConstraint(child)
+	parentC := requiresConstraint(parent)
+	switch {
+	case parentC == "":
+		return
+	case childC == "":
+		child.Requires = &RequiresConfig{Gridctl: parentC}
+	default:
+		child.Requires = &RequiresConfig{Gridctl: intersectConstraints(childC, parentC)}
+	}
+}
+
+func requiresConstraint(s *Stack) string {
+	if s == nil || s.Requires == nil {
+		return ""
+	}
+	return strings.TrimSpace(s.Requires.Gridctl)
 }
 
 func mergeVariableDeclarations(child, parent *Stack) {

@@ -268,6 +268,51 @@ func runValidateBinEnv(t *testing.T, bin string, env []string, stack string, arg
 	return outBuf.String(), errBuf.String(), code
 }
 
+func TestValidateRequiresCLI(t *testing.T) {
+	bin := buildVersionedValidateBinary(t, "1.0.0")
+	stack := writeValidateStack(t, `name: floor
+requires:
+  gridctl: ">=1.1.0"
+mcp-servers:
+  - name: echo
+    command: ["echo"]
+`)
+	out, stderr, code := runValidateBin(t, bin, stack, "--format", "json")
+	if code != 1 {
+		t.Fatalf("exit = %d stderr=%s stdout=%s", code, stderr, out)
+	}
+	var result config.ValidationResult
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("json: %v\n%s", err, out)
+	}
+	found := false
+	for _, issue := range result.Issues {
+		if issue.Field == "requires.gridctl" && issue.Severity == config.SeverityError &&
+			issue.Message == "stack requires gridctl >=1.1.0, running 1.0.0 (gridctl upgrade --version v1.1.0)" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("issues = %+v", result.Issues)
+	}
+
+	text, _, textCode := runValidateBin(t, bin, stack)
+	if textCode != 1 || !strings.Contains(text, "requires.gridctl:") {
+		t.Fatalf("text exit = %d\n%s", textCode, text)
+	}
+}
+
+func buildVersionedValidateBinary(t *testing.T, version string) string {
+	t.Helper()
+	binPath := filepath.Join(t.TempDir(), "gridctl")
+	build := exec.Command("go", "build", "-ldflags", "-X main.version="+version, "-o", binPath, ".")
+	out, err := build.CombinedOutput()
+	if err != nil {
+		t.Fatalf("building gridctl: %v\n%s", err, out)
+	}
+	return binPath
+}
+
 func assertMutablePackageJSON(t *testing.T, raw, field string) {
 	t.Helper()
 	var result config.ValidationResult

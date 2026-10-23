@@ -46,6 +46,10 @@ var (
 	ErrBoostersAttached = errors.New("pack has attached boosters")
 	// ErrBaseNotAdded marks a booster whose base pack is not imported.
 	ErrBaseNotAdded = errors.New("base pack is not added")
+	// ErrPackRequires marks a pack whose requires.gridctl the running
+	// gridctl does not satisfy, or whose constraint does not parse.
+	// Nothing is imported or projected.
+	ErrPackRequires = errors.New("pack gridctl requirement failed")
 )
 
 // packError pairs a sentinel with exact user-facing prose, so errors.Is

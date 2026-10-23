@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/packops"
 	"github.com/gridctl/gridctl/pkg/project"
 	"github.com/gridctl/gridctl/pkg/skills"
@@ -647,6 +648,51 @@ func TestParseSourceAuthAndText(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "tok https://example.com/a@v1 (abcdef12)\n") {
 		t.Fatalf("redacted line missing:\n%s", stdout.String())
+	}
+}
+
+func TestPackAdd_UnsatisfiedRequiresExitsAttention(t *testing.T) {
+	imp, freshManagers := packTestEnv(t)
+	config.SetRunningVersion("1.0.0")
+	t.Cleanup(config.ResetRunningVersion)
+	manifest := packTestManifest + "requires:\n  gridctl: \">=1.1.0\"\n"
+	repo := packFixture(t, manifest, nil)
+	var stdout, stderr bytes.Buffer
+	exit := runPackAdd(context.Background(), &stdout, &stderr, freshManagers(), imp, repo, "", "", false, false, "text", skills.AuthConfig{}, nil)
+	if exit != ctxExitAttention {
+		t.Fatalf("exit = %d, want 1\nstdout=%s\nstderr=%s", exit, stdout.String(), stderr.String())
+	}
+	if stderr.String() != "pack team-pack requires gridctl >=1.1.0, running 1.0.0\n" {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+	if _, err := loadLockedPack("team-pack"); err == nil {
+		t.Fatal("unsatisfied pack was imported")
+	}
+}
+
+func TestPackApply_UnsatisfiedRequiresExitsAttention(t *testing.T) {
+	_, freshManagers := packTestEnv(t)
+	config.SetRunningVersion("1.0.0")
+	t.Cleanup(config.ResetRunningVersion)
+	lf := &skills.LockFile{Sources: map[string]skills.LockedSource{
+		"netops": {
+			Repo: "https://example.com/netops.git",
+			Pack: &skills.LockedPack{Name: "netops", Requires: ">=1.1.0", Skills: []string{"alpha"}},
+		},
+	}}
+	if err := skills.WriteLockFile(skills.LockFilePath(), lf); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	exit := runPackApply(context.Background(), &stdout, &stderr, freshManagers(), "netops", false, false, nil, 8180, false, "text", false)
+	if exit != ctxExitAttention {
+		t.Fatalf("exit = %d, want 1\nstdout=%s\nstderr=%s", exit, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("projected output:\n%s", stdout.String())
+	}
+	if stderr.String() != "pack netops requires gridctl >=1.1.0, running 1.0.0\n" {
+		t.Fatalf("stderr = %q", stderr.String())
 	}
 }
 

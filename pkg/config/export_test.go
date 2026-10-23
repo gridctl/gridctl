@@ -232,3 +232,29 @@ func TestExportStack_InheritanceAndSafeErrors(t *testing.T) {
 	_, _, err = ExportStack(ctx, child)
 	require.ErrorIs(t, err, context.Canceled)
 }
+
+func TestExportStack_PreservesRequires(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "stack.yaml")
+	source := "name: lab\nrequires:\n  gridctl: \">=1.1.0\"\nmcp-servers:\n  - name: echo\n    command: [echo]\n"
+	require.NoError(t, os.WriteFile(path, []byte(source), 0o600))
+	stack, _, err := ExportStack(context.Background(), path)
+	require.NoError(t, err)
+	require.NotNil(t, stack.Requires)
+	require.Equal(t, ">=1.1.0", stack.Requires.Gridctl)
+	encoded, err := yaml.Marshal(stack)
+	require.NoError(t, err)
+	require.Contains(t, string(encoded), ">=1.1.0")
+	var again Stack
+	require.NoError(t, yaml.Unmarshal(encoded, &again))
+	require.Equal(t, stack.Requires.Gridctl, again.Requires.Gridctl)
+
+	parent := filepath.Join(dir, "parent.yaml")
+	child := filepath.Join(dir, "child.yaml")
+	require.NoError(t, os.WriteFile(parent, []byte("name: parent\nrequires:\n  gridctl: \">=1.0.0\"\nmcp-servers:\n  - name: echo\n    command: [echo]\n"), 0o600))
+	require.NoError(t, os.WriteFile(child, []byte("name: child\nextends: parent.yaml\nrequires:\n  gridctl: \">=1.1.0\"\nmcp-servers: []\n"), 0o600))
+	merged, _, err := ExportStack(context.Background(), child)
+	require.NoError(t, err)
+	require.NotNil(t, merged.Requires)
+	require.Equal(t, ">=1.1.0, >=1.0.0", merged.Requires.Gridctl)
+}

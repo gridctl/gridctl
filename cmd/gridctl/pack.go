@@ -110,9 +110,11 @@ Manifest-selected names the repository does not contain are reported as
 unresolved (exit 1); the rest of the pack still imports. A failed source
 is exit 1 even when no selection names it.
 
+An unsatisfied requires.gridctl floor exits 1 and imports nothing.
+
 Exit codes:
   0  imported cleanly
-  1  partial (unresolved selections, skipped resources, or a failed source)
+  1  partial (unresolved selections, skipped resources, or a failed source), or an unsatisfied requires.gridctl floor
   2  infrastructure error (clone, auth, missing or invalid manifest)`,
 	Args:    cobra.ExactArgs(1),
 	PreRunE: validatePackAddFlags,
@@ -260,6 +262,10 @@ func runPackAdd(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Man
 		Locked: packAddLocked, IgnoreLock: packAddIgnoreLock,
 	})
 	if err != nil {
+		if errors.Is(err, packops.ErrPackRequires) {
+			fmt.Fprintln(stderr, err.Error())
+			return ctxExitAttention
+		}
 		if errors.Is(err, packops.ErrLockStale) {
 			fmt.Fprintln(stderr, err.Error())
 			return ctxExitAttention
@@ -465,9 +471,11 @@ Apply is additive and never transactional: each resource succeeds or
 skips independently, drifted resources are skipped with an adopt or
 --force hint, and a resource tagged by a different pack is refused.
 
+An unsatisfied recorded requires.gridctl floor exits 1 and projects nothing.
+
 Exit codes:
   0  everything applied
-  1  a resource was skipped or failed
+  1  a resource was skipped or failed, or the recorded requires.gridctl floor is unsatisfied
   2  infrastructure error`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -497,6 +505,9 @@ func runPackApply(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.M
 	doc, err := mgrs.Apply(ctx, name, packops.ApplyOptions{Force: force, DryRun: dryRun, Clients: clientOverride, Port: port, PortSet: portSet})
 	if err != nil {
 		fmt.Fprintln(stderr, err)
+		if errors.Is(err, packops.ErrPackRequires) {
+			return ctxExitAttention
+		}
 		return ctxExitInfrastructure
 	}
 

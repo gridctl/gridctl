@@ -179,6 +179,17 @@ type Manifest struct {
 	// is today's path. A mapping with extends names a fragment that
 	// composes onto another pack's stack.
 	Stack StackSpec `yaml:"stack,omitempty" json:"stack,omitempty"`
+	// Requires is an optional semver floor for the running gridctl.
+	// Older readers ignore the key (Parse is not strict). Enforcement is
+	// pack add, pack apply, and preview, not Parse or pack lock.
+	// Defined locally so this package does not import pkg/config.
+	Requires *RequiresConfig `yaml:"requires,omitempty" json:"requires,omitempty"`
+}
+
+// RequiresConfig is the optional tool-version floor. The shape matches
+// config.RequiresConfig. Omitted means no constraint (Article IX).
+type RequiresConfig struct {
+	Gridctl string `yaml:"gridctl,omitempty" json:"gridctl,omitempty"`
 }
 
 // StackSpec is a carried stack path, or a fragment that extends another

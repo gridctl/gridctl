@@ -10,9 +10,14 @@ import (
 
 // Stack represents the complete gridctl configuration.
 type Stack struct {
-	Version    string           `yaml:"version"`
-	Name       string           `yaml:"name"`
-	Extends    string           `yaml:"extends,omitempty"` // Path to a parent stack file for composition
+	Version string `yaml:"version"`
+	Name    string `yaml:"name"`
+	Extends string `yaml:"extends,omitempty"` // Path to a parent stack file for composition
+	// Requires is an optional tool-version floor. Omitted means no
+	// constraint (Article IX). Both the parent and the child constraints
+	// apply across extends. Not accepted in an override file or a booster
+	// fragment.
+	Requires   *RequiresConfig  `yaml:"requires,omitempty" json:"requires,omitempty"`
 	Gateway    *GatewayConfig   `yaml:"gateway,omitempty"`
 	Logging    *LoggingConfig   `yaml:"logging,omitempty"`
 	Telemetry  *TelemetryConfig `yaml:"telemetry,omitempty"` // Opt-in disk persistence for logs/metrics/traces

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/state"
@@ -62,6 +63,10 @@ lockfile-tracked ownership. A pack imports the setup from a git repository.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// Record the build version before any command validates
+		// requires.gridctl. The daemon child re-enters main, so this one
+		// call covers the controller.
+		config.SetRunningVersion(version)
 		output.SetNoColor(noColorFlag)
 		lvl, err := parseLogLevelFlag(logLevelFlag)
 		if err != nil {
