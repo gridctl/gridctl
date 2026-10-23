@@ -193,7 +193,7 @@ pkg/agentsync/      Projects imported agents to clients: identity copy for Claud
 pkg/contexts/       Global agent-context projection (`gridctl ctx`): one canonical file, or opt-in rule fragments
                     with multi-file and compiled per-client assembly.
 pkg/wiring/         Key-level ownership of gateway entries merged into client MCP configs (`gridctl project`, link/unlink).
-pkg/pack/           gridctl-pack.yaml manifest schema, including named external `sources`, a scalar or mapping `stack` (`file` and optional `extends`), and `gridctl-pack.lock.yaml`; pkg/packops owns add, lock honoring, and composition against the lockfile and launcher, including per-source clone and auth. The CLI injects stack launch and reload; REST leaves the launcher nil and does not start, stop, or reload a carried daemon, and it does not write the pack lock.
+pkg/pack/           gridctl-pack.yaml manifest schema, including named external `sources`, a scalar or mapping `stack` (`file` and optional `extends`), optional `requires.gridctl`, and `gridctl-pack.lock.yaml`; pkg/packops owns add, lock honoring, and composition against the lockfile and launcher, including per-source clone and auth, and checks `requires.gridctl` on add, apply, and preview. The CLI injects stack launch and reload; REST leaves the launcher nil and does not start, stop, or reload a carried daemon, and it does not write the pack lock.
 pkg/skillpins/      TOFU pins over skill documents (per-file digests, findings); the `gridctl skill pins` store.
                     ComputeManifest is the shared complete hash walk for pins and Skills over MCP, excluding links,
                     dotfiles, temporary files, and nested skills. Publication limits live in pkg/skillsext, not hashing.

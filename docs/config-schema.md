@@ -60,7 +60,7 @@ requires: ...
 
 ## Requires
 
-Optional tool-version floor. Omitting the block means no constraint.
+Optional tool-version floor. Omitting the block, or leaving `gridctl` empty, means no constraint.
 
 ```yaml
 requires:
@@ -75,13 +75,13 @@ requires:
 requires.gridctl: stack requires gridctl >=1.1.0, running 1.0.0 (gridctl upgrade --version v1.1.0)
 ```
 
-The upgrade hint is included only when the constraint is a single `>=` clause. `gridctl validate` exits 1, and `--format json` carries `field: "requires.gridctl"` with `severity: "error"`. A saved file the running daemon does not satisfy is rejected on reload, and the loaded configuration keeps running.
+The upgrade hint is included only when the constraint is a single `>=` clause. A leading `v` on the running version is not shown. A string that does not parse is `must be a semver constraint (e.g. ">=1.1.0")`, including on a build that would otherwise skip enforcement. `gridctl validate` exits 1, and `--format json` carries `field: "requires.gridctl"` with `severity: "error"`. A saved file the running daemon does not satisfy is rejected on reload (`invalid_candidate`, HTTP 400). The loaded configuration keeps running.
 
-A `dev` build, or any build whose version is empty or not a release, checks that the string parses and then skips enforcement. It logs `requires.gridctl not enforced: running version "dev" is not a release` once per process.
+A `dev` build, or any build whose version is empty or not a release, checks that the string parses and then skips enforcement. It logs `requires.gridctl not enforced: running version "<version>" is not a release` once per process. For a `dev` build, `<version>` is `dev`.
 
-With `extends`, the parent constraint and the child constraint both apply on the load path (`apply`, `serve`, and reload). A child that omits `requires` still has to satisfy the parent. Export keeps the merged constraint. `gridctl validate` on the child file alone sees only the child's block.
+With `extends`, the parent constraint and the child constraint both apply on the load path (`apply`, `serve`, and reload). A child that omits `requires` still has to satisfy the parent. The merged string is the child constraint, then `, `, then the parent (`>=1.1.0, >=1.0.0`). A constraint that already contains `||` is not parenthesized; keep each floor a simple range. Export keeps the merged constraint. `gridctl validate` on the child file alone sees only the child's block.
 
-A booster fragment cannot carry `requires`. Put the floor on the base pack's stack. An override file cannot carry it either. The existing top-level allowlist refuses the key.
+A booster fragment cannot carry `requires`. Put the floor on the base pack's stack. The composed file keeps that floor. An override file cannot carry it either. The existing top-level allowlist refuses the key.
 
 Releases before this field reject a stack file that contains it with an unknown-field error. That is fail closed: an older binary will not run a stack that declares a floor it cannot read. See [Validation reports an unknown field](troubleshooting.md#validation-reports-an-unknown-field).
 
@@ -2056,7 +2056,7 @@ Semantics:
 
 `~/.gridctl/skills.yaml` is the Library source list. It is read for auto-update display. `gridctl skill update` and the background checker do not consult it. Imports and later updates authenticate from the origin sidecar and `skills.lock.yaml` written at import.
 
-`skills.lock.yaml` is stamped at the lowest version that can represent its sources. Version 6 is written only when at least one source has `kind: local` (a directory import, with per-skill `tree_hash` and an empty `commit_sha`). Files without a local source keep their previous stamp. This build refuses a file newer than version 8. An older gridctl refuses a version 6 file, including unrelated skill and pack commands. Remove the local sources with this build before downgrading. Version 7 is written when a pack record has external sources or a source carries a pack member marker. An older gridctl refuses that file too. Remove the pack with this build before downgrading. Version 8 is written when a pack record has `lock` or `fragment`, or a member source has `locked_by`. An older gridctl refuses that file, including unrelated skill updates. Remove the pack with this build before downgrading. Files without those keys keep their previous stamp. Local paths are not portable: a YAML `gridctl export --output` omits those sources from the generated `skills.yaml` and prints `export: N local skill source(s) omitted from skills.yaml (local paths are not portable)`. JSON and stdout exports have no sidecar.
+`skills.lock.yaml` is stamped at the lowest version that can represent its sources. Version 6 is written only when at least one source has `kind: local` (a directory import, with per-skill `tree_hash` and an empty `commit_sha`). Files without a local source keep their previous stamp. This build refuses a file newer than version 8. An older gridctl refuses a version 6 file, including unrelated skill and pack commands. Remove the local sources with this build before downgrading. Version 7 is written when a pack record has external sources or a source carries a pack member marker. An older gridctl refuses that file too. Remove the pack with this build before downgrading. Version 8 is written when a pack record has `lock` or `fragment`, or a member source has `locked_by`. An older gridctl refuses that file, including unrelated skill updates. Remove the pack with this build before downgrading. Files without those keys keep their previous stamp. A pack record's `requires` string does not stamp a new version. An older reader drops that key on its next write. Local paths are not portable: a YAML `gridctl export --output` omits those sources from the generated `skills.yaml` and prints `export: N local skill source(s) omitted from skills.yaml (local paths are not portable)`. JSON and stdout exports have no sidecar.
 
 ```yaml
 # Display list only. auth: blocks here are not read on update.

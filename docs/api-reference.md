@@ -3644,11 +3644,11 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/packs \
 **Errors:**
 - `400` - Missing repo, invalid body, an unresolvable `auth.credentialRef` or `sourceAuth` credential, or a relative `auth.sshKeyPath` or `sourceAuth` key path. A source entry's error is prefixed `source "<name>":`
 - `409` - Security findings without trust: `{ "error", "pack", "findings": [{kind, name, source, findings}] }`; `source` is set for an external resource and omitted for the pack repository; nothing was imported. A stale or missing lock with `locked: true` is `{ "error", "code": "lock_stale" }` and writes nothing. A pack lock written by a newer gridctl is `409` with the newer-version message.
-- `422` - No `gridctl-pack.yaml` at the repository root, or no reachable ssh-agent (see [pack auth](#pack-authentication))
+- `422` - No `gridctl-pack.yaml` at the repository root, no reachable ssh-agent (see [pack auth](#pack-authentication)), or an unsatisfied or invalid `requires.gridctl`. That floor refusal imports nothing, including when `dryRun` is set. The body is `{"error":"pack <name> requires gridctl <constraint>, running <version>"}`. A constraint that does not parse uses `pack <name>: requires.gridctl: must be a semver constraint (e.g. ">=1.1.0")`.
 
 #### `POST /api/packs/preview`
 
-Resolves a pack manifest against its repository without writing anything: manifest identity, the resolved selection per kind with per-resource scan findings, unresolved names, and warnings. The wizard's read-only review step. A carried stack adds optional `stack`: `{ "path", "name", "servers", "fragment", "extends" }` on the result itself (not under `doc`) and does not create a checkout. A pack with sources or `stack.extends` adds optional `lock` (`state`, `path`, `digest`, `reason`, `notes`). External sources add optional `sources` (the same shape as `doc.sources` on add) and `source` on each preview resource that did not come from the pack repository. A source clone failure is an unresolved entry and a warning, not an error.
+Resolves a pack manifest against its repository without writing anything: manifest identity, the resolved selection per kind with per-resource scan findings, unresolved names, and warnings. The wizard's read-only review step. A carried stack adds optional `stack`: `{ "path", "name", "servers", "fragment", "extends" }` on the result itself (not under `doc`) and does not create a checkout. A pack with sources or `stack.extends` adds optional `lock` (`state`, `path`, `digest`, `reason`, `notes`). External sources add optional `sources` (the same shape as `doc.sources` on add) and `source` on each preview resource that did not come from the pack repository. A source clone failure is an unresolved entry and a warning, not an error. An unsatisfied or invalid `requires.gridctl` is a `warnings` entry (`pack <name> requires gridctl <constraint>, running <version>`), not an error status. Preview still returns the rest of the document and starts nothing. A lock error after the floor check, such as `locked: true` with a stale or missing lock, returns that error instead, so the warning is not in that response.
 
 **Auth:** Yes
 
@@ -3715,7 +3715,7 @@ Projects one pack. Apply is additive and never transactional: each resource succ
 
 An empty or absent body is a plain apply. **Response:** the apply document: `applied`, `total`, and per-resource `rows` (kind, name, client, action, detail, remediation). A carried stack is the first row. Over REST its action is `skipped-unavailable`, detail `stack deploy is not available over this interface`, remediation `run 'gridctl pack apply <name>' from the CLI`. The wiring row is `skipped-unavailable` with detail `pack stack is not running` and remediation `resolve the stack row above, then re-run 'gridctl pack apply <name>'`. Drifted resources are skipped with a remediation hint unless forced; resources tagged by a different pack are refused with the owning pack named.
 
-**Errors:** `404` - Pack not imported; `409` - Name collision.
+**Errors:** `404` - Pack not imported; `409` - Name collision; `422` - the recorded `requires.gridctl` is unsatisfied or invalid, and nothing is projected, including when `dry_run` is set. The body is `{"error":"..."}` with the same pack message as add. A pack imported before the field existed has no recorded floor and is not checked.
 
 #### `DELETE /api/packs/{name}`
 
