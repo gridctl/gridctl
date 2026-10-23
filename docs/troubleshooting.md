@@ -32,6 +32,10 @@ This check ships in the next 1.0.0 release candidate. A stack that validated
 before it because an unknown key was ignored will now fail until that key
 is fixed or removed.
 
+A stack that contains `requires:` fails this check on a release that does not
+know the key. That release cannot enforce the floor, so it refuses the file.
+Upgrade gridctl, or remove the block. See [Requires](config-schema.md#requires).
+
 ## Gateway security requires a restart
 
 `restart_required` means the saved candidate differs from the listener's effective startup authentication, bind, Host/Origin allowlists, or insecure override. The active credential and accepted configuration remain unchanged, including when ordinary edits were saved alongside security changes. The edited file is not rolled back. Repeating reload cannot activate it.

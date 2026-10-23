@@ -28,6 +28,7 @@ link: ...
 skills: ...
 model_preferences: ...
 experimental: ...
+requires: ...
 ```
 
 | Field | Type | Required | Default | Description |
@@ -53,6 +54,36 @@ experimental: ...
 | `model_preferences` | object | No | - | Model preference defaults and overrides for skill and agent projections (see [Model Preferences](#model-preferences)) |
 | `experimental` | object | No | - | Feature flags for experimental behavior (see [Experimental](#experimental-feature-flags)) |
 | `policy` | object | No | - | Per-tool call policy enforced at dispatch (see [Policy](#policy-per-tool-call-policy)). Distinct from `gridctl validate --policy` |
+| `requires` | object | No | - | Semver floor for the running gridctl (see [Requires](#requires)) |
+
+---
+
+## Requires
+
+Optional tool-version floor. Omitting the block means no constraint.
+
+```yaml
+requires:
+  gridctl: ">=1.1.0"
+```
+
+`gridctl` is a semver constraint. `>=1.1.0` is the usual form. Comparisons are `=`, `!=`, `>`, `<`, `>=`, and `<=`. A comma joins AND clauses (`>=1.1.0, <2.0.0`). `||` joins OR clauses. `~` and `^` are accepted. A maximum is allowed and discouraged: a later release that still runs the stack would be refused. Pre-release versions are included, so `1.0.0-rc.2` satisfies `>=0.1.0` and does not satisfy `>=1.0.0`.
+
+`gridctl validate` enforces the constraint in the file it reads. It does not resolve `extends`, matching the rest of validate. `gridctl apply`, a stack loaded into `gridctl serve`, and hot reload enforce the merged constraint. An unsatisfied floor is an error on `requires.gridctl`:
+
+```text
+requires.gridctl: stack requires gridctl >=1.1.0, running 1.0.0 (gridctl upgrade --version v1.1.0)
+```
+
+The upgrade hint is included only when the constraint is a single `>=` clause. `gridctl validate` exits 1, and `--format json` carries `field: "requires.gridctl"` with `severity: "error"`. A saved file the running daemon does not satisfy is rejected on reload, and the loaded configuration keeps running.
+
+A `dev` build, or any build whose version is empty or not a release, checks that the string parses and then skips enforcement. It logs `requires.gridctl not enforced: running version "dev" is not a release` once per process.
+
+With `extends`, the parent constraint and the child constraint both apply on the load path (`apply`, `serve`, and reload). A child that omits `requires` still has to satisfy the parent. Export keeps the merged constraint. `gridctl validate` on the child file alone sees only the child's block.
+
+A booster fragment cannot carry `requires`. Put the floor on the base pack's stack. An override file cannot carry it either. The existing top-level allowlist refuses the key.
+
+Releases before this field reject a stack file that contains it with an unknown-field error. That is fail closed: an older binary will not run a stack that declares a floor it cannot read. See [Validation reports an unknown field](troubleshooting.md#validation-reports-an-unknown-field).
 
 ---
 
