@@ -18,10 +18,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/gridctl/gridctl/pkg/state"
 )
 
 // TestUpgradeRollback_RoundTrip builds two race-enabled binaries, upgrades
@@ -123,11 +126,245 @@ func TestUpgradeRollback_RoundTrip(t *testing.T) {
 	if !strings.Contains(stdout, "Rolled back gridctl from v9.0.2 to v9.0.1") {
 		t.Fatalf("stdout = %s", stdout)
 	}
-	if !strings.Contains(stderr, "compatibility unknown: v9.0.1") {
+	// The replaced binary is retained with this release's schema advertisement,
+	// so a rollback to it is not the unknown-schemas path.
+	if strings.Contains(stderr, "compatibility unknown") {
 		t.Fatalf("stderr = %s", stderr)
 	}
 	assertVersion(ctx, t, oldBin, home, "v9.0.1")
 	assertManifest(t, home, "v9.0.1", "v9.0.2")
+	assertRetainedSchemas(t, home, "v9.0.1")
+}
+
+// TestUpgradeRollback_StateAware starts a local-process daemon on the older
+// binary, upgrades it, and checks status, rollback --restart, and the two
+// hand-bumped refusal files. The children are race-built with distinct
+// ldflags versions. No container runtime is required.
+func TestUpgradeRollback_StateAware(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	if mockStdioBin == "" {
+		t.Fatal("mock stdio server was not built")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	root, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	oldBin := buildVersioned(ctx, t, root, dir, "gridctl-old", "v9.0.1")
+	newBin := buildVersioned(ctx, t, root, dir, "gridctl-new", "v9.0.2")
+	// Each subtest installs over its own copy. A shared path would stay on
+	// v9.0.2 after a refused rollback, and the next upgrade would not retain
+	// a previous tag.
+	pristine, err := os.ReadFile(oldBin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	copyOld := func(t *testing.T, home string) string {
+		t.Helper()
+		bin := filepath.Join(home, "gridctl")
+		if err := os.WriteFile(bin, pristine, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return bin
+	}
+
+	t.Run("restart", func(t *testing.T) {
+		home := filepath.Join(dir, "restart-home")
+		if err := os.MkdirAll(home, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		oldBin := copyOld(t, home)
+		t.Setenv("HOME", home)
+		t.Setenv("GRIDCTL_HOME", home)
+		stack := filepath.Join(dir, "lab.yaml")
+		body := fmt.Sprintf("version: \"1\"\nname: lab\nmcp-servers:\n  - name: echo\n    command: [%q]\n", mockStdioBin)
+		if err := os.WriteFile(stack, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		port := freePort(t)
+		t.Cleanup(func() {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cleanupCancel()
+			_, _, _ = runUpgrade(cleanupCtx, t, oldBin, home, "", "", "destroy", "lab")
+		})
+
+		stdout, stderr, code := runUpgrade(ctx, t, oldBin, home, "", "", "apply", stack, "--port", strconv.Itoa(port))
+		if code != 0 {
+			t.Fatalf("apply exit = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+		}
+		st, err := state.Load("lab")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.BinaryVersion != "v9.0.1" {
+			t.Fatalf("binary_version = %q", st.BinaryVersion)
+		}
+		if !state.IsRunning(st) {
+			t.Fatal("daemon is not running")
+		}
+		firstPID := st.PID
+
+		payload, err := os.ReadFile(newBin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var hits hitLog
+		srv := httptest.NewServer(releaseHandler(t, "v9.0.2", payload, &hits))
+		defer srv.Close()
+		api := srv.URL + "/repos/gridctl/gridctl/releases?per_page=1"
+		base := srv.URL + "/gridctl/gridctl/releases/download"
+		stdout, stderr, code = runUpgrade(ctx, t, oldBin, home, api, base, "upgrade", "--yes", "--version", "v9.0.2")
+		if code != 0 {
+			t.Fatalf("upgrade exit = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+		}
+		assertVersion(ctx, t, oldBin, home, "v9.0.2")
+
+		stdout, stderr, code = runUpgrade(ctx, t, oldBin, home, "", "", "status", "--plain")
+		if code != 0 {
+			t.Fatalf("status exit = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+		}
+		if !strings.Contains(stderr, "warning: lab runs gridctl v9.0.1; this CLI is v9.0.2") {
+			t.Fatalf("stderr = %s\nstdout: %s", stderr, stdout)
+		}
+		stdout, stderr, code = runUpgrade(ctx, t, oldBin, home, "", "", "status", "--json")
+		if code != 0 {
+			t.Fatalf("status json exit = %d\n%s\n%s", code, stdout, stderr)
+		}
+		if !strings.Contains(stdout, `"binary_version": "v9.0.1"`) && !strings.Contains(stdout, `"binary_version":"v9.0.1"`) {
+			t.Fatalf("status json = %s", stdout)
+		}
+		if strings.Contains(stderr, "runs gridctl") {
+			t.Fatalf("json status printed a version warning: %s", stderr)
+		}
+
+		stdout, stderr, code = runUpgrade(ctx, t, oldBin, home, "", "", "upgrade", "--rollback", "--restart", "--yes")
+		if code != 0 {
+			t.Fatalf("rollback --restart exit = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+		}
+		if !strings.Contains(stdout, "Restarted lab") {
+			t.Fatalf("stdout = %s\nstderr: %s", stdout, stderr)
+		}
+		assertVersion(ctx, t, oldBin, home, "v9.0.1")
+		st, err = state.Load("lab")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.BinaryVersion != "v9.0.1" {
+			t.Fatalf("restarted binary_version = %q", st.BinaryVersion)
+		}
+		if st.PID == firstPID || !state.IsRunning(st) {
+			t.Fatalf("daemon was not replaced: pid %d running %v", st.PID, state.IsRunning(st))
+		}
+	})
+
+	t.Run("project lock", func(t *testing.T) {
+		home := filepath.Join(dir, "lock-home")
+		if err := os.MkdirAll(home, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		bin := copyOld(t, home)
+		upgradePair(ctx, t, bin, newBin, home)
+		lock := filepath.Join(home, ".gridctl", "project.lock.yaml")
+		if err := os.WriteFile(lock, []byte("version: 99\nprojections: []\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		stdout, stderr, code := runUpgrade(ctx, t, oldBin, home, "", "", "upgrade", "--rollback", "--yes")
+		if code != 2 {
+			t.Fatalf("lock refusal exit = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+		}
+		if !strings.Contains(stderr, "project.lock.yaml is version 99") || !strings.Contains(stderr, "Rollback to v9.0.1 refused:") {
+			t.Fatalf("stderr = %s", stderr)
+		}
+		assertVersion(ctx, t, bin, home, "v9.0.2")
+	})
+
+	t.Run("tool pin", func(t *testing.T) {
+		home := filepath.Join(dir, "pin-home")
+		if err := os.MkdirAll(home, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		bin := copyOld(t, home)
+		upgradePair(ctx, t, bin, newBin, home)
+		// The pin check follows stack names in daemon state files. A
+		// hand-written state file is enough; the process does not need to
+		// be running.
+		stateDir := filepath.Join(home, ".gridctl", "state")
+		if err := os.MkdirAll(stateDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(stateDir, "lab.json"), []byte("{\"schema_version\":2,\"stack_name\":\"lab\",\"stack_file\":\"\",\"pid\":0}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		pinDir := filepath.Join(home, ".gridctl", "pins")
+		if err := os.MkdirAll(pinDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(pinDir, "lab.json"), []byte("{\"version\":\"9\"}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		stdout, stderr, code := runUpgrade(ctx, t, oldBin, home, "", "", "upgrade", "--rollback", "--yes")
+		if code != 2 {
+			t.Fatalf("pin refusal exit = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+		}
+		if !strings.Contains(stderr, "pins/lab.json is version 9") || !strings.Contains(stderr, "Rollback to v9.0.1 refused:") {
+			t.Fatalf("stderr = %s", stderr)
+		}
+		assertVersion(ctx, t, bin, home, "v9.0.2")
+	})
+}
+
+// upgradePair installs newBin over oldBin through a local release server so
+// the store's previous tag advertises schemas.
+func upgradePair(ctx context.Context, t *testing.T, oldBin, newBin, home string) {
+	t.Helper()
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := os.ReadFile(newBin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hits hitLog
+	srv := httptest.NewServer(releaseHandler(t, "v9.0.2", payload, &hits))
+	defer srv.Close()
+	api := srv.URL + "/repos/gridctl/gridctl/releases?per_page=1"
+	base := srv.URL + "/gridctl/gridctl/releases/download"
+	stdout, stderr, code := runUpgrade(ctx, t, oldBin, home, api, base, "upgrade", "--yes", "--version", "v9.0.2")
+	if code != 0 {
+		t.Fatalf("upgrade exit = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+}
+
+func assertRetainedSchemas(t *testing.T, home, tag string) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(home, ".gridctl", "versions", "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var man struct {
+		Entries []struct {
+			Tag     string          `json:"tag"`
+			Schemas json.RawMessage `json:"schemas"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal(data, &man); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range man.Entries {
+		if e.Tag != tag {
+			continue
+		}
+		if len(e.Schemas) == 0 || string(e.Schemas) == "null" {
+			t.Fatalf("%s schemas = %s", tag, e.Schemas)
+		}
+		return
+	}
+	t.Fatalf("tag %s not in manifest", tag)
 }
 
 func buildVersioned(ctx context.Context, t *testing.T, root, dir, name, ver string) string {
