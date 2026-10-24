@@ -20,7 +20,10 @@ import (
 
 const (
 	lockTimeout = 5 * time.Second
-	fileVersion = "2"
+	// FileVersion is the pin file version this binary writes and the highest
+	// version it accepts. Advertised by `gridctl info --json`.
+	FileVersion = "2"
+	fileVersion = FileVersion
 	filePerm    = os.FileMode(0600)
 )
 
