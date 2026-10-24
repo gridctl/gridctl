@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gridctl/gridctl/pkg/versions"
 )
@@ -117,6 +118,9 @@ func TestUpgrade_StoreHitSkipsDownload(t *testing.T) {
 	if !strings.Contains(stdout.String(), "Using retained v1.2.3 (no download)") {
 		t.Fatalf("stdout = %s", stdout.String())
 	}
+	if strings.Contains(stdout.String(), "Retained ") {
+		t.Fatalf("same-tag reinstall reported a new retention:\n%s", stdout.String())
+	}
 	for _, path := range hits.paths() {
 		if strings.Contains(path, "/releases/download/") {
 			t.Fatalf("store hit downloaded %s", path)
@@ -126,6 +130,71 @@ func TestUpgrade_StoreHitSkipsDownload(t *testing.T) {
 	defer store.Close()
 	if store.Active() != "v1.2.3" || store.Previous() != "v1.0.0" {
 		t.Fatalf("store hit rewrote rollback target: active=%s previous=%s", store.Active(), store.Previous())
+	}
+}
+
+func TestUpgrade_SameTagStoreHitKeepsStoredBytes(t *testing.T) {
+	payload := []byte("release-bytes")
+	srv, hits := releaseServer(t, "v1.2.3", payload)
+	exe := writeExe(t, []byte("old-binary"))
+	u, _, _ := testUpgrader(t, srv, exe)
+	u.version = "v1.0.0"
+	u.versionFlag = "v1.2.3"
+	if err := u.run(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	store := mustOpen(t, u.storeDir)
+	entry, _, ok := store.Lookup("v1.2.3")
+	store.Close()
+	if !ok {
+		t.Fatal("missing retained release")
+	}
+	wantSHA := entry.SHA256
+
+	if err := os.WriteFile(exe, []byte("corrupted-local"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hits.reset()
+	again, stdout, _ := testUpgrader(t, srv, exe)
+	again.storeDir = u.storeDir
+	again.version = "v1.2.3"
+	again.versionFlag = "v1.2.3"
+	if err := again.run(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "Using retained v1.2.3 (no download)") {
+		t.Fatalf("stdout = %s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "Retained ") {
+		t.Fatalf("same-tag reinstall reported a new retention:\n%s", stdout.String())
+	}
+	got, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Fatalf("installed = %q, want stored release bytes", got)
+	}
+	store = mustOpen(t, u.storeDir)
+	defer store.Close()
+	entry, path, ok := store.Lookup("v1.2.3")
+	if !ok || entry.SHA256 != wantSHA {
+		t.Fatalf("store entry changed: %+v ok=%v", entry, ok)
+	}
+	stored, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(stored, payload) {
+		t.Fatalf("retained file = %q", stored)
+	}
+	if store.Previous() != "v1.0.0" || store.Active() != "v1.2.3" {
+		t.Fatalf("active=%s previous=%s", store.Active(), store.Previous())
+	}
+	for _, hit := range hits.paths() {
+		if strings.Contains(hit, "/releases/download/") {
+			t.Fatalf("store hit downloaded %s", hit)
+		}
 	}
 }
 
@@ -405,11 +474,81 @@ func TestUpgrade_RollbackExitCodes(t *testing.T) {
 	if !errors.Is(err, versions.ErrChecksumMismatch) {
 		t.Fatalf("err = %v", err)
 	}
-	if !strings.Contains(stderr.String(), "expected:") || !strings.Contains(stderr.String(), "actual:") {
-		t.Fatalf("stderr = %s", stderr.String())
+	if !strings.Contains(err.Error(), "expected:") || !strings.Contains(err.Error(), "actual:") {
+		t.Fatalf("err = %v", err)
+	}
+	if strings.Contains(stderr.String(), "expected:") || strings.Contains(stderr.String(), "actual:") {
+		t.Fatalf("checksum mismatch also printed on stderr: %s", stderr.String())
 	}
 	if got, _ := os.ReadFile(exe); string(got) != "installed" {
 		t.Fatal("checksum mismatch replaced the binary")
+	}
+
+	goneDir := t.TempDir()
+	seedRetained(t, goneDir, "v1.0.0", []byte("gone-bytes"), true)
+	if err := os.Remove(filepath.Join(goneDir, "v1.0.0", "gridctl")); err != nil {
+		t.Fatal(err)
+	}
+	gone, _, stderr := testUpgrader(t, nil, exe)
+	gone.storeDir = goneDir
+	gone.rollback = true
+	gone.rollbackTag = "v1.0.0"
+	err = gone.run(t.Context())
+	code = nil
+	if !errors.As(err, &code) || code.Code != 2 {
+		t.Fatalf("missing file err = %v", err)
+	}
+	if !strings.Contains(stderr.String(), "v1.0.0 is not retained (gridctl upgrade --list)") {
+		t.Fatalf("stderr = %s", stderr.String())
+	}
+	if strings.Contains(stderr.String(), "Error:") {
+		t.Fatalf("missing file printed a second error line: %s", stderr.String())
+	}
+	if got, _ := os.ReadFile(exe); string(got) != "installed" {
+		t.Fatal("missing file rollback replaced the binary")
+	}
+
+	untagged, _, stderr := testUpgrader(t, nil, exe)
+	untagged.storeDir = goneDir
+	untagged.rollback = true
+	err = untagged.run(t.Context())
+	code = nil
+	if !errors.As(err, &code) || code.Code != 2 {
+		t.Fatalf("tagless missing file err = %v", err)
+	}
+	if !strings.Contains(stderr.String(), "v1.0.0 is not retained (gridctl upgrade --list)") {
+		t.Fatalf("stderr = %s", stderr.String())
+	}
+}
+
+func TestWriteListTextMatchesSpec(t *testing.T) {
+	man := versions.Manifest{
+		Active:   "v1.1.0",
+		Previous: "v1.0.0",
+		Entries: []versions.Entry{
+			{
+				Tag:        "v1.1.0",
+				Origin:     versions.OriginDownloaded,
+				RetainedAt: time.Date(2026, 10, 23, 14, 2, 12, 0, time.UTC),
+				Size:       64487424, // 61.5 MiB
+			},
+			{
+				Tag:        "v1.0.0",
+				Origin:     versions.OriginReplaced,
+				RetainedAt: time.Date(2026, 10, 23, 14, 2, 11, 0, time.UTC),
+				Size:       61236838, // 58.4 MiB at one decimal
+			},
+		},
+	}
+	var buf bytes.Buffer
+	writeListText(&buf, man, nil)
+	want := "" +
+		"  TAG       ORIGIN      RETAINED              SIZE\n" +
+		"* v1.1.0    downloaded  2026-10-23T14:02:12Z  61.5 MiB\n" +
+		"p v1.0.0    replaced    2026-10-23T14:02:11Z  58.4 MiB\n" +
+		"(* active, p previous; 2 of 2 kept)\n"
+	if buf.String() != want {
+		t.Fatalf("list text =\n%s\nwant:\n%s", buf.String(), want)
 	}
 }
 

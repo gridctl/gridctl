@@ -82,9 +82,11 @@ var upgradeCmd = &cobra.Command{
 binary in place after verifying its SHA256 checksum.
 
 A standalone install keeps the replaced binary and the installed binary
-under ~/.gridctl/versions (default 2; --keep raises the count, and
---keep 0 disables retention for this run). --rollback restores a retained
-binary offline. --list prints the store. A dev build is not retained.
+under ~/.gridctl/versions (default 2). --keep <n> is the count for this
+run, not a stored setting. Active and previous are always kept, so
+--keep 1 still leaves both. --keep 0 disables retention for this run.
+--rollback restores a retained binary offline. --list prints the store.
+A dev build is not retained.
 
 If gridctl was installed via Homebrew, this command defers to
 'brew upgrade gridctl/tap/gridctl' and exits. Rollback of a Homebrew
@@ -123,7 +125,7 @@ func init() {
 	upgradeCmd.Flags().StringVar(&upgradeRollback, "rollback", "", "Roll back to the previous retained binary, or to the named tag")
 	upgradeCmd.Flags().Lookup("rollback").NoOptDefVal = rollbackPrevious
 	upgradeCmd.Flags().BoolVar(&upgradeList, "list", false, "List retained binaries and exit")
-	upgradeCmd.Flags().IntVar(&upgradeKeep, "keep", 2, "Retained binaries to keep (0 disables retention for this run)")
+	upgradeCmd.Flags().IntVar(&upgradeKeep, "keep", 2, "Retained binaries to keep for this run (active and previous are always kept; 0 disables retention)")
 	upgradeCmd.Flags().StringVar(&upgradeFormat, "format", "text", "Output format for --list: text or json")
 	upgradeCmd.MarkFlagsMutuallyExclusive("rollback", "version")
 	upgradeCmd.MarkFlagsMutuallyExclusive("list", "rollback")
@@ -348,7 +350,9 @@ func (u *upgrader) upgrade(ctx context.Context, exePath string) error {
 	}
 
 	retainedCurrent := false
-	if keep != 0 && store != nil && retainableTag(currentTag) {
+	// A same-tag reinstall must install the retained bytes, not copy the
+	// running file over that store entry first. Previous stays as recorded.
+	if keep != 0 && store != nil && retainableTag(currentTag) && currentTag != targetTag {
 		if err := store.Retain(ctx, currentTag, exePath, versions.OriginReplaced, nil); err != nil {
 			return fmt.Errorf("retaining %s: %w", currentTag, err)
 		}

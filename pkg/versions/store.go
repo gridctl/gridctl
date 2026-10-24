@@ -598,7 +598,31 @@ func loadManifest(path string) (Manifest, error) {
 	if man.Entries == nil {
 		man.Entries = []Entry{}
 	}
+	// Tags from disk are checked before any path join. Retain and SetActive
+	// already refuse these values; a hand-edited manifest must not be weaker.
+	if err := validateManifestTags(man); err != nil {
+		return Manifest{}, fmt.Errorf("parsing versions manifest %s: %w", path, err)
+	}
 	return man, nil
+}
+
+func validateManifestTags(man Manifest) error {
+	if man.Active != "" {
+		if err := validateTag(man.Active); err != nil {
+			return fmt.Errorf("active: %w", err)
+		}
+	}
+	if man.Previous != "" {
+		if err := validateTag(man.Previous); err != nil {
+			return fmt.Errorf("previous: %w", err)
+		}
+	}
+	for _, e := range man.Entries {
+		if err := validateTag(e.Tag); err != nil {
+			return fmt.Errorf("entry: %w", err)
+		}
+	}
+	return nil
 }
 
 func hashFile(ctx context.Context, path string) (string, int64, error) {

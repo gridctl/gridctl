@@ -316,6 +316,50 @@ func TestStore_MissingFileReconciliationAndOrphans(t *testing.T) {
 	}
 }
 
+func TestStore_RejectsUnsafeManifestTags(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+	}{
+		{
+			name: "entry",
+			raw:  `{"schema_version":1,"active":"","previous":"","entries":[{"tag":"../../bin/x","sha256":"aa","size":1,"origin":"downloaded","schemas":null}]}`,
+		},
+		{
+			name: "previous",
+			raw:  `{"schema_version":1,"active":"v1.0.0","previous":"../../bin/x","entries":[{"tag":"v1.0.0","sha256":"aa","size":1,"origin":"downloaded","schemas":null}]}`,
+		},
+		{
+			name: "active",
+			raw:  `{"schema_version":1,"active":"v1/evil","previous":"","entries":[]}`,
+		},
+		{
+			name: "backslash",
+			raw:  `{"schema_version":1,"active":"","previous":"v1\\evil","entries":[]}`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, manifestName)
+			if err := os.WriteFile(path, []byte(tc.raw), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Open(t.Context(), dir)
+			if !errors.Is(err, ErrInvalidTag) {
+				t.Fatalf("Open err = %v, want ErrInvalidTag", err)
+			}
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != tc.raw {
+				t.Fatalf("manifest rewritten:\n%s", got)
+			}
+		})
+	}
+}
+
 func TestStore_RejectsUnsafeTagAndSymlink(t *testing.T) {
 	dir := t.TempDir()
 	ctx := t.Context()

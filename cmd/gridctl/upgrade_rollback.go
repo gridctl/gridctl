@@ -35,13 +35,18 @@ func (u *upgrader) rollbackTo(ctx context.Context, exePath string) error {
 	if err != nil {
 		return err
 	}
-	if err := store.Verify(ctx, target); err != nil {
-		fmt.Fprintln(u.stderr, err.Error())
-		return err
-	}
 	entry, path, ok := store.Lookup(target)
 	if !ok {
-		return u.nothing(fmt.Sprintf("%s is not retained (gridctl upgrade --list)", target))
+		return u.notRetained(target)
+	}
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return u.notRetained(target)
+		}
+		return fmt.Errorf("retained %s: %w", target, err)
+	}
+	if err := store.Verify(ctx, target); err != nil {
+		return err
 	}
 	// Part two's pre-swap check is the unknown-schemas warning only.
 	// A later release fills Entry.Schemas and refuses incompatible state.
@@ -89,6 +94,10 @@ func (u *upgrader) rollbackTo(ctx context.Context, exePath string) error {
 	return nil
 }
 
+func (u *upgrader) notRetained(tag string) error {
+	return u.nothing(fmt.Sprintf("%s is not retained (gridctl upgrade --list)", tag))
+}
+
 func (u *upgrader) rollbackTarget(store *versions.Store) (string, error) {
 	if u.rollbackTag == "" || u.rollbackTag == rollbackPrevious {
 		target := store.Previous()
@@ -102,7 +111,7 @@ func (u *upgrader) rollbackTarget(store *versions.Store) (string, error) {
 		return "", fmt.Errorf("rollback tag must be a semver version, got %q", u.rollbackTag)
 	}
 	if _, _, ok := store.Lookup(target); !ok {
-		return "", u.nothing(fmt.Sprintf("%s is not retained (gridctl upgrade --list)", target))
+		return "", u.notRetained(target)
 	}
 	return target, nil
 }
@@ -170,10 +179,35 @@ func writeListText(w io.Writer, man versions.Manifest, orphans []string) {
 			mark = "p"
 		}
 		ts := e.RetainedAt.UTC().Format(time.RFC3339)
-		fmt.Fprintf(w, "%s %-12s %-12s %s  %s\n", mark, e.Tag, e.Origin, ts, formatBytes(e.Size))
+		// Tag is 10 wide and origin is 12 wide: mark at column 0, tag at 2,
+		// origin at 12, timestamp at 24, size at 46. That matches the header.
+		fmt.Fprintf(w, "%s %-10s%-12s%s  %s\n", mark, e.Tag, e.Origin, ts, formatListSize(e.Size))
 	}
+	// Both counts are entries. --keep is per run and is not stored, so the
+	// footer cannot report a keep limit. The specified example is N of N.
 	fmt.Fprintf(w, "(* active, p previous; %d of %d kept)\n", len(man.Entries), len(man.Entries))
 	if len(orphans) > 0 {
 		fmt.Fprintf(w, "orphans (not deleted): %s\n", strings.Join(orphans, ", "))
 	}
+}
+
+// formatListSize renders a retained binary size with one decimal place
+// above bytes, matching the --list row (61.5 MiB). formatBytes rounds
+// values of 10 or more to a whole number for the telemetry wipe summary
+// and is the wrong formatter here.
+func formatListSize(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	units := []string{"KiB", "MiB", "GiB", "TiB"}
+	if exp >= len(units) {
+		exp = len(units) - 1
+	}
+	return fmt.Sprintf("%.1f %s", float64(bytes)/float64(div), units[exp])
 }
