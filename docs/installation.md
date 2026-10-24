@@ -71,7 +71,19 @@ gridctl upgrade --yes      # non-interactive (CI)
 gridctl upgrade --version v0.1.0-beta.14   # install a specific version
 ```
 
-If gridctl was installed via Homebrew, `gridctl upgrade` detects that and recommends `brew upgrade gridctl/tap/gridctl` instead.
+If gridctl was installed via Homebrew, `gridctl upgrade` detects that and recommends `brew upgrade gridctl/tap/gridctl` instead. A Homebrew install does not keep a local copy, and `gridctl upgrade --rollback` prints the same brew command and exits 0. `--force` bypasses that detection. Rollback is not supported on Windows.
+
+A standalone install keeps the binary it replaced, and the binary it installed, under `~/.gridctl/versions`. The default is two entries: the active release and the previous one. `--keep <n>` raises that count. `--keep 0` upgrades without writing the store. A dev build (`gridctl version` reports `dev`) is not retained. `~/.gridctl/versions` follows `GRIDCTL_HOME` and `--home`. `gridctl reset --purge` removes it with the rest of `~/.gridctl`. Each entry is one copy of the gridctl binary, typically tens of megabytes.
+
+```bash
+gridctl upgrade --list
+gridctl upgrade --list --format json
+gridctl upgrade --rollback
+gridctl upgrade --rollback v1.0.0-rc.2
+gridctl upgrade --keep 3
+```
+
+`--rollback` with no tag restores the previous retained binary. A tag restores that retained release. Both are offline: nothing is downloaded. The command verifies the stored SHA256 before it replaces the installed binary. A mismatch prints the expected and actual digests, exits 1, and leaves the installed binary in place. Nothing retained, or a tag that is not in the store, exits 2. A retained release that does not advertise schema versions prints a compatibility warning and still rolls back.
 
 Updating does not automatically verify attestations. To require origin verification for a standalone update, follow [Release Verification](release-verification.md) and install the verified local archive instead of asking `gridctl upgrade` to download it again.
 
