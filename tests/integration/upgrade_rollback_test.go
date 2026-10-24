@@ -99,6 +99,8 @@ func TestUpgradeRollback_RoundTrip(t *testing.T) {
 	}
 	assertVersion(ctx, t, oldBin, home, "v9.0.2")
 	assertManifest(t, home, "v9.0.2", "v9.0.1")
+	assertRetainedSchemas(t, home, "v9.0.2")
+	assertProbedSchemasMatchBinary(ctx, t, newBin, home, "v9.0.2")
 
 	before := hits.paths()
 	if !containsPath(before, "/releases/download/") {
@@ -273,7 +275,7 @@ func TestUpgradeRollback_StateAware(t *testing.T) {
 		if err := os.WriteFile(lock, []byte("version: 99\nprojections: []\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		stdout, stderr, code := runUpgrade(ctx, t, oldBin, home, "", "", "upgrade", "--rollback", "--yes")
+		stdout, stderr, code := runUpgrade(ctx, t, bin, home, "", "", "upgrade", "--rollback", "--yes")
 		if code != 2 {
 			t.Fatalf("lock refusal exit = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
 		}
@@ -307,7 +309,7 @@ func TestUpgradeRollback_StateAware(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(pinDir, "lab.json"), []byte("{\"version\":\"9\"}\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		stdout, stderr, code := runUpgrade(ctx, t, oldBin, home, "", "", "upgrade", "--rollback", "--yes")
+		stdout, stderr, code := runUpgrade(ctx, t, bin, home, "", "", "upgrade", "--rollback", "--yes")
 		if code != 2 {
 			t.Fatalf("pin refusal exit = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
 		}
@@ -365,6 +367,65 @@ func assertRetainedSchemas(t *testing.T, home, tag string) {
 		return
 	}
 	t.Fatalf("tag %s not in manifest", tag)
+}
+
+// assertProbedSchemasMatchBinary checks that a downloaded entry's schemas
+// equal that binary's info --json advertisement. The replaced tag is filled
+// from in-process constants; this is the subprocess probe path.
+func assertProbedSchemasMatchBinary(ctx context.Context, t *testing.T, bin, home, tag string) {
+	t.Helper()
+	stdout, stderr, code := runUpgrade(ctx, t, bin, home, "", "", "info", "--json")
+	if code != 0 {
+		t.Fatalf("info --json exit = %d\n%s\n%s", code, stdout, stderr)
+	}
+	var info struct {
+		Schemas *retainedSchemas `json:"schemas"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &info); err != nil {
+		t.Fatal(err)
+	}
+	if info.Schemas == nil {
+		t.Fatal("info --json omitted schemas")
+	}
+	got := retainedSchemasFor(t, home, tag)
+	if *got != *info.Schemas {
+		t.Fatalf("retained %s schemas = %+v, info = %+v", tag, *got, *info.Schemas)
+	}
+}
+
+type retainedSchemas struct {
+	DaemonState int    `json:"daemon_state"`
+	ProjectLock int    `json:"project_lock"`
+	ImportLock  int    `json:"import_lock"`
+	ToolPins    string `json:"tool_pins"`
+	SkillPins   string `json:"skill_pins"`
+}
+
+func retainedSchemasFor(t *testing.T, home, tag string) *retainedSchemas {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(home, ".gridctl", "versions", "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var man struct {
+		Entries []struct {
+			Tag     string           `json:"tag"`
+			Schemas *retainedSchemas `json:"schemas"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal(data, &man); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range man.Entries {
+		if e.Tag == tag {
+			if e.Schemas == nil {
+				t.Fatalf("%s schemas are null", tag)
+			}
+			return e.Schemas
+		}
+	}
+	t.Fatalf("tag %s not in manifest", tag)
+	return nil
 }
 
 func buildVersioned(ctx context.Context, t *testing.T, root, dir, name, ver string) string {
