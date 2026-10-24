@@ -94,7 +94,9 @@ or a stack or pack floor is newer than the target reads. --force turns
 those refusals into warnings and continues.
 
 After a successful upgrade or rollback, running daemons are listed with
-a restart command. --restart performs it. A service-owned daemon is
+a restart command. --restart performs it. gridctl upgrade --restart
+when this binary is already current skips the swap and runs that plan.
+A service-owned daemon is
 restarted through its supervisor. A plain daemon is destroy plus apply
 --port, plus --override when status reports one. The stackless daemon is
 destroy plus serve --port. Flags that were not recorded are named and
@@ -140,7 +142,7 @@ func init() {
 	upgradeCmd.Flags().BoolVar(&upgradeList, "list", false, "List retained binaries and exit")
 	upgradeCmd.Flags().IntVar(&upgradeKeep, "keep", 2, "Retained binaries to keep for this run (active and previous are always kept; 0 disables retention)")
 	upgradeCmd.Flags().StringVar(&upgradeFormat, "format", "text", "Output format for --list: text or json")
-	upgradeCmd.Flags().BoolVar(&upgradeRestart, "restart", false, "Restart running daemons after a successful upgrade or rollback")
+	upgradeCmd.Flags().BoolVar(&upgradeRestart, "restart", false, "Restart running daemons after a successful upgrade or rollback, or when this binary is already current")
 	upgradeCmd.MarkFlagsMutuallyExclusive("rollback", "version")
 	upgradeCmd.MarkFlagsMutuallyExclusive("restart", "list")
 	upgradeCmd.MarkFlagsMutuallyExclusive("restart", "check")
@@ -318,6 +320,13 @@ func (u *upgrader) upgrade(ctx context.Context, exePath string) error {
 	switch {
 	case u.versionFlag == "" && ok && cmp >= 0 && !u.force:
 		fmt.Fprintln(u.stdout, "gridctl is up to date.")
+		// The post-swap hint, doctor, and macOS status line all name
+		// `gridctl upgrade --restart`. That invocation hits this
+		// short-circuit, so perform the plan from recorded state
+		// without downloading or replacing the binary.
+		if u.restart {
+			return u.reportDaemons(ctx, exePath)
+		}
 		return nil
 	case u.check:
 		if ok && cmp >= 0 {
@@ -411,9 +420,9 @@ func (u *upgrader) upgrade(ctx context.Context, exePath string) error {
 	return u.reportDaemons(ctx, exePath)
 }
 
-// schemasForDownloaded probes a downloaded or stored binary. A probe
+// schemasForDownloaded probes a newly downloaded binary. A probe
 // failure records nil so retention still proceeds; rollback then warns
-// that compatibility is unknown.
+// that compatibility is unknown. A store hit is not probed.
 func (u *upgrader) schemasForDownloaded(ctx context.Context, path string) *versions.Schemas {
 	home, err := u.gridHome()
 	if err != nil {

@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	// schemaProbeTimeout bounds `info --json` on a retained or downloaded
-	// binary. The store never executes a stored binary except this probe.
+	// schemaProbeTimeout bounds `info --json` on a newly downloaded
+	// binary. A store hit is not executed.
 	schemaProbeTimeout = 10 * time.Second
 	// schemaProbeMaxBytes caps the probe stdout. A larger stream is treated
 	// as unknown rather than parsed from a prefix.

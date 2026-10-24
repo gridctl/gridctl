@@ -729,6 +729,64 @@ func TestUpgrade_CheckAndUpToDateAndAbort(t *testing.T) {
 	}
 }
 
+func TestUpgrade_RestartWhenCurrentSkipsSwap(t *testing.T) {
+	payload := []byte("should-not-install")
+	srv, hits := releaseServer(t, "v1.2.3", payload)
+	logPath := filepath.Join(t.TempDir(), "args")
+	script := filepath.Join(t.TempDir(), "gridctl")
+	body := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> " + shellQuote(logPath) + "\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	u, stdout, stderr := testUpgrader(t, srv, script)
+	u.version = "v1.2.3"
+	u.restart = true
+
+	stateDir := filepath.Join(u.home, ".gridctl", "state")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Port 0 makes the status read unread without a dial. The live PID
+	// is what marks the daemon running.
+	stateFile := fmt.Sprintf("{\"schema_version\":2,\"stack_name\":\"lab\",\"stack_file\":\"/tmp/lab.yaml\",\"pid\":%d,\"port\":0}\n", os.Getpid())
+	if err := os.WriteFile(filepath.Join(stateDir, "lab.json"), []byte(stateFile), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	before, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := u.run(t.Context()); err != nil {
+		t.Fatalf("restart: %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
+	}
+	after, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("current-binary --restart replaced the executable")
+	}
+	if hitPath(hits, "/releases/download/") {
+		t.Fatal("current-binary --restart downloaded an archive")
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "gridctl is up to date.") {
+		t.Fatalf("stdout = %s", out)
+	}
+	if !strings.Contains(out, "Restarted lab") {
+		t.Fatalf("stdout = %s\nstderr: %s", out, stderr.String())
+	}
+	logged, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(logged)
+	if !strings.Contains(text, "destroy lab") || !strings.Contains(text, "apply /tmp/lab.yaml --port 0") {
+		t.Fatalf("args =\n%s", text)
+	}
+}
+
 func TestUpgrade_ChecksumMismatchLeavesBinary(t *testing.T) {
 	payload := []byte("real")
 	srv, _ := releaseServerSum(t, "v1.2.3", payload, "deadbeef")
