@@ -44,6 +44,9 @@ type statusGatewayJSON struct {
 	Extensions []string        `json:"extensions,omitempty"`
 	// Override is the override file the daemon merged, when one is active.
 	Override string `json:"override,omitempty"`
+	// BinaryVersion is the gridctl version the daemon recorded. Empty in
+	// state files written before the field existed. Additive (Article VIII).
+	BinaryVersion string `json:"binary_version,omitempty"`
 }
 
 // statusContainerJSON is one container entry of `gridctl status --json`.
@@ -141,6 +144,7 @@ func runStatus(stack string, showReplicas, asJSON, plain bool) error {
 			PID:     s.PID,
 			Status:  status,
 			Started: formatDuration(time.Since(s.StartedAt)),
+			Version: s.BinaryVersion,
 		}
 		// Query the running gateway for code mode and experimental flag status
 		var features map[string]bool
@@ -148,8 +152,9 @@ func runStatus(stack string, showReplicas, asJSON, plain bool) error {
 		var override string
 		var authWarn string
 		var toolDiscovery string
+		var statusReached bool
 		if status == "running" {
-			gw.CodeMode, toolDiscovery, features, extensions, override, authWarn = queryGatewayStatus(s.Port)
+			gw.CodeMode, toolDiscovery, features, extensions, override, authWarn, statusReached = queryGatewayStatus(s.Port)
 		}
 		if authWarn != "" {
 			printer.Warn(authWarn, "stack", s.StackName)
@@ -166,7 +171,12 @@ func runStatus(stack string, showReplicas, asJSON, plain bool) error {
 			Features:      features,
 			Extensions:    extensions,
 			Override:      override,
+			BinaryVersion: s.BinaryVersion,
 		})
+		if !asJSON && status == "running" && s.BinaryVersion != "" && s.BinaryVersion != version {
+			line := restartLineForStatus(s, override, !statusReached)
+			fmt.Fprintln(os.Stderr, daemonVersionWarning(s.StackName, s.BinaryVersion, version, line))
+		}
 	}
 
 	// Load pin status for all filtered stacks (best-effort; errors are non-fatal).
@@ -678,15 +688,15 @@ func warnDaemonHomeMismatch(printer *output.Printer, resolvedHome string, states
 // queryGatewayStatus queries a running gateway's API for code mode status
 // ("on" if active, empty otherwise) and the enabled experimental flag map
 // (nil when nothing is enabled).
-func queryGatewayStatus(port int) (codeMode, toolDiscovery string, features map[string]bool, extensions []string, override, authWarn string) {
+func queryGatewayStatus(port int) (codeMode, toolDiscovery string, features map[string]bool, extensions []string, override, authWarn string, reached bool) {
 	api := newDaemonAPI(port, 2*time.Second)
 	resp, err := api.Get(api.URL("/api/status"))
 	if err != nil {
-		return "", "", nil, nil, "", ""
+		return "", "", nil, nil, "", "", false
 	}
 	defer resp.Body.Close()
 	if authErr := api.describeUnauthorized(resp); authErr != nil {
-		return "", "", nil, nil, "", authErr.Error()
+		return "", "", nil, nil, "", authErr.Error(), false
 	}
 
 	var status struct {
@@ -697,9 +707,9 @@ func queryGatewayStatus(port int) (codeMode, toolDiscovery string, features map[
 		Override      string          `json:"override"`
 	}
 	if json.NewDecoder(resp.Body).Decode(&status) == nil {
-		return status.CodeMode, status.ToolDiscovery, status.Features, status.Extensions, status.Override, ""
+		return status.CodeMode, status.ToolDiscovery, status.Features, status.Extensions, status.Override, "", true
 	}
-	return "", "", nil, nil, "", ""
+	return "", "", nil, nil, "", "", false
 }
 
 // loadPinLabels loads pin status for all provided stacks and returns a map

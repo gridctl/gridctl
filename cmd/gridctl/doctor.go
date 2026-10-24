@@ -70,7 +70,7 @@ var doctorCmd = &cobra.Command{
 	Long: `Runs opinionated health checks against the local environment: container
 runtime, socket reachability, gateway port, Node.js availability for client
 bridges, advisory uvx availability for host package workflows, state directory
-hygiene, vault status, projection lockfile generation, wiring ownership,
+hygiene, daemon binary version, vault status, projection lockfile generation, wiring ownership,
 installed services, and per-server MCP protocol generation. Each check renders
 a verdict with a remediation hint.
 
@@ -144,6 +144,7 @@ func runDoctorChecks(ctx context.Context) doctorReport {
 	checkUvx(&checks)
 	checkStateDir(ctx, &checks)
 	checkStaleState(ctx, &checks)
+	checkDaemonVersion(ctx, &checks)
 	checkProjectLockfile(ctx, &checks)
 	checkClientWiring(ctx, &checks)
 	checkServices(ctx, &checks)
@@ -366,6 +367,46 @@ func checkStaleState(ctx context.Context, checks *[]doctorCheck) {
 		return
 	}
 	*checks = append(*checks, doctorCheck{ID: "state.stale", Status: doctorStatusOK, Message: "no stale state files"})
+}
+
+// checkDaemonVersion warns when a running daemon recorded a gridctl version
+// other than this CLI. An empty binary_version is an older state file, not
+// a mismatch. Stopped daemons are ignored.
+func checkDaemonVersion(ctx context.Context, checks *[]doctorCheck) {
+	if err := ctx.Err(); err != nil {
+		*checks = append(*checks, doctorCheck{ID: "daemon.version", Status: doctorStatusInfo, Message: "skipped (cancelled)"})
+		return
+	}
+	states, err := state.List()
+	if err != nil {
+		*checks = append(*checks, doctorCheck{ID: "daemon.version", Status: doctorStatusWarn, Message: fmt.Sprintf("could not read state files: %v", err)})
+		return
+	}
+	var mismatched []string
+	running := 0
+	for _, s := range states {
+		if !state.IsRunning(&s) {
+			continue
+		}
+		running++
+		if s.BinaryVersion == "" || s.BinaryVersion == version {
+			continue
+		}
+		mismatched = append(mismatched, fmt.Sprintf("%s runs %s", s.StackName, s.BinaryVersion))
+	}
+	if len(mismatched) == 0 {
+		msg := "no running daemons"
+		if running > 0 {
+			msg = "running daemons match this CLI"
+		}
+		*checks = append(*checks, doctorCheck{ID: "daemon.version", Status: doctorStatusOK, Message: msg})
+		return
+	}
+	*checks = append(*checks, doctorCheck{
+		ID:      "daemon.version",
+		Status:  doctorStatusWarn,
+		Message: fmt.Sprintf("%s, CLI is %s; restart it (gridctl upgrade --restart or the command in gridctl status)", strings.Join(mismatched, ", "), version),
+	})
 }
 
 // checkProjectLockfile reports the projection lockfile state: the

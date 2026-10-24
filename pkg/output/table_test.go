@@ -85,6 +85,9 @@ func TestPrinter_Gateways_WithData(t *testing.T) {
 	if !strings.Contains(got, "PID") {
 		t.Error("Gateways() should contain PID header")
 	}
+	if !strings.Contains(got, "VERSION") {
+		t.Error("Gateways() should contain VERSION header")
+	}
 	// Check data
 	if !strings.Contains(got, "my-topo") {
 		t.Error("Gateways() should contain gateway name")

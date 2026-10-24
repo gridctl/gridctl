@@ -25,6 +25,9 @@ type GatewaySummary struct {
 	Status   string // running, stopped
 	Started  string // human-readable duration
 	CodeMode string // "on" or empty
+	// Version is the gridctl binary the daemon recorded. Empty for state
+	// files written before binary_version.
+	Version string
 }
 
 // MCPServerRollup is one row of the rolled-up MCP-servers table shown by
@@ -128,9 +131,9 @@ func (p *Printer) Gateways(gateways []GatewaySummary) {
 	}
 
 	if hasCodeMode {
-		t.AppendHeader(table.Row{"Name", "Port", "PID", "Status", "Code Mode", "Started"})
+		t.AppendHeader(table.Row{"Name", "Port", "PID", "Status", "Version", "Code Mode", "Started"})
 	} else {
-		t.AppendHeader(table.Row{"Name", "Port", "PID", "Status", "Started"})
+		t.AppendHeader(table.Row{"Name", "Port", "PID", "Status", "Version", "Started"})
 	}
 
 	for _, g := range gateways {
@@ -139,9 +142,9 @@ func (p *Printer) Gateways(gateways []GatewaySummary) {
 			status = colorState(g.Status)
 		}
 		if hasCodeMode {
-			t.AppendRow(table.Row{g.Name, g.Port, g.PID, status, g.CodeMode, g.Started})
+			t.AppendRow(table.Row{g.Name, g.Port, g.PID, status, g.Version, g.CodeMode, g.Started})
 		} else {
-			t.AppendRow(table.Row{g.Name, g.Port, g.PID, status, g.Started})
+			t.AppendRow(table.Row{g.Name, g.Port, g.PID, status, g.Version, g.Started})
 		}
 	}
 
