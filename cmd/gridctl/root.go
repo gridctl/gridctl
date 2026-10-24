@@ -130,7 +130,7 @@ func stateMutatingCommand(cmd *cobra.Command) bool {
 		"apply": true, "serve": true, "reset": true, "link": true,
 		"unlink": true, "project": true, "pack": true, "skill": true,
 		"ctx": true, "import": true, "reload": true,
-		"destroy": true, "service": true,
+		"destroy": true, "service": true, "upgrade": true,
 	}
 	for c := cmd; c != nil; c = c.Parent() {
 		if mutating[c.Name()] {

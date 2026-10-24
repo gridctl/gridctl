@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bufio"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -19,27 +20,60 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/gridctl/gridctl/pkg/state"
+	"github.com/gridctl/gridctl/pkg/versions"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 )
 
 const (
-	upgradeRepo        = "gridctl/gridctl"
-	upgradeReleaseAPI  = "https://api.github.com/repos/" + upgradeRepo + "/releases?per_page=1"
-	upgradeHTTPTimeout = 60 * time.Second
+	upgradeRepo         = "gridctl/gridctl"
+	upgradeReleaseAPI   = "https://api.github.com/repos/" + upgradeRepo + "/releases?per_page=1"
+	upgradeDownloadBase = "https://github.com/" + upgradeRepo + "/releases/download"
+	upgradeHTTPTimeout  = 60 * time.Second
 	// Hard caps for downloaded artifacts. Releases are ~60 MiB today; the
 	// archive cap leaves generous headroom while still bounding malicious
 	// streams. checksums.txt is normally <1 KiB.
 	upgradeMaxArchiveSize   = 256 << 20
 	upgradeMaxChecksumsSize = 64 << 10
+
+	// rollbackPrevious is the NoOptDefVal for --rollback, meaning the
+	// manifest's previous tag.
+	rollbackPrevious = "previous"
+
+	// Test-only overrides. Not a supported configuration: a standalone
+	// upgrade always uses the GitHub URLs above unless a test sets these.
+	envUpgradeReleaseAPI   = "GRIDCTL_UPGRADE_RELEASE_API"
+	envUpgradeDownloadBase = "GRIDCTL_UPGRADE_DOWNLOAD_BASE"
 )
 
 var (
-	upgradeCheck   bool
-	upgradeVersion string
-	upgradeForce   bool
-	upgradeYes     bool
+	upgradeCheck    bool
+	upgradeVersion  string
+	upgradeForce    bool
+	upgradeYes      bool
+	upgradeRollback string
+	upgradeList     bool
+	upgradeKeep     int
+	upgradeFormat   string
 )
+
+var errUpgradeAborted = errors.New("upgrade aborted")
+
+// upgradeExit is returned for the upgrade command's own exit 2 contract.
+// RunE prints the message and calls os.Exit so Cobra's error path (exit 1)
+// is not used. Message text is already written to the upgrader's stderr.
+type upgradeExit struct {
+	Code int
+	msg  string
+}
+
+func (e *upgradeExit) Error() string {
+	if e == nil {
+		return ""
+	}
+	return e.msg
+}
 
 var upgradeCmd = &cobra.Command{
 	Use:   "upgrade",
@@ -47,10 +81,37 @@ var upgradeCmd = &cobra.Command{
 	Long: `Checks for a newer gridctl release on GitHub and replaces the running
 binary in place after verifying its SHA256 checksum.
 
+A standalone install keeps the replaced binary and the installed binary
+under ~/.gridctl/versions (default 2; --keep raises the count, and
+--keep 0 disables retention for this run). --rollback restores a retained
+binary offline. --list prints the store. A dev build is not retained.
+
 If gridctl was installed via Homebrew, this command defers to
-'brew upgrade gridctl/tap/gridctl' and exits.`,
+'brew upgrade gridctl/tap/gridctl' and exits. Rollback of a Homebrew
+install is not supported unless --force. Rollback is not supported on
+Windows.
+
+Exit codes: 0 success, including a --force rollback that printed
+warnings; 1 a failed download, verification, swap, or restart; 2 nothing
+to do as asked (nothing retained, the named tag is absent, or a pre-swap
+refusal).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runUpgrade()
+		u := newUpgraderFromFlags(cmd)
+		// pflag does not consume the next argument of a NoOptDefVal flag
+		// unless it is attached with '='. `--rollback v1.0.0` therefore
+		// arrives as a positional. `--rollback=v1.0.0` is already on the flag.
+		if u.rollback && u.rollbackTag == "" && len(args) > 0 {
+			if len(args) != 1 {
+				return fmt.Errorf("rollback accepts at most one tag")
+			}
+			u.rollbackTag = args[0]
+		}
+		err := u.run(cmd.Context())
+		var code *upgradeExit
+		if errors.As(err, &code) {
+			os.Exit(code.Code)
+		}
+		return err
 	},
 }
 
@@ -59,114 +120,375 @@ func init() {
 	upgradeCmd.Flags().StringVar(&upgradeVersion, "version", "", "Install a specific release tag (allows downgrades)")
 	upgradeCmd.Flags().BoolVar(&upgradeForce, "force", false, "Bypass Homebrew detection and the up-to-date short-circuit")
 	upgradeCmd.Flags().BoolVarP(&upgradeYes, "yes", "y", false, "Non-interactive: skip the confirmation prompt")
+	upgradeCmd.Flags().StringVar(&upgradeRollback, "rollback", "", "Roll back to the previous retained binary, or to the named tag")
+	upgradeCmd.Flags().Lookup("rollback").NoOptDefVal = rollbackPrevious
+	upgradeCmd.Flags().BoolVar(&upgradeList, "list", false, "List retained binaries and exit")
+	upgradeCmd.Flags().IntVar(&upgradeKeep, "keep", 2, "Retained binaries to keep (0 disables retention for this run)")
+	upgradeCmd.Flags().StringVar(&upgradeFormat, "format", "text", "Output format for --list: text or json")
+	upgradeCmd.MarkFlagsMutuallyExclusive("rollback", "version")
+	upgradeCmd.MarkFlagsMutuallyExclusive("list", "rollback")
+	upgradeCmd.MarkFlagsMutuallyExclusive("list", "version")
+	upgradeCmd.MarkFlagsMutuallyExclusive("list", "check")
 }
 
-func runUpgrade() error {
-	// Resolve the running binary's absolute path so we can detect brew + replace it.
-	exePath, err := resolveExecutable()
+// upgrader is the testable upgrade flow. Production wiring lives in
+// newUpgrader; tests set the fields and call run.
+type upgrader struct {
+	resolveExe   func() (string, error)
+	releaseAPI   string
+	downloadBase string
+	client       *http.Client
+	stdin        io.Reader
+	stdout       io.Writer
+	stderr       io.Writer
+	isTTY        func() bool
+	storeDir     string
+	goos         string
+	version      string
+
+	check       bool
+	versionFlag string
+	force       bool
+	yes         bool
+	rollback    bool
+	rollbackTag string
+	list        bool
+	keep        int
+	format      string
+}
+
+func newUpgrader() *upgrader {
+	return &upgrader{
+		resolveExe:   resolveExecutable,
+		releaseAPI:   upgradeReleaseAPI,
+		downloadBase: upgradeDownloadBase,
+		client:       &http.Client{Timeout: upgradeHTTPTimeout},
+		stdin:        os.Stdin,
+		stdout:       os.Stdout,
+		stderr:       os.Stderr,
+		isTTY:        func() bool { return isatty.IsTerminal(os.Stdin.Fd()) },
+		goos:         runtime.GOOS,
+		version:      version,
+		keep:         2,
+		format:       "text",
+	}
+}
+
+func newUpgraderFromFlags(cmd *cobra.Command) *upgrader {
+	u := newUpgrader()
+	u.check = upgradeCheck
+	u.versionFlag = upgradeVersion
+	u.force = upgradeForce
+	u.yes = upgradeYes
+	u.keep = upgradeKeep
+	u.format = upgradeFormat
+	u.list = upgradeList
+	if cmd != nil && cmd.Flags().Changed("rollback") {
+		u.rollback = true
+		if upgradeRollback != "" && upgradeRollback != rollbackPrevious {
+			u.rollbackTag = upgradeRollback
+		}
+	}
+	// Test seams. Unset in production, so the GitHub URLs stand.
+	if api := os.Getenv(envUpgradeReleaseAPI); api != "" {
+		u.releaseAPI = api
+	}
+	if base := os.Getenv(envUpgradeDownloadBase); base != "" {
+		u.downloadBase = base
+	}
+	return u
+}
+
+func (u *upgrader) run(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	u.applyDefaults()
+	if u.format != "text" && !strings.EqualFold(u.format, "json") {
+		return fmt.Errorf("invalid --format %q (want text or json)", u.format)
+	}
+	if u.keep < 0 {
+		return fmt.Errorf("--keep must be >= 0")
+	}
+	if u.rollback && u.versionFlag != "" {
+		return fmt.Errorf("cannot combine --rollback with --version")
+	}
+
+	exePath, err := u.resolveExe()
 	if err != nil {
 		return fmt.Errorf("resolving executable path: %w", err)
 	}
-
-	// Brew detection — defer to `brew upgrade` unless --force.
-	if isHomebrewPath(exePath) && !upgradeForce {
-		fmt.Printf("gridctl is installed via Homebrew at %s\n", exePath)
-		fmt.Println("Run `brew upgrade gridctl/tap/gridctl` to update.")
+	if isHomebrewPath(exePath) && !u.force {
+		fmt.Fprintf(u.stdout, "gridctl is installed via Homebrew at %s\n", exePath)
+		fmt.Fprintln(u.stdout, "Run `brew upgrade gridctl/tap/gridctl` to update.")
 		return nil
 	}
+	if u.list {
+		return u.listRetained(ctx)
+	}
+	if u.rollback {
+		return u.rollbackTo(ctx, exePath)
+	}
+	return u.upgrade(ctx, exePath)
+}
 
-	// Resolve target version.
-	currentTag := normalizeTag(version)
+func (u *upgrader) applyDefaults() {
+	if u.resolveExe == nil {
+		u.resolveExe = resolveExecutable
+	}
+	if u.releaseAPI == "" {
+		u.releaseAPI = upgradeReleaseAPI
+	}
+	if u.downloadBase == "" {
+		u.downloadBase = upgradeDownloadBase
+	}
+	if u.client == nil {
+		u.client = &http.Client{Timeout: upgradeHTTPTimeout}
+	}
+	if u.stdin == nil {
+		u.stdin = strings.NewReader("")
+	}
+	if u.stdout == nil {
+		u.stdout = io.Discard
+	}
+	if u.stderr == nil {
+		u.stderr = io.Discard
+	}
+	if u.isTTY == nil {
+		u.isTTY = func() bool { return false }
+	}
+	if u.goos == "" {
+		u.goos = runtime.GOOS
+	}
+	if u.format == "" {
+		u.format = "text"
+	}
+}
+
+func (u *upgrader) upgrade(ctx context.Context, exePath string) error {
+	currentTag := normalizeTag(u.version)
 	var targetTag string
-	if upgradeVersion != "" {
-		targetTag = normalizeTag(upgradeVersion)
+	if u.versionFlag != "" {
+		targetTag = normalizeTag(u.versionFlag)
 	} else {
-		latest, err := fetchLatestTag()
+		latest, err := u.fetchLatestTag(ctx)
 		if err != nil {
 			return err
 		}
 		targetTag = normalizeTag(latest)
 	}
+	if err := versions.ValidateTag(targetTag); err != nil {
+		return fmt.Errorf("target version %q: %w", targetTag, err)
+	}
 
 	targetLabel := "Latest version: "
-	if upgradeVersion != "" {
+	if u.versionFlag != "" {
 		targetLabel = "Target version: "
 	}
-	fmt.Printf("Current version: %s\n", currentTag)
-	fmt.Printf("%s%s\n", targetLabel, targetTag)
+	fmt.Fprintf(u.stdout, "Current version: %s\n", currentTag)
+	fmt.Fprintf(u.stdout, "%s%s\n", targetLabel, targetTag)
 
-	// Compare. Use semver where possible; fall back to exact-string equality.
 	cmp, ok := compareTags(currentTag, targetTag)
 	switch {
-	case upgradeVersion == "" && ok && cmp >= 0 && !upgradeForce:
-		fmt.Println("gridctl is up to date.")
+	case u.versionFlag == "" && ok && cmp >= 0 && !u.force:
+		fmt.Fprintln(u.stdout, "gridctl is up to date.")
 		return nil
-	case upgradeCheck:
+	case u.check:
 		if ok && cmp >= 0 {
-			fmt.Println("gridctl is up to date.")
+			fmt.Fprintln(u.stdout, "gridctl is up to date.")
 		} else {
-			fmt.Println("An update is available. Run `gridctl upgrade` to update.")
+			fmt.Fprintln(u.stdout, "An update is available. Run `gridctl upgrade` to update.")
 		}
 		return nil
 	}
 
-	// Confirm unless --yes or non-interactive. Non-interactive without --yes is
-	// refused — destructive operations should not auto-run from cron / CI.
-	if !upgradeYes {
-		if !isatty.IsTerminal(os.Stdin.Fd()) {
-			return fmt.Errorf("non-interactive shell detected; pass --yes to confirm the upgrade")
-		}
-		fmt.Printf("\nUpgrade gridctl to %s? [y/N] ", targetTag)
-		reader := bufio.NewReader(os.Stdin)
-		line, _ := reader.ReadString('\n')
-		switch strings.ToLower(strings.TrimSpace(line)) {
-		case "y", "yes":
-			// proceed
-		default:
-			fmt.Println("Aborted.")
+	if err := u.confirm(
+		fmt.Sprintf("\nUpgrade gridctl to %s? [y/N] ", targetTag),
+		"non-interactive shell detected; pass --yes to confirm the upgrade",
+	); err != nil {
+		if errors.Is(err, errUpgradeAborted) {
 			return nil
 		}
+		return err
 	}
 
-	// Download → verify → replace.
+	keep := u.keep
+	if u.goos == "windows" && keep != 0 {
+		fmt.Fprintln(u.stderr, "retention is not supported on Windows")
+		keep = 0
+	}
+
 	tmpDir, err := os.MkdirTemp("", "gridctl-upgrade-*")
 	if err != nil {
 		return fmt.Errorf("creating temp dir: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	versionNum := strings.TrimPrefix(targetTag, "v")
-	archiveName := fmt.Sprintf("gridctl_%s_%s_%s.tar.gz", versionNum, runtime.GOOS, runtime.GOARCH)
-	archiveURL := fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", upgradeRepo, targetTag, archiveName)
-	checksumsURL := fmt.Sprintf("https://github.com/%s/releases/download/%s/checksums.txt", upgradeRepo, targetTag)
-
-	fmt.Printf("\n  Downloading %s\n", archiveName)
-	archivePath := filepath.Join(tmpDir, archiveName)
-	if err := downloadFile(archiveURL, archivePath, upgradeMaxArchiveSize); err != nil {
-		return fmt.Errorf("downloading release: %w", err)
-	}
-	checksumsPath := filepath.Join(tmpDir, "checksums.txt")
-	if err := downloadFile(checksumsURL, checksumsPath, upgradeMaxChecksumsSize); err != nil {
-		return fmt.Errorf("downloading checksums: %w", err)
-	}
-
-	fmt.Println("  Verifying SHA256")
-	if err := verifySHA256(archivePath, checksumsPath, archiveName); err != nil {
+	store, err := u.openStore(ctx, false)
+	if err != nil {
 		return err
 	}
-	fmt.Println("  ✓ checksum matches")
+	if store == nil && keep != 0 {
+		store, err = u.openStore(ctx, true)
+		if err != nil {
+			return err
+		}
+	}
+	if store != nil {
+		defer store.Close()
+		store.AllowSources(exePath, tmpDir)
+	}
 
-	binPath := filepath.Join(tmpDir, "gridctl")
-	if err := extractGridctlBinary(archivePath, binPath); err != nil {
+	binPath, fromStore, err := u.resolveInstallBinary(ctx, store, targetTag, tmpDir)
+	if err != nil {
 		return err
+	}
+
+	retainedCurrent := false
+	if keep != 0 && store != nil && retainableTag(currentTag) {
+		if err := store.Retain(ctx, currentTag, exePath, versions.OriginReplaced, nil); err != nil {
+			return fmt.Errorf("retaining %s: %w", currentTag, err)
+		}
+		retainedCurrent = true
+	}
+	if keep != 0 && store != nil && !fromStore {
+		if err := store.Retain(ctx, targetTag, binPath, versions.OriginDownloaded, nil); err != nil {
+			return fmt.Errorf("retaining %s: %w", targetTag, err)
+		}
 	}
 
 	if err := atomicReplace(exePath, binPath); err != nil {
 		return fmt.Errorf("replacing binary: %w", err)
 	}
+	if keep != 0 && store != nil {
+		previous := store.Previous()
+		// A same-version reinstall did not leave a different binary
+		// behind. Keep the recorded previous so --rollback still has a target.
+		if retainedCurrent && currentTag != targetTag {
+			previous = currentTag
+		}
+		if err := store.SetActive(targetTag, previous); err != nil {
+			return err
+		}
+		if _, err := store.Prune(ctx, keep); err != nil {
+			return fmt.Errorf("pruning retained binaries: %w", err)
+		}
+	}
 
-	fmt.Printf("\nUpgraded gridctl from %s to %s\n", currentTag, targetTag)
+	fmt.Fprintf(u.stdout, "\nUpgraded gridctl from %s to %s\n", currentTag, targetTag)
+	if retainedCurrent {
+		fmt.Fprintf(u.stdout, "Retained %s (roll back with: gridctl upgrade --rollback)\n", currentTag)
+	}
 	return nil
+}
+
+// resolveInstallBinary uses a verified store entry when one exists.
+// A missing entry or a checksum failure falls through to a download.
+func (u *upgrader) resolveInstallBinary(ctx context.Context, store *versions.Store, targetTag, tmpDir string) (string, bool, error) {
+	if store != nil {
+		if _, path, ok := store.Lookup(targetTag); ok {
+			if err := store.Verify(ctx, targetTag); err == nil {
+				fmt.Fprintf(u.stdout, "Using retained %s (no download)\n", targetTag)
+				return path, true, nil
+			}
+		}
+	}
+
+	versionNum := strings.TrimPrefix(targetTag, "v")
+	archiveName := fmt.Sprintf("gridctl_%s_%s_%s.tar.gz", versionNum, runtime.GOOS, runtime.GOARCH)
+	archiveURL := u.releaseFileURL(targetTag, archiveName)
+	checksumsURL := u.releaseFileURL(targetTag, "checksums.txt")
+
+	fmt.Fprintf(u.stdout, "\n  Downloading %s\n", archiveName)
+	archivePath := filepath.Join(tmpDir, archiveName)
+	if err := u.downloadFile(ctx, archiveURL, archivePath, upgradeMaxArchiveSize); err != nil {
+		return "", false, fmt.Errorf("downloading release: %w", err)
+	}
+	checksumsPath := filepath.Join(tmpDir, "checksums.txt")
+	if err := u.downloadFile(ctx, checksumsURL, checksumsPath, upgradeMaxChecksumsSize); err != nil {
+		return "", false, fmt.Errorf("downloading checksums: %w", err)
+	}
+
+	fmt.Fprintln(u.stdout, "  Verifying SHA256")
+	if err := verifySHA256(archivePath, checksumsPath, archiveName); err != nil {
+		return "", false, err
+	}
+	fmt.Fprintln(u.stdout, "  ✓ checksum matches")
+
+	binPath := filepath.Join(tmpDir, "gridctl")
+	if err := extractGridctlBinary(archivePath, binPath); err != nil {
+		return "", false, err
+	}
+	return binPath, false, nil
+}
+
+func (u *upgrader) confirm(prompt, nonInteractive string) error {
+	if u.yes {
+		return nil
+	}
+	if !u.isTTY() {
+		return fmt.Errorf("%s", nonInteractive)
+	}
+	fmt.Fprint(u.stdout, prompt)
+	reader := bufio.NewReader(u.stdin)
+	line, _ := reader.ReadString('\n')
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "y", "yes":
+		return nil
+	default:
+		fmt.Fprintln(u.stdout, "Aborted.")
+		return errUpgradeAborted
+	}
+}
+
+func (u *upgrader) versionsDir() (string, error) {
+	if u.storeDir != "" {
+		return u.storeDir, nil
+	}
+	return state.VersionsDir()
+}
+
+// openStore locks the versions directory. create false returns (nil, nil)
+// when the directory does not exist yet, so a read-only caller does not
+// create it. Windows never opens the store.
+func (u *upgrader) openStore(ctx context.Context, create bool) (*versions.Store, error) {
+	if u.goos == "windows" {
+		return nil, nil
+	}
+	dir, err := u.versionsDir()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
+		if !create {
+			return nil, nil
+		}
+	} else if err != nil {
+		return nil, err
+	}
+	return versions.Open(ctx, dir)
+}
+
+func (u *upgrader) releaseFileURL(tag, name string) string {
+	return strings.TrimRight(u.downloadBase, "/") + "/" + tag + "/" + name
+}
+
+func (u *upgrader) nothing(msg string) error {
+	fmt.Fprintln(u.stderr, msg)
+	return &upgradeExit{Code: 2, msg: msg}
+}
+
+// retainableTag reports whether tag is a release version safe to use as a
+// store directory. Dev builds and other non-semver strings are not retained.
+func retainableTag(tag string) bool {
+	if versions.ValidateTag(tag) != nil {
+		return false
+	}
+	_, err := semver.NewVersion(strings.TrimPrefix(tag, "v"))
+	return err == nil
 }
 
 // resolveExecutable returns the absolute path of the running binary,
@@ -219,23 +541,22 @@ func compareTags(current, target string) (int, bool) {
 //
 // TODO: once a stable release ships, switch to the lighter
 // `https://github.com/<repo>/releases/latest` redirect.
-func fetchLatestTag() (string, error) {
-	client := &http.Client{Timeout: upgradeHTTPTimeout}
-	req, err := http.NewRequest(http.MethodGet, upgradeReleaseAPI, nil)
+func (u *upgrader) fetchLatestTag(ctx context.Context) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.releaseAPI, nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	// GitHub's API requires a User-Agent and silently returns an empty array
 	// for bot-like defaults (e.g. Go-http-client). Identify ourselves.
-	req.Header.Set("User-Agent", "gridctl/"+version)
+	req.Header.Set("User-Agent", "gridctl/"+u.version)
 	// Send a Bearer token when GITHUB_TOKEN is present (CI environments) to
 	// bypass the unauthenticated rate limit. End users running interactively
 	// stay below the unauth limit easily and don't need to set this.
 	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := client.Do(req)
+	resp, err := u.client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("contacting api.github.com: %w", err)
 	}
@@ -269,9 +590,12 @@ func snippet(body []byte) string {
 }
 
 // downloadFile streams url into dest, refusing to write more than maxBytes.
-func downloadFile(url, dest string, maxBytes int64) error {
-	client := &http.Client{Timeout: upgradeHTTPTimeout}
-	resp, err := client.Get(url)
+func (u *upgrader) downloadFile(ctx context.Context, url, dest string, maxBytes int64) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := u.client.Do(req)
 	if err != nil {
 		return err
 	}
