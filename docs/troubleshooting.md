@@ -36,6 +36,46 @@ A stack that contains `requires:` fails this check on a release that does not
 know the key. That release cannot enforce the floor, so it refuses the file.
 Upgrade gridctl, or remove the block. See [Requires](config-schema.md#requires).
 
+## Rollback refused
+
+`gridctl upgrade --rollback` exits 2, before the confirmation prompt, when the
+retained binary would not accept the files this install has written. Each
+problem is one line. `--force` prints the same lines as warnings and continues
+(exit 0). A target whose manifest entry has `schemas: null` prints
+`warning: compatibility unknown: <tag> was retained by a release that does not advertise schemas`
+and continues; that release did not record what it can read.
+
+Daemon state. A file under `~/.gridctl/state/` has `schema_version` above the
+target's `daemon_state`, or above the version this gridctl reads. Destroy that
+stack with the current build (`gridctl destroy <name>`) before rolling back.
+The check reads the state directory itself, so a file this binary cannot load
+is still a refusal.
+
+Tool pins. `~/.gridctl/pins/<stack>.json` has a `version` above the target's
+`tool_pins`. Delete or move the pin file, or destroy the stack, before rolling
+back. The daemon for that stack will not start otherwise. A missing pin file
+is compatible. An empty file version is version 0. A value that is not an
+integer is a warning, not a refusal.
+
+Skill pins. `~/.gridctl/pins/skills/<stack>.json` is the same check against
+`skill_pins`.
+
+Project lock. `~/.gridctl/project.lock.yaml` has `version` above the target's
+`project_lock`. Restore the copy under `~/.gridctl/project-migration-backup/`
+first.
+
+Import lock. `~/.gridctl/skills.lock.yaml` has `version` above the target's
+`import_lock`. Remove packs with the current build (`gridctl pack remove <name>`)
+before rolling back.
+
+Stack or pack floor. A stack file named by a daemon state, including a parent
+reached only through `extends`, or a `requires` string recorded on a pack in
+the import lock, is a constraint the target tag does not satisfy. Put the floor
+on a base stack; a booster fragment cannot carry `requires`. A stack file that
+is missing or does not parse is a warning, not a refusal. `gridctl-pack.lock.yaml`
+inside a pack checkout is not checked here. `pack add` and `pack lock` on the
+older binary still refuse a newer pack lock with their existing error.
+
 ## Gateway security requires a restart
 
 `restart_required` means the saved candidate differs from the listener's effective startup authentication, bind, Host/Origin allowlists, or insecure override. The active credential and accepted configuration remain unchanged, including when ordinary edits were saved alongside security changes. The edited file is not rolled back. Repeating reload cannot activate it.
