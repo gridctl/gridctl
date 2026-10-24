@@ -10,6 +10,8 @@ All notable changes to gridctl will be documented in this file.
 
 ### Security
 
+- Update the frontend development dependencies Zod to 4.6.7 and Undici to 8.12.3 to address memory-exhaustion and denial-of-service advisories (GHSA-mrhx-c7xc-m3w5 and GHSA-xjj6-f33q-929c) that fail the CI security audit.
+
 - The web UI markdown sanitizer is DOMPurify 3.4.17. Versions through 3.4.16 match the critical advisory range (GHSA-cg2g-xh64-v4q7 and GHSA-mrv2-3pqr-j5jr). Skill markdown still uses the same default sanitize call.
 
 - Breaking: a non-loopback bind with no `gateway.allowed_origins`, or with `["*"]`, refuses to start. Set `gateway.allowed_origins` to the origins that load the UI, or pass `--insecure-allow-unauthenticated` / set `gateway.insecure_allow_unauthenticated: true`. The same override covers the existing unauthenticated-bind refusal. Under the override, startup continues with the wildcard and logs one warning for each skipped refusal. Loopback binds are unchanged: no refusal, `["*"]` default, no new warning. Enumerated public discovery GETs (`/mcp/server-card`, `/groups/{name}/mcp/server-card`, `/.well-known/ai-catalog.json`) are exempt from authentication and answer `Access-Control-Allow-Origin: *`. `gridctl doctor --security` and `GET /api/security-report` add `gateway.origins.startup` with the mode and discovery-route list, and no origin strings. This is not a fix for a stored-credential leak: CORS does not send credentials, and the web UI token stays in same-origin localStorage. The refused configuration and this migration ship in the next 1.0.0 release candidate.
