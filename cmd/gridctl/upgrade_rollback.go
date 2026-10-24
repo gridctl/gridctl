@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -48,10 +49,8 @@ func (u *upgrader) rollbackTo(ctx context.Context, exePath string) error {
 	if err := store.Verify(ctx, target); err != nil {
 		return err
 	}
-	// Part two's pre-swap check is the unknown-schemas warning only.
-	// A later release fills Entry.Schemas and refuses incompatible state.
-	if entry.Schemas == nil {
-		fmt.Fprintf(u.stderr, "warning: compatibility unknown: %s was retained by a release that does not advertise schemas\n", target)
+	if err := u.preSwap(ctx, target, entry.Schemas); err != nil {
+		return err
 	}
 
 	currentTag := normalizeTag(u.version)
@@ -70,7 +69,7 @@ func (u *upgrader) rollbackTo(ctx context.Context, exePath string) error {
 	retainedCurrent := false
 	if u.keep != 0 && retainableTag(currentTag) {
 		store.AllowSources(exePath)
-		if err := store.Retain(ctx, currentTag, exePath, versions.OriginReplaced, nil); err != nil {
+		if err := store.Retain(ctx, currentTag, exePath, versions.OriginReplaced, currentSchemas()); err != nil {
 			return fmt.Errorf("retaining %s: %w", currentTag, err)
 		}
 		retainedCurrent = true
@@ -91,7 +90,53 @@ func (u *upgrader) rollbackTo(ctx context.Context, exePath string) error {
 		}
 	}
 	fmt.Fprintf(u.stdout, "\nRolled back gridctl from %s to %s\n", currentTag, target)
+	return u.reportDaemons(ctx, exePath)
+}
+
+// preSwap runs the compatibility check before confirmation. Refusals exit 2
+// unless --force, which prints them as warnings and continues.
+func (u *upgrader) preSwap(ctx context.Context, target string, schemas *versions.Schemas) error {
+	in, err := u.preswapInput(target, schemas)
+	if err != nil {
+		return err
+	}
+	result, err := checkPreswap(ctx, in)
+	if err != nil {
+		return err
+	}
+	proceed, lines := rollbackRefused(target, result, u.force)
+	for _, line := range lines {
+		fmt.Fprintln(u.stderr, line)
+	}
+	if !proceed {
+		return &upgradeExit{Code: 2, msg: "rollback refused"}
+	}
 	return nil
+}
+
+func (u *upgrader) preswapInput(target string, schemas *versions.Schemas) (preswapInput, error) {
+	in := preswapInput{
+		TargetTag: target,
+		Target:    schemas,
+		Own:       currentSchemas(),
+	}
+	if schemas == nil {
+		return in, nil
+	}
+	home, err := u.gridHome()
+	if err != nil {
+		return in, err
+	}
+	in.StateDir = filepath.Join(home, ".gridctl", "state")
+	in.ProjectLock = filepath.Join(home, ".gridctl", "project.lock.yaml")
+	in.ImportLock = filepath.Join(home, ".gridctl", "skills.lock.yaml")
+	in.ToolPin = func(name string) (string, error) {
+		return filepath.Join(home, ".gridctl", "pins", name+".json"), nil
+	}
+	in.SkillPin = func(name string) (string, error) {
+		return filepath.Join(home, ".gridctl", "pins", "skills", name+".json"), nil
+	}
+	return in, nil
 }
 
 func (u *upgrader) notRetained(tag string) error {

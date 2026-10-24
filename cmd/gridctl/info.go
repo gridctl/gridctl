@@ -25,6 +25,20 @@ type infoJSON struct {
 	Rootless bool   `json:"rootless"`
 	Network  string `json:"network,omitempty"`
 	Error    string `json:"error,omitempty"`
+	// Schemas advertises the on-disk schema versions this binary reads.
+	// Additive (Article VIII). Present on both the success and
+	// runtime-detection-error paths. Pin fields are strings because the
+	// on-disk constants are strings.
+	Schemas *infoSchemas `json:"schemas"`
+}
+
+// infoSchemas is the schemas object of `gridctl info --json`.
+type infoSchemas struct {
+	DaemonState int    `json:"daemon_state"`
+	ProjectLock int    `json:"project_lock"`
+	ImportLock  int    `json:"import_lock"`
+	ToolPins    string `json:"tool_pins"`
+	SkillPins   string `json:"skill_pins"`
 }
 
 var infoCmd = &cobra.Command{
@@ -45,13 +59,15 @@ func init() {
 }
 
 func runInfo(asJSON bool) error {
+	schemas := advertisedInfoSchemas()
 	info, err := runtime.DetectRuntime(runtime.DetectOptions{Explicit: runtimeFlag})
 	if err != nil {
 		if asJSON {
-			return output.EncodeJSON(os.Stdout, infoJSON{Error: err.Error()})
+			return output.EncodeJSON(os.Stdout, infoJSON{Error: err.Error(), Schemas: schemas})
 		}
 		fmt.Println("Runtime:  not detected")
 		fmt.Printf("Error:    %v\n", err)
+		fmt.Println(formatInfoSchemasLine(schemas))
 		return nil
 	}
 
@@ -63,6 +79,7 @@ func runInfo(asJSON bool) error {
 			Host:     info.HostAliasHostname(),
 			SELinux:  info.SELinux,
 			Rootless: info.IsRootless(),
+			Schemas:  schemas,
 		}
 		if info.IsRootless() {
 			doc.Network = rootlessNetworkStack(info)
@@ -83,8 +100,30 @@ func runInfo(asJSON bool) error {
 		fmt.Printf("Mode:     rootless\n")
 		fmt.Printf("Network:  %s\n", rootlessNetworkStack(info))
 	}
+	fmt.Println(formatInfoSchemasLine(schemas))
 
 	return nil
+}
+
+// advertisedInfoSchemas is the schemas object this binary advertises.
+// It is filled from the package constants, not from a subprocess.
+func advertisedInfoSchemas() *infoSchemas {
+	s := currentSchemas()
+	return &infoSchemas{
+		DaemonState: s.DaemonState,
+		ProjectLock: s.ProjectLock,
+		ImportLock:  s.ImportLock,
+		ToolPins:    s.ToolPins,
+		SkillPins:   s.SkillPins,
+	}
+}
+
+func formatInfoSchemasLine(s *infoSchemas) string {
+	if s == nil {
+		return "Schemas:  unknown"
+	}
+	return fmt.Sprintf("Schemas:  daemon_state=%d project_lock=%d import_lock=%d tool_pins=%s skill_pins=%s",
+		s.DaemonState, s.ProjectLock, s.ImportLock, s.ToolPins, s.SkillPins)
 }
 
 // rootlessNetworkStack describes the rootless Podman networking stack.

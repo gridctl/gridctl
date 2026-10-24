@@ -64,7 +64,7 @@ func TestDaemonAPI_OAuthCommandDiagnostics(t *testing.T) {
 	t.Run("runs fails with credential hint", func(t *testing.T) {
 		require.EqualError(t, runRunsListLive("json", runs.Filter{}, nil), want)
 	})
-	_, _, _, _, _, warning := queryGatewayStatus(port)
+	_, _, _, _, _, warning, _ := queryGatewayStatus(port)
 	require.Equal(t, want, warning)
 	for name, call := range map[string]func() error{
 		"groups":   func() error { _, err := fetchGroupsReport(port); return err },

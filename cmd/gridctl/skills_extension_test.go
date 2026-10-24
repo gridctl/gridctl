@@ -37,7 +37,7 @@ func TestStatus_SkillsExtension(t *testing.T) {
 	port, err := strconv.Atoi(u.Port())
 	require.NoError(t, err)
 	require.NoError(t, state.Save(&state.DaemonState{StackName: "skills", Port: port, PID: os.Getpid()}))
-	mode, _, _, extensions, _, warning := queryGatewayStatus(port)
+	mode, _, _, extensions, _, warning, _ := queryGatewayStatus(port)
 	require.Equal(t, "on", mode)
 	require.Empty(t, warning)
 	require.Equal(t, []string{mcp.SkillsExtensionID}, extensions)

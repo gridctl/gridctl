@@ -37,6 +37,7 @@ func (sc *StackController) saveForegroundState(name, stackFile string, stack *co
 			AuthHeader:     header,
 			AuthType:       authType,
 			AuthIssuerHost: issuerHost,
+			BinaryVersion:  sc.version,
 		}
 		if err := state.Save(st); err != nil {
 			return fmt.Errorf("failed to save state: %w", err)

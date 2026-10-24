@@ -241,11 +241,12 @@ func (sc *StackController) runStacklessDaemonChild(ctx context.Context) error {
 	}
 
 	st := &state.DaemonState{
-		StackName: "gridctl",
-		StackFile: "",
-		PID:       os.Getpid(),
-		Port:      sc.config.Port,
-		StartedAt: time.Now(),
+		StackName:     "gridctl",
+		StackFile:     "",
+		PID:           os.Getpid(),
+		Port:          sc.config.Port,
+		StartedAt:     time.Now(),
+		BinaryVersion: sc.version,
 	}
 	if err := state.Save(st); err != nil {
 		return fmt.Errorf("failed to save state: %w", err)
@@ -558,6 +559,7 @@ func (sc *StackController) runDaemonChild(ctx context.Context, literal, resolved
 		AuthHeader:     header,
 		AuthType:       authType,
 		AuthIssuerHost: issuerHost,
+		BinaryVersion:  sc.version,
 	}
 	if err := state.Save(st); err != nil {
 		return fmt.Errorf("failed to save state: %w", err)

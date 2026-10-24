@@ -247,7 +247,7 @@ pkg/controller/     Application composition root: builds the gateway, mounts the
 pkg/logging/        Shared structured log handlers and redaction, including a process-wide exact-value registry
                     used by the slog handler and RedactString, and typed capability strings in messages,
                     field/group names, and nested JSON-compatible values. Diagnostic copies do not alter policy inputs.
-pkg/versions/       Retained upgrade binaries under `<home>/.gridctl/versions` (`gridctl upgrade --rollback`, `--list`, `--keep`). Manifest schema 1, flock, SHA256 verify, and a prune that never drops active or previous. Upgrade retention is skipped on Windows.
+pkg/versions/       Retained upgrade binaries under `<home>/.gridctl/versions` (`gridctl upgrade --rollback`, `--list`, `--keep`). Manifest schema 1, flock, SHA256 verify, and a prune that never drops active or previous. Entries may record advertised schemas; null means those versions are unknown. Upgrade retention is skipped on Windows.
 pkg/token/, pkg/format/, pkg/output/, pkg/jsonrpc/, pkg/state/, pkg/git/, pkg/dockerclient/   Supporting libs.
 
 web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). Zustand stores in src/stores/, route map in
@@ -281,7 +281,7 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
                     pack_composition_test.go (`integration && !windows`) drives booster composition through a real local-process daemon.
                     pack_lock_test.go (`integration && !windows`) covers lock honoring across homes against a local git HTTP fixture.
                     secret_providers_test.go covers exec apply, redaction, export, plan, rotation reload, failure, and recovery with real subprocesses.
-                    upgrade_rollback_test.go (`integration && !windows`) upgrades and rolls back two race-built children through a local release server, with no Docker.
+                    upgrade_rollback_test.go (`integration && !windows`) upgrades and rolls back two race-built children through a local release server, with no Docker. It also checks a status version mismatch, `--rollback --restart`, and exit 2 when a project lock or tool pin file version is hand-bumped.
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, a2a, mcp-apps, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
                     portable-pack, booster-pack, python-sources, python-runtime, execution, security-evidence, stack-configs, stack-declaration-policy, runs).

@@ -11,11 +11,15 @@ import (
 
 const daemonShutdownGracePeriod = 5 * time.Second
 
-// daemonStateSchemaVersion is the current schema of the per-stack daemon
+// DaemonStateSchemaVersion is the current schema of the per-stack daemon
 // state file. Version 1 is the pre-versioned file (schema_version absent);
 // version 2 adds the schema_version and home fields. Readers refuse a newer
-// version rather than guess (Article XVII).
-const daemonStateSchemaVersion = 2
+// version rather than guess (Article XVII). Advertised by `gridctl info --json`.
+const DaemonStateSchemaVersion = 2
+
+// daemonStateSchemaVersion keeps the historical unexported name. New callers
+// use DaemonStateSchemaVersion.
+const daemonStateSchemaVersion = DaemonStateSchemaVersion
 
 // ErrNewerSchema marks a state file written by a newer gridctl. Callers
 // must refuse to act on it, and above all must not "clean it up": the
@@ -58,6 +62,11 @@ type DaemonState struct {
 	// AuthIssuerHost is the OAuth issuer URL's host, optionally with a port.
 	// It carries no scheme, path, query, or token. Empty in bearer and api_key modes.
 	AuthIssuerHost string `json:"auth_issuer_host,omitempty"`
+
+	// BinaryVersion is the gridctl version that wrote this file. Empty in
+	// files written before the field existed. Additive: no schema bump
+	// (Article IX). Absent files load unchanged.
+	BinaryVersion string `json:"binary_version,omitempty"`
 }
 
 // BaseDir returns the base gridctl directory (<home>/.gridctl). It errors

@@ -26,11 +26,15 @@ import (
 //   - pkg/secrets/onepassword.go: token_file ~/ expansion. The path is a
 //     host credential file, not gridctl state, so GRIDCTL_HOME must not
 //     redirect it.
+//   - cmd/gridctl/schemas.go: the retained-binary info probe forwards the
+//     process HOME to the child. It does not use that value as a gridctl
+//     path. GRIDCTL_HOME on the child is the resolved gridctl home.
 var homeGuardAllowlist = map[string]bool{
 	"pkg/state/home.go":          true,
 	"pkg/config/loader.go":       true,
 	"pkg/runtime/detect.go":      true,
 	"pkg/secrets/onepassword.go": true,
+	"cmd/gridctl/schemas.go":     true,
 }
 
 // TestNoUserHomeDirOutsideResolver walks every production Go file in the

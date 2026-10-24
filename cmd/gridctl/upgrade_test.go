@@ -90,6 +90,10 @@ func TestUpgrade_RetainsReplacedAndInstalled(t *testing.T) {
 	if !ok || prev.Origin != versions.OriginReplaced {
 		t.Fatalf("replaced entry = %+v ok=%v", prev, ok)
 	}
+	wantSchemas := currentSchemas()
+	if prev.Schemas == nil || *prev.Schemas != *wantSchemas {
+		t.Fatalf("replaced schemas = %+v, want %+v", prev.Schemas, wantSchemas)
+	}
 	next, _, ok := store.Lookup("v1.2.3")
 	if !ok || next.Origin != versions.OriginDownloaded || next.Schemas != nil {
 		t.Fatalf("downloaded entry = %+v ok=%v", next, ok)
@@ -552,6 +556,65 @@ func TestWriteListTextMatchesSpec(t *testing.T) {
 	}
 }
 
+func TestUpgrade_RollbackPreswapRefuseAndForce(t *testing.T) {
+	dir := t.TempDir()
+	exe := writeExe(t, []byte("installed"))
+	seedRetained(t, dir, "v1.0.0", []byte("old-bytes"), true)
+	// Same-SHA retain is a no-op, so advertise schemas by rewriting the
+	// manifest. A nil schemas entry would only warn and proceed.
+	patchSchemas(t, dir, "v1.0.0", &versions.Schemas{DaemonState: 2, ProjectLock: 1, ImportLock: 1, ToolPins: "2", SkillPins: "1"})
+
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".gridctl"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".gridctl", "project.lock.yaml"), []byte("version: 9\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	refused, _, stderr := testUpgrader(t, nil, exe)
+	refused.storeDir = dir
+	refused.home = home
+	refused.rollback = true
+	refused.rollbackTag = "v1.0.0"
+	refused.version = "v1.2.0"
+	err := refused.run(t.Context())
+	var code *upgradeExit
+	if !errors.As(err, &code) || code.Code != 2 {
+		t.Fatalf("refusal err = %v\n%s", err, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "Rollback to v1.0.0 refused:") || !strings.Contains(stderr.String(), "project.lock.yaml is version 9") {
+		t.Fatalf("stderr = %s", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "Pass --force to roll back anyway.") {
+		t.Fatalf("stderr = %s", stderr.String())
+	}
+	if got, _ := os.ReadFile(exe); string(got) != "installed" {
+		t.Fatal("refusal replaced the binary")
+	}
+
+	forced, _, stderr := testUpgrader(t, nil, exe)
+	forced.storeDir = dir
+	forced.home = home
+	forced.rollback = true
+	forced.rollbackTag = "v1.0.0"
+	forced.version = "v1.2.0"
+	forced.force = true
+	if err := forced.run(t.Context()); err != nil {
+		t.Fatalf("force rollback: %v\n%s", err, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "warning: ") || strings.Contains(stderr.String(), "Rollback to v1.0.0 refused:") {
+		t.Fatalf("stderr = %s", stderr.String())
+	}
+	got, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "old-bytes" {
+		t.Fatalf("forced binary = %q", got)
+	}
+}
+
 func TestUpgrade_RollbackUsageAndHomebrewAndWindows(t *testing.T) {
 	exe := writeExe(t, []byte("installed"))
 	u, _, _ := testUpgrader(t, nil, exe)
@@ -666,6 +729,64 @@ func TestUpgrade_CheckAndUpToDateAndAbort(t *testing.T) {
 	}
 }
 
+func TestUpgrade_RestartWhenCurrentSkipsSwap(t *testing.T) {
+	payload := []byte("should-not-install")
+	srv, hits := releaseServer(t, "v1.2.3", payload)
+	logPath := filepath.Join(t.TempDir(), "args")
+	script := filepath.Join(t.TempDir(), "gridctl")
+	body := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> " + shellQuote(logPath) + "\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	u, stdout, stderr := testUpgrader(t, srv, script)
+	u.version = "v1.2.3"
+	u.restart = true
+
+	stateDir := filepath.Join(u.home, ".gridctl", "state")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Port 0 makes the status read unread without a dial. The live PID
+	// is what marks the daemon running.
+	stateFile := fmt.Sprintf("{\"schema_version\":2,\"stack_name\":\"lab\",\"stack_file\":\"/tmp/lab.yaml\",\"pid\":%d,\"port\":0}\n", os.Getpid())
+	if err := os.WriteFile(filepath.Join(stateDir, "lab.json"), []byte(stateFile), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	before, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := u.run(t.Context()); err != nil {
+		t.Fatalf("restart: %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
+	}
+	after, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("current-binary --restart replaced the executable")
+	}
+	if hitPath(hits, "/releases/download/") {
+		t.Fatal("current-binary --restart downloaded an archive")
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "gridctl is up to date.") {
+		t.Fatalf("stdout = %s", out)
+	}
+	if !strings.Contains(out, "Restarted lab") {
+		t.Fatalf("stdout = %s\nstderr: %s", out, stderr.String())
+	}
+	logged, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(logged)
+	if !strings.Contains(text, "destroy lab") || !strings.Contains(text, "apply /tmp/lab.yaml --port 0") {
+		t.Fatalf("args =\n%s", text)
+	}
+}
+
 func TestUpgrade_ChecksumMismatchLeavesBinary(t *testing.T) {
 	payload := []byte("real")
 	srv, _ := releaseServerSum(t, "v1.2.3", payload, "deadbeef")
@@ -710,7 +831,7 @@ func TestUpgradeHelpAndMutualExclusion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"--rollback", "--list", "--keep", "--format", "Exit codes:", "nothing retained"} {
+	for _, want := range []string{"--rollback", "--list", "--keep", "--format", "--restart", "Exit codes:", "nothing retained"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("help missing %q", want)
 		}
@@ -724,7 +845,7 @@ func TestUpgradeHelpAndMutualExclusion(t *testing.T) {
 
 func resetUpgradeFlags(t *testing.T) {
 	t.Helper()
-	for _, name := range []string{"help", "rollback", "version", "check", "force", "yes", "list", "keep", "format"} {
+	for _, name := range []string{"help", "rollback", "version", "check", "force", "yes", "list", "keep", "format", "restart"} {
 		f := upgradeCmd.Flags().Lookup(name)
 		if f == nil {
 			continue
@@ -801,6 +922,8 @@ func testUpgrader(t *testing.T, srv *httptest.Server, exe string) (*upgrader, *b
 	t.Helper()
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
+	home := t.TempDir()
+	t.Setenv("GRIDCTL_HOME", home)
 	u := &upgrader{
 		resolveExe: func() (string, error) { return exe, nil },
 		client:     &http.Client{},
@@ -814,6 +937,7 @@ func testUpgrader(t *testing.T, srv *httptest.Server, exe string) (*upgrader, *b
 		yes:        true,
 		keep:       2,
 		format:     "text",
+		home:       home,
 	}
 	if srv != nil {
 		u.releaseAPI = srv.URL + "/repos/gridctl/gridctl/releases?per_page=1"
@@ -865,6 +989,36 @@ func hitPath(hits *hitLog, fragment string) bool {
 		}
 	}
 	return false
+}
+
+func patchSchemas(t *testing.T, dir, tag string, schemas *versions.Schemas) {
+	t.Helper()
+	path := filepath.Join(dir, "manifest.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var man versions.Manifest
+	if err := json.Unmarshal(data, &man); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for i := range man.Entries {
+		if man.Entries[i].Tag == tag {
+			man.Entries[i].Schemas = schemas
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("tag %s not in manifest", tag)
+	}
+	out, err := json.MarshalIndent(man, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(out, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func mustOpen(t *testing.T, dir string) *versions.Store {
