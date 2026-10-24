@@ -174,17 +174,20 @@ type namedHead struct {
 }
 
 func daemonStateRefusals(in preswapInput, h namedHead) []string {
-	var out []string
 	fileVer := h.Head.SchemaVersion
+	// One line per file. When the file is newer than both readers, name
+	// the target: that is the version the rollback would install, and it
+	// may be lower than this binary. The current-binary line is only for
+	// the case the target would accept the file.
 	if fileVer > in.Target.DaemonState {
-		out = append(out, fmt.Sprintf("%s is schema version %d; %s reads version %d. gridctl destroy %s before rolling back.",
-			h.Path, fileVer, in.TargetTag, in.Target.DaemonState, h.Head.StackName))
+		return []string{fmt.Sprintf("%s is schema version %d; %s reads version %d. gridctl destroy %s before rolling back.",
+			h.Path, fileVer, in.TargetTag, in.Target.DaemonState, h.Head.StackName)}
 	}
 	if in.Own != nil && fileVer > in.Own.DaemonState {
-		out = append(out, fmt.Sprintf("%s is schema version %d; this gridctl reads version %d. gridctl destroy %s before rolling back.",
-			h.Path, fileVer, in.Own.DaemonState, h.Head.StackName))
+		return []string{fmt.Sprintf("%s is schema version %d; this gridctl reads version %d. gridctl destroy %s before rolling back.",
+			h.Path, fileVer, in.Own.DaemonState, h.Head.StackName)}
 	}
-	return out
+	return nil
 }
 
 func pinRefusalsFor(in preswapInput, h namedHead) (refusals, warnings []string) {

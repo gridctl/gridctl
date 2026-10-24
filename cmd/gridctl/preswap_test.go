@@ -6,6 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gridctl/gridctl/pkg/project"
+	"github.com/gridctl/gridctl/pkg/skills"
+	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/versions"
 )
 
@@ -20,12 +23,35 @@ func TestCheckPreswap_Refusals(t *testing.T) {
 			TargetTag: "v1.0.0", Target: target, Own: own,
 			StateDir: filepath.Join(dir, "state"),
 		})
+		if len(got.Refusals) != 1 {
+			t.Fatalf("refusals = %v", got.Refusals)
+		}
 		assertHas(t, got.Refusals, "state/netops.json is schema version 3; v1.0.0 reads version 2")
-		assertHas(t, got.Refusals, "this gridctl reads version 2")
 		assertHas(t, got.Refusals, "gridctl destroy netops before rolling back")
+		if strings.Contains(got.Refusals[0], "this gridctl reads") {
+			t.Fatalf("duplicate current-binary line: %s", got.Refusals[0])
+		}
 		joined := strings.Join(append(got.Refusals, got.Warnings...), "\n")
 		if strings.Contains(joined, "secret-token") || strings.Contains(joined, "auth_token") {
 			t.Fatalf("refusal printed credential material:\n%s", joined)
+		}
+	})
+
+	t.Run("daemon state newer than both, target older than current", func(t *testing.T) {
+		dir := preswapHome(t)
+		writeJSON(t, filepath.Join(dir, "state", "netops.json"), `{"schema_version":3,"stack_name":"netops","pid":1}`)
+		older := *target
+		older.DaemonState = 1
+		got := mustPreswap(t, preswapInput{
+			TargetTag: "v1.0.0", Target: &older, Own: own,
+			StateDir: filepath.Join(dir, "state"),
+		})
+		if len(got.Refusals) != 1 {
+			t.Fatalf("refusals = %v", got.Refusals)
+		}
+		assertHas(t, got.Refusals, "v1.0.0 reads version 1")
+		if strings.Contains(got.Refusals[0], "this gridctl reads") {
+			t.Fatalf("hid the target version: %s", got.Refusals[0])
 		}
 	})
 
@@ -214,6 +240,54 @@ func TestCheckPreswap_WarningsAndForce(t *testing.T) {
 			t.Fatalf("lines = %v", lines)
 		}
 	})
+}
+
+func TestPreswapInputPathsMatchHelpers(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("GRIDCTL_HOME", home)
+	u := &upgrader{home: home}
+	in, err := u.preswapInput("v1.0.0", currentSchemas())
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantState, err := state.StateDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in.StateDir != wantState {
+		t.Fatalf("state dir = %s, helper = %s", in.StateDir, wantState)
+	}
+	if u.stateDir() != wantState {
+		t.Fatalf("stateDir() = %s, helper = %s", u.stateDir(), wantState)
+	}
+	if in.ProjectLock != project.NewStore(home).Path() {
+		t.Fatalf("project lock = %s, helper = %s", in.ProjectLock, project.NewStore(home).Path())
+	}
+	if in.ImportLock != skills.LockFilePath() {
+		t.Fatalf("import lock = %s, helper = %s", in.ImportLock, skills.LockFilePath())
+	}
+	wantTool, err := state.PinsPath("lab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotTool, err := in.ToolPin("lab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotTool != wantTool {
+		t.Fatalf("tool pin = %s, helper = %s", gotTool, wantTool)
+	}
+	wantSkill, err := state.SkillPinsPath("lab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotSkill, err := in.SkillPin("lab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotSkill != wantSkill {
+		t.Fatalf("skill pin = %s, helper = %s", gotSkill, wantSkill)
+	}
 }
 
 func preswapHome(t *testing.T) string {
