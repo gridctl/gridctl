@@ -56,6 +56,7 @@ var (
 	upgradeList     bool
 	upgradeKeep     int
 	upgradeFormat   string
+	upgradeRestart  bool
 )
 
 var errUpgradeAborted = errors.New("upgrade aborted")
@@ -86,7 +87,19 @@ under ~/.gridctl/versions (default 2). --keep <n> is the count for this
 run, not a stored setting. Active and previous are always kept, so
 --keep 1 still leaves both. --keep 0 disables retention for this run.
 --rollback restores a retained binary offline. --list prints the store.
-A dev build is not retained.
+A dev build is not retained. Each retained binary records the schema
+versions it advertises. --rollback refuses, before the confirmation
+prompt, when daemon state, pin files, the project lock, the import lock,
+or a stack or pack floor is newer than the target reads. --force turns
+those refusals into warnings and continues.
+
+After a successful upgrade or rollback, running daemons are listed with
+a restart command. --restart performs it. A service-owned daemon is
+restarted through its supervisor. A plain daemon is destroy plus apply
+--port, plus --override when status reports one. The stackless daemon is
+destroy plus serve --port. Flags that were not recorded are named and
+are not reproduced. On macOS the service line is gridctl upgrade
+--restart and the launchd label.
 
 If gridctl was installed via Homebrew, this command defers to
 'brew upgrade gridctl/tap/gridctl' and exits. Rollback of a Homebrew
@@ -120,14 +133,17 @@ refusal).`,
 func init() {
 	upgradeCmd.Flags().BoolVar(&upgradeCheck, "check", false, "Only check for updates; do not install")
 	upgradeCmd.Flags().StringVar(&upgradeVersion, "version", "", "Install a specific release tag (allows downgrades)")
-	upgradeCmd.Flags().BoolVar(&upgradeForce, "force", false, "Bypass Homebrew detection and the up-to-date short-circuit")
+	upgradeCmd.Flags().BoolVar(&upgradeForce, "force", false, "Bypass Homebrew detection, the up-to-date short-circuit, and rollback compatibility refusals")
 	upgradeCmd.Flags().BoolVarP(&upgradeYes, "yes", "y", false, "Non-interactive: skip the confirmation prompt")
 	upgradeCmd.Flags().StringVar(&upgradeRollback, "rollback", "", "Roll back to the previous retained binary, or to the named tag")
 	upgradeCmd.Flags().Lookup("rollback").NoOptDefVal = rollbackPrevious
 	upgradeCmd.Flags().BoolVar(&upgradeList, "list", false, "List retained binaries and exit")
 	upgradeCmd.Flags().IntVar(&upgradeKeep, "keep", 2, "Retained binaries to keep for this run (active and previous are always kept; 0 disables retention)")
 	upgradeCmd.Flags().StringVar(&upgradeFormat, "format", "text", "Output format for --list: text or json")
+	upgradeCmd.Flags().BoolVar(&upgradeRestart, "restart", false, "Restart running daemons after a successful upgrade or rollback")
 	upgradeCmd.MarkFlagsMutuallyExclusive("rollback", "version")
+	upgradeCmd.MarkFlagsMutuallyExclusive("restart", "list")
+	upgradeCmd.MarkFlagsMutuallyExclusive("restart", "check")
 	upgradeCmd.MarkFlagsMutuallyExclusive("list", "rollback")
 	upgradeCmd.MarkFlagsMutuallyExclusive("list", "version")
 	upgradeCmd.MarkFlagsMutuallyExclusive("list", "check")
@@ -157,6 +173,10 @@ type upgrader struct {
 	list        bool
 	keep        int
 	format      string
+	restart     bool
+	// home overrides the resolved gridctl home. Empty uses state.Home().
+	// Tests set it so a rollback check does not read the real state dir.
+	home string
 }
 
 func newUpgrader() *upgrader {
@@ -185,6 +205,7 @@ func newUpgraderFromFlags(cmd *cobra.Command) *upgrader {
 	u.keep = upgradeKeep
 	u.format = upgradeFormat
 	u.list = upgradeList
+	u.restart = upgradeRestart
 	if cmd != nil && cmd.Flags().Changed("rollback") {
 		u.rollback = true
 		if upgradeRollback != "" && upgradeRollback != rollbackPrevious {
@@ -353,13 +374,14 @@ func (u *upgrader) upgrade(ctx context.Context, exePath string) error {
 	// A same-tag reinstall must install the retained bytes, not copy the
 	// running file over that store entry first. Previous stays as recorded.
 	if keep != 0 && store != nil && retainableTag(currentTag) && currentTag != targetTag {
-		if err := store.Retain(ctx, currentTag, exePath, versions.OriginReplaced, nil); err != nil {
+		if err := store.Retain(ctx, currentTag, exePath, versions.OriginReplaced, currentSchemas()); err != nil {
 			return fmt.Errorf("retaining %s: %w", currentTag, err)
 		}
 		retainedCurrent = true
 	}
 	if keep != 0 && store != nil && !fromStore {
-		if err := store.Retain(ctx, targetTag, binPath, versions.OriginDownloaded, nil); err != nil {
+		schemas := u.schemasForDownloaded(ctx, binPath)
+		if err := store.Retain(ctx, targetTag, binPath, versions.OriginDownloaded, schemas); err != nil {
 			return fmt.Errorf("retaining %s: %w", targetTag, err)
 		}
 	}
@@ -386,7 +408,18 @@ func (u *upgrader) upgrade(ctx context.Context, exePath string) error {
 	if retainedCurrent {
 		fmt.Fprintf(u.stdout, "Retained %s (roll back with: gridctl upgrade --rollback)\n", currentTag)
 	}
-	return nil
+	return u.reportDaemons(ctx, exePath)
+}
+
+// schemasForDownloaded probes a downloaded or stored binary. A probe
+// failure records nil so retention still proceeds; rollback then warns
+// that compatibility is unknown.
+func (u *upgrader) schemasForDownloaded(ctx context.Context, path string) *versions.Schemas {
+	home, err := u.gridHome()
+	if err != nil {
+		return nil
+	}
+	return probeBinarySchemas(ctx, path, home)
 }
 
 // resolveInstallBinary uses a verified store entry when one exists.
