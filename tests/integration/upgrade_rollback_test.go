@@ -38,13 +38,10 @@ func TestUpgradeRollback_RoundTrip(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	root, err := filepath.Abs("../..")
-	if err != nil {
-		t.Fatal(err)
-	}
 	dir := t.TempDir()
-	oldBin := buildVersioned(ctx, t, root, dir, "gridctl-old", "v9.0.1")
-	newBin := buildVersioned(ctx, t, root, dir, "gridctl-new", "v9.0.2")
+	// Copy before the swap. The shared build stays on v9.0.1 for later tests.
+	oldBin := filepath.Join(dir, "gridctl-old")
+	newBin := installVersioned(ctx, t, oldBin)
 
 	home := filepath.Join(dir, "home")
 	if err := os.MkdirAll(home, 0o755); err != nil {
@@ -152,13 +149,8 @@ func TestUpgradeRollback_StateAware(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	root, err := filepath.Abs("../..")
-	if err != nil {
-		t.Fatal(err)
-	}
 	dir := t.TempDir()
-	oldBin := buildVersioned(ctx, t, root, dir, "gridctl-old", "v9.0.1")
-	newBin := buildVersioned(ctx, t, root, dir, "gridctl-new", "v9.0.2")
+	oldBin, newBin := versionedBins(ctx, t)
 	// Each subtest installs over its own copy. A shared path would stay on
 	// v9.0.2 after a refused rollback, and the next upgrade would not retain
 	// a previous tag.
@@ -225,6 +217,9 @@ func TestUpgradeRollback_StateAware(t *testing.T) {
 			t.Fatalf("upgrade exit = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
 		}
 		assertVersion(ctx, t, oldBin, home, "v9.0.2")
+		// Refusal subtests need this store, not another upgrade. A second
+		// race-instrumented install of the same binary is most of their time.
+		saveUpgradeSnapshot(t, home, dir)
 
 		stdout, stderr, code = runUpgrade(ctx, t, oldBin, home, "", "", "status", "--plain")
 		if code != 0 {
@@ -269,8 +264,7 @@ func TestUpgradeRollback_StateAware(t *testing.T) {
 		if err := os.MkdirAll(home, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		bin := copyOld(t, home)
-		upgradePair(ctx, t, bin, newBin, home)
+		bin := upgradedInstall(ctx, t, home, newBin, copyOld)
 		lock := filepath.Join(home, ".gridctl", "project.lock.yaml")
 		if err := os.WriteFile(lock, []byte("version: 99\nprojections: []\n"), 0o644); err != nil {
 			t.Fatal(err)
@@ -290,8 +284,7 @@ func TestUpgradeRollback_StateAware(t *testing.T) {
 		if err := os.MkdirAll(home, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		bin := copyOld(t, home)
-		upgradePair(ctx, t, bin, newBin, home)
+		bin := upgradedInstall(ctx, t, home, newBin, copyOld)
 		// The pin check follows stack names in daemon state files. A
 		// hand-written state file is enough; the process does not need to
 		// be running.
@@ -428,16 +421,155 @@ func retainedSchemasFor(t *testing.T, home, tag string) *retainedSchemas {
 	return nil
 }
 
-func buildVersioned(ctx context.Context, t *testing.T, root, dir, name, ver string) string {
+// versionedOld and versionedNew are race-built once per process. Repeating
+// the link for the second test copies about 90MB and was eating the podman
+// suite's remaining package-timeout budget.
+var (
+	versionedOnce sync.Once
+	versionedOld  string
+	versionedNew  string
+	versionedErr  error
+)
+
+func versionedBins(ctx context.Context, t *testing.T) (oldBin, newBin string) {
 	t.Helper()
-	bin := filepath.Join(dir, name)
+	versionedOnce.Do(func() {
+		root, err := filepath.Abs("../..")
+		if err != nil {
+			versionedErr = err
+			return
+		}
+		dir, err := os.MkdirTemp("", "gridctl-versioned-*")
+		if err != nil {
+			versionedErr = err
+			return
+		}
+		oldBin := filepath.Join(dir, "gridctl-old")
+		newBin := filepath.Join(dir, "gridctl-new")
+		errc := make(chan error, 2)
+		go func() {
+			errc <- buildVersionedBin(ctx, root, oldBin, "v9.0.1")
+		}()
+		go func() {
+			errc <- buildVersionedBin(ctx, root, newBin, "v9.0.2")
+		}()
+		for range 2 {
+			if err := <-errc; err != nil && versionedErr == nil {
+				versionedErr = err
+			}
+		}
+		if versionedErr != nil {
+			return
+		}
+		versionedOld = oldBin
+		versionedNew = newBin
+	})
+	if versionedErr != nil {
+		t.Fatal(versionedErr)
+	}
+	return versionedOld, versionedNew
+}
+
+// installVersioned copies the pristine v9.0.1 binary to dst and returns the
+// shared v9.0.2 binary. Callers may replace dst; the shared files stay put.
+func installVersioned(ctx context.Context, t *testing.T, dst string) string {
+	t.Helper()
+	oldBin, newBin := versionedBins(ctx, t)
+	data, err := os.ReadFile(oldBin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, data, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return newBin
+}
+
+func buildVersionedBin(ctx context.Context, root, bin, ver string) error {
 	cmd := exec.CommandContext(ctx, "go", "build", "-race", "-ldflags", "-X main.version="+ver, "-o", bin, ".")
 	cmd.Dir = filepath.Join(root, "cmd", "gridctl")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("build %s: %v\n%s", ver, err, out)
+		return fmt.Errorf("build %s: %v\n%s", ver, err, out)
 	}
-	return bin
+	return nil
+}
+
+// upgradeSnapDir holds a v9.0.2 install and the versions store from a real
+// upgrade. Refusal cases clone it instead of downloading the race binary again.
+var upgradeSnapDir string
+
+func saveUpgradeSnapshot(t *testing.T, home, dir string) {
+	t.Helper()
+	if upgradeSnapDir != "" {
+		return
+	}
+	// Parent temp dir: the restart subtest's own TempDir is removed before
+	// the refusal subtests clone this store.
+	snap := filepath.Join(dir, "upgrade-snapshot")
+	if err := copyFileMode(filepath.Join(home, "gridctl"), filepath.Join(snap, "gridctl"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	versions := filepath.Join(home, ".gridctl", "versions")
+	if err := copyTree(versions, filepath.Join(snap, ".gridctl", "versions")); err != nil {
+		t.Fatal(err)
+	}
+	upgradeSnapDir = snap
+}
+
+// upgradedInstall returns a binary whose home already has a real upgrade
+// store. A focused run that skipped the restart subtest builds that store
+// itself.
+func upgradedInstall(ctx context.Context, t *testing.T, home, newBin string, copyOld func(t *testing.T, home string) string) string {
+	t.Helper()
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if upgradeSnapDir == "" {
+		bin := copyOld(t, home)
+		upgradePair(ctx, t, bin, newBin, home)
+		saveUpgradeSnapshot(t, home, filepath.Dir(home))
+		return bin
+	}
+	if err := copyFileMode(filepath.Join(upgradeSnapDir, "gridctl"), filepath.Join(home, "gridctl"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyTree(filepath.Join(upgradeSnapDir, ".gridctl"), filepath.Join(home, ".gridctl")); err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(home, "gridctl")
+}
+
+func copyFileMode(src, dst string, mode os.FileMode) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, mode)
+}
+
+func copyTree(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		return copyFileMode(path, target, info.Mode().Perm())
+	})
 }
 
 func runUpgrade(ctx context.Context, t *testing.T, bin, home, api, base string, args ...string) (string, string, int) {
@@ -578,10 +710,25 @@ func releaseHandler(t *testing.T, tag string, binary []byte, hits *hitLog) http.
 	})
 }
 
+// archiveCache keeps one tar.gz per payload. The integration process is
+// race-instrumented, and default deflate of a race-built gridctl (about
+// 90MB) takes long enough to exhaust the podman suite's 20-minute package
+// timeout. Stored gzip is still a valid release archive; the upgrader
+// extracts it with gzip.NewReader.
+var archiveCache sync.Map
+
 func tarGzBinary(t *testing.T, payload []byte) []byte {
 	t.Helper()
+	sum := sha256.Sum256(payload)
+	key := hex.EncodeToString(sum[:])
+	if v, ok := archiveCache.Load(key); ok {
+		return v.([]byte)
+	}
 	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
+	gz, err := gzip.NewWriterLevel(&buf, gzip.NoCompression)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tw := tar.NewWriter(gz)
 	hdr := &tar.Header{Name: "gridctl", Mode: 0o755, Size: int64(len(payload))}
 	if err := tw.WriteHeader(hdr); err != nil {
@@ -596,7 +743,8 @@ func tarGzBinary(t *testing.T, payload []byte) []byte {
 	if err := gz.Close(); err != nil {
 		t.Fatal(err)
 	}
-	return buf.Bytes()
+	actual, _ := archiveCache.LoadOrStore(key, buf.Bytes())
+	return actual.([]byte)
 }
 
 func containsPath(paths []string, fragment string) bool {
