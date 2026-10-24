@@ -249,7 +249,7 @@ The [Python MCP runtime base](../mcp-runtime-python.md) uses a dedicated OCI wor
 
 Provenance binds artifacts to expected repository, workflow, tag, and source identities. It does not prove harmless code, reproducibility, complete dependency coverage, or a SLSA level. A compromised trusted workflow or dependency remains relevant. Repository release settings and permissions must be checked for the actual publication; workflow source alone cannot establish that immutable release settings are enabled.
 
-The installer, updater, and Homebrew checksum validate archive integrity but do not automatically enforce the provenance policy. An attacker controlling both an archive and its unauthenticated checksum is not defeated by that check. External verification is the current origin-authentication path. It would be inaccurate to label all release artifacts unsigned merely because installation does not verify attestations.
+The installer, a downloaded upgrade, and Homebrew check archive checksums. An upgrade that reuses a retained copy checks that copy's stored SHA256 instead of downloading the archive again. None of those checks enforces the provenance policy. An attacker controlling both an archive and its unauthenticated checksum is not defeated by that check. External verification is the current origin-authentication path. It would be inaccurate to label all release artifacts unsigned merely because installation does not verify attestations.
 
 ## Residual Risks and Non-Goals
 

@@ -6,7 +6,7 @@ Checksums detect corruption. Authenticated provenance also establishes that the 
 
 No first provenance-covered production version is assigned in advance. The first covered release must be identified in its published release notes after acceptance passes, with its full source SHA and `provenance.sigstore.json` asset. Earlier releases and local/source builds have no guarantee under this policy. Missing legacy evidence is not a reason to relax verification for a covered release.
 
-The installer and `gridctl upgrade` still check SHA256 against the release's checksum file. Homebrew uses its cask checksum. None automatically enforces this origin policy.
+The installer, and a `gridctl upgrade` that downloads a release, still check SHA256 against the release's checksum file. A later upgrade that reuses a retained copy checks that copy's stored SHA256 and does not download the archive again. Homebrew uses its cask checksum. None automatically enforces this origin policy.
 
 ## Verify Before Installing
 
