@@ -216,6 +216,29 @@ func TestExecute_BackupFailClosed(t *testing.T) {
 	}
 }
 
+func TestExecute_PurgeRemovesVersionsStore(t *testing.T) {
+	home := sandboxHome(t)
+	gridctlDir := filepath.Join(home, ".gridctl")
+	binDir := filepath.Join(gridctlDir, "versions", "v1.0.0")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gridctlDir, "versions", "manifest.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "gridctl"), []byte("retained"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	m := &Managers{Home: home}
+	if _, err := m.Execute(context.Background(), Options{Purge: true}, nil); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".gridctl", "versions")); !os.IsNotExist(err) {
+		t.Fatalf("versions store must be removed by --purge, stat err = %v", err)
+	}
+}
+
 func TestExecute_PurgeRemovesDirAndBackupSurvives(t *testing.T) {
 	home := sandboxHome(t)
 	gridctlDir := filepath.Join(home, ".gridctl")
