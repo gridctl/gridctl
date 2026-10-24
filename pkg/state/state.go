@@ -82,6 +82,17 @@ func StateDir() (string, error) {
 	return filepath.Join(base, "state"), nil
 }
 
+// VersionsDir returns the directory for retained upgrade binaries
+// (<home>/.gridctl/versions). It sits under BaseDir, so GRIDCTL_HOME,
+// --home, and gridctl reset --purge apply.
+func VersionsDir() (string, error) {
+	base, err := BaseDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "versions"), nil
+}
+
 // LogDir returns the directory for log files (<home>/.gridctl/logs).
 func LogDir() (string, error) {
 	base, err := BaseDir()

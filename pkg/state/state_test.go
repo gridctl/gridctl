@@ -45,6 +45,20 @@ func TestStateDir(t *testing.T) {
 	}
 }
 
+func TestVersionsDir(t *testing.T) {
+	setTempHome(t)
+
+	home := os.Getenv("HOME")
+	expected := filepath.Join(home, ".gridctl", "versions")
+	got, err := VersionsDir()
+	if err != nil {
+		t.Fatalf("VersionsDir: %v", err)
+	}
+	if got != expected {
+		t.Errorf("VersionsDir() = %q, want %q", got, expected)
+	}
+}
+
 func TestLogDir(t *testing.T) {
 	setTempHome(t)
 

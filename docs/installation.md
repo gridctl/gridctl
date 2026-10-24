@@ -71,7 +71,23 @@ gridctl upgrade --yes      # non-interactive (CI)
 gridctl upgrade --version v0.1.0-beta.14   # install a specific version
 ```
 
-If gridctl was installed via Homebrew, `gridctl upgrade` detects that and recommends `brew upgrade gridctl/tap/gridctl` instead.
+If gridctl was installed via Homebrew, `gridctl upgrade` detects that and recommends `brew upgrade gridctl/tap/gridctl` instead. `--list` and `--rollback` print the same brew command and exit 0. A Homebrew install does not keep a local copy unless `--force` bypasses that detection. Rollback is not supported on Windows (`rollback is not supported on Windows`, exit 1). On Windows, an upgrade skips retention and prints `retention is not supported on Windows` on stderr.
+
+A standalone install keeps the binary it replaced, and the binary it installed, under `~/.gridctl/versions`. The default is two entries: the active release and the previous one. `--keep <n>` is the count for that run, not a stored setting. Active and previous are never pruned, so `--keep 1` still leaves both. `--keep 0` replaces the binary and does not write or prune the store. A dev build (`gridctl version` reports `dev`) is not retained. Reinstalling the version already running does not replace the recorded previous tag. When that tag is already retained and the checksum matches, the reinstall installs those bytes and leaves the store entry unchanged. `~/.gridctl/versions` follows `GRIDCTL_HOME` and `--home`. `gridctl reset --purge` removes it with the rest of `~/.gridctl`. Each entry is one copy of the gridctl binary, typically tens of megabytes.
+
+A successful upgrade that retained the previous binary prints `Retained <tag> (roll back with: gridctl upgrade --rollback)`. A later `gridctl upgrade --version <tag>` uses a retained copy when its checksum matches and prints `Using retained <tag> (no download)`. A mismatch downloads the release again.
+
+```bash
+gridctl upgrade --list
+gridctl upgrade --list --format json
+gridctl upgrade --rollback --yes
+gridctl upgrade --rollback v1.0.0-rc.2 --yes
+gridctl upgrade --keep 3 --yes   # this upgrade; --keep is not saved
+```
+
+`--list` prints one row per entry. `*` marks the active release and `p` marks the previous one. Columns line up under `TAG`, `ORIGIN`, `RETAINED`, and `SIZE`. Sizes use one decimal place above bytes (`61.5 MiB`). The footer count is the number of entries, not `--keep`, because the keep count is not stored. A directory that is not in the manifest is listed as `orphans (not deleted): ...` and is left in place. `--format json` prints `schema_version`, `active`, `previous`, `entries`, and `orphans`, and exits 0 when the store is empty. Each entry has `tag`, `sha256`, `size`, `retained_at`, `origin` (`replaced` or `downloaded`), and `schemas`. `schemas` is null for a binary this release retained.
+
+`--rollback` with no tag restores the previous retained binary. A tag restores that retained release. Both are offline: nothing is downloaded. The command prompts unless `--yes`. A non-interactive shell without `--yes` is refused (exit 1). It verifies the stored SHA256 before replacing the installed binary. A mismatch prints the expected and actual digests, exits 1, and leaves the installed binary in place. A missing store, including a named tag when the directory is absent, prints `nothing retained; run gridctl upgrade first` and exits 2. A tag that is not in an existing store prints `<tag> is not retained (gridctl upgrade --list)` and exits 2. A manifest entry whose binary file is missing prints the same line and exits 2; the row stays until the next write. Once a store exists, a tag that is not a semver version exits 1 (`rollback tag must be a semver version`). `--rollback` and `--version` cannot be combined (exit 1). A retained release that does not advertise schema versions prints `warning: compatibility unknown: <tag> was retained by a release that does not advertise schemas` and still rolls back. Binaries retained by this release do not advertise schemas, so that warning is expected. A manifest written by a newer gridctl is refused (`versions manifest written by a newer gridctl`) and is not rewritten. A tag, active value, or previous value that is not a single directory name is refused and is not rewritten.
 
 Updating does not automatically verify attestations. To require origin verification for a standalone update, follow [Release Verification](release-verification.md) and install the verified local archive instead of asking `gridctl upgrade` to download it again.
 
