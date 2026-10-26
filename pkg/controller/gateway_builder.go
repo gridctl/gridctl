@@ -545,6 +545,20 @@ func (b *GatewayBuilder) Run(ctx context.Context, inst *GatewayInstance, verbose
 	gateway := inst.Gateway
 	bufferHandler := inst.Handler
 
+	// Declare before the listener accepts connections. Status() has no row
+	// for a server until registration commits, so an empty list would
+	// otherwise make /ready return 200. Nil only in test constructors;
+	// stackless serve passes an empty UpResult. listenerStack is the stack
+	// RegisterAll will read, which is b.stack until a resolved copy exists.
+	if b.result != nil {
+		stack := b.listenerStack()
+		decls := make([]mcp.ExpectedRegistration, 0, len(b.result.MCPServers))
+		for _, server := range b.result.MCPServers {
+			decls = append(decls, expectedFromResult(server, stack))
+		}
+		gateway.ExpectRegistration(decls...)
+	}
+
 	// Start periodic session cleanup
 	gateway.StartCleanup(ctx)
 	defer gateway.Close()

@@ -2,12 +2,16 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/config"
+	"github.com/gridctl/gridctl/pkg/jsonrpc"
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/runtime"
 )
@@ -676,6 +680,9 @@ func TestServerRegistrar_RegisterAll_WithExternalServer(t *testing.T) {
 	if !found {
 		t.Error("expected failed server to appear in gateway status")
 	}
+	if awaiting := gw.AwaitingRegistration(); len(awaiting) != 0 {
+		t.Errorf("RegisterAll failure left awaiting %v", awaiting)
+	}
 }
 
 func TestServerRegistrar_RegisterOne_External(t *testing.T) {
@@ -707,6 +714,114 @@ func TestServerRegistrar_RegisterOne_External(t *testing.T) {
 	if !found {
 		t.Error("expected RegisterOne failure to surface in gateway status")
 	}
+	if awaiting := gw.AwaitingRegistration(); len(awaiting) != 0 {
+		t.Errorf("RegisterOne failure left awaiting %v", awaiting)
+	}
+}
+
+func TestExpectedRegistration_KindFlags(t *testing.T) {
+	local := expectedFromResult(runtime.MCPServerResult{Name: "echo", LocalProcess: true}, &config.Stack{
+		MCPServers: []config.MCPServer{{Name: "echo", Command: []string{"echo"}, Transport: "stdio"}},
+	})
+	if !local.LocalProcess || local.Transport != "" || local.External || local.A2A {
+		t.Fatalf("local result = %+v, want LocalProcess and empty transport", local)
+	}
+
+	container := expectedFromResult(runtime.MCPServerResult{Name: "box"}, &config.Stack{
+		MCPServers: []config.MCPServer{{Name: "box", Image: "example:latest", Transport: "sse"}},
+	})
+	if container.Transport != mcp.TransportSSE || container.LocalProcess || container.External || container.OpenAPI || container.A2A {
+		t.Fatalf("container result = %+v, want transport sse and no kind flags", container)
+	}
+
+	bare := expectedFromResult(runtime.MCPServerResult{Name: "box"}, nil)
+	if bare.Transport != mcp.TransportHTTP {
+		t.Fatalf("bare container transport = %q, want http", bare.Transport)
+	}
+
+	cfg := expectedFromConfig(config.MCPServer{Name: "echo", Command: []string{"echo"}})
+	if !cfg.LocalProcess || cfg.Transport != mcp.TransportHTTP || cfg.External {
+		t.Fatalf("config local = %+v, want LocalProcess and resolved http transport", cfg)
+	}
+	a2a := expectedFromConfig(config.MCPServer{Name: "agent", A2A: &config.A2AConfig{Card: "https://example.com/card"}})
+	if !a2a.A2A || a2a.LocalProcess {
+		t.Fatalf("config a2a = %+v, want A2A", a2a)
+	}
+}
+
+func TestServerRegistrar_RegisterAll_SuccessClearsAwaiting(t *testing.T) {
+	srv := newRegistrarMCPServer(t)
+	gw := mcp.NewGateway()
+	r := NewServerRegistrar(gw, false)
+	r.SetLogger(slog.Default())
+
+	stack := &config.Stack{MCPServers: []config.MCPServer{{
+		Name:               "ext",
+		URL:                srv.URL,
+		ProtocolGeneration: "handshake",
+	}}}
+	result := &runtime.UpResult{MCPServers: []runtime.MCPServerResult{{
+		Name: "ext", External: true, URL: srv.URL,
+	}}}
+	r.RegisterAll(context.Background(), result, stack, "/path/stack.yaml")
+	if awaiting := gw.AwaitingRegistration(); len(awaiting) != 0 {
+		t.Fatalf("RegisterAll success left awaiting %v", awaiting)
+	}
+	if gw.Router().GetReplicaSet("ext") == nil {
+		t.Fatal("expected the external server to be registered")
+	}
+}
+
+func TestServerRegistrar_RegisterOne_SuccessClearsAwaiting(t *testing.T) {
+	srv := newRegistrarMCPServer(t)
+	gw := mcp.NewGateway()
+	r := NewServerRegistrar(gw, false)
+	r.SetLogger(slog.Default())
+
+	server := config.MCPServer{
+		Name:               "ext",
+		URL:                srv.URL,
+		ProtocolGeneration: "handshake",
+	}
+	if err := r.RegisterOne(context.Background(), server, []ReplicaRuntime{{}}, "/path/stack.yaml"); err != nil {
+		t.Fatalf("RegisterOne: %v", err)
+	}
+	if awaiting := gw.AwaitingRegistration(); len(awaiting) != 0 {
+		t.Fatalf("RegisterOne success left awaiting %v", awaiting)
+	}
+	if gw.Router().GetReplicaSet("ext") == nil {
+		t.Fatal("expected the external server to be registered")
+	}
+}
+
+// newRegistrarMCPServer is enough of an MCP peer for a handshake-pinned
+// external registration to succeed.
+func newRegistrarMCPServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req jsonrpc.Request
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch req.Method {
+		case "initialize":
+			w.Header().Set("Mcp-Session-Id", "registrar-session")
+			_ = json.NewEncoder(w).Encode(jsonrpc.NewSuccessResponse(req.ID, map[string]any{
+				"protocolVersion": "2025-11-25",
+				"serverInfo":      map[string]string{"name": "registrar-test", "version": "1.0"},
+			}))
+		case "tools/list":
+			_ = json.NewEncoder(w).Encode(jsonrpc.NewSuccessResponse(req.ID, map[string]any{
+				"tools": []map[string]string{{"name": "ping"}},
+			}))
+		default:
+			_ = json.NewEncoder(w).Encode(jsonrpc.NewSuccessResponse(req.ID, nil))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
 }
 
 // recordingRuntime records Stop/Remove calls so tests can assert cleanup behavior

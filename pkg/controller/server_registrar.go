@@ -138,6 +138,9 @@ func (r *ServerRegistrar) RegisterAll(ctx context.Context, result *runtime.UpRes
 
 	for _, server := range result.MCPServers {
 		serverCfg := serverConfigs[server.Name]
+		// Idempotent with Run's pre-listen declaration, and the only
+		// declaration for callers that skip Run.
+		r.gateway.ExpectRegistration(expectedFromResult(server, stack))
 		r.logger.Info("MCP server phase", "server", server.Name, "phase", "connecting_server")
 
 		if serverCfg.Autoscale != nil {
@@ -173,13 +176,19 @@ func (r *ServerRegistrar) RegisterAll(ctx context.Context, result *runtime.UpRes
 // recordOutcome reflects a registration attempt in gateway status: failures
 // surface the server as failed (auth challenges become needs-auth state
 // inside RecordRegistrationFailure), successes clear any earlier failure and
-// any stale needs-auth marker.
+// any stale needs-auth marker. Both branches resolve the pre-registration
+// declaration. That resolution does not belong in RecordRegistrationFailure:
+// a per-replica execution failure reaches it while sibling replicas are
+// still starting, and treating that as terminal would let /ready return 200
+// before the attempt finished.
 func (r *ServerRegistrar) recordOutcome(name string, err error) {
 	if err != nil {
 		r.gateway.RecordRegistrationFailure(name, err)
+		r.gateway.ResolveExpectedRegistration(name)
 		return
 	}
 	r.gateway.ClearRegistrationFailure(name)
+	r.gateway.ResolveExpectedRegistration(name)
 	if st, ok := r.gateway.ServerAuthState(name); ok && st.Status == mcp.AuthStatusNeedsAuth {
 		r.gateway.ClearServerAuthState(name)
 	}
@@ -201,6 +210,10 @@ type ReplicaRuntime struct {
 // zero-valued ReplicaRuntime entries of the desired length (or a single-entry
 // slice for the single-replica case).
 func (r *ServerRegistrar) RegisterOne(ctx context.Context, server config.MCPServer, replicas []ReplicaRuntime, stackPath string) (err error) {
+	// Guards the handshake for reload adds and OAuth re-registration.
+	// Container start that pkg/reload performs before this call is not
+	// covered.
+	r.gateway.ExpectRegistration(expectedFromConfig(server))
 	defer func() { r.recordOutcome(server.Name, err) }()
 	r.logger.Info("MCP server phase", "server", server.Name, "phase", "connecting_server")
 
@@ -629,6 +642,51 @@ func mapServerAuth(a *config.ServerAuth) *mcp.ServerAuthConfig {
 		ClientID:     a.ClientID,
 		ClientSecret: a.ClientSecret,
 	}
+}
+
+// expectedFromConfig builds the declaration for RegisterOne. Transport is
+// always resolved; kind flags are what keep a non-container row from being
+// labeled as a container while it registers.
+func expectedFromConfig(server config.MCPServer) mcp.ExpectedRegistration {
+	return mcp.ExpectedRegistration{
+		Name:         server.Name,
+		Transport:    resolveTransport(server.Transport),
+		External:     server.IsExternal(),
+		LocalProcess: server.IsLocalProcess(),
+		SSH:          server.IsSSH(),
+		OpenAPI:      server.IsOpenAPI(),
+		A2A:          server.IsA2A(),
+	}
+}
+
+// expectedFromResult builds the pre-listen declaration from an UpResult
+// entry. Kind flags come from the result. Only a container server takes
+// Transport from the matching stack entry; a non-container row is labeled
+// by its kind flag, and an empty transport would otherwise read as a
+// container for the whole registration.
+func expectedFromResult(server runtime.MCPServerResult, stack *config.Stack) mcp.ExpectedRegistration {
+	decl := mcp.ExpectedRegistration{
+		Name:         server.Name,
+		External:     server.External,
+		LocalProcess: server.LocalProcess,
+		SSH:          server.SSH,
+		OpenAPI:      server.OpenAPI,
+		A2A:          server.A2A,
+	}
+	if decl.External || decl.LocalProcess || decl.SSH || decl.OpenAPI || decl.A2A {
+		return decl
+	}
+	transport := ""
+	if stack != nil {
+		for i := range stack.MCPServers {
+			if stack.MCPServers[i].Name == server.Name {
+				transport = stack.MCPServers[i].Transport
+				break
+			}
+		}
+	}
+	decl.Transport = resolveTransport(transport)
+	return decl
 }
 
 func resolveTransport(transport string) mcp.Transport {

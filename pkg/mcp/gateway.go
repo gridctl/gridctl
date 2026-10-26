@@ -229,14 +229,19 @@ type Gateway struct {
 
 	// pendingMu guards the never-connected retry bookkeeping: pending holds
 	// servers whose registration failed retryably (they have no serverMeta
-	// and no router entry, so the health monitor cannot see them), regGen is
-	// the per-name registration generation that in-flight retries must match
-	// to commit, and cleanupRan flags names whose ready-failure cleanup
-	// removed the backing container (retrying such a config can never
+	// and no router entry, so the health monitor cannot see them), awaiting
+	// holds names declared before registration commits or records an outcome,
+	// regGen is the per-name registration generation that in-flight retries
+	// must match to commit, and cleanupRan flags names whose ready-failure
+	// cleanup removed the backing container (retrying such a config can never
 	// converge). Ordering: pendingMu may be held while taking mu or router
-	// locks (the commit path), never the reverse.
+	// locks (the commit path), never the reverse. Do not take pendingMu from
+	// RecordRegistrationFailure or ClearRegistrationFailure: the first runs
+	// mid-attempt, and UnregisterMCPServerContext calls the second while it
+	// already holds pendingMu.
 	pendingMu  sync.Mutex
 	pending    map[string]*pendingRegistration
+	awaiting   map[string]ExpectedRegistration
 	regGen     map[string]uint64
 	cleanupRan map[string]bool
 
@@ -328,6 +333,7 @@ func NewGateway() *Gateway {
 		registrationFailures: make(map[string]string),
 		authState:            make(map[string]ServerAuthState),
 		pending:              make(map[string]*pendingRegistration),
+		awaiting:             make(map[string]ExpectedRegistration),
 		regGen:               make(map[string]uint64),
 		cleanupRan:           make(map[string]bool),
 		lifeCtx:              lifeCtx,
@@ -1663,9 +1669,12 @@ func (g *Gateway) registerReplicaSet(ctx context.Context, name, policy string, c
 		closeAgentClient(r.Client())
 	}
 
-	// Success clears failure and stale needs-auth state gateway-side: the
-	// controller's recordOutcome only covers its own callers, and the retry
+	// Success clears the pre-listen declaration, any recorded failure, and
+	// stale needs-auth state gateway-side. Resolving here, after the commit
+	// unlock, keeps /ready at 503 between the serverMeta write and
+	// AddReplicaSet. recordOutcome only covers controller callers; the retry
 	// path has no controller in the loop.
+	g.resolveExpected(name)
 	g.ClearRegistrationFailure(name)
 	if st, ok := g.ServerAuthState(name); ok && st.Status == AuthStatusNeedsAuth {
 		g.ClearServerAuthState(name)
@@ -1976,6 +1985,7 @@ func (g *Gateway) UnregisterMCPServerContext(ctx context.Context, name string) e
 	g.cancelListenLoopLocked(name)
 	delete(g.a2aDeclarations, name)
 	delete(g.pending, name)
+	delete(g.awaiting, name)
 	delete(g.cleanupRan, name)
 	g.capabilities.retireServer(name)
 	set := g.router.GetReplicaSet(name)
@@ -2052,6 +2062,66 @@ func (g *Gateway) UnregisterMCPServerContext(ctx context.Context, name string) e
 		}
 	}
 	return errors.Join(cleanupErrors...)
+}
+
+// ExpectedRegistration is a server the gateway must attempt before /ready
+// can return 200. Kind flags are copied onto the transient Status row so a
+// client labels the server correctly while the handshake is in flight.
+// Healthy and RegistrationFailed stay unset on that row.
+type ExpectedRegistration struct {
+	Name         string
+	Transport    Transport
+	External     bool
+	LocalProcess bool
+	SSH          bool
+	OpenAPI      bool
+	A2A          bool
+}
+
+// ExpectRegistration records servers that must be attempted before /ready
+// returns 200. A later declaration for the same name replaces the earlier
+// one. Empty names are ignored.
+func (g *Gateway) ExpectRegistration(decls ...ExpectedRegistration) {
+	g.pendingMu.Lock()
+	defer g.pendingMu.Unlock()
+	if g.awaiting == nil {
+		g.awaiting = make(map[string]ExpectedRegistration)
+	}
+	for _, decl := range decls {
+		if decl.Name == "" {
+			continue
+		}
+		g.awaiting[decl.Name] = decl
+	}
+}
+
+// AwaitingRegistration returns the sorted names still awaiting registration.
+// The slice is empty, never nil, when none are outstanding.
+func (g *Gateway) AwaitingRegistration() []string {
+	g.pendingMu.Lock()
+	defer g.pendingMu.Unlock()
+	names := make([]string, 0, len(g.awaiting))
+	for name := range g.awaiting {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// ResolveExpectedRegistration marks a declared registration as attempted.
+// It is a no-op when the name was never declared. Callers must not hold
+// pendingMu, regFailMu, or mu.
+func (g *Gateway) ResolveExpectedRegistration(name string) {
+	g.resolveExpected(name)
+}
+
+// resolveExpected drops one declaration. The caller must not hold pendingMu,
+// regFailMu, or mu: this takes pendingMu itself. UnregisterMCPServerContext
+// deletes inline instead, because it already holds pendingMu.
+func (g *Gateway) resolveExpected(name string) {
+	g.pendingMu.Lock()
+	delete(g.awaiting, name)
+	g.pendingMu.Unlock()
 }
 
 // RecordRegistrationFailure records why a server could not be registered so
@@ -3654,7 +3724,11 @@ func (g *Gateway) Status() []MCPServerStatus {
 	// snapshotted before regFailMu so the two locks never nest.
 	retryHints := make(map[string]string)
 	a2aDeclarations := make(map[string]bool)
+	awaiting := make(map[string]ExpectedRegistration)
 	g.pendingMu.Lock()
+	for name, decl := range g.awaiting {
+		awaiting[name] = decl
+	}
 	for name := range g.a2aDeclarations {
 		a2aDeclarations[name] = true
 	}
@@ -3704,6 +3778,29 @@ func (g *Gateway) Status() []MCPServerStatus {
 		})
 	}
 	g.authStateMu.RUnlock()
+
+	// Declared, not yet committed, and not yet recorded as a failure or
+	// needs-auth row. A2A comes from the declaration: a2aDeclarations is
+	// filled only when RegisterMCPReplicaSet runs, which is after the
+	// pre-listen declaration. Healthy stays nil so the UI renders
+	// initializing rather than error.
+	for name, decl := range awaiting {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		statuses = append(statuses, MCPServerStatus{
+			Name:         name,
+			Transport:    decl.Transport,
+			External:     decl.External,
+			LocalProcess: decl.LocalProcess,
+			SSH:          decl.SSH,
+			OpenAPI:      decl.OpenAPI,
+			A2A:          decl.A2A,
+			Initialized:  false,
+			Tools:        []string{},
+		})
+	}
 
 	sort.Slice(statuses, func(i, j int) bool { return statuses[i].Name < statuses[j].Name })
 	return statuses

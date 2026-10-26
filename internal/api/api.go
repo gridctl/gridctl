@@ -1480,6 +1480,12 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	// reported ready with those servers silently absent, and a permanently
 	// failed server must not wedge /ready at 503 (apply's readiness wait
 	// would time out even though the gateway serves every healthy server).
+	// A name still awaiting registration is not ready, even with no Status row.
+	if awaiting := s.gateway.AwaitingRegistration(); len(awaiting) > 0 {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte("MCP server not initialized: " + awaiting[0]))
+		return
+	}
 	for _, status := range s.gateway.Status() {
 		if status.Initialized {
 			continue
