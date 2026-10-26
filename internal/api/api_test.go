@@ -119,7 +119,8 @@ func TestHandleReady_StackFileSetNoServers(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	// Stack file set, no MCP servers registered: vacuously all initialized -> 200
+	// Stack file set and no declared servers: 200. A declared server that
+	// has not yet registered is covered by TestHandleReady_DeclaredServerRegistering.
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected 200 when stack file set and no servers registered, got %d", rec.Code)
 	}
@@ -213,6 +214,62 @@ func TestHandleReady_IdleAutoscaled(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected 200 for idle autoscaled server, got %d (body=%q)", rec.Code, rec.Body.String())
 	}
+}
+
+func TestHandleReady_DeclaredServerRegistering(t *testing.T) {
+	tools := []mcp.Tool{{Name: "echo", Description: "echo"}}
+
+	t.Run("commit", func(t *testing.T) {
+		srv := newTestServer(t)
+		srv.SetStackFile("/stack.yaml")
+		srv.gateway.ExpectRegistration(mcp.ExpectedRegistration{Name: "echo", LocalProcess: true})
+
+		rec := readyResponse(t, srv)
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected 503 while declared, got %d", rec.Code)
+		}
+		if body := rec.Body.String(); !strings.Contains(body, "echo") {
+			t.Fatalf("expected body to contain echo, got %q", body)
+		}
+
+		srv.gateway.Router().AddClient(newMockAgentClient("echo", tools))
+		registerMockServerMeta(srv.gateway, "echo", mcp.TransportHTTP)
+		srv.gateway.ResolveExpectedRegistration("echo")
+
+		rec = readyResponse(t, srv)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 after commit, got %d (body=%q)", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("recorded failure does not resolve", func(t *testing.T) {
+		srv := newTestServer(t)
+		srv.SetStackFile("/stack.yaml")
+		srv.gateway.ExpectRegistration(mcp.ExpectedRegistration{Name: "echo", LocalProcess: true})
+		srv.gateway.RecordRegistrationFailure("echo", errors.New("boom"))
+
+		rec := readyResponse(t, srv)
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected 503 after RecordRegistrationFailure alone, got %d (body=%q)", rec.Code, rec.Body.String())
+		}
+		if body := rec.Body.String(); !strings.Contains(body, "echo") {
+			t.Fatalf("expected body to contain echo, got %q", body)
+		}
+
+		srv.gateway.ResolveExpectedRegistration("echo")
+		rec = readyResponse(t, srv)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 once the attempt is recorded as finished, got %d (body=%q)", rec.Code, rec.Body.String())
+		}
+	})
+}
+
+func readyResponse(t *testing.T, srv *Server) *httptest.ResponseRecorder {
+	t.Helper()
+	req := loopbackRequest(http.MethodGet, "/ready", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	return rec
 }
 
 func TestHandleReady_MethodNotAllowed(t *testing.T) {
