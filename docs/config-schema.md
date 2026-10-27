@@ -123,7 +123,7 @@ gateway:
 | `maxToolResultBytes` | int | No | `65536` | Maximum size of a tool-result text block in bytes before truncation. The limit applies to text blocks. Image, audio, resource link, embedded resource, and other non-text blocks are exempt and are not dropped. Ordinary text over the limit is truncated with a suffix noting the original size; [A2A envelopes](#tools-and-capability-delivery) retain atomic JSON and mark omitted content. `0` uses the default (64 KB) |
 | `name` | string | No | `"gridctl-gateway"` | Identity announced to MCP clients in the initialize response (`serverInfo.name`). Some clients (VS Code / GitHub Copilot) display this instead of the entry key in their own config, so give distinct gateways distinct names. Group endpoints announce `<name>/<group>`. The Server Card sanitizes this value for its `name` and does not require it to already match that pattern. Requires a restart to propagate |
 | `description` | string | No | generated | Optional Server Card description, 1 to 100 characters when set. Unset uses `MCP gateway for stack <name>`, truncated to 100 characters. Read only by the card builder. Requires a restart to propagate |
-| `public_url` | string | No | - | Absolute `http` or `https` URL the Server Card advertises, with an optional port and path prefix and no userinfo, query, or fragment. Unset leaves the card to a loopback Host or a Host in `allowed_hosts`, and omits `remotes` otherwise. OAuth uses it as the base for metadata challenges and for the resource URL when the audience is not an HTTP(S) URL; its fallback is the request Host with scheme `http`. Not used for link URLs or the gateway address. Requires a restart to propagate |
+| `public_url` | string | No | - | Absolute `http` or `https` URL the Server Card advertises, with an optional port and path prefix and no userinfo, query, or fragment. Unset leaves the card to a loopback Host or a Host in `allowed_hosts`, and omits `remotes` otherwise. Inbound OAuth uses it as the base for metadata challenges and for the resource URL when the audience is not an HTTP(S) URL; its fallback is the request Host with scheme `http`. Downstream OAuth uses `<public_url>/oauth/callback` as the authorization `redirect_uri`, path prefix included (the proxy must strip that prefix before forwarding). A pre-registered `client_id` must allow that redirect URI on the provider. Unset, the redirect stays `http://localhost:<port>/oauth/callback`. A non-loopback `http` value logs one warning that the redirect is not TLS and providers may refuse it; startup still uses the value. Not used for link URLs or the gateway address. Requires a daemon restart to propagate; a reload accepts the edit and leaves the callback on the startup value |
 | `security` | object | No | - | Security settings (see [Security](#security)) |
 | `tokenizer` | string | No | `"embedded"` | Token counting mode: `"embedded"` (cl100k_base approximation) or `"api"` (exact counts via Anthropic `count_tokens` endpoint) |
 | `tokenizer_api_key` | string | No | - | Anthropic API key for `tokenizer: api`. Falls back to `ANTHROPIC_API_KEY` env var. Supports `${VAR}` and `${var:KEY}` references |
@@ -875,10 +875,12 @@ is not sent downstream and is not a credential.
 
 With `type: oauth`, an unauthorized server deploys in a `needs auth` state
 instead of failing the stack; run `gridctl auth login <name>` (or use the
-web UI) to authorize once. Tokens are stored encrypted under
-`~/.gridctl/oauth/` keyed by the server URL, refresh automatically, and
-survive daemon restarts. This replaces the `npx mcp-remote` bridge for
-OAuth-protected servers. See `gridctl auth --help`.
+web UI) to authorize once. The redirect is
+`http://localhost:<port>/oauth/callback` unless [`gateway.public_url`](#gateway)
+is set, in which case it is `<public_url>/oauth/callback`. Tokens are stored
+encrypted under `~/.gridctl/oauth/` keyed by the server URL, refresh
+automatically, and survive daemon restarts. This replaces the `npx mcp-remote`
+bridge for OAuth-protected servers. See `gridctl auth --help`.
 
 ### Local Process Server
 

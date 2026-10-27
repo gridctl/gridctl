@@ -249,8 +249,8 @@ func discover(ctx context.Context, client *http.Client, serverURL string, config
 
 // clientRegistrationRequest is the RFC 7591 registration payload. Rolled by
 // hand (rather than oauthex.RegisterClient) so application_type can be
-// declared: without "native", strict servers default to "web" and reject
-// loopback redirect URIs (SEP-837).
+// declared. Loopback redirects stay "native" because strict servers default
+// to "web" and reject them (SEP-837). https redirects register as "web".
 type clientRegistrationRequest struct {
 	RedirectURIs            []string `json:"redirect_uris"`
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
@@ -268,8 +268,20 @@ type clientRegistrationResponse struct {
 	ErrorDesc    string `json:"error_description,omitempty"`
 }
 
+// applicationTypeForRedirect reports the DCR application_type for a callback.
+// https registers as web. Loopback http and every other scheme stay native
+// so strict providers keep accepting a loopback redirect (SEP-837).
+func applicationTypeForRedirect(redirectURI string) string {
+	u, err := url.Parse(redirectURI)
+	if err != nil || u.Scheme != "https" {
+		return "native"
+	}
+	return "web"
+}
+
 // registerClient performs dynamic client registration against the issuer,
-// declaring a native public client bound to redirectURI.
+// binding a public client to redirectURI. https redirects register as web;
+// every other scheme, including loopback http, registers as native.
 func registerClient(ctx context.Context, client *http.Client, d *discovery, redirectURI string) (*ClientRegistration, error) {
 	if d.Meta.RegistrationEndpoint == "" {
 		return nil, ErrDCRUnsupported
@@ -281,7 +293,7 @@ func registerClient(ctx context.Context, client *http.Client, d *discovery, redi
 		GrantTypes:              []string{"authorization_code", "refresh_token"},
 		ResponseTypes:           []string{"code"},
 		ClientName:              "gridctl",
-		ApplicationType:         "native",
+		ApplicationType:         applicationTypeForRedirect(redirectURI),
 	}
 	// Registering scopes matters: some servers reject token requests for
 	// scopes the client did not register (go-sdk issue #1102 class).

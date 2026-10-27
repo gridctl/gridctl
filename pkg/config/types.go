@@ -579,7 +579,8 @@ type GatewayConfig struct {
 	// PublicURL is the absolute http(s) origin the Server Card advertises,
 	// with an optional port and path prefix and no userinfo, query, or
 	// fragment. Unset leaves the card to a trusted Host, or omits remotes.
-	// Read only by the card builder.
+	// Also the inbound OAuth metadata base and the downstream OAuth
+	// callback (<value>/oauth/callback, path prefix included).
 	PublicURL string `yaml:"public_url,omitempty"`
 
 	// AllowedHosts lists additional Host header values accepted on the MCP

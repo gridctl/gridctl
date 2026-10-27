@@ -976,6 +976,22 @@ OAuth issuer, audience, JWKS URL, required scopes, and identity claim are restar
 
 ## Downstream OAuth
 
+### Redirect goes to localhost behind a proxy
+
+**Symptoms:**
+
+Authorize in the proxied web UI, or `gridctl auth login`, opens an authorize URL whose `redirect_uri` is `http://localhost:<port>/oauth/callback`. After consent the provider redirects the browser there. Off the daemon host that address is unreachable, the pending flow times out, and the server stays in `needs_auth`.
+
+**Causes:**
+
+`gateway.public_url` is unset, so the downstream OAuth callback stays on the loopback listener. A reload does not apply a change to `gateway.public_url`. That field is not in the reload restart-required set, so the reload succeeds and the broker keeps the redirect it was built with at startup.
+
+**Resolution:**
+
+Set `gateway.public_url` to the absolute URL clients use to reach the gateway, including any path prefix. The redirect becomes `<public_url>/oauth/callback`. The proxy must strip that prefix before forwarding to the daemon. A non-loopback `http` value is accepted and logs one warning that the redirect is not TLS; providers may still refuse it. A pre-registered `client_id` must allow that redirect URI on the provider. Restart the daemon process after setting or changing `public_url`. Reload will not report `restart_required` for this field and will not change the callback. Stop the process and start it again with the saved stack, as in [gateway restart recovery](#gateway-security-requires-a-restart). If the provider rejects a fresh registration for an issuer that already has a cached client, run `gridctl auth reset <name>` and log in again.
+
+See [gateway configuration](config-schema.md#gateway).
+
 ### Login keeps failing after provider-side app rotation
 
 **Symptoms:**

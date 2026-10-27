@@ -16,6 +16,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/mcpauth"
 	"github.com/gridctl/gridctl/pkg/runtime"
 	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/vault"
@@ -795,9 +796,166 @@ func TestGatewayBuilder_SetupHotReload_WithWatch(t *testing.T) {
 	builder.setupHotReload(ctx, inst, registrar, handler, true)
 }
 
-// TestGatewayBuilder_RefusesUnauthenticatedExposure is the regression case:
-// before this, a widened bind with no auth started and served the API to the
-// network with only a log warning.
+func TestOAuthRedirectURL(t *testing.T) {
+	tests := []struct {
+		name         string
+		stack        *config.Stack
+		port         int
+		want         string
+		wantInsecure bool
+	}{
+		{
+			name:         "nil stack",
+			port:         8180,
+			want:         "http://localhost:8180" + mcpauth.CallbackPath,
+			wantInsecure: false,
+		},
+		{
+			name:         "nil gateway",
+			stack:        &config.Stack{Name: "gridctl"},
+			port:         8180,
+			want:         "http://localhost:8180" + mcpauth.CallbackPath,
+			wantInsecure: false,
+		},
+		{
+			name:         "empty public_url",
+			stack:        &config.Stack{Gateway: &config.GatewayConfig{}},
+			port:         8180,
+			want:         "http://localhost:8180" + mcpauth.CallbackPath,
+			wantInsecure: false,
+		},
+		{
+			name:         "https origin",
+			stack:        &config.Stack{Gateway: &config.GatewayConfig{PublicURL: "https://gw.example"}},
+			port:         8180,
+			want:         "https://gw.example" + mcpauth.CallbackPath,
+			wantInsecure: false,
+		},
+		{
+			name:         "https origin trailing slash",
+			stack:        &config.Stack{Gateway: &config.GatewayConfig{PublicURL: "https://gw.example/"}},
+			port:         8180,
+			want:         "https://gw.example" + mcpauth.CallbackPath,
+			wantInsecure: false,
+		},
+		{
+			name:         "https origin with port and prefix",
+			stack:        &config.Stack{Gateway: &config.GatewayConfig{PublicURL: "https://gw.example:8443/prefix"}},
+			port:         8180,
+			want:         "https://gw.example:8443/prefix" + mcpauth.CallbackPath,
+			wantInsecure: false,
+		},
+		{
+			name:         "http non-loopback",
+			stack:        &config.Stack{Gateway: &config.GatewayConfig{PublicURL: "http://gw.example"}},
+			port:         8180,
+			want:         "http://gw.example" + mcpauth.CallbackPath,
+			wantInsecure: true,
+		},
+		{
+			name:         "http loopback",
+			stack:        &config.Stack{Gateway: &config.GatewayConfig{PublicURL: "http://localhost:9000"}},
+			port:         8180,
+			want:         "http://localhost:9000" + mcpauth.CallbackPath,
+			wantInsecure: false,
+		},
+		{
+			name:         "http ipv4 loopback",
+			stack:        &config.Stack{Gateway: &config.GatewayConfig{PublicURL: "http://127.0.0.1:9000"}},
+			port:         8180,
+			want:         "http://127.0.0.1:9000" + mcpauth.CallbackPath,
+			wantInsecure: false,
+		},
+		{
+			name:         "http ipv6 loopback",
+			stack:        &config.Stack{Gateway: &config.GatewayConfig{PublicURL: "http://[::1]:9000"}},
+			port:         8180,
+			want:         "http://[::1]:9000" + mcpauth.CallbackPath,
+			wantInsecure: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, insecure := oauthRedirectURL(tt.stack, tt.port)
+			if got != tt.want || insecure != tt.wantInsecure {
+				t.Errorf("oauthRedirectURL() = %q %v, want %q %v", got, insecure, tt.want, tt.wantInsecure)
+			}
+		})
+	}
+}
+
+func TestGatewayBuilder_Build_OAuthRedirectFromPublicURL(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+
+	regDir := t.TempDir()
+	cfg := Config{Port: 8180}
+	stack := &config.Stack{
+		Name:    "test",
+		Gateway: &config.GatewayConfig{PublicURL: "https://gw.example"},
+	}
+	rt := runtime.NewOrchestrator(nil, nil)
+	builder := NewGatewayBuilder(cfg, stack, "/path/stack.yaml", rt, &runtime.UpResult{})
+	builder.registryDir = regDir
+
+	inst, err := builder.Build(false)
+	if err != nil {
+		t.Fatalf("Build() returned error: %v", err)
+	}
+	if inst.Broker == nil {
+		t.Fatal("expected broker")
+	}
+	const want = "https://gw.example/oauth/callback"
+	if got := inst.Broker.RedirectURL(); got != want {
+		t.Errorf("RedirectURL() = %q, want %q", got, want)
+	}
+	if n := oauthRedirectWarnings(inst); n != 0 {
+		t.Errorf("insecure redirect warnings = %d, want 0", n)
+	}
+}
+
+func TestGatewayBuilder_Build_OAuthRedirectWarnsOnInsecureHTTP(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+
+	regDir := t.TempDir()
+	cfg := Config{Port: 8180}
+	stack := &config.Stack{
+		Name:    "test",
+		Gateway: &config.GatewayConfig{PublicURL: "http://gw.example"},
+	}
+	rt := runtime.NewOrchestrator(nil, nil)
+	builder := NewGatewayBuilder(cfg, stack, "/path/stack.yaml", rt, &runtime.UpResult{})
+	builder.registryDir = regDir
+
+	inst, err := builder.Build(false)
+	if err != nil {
+		t.Fatalf("Build() returned error: %v", err)
+	}
+	if inst.Broker == nil {
+		t.Fatal("expected broker")
+	}
+	const want = "http://gw.example/oauth/callback"
+	if got := inst.Broker.RedirectURL(); got != want {
+		t.Errorf("RedirectURL() = %q, want %q", got, want)
+	}
+	if n := oauthRedirectWarnings(inst); n != 1 {
+		t.Errorf("insecure redirect warnings = %d, want 1", n)
+	}
+}
+
+func oauthRedirectWarnings(inst *GatewayInstance) int {
+	if inst == nil || inst.LogBuffer == nil {
+		return 0
+	}
+	matches := inst.LogBuffer.GetRecentMatching(0, func(e logging.BufferedEntry) bool {
+		return e.Level == "WARN" && strings.Contains(e.Message, "downstream OAuth redirect is not TLS")
+	})
+	return len(matches)
+}
+
 func TestStartupOriginsMode(t *testing.T) {
 	tests := []struct {
 		bind    string
@@ -820,6 +978,9 @@ func TestStartupOriginsMode(t *testing.T) {
 	}
 }
 
+// TestGatewayBuilder_RefusesUnauthenticatedExposure is the regression case:
+// before this, a widened bind with no auth started and served the API to the
+// network with only a log warning.
 func TestGatewayBuilder_RefusesUnauthenticatedExposure(t *testing.T) {
 	withAuth := func() *config.Stack {
 		return &config.Stack{Name: "test", Gateway: &config.GatewayConfig{

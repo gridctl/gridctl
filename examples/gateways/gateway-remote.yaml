@@ -94,6 +94,11 @@ gateway:
     - "https://gateway.example.com"
   # The Server Card advertises an endpoint only when public_url is set, or
   # when the request Host is in allowed_hosts. A reflected Host is not used.
+  # public_url is also the downstream OAuth callback base:
+  # <public_url>/oauth/callback, path prefix included (the proxy must strip
+  # it). A pre-registered client_id must allow that redirect URI. Changing
+  # public_url requires a daemon restart; reload leaves the callback on the
+  # startup value.
   # allowed_hosts:
   #   - "gateway.example.com"
   # public_url: "https://gateway.example.com"

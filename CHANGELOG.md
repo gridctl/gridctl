@@ -4,6 +4,10 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Downstream OAuth now uses `gateway.public_url` for the `/oauth/callback` redirect when it is set, so `redirect_uri` is `<public_url>/oauth/callback` (path prefix included) instead of `http://localhost:<port>/oauth/callback`. Dynamic client registration sends `application_type: web` for an https redirect and `native` otherwise. With `public_url` unset, the loopback redirect and `application_type: native` are unchanged. A non-loopback `http` `public_url` logs one warning and does not refuse startup. A pre-registered `client_id` must allow the new redirect URI on the provider. Changing `public_url` requires a daemon restart. The next login replaces a cached registration; run `gridctl auth reset` if the provider rejects re-registration. (#1439)
+
 ## [1.0.0-rc.3] - 2026-10-27
 
 ### Deprecated
