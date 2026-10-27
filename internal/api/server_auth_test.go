@@ -101,7 +101,7 @@ func TestHandleAuthServers(t *testing.T) {
 }
 
 func TestHandleAuthLoginAndManual(t *testing.T) {
-	srv, _, as := newAuthTestServer(t)
+	srv, broker, as := newAuthTestServer(t)
 	handler := srv.Handler()
 
 	req := loopbackRequest(http.MethodPost, "/api/servers/notion/auth/login", strings.NewReader("{}"))
@@ -119,6 +119,17 @@ func TestHandleAuthLoginAndManual(t *testing.T) {
 	}
 	if loginResp.State == "" || !strings.HasPrefix(loginResp.AuthorizeURL, as.URL+"/authorize") {
 		t.Fatalf("unexpected login payload: %+v", loginResp)
+	}
+	parsed, err := url.Parse(loginResp.AuthorizeURL)
+	if err != nil {
+		t.Fatalf("parsing authorize URL: %v", err)
+	}
+	wantRedirect := broker.RedirectURL()
+	if wantRedirect != "http://localhost:8180"+mcpauth.CallbackPath {
+		t.Fatalf("fixture redirect = %q, want loopback callback", wantRedirect)
+	}
+	if got := parsed.Query().Get("redirect_uri"); got != wantRedirect {
+		t.Errorf("authorize redirect_uri = %q, want %q", got, wantRedirect)
 	}
 
 	// Complete via the manual endpoint with a pasted redirect URL.

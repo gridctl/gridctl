@@ -739,8 +739,9 @@ func (s *Server) Handler() http.Handler {
 
 	// DNS rebinding protection for the whole surface, not just /mcp. Sits
 	// inside corsMiddleware so preflight still gets its headers, and outside
-	// the OAuth callback mount so that route is covered too — its redirect
-	// URI is loopback, so it satisfies the check without an exemption.
+	// the OAuth callback mount so that route is covered too. The Host check
+	// still holds: a loopback arrival with the public Host passes when
+	// allowed_hosts lists it, and a non-loopback arrival skips the check.
 	handler = s.hostMiddleware(handler)
 
 	var extraHeaders []string

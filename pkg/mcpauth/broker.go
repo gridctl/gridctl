@@ -68,8 +68,9 @@ type Broker struct {
 	httpClient *http.Client
 	logger     *slog.Logger
 
-	// redirectURL is the daemon-hosted callback, e.g.
-	// http://localhost:8180/oauth/callback.
+	// redirectURL is the daemon-hosted callback. It is
+	// <gateway.public_url>/oauth/callback when public_url is set, and
+	// http://localhost:<port>/oauth/callback otherwise.
 	redirectURL string
 
 	sink         StateSink             // may be nil
@@ -110,6 +111,10 @@ func (b *Broker) SetOnAuthorized(fn func(server string)) { b.onAuthorized = fn }
 // token is registered the moment it enters memory, before any code path
 // can log a request or response containing it.
 func (b *Broker) SetRedactor(fn func(values []string)) { b.redactor = fn }
+
+// RedirectURL returns the callback registered with the provider and sent
+// as redirect_uri. It is fixed when the broker is constructed.
+func (b *Broker) RedirectURL() string { return b.redirectURL }
 
 // redactToken registers a token's material with the redactor.
 func (b *Broker) redactToken(tok *oauth2.Token) {
@@ -333,8 +338,8 @@ func (b *Broker) FailAuthorization(stateToken string, cause error) {
 	b.logger.Warn("authorization failed", "server", p.server, "error", cause)
 }
 
-// CompleteManual accepts a full pasted redirect URL (the --manual path for
-// SSH sessions where the loopback callback cannot reach the daemon).
+// CompleteManual accepts a full pasted redirect URL (the --manual path when
+// the browser cannot reach the daemon callback, for example over SSH).
 func (b *Broker) CompleteManual(ctx context.Context, redirectURL string) error {
 	u, err := url.Parse(strings.TrimSpace(redirectURL))
 	if err != nil {

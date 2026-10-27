@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -413,7 +414,13 @@ func (b *GatewayBuilder) Build(verbose bool) (*GatewayInstance, error) {
 		slog.New(inst.Handler).Warn("oauth token store unavailable; downstream OAuth brokering disabled",
 			"error", storeErr)
 	} else {
-		redirect := fmt.Sprintf("http://localhost:%d%s", b.config.Port, mcpauth.CallbackPath)
+		// The callback is fixed for this process. gateway.public_url is not
+		// in the reload restart-required set, so a later edit needs a restart.
+		redirect, insecureHTTP := oauthRedirectURL(b.stack, b.config.Port)
+		if insecureHTTP {
+			slog.New(inst.Handler).Warn("downstream OAuth redirect is not TLS; providers may refuse it",
+				"redirect", redirect)
+		}
 		broker := mcpauth.NewBroker(store, redirect, slog.New(inst.Handler))
 		broker.SetStateSink(inst.Gateway)
 		if rh, ok := inst.Handler.(*logging.RedactingHandler); ok {
@@ -824,6 +831,26 @@ func originsUnrestricted(stack *config.Stack) bool {
 		}
 	}
 	return false
+}
+
+// oauthRedirectURL returns the downstream OAuth callback. A configured
+// gateway.public_url is the base, trailing slash trimmed and any path
+// prefix kept, plus the callback path. Otherwise the callback is the
+// loopback listener, byte-identical to the historical default. insecureHTTP
+// is true only when that public URL uses http on a non-loopback host.
+// Callers warn and still use the value; startup does not refuse it.
+func oauthRedirectURL(stack *config.Stack, port int) (redirect string, insecureHTTP bool) {
+	redirect = fmt.Sprintf("http://localhost:%d%s", port, mcpauth.CallbackPath)
+	if stack == nil || stack.Gateway == nil || stack.Gateway.PublicURL == "" {
+		return redirect, false
+	}
+	base := strings.TrimRight(stack.Gateway.PublicURL, "/")
+	redirect = base + mcpauth.CallbackPath
+	u, err := url.Parse(stack.Gateway.PublicURL)
+	if err != nil || u.Scheme != "http" || mcp.HostIsLoopback(u.Hostname()) {
+		return redirect, false
+	}
+	return redirect, true
 }
 
 // startupOriginsMode classifies the effective bind and allowlist for the

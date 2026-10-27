@@ -38,7 +38,9 @@ type fakeAS struct {
 	lastTokenForm  url.Values
 	revokedTokens  []string
 	registerCalls  int
-	rotatedRefresh string // refresh token returned by the last refresh
+	registeredType string   // application_type from the last successful DCR
+	registeredURIs []string // redirect_uris from the last successful DCR
+	rotatedRefresh string   // refresh token returned by the last refresh
 }
 
 func newFakeAS(t *testing.T) *fakeAS {
@@ -88,9 +90,10 @@ func newFakeAS(t *testing.T) *fakeAS {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		if req.ApplicationType != "native" {
-			f.t.Errorf("registration missing application_type=native, got %q", req.ApplicationType)
-		}
+		f.mu.Lock()
+		f.registeredType = req.ApplicationType
+		f.registeredURIs = append([]string(nil), req.RedirectURIs...)
+		f.mu.Unlock()
 		if len(req.RedirectURIs) == 0 {
 			f.t.Error("registration missing redirect_uris")
 		}
@@ -247,10 +250,28 @@ func runAuthFlow(t *testing.T, b *Broker, f *fakeAS, server string) {
 	if q.Get("state") != stateToken {
 		t.Errorf("authorize state mismatch")
 	}
+	if q.Get("redirect_uri") != b.RedirectURL() {
+		t.Errorf("authorize redirect_uri = %q, want %q", q.Get("redirect_uri"), b.RedirectURL())
+	}
 
 	f.mu.Lock()
 	f.codeChallenge = q.Get("code_challenge")
+	calls := f.registerCalls
+	gotType := f.registeredType
+	gotURIs := append([]string(nil), f.registeredURIs...)
 	f.mu.Unlock()
+	if calls > 0 {
+		wantType := "native"
+		if ru, err := url.Parse(b.RedirectURL()); err == nil && ru.Scheme == "https" {
+			wantType = "web"
+		}
+		if gotType != wantType {
+			t.Errorf("application_type = %q, want %q", gotType, wantType)
+		}
+		if len(gotURIs) != 1 || gotURIs[0] != b.RedirectURL() {
+			t.Errorf("redirect_uris = %v, want [%s]", gotURIs, b.RedirectURL())
+		}
+	}
 
 	if err := b.CompleteAuthorization(context.Background(), stateToken, f.issuedCode, f.srv.URL); err != nil {
 		t.Fatalf("CompleteAuthorization: %v", err)
@@ -300,6 +321,62 @@ func TestBrokerFullFlow(t *testing.T) {
 	}
 	if info.Issuer != f.srv.URL {
 		t.Errorf("issuer = %q, want %q", info.Issuer, f.srv.URL)
+	}
+}
+
+func TestBrokerRegistersConfiguredRedirect(t *testing.T) {
+	tests := []struct {
+		name     string
+		redirect string
+		wantType string
+	}{
+		{
+			name:     "https registers web",
+			redirect: "https://gw.example/oauth/callback",
+			wantType: "web",
+		},
+		{
+			name:     "loopback registers native",
+			redirect: "http://localhost:8180" + CallbackPath,
+			wantType: "native",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFakeAS(t)
+			store, err := NewTokenStore(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			b := NewBroker(store, tt.redirect, nil)
+			if b.RedirectURL() != tt.redirect {
+				t.Fatalf("RedirectURL() = %q, want %q", b.RedirectURL(), tt.redirect)
+			}
+			if err := b.Configure("notion", f.resource(), &mcp.ServerAuthConfig{Type: "oauth"}); err != nil {
+				t.Fatal(err)
+			}
+			authURL, _, err := b.BeginAuthorization(context.Background(), "notion", time.Minute)
+			if err != nil {
+				t.Fatalf("BeginAuthorization: %v", err)
+			}
+			u, err := url.Parse(authURL)
+			if err != nil {
+				t.Fatalf("parsing authorize URL: %v", err)
+			}
+			if got := u.Query().Get("redirect_uri"); got != tt.redirect {
+				t.Errorf("redirect_uri = %q, want %q", got, tt.redirect)
+			}
+			f.mu.Lock()
+			gotType := f.registeredType
+			gotURIs := append([]string(nil), f.registeredURIs...)
+			f.mu.Unlock()
+			if gotType != tt.wantType {
+				t.Errorf("application_type = %q, want %q", gotType, tt.wantType)
+			}
+			if len(gotURIs) != 1 || gotURIs[0] != tt.redirect {
+				t.Errorf("redirect_uris = %v, want [%s]", gotURIs, tt.redirect)
+			}
+		})
 	}
 }
 
