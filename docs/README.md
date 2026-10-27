@@ -39,13 +39,13 @@ New to gridctl? Read in this order:
 | [Skills](skills.md) | Author `SKILL.md` files, serve prompts, resources, and Skills over MCP manifests, import from git, a local directory, or a client home, and project skills and agents onto disk via `gridctl skill project` |
 | [Packs](packs.md) | One `gridctl-pack.yaml` manifest importing skills, agents (including from declared external repositories), rule fragments, wiring, and an optional stack as a unit, with tag-exact removal, booster fragments, and `gridctl-pack.lock.yaml` |
 | [Tools Workspace](tools-workspace.md) | Curate the exposed tool surface - whitelists, policy verdicts, Audit Mode, annotation hints, fleet actions, per-client access, and groups |
-| [Gateway authentication](config-schema.md#auth) | Shared credentials and unreleased OAuth resource-server mode, issuer setup, authenticated client profiles, and credential recovery |
+| [Gateway authentication](config-schema.md#auth) | Shared credentials and OAuth resource-server mode (included in v1.0.0-rc.3), issuer setup, authenticated client profiles, and credential recovery |
 | [Global Context Sync](global-context.md) | Manage the global context (one canonical AGENTS.md, or an opt-in rule fragment library with per-client assembly) via `gridctl ctx`, the web UI, or the REST API |
 | [Scaling stdio servers](scaling.md) | Run multiple replicas of a single MCP server - policies, trade-offs, observability |
 | [MCP execution controls](execution.md) | Included in v1.0.0-rc.2: opt-in container restrictions, local environment hygiene, and per-replica evidence |
 | [Outbound A2A](config-schema.md#a2a) | Experimental, included in v1.0.0-rc.2: remote agent tools, mandatory card trust, secret handles, and conversation lifecycle |
 | [Python MCP runtime base](mcp-runtime-python.md) | Recipe included in v1.0.0-rc.2: downstream Python 3.12 foundation image, derived-image recipes, and publication policy. Not a published supported image |
-| [Usage Observability](usage-observability.md) | Token and call metrics, tokenizer options, format savings, `gridctl optimize` heuristics, opt-in run records included in v1.0.0-rc.2, and unreleased OpenTelemetry attribute conventions and OTLP metrics export |
+| [Usage Observability](usage-observability.md) | Token and call metrics, tokenizer options, format savings, `gridctl optimize` heuristics, opt-in run records included in v1.0.0-rc.2, and OpenTelemetry attribute conventions and OTLP metrics export included in v1.0.0-rc.3 |
 | [Capability and sensitive-call primitives](capability-primitives.md) | Included in v1.0.0-rc.2: internal shared authority accounting, generation lifecycle, payload-free observations, and diagnostic privacy |
 
 ## Operations
