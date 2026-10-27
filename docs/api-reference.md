@@ -2019,7 +2019,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/auth/servers
 
 #### `POST /api/servers/{name}/auth/login`
 
-Starts the authorization-code flow for a server: discovers the authorization server, registers or reuses a client, and returns the URL the browser must open plus the single-use `state` token that keys the flow.
+Starts the authorization-code flow for a server: discovers the authorization server, registers or reuses a client, and returns the URL the browser must open plus the single-use `state` token that keys the flow. That URL's `redirect_uri` is `<gateway.public_url>/oauth/callback` when `public_url` is set (path prefix included), otherwise `http://localhost:<port>/oauth/callback`.
 
 **Auth:** Yes
 
@@ -2086,7 +2086,7 @@ Deletes the stored grant **and** the cached dynamic client registration for a se
 
 #### `GET /oauth/callback`
 
-The authorization-code redirect target. When `gateway.public_url` is set, the registered `redirect_uri` is `<public_url>/oauth/callback`, including any path prefix the proxy must strip. Otherwise it is `http://localhost:<port>/oauth/callback`. A pre-registered `client_id` must allow that URI on the provider. Changing `public_url` requires a daemon restart; reload leaves the broker on the startup value. Mounted **outside** the inbound auth middleware (the provider's browser redirect cannot carry a gateway bearer token) and authenticated by the flow's single-use `state` parameter instead. Serves a small HTML page that closes the popup. Not called directly by API clients.
+The authorization-code redirect target. When `gateway.public_url` is set, the registered `redirect_uri` is `<public_url>/oauth/callback`, including any path prefix the proxy must strip. Otherwise it is `http://localhost:<port>/oauth/callback`. A non-loopback `http` `public_url` logs one warning that the redirect is not TLS; startup still uses the value. A pre-registered `client_id` must allow that URI on the provider. Changing `public_url` requires a daemon restart; reload leaves the broker on the startup value. Mounted **outside** the inbound auth middleware (the provider's browser redirect cannot carry a gateway bearer token) and authenticated by the flow's single-use `state` parameter instead. Serves a small HTML page that closes the popup. Not called directly by API clients.
 
 ---
 

@@ -988,7 +988,7 @@ Authorize in the proxied web UI, or `gridctl auth login`, opens an authorize URL
 
 **Resolution:**
 
-Set `gateway.public_url` to the absolute URL clients use to reach the gateway, including any path prefix. The redirect becomes `<public_url>/oauth/callback`. The proxy must strip that prefix before forwarding to the daemon. A pre-registered `client_id` must allow that redirect URI on the provider. Restart the daemon process after setting or changing `public_url`. Reload will not report `restart_required` for this field and will not change the callback. Stop the process and start it again with the saved stack, as in [gateway restart recovery](#gateway-security-requires-a-restart). If the provider rejects a fresh registration for an issuer that already has a cached client, run `gridctl auth reset <name>` and log in again.
+Set `gateway.public_url` to the absolute URL clients use to reach the gateway, including any path prefix. The redirect becomes `<public_url>/oauth/callback`. The proxy must strip that prefix before forwarding to the daemon. A non-loopback `http` value is accepted and logs one warning that the redirect is not TLS; providers may still refuse it. A pre-registered `client_id` must allow that redirect URI on the provider. Restart the daemon process after setting or changing `public_url`. Reload will not report `restart_required` for this field and will not change the callback. Stop the process and start it again with the saved stack, as in [gateway restart recovery](#gateway-security-requires-a-restart). If the provider rejects a fresh registration for an issuer that already has a cached client, run `gridctl auth reset <name>` and log in again.
 
 See [gateway configuration](config-schema.md#gateway).
 
