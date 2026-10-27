@@ -796,9 +796,6 @@ func TestGatewayBuilder_SetupHotReload_WithWatch(t *testing.T) {
 	builder.setupHotReload(ctx, inst, registrar, handler, true)
 }
 
-// TestGatewayBuilder_RefusesUnauthenticatedExposure is the regression case:
-// before this, a widened bind with no auth started and served the API to the
-// network with only a log warning.
 func TestOAuthRedirectURL(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -981,6 +978,9 @@ func TestStartupOriginsMode(t *testing.T) {
 	}
 }
 
+// TestGatewayBuilder_RefusesUnauthenticatedExposure is the regression case:
+// before this, a widened bind with no auth started and served the API to the
+// network with only a log warning.
 func TestGatewayBuilder_RefusesUnauthenticatedExposure(t *testing.T) {
 	withAuth := func() *config.Stack {
 		return &config.Stack{Name: "test", Gateway: &config.GatewayConfig{
