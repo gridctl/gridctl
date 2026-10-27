@@ -413,7 +413,7 @@ Downstream authorization for external servers declared with `auth: {type: oauth}
 
 | Command | Purpose |
 |---|---|
-| `gridctl auth login <server>` | Authorize a server in the browser. `--no-browser` prints the URL (forward the gateway port over SSH first); `--manual` accepts a pasted redirect URL when the browser cannot reach the daemon; `--timeout` bounds the wait (default 5m); `--format json` for machine output. |
+| `gridctl auth login <server>` | Authorize a server in the browser. The `redirect_uri` is `<gateway.public_url>/oauth/callback` when `public_url` is set (path prefix included; a pre-registered `client_id` must allow it), otherwise `http://localhost:<port>/oauth/callback`. Changing `public_url` requires a daemon restart. `--no-browser` prints the URL (forward the gateway port over SSH first); `--manual` accepts a pasted redirect URL when the browser cannot reach the daemon; `--timeout` bounds the wait (default 5m); `--format json` for machine output. |
 | `gridctl auth status [server]` | Authorization state per server (exit `0` all authorized, `1` needs auth, `2` infrastructure error); `--format json` or `--json` for machine output. |
 | `gridctl auth logout [server]` | Revoke (best effort) and delete stored tokens; `--all` for every server. |
 | `gridctl auth reset <server>` | Delete tokens and the cached client registration; the next login starts clean. |

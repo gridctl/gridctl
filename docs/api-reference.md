@@ -2052,7 +2052,7 @@ Long-polls until the flow keyed by `state` completes, fails, or times out. Resol
 
 #### `POST /api/servers/{name}/auth/manual`
 
-Completes a flow from a pasted redirect URL - the `--manual` path for sessions where the browser cannot reach the daemon's callback (e.g. over SSH).
+Completes a flow from a pasted redirect URL, the `--manual` path for sessions where the browser cannot reach the daemon's callback (for example over SSH). When `gateway.public_url` is set, that URL is `<public_url>/oauth/callback` (path prefix included) rather than `http://localhost:<port>/oauth/callback`. The example below is the unset case.
 
 **Auth:** Yes
 
@@ -2086,7 +2086,7 @@ Deletes the stored grant **and** the cached dynamic client registration for a se
 
 #### `GET /oauth/callback`
 
-The authorization-code redirect target. Mounted **outside** the inbound auth middleware - the provider's browser redirect cannot carry a gateway bearer token - and authenticated by the flow's single-use `state` parameter instead. Serves a small HTML page that closes the popup. Not called directly by API clients.
+The authorization-code redirect target. When `gateway.public_url` is set, the registered `redirect_uri` is `<public_url>/oauth/callback`, including any path prefix the proxy must strip. Otherwise it is `http://localhost:<port>/oauth/callback`. A pre-registered `client_id` must allow that URI on the provider. Changing `public_url` requires a daemon restart; reload leaves the broker on the startup value. Mounted **outside** the inbound auth middleware (the provider's browser redirect cannot carry a gateway bearer token) and authenticated by the flow's single-use `state` parameter instead. Serves a small HTML page that closes the popup. Not called directly by API clients.
 
 ---
 
