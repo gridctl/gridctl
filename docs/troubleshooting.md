@@ -28,7 +28,7 @@ Leftover removed fields (`gateway.default_model`, a per-server `model:`,
 top-level `client_models:`, and `limits.budgets`) fail the same way. Delete
 them. `gridctl validate --policy` does not run this check.
 
-This check ships in the next 1.0.0 release candidate. A stack that validated
+This check is included in v1.0.0-rc.3. A stack that validated
 before it because an unknown key was ignored will now fail until that key
 is fixed or removed.
 

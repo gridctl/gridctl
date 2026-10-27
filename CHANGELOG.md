@@ -4,6 +4,8 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.0-rc.3] - 2026-10-27
+
 ### Deprecated
 
 - Legacy span attribute keys (`server.name`, `mcp.server.name`, `mcp.server`, `mcp.replica.id`, `mcp.client.name`, `mcp.protocol.generation`, `mcp.tool.name`, `tool.name`, `output.format`, `mcp.autoscale.direction`, `mcp.autoscale.reason`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.cache_read.input_tokens`, and `gen_ai.usage.cache_creation.input_tokens`) are still emitted beside the new keys and will be removed in 1.1.0. The UI fallback for the four `gen_ai.usage.*` keys goes away with that removal. `network.transport` keeps its key, but the values change immediately: `stdio` and `process` become `pipe`, and `http`, `sse`, `ssh`, OpenAPI, and A2A become `tcp`. `gridctl.transport` keeps the old label (`stdio`, `process`, `ssh`, `http`, `sse`, `openapi`, `a2a`). Dashboards that filter `network.transport` on the old values need to move now. The old values are documented until the same 1.1.0 removal.
