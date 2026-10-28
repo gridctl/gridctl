@@ -554,6 +554,44 @@ func TestWriteListTextMatchesSpec(t *testing.T) {
 	if buf.String() != want {
 		t.Fatalf("list text =\n%s\nwant:\n%s", buf.String(), want)
 	}
+
+	// Longest shipped tag is 15 characters. Width is max(10, longest+1),
+	// so ORIGIN, RETAINED, and SIZE stay in one column and a gutter remains.
+	pre := versions.Manifest{
+		Active:   "v1.0.0-rc.3",
+		Previous: "v1.0.0-rc.2",
+		Entries: []versions.Entry{
+			{
+				Tag:        "v1.0.0-rc.3",
+				Origin:     versions.OriginDownloaded,
+				RetainedAt: time.Date(2026, 10, 27, 23, 2, 0, 0, time.UTC),
+				Size:       77_700_000, // 74.1 MiB
+			},
+			{
+				Tag:        "v1.0.0-rc.2",
+				Origin:     versions.OriginReplaced,
+				RetainedAt: time.Date(2026, 10, 27, 23, 2, 0, 0, time.UTC),
+				Size:       77_700_000,
+			},
+			{
+				Tag:        "v0.1.0-alpha.10",
+				Origin:     versions.OriginReplaced,
+				RetainedAt: time.Date(2026, 10, 27, 23, 2, 0, 0, time.UTC),
+				Size:       77_700_000,
+			},
+		},
+	}
+	buf.Reset()
+	writeListText(&buf, pre, nil)
+	want = "" +
+		"  TAG             ORIGIN      RETAINED              SIZE\n" +
+		"* v1.0.0-rc.3     downloaded  2026-10-27T23:02:00Z  74.1 MiB\n" +
+		"p v1.0.0-rc.2     replaced    2026-10-27T23:02:00Z  74.1 MiB\n" +
+		"  v0.1.0-alpha.10 replaced    2026-10-27T23:02:00Z  74.1 MiB\n" +
+		"(* active, p previous; 3 of 3 kept)\n"
+	if buf.String() != want {
+		t.Fatalf("list text =\n%s\nwant:\n%s", buf.String(), want)
+	}
 }
 
 func TestUpgrade_RollbackPreswapRefuseAndForce(t *testing.T) {
