@@ -83,7 +83,7 @@ With `extends`, the parent constraint and the child constraint both apply on the
 
 A booster fragment cannot carry `requires`. Put the floor on the base pack's stack. The composed file keeps that floor. An override file cannot carry it either. The existing top-level allowlist refuses the key.
 
-Releases before this field reject a stack file that contains it with an unknown-field error. That is fail closed: an older binary will not run a stack that declares a floor it cannot read. See [Validation reports an unknown field](troubleshooting.md#validation-reports-an-unknown-field).
+Releases before v1.0.0-rc.3 ignore `requires` (fail open) because they decode unknown keys silently, the same as a pack manifest. v1.0.0-rc.3 is the first release that enforces the floor and rejects unknown keys. Upgrade every gridctl that reads the stack to v1.0.0-rc.3 or later before adding the key. On a standalone install, `gridctl upgrade --rollback` checks the floor only for a retained target that advertises schemas and refuses the rollback when that target does not satisfy the floor (`--force` prints the refusal as a warning and continues). A target that advertises none, which includes every release before v1.0.0-rc.3, prints the compatibility-unknown warning and still rolls back. A release before v1.0.0-rc.3 then ignores the key. `gridctl upgrade --version`, Homebrew, and a manually installed archive do not check the floor. See [Rollback refused](troubleshooting.md#rollback-refused).
 
 ---
 
