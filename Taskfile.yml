@@ -147,12 +147,12 @@ tasks:
   test:integration:
     desc: Run integration tests (requires Docker or Podman, matches CI flags)
     summary: |
-      Whole integration suite with -race and -timeout 20m. CI additionally
+      Whole integration suite with -race and -timeout 30m. CI additionally
       captures JSON (-count=1) and verifies designated identities from
       tests/adversarial/index.yaml. Docker results cannot satisfy
       Podman-only scenarios. Focused -run reruns are diagnostic only.
     cmds:
-      - go test -tags=integration -race -timeout 20m ./tests/integration/...
+      - go test -tags=integration -race -timeout 30m ./tests/integration/...
 
   test:conformance:
     desc: Run the MCP conformance suite against a live gateway (requires Node 22+)

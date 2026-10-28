@@ -27,7 +27,7 @@ Task (https://taskfile.dev) is the entry point for development builds and Go/fro
 | `task test:verify` | Unit-lane JSON capture plus `cmd/scenarioverify` against `tests/adversarial/index.yaml` (same path Gatekeeper uses). Included in `task verify`. |
 | `task verify` | Canonical local gate. Runs `test:verify`, `lint`, `test:frontend`, and the Python policy tests once each and stops at the first failure. Gatekeeper lanes start together and each designated lane prints a slowest-tests summary; raw captures stay on the runner. |
 | `task scenarios` | Prints designated scenario IDs and escaped focused `-run` commands. Focused reruns do not replace whole-suite acceptance. |
-| `task test:integration` | `go test -tags=integration -race -timeout 20m ./tests/integration/...`. The full suite requires Docker (or Podman); selected HTTP/subprocess suites need no container runtime. All use real dependencies per Article IV of `CONSTITUTION.md`; mocks are disallowed in `tests/integration/`. |
+| `task test:integration` | `go test -tags=integration -race -timeout 30m ./tests/integration/...`. The full suite requires Docker (or Podman); selected HTTP/subprocess suites need no container runtime. All use real dependencies per Article IV of `CONSTITUTION.md`; mocks are disallowed in `tests/integration/`. |
 | `task test:frontend` | `cd web && npm test` (Vitest). |
 | `task examples:refs` | Checks example stacks for unpinned or unassessed in-scope image and package selectors (`scripts/check-example-refs.sh`). Requires `./gridctl`. |
 | `task images:python-runtime` | Validates the Python MCP runtime recipe, pins, and OCI workflow policy. Hosted amd64/arm64 image acceptance is separate. |

@@ -150,11 +150,11 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
-    # The whole suite takes about 14 minutes on a hosted runner and the go
-    # test budget below is 20 minutes, so a slow runner cannot exhaust the
-    # package timeout before a genuinely hung test would. The job limit
-    # leaves room for runtime setup on top of that budget.
-    timeout-minutes: 25
+    # The whole suite takes about 17 minutes on a hosted runner (about 20
+    # under Podman) and the go test budget below is 30 minutes, so a slow
+    # runner cannot exhaust the package timeout before a genuinely hung test
+    # would. The job limit leaves room for runtime setup on top of that budget.
+    timeout-minutes: 35
     env:
       GRIDCTL_RUNTIME: docker
 
@@ -196,7 +196,7 @@ jobs:
             --summary "${RUNNER_TEMP}/integration-scenarios.json" \
             --capture "${RUNNER_TEMP}/integration-capture.json" \
             -- \
-            -tags=integration -timeout 20m ./tests/integration/...
+            -tags=integration -timeout 30m ./tests/integration/...
 
       - name: Slowest tests
         if: always()
@@ -258,7 +258,8 @@ jobs:
     # whatever build is current — so the network stack is provisioned explicitly
     # below rather than inherited from the image (#1092).
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    # Same 30-minute go test budget as the integration job above.
+    timeout-minutes: 35
 
     env:
       # netavark and aardvark-dns release in lockstep and must stay on the same
@@ -400,7 +401,7 @@ jobs:
             --summary "${RUNNER_TEMP}/podman-scenarios.json" \
             --capture "${RUNNER_TEMP}/podman-integration-capture.json" \
             -- \
-            -tags=integration -timeout 20m ./tests/integration/...
+            -tags=integration -timeout 30m ./tests/integration/...
 
       - name: Slowest tests
         if: always()
