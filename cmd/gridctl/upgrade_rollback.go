@@ -214,7 +214,15 @@ type listDocument struct {
 }
 
 func writeListText(w io.Writer, man versions.Manifest, orphans []string) {
-	fmt.Fprintln(w, "  TAG       ORIGIN      RETAINED              SIZE")
+	// Tag column is sized from the longest tag, minimum 10, plus one space
+	// of gutter. Header and rows share that width. Origin stays 12 wide.
+	width := 10
+	for _, e := range man.Entries {
+		if n := len(e.Tag) + 1; n > width {
+			width = n
+		}
+	}
+	fmt.Fprintf(w, "  %-*s%-12s%s\n", width, "TAG", "ORIGIN", "RETAINED              SIZE")
 	for _, e := range man.Entries {
 		mark := " "
 		switch e.Tag {
@@ -224,9 +232,7 @@ func writeListText(w io.Writer, man versions.Manifest, orphans []string) {
 			mark = "p"
 		}
 		ts := e.RetainedAt.UTC().Format(time.RFC3339)
-		// Tag is 10 wide and origin is 12 wide: mark at column 0, tag at 2,
-		// origin at 12, timestamp at 24, size at 46. That matches the header.
-		fmt.Fprintf(w, "%s %-10s%-12s%s  %s\n", mark, e.Tag, e.Origin, ts, formatListSize(e.Size))
+		fmt.Fprintf(w, "%s %-*s%-12s%s  %s\n", mark, width, e.Tag, e.Origin, ts, formatListSize(e.Size))
 	}
 	// Both counts are entries. --keep is per run and is not stored, so the
 	// footer cannot report a keep limit. The specified example is N of N.
