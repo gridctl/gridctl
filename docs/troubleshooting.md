@@ -36,13 +36,13 @@ A release before v1.0.0-rc.3 does not know `requires:` and ignores it along
 with any other unknown key, so the floor is not enforced there. Upgrade that
 gridctl to v1.0.0-rc.3 or later before adding the key. On a standalone
 install, the pre-swap floor check in [Rollback refused](#rollback-refused)
-applies only to a retained target that advertises schemas (v1.0.0-rc.3 or
-later) and refuses the rollback when that target does not satisfy the floor
-(`--force` prints the refusal as a warning and continues). A target that
-advertises none (every release before v1.0.0-rc.3) prints the
-compatibility-unknown warning, rolls back, and then ignores the key.
-`gridctl upgrade --version`, Homebrew, and a manually installed archive do
-not check the floor. See [Requires](config-schema.md#requires).
+applies only to a retained target that advertises schemas and refuses the
+rollback when that target does not satisfy the floor (`--force` prints the
+refusal as a warning and continues). A target that advertises none, which
+includes every release before v1.0.0-rc.3, prints the compatibility-unknown
+warning and still rolls back. A release before v1.0.0-rc.3 then ignores the
+key. `gridctl upgrade --version`, Homebrew, and a manually installed
+archive do not check the floor. See [Requires](config-schema.md#requires).
 
 ## Rollback refused
 
