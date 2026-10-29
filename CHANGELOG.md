@@ -6,7 +6,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Fixed
 
-- The web UI now asks before wiping run history, deleting a skill file, deleting a wizard draft, or removing a context fragment. Wipe history names the stack and the stored file count and size, and states that the wipe is stack-wide and ignores the current filters. Removing a context fragment saves a backup under `~/.gridctl/project-backups/context/`, outside the fragments directory. Deleting a skill file or a wizard draft does not save a backup. Skill and global context editors ask before discarding unsaved edits, including on reload or tab close. A skill that has just loaded its body is not treated as dirty. Escape on a confirm closes that confirm only. (#1360)
+- The web UI now asks before wiping run history, deleting a skill file, deleting a wizard draft, or removing a context fragment. Wipe history names the stack and the stored file count and size, and states that the wipe is stack-wide and ignores the current filters. Removing a context fragment saves a backup under `~/.gridctl/project-backups/context/`, outside the fragments directory. Deleting a skill file or a wizard draft does not save a backup. Skill and global context editors ask before discarding unsaved edits, including on reload or tab close. Closing the detached skill editor after save, discard, reset, detach, fork, or compare-take does not show a browser leave prompt. A skill that has just loaded its body is not treated as dirty. Escape on a confirm closes that confirm only. (#1360)
 
 - `gridctl upgrade --list` sizes the TAG column from the longest retained tag (minimum 10) so pre-release tags such as `v1.0.0-rc.3` no longer run into ORIGIN. This matches the documented aligned-column behavior. (#1442)
 
