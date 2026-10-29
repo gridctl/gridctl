@@ -86,4 +86,32 @@ describe('usePolling retry registration', () => {
     expect(useRegistryStore.getState().error).toBeNull();
     view.unmount();
   });
+
+  it('records a server-pins failure without clearing a successful skill-pins fetch', async () => {
+    stubPoll();
+    vi.mocked(api.fetchServerPins).mockRejectedValue(new Error('pins down'));
+    useAuthStore.setState({ authRequired: false, generation: Symbol() });
+    const view = renderHook(() => usePolling({ registerRetry: true }), { wrapper });
+    await waitFor(() => {
+      expect(usePinsStore.getState().pinsError).toBe('pins down');
+      expect(usePinsStore.getState().skillPins).toEqual({});
+    });
+    expect(usePinsStore.getState().pins).toBeNull();
+    expect(usePinsStore.getState().skillPinsError).toBeNull();
+    view.unmount();
+  });
+
+  it('records a skill-pins failure without clearing a successful server-pins fetch', async () => {
+    stubPoll();
+    vi.mocked(api.fetchSkillPins).mockRejectedValue(new Error('skill pins down'));
+    useAuthStore.setState({ authRequired: false, generation: Symbol() });
+    const view = renderHook(() => usePolling({ registerRetry: true }), { wrapper });
+    await waitFor(() => {
+      expect(usePinsStore.getState().skillPinsError).toBe('skill pins down');
+      expect(usePinsStore.getState().pins).toEqual({});
+    });
+    expect(usePinsStore.getState().skillPins).toBeNull();
+    expect(usePinsStore.getState().pinsError).toBeNull();
+    view.unmount();
+  });
 });
