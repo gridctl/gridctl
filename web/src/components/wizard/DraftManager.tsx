@@ -4,6 +4,7 @@ import { cn } from '../../lib/cn';
 import { useWizardStore, type WizardDraft } from '../../stores/useWizardStore';
 import { fetchWizardDrafts, saveWizardDraft, deleteWizardDraft } from '../../lib/api';
 import { showToast } from '../ui/Toast';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 
 interface DraftManagerProps {
   className?: string;
@@ -17,6 +18,7 @@ export function DraftManager({ className }: DraftManagerProps) {
   const [showSave, setShowSave] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<WizardDraft | null>(null);
 
   const refreshDrafts = useCallback(async () => {
     setDraftsLoading(true);
@@ -191,8 +193,11 @@ export function DraftManager({ className }: DraftManagerProps) {
                     </div>
                   </button>
                   <button
-                    onClick={() => handleDelete(draft.id)}
+                    type="button"
+                    onClick={() => setPendingDelete(draft)}
                     disabled={deleting === draft.id}
+                    title="Delete draft"
+                    aria-label={`Delete draft ${draft.name}`}
                     className="p-1 rounded text-text-muted/40 hover:text-status-error opacity-0 group-hover:opacity-100 transition-all duration-200"
                   >
                     {deleting === draft.id ? (
@@ -207,6 +212,24 @@ export function DraftManager({ className }: DraftManagerProps) {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => {
+          const id = pendingDelete?.id;
+          setPendingDelete(null);
+          if (id) void handleDelete(id);
+        }}
+        title="Delete draft"
+        message={
+          <p>
+            Delete draft <span className="font-mono text-primary">{pendingDelete?.name}</span> ({pendingDelete?.resourceType})?
+          </p>
+        }
+        confirmLabel={`Delete "${pendingDelete?.name ?? ''}"`}
+        variant="danger"
+      />
     </div>
   );
 }
