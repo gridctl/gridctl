@@ -18,6 +18,7 @@ import type {
 import { transformToNodesAndEdges } from '../lib/transform';
 import { showToast } from '../components/ui/Toast';
 import { appendToolFanout } from '../lib/graph/toolFanout';
+import { reuseGraphIdentities, structurallyEqual } from '../lib/graph/identity';
 import { useRegistryStore } from './useRegistryStore';
 import { useUIStore } from './useUIStore';
 import { usePinsStore } from './usePinsStore';
@@ -80,6 +81,10 @@ interface StackState {
   autoscaleDecisions: Record<string, AutoscaleDecision[]>;
   // Last-seen raw timestamps, used to diff polls and detect new scale events.
   autoscaleLastSeen: Record<string, { upAt?: string; downAt?: string }>;
+  // Servers whose token total rose since the previous poll. The canvas animates
+  // those gateway edges, capped, instead of every live edge.
+  activeServers: Set<string>;
+  tokenTotalsLastSeen: Record<string, number>;
 
   // === UI State ===
   selectedNodeId: string | null;
@@ -141,6 +146,8 @@ export const useStackStore = create<StackState>()(
     autoscaleHistory: {},
     autoscaleDecisions: {},
     autoscaleLastSeen: {},
+    activeServers: new Set<string>(),
+    tokenTotalsLastSeen: {},
     selectedNodeId: null,
     expandedServers: new Set<string>(),
     layoutEpoch: 0,
@@ -181,6 +188,11 @@ export const useStackStore = create<StackState>()(
         autoscaleDecisions,
         autoscaleLastSeen,
       );
+      const tokens = observeTokenTotals(
+        status.token_usage,
+        get().tokenTotalsLastSeen,
+        get().activeServers,
+      );
       set({
         gatewayInfo: status.gateway,
         mcpServers,
@@ -195,6 +207,8 @@ export const useStackStore = create<StackState>()(
         autoscaleHistory: folded.history,
         autoscaleDecisions: folded.decisions,
         autoscaleLastSeen: folded.lastSeen,
+        activeServers: tokens.activeServers,
+        tokenTotalsLastSeen: tokens.tokenTotalsLastSeen,
         lastUpdated: new Date(),
         isLoading: false,
         error: null,
@@ -205,9 +219,12 @@ export const useStackStore = create<StackState>()(
 
     setSessionEntries: (entries) => set({ sessionEntries: entries }),
     setClients: (clients) => {
+      // The poll applies status before clients. Skip a no-op write, and
+      // refresh when the list changed so a link, unlink, or scope edit paints
+      // in the same cycle instead of waiting for the next status poll.
+      if (structurallyEqual(get().clients, clients)) return;
       set({ clients });
-      // No refreshNodesAndEdges here -- setGatewayStatus already triggers it,
-      // and clients are read from store state during refresh.
+      if (get().gatewayInfo) get().refreshNodesAndEdges();
     },
 
     setTools: (tools) => set({ tools }),
@@ -306,7 +323,18 @@ export const useStackStore = create<StackState>()(
         draggedPositions: draggedPositions.size > 0 ? draggedPositions : undefined,
       });
 
-      set({ nodes: fanned.nodes, edges: fanned.edges });
+      // Reuse after pin annotation and fan-out so a reused node cannot keep a
+      // stale pinStatus. Skip the write when both arrays are unchanged.
+      const previousNodes = get().nodes;
+      const previousEdges = get().edges;
+      const reused = reuseGraphIdentities(
+        previousNodes,
+        fanned.nodes,
+        previousEdges,
+        fanned.edges,
+      );
+      if (reused.nodes === previousNodes && reused.edges === previousEdges) return;
+      set({ nodes: reused.nodes, edges: reused.edges });
     },
 
     resetLayout: () => {
@@ -375,6 +403,36 @@ export const useSelectedNodeData = () => {
   const node = useSelectedNode();
   return node?.data as Record<string, unknown> | undefined;
 };
+
+function sameMembers(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const item of a) {
+    if (!b.has(item)) return false;
+  }
+  return true;
+}
+
+// Servers whose token total rose since the previous poll. First sight is a
+// baseline only, matching the autoscale decision feed. The previous active set
+// is reused when membership is unchanged so the canvas does not re-render.
+function observeTokenTotals(
+  usage: TokenUsage | null | undefined,
+  prevTotals: Record<string, number>,
+  prevActive: Set<string>,
+): { activeServers: Set<string>; tokenTotalsLastSeen: Record<string, number> } {
+  const tokenTotalsLastSeen: Record<string, number> = {};
+  const nextActive = new Set<string>();
+  for (const [name, counts] of Object.entries(usage?.per_server ?? {})) {
+    const total = counts.total_tokens ?? 0;
+    tokenTotalsLastSeen[name] = total;
+    const seen = prevTotals[name];
+    if (seen !== undefined && total > seen) nextActive.add(name);
+  }
+  return {
+    activeServers: sameMembers(nextActive, prevActive) ? prevActive : nextActive,
+    tokenTotalsLastSeen,
+  };
+}
 
 // Fold the latest poll into the autoscale ring buffer and derived decision
 // feed. Exported for unit-testing; not intended for direct use from components.
