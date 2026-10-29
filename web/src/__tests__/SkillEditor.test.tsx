@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { SkillEditor } from '../components/registry/SkillEditor';
-import { fetchRegistrySkill, updateRegistrySkill } from '../lib/api';
-import type { AgentSkill } from '../types';
+import { createRegistrySkill, fetchRegistrySkill, updateRegistrySkill } from '../lib/api';
+import { useUIStore } from '../stores/useUIStore';
+import type { AgentSkill, SkillSourceStatus } from '../types';
 
 vi.mock('../components/ui/Toast', () => ({
   showToast: vi.fn(),
@@ -164,5 +165,130 @@ describe('SkillEditor extra frontmatter pass-through', () => {
     fireEvent.click(saveButton());
     await waitFor(() => expect(updateRegistrySkill).toHaveBeenCalledTimes(1));
     expect(vi.mocked(updateRegistrySkill).mock.calls[0][1]).not.toHaveProperty('extra');
+  });
+});
+
+const SOURCE: SkillSourceStatus = {
+  name: 'team',
+  repo: 'https://github.com/example/skills',
+  autoUpdate: false,
+  updateInterval: '',
+  skills: [],
+  updateAvailable: false,
+  driftedSkills: ['incident-triage'],
+};
+
+describe('SkillEditor discard guard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fetchRegistrySkill).mockResolvedValue({ ...LIST_SKILL, body: '# Triage\n\nReal instructions.' });
+  });
+
+  afterEach(() => {
+    useUIStore.setState({
+      editorPrefs: { showFrontmatter: false, showPreview: true, splitRatio: 0.62 },
+    });
+  });
+
+  it('closes a freshly hydrated skill without a discard prompt', async () => {
+    const onClose = vi.fn();
+    render(<SkillEditor isOpen onClose={onClose} onSaved={() => {}} skill={LIST_SKILL} />);
+    await waitFor(() => expect(bodyField()).toHaveValue('# Triage\n\nReal instructions.'));
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
+  it('confirms before discarding a body edit', async () => {
+    const onClose = vi.fn();
+    render(<SkillEditor isOpen onClose={onClose} onSaved={() => {}} skill={LIST_SKILL} />);
+    await waitFor(() => expect(bodyField()).toHaveValue('# Triage\n\nReal instructions.'));
+
+    fireEvent.change(bodyField(), { target: { value: '# Edited\n' } });
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(/unsaved edits/i);
+    expect(bodyField()).toHaveValue('# Edited\n');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(bodyField()).toHaveValue('# Edited\n');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('confirms before discarding a frontmatter edit', async () => {
+    // Seed the persisted pref instead of clicking Edit metadata. That click
+    // updates the store from inside a setState updater and warns; the field
+    // the editor shows is the same either way.
+    useUIStore.setState({
+      editorPrefs: { showFrontmatter: true, showPreview: true, splitRatio: 0.62 },
+    });
+    const onClose = vi.fn();
+    render(<SkillEditor isOpen onClose={onClose} onSaved={() => {}} skill={LIST_SKILL} />);
+    await waitFor(() => expect(bodyField()).toHaveValue('# Triage\n\nReal instructions.'));
+
+    fireEvent.change(screen.getByPlaceholderText('Brief description of what this skill does'), {
+      target: { value: 'Changed description' },
+    });
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(/unsaved edits/i);
+  });
+
+  it('closes only the Reset confirm on Escape', async () => {
+    const onClose = vi.fn();
+    render(
+      <SkillEditor isOpen onClose={onClose} onSaved={() => {}} skill={LIST_SKILL} source={SOURCE} />,
+    );
+    await waitFor(() => expect(bodyField()).toHaveValue('# Triage\n\nReal instructions.'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(/upstream/i);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
+  it('forks under the typed name with no supporting files', async () => {
+    const onClose = vi.fn();
+    render(
+      <SkillEditor isOpen onClose={onClose} onSaved={() => {}} skill={LIST_SKILL} source={SOURCE} />,
+    );
+    await waitFor(() => expect(bodyField()).toHaveValue('# Triage\n\nReal instructions.'));
+
+    fireEvent.click(screen.getByRole('button', { name: /fork as/i }));
+    fireEvent.change(screen.getByPlaceholderText('new-skill-name'), { target: { value: 'triage-copy' } });
+    fireEvent.click(screen.getByRole('button', { name: /^fork$/i }));
+
+    await waitFor(() => expect(createRegistrySkill).toHaveBeenCalledTimes(1));
+    expect(createRegistrySkill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'triage-copy',
+        fileCount: 0,
+        body: '# Triage\n\nReal instructions.',
+      }),
+    );
+  });
+
+  it('prevents unload while dirty and not while clean', async () => {
+    const onClose = vi.fn();
+    render(<SkillEditor isOpen onClose={onClose} onSaved={() => {}} skill={LIST_SKILL} />);
+    await waitFor(() => expect(bodyField()).toHaveValue('# Triage\n\nReal instructions.'));
+
+    const clean = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(clean);
+    expect(clean.defaultPrevented).toBe(false);
+
+    fireEvent.change(bodyField(), { target: { value: '# Edited\n' } });
+    const dirty = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(dirty);
+    expect(dirty.defaultPrevented).toBe(true);
   });
 });

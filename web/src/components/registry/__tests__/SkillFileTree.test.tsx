@@ -3,7 +3,7 @@ import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { SkillFileTree } from '../SkillFileTree';
 import { sortSkillFiles } from '../../../lib/skillFiles';
-import { fetchSkillFiles } from '../../../lib/api';
+import { deleteSkillFile, fetchSkillFiles } from '../../../lib/api';
 import type { SkillFile } from '../../../types';
 
 vi.mock('../../ui/Toast', () => ({
@@ -114,6 +114,23 @@ describe('SkillFileTree', () => {
     render(<SkillFileTree skillName="docx" readOnly />);
     await screen.findByText('only.sh');
     expect(screen.queryByRole('group', { name: 'Sort files by' })).not.toBeInTheDocument();
+  });
+
+  it('confirms before deleting a file', async () => {
+    vi.mocked(deleteSkillFile).mockResolvedValue(undefined);
+    render(<SkillFileTree skillName="docx" />);
+    const trigger = await screen.findByRole('button', { name: 'Delete file scripts/alpha.sh' });
+    fireEvent.click(trigger);
+    expect(deleteSkillFile).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(deleteSkillFile).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete file scripts/alpha.sh' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete "alpha.sh"' }));
+    await waitFor(() => expect(deleteSkillFile).toHaveBeenCalledWith('docx', 'scripts/alpha.sh'));
   });
 
   it('renders the empty state when a skill has no supporting files', async () => {

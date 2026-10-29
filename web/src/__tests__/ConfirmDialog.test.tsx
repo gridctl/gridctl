@@ -3,6 +3,7 @@ import '@testing-library/jest-dom';
 import { useState } from 'react';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { Modal } from '../components/ui/Modal';
 
 beforeEach(() => {
   cleanup();
@@ -93,6 +94,27 @@ describe('ConfirmDialog', () => {
       await nextFrame();
     });
     expect(screen.getByText(/Delete "my-skill"/)).toBeInTheDocument();
+  });
+
+  it('closes only itself when nested in a Modal', () => {
+    const modalClose = vi.fn();
+    const confirmClose = vi.fn();
+    render(
+      <Modal isOpen onClose={modalClose} title="Host">
+        <ConfirmDialog
+          isOpen
+          onClose={confirmClose}
+          onConfirm={() => {}}
+          title="Delete file"
+          message="Delete it?"
+          confirmLabel="Delete"
+        />
+      </Modal>,
+    );
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(confirmClose).toHaveBeenCalledTimes(1);
+    expect(modalClose).not.toHaveBeenCalled();
   });
 
   it('returns null when closed', () => {

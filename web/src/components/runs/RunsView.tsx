@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { useRunsStore } from '../../stores/useRunsStore';
 import { exportRuns, updateStackRuns, wipeRuns, type RunRecord } from '../../lib/api';
+import { formatBytes } from '../../lib/format-bytes';
 import { cn } from '../../lib/cn';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 
 const RECORDING_BLURB =
   'Records are saved after dispatch attempts return. Recording is best-effort. Attempts interrupted by a crash may leave no record, and older records may have been removed by retention or wipe.';
@@ -29,6 +31,7 @@ export function RunsView({ servers }: RunsViewProps) {
   const isLoading = useRunsStore((s) => s.isLoading);
   const [confirmEnable, setConfirmEnable] = useState(false);
   const [confirmDisable, setConfirmDisable] = useState(false);
+  const [confirmWipe, setConfirmWipe] = useState(false);
   const [busy, setBusy] = useState(false);
   const [params] = useSearchParams();
   const [narrow, setNarrow] = useState(false);
@@ -169,22 +172,11 @@ export function RunsView({ servers }: RunsViewProps) {
               </button>
               <button
                 type="button"
-                className="px-2 py-1 rounded border border-border text-text-primary hover:bg-surface-highlight"
-                onClick={async () => {
-                  setBusy(true);
-                  setMutationError(null);
-                  try {
-                    const result = await wipeRuns();
-                    if (!result.success) {
-                      setMutationError(result.partial ? 'Wipe was partial; some files remain.' : 'Wipe failed.');
-                    }
-                    await load();
-                  } catch (err) {
-                    setMutationError(err instanceof Error ? err.message : 'Wipe failed');
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
+                className={cn(
+                  'px-2 py-1 rounded border',
+                  'border-status-error/40 text-status-error hover:bg-status-error/10',
+                )}
+                onClick={() => setConfirmWipe(true)}
                 disabled={busy}
               >
                 Wipe history
@@ -379,6 +371,39 @@ export function RunsView({ servers }: RunsViewProps) {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={confirmWipe}
+        onClose={() => setConfirmWipe(false)}
+        onConfirm={() => {
+          setConfirmWipe(false);
+          void (async () => {
+            setBusy(true);
+            setMutationError(null);
+            try {
+              const result = await wipeRuns();
+              if (!result.success) {
+                setMutationError(result.partial ? 'Wipe was partial; some files remain.' : 'Wipe failed.');
+              }
+              await load();
+            } catch (err) {
+              setMutationError(err instanceof Error ? err.message : 'Wipe failed');
+            } finally {
+              setBusy(false);
+            }
+          })();
+        }}
+        title="Wipe run history"
+        message={
+          <p>
+            Wipe run history for stack <span className="font-mono text-primary">{status?.inventory.stack}</span>?
+            This removes {status?.inventory.fileCount ?? 0} stored {(status?.inventory.fileCount ?? 0) === 1 ? 'file' : 'files'} ({formatBytes(status?.inventory.sizeBytes ?? 0)}).
+            The wipe is stack-wide and ignores the current filters.
+          </p>
+        }
+        confirmLabel="Wipe history"
+        variant="danger"
+      />
 
       <div className={cn('flex-1 min-h-0 flex', narrow && 'flex-col')}>
         <div className="flex-1 min-w-0 overflow-auto">

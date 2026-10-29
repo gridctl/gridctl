@@ -117,13 +117,13 @@ The web UI's Library tab (⌘2 in the unified shell, also available as the detac
 
 - **List** every skill in the registry. Filter by state (`active` / `draft` / `disabled`) or by name.
 - **Create** a new skill: gridctl prompts for the name, populates default frontmatter, and opens the editor on the body.
-- **Edit** the body and frontmatter inline. The SkillEditor renders a side-by-side YAML form (for frontmatter) plus a markdown editor (for the body), with validation against the agentskills.io schema.
+- **Edit** the body and frontmatter inline. The SkillEditor renders a side-by-side YAML form (for frontmatter) plus a markdown editor (for the body), with validation against the agentskills.io schema. Closing with unsaved body or frontmatter edits asks before discarding them. Reload or tab close prompts while those edits are pending. A skill that has just loaded its body is not treated as dirty. Deleting a supporting file from the editor asks first. That delete removes the file and does not write a backup.
 - **Activate / disable** a skill via the state badge. Disabled skills stay on disk but are dropped from `prompts/list` responses.
 - **Delete** a skill: removes the directory from the registry.
 
 The Library is backed by the REST endpoints under `/api/registry/skills/*` (see [`docs/api-reference.md`](./api-reference.md)). Everything you can do in the UI you can also do over HTTP.
 
-The main Library and detached editor share [gateway credential re-entry](config-schema.md#browser-credentials). If a save succeeds but its follow-up registry refresh is rejected, the detached editor stays open for verification. Verification resumes the read without repeating the save.
+The main Library and detached editor share [gateway credential re-entry](config-schema.md#browser-credentials). If a save succeeds but its follow-up registry refresh is rejected, the detached editor stays open for verification. Verification resumes the read without repeating the save. A close that does run, including after save or discard, does not show a browser leave prompt.
 
 ## Managing skills on the CLI
 

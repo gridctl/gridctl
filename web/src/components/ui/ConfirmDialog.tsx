@@ -50,8 +50,12 @@ export function ConfirmDialog({
 
   useEffect(() => {
     if (!isOpen) return;
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    // Capture phase, matching useDismiss: one Escape closes this confirm and
+    // must not also reach a host Modal's bubble-phase listener on document.
+    // stopPropagation is enough for that; it does not silence other capture
+    // listeners on document (useDismiss, AccessLens).
+    document.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => document.removeEventListener('keydown', handleKeyDown, { capture: true });
   }, [isOpen, handleKeyDown]);
 
   if (!isOpen) return null;

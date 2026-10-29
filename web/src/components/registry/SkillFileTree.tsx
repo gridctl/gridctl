@@ -12,6 +12,7 @@ import { cn } from '../../lib/cn';
 import { fetchSkillFiles, writeSkillFile, deleteSkillFile } from '../../lib/api';
 import { FILE_SORTS, groupFilesByDir, type FileSort } from '../../lib/skillFiles';
 import { showToast } from '../ui/Toast';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 import type { SkillFile } from '../../types';
 
 interface SkillFileTreeProps {
@@ -29,6 +30,7 @@ export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: Ski
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set(['scripts', 'references', 'assets']));
   const [showNewFile, setShowNewFile] = useState(false);
   const [newFilePath, setNewFilePath] = useState('');
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   // Flag loading when the skill changes (state adjustment during render, so
   // the spinner commits together with the switch).
@@ -160,8 +162,9 @@ export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: Ski
                       {!readOnly && (
                         <button
                           type="button"
-                          onClick={() => handleDeleteFile(file.path)}
+                          onClick={() => setPendingDelete(file.path)}
                           title="Delete file"
+                          aria-label={`Delete file ${file.path}`}
                           className="opacity-0 group-hover:opacity-100 p-1.5 rounded text-text-muted hover:text-status-error hover:bg-status-error/10 focus:outline-none focus:ring-2 focus:ring-status-error/30 focus:opacity-100 transition-all"
                         >
                           <Trash2 size={10} />
@@ -174,6 +177,25 @@ export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: Ski
             </div>
           ))}
         </div>
+      )}
+      {!readOnly && (
+        <ConfirmDialog
+          isOpen={pendingDelete !== null}
+          onClose={() => setPendingDelete(null)}
+          onConfirm={() => {
+            const path = pendingDelete;
+            setPendingDelete(null);
+            if (path) void handleDeleteFile(path);
+          }}
+          title="Delete file"
+          message={
+            <p>
+              Delete <span className="font-mono text-primary">{pendingDelete}</span>?
+            </p>
+          }
+          confirmLabel={`Delete "${pendingDelete ? pendingDelete.split('/').pop() : ''}"`}
+          variant="danger"
+        />
       )}
     </div>
   );

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MemoryRouter } from 'react-router';
 import { RunsView } from '../components/runs/RunsView';
@@ -139,7 +139,31 @@ describe('RunsView', () => {
     );
     await waitFor(() => expect(screen.getByText(/Loss queue_full: 3/)).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /wipe history/i }));
+    expect(wipeRuns).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveTextContent(/demo/);
+    expect(dialog).toHaveTextContent(/stack-wide/i);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(wipeRuns).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /wipe history/i }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: /wipe history/i }));
+    await waitFor(() => expect(wipeRuns).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/partial/i));
+  });
+
+  it('does not wipe when the confirm is dismissed with Escape', async () => {
+    render(
+      <MemoryRouter>
+        <RunsView servers={['github']} />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: /wipe history/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /wipe history/i }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(wipeRuns).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 
   it('supports keyboard selection', async () => {
