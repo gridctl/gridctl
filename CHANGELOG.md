@@ -6,6 +6,8 @@ All notable changes to gridctl will be documented in this file.
 
 ### Fixed
 
+- The web UI now asks before wiping run history, deleting a skill file, deleting a wizard draft, or removing a context fragment. Skill and global context editors ask before discarding unsaved edits, including on reload or tab close. Escape on a confirm closes that confirm only.
+
 - `gridctl upgrade --list` sizes the TAG column from the longest retained tag (minimum 10) so pre-release tags such as `v1.0.0-rc.3` no longer run into ORIGIN. This matches the documented aligned-column behavior. (#1442)
 
 - Downstream OAuth now uses `gateway.public_url` for the `/oauth/callback` redirect when it is set, so `redirect_uri` is `<public_url>/oauth/callback` (path prefix included) instead of `http://localhost:<port>/oauth/callback`. Dynamic client registration sends `application_type: web` for an https redirect and `native` otherwise. With `public_url` unset, the loopback redirect and `application_type: native` are unchanged. A non-loopback `http` `public_url` logs one warning and does not refuse startup. A pre-registered `client_id` must allow the new redirect URI on the provider. Changing `public_url` requires a daemon restart. The next login replaces a cached registration; run `gridctl auth reset` if the provider rejects re-registration. (#1439)
