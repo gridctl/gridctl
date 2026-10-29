@@ -41,6 +41,7 @@ import { applyMarkdownAction, type MarkdownAction } from '../../lib/markdownEdit
 import { cn } from '../../lib/cn';
 import { useUIStore } from '../../stores/useUIStore';
 import { useSkillBody } from '../../hooks/useSkillBody';
+import { useBeforeUnloadGuard } from '../../hooks/useBeforeUnloadGuard';
 import { useSplitPane } from '../../hooks/useSplitPane';
 import { SplitPaneHandle } from '../ui/SplitPane';
 import type { AgentSkill, ItemState, SkillSourceStatus, SkillValidationResult } from '../../types';
@@ -291,6 +292,84 @@ function AcceptanceCriteriaEditor({
   );
 }
 
+interface SkillDataFields {
+  name: string;
+  description: string;
+  body: string;
+  state: ItemState;
+  fileCount: number;
+  license: string;
+  compatibility: string;
+  allowedTools: string;
+  metadata: MetadataEntry[];
+  criteria: CriterionEntry[];
+  extra?: Record<string, unknown>;
+}
+
+// Shared by save and fork. name and fileCount are inputs because a fork is a
+// new local skill (typed name, fileCount 0), not a save of the open skill.
+function buildSkillData(fields: SkillDataFields): AgentSkill {
+  const metadataRecord: Record<string, string> = {};
+  for (const entry of fields.metadata) {
+    if (entry.key) metadataRecord[entry.key] = entry.value;
+  }
+  const criteriaStrings = fields.criteria
+    .filter((c) => c.given && c.when && c.then)
+    .map((c) => `GIVEN ${c.given} WHEN ${c.when} THEN ${c.then}`);
+  return {
+    name: fields.name,
+    description: fields.description,
+    body: fields.body,
+    state: fields.state,
+    fileCount: fields.fileCount,
+    ...(fields.license && { license: fields.license }),
+    ...(fields.compatibility && { compatibility: fields.compatibility }),
+    ...(Object.keys(metadataRecord).length > 0 && { metadata: metadataRecord }),
+    ...(fields.allowedTools && { allowedTools: fields.allowedTools }),
+    ...(criteriaStrings.length > 0 && { acceptanceCriteria: criteriaStrings }),
+    ...(fields.extra && Object.keys(fields.extra).length > 0 && { extra: fields.extra }),
+  };
+}
+
+// Same mapping as the reset-on-open effect, including the seeded criterion
+// row for a new skill. IDs are not part of the saved payload.
+function fieldsFromSkill(skill: AgentSkill | undefined, body: string): SkillDataFields {
+  if (!skill) {
+    return {
+      name: '',
+      description: '',
+      body,
+      state: 'draft',
+      fileCount: 0,
+      license: '',
+      compatibility: '',
+      allowedTools: '',
+      metadata: [],
+      criteria: [{ id: 0, given: '', when: 'the skill is called', then: '' }],
+    };
+  }
+  return {
+    name: skill.name,
+    description: skill.description,
+    body,
+    state: skill.state,
+    fileCount: skill.fileCount,
+    license: skill.license ?? '',
+    compatibility: skill.compatibility ?? '',
+    allowedTools: skill.allowedTools ?? '',
+    metadata: Object.entries(skill.metadata ?? {}).map(([key, value], index) => ({
+      id: index + 1,
+      key,
+      value,
+    })),
+    criteria: (skill.acceptanceCriteria ?? []).map((raw, index) => {
+      const parsed = parseAcceptanceCriterion(raw);
+      return { id: index + 1, given: parsed.given, when: parsed.when, then: parsed.then };
+    }),
+    extra: skill.extra,
+  };
+}
+
 // --- SkillEditor (main component) ---
 
 interface SkillEditorProps {
@@ -362,6 +441,12 @@ export function SkillEditor({
   const [showFrontmatter, setShowFrontmatter] = useState(isNew ? true : editorPrefs.showFrontmatter);
   const [showPreview, setShowPreview] = useState(editorPrefs.showPreview);
   const [saving, setSaving] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (wasOpen !== isOpen) {
+    setWasOpen(isOpen);
+    if (!isOpen) setConfirmDiscard(false);
+  }
   const [error, setError] = useState<string | null>(null);
   const [validation, setValidation] = useState<SkillValidationResult | null>(null);
 
@@ -503,6 +588,37 @@ export function SkillEditor({
     setOriginalBody(fetchedBody);
   }
 
+  // Baseline derives from originalBody, which hydration adopts during render,
+  // so a fetched body is the clean state rather than a snapshot taken before it landed.
+  const baseline = useMemo(
+    () => JSON.stringify(buildSkillData(fieldsFromSkill(skill, originalBody))),
+    [skill, originalBody],
+  );
+  const current = useMemo(
+    () =>
+      JSON.stringify(
+        buildSkillData({
+          name,
+          description,
+          body,
+          state,
+          fileCount: skill?.fileCount ?? 0,
+          license,
+          compatibility,
+          allowedTools,
+          metadata,
+          criteria,
+          extra: skill?.extra,
+        }),
+      ),
+    [name, description, body, state, skill, license, compatibility, allowedTools, metadata, criteria],
+  );
+  // Name is immutable on an existing skill, so a mismatch means the reset
+  // effect has not seeded the fields yet. That frame is not an edit.
+  const fieldsSeeded = !skill || name === skill.name;
+  const dirty = fieldsSeeded && !bodySettling && baseline !== current;
+  useBeforeUnloadGuard(isOpen && dirty);
+
   // --- Metadata management ---
 
   const addMetadata = useCallback(() => {
@@ -555,30 +671,21 @@ export function SkillEditor({
     setSaving(true);
     setError(null);
     try {
-      const metadataRecord: Record<string, string> = {};
-      for (const entry of metadata) {
-        if (entry.key) metadataRecord[entry.key] = entry.value;
-      }
-
-      const criteriaStrings = criteria
-        .filter((c) => c.given && c.when && c.then)
-        .map((c) => `GIVEN ${c.given} WHEN ${c.when} THEN ${c.then}`);
-
-      const skillData: AgentSkill = {
+      // Unmodeled frontmatter keys pass through untouched; dropping them
+      // here would undo the backend's preservation on the first save.
+      const skillData = buildSkillData({
         name,
         description,
         body,
         state,
         fileCount: skill?.fileCount ?? 0,
-        ...(license && { license }),
-        ...(compatibility && { compatibility }),
-        ...(Object.keys(metadataRecord).length > 0 && { metadata: metadataRecord }),
-        ...(allowedTools && { allowedTools }),
-        ...(criteriaStrings.length > 0 && { acceptanceCriteria: criteriaStrings }),
-        // Unmodeled frontmatter keys pass through untouched; dropping them
-        // here would undo the backend's preservation on the first save.
-        ...(skill?.extra && Object.keys(skill.extra).length > 0 && { extra: skill.extra }),
-      };
+        license,
+        compatibility,
+        allowedTools,
+        metadata,
+        criteria,
+        extra: skill?.extra,
+      });
 
       if (isNew) {
         await createRegistrySkill(skillData);
@@ -679,28 +786,22 @@ export function SkillEditor({
     if (!newName) return;
     setReconciling(true);
     try {
-      const metadataRecord: Record<string, string> = {};
-      for (const entry of metadata) {
-        if (entry.key) metadataRecord[entry.key] = entry.value;
-      }
-      const criteriaStrings = criteria
-        .filter((c) => c.given && c.when && c.then)
-        .map((c) => `GIVEN ${c.given} WHEN ${c.when} THEN ${c.then}`);
       // A fork is a brand-new local skill (no origin) seeded from the current
-      // editor fields, so it captures any unsaved local edits.
-      const copy: AgentSkill = {
+      // editor fields, so it captures any unsaved local edits. The typed name
+      // and a zero file count are what make it a new skill rather than a save.
+      const copy = buildSkillData({
         name: newName,
         description,
         body,
         state,
         fileCount: 0,
-        ...(license && { license }),
-        ...(compatibility && { compatibility }),
-        ...(Object.keys(metadataRecord).length > 0 && { metadata: metadataRecord }),
-        ...(allowedTools && { allowedTools }),
-        ...(criteriaStrings.length > 0 && { acceptanceCriteria: criteriaStrings }),
-        ...(skill?.extra && Object.keys(skill.extra).length > 0 && { extra: skill.extra }),
-      };
+        license,
+        compatibility,
+        allowedTools,
+        metadata,
+        criteria,
+        extra: skill?.extra,
+      });
       await createRegistrySkill(copy);
       showToast('success', `Forked as "${newName}"`);
       if (await onSaved() !== false) onClose();
@@ -711,6 +812,17 @@ export function SkillEditor({
       setForking(false);
     }
   }, [forkName, description, body, state, license, compatibility, metadata, allowedTools, criteria, skill, onSaved, onClose]);
+
+  // No-op while another confirm is open so two focus traps never stack.
+  // Programmatic closes (save, reset, detach, fork, compare-take) call onClose directly.
+  const requestClose = useCallback(() => {
+    if (pendingAction !== null || showCompare || confirmDiscard) return;
+    if (dirty && !saving) {
+      setConfirmDiscard(true);
+      return;
+    }
+    onClose();
+  }, [pendingAction, showCompare, confirmDiscard, dirty, saving, onClose]);
 
   // --- Keyboard shortcut: Cmd/Ctrl+S to save ---
 
@@ -729,7 +841,7 @@ export function SkillEditor({
   return (
     <Modal
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={requestClose}
       title={isNew ? 'New Skill' : `Edit: ${skill!.name}`}
       expandable
       size={size ?? 'full'}
@@ -1151,6 +1263,19 @@ export function SkillEditor({
           </>
         }
         confirmLabel="Detach"
+      />
+
+      <ConfirmDialog
+        isOpen={confirmDiscard && pendingAction === null}
+        onClose={() => setConfirmDiscard(false)}
+        onConfirm={() => {
+          setConfirmDiscard(false);
+          onClose();
+        }}
+        title="Discard changes"
+        message={<p>This skill has unsaved edits. Discard them?</p>}
+        confirmLabel="Discard"
+        variant="danger"
       />
     </Modal>
   );
