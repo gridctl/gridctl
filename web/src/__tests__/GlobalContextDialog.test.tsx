@@ -259,8 +259,11 @@ describe('GlobalContextDialog', () => {
 
   it('prevents unload while canonical edits are pending', async () => {
     vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
-    const onClose = vi.fn();
-    render(<GlobalContextDialog isOpen onClose={onClose} />);
+    let open = true;
+    const onClose = vi.fn(() => {
+      open = false;
+    });
+    const { rerender } = render(<GlobalContextDialog isOpen={open} onClose={onClose} />);
     const editor = await screen.findByLabelText('Canonical global context');
 
     const clean = new Event('beforeunload', { cancelable: true });
@@ -274,6 +277,10 @@ describe('GlobalContextDialog', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' });
     fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    // Real callers flip isOpen false. The guard drops on that transition,
+    // not on a dirty clear that has not committed yet.
+    rerender(<GlobalContextDialog isOpen={open} onClose={onClose} />);
     const after = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(after);
     expect(after.defaultPrevented).toBe(false);

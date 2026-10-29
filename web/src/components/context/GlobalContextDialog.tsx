@@ -174,7 +174,6 @@ export function GlobalContextDialog({ isOpen, onClose, initialDriftSlug = null }
         onClose={() => setConfirmDiscard(false)}
         onConfirm={() => {
           setConfirmDiscard(false);
-          setDirty(false);
           onClose();
         }}
         title="Discard changes"
