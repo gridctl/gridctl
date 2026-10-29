@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useNavigate, useSearchParams } from 'react-router';
-import { Bot, Plug, Radio } from 'lucide-react';
+import { Bot, Loader2, Plug, Radio } from 'lucide-react';
 import {
   ClientLinkError,
   fetchClients,
@@ -62,6 +62,10 @@ export default function ConnectionsWorkspace() {
 
   const [wiringRows, setWiringRows] = useState<WiringRow[] | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
+  // clients defaults to [], which is also the loaded-empty value. This flag
+  // starts true so the first paint is loading, not the teaching empty state,
+  // and stays true until the in-flight health fetch settles.
+  const [healthPending, setHealthPending] = useState(true);
   const [sessionsFailed, setSessionsFailed] = useState(false);
   const [staged, setStaged] = useState<StagedChanges>({});
   const [reviewing, setReviewing] = useState(false);
@@ -93,7 +97,10 @@ export default function ConnectionsWorkspace() {
   const refreshHealth = useCallback(async () => {
     const current = captureCurrent();
     if (!current()) return;
-    setHealthError(null);
+    // Keep the previous healthError until these results land. Clearing it
+    // here replaced a failed no-clients pane with the teaching empty state
+    // for the whole retry, and flipped the Ownership badge back to "loading".
+    setHealthPending(true);
     const request = Symbol();
     healthRequest.current = request;
     const results = await Promise.allSettled([
@@ -104,6 +111,7 @@ export default function ConnectionsWorkspace() {
     ]);
     if (!current() || healthRequest.current !== request) return;
     setHealthError(firstHealthError(results));
+    setHealthPending(false);
     if (results[0].status === 'fulfilled') setWiringRows(results[0].value);
     if (results[1].status === 'fulfilled') {
       useRegistryStore.getState().setAgentStatuses(results[1].value);
@@ -119,7 +127,7 @@ export default function ConnectionsWorkspace() {
   }, [captureCurrent]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- all state writes happen after awaited fetches resolve; nothing sets state synchronously in this effect
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- refreshHealth marks the fetch in flight before its first await; result writes happen after the fetches resolve
     void refreshHealth();
   }, [refreshHealth, authRequired, generation]);
 
@@ -369,6 +377,16 @@ export default function ConnectionsWorkspace() {
               feature="Connections"
               message={healthError}
               onRetry={() => void refreshHealth()}
+            />
+          </div>
+        ) : healthPending ? (
+          <div className="flex-1 min-h-0">
+            <EmptyState
+              icon={Loader2}
+              iconClassName="animate-spin"
+              tone="primary"
+              title="Loading connections…"
+              description="Fetching client and wiring status from the gateway."
             />
           </div>
         ) : (
