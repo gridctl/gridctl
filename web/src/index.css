@@ -210,12 +210,12 @@ html, body, #root {
   background-color: var(--color-background);
 }
 
-/* Frosted-glass surfaces in light theme. Stack canvas nodes and the tool-detail
-   popover paint an opaque Tailwind surface (from-surface/95, bg-surface-
-   elevated/95) that reads as a flat white card on the bright canvas. In light
-   only, drop them to a translucent white so the existing backdrop-blur frosts
-   the canvas/grid behind them — cohesive with the dark glass language. Dark
-   keeps its opaque surfaces (no rule), since glass fades into the inky bg. */
+/* Frosted-glass surfaces in light theme. The gateway node and the tool-detail
+   popover paint an opaque Tailwind surface that reads as a flat white card on
+   the bright canvas. In light only, drop them to a translucent white so the
+   existing backdrop-blur frosts the canvas behind them. Server, resource, and
+   client nodes keep the opaque surface they declare. Dark keeps its opaque
+   surfaces (no rule), since glass fades into the inky background. */
 :root[data-theme='light'] .frost-surface {
   background: rgba(255, 255, 255, 0.6) !important;
 }
@@ -435,91 +435,6 @@ body::before {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-}
-
-/* ============================================
-   NODE STYLES - Glass Panels
-   ============================================ */
-
-/* Base node - Glass morphism */
-.node-glass {
-  background: var(--glass-bg);
-  backdrop-filter: blur(16px);
-  border: 1px solid var(--glass-border);
-  border-radius: 12px;
-  box-shadow: inset 0 1px 0 var(--bevel-highlight);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.node-glass:hover {
-  border-color: var(--color-border);
-  box-shadow: inset 0 1px 0 var(--bevel-highlight), var(--shadow-lg);
-}
-
-/* Primary variant (MCP servers) - Amber accent */
-.node-glass-primary {
-  background: linear-gradient(
-    135deg,
-    var(--glass-bg) 0%,
-    color-mix(in srgb, var(--color-primary) 4%, transparent) 100%
-  );
-  backdrop-filter: blur(16px);
-  border: 1px solid var(--glass-border);
-  border-radius: 12px;
-  box-shadow: inset 0 1px 0 var(--bevel-highlight);
-}
-
-.node-glass-primary.selected {
-  border-color: var(--color-primary);
-  box-shadow:
-    inset 0 1px 0 var(--bevel-highlight),
-    0 0 0 1px var(--color-primary),
-    var(--shadow-glow-primary),
-    var(--shadow-lg);
-}
-
-/* Secondary variant (Resources) - Teal accent */
-.node-glass-secondary {
-  background: linear-gradient(
-    135deg,
-    var(--glass-bg) 0%,
-    color-mix(in srgb, var(--color-secondary) 4%, transparent) 100%
-  );
-  backdrop-filter: blur(16px);
-  border: 1px solid var(--glass-border);
-  border-radius: 12px;
-  box-shadow: inset 0 1px 0 var(--bevel-highlight);
-}
-
-.node-glass-secondary.selected {
-  border-color: var(--color-secondary);
-  box-shadow:
-    inset 0 1px 0 var(--bevel-highlight),
-    0 0 0 1px var(--color-secondary),
-    var(--shadow-glow-secondary),
-    var(--shadow-lg);
-}
-
-/* Gateway node - Central hub */
-.node-gateway {
-  background: linear-gradient(
-    180deg,
-    var(--glass-elevated-bg) 0%,
-    color-mix(in srgb, var(--color-primary) 6%, transparent) 100%
-  );
-  backdrop-filter: blur(20px);
-  border: 1px solid color-mix(in srgb, var(--color-primary) 22%, transparent);
-  border-radius: 16px;
-  box-shadow: inset 0 1px 0 var(--bevel-highlight), var(--shadow-lg);
-}
-
-.node-gateway.selected {
-  border-color: var(--color-primary);
-  box-shadow:
-    inset 0 1px 0 var(--bevel-highlight),
-    0 0 0 2px var(--color-primary),
-    var(--shadow-glow-primary),
-    var(--shadow-lg);
 }
 
 /* ============================================
@@ -758,15 +673,6 @@ body::before {
    PERFORMANCE OPTIMIZATIONS
    ============================================ */
 
-.node-glass,
-.node-glass-primary,
-.node-glass-secondary,
-.node-gateway,
-.react-flow__edge-path {
-  transform: translateZ(0);
-  will-change: transform, opacity, box-shadow;
-}
-
 /* Prevent clipping on hover animations */
 .react-flow__node,
 .react-flow__node *,
@@ -793,24 +699,15 @@ body::before {
   overflow-y: auto !important;
 }
 
-.react-flow__edge.animated .react-flow__edge-path {
-  transform: translateZ(0);
-  backface-visibility: hidden;
-}
-
-.control-button,
-.react-flow__controls-button {
-  will-change: background-color, color, box-shadow;
-}
-
 /* ============================================
    PATH HIGHLIGHTING - Selection-based dimming
    ============================================ */
 
-/* Base transition for nodes and edges */
+/* Base transition for nodes and edges. Opacity only: filter and visibility
+   transitions forced a paint on every highlight change. */
 .react-flow__node,
 .react-flow__edge {
-  transition: opacity 0.3s ease, filter 0.3s ease, visibility 0.3s ease;
+  transition: opacity 0.3s ease;
 }
 
 /* Hidden state - for uses edges when no selection */
@@ -851,8 +748,8 @@ body::before {
 
 /* Highlighted state - edges get enhanced visibility */
 .react-flow__edge.highlighted .react-flow__edge-path {
-  stroke-width: 2.5px !important;
-  filter: drop-shadow(0 0 4px currentColor);
+  stroke-width: 3px;
+  opacity: 1;
 }
 
 /* Access Lens: render edges as calm, solid lines while editing scope — the

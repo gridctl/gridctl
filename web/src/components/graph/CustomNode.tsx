@@ -104,8 +104,8 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
   return (
     <div
       className={cn(
-        'w-64 rounded-xl relative frost-surface',
-        'backdrop-blur-xl border transition-all duration-200 ease-out',
+        'w-64 rounded-xl relative',
+        'border transition-[border-color,box-shadow,background-color] duration-200 ease-out',
         'shadow-bevel',
         isServer
           ? 'bg-gradient-to-br from-surface/95 to-violet-500/[0.03] border-border'
@@ -228,7 +228,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
       {/* Body - hidden in compact mode */}
       <div
         className={cn(
-          'overflow-hidden transition-all duration-200 ease-out',
+          'overflow-hidden transition-[max-height,opacity] duration-200 ease-out',
           isCompact ? 'max-h-0 opacity-0 pointer-events-none' : 'max-h-96 opacity-100'
         )}
       >
@@ -481,7 +481,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
         className={cn(
           '!w-2.5 !h-2.5 !border-2 !border-background !rounded-full',
           isServer ? '!bg-violet-500' : '!bg-secondary',
-          'transition-all duration-200 hover:!scale-125'
+          'transition-transform duration-200 hover:!scale-125'
         )}
         id="input"
       />
@@ -491,7 +491,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
         className={cn(
           '!w-2.5 !h-2.5 !border-2 !border-background !rounded-full',
           isServer ? '!bg-violet-500' : '!bg-secondary',
-          'transition-all duration-200 hover:!scale-125'
+          'transition-transform duration-200 hover:!scale-125'
         )}
         id="output"
       />

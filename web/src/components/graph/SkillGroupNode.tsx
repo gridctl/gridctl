@@ -48,7 +48,7 @@ const SkillGroupNode = memo(({ data, selected }: SkillGroupNodeProps) => {
       <div
         className={cn(
           'w-44 rounded-xl relative',
-          'backdrop-blur-xl border transition-all duration-200 ease-out',
+          'border transition-[border-color,box-shadow,background-color] duration-200 ease-out',
           'bg-gradient-to-b from-surface/95 via-surface/90 to-tertiary/[0.03]',
           'shadow-bevel',
           'flex items-center px-2.5 gap-2',
@@ -74,7 +74,7 @@ const SkillGroupNode = memo(({ data, selected }: SkillGroupNodeProps) => {
           position={Position.Left}
           className={cn(
             '!w-2.5 !h-2.5 !bg-tertiary !border-2 !border-background !rounded-full',
-            'transition-all duration-200 hover:!scale-125'
+            'transition-transform duration-200 hover:!scale-125'
           )}
           id="input"
         />
@@ -86,7 +86,7 @@ const SkillGroupNode = memo(({ data, selected }: SkillGroupNodeProps) => {
     <div
       className={cn(
         'w-44 rounded-xl relative',
-        'backdrop-blur-xl border transition-all duration-200 ease-out',
+        'border transition-[border-color,box-shadow,background-color] duration-200 ease-out',
         'bg-gradient-to-b from-surface/95 via-surface/90 to-tertiary/[0.03]',
         'shadow-bevel',
         'flex flex-col items-center justify-center text-center p-3 gap-1.5',
@@ -124,7 +124,7 @@ const SkillGroupNode = memo(({ data, selected }: SkillGroupNodeProps) => {
         position={Position.Left}
         className={cn(
           '!w-2.5 !h-2.5 !bg-tertiary !border-2 !border-background !rounded-full',
-          'transition-all duration-200 hover:!scale-125'
+          'transition-transform duration-200 hover:!scale-125',
         )}
         id="input"
       />

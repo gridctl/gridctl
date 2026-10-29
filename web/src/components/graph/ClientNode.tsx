@@ -21,7 +21,7 @@ const ClientNode = memo(({ data, selected }: ClientNodeProps) => {
       <div
         className={cn(
           'w-40 rounded-xl relative',
-          'backdrop-blur-xl border transition-all duration-200 ease-out',
+          'border transition-[border-color,box-shadow,background-color] duration-200 ease-out',
           'bg-gradient-to-b from-surface/95 via-surface/90 to-surface/80',
           'shadow-bevel',
           'flex items-center px-2.5 gap-2',
@@ -46,7 +46,7 @@ const ClientNode = memo(({ data, selected }: ClientNodeProps) => {
           position={Position.Right}
           className={cn(
             '!w-2.5 !h-2.5 !bg-text-secondary !border-2 !border-background !rounded-full',
-            'transition-all duration-200 hover:!scale-125'
+            'transition-transform duration-200 hover:!scale-125'
           )}
           id="output"
         />
@@ -58,7 +58,7 @@ const ClientNode = memo(({ data, selected }: ClientNodeProps) => {
     <div
       className={cn(
         'w-52 rounded-xl relative',
-        'backdrop-blur-xl border transition-all duration-200 ease-out',
+        'border transition-[border-color,box-shadow,background-color] duration-200 ease-out',
         'bg-gradient-to-b from-surface/95 via-surface/90 to-surface/80',
         'shadow-bevel',
         'flex items-center gap-3 px-3',
@@ -95,7 +95,7 @@ const ClientNode = memo(({ data, selected }: ClientNodeProps) => {
         position={Position.Right}
         className={cn(
           '!w-2.5 !h-2.5 !bg-text-secondary !border-2 !border-background !rounded-full',
-          'transition-all duration-200 hover:!scale-125'
+          'transition-transform duration-200 hover:!scale-125',
         )}
         id="output"
       />
