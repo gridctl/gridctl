@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import { useSearchParams } from 'react-router';
 import { AlertCircle, Wrench } from 'lucide-react';
 import { SkillEditor } from '../components/registry/SkillEditor';
@@ -26,6 +27,7 @@ function DetachedEditorContent() {
   const [skill, setSkill] = useState<AgentSkill | undefined>();
   const [loading, setLoading] = useState(!!itemName);
   const [error, setError] = useState<string | null>(null);
+  const [editorOpen, setEditorOpen] = useState(true);
   const refreshPending = useRef(false);
 
   // Register with main window
@@ -77,6 +79,10 @@ function DetachedEditorContent() {
   }, [editorType, itemName, generation, authRequired, skill]);
 
   const handleClose = useCallback(() => {
+    // window.close() fires beforeunload before it returns. isOpen has to be
+    // false already, so the guard's effect cleanup removes the listener first.
+    // A later render is too late: the browser asks during this call.
+    flushSync(() => setEditorOpen(false));
     window.close();
   }, []);
 
@@ -156,7 +162,7 @@ function DetachedEditorContent() {
 
       {/* Editor - rendered flush (fills viewport) in detached window */}
       <SkillEditor
-        isOpen={true}
+        isOpen={editorOpen}
         onClose={handleClose}
         onSaved={handleSaved}
         skill={skill}
