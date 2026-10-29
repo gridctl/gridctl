@@ -4,6 +4,10 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Pins, Library, Tools, Variables, Connections, run history, and Logs now show a named failure and a Retry control when their request fails, instead of a spinner, skeleton, or teaching empty state. A failure while data is already on screen keeps that data and shows a banner. An unconfigured registry or variable store, and pinning that is off, still show their empty states. (#1361)
+
 ### Fixed
 
 - The web UI now asks before wiping run history, deleting a skill file, deleting a wizard draft, or removing a context fragment. Wipe history names the stack and the stored file count and size, and states that the wipe is stack-wide and ignores the current filters. Removing a context fragment saves a backup under `~/.gridctl/project-backups/context/`, outside the fragments directory. Deleting a skill file or a wizard draft does not save a backup. Skill and global context editors ask before discarding unsaved edits, including on reload or tab close. Closing the detached skill editor after save, discard, reset, detach, fork, or compare-take does not show a browser leave prompt. A skill that has just loaded its body is not treated as dirty. Escape on a confirm closes that confirm only. (#1360)
