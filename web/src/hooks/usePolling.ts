@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import { useStackStore } from '../stores/useStackStore';
 import { useAuthStore } from '../stores/useAuthStore';
 import { useRegistryStore } from '../stores/useRegistryStore';
-import { usePinsStore, countFindingServers, firstDriftedServer, firstFindingsServer, countDriftedSkills, countFindingSkills, firstDriftedSkill, firstFindingsSkill } from '../stores/usePinsStore';
+import { usePinsStore, countFindingServers, firstDriftedServer, firstFindingsServer, countDriftedSkills, countFindingSkills, firstDriftedSkill, firstFindingsSkill, serverPinsChanged } from '../stores/usePinsStore';
 import { useTelemetryStore } from '../stores/useTelemetryStore';
 import { fetchStatus, fetchTools, fetchToolCatalog, fetchClients, fetchRegistryStatus, fetchRegistrySkills, fetchSkillSources, fetchServerPins, fetchSkillPins, fetchStackSpec, getTelemetryInventory, AuthError } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
@@ -63,11 +63,15 @@ export function usePolling() {
 
       // Fetch pins — progressive disclosure, never blocks main cycle
       try {
+        const prevPins = usePinsStore.getState().pins;
         const pins = await fetchServerPins();
         if (!current()) return;
         usePinsStore.getState().setPins(pins);
-        // Re-apply pin state to nodes built from the status fetch above
-        useStackStore.getState().refreshNodesAndEdges();
+        // Re-apply pin annotation only when status, tool count, or the server
+        // set changed. Client changes paint through setClients in this cycle.
+        if (serverPinsChanged(prevPins, pins)) {
+          useStackStore.getState().refreshNodesAndEdges();
+        }
 
         const driftedCount = Object.values(pins).filter((sp) => sp.status === 'drift').length;
         if (driftedCount > 0 && _prevDriftCount === 0) {

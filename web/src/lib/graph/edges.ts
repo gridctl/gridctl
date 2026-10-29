@@ -43,7 +43,6 @@ export function createGatewayToServerEdges(
     id: `edge-gateway-mcp-${server.name}`,
     source: GATEWAY_NODE_ID,
     target: `mcp-${server.name}`,
-    animated: server.initialized,
     markerEnd: { ...arrowMarker, color: COLORS.external },
     data: {
       relationType: 'gateway-to-server' as const,
@@ -64,7 +63,6 @@ export function createGatewayToResourceEdges(
     id: `edge-gateway-resource-${resource.name}`,
     source: GATEWAY_NODE_ID,
     target: `resource-${resource.name}`,
-    animated: resource.status === 'running',
     markerEnd: { ...arrowMarker, color: COLORS.secondary },
     data: {
       relationType: 'gateway-to-resource' as const,
@@ -87,7 +85,6 @@ export function createClientToGatewayEdges(
       id: `edge-client-gateway-${client.slug}`,
       source: `client-${client.slug}`,
       target: GATEWAY_NODE_ID,
-      animated: true,
       data: {
         relationType: 'client-to-gateway' as const,
         isHighlightable: true,
@@ -106,7 +103,6 @@ export function createGatewayToSkillGroupEdges(skills: AgentSkill[]): EnhancedEd
     id: `edge-gateway-skill-group-${groupName}`,
     source: GATEWAY_NODE_ID,
     target: `skill-group-${groupName}`,
-    animated: true,
     markerEnd: { ...arrowMarker, color: COLORS.tertiary },
     data: {
       relationType: 'gateway-to-skill-group' as const,

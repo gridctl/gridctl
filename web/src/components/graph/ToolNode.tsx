@@ -47,7 +47,7 @@ const ToolNode = memo(({ data }: ToolNodeProps) => {
           className={cn(
             'w-full flex items-center gap-1.5 pl-2 pr-1.5 rounded-lg relative',
             'border bg-gradient-to-b from-surface/95 via-surface/90 to-surface/80',
-            'backdrop-blur-xl shadow-bevel transition-all duration-200',
+            'shadow-bevel transition-[border-color,box-shadow,background-color] duration-200',
             on
               ? 'border-white/70 ring-1 ring-white/25'
               : 'border-dashed border-border/50 saturate-[0.4] opacity-70',
@@ -107,7 +107,7 @@ const ToolNode = memo(({ data }: ToolNodeProps) => {
           className={cn(
             'w-full flex items-center gap-2 px-2.5 rounded-lg relative text-left',
             'border border-border bg-gradient-to-b from-surface/95 via-surface/90 to-surface/80',
-            'backdrop-blur-xl shadow-bevel',
+            'shadow-bevel',
             'transition-colors duration-200 hover:shadow-node-hover hover:border-text-secondary/40',
           )}
           style={{ height: LAYOUT.TOOL_HEIGHT }}
@@ -130,7 +130,7 @@ const ToolNode = memo(({ data }: ToolNodeProps) => {
         position={Position.Left}
         className={cn(
           '!w-2 !h-2 !bg-text-secondary !border-2 !border-background !rounded-full',
-          'transition-all duration-200',
+          'transition-transform duration-200',
         )}
         id="input"
       />

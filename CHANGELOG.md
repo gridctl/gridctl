@@ -12,6 +12,8 @@ All notable changes to gridctl will be documented in this file.
 
 - The docs and the v1.0.0-rc.3 changelog entry previously said releases before `requires.gridctl` reject a stack that contains it. Those releases ignore the key. Strict unknown-key checking and the floor both start at v1.0.0-rc.3. The wording was corrected. (#1443)
 
+- The Stack canvas opens a node inspector from the keyboard. Tab to a gateway, client, server, or resource node and press Enter or Space; Escape closes the inspector and clears the selection ring. Enter on the expand chevron or the Skills row acts on that control only. Each of those nodes announces its name, type, and status, the canvas controls have accessible names, and the gateway Skills row is a labeled button. The command palette lists `Inspect <name>` and selects that server. Identical status polls keep the same node and edge objects. A client link, unlink, or scope change still appears in the poll that returned it. Quiet edges no longer animate. Token-active servers animate at most 12 edges, and a selection animates only the highlighted path, drawn at 3px. Repeated node surfaces drop backdrop blur and `transition-all`, and the unused glass rules and permanent `will-change` rules are gone. In light theme, server, resource, and client nodes use the opaque surface they already declare. The gateway node, controls, and minimap are unchanged. (#1359)
+
 ## [1.0.0-rc.3] - 2026-10-27
 
 ### Deprecated

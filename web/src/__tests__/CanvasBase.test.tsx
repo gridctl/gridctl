@@ -36,6 +36,27 @@ describe('CanvasBase', () => {
     expect(screen.getByTestId('control-slot')).toBeInTheDocument();
   });
 
+  it('exposes aria-label and tabindex on the node wrapper and forwards onKeyDown', () => {
+    const onKeyDown = vi.fn();
+    const nodes = [{
+      id: 'mcp-github',
+      position: { x: 0, y: 0 },
+      data: { label: 'github' },
+      ariaLabel: 'github, MCP server, running',
+    }];
+    const { container } = render(
+      <ReactFlowProvider>
+        <CanvasBase nodes={nodes} edges={[]} onKeyDown={onKeyDown} />
+      </ReactFlowProvider>,
+    );
+    const wrapper = container.querySelector('.react-flow__node');
+    expect(wrapper).not.toBeNull();
+    expect(wrapper).toHaveAttribute('aria-label', 'github, MCP server, running');
+    expect(wrapper).toHaveAttribute('tabindex', '0');
+    fireEvent.keyDown(wrapper as Element, { key: 'Enter' });
+    expect(onKeyDown).toHaveBeenCalled();
+  });
+
   it('forwards onPaneClick to the underlying React Flow', () => {
     const onPaneClick = vi.fn();
     const { container } = render(

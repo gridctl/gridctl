@@ -65,9 +65,10 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
         className={cn(
           'animate-slide-in-right',
           'w-full flex items-center gap-2 px-2.5 rounded-lg',
-          'border border-dashed border-text-secondary/40 bg-white/[0.03]',
-          'backdrop-blur-xl text-left',
-          'transition-colors duration-200 hover:border-text-secondary/70 hover:bg-white/[0.06]'
+          'border border-dashed border-text-secondary/40',
+          'bg-gradient-to-b from-surface/95 via-surface/90 to-surface/80',
+          'text-left',
+          'transition-colors duration-200 hover:border-text-secondary/70'
         )}
         style={{ height: LAYOUT.TOOL_HEIGHT }}
       >
@@ -154,7 +155,7 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
         position={Position.Left}
         className={cn(
           '!w-2 !h-2 !bg-text-secondary !border-2 !border-background !rounded-full',
-          'transition-all duration-200'
+          'transition-transform duration-200'
         )}
         id="input"
       />

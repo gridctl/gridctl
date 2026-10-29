@@ -68,6 +68,13 @@ describe('GatewayNode', () => {
     expect(screen.queryByText('Deferred discovery')).not.toBeInTheDocument();
   });
 
+  it('renders the Skills row as a labeled button', () => {
+    renderNode({ ...baseData, totalSkills: 4, activeSkills: 2 });
+    const button = screen.getByRole('button', { name: 'Open skills dashboard' });
+    expect(button.tagName).toBe('BUTTON');
+    expect(button).toHaveTextContent('Skills');
+  });
+
   it('keeps Gateway Active as a read-only status pill', () => {
     renderNode();
     const active = screen.getByText('Gateway Active').closest('[role="status"]');

@@ -39,6 +39,12 @@ export function getMCPServerStatus(server: MCPServerStatus): NodeStatus {
   return 'running';
 }
 
+/** Screen-reader status. needs-auth is announced as words, not a slug. */
+function accessibleStatus(status: string): string {
+  if (status === 'needs-auth') return 'needs authorization';
+  return status;
+}
+
 /**
  * Create the gateway node
  *
@@ -66,6 +72,7 @@ export function createGatewayNode(
     id: GATEWAY_NODE_ID,
     type: NODE_TYPES.GATEWAY,
     position: { x: 0, y: 0 }, // Will be calculated by layout engine
+    ariaLabel: `${gatewayInfo.name}, gateway, active`,
     data: {
       type: 'gateway',
       name: gatewayInfo.name,
@@ -106,6 +113,10 @@ export function createMCPServerNodes(mcpServers: MCPServerStatus[]): Node[] {
     id: `mcp-${server.name}`,
     type: NODE_TYPES.MCP_SERVER,
     position: { x: 0, y: 0 }, // Will be calculated by layout engine
+    // A disabled server renders a disabled badge instead of its health state.
+    ariaLabel: `${server.name}, MCP server, ${
+      server.enabled === false ? 'disabled' : accessibleStatus(getMCPServerStatus(server))
+    }`,
     data: {
       type: 'mcp-server',
       name: server.name,
@@ -161,6 +172,7 @@ export function createResourceNodes(resources: ResourceStatus[]): Node[] {
     id: `resource-${resource.name}`,
     type: NODE_TYPES.RESOURCE,
     position: { x: 0, y: 0 }, // Will be calculated by layout engine
+    ariaLabel: `${resource.name}, resource, ${accessibleStatus(resource.status)}`,
     data: {
       type: 'resource',
       name: resource.name,
@@ -182,6 +194,7 @@ export function createClientNodes(clients: ClientStatus[]): Node[] {
       id: `client-${client.slug}`,
       type: NODE_TYPES.CLIENT,
       position: { x: 0, y: 0 },
+      ariaLabel: `${client.name}, client, linked`,
       data: {
         type: 'client',
         name: client.name,
@@ -212,15 +225,18 @@ export function createSkillGroupNodes(skills: AgentSkill[]): Node[] {
   const nodes: Node[] = [];
   for (const [groupName, groupSkills] of groups) {
     const criteriaCount = groupSkills.reduce((n, s) => n + (s.acceptanceCriteria?.length ?? 0), 0);
+    const activeSkills = groupSkills.length;
+    const totalSkills = groupSkills.length;
     nodes.push({
       id: `skill-group-${groupName}`,
       type: NODE_TYPES.SKILL_GROUP,
       position: { x: 0, y: 0 }, // Will be calculated by layout engine
+      ariaLabel: `${groupName}, skill group, ${activeSkills} of ${totalSkills} active`,
       data: {
         type: 'skill-group',
         groupName,
-        totalSkills: groupSkills.length,
-        activeSkills: groupSkills.length,
+        totalSkills,
+        activeSkills,
         failingSkills: 0,
         untestedSkills: criteriaCount > 0 ? groupSkills.length : 0,
       },

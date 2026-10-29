@@ -1,4 +1,4 @@
-import type { CSSProperties, MouseEvent, ReactNode } from 'react';
+import type { CSSProperties, KeyboardEvent, MouseEvent, ReactNode } from 'react';
 import {
   ReactFlow,
   Background,
@@ -33,6 +33,8 @@ export interface CanvasBaseProps<NodeData extends Record<string, unknown> = Reco
   onEdgesChange?: (changes: EdgeChange[]) => void;
   onNodeClick?: (event: MouseEvent, node: RFNode<NodeData>) => void;
   onPaneClick?: () => void;
+  // Forwarded onto the React Flow wrapper. Workspace canvases own the handler.
+  onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
   onConnect?: (connection: Connection) => void;
   defaultEdgeOptions?: DefaultEdgeOptions;
   fitView?: boolean;
@@ -86,6 +88,7 @@ export function CanvasBase<
   onEdgesChange,
   onNodeClick,
   onPaneClick,
+  onKeyDown,
   onConnect,
   defaultEdgeOptions,
   fitView,
@@ -113,6 +116,7 @@ export function CanvasBase<
         onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick as never}
         onPaneClick={onPaneClick}
+        onKeyDown={onKeyDown}
         onConnect={onConnect}
         defaultEdgeOptions={defaultEdgeOptions}
         fitView={fitView}

@@ -1,10 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type KeyboardEvent, type MouseEvent } from 'react';
 import {
-  Background,
   Panel,
   BackgroundVariant,
   useReactFlow,
-  useViewport,
 } from '@xyflow/react';
 import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid, Layers, Server, Database } from 'lucide-react';
 
@@ -19,6 +17,37 @@ import { cn } from '../../lib/cn';
 import { CanvasBase } from '../canvas/CanvasBase';
 import { SpecModeOverlay } from '../spec/SpecModeOverlay';
 import { OverlaysMenu } from './OverlaysMenu';
+import { SubGrid } from './SubGrid';
+
+const MAX_ANIMATED_EDGES = 12;
+const GATEWAY_MCP_EDGE_PREFIX = 'edge-gateway-mcp-';
+
+function serverNameFromEdge(edgeId: string): string {
+  return edgeId.startsWith(GATEWAY_MCP_EDGE_PREFIX)
+    ? edgeId.slice(GATEWAY_MCP_EDGE_PREFIX.length)
+    : '';
+}
+
+function gatedAnimatedIds(
+  edges: Array<{ id: string }>,
+  hasSelection: boolean,
+  highlighted: Set<string>,
+  activeServers: Set<string>,
+): Set<string> {
+  if (hasSelection) return highlighted;
+  const ids = new Set<string>();
+  for (const edge of edges) {
+    if (ids.size >= MAX_ANIMATED_EDGES) break;
+    const serverName = serverNameFromEdge(edge.id);
+    if (serverName && activeServers.has(serverName)) ids.add(edge.id);
+  }
+  return ids;
+}
+
+type ActivatableNode = {
+  id: string;
+  data?: { type?: string; name?: string };
+};
 
 export function Canvas() {
   const nodes = useStackStore((s) => s.nodes);
@@ -42,6 +71,7 @@ export function Canvas() {
   // the selected client, the highlight previews the draft instead of the saved
   // scope, and clicking a server node grants/revokes it in the draft.
   const mcpServers = useStackStore((s) => s.mcpServers);
+  const activeServers = useStackStore((s) => s.activeServers);
   const lensEnabled = useAccessLensStore((s) => s.enabled);
   const lensClientSlug = useAccessLensStore((s) => s.clientSlug);
   const lensDraft = useAccessLensStore((s) => s.draft);
@@ -81,7 +111,6 @@ export function Canvas() {
 
   // React Flow controls
   const { zoomIn, zoomOut, fitView } = useReactFlow();
-  const { zoom } = useViewport();
   // Live theme colors so JS-set edge/grid colors follow [data-theme].
   const colors = useThemeColors();
 
@@ -113,14 +142,16 @@ export function Canvas() {
   // ids, so draft edits still hold the canvas still while expand/collapse
   // re-frames.
   const layoutEpoch = useStackStore((s) => s.layoutEpoch);
-  const selectedNode = nodes.find((n) => n.id === selectedNodeId);
-  const isClientSelected =
-    (selectedNode?.data as { type?: string } | undefined)?.type === 'client';
-  const fitIds =
-    isClientSelected && !lensActive
-      ? [...highlightState.highlightedNodeIds].sort().join(',')
-      : (nodes ?? []).map((n) => n.id).sort().join(',');
-  const fitKey = fitIds ? `${layoutEpoch}:${fitIds}` : '';
+  const fitKey = useMemo(() => {
+    const selectedNode = nodes.find((n) => n.id === selectedNodeId);
+    const isClientSelected =
+      (selectedNode?.data as { type?: string } | undefined)?.type === 'client';
+    const fitIds =
+      isClientSelected && !lensActive
+        ? [...highlightState.highlightedNodeIds].sort().join(',')
+        : (nodes ?? []).map((n) => n.id).sort().join(',');
+    return fitIds ? `${layoutEpoch}:${fitIds}` : '';
+  }, [nodes, selectedNodeId, highlightState, lensActive, layoutEpoch]);
   const fitSetRef = useRef<{ id: string }[]>([]);
   useEffect(() => {
     if (!fitKey) return;
@@ -172,10 +203,6 @@ export function Canvas() {
     };
   }, [fitView]);
 
-  // Evolvable grid - main lines at 100px, sub-grid dots at 20px fade in at >0.8x
-  const showSubGrid = zoom > 0.8;
-  const subGridOpacity = Math.min((zoom - 0.8) * 2.5, 1); // Fade from 0.8 to 1.2
-
   // Dynamic edge options based on toggle
   const defaultEdgeOptions = useMemo(() => ({
     type: edgeStyle,
@@ -198,17 +225,32 @@ export function Canvas() {
   }, [nodes, highlightState]);
 
   // Apply highlighting classes to edges.
-  // Uses edges (Agent → Server) are always hidden - we show the path through Gateway instead
+  // Uses edges (Agent → Server) are always hidden - we show the path through Gateway instead.
+  // Animation is not a default: a selection animates the highlighted path, and
+  // otherwise only gateway-to-server edges whose token total rose this poll,
+  // capped so a busy fleet cannot march every edge.
   const styledEdges = useMemo(() => {
-    return (edges ?? []).map((edge) => {
+    const list = edges ?? [];
+    const animatedIds = gatedAnimatedIds(
+      list,
+      highlightState.hasSelection,
+      highlightState.highlightedEdgeIds,
+      activeServers,
+    );
+    return list.map((edge) => {
       const edgeData = edge.data as { isUsesEdge?: boolean } | undefined;
       if (edgeData?.isUsesEdge) {
         return { ...edge, className: 'hidden' };
       }
-      if (!highlightState.hasSelection) return edge;
-      const isHighlighted = highlightState.highlightedEdgeIds.has(edge.id);
+      const isHighlighted = highlightState.hasSelection && highlightState.highlightedEdgeIds.has(edge.id);
+      const animated = animatedIds.has(edge.id);
+      if (!highlightState.hasSelection) {
+        if ((edge.animated === true) === animated) return edge;
+        return { ...edge, animated };
+      }
       return {
         ...edge,
+        animated,
         // Freeze the energy-flow animation while editing in Access Lens so the
         // canvas stays calm and the scope edits are the only thing moving.
         className: cn(
@@ -218,24 +260,57 @@ export function Canvas() {
         ),
       };
     });
-  }, [edges, highlightState, lensActive]);
+  }, [edges, highlightState, lensActive, activeServers]);
 
   // Handle node selection. Tool fan-out nodes own their own click handling:
   // each renders an anchored detail popover internally, so a canvas-level click
   // must not select them or open the sidebar. The node already stops
   // propagation; this early return is the belt-and-suspenders guard.
-  const onNodeClick = useCallback((_: React.MouseEvent, node: { id: string; data?: { type?: string; name?: string } }) => {
+  // Returns whether the node was activated, so Space can preventDefault only then.
+  const activateNode = useCallback((node: ActivatableNode): boolean => {
     const nodeType = node.data?.type;
-    if (nodeType === 'tool' || nodeType === 'tool-overflow') return;
+    if (nodeType === 'tool' || nodeType === 'tool-overflow') return false;
     // In Access Lens, a server-node click grants/revokes it in the draft instead
-    // of selecting it — the draft mutates, never the stack (commit gate writes).
+    // of selecting it. The draft mutates, never the stack (commit gate writes).
     if (lensActive && nodeType === 'mcp-server' && node.data?.name) {
       toggleDraftServer(node.data.name);
-      return;
+      return true;
     }
     selectNode(node.id);
     setSidebarOpen(true);
+    return true;
   }, [selectNode, setSidebarOpen, lensActive, toggleDraftServer]);
+
+  const onNodeClick = useCallback((_: MouseEvent, node: ActivatableNode) => {
+    activateNode(node);
+  }, [activateNode]);
+
+  // React Flow's node wrapper handles Enter and Space itself and does not call
+  // onNodeClick. Keydown does not reach the custom node component, so the
+  // wrapper listener is the keyboard path. Inner buttons, links, and fields
+  // keep their own activation. Enter is not preventDefault'd, so React Flow's
+  // selection toggle still runs. Space is preventDefault'd only after a node
+  // activates, and is not stopPropagation'd: React Flow's window listener still
+  // arms pan-on-drag while Space is held.
+  const onCanvasKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const wrapper = target.closest('.react-flow__node');
+    if (!wrapper) return;
+    if (
+      target !== wrapper &&
+      target.matches('button, a, input, select, textarea, [contenteditable]')
+    ) {
+      return;
+    }
+    const id = wrapper.getAttribute('data-id');
+    if (!id) return;
+    const node = nodes.find((item) => item.id === id);
+    if (!node) return;
+    const activated = activateNode(node);
+    if (event.key === ' ' && activated) event.preventDefault();
+  }, [nodes, activateNode]);
 
   // Handle pane click: return to the default view. Deselect, close the
   // sidebar, and collapse every tool fan-out (which also unmounts any open
@@ -256,6 +331,8 @@ export function Canvas() {
 
   const isEmpty = !nodes || nodes.length === 0;
   const hasActiveStack = connectionStatus === 'connected' && gatewayInfo !== null;
+  const edgeStyleLabel = `Switch to ${edgeStyle === 'default' ? 'straight' : 'curved'} edges`;
+  const cardStyleLabel = compactCards ? 'Switch to full cards' : 'Switch to compact cards';
 
   return (
     <div ref={wrapperRef} className="absolute inset-0 canvas-wrapper">
@@ -319,6 +396,7 @@ export function Canvas() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick}
+        onKeyDown={onCanvasKeyDown}
         onConnect={onConnect}
         onPaneClick={onPaneClick}
         defaultEdgeOptions={defaultEdgeOptions}
@@ -334,17 +412,9 @@ export function Canvas() {
           },
         ]}
       >
-        {/* Sub-grid — dots at 20px, fades in when zoom > 0.8. Rendered as a
-            child so the zoom-conditional layer stays local to this canvas. */}
-        {showSubGrid && (
-          <Background
-            id="sub-grid"
-            variant={BackgroundVariant.Dots}
-            gap={20}
-            size={1}
-            color={`rgba(13, 148, 136, ${0.1 * subGridOpacity})`}
-          />
-        )}
+        {/* Sub-grid dots fade in above 0.8x. Isolated so this canvas does not
+            subscribe to the viewport. */}
+        <SubGrid />
 
         {/* Controls */}
         <Panel position="bottom-left" className="flex gap-1">
@@ -352,6 +422,7 @@ export function Canvas() {
             onClick={() => zoomIn({ duration: 200 })}
             className="control-button"
             title="Zoom in"
+            aria-label="Zoom in"
           >
             <Plus className="w-4 h-4" />
           </button>
@@ -359,6 +430,7 @@ export function Canvas() {
             onClick={() => zoomOut({ duration: 200 })}
             className="control-button"
             title="Zoom out"
+            aria-label="Zoom out"
           >
             <Minus className="w-4 h-4" />
           </button>
@@ -366,6 +438,7 @@ export function Canvas() {
             onClick={() => fitView({ padding: 0.2, duration: 300 })}
             className="control-button"
             title="Fit view"
+            aria-label="Fit view"
           >
             <Maximize className="w-4 h-4" />
           </button>
@@ -373,13 +446,15 @@ export function Canvas() {
             onClick={resetLayout}
             className="control-button"
             title="Reset layout"
+            aria-label="Reset layout"
           >
             <RotateCcw className="w-4 h-4" />
           </button>
           <button
             onClick={toggleEdgeStyle}
             className="control-button"
-            title={`Switch to ${edgeStyle === 'default' ? 'straight' : 'curved'} edges`}
+            title={edgeStyleLabel}
+            aria-label={edgeStyleLabel}
           >
             {edgeStyle === 'default' ? (
               <Minus className="w-4 h-4 rotate-45" />
@@ -393,7 +468,8 @@ export function Canvas() {
               'control-button',
               compactCards && 'ring-1 ring-primary/30'
             )}
-            title={compactCards ? 'Switch to full cards' : 'Switch to compact cards'}
+            title={cardStyleLabel}
+            aria-label={cardStyleLabel}
           >
             {compactCards ? (
               <LayoutGrid className="w-4 h-4" />

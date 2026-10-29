@@ -63,6 +63,7 @@ export function OverlaysMenu() {
         onClick={() => setOpen((v) => !v)}
         className={cn('control-button', (open || anyActive) && 'ring-1 ring-primary/30')}
         title="Overlays"
+        aria-label="Overlays"
         aria-haspopup="menu"
         aria-expanded={open}
       >

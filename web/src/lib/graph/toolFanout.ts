@@ -150,6 +150,9 @@ export function createToolFanout(
       data: nodeData,
       draggable: true,
       selectable: false,
+      // The pill button owns the name and the keyboard handler.
+      focusable: false,
+      ariaLabel: `${serverName} tool ${toolName}`,
     });
     edges.push({
       id: toolEdgeId(serverNodeId, id),
@@ -177,6 +180,8 @@ export function createToolFanout(
       data: overflowData,
       draggable: true,
       selectable: false,
+      focusable: false,
+      ariaLabel: `${overflow.length} more ${serverName} tools`,
     });
     edges.push({
       id: toolEdgeId(serverNodeId, id),

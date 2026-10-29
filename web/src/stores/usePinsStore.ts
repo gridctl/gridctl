@@ -12,6 +12,28 @@ interface PinsState {
   setSkillPins: (skillPins: Record<string, SkillPin>) => void;
 }
 
+/**
+ * True when a pins snapshot should re-annotate canvas nodes. Null means the
+ * first load has not landed yet. Other pin fields (findings, hashes) do not
+ * change the node annotation, so they do not force a refresh.
+ */
+export function serverPinsChanged(
+  prev: Record<string, ServerPins> | null,
+  next: Record<string, ServerPins> | null,
+): boolean {
+  if (prev == null || next == null) return true;
+  const prevNames = Object.keys(prev);
+  if (prevNames.length !== Object.keys(next).length) return true;
+  for (const name of prevNames) {
+    const after = next[name];
+    if (!after) return true;
+    if (after.status !== prev[name].status || after.tool_count !== prev[name].tool_count) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export const usePinsStore = create<PinsState>()(
   subscribeWithSelector((set) => ({
     pins: null,
