@@ -241,7 +241,24 @@ export const useStackStore = create<StackState>()(
 
     setConnectionStatus: (connectionStatus) => set({ connectionStatus }),
 
-    selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
+    // selected is carried across polls, so clearing the store selection has to
+    // clear React Flow's flag too. Escape and the inspector close often run
+    // while focus is outside the node, where React Flow's own handler does not.
+    selectNode: (nodeId) => {
+      if (nodeId === null) {
+        const selected = get().nodes.filter((node) => node.selected);
+        if (selected.length > 0) {
+          get().onNodesChange(
+            selected.map((node) => ({
+              type: 'select',
+              id: node.id,
+              selected: false,
+            })),
+          );
+        }
+      }
+      set({ selectedNodeId: nodeId });
+    },
 
     toggleServerExpanded: (serverId) => {
       const next = new Set(get().expandedServers);

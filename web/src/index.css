@@ -746,9 +746,11 @@ body::before {
   z-index: 10;
 }
 
-/* Highlighted state - edges get enhanced visibility */
+/* Highlighted state - edges get enhanced visibility.
+   defaultEdgeOptions writes an inline 2px width, which beats a stylesheet
+   rule unless stroke-width is !important. The previous 2.5px rule did this. */
 .react-flow__edge.highlighted .react-flow__edge-path {
-  stroke-width: 3px;
+  stroke-width: 3px !important;
   opacity: 1;
 }
 

@@ -102,6 +102,42 @@ describe('useStackStore graph identity', () => {
     expect(after.find((node) => node.id === 'gateway')).toBe(before.find((node) => node.id === 'gateway'));
   });
 
+  it('reuses expanded fan-out nodes across an identical poll', () => {
+    const tools = Array.from({ length: 12 }, (_, index) => `github-tool-${index}`);
+    const payload = status([makeServer('github', { toolCount: tools.length, tools })]);
+    useStackStore.getState().setGatewayStatus(payload);
+    useStackStore.getState().toggleServerExpanded('mcp-github');
+    const firstNodes = useStackStore.getState().nodes;
+    const firstEdges = useStackStore.getState().edges;
+    const toolNodes = firstNodes.filter((node) => node.id.startsWith('tool-mcp-github'));
+    expect(toolNodes.length).toBeGreaterThan(0);
+    expect(firstNodes.some((node) => node.id === 'tool-overflow-mcp-github')).toBe(true);
+
+    useStackStore.getState().setGatewayStatus(JSON.parse(JSON.stringify(payload)) as GatewayStatus);
+
+    expect(useStackStore.getState().nodes).toBe(firstNodes);
+    expect(useStackStore.getState().edges).toBe(firstEdges);
+    for (const node of toolNodes) {
+      expect(useStackStore.getState().nodes.find((item) => item.id === node.id)).toBe(node);
+    }
+  });
+
+  it('clears React Flow selected flags when the store selection is cleared', () => {
+    useStackStore.getState().setGatewayStatus(status([makeServer('github'), makeServer('jira')]));
+    useStackStore.getState().onNodesChange([{
+      id: 'mcp-github',
+      type: 'select',
+      selected: true,
+    }]);
+    expect(useStackStore.getState().nodes.find((node) => node.id === 'mcp-github')?.selected).toBe(true);
+
+    useStackStore.getState().selectNode(null);
+
+    expect(useStackStore.getState().selectedNodeId).toBeNull();
+    expect(useStackStore.getState().nodes.some((node) => node.selected)).toBe(false);
+    expect(useStackStore.getState().nodes.find((node) => node.id === 'mcp-jira')?.selected).not.toBe(true);
+  });
+
   it('keeps a dragged position across the next poll', () => {
     useStackStore.getState().setGatewayStatus(status([makeServer('github')]));
     useStackStore.getState().onNodesChange([{
