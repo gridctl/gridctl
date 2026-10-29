@@ -934,6 +934,26 @@ Browser shows a blank page or connection refused when accessing the gateway URL.
 
 3. The web UI requires a modern browser - Chrome, Firefox, Safari, or Edge.
 
+### A workspace says a feature is unavailable
+
+**Symptoms:**
+
+Pins, the Library skills list, Tools, Variables, Connections, run history, or Logs shows a title ending in "unavailable" and a Retry control. Pins, the Library skills list, Tools, and Variables may instead show a banner above data that is already on screen. Metrics already offered Retry; its title is now "Metrics unavailable". This is not a blank page, and it is not the authentication prompt.
+
+**Causes:**
+
+The request for that workspace failed. `gridctl apply` restarts the daemon and is a common trigger. An unconfigured registry still shows "No skills registered", the same empty state as a registry with no skills. An unconfigured variable store still shows "Your variables home", the same empty state as a store with no variables. Pinning that is off still shows "No servers pinned yet" on the Pins server tab. No detected clients still shows "No client registry available", but only after the health fetch succeeds. None of those empty states is a failure. While the Connections health fetch is in flight, the pane says "Loading connections…". A failed fetch says "Connections unavailable" and keeps that title while Retry runs.
+
+**Resolution:**
+
+1. Use Retry on that workspace. Pins, the Library skills list, and Tools retry the shell status poll. Variables, Connections, run history, and Logs retry their own fetch. The detached logs window uses the same Retry as Logs.
+2. If Retry fails the same way, confirm the gateway is running:
+   ```bash
+   gridctl status
+   ```
+3. Read the text under the title. On Pins, the Library skills list, and Tools, a connection failure says "Gateway connection unavailable". On Variables, Connections, and Logs, a connection failure says "Gateway connection failed. Check connectivity, TLS, and browser access policy." An HTTP failure on Variables and Connections says `API error: <status> <statusText>`. Logs says `Logs fetch failed: <status> <statusText>`. Run history does not show that text. It uses "Run history is unreadable. This is not an empty history.", so a failed read is not an empty history. A credential rejection does not use this state.
+4. A banner means the last refresh failed and the previous Pins, Library skills, Tools, or Variables data is still on screen. An unsaved Tools whitelist edit stays mounted. Run history and Logs replace the list instead. The Pins server tab and skills tab fail independently. Connections does not poll wiring. After clients have loaded, only the sessions axis changes until the next health refresh (a mount, a mutation, or Retry). If that refresh fails before any wiring rows have loaded, the Ownership badge and the Wiring summary say "unavailable", and the Wiring body reads "Wiring status could not be loaded." Retry keeps that text until the new result arrives.
+
 ### Grouped MCP requests return 401
 
 With `gateway.auth` configured, grouped endpoints now require the same credential as `/mcp` and `/api/`. Clients that previously reached `/groups/{name}/mcp` or `/groups/{name}/sse` without a credential must attach it to every request, including SSE negotiation, stream reconnection, and DELETE. Use `Authorization: Bearer <token>` for `type: bearer`, or the raw token in the configured header for `type: api_key` (default: `Authorization`). A session ID or replay ID does not replace the credential.

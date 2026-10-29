@@ -14,6 +14,7 @@ import {
   deleteVariableSet,
   assignVariableToSet,
   fetchVariableStoreStatus,
+  isFeatureUnavailable,
   unlockVariableStore,
   lockVariableStore,
   importVariables,
@@ -147,9 +148,16 @@ export function useVaultManager(
         }
       }
     } catch (err) {
-      useVaultStore
-        .getState()
-        .setError(err instanceof Error ? err.message : 'Failed to load vault');
+      // An unconfigured store is a 503. That is the teaching empty state,
+      // not a failure the operator can retry into existence.
+      if (isFeatureUnavailable(err)) {
+        useVaultStore.getState().setVariables([]);
+        useVaultStore.getState().setError(null);
+      } else {
+        useVaultStore
+          .getState()
+          .setError(err instanceof Error ? err.message : 'Failed to load vault');
+      }
     } finally {
       useVaultStore.getState().setLoading(false);
     }

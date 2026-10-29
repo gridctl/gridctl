@@ -5,6 +5,7 @@ import { exportRuns, updateStackRuns, wipeRuns, type RunRecord } from '../../lib
 import { formatBytes } from '../../lib/format-bytes';
 import { cn } from '../../lib/cn';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { FailedState } from '../ui/EmptyState';
 
 const RECORDING_BLURB =
   'Records are saved after dispatch attempts return. Recording is best-effort. Attempts interrupted by a crash may leave no record, and older records may have been removed by retention or wipe.';
@@ -407,7 +408,20 @@ export function RunsView({ servers }: RunsViewProps) {
 
       <div className={cn('flex-1 min-h-0 flex', narrow && 'flex-col')}>
         <div className="flex-1 min-w-0 overflow-auto">
-          {emptyReason ? (
+          {isLoading && records.length === 0 ? (
+            <div className="p-3 space-y-2 animate-pulse" data-testid="runs-skeleton">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-7 rounded bg-surface-elevated/60 border border-border/20" />
+              ))}
+            </div>
+          ) : emptyReason && error ? (
+            <FailedState
+              feature="Run history"
+              message="Run history is unreadable. This is not an empty history."
+              onRetry={() => void load()}
+              inline
+            />
+          ) : emptyReason ? (
             <p className="px-6 py-8 text-sm text-text-muted" role="status">
               {emptyReason}
             </p>

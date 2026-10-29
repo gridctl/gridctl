@@ -49,6 +49,8 @@ import {
   type AuditFilter,
   type ToolSortMode,
 } from '../../lib/toolSort';
+import { requestGatewayPoll } from '../../hooks/usePolling';
+import { EmptyState, FailedState, FailureBanner } from '../ui/EmptyState';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { StatusDot } from '../ui/StatusDot';
@@ -89,6 +91,7 @@ export function ToolsWorkspace() {
   // `tools` list which is just the meta-tools when code mode is on.
   const toolCatalog = useStackStore((s) => s.toolCatalog);
   const isLoading = useStackStore((s) => s.isLoading);
+  const error = useStackStore((s) => s.error);
 
   // Servers sorted by name for a stable rail order.
   const servers = useMemo(
@@ -571,41 +574,70 @@ export function ToolsWorkspace() {
             onReviewAudit={openAudit7d}
           />
 
-          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark">
-            {servers.length === 0 ? (
-              <ToolsEmptyState loading={isLoading} />
-            ) : searchActive ? (
-              <GlobalResults
-                results={globalResults}
-                query={globalQuery}
-                serverCount={servers.length}
-                onPick={(server, tool) => requestServer(server, tool)}
-                auditFor={auditForResult}
+          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark flex flex-col">
+            {servers.length === 0 && error ? (
+              <FailedState
+                feature="Tools"
+                message={error}
+                onRetry={requestGatewayPoll}
+                className="flex-1"
               />
-            ) : activeServer ? (
-              <ServerDetail
-                key={activeServer.name}
-                server={activeServer}
-                editor={editor}
-                selectedTool={selectedTool}
-                onSelect={applyTool}
-                auditMode={auditMode}
-                usage={usageByServer?.[activeServer.name]}
-                windowMs={windowMs}
-                now={fetchedAt}
-                auditFilter={auditFilter}
-                onFilter={applyFilter}
-                sortMode={sortMode}
-                onSort={applySort}
-                destructiveOnly={destructiveOnly}
-                onRisk={applyRisk}
-                onClearFacets={clearFacets}
-                groupsFor={(tool) =>
-                  groupsForTool(groupsReport, `${activeServer.name}${TOOL_NAME_DELIMITER}${tool}`)
-                }
-                policyTools={policyReport?.tools}
+            ) : servers.length === 0 && isLoading ? (
+              <EmptyState
+                icon={Loader2}
+                iconClassName="animate-spin"
+                tone="primary"
+                title="Loading servers…"
+                description="Fetching the active stack."
+                className="flex-1"
               />
-            ) : null}
+            ) : servers.length === 0 ? (
+              <EmptyState
+                icon={Wrench}
+                tone="primary"
+                title="No MCP servers yet"
+                description="Add an MCP server to your stack to manage its tools here."
+                className="flex-1"
+              />
+            ) : (
+              <>
+                {error && (
+                  <FailureBanner message={error} onRetry={requestGatewayPoll} />
+                )}
+                {searchActive ? (
+                  <GlobalResults
+                    results={globalResults}
+                    query={globalQuery}
+                    serverCount={servers.length}
+                    onPick={(server, tool) => requestServer(server, tool)}
+                    auditFor={auditForResult}
+                  />
+                ) : activeServer ? (
+                  <ServerDetail
+                    key={activeServer.name}
+                    server={activeServer}
+                    editor={editor}
+                    selectedTool={selectedTool}
+                    onSelect={applyTool}
+                    auditMode={auditMode}
+                    usage={usageByServer?.[activeServer.name]}
+                    windowMs={windowMs}
+                    now={fetchedAt}
+                    auditFilter={auditFilter}
+                    onFilter={applyFilter}
+                    sortMode={sortMode}
+                    onSort={applySort}
+                    destructiveOnly={destructiveOnly}
+                    onRisk={applyRisk}
+                    onClearFacets={clearFacets}
+                    groupsFor={(tool) =>
+                      groupsForTool(groupsReport, `${activeServer.name}${TOOL_NAME_DELIMITER}${tool}`)
+                    }
+                    policyTools={policyReport?.tools}
+                  />
+                ) : null}
+              </>
+            )}
           </div>
         </main>
       </WorkspaceShell>
@@ -1682,36 +1714,6 @@ function GlobalResults({ results, query, serverCount, onPick, auditFor }: Global
           })}
         </div>
       )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Empty state
-// ---------------------------------------------------------------------------
-
-function ToolsEmptyState({ loading }: { loading: boolean }) {
-  return (
-    <div className="h-full flex items-center justify-center px-6 py-12">
-      <div className="max-w-md w-full text-center space-y-4">
-        <div className="mx-auto w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-          {loading ? (
-            <Loader2 size={24} className="text-primary/70 animate-spin" />
-          ) : (
-            <Wrench size={24} className="text-primary/70" />
-          )}
-        </div>
-        <div className="space-y-1.5">
-          <h2 className="text-base font-semibold text-text-primary">
-            {loading ? 'Loading servers…' : 'No MCP servers yet'}
-          </h2>
-          <p className="text-xs text-text-muted leading-relaxed">
-            {loading
-              ? 'Fetching the active stack.'
-              : 'Add an MCP server to your stack to manage its tools here.'}
-          </p>
-        </div>
-      </div>
     </div>
   );
 }

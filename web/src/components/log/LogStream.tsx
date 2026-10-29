@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ScrollText, Terminal } from 'lucide-react';
-import { EmptyState } from '../ui/EmptyState';
+import { EmptyState, FailedState } from '../ui/EmptyState';
 import { useListNav } from '../../hooks/useListNav';
 import { LogLine } from './LogLine';
 import { GATEWAY_LOG_SOURCE, logEntryKeys, logSourceOf, type ParsedLog } from './logTypes';
@@ -16,6 +16,7 @@ interface LogStreamProps {
   logs: ParsedLog[];
   isLoading: boolean;
   error: string | null;
+  onRetry?: () => void;
   /** True when a search/trace filter is hiding entries. */
   hasActiveFilter?: boolean;
   onClearFilter?: () => void;
@@ -55,6 +56,7 @@ export function LogStream({
   logs,
   isLoading,
   error,
+  onRetry,
   hasActiveFilter,
   onClearFilter,
   showSource,
@@ -176,10 +178,7 @@ export function LogStream({
 
       {/* Error state */}
       {error && (
-        <div className="flex items-center gap-2 p-4 text-status-error text-xs">
-          <span className="w-2 h-2 rounded-full bg-status-error" />
-          Error: {error}
-        </div>
+        <FailedState feature="Logs" message={error} onRetry={onRetry} inline />
       )}
 
       {/* Empty states, most specific filter first */}

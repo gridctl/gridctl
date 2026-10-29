@@ -80,6 +80,11 @@ export class HTTPError extends Error {
   }
 }
 
+/** True only for the 503 "subsystem not configured" response. */
+export function isFeatureUnavailable(err: unknown): boolean {
+  return err instanceof HTTPError && err.status === 503;
+}
+
 /** Pull the structured git-error fields off an error response body. */
 function gitErrorExtra(data: unknown): { code?: string; httpsEquivalent?: string } {
   const body = (data ?? {}) as { code?: unknown; httpsEquivalent?: unknown };
@@ -122,7 +127,7 @@ async function fetchJSON<T>(endpoint: string): Promise<T> {
   }
 
   if (!response.ok) {
-    throw new Error(`API error: ${response.status} ${response.statusText}`);
+    throw new HTTPError(response.status, `API error: ${response.status} ${response.statusText}`);
   }
 
   return response.json();

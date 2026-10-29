@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MemoryRouter } from 'react-router';
 import { RunsView } from '../components/runs/RunsView';
@@ -109,8 +109,27 @@ describe('RunsView', () => {
         <RunsView servers={[]} />
       </MemoryRouter>,
     );
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/unreadable/));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/unreadable/));
     expect(screen.queryByText(/No matching run records/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(fetchRuns).toHaveBeenCalledTimes(2));
+  });
+
+  it('shows a skeleton instead of an empty table while the first load is pending', async () => {
+    let resolveRuns: (value: Awaited<ReturnType<typeof fetchRuns>>) => void = () => {};
+    vi.mocked(fetchRuns).mockReturnValue(new Promise((resolve) => {
+      resolveRuns = resolve;
+    }));
+    render(
+      <MemoryRouter>
+        <RunsView servers={[]} />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByTestId('runs-skeleton')).toBeInTheDocument();
+    expect(screen.queryByRole('grid')).not.toBeInTheDocument();
+    await act(async () => {
+      resolveRuns({ records: [], warnings: [], partial: false, wipeEpoch: 0 });
+    });
   });
 
   it('reveals privacy and retention before enable', async () => {

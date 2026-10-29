@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useNavigate, useSearchParams } from 'react-router';
-import { Bot, Plug, Radio } from 'lucide-react';
+import { Bot, Loader2, Plug, Radio } from 'lucide-react';
 import {
   ClientLinkError,
   fetchClients,
@@ -20,6 +20,7 @@ import { useAuthStore } from '../../stores/useAuthStore';
 import { useListNav } from '../../hooks/useListNav';
 import type { AgentProjectionStatus, ClientStatus, SessionEntry, WiringRow } from '../../types';
 import { showToast } from '../ui/Toast';
+import { EmptyState, FailedState } from '../ui/EmptyState';
 import { GlobalContextDialog } from '../context/GlobalContextDialog';
 import { ResetDialog } from '../system/ResetDialog';
 import { useUIStore } from '../../stores/useUIStore';
@@ -60,6 +61,11 @@ export default function ConnectionsWorkspace() {
   const agentStatuses = useRegistryStore((s) => s.agentStatuses);
 
   const [wiringRows, setWiringRows] = useState<WiringRow[] | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
+  // clients defaults to [], which is also the loaded-empty value. This flag
+  // starts true so the first paint is loading, not the teaching empty state,
+  // and stays true until the in-flight health fetch settles.
+  const [healthPending, setHealthPending] = useState(true);
   const [sessionsFailed, setSessionsFailed] = useState(false);
   const [staged, setStaged] = useState<StagedChanges>({});
   const [reviewing, setReviewing] = useState(false);
@@ -91,6 +97,10 @@ export default function ConnectionsWorkspace() {
   const refreshHealth = useCallback(async () => {
     const current = captureCurrent();
     if (!current()) return;
+    // Keep the previous healthError until these results land. Clearing it
+    // here replaced a failed no-clients pane with the teaching empty state
+    // for the whole retry, and flipped the Ownership badge back to "loading".
+    setHealthPending(true);
     const request = Symbol();
     healthRequest.current = request;
     const results = await Promise.allSettled([
@@ -100,6 +110,8 @@ export default function ConnectionsWorkspace() {
       fetchClients(),
     ]);
     if (!current() || healthRequest.current !== request) return;
+    setHealthError(firstHealthError(results));
+    setHealthPending(false);
     if (results[0].status === 'fulfilled') setWiringRows(results[0].value);
     if (results[1].status === 'fulfilled') {
       useRegistryStore.getState().setAgentStatuses(results[1].value);
@@ -115,7 +127,7 @@ export default function ConnectionsWorkspace() {
   }, [captureCurrent]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- all state writes happen after awaited fetches resolve; nothing sets state synchronously in this effect
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- refreshHealth marks the fetch in flight before its first await; result writes happen after the fetches resolve
     void refreshHealth();
   }, [refreshHealth, authRequired, generation]);
 
@@ -359,18 +371,37 @@ export default function ConnectionsWorkspace() {
   if (clients.length === 0) {
     return (
       <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
-        <ConnectionsHeader subtitle="No clients reported" />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center max-w-xs">
-            <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-4 text-primary">
-              <Plug size={22} />
-            </div>
-            <div className="text-sm font-medium text-text-primary mb-1">No client registry available</div>
-            <div className="text-xs text-text-muted">
-              Start a stack with 'gridctl apply' to detect and link LLM clients.
-            </div>
+        {healthError ? (
+          <div className="flex-1 min-h-0">
+            <FailedState
+              feature="Connections"
+              message={healthError}
+              onRetry={() => void refreshHealth()}
+            />
           </div>
-        </div>
+        ) : healthPending ? (
+          <div className="flex-1 min-h-0">
+            <EmptyState
+              icon={Loader2}
+              iconClassName="animate-spin"
+              tone="primary"
+              title="Loading connections…"
+              description="Fetching client and wiring status from the gateway."
+            />
+          </div>
+        ) : (
+          <>
+            <ConnectionsHeader subtitle="No clients reported" />
+            <div className="flex-1 min-h-0">
+              <EmptyState
+                icon={Plug}
+                tone="primary"
+                title="No client registry available"
+                description="Start a stack with 'gridctl apply' to detect and link LLM clients."
+              />
+            </div>
+          </>
+        )}
       </div>
     );
   }
@@ -423,6 +454,7 @@ export default function ConnectionsWorkspace() {
                       : []
                 }
                 sessionsFailed={sessionsFailed}
+                healthFailed={healthError !== null}
                 onRefresh={refreshHealth}
                 onReviewContext={() => {
                   setContextReviewSlug(selectedSlug);
@@ -518,6 +550,17 @@ function DangerZoneStrip({ onOpen }: { onOpen: () => void }) {
       </div>
     </div>
   );
+}
+
+function firstHealthError(
+  results: Array<PromiseSettledResult<unknown>>,
+): string | null {
+  for (const index of [0, 1, 3]) {
+    const result = results[index];
+    if (!result || result.status !== 'rejected') continue;
+    return result.reason instanceof Error ? result.reason.message : 'Request failed';
+  }
+  return null;
 }
 
 function ConnectionsHeader({ subtitle }: { subtitle: string }) {

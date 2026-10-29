@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router';
 import { Loader2, Pin } from 'lucide-react';
+import { requestGatewayPoll } from '../../hooks/usePolling';
+import { EmptyState, FailedState, FailureBanner } from '../ui/EmptyState';
 import { cn } from '../../lib/cn';
 import {
   serverHasAlertFindings,
@@ -47,6 +49,8 @@ export function PinsWorkspace() {
   const pinsPrefs = useUIStore((s) => s.pinsPrefs);
   const pins = usePinsStore((s) => s.pins);
   const skillPins = usePinsStore((s) => s.skillPins);
+  const pinsError = usePinsStore((s) => s.pinsError);
+  const skillPinsError = usePinsStore((s) => s.skillPinsError);
 
   // Only the value 'skill' selects the skill kind; anything else (including
   // a hand-edited URL) is the server kind, matching the pre-kind URLs.
@@ -327,6 +331,7 @@ export function PinsWorkspace() {
   // null means the first poll for the active kind has not landed yet; both
   // endpoints return an empty object (not an error) when pinning is quiet.
   const activeMap = kind === 'server' ? pins : skillPins;
+  const activeError = kind === 'server' ? pinsError : skillPinsError;
   const activeCount = kind === 'server' ? entries.length : skillEntries.length;
 
   return (
@@ -371,47 +376,68 @@ export function PinsWorkspace() {
             </div>
           </header>
 
-          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark">
-            {activeMap === null ? (
-              <PinsEmptyState
-                icon={<Loader2 size={24} className="text-primary/70 animate-spin" />}
-                title="Loading pins…"
-                body="Fetching pin state from the gateway."
+          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark flex flex-col">
+            {activeError && activeMap === null ? (
+              <FailedState
+                feature="Pins"
+                message={activeError}
+                onRetry={requestGatewayPoll}
+                className="flex-1"
               />
-            ) : activeCount === 0 ? (
-              kind === 'server' ? (
-                <PinsEmptyState
-                  icon={<Pin size={24} className="text-primary/70" />}
-                  title="No servers pinned yet"
-                  body="Servers are pinned automatically on first verify after deploy. If schema pinning is disabled in your stack, nothing will appear here."
-                />
-              ) : (
-                <PinsEmptyState
-                  icon={<Pin size={24} className="text-primary/70" />}
-                  title="No skills pinned yet"
-                  body="Registry skills are pinned automatically when the daemon first observes them. Add a skill to the Library and it appears here after the next refresh."
-                />
-              )
+            ) : activeMap === null ? (
+              <EmptyState
+                icon={Loader2}
+                iconClassName="animate-spin"
+                tone="primary"
+                title="Loading pins…"
+                description="Fetching pin state from the gateway."
+                className="flex-1"
+              />
             ) : (
               <>
-                {kind === 'server' && activePins && (
-                  <PinsServerDetail
-                    key={activeName}
-                    name={activeName}
-                    pins={activePins}
-                    findingsOnly={findingsOnly}
-                    onToggleFindingsOnly={toggleFindingsOnly}
-                    onReset={handleReset}
-                    expandFindingsOnMount={view === 'findings'}
-                  />
+                {activeError && (
+                  <FailureBanner message={activeError} onRetry={requestGatewayPoll} />
                 )}
-                {kind === 'skill' && activeSkillPin && (
-                  <PinsSkillDetail
-                    key={activeName}
-                    name={activeName}
-                    pin={activeSkillPin}
-                    onReset={handleResetSkill}
-                  />
+                {activeCount === 0 ? (
+                  kind === 'server' ? (
+                    <EmptyState
+                      icon={Pin}
+                      tone="primary"
+                      title="No servers pinned yet"
+                      description="Servers are pinned automatically on first verify after deploy. If schema pinning is disabled in your stack, nothing will appear here."
+                      className="flex-1"
+                    />
+                  ) : (
+                    <EmptyState
+                      icon={Pin}
+                      tone="primary"
+                      title="No skills pinned yet"
+                      description="Registry skills are pinned automatically when the daemon first observes them. Add a skill to the Library and it appears here after the next refresh."
+                      className="flex-1"
+                    />
+                  )
+                ) : (
+                  <>
+                    {kind === 'server' && activePins && (
+                      <PinsServerDetail
+                        key={activeName}
+                        name={activeName}
+                        pins={activePins}
+                        findingsOnly={findingsOnly}
+                        onToggleFindingsOnly={toggleFindingsOnly}
+                        onReset={handleReset}
+                        expandFindingsOnMount={view === 'findings'}
+                      />
+                    )}
+                    {kind === 'skill' && activeSkillPin && (
+                      <PinsSkillDetail
+                        key={activeName}
+                        name={activeName}
+                        pin={activeSkillPin}
+                        onReset={handleResetSkill}
+                      />
+                    )}
+                  </>
                 )}
               </>
             )}
@@ -441,34 +467,6 @@ function skillHeaderTally(entries: Array<[string, SkillPin]>): string {
   if (drifted > 0) parts.push(`${drifted} drifted`);
   if (withFindings > 0) parts.push(`${withFindings} with findings`);
   return parts.join(' · ');
-}
-
-// ---------------------------------------------------------------------------
-// Empty states
-// ---------------------------------------------------------------------------
-
-function PinsEmptyState({
-  icon,
-  title,
-  body,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  body: string;
-}) {
-  return (
-    <div className="absolute inset-0 flex items-center justify-center bg-background px-6 py-12">
-      <div className="max-w-md w-full text-center space-y-4">
-        <div className="mx-auto w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-          {icon}
-        </div>
-        <div className="space-y-1.5">
-          <h2 className="text-base font-semibold text-text-primary">{title}</h2>
-          <p className="text-xs text-text-muted leading-relaxed">{body}</p>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 export default PinsWorkspace;

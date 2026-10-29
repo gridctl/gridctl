@@ -294,9 +294,67 @@ describe('ConnectionsWorkspace', () => {
     expect(screen.queryByText(/pending change/)).not.toBeInTheDocument();
   });
 
-  it('renders an empty state when no clients are reported', () => {
-    useStackStore.setState({ clients: [] });
+  it('shows wiring as unavailable and retries the failed fetch', async () => {
+    vi.mocked(api.fetchWiringStatus).mockRejectedValue(new Error('Wiring unavailable'));
     renderWorkspace();
+    await waitFor(() => {
+      expect(screen.getByText('Ownership').parentElement).toHaveTextContent('unavailable');
+    });
+    expect(screen.getByText('Ownership').parentElement).not.toHaveTextContent('loading');
+    expect(screen.getByText('Wiring status could not be loaded.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(api.fetchWiringStatus).toHaveBeenCalledTimes(2));
+  });
+
+  it('renders a failed state when clients cannot be loaded', async () => {
+    useStackStore.setState({ clients: [] });
+    vi.mocked(api.fetchClients).mockRejectedValue(new Error('clients down'));
+    renderWorkspace();
+    expect(await screen.findByText('Connections unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('No client registry available')).not.toBeInTheDocument();
+  });
+
+  it('renders the teaching empty state when no clients are detected', async () => {
+    useStackStore.setState({ clients: [] });
+    vi.mocked(api.fetchClients).mockResolvedValue([]);
+    renderWorkspace();
+    await waitFor(() => expect(api.fetchClients).toHaveBeenCalled());
+    await act(async () => {});
     expect(screen.getByText('No client registry available')).toBeInTheDocument();
+    expect(screen.queryByText('Connections unavailable')).not.toBeInTheDocument();
+  });
+
+  it('shows loading, not the teaching empty state, until the health fetch settles', async () => {
+    useStackStore.setState({ clients: [] });
+    const clientsFetch = deferred<ClientStatus[]>();
+    vi.mocked(api.fetchClients).mockReturnValue(clientsFetch.promise);
+    renderWorkspace();
+    expect(screen.getByText('Loading connections…')).toBeInTheDocument();
+    expect(screen.queryByText('No client registry available')).not.toBeInTheDocument();
+    expect(screen.queryByText('Connections unavailable')).not.toBeInTheDocument();
+
+    await act(async () => { clientsFetch.resolve([]); });
+    expect(await screen.findByText('No client registry available')).toBeInTheDocument();
+    expect(screen.queryByText('Loading connections…')).not.toBeInTheDocument();
+    expect(screen.queryByText('Connections unavailable')).not.toBeInTheDocument();
+  });
+
+  it('keeps the failed state while a client retry is in flight', async () => {
+    useStackStore.setState({ clients: [] });
+    vi.mocked(api.fetchClients).mockRejectedValue(new Error('clients down'));
+    renderWorkspace();
+    expect(await screen.findByText('Connections unavailable')).toBeInTheDocument();
+
+    const retry = deferred<ClientStatus[]>();
+    vi.mocked(api.fetchClients).mockReturnValue(retry.promise);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(screen.getByText('Connections unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('No client registry available')).not.toBeInTheDocument();
+    expect(screen.queryByText('Loading connections…')).not.toBeInTheDocument();
+
+    await act(async () => { retry.reject(new Error('clients down')); });
+    await waitFor(() => expect(api.fetchClients).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('Connections unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('No client registry available')).not.toBeInTheDocument();
   });
 });

@@ -3,6 +3,7 @@ import { act, render, screen, fireEvent, waitFor, within } from '@testing-librar
 import { MemoryRouter, useLocation } from 'react-router';
 import '@testing-library/jest-dom';
 import { ToolsWorkspace } from '../components/workspaces/ToolsWorkspace';
+import { requestGatewayPoll } from '../hooks/usePolling';
 import { useStackStore } from '../stores/useStackStore';
 import { useToolsDirtyStore } from '../stores/useToolsDirtyStore';
 import { useUIStore } from '../stores/useUIStore';
@@ -11,6 +12,10 @@ import * as api from '../lib/api';
 import type { MCPServerStatus, Tool } from '../types';
 
 vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn() }));
+vi.mock('../hooks/usePolling', () => ({
+  requestGatewayPoll: vi.fn(),
+  usePolling: () => ({ refresh: vi.fn() }),
+}));
 
 function server(
   name: string,
@@ -60,6 +65,7 @@ beforeEach(() => {
   ];
   useStackStore.setState({
     isLoading: false,
+    error: null,
     mcpServers: [
       // github: 1 of 2 whitelisted
       server(GITHUB, ['create_issue', 'list_repos'], ['create_issue']),
@@ -95,6 +101,27 @@ function renderWithProbe(path = '/tools') {
 }
 
 describe('ToolsWorkspace', () => {
+  it('renders a failed state instead of the teaching empty state when the poll failed', () => {
+    useStackStore.setState({
+      mcpServers: [],
+      isLoading: false,
+      error: 'Gateway connection unavailable',
+    });
+    renderAt();
+    expect(screen.getByText('Tools unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('No MCP servers yet')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(requestGatewayPoll).toHaveBeenCalled();
+  });
+
+  it('keeps the editor mounted and shows a banner when a later poll fails', () => {
+    useStackStore.setState({ error: 'Gateway connection unavailable' });
+    renderAt('/tools?server=github');
+    expect(screen.getByRole('alert')).toHaveTextContent('Gateway connection unavailable');
+    expect(screen.getByText('create_issue')).toBeInTheDocument();
+    expect(screen.queryByText('Tools unavailable')).not.toBeInTheDocument();
+  });
+
   it('renders a BLOCKED chip and detail text from GET /api/policy', async () => {
     vi.mocked(api.fetchPolicy).mockResolvedValue({
       configured: true,

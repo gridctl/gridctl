@@ -54,7 +54,7 @@ export const useVaultStore = create<VaultState>()((set) => ({
   locked: false,
   encrypted: false,
 
-  setVariables: (variables) => set({ variables: variables ?? [] }),
+  setVariables: (variables) => set({ variables: variables ?? [], error: null }),
   setSets: (sets) => set({ sets: sets ?? [] }),
   setUsage: (usage, loaded = true) =>
     set({ usage: usage ?? {}, usageLoaded: loaded }),

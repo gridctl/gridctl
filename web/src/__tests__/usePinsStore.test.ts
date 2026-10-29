@@ -199,6 +199,25 @@ describe('deep-link selectors', () => {
     expect(first).toBe('alpha');
   });
 
+  it('clears only the error for the map that was stored', () => {
+    act(() => {
+      usePinsStore.getState().setPinsError('x');
+      usePinsStore.getState().setSkillPinsError('y');
+    });
+    act(() => {
+      usePinsStore.getState().setPins({});
+    });
+    expect(usePinsStore.getState().pinsError).toBeNull();
+    expect(usePinsStore.getState().skillPinsError).toBe('y');
+
+    act(() => {
+      usePinsStore.getState().setPinsError('x');
+      usePinsStore.getState().setSkillPins({});
+    });
+    expect(usePinsStore.getState().skillPinsError).toBeNull();
+    expect(usePinsStore.getState().pinsError).toBe('x');
+  });
+
   it('useFirstFindingsServer is referentially stable across rerenders', () => {
     act(() => {
       usePinsStore.setState({ pins: { alpha: server('pinned', 'warn') } });

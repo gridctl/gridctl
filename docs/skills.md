@@ -121,6 +121,8 @@ The web UI's Library tab (⌘2 in the unified shell, also available as the detac
 - **Activate / disable** a skill via the state badge. Disabled skills stay on disk but are dropped from `prompts/list` responses.
 - **Delete** a skill: removes the directory from the registry.
 
+A failed registry fetch is not an empty skills list. With no skills loaded, the list says "Library unavailable" and offers Retry. When skills are already listed, a banner names the failure and the grid stays. An unconfigured registry still shows "No skills registered".
+
 The Library is backed by the REST endpoints under `/api/registry/skills/*` (see [`docs/api-reference.md`](./api-reference.md)). Everything you can do in the UI you can also do over HTTP.
 
 The main Library and detached editor share [gateway credential re-entry](config-schema.md#browser-credentials). If a save succeeds but its follow-up registry refresh is rejected, the detached editor stays open for verification. Verification resumes the read without repeating the save. A close that does run, including after save or discard, does not show a browser leave prompt.

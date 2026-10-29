@@ -17,6 +17,7 @@ import {
   type MetricsTimeRange,
 } from '../../hooks/useMetricsSeries';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
+import { EmptyState, FailedState } from '../ui/EmptyState';
 import { PopoutButton } from '../ui/PopoutButton';
 import { PersistedFromMarker } from '../telemetry/PersistedFromMarker';
 import { MetricsControls } from '../metrics/MetricsControls';
@@ -467,19 +468,27 @@ export function MetricsWorkspace() {
             />
           </header>
 
-          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark px-6 py-4">
+          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark px-6 py-4 flex flex-col">
             {/* Mutually exclusive states: error → skeleton → empty → data.
                 The headline numbers are window-scoped, so the skeleton holds
                 until the ranged series lands (or a range switch resolves) —
                 rendering zeros from an unresolved fetch would present
                 "loading" as "no activity". */}
             {error && !isLoading && (
-              <ErrorState message={error} onRetry={reload} />
+              <FailedState feature="Metrics" message={error} onRetry={reload} className="flex-1" />
             )}
 
             {!error && isLoading && !metricsData && <LoadingState />}
 
-            {!error && !hasData && !(isLoading && !metricsData) && <MetricsEmptyState />}
+            {!error && !hasData && !(isLoading && !metricsData) && (
+              <EmptyState
+                icon={BarChart3}
+                tone="primary"
+                title="Your metrics home"
+                description="Metrics populate as tools are called: token usage per server, client, and tool, plus call activity and format-conversion savings."
+                className="flex-1"
+              />
+            )}
 
             {!error && hasData && !(isLoading && !metricsData) && (
               <div className="space-y-4 max-w-7xl">
@@ -729,39 +738,6 @@ function LoadingState() {
         ))}
       </div>
       <div className="h-44 rounded-lg bg-surface-elevated/60 border border-border/30" />
-    </div>
-  );
-}
-
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center h-full gap-3">
-      <span className="text-xs text-status-error">{message}</span>
-      <button onClick={onRetry} className="text-xs text-primary hover:underline">
-        Retry
-      </button>
-    </div>
-  );
-}
-
-function MetricsEmptyState() {
-  return (
-    <div className="h-full flex items-center justify-center px-6 py-12">
-      <div className="max-w-md w-full text-center space-y-5 animate-fade-in-scale">
-        <div className="relative mx-auto w-16 h-16">
-          <div className="absolute inset-0 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-            <BarChart3 size={26} className="text-primary/70" />
-          </div>
-          <div className="absolute -inset-2 rounded-3xl bg-primary/5 blur-2xl -z-10" />
-        </div>
-        <div className="space-y-1.5">
-          <h2 className="text-base font-semibold text-text-primary">Your metrics home</h2>
-          <p className="text-xs text-text-muted leading-relaxed">
-            Metrics populate as tools are called: token usage per server, client, and tool, plus
-            call activity and format-conversion savings.
-          </p>
-        </div>
-      </div>
     </div>
   );
 }

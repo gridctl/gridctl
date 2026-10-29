@@ -25,6 +25,7 @@ import { IconButton } from '../ui/IconButton';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { showToast } from '../ui/Toast';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
+import { EmptyState, FailedState, FailureBanner } from '../ui/EmptyState';
 import { NewSetForm } from '../vault/NewSetForm';
 import { VariableInspector } from '../vault/VariableInspector';
 import { VariableQuickAddForm } from '../vault/VariableQuickAddForm';
@@ -720,15 +721,21 @@ export function VaultWorkspace() {
               </div>
 
               {/* Body */}
-              <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark">
-                {error && (
-                  <div className="mx-6 mt-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-status-error/10 border border-status-error/20 text-xs text-status-error">
-                    <AlertCircle size={12} className="flex-shrink-0" />
-                    <span>{error}</span>
-                  </div>
+              <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark flex flex-col">
+                {error && !loading && vaultVariables === null && (
+                  <FailedState
+                    feature="Variables"
+                    message={error}
+                    onRetry={() => void refresh()}
+                    className="flex-1"
+                  />
                 )}
 
-                {loading && !vaultVariables && (
+                {error && vaultVariables !== null && (
+                  <FailureBanner message={error} onRetry={() => void refresh()} />
+                )}
+
+                {loading && !vaultVariables && !error && (
                   <div className="p-6 space-y-3">
                     {[1, 2, 3, 4].map((i) => (
                       <div
@@ -739,7 +746,7 @@ export function VaultWorkspace() {
                   </div>
                 )}
 
-                {!loading && isEmpty && (
+                {!loading && isEmpty && !error && (
                   <VaultEmptyState
                     onImport={() => setImportOpen(true)}
                     onAddOne={() => setAddOneOpen(true)}
@@ -1417,25 +1424,31 @@ interface VaultEmptyStateProps {
 
 function VaultEmptyState({ onImport, onAddOne }: VaultEmptyStateProps) {
   return (
-    <div className="h-full flex items-center justify-center px-6 py-12">
-      <div className="max-w-md w-full text-center space-y-5 animate-fade-in-scale">
-        <div className="relative mx-auto w-16 h-16">
-          <div className="absolute inset-0 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-            <KeyRound size={26} className="text-primary/70" />
-          </div>
-          <div className="absolute -inset-2 rounded-3xl bg-primary/5 blur-2xl -z-10" />
-        </div>
-        <div className="space-y-1.5">
-          <h2 className="text-base font-semibold text-text-primary">
-            Your variables home
-          </h2>
-          <p className="text-xs text-text-muted leading-relaxed">
-            Bring a <code className="font-mono text-text-secondary">.env</code> file
-            over, or add a key by hand. Secrets stay encrypted at rest when you
-            set a passphrase.
-          </p>
-        </div>
-        <div className="flex items-center justify-center gap-2 pt-1">
+    <EmptyState
+      icon={KeyRound}
+      tone="primary"
+      title="Your variables home"
+      className="flex-1"
+      description={
+        <>
+          Bring a <code className="font-mono text-text-secondary">.env</code> file
+          over, or add a key by hand. Secrets stay encrypted at rest when you
+          set a passphrase.
+          <span className="block mt-2 text-[10px] text-text-muted/70">
+            Tip: drop a <code className="font-mono text-text-secondary">.env</code> or{' '}
+            <code className="font-mono text-text-secondary">.json</code> file
+            anywhere on this page.
+          </span>
+          <span className="block text-[10px] text-text-muted/70">
+            Or use the CLI:
+            <code className="ml-1 font-mono text-text-secondary">
+              gridctl var import .env
+            </code>
+          </span>
+        </>
+      }
+      action={
+        <div className="flex items-center justify-center gap-2">
           <button
             onClick={onImport}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-gradient-to-r from-primary to-primary-dark text-background shadow-[0_1px_12px_rgba(245,158,11,0.3)] hover:shadow-[0_2px_18px_rgba(245,158,11,0.4)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200"
@@ -1449,20 +1462,8 @@ function VaultEmptyState({ onImport, onAddOne }: VaultEmptyStateProps) {
             <Plus size={12} /> Add one manually
           </button>
         </div>
-        <p className="text-[10px] text-text-muted/70 pt-2">
-          Tip: drop a{' '}
-          <code className="font-mono text-text-secondary">.env</code> or{' '}
-          <code className="font-mono text-text-secondary">.json</code> file
-          anywhere on this page.
-        </p>
-        <p className="text-[10px] text-text-muted/70">
-          Or use the CLI:
-          <code className="ml-1 font-mono text-text-secondary">
-            gridctl var import .env
-          </code>
-        </p>
-      </div>
-    </div>
+      }
+    />
   );
 }
 
@@ -1492,53 +1493,58 @@ function NoMatchesState({
       : 'this view';
   const refLabel = REF_FILTERS.find((f) => f.id === refFilter)?.label;
 
+  const title = searchQuery
+    ? `No variables match "${searchQuery}" in ${scopeLabel}.`
+    : refFilter !== 'all'
+      ? `No ${refLabel?.toLowerCase()} variables in ${scopeLabel}.`
+      : `No variables in ${scopeLabel} yet.`;
+  const showImportHint = isRealSet && !searchQuery && refFilter === 'all';
+
   return (
-    <div className="h-full flex items-center justify-center px-6 py-10">
-      <div className="text-center space-y-2 max-w-sm">
-        <div className="mx-auto w-12 h-12 rounded-xl bg-surface-elevated/60 border border-border/30 flex items-center justify-center">
-          <Search size={20} className="text-text-muted/50" />
-        </div>
-        <p className="text-xs text-text-secondary">
-          {searchQuery
-            ? `No variables match "${searchQuery}" in ${scopeLabel}.`
-            : refFilter !== 'all'
-              ? `No ${refLabel?.toLowerCase()} variables in ${scopeLabel}.`
-              : `No variables in ${scopeLabel} yet.`}
-        </p>
-        {/* An empty, selected set is exactly where the import default is worth
-            teaching: this is the only state where a real set is active and
-            there is room to say where imports land. */}
-        {isRealSet && !searchQuery && refFilter === 'all' && (
-          <p className="text-[10px] text-text-muted/70 leading-relaxed">
+    <EmptyState
+      inline
+      icon={Search}
+      title={title}
+      description={
+        showImportHint ? (
+          <>
             Importing from here lands keys in{' '}
             <span className="font-mono text-text-secondary">{activeSet}</span> by
-            default.{' '}
-            <button
-              onClick={onImport}
-              className="text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
-            >
-              Import .env
-            </button>
-          </p>
-        )}
-        {searchQuery && (
-          <button
-            onClick={onClear}
-            className="text-[11px] text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
-          >
-            Clear search
-          </button>
-        )}
-        {!searchQuery && refFilter !== 'all' && (
-          <button
-            onClick={onClearRefFilter}
-            className="text-[11px] text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
-          >
-            Show all variables
-          </button>
-        )}
-      </div>
-    </div>
+            default.
+          </>
+        ) : undefined
+      }
+      action={
+        showImportHint || searchQuery || refFilter !== 'all' ? (
+          <span className="flex flex-col items-center gap-2">
+            {showImportHint && (
+              <button
+                onClick={onImport}
+                className="text-[11px] text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
+              >
+                Import .env
+              </button>
+            )}
+            {searchQuery && (
+              <button
+                onClick={onClear}
+                className="text-[11px] text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
+              >
+                Clear search
+              </button>
+            )}
+            {!searchQuery && refFilter !== 'all' && (
+              <button
+                onClick={onClearRefFilter}
+                className="text-[11px] text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
+              >
+                Show all variables
+              </button>
+            )}
+          </span>
+        ) : undefined
+      }
+    />
   );
 }
 
