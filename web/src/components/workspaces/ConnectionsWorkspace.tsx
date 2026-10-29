@@ -20,6 +20,7 @@ import { useAuthStore } from '../../stores/useAuthStore';
 import { useListNav } from '../../hooks/useListNav';
 import type { AgentProjectionStatus, ClientStatus, SessionEntry, WiringRow } from '../../types';
 import { showToast } from '../ui/Toast';
+import { EmptyState, FailedState } from '../ui/EmptyState';
 import { GlobalContextDialog } from '../context/GlobalContextDialog';
 import { ResetDialog } from '../system/ResetDialog';
 import { useUIStore } from '../../stores/useUIStore';
@@ -60,6 +61,7 @@ export default function ConnectionsWorkspace() {
   const agentStatuses = useRegistryStore((s) => s.agentStatuses);
 
   const [wiringRows, setWiringRows] = useState<WiringRow[] | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
   const [sessionsFailed, setSessionsFailed] = useState(false);
   const [staged, setStaged] = useState<StagedChanges>({});
   const [reviewing, setReviewing] = useState(false);
@@ -91,6 +93,7 @@ export default function ConnectionsWorkspace() {
   const refreshHealth = useCallback(async () => {
     const current = captureCurrent();
     if (!current()) return;
+    setHealthError(null);
     const request = Symbol();
     healthRequest.current = request;
     const results = await Promise.allSettled([
@@ -100,6 +103,7 @@ export default function ConnectionsWorkspace() {
       fetchClients(),
     ]);
     if (!current() || healthRequest.current !== request) return;
+    setHealthError(firstHealthError(results));
     if (results[0].status === 'fulfilled') setWiringRows(results[0].value);
     if (results[1].status === 'fulfilled') {
       useRegistryStore.getState().setAgentStatuses(results[1].value);
@@ -359,18 +363,27 @@ export default function ConnectionsWorkspace() {
   if (clients.length === 0) {
     return (
       <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
-        <ConnectionsHeader subtitle="No clients reported" />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center max-w-xs">
-            <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-4 text-primary">
-              <Plug size={22} />
-            </div>
-            <div className="text-sm font-medium text-text-primary mb-1">No client registry available</div>
-            <div className="text-xs text-text-muted">
-              Start a stack with 'gridctl apply' to detect and link LLM clients.
-            </div>
+        {healthError ? (
+          <div className="flex-1 min-h-0">
+            <FailedState
+              feature="Connections"
+              message={healthError}
+              onRetry={() => void refreshHealth()}
+            />
           </div>
-        </div>
+        ) : (
+          <>
+            <ConnectionsHeader subtitle="No clients reported" />
+            <div className="flex-1 min-h-0">
+              <EmptyState
+                icon={Plug}
+                tone="primary"
+                title="No client registry available"
+                description="Start a stack with 'gridctl apply' to detect and link LLM clients."
+              />
+            </div>
+          </>
+        )}
       </div>
     );
   }
@@ -423,6 +436,7 @@ export default function ConnectionsWorkspace() {
                       : []
                 }
                 sessionsFailed={sessionsFailed}
+                healthFailed={healthError !== null}
                 onRefresh={refreshHealth}
                 onReviewContext={() => {
                   setContextReviewSlug(selectedSlug);
@@ -518,6 +532,17 @@ function DangerZoneStrip({ onOpen }: { onOpen: () => void }) {
       </div>
     </div>
   );
+}
+
+function firstHealthError(
+  results: Array<PromiseSettledResult<unknown>>,
+): string | null {
+  for (const index of [0, 1, 3]) {
+    const result = results[index];
+    if (!result || result.status !== 'rejected') continue;
+    return result.reason instanceof Error ? result.reason.message : 'Request failed';
+  }
+  return null;
 }
 
 function ConnectionsHeader({ subtitle }: { subtitle: string }) {

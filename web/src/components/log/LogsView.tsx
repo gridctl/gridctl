@@ -179,6 +179,7 @@ export function LogsView({
         logs={view.filteredLogs}
         isLoading={view.isLoading}
         error={view.error}
+        onRetry={view.refresh}
         hasActiveFilter={view.hasActiveFilter}
         onClearFilter={view.clearFilters}
         showSource={view.source == null}

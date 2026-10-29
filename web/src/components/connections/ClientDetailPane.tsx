@@ -33,6 +33,8 @@ interface ClientDetailPaneProps {
   sessions: SessionEntry[] | null;
   /** True when the sessions fetch failed: unavailable, not loading. */
   sessionsFailed?: boolean;
+  /** True when wiring, agents, or clients failed to load. */
+  healthFailed?: boolean;
   onRefresh: () => Promise<void> | void;
   onReviewContext: () => void;
 }
@@ -54,6 +56,7 @@ export function ClientDetailPane({
   agentRows,
   sessions,
   sessionsFailed = false,
+  healthFailed = false,
   onRefresh,
   onReviewContext,
 }: ClientDetailPaneProps) {
@@ -99,6 +102,7 @@ export function ClientDetailPane({
 
   const isAgentTarget = AGENT_TARGET_SLUGS.has(client.slug);
   const ownershipAttention = health.attention;
+  const wiringFailed = wiringRows === null && healthFailed;
   const scope = client.effectiveScope;
   const attributedSessions = sessions ?? [];
 
@@ -135,15 +139,17 @@ export function ClientDetailPane({
         <div className="mt-3 flex items-center gap-4 flex-wrap">
           <AxisBadge
             label="Ownership"
-            tone={wiringRows === null ? 'muted' : ownershipAttention ? 'pending' : 'ok'}
+            tone={wiringFailed ? 'pending' : wiringRows === null ? 'muted' : ownershipAttention ? 'pending' : 'ok'}
             text={
-              wiringRows === null
-                ? 'loading'
-                : ownershipAttention
-                  ? health.reasons.join(' · ')
-                  : wiringRows.length === 0
-                    ? 'nothing placed yet'
-                    : 'everything gridctl placed is in sync'
+              wiringFailed
+                ? 'unavailable'
+                : wiringRows === null
+                  ? 'loading'
+                  : ownershipAttention
+                    ? health.reasons.join(' · ')
+                    : wiringRows.length === 0
+                      ? 'nothing placed yet'
+                      : 'everything gridctl placed is in sync'
             }
           />
           <AxisBadge
@@ -185,15 +191,32 @@ export function ClientDetailPane({
         icon={<Plug size={13} />}
         title="Wiring"
         summary={
-          wiringRows === null
-            ? 'loading'
-            : wiringRows.length === 0
-              ? 'no entries recorded'
-              : wiringRows.map((r) => `${r.name}: ${r.state}`).join(' · ')
+          wiringFailed
+            ? 'unavailable'
+            : wiringRows === null
+              ? 'loading'
+              : wiringRows.length === 0
+                ? 'no entries recorded'
+                : wiringRows.map((r) => `${r.name}: ${r.state}`).join(' · ')
         }
-        attention={(wiringRows ?? []).some((r) => r.state !== 'in-sync' && r.state !== 'missing')}
+        attention={
+          wiringFailed ||
+          (wiringRows ?? []).some((r) => r.state !== 'in-sync' && r.state !== 'missing')
+        }
       >
-        {wiringRows === null && (
+        {wiringFailed && (
+          <p className="text-[11px] text-text-muted px-1">
+            Wiring status could not be loaded.{' '}
+            <button
+              type="button"
+              onClick={() => void onRefresh()}
+              className="text-primary hover:underline"
+            >
+              Retry
+            </button>
+          </p>
+        )}
+        {wiringRows === null && !healthFailed && (
           <p className="text-[11px] text-text-muted px-1">
             Wiring state has not loaded. It appears once the ownership status fetch resolves.
           </p>

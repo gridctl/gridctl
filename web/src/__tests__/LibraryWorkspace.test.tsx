@@ -3,6 +3,7 @@ import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { LibraryWorkspace } from '../components/workspaces/LibraryWorkspace';
+import { requestGatewayPoll } from '../hooks/usePolling';
 import { useRegistryStore } from '../stores/useRegistryStore';
 import { useUIStore } from '../stores/useUIStore';
 import { useWizardStore } from '../stores/useWizardStore';
@@ -10,6 +11,11 @@ import { setRegistrySkillsBatch, fetchSkillUsage, syncAllSources } from '../lib/
 import { showToast } from '../components/ui/Toast';
 import { CommandRegistryProvider } from '../hooks/useCommandRegistry';
 import type { AgentSkill, SkillSourceStatus } from '../types';
+
+vi.mock('../hooks/usePolling', () => ({
+  requestGatewayPoll: vi.fn(),
+  usePolling: () => ({ refresh: vi.fn() }),
+}));
 
 vi.mock('../components/ui/Toast', () => ({
   showToast: vi.fn(),
@@ -110,7 +116,7 @@ describe('LibraryWorkspace', () => {
     vi.clearAllMocks();
     // Reset sources to null so provenance grouping is off by default; tests that
     // exercise grouping opt in explicitly.
-    useRegistryStore.setState({ skills: SAMPLE_SKILLS, status: { totalSkills: 3, activeSkills: 1 }, sources: null });
+    useRegistryStore.setState({ skills: SAMPLE_SKILLS, error: null, status: { totalSkills: 3, activeSkills: 1 }, sources: null });
     // Both are persisted global stores; reset so test order cannot leak state.
     useUIStore.setState({ libraryPrefs: { selectMode: false } });
     useWizardStore.setState({ isOpen: false });
@@ -118,6 +124,22 @@ describe('LibraryWorkspace', () => {
 
   // Icon-only row actions used to expose no accessible name at all, so they
   // were unreachable by role and invisible to assistive tech.
+  it('renders a failed state instead of skeleton cards when skills have not loaded', () => {
+    useRegistryStore.setState({ skills: null, error: 'boom' });
+    renderAt('/library');
+    expect(screen.getByText('Library unavailable')).toBeInTheDocument();
+    expect(screen.queryByTestId('skill-skeletons')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(requestGatewayPoll).toHaveBeenCalled();
+  });
+
+  it('keeps the skill grid and shows a banner when a later fetch fails', () => {
+    useRegistryStore.setState({ skills: SAMPLE_SKILLS, error: 'boom' });
+    renderAt('/library');
+    expect(screen.getByText('incident-triage')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('boom');
+  });
+
   it('exposes icon-only skill actions by their accessible name', () => {
     renderAt('/library?view=table');
     expect(screen.getAllByRole('button', { name: 'Disable skill' }).length).toBeGreaterThan(0);

@@ -23,6 +23,8 @@ import { IconButton } from '../ui/IconButton';
 import { PopoutButton } from '../ui/PopoutButton';
 import { SkillEditor } from '../registry/SkillEditor';
 import { SkillCardSkeleton } from '../registry/SkillCardSkeleton';
+import { requestGatewayPoll } from '../../hooks/usePolling';
+import { EmptyState, FailedState, FailureBanner } from '../ui/EmptyState';
 import { LibraryGrid, type GroupMode } from '../registry/LibraryGrid';
 import { LibraryTable } from '../registry/LibraryTable';
 import { SkillDetailPanel } from '../registry/SkillDetailPanel';
@@ -116,6 +118,7 @@ export function LibraryWorkspace() {
   // Registry is fetched by the global usePolling cycle in AppShell — read from
   // the store instead of starting a second polling loop here.
   const skills = useRegistryStore((s) => s.skills);
+  const registryError = useRegistryStore((s) => s.error);
   const sources = useRegistryStore((s) => s.sources);
   // Load the packs list once for the reverse-ownership chips (source
   // group headers and agent detail); packs are off the global poll.
@@ -962,9 +965,23 @@ export function LibraryWorkspace() {
             />
           )}
 
-          <div className="flex-1 overflow-y-auto scrollbar-dark">
-            {isLoading && (
+          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark flex flex-col">
+            {registryError && skills === null && (
+              <FailedState
+                feature="Library"
+                message={registryError}
+                onRetry={requestGatewayPoll}
+                className="flex-1"
+              />
+            )}
+
+            {registryError && skills !== null && (
+              <FailureBanner message={registryError} onRetry={requestGatewayPoll} />
+            )}
+
+            {!registryError && isLoading && (
               <div
+                data-testid="skill-skeletons"
                 className="p-4"
                 style={{
                   display: 'grid',
@@ -979,32 +996,30 @@ export function LibraryWorkspace() {
             )}
 
             {!isLoading && !hasSkills && (
-              <div className="h-full flex flex-col items-center justify-center text-text-muted gap-3 animate-fade-in-scale">
-                <div className="p-4 rounded-xl bg-surface-elevated/50 border border-border/30">
-                  <BookOpen size={32} className="text-text-muted/50" />
-                </div>
-                <span className="text-sm">No skills registered</span>
-                <span className="text-[10px] text-text-muted">Create a SKILL.md to get started</span>
-              </div>
+              <EmptyState
+                icon={BookOpen}
+                title="No skills registered"
+                description="Create a SKILL.md to get started"
+                className="flex-1"
+              />
             )}
 
             {!isLoading && hasSkills && visibleSkills.length === 0 && (
-              <div className="h-full flex flex-col items-center justify-center text-text-muted gap-3 animate-fade-in-scale p-8">
-                <div className="p-4 rounded-xl bg-surface-elevated/50 border border-border/30">
-                  <Search size={28} className="text-text-muted/50" />
-                </div>
-                <span className="text-sm text-text-secondary">
-                  No skills match{searchQuery ? ` "${searchQuery}"` : ' this filter'}
-                </span>
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="text-xs text-primary hover:text-primary/80 transition-colors underline underline-offset-2"
-                  >
-                    Clear search
-                  </button>
-                )}
-              </div>
+              <EmptyState
+                icon={Search}
+                title={`No skills match${searchQuery ? ` "${searchQuery}"` : ' this filter'}`}
+                className="flex-1"
+                action={
+                  searchQuery ? (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="text-xs text-primary hover:text-primary/80 transition-colors underline underline-offset-2"
+                    >
+                      Clear search
+                    </button>
+                  ) : undefined
+                }
+              />
             )}
 
             {!isLoading && visibleSkills.length > 0 && viewMode === 'cards' && (

@@ -5,12 +5,17 @@ import '@testing-library/jest-dom';
 import { MemoryRouter } from 'react-router';
 import { CommandRegistryProvider, useCommandRegistry } from '../hooks/useCommandRegistry';
 import { PinsWorkspace } from '../components/workspaces/PinsWorkspace';
+import { requestGatewayPoll } from '../hooks/usePolling';
 import { usePinsStore } from '../stores/usePinsStore';
 import { useUIStore } from '../stores/useUIStore';
 import * as api from '../lib/api';
 import type { PinsDiff, ServerPins } from '../lib/api';
 
 vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn(), copyWithToast: vi.fn() }));
+vi.mock('../hooks/usePolling', () => ({
+  requestGatewayPoll: vi.fn(),
+  usePolling: () => ({ refresh: vi.fn() }),
+}));
 vi.mock('../lib/download', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/download')>()),
   downloadTextFile: vi.fn(),
@@ -67,6 +72,8 @@ function renderWorkspace(initialEntry = '/pins') {
 
 beforeEach(() => {
   usePinsStore.setState({
+    pinsError: null,
+    skillPinsError: null,
     pins: {
       github: serverPins('pinned', {
         create_issue: {
@@ -83,12 +90,35 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  usePinsStore.setState({ pins: null });
+  usePinsStore.setState({ pins: null, skillPins: null, pinsError: null, skillPinsError: null });
   useUIStore.setState({ pinsPrefs: { attentionOnly: null, findingsOnly: false } });
   vi.restoreAllMocks();
 });
 
 describe('PinsWorkspace', () => {
+  it('renders a failed state instead of a spinner when pins have not loaded', () => {
+    usePinsStore.setState({ pins: null, pinsError: 'Gateway connection unavailable' });
+    renderWorkspace();
+    expect(screen.getByText('Pins unavailable')).toBeInTheDocument();
+    expect(screen.queryByText(/Loading pins/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(requestGatewayPoll).toHaveBeenCalled();
+  });
+
+  it('keeps pin detail and shows a banner when a later fetch fails', async () => {
+    usePinsStore.setState({ pinsError: 'x' });
+    renderWorkspace('/pins?server=github');
+    expect(await screen.findByText('create_issue')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+
+  it('does not apply a skill pin error to the server tab', () => {
+    usePinsStore.setState({ pins: null, skillPinsError: 'x', pinsError: null });
+    renderWorkspace();
+    expect(screen.getByText(/Loading pins/)).toBeInTheDocument();
+    expect(screen.queryByText('Pins unavailable')).not.toBeInTheDocument();
+  });
+
   it('selects the drifted server first and renders its diff', async () => {
     renderWorkspace();
 

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createRef, useState } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
@@ -33,6 +33,25 @@ function Harness({ logs }: { logs: ParsedLog[] }) {
 }
 
 describe('LogStream', () => {
+  it('renders a failed state and calls onRetry', () => {
+    const onRetry = vi.fn();
+    render(
+      <LogStream
+        logs={[]}
+        isLoading={false}
+        error="socket closed"
+        onRetry={onRetry}
+        fontSize={12}
+        containerRef={createRef<HTMLDivElement>()}
+        expandedKey={null}
+        onToggleExpand={() => {}}
+      />,
+    );
+    expect(screen.getByText('Logs unavailable')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
   it('keeps the same logical entry expanded when a poll replaces the array', () => {
     const first = entry({ message: 'first entry', timestamp: '2026-07-24T10:00:01Z' });
     const second = entry({ message: 'second entry', timestamp: '2026-07-24T10:00:02Z' });

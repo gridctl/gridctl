@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act, within } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import '@testing-library/jest-dom';
 import { VaultWorkspace } from '../components/workspaces/VaultWorkspace';
@@ -66,6 +66,40 @@ function dispatchDrag(type: string, files: unknown[] = []) {
 }
 
 const OVERLAY_COPY = /drop a \.env or \.json file to import/i;
+
+describe('VaultWorkspace fetch failures', () => {
+  beforeEach(() => {
+    useVaultStore.setState({
+      variables: null,
+      sets: null,
+      loading: false,
+      error: null,
+      locked: false,
+      encrypted: false,
+    });
+    vi.mocked(api.fetchVariableStoreStatus).mockReset();
+    vi.mocked(api.fetchVariableStoreStatus).mockResolvedValue({ locked: false, encrypted: false });
+  });
+
+  it('renders a failed state when the store status request fails', async () => {
+    vi.mocked(api.fetchVariableStoreStatus).mockRejectedValueOnce(new Error('store down'));
+    renderWorkspace();
+    expect(await screen.findByText('Variables unavailable')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /import from \.env/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(api.fetchVariableStoreStatus).toHaveBeenCalledTimes(2));
+  });
+
+  it('renders the teaching empty state when the store is not configured', async () => {
+    vi.mocked(api.fetchVariableStoreStatus).mockRejectedValueOnce(
+      new api.HTTPError(503, 'API error: 503 Service Unavailable'),
+    );
+    renderWorkspace();
+    expect(await screen.findByRole('button', { name: /import from \.env/i })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText('Variables unavailable')).not.toBeInTheDocument();
+  });
+});
 
 describe('VaultWorkspace — empty state', () => {
   beforeEach(() => {
