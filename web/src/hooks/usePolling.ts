@@ -5,7 +5,7 @@ import { useAuthStore } from '../stores/useAuthStore';
 import { useRegistryStore } from '../stores/useRegistryStore';
 import { usePinsStore, countFindingServers, firstDriftedServer, firstFindingsServer, countDriftedSkills, countFindingSkills, firstDriftedSkill, firstFindingsSkill, serverPinsChanged } from '../stores/usePinsStore';
 import { useTelemetryStore } from '../stores/useTelemetryStore';
-import { fetchStatus, fetchTools, fetchToolCatalog, fetchClients, fetchRegistryStatus, fetchRegistrySkills, fetchSkillSources, fetchServerPins, fetchSkillPins, fetchStackSpec, getTelemetryInventory, AuthError } from '../lib/api';
+import { fetchStatus, fetchTools, fetchToolCatalog, fetchClients, fetchRegistryStatus, fetchRegistrySkills, fetchSkillSources, fetchServerPins, fetchSkillPins, fetchStackSpec, getTelemetryInventory, AuthError, isFeatureUnavailable } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
 import { POLLING } from '../lib/constants';
 import { skillPinsUrl } from '../lib/skillGovernance';
@@ -16,7 +16,20 @@ let _prevFindingCount = 0;
 let _prevSkillDriftCount = 0;
 let _prevSkillFindingCount = 0;
 
-export function usePolling() {
+// Shell-only retry slot. A second usePolling instance must not overwrite or
+// clear it, or leaving Stack would no-op Retry on Pins, Library, and Tools.
+let registeredPoll: (() => void) | null = null;
+
+// Re-issues the shell poll. No-op when no registering hook is mounted.
+export function requestGatewayPoll(): void {
+  registeredPoll?.();
+}
+
+function failureMessage(err: unknown): string {
+  return err instanceof Error ? err.message : 'Unknown error';
+}
+
+export function usePolling(options?: { registerRetry?: boolean }) {
   const intervalRef = useRef<number | null>(null);
   const navigate = useNavigate();
 
@@ -102,8 +115,20 @@ export function usePolling() {
           });
         }
         _prevFindingCount = findingCount;
-      } catch {
-        // Pins endpoint unavailable (feature not enabled) — suppress silently
+      } catch (err) {
+        // 503 is defensive: disabled pinning is a 200 empty map. Leave the
+        // loaded map in place (coalesce a first-load null so the empty state
+        // can render) and do not record an error.
+        if (!current()) return;
+        if (isFeatureUnavailable(err)) {
+          if (usePinsStore.getState().pins === null) {
+            usePinsStore.getState().setPins({});
+          } else {
+            usePinsStore.getState().setPinsError(null);
+          }
+        } else {
+          usePinsStore.getState().setPinsError(failureMessage(err));
+        }
       }
 
       // Skill pins ride the same cadence in their own progressive-disclosure
@@ -134,8 +159,17 @@ export function usePolling() {
           });
         }
         _prevSkillFindingCount = skillFindingCount;
-      } catch {
-        // Skill pins endpoint unavailable (older daemon) — suppress silently
+      } catch (err) {
+        if (!current()) return;
+        if (isFeatureUnavailable(err)) {
+          if (usePinsStore.getState().skillPins === null) {
+            usePinsStore.getState().setSkillPins({});
+          } else {
+            usePinsStore.getState().setSkillPinsError(null);
+          }
+        } else {
+          usePinsStore.getState().setSkillPinsError(failureMessage(err));
+        }
       }
 
       // Fetch telemetry inventory + stack spec — progressive disclosure.
@@ -180,8 +214,17 @@ export function usePolling() {
         if (prevActiveCount !== nextActiveCount) {
           refreshNodesAndEdges();
         }
-      } catch {
-        // Registry not available — not an error (progressive disclosure)
+      } catch (err) {
+        // 503 means the registry is not configured. That is the empty
+        // teaching state, not a failure. Any other rejection leaves the
+        // loaded list in place and records the message.
+        if (!current()) return;
+        if (isFeatureUnavailable(err)) {
+          useRegistryStore.getState().setSkills([]);
+          useRegistryStore.getState().setError(null);
+        } else {
+          useRegistryStore.getState().setError(failureMessage(err));
+        }
       }
 
       // Fetch skill sources (provenance) independently. A failure here must not
@@ -202,18 +245,36 @@ export function usePolling() {
         return;
       }
 
-      // Differentiate network errors from HTTP errors
+      // Differentiate network errors from HTTP errors. Pins and registry
+      // fetches never ran, so record the same failure there or those
+      // surfaces keep a spinner over stale "not loaded" state.
+      const message =
+        error instanceof GatewayRequestError && error.kind === 'connection'
+          ? 'Gateway connection unavailable'
+          : failureMessage(error);
       if (error instanceof GatewayRequestError && error.kind === 'connection') {
         // Network error: gateway unreachable (shutdown, crash, or network issue)
-        setError('Gateway connection unavailable');
+        setError(message);
         setConnectionStatus('disconnected');
       } else {
         // HTTP error: gateway is running but returned an error
-        setError(error instanceof Error ? error.message : 'Unknown error');
+        setError(message);
         setConnectionStatus('error');
       }
+      if (!current()) return;
+      usePinsStore.getState().setPinsError(message);
+      usePinsStore.getState().setSkillPinsError(message);
+      useRegistryStore.getState().setError(message);
     }
   }, [setGatewayStatus, setClients, setTools, setToolCatalog, setError, setConnectionStatus, setAuthRequired, setLoading, refreshNodesAndEdges, navigate]);
+
+  useEffect(() => {
+    if (!options?.registerRetry) return;
+    registeredPoll = poll;
+    return () => {
+      if (registeredPoll === poll) registeredPoll = null;
+    };
+  }, [options?.registerRetry, poll]);
 
   useEffect(() => {
     // Don't poll while auth prompt is showing

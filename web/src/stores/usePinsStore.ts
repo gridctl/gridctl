@@ -5,11 +5,16 @@ import type { ServerPins, SkillPin } from '../lib/api';
 
 interface PinsState {
   pins: Record<string, ServerPins> | null;
+  // null until a server-pins fetch fails. Cleared only by setPins.
+  pinsError: string | null;
   setPins: (pins: Record<string, ServerPins>) => void;
+  setPinsError: (error: string | null) => void;
   // Skill-document pins, the same polling contract as pins: null until the
   // first /api/skill-pins poll lands, {} when skill pinning is quiet.
   skillPins: Record<string, SkillPin> | null;
+  skillPinsError: string | null;
   setSkillPins: (skillPins: Record<string, SkillPin>) => void;
+  setSkillPinsError: (error: string | null) => void;
 }
 
 /**
@@ -37,9 +42,13 @@ export function serverPinsChanged(
 export const usePinsStore = create<PinsState>()(
   subscribeWithSelector((set) => ({
     pins: null,
-    setPins: (pins) => set({ pins }),
+    pinsError: null,
+    setPins: (pins) => set({ pins, pinsError: null }),
+    setPinsError: (pinsError) => set({ pinsError }),
     skillPins: null,
-    setSkillPins: (skillPins) => set({ skillPins }),
+    skillPinsError: null,
+    setSkillPins: (skillPins) => set({ skillPins, skillPinsError: null }),
+    setSkillPinsError: (skillPinsError) => set({ skillPinsError }),
   }))
 );
 

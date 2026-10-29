@@ -49,7 +49,7 @@ export const useRegistryStore = create<RegistryState>()(
     isLoading: false,
     error: null,
 
-    setSkills: (skills) => set({ skills: skills ?? [] }),
+    setSkills: (skills) => set({ skills: skills ?? [], error: null }),
     setStatus: (status) => set({ status }),
     setSources: (sources) => set({ sources: sources ?? [] }),
     setAgents: (agents) => set({ agents: agents ?? [] }),

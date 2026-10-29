@@ -57,7 +57,7 @@ function AppShellInner() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { fitView, zoomIn, zoomOut } = useReactFlow();
-  const { refresh } = usePolling();
+  const { refresh } = usePolling({ registerRetry: true });
 
   useSSEShutdown(useCallback(() => {
     setIsShuttingDown(true);
