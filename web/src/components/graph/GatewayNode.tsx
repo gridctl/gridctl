@@ -23,7 +23,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         'w-60 rounded-2xl frost-surface',
         'bg-gradient-to-b from-surface/95 via-surface/90 to-primary/[0.03]',
         'backdrop-blur-xl border border-border',
-        'shadow-lg-bevel transition-all duration-300 ease-out',
+        'shadow-lg-bevel transition-[border-color,box-shadow,background-color] duration-300 ease-out',
         selected && 'border-primary shadow-glow-primary ring-2 ring-primary/20',
         !selected && 'hover:shadow-node-hover hover:border-primary/60'
       )}
@@ -119,10 +119,12 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
 
         {/* Skills (Registry) */}
         {(data.totalSkills ?? 0) > 0 && (
-          <div
-            className="flex items-center justify-between group cursor-pointer hover:bg-primary/5 rounded-md transition-colors px-1 -mx-1"
+          <button
+            type="button"
+            className="flex items-center justify-between group cursor-pointer hover:bg-primary/5 rounded-md transition-colors px-1 -mx-1 w-full text-left"
             onClick={(e) => { e.stopPropagation(); openDetachedWindow('registry'); }}
             title="Open skills dashboard"
+            aria-label="Open skills dashboard"
           >
             <div className="flex items-center gap-2.5">
               <div className="p-1.5 rounded-lg bg-white/[0.04] border border-[var(--color-border-subtle)] group-hover:bg-primary/15 group-hover:border-primary/20 transition-colors">
@@ -136,7 +138,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
               </span>
               <ExternalLink size={9} className="text-text-muted opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
-          </div>
+          </button>
         )}
 
         {/* Read-only status footer. These pills reflect gateway state and are
@@ -180,7 +182,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         position={Position.Left}
         className={cn(
           '!w-3.5 !h-3.5 !bg-primary !border-2 !border-background !rounded-full',
-          'transition-all duration-200 hover:!scale-125 hover:!shadow-glow-primary'
+          'transition-transform duration-200 hover:!scale-125 hover:!shadow-glow-primary'
         )}
         id="input"
       />
@@ -189,7 +191,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         position={Position.Right}
         className={cn(
           '!w-3.5 !h-3.5 !bg-primary !border-2 !border-background !rounded-full',
-          'transition-all duration-200 hover:!scale-125 hover:!shadow-glow-primary'
+          'transition-transform duration-200 hover:!scale-125 hover:!shadow-glow-primary'
         )}
         id="output"
       />

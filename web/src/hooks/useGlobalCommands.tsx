@@ -288,13 +288,13 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
   useEffect(() => {
     const commands: PaletteCommand[] = (mcpServers ?? []).map((server) => ({
       id: `node:${server.name}`,
-      label: `View node: ${server.name}`,
+      label: `Inspect ${server.name}`,
       section: 'canvas' as const,
       workspaces: ['stack' as const],
       icon: <Server size={14} />,
-      keywords: [server.name, 'node', 'server', 'mcp'],
+      keywords: [server.name, 'node', 'server', 'mcp', 'inspect'],
       onSelect: () => {
-        selectNode(server.name);
+        selectNode(`mcp-${server.name}`);
         setSidebarOpen(true);
       },
     }));

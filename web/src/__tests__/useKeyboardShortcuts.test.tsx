@@ -55,6 +55,13 @@ describe('useKeyboardShortcuts — workspace navigation', () => {
     expect(onOpenPalette).toHaveBeenCalledTimes(1);
   });
 
+  it('Escape calls onEscape', () => {
+    const onEscape = vi.fn();
+    renderHook(() => useKeyboardShortcuts({ onEscape }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onEscape).toHaveBeenCalledTimes(1);
+  });
+
   it('⌘\\ calls onToggleCompactMode', () => {
     const onToggleCompactMode = vi.fn();
     renderHook(() => useKeyboardShortcuts({ onToggleCompactMode }));
