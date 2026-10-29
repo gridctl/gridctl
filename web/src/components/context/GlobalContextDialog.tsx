@@ -22,10 +22,12 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Modal } from '../ui/Modal';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { IconButton } from '../ui/IconButton';
 import { StatePill } from '../ui/StatePill';
 import { PACK_CHIP_CLASS } from '../registry/PackChip';
 import { showToast } from '../ui/Toast';
+import { useBeforeUnloadGuard } from '../../hooks/useBeforeUnloadGuard';
 import { useSplitPane } from '../../hooks/useSplitPane';
 import { SplitPaneHandle } from '../ui/SplitPane';
 import { MarkdownPreview } from '../registry/MarkdownPreview';
@@ -106,13 +108,39 @@ export function GlobalContextDialog({ isOpen, onClose, initialDriftSlug = null }
   const loading = useContextStore((s) => s.loading);
   const error = useContextStore((s) => s.error);
   const refresh = useContextStore((s) => s.refresh);
+  const [dirty, setDirty] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+
+  // Views unmount only when the Modal returns null, so a close that does not
+  // remount them still has to drop the dirty flag itself.
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (wasOpen !== isOpen) {
+    setWasOpen(isOpen);
+    if (!isOpen) {
+      setDirty(false);
+      setConfirmDiscard(false);
+      setDeleteConfirmOpen(false);
+    }
+  }
+
+  const requestClose = useCallback(() => {
+    if (confirmDiscard || deleteConfirmOpen) return;
+    if (dirty) {
+      setConfirmDiscard(true);
+      return;
+    }
+    onClose();
+  }, [confirmDiscard, deleteConfirmOpen, dirty, onClose]);
+
+  useBeforeUnloadGuard(isOpen && dirty);
 
   useEffect(() => {
     if (isOpen) void refresh();
   }, [isOpen, refresh]);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Global Context" size="full" expandable>
+    <Modal isOpen={isOpen} onClose={requestClose} title="Global Context" size="full" expandable>
       {loading && !doc && (
         <div className="h-40 flex items-center justify-center text-sm text-text-muted">
           Loading global context…
@@ -124,12 +152,36 @@ export function GlobalContextDialog({ isOpen, onClose, initialDriftSlug = null }
       {/* Fragments mode replaces the canonical file entirely, so it must
           route before the exists check (the store is a directory now). */}
       {doc && doc.fragments_active && (
-        <FragmentsView doc={doc} refreshError={error} initialDriftSlug={initialDriftSlug} />
+        <FragmentsView
+          doc={doc}
+          refreshError={error}
+          initialDriftSlug={initialDriftSlug}
+          onDirtyChange={setDirty}
+          onDeleteConfirmChange={setDeleteConfirmOpen}
+        />
       )}
       {doc && !doc.fragments_active && !doc.canonical.exists && <SetupView />}
       {doc && !doc.fragments_active && doc.canonical.exists && (
-        <EditorView doc={doc} refreshError={error} initialDriftSlug={initialDriftSlug} />
+        <EditorView
+          doc={doc}
+          refreshError={error}
+          initialDriftSlug={initialDriftSlug}
+          onDirtyChange={setDirty}
+        />
       )}
+      <ConfirmDialog
+        isOpen={confirmDiscard && !deleteConfirmOpen}
+        onClose={() => setConfirmDiscard(false)}
+        onConfirm={() => {
+          setConfirmDiscard(false);
+          setDirty(false);
+          onClose();
+        }}
+        title="Discard changes"
+        message={<p>The global context has unsaved edits. Discard them?</p>}
+        confirmLabel="Discard"
+        variant="danger"
+      />
     </Modal>
   );
 }
@@ -384,10 +436,12 @@ function EditorView({
   doc,
   refreshError,
   initialDriftSlug = null,
+  onDirtyChange,
 }: {
   doc: ContextDoc;
   refreshError: string | null;
   initialDriftSlug?: string | null;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const setDoc = useContextStore((s) => s.setDoc);
   const refresh = useContextStore((s) => s.refresh);
@@ -415,6 +469,11 @@ function EditorView({
   const content = draft ?? doc.canonical.content;
   const dirty = draft !== null && draft !== doc.canonical.content;
   const markerIssue = RESERVED_MARKERS.find((m) => content.includes(m)) ?? null;
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    return () => onDirtyChange?.(false);
+  }, [dirty, onDirtyChange]);
   const lineCount = content.split('\n').length;
   const charCount = content.length;
 
@@ -1433,10 +1492,14 @@ function FragmentsView({
   doc,
   refreshError,
   initialDriftSlug = null,
+  onDirtyChange,
+  onDeleteConfirmChange,
 }: {
   doc: ContextDoc;
   refreshError: string | null;
   initialDriftSlug?: string | null;
+  onDirtyChange?: (dirty: boolean) => void;
+  onDeleteConfirmChange?: (open: boolean) => void;
 }) {
   const refresh = useContextStore((s) => s.refresh);
   const [fragments, setFragments] = useState<ContextFragment[] | null>(null);
@@ -1449,6 +1512,7 @@ function FragmentsView({
   );
   const [spotlightSlug, setSpotlightSlug] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(true);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   // Deep link from the Connections hub: spotlight the client's row, and
   // open the review directly only when the target is unambiguous (compiled
@@ -1513,6 +1577,17 @@ function FragmentsView({
   const content = draft ?? current?.content ?? '';
   const dirty = current !== null && draft !== null && draft !== current.content;
   const markerIssue = RESERVED_MARKERS.find((m) => content.includes(m)) ?? null;
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    return () => onDirtyChange?.(false);
+  }, [dirty, onDirtyChange]);
+
+  useEffect(() => {
+    onDeleteConfirmChange?.(pendingDelete !== null);
+    return () => onDeleteConfirmChange?.(false);
+  }, [pendingDelete, onDeleteConfirmChange]);
+
   const lineCount = content.split('\n').length;
   const charCount = content.length;
   const fragmentPath = current
@@ -1709,7 +1784,7 @@ function FragmentsView({
           selected={selected}
           onSelect={handleSelect}
           onAdd={handleAdd}
-          onDelete={handleDelete}
+          onDelete={setPendingDelete}
           outOfSync={fragmentOutOfSync(doc.clients)}
         />
 
@@ -1791,6 +1866,29 @@ function FragmentsView({
           <span>{charCount} chars</span>
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => {
+          const name = pendingDelete;
+          setPendingDelete(null);
+          if (name) void handleDelete(name);
+        }}
+        title="Remove fragment"
+        message={
+          <>
+            <p>
+              Remove <span className="font-mono text-primary">{pendingDelete}</span>?
+            </p>
+            <p>
+              A backup copy is saved outside the fragments directory. A sync afterward drops its projections.
+            </p>
+          </>
+        }
+        confirmLabel={`Remove "${pendingDelete ?? ''}"`}
+        variant="danger"
+      />
 
       {driftTarget &&
         (() => {
@@ -1941,6 +2039,7 @@ function FragmentRail({
                 type="button"
                 onClick={() => onDelete(f.name)}
                 title={`Remove fragment ${f.name}`}
+                aria-label={`Remove fragment ${f.name}`}
                 className="opacity-0 group-hover:opacity-100 p-1 rounded text-text-muted hover:text-status-error hover:bg-status-error/10 focus:outline-none focus:ring-2 focus:ring-status-error/30 focus:opacity-100 transition-all"
               >
                 <Trash2 size={10} />

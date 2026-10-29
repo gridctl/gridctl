@@ -223,4 +223,59 @@ describe('GlobalContextDialog', () => {
       expect(syncGlobalContext).toHaveBeenCalledWith();
     });
   });
+
+  it('confirms before discarding canonical edits', async () => {
+    vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
+    const onClose = vi.fn();
+    render(<GlobalContextDialog isOpen onClose={onClose} />);
+    const editor = await screen.findByLabelText('Canonical global context');
+
+    fireEvent.change(editor, { target: { value: '# Edited rules\n' } });
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(/unsaved edits/i);
+    expect(screen.getByLabelText('Canonical global context')).toHaveValue('# Edited rules\n');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Canonical global context')).toHaveValue('# Edited rules\n');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes directly when the canonical editor has no edits', async () => {
+    vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
+    const onClose = vi.fn();
+    render(<GlobalContextDialog isOpen onClose={onClose} />);
+    await screen.findByLabelText('Canonical global context');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
+  it('prevents unload while canonical edits are pending', async () => {
+    vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
+    const onClose = vi.fn();
+    render(<GlobalContextDialog isOpen onClose={onClose} />);
+    const editor = await screen.findByLabelText('Canonical global context');
+
+    const clean = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(clean);
+    expect(clean.defaultPrevented).toBe(false);
+
+    fireEvent.change(editor, { target: { value: '# Edited rules\n' } });
+    const dirty = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(dirty);
+    expect(dirty.defaultPrevented).toBe(true);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    const after = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(after);
+    expect(after.defaultPrevented).toBe(false);
+  });
 });

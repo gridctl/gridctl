@@ -165,11 +165,35 @@ describe('GlobalContextDialog fragments mode', () => {
     render(<GlobalContextDialog isOpen onClose={() => {}} />);
     await screen.findByText('10-style');
 
-    fireEvent.click(screen.getByTitle('Remove fragment 10-style'));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove fragment 10-style' }));
+    expect(deleteContextFragment).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(/backup/i);
 
+    fireEvent.click(screen.getByRole('button', { name: 'Remove "10-style"' }));
     await waitFor(() => {
       expect(deleteContextFragment).toHaveBeenCalledWith('10-style');
     });
+  });
+
+  it('confirms before discarding fragment edits', async () => {
+    const onClose = vi.fn();
+    render(<GlobalContextDialog isOpen onClose={onClose} />);
+    const editor = await screen.findByLabelText('Fragment 00-default');
+
+    fireEvent.change(editor, { target: { value: '# Edited rules\n' } });
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(/unsaved edits/i);
+    expect(screen.getByLabelText('Fragment 00-default')).toHaveValue('# Edited rules\n');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Fragment 00-default')).toHaveValue('# Edited rules\n');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('offers the split-into-fragments affordance from the single-file editor', async () => {
