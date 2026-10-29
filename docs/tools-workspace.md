@@ -9,6 +9,8 @@ The Tools workspace (`/tools` in the web UI on `:8180`) is the control plane for
 - **Detail rail (right)**: description, input schema, server-reported hints, the policy verdict when one applies, and usage stats for the selected tool.
 - **Header**: global search across every server, plus the Groups, Access, Fleet, and Audit entry points.
 
+A failed fetch is not an empty stack. With no servers loaded, the pane says "Tools unavailable" and offers Retry. When servers are already on screen, a banner names the failure and the editor stays mounted, including an unsaved whitelist edit. See [a workspace says a feature is unavailable](troubleshooting.md#a-workspace-says-a-feature-is-unavailable).
+
 Everything an operator would put in a support link lives in the URL: `?server=`, `?q=`, `?tool=`, `?audit=1`, `?window=`, `?filter=`, `?sort=`, `?risk=`, and `?client=<slug>` (the Connections hub's deep link: opens the per-client access editor on that client once, then drops itself from the URL). Defaults are omitted, so a bare `/tools` stays canonical.
 
 ## Expose-all semantics

@@ -49,7 +49,7 @@ A policy denial is recorded as disposition `denied`, stage `gate`, reason `polic
 
 Default retention is seven days and 100 MiB of logical record bytes per stack, including the active file and rotated segments. Age pruning runs at writer start and hourly while the process is up, compacting old records out of the active file. Physical filesystem overhead is extra. Wipe is stack-wide, is not secure erasure, and does not remove exports or backups. The Runs tab asks before wiping. The confirm names the stack and the stored file count and size, and states that the wipe is stack-wide and ignores the current filters. Disabling recording does not delete retained history. A stalled disk syscall can outlive the two-second shutdown drain; remaining queued events are counted as dropped.
 
-Query with `gridctl runs list`, `GET /api/runs`, or the Runs tab beside Traces. Live and offline sources are explicit; a failed live request never falls back to disk. See [Run records](config-schema.md#run-records) and [CLI runs](cli-reference.md#runs).
+Query with `gridctl runs list`, `GET /api/runs`, or the Runs tab beside Traces. Live and offline sources are explicit; a failed live request never falls back to disk. The Runs tab shows "Run history unavailable" and "Run history is unreadable. This is not an empty history." with Retry when the live list fails. The header Refresh control loads the same list. See [Run records](config-schema.md#run-records) and [CLI runs](cli-reference.md#runs).
 
 ## Diagnostic privacy and migration
 

@@ -88,6 +88,8 @@ workspaces. Reach for them before duplicating UI:
 | `InspectorSection` | `components/inspector/` | Stack `Sidebar.tsx`, `DetachedSidebarPage.tsx` (collapsible section pattern) |
 | `InspectorTabList` / `InspectorTabButton` | `components/inspector/` | Library tab list a11y wrapper |
 | `EmptyState` | `components/ui/` | Anywhere a "no items / no selection" affordance is needed |
+| `FailedState` | `components/ui/` | Failed fetch with nothing loaded. Title is `<feature> unavailable`, with Retry when `onRetry` is set. Not a spinner or an empty collection |
+| `FailureBanner` | `components/ui/` | Failed refresh when data is already on screen: one alert row and Retry |
 
 `CanvasBase` is intentionally small (~120 LOC) - it owns the React Flow
 boilerplate (wrapper element, Background layers, proOptions) and exposes

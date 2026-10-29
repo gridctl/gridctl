@@ -6,7 +6,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Bug Fixes
 
-- Pins, Library, Tools, Variables, Connections, run history, and Logs now show a named failure and a Retry control when their request fails, instead of a spinner, skeleton, or teaching empty state. A failure while data is already on screen keeps that data and shows a banner. An unconfigured registry or variable store, and pinning that is off, still show their empty states. (#1361)
+- Pins, the Library skills list, Tools, Variables, Connections, run history, and Logs now show a named failure and a Retry control when their request fails, instead of a spinner, skeleton, or teaching empty state. Pins, the Library skills list, Tools, and Variables keep loaded data and show a banner, so an unsaved Tools edit stays mounted. Run history and Logs replace the list with the failure. Connections shows "Connections unavailable" when no clients are loaded after a failed health fetch. When clients are listed and the wiring fetch failed before any rows loaded, the Ownership badge and Wiring section say "unavailable". An unconfigured registry or variable store, and pinning that is off, still show their empty states. A credential rejection still opens the auth prompt. Metrics already showed a failure and Retry; its title is now "Metrics unavailable". (#1361)
 
 ### Fixed
 
