@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { Layers } from 'lucide-react';
-import { EmptyState } from '../components/ui/EmptyState';
+import { EmptyState, FailedState } from '../components/ui/EmptyState';
 
 describe('EmptyState', () => {
   it('renders title and description', () => {
@@ -33,5 +33,14 @@ describe('EmptyState', () => {
     const root = container.firstElementChild;
     expect(root?.className).not.toContain('h-full');
     expect(root?.className).toContain('py-8');
+  });
+
+  it('renders a failed state with a Retry control', () => {
+    const onRetry = vi.fn();
+    render(<FailedState feature="Pins" message="Gateway connection unavailable" onRetry={onRetry} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Pins unavailable');
+    expect(screen.getByText('Gateway connection unavailable')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(onRetry).toHaveBeenCalledOnce();
   });
 });
