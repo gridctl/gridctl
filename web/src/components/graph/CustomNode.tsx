@@ -227,6 +227,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
 
       {/* Body - hidden in compact mode */}
       <div
+        aria-hidden={isCompact ? true : undefined}
         className={cn(
           'overflow-hidden transition-[max-height,opacity] duration-200 ease-out',
           isCompact ? 'max-h-0 opacity-0 pointer-events-none' : 'max-h-96 opacity-100'

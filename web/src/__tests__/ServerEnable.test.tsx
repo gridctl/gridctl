@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
@@ -29,6 +29,7 @@ vi.mock('../lib/api', () => ({
 }));
 
 import CustomNode from '../components/graph/CustomNode';
+import { useUIStore } from '../stores/useUIStore';
 import { ServerEnableControl } from '../components/sidebar/ServerEnableControl';
 import { SetServerToolsError } from '../lib/api';
 import type { MCPServerNodeData } from '../types';
@@ -47,7 +48,14 @@ function makeServerData(overrides: Partial<MCPServerNodeData> = {}): MCPServerNo
 }
 
 describe('CustomNode disabled server', () => {
+  afterEach(() => {
+    useUIStore.setState({ compactCards: true });
+  });
+
   it('renders a muted disabled chip and hides health strips', () => {
+    // The disabled status lives in the card body, which compact mode
+    // removes from the accessibility tree.
+    useUIStore.setState({ compactCards: false });
     const { container } = render(
       <CustomNode
         data={makeServerData({
