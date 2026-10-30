@@ -30,6 +30,7 @@ vi.mock('@xyflow/react', () => ({
 }));
 
 import { Canvas } from '../components/graph/Canvas';
+import { useCanvasActionsStore } from '../stores/useCanvasActionsStore';
 import { useStackStore } from '../stores/useStackStore';
 import { useAccessLensStore } from '../stores/useAccessLensStore';
 import type { GatewayStatus, MCPServerStatus } from '../types';
@@ -107,6 +108,16 @@ describe('Canvas auto-refit on tool fan-out', () => {
   afterEach(() => {
     globalThis.ResizeObserver = SetupResizeObserver;
     vi.useRealTimers();
+  });
+
+  it('registers canvas actions on mount and clears them on unmount', () => {
+    const view = render(<Canvas />);
+    expect(useCanvasActionsStore.getState().fitView).toBe(fitView);
+    view.unmount();
+    const calls = fitView.mock.calls.length;
+    useCanvasActionsStore.getState().fitView();
+    expect(fitView).toHaveBeenCalledTimes(calls);
+    expect(useCanvasActionsStore.getState().fitView).not.toBe(fitView);
   });
 
   it('refits with the fan-out node ids when a server expands with nothing selected', () => {

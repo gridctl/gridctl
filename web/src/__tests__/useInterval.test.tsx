@@ -168,6 +168,35 @@ describe('useInterval', () => {
     expect(callback).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps firing after a callback rejects once', async () => {
+    vi.useFakeTimers();
+    const callback = vi.fn()
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValue(undefined);
+    renderHook(() => useInterval(callback, 1000));
+    await flush();
+    expect(callback).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(callback).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps firing after a callback throws once', async () => {
+    vi.useFakeTimers();
+    const callback = vi.fn()
+      .mockImplementationOnce(() => {
+        throw new Error('boom');
+      });
+    renderHook(() => useInterval(callback, 1000));
+    await flush();
+    expect(callback).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(callback).toHaveBeenCalledTimes(2);
+  });
+
   it('does not immediate-fire when only the interval changes', async () => {
     vi.useFakeTimers();
     const callback = vi.fn();

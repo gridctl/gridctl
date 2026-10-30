@@ -54,6 +54,8 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
   const navigate = useNavigate();
   const startedRef = useRef(false);
   const slowRunning = useRef(false);
+  const slowInFlight = useRef<Promise<void> | null>(null);
+  const runSlowRef = useRef<() => Promise<void>>(async () => {});
   const seenVisible = useRef<boolean | null>(null);
   const seenWorkspace = useRef<string | null>(null);
   const postRef = useRef<(message: Omit<BroadcastMessage, 'timestamp'>) => void>(() => {});
@@ -105,6 +107,11 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
       ]);
       if (!current()) return;
 
+      // Initial state is disconnected, but the first cycle sets connecting
+      // before this await, so a first success does not look like a recovery.
+      const recoverInventory =
+        useStackStore.getState().connectionStatus === 'disconnected' ||
+        useStackStore.getState().connectionStatus === 'error';
       lastStatusRef.current = status;
       setGatewayStatus(status);
       setTools(toolsResult.tools ?? []);
@@ -123,6 +130,23 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
         setClients(clients);
       } catch {
         // Client endpoint may not be available; ignore gracefully
+      }
+
+      // Pins and Library clear on inventory, not on status. A recovery would
+      // otherwise leave those banners up until the next 15 second tick.
+      // Wait out a slow cycle that started during the outage, then run a
+      // fresh one. The in-flight guard makes the second start a no-op when
+      // a post-recovery cycle is already running.
+      if (recoverInventory) {
+        void (async () => {
+          try {
+            const inflight = slowInFlight.current;
+            if (inflight) await inflight;
+            await runSlowRef.current();
+          } catch {
+            // Store writes already recorded the failure. Do not surface it here.
+          }
+        })();
       }
     } catch (error) {
       if (!current()) return;
@@ -147,8 +171,13 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
   }, [setGatewayStatus, setClients, setTools, setError, setConnectionStatus, setAuthRequired, setLoading]);
 
   const runSlow = useCallback(async () => {
-    if (slowRunning.current) return;
+    if (slowRunning.current) return slowInFlight.current ?? Promise.resolve();
     slowRunning.current = true;
+    let releaseSlow: () => void = () => {};
+    const done = new Promise<void>((resolve) => {
+      releaseSlow = resolve;
+    });
+    slowInFlight.current = done;
     const generation = useAuthStore.getState().generation;
     const current = () => useAuthStore.getState().generation === generation && !useAuthStore.getState().authRequired;
     try {
@@ -263,8 +292,13 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
         const spec = await fetchStackSpec();
         if (!current()) return;
         useTelemetryStore.getState().setRawSpec(spec.content);
-      } catch {
-        if (current()) useTelemetryStore.getState().setRawSpec(null);
+      } catch (err) {
+        // Stackless mode returns 503. Clear so the UI does not keep a spec
+        // from a previous stack. Any other miss, including a connection
+        // failure, keeps the last snapshot.
+        if (current() && isFeatureUnavailable(err)) {
+          useTelemetryStore.getState().setRawSpec(null);
+        }
       }
 
       try {
@@ -312,12 +346,18 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
       }
     } finally {
       slowRunning.current = false;
+      slowInFlight.current = null;
+      releaseSlow();
     }
   }, [navigate, refreshNodesAndEdges, setToolCatalog]);
 
   const refresh = useCallback(async () => {
     await Promise.all([runFast(), runSlow()]);
   }, [runFast, runSlow]);
+
+  useEffect(() => {
+    runSlowRef.current = runSlow;
+  }, [runSlow]);
 
   useEffect(() => {
     refreshImpl = refresh;

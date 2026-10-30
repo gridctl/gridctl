@@ -52,7 +52,7 @@ function DetachedSidebarPageContent() {
 
   const [selectedNode, setSelectedNode] = useState<string | null>(initialNode);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const { status } = useSharedStatus({ enabled: !authRequired });
+  const { status, settled } = useSharedStatus({ enabled: !authRequired });
   const nodes = useMemo<NodeOption[]>(() => {
     if (!status || useAuthStore.getState().generation !== generation || useAuthStore.getState().authRequired) {
       return [];
@@ -70,7 +70,7 @@ function DetachedSidebarPageContent() {
       })),
     ];
   }, [status, generation]);
-  const isLoading = status == null && !authRequired;
+  const isLoading = status == null && !authRequired && !settled;
 
   // Text zoom
   const contentRef = useRef<HTMLElement>(null);

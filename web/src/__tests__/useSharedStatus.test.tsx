@@ -115,6 +115,26 @@ describe('useSharedStatus', () => {
     main.close();
   });
 
+  it('settles after a failed self-poll so a popout can leave its loading state', async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetchStatus).mockRejectedValue(new Error('down'));
+    const view = renderHook(() => useSharedStatus({ enabled: true }), { wrapper });
+    expect(view.result.current.settled).toBe(false);
+    await act(async () => {
+      vi.advanceTimersByTime(STATUS_STALE_MS - 1);
+    });
+    expect(view.result.current.settled).toBe(false);
+    expect(fetchStatus).not.toHaveBeenCalled();
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+    });
+    await flushMessages();
+    expect(fetchStatus).toHaveBeenCalledTimes(1);
+    expect(view.result.current.status).toBeNull();
+    expect(view.result.current.settled).toBe(true);
+    view.unmount();
+  });
+
   it('stops self-polling only after two snapshots inside the staleness window', async () => {
     vi.useFakeTimers();
     vi.mocked(fetchStatus).mockResolvedValue(status);

@@ -37,6 +37,10 @@ export function useInterval(
   const visibleRef = useRef(visible);
   const wasEnabledRef = useRef(false);
   const startedRef = useRef(false);
+  // The return value is part of the hook contract. State keeps it current
+  // for a caller; scheduling reads the ref. The microtask avoids a
+  // synchronous setState in the effect below. No caller reads it today, and
+  // the extra render is the cost of that contract.
   const [lastRunAt, setLastRunAt] = useState<number | null>(null);
 
   useEffect(() => {
@@ -77,23 +81,45 @@ export function useInterval(
       }, Math.max(0, delay));
     };
 
-    const invoke = async (): Promise<boolean> => {
-      if (pendingRef.current) return false;
-      const result = callbackRef.current();
+    const recordRun = () => {
       const now = Date.now();
       lastRunAtRef.current = now;
       queueMicrotask(() => {
         if (!cancelled) setLastRunAt(now);
       });
+    };
+
+    // A throw or a rejected promise must not kill the chain. Callers that
+    // care catch their own errors; this scheduler still records the attempt
+    // and arms the next tick.
+    const invoke = async (): Promise<boolean> => {
+      if (pendingRef.current) return false;
+      let result: void | Promise<void>;
+      try {
+        result = callbackRef.current();
+      } catch {
+        recordRun();
+        return true;
+      }
+      recordRun();
       if (isPromise(result)) {
         pendingRef.current = true;
         try {
           await result;
+        } catch {
+          // Rejection is recorded above. The timer continues.
         } finally {
           pendingRef.current = false;
         }
       }
       return true;
+    };
+
+    const armNext = () => {
+      if (cancelled) return;
+      const next = activeInterval();
+      if (next == null) return;
+      schedule(next);
     };
 
     const tick = async () => {
@@ -104,11 +130,11 @@ export function useInterval(
         schedule(interval);
         return;
       }
-      await invoke();
-      if (cancelled) return;
-      const next = activeInterval();
-      if (next == null) return;
-      schedule(next);
+      try {
+        await invoke();
+      } finally {
+        armNext();
+      }
     };
 
     const reschedule = () => {
@@ -130,12 +156,7 @@ export function useInterval(
     // Start the callback in this effect so a same-tick disable still observes
     // the in-flight request. State writes stay after the callback's first await.
     if (fireNow) {
-      void invoke().then(() => {
-        if (cancelled) return;
-        const next = activeInterval();
-        if (next == null) return;
-        schedule(next);
-      });
+      void invoke().finally(armNext);
     } else {
       const interval = activeInterval();
       if (interval != null) schedule(interval);

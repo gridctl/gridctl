@@ -21,6 +21,9 @@ function snapshotStatus(payload: unknown): GatewayStatus | null {
 export interface SharedStatus {
   status: GatewayStatus | null;
   source: 'broadcast' | 'self' | null;
+  // True after a snapshot arrives or the first self-poll attempt finishes.
+  // A popout can leave its loading state when status never arrives.
+  settled: boolean;
 }
 
 // Broadcast is the primary source. Self-poll starts when snapshots go stale
@@ -30,6 +33,7 @@ export interface SharedStatus {
 export function useSharedStatus({ enabled }: { enabled: boolean }): SharedStatus {
   const [status, setStatus] = useState<GatewayStatus | null>(null);
   const [source, setSource] = useState<'broadcast' | 'self' | null>(null);
+  const [settled, setSettled] = useState(false);
   const [selfPoll, setSelfPoll] = useState(false);
   const selfPollRef = useRef(false);
   const lastSnapshotAt = useRef<number | null>(null);
@@ -52,6 +56,7 @@ export function useSharedStatus({ enabled }: { enabled: boolean }): SharedStatus
     lastSnapshotAt.current = now;
     setStatus(next);
     setSource('broadcast');
+    setSettled(true);
     if (!selfPollRef.current) {
       setLiveEpoch((n) => n + 1);
       return;
@@ -95,6 +100,8 @@ export function useSharedStatus({ enabled }: { enabled: boolean }): SharedStatus
       setSource('self');
     } catch {
       // The next tick retries. A status miss must not blank the popout.
+    } finally {
+      setSettled(true);
     }
   }, [generation]);
 
@@ -102,5 +109,5 @@ export function useSharedStatus({ enabled }: { enabled: boolean }): SharedStatus
     enabled: enabled && selfPoll && !authRequired,
   });
 
-  return { status, source };
+  return { status, source, settled };
 }
