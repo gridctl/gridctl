@@ -87,9 +87,9 @@ also guard mount lifetime and credential generation before updating state or
 starting another operation; Connections is a regression-tested example.
 Re-verification resumes eligible reads, never a save or other mutation.
 
-`useSSEShutdown` consumes `/sse` negotiation through cancellable fetch. The
-endpoint closes normally after the hint, so EOF does not signal shutdown;
-status polling remains the disconnect fallback.
+The browser does not consume `/sse`. That route is a legacy negotiation hint
+for clients that still probe the retired transport, and it closes after the
+hint, so it carries no shutdown signal. Status polling is the disconnect signal.
 
 ## Shared primitives
 

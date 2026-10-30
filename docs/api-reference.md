@@ -3940,7 +3940,7 @@ data: POST /mcp
 
 **Auth:** Yes
 
-Normal completion is not shutdown notification. The browser consumes this negotiation through credential-aware fetch; polling remains its disconnect fallback.
+Normal completion is not shutdown notification. The browser does not consume `/sse`. Status polling is the disconnect signal.
 
 #### `POST /message` (retired)
 

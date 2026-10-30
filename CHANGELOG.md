@@ -4,6 +4,10 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- The web UI shell loads a smaller entry chunk. Popout pages, the creation wizard, the global context dialog, markdown rendering, and the YAML parser load on demand, and the React Flow and chart libraries are fetched only by the workspaces that draw them. Status polling stays on a 3 second cadence while the tab is visible and drops to one heartbeat every 30 seconds while it is hidden. Catalog, pins, registry, telemetry, and spec health move to a 15 second inventory cycle that pauses in a hidden tab and runs again on return. Detached windows take status from the main window while it is visible and poll themselves when that window is hidden or closed. The browser no longer requests `/sse`. Status polling is the disconnect signal.
+
 ### Fixes
 
 - The web UI no longer swallows typing in the JSON variable editor, and Cmd/Ctrl+F reaches browser Find. Fit view and canvas zoom shortcuts apply only on the Stack workspace, and Cmd/Ctrl+A is no longer intercepted. The Refresh tooltip reads "Refresh (⌘⇧R)". Metrics and Connections show ⌘5 and ⌘9 chips in the command palette. The Variables list footer hints at j/k, Home/End, Enter, and e. Agent, skill, and Traces tabs move with the keyboard. The workspace switcher is a navigation landmark, not a tab list. In-shell pages expose one main landmark, a heading, and named regions. Status dots have accessible names and stay distinct under reduced motion. `/runs` and `/runs/:runID` redirect to the Runs tab at `/traces?view=runs`. The run id is not carried; the Runs view has no selection parameter.
