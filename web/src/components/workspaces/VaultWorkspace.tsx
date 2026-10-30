@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useState,
 } from 'react';
@@ -34,6 +35,7 @@ import { ProviderReferences } from '../vault/ProviderReferences';
 import { VaultEncryptForm } from '../vault/VaultEncryptForm';
 import { VaultLockPrompt } from '../vault/VaultLockPrompt';
 import { EnvImportModal } from '../vault/EnvImportModal';
+import { WORKSPACE_LABELS } from '../../types/workspace';
 import { useUIStore } from '../../stores/useUIStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { useVaultManager } from '../../hooks/useVaultManager';
@@ -93,6 +95,7 @@ function markBannerDismissed(storageKey: string): void {
 // lock/encrypt controls, and the bulk `.env` import flow that the sidebar
 // deliberately doesn't host.
 export function VaultWorkspace() {
+  const headingId = useId();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const compact = useUIStore((s) => s.compactMode.vault);
@@ -583,7 +586,8 @@ export function VaultWorkspace() {
         minLeftPx={200}
         minRightPx={300}
       >
-        <main className="flex flex-col h-full overflow-hidden">
+        <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
+          <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.vault}</h1>
           <VaultHeader
             compact={compact}
             totalVariables={allVariables.length}
@@ -776,9 +780,15 @@ export function VaultWorkspace() {
                 )}
                 <ProviderReferences />
               </div>
+              <div className="flex items-center gap-2 px-3 h-5 flex-shrink-0 border-t border-border/20 text-[9px] text-text-muted/60 select-none">
+                <span><kbd className="font-mono">j</kbd>/<kbd className="font-mono">k</kbd> navigate</span>
+                <span><kbd className="font-mono">Home</kbd>/<kbd className="font-mono">End</kbd> first and last</span>
+                <span><kbd className="font-mono">↵</kbd> open</span>
+                <span><kbd className="font-mono">e</kbd> edit</span>
+              </div>
             </>
           )}
-        </main>
+        </section>
       </WorkspaceShell>
 
       <ConfirmDialog
@@ -1023,7 +1033,7 @@ function VaultLeftRail({
   locked,
 }: VaultLeftRailProps) {
   return (
-    <aside className="h-full flex flex-col bg-surface border-r border-border-subtle">
+    <aside aria-label="Variable sets" className="h-full flex flex-col bg-surface border-r border-border-subtle">
       <div
         className={cn(
           'flex-shrink-0 px-3 border-b border-border-subtle/60',

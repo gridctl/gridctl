@@ -118,6 +118,16 @@ describe('VaultWorkspace — empty state', () => {
     expect(await screen.findByText('variables')).toBeInTheDocument();
   });
 
+  it('shows list keyboard hints for the bindings the list actually wires', async () => {
+    renderWorkspace();
+    expect(await screen.findByText(/navigate/)).toBeInTheDocument();
+    expect(screen.getByText(/first and last/)).toBeInTheDocument();
+    expect(screen.getByText(/↵/)).toBeInTheDocument();
+    const keys = screen.getAllByText(/^(j|k|Home|End|e|↵)$/);
+    expect(keys.every((node) => node.tagName === 'KBD')).toBe(true);
+    expect(screen.queryByText((_, node) => node?.tagName === 'KBD' && node.textContent === '/')).not.toBeInTheDocument();
+  });
+
   it('renders an Import .env button in the header', async () => {
     renderWorkspace();
     expect(

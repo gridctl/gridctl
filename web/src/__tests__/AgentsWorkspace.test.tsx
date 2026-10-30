@@ -97,6 +97,8 @@ describe('AgentsWorkspace', () => {
     await waitFor(() => {
       expect(screen.getByText('No agents imported')).toBeInTheDocument();
     });
+    expect(screen.queryAllByRole('main')).toHaveLength(0);
+    expect(screen.getByRole('heading', { level: 1, name: 'Library' })).toBeInTheDocument();
     // KPI strip stays visible at zero — it is the signal that agents
     // support exists on a fresh install.
     const strip = screen.getByRole('group', { name: 'Agent projection summary' });

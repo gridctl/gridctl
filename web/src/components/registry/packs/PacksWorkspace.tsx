@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, createElement } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, createElement } from 'react';
 import { useSearchParams } from 'react-router';
 import { Copy, Download, List, Package, RefreshCw, Bot } from 'lucide-react';
 import { cn } from '../../../lib/cn';
+import { WORKSPACE_LABELS } from '../../../types/workspace';
 import { IconButton } from '../../ui/IconButton';
 import { showToast } from '../../ui/Toast';
 import { WorkspaceShell } from '../../layout/WorkspaceShell';
@@ -29,6 +30,7 @@ interface PacksWorkspaceProps {
  * grouping (a pack IS a source).
  */
 export function PacksWorkspace({ onKindChange }: PacksWorkspaceProps) {
+  const headingId = useId();
   const [searchParams, setSearchParams] = useSearchParams();
   const packs = useRegistryStore((s) => s.packs);
   const openWizard = useWizardStore((s) => s.open);
@@ -181,7 +183,8 @@ export function PacksWorkspace({ onKindChange }: PacksWorkspaceProps) {
   return (
     <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
       <WorkspaceShell workspace="library" defaultRightPct={42} minRightPx={380} right={inspector}>
-        <main className="flex flex-col h-full overflow-hidden">
+        <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
+          <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.library}</h1>
           <header className="flex-shrink-0 bg-surface/30 backdrop-blur-sm border-b border-border-subtle px-6 py-3 flex flex-col gap-2">
             <div className="flex items-center justify-between gap-3">
               <LibraryKindSwitch kind="pack" onChange={onKindChange} />
@@ -260,7 +263,7 @@ export function PacksWorkspace({ onKindChange }: PacksWorkspaceProps) {
               </ul>
             )}
           </div>
-        </main>
+        </section>
       </WorkspaceShell>
     </div>
   );

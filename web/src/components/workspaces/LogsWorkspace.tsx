@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useId, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { Activity, Layers, Radio, Server } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { WORKSPACE_LABELS } from '../../types/workspace';
 import { useUIStore } from '../../stores/useUIStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
@@ -22,6 +23,7 @@ import { useLogsCommands } from '../log/useLogsCommands';
 // the exact view they name. Every stream action lives in the shared control
 // bar; this host contributes only identity chrome and the popout.
 export function LogsWorkspace() {
+  const headingId = useId();
   const navigate = useNavigate();
   const compact = useUIStore((s) => s.compactMode.logs);
   const logsDetached = useUIStore((s) => s.logsDetached);
@@ -63,7 +65,8 @@ export function LogsWorkspace() {
   return (
     <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
       <WorkspaceShell workspace="logs" defaultLeftPct={16} left={leftRail} minLeftPx={180}>
-        <main className="flex flex-col h-full overflow-hidden">
+        <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
+          <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.logs}</h1>
           <header
             className={cn(
               'flex-shrink-0 bg-surface/30 backdrop-blur-sm border-b border-border-subtle flex items-center gap-3 px-6',
@@ -93,7 +96,7 @@ export function LogsWorkspace() {
               />
             }
           />
-        </main>
+        </section>
       </WorkspaceShell>
     </div>
   );
@@ -116,7 +119,7 @@ interface SourceRailProps {
 
 function SourceRail({ compact, source, onSelectSource, serverNames, totalCount, counts, onViewMetrics }: SourceRailProps) {
   return (
-    <aside className="h-full flex flex-col bg-surface border-r border-border-subtle">
+    <aside aria-label="Logs rail" className="h-full flex flex-col bg-surface border-r border-border-subtle">
       <div className={cn('flex-shrink-0 px-3 border-b border-border-subtle/60', compact ? 'py-2' : 'py-3')}>
         <div className="text-[10px] font-medium text-text-muted/60 uppercase tracking-[0.3em]">sources</div>
       </div>

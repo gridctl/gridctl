@@ -1,10 +1,10 @@
 import { useEffect } from 'react';
+import { isTextInputTarget } from '../lib/dom';
 import { WORKSPACE_CONFIG, type Workspace } from '../types/workspace';
 
 interface ShortcutOptions {
   onFitView?: () => void;
   onEscape?: () => void;
-  onSelectAll?: () => void;
   onZoomIn?: () => void;
   onZoomOut?: () => void;
   onRefresh?: () => void;
@@ -26,20 +26,22 @@ const WORKSPACE_BY_KEY: ReadonlyMap<string, Workspace> = new Map(
 export function useKeyboardShortcuts(options: ShortcutOptions) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Ignore if typing in input
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
-      ) {
-        return;
-      }
+      // Inputs, textareas, selects, and contenteditable (the JSON editor)
+      // keep their native keys. Cmd/Ctrl+F must also reach the browser.
+      if (isTextInputTarget(e.target)) return;
 
       const isMod = e.metaKey || e.ctrlKey;
 
-      // Fit view: F or Cmd/Ctrl+0
-      if (e.key === 'f' || e.key === 'F' || (isMod && e.key === '0')) {
+      // Fit view: bare f/F, or Cmd/Ctrl+0, and only when a handler is wired
+      // (Stack). Modified f is browser Find; do not preventDefault.
+      const bareFit = (e.key === 'f' || e.key === 'F') && !e.metaKey && !e.ctrlKey && !e.altKey;
+      if (bareFit && options.onFitView) {
         e.preventDefault();
-        options.onFitView?.();
+        options.onFitView();
+      }
+      if (isMod && e.key === '0' && options.onFitView) {
+        e.preventDefault();
+        options.onFitView();
       }
 
       // Escape: Close panel
@@ -47,20 +49,15 @@ export function useKeyboardShortcuts(options: ShortcutOptions) {
         options.onEscape?.();
       }
 
-      // Select all: Cmd/Ctrl+A
-      if (isMod && e.key === 'a') {
+      // Zoom: Cmd/Ctrl + +/-. Prevent only when a handler is wired, so the
+      // browser keeps zoom and zoom-reset outside the Stack workspace.
+      if (isMod && (e.key === '+' || e.key === '=') && options.onZoomIn) {
         e.preventDefault();
-        options.onSelectAll?.();
+        options.onZoomIn();
       }
-
-      // Zoom: Cmd/Ctrl + +/-
-      if (isMod && (e.key === '+' || e.key === '=')) {
+      if (isMod && e.key === '-' && options.onZoomOut) {
         e.preventDefault();
-        options.onZoomIn?.();
-      }
-      if (isMod && e.key === '-') {
-        e.preventDefault();
-        options.onZoomOut?.();
+        options.onZoomOut();
       }
 
       // Refresh: Cmd/Ctrl+Shift+R (Cmd+R alone is reserved for browser refresh)

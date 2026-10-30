@@ -33,6 +33,7 @@ vi.mock('../lib/api', () => ({
 }));
 
 import CustomNode from '../components/graph/CustomNode';
+import { useUIStore } from '../stores/useUIStore';
 import { getMCPServerStatus } from '../lib/graph/nodes';
 import { ServerAuthSection } from '../components/sidebar/ServerAuthSection';
 import { AuthPendingBadge } from '../components/sidebar/AuthPendingBadge';
@@ -78,6 +79,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.clearAllMocks();
   useStackStore.setState({ mcpServers: [], selectedNodeId: null });
+  useUIStore.setState({ compactCards: true });
 });
 
 describe('getMCPServerStatus needs-auth precedence', () => {
@@ -116,6 +118,10 @@ describe('getMCPServerStatus needs-auth precedence', () => {
 
 describe('CustomNode needs-auth rendering', () => {
   it('shows the amber authorization indicator with an accessible label', () => {
+    // Compact mode hides the clipped body from assistive tech. The
+    // authorization status lives in that body, so this check uses the
+    // expanded card.
+    useUIStore.setState({ compactCards: false });
     render(<CustomNode data={makeServerData()} />);
     expect(screen.getByRole('status', { name: 'notion needs authorization' })).toBeInTheDocument();
     expect(screen.getByText('Needs authorization')).toBeInTheDocument();

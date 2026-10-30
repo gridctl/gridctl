@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import {
   AlignJustify,
@@ -19,6 +19,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { WORKSPACE_LABELS } from '../../types/workspace';
 import { IconButton } from '../ui/IconButton';
 import { PopoutButton } from '../ui/PopoutButton';
 import { SkillEditor } from '../registry/SkillEditor';
@@ -111,6 +112,7 @@ function isSortMode(value: string | null): value is SortMode {
  * else surfaces a toast and falls back to `/library`.
  */
 export function LibraryWorkspace() {
+  const headingId = useId();
   const [searchParams, setSearchParams] = useSearchParams();
   const { skillName } = useParams<{ skillName?: string }>();
   const navigate = useNavigate();
@@ -857,7 +859,8 @@ export function LibraryWorkspace() {
         minRightPx={300}
         right={inspector}
       >
-        <main className="flex flex-col h-full overflow-hidden">
+        <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
+          <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.library}</h1>
           <LibraryHeader
             kindSwitch={<LibraryKindSwitch kind="skill" onChange={setKind} />}
             onNewSkill={handleNewSkill}
@@ -1066,7 +1069,7 @@ export function LibraryWorkspace() {
               />
             )}
           </div>
-        </main>
+        </section>
       </WorkspaceShell>
 
       <ConfirmDialog

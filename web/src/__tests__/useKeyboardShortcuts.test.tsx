@@ -69,3 +69,94 @@ describe('useKeyboardShortcuts — workspace navigation', () => {
     expect(onToggleCompactMode).toHaveBeenCalledTimes(1);
   });
 });
+
+function dispatchKey(
+  key: string,
+  init: KeyboardEventInit = {},
+  target?: EventTarget,
+) {
+  const ev = new KeyboardEvent('keydown', {
+    key,
+    bubbles: true,
+    cancelable: true,
+    ...init,
+  });
+  if (target) Object.defineProperty(ev, 'target', { value: target });
+  window.dispatchEvent(ev);
+  return ev;
+}
+
+describe('useKeyboardShortcuts — editable targets and browser chords', () => {
+  it('does not swallow f, Cmd+A, or Cmd+Plus in a contenteditable editor', () => {
+    const onFitView = vi.fn();
+    const onZoomIn = vi.fn();
+    renderHook(() => useKeyboardShortcuts({ onFitView, onZoomIn }));
+
+    const editor = document.createElement('div');
+    editor.contentEditable = 'true';
+    Object.defineProperty(editor, 'isContentEditable', { value: true });
+    document.body.appendChild(editor);
+    editor.focus();
+
+    const fit = dispatchKey('f', {}, editor);
+    const selectAll = dispatchKey('a', { metaKey: true }, editor);
+    const zoom = dispatchKey('+', { metaKey: true }, editor);
+
+    expect(onFitView).not.toHaveBeenCalled();
+    expect(onZoomIn).not.toHaveBeenCalled();
+    expect(fit.defaultPrevented).toBe(false);
+    expect(selectAll.defaultPrevented).toBe(false);
+    expect(zoom.defaultPrevented).toBe(false);
+    editor.remove();
+  });
+
+  it('does not swallow shortcuts while a select is focused', () => {
+    const onFitView = vi.fn();
+    const onSwitchToWorkspace = vi.fn();
+    renderHook(() => useKeyboardShortcuts({ onFitView, onSwitchToWorkspace }));
+
+    const select = document.createElement('select');
+    document.body.appendChild(select);
+    select.focus();
+
+    const fit = dispatchKey('f', {}, select);
+    const workspace = dispatchKey('2', { metaKey: true }, select);
+
+    expect(onFitView).not.toHaveBeenCalled();
+    expect(onSwitchToWorkspace).not.toHaveBeenCalled();
+    expect(fit.defaultPrevented).toBe(false);
+    expect(workspace.defaultPrevented).toBe(false);
+    select.remove();
+  });
+
+  it('leaves Cmd/Ctrl+F for the browser and fits on bare f and Cmd+0', () => {
+    const onFitView = vi.fn();
+    renderHook(() => useKeyboardShortcuts({ onFitView }));
+
+    const cmdF = dispatchKey('f', { metaKey: true });
+    const ctrlF = dispatchKey('f', { ctrlKey: true });
+    expect(onFitView).not.toHaveBeenCalled();
+    expect(cmdF.defaultPrevented).toBe(false);
+    expect(ctrlF.defaultPrevented).toBe(false);
+
+    const bare = dispatchKey('f');
+    expect(onFitView).toHaveBeenCalledTimes(1);
+    expect(bare.defaultPrevented).toBe(true);
+
+    const fitZero = dispatchKey('0', { metaKey: true });
+    expect(onFitView).toHaveBeenCalledTimes(2);
+    expect(fitZero.defaultPrevented).toBe(true);
+  });
+
+  it('does not prevent zoom or fit when no handler is wired', () => {
+    renderHook(() => useKeyboardShortcuts({}));
+
+    const zoom = dispatchKey('+', { metaKey: true });
+    const fit = dispatchKey('0', { metaKey: true });
+    const bare = dispatchKey('f');
+
+    expect(zoom.defaultPrevented).toBe(false);
+    expect(fit.defaultPrevented).toBe(false);
+    expect(bare.defaultPrevented).toBe(false);
+  });
+});

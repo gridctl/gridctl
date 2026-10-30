@@ -15,48 +15,50 @@ function renderAt(path: string) {
 }
 
 describe('WorkspaceSwitcher', () => {
-  it('renders one pill per workspace, in WORKSPACE_CONFIG order', () => {
+  it('renders one link per workspace, in WORKSPACE_CONFIG order', () => {
     renderAt('/stack');
-    const tablist = screen.getByRole('tablist', { name: /workspace/i });
-    expect(tablist).toBeInTheDocument();
-    const tabs = screen.getAllByRole('tab');
-    expect(tabs).toHaveLength(WORKSPACE_CONFIG.length);
-    expect(tabs.map((t) => t.textContent?.trim())).toEqual(
+    const nav = screen.getByRole('navigation', { name: 'Workspaces' });
+    expect(nav).toBeInTheDocument();
+    const links = screen.getAllByRole('link');
+    expect(links).toHaveLength(WORKSPACE_CONFIG.length);
+    expect(links.map((link) => link.getAttribute('aria-label'))).toEqual(
       WORKSPACE_CONFIG.map((w) => w.label),
     );
+    expect(screen.queryAllByRole('tab')).toHaveLength(0);
   });
 
-  it('marks the active workspace with aria-selected=true and others false', () => {
+  it('marks the active workspace with aria-current=page and others with none', () => {
     renderAt('/library');
     for (const ws of WORKSPACE_CONFIG) {
-      const tab = screen.getByRole('tab', { name: ws.label });
-      expect(tab).toHaveAttribute(
-        'aria-selected',
-        ws.id === 'library' ? 'true' : 'false',
-      );
+      const link = screen.getByRole('link', { name: ws.label });
+      if (ws.id === 'library') {
+        expect(link).toHaveAttribute('aria-current', 'page');
+      } else {
+        expect(link).not.toHaveAttribute('aria-current');
+      }
     }
   });
 
-  it('marks the Library pill active for /library and deep-link paths', () => {
+  it('marks the Library link active for deep-link paths', () => {
     renderAt('/library/incident-triage');
-    expect(screen.getByRole('tab', { name: 'Library' })).toHaveAttribute(
-      'aria-selected',
-      'true',
+    expect(screen.getByRole('link', { name: 'Library' })).toHaveAttribute(
+      'aria-current',
+      'page',
     );
   });
 
-  it('marks the Variables pill active for /vault', () => {
+  it('marks the Variables link active for /vault', () => {
     renderAt('/vault');
-    expect(screen.getByRole('tab', { name: 'Variables' })).toHaveAttribute(
-      'aria-selected',
-      'true',
+    expect(screen.getByRole('link', { name: 'Variables' })).toHaveAttribute(
+      'aria-current',
+      'page',
     );
   });
 
   it('links each pill to its workspace route', () => {
     renderAt('/stack');
     for (const ws of WORKSPACE_CONFIG) {
-      expect(screen.getByRole('tab', { name: ws.label })).toHaveAttribute(
+      expect(screen.getByRole('link', { name: ws.label })).toHaveAttribute(
         'href',
         `/${ws.id}`,
       );
@@ -73,25 +75,26 @@ describe('WorkspaceSwitcher — Tools dirty guard', () => {
     useToolsDirtyStore.setState({ dirty: true, exitNavTarget: null });
     renderAt('/tools');
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Metrics' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Metrics' }));
 
     expect(useToolsDirtyStore.getState().exitNavTarget).toBe('/metrics');
-    // The NavLink was cancelled — Tools stays the active pill.
-    expect(screen.getByRole('tab', { name: 'Tools' })).toHaveAttribute(
-      'aria-selected',
-      'true',
+    // The NavLink was cancelled — Tools stays the active link.
+    expect(screen.getByRole('link', { name: 'Tools' })).toHaveAttribute(
+      'aria-current',
+      'page',
     );
+    expect(screen.getByRole('link', { name: 'Metrics' })).not.toHaveAttribute('aria-current');
   });
 
   it('does not intercept when the Tools editor is clean', () => {
     renderAt('/tools');
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Metrics' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Metrics' }));
 
     expect(useToolsDirtyStore.getState().exitNavTarget).toBeNull();
-    expect(screen.getByRole('tab', { name: 'Metrics' })).toHaveAttribute(
-      'aria-selected',
-      'true',
+    expect(screen.getByRole('link', { name: 'Metrics' })).toHaveAttribute(
+      'aria-current',
+      'page',
     );
   });
 });

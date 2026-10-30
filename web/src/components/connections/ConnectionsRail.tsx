@@ -113,7 +113,7 @@ export function ConnectionsRail({
   onToggleAttention,
 }: ConnectionsRailProps) {
   return (
-    <aside className="h-full flex flex-col bg-surface border-r border-border-subtle">
+    <aside aria-label="Connections rail" className="h-full flex flex-col bg-surface border-r border-border-subtle">
       <div className="flex-shrink-0 px-3 py-3 border-b border-border-subtle/60 flex items-center justify-between gap-2">
         <span className="text-[10px] font-medium uppercase tracking-[0.3em] text-text-muted">
           Clients

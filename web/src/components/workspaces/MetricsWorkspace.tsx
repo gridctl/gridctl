@@ -1,8 +1,9 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useId, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { BarChart3, Server, Users, Wrench, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { WORKSPACE_LABELS } from '../../types/workspace';
 import { useUIStore } from '../../stores/useUIStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
@@ -83,6 +84,7 @@ function clearToolParams(params: URLSearchParams): void {
 // are URL-synced so reload and deep links survive. The dashboard body is
 // shared with the detached window via metricsShared.
 export function MetricsWorkspace() {
+  const headingId = useId();
   const [searchParams, setSearchParams] = useSearchParams();
   const compact = useUIStore((s) => s.compactMode.metrics);
   const metricsDetached = useUIStore((s) => s.metricsDetached);
@@ -439,7 +441,8 @@ export function MetricsWorkspace() {
         minLeftPx={200}
         minRightPx={300}
       >
-        <main className="flex flex-col h-full overflow-hidden">
+        <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
+          <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.metrics}</h1>
           <header
             className={cn(
               'flex-shrink-0 bg-surface/30 backdrop-blur-sm border-b border-border-subtle flex items-center justify-between gap-3 px-6',
@@ -648,7 +651,7 @@ export function MetricsWorkspace() {
               </div>
             )}
           </div>
-        </main>
+        </section>
       </WorkspaceShell>
     </div>
   );
@@ -669,7 +672,7 @@ interface ScopeRailProps {
 
 function ScopeRail({ compact, scope, onSelectScope, clientCount, serverCount, toolCount }: ScopeRailProps) {
   return (
-    <aside className="h-full flex flex-col bg-surface border-r border-border-subtle">
+    <aside aria-label="Metrics rail" className="h-full flex flex-col bg-surface border-r border-border-subtle">
       <div className={cn('flex-shrink-0 px-3 border-b border-border-subtle/60', compact ? 'py-2' : 'py-3')}>
         <div className="text-[10px] font-medium text-text-muted/60 uppercase tracking-[0.3em]">breakdown</div>
       </div>

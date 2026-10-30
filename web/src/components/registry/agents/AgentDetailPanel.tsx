@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Bot, Pencil, Trash2 } from 'lucide-react';
-import { InspectorHeader, InspectorTabList, InspectorTabButton, PaneAnchor } from '../../inspector';
+import { InspectorHeader, PaneAnchor } from '../../inspector';
+import { Tab, Tabs } from '../../ui/Tabs';
 import { MarkdownPreview } from '../MarkdownPreview';
 import { AgentProjectionRows } from './AgentProjectionRows';
 import { agentClientName, formatExtraValue } from './agentModel';
@@ -132,15 +133,15 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
         }
       />
 
-      <InspectorTabList ariaLabel="Agent detail tabs">
-        <InspectorTabButton active={tab === 'overview'} onClick={() => setTab('overview')} label="Overview" controls="agent-tab-overview" />
-        <InspectorTabButton active={tab === 'body'} onClick={() => setTab('body')} label="Body" controls="agent-tab-body" />
-        <InspectorTabButton active={tab === 'projection'} onClick={() => setTab('projection')} label="Projection" controls="agent-tab-projection" />
-      </InspectorTabList>
+      <Tabs ariaLabel="Agent detail tabs">
+        <Tab id="agent-tabbtn-overview" selected={tab === 'overview'} onSelect={() => setTab('overview')} controls="agent-tab-overview">Overview</Tab>
+        <Tab id="agent-tabbtn-body" selected={tab === 'body'} onSelect={() => setTab('body')} controls="agent-tab-body">Body</Tab>
+        <Tab id="agent-tabbtn-projection" selected={tab === 'projection'} onSelect={() => setTab('projection')} controls="agent-tab-projection">Projection</Tab>
+      </Tabs>
 
       <div className="flex-1 overflow-y-auto scrollbar-dark">
         {tab === 'overview' && (
-          <div id="agent-tab-overview" role="tabpanel" className="p-5 flex flex-col gap-4">
+          <div id="agent-tab-overview" role="tabpanel" aria-labelledby="agent-tabbtn-overview" className="p-5 flex flex-col gap-4">
             <p className="text-sm text-text-secondary leading-relaxed">
               {agent.description || <span className="italic text-text-muted/50">No description</span>}
             </p>
@@ -231,7 +232,7 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
         )}
 
         {tab === 'body' && (
-          <div id="agent-tab-body" role="tabpanel" className="p-5 flex flex-col gap-3">
+          <div id="agent-tab-body" role="tabpanel" aria-labelledby="agent-tabbtn-body" className="p-5 flex flex-col gap-3">
             {bodyError && <p className="text-xs text-status-error">{bodyError}</p>}
             {!bodyError && full === null && <p className="text-xs text-text-muted">Loading…</p>}
             {full !== null && (
@@ -267,7 +268,7 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
         )}
 
         {tab === 'projection' && (
-          <div id="agent-tab-projection" role="tabpanel" className="p-4">
+          <div id="agent-tab-projection" role="tabpanel" aria-labelledby="agent-tabbtn-projection" className="p-4">
             <AgentProjectionRows agentName={agent.name} statuses={statuses} onRefresh={onRefresh} />
           </div>
         )}

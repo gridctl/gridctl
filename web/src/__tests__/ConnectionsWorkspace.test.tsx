@@ -10,6 +10,7 @@ import { useAuthStore } from '../stores/useAuthStore';
 import { POLLING } from '../lib/constants';
 import * as api from '../lib/api';
 import type { ClientStatus } from '../types';
+import { WORKSPACE_LABELS } from '../types/workspace';
 
 vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn() }));
 
@@ -79,6 +80,11 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+function expectOneConnectionsHeading() {
+  expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+  expect(screen.getByRole('heading', { level: 1, name: WORKSPACE_LABELS.connections })).toBeInTheDocument();
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason: Error) => void;
@@ -87,6 +93,30 @@ function deferred<T>() {
 }
 
 describe('ConnectionsWorkspace', () => {
+  it('renders one Connections heading while loaded, loading, empty, and failed', async () => {
+    renderWorkspace();
+    expectOneConnectionsHeading();
+    cleanup();
+
+    useStackStore.setState({ clients: [] });
+    const clientsFetch = deferred<ClientStatus[]>();
+    vi.mocked(api.fetchClients).mockReturnValue(clientsFetch.promise);
+    renderWorkspace();
+    expect(screen.getByText('Loading connections…')).toBeInTheDocument();
+    expectOneConnectionsHeading();
+
+    await act(async () => { clientsFetch.resolve([]); });
+    expect(await screen.findByText('No client registry available')).toBeInTheDocument();
+    expectOneConnectionsHeading();
+    cleanup();
+
+    useStackStore.setState({ clients: [] });
+    vi.mocked(api.fetchClients).mockRejectedValue(new Error('clients down'));
+    renderWorkspace();
+    expect(await screen.findByText('Connections unavailable')).toBeInTheDocument();
+    expectOneConnectionsHeading();
+  });
+
   it.each(['initial', 'post-apply'] as const)('ignores late %s health results after unmount', async (phase) => {
     const wiring = deferred<Awaited<ReturnType<typeof api.fetchWiringStatus>>>();
     if (phase === 'initial') vi.mocked(api.fetchWiringStatus).mockReturnValueOnce(wiring.promise);

@@ -28,7 +28,7 @@ export function MetricsInspector({ scope, row, onClose, tokenPoints }: MetricsIn
   const tokenSeries = toTokenPoints(tokenPoints ?? []);
 
   return (
-    <aside className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
+    <aside aria-label="Metrics inspector" className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
       <PaneAnchor />
       <div className="flex-shrink-0 flex items-center gap-2 px-4 py-3 border-b border-border-subtle">
         <div className="min-w-0">
@@ -126,7 +126,7 @@ export function MetricsInspector({ scope, row, onClose, tokenPoints }: MetricsIn
 // empty rail.
 function InspectorOverview() {
   return (
-    <aside className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
+    <aside aria-label="Metrics inspector" className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
       <div className="flex-shrink-0 px-4 py-3 border-b border-border-subtle">
         <div className="text-[10px] uppercase tracking-[0.3em] text-text-muted/60">inspector</div>
       </div>

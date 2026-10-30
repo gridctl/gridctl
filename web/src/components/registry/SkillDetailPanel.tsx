@@ -12,7 +12,8 @@ import { parseAcceptanceCriterion } from '../../lib/skillCriteria';
 import { skillCategory } from '../../lib/skillMeta';
 import { originLabel } from '../../lib/skillGovernance';
 import { formatLastUsed } from '../../lib/toolAudit';
-import { InspectorHeader, InspectorTabList, InspectorTabButton, PaneAnchor } from '../inspector';
+import { InspectorHeader, PaneAnchor } from '../inspector';
+import { Tab, Tabs } from '../ui/Tabs';
 import { IconButton } from '../ui/IconButton';
 import { ZoomControls } from '../ui/ZoomControls';
 import { StateBadge } from './StateBadge';
@@ -93,7 +94,6 @@ export function SkillDetailPanel({
   const [viewSource, setViewSource] = useState(false);
   const [showCompare, setShowCompare] = useState(false);
   const [prevName, setPrevName] = useState(skill?.name);
-  const tablistRef = useRef<HTMLDivElement>(null);
 
   // Content text-size control for the rendered Instructions markdown. Scoped to
   // this pane (own storageKey) like the Logs/Traces zoom; the .skill-md scope
@@ -154,33 +154,18 @@ export function SkillDetailPanel({
 
   if (!skill) {
     return (
-      <aside className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
+      <aside aria-label="Skill details" className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
         <SkillDetailEmpty />
       </aside>
     );
   }
-
-  // APG tabs: Left/Right (and Home/End) move the active tab, focusing it.
-  const onTabsKeyDown = (e: React.KeyboardEvent) => {
-    const idx = TABS.findIndex((t) => t.key === activeTab);
-    let next = idx;
-    if (e.key === 'ArrowRight') next = (idx + 1) % TABS.length;
-    else if (e.key === 'ArrowLeft') next = (idx - 1 + TABS.length) % TABS.length;
-    else if (e.key === 'Home') next = 0;
-    else if (e.key === 'End') next = TABS.length - 1;
-    else return;
-    e.preventDefault();
-    setActiveTab(TABS[next].key);
-    const buttons = tablistRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
-    buttons?.[next]?.focus();
-  };
 
   const repoInfo = source ? extractRepoInfo(source.repo) : null;
   const hasLocalEdits = source?.driftedSkills?.includes(skill.name) ?? false;
 
 
   return (
-    <aside className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
+    <aside aria-label="Skill details" className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
       <PaneAnchor />
       <InspectorHeader
         title={skill.name}
@@ -262,20 +247,19 @@ export function SkillDetailPanel({
         }
       />
 
-      <div ref={tablistRef} onKeyDown={onTabsKeyDown}>
-        <InspectorTabList ariaLabel={`${skill.name} detail tabs`}>
-          {TABS.map((tab) => (
-            <InspectorTabButton
-              key={tab.key}
-              id={tabBtnId(tab.key)}
-              active={activeTab === tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              label={tab.label}
-              controls={tabPanelId(tab.key)}
-            />
-          ))}
-        </InspectorTabList>
-      </div>
+      <Tabs ariaLabel={`${skill.name} detail tabs`}>
+        {TABS.map((tab) => (
+          <Tab
+            key={tab.key}
+            id={tabBtnId(tab.key)}
+            selected={activeTab === tab.key}
+            onSelect={() => setActiveTab(tab.key)}
+            controls={tabPanelId(tab.key)}
+          >
+            {tab.label}
+          </Tab>
+        ))}
+      </Tabs>
 
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark">
         {/* Overview */}

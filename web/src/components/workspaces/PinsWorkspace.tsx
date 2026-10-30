@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useId, useMemo } from 'react';
 import { useSearchParams } from 'react-router';
 import { Loader2, Pin } from 'lucide-react';
 import { requestGatewayPoll } from '../../hooks/usePolling';
 import { EmptyState, FailedState, FailureBanner } from '../ui/EmptyState';
 import { cn } from '../../lib/cn';
+import { WORKSPACE_LABELS } from '../../types/workspace';
 import {
   serverHasAlertFindings,
   countServerAlertFindings,
@@ -44,6 +45,7 @@ type PinsView = (typeof PINS_VIEWS)[number];
 // ?skill=, ?view=, ?attention=), with the persisted attention preference
 // seeding bare visits.
 export function PinsWorkspace() {
+  const headingId = useId();
   const [searchParams, setSearchParams] = useSearchParams();
   const compact = useUIStore((s) => s.compactMode.pins);
   const pinsPrefs = useUIStore((s) => s.pinsPrefs);
@@ -361,7 +363,8 @@ export function PinsWorkspace() {
         }
         minLeftPx={220}
       >
-        <main className="flex flex-col h-full overflow-hidden">
+        <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
+          <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.pins}</h1>
           <header
             className={cn(
               'flex-shrink-0 bg-surface/30 backdrop-blur-sm border-b border-border-subtle px-6 flex items-center gap-3',
@@ -442,7 +445,7 @@ export function PinsWorkspace() {
               </>
             )}
           </div>
-        </main>
+        </section>
       </WorkspaceShell>
     </div>
   );

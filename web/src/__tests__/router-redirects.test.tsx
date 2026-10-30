@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import '@testing-library/jest-dom';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Navigate, Route, Routes, useLocation } from 'react-router';
+import { LEGACY_REDIRECTS } from '../routes';
 import { RootRedirect } from '../components/shell/RootRedirect';
 import {
   resolveLandingWorkspace,
@@ -27,13 +28,16 @@ function renderRedirect(initial: string) {
   return render(
     <MemoryRouter initialEntries={[initial]}>
       <Routes>
-        <Route path="/agent" element={<Navigate to="/library" replace />} />
-        <Route path="/skills" element={<Navigate to="/library" replace />} />
-        <Route path="/runs" element={<Navigate to="/library" replace />} />
-        <Route path="/runs/:runID" element={<Navigate to="/library" replace />} />
-        <Route path="/topology" element={<Navigate to="/stack" replace />} />
+        {LEGACY_REDIRECTS.map((redirect) => (
+          <Route
+            key={redirect.from}
+            path={redirect.from}
+            element={<Navigate to={redirect.to} replace />}
+          />
+        ))}
         <Route path="/library" element={<LocationProbe />} />
         <Route path="/stack" element={<StackProbe />} />
+        <Route path="/traces" element={<TracesProbe />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -59,7 +63,19 @@ function LocationProbe() {
   return (
     <div>
       <span data-testid="library-pathname">{location.pathname}</span>
+      <span data-testid="library-search">{location.search}</span>
       library-page
+    </div>
+  );
+}
+
+function TracesProbe() {
+  const location = useLocation();
+  return (
+    <div>
+      <span data-testid="traces-pathname">{location.pathname}</span>
+      <span data-testid="traces-search">{location.search}</span>
+      traces-page
     </div>
   );
 }
@@ -149,10 +165,11 @@ describe('RootRedirect (integration)', () => {
 });
 
 describe('legacy workspace redirects', () => {
-  it('redirects /agent → /library', () => {
+  it('redirects /agent → /library?kind=agent', () => {
     renderRedirect('/agent');
     expect(screen.getByText('library-page')).toBeInTheDocument();
     expect(screen.getByTestId('library-pathname').textContent).toBe('/library');
+    expect(screen.getByTestId('library-search').textContent).toBe('?kind=agent');
   });
 
   it('redirects /skills → /library', () => {
@@ -160,14 +177,18 @@ describe('legacy workspace redirects', () => {
     expect(screen.getByText('library-page')).toBeInTheDocument();
   });
 
-  it('redirects /runs → /library', () => {
+  it('redirects /runs → /traces?view=runs', () => {
     renderRedirect('/runs');
-    expect(screen.getByText('library-page')).toBeInTheDocument();
+    expect(screen.getByText('traces-page')).toBeInTheDocument();
+    expect(screen.getByTestId('traces-pathname').textContent).toBe('/traces');
+    expect(screen.getByTestId('traces-search').textContent).toBe('?view=runs');
   });
 
-  it('redirects /runs/:runID → /library', () => {
+  it('redirects /runs/:runID → /traces?view=runs', () => {
     renderRedirect('/runs/abc123');
-    expect(screen.getByText('library-page')).toBeInTheDocument();
+    expect(screen.getByText('traces-page')).toBeInTheDocument();
+    expect(screen.getByTestId('traces-pathname').textContent).toBe('/traces');
+    expect(screen.getByTestId('traces-search').textContent).toBe('?view=runs');
   });
 
   it('redirects /topology → /stack', () => {

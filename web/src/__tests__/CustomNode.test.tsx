@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
@@ -33,6 +33,24 @@ describe('CustomNode', () => {
   it('shows running status indicator', () => {
     render(<CustomNode data={makeServerData({ status: 'running' })} />);
     expect(screen.getByText('running')).toBeInTheDocument();
+  });
+
+  it('names compact status from the dot and hides the clipped badge from assistive tech', () => {
+    useUIStore.setState({ compactCards: true });
+    render(<CustomNode data={makeServerData({ status: 'running' })} />);
+    expect(screen.getByRole('img', { name: 'running' })).toBeInTheDocument();
+    expect(screen.getAllByText('running')).toHaveLength(1);
+    expect(screen.getByText('running').closest('[aria-hidden="true"]')).not.toBeNull();
+  });
+
+  it('keeps the expanded status badge in the accessibility tree', () => {
+    useUIStore.setState({ compactCards: false });
+    render(<CustomNode data={makeServerData({ status: 'running' })} />);
+    expect(screen.getByText('running').closest('[aria-hidden]')).toBeNull();
+  });
+
+  afterEach(() => {
+    useUIStore.setState({ compactCards: true });
   });
 
   it('shows stopped status indicator', () => {
