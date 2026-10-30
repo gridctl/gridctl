@@ -6,19 +6,31 @@ export default defineConfig({
   plugins: [react()],
   base: '/',
   build: {
-    chunkSizeWarningLimit: 1000,
-    rollupOptions: {
+    // Default warning limit is 500 kB. JsonValueEditor (CodeMirror) is the
+    // largest remaining chunk at about 427 kB, so the default holds.
+    rolldownOptions: {
       output: {
-        manualChunks(id) {
-          if (['react', 'react-dom', 'react-router'].some(pkg => id.includes(`/node_modules/${pkg}/`))) {
-            return 'vendor-react'
-          }
-          if (['@xyflow/react', '@dagrejs/dagre'].some(pkg => id.includes(`/node_modules/${pkg}/`))) {
-            return 'vendor-graph'
-          }
-          if (id.includes('/node_modules/recharts/')) {
-            return 'vendor-charts'
-          }
+        codeSplitting: {
+          groups: [
+            {
+              name: 'vendor-react',
+              test: /node_modules[\\/](react-dom|react-router|react|scheduler)[\\/]/,
+              priority: 30,
+              includeDependenciesRecursively: false,
+            },
+            {
+              name: 'vendor-graph',
+              test: /node_modules[\\/](@xyflow|@dagrejs)[\\/]/,
+              priority: 20,
+              includeDependenciesRecursively: false,
+            },
+            {
+              name: 'vendor-charts',
+              test: /node_modules[\\/](recharts|victory-vendor|d3-[^/\\]+)[\\/]/,
+              priority: 20,
+              includeDependenciesRecursively: false,
+            },
+          ],
         },
       },
     },

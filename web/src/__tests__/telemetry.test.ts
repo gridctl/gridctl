@@ -1,4 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect, vi } from 'vitest';
+import { useAuthStore } from '../stores/useAuthStore';
+import { useTelemetryStore } from '../stores/useTelemetryStore';
 import {
   effectiveSignal,
   nextTriState,
@@ -35,40 +37,44 @@ mcp-servers:
 `;
 
 describe('parseStackTelemetry', () => {
-  it('extracts global persist defaults', () => {
-    const cfg = parseStackTelemetry(STACK_YAML);
+  it('extracts global persist defaults', async () => {
+    const cfg = await parseStackTelemetry(STACK_YAML);
     expect(cfg.global).toEqual({ logs: true, metrics: false, traces: true });
   });
 
-  it('extracts retention block', () => {
-    const cfg = parseStackTelemetry(STACK_YAML);
+  it('extracts retention block', async () => {
+    const cfg = await parseStackTelemetry(STACK_YAML);
     expect(cfg.retention).toEqual({ max_size_mb: 100, max_backups: 5, max_age_days: 7 });
   });
 
-  it('extracts per-server overrides only when present', () => {
-    const cfg = parseStackTelemetry(STACK_YAML);
+  it('extracts per-server overrides only when present', async () => {
+    const cfg = await parseStackTelemetry(STACK_YAML);
     expect(cfg.servers.github).toEqual({ traces: false });
     expect(cfg.servers.filesystem).toBeUndefined();
   });
 
-  it('returns empty config for null/empty input', () => {
-    expect(parseStackTelemetry(null)).toEqual({ global: {}, servers: {} });
-    expect(parseStackTelemetry('')).toEqual({ global: {}, servers: {} });
+  it('returns empty config for null/empty input', async () => {
+    expect(await parseStackTelemetry(null)).toEqual({ global: {}, servers: {} });
+    expect(await parseStackTelemetry('')).toEqual({ global: {}, servers: {} });
   });
 
-  it('returns empty config for malformed YAML rather than throwing', () => {
-    const cfg = parseStackTelemetry('this: is: invalid: yaml: [unclosed');
+  it('returns empty config for malformed YAML rather than throwing', async () => {
+    const cfg = await parseStackTelemetry('this: is: invalid: yaml: [unclosed');
     expect(cfg).toEqual({ global: {}, servers: {} });
   });
 
-  it('ignores non-object telemetry blocks gracefully', () => {
-    const cfg = parseStackTelemetry('telemetry: "wrong-shape"\n');
+  it('ignores non-object telemetry blocks gracefully', async () => {
+    const cfg = await parseStackTelemetry('telemetry: "wrong-shape"\n');
     expect(cfg).toEqual({ global: {}, servers: {} });
   });
 });
 
 describe('effectiveSignal — inheritance', () => {
-  const cfg: ResolvedTelemetry = parseStackTelemetry(STACK_YAML);
+  let cfg: ResolvedTelemetry;
+
+  beforeAll(async () => {
+    cfg = await parseStackTelemetry(STACK_YAML);
+  });
 
   it('returns explicit override when set', () => {
     expect(effectiveSignal(cfg, 'github', 'traces')).toBe(false);
@@ -86,7 +92,11 @@ describe('effectiveSignal — inheritance', () => {
 });
 
 describe('readTriState + nextTriState — cycling state machine', () => {
-  const cfg: ResolvedTelemetry = parseStackTelemetry(STACK_YAML);
+  let cfg: ResolvedTelemetry;
+
+  beforeAll(async () => {
+    cfg = await parseStackTelemetry(STACK_YAML);
+  });
 
   it('reads "off" when an explicit-false override exists', () => {
     expect(readTriState(cfg, 'github', 'traces')).toBe('off');
@@ -193,6 +203,40 @@ describe('WipeTelemetryDialog scope formatting', () => {
     expect(view.servers).toBe(0);
     expect(view.signals).toEqual([]);
     expect(view.span).toBe(null);
+  });
+});
+
+describe('setRawSpec sequence', () => {
+  it('drops an older parse when a newer spec arrives first', async () => {
+    useTelemetryStore.setState({ rawSpec: null, config: { global: {}, servers: {} } });
+    useTelemetryStore.getState().setRawSpec('telemetry:\n  persist:\n    logs: false\n');
+    useTelemetryStore.getState().setRawSpec(STACK_YAML);
+    await vi.waitFor(() => {
+      expect(useTelemetryStore.getState().rawSpec).toBe(STACK_YAML);
+    });
+    expect(useTelemetryStore.getState().config.global.logs).toBe(true);
+    expect(useTelemetryStore.getState().config.servers.github).toEqual({ traces: false });
+  });
+
+  it('does not let an in-flight parse overwrite a cleared spec', async () => {
+    useTelemetryStore.setState({ rawSpec: 'stale', config: { global: { logs: true }, servers: {} } });
+    useTelemetryStore.getState().setRawSpec(STACK_YAML);
+    useTelemetryStore.getState().setRawSpec(null);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await vi.waitFor(() => {
+      expect(useTelemetryStore.getState().rawSpec).toBeNull();
+    });
+    expect(useTelemetryStore.getState().config).toEqual({ global: {}, servers: {} });
+  });
+
+  it('discards a parse when the auth generation changes while it is pending', async () => {
+    useAuthStore.setState({ generation: Symbol('before') });
+    useTelemetryStore.setState({ rawSpec: null, config: { global: {}, servers: {} } });
+    useTelemetryStore.getState().setRawSpec(STACK_YAML);
+    useAuthStore.setState({ generation: Symbol('after') });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(useTelemetryStore.getState().config).toEqual({ global: {}, servers: {} });
+    expect(useTelemetryStore.getState().rawSpec).toBeNull();
   });
 });
 

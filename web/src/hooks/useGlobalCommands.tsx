@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { useReactFlow } from '@xyflow/react';
 import { useNavigate } from 'react-router';
 import {
   Activity,
@@ -33,6 +32,7 @@ import { useTracesStore } from '../stores/useTracesStore';
 import { useVaultStore } from '../stores/useVaultStore';
 import { useRegistryStore } from '../stores/useRegistryStore';
 import { useWizardStore } from '../stores/useWizardStore';
+import { useCanvasActionsStore } from '../stores/useCanvasActionsStore';
 import type { PaletteCommand } from '../types/palette';
 
 interface GlobalCommandsOptions {
@@ -40,7 +40,6 @@ interface GlobalCommandsOptions {
 }
 
 export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
-  const { fitView, zoomIn, zoomOut } = useReactFlow();
   const { registerCommands, unregisterCommands } = useCommandRegistry();
   const navigate = useNavigate();
 
@@ -203,7 +202,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         icon: <Maximize2 size={14} />,
         shortcut: ['⌘', '0'],
         keywords: ['zoom', 'fit', 'view', 'reset', 'all', 'fit view'],
-        onSelect: () => fitView({ padding: 0.2, duration: 300 }),
+        onSelect: () => useCanvasActionsStore.getState().fitView({ padding: 0.2, duration: 300 }),
       },
       {
         id: 'canvas:zoom-in',
@@ -213,7 +212,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         icon: <ZoomIn size={14} />,
         shortcut: ['⌘', '+'],
         keywords: ['zoom', 'in', 'magnify', 'larger'],
-        onSelect: () => zoomIn({ duration: 200 }),
+        onSelect: () => useCanvasActionsStore.getState().zoomIn({ duration: 200 }),
       },
       {
         id: 'canvas:zoom-out',
@@ -223,7 +222,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         icon: <ZoomOut size={14} />,
         shortcut: ['⌘', '−'],
         keywords: ['zoom', 'out', 'shrink', 'smaller'],
-        onSelect: () => zoomOut({ duration: 200 }),
+        onSelect: () => useCanvasActionsStore.getState().zoomOut({ duration: 200 }),
       },
       {
         id: 'canvas:refresh',
@@ -276,9 +275,6 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
   }, [
     registerCommands,
     unregisterCommands,
-    fitView,
-    zoomIn,
-    zoomOut,
     toggleHeatMap,
     toggleCompactCards,
     toggleSpecMode,

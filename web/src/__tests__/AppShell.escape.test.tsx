@@ -10,7 +10,6 @@ vi.mock('../components/layout/StatusBar', () => ({ StatusBar: () => null }));
 vi.mock('../components/palette/CommandPalette', () => ({ CommandPalette: () => null }));
 vi.mock('../components/ui/Toast', () => ({ ToastContainer: () => null }));
 vi.mock('../hooks/usePolling', () => ({ usePolling: () => ({ refresh: async () => {} }) }));
-vi.mock('../hooks/useSSEShutdown', () => ({ useSSEShutdown: () => {} }));
 vi.mock('../hooks/useGlobalCommands', () => ({ useGlobalCommands: () => {} }));
 
 describe('AppShell Escape', () => {

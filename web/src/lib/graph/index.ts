@@ -20,9 +20,6 @@ export type {
 } from './types';
 
 // Layout engines
-export { DagreLayoutEngine } from './dagre';
-export type { DagreLayoutOptions, LayoutDirection } from './dagre';
-
 export { ButterflyLayoutEngine, createButterflyEngine } from './butterfly';
 export type { ButterflyLayoutOptions } from './butterfly';
 

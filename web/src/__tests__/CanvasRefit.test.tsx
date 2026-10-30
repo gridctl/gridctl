@@ -11,8 +11,8 @@ const { fitView, paneClick } = vi.hoisted(() => ({
 
 // Mock React Flow for every consumer in Canvas's module graph: CanvasBase
 // (ReactFlow, Background, BackgroundVariant), Canvas (useReactFlow,
-// useViewport, Panel), the node components (Handle, Position), the store
-// (applyNodeChanges, applyEdgeChanges), and edge building (MarkerType).
+// useViewport, Panel, applyNodeChanges, applyEdgeChanges), and the node
+// components (Handle, Position).
 vi.mock('@xyflow/react', () => ({
   ReactFlow: ({ children, onPaneClick }: { children?: ReactNode; onPaneClick?: () => void }) => {
     paneClick.current = onPaneClick;
@@ -23,7 +23,6 @@ vi.mock('@xyflow/react', () => ({
   Panel: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Handle: () => null,
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
-  MarkerType: { Arrow: 'arrow', ArrowClosed: 'arrowclosed' },
   useReactFlow: () => ({ fitView, zoomIn: vi.fn(), zoomOut: vi.fn() }),
   useViewport: () => ({ zoom: 1 }),
   applyNodeChanges: (_changes: unknown, nodes: unknown) => nodes,

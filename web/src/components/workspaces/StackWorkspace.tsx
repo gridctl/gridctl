@@ -1,4 +1,5 @@
 import { useCallback, useId, useMemo, useRef, useState } from 'react';
+import { ReactFlowProvider } from '@xyflow/react';
 import { useSearchParams } from 'react-router';
 import { AlertCircle, RefreshCw, WifiOff } from 'lucide-react';
 import { Sidebar } from '../layout/Sidebar';
@@ -8,7 +9,7 @@ import { SpecPane } from '../spec/SpecPane';
 import { ResizeHandle } from '../ui/ResizeHandle';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
-import { usePolling } from '../../hooks/usePolling';
+import { usePollingRefresh } from '../../hooks/usePolling';
 import { WORKSPACE_LABELS } from '../../types/workspace';
 
 const SIDEBAR_DEFAULT = 320;
@@ -62,7 +63,7 @@ export function StackWorkspace() {
     [mcpServers],
   );
 
-  const { refresh } = usePolling();
+  const refresh = usePollingRefresh();
 
   const handleRefresh = useCallback(async () => {
     await refresh();
@@ -75,6 +76,7 @@ export function StackWorkspace() {
   }, []);
 
   return (
+    <ReactFlowProvider>
     <div className="absolute inset-0 overflow-hidden">
       <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.stack}</h1>
       <div
@@ -167,6 +169,7 @@ export function StackWorkspace() {
         )}
       </div>
     </div>
+    </ReactFlowProvider>
   );
 }
 

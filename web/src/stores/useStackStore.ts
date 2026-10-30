@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
-import type { Node, Edge, NodeChange, EdgeChange } from '@xyflow/react';
-import { applyNodeChanges, applyEdgeChanges } from '@xyflow/react';
+import type { Node, Edge, NodeChange } from '@xyflow/react';
 import type {
   GatewayStatus,
   ServerInfo,
@@ -118,9 +117,10 @@ interface StackState {
   refreshNodesAndEdges: () => void;
   resetLayout: () => void;
 
-  // React Flow callbacks
-  onNodesChange: (changes: NodeChange[]) => void;
-  onEdgesChange: (changes: EdgeChange[]) => void;
+  setNodes: (nodes: Node[]) => void;
+  setEdges: (edges: Edge[]) => void;
+  // A position change with dragging === false and a position records the drag.
+  recordDraggedPositions: (changes: NodeChange[]) => void;
 }
 
 export const useStackStore = create<StackState>()(
@@ -246,15 +246,13 @@ export const useStackStore = create<StackState>()(
     // while focus is outside the node, where React Flow's own handler does not.
     selectNode: (nodeId) => {
       if (nodeId === null) {
-        const selected = get().nodes.filter((node) => node.selected);
-        if (selected.length > 0) {
-          get().onNodesChange(
-            selected.map((node) => ({
-              type: 'select',
-              id: node.id,
-              selected: false,
-            })),
-          );
+        const nodes = get().nodes;
+        if (nodes.some((node) => node.selected)) {
+          set({
+            nodes: nodes.map((node) => (node.selected ? { ...node, selected: false } : node)),
+            selectedNodeId: null,
+          });
+          return;
         }
       }
       set({ selectedNodeId: nodeId });
@@ -387,24 +385,20 @@ export const useStackStore = create<StackState>()(
       });
     },
 
-    onNodesChange: (changes) => {
-      const nodes = applyNodeChanges(changes, get().nodes);
+    setNodes: (nodes) => set({ nodes }),
 
-      // Track user-dragged positions (drag end events)
+    setEdges: (edges) => set({ edges }),
+
+    recordDraggedPositions: (changes) => {
       const draggedPositions = new Map(get().draggedPositions);
+      let changed = false;
       for (const change of changes) {
         if (change.type === 'position' && change.dragging === false && change.position) {
           draggedPositions.set(change.id, change.position);
+          changed = true;
         }
       }
-
-      set({ nodes, draggedPositions });
-    },
-
-    onEdgesChange: (changes) => {
-      set({
-        edges: applyEdgeChanges(changes, get().edges),
-      });
+      if (changed) set({ draggedPositions });
     },
   }))
 );

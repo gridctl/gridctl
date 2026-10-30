@@ -3,12 +3,6 @@ import { Navigate, Route, Routes } from 'react-router';
 import { AppShell } from './components/shell/AppShell';
 import { RootRedirect } from './components/shell/RootRedirect';
 import { WorkspaceLoadingShell } from './components/shell/WorkspaceLoadingShell';
-import { DetachedLogsPage } from './pages/DetachedLogsPage';
-import { DetachedSidebarPage } from './pages/DetachedSidebarPage';
-import { DetachedEditorPage } from './pages/DetachedEditorPage';
-import { DetachedRegistryPage } from './pages/DetachedRegistryPage';
-import { DetachedMetricsPage } from './pages/DetachedMetricsPage';
-import { DetachedTracesPage } from './pages/DetachedTracesPage';
 import { useThemeSync } from './themes/useThemeSync';
 import { AuthBoundary } from './components/auth/AuthBoundary';
 
@@ -22,6 +16,13 @@ const PinsWorkspace = lazy(() => import('./components/workspaces/PinsWorkspace')
 const LogsWorkspace = lazy(() => import('./components/workspaces/LogsWorkspace'));
 const TracesWorkspace = lazy(() => import('./components/workspaces/TracesWorkspace'));
 const ConnectionsWorkspace = lazy(() => import('./components/workspaces/ConnectionsWorkspace'));
+
+const DetachedLogsPage = lazy(() => import('./pages/DetachedLogsPage').then((m) => ({ default: m.DetachedLogsPage })));
+const DetachedSidebarPage = lazy(() => import('./pages/DetachedSidebarPage').then((m) => ({ default: m.DetachedSidebarPage })));
+const DetachedEditorPage = lazy(() => import('./pages/DetachedEditorPage').then((m) => ({ default: m.DetachedEditorPage })));
+const DetachedRegistryPage = lazy(() => import('./pages/DetachedRegistryPage').then((m) => ({ default: m.DetachedRegistryPage })));
+const DetachedMetricsPage = lazy(() => import('./pages/DetachedMetricsPage').then((m) => ({ default: m.DetachedMetricsPage })));
+const DetachedTracesPage = lazy(() => import('./pages/DetachedTracesPage').then((m) => ({ default: m.DetachedTracesPage })));
 
 // Bookmark redirects for removed paths. Keep through v1.0 so existing links
 // don't 404. The Runs tab lives at /traces?view=runs; /runs and /runs/:runID
@@ -143,17 +144,17 @@ export function AppRoutes() {
       ))}
 
       {/* Detached windows stay frameless — outside AppShell on purpose. */}
-      <Route path="/sidebar" element={<DetachedSidebarPage />} />
-      <Route path="/editor" element={<DetachedEditorPage />} />
-      <Route path="/library-window" element={<DetachedRegistryPage />} />
+      <Route path="/sidebar" element={<Suspense fallback={<WorkspaceLoadingShell />}><DetachedSidebarPage /></Suspense>} />
+      <Route path="/editor" element={<Suspense fallback={<WorkspaceLoadingShell />}><DetachedEditorPage /></Suspense>} />
+      <Route path="/library-window" element={<Suspense fallback={<WorkspaceLoadingShell />}><DetachedRegistryPage /></Suspense>} />
       {/* /registry → /library-window: silent redirect for bookmarks and
           existing detached window handles. */}
       <Route path="/registry" element={<Navigate to="/library-window" replace />} />
       {/* /metrics, /logs, and /traces are in-shell workspaces; each detached
           popout renders at /<type>-window (window type keys stay put). */}
-      <Route path="/metrics-window" element={<DetachedMetricsPage />} />
-      <Route path="/logs-window" element={<DetachedLogsPage />} />
-      <Route path="/traces-window" element={<DetachedTracesPage />} />
+      <Route path="/metrics-window" element={<Suspense fallback={<WorkspaceLoadingShell />}><DetachedMetricsPage /></Suspense>} />
+      <Route path="/logs-window" element={<Suspense fallback={<WorkspaceLoadingShell />}><DetachedLogsPage /></Suspense>} />
+      <Route path="/traces-window" element={<Suspense fallback={<WorkspaceLoadingShell />}><DetachedTracesPage /></Suspense>} />
 
       {/* Catch-all: any unmatched URL (typo, stale bookmark, removed route)
           redirects to the root, where RootRedirect resolves the landing
