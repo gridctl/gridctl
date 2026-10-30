@@ -6,7 +6,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Fixes
 
-- The web UI no longer swallows typing in the JSON variable editor, and Cmd/Ctrl+F reaches browser Find. Fit view and canvas zoom shortcuts apply only on the Stack workspace, and Cmd/Ctrl+A is no longer intercepted. Agent, skill, and Traces tabs move with the keyboard. In-shell pages expose one main landmark, a heading, and named regions. Status dots have accessible names and stay distinct under reduced motion. `/runs` and `/runs/:runID` redirect to the Runs tab at `/traces?view=runs`.
+- The web UI no longer swallows typing in the JSON variable editor, and Cmd/Ctrl+F reaches browser Find. Fit view and canvas zoom shortcuts apply only on the Stack workspace, and Cmd/Ctrl+A is no longer intercepted. The Refresh tooltip reads "Refresh (⌘⇧R)". Metrics and Connections show ⌘5 and ⌘9 chips in the command palette. The Variables list footer hints at j/k, Home/End, Enter, and e. Agent, skill, and Traces tabs move with the keyboard. The workspace switcher is a navigation landmark, not a tab list. In-shell pages expose one main landmark, a heading, and named regions. Status dots have accessible names and stay distinct under reduced motion. `/runs` and `/runs/:runID` redirect to the Runs tab at `/traces?view=runs`. The run id is not carried; the Runs view has no selection parameter.
 
 ### Bug Fixes
 

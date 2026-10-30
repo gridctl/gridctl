@@ -10,7 +10,7 @@ should follow.
 ```
 <AppShell>             web/src/components/shell/AppShell.tsx
 ├── <Header>           web/src/components/layout/Header.tsx
-│   └── <WorkspaceSwitcher>   pills bound to React Router NavLinks
+│   └── <WorkspaceSwitcher>   <nav aria-label="Workspaces"> of NavLinks
 ├── <Outlet />         renders the active workspace body
 │   ├── <StackWorkspace>      /stack  (hosts the ?spec=1 slide-over)
 │   ├── <LibraryWorkspace>    /library  (also /library/:skillName)
@@ -29,7 +29,13 @@ should follow.
 The shell is constant across workspaces; only the `<Outlet />` body and the
 right rail change. Workspace switching is done via React Router `NavLink`s
 in the header, the `⌘1`-`⌘9` shortcuts, or the command palette. `⌘J` jumps
-to the Logs workspace.
+to the Logs workspace. The switcher is `<nav aria-label="Workspaces">` with
+`aria-current="page"` on the active link. It is not a tab list. Fit view
+(`f`, `⌘0`) and canvas zoom apply only on Stack. `⌘F` is left to the browser.
+
+AppShell owns the only in-shell `<main>`. A workspace root that used to
+render `<main>` is a `<section aria-labelledby>` with one `<h1>`. Give every
+`<aside>` a distinct `aria-label`.
 
 Detached windows (`/sidebar`, `/editor`, `/logs-window`, `/metrics-window`,
 `/traces-window`, `/registry` → `/library-window`) render *outside*
@@ -141,6 +147,9 @@ workspace-specific props.
   `components/ui/`, or `components/inspector/`.
 - Don't put behavior-changing logic in `CanvasBase`. Background layers,
   control bars, overlays, and node types all belong in the workspace canvas.
+- Don't render `<main>` inside a workspace, or `role="tab"` on a route link.
+  AppShell owns the in-shell landmark. Give every `<aside>` a distinct
+  `aria-label`.
 
 ## File map
 
@@ -155,5 +164,5 @@ web/src/components/
 ├── graph/            Stack Canvas + custom node types
 ├── registry/         Library workspace (LibraryGrid, SkillEditor, …)
 ├── palette/          CommandPalette (workspace-scoped via useCommandRegistry)
-└── ui/               Badge, Toast, IconButton, Field, EmptyState, …
+└── ui/               Badge, Toast, IconButton, Field, EmptyState, Tabs, …
 ```
