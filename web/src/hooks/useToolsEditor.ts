@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStackStore } from '../stores/useStackStore';
 import { TOOL_NAME_DELIMITER } from '../lib/constants';
 import { showToast } from '../components/ui/Toast';
@@ -224,12 +224,16 @@ export function useToolsEditor(
     return count;
   }, [canonicalSelection, savedSelection, selected]);
 
-  const toggle = (name: string) => {
-    const next = new Set(selected);
-    if (next.has(name)) next.delete(name);
-    else next.add(name);
-    setSelection([...next]);
-  };
+  // Functional update so this identity does not follow the selection. A
+  // dependency on selected would change every toggle and defeat row memo.
+  const toggle = useCallback((name: string) => {
+    setSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return [...next];
+    });
+  }, []);
 
   const selectAll = () => setSelection(allTools.map((t) => t.name));
   const clearAll = () => setSelection([]);

@@ -4,7 +4,6 @@ import { Command } from 'cmdk';
 import {
   Activity,
   AlertCircle,
-  Check,
   ChevronRight,
   Layers,
   Loader2,
@@ -60,7 +59,8 @@ import { ClientAccessEditor } from './ClientAccessEditor';
 import { GroupsPanel } from './GroupsPanel';
 import { useGroups } from '../../hooks/useGroups';
 import { usePolicy } from '../../hooks/usePolicy';
-import { CHIP_TONE_CLASS, annotationChips, groupsForTool, policyChip } from '../../lib/groups';
+import { groupsForTool, policyChip } from '../../lib/groups';
+import { joinToolGroups, ToolListRow } from './ToolListRow';
 import type { PolicyToolStatus } from '../../lib/api';
 import { ToolDetailPanel } from './ToolDetailPanel';
 import type { MCPServerStatus, NodeStatus, Tool, ToolUsageStat } from '../../types';
@@ -1108,22 +1108,6 @@ interface ServerDetailProps {
   policyTools?: Record<string, PolicyToolStatus>;
 }
 
-function PolicyRowChip({ verdict }: { verdict?: PolicyToolStatus }) {
-  const chip = policyChip(verdict);
-  if (!chip) return null;
-  return (
-    <span
-      title={chip.title}
-      className={cn(
-        'flex-shrink-0 px-1.5 py-px rounded text-[9px] font-medium',
-        CHIP_TONE_CLASS[chip.tone],
-      )}
-    >
-      {chip.label}
-    </span>
-  );
-}
-
 function ServerDetail({
   server,
   editor,
@@ -1226,6 +1210,12 @@ function ServerDetail({
   const [remediateOpen, setRemediateOpen] = useState(false);
 
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  // One ref callback for the list. A fresh callback per row would both defeat
+  // memo and re-register the node on every parent render.
+  const registerRef = useCallback((name: string, el: HTMLDivElement | null) => {
+    if (el) rowRefs.current.set(name, el);
+    else rowRefs.current.delete(name);
+  }, []);
 
   // Scroll the selected tool into view (e.g. after a global-search reveal).
   // `block: 'nearest'` no-ops when the row is already visible, so clicking a
@@ -1385,129 +1375,27 @@ function ServerDetail({
               </p>
             </Command.Empty>
             {shown.map((opt) => {
-              const isEnabled = selected.has(opt.name);
-              const isActive = selectedTool === opt.name;
               const auditState = auditByTool.get(opt.name) ?? null;
+              const chip = policyChip(policyTools?.[`${server.name}${TOOL_NAME_DELIMITER}${opt.name}`]);
               return (
-                <div
+                <ToolListRow
                   key={opt.name}
-                  ref={(el) => {
-                    if (el) rowRefs.current.set(opt.name, el);
-                    else rowRefs.current.delete(opt.name);
-                  }}
-                  className={cn(
-                    'border-b border-border/20 last:border-b-0 border-l-2',
-                    isActive
-                      ? 'border-l-primary bg-primary/[0.06]'
-                      : 'border-l-transparent',
-                    isEnabled && !isActive && 'bg-primary/[0.03]',
-                  )}
-                >
-                  <Command.Item
-                    value={opt.name}
-                    onSelect={() => onSelect(opt.name)}
-                    aria-current={isActive}
-                    aria-label={`${opt.name} details`}
-                    className={cn(
-                      'flex items-start gap-2.5 px-3 py-2 cursor-pointer select-none outline-none transition-colors',
-                      'hover:bg-surface-highlight/40',
-                      '[&[data-selected=true]]:bg-surface-highlight/40',
-                      'focus-visible:bg-surface-highlight/40',
-                    )}
-                  >
-                    <button
-                      type="button"
-                      role="checkbox"
-                      aria-checked={isEnabled}
-                      aria-label={isEnabled ? `Disable ${opt.name}` : `Enable ${opt.name}`}
-                      onClick={(e) => {
-                        // Toggling exposure must not select the row for the panel.
-                        e.stopPropagation();
-                        toggle(opt.name);
-                      }}
-                      className={cn(
-                        'mt-0.5 w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors',
-                        isEnabled
-                          ? 'bg-primary/20 border-primary/60'
-                          : 'border-border/60 bg-background/50 hover:border-primary/40',
-                      )}
-                    >
-                      {isEnabled && <Check size={10} className="text-primary" aria-hidden="true" />}
-                    </button>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span
-                          className={cn(
-                            'text-xs font-mono truncate',
-                            isEnabled ? 'text-text-primary' : 'text-text-secondary',
-                          )}
-                        >
-                          {opt.name}
-                        </span>
-                        {groupsFor(opt.name).map((g) => (
-                          <span
-                            key={g}
-                            title={`In tool group "${g}"`}
-                            className="flex-shrink-0 px-1.5 py-px rounded text-[9px] font-medium bg-secondary/10 text-secondary"
-                          >
-                            {g}
-                          </span>
-                        ))}
-                        {/* Server-reported annotation chips. Undeclared hints
-                            render nothing (spec: absent = worst-case, which
-                            the detail panel's Hints section spells out). */}
-                        {annotationChips(opt.annotations).map((chip) => (
-                          <span
-                            key={chip.label}
-                            title={`${chip.title} (reported by the server, not verified)`}
-                            className={cn(
-                              'flex-shrink-0 px-1.5 py-px rounded text-[9px] font-medium',
-                              CHIP_TONE_CLASS[chip.tone],
-                            )}
-                          >
-                            {chip.label}
-                          </span>
-                        ))}
-                        <PolicyRowChip
-                          verdict={policyTools?.[`${server.name}${TOOL_NAME_DELIMITER}${opt.name}`]}
-                        />
-                      </div>
-                      {opt.description && (
-                        <div className="text-[10px] text-text-muted truncate">{opt.description}</div>
-                      )}
-                      {auditState && (
-                        <div
-                          className={cn(
-                            'flex items-center gap-1 text-[10px] mt-0.5',
-                            AUDIT_STYLES[auditState].text,
-                          )}
-                        >
-                          <span
-                            className={cn(
-                              'inline-block w-1.5 h-1.5 rounded-full flex-shrink-0',
-                              AUDIT_STYLES[auditState].dot,
-                            )}
-                            aria-hidden="true"
-                          />
-                          <span>{AUDIT_STYLES[auditState].label}</span>
-                          {auditState !== 'disabled' && (
-                            <span className="text-text-muted/70 truncate">
-                              · {formatLastUsed(usage?.[opt.name]?.lastCalledAt)}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    <ChevronRight
-                      size={13}
-                      className={cn(
-                        'flex-shrink-0 mt-0.5 transition-colors',
-                        isActive ? 'text-primary' : 'text-text-muted/40',
-                      )}
-                      aria-hidden="true"
-                    />
-                  </Command.Item>
-                </div>
+                  opt={opt}
+                  groups={joinToolGroups(groupsFor(opt.name))}
+                  lastUsed={
+                    auditState && auditState !== 'disabled'
+                      ? formatLastUsed(usage?.[opt.name]?.lastCalledAt)
+                      : ''
+                  }
+                  isEnabled={selected.has(opt.name)}
+                  isActive={selectedTool === opt.name}
+                  auditState={auditState}
+                  policyLabel={chip?.label ?? ''}
+                  policyTitle={chip?.title ?? ''}
+                  onSelect={onSelect}
+                  onToggle={toggle}
+                  registerRef={registerRef}
+                />
               );
             })}
           </Command.List>
