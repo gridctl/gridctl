@@ -1239,7 +1239,7 @@ function VariableList({
           key={variable.key}
           variable={variable}
           selected={variable.key === selectedKey}
-          onSelect={() => onSelect(variable.key)}
+          onSelect={onSelect}
           preview={
             variable.is_secret
               ? SECRET_PREVIEW
