@@ -946,7 +946,7 @@ The request for that workspace failed. `gridctl apply` restarts the daemon and i
 
 **Resolution:**
 
-1. Use Retry on that workspace. Pins, the Library skills list, and Tools retry the shell status poll. Variables, Connections, run history, and Logs retry their own fetch. The detached logs window uses the same Retry as Logs.
+1. Use Retry on that workspace. Pins, the Library skills list, and Tools retry through the shell poller, which refreshes status and inventory. Variables, Connections, run history, and Logs retry their own fetch. The detached logs window uses the same Retry as Logs.
 2. If Retry fails the same way, confirm the gateway is running:
    ```bash
    gridctl status

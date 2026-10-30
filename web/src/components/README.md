@@ -48,7 +48,7 @@ truncates, and its `title` carries the full string.
 
 Detached windows (`/sidebar`, `/editor`, `/logs-window`, `/metrics-window`,
 `/traces-window`, `/registry` → `/library-window`) render *outside*
-AppShell - they're popout-friendly single-purpose pages.
+AppShell. They are popout-friendly single-purpose pages and load on demand.
 
 `AuthBoundary` wraps the router in `routes.tsx`, covering both the shell and
 all six detached routes. During credential re-entry, existing content stays
@@ -73,19 +73,21 @@ store:
 - Library   → `useRegistryStore`
 
 Several supporting stores (`useSpecStore`, `useAuthStore`, `usePinsStore`,
-`useTelemetryStore`, `useTracesStore`, `useVaultStore`, `useWizardStore`) sit
-alongside the workspace stores. `useAuthStore` owns the credential, verification
+`useTelemetryStore`, `useTracesStore`, `useVaultStore`, `useWizardStore`,
+`useCanvasActionsStore`) sit alongside the workspace stores. `useCanvasActionsStore`
+holds fit and zoom until `graph/Canvas.tsx` registers them, so the shell does
+not import React Flow. `useAuthStore` owns the credential, verification
 attempt, and credential generation shared by protected requests and their
 consumers. Data stores and polling hooks consult that generation to discard
 superseded results.
 
 Use the endpoint parsers in `lib/api.ts`; their shared transport is
-`lib/gatewayRequest.ts`. Streaming consumers use that transport directly. It
-enforces same-origin requests, manual redirect refusal, credential header
-validation, and gateway-rejection provenance. Component continuations must
-also guard mount lifetime and credential generation before updating state or
-starting another operation; Connections is a regression-tested example.
-Re-verification resumes eligible reads, never a save or other mutation.
+`lib/gatewayRequest.ts`. It enforces same-origin requests, manual redirect
+refusal, credential header validation, and gateway-rejection provenance.
+Component continuations must also guard mount lifetime and credential
+generation before updating state or starting another operation; Connections
+is a regression-tested example. Re-verification resumes eligible reads,
+never a save or other mutation.
 
 The browser does not consume `/sse`. That route is a legacy negotiation hint
 for clients that still probe the retired transport, and it closes after the
@@ -118,7 +120,7 @@ Overlay stacking uses named steps from `web/src/index.css`. Tailwind maps `--z-i
 | `raised` | 10 | Local lift inside a stacking context (scrims, handles, badges) |
 | `sticky` | 20 | Sticky table headers and in-flow overlays that must stay above raised content |
 | `header` | 30 | App header, slide-over, and the Access Lens dirty bar |
-| `overlay` | 40 | Loading scrims, the vault drag dropzone, the shutdown pill, and the header reload banner |
+| `overlay` | 40 | Loading scrims, the vault drag dropzone, and the header reload banner |
 | `modal` | 50 | Dialogs, the creation wizard, the spec diff, and confirms |
 | `popover` | 60 | Menus and portaled dropdowns. Above `modal` so a dropdown opened from a dialog paints over it |
 | `toast` | 70 | Toasts and window-only credential notices |
@@ -143,8 +145,9 @@ workspace-specific props.
 - Use Tailwind **semantic tokens** (`bg-primary`, `text-secondary`,
   `border-status-error`) - never raw color literals like `bg-amber-500` in
   new code.
-- Code-split each workspace with `React.lazy()` + `<Suspense>`; the router
-  already wires this up in `routes.tsx`.
+- Code-split each workspace, detached page, and the header dialogs with
+  `React.lazy()` + `<Suspense>`. `routes.tsx` and `Header.tsx` already
+  wire this up.
 
 **Don't**
 
@@ -154,6 +157,10 @@ workspace-specific props.
 - Don't mix workspace bundles. A workspace component should not import from
   another workspace's folder. Shared utilities go in `components/canvas/`,
   `components/ui/`, or `components/inspector/`.
+- Don't add a network poll with `setInterval`. Use `useInterval` so a hidden
+  document pauses. The shell status cycle (status, tools, and clients)
+  heartbeats every 30 seconds while hidden. Inventory and other workspace
+  polls pause.
 - Don't put behavior-changing logic in `CanvasBase`. Background layers,
   control bars, overlays, and node types all belong in the workspace canvas.
 - Don't render `<main>` inside a workspace, or `role="tab"` on a route link.

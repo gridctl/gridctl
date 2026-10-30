@@ -6,7 +6,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Features
 
-- The web UI shell loads a smaller entry chunk. Popout pages, the creation wizard, the global context dialog, markdown rendering, and the YAML parser load on demand, and the React Flow and chart libraries are fetched only by the workspaces that draw them. Status polling stays on a 3 second cadence while the tab is visible and drops to one heartbeat every 30 seconds while it is hidden. Catalog, pins, registry, telemetry, and spec health move to a 15 second inventory cycle that pauses in a hidden tab and runs again on return. Detached windows take status from the main window while it is visible and poll themselves when that window is hidden or closed. The browser no longer requests `/sse`. Status polling is the disconnect signal.
+- The web UI shell loads a smaller entry chunk. Popout pages, the creation wizard, the global context dialog, markdown rendering, and the YAML parser load on demand, and the React Flow and chart libraries are fetched only by the routes that draw them. While the tab is visible, the shell status cycle (status, tools, and clients) stays on a three second cadence, and inventory (catalog, pins, registry, telemetry, and spec health) runs every 15 seconds. A hidden tab runs that status cycle once every 30 seconds and pauses inventory and the other workspace polls. Inventory runs again on return. Detached windows take status from the main window while it is visible and poll themselves when that window is hidden or closed. The detached sidebar and registry windows poll their own inventory every 15 seconds. The browser no longer requests `/sse`. Status polling is the disconnect signal.
 
 ### Fixes
 
