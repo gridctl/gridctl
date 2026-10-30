@@ -4,10 +4,11 @@
 // label. Click opens a popover with the three signal toggles and a
 // destructive "Wipe all" button; mutations call the API helpers and
 // hand the refreshed inventory back to the store.
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Database, Power, PowerOff, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { showToast } from '../ui/Toast';
+import { Popover } from '../ui/Popover';
 import { WipeTelemetryDialog } from './WipeTelemetryDialog';
 import {
   StackModifiedError,
@@ -46,32 +47,10 @@ export function HeaderTelemetryPill() {
   const [open, setOpen] = useState(false);
   const [wipeOpen, setWipeOpen] = useState(false);
   const [pending, setPending] = useState<TelemetrySignal | 'wipe' | null>(null);
-  const popoverRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
 
   const anyOn = SIGNALS.some((s) => config.global[s] === true);
   const label = buildPillLabel(config.global);
-
-  // Close the popover on outside click or Escape so it composes with the
-  // rest of the header's overlapping affordances (vault panel, wizard).
-  useEffect(() => {
-    if (!open) return;
-    const onPointer = (e: MouseEvent) => {
-      const t = e.target as Node | null;
-      if (!t) return;
-      if (popoverRef.current?.contains(t) || triggerRef.current?.contains(t)) return;
-      setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', onPointer);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onPointer);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
 
   async function toggleSignal(signal: TelemetrySignal) {
     const current = config.global[signal] === true;
@@ -130,16 +109,13 @@ export function HeaderTelemetryPill() {
         </span>
       </button>
 
-      {open && (
-        <div
-          ref={popoverRef}
-          role="dialog"
-          aria-label="Stack telemetry persistence"
-          className={cn(
-            'absolute top-full mt-2 right-0 z-40 w-64',
-            'glass-panel-elevated rounded-xl p-3 shadow-lg',
-          )}
-        >
+      <Popover
+        open={open}
+        onClose={() => setOpen(false)}
+        triggerRef={triggerRef}
+        aria-label="Stack telemetry persistence"
+        className="absolute top-full mt-2 right-0 w-64 p-3"
+      >
           <div className="text-[10px] uppercase tracking-widest font-medium text-text-muted px-1 pb-2">
             Stack-global signals
           </div>
@@ -203,8 +179,7 @@ export function HeaderTelemetryPill() {
               Wipe all persisted data
             </button>
           </div>
-        </div>
-      )}
+      </Popover>
 
       <WipeTelemetryDialog
         isOpen={wipeOpen}

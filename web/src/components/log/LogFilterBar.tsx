@@ -1,10 +1,10 @@
-import { useState, type RefObject } from 'react';
+import { useRef, useState, type RefObject } from 'react';
 import { AlertCircle, Search, SlidersHorizontal } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { LevelFilter } from './LevelFilter';
 import { ZoomControls } from '../ui/ZoomControls';
 import { IconButton } from '../ui/IconButton';
-import { useDismiss } from '../../hooks/useDismiss';
+import { Popover } from '../ui/Popover';
 import { LOG_TIME_RANGES, LOG_WINDOW_SIZES, type LogLevel, type LogTimeRange } from './logTypes';
 
 interface LogFilterBarProps {
@@ -79,7 +79,7 @@ export function LogFilterBar({
   trailing,
 }: LogFilterBarProps) {
   const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
-  const viewOptionsRef = useDismiss<HTMLDivElement>(viewOptionsOpen, () => setViewOptionsOpen(false));
+  const viewOptionsTriggerRef = useRef<HTMLButtonElement>(null);
   const viewOptionsActive = timeRange !== 'all' || wrap || relativeTime;
 
   return (
@@ -128,8 +128,9 @@ export function LogFilterBar({
       {children}
 
       {/* Filters popover: window size, time range, wrap, relative time */}
-      <div ref={viewOptionsRef} className="relative flex-shrink-0">
+      <div className="relative flex-shrink-0">
         <IconButton
+          ref={viewOptionsTriggerRef}
           icon={SlidersHorizontal}
           onClick={() => setViewOptionsOpen((v) => !v)}
           tooltip="View options"
@@ -137,14 +138,13 @@ export function LogFilterBar({
           variant="ghost"
           className={cn(viewOptionsActive && 'ring-1 ring-primary/30 rounded')}
         />
-        {viewOptionsOpen && (
-          <div
-            className={cn(
-              'absolute right-0 top-full mt-1 z-50 w-56 p-2',
-              'rounded-lg border border-border bg-surface-elevated/95',
-              'backdrop-blur-xl shadow-bevel animate-fade-in-scale'
-            )}
-          >
+        <Popover
+          open={viewOptionsOpen}
+          onClose={() => setViewOptionsOpen(false)}
+          triggerRef={viewOptionsTriggerRef}
+          aria-label="View options"
+          className="absolute right-0 top-full mt-1 w-56 p-2"
+        >
             <div className="px-1 py-1 text-[9px] uppercase tracking-[0.18em] text-text-muted/70">
               View options
             </div>
@@ -202,8 +202,7 @@ export function LogFilterBar({
                 onToggle={onToggleRelativeTime}
               />
             )}
-          </div>
-        )}
+        </Popover>
       </div>
 
       {/* Zoom controls */}
