@@ -18,9 +18,11 @@ interface PopoverProps {
 
 // useDismiss closes on any mousedown outside its ref. The trigger sits outside
 // the panel, so a trigger press must be ignored or the following click reopens
-// the popover. Close reason is recorded explicitly: an outside mousedown on a
-// non-focusable node leaves focus inside the panel, so focus location cannot
-// distinguish Escape from an outside click.
+// the popover. The ignore flag always describes the current event: a trigger
+// press whose bubble never reaches useDismiss must not swallow the next
+// Escape or outside click. Close reason is recorded explicitly: an outside
+// mousedown on a non-focusable node leaves focus inside the panel, so focus
+// location cannot distinguish Escape from an outside click.
 export function Popover({
   open,
   onClose,
@@ -50,16 +52,16 @@ export function Popover({
     if (!open) return;
     const onMouseDown = (e: MouseEvent) => {
       const target = e.target as Node | null;
-      if (!target) return;
-      if (triggerRef.current?.contains(target)) {
-        ignoreTriggerRef.current = true;
-        return;
-      }
+      const fromTrigger = Boolean(target && triggerRef.current?.contains(target));
+      ignoreTriggerRef.current = fromTrigger;
+      if (!target || fromTrigger) return;
       if (panelRef.current?.contains(target)) return;
       reasonRef.current = 'outside';
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') reasonRef.current = 'escape';
+      if (e.key !== 'Escape') return;
+      ignoreTriggerRef.current = false;
+      reasonRef.current = 'escape';
     };
     document.addEventListener('mousedown', onMouseDown, true);
     document.addEventListener('keydown', onKeyDown, true);

@@ -85,6 +85,42 @@ describe('Popover', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
+  it('does not swallow a later dismiss after a trigger press that never bubbles', () => {
+    function Stopped() {
+      const triggerRef = useRef<HTMLButtonElement>(null);
+      const [open, setOpen] = useState(true);
+      return (
+        <>
+          <div
+            onMouseDown={(e) => {
+              if (triggerRef.current?.contains(e.target as Node)) e.stopPropagation();
+            }}
+          >
+            <button ref={triggerRef} type="button">
+              Trigger
+            </button>
+          </div>
+          <div data-testid="outside">outside</div>
+          <Popover open={open} onClose={() => setOpen(false)} triggerRef={triggerRef} aria-label="Menu">
+            <button type="button">Inside</button>
+          </Popover>
+        </>
+      );
+    }
+
+    const { unmount } = render(<Stopped />);
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Trigger' }));
+    fireEvent.mouseDown(screen.getByTestId('outside'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    unmount();
+
+    render(<Stopped />);
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Trigger' }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Trigger' })).toHaveFocus();
+  });
+
   it('refocuses the trigger when open flips false programmatically', () => {
     function Controlled() {
       const triggerRef = useRef<HTMLButtonElement>(null);
