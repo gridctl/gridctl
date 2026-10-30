@@ -1,7 +1,8 @@
-import { useMemo, useEffect, useCallback } from 'react';
+import { useMemo, useEffect, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertCircle, Minus, Plus, Equal, X } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { useSpecStore } from '../../stores/useSpecStore';
 import { Button } from '../ui/Button';
 
@@ -65,6 +66,8 @@ interface SpecDiffModalProps {
 
 export function SpecDiffModal({ onApply, validationErrors }: SpecDiffModalProps) {
   const diffModalOpen = useSpecStore((s) => s.diffModalOpen);
+  const titleId = useId();
+  const panelRef = useFocusTrap<HTMLDivElement>({ active: diffModalOpen });
   const diffModalMode = useSpecStore((s) => s.diffModalMode);
   const closeDiffModal = useSpecStore((s) => s.closeDiffModal);
   const appliedSpec = useSpecStore((s) => s.appliedSpec);
@@ -105,11 +108,17 @@ export function SpecDiffModal({ onApply, validationErrors }: SpecDiffModalProps)
   if (!diffModalOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex flex-col bg-background">
+    <div
+      ref={panelRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="fixed inset-0 z-modal flex flex-col bg-background"
+    >
       {/* Header — pinned */}
       <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-border/50 bg-surface-elevated">
         <div className="flex items-center gap-4">
-          <h2 className="text-sm font-semibold text-text-primary">
+          <h2 id={titleId} className="text-sm font-semibold text-text-primary">
             {isCompareMode ? 'Compare to Running' : 'Configuration Changed'}
           </h2>
           {hasChanges && (
@@ -130,7 +139,9 @@ export function SpecDiffModal({ onApply, validationErrors }: SpecDiffModalProps)
           )}
         </div>
         <button
+          type="button"
           onClick={closeDiffModal}
+          aria-label="Close"
           className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors text-text-muted hover:text-text-primary"
         >
           <X size={16} />
@@ -152,7 +163,7 @@ export function SpecDiffModal({ onApply, validationErrors }: SpecDiffModalProps)
         ) : (
           <table className="w-full font-mono text-xs border-collapse">
             <thead>
-              <tr className="border-b border-border/30 sticky top-0 bg-surface-elevated z-10">
+              <tr className="border-b border-border/30 sticky top-0 bg-surface-elevated z-sticky">
                 <th className="text-right px-3 py-2 text-text-muted font-medium w-14">Old</th>
                 <th className="text-right px-3 py-2 text-text-muted font-medium w-14">New</th>
                 <th className="text-left px-4 py-2 text-text-muted font-medium">Content</th>

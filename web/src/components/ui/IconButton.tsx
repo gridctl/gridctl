@@ -1,3 +1,4 @@
+import { forwardRef } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/cn';
 
@@ -23,7 +24,7 @@ interface IconButtonProps {
   pressed?: boolean;
 }
 
-export function IconButton({
+export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton({
   icon: Icon,
   onClick,
   disabled,
@@ -33,7 +34,7 @@ export function IconButton({
   size = 'md',
   variant = 'default',
   pressed,
-}: IconButtonProps) {
+}, ref) {
   // The icon is the only child, so without a name the button is announced as
   // just "button". Falling back to the tooltip covers every call site that
   // passes one; a button with neither is left nameless on purpose so the gap
@@ -59,6 +60,7 @@ export function IconButton({
 
   return (
     <button
+      ref={ref}
       onClick={onClick}
       disabled={disabled}
       title={tooltip}
@@ -76,4 +78,4 @@ export function IconButton({
       <Icon size={iconSize} aria-hidden="true" />
     </button>
   );
-}
+});

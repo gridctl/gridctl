@@ -429,7 +429,7 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
                   onValueChange={setQuery}
                   placeholder="Search operations..."
                   aria-label="Search operations"
-                  className="flex-1 bg-transparent outline-none text-xs text-text-primary placeholder:text-text-muted/60"
+                  className="flex-1 bg-transparent rounded text-xs text-text-primary placeholder:text-text-muted/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
                 />
               </div>
 
@@ -570,6 +570,7 @@ function OperationRow({
         'flex items-start gap-2.5 px-3 py-2 select-none outline-none transition-colors',
         selectable ? 'cursor-pointer hover:bg-surface-highlight/50' : 'cursor-default',
         '[&[data-selected=true]]:bg-primary/[0.06]',
+        'focus-visible:bg-primary/[0.06]',
         checked && 'bg-primary/[0.03]',
       )}
     >

@@ -275,7 +275,7 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
               onValueChange={setQuery}
               placeholder="Search tools..."
               aria-label="Search tools"
-              className="flex-1 bg-transparent outline-none text-xs text-text-primary placeholder:text-text-muted/60"
+              className="flex-1 bg-transparent rounded text-xs text-text-primary placeholder:text-text-muted/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
             />
           </div>
 
@@ -301,6 +301,7 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
                     'flex items-start gap-2.5 px-3 py-2 cursor-pointer select-none outline-none transition-colors',
                     'hover:bg-surface-highlight/50',
                     '[&[data-selected=true]]:bg-primary/[0.06]',
+                    'focus-visible:bg-primary/[0.06]',
                     isSelected && 'bg-primary/[0.03]',
                   )}
                 >

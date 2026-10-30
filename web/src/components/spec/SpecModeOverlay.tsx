@@ -31,7 +31,7 @@ export function SpecModeOverlay({ className }: SpecModeOverlayProps) {
   if (!drift || drift.status === 'in-sync') {
     return (
       <div className={cn('pointer-events-none', className)}>
-        <div className="pointer-events-auto absolute top-3 left-1/2 -translate-x-1/2 z-20">
+        <div className="pointer-events-auto absolute top-3 left-1/2 -translate-x-1/2 z-sticky">
           <div className="glass-panel rounded-lg px-3 py-1.5 flex items-center gap-2 border border-secondary/30 bg-secondary/5">
             <Eye size={12} className="text-secondary" />
             <span className="text-[10px] font-medium text-secondary">Spec Mode — all in sync</span>
@@ -44,7 +44,7 @@ export function SpecModeOverlay({ className }: SpecModeOverlayProps) {
   return (
     <div className={cn('pointer-events-none', className)}>
       {/* Spec mode banner */}
-      <div className="pointer-events-auto absolute top-3 left-1/2 -translate-x-1/2 z-20">
+      <div className="pointer-events-auto absolute top-3 left-1/2 -translate-x-1/2 z-sticky">
         <div className="glass-panel rounded-lg px-3 py-1.5 flex items-center gap-2 border border-secondary/30 bg-secondary/5">
           <Eye size={12} className="text-secondary" />
           <span className="text-[10px] font-medium text-secondary">
@@ -61,7 +61,7 @@ export function SpecModeOverlay({ className }: SpecModeOverlayProps) {
 
       {/* Ghost nodes — declared in spec but not running */}
       {ghostItems.length > 0 && (
-        <div className="pointer-events-auto absolute bottom-14 left-3 z-20 space-y-1">
+        <div className="pointer-events-auto absolute bottom-14 left-3 z-sticky space-y-1">
           {ghostItems.map((name) => (
             <div
               key={name}
@@ -77,7 +77,7 @@ export function SpecModeOverlay({ className }: SpecModeOverlayProps) {
 
       {/* Warning badges — running but not in spec */}
       {warningItems.length > 0 && (
-        <div className="pointer-events-auto absolute bottom-14 right-3 z-20 space-y-1">
+        <div className="pointer-events-auto absolute bottom-14 right-3 z-sticky space-y-1">
           {warningItems.map((name) => (
             <div
               key={name}
@@ -94,7 +94,7 @@ export function SpecModeOverlay({ className }: SpecModeOverlayProps) {
 
       {/* Changed badges — declared and running but diverging from the spec */}
       {changedItems.length > 0 && (
-        <div className="pointer-events-auto absolute bottom-14 left-1/2 -translate-x-1/2 z-20 space-y-1">
+        <div className="pointer-events-auto absolute bottom-14 left-1/2 -translate-x-1/2 z-sticky space-y-1">
           {changedItems.map((name) => (
             <div
               key={name}

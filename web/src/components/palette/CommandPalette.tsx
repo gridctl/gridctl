@@ -92,6 +92,7 @@ function PaletteItem({ command, onSelect, showBadge }: PaletteItemProps) {
         'text-text-secondary transition-colors duration-75',
         'hover:bg-surface-highlight/70',
         '[&[data-selected=true]]:bg-primary/10 [&[data-selected=true]]:text-text-primary',
+        'focus-visible:bg-primary/10 focus-visible:text-text-primary',
         command.unavailable && 'opacity-40',
       )}
     >
@@ -216,7 +217,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-start justify-center"
+      className="fixed inset-0 z-modal flex items-start justify-center"
       style={{ paddingTop: '13vh', backgroundColor: 'rgba(8,8,10,0.75)', backdropFilter: 'blur(6px)' }}
       role="dialog"
       aria-modal="true"
@@ -275,7 +276,8 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
               }
               autoFocus
               className={cn(
-                'flex-1 min-w-0 bg-transparent outline-none text-sm text-text-primary',
+                'flex-1 min-w-0 bg-transparent text-sm text-text-primary rounded',
+                'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60',
                 'placeholder:text-text-muted caret-primary',
               )}
             />

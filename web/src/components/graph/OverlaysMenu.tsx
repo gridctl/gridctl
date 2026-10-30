@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { SlidersHorizontal, Flame, Eye, Check } from 'lucide-react';
 import { useUIStore } from '../../stores/useUIStore';
 import { cn } from '../../lib/cn';
+import { Popover } from '../ui/Popover';
 
 /**
  * Groups the canvas's graph overlays (token heat, spec mode) behind a single
@@ -17,23 +18,7 @@ export function OverlaysMenu() {
   const toggleSpecMode = useUIStore((s) => s.toggleSpecMode);
 
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [open]);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const anyActive = showHeatMap || showSpecMode;
 
@@ -57,8 +42,9 @@ export function OverlaysMenu() {
   ];
 
   return (
-    <div ref={ref} className="relative">
+    <div className="relative">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn('control-button', (open || anyActive) && 'ring-1 ring-primary/30')}
@@ -70,16 +56,14 @@ export function OverlaysMenu() {
         <SlidersHorizontal className="w-4 h-4" />
       </button>
 
-      {open && (
-        <div
-          role="menu"
-          aria-label="Canvas overlays"
-          className={cn(
-            'absolute bottom-full left-0 mb-2 z-50 w-44 p-1',
-            'rounded-lg border border-border bg-surface-elevated/95',
-            'backdrop-blur-xl shadow-bevel animate-fade-in-scale',
-          )}
-        >
+      <Popover
+        open={open}
+        onClose={() => setOpen(false)}
+        triggerRef={triggerRef}
+        role="menu"
+        aria-label="Canvas overlays"
+        className="absolute bottom-full left-0 mb-2 w-44 p-1"
+      >
           <div className="px-2 py-1 text-[9px] uppercase tracking-[0.18em] text-text-muted/70">
             Overlays
           </div>
@@ -105,8 +89,7 @@ export function OverlaysMenu() {
               {active && <Check size={12} className={accent} aria-hidden="true" />}
             </button>
           ))}
-        </div>
-      )}
+      </Popover>
     </div>
   );
 }

@@ -195,9 +195,8 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
         bottom: position.bottom,
         right: position.right,
         width: '18rem',
-        zIndex: 9999,
       }}
-      className={cn('glass-panel-elevated rounded-xl', 'animate-fade-in-scale')}
+      className={cn('glass-panel-elevated rounded-xl z-popover', 'animate-fade-in-scale')}
     >
       {/* Search */}
       <div className="px-3 pt-3 pb-2">

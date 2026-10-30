@@ -58,7 +58,7 @@ export function DriftSyncDialog({
   return (
     <div
       className={cn(
-        'fixed inset-0 z-[60] animate-fade-in-scale',
+        'fixed inset-0 z-modal animate-fade-in-scale',
         'bg-background/80 backdrop-blur-sm flex items-center justify-center',
       )}
     >

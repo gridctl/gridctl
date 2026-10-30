@@ -52,6 +52,7 @@ export function AuthPrompt() {
   }, [token, mode, header, beginAttempt, commitAttempt]);
 
   return (
+    // Escape is intentionally not bound: this prompt is an auth gate with nothing to dismiss to.
     <div role="dialog" aria-modal="true" aria-labelledby="auth-title" onKeyDown={event => {
       if (event.key !== 'Tab') return;
       const fields = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('input, select, button:not(:disabled)'));
@@ -59,7 +60,7 @@ export function AuthPrompt() {
       const last = fields.at(-1);
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
       if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-    }} className="fixed inset-0 overflow-y-auto flex items-start justify-center bg-background/95 backdrop-blur-sm z-50 p-3">
+    }} className="fixed inset-0 overflow-y-auto flex items-start justify-center bg-background/95 backdrop-blur-sm z-modal p-3">
       <div className="my-auto w-full max-w-sm p-4 sm:p-8 animate-fade-in-scale glass-panel-elevated">
         {/* Lock icon */}
         <div className="relative mx-auto w-16 h-16 mb-6">

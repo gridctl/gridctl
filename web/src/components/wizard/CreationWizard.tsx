@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, useId } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Layers,
@@ -19,6 +19,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { cn } from '../../lib/cn';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { Button } from '../ui/Button';
 import { useWizardStore, type WizardStep } from '../../stores/useWizardStore';
 import { useStackStore } from '../../stores/useStackStore';
@@ -170,6 +171,8 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
     openapiOperationStats,
     reset,
   } = useWizardStore();
+  const titleId = useId();
+  const panelRef = useFocusTrap<HTMLDivElement>({ active: isOpen });
 
   // One-line outcome of the OpenAPI operations filter for the Review step.
   // Only meaningful for an OpenAPI server; every other type leaves it null so
@@ -364,16 +367,22 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 animate-fade-in-scale bg-background/80 backdrop-blur-sm flex items-center justify-center">
+    <div className="fixed inset-0 z-modal animate-fade-in-scale bg-background/80 backdrop-blur-sm flex items-center justify-center">
       {/* Backdrop */}
       <div className="absolute inset-0" onClick={close} />
 
       {/* Panel */}
-      <div className="relative flex flex-col glass-panel-elevated rounded-xl w-full max-w-5xl mx-4 h-[85vh] shadow-lg transition-[max-width] duration-300 ease-out">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="relative flex flex-col glass-panel-elevated rounded-xl w-full max-w-5xl mx-4 h-[85vh] shadow-lg transition-[max-width] duration-300 ease-out"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border/30 flex-shrink-0">
           <div className="flex items-center gap-4">
-            <h2 className="text-sm font-medium text-text-primary">
+            <h2 id={titleId} className="text-sm font-medium text-text-primary">
               {currentStep === 'type'
                 ? 'Create New Resource'
                 : selectedType
@@ -422,8 +431,10 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
 
             {/* Reset */}
             <button
+              type="button"
               onClick={reset}
               title="Start over"
+              aria-label="Start over"
               className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors text-text-muted hover:text-text-secondary"
             >
               <RotateCcw size={14} />
@@ -431,7 +442,9 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
 
             {/* Close */}
             <button
+              type="button"
               onClick={close}
+              aria-label="Close"
               className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors"
             >
               <X size={14} className="text-text-muted" />

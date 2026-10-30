@@ -198,7 +198,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
               placeholder="https://github.com/owner/repo"
               className={cn(
                 'w-full bg-background/60 border rounded-lg pl-9 pr-3 py-2.5 text-xs',
-                'focus:outline-none text-text-primary placeholder:text-text-muted/50 transition-colors',
+                'text-text-primary placeholder:text-text-muted/50 transition-colors',
                 error
                   ? 'border-status-error/40 focus:border-status-error/60'
                   : 'border-border/40 focus:border-primary/50',

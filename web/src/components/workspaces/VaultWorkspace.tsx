@@ -866,7 +866,7 @@ export function VaultWorkspace() {
         <div
           aria-hidden="true"
           className={cn(
-            'absolute inset-0 z-[55] pointer-events-none p-6',
+            'absolute inset-0 z-overlay pointer-events-none p-6',
             'flex items-center justify-center',
             'bg-background/80 backdrop-blur-sm animate-fade-in-scale',
           )}
@@ -1213,7 +1213,7 @@ function VariableList({
       <div
         aria-hidden="true"
         className={cn(
-          'sticky top-0 z-10 px-6 border-l-2 border-l-transparent border-b border-border-subtle bg-background/95 backdrop-blur-sm',
+          'sticky top-0 z-sticky px-6 border-l-2 border-l-transparent border-b border-border-subtle bg-background/95 backdrop-blur-sm',
           VARIABLE_ROW_GRID,
           compact ? 'py-1' : 'py-1.5',
         )}

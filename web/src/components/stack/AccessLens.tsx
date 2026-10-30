@@ -260,7 +260,7 @@ export function AccessLens({ servers }: AccessLensProps) {
   return (
     <>
       {/* Header toggle — net-new to the Stack workspace. Amber when on, with aria-pressed. */}
-      <div className="absolute top-3 left-3 z-20 flex items-center gap-2">
+      <div className="absolute top-3 left-3 z-sticky flex items-center gap-2">
         <button
           type="button"
           onClick={() => (enabled ? requestDisable() : setEnabled(true))}
@@ -312,7 +312,7 @@ export function AccessLens({ servers }: AccessLensProps) {
 
       {/* Floating action bar — visible whenever the draft is dirty. */}
       {dirty && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 animate-fade-in-up">
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-header animate-fade-in-up">
           <div className="glass-panel-elevated shadow-bevel rounded-xl px-4 py-2.5 flex items-center gap-4">
             <span className="text-[11px] text-text-secondary" role="status">
               <span className="font-mono text-primary">{draft.length}</span> server

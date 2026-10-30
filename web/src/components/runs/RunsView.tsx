@@ -301,77 +301,82 @@ export function RunsView({ servers }: RunsViewProps) {
             {w.message} ({w.count})
           </p>
         ))}
-        {mutationError && (
+        {/* Enable and disable failures render inside the open confirm. */}
+        {mutationError && !confirmEnable && !confirmDisable && (
           <p className="text-xs text-status-error" role="alert">
             {mutationError}
           </p>
         )}
       </div>
 
-      {confirmEnable && (
-        <div role="dialog" aria-labelledby="enable-runs-title" className="px-6 py-3 border-b border-border-subtle bg-surface-elevated">
-          <h2 id="enable-runs-title" className="text-sm font-medium">Enable run recording?</h2>
-          <p className="text-xs text-text-muted mt-1 max-w-2xl">{status?.privacyNote}</p>
-          <p className="text-xs text-text-muted mt-1 max-w-2xl">{status?.retentionNote}</p>
-          <div className="mt-2 flex gap-2">
-            <button
-              type="button"
-              className="px-2 py-1 rounded bg-primary/20 text-primary"
-              onClick={async () => {
-                setBusy(true);
-                setMutationError(null);
-                try {
-                  await updateStackRuns({ enabled: true });
-                  setConfirmEnable(false);
-                  await load();
-                } catch (err) {
-                  setMutationError(err instanceof Error ? err.message : 'Failed to enable recording');
-                } finally {
-                  setBusy(false);
-                }
-              }}
-              disabled={busy}
-            >
-              Enable
-            </button>
-            <button type="button" className="px-2 py-1 rounded border border-border" onClick={() => setConfirmEnable(false)}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        isOpen={confirmEnable}
+        onClose={() => {
+          setMutationError(null);
+          setConfirmEnable(false);
+        }}
+        onConfirm={() => {
+          void (async () => {
+            setBusy(true);
+            setMutationError(null);
+            try {
+              await updateStackRuns({ enabled: true });
+              setConfirmEnable(false);
+              await load();
+            } catch (err) {
+              setMutationError(err instanceof Error ? err.message : 'Failed to enable recording');
+            } finally {
+              setBusy(false);
+            }
+          })();
+        }}
+        title="Enable run recording?"
+        message={
+          <>
+            <p>{status?.privacyNote}</p>
+            <p>{status?.retentionNote}</p>
+            {mutationError && (
+              <p className="text-status-error" role="alert">{mutationError}</p>
+            )}
+          </>
+        }
+        confirmLabel="Enable"
+        busy={busy}
+      />
 
-      {confirmDisable && (
-        <div role="dialog" aria-labelledby="disable-runs-title" className="px-6 py-3 border-b border-border-subtle bg-surface-elevated">
-          <h2 id="disable-runs-title" className="text-sm font-medium">Disable run recording?</h2>
-          <p className="text-xs text-text-muted mt-1 max-w-2xl">Retained history is kept. New attempts will not be recorded.</p>
-          <div className="mt-2 flex gap-2">
-            <button
-              type="button"
-              className="px-2 py-1 rounded bg-primary/20 text-primary"
-              onClick={async () => {
-                setBusy(true);
-                setMutationError(null);
-                try {
-                  await updateStackRuns({ enabled: false });
-                  setConfirmDisable(false);
-                  await load();
-                } catch (err) {
-                  setMutationError(err instanceof Error ? err.message : 'Failed to disable recording');
-                } finally {
-                  setBusy(false);
-                }
-              }}
-              disabled={busy}
-            >
-              Disable
-            </button>
-            <button type="button" className="px-2 py-1 rounded border border-border" onClick={() => setConfirmDisable(false)}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        isOpen={confirmDisable}
+        onClose={() => {
+          setMutationError(null);
+          setConfirmDisable(false);
+        }}
+        onConfirm={() => {
+          void (async () => {
+            setBusy(true);
+            setMutationError(null);
+            try {
+              await updateStackRuns({ enabled: false });
+              setConfirmDisable(false);
+              await load();
+            } catch (err) {
+              setMutationError(err instanceof Error ? err.message : 'Failed to disable recording');
+            } finally {
+              setBusy(false);
+            }
+          })();
+        }}
+        title="Disable run recording?"
+        message={
+          <>
+            <p>Retained history is kept. New attempts will not be recorded.</p>
+            {mutationError && (
+              <p className="text-status-error" role="alert">{mutationError}</p>
+            )}
+          </>
+        }
+        confirmLabel="Disable"
+        busy={busy}
+      />
 
       <ConfirmDialog
         isOpen={confirmWipe}

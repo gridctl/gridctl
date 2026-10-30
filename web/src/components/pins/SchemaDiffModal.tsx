@@ -70,7 +70,7 @@ export function SchemaDiffModal({ title, oldSchema, newSchema, onClose }: Schema
       onKeyDown={(e) => {
         if (e.key === 'Escape') onClose();
       }}
-      className="fixed inset-0 z-[100] flex flex-col bg-background"
+      className="fixed inset-0 z-modal flex flex-col bg-background"
     >
       {/* Header - pinned */}
       <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-border/50 bg-surface-elevated">
@@ -111,7 +111,7 @@ export function SchemaDiffModal({ title, oldSchema, newSchema, onClose }: Schema
       <div className="flex-1 min-h-0 overflow-auto scrollbar-dark">
         <table className="w-full font-mono text-xs border-collapse">
           <thead>
-            <tr className="border-b border-border/30 sticky top-0 bg-surface-elevated z-10">
+            <tr className="border-b border-border/30 sticky top-0 bg-surface-elevated z-sticky">
               {isDiff && (
                 <th className="text-right px-3 py-2 text-text-muted font-medium w-14">Old</th>
               )}

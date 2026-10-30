@@ -70,7 +70,7 @@ export function StackWorkspace() {
         <div className="relative overflow-hidden">
           {/* Loading State */}
           {isLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-background/90 backdrop-blur-sm z-30">
+            <div className="absolute inset-0 flex items-center justify-center bg-background/90 backdrop-blur-sm z-overlay">
               <div className="text-center space-y-5 animate-fade-in-scale">
                 <div className="relative mx-auto w-16 h-16">
                   <div className="absolute inset-0 rounded-full border-2 border-primary/20" />
@@ -90,7 +90,7 @@ export function StackWorkspace() {
 
           {/* Error State */}
           {error && !isLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-background/90 backdrop-blur-sm z-30">
+            <div className="absolute inset-0 flex items-center justify-center bg-background/90 backdrop-blur-sm z-overlay">
               <div className="text-center space-y-5 max-w-md p-8 animate-fade-in-scale">
                 <div className="relative mx-auto w-20 h-20">
                   <div className="absolute inset-0 bg-status-error/20 rounded-2xl blur-xl" />

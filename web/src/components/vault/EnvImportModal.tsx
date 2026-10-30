@@ -310,7 +310,7 @@ export function EnvImportModal({
   return (
     <div
       className={cn(
-        'fixed inset-0 z-[60] animate-fade-in-scale',
+        'fixed inset-0 z-modal animate-fade-in-scale',
         'bg-background/80 backdrop-blur-sm flex items-center justify-center',
       )}
     >
@@ -378,7 +378,7 @@ export function EnvImportModal({
                 spellCheck={false}
                 className={cn(
                   'flex-1 min-h-0 w-full bg-transparent text-xs font-mono text-text-primary',
-                  'placeholder:text-text-muted/40 focus:outline-none resize-none',
+                  'placeholder:text-text-muted/40 resize-none',
                   'px-4 py-4 leading-relaxed',
                 )}
               />

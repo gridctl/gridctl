@@ -118,7 +118,7 @@ function DetachedLogsPageContent() {
       />
 
       {/* Header — identity chrome only; stream actions live in the shared bar */}
-      <header className="h-12 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-b border-border/50 flex items-center justify-between px-4 z-10 relative">
+      <header className="h-12 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-b border-border/50 flex items-center justify-between px-4 z-raised relative">
         {/* Top accent line */}
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
 
@@ -162,7 +162,7 @@ function DetachedLogsPageContent() {
             </button>
 
             {dropdownOpen && (
-              <div className="absolute top-full left-0 mt-1 w-64 py-1 bg-surface-elevated/95 backdrop-blur-xl border border-border/50 rounded-lg shadow-lg z-50 animate-fade-in-scale">
+              <div className="absolute top-full left-0 mt-1 w-64 py-1 bg-surface-elevated/95 backdrop-blur-xl border border-border/50 rounded-lg shadow-lg z-popover animate-fade-in-scale">
                 <SourceOption
                   label="All sources"
                   dotClass="bg-text-muted"

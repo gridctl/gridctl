@@ -81,7 +81,7 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
       {open && (
         <div
           className={cn(
-            'absolute left-0 top-full mt-1.5 z-50',
+            'absolute left-0 top-full mt-1.5 z-popover',
             'rounded-lg border border-border bg-surface-elevated/95',
             'backdrop-blur-xl shadow-bevel p-1.5',
             // node-scroll wins overflow-y:auto back from the react-flow

@@ -90,6 +90,23 @@ workspaces. Reach for them before duplicating UI:
 | `EmptyState` | `components/ui/` | Anywhere a "no items / no selection" affordance is needed |
 | `FailedState` | `components/ui/` | Failed fetch with nothing loaded. Title is `<feature> unavailable`, with Retry when `onRetry` is set. Not a spinner or an empty collection |
 | `FailureBanner` | `components/ui/` | Failed refresh when data is already on screen: one alert row and Retry |
+| `Popover` | `components/ui/` | Theme picker, telemetry pill, overlays menu, log level filter, log view options. Escape and a programmatic close return focus to the trigger; an outside click does not |
+
+## Layering
+
+Overlay stacking uses named steps from `web/src/index.css`. Tailwind maps `--z-index-<name>` to the `z-<name>` utility.
+
+| Step | Value | Use |
+|---|---|---|
+| `raised` | 10 | Local lift inside a stacking context (scrims, handles, badges) |
+| `sticky` | 20 | Sticky table headers and in-flow overlays that must stay above raised content |
+| `header` | 30 | App header, slide-over, and the Access Lens dirty bar |
+| `overlay` | 40 | Loading scrims, the vault drag dropzone, the shutdown pill, and the header reload banner |
+| `modal` | 50 | Dialogs, the creation wizard, the spec diff, and confirms |
+| `popover` | 60 | Menus and portaled dropdowns. Above `modal` so a dropdown opened from a dialog paints over it |
+| `toast` | 70 | Toasts and window-only credential notices |
+
+`popover` outranks `modal` because portaled dropdowns opened from inside a modal must paint over it. A popover inside the header (`relative z-header`, its own stacking context) only ranks against header children, so it still paints over the reload banner and cannot reach the toast layer. A fixed dialog inside a `backdrop-blur` header is trapped the same way. The metrics clear confirm is portaled to `document.body` so it covers the viewport. Run recording confirms stay in the workspace and are not portaled.
 
 `CanvasBase` is intentionally small (~120 LOC) - it owns the React Flow
 boilerplate (wrapper element, Background layers, proOptions) and exposes

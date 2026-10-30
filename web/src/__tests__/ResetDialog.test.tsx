@@ -141,7 +141,8 @@ describe('ResetDialog', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/already running/));
     // A 409/422 removed nothing: the exit is Close, never a page reload.
     expect(screen.queryByRole('button', { name: /done/i })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /close/i }));
+    // The modal chrome control is also named Close. This clicks the failure-state exit.
+    fireEvent.click(screen.getByText(/^Close$/));
     expect(onClose).toHaveBeenCalled();
     expect(reloadSpy).not.toHaveBeenCalled();
   });

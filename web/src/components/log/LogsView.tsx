@@ -94,7 +94,7 @@ export function LogsView({
           disabled={view.filteredLogs.length === 0}
         />
         {exportOpen && (
-          <div className="absolute right-0 top-full mt-1 z-50 min-w-[130px] py-1 rounded-lg border border-border bg-surface-elevated/95 backdrop-blur-xl shadow-bevel animate-fade-in-scale">
+          <div className="absolute right-0 top-full mt-1 z-popover min-w-[130px] py-1 rounded-lg border border-border bg-surface-elevated/95 backdrop-blur-xl shadow-bevel animate-fade-in-scale">
             <button
               onClick={() => exportFiltered('jsonl')}
               className="w-full px-3 py-1.5 text-left text-[10px] text-text-secondary hover:bg-surface-highlight hover:text-text-primary transition-colors"

@@ -66,7 +66,7 @@ export function SlideOver({
       className={cn(
         // Anchored to the right edge, below the app header band. Pointer events
         // are confined to the panel so the canvas stays live everywhere else.
-        'absolute top-3 bottom-3 right-3 z-30 flex flex-col',
+        'absolute top-3 bottom-3 right-3 z-header flex flex-col',
         'glass-panel-elevated rounded-xl shadow-bevel animate-slide-in-right',
         widthClass ?? 'w-[340px]',
       )}

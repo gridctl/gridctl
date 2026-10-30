@@ -47,7 +47,7 @@ export function PackApplyForceDialog({
   }, [handleKeyDown]);
 
   return (
-    <div className="fixed inset-0 z-[60] animate-fade-in-scale bg-background/80 backdrop-blur-sm flex items-center justify-center">
+    <div className="fixed inset-0 z-modal animate-fade-in-scale bg-background/80 backdrop-blur-sm flex items-center justify-center">
       <div className="absolute inset-0" onClick={onCancel} />
       <div
         ref={panelRef}

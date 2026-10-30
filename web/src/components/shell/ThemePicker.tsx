@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Sun, Moon, Monitor } from 'lucide-react';
 import { useUIStore } from '../../stores/useUIStore';
 import { useResolvedTheme } from '../../themes/useTheme';
 import type { ThemeMode } from '../../themes/types';
 import { cn } from '../../lib/cn';
+import { Popover } from '../ui/Popover';
 
 const OPTIONS: { mode: ThemeMode; label: string; icon: typeof Sun }[] = [
   { mode: 'light', label: 'Light', icon: Sun },
@@ -33,23 +34,7 @@ export function ThemePicker({ variant = 'statusbar', placement = 'up' }: ThemePi
   const resolved = useResolvedTheme();
 
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [open]);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   // Roving arrow-key navigation across the segmented radio group.
   const onRadioKeyDown = (e: React.KeyboardEvent, index: number) => {
@@ -69,8 +54,9 @@ export function ThemePicker({ variant = 'statusbar', placement = 'up' }: ThemePi
   const isHeader = variant === 'header';
 
   return (
-    <div ref={ref} className="relative flex items-center">
+    <div className="relative flex items-center">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="dialog"
@@ -98,17 +84,16 @@ export function ThemePicker({ variant = 'statusbar', placement = 'up' }: ThemePi
         <TriggerIcon size={isHeader ? 16 : 12} aria-hidden="true" />
       </button>
 
-      {open && (
-        <div
-          role="dialog"
-          aria-label="Appearance"
-          className={cn(
-            'absolute right-0 z-50 w-52 p-2',
-            placement === 'down' ? 'top-full mt-2' : 'bottom-full mb-2',
-            'rounded-lg border border-border bg-surface-elevated/95',
-            'backdrop-blur-xl shadow-lg animate-fade-in-scale',
-          )}
-        >
+      <Popover
+        open={open}
+        onClose={() => setOpen(false)}
+        triggerRef={triggerRef}
+        aria-label="Appearance"
+        className={cn(
+          'absolute right-0 w-52 p-2',
+          placement === 'down' ? 'top-full mt-2' : 'bottom-full mb-2',
+        )}
+      >
           <div className="px-1 pb-1.5 text-[9px] uppercase tracking-[0.18em] text-text-muted/70">
             Appearance
           </div>
@@ -149,8 +134,7 @@ export function ThemePicker({ variant = 'statusbar', placement = 'up' }: ThemePi
               ? `Following system — currently ${resolved === 'light' ? 'Light' : 'Dark'}`
               : ''}
           </div>
-        </div>
-      )}
+      </Popover>
     </div>
   );
 }

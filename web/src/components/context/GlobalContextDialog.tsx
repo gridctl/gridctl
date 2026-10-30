@@ -647,7 +647,7 @@ function EditorView({
             onScroll={handleEditorScroll}
             aria-label="Canonical global context"
             placeholder={'# Global Agent Context\n\nDurable cross-project preferences only...\n\n## Coding Style\n\n- Prefer clarity over cleverness.'}
-            className="flex-1 w-full bg-background/40 px-5 py-4 text-sm font-mono text-text-primary placeholder:text-text-muted/30 resize-none focus:outline-none leading-relaxed"
+            className="flex-1 w-full bg-background/40 px-5 py-4 text-sm font-mono text-text-primary placeholder:text-text-muted/30 resize-none leading-relaxed"
             spellCheck={false}
           />
         </div>
@@ -1816,7 +1816,7 @@ function FragmentsView({
                   onScroll={handleEditorScroll}
                   aria-label={`Fragment ${current.name}`}
                   placeholder={'---\ndescription: what this rule covers\npaths:\n  - "**/*.go"\n---\n\n# Rules\n'}
-                  className="flex-1 w-full bg-background/40 px-5 py-4 text-sm font-mono text-text-primary placeholder:text-text-muted/30 resize-none focus:outline-none leading-relaxed"
+                  className="flex-1 w-full bg-background/40 px-5 py-4 text-sm font-mono text-text-primary placeholder:text-text-muted/30 resize-none leading-relaxed"
                   spellCheck={false}
                 />
               </div>
