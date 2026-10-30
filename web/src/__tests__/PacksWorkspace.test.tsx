@@ -498,7 +498,7 @@ describe('reverse ownership chip', () => {
         <SourceGroupHeader source={source} count={2} hasSearch={false} isActive={false} onToggle={() => {}} />
       </MemoryRouter>,
     );
-    expect(screen.getByText('pack: team-pack')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'pack: team-pack' })).toBeInTheDocument();
   });
 
   it('labels a pack member source even when the packs list is unloaded', () => {
@@ -514,7 +514,7 @@ describe('reverse ownership chip', () => {
         />
       </MemoryRouter>,
     );
-    expect(screen.getByText('pack: team-pack')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'pack: team-pack' })).toBeInTheDocument();
   });
 
   it('renders no chip when the source has no pack (or packs are unloaded)', () => {
