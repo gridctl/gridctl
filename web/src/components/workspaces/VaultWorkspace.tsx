@@ -1177,7 +1177,7 @@ function SetPill({
       {onDelete && (
         <button
           onClick={onDelete}
-          className="flex-shrink-0 p-1 mr-1.5 rounded hover:bg-status-error/10 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+          className="flex-shrink-0 p-1 mr-1.5 rounded hover:bg-status-error/10 transition-colors opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover-none:opacity-100 focus:opacity-100"
           title={`Delete ${label}`}
           aria-label={`Delete set ${label}`}
         >

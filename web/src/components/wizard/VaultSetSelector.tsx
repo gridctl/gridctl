@@ -179,7 +179,7 @@ export function VaultSetSelector({ value, onChange }: VaultSetSelectorProps) {
             className="w-full flex items-center justify-between px-3 py-2 text-xs hover:bg-white/[0.04] transition-colors group"
           >
             <span className="font-mono text-text-primary truncate">{set.name}</span>
-            <span className="text-[10px] text-text-muted opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+            <span className="text-[10px] text-text-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover-none:opacity-100 transition-opacity flex items-center gap-1">
               <Check size={10} />
               Select
             </span>

@@ -334,7 +334,7 @@ function ItemHeader({
       <button
         type="button"
         onClick={onRemove}
-        className="p-1 text-text-muted hover:text-status-error transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
+        className="p-1 text-text-muted hover:text-status-error transition-colors opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover-none:opacity-100 flex-shrink-0"
         title="Remove"
         aria-label={`Remove ${name || label}`}
       >

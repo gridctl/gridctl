@@ -230,7 +230,7 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
             <VariableVisibilityIcon isSecret={variable.is_secret} />
             <span className="font-mono text-text-primary truncate flex-1 text-left">{variable.key}</span>
             <VariableTypeBadge type={variable.type} />
-            <span className="text-[10px] text-text-muted opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+            <span className="text-[10px] text-text-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover-none:opacity-100 transition-opacity flex items-center gap-1">
               <Check size={10} />
               Select
             </span>

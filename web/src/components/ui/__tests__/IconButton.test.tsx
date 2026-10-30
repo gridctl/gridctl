@@ -53,6 +53,19 @@ describe('IconButton', () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
+  it('renders size lg as a 44px square and keeps md padding', () => {
+    const { rerender } = render(<IconButton icon={Trash2} tooltip="Delete skill" size="lg" />);
+    const lg = screen.getByRole('button', { name: 'Delete skill' });
+    expect(lg).toHaveClass('size-11');
+    expect(lg).toHaveClass('border');
+
+    rerender(<IconButton icon={Trash2} tooltip="Delete skill" size="lg" variant="ghost" />);
+    expect(screen.getByRole('button', { name: 'Delete skill' })).toHaveClass('size-11');
+
+    rerender(<IconButton icon={Trash2} tooltip="Delete skill" size="md" />);
+    expect(screen.getByRole('button', { name: 'Delete skill' })).toHaveClass('p-2');
+  });
+
   it('renders aria-pressed for stateful toggles', () => {
     render(<IconButton icon={Trash2} tooltip="Compact rows" pressed />);
     expect(screen.getByRole('button', { name: 'Compact rows' })).toHaveAttribute('aria-pressed', 'true');

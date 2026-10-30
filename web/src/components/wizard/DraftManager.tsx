@@ -199,7 +199,7 @@ export function DraftManager({ className }: DraftManagerProps) {
                     disabled={deleting === draft.id}
                     title="Delete draft"
                     aria-label={`Delete draft ${draft.name}`}
-                    className="p-1 rounded text-text-muted/40 hover:text-status-error opacity-0 group-hover:opacity-100 transition-all duration-200"
+                    className="p-1 rounded text-text-muted/40 hover:text-status-error opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover-none:opacity-100 transition-all duration-200"
                   >
                     {deleting === draft.id ? (
                       <Loader2 size={12} className="animate-spin" />
