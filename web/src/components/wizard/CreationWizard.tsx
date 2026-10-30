@@ -862,6 +862,7 @@ function ExpertEditor({
       <textarea
         value={yaml}
         onChange={(e) => onChange(e.target.value)}
+        aria-label="YAML"
         spellCheck={false}
         className={cn(
           'w-full flex-1 min-h-0 font-mono text-[11px] leading-[1.7] resize-none',

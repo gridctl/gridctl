@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useId } from 'react';
 import {
   Container,
   GitBranch,
@@ -11,7 +11,6 @@ import {
   Plus,
   X,
   Zap,
-  AlertCircle,
   KeyRound,
   ShieldCheck,
 } from 'lucide-react';
@@ -26,6 +25,7 @@ import { OperationsPicker } from './OperationsPicker';
 import { fetchPythonPackageVersions } from '../../../lib/api';
 import { cardPrefill, useDetectCard } from '../../../hooks/useDetectCard';
 import type { DetectedCardInput } from '../../../lib/api';
+import { Field, FieldError } from '../../ui/Field';
 import { ExecutionFields } from './ExecutionFields';
 
 // --- Server type definitions ---
@@ -265,17 +265,6 @@ function Section({
 
 const inputClass = 'w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors';
 const labelClass = 'block text-xs text-text-secondary mb-1.5';
-const errorClass = 'text-[10px] text-status-error mt-1';
-
-function FieldError({ error }: { error?: string }) {
-  if (!error) return null;
-  return (
-    <p className={errorClass}>
-      <AlertCircle size={10} className="inline mr-1 -mt-0.5" />
-      {error}
-    </p>
-  );
-}
 
 function CustomHeadersEditor({
   headers,
@@ -368,6 +357,7 @@ function KeyValueEditor({
               value={key}
               onChange={(e) => updateKey(key, e.target.value, i)}
               placeholder={placeholder?.key ?? 'KEY'}
+              aria-label={`${label} key ${i + 1}`}
               className={cn(inputClass, 'w-[40%] font-mono')}
             />
             <span className="text-text-muted text-xs">=</span>
@@ -377,6 +367,7 @@ function KeyValueEditor({
                 value={val}
                 onChange={(e) => updateValue(key, e.target.value)}
                 placeholder={placeholder?.value ?? 'value'}
+                aria-label={`${label} value ${i + 1}`}
                 className={cn(inputClass, 'flex-1', val.startsWith('${var:') && 'text-tertiary font-medium')}
               />
               {showSecrets && (
@@ -388,6 +379,7 @@ function KeyValueEditor({
             <button
               type="button"
               onClick={() => removeEntry(key)}
+              aria-label={`Remove ${key || 'entry'}`}
               className="p-1 text-text-muted hover:text-status-error transition-colors flex-shrink-0"
             >
               <X size={12} />
@@ -443,11 +435,13 @@ function CommandArrayBuilder({
               value={item}
               onChange={(e) => updateItem(i, e.target.value)}
               placeholder={i === 0 ? 'command' : `arg ${i}`}
+              aria-label={i === 0 ? 'Command' : `Argument ${i}`}
               className={cn(inputClass, 'flex-1 font-mono')}
             />
             <button
               type="button"
               onClick={() => removeItem(i)}
+              aria-label={`Remove ${i === 0 ? 'command' : `argument ${i}`}`}
               className="p-1 text-text-muted hover:text-status-error transition-colors flex-shrink-0"
             >
               <X size={12} />
@@ -564,14 +558,14 @@ function PythonSourceFields({
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label htmlFor="python-package" className={labelClass}>Project name <span className="text-status-error">*</span></label>
-            <input id="python-package" value={source.package ?? ''} onChange={(event) => updateSource({ package: event.target.value })} placeholder="mcp-server-fetch" className={cn(inputClass, 'font-mono')} />
-            <FieldError error={errors?.['source.package']} />
+            <input id="python-package" value={source.package ?? ''} onChange={(event) => updateSource({ package: event.target.value })} placeholder="mcp-server-fetch" aria-invalid={errors?.['source.package'] ? true : undefined} aria-describedby={errors?.['source.package'] ? 'python-package-error' : undefined} className={cn(inputClass, 'font-mono')} />
+            <FieldError id="python-package-error" error={errors?.['source.package']} />
           </div>
           <div>
             <label htmlFor="python-version" className={labelClass}>Exact version <span className="text-status-error">*</span></label>
-            <input id="python-version" value={source.ref ?? ''} onChange={(event) => updateSource({ ref: event.target.value })} list="python-package-versions" placeholder={!currentVersionResult || currentVersionResult.loading ? 'Resolving...' : '1.0.0'} className={cn(inputClass, 'font-mono')} />
+            <input id="python-version" value={source.ref ?? ''} onChange={(event) => updateSource({ ref: event.target.value })} list="python-package-versions" placeholder={!currentVersionResult || currentVersionResult.loading ? 'Resolving...' : '1.0.0'} aria-invalid={errors?.['source.ref'] || currentVersionResult?.error ? true : undefined} aria-describedby={errors?.['source.ref'] || currentVersionResult?.error ? 'python-version-error' : undefined} className={cn(inputClass, 'font-mono')} />
             <datalist id="python-package-versions">{currentVersionResult?.versions.map((version) => <option key={version} value={version} />)}</datalist>
-            <FieldError error={errors?.['source.ref'] ?? currentVersionResult?.error} />
+            <FieldError id="python-version-error" error={errors?.['source.ref'] ?? currentVersionResult?.error} />
           </div>
         </div>
       ) : (
@@ -580,8 +574,8 @@ function PythonSourceFields({
             <>
               <div>
                 <label htmlFor="source-url" className={labelClass}>Repository URL <span className="text-status-error">*</span></label>
-                <input id="source-url" type="url" value={source.url ?? ''} onChange={(event) => updateSource({ url: event.target.value })} placeholder="https://github.com/org/repo.git" className={cn(inputClass, errors?.['source.url'] && 'border-status-error/50')} />
-                <FieldError error={errors?.['source.url']} />
+                <input id="source-url" type="url" value={source.url ?? ''} onChange={(event) => updateSource({ url: event.target.value })} placeholder="https://github.com/org/repo.git" aria-invalid={errors?.['source.url'] ? true : undefined} aria-describedby={errors?.['source.url'] ? 'source-url-error' : undefined} className={cn(inputClass, errors?.['source.url'] && 'border-status-error/50')} />
+                <FieldError id="source-url-error" error={errors?.['source.url']} />
               </div>
               <div>
                 <label htmlFor="source-ref" className={labelClass}>Ref</label>
@@ -593,8 +587,8 @@ function PythonSourceFields({
           ) : (
             <div>
               <label htmlFor="source-path" className={labelClass}>Local root <span className="text-status-error">*</span></label>
-              <input id="source-path" value={source.path ?? ''} onChange={(event) => updateSource({ path: event.target.value })} placeholder="./path/to/server" className={cn(inputClass, 'font-mono')} />
-              <FieldError error={errors?.['source.path']} />
+              <input id="source-path" value={source.path ?? ''} onChange={(event) => updateSource({ path: event.target.value })} placeholder="./path/to/server" aria-invalid={errors?.['source.path'] ? true : undefined} aria-describedby={errors?.['source.path'] ? 'source-path-error' : undefined} className={cn(inputClass, 'font-mono')} />
+              <FieldError id="source-path-error" error={errors?.['source.path']} />
             </div>
           )}
 
@@ -677,6 +671,7 @@ interface MCPServerFormProps {
 }
 
 export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
+  const uid = useId();
   const cardDetect = useDetectCard();
   const [cardInputs, setCardInputs] = useState<DetectedCardInput[]>([]);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
@@ -728,21 +723,21 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
         expanded={expandedSections.has('identity')}
         onToggle={() => toggleSection('identity')}
       >
-        <div>
-          <label className={labelClass}>
-            Name <span className="text-status-error">*</span>
-          </label>
-          <input
-            type="text"
-            value={data.name}
-            onChange={(e) => onChange({ name: toKebabCase(e.target.value) })}
-            onBlur={(e) => onChange({ name: e.target.value.replace(/-+$/, '') })}
-            placeholder="my-server"
-            className={cn(inputClass, 'font-mono', errors?.name && 'border-status-error/50')}
-          />
-          <FieldError error={errors?.name} />
-          <p className="text-[10px] text-text-muted mt-1">Kebab-case identifier for this server</p>
-        </div>
+        <Field label="Name" required error={errors?.name} help="Kebab-case identifier for this server">
+          {({ id, describedBy, invalid }) => (
+            <input
+              id={id}
+              type="text"
+              value={data.name}
+              onChange={(e) => onChange({ name: toKebabCase(e.target.value) })}
+              onBlur={(e) => onChange({ name: e.target.value.replace(/-+$/, '') })}
+              placeholder="my-server"
+              aria-describedby={describedBy}
+              aria-invalid={invalid}
+              className={cn(inputClass, 'font-mono', errors?.name && 'border-status-error/50')}
+            />
+          )}
+        </Field>
       </Section>
 
       {/* Section 2: Server Type */}
@@ -799,41 +794,45 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
         <div className="space-y-3 transition-all duration-200">
           {/* Container: image */}
           {visibility.image && (
-            <div>
-              <label className={labelClass}>
-                Image <span className="text-status-error">*</span>
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={data.image ?? ''}
-                  onChange={(e) => onChange({ image: e.target.value })}
-                  placeholder="image:tag"
-                  list="image-presets"
-                  className={cn(inputClass, 'font-mono', errors?.image && 'border-status-error/50')}
-                />
-                <datalist id="image-presets">
-                  {IMAGE_PRESETS.map((p) => (
-                    <option key={p} value={p} />
-                  ))}
-                </datalist>
-              </div>
-              <FieldError error={errors?.image} />
-            </div>
+            <Field label="Image" required error={errors?.image}>
+              {({ id, describedBy, invalid }) => (
+                <div className="relative">
+                  <input
+                    id={id}
+                    type="text"
+                    value={data.image ?? ''}
+                    onChange={(e) => onChange({ image: e.target.value })}
+                    placeholder="image:tag"
+                    list="image-presets"
+                    aria-describedby={describedBy}
+                    aria-invalid={invalid}
+                    className={cn(inputClass, 'font-mono', errors?.image && 'border-status-error/50')}
+                  />
+                  <datalist id="image-presets">
+                    {IMAGE_PRESETS.map((p) => (
+                      <option key={p} value={p} />
+                    ))}
+                  </datalist>
+                </div>
+              )}
+            </Field>
           )}
 
           {/* External: url */}
           {visibility.url && (
             <div>
-              <label className={labelClass}>
+              <label htmlFor={`${uid}-url`} className={labelClass}>
                 URL <span className="text-status-error">*</span>
               </label>
               <div className="flex items-center gap-2">
                 <input
+                  id={`${uid}-url`}
                   type="url"
                   value={data.url ?? ''}
                   onChange={(e) => onChange({ url: e.target.value })}
                   placeholder="https://my-server.example.com/mcp"
+                  aria-invalid={errors?.url ? true : undefined}
+                  aria-describedby={errors?.url ? `${uid}-url-error` : undefined}
                   className={cn(inputClass, 'flex-1', errors?.url && 'border-status-error/50')}
                 />
                 <button
@@ -852,7 +851,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                   {cardDetect.loading ? 'Detecting...' : 'Detect from URL'}
                 </button>
               </div>
-              <FieldError error={errors?.url} />
+              <FieldError id={`${uid}-url-error`} error={errors?.url} />
               {cardDetect.error && (
                 <p className="text-[10px] text-status-error mt-1">{cardDetect.error.message}</p>
               )}
@@ -879,41 +878,44 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
           {visibility.ssh && (
             <div className="space-y-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
               <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className={labelClass}>
-                    Host <span className="text-status-error">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={data.ssh?.host ?? ''}
-                    onChange={(e) =>
-                      onChange({ ssh: { ...data.ssh, host: e.target.value, user: data.ssh?.user ?? '' } })
-                    }
-                    placeholder="192.168.1.100"
-                    className={cn(inputClass, 'font-mono', errors?.['ssh.host'] && 'border-status-error/50')}
-                  />
-                  <FieldError error={errors?.['ssh.host']} />
-                </div>
-                <div>
-                  <label className={labelClass}>
-                    User <span className="text-status-error">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={data.ssh?.user ?? ''}
-                    onChange={(e) =>
-                      onChange({ ssh: { ...data.ssh, host: data.ssh?.host ?? '', user: e.target.value } })
-                    }
-                    placeholder="root"
-                    className={cn(inputClass, 'font-mono', errors?.['ssh.user'] && 'border-status-error/50')}
-                  />
-                  <FieldError error={errors?.['ssh.user']} />
-                </div>
+                <Field label="Host" required error={errors?.['ssh.host']}>
+                  {({ id, describedBy, invalid }) => (
+                    <input
+                      id={id}
+                      type="text"
+                      value={data.ssh?.host ?? ''}
+                      onChange={(e) =>
+                        onChange({ ssh: { ...data.ssh, host: e.target.value, user: data.ssh?.user ?? '' } })
+                      }
+                      placeholder="192.168.1.100"
+                      aria-describedby={describedBy}
+                      aria-invalid={invalid}
+                      className={cn(inputClass, 'font-mono', errors?.['ssh.host'] && 'border-status-error/50')}
+                    />
+                  )}
+                </Field>
+                <Field label="User" required error={errors?.['ssh.user']}>
+                  {({ id, describedBy, invalid }) => (
+                    <input
+                      id={id}
+                      type="text"
+                      value={data.ssh?.user ?? ''}
+                      onChange={(e) =>
+                        onChange({ ssh: { ...data.ssh, host: data.ssh?.host ?? '', user: e.target.value } })
+                      }
+                      placeholder="root"
+                      aria-describedby={describedBy}
+                      aria-invalid={invalid}
+                      className={cn(inputClass, 'font-mono', errors?.['ssh.user'] && 'border-status-error/50')}
+                    />
+                  )}
+                </Field>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className={labelClass}>Port</label>
+                  <label htmlFor={`${uid}-ssh-port`} className={labelClass}>Port</label>
                   <input
+                    id={`${uid}-ssh-port`}
                     type="number"
                     value={data.ssh?.port ?? 22}
                     onChange={(e) =>
@@ -931,8 +933,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                   />
                 </div>
                 <div>
-                  <label className={labelClass}>Identity File</label>
+                  <label htmlFor={`${uid}-identity-file`} className={labelClass}>Identity File</label>
                   <input
+                    id={`${uid}-identity-file`}
                     type="text"
                     value={data.ssh?.identityFile ?? ''}
                     onChange={(e) =>
@@ -951,8 +954,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                 </div>
               </div>
               <div>
-                <label className={labelClass}>Known Hosts File</label>
+                <label htmlFor={`${uid}-known-hosts`} className={labelClass}>Known Hosts File</label>
                 <input
+                  id={`${uid}-known-hosts`}
                   type="text"
                   value={data.ssh?.knownHostsFile ?? ''}
                   onChange={(e) =>
@@ -971,8 +975,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                 <p className="text-[10px] text-text-muted mt-1">Optional — enables StrictHostKeyChecking=yes</p>
               </div>
               <div>
-                <label className={labelClass}>Jump Host</label>
+                <label htmlFor={`${uid}-jump-host`} className={labelClass}>Jump Host</label>
                 <input
+                  id={`${uid}-jump-host`}
                   type="text"
                   value={data.ssh?.jumpHost ?? ''}
                   onChange={(e) =>
@@ -996,21 +1001,22 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
           {/* OpenAPI config */}
           {visibility.openapi && (
             <div className="space-y-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
-              <div>
-                <label className={labelClass}>
-                  Spec <span className="text-status-error">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={data.openapi?.spec ?? ''}
-                  onChange={(e) =>
-                    onChange({ openapi: { ...data.openapi, spec: e.target.value } })
-                  }
-                  placeholder="https://api.example.com/openapi.yaml or ./spec.yaml"
-                  className={cn(inputClass, errors?.['openapi.spec'] && 'border-status-error/50')}
-                />
-                <FieldError error={errors?.['openapi.spec']} />
-              </div>
+              <Field label="Spec" required error={errors?.['openapi.spec']}>
+                {({ id, describedBy, invalid }) => (
+                  <input
+                    id={id}
+                    type="text"
+                    value={data.openapi?.spec ?? ''}
+                    onChange={(e) =>
+                      onChange({ openapi: { ...data.openapi, spec: e.target.value } })
+                    }
+                    placeholder="https://api.example.com/openapi.yaml or ./spec.yaml"
+                    aria-describedby={describedBy}
+                    aria-invalid={invalid}
+                    className={cn(inputClass, errors?.['openapi.spec'] && 'border-status-error/50')}
+                  />
+                )}
+              </Field>
               {/* openapi.auth is not auth:; the server does not treat it as a conflict. */}
               <CustomHeadersEditor
                 headers={data.headers}
@@ -1018,8 +1024,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                 onChange={(headers) => onChange({ headers })}
               />
               <div>
-                <label className={labelClass}>Base URL</label>
+                <label htmlFor={`${uid}-base-url`} className={labelClass}>Base URL</label>
                 <input
+                  id={`${uid}-base-url`}
                   type="url"
                   value={data.openapi?.baseUrl ?? ''}
                   onChange={(e) =>
@@ -1031,8 +1038,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
               </div>
               {/* Auth */}
               <div>
-                <label className={labelClass}>Authentication</label>
+                <label htmlFor={`${uid}-openapi-auth`} className={labelClass}>Authentication</label>
                 <select
+                  id={`${uid}-openapi-auth`}
                   value={data.openapi?.auth?.type ?? ''}
                   onChange={(e) => {
                     const authType = e.target.value;
@@ -1060,8 +1068,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
               </div>
               {data.openapi?.auth?.type === 'bearer' && (
                 <div>
-                  <label className={labelClass}>Token Environment Variable</label>
+                  <label htmlFor={`${uid}-token-env`} className={labelClass}>Token Environment Variable</label>
                   <input
+                    id={`${uid}-token-env`}
                     type="text"
                     value={data.openapi.auth.tokenEnv ?? ''}
                     onChange={(e) =>
@@ -1081,8 +1090,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
               {data.openapi?.auth?.type === 'header' && (
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className={labelClass}>Header Name</label>
+                    <label htmlFor={`${uid}-header-name`} className={labelClass}>Header Name</label>
                     <input
+                      id={`${uid}-header-name`}
                       type="text"
                       value={data.openapi.auth.header ?? ''}
                       onChange={(e) =>
@@ -1099,8 +1109,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                     />
                   </div>
                   <div>
-                    <label className={labelClass}>Value Environment Variable</label>
+                    <label htmlFor={`${uid}-header-value-env`} className={labelClass}>Value Environment Variable</label>
                     <input
+                      id={`${uid}-header-value-env`}
                       type="text"
                       value={data.openapi.auth.valueEnv ?? ''}
                       onChange={(e) =>
@@ -1121,8 +1132,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
               {data.openapi?.auth?.type === 'query' && (
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className={labelClass}>Parameter Name</label>
+                    <label htmlFor={`${uid}-param-name`} className={labelClass}>Parameter Name</label>
                     <input
+                      id={`${uid}-param-name`}
                       type="text"
                       value={data.openapi.auth.paramName ?? ''}
                       onChange={(e) =>
@@ -1139,8 +1151,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                     />
                   </div>
                   <div>
-                    <label className={labelClass}>Value Environment Variable</label>
+                    <label htmlFor={`${uid}-query-value-env`} className={labelClass}>Value Environment Variable</label>
                     <input
+                      id={`${uid}-query-value-env`}
                       type="text"
                       value={data.openapi.auth.valueEnv ?? ''}
                       onChange={(e) =>
@@ -1162,8 +1175,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                 <div className="space-y-2">
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className={labelClass}>Client ID Env Var</label>
+                      <label htmlFor={`${uid}-client-id-env`} className={labelClass}>Client ID Env Var</label>
                       <input
+                        id={`${uid}-client-id-env`}
                         type="text"
                         value={data.openapi.auth.clientIdEnv ?? ''}
                         onChange={(e) =>
@@ -1180,8 +1194,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                       />
                     </div>
                     <div>
-                      <label className={labelClass}>Client Secret Env Var</label>
+                      <label htmlFor={`${uid}-client-secret-env`} className={labelClass}>Client Secret Env Var</label>
                       <input
+                        id={`${uid}-client-secret-env`}
                         type="text"
                         value={data.openapi.auth.clientSecretEnv ?? ''}
                         onChange={(e) =>
@@ -1199,8 +1214,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                     </div>
                   </div>
                   <div>
-                    <label className={labelClass}>Token URL</label>
+                    <label htmlFor={`${uid}-token-url`} className={labelClass}>Token URL</label>
                     <input
+                      id={`${uid}-token-url`}
                       type="url"
                       value={data.openapi.auth.tokenUrl ?? ''}
                       onChange={(e) =>
@@ -1217,8 +1233,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                     />
                   </div>
                   <div>
-                    <label className={labelClass}>Scopes</label>
+                    <label htmlFor={`${uid}-openapi-scopes`} className={labelClass}>Scopes</label>
                     <input
+                      id={`${uid}-openapi-scopes`}
                       type="text"
                       value={(data.openapi.auth.scopes ?? []).join(' ')}
                       onChange={(e) =>
@@ -1243,8 +1260,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
               {data.openapi?.auth?.type === 'basic' && (
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className={labelClass}>Username Env Var</label>
+                    <label htmlFor={`${uid}-username-env`} className={labelClass}>Username Env Var</label>
                     <input
+                      id={`${uid}-username-env`}
                       type="text"
                       value={data.openapi.auth.usernameEnv ?? ''}
                       onChange={(e) =>
@@ -1261,8 +1279,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                     />
                   </div>
                   <div>
-                    <label className={labelClass}>Password Env Var</label>
+                    <label htmlFor={`${uid}-password-env`} className={labelClass}>Password Env Var</label>
                     <input
+                      id={`${uid}-password-env`}
                       type="text"
                       value={data.openapi.auth.passwordEnv ?? ''}
                       onChange={(e) =>
@@ -1304,8 +1323,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
             >
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className={labelClass}>Client Cert File</label>
+                  <label htmlFor={`${uid}-cert-file`} className={labelClass}>Client Cert File</label>
                   <input
+                    id={`${uid}-cert-file`}
                     type="text"
                     value={data.openapi?.tls?.certFile ?? ''}
                     onChange={(e) =>
@@ -1322,8 +1342,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                   />
                 </div>
                 <div>
-                  <label className={labelClass}>Client Key File</label>
+                  <label htmlFor={`${uid}-key-file`} className={labelClass}>Client Key File</label>
                   <input
+                    id={`${uid}-key-file`}
                     type="text"
                     value={data.openapi?.tls?.keyFile ?? ''}
                     onChange={(e) =>
@@ -1341,8 +1362,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                 </div>
               </div>
               <div>
-                <label className={labelClass}>CA File</label>
+                <label htmlFor={`${uid}-ca-file`} className={labelClass}>CA File</label>
                 <input
+                  id={`${uid}-ca-file`}
                   type="text"
                   value={data.openapi?.tls?.caFile ?? ''}
                   onChange={(e) =>
@@ -1398,7 +1420,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
             <div className={cn('grid gap-2', portVisible ? 'grid-cols-2' : 'grid-cols-1')}>
               {visibility.transport && (
                 <div>
-                  <label className={labelClass}>Transport</label>
+                  <label htmlFor={`${uid}-transport`} className={labelClass}>Transport</label>
                   {typeOption.transportLocked ? (
                     <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-elevated/60 border border-border/30 text-xs text-text-muted">
                       <Zap size={12} className="text-primary" />
@@ -1407,6 +1429,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                     </div>
                   ) : (
                     <select
+                      id={`${uid}-transport`}
                       value={data.transport ?? typeOption.transportDefault}
                       onChange={(e) => onChange({ transport: e.target.value })}
                       className={inputClass}
@@ -1421,23 +1444,24 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                 </div>
               )}
               {portVisible && (
-                <div>
-                  <label className={labelClass}>
-                    Port <span className="text-status-error">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    value={data.port ?? ''}
-                    onChange={(e) =>
-                      onChange({ port: e.target.value ? Number(e.target.value) : undefined })
-                    }
-                    placeholder="8080"
-                    min={1}
-                    max={65535}
-                    className={cn(inputClass, errors?.port && 'border-status-error/50')}
-                  />
-                  <FieldError error={errors?.port} />
-                </div>
+                <Field label="Port" required error={errors?.port}>
+                  {({ id, describedBy, invalid }) => (
+                    <input
+                      id={id}
+                      type="number"
+                      value={data.port ?? ''}
+                      onChange={(e) =>
+                        onChange({ port: e.target.value ? Number(e.target.value) : undefined })
+                      }
+                      placeholder="8080"
+                      min={1}
+                      max={65535}
+                      aria-describedby={describedBy}
+                      aria-invalid={invalid}
+                      className={cn(inputClass, errors?.port && 'border-status-error/50')}
+                    />
+                  )}
+                </Field>
               )}
             </div>
           )}
@@ -1505,8 +1529,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
         />
 
         <div>
-          <label className={labelClass}>Output Format</label>
+          <label htmlFor={`${uid}-output-format`} className={labelClass}>Output Format</label>
           <select
+            id={`${uid}-output-format`}
             value={data.outputFormat ?? ''}
             onChange={(e) => onChange({ outputFormat: e.target.value || undefined })}
             className={inputClass}
@@ -1531,8 +1556,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
 
         {visibility.network && (
           <div>
-            <label className={labelClass}>Network</label>
+            <label htmlFor={`${uid}-network`} className={labelClass}>Network</label>
             <input
+              id={`${uid}-network`}
               type="text"
               value={data.network ?? ''}
               onChange={(e) => onChange({ network: e.target.value || undefined })}
@@ -1557,8 +1583,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
         )}
 
         <div>
-          <label className={labelClass}>Schema Pinning</label>
+          <label htmlFor={`${uid}-schema-pinning`} className={labelClass}>Schema Pinning</label>
           <select
+            id={`${uid}-schema-pinning`}
             value={data.pinSchemas === undefined ? '' : String(data.pinSchemas)}
             onChange={(e) => {
               const v = e.target.value;
@@ -1605,6 +1632,7 @@ function ScalingControl({
   onChange: (data: Partial<MCPServerFormData>) => void;
   errors?: Record<string, string>;
 }) {
+  const uid = useId();
   const mode: 'static' | 'autoscale' = data.autoscale ? 'autoscale' : 'static';
 
   const setMode = useCallback(
@@ -1665,10 +1693,13 @@ function ScalingControl({
 
       {mode === 'static' ? (
         <div>
-          <label className={labelClass}>Replicas</label>
+          <label htmlFor={`${uid}-replicas`} className={labelClass}>Replicas</label>
           <input
+            id={`${uid}-replicas`}
             type="number"
             aria-label="Replicas"
+            aria-invalid={errors?.replicas ? true : undefined}
+            aria-describedby={errors?.replicas ? `${uid}-replicas-error` : undefined}
             value={data.replicas ?? 1}
             onChange={(e) => {
               const n = Number(e.target.value);
@@ -1681,12 +1712,13 @@ function ScalingControl({
             max={32}
             className={cn(inputClass, errors?.replicas && 'border-status-error/50')}
           />
-          <FieldError error={errors?.replicas} />
+          <FieldError id={`${uid}-replicas-error`} error={errors?.replicas} />
           <p className="text-[10px] text-text-muted mt-1">Number of parallel instances to run (1–32). Supported for container, local-process, and SSH transports.</p>
           {data.replicas !== undefined && data.replicas > 1 && (
             <div className="mt-3">
-              <label className={labelClass}>Replica Policy</label>
+              <label htmlFor={`${uid}-replica-policy`} className={labelClass}>Replica Policy</label>
               <select
+                id={`${uid}-replica-policy`}
                 aria-label="Replica Policy"
                 value={data.replicaPolicy ?? 'round-robin'}
                 onChange={(e) => {
@@ -1722,14 +1754,18 @@ function AutoscaleFields({
   onChange: (patch: Partial<AutoscaleFormData>) => void;
   errors?: Record<string, string>;
 }) {
+  const uid = useId();
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className={labelClass}>Min replicas</label>
+          <label htmlFor={`${uid}-min`} className={labelClass}>Min replicas</label>
           <input
+            id={`${uid}-min`}
             type="number"
             aria-label="Min replicas"
+            aria-invalid={errors?.['autoscale.min'] ? true : undefined}
+            aria-describedby={errors?.['autoscale.min'] ? `${uid}-min-error` : undefined}
             value={data.min}
             onChange={(e) => {
               const n = Number(e.target.value);
@@ -1740,13 +1776,16 @@ function AutoscaleFields({
             max={32}
             className={cn(inputClass, errors?.['autoscale.min'] && 'border-status-error/50')}
           />
-          <FieldError error={errors?.['autoscale.min']} />
+          <FieldError id={`${uid}-min-error`} error={errors?.['autoscale.min']} />
         </div>
         <div>
-          <label className={labelClass}>Max replicas</label>
+          <label htmlFor={`${uid}-max`} className={labelClass}>Max replicas</label>
           <input
+            id={`${uid}-max`}
             type="number"
             aria-label="Max replicas"
+            aria-invalid={errors?.['autoscale.max'] ? true : undefined}
+            aria-describedby={errors?.['autoscale.max'] ? `${uid}-max-error` : undefined}
             value={data.max}
             onChange={(e) => {
               const n = Number(e.target.value);
@@ -1757,15 +1796,18 @@ function AutoscaleFields({
             max={32}
             className={cn(inputClass, errors?.['autoscale.max'] && 'border-status-error/50')}
           />
-          <FieldError error={errors?.['autoscale.max']} />
+          <FieldError id={`${uid}-max-error`} error={errors?.['autoscale.max']} />
         </div>
       </div>
 
       <div>
-        <label className={labelClass}>Target concurrent requests per replica</label>
+        <label htmlFor={`${uid}-target`} className={labelClass}>Target concurrent requests per replica</label>
         <input
+          id={`${uid}-target`}
           type="number"
           aria-label="Target concurrent requests per replica"
+          aria-invalid={errors?.['autoscale.target_in_flight'] ? true : undefined}
+          aria-describedby={errors?.['autoscale.target_in_flight'] ? `${uid}-target-error` : undefined}
           value={data.targetInFlight}
           onChange={(e) => {
             const n = Number(e.target.value);
@@ -1776,7 +1818,7 @@ function AutoscaleFields({
           max={10000}
           className={cn(inputClass, errors?.['autoscale.target_in_flight'] && 'border-status-error/50')}
         />
-        <FieldError error={errors?.['autoscale.target_in_flight']} />
+        <FieldError id={`${uid}-target-error`} error={errors?.['autoscale.target_in_flight']} />
         <p className="text-[10px] text-text-muted mt-1">
           gridctl adds replicas when the average in-flight request count exceeds this.
         </p>
@@ -1784,31 +1826,37 @@ function AutoscaleFields({
 
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className={labelClass}>Scale up after</label>
+          <label htmlFor={`${uid}-scale-up`} className={labelClass}>Scale up after</label>
           <input
+            id={`${uid}-scale-up`}
             type="text"
             aria-label="Scale up after"
+            aria-invalid={errors?.['autoscale.scale_up_after'] ? true : undefined}
+            aria-describedby={errors?.['autoscale.scale_up_after'] ? `${uid}-scale-up-error` : undefined}
             value={data.scaleUpAfter ?? ''}
             onChange={(e) => onChange({ scaleUpAfter: e.target.value || undefined })}
             placeholder="30s"
             className={cn(inputClass, 'font-mono', errors?.['autoscale.scale_up_after'] && 'border-status-error/50')}
           />
-          <FieldError error={errors?.['autoscale.scale_up_after']} />
+          <FieldError id={`${uid}-scale-up-error`} error={errors?.['autoscale.scale_up_after']} />
           <p className="text-[10px] text-text-muted mt-1">
             Wait this long while above target before spawning a replica (min 10s).
           </p>
         </div>
         <div>
-          <label className={labelClass}>Scale down after</label>
+          <label htmlFor={`${uid}-scale-down`} className={labelClass}>Scale down after</label>
           <input
+            id={`${uid}-scale-down`}
             type="text"
             aria-label="Scale down after"
+            aria-invalid={errors?.['autoscale.scale_down_after'] ? true : undefined}
+            aria-describedby={errors?.['autoscale.scale_down_after'] ? `${uid}-scale-down-error` : undefined}
             value={data.scaleDownAfter ?? ''}
             onChange={(e) => onChange({ scaleDownAfter: e.target.value || undefined })}
             placeholder="5m"
             className={cn(inputClass, 'font-mono', errors?.['autoscale.scale_down_after'] && 'border-status-error/50')}
           />
-          <FieldError error={errors?.['autoscale.scale_down_after']} />
+          <FieldError id={`${uid}-scale-down-error`} error={errors?.['autoscale.scale_down_after']} />
           <p className="text-[10px] text-text-muted mt-1">
             Wait this long while below target before reaping a replica (min 1m).
           </p>
@@ -1816,10 +1864,13 @@ function AutoscaleFields({
       </div>
 
       <div>
-        <label className={labelClass}>Warm pool</label>
+        <label htmlFor={`${uid}-warm-pool`} className={labelClass}>Warm pool</label>
         <input
+          id={`${uid}-warm-pool`}
           type="number"
           aria-label="Warm pool"
+          aria-invalid={errors?.['autoscale.warm_pool'] ? true : undefined}
+          aria-describedby={errors?.['autoscale.warm_pool'] ? `${uid}-warm-pool-error` : undefined}
           value={data.warmPool ?? 0}
           onChange={(e) => {
             const n = Number(e.target.value);
@@ -1831,7 +1882,7 @@ function AutoscaleFields({
           max={32}
           className={cn(inputClass, errors?.['autoscale.warm_pool'] && 'border-status-error/50')}
         />
-        <FieldError error={errors?.['autoscale.warm_pool']} />
+        <FieldError id={`${uid}-warm-pool-error`} error={errors?.['autoscale.warm_pool']} />
         <p className="text-[10px] text-text-muted mt-1">
           Extra idle replicas kept above the load-derived target.
         </p>
@@ -1873,6 +1924,7 @@ function ExternalAuthFields({
   auth: ExternalAuthFormData | undefined;
   onChange: (auth: ExternalAuthFormData | undefined) => void;
 }) {
+  const uid = useId();
   const update = (patch: Partial<ExternalAuthFormData>) => {
     onChange({ ...(auth as ExternalAuthFormData), ...patch });
   };
@@ -1884,8 +1936,9 @@ function ExternalAuthFields({
         custom header, or OAuth 2.1 brokered by the gateway.
       </p>
       <div>
-        <label className={labelClass}>Type</label>
+        <label htmlFor={`${uid}-type`} className={labelClass}>Type</label>
         <select
+          id={`${uid}-type`}
           aria-label="Authentication type"
           value={auth?.type ?? ''}
           onChange={(e) => {
@@ -1903,11 +1956,12 @@ function ExternalAuthFields({
 
       {auth?.type === 'bearer' && (
         <div>
-          <label className={labelClass}>
+          <label htmlFor={`${uid}-token`} className={labelClass}>
             Token <span className="text-status-error">*</span>
           </label>
           <div className="flex items-center gap-0.5">
             <input
+              id={`${uid}-token`}
               type="text"
               value={auth.token ?? ''}
               onChange={(e) => update({ token: e.target.value })}
@@ -1925,10 +1979,11 @@ function ExternalAuthFields({
       {auth?.type === 'header' && (
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <label className={labelClass}>
+            <label htmlFor={`${uid}-header`} className={labelClass}>
               Header name <span className="text-status-error">*</span>
             </label>
             <input
+              id={`${uid}-header`}
               type="text"
               value={auth.header ?? ''}
               onChange={(e) => update({ header: e.target.value })}
@@ -1937,11 +1992,12 @@ function ExternalAuthFields({
             />
           </div>
           <div>
-            <label className={labelClass}>
+            <label htmlFor={`${uid}-value`} className={labelClass}>
               Value <span className="text-status-error">*</span>
             </label>
             <div className="flex items-center gap-0.5">
               <input
+                id={`${uid}-value`}
                 type="text"
                 value={auth.value ?? ''}
                 onChange={(e) => update({ value: e.target.value })}
@@ -1965,8 +2021,9 @@ function ExternalAuthFields({
             registration is used when they are left empty.
           </p>
           <div>
-            <label className={labelClass}>Scopes</label>
+            <label htmlFor={`${uid}-scopes`} className={labelClass}>Scopes</label>
             <input
+              id={`${uid}-scopes`}
               type="text"
               aria-label="OAuth scopes"
               value={(auth.scopes ?? []).join(' ')}
@@ -1984,8 +2041,9 @@ function ExternalAuthFields({
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className={labelClass}>Client ID</label>
+              <label htmlFor={`${uid}-client-id`} className={labelClass}>Client ID</label>
               <input
+                id={`${uid}-client-id`}
                 type="text"
                 aria-label="OAuth client ID"
                 value={auth.clientId ?? ''}
@@ -1995,9 +2053,10 @@ function ExternalAuthFields({
               />
             </div>
             <div>
-              <label className={labelClass}>Client Secret</label>
+              <label htmlFor={`${uid}-client-secret`} className={labelClass}>Client Secret</label>
               <div className="flex items-center gap-0.5">
                 <input
+                  id={`${uid}-client-secret`}
                   type="text"
                   aria-label="OAuth client secret"
                   value={auth.clientSecret ?? ''}

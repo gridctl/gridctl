@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useId } from 'react';
 import {
   Layers,
   Shield,
@@ -11,7 +11,6 @@ import {
   Plus,
   X,
   Trash2,
-  AlertCircle,
   Zap,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -23,6 +22,7 @@ import type {
 } from '../../../lib/yaml-builder';
 import { VariablesPopover } from '../VariablesPopover';
 import { VaultSetSelector } from '../VaultSetSelector';
+import { Field } from '../../ui/Field';
 import { MCPServerForm } from './MCPServerForm';
 
 // --- Shared form primitives ---
@@ -37,16 +37,6 @@ function toKebabCase(value: string): string {
     .replace(/[^a-z0-9-]/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-/, ''); // strip leading hyphen only; trailing stripped on blur
-}
-
-function FieldError({ error }: { error?: string }) {
-  if (!error) return null;
-  return (
-    <p className="text-[10px] text-status-error mt-1">
-      <AlertCircle size={10} className="inline mr-1 -mt-0.5" />
-      {error}
-    </p>
-  );
 }
 
 // --- Accordion section ---
@@ -156,6 +146,7 @@ function KeyValueEditor({
               value={key}
               onChange={(e) => updateKey(key, e.target.value, i)}
               placeholder={placeholder?.key ?? 'KEY'}
+              aria-label={`${label} key ${i + 1}`}
               className={cn(inputClass, 'w-[40%] font-mono')}
             />
             <span className="text-text-muted text-xs">=</span>
@@ -165,6 +156,7 @@ function KeyValueEditor({
                 value={val}
                 onChange={(e) => updateValue(key, e.target.value)}
                 placeholder={placeholder?.value ?? 'value'}
+                aria-label={`${label} value ${i + 1}`}
                 className={cn(inputClass, 'flex-1', val.startsWith('${var:') && 'text-tertiary font-medium')}
               />
               {showSecrets && (
@@ -174,6 +166,7 @@ function KeyValueEditor({
             <button
               type="button"
               onClick={() => removeEntry(key)}
+              aria-label={`Remove ${key || 'entry'}`}
               className="p-1 text-text-muted hover:text-status-error transition-colors flex-shrink-0"
             >
               <X size={12} />
@@ -234,11 +227,13 @@ function StringArrayEditor({
               value={item}
               onChange={(e) => updateItem(i, e.target.value)}
               placeholder={placeholder}
+              aria-label={`${label} ${i + 1}`}
               className={cn(inputClass, 'flex-1 font-mono')}
             />
             <button
               type="button"
               onClick={() => removeItem(i)}
+              aria-label={`Remove ${label} ${i + 1}`}
               className="p-1 text-text-muted hover:text-status-error transition-colors flex-shrink-0"
             >
               <X size={12} />
@@ -341,6 +336,7 @@ function ItemHeader({
         onClick={onRemove}
         className="p-1 text-text-muted hover:text-status-error transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
         title="Remove"
+        aria-label={`Remove ${name || label}`}
       >
         <Trash2 size={11} />
       </button>
@@ -357,13 +353,15 @@ function InlineResourceForm({
   data: ResourceFormData;
   onChange: (data: Partial<ResourceFormData>) => void;
 }) {
+  const uid = useId();
   return (
     <div className="space-y-3 px-3 pb-3">
       <div>
-        <label className={labelClass}>
+        <label htmlFor={`${uid}-name`} className={labelClass}>
           Name <span className="text-status-error">*</span>
         </label>
         <input
+          id={`${uid}-name`}
           type="text"
           value={data.name}
           onChange={(e) => onChange({ name: toKebabCase(e.target.value) })}
@@ -372,10 +370,11 @@ function InlineResourceForm({
         />
       </div>
       <div>
-        <label className={labelClass}>
+        <label htmlFor={`${uid}-image`} className={labelClass}>
           Image <span className="text-status-error">*</span>
         </label>
         <input
+          id={`${uid}-image`}
           type="text"
           value={data.image}
           onChange={(e) => onChange({ image: e.target.value })}
@@ -407,8 +406,9 @@ function InlineResourceForm({
         emptyText="No volumes"
       />
       <div>
-        <label className={labelClass}>Network</label>
+        <label htmlFor={`${uid}-network`} className={labelClass}>Network</label>
         <input
+          id={`${uid}-network`}
           type="text"
           value={data.network ?? ''}
           onChange={(e) => onChange({ network: e.target.value || undefined })}
@@ -468,6 +468,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
   const [expandedServers, setExpandedServers] = useState<Set<number>>(new Set());
   const [expandedResources, setExpandedResources] = useState<Set<number>>(new Set());
   const [showResourcePresets, setShowResourcePresets] = useState(false);
+  const uid = useId();
 
   const toggleSection = useCallback((section: string) => {
     setExpandedSections((prev) => {
@@ -583,21 +584,21 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
         onToggle={() => toggleSection('identity')}
       >
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelClass}>
-              Name <span className="text-status-error">*</span>
-            </label>
-            <input
-              type="text"
-              value={data.name}
-              onChange={(e) => onChange({ name: toKebabCase(e.target.value) })}
-              onBlur={(e) => onChange({ name: e.target.value.replace(/-+$/, '') })}
-              placeholder="my-stack"
-              className={cn(inputClass, 'font-mono', errors?.name && 'border-status-error/50')}
-            />
-            <FieldError error={errors?.name} />
-            <p className="text-[10px] text-text-muted mt-1">Kebab-case stack identifier</p>
-          </div>
+          <Field label="Name" required error={errors?.name} help="Kebab-case stack identifier">
+            {({ id, describedBy, invalid }) => (
+              <input
+                id={id}
+                type="text"
+                value={data.name}
+                onChange={(e) => onChange({ name: toKebabCase(e.target.value) })}
+                onBlur={(e) => onChange({ name: e.target.value.replace(/-+$/, '') })}
+                placeholder="my-stack"
+                aria-describedby={describedBy}
+                aria-invalid={invalid}
+                className={cn(inputClass, 'font-mono', errors?.name && 'border-status-error/50')}
+              />
+            )}
+          </Field>
           <div>
             <label className={labelClass}>Version</label>
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-elevated/60 border border-border/30 text-xs text-text-muted">
@@ -633,8 +634,9 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
 
         {/* Auth */}
         <div>
-          <label className={labelClass}>Authentication</label>
+          <label htmlFor={`${uid}-auth`} className={labelClass}>Authentication</label>
           <select
+            id={`${uid}-auth`}
             value={data.gateway?.auth?.type ?? ''}
             onChange={(e) => {
               const type = e.target.value;
@@ -661,11 +663,12 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
         {data.gateway?.auth?.type && (
           <div className="space-y-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
             <div>
-              <label className={labelClass}>
+              <label htmlFor={`${uid}-token`} className={labelClass}>
                 Token <span className="text-status-error">*</span>
               </label>
               <div className="flex items-center gap-0.5">
                 <input
+                  id={`${uid}-token`}
                   type="text"
                   value={data.gateway.auth.token}
                   onChange={(e) =>
@@ -687,8 +690,9 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
             </div>
             {data.gateway.auth.type === 'header' && (
               <div>
-                <label className={labelClass}>Header Name</label>
+                <label htmlFor={`${uid}-header-name`} className={labelClass}>Header Name</label>
                 <input
+                  id={`${uid}-header-name`}
                   type="text"
                   value={data.gateway.auth.header ?? ''}
                   onChange={(e) =>
@@ -701,8 +705,9 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
             )}
             {data.gateway.auth.type === 'api_key' && (
               <div>
-                <label className={labelClass}>Header Name</label>
+                <label htmlFor={`${uid}-api-key-header`} className={labelClass}>Header Name</label>
                 <input
+                  id={`${uid}-api-key-header`}
                   type="text"
                   value={data.gateway.auth.header ?? ''}
                   onChange={(e) =>
@@ -720,8 +725,9 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
         {/* Code Mode + Output Format */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className={labelClass}>Code Mode</label>
+            <label htmlFor={`${uid}-code-mode`} className={labelClass}>Code Mode</label>
             <select
+              id={`${uid}-code-mode`}
               value={data.gateway?.codeMode ?? ''}
               onChange={(e) =>
                 onChange({ gateway: { ...data.gateway, codeMode: e.target.value || undefined } })
@@ -733,8 +739,9 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
             </select>
           </div>
           <div>
-            <label className={labelClass}>Output Format</label>
+            <label htmlFor={`${uid}-output-format`} className={labelClass}>Output Format</label>
             <select
+              id={`${uid}-output-format`}
               value={data.gateway?.outputFormat ?? ''}
               onChange={(e) =>
                 onChange({ gateway: { ...data.gateway, outputFormat: e.target.value || undefined } })
@@ -783,8 +790,9 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className={labelClass}>Sampling Rate</label>
+              <label htmlFor={`${uid}-sampling`} className={labelClass}>Sampling Rate</label>
               <input
+                id={`${uid}-sampling`}
                 type="number"
                 min="0"
                 max="1"
@@ -806,8 +814,9 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
               />
             </div>
             <div>
-              <label className={labelClass}>Retention</label>
+              <label htmlFor={`${uid}-retention`} className={labelClass}>Retention</label>
               <input
+                id={`${uid}-retention`}
                 type="text"
                 value={data.gateway?.tracing?.retention ?? ''}
                 placeholder="24h"
@@ -825,8 +834,9 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
             </div>
           </div>
           <div>
-            <label className={labelClass}>Export</label>
+            <label htmlFor={`${uid}-export`} className={labelClass}>Export</label>
             <select
+              id={`${uid}-export`}
               value={data.gateway?.tracing?.export ?? ''}
               onChange={(e) =>
                 onChange({
@@ -844,8 +854,9 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
           </div>
           {data.gateway?.tracing?.export === 'otlp' && (
             <div>
-              <label className={labelClass}>OTLP Endpoint</label>
+              <label htmlFor={`${uid}-otlp`} className={labelClass}>OTLP Endpoint</label>
               <input
+                id={`${uid}-otlp`}
                 type="url"
                 value={data.gateway?.tracing?.endpoint ?? ''}
                 placeholder="http://localhost:4318"
@@ -893,8 +904,9 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
           </div>
           {data.gateway?.security?.schemaPinning?.enabled && (
             <div>
-              <label className={labelClass}>Action</label>
+              <label htmlFor={`${uid}-pin-action`} className={labelClass}>Action</label>
               <select
+                id={`${uid}-pin-action`}
                 value={data.gateway?.security?.schemaPinning?.action ?? ''}
                 onChange={(e) =>
                   onChange({
@@ -925,8 +937,9 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
           <p className="text-[11px] font-medium text-text-muted uppercase tracking-wide">Performance</p>
           {data.gateway?.codeMode === 'on' && (
             <div>
-              <label className={labelClass}>Code Mode Timeout</label>
+              <label htmlFor={`${uid}-code-timeout`} className={labelClass}>Code Mode Timeout</label>
               <input
+                id={`${uid}-code-timeout`}
                 type="number"
                 min="1"
                 value={data.gateway?.codeModeTimeout ?? ''}
@@ -945,8 +958,9 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
             </div>
           )}
           <div>
-            <label className={labelClass}>Max Tool Result Bytes</label>
+            <label htmlFor={`${uid}-max-bytes`} className={labelClass}>Max Tool Result Bytes</label>
             <input
+              id={`${uid}-max-bytes`}
               type="number"
               min="1"
               value={data.gateway?.maxToolResultBytes ?? ''}
@@ -976,8 +990,9 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
       >
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className={labelClass}>Network Name</label>
+            <label htmlFor={`${uid}-network-name`} className={labelClass}>Network Name</label>
             <input
+              id={`${uid}-network-name`}
               type="text"
               value={data.network?.name ?? ''}
               onChange={(e) =>
@@ -988,8 +1003,9 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
             />
           </div>
           <div>
-            <label className={labelClass}>Driver</label>
+            <label htmlFor={`${uid}-driver`} className={labelClass}>Driver</label>
             <select
+              id={`${uid}-driver`}
               value={data.network?.driver ?? 'bridge'}
               onChange={(e) =>
                 onChange({ network: { name: data.network?.name ?? '', driver: e.target.value } })
@@ -1014,8 +1030,9 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
       >
         <div className="space-y-3">
           <div>
-            <label className={labelClass}>Log File Path</label>
+            <label htmlFor={`${uid}-log-file`} className={labelClass}>Log File Path</label>
             <input
+              id={`${uid}-log-file`}
               type="text"
               value={data.logging?.file ?? ''}
               placeholder="/var/log/gridctl.log"
@@ -1026,8 +1043,9 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div>
-              <label className={labelClass}>Max Size (MB)</label>
+              <label htmlFor={`${uid}-max-size`} className={labelClass}>Max Size (MB)</label>
               <input
+                id={`${uid}-max-size`}
                 type="number"
                 min="1"
                 value={data.logging?.maxSizeMB ?? ''}
@@ -1040,8 +1058,9 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
               <p className="text-[10px] text-text-muted mt-1">Default: 100</p>
             </div>
             <div>
-              <label className={labelClass}>Max Age (Days)</label>
+              <label htmlFor={`${uid}-max-age`} className={labelClass}>Max Age (Days)</label>
               <input
+                id={`${uid}-max-age`}
                 type="number"
                 min="1"
                 value={data.logging?.maxAgeDays ?? ''}
@@ -1054,8 +1073,9 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
               <p className="text-[10px] text-text-muted mt-1">Default: 7</p>
             </div>
             <div>
-              <label className={labelClass}>Max Backups</label>
+              <label htmlFor={`${uid}-max-backups`} className={labelClass}>Max Backups</label>
               <input
+                id={`${uid}-max-backups`}
                 type="number"
                 min="1"
                 value={data.logging?.maxBackups ?? ''}

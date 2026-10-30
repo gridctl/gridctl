@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useId } from 'react';
 import {
   GitBranch,
   Search,
@@ -49,6 +49,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
   const [recentSources, setRecentSources] = useState<SkillSourceStatus[]>([]);
   const [loadedRecent, setLoadedRecent] = useState(false);
   const urlInputRef = useRef<HTMLInputElement>(null);
+  const fieldId = useId();
 
   // Auth card state — the whole card is transient, never persisted.
   const auth = useAuthCard();
@@ -179,13 +180,14 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
 
         {/* URL field */}
         <div className="space-y-1.5">
-          <label className="text-[10px] text-text-muted uppercase tracking-wider">
+          <label htmlFor={`${fieldId}-url`} className="text-[10px] text-text-muted uppercase tracking-wider">
             Repository URL
           </label>
           <div className="relative">
             <FolderGit2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted/50" />
             <input
               ref={urlInputRef}
+              id={`${fieldId}-url`}
               type="text"
               value={url}
               onChange={(e) => {
@@ -227,10 +229,11 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
         {/* Optional fields row */}
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
-            <label className="text-[10px] text-text-muted uppercase tracking-wider">
+            <label htmlFor={`${fieldId}-ref`} className="text-[10px] text-text-muted uppercase tracking-wider">
               Ref <span className="normal-case">(optional)</span>
             </label>
             <input
+              id={`${fieldId}-ref`}
               type="text"
               value={ref}
               onChange={(e) => setRef(e.target.value)}
@@ -239,10 +242,11 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] text-text-muted uppercase tracking-wider">
+            <label htmlFor={`${fieldId}-path`} className="text-[10px] text-text-muted uppercase tracking-wider">
               Path <span className="normal-case">(optional)</span>
             </label>
             <input
+              id={`${fieldId}-path`}
               type="text"
               value={path}
               onChange={(e) => setPath(e.target.value)}

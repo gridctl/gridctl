@@ -115,6 +115,22 @@ describe('StackForm', () => {
     expect(onChange).toHaveBeenCalledWith({ secrets: { sets: ['dev'] } });
   });
 
+  it('associates the stack Name label with its input', () => {
+    render(<StackForm data={defaultData()} onChange={onChange} />);
+    expect(screen.getByLabelText(/^Name/)).toHaveAttribute('placeholder', 'my-stack');
+  });
+
+  it('names the server remove button after the row', () => {
+    render(
+      <StackForm
+        data={defaultData({ mcpServers: [{ name: 'alpha', serverType: 'container' }] })}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByText('MCP Servers'));
+    expect(screen.getByRole('button', { name: 'Remove alpha' })).toBeInTheDocument();
+  });
+
   it('can add MCP servers', () => {
     render(<StackForm data={defaultData()} onChange={onChange} />);
     fireEvent.click(screen.getByText('MCP Servers'));

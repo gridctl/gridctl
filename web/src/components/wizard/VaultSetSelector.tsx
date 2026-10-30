@@ -151,6 +151,7 @@ export function VaultSetSelector({ value, onChange }: VaultSetSelectorProps) {
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Filter sets..."
+            aria-label="Filter variable sets"
             autoFocus
             className="w-full bg-background/60 border border-border/40 rounded-lg pl-7 pr-3 py-1.5 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors"
           />
@@ -221,6 +222,7 @@ export function VaultSetSelector({ value, onChange }: VaultSetSelectorProps) {
             <button
               type="button"
               onClick={() => handleRemove(name)}
+              aria-label={`Remove set ${name}`}
               className="p-1 text-text-muted hover:text-status-error transition-colors flex-shrink-0"
             >
               <X size={12} />

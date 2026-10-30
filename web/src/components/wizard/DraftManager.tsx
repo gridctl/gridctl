@@ -141,6 +141,7 @@ export function DraftManager({ className }: DraftManagerProps) {
               onChange={(e) => setSaveName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSave()}
               placeholder="Draft name..."
+              aria-label="Draft name"
               className="flex-1 bg-background/60 border border-border/40 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50"
               autoFocus
             />
