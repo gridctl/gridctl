@@ -108,9 +108,28 @@ export function VaultSetSelector({ value, onChange }: VaultSetSelectorProps) {
   const emptyMessage =
     sets === null ? null : allSelected ? 'All sets selected' : 'No sets found';
 
+  // The dropdown portals to document.body, which puts it outside the wizard
+  // focus trap and outside that dialog's Escape handler. Own both keys here,
+  // as VariablesPopover does: a trap that cannot see this subtree yanks Tab
+  // back into the wizard, and an ancestor Escape listener would close the
+  // wizard instead of the picker. React routes portal events through the
+  // component tree, so stopping propagation here reaches those listeners.
+  const handleDropdownKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      setOpen(false);
+      triggerRef.current?.focus();
+      return;
+    }
+    if (e.key === 'Tab') {
+      e.stopPropagation();
+    }
+  };
+
   const dropdown = position && (
     <div
       ref={dropdownRef}
+      onKeyDown={handleDropdownKeyDown}
       style={{
         position: 'fixed',
         top: position.top,
