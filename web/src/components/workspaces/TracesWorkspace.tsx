@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useId, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { cn } from '../../lib/cn';
+import { WORKSPACE_LABELS } from '../../types/workspace';
 import { useUIStore } from '../../stores/useUIStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { useTracesStore } from '../../stores/useTracesStore';
 import { useRunsStore } from '../../stores/useRunsStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { PopoutButton } from '../ui/PopoutButton';
+import { Tab, TabPanel, Tabs } from '../ui/Tabs';
 import { TracesView } from '../traces/TracesView';
 import { RunsView } from '../runs/RunsView';
 
@@ -17,6 +19,7 @@ import { RunsView } from '../runs/RunsView';
 // detail pivots back to /logs?trace=<id> for the reverse correlation and to
 // /metrics?scope=servers&selected=<server> for the same server's metrics.
 export function TracesWorkspace() {
+  const headingId = useId();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const compact = useUIStore((s) => s.compactMode.traces);
@@ -80,56 +83,59 @@ export function TracesWorkspace() {
     );
   }, [selectedTraceId, filters, setSearchParams]);
 
+  const selectTraces = () => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('view');
+      return next;
+    }, { replace: true });
+  };
+  const selectRuns = () => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('view', 'runs');
+      return next;
+    }, { replace: true });
+  };
+
   return (
     <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
+      <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.traces}</h1>
       <header
         className={cn(
           'flex-shrink-0 bg-surface/30 backdrop-blur-sm border-b border-border-subtle flex items-center gap-3 px-6',
           compact ? 'py-2' : 'py-3',
         )}
       >
-        <div
-          role="tablist"
-          aria-label="Observability view"
-          className="flex items-center gap-1"
+        <Tabs
+          ariaLabel="Observability view"
+          className="px-0 pt-0 border-0 border-b-0 gap-1"
         >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={view === 'traces'}
+          <Tab
+            id="traces-tab-traces"
+            selected={view === 'traces'}
+            controls="traces-tabpanel"
+            onSelect={selectTraces}
             className={cn(
-              'font-sans text-[10px] uppercase tracking-[0.4em] px-2 py-1 rounded',
+              'font-sans text-[10px] uppercase tracking-[0.4em] px-2 py-1 rounded border-b-0 border-transparent mb-0',
               view === 'traces' ? 'text-primary' : 'text-text-muted/60',
             )}
-            onClick={() => {
-              setSearchParams((prev) => {
-                const next = new URLSearchParams(prev);
-                next.delete('view');
-                return next;
-              }, { replace: true });
-            }}
           >
             traces
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={view === 'runs'}
+          </Tab>
+          <Tab
+            id="traces-tab-runs"
+            selected={view === 'runs'}
+            controls="traces-tabpanel"
+            onSelect={selectRuns}
             className={cn(
-              'font-sans text-[10px] uppercase tracking-[0.4em] px-2 py-1 rounded',
+              'font-sans text-[10px] uppercase tracking-[0.4em] px-2 py-1 rounded border-b-0 border-transparent mb-0',
               view === 'runs' ? 'text-primary' : 'text-text-muted/60',
             )}
-            onClick={() => {
-              setSearchParams((prev) => {
-                const next = new URLSearchParams(prev);
-                next.set('view', 'runs');
-                return next;
-              }, { replace: true });
-            }}
           >
             runs
-          </button>
-        </div>
+          </Tab>
+        </Tabs>
         <div className="font-mono text-[10px] text-text-muted truncate">
           {view === 'runs'
             ? `${runCount} dispatch record${runCount === 1 ? '' : 's'}${runPartial ? ' (partial)' : ''}`
@@ -140,7 +146,12 @@ export function TracesWorkspace() {
                 : 'tool calls'}
         </div>
       </header>
-      <div className="flex-1 min-h-0">
+      <TabPanel
+        id="traces-tabpanel"
+        labelledBy={view === 'runs' ? 'traces-tab-runs' : 'traces-tab-traces'}
+        active
+        className="flex-1 min-h-0"
+      >
         {view === 'runs' ? (
           <RunsView servers={servers} />
         ) : (
@@ -158,7 +169,7 @@ export function TracesWorkspace() {
             }
           />
         )}
-      </div>
+      </TabPanel>
     </div>
   );
 }

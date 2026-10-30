@@ -43,8 +43,7 @@ function WorkspacePill({ workspace }: WorkspacePillProps) {
   return (
     <NavLink
       to={`/${workspace.id}`}
-      role="tab"
-      aria-selected={isActive}
+      aria-current={isActive ? 'page' : undefined}
       aria-label={workspace.label}
       title={workspace.label}
       data-workspace={workspace.id}
@@ -66,18 +65,18 @@ function WorkspacePill({ workspace }: WorkspacePillProps) {
   );
 }
 
-// Segmented control of pills in the Header, one per WORKSPACE_CONFIG entry.
-// role="tablist" with aria-selected on each tab for screen-reader navigation.
+// Workspace navigation. NavLink's default prefix match agrees with isActive
+// (including /library/:skillName). aria-current is set from that same check
+// so a deep link cannot disagree with the pill highlight.
 export function WorkspaceSwitcher() {
   return (
-    <div
-      role="tablist"
-      aria-label="Workspace"
+    <nav
+      aria-label="Workspaces"
       className="flex items-center gap-1 p-1 rounded-full bg-surface-elevated/60 backdrop-blur-sm border border-border/50"
     >
       {WORKSPACE_CONFIG.map((ws) => (
         <WorkspacePill key={ws.id} workspace={ws} />
       ))}
-    </div>
+    </nav>
   );
 }

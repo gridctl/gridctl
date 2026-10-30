@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { TracesWorkspace } from '../components/workspaces/TracesWorkspace';
 import { useStackStore } from '../stores/useStackStore';
 import { useTracesStore } from '../stores/useTracesStore';
@@ -159,7 +159,48 @@ beforeEach(() => {
   });
 });
 
+function SearchProbe() {
+  const location = useLocation();
+  return <span data-testid="location-search">{location.search}</span>;
+}
+
 describe('TracesWorkspace', () => {
+  it('wires traces and runs tabs to one tabpanel and moves with ArrowRight', () => {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: (query: string) => ({
+        matches: false,
+        media: query,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => false,
+      }),
+    });
+    render(
+      <MemoryRouter initialEntries={['/traces']}>
+        <SearchProbe />
+        <Routes>
+          <Route path="/traces" element={<TracesWorkspace />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    const traces = screen.getByRole('tab', { name: 'traces' });
+    const runs = screen.getByRole('tab', { name: 'runs' });
+    expect(traces).toHaveAttribute('aria-controls', 'traces-tabpanel');
+    expect(runs).toHaveAttribute('aria-controls', 'traces-tabpanel');
+    const panel = document.getElementById('traces-tabpanel');
+    expect(panel).toHaveAttribute('role', 'tabpanel');
+    expect(panel).toHaveAttribute('aria-labelledby', 'traces-tab-traces');
+
+    traces.focus();
+    fireEvent.keyDown(traces, { key: 'ArrowRight' });
+    expect(runs).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('location-search')).toHaveTextContent('?view=runs');
+    expect(panel).toHaveAttribute('aria-labelledby', 'traces-tab-runs');
+  });
+
   it('shows the global trace list with the tool as the primary label', async () => {
     renderAt('/traces');
     await waitFor(() => {
