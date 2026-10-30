@@ -96,7 +96,7 @@ export function Modal({
   return (
     <div
       className={cn(
-        'fixed inset-0 z-50 animate-fade-in-scale',
+        'fixed inset-0 z-modal animate-fade-in-scale',
         flush
           ? 'bg-background flex flex-col'
           : 'bg-background/80 backdrop-blur-sm flex items-center justify-center',
@@ -128,8 +128,10 @@ export function Modal({
           <div className="flex items-center gap-1">
             {canExpand && (
               <button
+                type="button"
                 onClick={() => setExpanded(!expanded)}
                 title={expanded ? 'Compact view' : 'Expanded view'}
+                aria-label={expanded ? 'Compact view' : 'Expanded view'}
                 className="p-1.5 rounded-lg hover:bg-surface-highlight transition-all duration-200 group"
               >
                 {expanded ? (
@@ -141,9 +143,11 @@ export function Modal({
             )}
             {onPopout && (
               <button
+                type="button"
                 onClick={onPopout}
                 disabled={popoutDisabled}
                 title="Open in new window"
+                aria-label="Open in new window"
                 className={cn(
                   'p-1.5 rounded-lg transition-all duration-200 group',
                   'hover:bg-primary/10 hover:shadow-[0_0_12px_rgba(245,158,11,0.15)]',
@@ -160,7 +164,9 @@ export function Modal({
               </button>
             )}
             <button
+              type="button"
               onClick={onClose}
+              aria-label="Close"
               className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors"
             >
               <X size={14} className="text-text-muted" />
