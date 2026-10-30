@@ -136,7 +136,7 @@ function DetachedSidebarPageContent() {
       />
 
       {/* Header */}
-      <header className="h-12 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-b border-border/50 flex items-center justify-between px-4 z-10 relative">
+      <header className="h-12 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-b border-border/50 flex items-center justify-between px-4 z-raised relative">
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-tertiary/30 to-transparent" />
 
         <div className="flex items-center gap-3">
@@ -168,7 +168,7 @@ function DetachedSidebarPageContent() {
             </button>
 
             {dropdownOpen && (
-              <div className="absolute top-full left-0 mt-1 w-64 py-1 bg-surface-elevated/95 backdrop-blur-xl border border-border/50 rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto scrollbar-dark animate-fade-in-scale">
+              <div className="absolute top-full left-0 mt-1 w-64 py-1 bg-surface-elevated/95 backdrop-blur-xl border border-border/50 rounded-lg shadow-lg z-popover max-h-80 overflow-y-auto scrollbar-dark animate-fade-in-scale">
                 {(nodes ?? []).length === 0 ? (
                   <div className="px-3 py-2 text-xs text-text-muted">No nodes available</div>
                 ) : (

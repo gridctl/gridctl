@@ -24,6 +24,6 @@ export function AuthBoundary({ children }: { children: ReactNode }) {
   return <>
     <div ref={content} tabIndex={-1} inert={required} className="contents">{children}</div>
     {required && <AuthPrompt />}
-    {!required && notice && <p role="status" className="fixed bottom-8 left-3 right-3 z-[60] p-3 bg-surface border border-border text-sm text-text-primary">{notice}</p>}
+    {!required && notice && <p role="status" className="fixed bottom-8 left-3 right-3 z-toast p-3 bg-surface border border-border text-sm text-text-primary">{notice}</p>}
   </>;
 }

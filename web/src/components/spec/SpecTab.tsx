@@ -282,7 +282,7 @@ export function SpecTab() {
                       >
                         {severityIcon(highestSeverity as IssueSeverity)}
                         {/* Tooltip */}
-                        <span className="absolute right-6 top-0 z-10 hidden group-hover/anno:block w-64 px-3 py-2 rounded-lg bg-surface-elevated border border-border/50 shadow-lg text-xs text-text-secondary whitespace-normal">
+                        <span className="absolute right-6 top-0 z-raised hidden group-hover/anno:block w-64 px-3 py-2 rounded-lg bg-surface-elevated border border-border/50 shadow-lg text-xs text-text-secondary whitespace-normal">
                           {lineIssues.map((issue, j) => (
                             <div key={j} className="flex items-start gap-1.5 mb-1 last:mb-0">
                               {severityIcon(issue.severity)}

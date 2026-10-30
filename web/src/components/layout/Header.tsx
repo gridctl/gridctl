@@ -102,7 +102,7 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
   const isConnected = connectionStatus === 'connected';
 
   return (
-    <header className="h-14 bg-surface/80 backdrop-blur-xl border-b border-border/50 flex items-center justify-between px-5 relative z-30">
+    <header className="h-14 bg-surface/80 backdrop-blur-xl border-b border-border/50 flex items-center justify-between px-5 relative z-header">
       {/* Subtle gradient line at top */}
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
 
@@ -119,8 +119,9 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
 
       {/* Reload notification */}
       {reloadMessage && (
+        // z-overlay ranks only against header children (backdrop-blur stacking context), so this banner cannot reach toasts; header popovers on z-popover paint over it.
         <div className={cn(
-          'absolute top-full left-1/2 -translate-x-1/2 mt-2 z-50',
+          'absolute top-full left-1/2 -translate-x-1/2 mt-2 z-overlay',
           'px-4 py-2 rounded-lg backdrop-blur-xl border shadow-lg',
           'text-xs font-medium transition-all duration-300 animate-fade-in-scale',
           reloadMessage.isError

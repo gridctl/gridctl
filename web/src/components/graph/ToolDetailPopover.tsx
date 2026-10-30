@@ -124,7 +124,7 @@ const ToolDetailPopover = memo(({ serverName, toolName, positionStyle, onClose }
       onClick={(e) => e.stopPropagation()}
       style={positionStyle}
       className={cn(
-        'nodrag absolute z-50 w-72 frost-surface',
+        'nodrag absolute z-popover w-72 frost-surface',
         !positionStyle && 'left-full top-0 ml-2',
         'rounded-lg border border-border bg-surface-elevated/95',
         'backdrop-blur-xl shadow-bevel animate-fade-in-scale',

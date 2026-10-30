@@ -304,7 +304,7 @@ export function SortableHeader({
 // window's Per-Tool panel.
 export function ScrollableBreakdown({ children }: { children: ReactNode }) {
   return (
-    <div className="max-h-[60vh] overflow-y-auto scrollbar-dark [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-[1] [&_thead_th]:bg-surface">
+    <div className="max-h-[60vh] overflow-y-auto scrollbar-dark [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-sticky [&_thead_th]:bg-surface">
       {children}
     </div>
   );

@@ -132,7 +132,7 @@ export function DraftManager({ className }: DraftManagerProps) {
 
       {/* Save Dialog */}
       {showSave && (
-        <div className="absolute top-full right-0 mt-2 z-50 w-64 bg-surface-elevated border border-border/50 rounded-xl shadow-lg p-3 animate-fade-in-scale">
+        <div className="absolute top-full right-0 mt-2 z-popover w-64 bg-surface-elevated border border-border/50 rounded-xl shadow-lg p-3 animate-fade-in-scale">
           <div className="text-xs font-medium text-text-secondary mb-2">Save Draft</div>
           <div className="flex gap-2">
             <input
@@ -161,7 +161,7 @@ export function DraftManager({ className }: DraftManagerProps) {
 
       {/* Drafts List */}
       {showList && (
-        <div className="absolute top-full right-0 mt-2 z-50 w-72 bg-surface-elevated border border-border/50 rounded-xl shadow-lg overflow-hidden animate-fade-in-scale">
+        <div className="absolute top-full right-0 mt-2 z-popover w-72 bg-surface-elevated border border-border/50 rounded-xl shadow-lg overflow-hidden animate-fade-in-scale">
           <div className="px-3 py-2.5 border-b border-border/30">
             <div className="text-xs font-medium text-text-secondary">Saved Drafts</div>
           </div>

@@ -78,6 +78,24 @@
      onto the recessed list behind it. Tight, diffuse, no spread. */
   --shadow-pane-left: -12px 0 28px -16px rgba(0, 0, 0, 0.7);
   --grain-opacity: 0.015;
+
+  /* Layering scale. Tailwind maps z-<name> to --z-index-<name>.
+     popover sits above modal so a portaled dropdown opened from a dialog
+     paints over that dialog. */
+  --z-index-raised: 10;
+  --z-index-sticky: 20;
+  --z-index-header: 30;
+  --z-index-overlay: 40;
+  --z-index-modal: 50;
+  --z-index-popover: 60;
+  --z-index-toast: 70;
+}
+
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
 }
 
 /* ============================================

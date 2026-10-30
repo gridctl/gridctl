@@ -153,7 +153,7 @@ function DetachedRegistryContent() {
       />
 
       {/* Header */}
-      <header className="h-12 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-b border-border/50 flex items-center justify-between px-4 z-10 relative">
+      <header className="h-12 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-b border-border/50 flex items-center justify-between px-4 z-raised relative">
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
 
         <div className="flex items-center gap-3">
@@ -187,7 +187,7 @@ function DetachedRegistryContent() {
       </header>
 
       {/* Search + Filter bar */}
-      <div className="px-4 pt-3 pb-2.5 bg-surface/60 backdrop-blur-sm border-b border-border/40 flex flex-col gap-2 z-10 flex-shrink-0">
+      <div className="px-4 pt-3 pb-2.5 bg-surface/60 backdrop-blur-sm border-b border-border/40 flex flex-col gap-2 z-raised flex-shrink-0">
         {/* Search input */}
         <div className="relative">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted/50 pointer-events-none" />
@@ -240,7 +240,7 @@ function DetachedRegistryContent() {
       {/* Content */}
       <main
         ref={contentRef}
-        className="flex-1 overflow-y-auto scrollbar-dark relative z-10"
+        className="flex-1 overflow-y-auto scrollbar-dark relative z-raised"
         style={{ '--log-font-size': `${fontSize}px` } as React.CSSProperties}
       >
         {isLoading && (
@@ -303,7 +303,7 @@ function DetachedRegistryContent() {
       </main>
 
       {/* Status footer */}
-      <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-[10px] text-text-muted z-10">
+      <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-[10px] text-text-muted z-raised">
         <span>
           {status ? `${status.totalSkills} total` : ''}
           {status ? ` · ` : ''}

@@ -340,7 +340,7 @@ export function Canvas() {
       <div className="film-grain" />
       {/* Empty state CTA */}
       {isEmpty && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+        <div className="absolute inset-0 z-raised flex items-center justify-center pointer-events-none">
           <div className="pointer-events-auto glass-panel-elevated rounded-xl p-8 text-center max-w-sm animate-fade-in-up">
             <div className="w-12 h-12 rounded-xl bg-surface-elevated border border-border/40 flex items-center justify-center mx-auto mb-4">
               <Layers size={22} className="text-primary" />
@@ -482,8 +482,8 @@ export function Canvas() {
       </CanvasBase>
       {showSpecMode && (
         <>
-          <div className="absolute inset-0 pointer-events-none bg-secondary/[0.02] z-10" />
-          <SpecModeOverlay className="absolute inset-0 z-20" />
+          <div className="absolute inset-0 pointer-events-none bg-secondary/[0.02] z-raised" />
+          <SpecModeOverlay className="absolute inset-0 z-sticky" />
         </>
       )}
     </div>

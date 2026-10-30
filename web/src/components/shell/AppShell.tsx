@@ -122,7 +122,7 @@ function AppShellInner() {
       }}
     >
       {isShuttingDown && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-lg bg-primary/10 border border-primary/20 text-primary text-sm font-medium backdrop-blur-xl animate-fade-in-scale">
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-overlay px-4 py-2 rounded-lg bg-primary/10 border border-primary/20 text-primary text-sm font-medium backdrop-blur-xl animate-fade-in-scale">
           Gateway is shutting down...
         </div>
       )}
