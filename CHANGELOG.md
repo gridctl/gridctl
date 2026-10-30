@@ -4,6 +4,10 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Fixes
+
+- The web UI no longer swallows typing in the JSON variable editor, and Cmd/Ctrl+F reaches browser Find. Fit view and canvas zoom shortcuts apply only on the Stack workspace, and Cmd/Ctrl+A is no longer intercepted. Agent, skill, and Traces tabs move with the keyboard. In-shell pages expose one main landmark, a heading, and named regions. Status dots have accessible names and stay distinct under reduced motion. `/runs` and `/runs/:runID` redirect to the Runs tab at `/traces?view=runs`.
+
 ### Bug Fixes
 
 - The create-server and create-stack wizards, vault prompts, and skill editor now associate each visible label with its control. Icon-only buttons on those forms and in the registry, zoom controls, trace waterfall, and global context dialog have accessible names. Field errors are tied to the control with `aria-invalid` and `aria-describedby`. The skill browse toggle is a checkbox. `IconButton` requires a name and renders `type="button"`. (#1363)

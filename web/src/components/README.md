@@ -86,7 +86,7 @@ workspaces. Reach for them before duplicating UI:
 | `CanvasBase` | `components/canvas/` | Stack `graph/Canvas.tsx` |
 | `InspectorHeader` | `components/inspector/` | Inspectors that need the standard icon + title + close/popout strip |
 | `InspectorSection` | `components/inspector/` | Stack `Sidebar.tsx`, `DetachedSidebarPage.tsx` (collapsible section pattern) |
-| `InspectorTabList` / `InspectorTabButton` | `components/inspector/` | Library tab list a11y wrapper |
+| `Tabs` / `Tab` / `TabPanel` | `components/ui/` | Keyboard-operable tab lists. Arrow keys move and select. `InspectorTabList` / `InspectorTabButton` are wrappers that keep inspector chrome |
 | `EmptyState` | `components/ui/` | Anywhere a "no items / no selection" affordance is needed |
 | `FailedState` | `components/ui/` | Failed fetch with nothing loaded. Title is `<feature> unavailable`, with Retry when `onRetry` is set. Not a spinner or an empty collection |
 | `FailureBanner` | `components/ui/` | Failed refresh when data is already on screen: one alert row and Retry |
@@ -150,7 +150,7 @@ web/src/components/
 ├── shell/            AppShell, WorkspaceSwitcher, RootRedirect
 ├── workspaces/       StackWorkspace, LibraryWorkspace, … (one per top-level workspace)
 ├── layout/           Header, StatusBar, Sidebar (Stack inspector), WorkspaceShell
-├── inspector/        InspectorHeader, InspectorSection, InspectorTabList    ← shared primitives
+├── inspector/        InspectorHeader, InspectorSection, InspectorTabList (wraps ui/Tabs)
 ├── canvas/           CanvasBase                                              ← shared React Flow scaffolding
 ├── graph/            Stack Canvas + custom node types
 ├── registry/         Library workspace (LibraryGrid, SkillEditor, …)
