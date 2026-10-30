@@ -161,7 +161,7 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
             isRefreshing && 'animate-spin',
             'hover:text-primary hover:border-primary/30'
           )}
-          tooltip="Refresh (⌘R)"
+          tooltip="Refresh (⌘⇧R)"
         />
         <IconButton
           icon={RotateCcw}

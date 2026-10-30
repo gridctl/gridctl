@@ -84,16 +84,19 @@ function AppShellInner() {
     document.title = documentTitleForWorkspace(workspaceFromPath(pathname));
   }, [pathname]);
 
-  // Keyboard shortcuts. ⌘1-8 switch workspaces; ⌘J opens Logs (the old
+  // Keyboard shortcuts. ⌘1-9 switch workspaces; ⌘J opens Logs (the old
   // bottom-panel toggle's muscle memory lands on the panel's main content).
+  // Fit and zoom are Stack-only, matching the palette. Outside Stack the
+  // keys are not prevented, so the browser keeps Find and zoom.
+  const canvasShortcuts = activeWorkspace === 'stack';
   useKeyboardShortcuts({
-    onFitView: () => fitView({ padding: 0.2, duration: 300 }),
+    onFitView: canvasShortcuts ? () => fitView({ padding: 0.2, duration: 300 }) : undefined,
     onEscape: () => {
       selectNode(null);
       setSidebarOpen(false);
     },
-    onZoomIn: () => zoomIn({ duration: 200 }),
-    onZoomOut: () => zoomOut({ duration: 200 }),
+    onZoomIn: canvasShortcuts ? () => zoomIn({ duration: 200 }) : undefined,
+    onZoomOut: canvasShortcuts ? () => zoomOut({ duration: 200 }) : undefined,
     onRefresh: handleRefresh,
     onOpenLogs: () => navigate('/logs'),
     onOpenPalette: toggleCommandPalette,
