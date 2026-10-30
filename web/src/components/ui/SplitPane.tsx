@@ -3,17 +3,17 @@ import { cn } from '../../lib/cn';
 
 /** The visible divider between split panes: grip glyph + hairline. */
 export function SplitPaneHandle({
-  onMouseDown,
+  onPointerDown,
   isDragging,
 }: {
-  onMouseDown: (e: React.MouseEvent) => void;
+  onPointerDown: (e: React.PointerEvent) => void;
   isDragging: boolean;
 }) {
   return (
     <div
-      onMouseDown={onMouseDown}
+      onPointerDown={onPointerDown}
       className={cn(
-        'relative flex items-center justify-center cursor-col-resize select-none',
+        'relative flex items-center justify-center cursor-col-resize select-none touch-none',
         'w-2 hover:bg-primary/5 transition-colors duration-150',
         isDragging && 'bg-primary/10',
       )}
