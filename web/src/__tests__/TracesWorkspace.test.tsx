@@ -186,6 +186,8 @@ describe('TracesWorkspace', () => {
         </Routes>
       </MemoryRouter>,
     );
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole('heading', { level: 1, name: 'Traces' })).toBeInTheDocument();
     const traces = screen.getByRole('tab', { name: 'traces' });
     const runs = screen.getByRole('tab', { name: 'runs' });
     expect(traces).toHaveAttribute('aria-controls', 'traces-tabpanel');

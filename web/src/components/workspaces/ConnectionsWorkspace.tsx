@@ -19,6 +19,7 @@ import { useStackStore } from '../../stores/useStackStore';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useListNav } from '../../hooks/useListNav';
 import type { AgentProjectionStatus, ClientStatus, SessionEntry, WiringRow } from '../../types';
+import { WORKSPACE_LABELS } from '../../types/workspace';
 import { showToast } from '../ui/Toast';
 import { EmptyState, FailedState } from '../ui/EmptyState';
 import { GlobalContextDialog } from '../context/GlobalContextDialog';
@@ -373,6 +374,7 @@ export default function ConnectionsWorkspace() {
       <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
         {healthError ? (
           <div className="flex-1 min-h-0">
+            <h1 className="sr-only">{WORKSPACE_LABELS.connections}</h1>
             <FailedState
               feature="Connections"
               message={healthError}
@@ -381,6 +383,7 @@ export default function ConnectionsWorkspace() {
           </div>
         ) : healthPending ? (
           <div className="flex-1 min-h-0">
+            <h1 className="sr-only">{WORKSPACE_LABELS.connections}</h1>
             <EmptyState
               icon={Loader2}
               iconClassName="animate-spin"
