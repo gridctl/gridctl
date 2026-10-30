@@ -43,7 +43,7 @@ the window is narrow. The left group is `min-w-0 flex-1`; without that
 the nav has no bounded width and the pills stay clipped. Below `sm` the
 logo is shorter, the persistence label is visually hidden, and the
 decorative dividers drop. The status bar stays one row; tokenizer, format
-savings, and sessions hide at 800 px and below. A disconnected error
+savings, and sessions hide below 800 px. A disconnected error
 truncates, and its `title` carries the full string.
 
 Detached windows (`/sidebar`, `/editor`, `/logs-window`, `/metrics-window`,
@@ -174,7 +174,7 @@ workspace-specific props.
   (`web/src/lib/pointerCapture.ts`).
 - Don't hide a pack chip name with a min-width container query. The name
   uses `@max-[339px]:hidden`, so it stays visible unless a query container
-  ancestor is narrower than 340 px. A min-width query is false with no
+  ancestor is narrower than 339 px. A min-width query is false with no
   container and would blank the name on every other surface.
 
 ## File map
