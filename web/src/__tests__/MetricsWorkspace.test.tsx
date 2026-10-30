@@ -173,8 +173,8 @@ describe('MetricsWorkspace', () => {
   it('names the full blast radius in the clear confirm', async () => {
     renderAt();
     fireEvent.click(screen.getByTitle('Clear Metrics'));
-    expect(await screen.findByText('Clear all metrics?')).toBeInTheDocument();
-    expect(screen.getByText(/all recorded token and tool usage history/)).toBeInTheDocument();
+    const dialog = await screen.findByRole('alertdialog', { name: /clear all metrics/i });
+    expect(dialog).toHaveTextContent(/all recorded token and tool usage history/);
   });
 
   it('offers no pricing-manager entry point anywhere in the workspace', async () => {

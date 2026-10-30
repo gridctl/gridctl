@@ -1,12 +1,14 @@
 import { useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Pause, Play, RefreshCw, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { IconButton } from '../ui/IconButton';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { METRICS_TIME_RANGES, type MetricsTimeRange } from '../../hooks/useMetricsSeries';
 
 // MetricsControls is the shared control cluster for every metrics surface:
 // the time-range segmented control, a live/pause toggle, refresh, clear (with
-// an inline confirm), and a host-supplied `right` slot (popout in-shell,
+// a confirm dialog), and a host-supplied `right` slot (popout in-shell,
 // fullscreen detached). Pulling it out of the hosts keeps their toolbars
 // identical and the clear-confirm logic in one place.
 export function MetricsControls({
@@ -77,46 +79,31 @@ export function MetricsControls({
         )}
         <IconButton icon={RefreshCw} onClick={onRefresh} tooltip="Refresh" size="sm" variant="ghost" />
 
-        <div className="relative">
-          <IconButton
-            icon={Trash2}
-            onClick={() => setShowClearConfirm(true)}
-            tooltip="Clear Metrics"
-            size="sm"
-            variant="ghost"
-            className="hover:text-status-error"
-          />
-          {showClearConfirm && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setShowClearConfirm(false)} />
-              <div className="absolute right-0 top-full mt-1 z-50 p-3 rounded-lg bg-surface-elevated border border-border/50 shadow-xl min-w-[220px]">
-                {/* The endpoint is a total wipe (Accumulator.Clear), so the
-                    copy names the whole blast radius — never just tokens. */}
-                <p className="text-xs text-text-primary font-medium mb-2">Clear all metrics?</p>
-                <p className="text-[10px] text-text-muted mb-3">
-                  This wipes all recorded token and tool usage history. It cannot be undone.
-                </p>
-                <div className="flex items-center gap-2 justify-end">
-                  <button
-                    onClick={() => setShowClearConfirm(false)}
-                    className="px-2.5 py-1 text-[10px] font-medium rounded-md bg-surface-highlight text-text-secondary hover:text-text-primary transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowClearConfirm(false);
-                      onClear();
-                    }}
-                    className="px-2.5 py-1 text-[10px] font-medium rounded-md bg-status-error/15 text-status-error hover:bg-status-error/25 transition-colors"
-                  >
-                    Clear
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
+        <IconButton
+          icon={Trash2}
+          onClick={() => setShowClearConfirm(true)}
+          tooltip="Clear Metrics"
+          size="sm"
+          variant="ghost"
+          className="hover:text-status-error"
+        />
+        {/* Portaled: both hosts render this cluster inside a backdrop-blur header,
+            which would trap a fixed dialog. */}
+        {createPortal(
+          <ConfirmDialog
+            isOpen={showClearConfirm}
+            onClose={() => setShowClearConfirm(false)}
+            onConfirm={() => {
+              setShowClearConfirm(false);
+              onClear();
+            }}
+            title="Clear all metrics?"
+            message="This wipes all recorded token and tool usage history. It cannot be undone."
+            confirmLabel="Clear"
+            variant="danger"
+          />,
+          document.body,
+        )}
 
         {right && (
           <>

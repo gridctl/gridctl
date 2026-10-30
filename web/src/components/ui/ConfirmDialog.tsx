@@ -15,6 +15,8 @@ interface ConfirmDialogProps {
   variant?: Variant;
   /** Which button to focus on open. Defaults to 'cancel' for safety. */
   autoFocus?: 'cancel' | 'confirm';
+  /** Disables the confirm button while a mutation is in flight. */
+  busy?: boolean;
 }
 
 export function ConfirmDialog({
@@ -27,6 +29,7 @@ export function ConfirmDialog({
   cancelLabel = 'Cancel',
   variant = 'default',
   autoFocus = 'cancel',
+  busy = false,
 }: ConfirmDialogProps) {
   const titleId = useId();
   const descId = useId();
@@ -76,7 +79,7 @@ export function ConfirmDialog({
   return (
     <div
       className={cn(
-        'fixed inset-0 z-[60] animate-fade-in-scale',
+        'fixed inset-0 z-modal animate-fade-in-scale',
         'bg-background/80 backdrop-blur-sm flex items-center justify-center',
       )}
     >
@@ -120,8 +123,10 @@ export function ConfirmDialog({
             onClick={() => {
               onConfirm();
             }}
+            disabled={busy}
             className={cn(
               'px-3 py-1.5 text-xs font-medium rounded-lg transition-colors',
+              'disabled:opacity-50 disabled:cursor-not-allowed',
               confirmClasses,
             )}
           >

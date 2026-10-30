@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { Command } from 'cmdk';
 import { AlertCircle, Check, Loader2, RefreshCw, Save, Search, Undo2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
@@ -50,6 +51,11 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
   const saveLabel = dirty
     ? `Save ${diffCount} change${diffCount === 1 ? '' : 's'} & Reload`
     : 'Saved';
+  const keepEditingRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (discardPrompt) keepEditingRef.current?.focus();
+  }, [discardPrompt]);
 
   return (
     <div aria-label="Tools Editor" aria-busy={isSaving} className="space-y-2">
@@ -58,6 +64,11 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
           role="alertdialog"
           aria-label="Discard unsaved tool changes"
           className="rounded-md border border-status-pending/40 bg-status-pending/[0.05] px-3 py-2 space-y-2"
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape') return;
+            e.stopPropagation();
+            handleKeepEditing();
+          }}
         >
           <p className="text-[11px] text-status-pending font-medium">
             Discard unsaved changes to {discardPrompt}?
@@ -71,6 +82,7 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
               Discard
             </button>
             <button
+              ref={keepEditingRef}
               type="button"
               onClick={handleKeepEditing}
               className="text-[10px] px-2 py-1 rounded-md border border-border/40 text-text-secondary hover:bg-surface-highlight/50 transition-colors"
@@ -127,7 +139,7 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
               onValueChange={setQuery}
               placeholder="Search tools..."
               aria-label="Search tools"
-              className="flex-1 bg-transparent outline-none text-xs text-text-primary placeholder:text-text-muted/60"
+              className="flex-1 bg-transparent rounded text-xs text-text-primary placeholder:text-text-muted/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
             />
           </div>
 
@@ -152,6 +164,7 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
                     'flex items-start gap-2.5 px-3 py-2 cursor-pointer select-none outline-none transition-colors',
                     'hover:bg-surface-highlight/50',
                     '[&[data-selected=true]]:bg-primary/[0.06]',
+                    'focus-visible:bg-primary/[0.06]',
                     isSelected && 'bg-primary/[0.03]',
                   )}
                 >

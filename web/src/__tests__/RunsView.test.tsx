@@ -144,8 +144,56 @@ describe('RunsView', () => {
     fireEvent.click(screen.getByRole('button', { name: /enable recording/i }));
     expect(screen.getByText(/Metadata only/)).toBeInTheDocument();
     expect(screen.getByText(/Seven days and 100 MiB/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /^enable$/i }));
+    const dialog = screen.getByRole('alertdialog', { name: /enable run recording/i });
+    expect(dialog).toHaveTextContent(/Metadata only/);
+    expect(dialog).toHaveTextContent(/Seven days and 100 MiB/);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(updateStackRuns).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /enable recording/i }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: /^enable$/i }));
     await waitFor(() => expect(updateStackRuns).toHaveBeenCalledWith({ enabled: true }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+  });
+
+  it('keeps the enable confirm open when the mutation fails', async () => {
+    vi.mocked(fetchRuns).mockResolvedValue({ records: [], warnings: [], partial: false, wipeEpoch: 0 });
+    vi.mocked(fetchRunsStatus).mockResolvedValue(status({ enabled: false, effective: false, inventory: { stack: 'demo', signal: 'runs', path: '', sizeBytes: 0, fileCount: 0 } }));
+    vi.mocked(updateStackRuns).mockRejectedValue(new Error('recorder unavailable'));
+    render(
+      <MemoryRouter>
+        <RunsView servers={[]} />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: /enable recording/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /enable recording/i }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: /^enable$/i }));
+    const dialog = await screen.findByRole('alertdialog', { name: /enable run recording/i });
+    expect(dialog).toHaveTextContent('recorder unavailable');
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('recorder unavailable');
+  });
+
+  it('keeps the disable confirm open when the mutation fails and closes it on success', async () => {
+    vi.mocked(updateStackRuns).mockResolvedValue({ success: true });
+    render(
+      <MemoryRouter>
+        <RunsView servers={['github']} />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: /disable recording/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /disable recording/i }));
+    const opened = screen.getByRole('alertdialog', { name: /disable run recording/i });
+    expect(opened).toHaveTextContent(/Retained history is kept/);
+    fireEvent.click(within(opened).getByRole('button', { name: /^disable$/i }));
+    await waitFor(() => expect(updateStackRuns).toHaveBeenCalledWith({ enabled: false }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+
+    vi.mocked(updateStackRuns).mockRejectedValue(new Error('still recording'));
+    fireEvent.click(screen.getByRole('button', { name: /disable recording/i }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: /^disable$/i }));
+    const dialog = await screen.findByRole('alertdialog', { name: /disable run recording/i });
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('still recording');
   });
 
   it('shows drop counts and wipe partial errors', async () => {

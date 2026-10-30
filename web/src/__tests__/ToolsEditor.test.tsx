@@ -168,9 +168,11 @@ describe('ToolsEditor', () => {
     const dialog = screen.getByRole('alertdialog');
     expect(dialog).toHaveTextContent('Discard unsaved changes to db?');
 
-    // Clicking "Keep editing" restores the prior selection in the store.
-    fireEvent.click(screen.getByRole('button', { name: /Keep editing/ }));
+    const keep = screen.getByRole('button', { name: /Keep editing/ });
+    expect(keep).toHaveFocus();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
     expect(mockStoreState.selectNode).toHaveBeenCalledWith('mcp-db');
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 
   it('renders every server tool when the global store is empty (code mode)', () => {
