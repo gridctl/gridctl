@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchToolUsage } from '../lib/api';
 import type { ToolUsageResponse } from '../types';
 import { useAuthStore } from '../stores/useAuthStore';
+import { useInterval } from './useInterval';
 
 // Poll cadence for Audit Mode usage. Slower than status polling — usage shifts
 // over hours/days, so a tight loop buys nothing and the Fuse/classification
@@ -29,35 +30,26 @@ export function useToolUsage(enabled: boolean): ToolUsageState {
   const [usage, setUsage] = useState<ToolUsageResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fetchedAt, setFetchedAt] = useState<number | null>(null);
-
+  const alive = useRef(true);
   useEffect(() => {
-    if (!enabled || authRequired) return;
-    let active = true;
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
 
-    // State writes happen only inside this async loader (after an await
-    // tick), never synchronously in the effect body, so a refetch can't
-    // cascade an extra synchronous render. Date.now() is read here (not in
-    // render) so audit classification stays pure.
-    const load = async () => {
-      try {
-        const data = await fetchToolUsage();
-        if (!active || useAuthStore.getState().generation !== generation) return;
-        setUsage(data);
-        setFetchedAt(Date.now());
-        setError(null);
-      } catch (err) {
-        if (!active || useAuthStore.getState().generation !== generation) return;
-        setError(err instanceof Error ? err.message : 'Failed to load tool usage');
-      }
-    };
+  const load = useCallback(async () => {
+    try {
+      const data = await fetchToolUsage();
+      if (!alive.current || useAuthStore.getState().generation !== generation || useAuthStore.getState().authRequired) return;
+      setUsage(data);
+      setFetchedAt(Date.now());
+      setError(null);
+    } catch (err) {
+      if (!alive.current || useAuthStore.getState().generation !== generation || useAuthStore.getState().authRequired) return;
+      setError(err instanceof Error ? err.message : 'Failed to load tool usage');
+    }
+  }, [generation]);
 
-    void load();
-    const id = setInterval(load, USAGE_POLL_MS);
-    return () => {
-      active = false;
-      clearInterval(id);
-    };
-  }, [enabled, generation, authRequired]);
+  useInterval(load, USAGE_POLL_MS, { enabled: enabled && !authRequired });
 
   return { usage, error, fetchedAt };
 }

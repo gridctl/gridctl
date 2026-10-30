@@ -1,4 +1,5 @@
 import { useCallback, useId, useMemo, useRef, useState } from 'react';
+import { ReactFlowProvider } from '@xyflow/react';
 import { useSearchParams } from 'react-router';
 import { AlertCircle, RefreshCw, WifiOff } from 'lucide-react';
 import { Sidebar } from '../layout/Sidebar';
@@ -8,7 +9,7 @@ import { SpecPane } from '../spec/SpecPane';
 import { ResizeHandle } from '../ui/ResizeHandle';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
-import { usePolling } from '../../hooks/usePolling';
+import { usePollingRefresh } from '../../hooks/usePolling';
 import { WORKSPACE_LABELS } from '../../types/workspace';
 
 const SIDEBAR_DEFAULT = 320;
@@ -62,7 +63,7 @@ export function StackWorkspace() {
     [mcpServers],
   );
 
-  const { refresh } = usePolling();
+  const refresh = usePollingRefresh();
 
   const handleRefresh = useCallback(async () => {
     await refresh();
@@ -75,98 +76,100 @@ export function StackWorkspace() {
   }, []);
 
   return (
-    <div className="absolute inset-0 overflow-hidden">
-      <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.stack}</h1>
-      <div
-        ref={containerRef}
-        className="grid h-full"
-        style={{
-          // min() is a backstop after a window resize without a drag. A CSS-only
-          // clamp would pin the track at 60% and ignore the drag below 280px.
-          gridTemplateColumns: `minmax(0, 1fr) ${sidebarOpen ? `min(${sidebarWidth}px, 60%)` : '0px'}`,
-        }}
-      >
-        <div className="relative overflow-hidden">
-          {/* Loading State */}
-          {isLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-background/90 backdrop-blur-sm z-overlay">
-              <div className="text-center space-y-5 animate-fade-in-scale">
-                <div className="relative mx-auto w-16 h-16">
-                  <div className="absolute inset-0 rounded-full border-2 border-primary/20" />
-                  <div className="absolute inset-0 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-                  <div
-                    className="absolute inset-2 rounded-full border-2 border-secondary/30 border-b-transparent animate-spin"
-                    style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}
-                  />
-                </div>
-                <div>
-                  <p className="text-text-secondary font-medium">Loading stack</p>
-                  <p className="text-text-muted text-sm mt-1">Connecting to gateway...</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Error State */}
-          {error && !isLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-background/90 backdrop-blur-sm z-overlay">
-              <div className="text-center space-y-5 max-w-md p-8 animate-fade-in-scale">
-                <div className="relative mx-auto w-20 h-20">
-                  <div className="absolute inset-0 bg-status-error/20 rounded-2xl blur-xl" />
-                  <div className="relative w-full h-full bg-status-error/10 rounded-2xl border border-status-error/20 flex items-center justify-center">
-                    {error.includes('unavailable') ? (
-                      <WifiOff size={32} className="text-status-error" />
-                    ) : (
-                      <AlertCircle size={32} className="text-status-error" />
-                    )}
+    <ReactFlowProvider>
+      <div className="absolute inset-0 overflow-hidden">
+        <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.stack}</h1>
+        <div
+          ref={containerRef}
+          className="grid h-full"
+          style={{
+            // min() is a backstop after a window resize without a drag. A CSS-only
+            // clamp would pin the track at 60% and ignore the drag below 280px.
+            gridTemplateColumns: `minmax(0, 1fr) ${sidebarOpen ? `min(${sidebarWidth}px, 60%)` : '0px'}`,
+          }}
+        >
+          <div className="relative overflow-hidden">
+            {/* Loading State */}
+            {isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-background/90 backdrop-blur-sm z-overlay">
+                <div className="text-center space-y-5 animate-fade-in-scale">
+                  <div className="relative mx-auto w-16 h-16">
+                    <div className="absolute inset-0 rounded-full border-2 border-primary/20" />
+                    <div className="absolute inset-0 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                    <div
+                      className="absolute inset-2 rounded-full border-2 border-secondary/30 border-b-transparent animate-spin"
+                      style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}
+                    />
+                  </div>
+                  <div>
+                    <p className="text-text-secondary font-medium">Loading stack</p>
+                    <p className="text-text-muted text-sm mt-1">Connecting to gateway...</p>
                   </div>
                 </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-text-primary">
-                    {error.includes('unavailable') ? 'Gateway Unavailable' : 'Connection Error'}
-                  </h2>
-                  <p className="text-sm text-text-muted mt-2 leading-relaxed">{error}</p>
-                  {error.includes('unavailable') && (
-                    <p className="text-xs text-text-muted mt-3">
-                      The gateway may have been shut down or restarted. It will reconnect automatically when available.
-                    </p>
-                  )}
-                </div>
-                <button
-                  onClick={handleRefresh}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-primary to-primary-dark text-background font-semibold rounded-lg hover:from-primary-light hover:to-primary transition-all shadow-glow-primary hover:shadow-[0_0_30px_rgba(245,158,11,0.3)]"
-                >
-                  <RefreshCw size={16} />
-                  Retry Connection
-                </button>
               </div>
-            </div>
+            )}
+
+            {/* Error State */}
+            {error && !isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-background/90 backdrop-blur-sm z-overlay">
+                <div className="text-center space-y-5 max-w-md p-8 animate-fade-in-scale">
+                  <div className="relative mx-auto w-20 h-20">
+                    <div className="absolute inset-0 bg-status-error/20 rounded-2xl blur-xl" />
+                    <div className="relative w-full h-full bg-status-error/10 rounded-2xl border border-status-error/20 flex items-center justify-center">
+                      {error.includes('unavailable') ? (
+                        <WifiOff size={32} className="text-status-error" />
+                      ) : (
+                        <AlertCircle size={32} className="text-status-error" />
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-semibold text-text-primary">
+                      {error.includes('unavailable') ? 'Gateway Unavailable' : 'Connection Error'}
+                    </h2>
+                    <p className="text-sm text-text-muted mt-2 leading-relaxed">{error}</p>
+                    {error.includes('unavailable') && (
+                      <p className="text-xs text-text-muted mt-3">
+                        The gateway may have been shut down or restarted. It will reconnect automatically when available.
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={handleRefresh}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-primary to-primary-dark text-background font-semibold rounded-lg hover:from-primary-light hover:to-primary transition-all shadow-glow-primary hover:shadow-[0_0_30px_rgba(245,158,11,0.3)]"
+                  >
+                    <RefreshCw size={16} />
+                    Retry Connection
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <Canvas />
+
+            {/* Access Lens authoring surface: header toggle, slide-over editor,
+                action bar, commit gate, and dirty-exit guard. Mounted in the
+                canvas column so its absolute overlays anchor to the canvas. */}
+            <AccessLens servers={accessServers} />
+
+            {specOpen && <SpecPane onClose={closeSpec} />}
+          </div>
+
+          {sidebarOpen && (
+            <aside aria-label="Stack inspector" className="flex flex-row overflow-hidden bg-surface-elevated border-l border-border shadow-pane-left">
+              <ResizeHandle
+                direction="vertical"
+                onResize={handleSidebarResize}
+                className="flex-shrink-0"
+              />
+              <div className="flex-1 min-w-0 overflow-hidden">
+                <Sidebar />
+              </div>
+            </aside>
           )}
-
-          <Canvas />
-
-          {/* Access Lens authoring surface: header toggle, slide-over editor,
-              action bar, commit gate, and dirty-exit guard. Mounted in the
-              canvas column so its absolute overlays anchor to the canvas. */}
-          <AccessLens servers={accessServers} />
-
-          {specOpen && <SpecPane onClose={closeSpec} />}
         </div>
-
-        {sidebarOpen && (
-          <aside aria-label="Stack inspector" className="flex flex-row overflow-hidden bg-surface-elevated border-l border-border shadow-pane-left">
-            <ResizeHandle
-              direction="vertical"
-              onResize={handleSidebarResize}
-              className="flex-shrink-0"
-            />
-            <div className="flex-1 min-w-0 overflow-hidden">
-              <Sidebar />
-            </div>
-          </aside>
-        )}
       </div>
-    </div>
+    </ReactFlowProvider>
   );
 }
 

@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchGroups, type GroupsReport } from '../lib/api';
+import { useInterval } from './useInterval';
 
 // Poll cadence for group definitions. Groups change at stack-edit speed;
 // 15s matches the tool-usage and limits polls.
@@ -19,32 +20,25 @@ export interface GroupsState {
 export function useGroups(enabled: boolean): GroupsState {
   const [report, setReport] = useState<GroupsReport | null>(null);
   const [error, setError] = useState<string | null>(null);
-
+  const alive = useRef(true);
   useEffect(() => {
-    if (!enabled) return;
-    let active = true;
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
 
-    // State writes happen only inside this async loader (after an await
-    // tick), never synchronously in the effect body.
-    const load = async () => {
-      try {
-        const data = await fetchGroups();
-        if (!active) return;
-        setReport(data);
-        setError(null);
-      } catch (err) {
-        if (!active) return;
-        setError(err instanceof Error ? err.message : 'Failed to load groups');
-      }
-    };
+  const load = useCallback(async () => {
+    try {
+      const data = await fetchGroups();
+      if (!alive.current) return;
+      setReport(data);
+      setError(null);
+    } catch (err) {
+      if (!alive.current) return;
+      setError(err instanceof Error ? err.message : 'Failed to load groups');
+    }
+  }, []);
 
-    void load();
-    const id = setInterval(load, GROUPS_POLL_MS);
-    return () => {
-      active = false;
-      clearInterval(id);
-    };
-  }, [enabled]);
+  useInterval(load, GROUPS_POLL_MS, { enabled });
 
   return { report, error };
 }

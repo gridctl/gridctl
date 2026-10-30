@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchSkillUsage } from '../lib/api';
 import type { SkillUsageResponse } from '../types';
+import { useInterval } from './useInterval';
 
 // Poll cadence for skill usage. Usage shifts over hours/days, so a slow loop
 // matches useToolUsage and keeps the join memo stable between renders.
@@ -35,33 +36,29 @@ export function useSkillUsage(): SkillUsageState {
     fetchedAt: null,
     error: null,
   });
-
+  const alive = useRef(true);
   useEffect(() => {
-    let active = true;
-
-    const load = async () => {
-      try {
-        const data = await fetchSkillUsage();
-        if (!active) return;
-        setState({ usage: data, fetchedAt: Date.now(), error: null });
-      } catch (err) {
-        if (!active) return;
-        // Usage unavailable: keep the last snapshot (or null on first load) so
-        // the Library shows no usage UI rather than an error, but record why.
-        setState((prev) => ({
-          ...prev,
-          error: err instanceof Error ? err.message : 'Usage unavailable',
-        }));
-      }
-    };
-
-    void load();
-    const id = setInterval(load, USAGE_POLL_MS);
-    return () => {
-      active = false;
-      clearInterval(id);
-    };
+    alive.current = true;
+    return () => { alive.current = false; };
   }, []);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await fetchSkillUsage();
+      if (!alive.current) return;
+      setState({ usage: data, fetchedAt: Date.now(), error: null });
+    } catch (err) {
+      if (!alive.current) return;
+      // Usage unavailable: keep the last snapshot (or null on first load) so
+      // the Library shows no usage UI rather than an error, but record why.
+      setState((prev) => ({
+        ...prev,
+        error: err instanceof Error ? err.message : 'Usage unavailable',
+      }));
+    }
+  }, []);
+
+  useInterval(load, USAGE_POLL_MS);
 
   return state;
 }

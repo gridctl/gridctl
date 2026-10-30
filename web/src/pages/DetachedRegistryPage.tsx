@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import {
   Library,
   BookOpen,
@@ -16,6 +16,7 @@ import { LibraryGrid } from '../components/registry/LibraryGrid';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { ToastContainer, showToast } from '../components/ui/Toast';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
+import { useInterval } from '../hooks/useInterval';
 import { useLogFontSize } from '../hooks/useLogFontSize';
 import { useFuzzySearch } from '../hooks/useFuzzySearch';
 import {
@@ -80,15 +81,7 @@ function DetachedRegistryContent() {
     }
   }, [generation]);
 
-  useEffect(() => {
-    if (authRequired) return;
-    const initFetch = async () => {
-      await fetchData();
-    };
-    initFetch();
-    const interval = window.setInterval(fetchData, POLLING.STATUS);
-    return () => clearInterval(interval);
-  }, [fetchData, authRequired]);
+  useInterval(fetchData, POLLING.INVENTORY, { enabled: !authRequired });
 
   // Fuzzy search runs on all skills; tab filter narrows the result
   const searchResults = useFuzzySearch(skills ?? [], searchQuery);

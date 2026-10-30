@@ -1,5 +1,5 @@
 import { RefreshCw, RotateCcw, Plus, Command } from 'lucide-react';
-import { useState, useRef, useCallback } from 'react';
+import { Suspense, lazy, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
 import { cn } from '../../lib/cn';
@@ -8,14 +8,15 @@ import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { triggerReload, fetchStackSpec, validateStackSpec } from '../../lib/api';
 import { SpecDiffModal } from '../spec/SpecDiffModal';
-import { CreationWizard } from '../wizard/CreationWizard';
-import { GlobalContextDialog } from '../context/GlobalContextDialog';
 import { HeaderTelemetryPill } from '../telemetry/HeaderTelemetryPill';
 import { useSpecStore } from '../../stores/useSpecStore';
 import { useWizardStore } from '../../stores/useWizardStore';
 import { LogoWordmark } from './LogoWordmark';
 import { ThemePicker } from '../shell/ThemePicker';
 import { WorkspaceSwitcher } from '../shell/WorkspaceSwitcher';
+
+const CreationWizard = lazy(() => import('../wizard/CreationWizard').then((m) => ({ default: m.CreationWizard })));
+const GlobalContextDialog = lazy(() => import('../context/GlobalContextDialog').then((m) => ({ default: m.GlobalContextDialog })));
 
 interface HeaderProps {
   onRefresh?: () => void;
@@ -30,6 +31,7 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
   const [isReloading, setIsReloading] = useState(false);
   // Global Context dialog, reachable from the creation wizard's tile.
   const [showGlobalContext, setShowGlobalContext] = useState(false);
+  const wizardOpen = useWizardStore((s) => s.isOpen);
   const [reloadMessage, setReloadMessage] = useState<{ text: string; isError: boolean } | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const dismissTimer = useRef<ReturnType<typeof setTimeout>>(null);
@@ -183,21 +185,27 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
         onApply={executeReload}
         validationErrors={validationErrors}
       />
-      <CreationWizard
-        onOpenVault={() => navigate('/vault')}
-        onOpenGlobalContext={() => setShowGlobalContext(true)}
-        onOpenConnections={() => navigate('/connections?spotlight=unlinked')}
-        onDeploy={onRefresh}
-      />
+      {wizardOpen && (
+        <Suspense fallback={null}>
+          <CreationWizard
+            onOpenVault={() => navigate('/vault')}
+            onOpenGlobalContext={() => setShowGlobalContext(true)}
+            onOpenConnections={() => navigate('/connections?spotlight=unlinked')}
+            onDeploy={onRefresh}
+          />
+        </Suspense>
+      )}
       {/* Portaled: the header's backdrop-blur creates a containing block
           that would trap the dialog's fixed positioning inside the 56px
           header (same reason CreationWizard portals). */}
       {showGlobalContext &&
         createPortal(
-          <GlobalContextDialog
-            isOpen={showGlobalContext}
-            onClose={() => setShowGlobalContext(false)}
-          />,
+          <Suspense fallback={null}>
+            <GlobalContextDialog
+              isOpen={showGlobalContext}
+              onClose={() => setShowGlobalContext(false)}
+            />
+          </Suspense>,
           document.body,
         )}
     </header>

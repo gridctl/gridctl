@@ -11,8 +11,8 @@ const { fitView, paneClick } = vi.hoisted(() => ({
 
 // Mock React Flow for every consumer in Canvas's module graph: CanvasBase
 // (ReactFlow, Background, BackgroundVariant), Canvas (useReactFlow,
-// useViewport, Panel), the node components (Handle, Position), the store
-// (applyNodeChanges, applyEdgeChanges), and edge building (MarkerType).
+// useViewport, Panel, applyNodeChanges, applyEdgeChanges), and the node
+// components (Handle, Position).
 vi.mock('@xyflow/react', () => ({
   ReactFlow: ({ children, onPaneClick }: { children?: ReactNode; onPaneClick?: () => void }) => {
     paneClick.current = onPaneClick;
@@ -23,7 +23,6 @@ vi.mock('@xyflow/react', () => ({
   Panel: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Handle: () => null,
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
-  MarkerType: { Arrow: 'arrow', ArrowClosed: 'arrowclosed' },
   useReactFlow: () => ({ fitView, zoomIn: vi.fn(), zoomOut: vi.fn() }),
   useViewport: () => ({ zoom: 1 }),
   applyNodeChanges: (_changes: unknown, nodes: unknown) => nodes,
@@ -31,6 +30,7 @@ vi.mock('@xyflow/react', () => ({
 }));
 
 import { Canvas } from '../components/graph/Canvas';
+import { useCanvasActionsStore } from '../stores/useCanvasActionsStore';
 import { useStackStore } from '../stores/useStackStore';
 import { useAccessLensStore } from '../stores/useAccessLensStore';
 import type { GatewayStatus, MCPServerStatus } from '../types';
@@ -108,6 +108,16 @@ describe('Canvas auto-refit on tool fan-out', () => {
   afterEach(() => {
     globalThis.ResizeObserver = SetupResizeObserver;
     vi.useRealTimers();
+  });
+
+  it('registers canvas actions on mount and clears them on unmount', () => {
+    const view = render(<Canvas />);
+    expect(useCanvasActionsStore.getState().fitView).toBe(fitView);
+    view.unmount();
+    const calls = fitView.mock.calls.length;
+    useCanvasActionsStore.getState().fitView();
+    expect(fitView).toHaveBeenCalledTimes(calls);
+    expect(useCanvasActionsStore.getState().fitView).not.toBe(fitView);
   });
 
   it('refits with the fan-out node ids when a server expands with nothing selected', () => {

@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchOptimizeReport } from '../lib/api';
 import type { OptimizeReport } from '../types';
+import { useInterval } from './useInterval';
 
 // Poll cadence for optimize findings. Findings move at tool-call/analysis
 // speed; 15s matches the tool-usage and limits polls (each mounted surface
@@ -19,32 +20,25 @@ export interface OptimizeState {
 export function useOptimize(enabled: boolean): OptimizeState {
   const [report, setReport] = useState<OptimizeReport | null>(null);
   const [error, setError] = useState<string | null>(null);
-
+  const alive = useRef(true);
   useEffect(() => {
-    if (!enabled) return;
-    let active = true;
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
 
-    // State writes happen only inside this async loader (after an await
-    // tick), never synchronously in the effect body.
-    const load = async () => {
-      try {
-        const data = await fetchOptimizeReport();
-        if (!active) return;
-        setReport(data);
-        setError(null);
-      } catch (err) {
-        if (!active) return;
-        setError(err instanceof Error ? err.message : 'Failed to load optimize report');
-      }
-    };
+  const load = useCallback(async () => {
+    try {
+      const data = await fetchOptimizeReport();
+      if (!alive.current) return;
+      setReport(data);
+      setError(null);
+    } catch (err) {
+      if (!alive.current) return;
+      setError(err instanceof Error ? err.message : 'Failed to load optimize report');
+    }
+  }, []);
 
-    void load();
-    const id = setInterval(load, OPTIMIZE_POLL_MS);
-    return () => {
-      active = false;
-      clearInterval(id);
-    };
-  }, [enabled]);
+  useInterval(load, OPTIMIZE_POLL_MS, { enabled });
 
   return { report, error };
 }

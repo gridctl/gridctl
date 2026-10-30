@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router';
-import { ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import { Header } from '../layout/Header';
 import { StatusBar } from '../layout/StatusBar';
 import { CommandPalette } from '../palette/CommandPalette';
@@ -10,8 +9,8 @@ import { useStackStore } from '../../stores/useStackStore';
 import { useToolsDirtyStore } from '../../stores/useToolsDirtyStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { usePolling } from '../../hooks/usePolling';
-import { useSSEShutdown } from '../../hooks/useSSEShutdown';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
+import { useCanvasActionsStore } from '../../stores/useCanvasActionsStore';
 import { useGlobalCommands } from '../../hooks/useGlobalCommands';
 import { documentTitleForWorkspace, isWorkspace, type Workspace } from '../../types/workspace';
 import {
@@ -39,9 +38,8 @@ function persistLastWorkspace(ws: Workspace, stackId: string | null) {
   }
 }
 
-function AppShellInner() {
+export function AppShell() {
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isShuttingDown, setIsShuttingDown] = useState(false);
 
   const selectNode = useStackStore((s) => s.selectNode);
   const stackId = useStackStore((s) => s.gatewayInfo?.name ?? null);
@@ -56,12 +54,7 @@ function AppShellInner() {
 
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const { fitView, zoomIn, zoomOut } = useReactFlow();
   const { refresh } = usePolling({ registerRetry: true });
-
-  useSSEShutdown(useCallback(() => {
-    setIsShuttingDown(true);
-  }, []));
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -90,13 +83,19 @@ function AppShellInner() {
   // keys are not prevented, so the browser keeps Find and zoom.
   const canvasShortcuts = activeWorkspace === 'stack';
   useKeyboardShortcuts({
-    onFitView: canvasShortcuts ? () => fitView({ padding: 0.2, duration: 300 }) : undefined,
+    onFitView: canvasShortcuts
+      ? () => useCanvasActionsStore.getState().fitView({ padding: 0.2, duration: 300 })
+      : undefined,
     onEscape: () => {
       selectNode(null);
       setSidebarOpen(false);
     },
-    onZoomIn: canvasShortcuts ? () => zoomIn({ duration: 200 }) : undefined,
-    onZoomOut: canvasShortcuts ? () => zoomOut({ duration: 200 }) : undefined,
+    onZoomIn: canvasShortcuts
+      ? () => useCanvasActionsStore.getState().zoomIn({ duration: 200 })
+      : undefined,
+    onZoomOut: canvasShortcuts
+      ? () => useCanvasActionsStore.getState().zoomOut({ duration: 200 })
+      : undefined,
     onRefresh: handleRefresh,
     onOpenLogs: () => navigate('/logs'),
     onOpenPalette: toggleCommandPalette,
@@ -124,12 +123,6 @@ function AppShellInner() {
         gridTemplateColumns: '1fr',
       }}
     >
-      {isShuttingDown && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-overlay px-4 py-2 rounded-lg bg-primary/10 border border-primary/20 text-primary text-sm font-medium backdrop-blur-xl animate-fade-in-scale">
-          Gateway is shutting down...
-        </div>
-      )}
-
       <Header onRefresh={handleRefresh} isRefreshing={isRefreshing} />
 
       <main className="relative overflow-hidden" style={{ minHeight: 100 }}>
@@ -151,17 +144,6 @@ function AppShellInner() {
         onClose={() => setCommandPaletteOpen(false)}
       />
     </div>
-  );
-}
-
-// AppShell is the parent route for every workspace. It owns the
-// ReactFlowProvider so workspace canvases (and shell-level hooks like
-// useGlobalCommands, which calls useReactFlow) share a single instance.
-export function AppShell() {
-  return (
-    <ReactFlowProvider>
-      <AppShellInner />
-    </ReactFlowProvider>
   );
 }
 

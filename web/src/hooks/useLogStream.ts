@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useInterval } from './useInterval';
 import { DEFAULT_LOG_WINDOW, parseLogEntry, type ParsedLog } from '../components/log/logTypes';
 import { fetchGatewayLogs } from '../lib/api';
 import { POLLING } from '../lib/constants';
@@ -74,14 +75,17 @@ export function useLogStream({ active, paused = false, lines = DEFAULT_LOG_WINDO
     }
   }, [lines, generation]);
 
-  // Fetch on activation, then poll while active and not paused.
+  // A paused stream still loads once so the buffer is current, then stops.
+  // Resuming starts the interval, which fires immediately because enabled
+  // went true. Hidden tabs pause fully via useInterval.
   useEffect(() => {
-    if (!active || authRequired) return;
-    fetchLogs();
-    if (paused) return;
-    const interval = window.setInterval(fetchLogs, POLLING.LOGS);
-    return () => clearInterval(interval);
+    if (!active || authRequired || !paused) return;
+    void fetchLogs();
   }, [active, paused, fetchLogs, authRequired]);
+
+  useInterval(fetchLogs, POLLING.LOGS, {
+    enabled: active && !paused && !authRequired,
+  });
 
   const clear = useCallback(() => {
     setLogs((prev) => {

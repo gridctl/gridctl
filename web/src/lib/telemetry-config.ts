@@ -7,7 +7,6 @@
 // the UI — it returns an empty config so the rest of the app continues to
 // render and the operator can fix the YAML in the spec tab.
 
-import { parse as parseYAML } from 'yaml';
 import type {
   ResolvedTelemetry,
   ServerPersistOverride,
@@ -33,15 +32,27 @@ interface RawStack {
 
 const EMPTY: ResolvedTelemetry = { global: {}, servers: {} };
 
+let yamlParse: ((raw: string) => unknown) | null = null;
+
+async function loadYamlParse(): Promise<(raw: string) => unknown> {
+  if (!yamlParse) {
+    const mod = await import('yaml');
+    yamlParse = mod.parse;
+  }
+  return yamlParse;
+}
+
 /**
- * Parse a stack YAML string into a resolved telemetry view. Errors and
- * unexpected shapes degrade to the empty config rather than throwing, so
- * an unrelated parse failure never blocks the rest of the UI from rendering.
+ * Parse a stack YAML string into a resolved telemetry view. The YAML parser
+ * loads on the first call. Errors and unexpected shapes degrade to the empty
+ * config rather than throwing, so an unrelated parse failure never blocks the
+ * rest of the UI from rendering.
  */
-export function parseStackTelemetry(raw: string | null | undefined): ResolvedTelemetry {
+export async function parseStackTelemetry(raw: string | null | undefined): Promise<ResolvedTelemetry> {
   if (!raw) return EMPTY;
   let doc: unknown;
   try {
+    const parseYAML = await loadYamlParse();
     doc = parseYAML(raw);
   } catch {
     return EMPTY;

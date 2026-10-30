@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import type { InventoryRecord, ResolvedTelemetry, TelemetrySignal } from '../types';
 import { parseStackTelemetry } from '../lib/telemetry-config';
+import { useAuthStore } from './useAuthStore';
 
 // Aggregate snapshot for the header pill / wipe modal. servers is the
 // distinct count of servers with at least one inventory record; oldest /
@@ -33,6 +34,10 @@ interface TelemetryState {
 
 const EMPTY_CONFIG: ResolvedTelemetry = { global: {}, servers: {} };
 
+// An older parse must not overwrite a newer spec, including a null clear
+// that arrives while the YAML chunk is still loading.
+let specSequence = 0;
+
 export const useTelemetryStore = create<TelemetryState>()(
   subscribeWithSelector((set) => ({
     inventory: [],
@@ -48,11 +53,17 @@ export const useTelemetryStore = create<TelemetryState>()(
     // every read is a cheap object lookup. A nil/empty spec collapses to
     // the empty resolved config — consistent with stackless mode.
     setRawSpec: (content) => {
+      const seq = ++specSequence;
+      const generation = useAuthStore.getState().generation;
       if (content === null) {
         set({ rawSpec: null, config: EMPTY_CONFIG });
         return;
       }
-      set({ rawSpec: content, config: parseStackTelemetry(content) });
+      void parseStackTelemetry(content).then((config) => {
+        if (seq !== specSequence) return;
+        if (useAuthStore.getState().generation !== generation) return;
+        set({ rawSpec: content, config });
+      });
     },
 
     setError: (error) => set({ error }),

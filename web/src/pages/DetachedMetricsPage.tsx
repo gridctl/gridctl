@@ -1,11 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { BarChart3, AlertCircle, Maximize2, Minimize2, Users, Server, Wrench } from 'lucide-react';
 import { IconButton } from '../components/ui/IconButton';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
-import { fetchStatus } from '../lib/api';
+import { useSharedStatus } from '../hooks/useSharedStatus';
 import { formatCompactNumber } from '../lib/format';
-import { POLLING } from '../lib/constants';
 import { useMetricsSeries, windowLabelFor, type MetricsTimeRange } from '../hooks/useMetricsSeries';
 import { useToolUsage } from '../hooks/useToolUsage';
 import { useLimits } from '../hooks/useLimits';
@@ -25,7 +24,7 @@ import {
   type BreakdownSortColumn,
   type SortDirection,
 } from '../components/metrics/metricsData';
-import type { GatewayStatus, TokenUsage } from '../types';
+import type { TokenUsage } from '../types';
 import { useAuthStore } from '../stores/useAuthStore';
 
 function DetachedMetricsPageContent() {
@@ -34,8 +33,15 @@ function DetachedMetricsPageContent() {
   // Real-time status snapshot — the detached window lives outside the app
   // shell, so it owns its own status poll (the in-shell surfaces read the app
   // store instead). The time-series come from the shared useMetricsSeries hook.
-  const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
-  const [serverNames, setServerNames] = useState<string[]>([]);
+  const { status } = useSharedStatus({ enabled: !authRequired });
+  const tokenUsage = useMemo<TokenUsage | null>(() => {
+    if (!status || useAuthStore.getState().generation !== generation) return null;
+    return status.token_usage ?? null;
+  }, [status, generation]);
+  const serverNames = useMemo(() => {
+    if (!status || useAuthStore.getState().generation !== generation) return [];
+    return (status['mcp-servers'] ?? []).map((s) => s.name);
+  }, [status, generation]);
   const [timeRange, setTimeRange] = useState<MetricsTimeRange>('live');
   const [isPaused, setIsPaused] = useState(false);
   const [sortColumn, setSortColumn] = useState<BreakdownSortColumn>('total');
@@ -56,26 +62,6 @@ function DetachedMetricsPageContent() {
     timeRange,
     paused: isPaused,
   });
-
-  // Poll status for real-time token usage
-  useEffect(() => {
-    if (authRequired) return;
-    let active = true;
-    const pollStatus = async () => {
-      try {
-        const status: GatewayStatus = await fetchStatus();
-        if (!active || useAuthStore.getState().generation !== generation) return;
-        setTokenUsage(status.token_usage ?? null);
-        setServerNames((status['mcp-servers'] ?? []).map((s) => s.name));
-      } catch {
-        // Ignore status errors
-      }
-    };
-
-    pollStatus();
-    const interval = window.setInterval(pollStatus, POLLING.STATUS);
-    return () => { active = false; clearInterval(interval); };
-  }, [authRequired, generation]);
 
   const handleSort = (column: BreakdownSortColumn) => {
     if (sortColumn === column) setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'));

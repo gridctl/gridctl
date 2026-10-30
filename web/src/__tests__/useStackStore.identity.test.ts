@@ -124,11 +124,11 @@ describe('useStackStore graph identity', () => {
 
   it('clears React Flow selected flags when the store selection is cleared', () => {
     useStackStore.getState().setGatewayStatus(status([makeServer('github'), makeServer('jira')]));
-    useStackStore.getState().onNodesChange([{
-      id: 'mcp-github',
-      type: 'select',
-      selected: true,
-    }]);
+    useStackStore.getState().setNodes(
+      useStackStore.getState().nodes.map((node) => (
+        node.id === 'mcp-github' ? { ...node, selected: true } : node
+      )),
+    );
     expect(useStackStore.getState().nodes.find((node) => node.id === 'mcp-github')?.selected).toBe(true);
 
     useStackStore.getState().selectNode(null);
@@ -140,7 +140,12 @@ describe('useStackStore graph identity', () => {
 
   it('keeps a dragged position across the next poll', () => {
     useStackStore.getState().setGatewayStatus(status([makeServer('github')]));
-    useStackStore.getState().onNodesChange([{
+    useStackStore.getState().setNodes(
+      useStackStore.getState().nodes.map((node) => (
+        node.id === 'mcp-github' ? { ...node, position: { x: 400, y: 250 } } : node
+      )),
+    );
+    useStackStore.getState().recordDraggedPositions([{
       id: 'mcp-github',
       type: 'position',
       position: { x: 400, y: 250 },

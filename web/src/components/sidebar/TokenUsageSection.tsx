@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { ArrowDown } from 'lucide-react';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
@@ -6,6 +6,7 @@ import { fetchTokenMetrics } from '../../lib/api';
 import { formatCompactNumber } from '../../lib/format';
 import { SparkChart } from '../chart/SparkChart';
 import { POLLING } from '../../lib/constants';
+import { useInterval } from '../../hooks/useInterval';
 import type { TokenDataPoint } from '../../types';
 
 interface TokenUsageSectionProps {
@@ -16,7 +17,6 @@ export function TokenUsageSection({ serverName }: TokenUsageSectionProps) {
   const tokenUsage = useStackStore((s) => s.tokenUsage);
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
   const [sparkData, setSparkData] = useState<TokenDataPoint[]>([]);
-  const intervalRef = useRef<number | null>(null);
 
   const serverTokens = tokenUsage?.per_server[serverName];
 
@@ -33,20 +33,9 @@ export function TokenUsageSection({ serverName }: TokenUsageSectionProps) {
     }
   }, [serverName]);
 
-  useEffect(() => {
-    if (!sidebarOpen || !serverTokens) return;
-
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- async callback; state is set only after await, not synchronously
-    loadSparkline();
-    intervalRef.current = window.setInterval(loadSparkline, POLLING.METRICS);
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
-  }, [sidebarOpen, serverTokens, loadSparkline]);
+  useInterval(loadSparkline, POLLING.METRICS, {
+    enabled: sidebarOpen && !!serverTokens,
+  });
 
   const chartData = useMemo(() => {
     if (!sparkData.length) return [];

@@ -2,12 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, type KeyboardEvent, type Mouse
 import {
   Panel,
   BackgroundVariant,
+  applyEdgeChanges,
+  applyNodeChanges,
   useReactFlow,
+  type EdgeChange,
+  type NodeChange,
 } from '@xyflow/react';
 import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid, Layers, Server, Database } from 'lucide-react';
 
 import { nodeTypes } from './nodeTypes';
 import { useStackStore } from '../../stores/useStackStore';
+import { useCanvasActionsStore } from '../../stores/useCanvasActionsStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useWizardStore } from '../../stores/useWizardStore';
 import { useAccessLensStore, buildDraftScope, flattenTools, isDirty } from '../../stores/useAccessLensStore';
@@ -52,8 +57,9 @@ type ActivatableNode = {
 export function Canvas() {
   const nodes = useStackStore((s) => s.nodes);
   const edges = useStackStore((s) => s.edges);
-  const onNodesChange = useStackStore((s) => s.onNodesChange);
-  const onEdgesChange = useStackStore((s) => s.onEdgesChange);
+  const setNodes = useStackStore((s) => s.setNodes);
+  const setEdges = useStackStore((s) => s.setEdges);
+  const recordDraggedPositions = useStackStore((s) => s.recordDraggedPositions);
   const selectNode = useStackStore((s) => s.selectNode);
   const selectedNodeId = useStackStore((s) => s.selectedNodeId);
   const resetLayout = useStackStore((s) => s.resetLayout);
@@ -109,8 +115,24 @@ export function Canvas() {
     lensSavedTools,
   ]);
 
-  // React Flow controls
+  // React Flow controls. Registered for shell shortcuts that live outside this tree.
   const { zoomIn, zoomOut, fitView } = useReactFlow();
+  const registerCanvasActions = useCanvasActionsStore((s) => s.register);
+  const clearCanvasActions = useCanvasActionsStore((s) => s.clear);
+  useEffect(() => {
+    registerCanvasActions({ fitView, zoomIn, zoomOut });
+    return () => clearCanvasActions();
+  }, [fitView, zoomIn, zoomOut, registerCanvasActions, clearCanvasActions]);
+
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
+    const store = useStackStore.getState();
+    setNodes(applyNodeChanges(changes, store.nodes));
+    recordDraggedPositions(changes);
+  }, [setNodes, recordDraggedPositions]);
+
+  const onEdgesChange = useCallback((changes: EdgeChange[]) => {
+    setEdges(applyEdgeChanges(changes, useStackStore.getState().edges));
+  }, [setEdges]);
   // Live theme colors so JS-set edge/grid colors follow [data-theme].
   const colors = useThemeColors();
 

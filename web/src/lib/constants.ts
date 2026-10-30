@@ -112,11 +112,13 @@ export const ANIMATION = {
 
 // Polling intervals (ms)
 export const POLLING = {
-  STATUS: 3000,      // Poll status every 3 seconds
-  TOOLS: 30000,      // Poll tools every 30 seconds
-  LOGS: 2000,        // Poll logs every 2 seconds
-  METRICS: 5000,     // Poll metrics every 5 seconds (live mode)
-  SESSIONS: 10000,   // Poll live MCP sessions every 10 seconds
+  STATUS: 3000,        // Poll status every 3 seconds while the tab is visible
+  STATUS_HIDDEN: 30000, // Hidden-tab heartbeat: at most one status request per 30 seconds
+  INVENTORY: 15000,    // Catalog, pins, registry, telemetry, and spec health while visible
+  TOOLS: 30000,        // Poll tools every 30 seconds
+  LOGS: 2000,          // Poll logs every 2 seconds
+  METRICS: 5000,       // Poll metrics every 5 seconds (live mode)
+  SESSIONS: 10000,     // Poll live MCP sessions every 10 seconds
 } as const;
 
 // Tool naming

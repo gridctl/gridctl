@@ -8,7 +8,6 @@
  */
 
 import type { Edge } from '@xyflow/react';
-import { MarkerType } from '@xyflow/react';
 import type { MCPServerStatus, ResourceStatus, ClientStatus, AgentSkill } from '../../types';
 import type { EdgeMetadata } from './types';
 import { COLORS } from '../constants';
@@ -16,13 +15,15 @@ import { COLORS } from '../constants';
 /** Gateway node ID constant */
 export const GATEWAY_NODE_ID = 'gateway';
 
-/** Arrow marker configuration */
-const arrowMarker = {
-  type: MarkerType.ArrowClosed,
-  width: 16,
-  height: 16,
-  color: COLORS.edgeDefault,
-};
+/** Arrow marker configuration. The literal keeps React Flow's marker type without importing the enum. */
+function arrowMarker(color: string): { type: 'arrowclosed'; width: number; height: number; color: string } {
+  return {
+    type: 'arrowclosed',
+    width: 16,
+    height: 16,
+    color,
+  };
+}
 
 /**
  * Extended edge type with metadata for highlighting
@@ -43,7 +44,7 @@ export function createGatewayToServerEdges(
     id: `edge-gateway-mcp-${server.name}`,
     source: GATEWAY_NODE_ID,
     target: `mcp-${server.name}`,
-    markerEnd: { ...arrowMarker, color: COLORS.external },
+    markerEnd: arrowMarker(COLORS.external),
     data: {
       relationType: 'gateway-to-server' as const,
       isHighlightable: true,
@@ -63,7 +64,7 @@ export function createGatewayToResourceEdges(
     id: `edge-gateway-resource-${resource.name}`,
     source: GATEWAY_NODE_ID,
     target: `resource-${resource.name}`,
-    markerEnd: { ...arrowMarker, color: COLORS.secondary },
+    markerEnd: arrowMarker(COLORS.secondary),
     data: {
       relationType: 'gateway-to-resource' as const,
       isHighlightable: false, // Resources not in agent highlight path
@@ -103,7 +104,7 @@ export function createGatewayToSkillGroupEdges(skills: AgentSkill[]): EnhancedEd
     id: `edge-gateway-skill-group-${groupName}`,
     source: GATEWAY_NODE_ID,
     target: `skill-group-${groupName}`,
-    markerEnd: { ...arrowMarker, color: COLORS.tertiary },
+    markerEnd: arrowMarker(COLORS.tertiary),
     data: {
       relationType: 'gateway-to-skill-group' as const,
       isHighlightable: false,

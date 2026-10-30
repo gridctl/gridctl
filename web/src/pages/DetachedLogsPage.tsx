@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Terminal,
   ChevronDown,
@@ -10,10 +10,8 @@ import {
 import { cn } from '../lib/cn';
 import { IconButton } from '../components/ui/IconButton';
 import { GATEWAY_LOG_SOURCE, LogsView, useLogsView } from '../components/log';
-import { fetchStatus } from '../lib/api';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
-import { POLLING } from '../lib/constants';
-import type { GatewayStatus } from '../types';
+import { useSharedStatus } from '../hooks/useSharedStatus';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { useAuthStore } from '../stores/useAuthStore';
 
@@ -34,7 +32,14 @@ function DetachedLogsPageContent() {
   const view = useLogsView();
   const { source } = view;
 
-  const [nodes, setNodes] = useState<NodeOption[]>([]);
+  const { status } = useSharedStatus({ enabled: !authRequired });
+  const nodes = useMemo<NodeOption[]>(() => {
+    if (!status || useAuthStore.getState().generation !== generation) return [];
+    return [
+      ...(status['mcp-servers'] ?? []).map((s) => ({ name: s.name, type: 'mcp-server' as const })),
+      ...(status.resources ?? []).map((r) => ({ name: r.name, type: 'resource' as const })),
+    ];
+  }, [status, generation]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
@@ -42,30 +47,6 @@ function DetachedLogsPageContent() {
 
   // Register with main window
   useDetachedWindowSync('logs');
-
-  // Fetch available nodes for the source picker
-  useEffect(() => {
-    if (authRequired) return;
-    let active = true;
-    const fetchNodes = async () => {
-      try {
-        const status: GatewayStatus = await fetchStatus();
-        if (!active || useAuthStore.getState().generation !== generation) return;
-        const nodeList: NodeOption[] = [
-          ...(status['mcp-servers'] ?? []).map((s) => ({ name: s.name, type: 'mcp-server' as const })),
-          ...(status.resources ?? []).map((r) => ({ name: r.name, type: 'resource' as const })),
-        ];
-        setNodes(nodeList);
-      } catch {
-        // Ignore errors fetching nodes
-      }
-    };
-
-    fetchNodes();
-    const nodeInterval = window.setInterval(fetchNodes, POLLING.STATUS);
-
-    return () => { active = false; clearInterval(nodeInterval); };
-  }, [authRequired, generation]);
 
   // Close dropdown when clicking outside
   useEffect(() => {

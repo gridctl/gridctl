@@ -18,6 +18,7 @@ import { useRegistryStore } from '../../stores/useRegistryStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useListNav } from '../../hooks/useListNav';
+import { useInterval } from '../../hooks/useInterval';
 import type { AgentProjectionStatus, ClientStatus, SessionEntry, WiringRow } from '../../types';
 import { WORKSPACE_LABELS } from '../../types/workspace';
 import { showToast } from '../ui/Toast';
@@ -136,37 +137,33 @@ export default function ConnectionsWorkspace() {
   // array while it is loaded, so the two counts cannot diverge. Cleared
   // on unmount so the status bar falls back to the status-poll count
   // (the backend keeps the two equal by construction).
-  useEffect(() => {
-    if (authRequired) return;
-    let cancelled = false;
+  const loadSessions = useCallback(async () => {
     const current = captureCurrent();
-    const load = async () => {
-      if (cancelled || !current()) return;
-      try {
-        const res = await fetchSessions();
-        if (!cancelled && current()) {
-          setSessionsFailed(false);
-          useStackStore
-            .getState()
-            .setSessionEntries(
-              res.entries ?? res.sessions?.map((id) => ({ id, generation: 'handshake' })) ?? [],
-            );
-        }
-      } catch {
-        // A failed fetch is its own fact, distinct from "still loading":
-        // the pane says unavailable, and the store slice stays null so
-        // the status bar keeps its honest status-poll fallback.
-        if (!cancelled && current()) setSessionsFailed(true);
-      }
-    };
-    void load();
-    const timer = window.setInterval(load, POLLING.SESSIONS);
+    if (!current()) return;
+    try {
+      const res = await fetchSessions();
+      if (!current()) return;
+      setSessionsFailed(false);
+      useStackStore
+        .getState()
+        .setSessionEntries(
+          res.entries ?? res.sessions?.map((id) => ({ id, generation: 'handshake' })) ?? [],
+        );
+    } catch {
+      // A failed fetch is its own fact, distinct from "still loading":
+      // the pane says unavailable, and the store slice stays null so
+      // the status bar keeps its honest status-poll fallback.
+      if (current()) setSessionsFailed(true);
+    }
+  }, [captureCurrent]);
+
+  useInterval(loadSessions, POLLING.SESSIONS, { enabled: !authRequired });
+
+  useEffect(() => {
     return () => {
-      cancelled = true;
-      window.clearInterval(timer);
       useStackStore.getState().setSessionEntries(null);
     };
-  }, [authRequired, generation, captureCurrent]);
+  }, []);
 
   // ---- Health join + ordering. ----
   const contextClients = contextDoc?.clients ?? null;
