@@ -1,26 +1,11 @@
-import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { FileCheck } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useSpecStore } from '../../stores/useSpecStore';
-import { fetchStackHealth } from '../../lib/api';
 
 export function SpecHealthBadge() {
   const health = useSpecStore((s) => s.health);
-  const setHealth = useSpecStore((s) => s.setHealth);
-  const pollRef = useRef<ReturnType<typeof setInterval>>(null);
   const navigate = useNavigate();
-
-  useEffect(() => {
-    const load = () => {
-      fetchStackHealth().then(setHealth).catch(() => {});
-    };
-    load();
-    pollRef.current = setInterval(load, 10000);
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [setHealth]);
 
   const handleClick = () => {
     navigate('/stack?spec=1');

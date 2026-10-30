@@ -1,4 +1,11 @@
 import { useEffect, useRef, useCallback } from 'react';
+import type { GatewayStatus } from '../types';
+
+// Visible-cadence status from the main window. A hidden heartbeat does not send this.
+export interface StatusSnapshotPayload {
+  status: GatewayStatus;
+  at: number;
+}
 
 // Message types for cross-window communication
 export interface BroadcastMessage {
@@ -8,7 +15,8 @@ export interface BroadcastMessage {
     | 'WINDOW_CLOSED'
     | 'REQUEST_STATE'
     | 'SELECTION_CHANGE'
-    | 'THEME_CHANGE';
+    | 'THEME_CHANGE'
+    | 'STATUS_SNAPSHOT';
   payload?: unknown;
   source: 'main' | 'detached';
   timestamp: number;

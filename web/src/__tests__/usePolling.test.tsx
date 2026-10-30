@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import { requestGatewayPoll, usePolling } from '../hooks/usePolling';
+import { requestGatewayPoll, usePolling, usePollingRefresh } from '../hooks/usePolling';
 import * as api from '../lib/api';
 import { HTTPError } from '../lib/api';
 import { GatewayRequestError } from '../lib/gatewayRequest';
@@ -26,6 +26,7 @@ const quietStatus = {
 
 describe('usePolling retry registration', () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     useAuthStore.setState({ authRequired: false, generation: Symbol() });
     usePinsStore.setState({ pins: null, skillPins: null, pinsError: null, skillPinsError: null });
@@ -45,17 +46,23 @@ describe('usePolling retry registration', () => {
     vi.spyOn(api, 'fetchSkillSources').mockResolvedValue([]);
     vi.spyOn(api, 'getTelemetryInventory').mockResolvedValue([]);
     vi.spyOn(api, 'fetchStackSpec').mockResolvedValue({ content: '', path: '' });
+    vi.spyOn(api, 'fetchStackHealth').mockResolvedValue({
+      validation: { status: 'valid', errorCount: 0, warningCount: 0 },
+      drift: { status: 'in-sync' },
+      dependencies: { status: 'resolved' },
+    });
   }
 
-  it('keeps the shell callback after a non-registering instance unmounts', async () => {
+  it('keeps the shell callback after a refresh accessor unmounts', async () => {
     stubPoll();
     useAuthStore.setState({ authRequired: false, generation: Symbol() });
     const first = renderHook(() => usePolling({ registerRetry: true }), { wrapper });
-    const second = renderHook(() => usePolling(), { wrapper });
-    await waitFor(() => expect(api.fetchStatus).toHaveBeenCalledTimes(2));
+    const second = renderHook(() => usePollingRefresh(), { wrapper });
+    await waitFor(() => expect(api.fetchStatus).toHaveBeenCalledTimes(1));
+    expect(api.fetchToolCatalog).toHaveBeenCalledTimes(1);
     second.unmount();
     requestGatewayPoll();
-    await waitFor(() => expect(api.fetchStatus).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(api.fetchStatus).toHaveBeenCalledTimes(2));
     first.unmount();
     const after = vi.mocked(api.fetchStatus).mock.calls.length;
     requestGatewayPoll();
@@ -64,7 +71,12 @@ describe('usePolling retry registration', () => {
 
   it('propagates a status connection failure to pins and the registry', async () => {
     stubPoll();
-    vi.mocked(api.fetchStatus).mockRejectedValue(new GatewayRequestError('connection', 'down'));
+    const down = new GatewayRequestError('connection', 'down');
+    vi.mocked(api.fetchStatus).mockRejectedValue(down);
+    vi.mocked(api.fetchServerPins).mockRejectedValue(down);
+    vi.mocked(api.fetchSkillPins).mockRejectedValue(down);
+    vi.mocked(api.fetchRegistryStatus).mockRejectedValue(down);
+    vi.mocked(api.fetchRegistrySkills).mockRejectedValue(down);
     useAuthStore.setState({ authRequired: false, generation: Symbol() });
     const view = renderHook(() => usePolling({ registerRetry: true }), { wrapper });
     await waitFor(() => {
@@ -113,5 +125,40 @@ describe('usePolling retry registration', () => {
     expect(usePinsStore.getState().skillPins).toBeNull();
     expect(usePinsStore.getState().pinsError).toBeNull();
     view.unmount();
+  });
+
+  it('does not broadcast a hidden heartbeat', async () => {
+    vi.useFakeTimers();
+    stubPoll();
+    useAuthStore.setState({ authRequired: false, generation: Symbol() });
+    const snaps: number[] = [];
+    const channel = new BroadcastChannel('gridctl-sync');
+    channel.onmessage = (event) => {
+      if (event.data?.type === 'STATUS_SNAPSHOT') snaps.push(1);
+    };
+    const view = renderHook(() => usePolling(), { wrapper });
+    await act(async () => {
+      await Promise.resolve();
+      vi.advanceTimersByTime(20);
+      await Promise.resolve();
+    });
+    expect(snaps.length).toBeGreaterThan(0);
+    const afterVisible = snaps.length;
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => 'hidden',
+    });
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(30000);
+      await Promise.resolve();
+    });
+    expect(snaps.length).toBe(afterVisible);
+    expect(vi.mocked(api.fetchStatus).mock.calls.length).toBeGreaterThan(1);
+    view.unmount();
+    channel.close();
   });
 });

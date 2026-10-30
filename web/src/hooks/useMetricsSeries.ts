@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { fetchTokenMetrics, clearTokenMetrics } from '../lib/api';
 import { POLLING } from '../lib/constants';
+import { useInterval } from './useInterval';
 import type { TokenMetricsResponse } from '../types';
 import { useAuthStore } from '../stores/useAuthStore';
 
@@ -64,7 +65,6 @@ export function useMetricsSeries({
   const [metricsData, setMetricsData] = useState<TokenMetricsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const intervalRef = useRef<number | null>(null);
 
   const apiRange = apiRangeFor(timeRange);
 
@@ -95,23 +95,12 @@ export function useMetricsSeries({
     void loadMetrics();
   }, [enabled, loadMetrics, authRequired]);
 
-  // Auto-refresh while live and not paused.
-  useEffect(() => {
-    if (!enabled || authRequired || paused || timeRange !== 'live') {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-      return;
-    }
-    intervalRef.current = window.setInterval(() => void loadMetrics(), POLLING.METRICS);
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
-  }, [enabled, paused, timeRange, loadMetrics, authRequired]);
+  // Auto-refresh while live and not paused. The mount effect already loaded,
+  // so this timer does not fire again on enable. Hidden tabs pause fully.
+  useInterval(() => { void loadMetrics(); }, POLLING.METRICS, {
+    enabled: enabled && !authRequired && !paused && timeRange === 'live',
+    immediate: false,
+  });
 
   const reload = useCallback(() => {
     void loadMetrics();

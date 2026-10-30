@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchPolicy, type PolicyStatus } from '../lib/api';
 import { useAuthStore } from '../stores/useAuthStore';
+import { useInterval } from './useInterval';
 
 const POLICY_POLL_MS = 15000;
 
@@ -17,30 +18,25 @@ export function usePolicy(enabled: boolean): PolicyState {
   const authRequired = useAuthStore((s) => s.authRequired);
   const [report, setReport] = useState<PolicyStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
-
+  const alive = useRef(true);
   useEffect(() => {
-    if (!enabled || authRequired) return;
-    let active = true;
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
 
-    const load = async () => {
-      try {
-        const data = await fetchPolicy();
-        if (!active || useAuthStore.getState().generation !== generation) return;
-        setReport(data);
-        setError(null);
-      } catch (err) {
-        if (!active || useAuthStore.getState().generation !== generation) return;
-        setError(err instanceof Error ? err.message : 'Failed to load policy');
-      }
-    };
+  const load = useCallback(async () => {
+    try {
+      const data = await fetchPolicy();
+      if (!alive.current || useAuthStore.getState().generation !== generation || useAuthStore.getState().authRequired) return;
+      setReport(data);
+      setError(null);
+    } catch (err) {
+      if (!alive.current || useAuthStore.getState().generation !== generation || useAuthStore.getState().authRequired) return;
+      setError(err instanceof Error ? err.message : 'Failed to load policy');
+    }
+  }, [generation]);
 
-    void load();
-    const id = setInterval(load, POLICY_POLL_MS);
-    return () => {
-      active = false;
-      clearInterval(id);
-    };
-  }, [enabled, generation, authRequired]);
+  useInterval(load, POLICY_POLL_MS, { enabled: enabled && !authRequired });
 
   return { report, error };
 }

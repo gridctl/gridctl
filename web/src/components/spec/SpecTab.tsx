@@ -1,10 +1,11 @@
-import { useEffect, useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { GitCompareArrows, AlertCircle, CheckCircle2, AlertTriangle, FlaskConical, RefreshCw } from 'lucide-react';
 import { useSpecStore } from '../../stores/useSpecStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { fetchStackSpec, fetchStackHealth, validateStackSpec, fetchStackExport } from '../../lib/api';
 import type { IssueSeverity } from '../../types';
 import { getLineIssues } from '../../lib/lineIssues';
+import { useInterval } from '../../hooks/useInterval';
 
 // YAML syntax highlighting tokens
 interface HighlightedToken {
@@ -86,7 +87,6 @@ export function SpecTab() {
   const specError = useSpecStore((s) => s.specError);
   const validation = useSpecStore((s) => s.validation);
   const openCompareModal = useSpecStore((s) => s.openCompareModal);
-  const pollRef = useRef<ReturnType<typeof setInterval>>(null);
   const exportPending = useRef(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
@@ -139,13 +139,7 @@ export function SpecTab() {
     }
   }, []);
 
-  useEffect(() => {
-    loadSpec();
-    pollRef.current = setInterval(loadSpec, 10000);
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [loadSpec]);
+  useInterval(loadSpec, 10000);
 
   if (specLoading && !spec) {
     return (

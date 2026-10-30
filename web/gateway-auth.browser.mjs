@@ -43,10 +43,43 @@ const server = await createServer({
             import { createRoot } from 'react-dom/client';
             import { AuthBoundary } from '/src/components/auth/AuthBoundary.tsx';
             import { useAuthStore } from '/src/stores/useAuthStore.ts';
-            import { useSSEShutdown } from '/src/hooks/useSSEShutdown.ts';
+            import { gatewayRequest } from '/src/lib/gatewayRequest.ts';
             import '/src/index.css';
             useAuthStore.setState({authRequired:true});
-            function Content() { useSSEShutdown(() => { window.fixtureShutdown = true; }); return React.createElement('button', {}, 'Content'); }
+            function useSSEReadLoop() {
+              const generation = useAuthStore(s => s.generation);
+              const authRequired = useAuthStore(s => s.authRequired);
+              React.useEffect(() => {
+                if (authRequired) return;
+                const controller = new AbortController();
+                let reader;
+                void (async () => {
+                  try {
+                    const response = await gatewayRequest('/sse', { headers: { Accept: 'text/event-stream' }, signal: controller.signal });
+                    if (!response.ok || controller.signal.aborted || useAuthStore.getState().generation !== generation) {
+                      await response.body?.cancel();
+                      return;
+                    }
+                    reader = response.body?.getReader();
+                    if (reader) {
+                      while (!controller.signal.aborted && useAuthStore.getState().generation === generation) {
+                        const { done } = await reader.read();
+                        if (done) break;
+                      }
+                    }
+                  } catch {
+                    // Shared policy handles gateway rejection. Other failures are not shutdown evidence.
+                  } finally {
+                    reader?.releaseLock();
+                  }
+                })();
+                return () => {
+                  controller.abort();
+                  void reader?.cancel().catch(() => {});
+                };
+              }, [generation, authRequired]);
+            }
+            function Content() { useSSEReadLoop(); return React.createElement('button', {}, 'Content'); }
             createRoot(document.getElementById('root')).render(React.createElement(AuthBoundary, {}, React.createElement(Content)));
           </script></body></html>`).then(html => res.end(html));
           return;

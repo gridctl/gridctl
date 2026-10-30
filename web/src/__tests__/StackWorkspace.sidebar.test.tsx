@@ -9,7 +9,10 @@ vi.mock('../components/graph/Canvas', () => ({ Canvas: () => <div data-testid="c
 vi.mock('../components/layout/Sidebar', () => ({ Sidebar: () => <div data-testid="sidebar" /> }));
 vi.mock('../components/stack/AccessLens', () => ({ AccessLens: () => null }));
 vi.mock('../components/spec/SpecPane', () => ({ SpecPane: () => null }));
-vi.mock('../hooks/usePolling', () => ({ usePolling: () => ({ refresh: async () => {} }) }));
+vi.mock('../hooks/usePolling', () => ({
+  usePolling: () => ({ refresh: async () => {} }),
+  usePollingRefresh: () => async () => {},
+}));
 
 beforeEach(() => {
   cleanup();

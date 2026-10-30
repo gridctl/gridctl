@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchLimits, type LimitsReport } from '../lib/api';
 import { useAuthStore } from '../stores/useAuthStore';
+import { useInterval } from './useInterval';
 
 // Poll cadence for limit state. Rate limits move at tool-call speed, not
 // render speed; 15s matches the tool-usage poll and is fast enough for the
@@ -23,32 +24,25 @@ export function useLimits(enabled: boolean): LimitsState {
   const authRequired = useAuthStore(s => s.authRequired);
   const [report, setReport] = useState<LimitsReport | null>(null);
   const [error, setError] = useState<string | null>(null);
-
+  const alive = useRef(true);
   useEffect(() => {
-    if (!enabled || authRequired) return;
-    let active = true;
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
 
-    // State writes happen only inside this async loader (after an await
-    // tick), never synchronously in the effect body.
-    const load = async () => {
-      try {
-        const data = await fetchLimits();
-        if (!active || useAuthStore.getState().generation !== generation) return;
-        setReport(data);
-        setError(null);
-      } catch (err) {
-        if (!active || useAuthStore.getState().generation !== generation) return;
-        setError(err instanceof Error ? err.message : 'Failed to load limits');
-      }
-    };
+  const load = useCallback(async () => {
+    try {
+      const data = await fetchLimits();
+      if (!alive.current || useAuthStore.getState().generation !== generation || useAuthStore.getState().authRequired) return;
+      setReport(data);
+      setError(null);
+    } catch (err) {
+      if (!alive.current || useAuthStore.getState().generation !== generation || useAuthStore.getState().authRequired) return;
+      setError(err instanceof Error ? err.message : 'Failed to load limits');
+    }
+  }, [generation]);
 
-    void load();
-    const id = setInterval(load, LIMITS_POLL_MS);
-    return () => {
-      active = false;
-      clearInterval(id);
-    };
-  }, [enabled, generation, authRequired]);
+  useInterval(load, LIMITS_POLL_MS, { enabled: enabled && !authRequired });
 
   return { report, error };
 }

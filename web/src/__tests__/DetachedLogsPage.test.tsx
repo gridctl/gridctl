@@ -8,6 +8,7 @@ import type { LogEntry } from '../lib/api';
 
 vi.mock('../hooks/useBroadcastChannel', () => ({
   useDetachedWindowSync: vi.fn(),
+  useBroadcastChannel: () => ({ postMessage: vi.fn() }),
 }));
 
 vi.mock('../lib/api', async (importActual) => {

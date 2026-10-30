@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useSearchParams } from 'react-router';
 import {
   Terminal,
@@ -18,6 +18,8 @@ import { Badge } from '../components/ui/Badge';
 import { IconButton } from '../components/ui/IconButton';
 import { ZoomControls } from '../components/ui/ZoomControls';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
+import { useSharedStatus } from '../hooks/useSharedStatus';
+import { useInterval } from '../hooks/useInterval';
 import { useLogFontSize } from '../hooks/useLogFontSize';
 import { fetchStatus, fetchTools, fetchToolCatalog } from '../lib/api';
 import { getTransportIcon, getTransportColorClasses } from '../lib/transport';
@@ -48,10 +50,27 @@ function DetachedSidebarPageContent() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialNode = searchParams.get('node');
 
-  const [nodes, setNodes] = useState<NodeOption[]>([]);
   const [selectedNode, setSelectedNode] = useState<string | null>(initialNode);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const { status } = useSharedStatus({ enabled: !authRequired });
+  const nodes = useMemo<NodeOption[]>(() => {
+    if (!status || useAuthStore.getState().generation !== generation || useAuthStore.getState().authRequired) {
+      return [];
+    }
+    return [
+      ...(status['mcp-servers'] ?? []).map((s) => ({
+        name: s.name,
+        type: 'mcp-server' as const,
+        data: s,
+      })),
+      ...(status.resources ?? []).map((r) => ({
+        name: r.name,
+        type: 'resource' as const,
+        data: r,
+      })),
+    ];
+  }, [status, generation]);
+  const isLoading = status == null && !authRequired;
 
   // Text zoom
   const contentRef = useRef<HTMLElement>(null);
@@ -61,53 +80,47 @@ function DetachedSidebarPageContent() {
   // Register with main window
   useDetachedWindowSync('sidebar');
 
-  // Fetch data
-  const fetchData = useCallback(async () => {
+  useEffect(() => {
+    if (!status) return;
+    if (useAuthStore.getState().generation !== generation || useAuthStore.getState().authRequired) return;
+    useStackStore.getState().setGatewayStatus(status);
+  }, [status, generation]);
+
+  const loadInventory = useCallback(async () => {
     const current = () => useAuthStore.getState().generation === generation && !useAuthStore.getState().authRequired;
     if (!current()) return;
     try {
-      const [status, toolsResult, catalogResult] = await Promise.all([
+      const [toolsResult, catalogResult] = await Promise.all([
+        fetchTools(),
+        fetchToolCatalog(),
+      ]);
+      if (!current()) return;
+      useStackStore.getState().setTools(toolsResult.tools ?? []);
+      useStackStore.getState().setToolCatalog(catalogResult.tools ?? []);
+    } catch {
+      // Tools stay on the last good snapshot.
+    }
+  }, [generation]);
+
+  const refreshAll = useCallback(async () => {
+    const current = () => useAuthStore.getState().generation === generation && !useAuthStore.getState().authRequired;
+    if (!current()) return;
+    try {
+      const [next, toolsResult, catalogResult] = await Promise.all([
         fetchStatus(),
         fetchTools(),
         fetchToolCatalog(),
       ]);
       if (!current()) return;
-
-      const nodeList: NodeOption[] = [
-        ...(status['mcp-servers'] ?? []).map((s) => ({
-          name: s.name,
-          type: 'mcp-server' as const,
-          data: s,
-        })),
-        ...(status.resources ?? []).map((r) => ({
-          name: r.name,
-          type: 'resource' as const,
-          data: r,
-        })),
-      ];
-
-      setNodes(nodeList);
-      // Mirror into the shared store so ToolsEditor (which reads from the
-      // store) has the same tool descriptions as the primary sidebar.
-      useStackStore.getState().setGatewayStatus(status);
+      useStackStore.getState().setGatewayStatus(next);
       useStackStore.getState().setTools(toolsResult.tools ?? []);
       useStackStore.getState().setToolCatalog(catalogResult.tools ?? []);
-      setIsLoading(false);
     } catch {
-      if (current()) setIsLoading(false);
+      // Manual refresh is best-effort; the interval retries inventory.
     }
   }, [generation]);
 
-  useEffect(() => {
-    if (authRequired) return;
-    // Async wrapper to avoid synchronous setState
-    const initFetch = async () => {
-      await fetchData();
-    };
-    initFetch();
-    const interval = window.setInterval(fetchData, POLLING.STATUS);
-    return () => clearInterval(interval);
-  }, [fetchData, authRequired]);
+  useInterval(loadInventory, POLLING.INVENTORY, { enabled: !authRequired });
 
   // Update URL when selection changes
   useEffect(() => {
@@ -211,7 +224,7 @@ function DetachedSidebarPageContent() {
             isMax={isMax}
             isDefault={isDefault}
           />
-          <IconButton icon={RefreshCw} onClick={fetchData} tooltip="Refresh" size="sm" variant="ghost" />
+          <IconButton icon={RefreshCw} onClick={() => void refreshAll()} tooltip="Refresh" size="sm" variant="ghost" />
         </div>
       </header>
 

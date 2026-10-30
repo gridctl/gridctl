@@ -36,6 +36,7 @@ import { useWorkspaceLayout } from '../../hooks/useWorkspaceLayout';
 import { TraceWaterfall } from './TraceWaterfall';
 import { PersistedFromMarker } from '../telemetry/PersistedFromMarker';
 import { POLLING } from '../../lib/constants';
+import { useInterval } from '../../hooks/useInterval';
 
 function formatAbsoluteTime(iso: string): string {
   try {
@@ -94,7 +95,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
   const setTracesPrefs = useUIStore((s) => s.setTracesPrefs);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const intervalRef = useRef<number | null>(null);
+
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersRef = useDismiss<HTMLDivElement>(filtersOpen, () => setFiltersOpen(false));
   // Keyboard highlight, tracked by trace ID so Live refreshes keep it sticky.
@@ -180,24 +181,13 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
     load();
   }, [active, filters.server, filters.errorsOnly, filters.minDuration, load, authRequired]);
 
-  // Auto-refresh while active and not paused. Pause freezes the display
-  // only — the gateway keeps collecting; resuming just reloads.
-  useEffect(() => {
-    if (!active || authRequired || isPaused) {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-      return;
-    }
-    intervalRef.current = window.setInterval(load, POLLING.STATUS);
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
-  }, [active, isPaused, load, authRequired]);
+  // Auto-refresh while active and not paused. The activation effect already
+  // loaded, so this timer does not fire again on enable. Pause freezes the
+  // display only. Hidden tabs pause fully.
+  useInterval(load, POLLING.STATUS, {
+    enabled: active && !authRequired && !isPaused,
+    immediate: false,
+  });
 
   // Client-side filter pipeline: time range and search first, then the
   // tool-call segment (so the "infra hidden" count reflects the same window
