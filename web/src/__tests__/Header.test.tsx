@@ -57,4 +57,14 @@ describe('Header', () => {
     renderHeader();
     expect(screen.queryByText(/Persistence:/)).not.toBeInTheDocument();
   });
+
+  it('keeps header actions mounted and lets the workspace strip scroll', () => {
+    renderHeader();
+    const create = screen.getByRole('button', { name: 'Create Resource' });
+    expect(screen.getByRole('button', { name: 'Refresh (⌘⇧R)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reload Config' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Command Palette (⌘K)' })).toBeInTheDocument();
+    expect(create.closest('div')).toHaveClass('shrink-0');
+    expect(screen.getByRole('navigation', { name: 'Workspaces' })).toHaveClass('overflow-x-auto');
+  });
 });

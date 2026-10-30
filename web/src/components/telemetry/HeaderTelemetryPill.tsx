@@ -90,7 +90,7 @@ export function HeaderTelemetryPill() {
         aria-expanded={open}
         title={label}
         className={cn(
-          'flex items-center gap-2 px-3 py-1.5 rounded-full',
+          'flex items-center gap-2 px-3 max-sm:px-2 py-1.5 rounded-full',
           'bg-surface-elevated/60 backdrop-blur-sm border transition-all duration-200',
           anyOn
             ? 'border-status-running/30 hover:border-status-running/50'
@@ -101,7 +101,7 @@ export function HeaderTelemetryPill() {
         <Database size={12} className={anyOn ? 'text-status-running' : 'text-text-muted'} />
         <span
           className={cn(
-            'text-xs font-medium',
+            'text-xs font-medium max-sm:sr-only',
             anyOn ? 'text-status-running' : 'text-text-secondary',
           )}
         >

@@ -36,11 +36,11 @@ export function StatusBar() {
   const isConnected = connectionStatus === 'connected';
 
   return (
-    <div className="h-8 bg-surface/80 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-xs relative">
+    <div className="h-8 bg-surface/80 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-xs relative whitespace-nowrap">
       {/* Top accent */}
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-border/50 to-transparent" />
 
-      <div className="flex items-center gap-5">
+      <div className="flex items-center gap-5 min-w-0 overflow-hidden">
         {/* Connection status */}
         <div className={cn(
           'flex items-center gap-2 px-2 py-0.5 rounded-full',
@@ -52,7 +52,12 @@ export function StatusBar() {
               <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-status-running rounded-full animate-pulse" />
             )}
           </span>
-          <span className="font-medium">{isConnected ? 'Connected' : error || 'Disconnected'}</span>
+          <span
+            className="font-medium truncate min-w-0 max-w-[40vw]"
+            title={isConnected ? 'Connected' : error || 'Disconnected'}
+          >
+            {isConnected ? 'Connected' : error || 'Disconnected'}
+          </span>
         </div>
 
         {/* Divider */}
@@ -90,8 +95,9 @@ export function StatusBar() {
         )}
 
         {/* Session count */}
+        {/* Hidden at and below the 768px wrap width. md would still show them there. */}
         {sessions > 0 && (
-          <div className="flex items-center gap-2 text-text-muted">
+          <div className="flex items-center gap-2 text-text-muted max-[800px]:hidden">
             <Radio size={11} className="text-primary" />
             <span>
               <span className="text-primary font-semibold">{sessions}</span>
@@ -155,14 +161,14 @@ export function StatusBar() {
 
         {/* Tokenizer mode indicator */}
         {tokenizerName && (
-          <div className="flex items-center gap-2 text-text-muted">
+          <div className="flex items-center gap-2 text-text-muted max-[800px]:hidden">
             <span className="text-text-muted/60 font-medium">{tokenizerName}</span>
           </div>
         )}
 
         {/* Format savings indicator */}
         {tokenUsage && tokenUsage.format_savings.savings_percent > 0 && (
-          <div className="flex items-center gap-2 text-text-muted">
+          <div className="flex items-center gap-2 text-text-muted max-[800px]:hidden">
             <ArrowDown size={11} className="text-status-running" />
             <span className="text-status-running font-semibold">
               {Math.round(tokenUsage.format_savings.savings_percent)}% saved
@@ -190,7 +196,7 @@ export function StatusBar() {
 
       {/* Last update */}
       {lastUpdated && (
-        <div className="flex items-center gap-2 text-text-muted">
+        <div className="flex items-center gap-2 text-text-muted shrink-0">
           <Clock size={11} className="text-text-muted/60" />
           <span>Updated {formatRelativeTime(lastUpdated)}</span>
         </div>

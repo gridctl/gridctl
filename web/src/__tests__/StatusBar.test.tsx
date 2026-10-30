@@ -45,6 +45,33 @@ beforeEach(() => {
 });
 
 describe('StatusBar', () => {
+  it('truncates a long disconnect error and stays on one row', () => {
+    const error = 'x'.repeat(200);
+    useStackStore.setState({ connectionStatus: 'disconnected', error });
+    renderBar();
+    const label = screen.getByText(error);
+    expect(label).toHaveClass('truncate');
+    expect(label).toHaveAttribute('title', error);
+    expect(label.closest('.h-8')).toHaveClass('whitespace-nowrap');
+  });
+
+  it('hides tokenizer, savings, and sessions at the narrow-bar breakpoint', () => {
+    useStackStore.setState({
+      sessions: 3,
+      sessionEntries: null,
+      gatewayInfo: { name: 'acme', version: 'v1', tokenizer: 'embedded' },
+      tokenUsage: {
+        session: { input_tokens: 10, output_tokens: 0, total_tokens: 10 },
+        per_server: {},
+        format_savings: { original_tokens: 100, formatted_tokens: 70, saved_tokens: 30, savings_percent: 30 },
+      },
+    });
+    renderBar();
+    expect(screen.getByText('sessions').parentElement?.parentElement).toHaveClass('max-[800px]:hidden');
+    expect(screen.getByText('embedded').parentElement).toHaveClass('max-[800px]:hidden');
+    expect(screen.getByText('30% saved').parentElement).toHaveClass('max-[800px]:hidden');
+  });
+
   it('owns the connection indicator', () => {
     renderBar();
     expect(screen.getByText('Connected')).toBeInTheDocument();

@@ -102,7 +102,7 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
   const isConnected = connectionStatus === 'connected';
 
   return (
-    <header className="h-14 bg-surface/80 backdrop-blur-xl border-b border-border/50 flex items-center justify-between px-5 relative z-header">
+    <header className="h-14 bg-surface/80 backdrop-blur-xl border-b border-border/50 flex items-center justify-between gap-3 px-3 md:gap-4 md:px-5 relative z-header">
       {/* Subtle gradient line at top */}
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
 
@@ -111,9 +111,12 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
           /api/status, not of the UI shell, so it belongs with the gateway's
           other properties on the canvas node and inspector sidebar rather than
           beside the wordmark. */}
-      <div className="flex items-center gap-4">
-        {/* Brand Logo — inline so "ctl" follows the theme (readable on light) */}
-        <LogoWordmark className="h-10 w-auto block" />
+      {/* min-w-0 flex-1: this group shrinks so the pill strip can scroll
+          instead of pushing the action cluster past the viewport edge. */}
+      <div className="flex items-center gap-2 min-w-0 flex-1 md:gap-4">
+        {/* Brand Logo — inline so "ctl" follows the theme (readable on light).
+            Shorter below sm so one workspace pill stays visible at 390px. */}
+        <LogoWordmark className="h-6 w-auto block shrink-0 sm:h-10" />
         <WorkspaceSwitcher />
       </div>
 
@@ -135,12 +138,14 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
       {/* Right: Persistence quick-toggle + Actions. Persistence is the one
           genuinely actionable control from the old status cluster, so it stays
           in the header next to the other actions. */}
-      <div className="flex items-center gap-2">
+      {/* shrink-0: actions stay reachable; the pill strip absorbs the squeeze.
+          Dividers hide below sm so the cluster fits a 390px header. */}
+      <div className="flex items-center gap-1 shrink-0 sm:gap-2">
         {isConnected && <HeaderTelemetryPill />}
-        {isConnected && <div className="w-px h-5 bg-border/50 mx-0.5" />}
+        {isConnected && <div className="hidden sm:block w-px h-5 bg-border/50 mx-0.5" />}
         {/* Appearance (light/dark/system) — prominent in the action cluster */}
         <ThemePicker variant="header" placement="down" />
-        <div className="w-px h-5 bg-border/50 mx-0.5" />
+        <div className="hidden sm:block w-px h-5 bg-border/50 mx-0.5" />
         <IconButton
           icon={Command}
           onClick={toggleCommandPalette}
