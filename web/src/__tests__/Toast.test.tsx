@@ -104,4 +104,55 @@ describe('ToastContainer', () => {
     expect(screen.queryByText('err-0')).not.toBeInTheDocument();
     expect(screen.getByText('err-5')).toBeInTheDocument();
   });
+
+  it('keeps a new timed toast when five persistent toasts are showing', () => {
+    render(<ToastContainer />);
+    act(() => {
+      for (let i = 0; i < 5; i += 1) showToast('error', `err-${i}`);
+      showToast('success', 'Copied');
+    });
+    expect(screen.getAllByRole('alert')).toHaveLength(4);
+    expect(screen.queryByText('err-0')).not.toBeInTheDocument();
+    expect(screen.getByText('err-4')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Copied');
+  });
+
+  it('drops the oldest timed toast before a persistent one', () => {
+    render(<ToastContainer />);
+    act(() => {
+      showToast('success', 'first');
+      showToast('success', 'second');
+      for (let i = 0; i < 3; i += 1) showToast('error', `err-${i}`);
+      showToast('warning', 'third');
+    });
+    expect(screen.queryByText('first')).not.toBeInTheDocument();
+    expect(screen.getByText('second')).toBeInTheDocument();
+    expect(screen.getByText('third')).toBeInTheDocument();
+    expect(screen.getAllByRole('alert')).toHaveLength(3);
+  });
+
+  it('keeps a paused toast paused when the same message is shown again', () => {
+    render(<ToastContainer />);
+    act(() => {
+      showToast('success', 'hold');
+    });
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    fireEvent.pointerEnter(screen.getByRole('status'));
+    act(() => {
+      showToast('success', 'hold');
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    fireEvent.pointerLeave(screen.getByRole('status'));
+    act(() => {
+      vi.advanceTimersByTime(2999);
+    });
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
 });

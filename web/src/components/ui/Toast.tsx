@@ -68,6 +68,17 @@ function startTimer(id: string, duration: number) {
   timers.set(id, { remaining: duration, startedAt: Date.now(), handle });
 }
 
+// A repeat of a toast the user is still hovering or focused must not arm a
+// fresh timeout. Reset the budget and leave the pause in place.
+function resetTimer(id: string, duration: number) {
+  const record = timers.get(id);
+  if (record && record.startedAt == null) {
+    timers.set(id, { remaining: duration, startedAt: null, handle: null });
+    return;
+  }
+  startTimer(id, duration);
+}
+
 function pauseTimer(id: string) {
   const record = timers.get(id);
   if (!record || record.startedAt == null) return;
@@ -88,17 +99,13 @@ function resumeTimer(id: string) {
   timers.set(id, { remaining: record.remaining, startedAt: Date.now(), handle });
 }
 
-// Drop the oldest timed toast first, then the oldest persistent one, until
-// the visible list is within the cap.
-function enforceCap(list: Toast[]): Toast[] {
-  const next = [...list];
-  while (next.length > MAX_VISIBLE) {
-    const timedIndex = next.findIndex((t) => !t.persistent);
-    const index = timedIndex >= 0 ? timedIndex : 0;
-    const [removed] = next.splice(index, 1);
-    clearTimer(removed.id);
-  }
-  return next;
+// Make room for an incoming toast. Drop the oldest timed toast first, then
+// the oldest persistent one. Never drop the toast being added.
+function dropOldest(list: Toast[]) {
+  const timedIndex = list.findIndex((t) => !t.persistent);
+  const index = timedIndex >= 0 ? timedIndex : 0;
+  const [removed] = list.splice(index, 1);
+  if (removed) clearTimer(removed.id);
 }
 
 /** Copy text to the clipboard and toast the outcome. */
@@ -120,7 +127,7 @@ export function showToast(
 ): string {
   const existing = toasts.find((t) => t.type === type && t.message === message);
   if (existing) {
-    if (!existing.persistent) startTimer(existing.id, existing.duration);
+    if (!existing.persistent) resetTimer(existing.id, existing.duration);
     notify();
     return existing.id;
   }
@@ -129,11 +136,11 @@ export function showToast(
   const persistent = isPersistent(type, options);
   const duration = options?.duration ?? DEFAULT_DURATION;
   const dismissible = options?.dismissible !== false;
-  toasts = enforceCap([
-    ...toasts,
-    { id, type, message, action: options?.action, duration, persistent, dismissible },
-  ]);
-  if (!persistent && toasts.some((t) => t.id === id)) startTimer(id, duration);
+  const next = [...toasts];
+  while (next.length >= MAX_VISIBLE) dropOldest(next);
+  next.push({ id, type, message, action: options?.action, duration, persistent, dismissible });
+  toasts = next;
+  if (!persistent) startTimer(id, duration);
   notify();
   return id;
 }
