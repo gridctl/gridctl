@@ -64,6 +64,30 @@ describe('MCPServerForm', () => {
     expect(screen.getByPlaceholderText('image:tag')).toBeInTheDocument();
   });
 
+  it('associates the Name, Image, and Transport labels with their controls', () => {
+    render(<MCPServerForm data={defaultData({ serverType: 'container' })} onChange={onChange} />);
+    expect(screen.getByLabelText(/^Name/)).toHaveAttribute('placeholder', 'my-server');
+    expect(screen.getByLabelText(/^Image/)).toHaveAttribute('placeholder', 'image:tag');
+    expect(screen.getByLabelText('Transport').tagName).toBe('SELECT');
+  });
+
+  it('ties the Name error to the input', () => {
+    render(<MCPServerForm data={defaultData()} onChange={onChange} errors={{ name: 'Name is required' }} />);
+    const input = screen.getByLabelText(/^Name/);
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    const described = (input.getAttribute('aria-describedby') ?? '')
+      .split(' ')
+      .map((describedId) => document.getElementById(describedId))
+      .find((node) => node?.textContent?.includes('Name is required'));
+    expect(described).toHaveTextContent('Name is required');
+  });
+
+  it('names the environment remove button after the row key', () => {
+    render(<MCPServerForm data={defaultData({ env: { FOO: 'bar' } })} onChange={onChange} />);
+    fireEvent.click(screen.getByText('Environment & Secrets'));
+    expect(screen.getByRole('button', { name: 'Remove FOO' })).toBeInTheDocument();
+  });
+
   it('shows URL field for external type', () => {
     render(<MCPServerForm data={defaultData({ serverType: 'external' })} onChange={onChange} />);
     expect(screen.getByPlaceholderText('https://my-server.example.com/mcp')).toBeInTheDocument();

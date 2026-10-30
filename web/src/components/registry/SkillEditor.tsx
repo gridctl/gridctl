@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, useId } from 'react';
 import {
   Library,
   Settings,
@@ -192,6 +192,7 @@ function MetadataEditor({
               value={entry.key}
               onChange={(e) => onUpdate(entry.id, 'key', e.target.value)}
               placeholder="key"
+              aria-label="Metadata key"
               className="w-36 bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-primary/50 transition-colors"
             />
             <span className="text-text-muted text-xs">=</span>
@@ -199,10 +200,13 @@ function MetadataEditor({
               value={entry.value}
               onChange={(e) => onUpdate(entry.id, 'value', e.target.value)}
               placeholder="value"
+              aria-label="Metadata value"
               className="flex-1 bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-primary/50 transition-colors"
             />
             <button
+              type="button"
               onClick={() => onRemove(entry.id)}
+              aria-label={`Remove metadata ${entry.key || 'entry'}`}
               className="p-1 text-text-muted hover:text-status-error transition-colors"
             >
               <X size={12} />
@@ -242,7 +246,7 @@ function AcceptanceCriteriaEditor({
         <p className="text-xs text-text-muted italic">No acceptance criteria defined</p>
       )}
       <div className="space-y-3">
-        {(entries ?? []).map((entry) => (
+        {(entries ?? []).map((entry, i) => (
           <div key={entry.id} className="rounded-lg border border-border/30 bg-background/40 p-3 space-y-2">
             <div className="flex items-start gap-2">
               <span className="text-[10px] text-text-muted uppercase tracking-wider w-12 pt-2.5 flex-shrink-0 font-mono">
@@ -252,10 +256,13 @@ function AcceptanceCriteriaEditor({
                 value={entry.given}
                 onChange={(e) => onUpdate(entry.id, 'given', e.target.value)}
                 placeholder="a valid input is provided"
+                aria-label="Given"
                 className="flex-1 bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50 transition-colors"
               />
               <button
+                type="button"
                 onClick={() => onRemove(entry.id)}
+                aria-label={`Remove test case ${i + 1}`}
                 className="p-1 text-text-muted hover:text-status-error transition-colors mt-1 flex-shrink-0"
               >
                 <X size={12} />
@@ -269,6 +276,7 @@ function AcceptanceCriteriaEditor({
                 value={entry.when}
                 onChange={(e) => onUpdate(entry.id, 'when', e.target.value)}
                 placeholder="the skill is called"
+                aria-label="When"
                 className="flex-1 bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50 transition-colors"
               />
               <div className="w-6 flex-shrink-0" />
@@ -281,6 +289,7 @@ function AcceptanceCriteriaEditor({
                 value={entry.then}
                 onChange={(e) => onUpdate(entry.id, 'then', e.target.value)}
                 placeholder="contains expected_output"
+                aria-label="Then"
                 className="flex-1 bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50 transition-colors"
               />
               <div className="w-6 flex-shrink-0" />
@@ -398,6 +407,7 @@ export function SkillEditor({
   flush,
 }: SkillEditorProps) {
   const isNew = !skill;
+  const fieldId = useId();
   const idCounter = useRef(0);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -864,8 +874,10 @@ export function SkillEditor({
           <div className="flex items-center gap-3">
             {/* Preview toggle */}
             <button
+              type="button"
               onClick={togglePreview}
               title={showPreview ? 'Hide preview' : 'Show preview'}
+              aria-label={showPreview ? 'Hide preview' : 'Show preview'}
               className={cn(
                 'p-1.5 rounded-lg transition-all duration-200 group',
                 showPreview
@@ -880,6 +892,7 @@ export function SkillEditor({
             <select
               value={state}
               onChange={(e) => setState(e.target.value as ItemState)}
+              aria-label="Skill state"
               className="bg-background/60 border border-border/40 rounded-lg px-3 py-1.5 text-xs text-text-primary focus:outline-none focus:border-primary/50 transition-colors cursor-pointer"
             >
               <option value="draft">Draft</option>
@@ -954,6 +967,7 @@ export function SkillEditor({
               autoFocus
               value={forkName}
               onChange={(e) => setForkName(e.target.value)}
+              aria-label="New skill name"
               onKeyDown={(e) => { if (e.key === 'Enter') handleFork(); if (e.key === 'Escape') setForking(false); }}
               placeholder="new-skill-name"
               className="flex-1 max-w-xs bg-background/60 border border-border/40 rounded-lg px-3 py-1.5 text-xs font-mono text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-primary/50 transition-colors"
@@ -1005,8 +1019,9 @@ export function SkillEditor({
               <div className="px-5 pb-4 space-y-4">
                 {/* Name */}
                 <div>
-                  <label className="text-xs text-text-muted uppercase tracking-wider block mb-1.5">Name</label>
+                  <label htmlFor={`${fieldId}-name`} className="text-xs text-text-muted uppercase tracking-wider block mb-1.5">Name</label>
                   <input
+                    id={`${fieldId}-name`}
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     disabled={!isNew}
@@ -1024,11 +1039,12 @@ export function SkillEditor({
 
                 {/* Description */}
                 <div>
-                  <label className="text-xs text-text-muted uppercase tracking-wider block mb-1.5">
+                  <label htmlFor={`${fieldId}-description`} className="text-xs text-text-muted uppercase tracking-wider block mb-1.5">
                     Description
                     <span className="ml-2 text-text-muted normal-case">{description.length}/1024</span>
                   </label>
                   <textarea
+                    id={`${fieldId}-description`}
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder="Brief description of what this skill does"
@@ -1041,8 +1057,9 @@ export function SkillEditor({
                 {/* License + Compatibility (side by side) */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs text-text-muted uppercase tracking-wider block mb-1.5">License</label>
+                    <label htmlFor={`${fieldId}-license`} className="text-xs text-text-muted uppercase tracking-wider block mb-1.5">License</label>
                     <input
+                      id={`${fieldId}-license`}
                       value={license}
                       onChange={(e) => setLicense(e.target.value)}
                       placeholder="Apache-2.0"
@@ -1050,8 +1067,9 @@ export function SkillEditor({
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-text-muted uppercase tracking-wider block mb-1.5">Compatibility</label>
+                    <label htmlFor={`${fieldId}-compatibility`} className="text-xs text-text-muted uppercase tracking-wider block mb-1.5">Compatibility</label>
                     <input
+                      id={`${fieldId}-compatibility`}
                       value={compatibility}
                       onChange={(e) => setCompatibility(e.target.value)}
                       placeholder="Requires git"
@@ -1062,8 +1080,9 @@ export function SkillEditor({
 
                 {/* Allowed Tools */}
                 <div>
-                  <label className="text-xs text-text-muted uppercase tracking-wider block mb-1.5">Allowed Tools</label>
+                  <label htmlFor={`${fieldId}-allowed-tools`} className="text-xs text-text-muted uppercase tracking-wider block mb-1.5">Allowed Tools</label>
                   <input
+                    id={`${fieldId}-allowed-tools`}
                     value={allowedTools}
                     onChange={(e) => setAllowedTools(e.target.value)}
                     placeholder="Bash(git:*) Read Write"

@@ -23,9 +23,11 @@ export function ZoomControls({
   return (
     <div className="flex items-center gap-0.5 rounded-md border border-border/50 bg-surface-elevated/60 overflow-hidden">
       <button
+        type="button"
         onClick={onZoomOut}
         disabled={isMin}
         title="Decrease font size (Ctrl+Scroll down)"
+        aria-label="Decrease font size"
         className={cn(
           'p-1 transition-all duration-200',
           'hover:bg-surface-highlight hover:text-text-primary',
@@ -51,9 +53,11 @@ export function ZoomControls({
       </button>
 
       <button
+        type="button"
         onClick={onZoomIn}
         disabled={isMax}
         title="Increase font size (Ctrl+Scroll up)"
+        aria-label="Increase font size"
         className={cn(
           'p-1 transition-all duration-200',
           'hover:bg-surface-highlight hover:text-text-primary',

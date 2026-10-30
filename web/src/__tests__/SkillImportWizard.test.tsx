@@ -87,6 +87,26 @@ describe('BrowseStep', () => {
     expect(screen.getByText('2 skills found')).toBeInTheDocument();
   });
 
+  it('exposes the selection toggle as a checkbox', () => {
+    const { rerender } = render(
+      <BrowseStep
+        previews={[makePreview()]}
+        selected={new Set()}
+        onSelectionChange={onSelectionChange}
+      />,
+    );
+    expect(screen.getByRole('checkbox', { name: 'Select test-skill' })).toHaveAttribute('aria-checked', 'false');
+
+    rerender(
+      <BrowseStep
+        previews={[makePreview()]}
+        selected={new Set(['test-skill'])}
+        onSelectionChange={onSelectionChange}
+      />,
+    );
+    expect(screen.getByRole('checkbox', { name: 'Select test-skill' })).toHaveAttribute('aria-checked', 'true');
+  });
+
   it('shows Select All button', () => {
     render(
       <BrowseStep

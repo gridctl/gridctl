@@ -246,24 +246,30 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
         </div>
         <div className="flex items-center gap-1 flex-shrink-0 ml-2">
           <button
+            type="button"
             onClick={() => copyWithToast(trace.traceId, 'Trace ID')}
             title="Copy trace ID"
+            aria-label="Copy trace ID"
             className="p-1 rounded text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
           >
             <Copy size={11} />
           </button>
           <button
+            type="button"
             onClick={() =>
               copyWithToast(`${window.location.origin}/traces?trace=${encodeURIComponent(trace.traceId)}`, 'Trace link')
             }
             title="Copy deep link"
+            aria-label="Copy deep link"
             className="p-1 rounded text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
           >
             <Link2 size={11} />
           </button>
           <button
+            type="button"
             onClick={downloadOTLP}
             title="Export trace as OTLP JSON"
+            aria-label="Export trace as OTLP JSON"
             className="p-1 rounded text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
           >
             <Download size={11} />

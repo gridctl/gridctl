@@ -91,6 +91,8 @@ workspaces. Reach for them before duplicating UI:
 | `FailedState` | `components/ui/` | Failed fetch with nothing loaded. Title is `<feature> unavailable`, with Retry when `onRetry` is set. Not a spinner or an empty collection |
 | `FailureBanner` | `components/ui/` | Failed refresh when data is already on screen: one alert row and Retry |
 | `Popover` | `components/ui/` | Theme picker, telemetry pill, overlays menu, log level filter, log view options. Escape and a programmatic close return focus to the trigger; an outside click does not |
+| `Field` | `components/ui/` | Label, control, error, then help. Owns the required marker and wires `htmlFor`, `aria-invalid`, and `aria-describedby`. Pass plain label text. A different sibling order keeps its wrapper and uses `useId` |
+| `IconButton` | `components/ui/` | Requires `tooltip` or `ariaLabel`, and renders `type="button"`. `title` alone is not an accessible name |
 
 ## Layering
 
@@ -153,5 +155,5 @@ web/src/components/
 ├── graph/            Stack Canvas + custom node types
 ├── registry/         Library workspace (LibraryGrid, SkillEditor, …)
 ├── palette/          CommandPalette (workspace-scoped via useCommandRegistry)
-└── ui/               Badge, Toast, IconButton, EmptyState, …
+└── ui/               Badge, Toast, IconButton, Field, EmptyState, …
 ```

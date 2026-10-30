@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Plus,
   X,
-  AlertCircle,
   KeyRound,
   Network,
   Settings,
@@ -15,6 +14,7 @@ import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import type { ResourceFormData } from '../../../lib/yaml-builder';
 import { VariablesPopover } from '../VariablesPopover';
+import { Field } from '../../ui/Field';
 
 // --- Resource presets ---
 
@@ -134,17 +134,6 @@ function Section({
 // --- Form field components ---
 
 const inputClass = 'w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors';
-const labelClass = 'block text-xs text-text-secondary mb-1.5';
-
-function FieldError({ error }: { error?: string }) {
-  if (!error) return null;
-  return (
-    <p className="text-[10px] text-status-error mt-1">
-      <AlertCircle size={10} className="inline mr-1 -mt-0.5" />
-      {error}
-    </p>
-  );
-}
 
 // --- Key-Value Editor ---
 
@@ -207,6 +196,7 @@ function KeyValueEditor({
               value={key}
               onChange={(e) => updateKey(key, e.target.value, i)}
               placeholder={placeholder?.key ?? 'KEY'}
+              aria-label={`${label} key ${i + 1}`}
               className={cn(inputClass, 'w-[40%] font-mono')}
             />
             <span className="text-text-muted text-xs">=</span>
@@ -216,6 +206,7 @@ function KeyValueEditor({
                 value={val}
                 onChange={(e) => updateValue(key, e.target.value)}
                 placeholder={placeholder?.value ?? 'value'}
+                aria-label={`${label} value ${i + 1}`}
                 className={cn(inputClass, 'flex-1', val.startsWith('${var:') && 'text-tertiary font-medium')}
               />
               {showSecrets && (
@@ -225,6 +216,7 @@ function KeyValueEditor({
             <button
               type="button"
               onClick={() => removeEntry(key)}
+              aria-label={`Remove ${key || 'entry'}`}
               className="p-1 text-text-muted hover:text-status-error transition-colors flex-shrink-0"
             >
               <X size={12} />
@@ -285,11 +277,13 @@ function StringArrayEditor({
               value={item}
               onChange={(e) => updateItem(i, e.target.value)}
               placeholder={placeholder}
+              aria-label={`${label} ${i + 1}`}
               className={cn(inputClass, 'flex-1 font-mono')}
             />
             <button
               type="button"
               onClick={() => removeItem(i)}
+              aria-label={`Remove ${label} ${i + 1}`}
               className="p-1 text-text-muted hover:text-status-error transition-colors flex-shrink-0"
             >
               <X size={12} />
@@ -415,34 +409,35 @@ export function ResourceForm({ data, onChange, errors }: ResourceFormProps) {
         onToggle={() => toggleSection('identity')}
       >
         <div className="space-y-3">
-          <div>
-            <label className={labelClass}>
-              Name <span className="text-status-error">*</span>
-            </label>
-            <input
-              type="text"
-              value={data.name}
-              onChange={(e) => onChange({ name: toKebabCase(e.target.value) })}
-              onBlur={(e) => onChange({ name: e.target.value.replace(/-+$/, '') })}
-              placeholder="my-resource"
-              className={cn(inputClass, 'font-mono', errors?.name && 'border-status-error/50')}
-            />
-            <FieldError error={errors?.name} />
-            <p className="text-[10px] text-text-muted mt-1">Kebab-case identifier for this resource</p>
-          </div>
-          <div>
-            <label className={labelClass}>
-              Image <span className="text-status-error">*</span>
-            </label>
-            <input
-              type="text"
-              value={data.image}
-              onChange={(e) => onChange({ image: e.target.value })}
-              placeholder="postgres:16"
-              className={cn(inputClass, 'font-mono', errors?.image && 'border-status-error/50')}
-            />
-            <FieldError error={errors?.image} />
-          </div>
+          <Field label="Name" required error={errors?.name} help="Kebab-case identifier for this resource">
+            {({ id, describedBy, invalid }) => (
+              <input
+                id={id}
+                type="text"
+                value={data.name}
+                onChange={(e) => onChange({ name: toKebabCase(e.target.value) })}
+                onBlur={(e) => onChange({ name: e.target.value.replace(/-+$/, '') })}
+                placeholder="my-resource"
+                aria-describedby={describedBy}
+                aria-invalid={invalid}
+                className={cn(inputClass, 'font-mono', errors?.name && 'border-status-error/50')}
+              />
+            )}
+          </Field>
+          <Field label="Image" required error={errors?.image}>
+            {({ id, describedBy, invalid }) => (
+              <input
+                id={id}
+                type="text"
+                value={data.image}
+                onChange={(e) => onChange({ image: e.target.value })}
+                placeholder="postgres:16"
+                aria-describedby={describedBy}
+                aria-invalid={invalid}
+                className={cn(inputClass, 'font-mono', errors?.image && 'border-status-error/50')}
+              />
+            )}
+          </Field>
         </div>
       </Section>
 
@@ -509,17 +504,19 @@ export function ResourceForm({ data, onChange, errors }: ResourceFormProps) {
         onToggle={() => toggleSection('network')}
         badge={data.network ? data.network : undefined}
       >
-        <div>
-          <label className={labelClass}>Network</label>
-          <input
-            type="text"
-            value={data.network ?? ''}
-            onChange={(e) => onChange({ network: e.target.value || undefined })}
-            placeholder="network-name"
-            className={cn(inputClass, 'font-mono')}
-          />
-          <p className="text-[10px] text-text-muted mt-1">Optional network name for this resource</p>
-        </div>
+        <Field label="Network" help="Optional network name for this resource">
+          {({ id, describedBy }) => (
+            <input
+              id={id}
+              type="text"
+              value={data.network ?? ''}
+              onChange={(e) => onChange({ network: e.target.value || undefined })}
+              placeholder="network-name"
+              aria-describedby={describedBy}
+              className={cn(inputClass, 'font-mono')}
+            />
+          )}
+        </Field>
       </Section>
     </div>
   );

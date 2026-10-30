@@ -559,8 +559,10 @@ function EditorView({
         </span>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
+            type="button"
             onClick={() => setShowPreview((p) => !p)}
             title={showPreview ? 'Hide preview' : 'Show preview'}
+            aria-label={showPreview ? 'Hide preview' : 'Show preview'}
             className={cn(
               'p-1.5 rounded-lg transition-all duration-200',
               showPreview
@@ -1718,8 +1720,10 @@ function FragmentsView({
         </span>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
+            type="button"
             onClick={() => setShowPreview((p) => !p)}
             title={showPreview ? 'Hide preview' : 'Show preview'}
+            aria-label={showPreview ? 'Hide preview' : 'Show preview'}
             className={cn(
               'p-1.5 rounded-lg transition-all duration-200',
               showPreview

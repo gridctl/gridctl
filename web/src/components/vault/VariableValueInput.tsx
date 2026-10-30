@@ -34,6 +34,14 @@ export interface VariableValueInputProps {
   enableZoom?: boolean;
   placeholder?: string;
   autoFocus?: boolean;
+  // id labels the string and number inputs, so a parent label's htmlFor can
+  // name those controls. List keeps "Add list item" and JSON keeps "JSON
+  // value"; forwarding id does not replace those names, and the JSON id sits
+  // on the editor wrapper, which is not a labelable element. Bool ignores id.
+  // ariaLabel follows the same split and defaults to "Value" on string and
+  // number when neither prop is set.
+  id?: string;
+  ariaLabel?: string;
 }
 
 // VariableValueInput renders the right editor for a variable's type and is the
@@ -55,7 +63,10 @@ export function VariableValueInput({
   enableZoom,
   placeholder,
   autoFocus,
+  id,
+  ariaLabel,
 }: VariableValueInputProps) {
+  const valueLabel = ariaLabel ?? (id ? undefined : 'Value');
   const errorId = useId();
   const [touched, setTouched] = useState(false);
 
@@ -116,9 +127,11 @@ export function VariableValueInput({
       <div>
         <div className="relative">
           <input
+            id={id}
             type={revealed || !isSecret ? 'text' : 'password'}
             value={value}
             autoFocus={autoFocus}
+            aria-label={valueLabel}
             placeholder={placeholder ?? getValuePlaceholder(type, isSecret)}
             aria-invalid={showError || undefined}
             aria-describedby={describedBy}
@@ -165,6 +178,8 @@ export function VariableValueInput({
     <div>
       {type === 'number' && (
         <NumberValueInput
+          id={id}
+          ariaLabel={valueLabel}
           value={value}
           onChange={onChange}
           onBlur={() => setTouched(true)}
@@ -180,6 +195,7 @@ export function VariableValueInput({
       )}
       {type === 'list' && (
         <ListTagInput
+          id={id}
           value={value}
           onChange={onChange}
           onCancel={onRequestCancel}
@@ -197,6 +213,7 @@ export function VariableValueInput({
           }
         >
           <JsonValueEditor
+            id={id}
             value={value}
             onChange={onChange}
             onBlur={() => setTouched(true)}

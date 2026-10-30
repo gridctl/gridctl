@@ -95,6 +95,7 @@ export function VaultEncryptForm({
           setError(null);
         }}
         placeholder={encrypting ? 'New passphrase' : 'Passphrase'}
+        aria-label={encrypting ? 'New passphrase' : 'Passphrase'}
         autoFocus
         className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:ring-1 focus:ring-primary/30 outline-none transition-colors"
       />
@@ -106,6 +107,7 @@ export function VaultEncryptForm({
           setError(null);
         }}
         placeholder="Confirm passphrase"
+        aria-label="Confirm passphrase"
         className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:ring-1 focus:ring-primary/30 outline-none transition-colors"
         onKeyDown={(e) => {
           if (e.key === 'Enter') handleSubmit();

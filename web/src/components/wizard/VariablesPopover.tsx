@@ -207,6 +207,7 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Filter variables..."
+            aria-label="Filter variables"
             autoFocus
             className="w-full bg-background/60 border border-border/40 rounded-lg pl-7 pr-3 py-1.5 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors"
           />
@@ -259,6 +260,8 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
               New Variable
             </span>
             <button
+              type="button"
+              aria-label="Cancel new variable"
               onClick={() => {
                 setCreating(false);
                 setError(null);
@@ -273,6 +276,7 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
             value={newKey}
             onChange={(e) => setNewKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))}
             placeholder="VARIABLE_KEY"
+            aria-label="Variable key"
             className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors"
           />
           <VariableValueInput
@@ -333,6 +337,7 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
           open && 'bg-primary/10 text-primary',
         )}
         title="Insert variable"
+        aria-label="Insert variable"
       >
         <KeyRound size={13} />
       </button>

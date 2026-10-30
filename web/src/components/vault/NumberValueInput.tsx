@@ -19,6 +19,8 @@ export function NumberValueInput({
   enableZoom,
   autoFocus,
   placeholder = '42',
+  id,
+  ariaLabel,
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -31,6 +33,8 @@ export function NumberValueInput({
   enableZoom?: boolean;
   autoFocus?: boolean;
   placeholder?: string;
+  id?: string;
+  ariaLabel?: string;
 }) {
   const step = (delta: number) => {
     const n = Number(value);
@@ -42,10 +46,12 @@ export function NumberValueInput({
   return (
     <div className="relative">
       <input
+        id={id}
         type="text"
         inputMode="numeric"
         value={value}
         autoFocus={autoFocus}
+        aria-label={ariaLabel ?? (id ? undefined : 'Value')}
         aria-invalid={invalid || undefined}
         aria-describedby={describedBy}
         placeholder={placeholder}

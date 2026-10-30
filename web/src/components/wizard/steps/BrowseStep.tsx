@@ -98,6 +98,10 @@ export function BrowseStep({ previews, selected, onSelectionChange }: BrowseStep
               >
                 {/* Checkbox */}
                 <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={isSelected}
+                  aria-label={`Select ${preview.name}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     if (isValid) toggleSkill(preview.name);

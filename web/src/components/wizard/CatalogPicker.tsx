@@ -132,6 +132,7 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search servers, e.g. postgres..."
+          aria-label="Search servers"
           autoFocus
           className={cn(
             'flex-1 bg-transparent text-xs text-text-primary',

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useId } from 'react';
 import { Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Button } from '../ui/Button';
@@ -13,6 +13,7 @@ export function VaultLockPrompt({ onUnlock }: VaultLockPromptProps) {
   const [showPassphrase, setShowPassphrase] = useState(false);
   const [isUnlocking, setIsUnlocking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,6 +67,9 @@ export function VaultLockPrompt({ onUnlock }: VaultLockPromptProps) {
               value={passphrase}
               onChange={(e) => setPassphrase(e.target.value)}
               placeholder="Enter passphrase"
+              aria-label="Passphrase"
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? errorId : undefined}
               autoFocus
               className={cn(
                 'w-full bg-surface border rounded-lg px-3 py-2.5 pr-10',
@@ -79,6 +83,8 @@ export function VaultLockPrompt({ onUnlock }: VaultLockPromptProps) {
             <button
               type="button"
               onClick={() => setShowPassphrase(!showPassphrase)}
+              aria-label={showPassphrase ? 'Hide passphrase' : 'Show passphrase'}
+              aria-pressed={showPassphrase}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded text-text-muted hover:text-text-primary transition-colors"
             >
               {showPassphrase ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -86,7 +92,7 @@ export function VaultLockPrompt({ onUnlock }: VaultLockPromptProps) {
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 text-xs text-status-error">
+            <div id={errorId} className="flex items-center gap-2 text-xs text-status-error">
               <AlertCircle size={12} className="flex-shrink-0" />
               <span>{error}</span>
             </div>

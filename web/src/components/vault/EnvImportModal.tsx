@@ -374,6 +374,7 @@ export function EnvImportModal({
                 ref={textareaRef}
                 value={text}
                 onChange={(e) => setText(e.target.value)}
+                aria-label="Environment file content"
                 placeholder={`# Paste .env content or drop a file\nDATABASE_URL=postgres://localhost/app\nAPI_KEY="sk_live_..."`}
                 spellCheck={false}
                 className={cn(
@@ -510,6 +511,7 @@ export function EnvImportModal({
                               onChange={(e) =>
                                 updateRow(r.key, { set: e.target.value })
                               }
+                              aria-label="Variable set"
                               className="bg-surface border border-border rounded-md px-1.5 py-0.5 text-[10px] text-text-secondary focus:border-primary/50 outline-none transition-colors"
                             >
                               <option value="">No set</option>
