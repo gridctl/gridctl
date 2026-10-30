@@ -4,6 +4,11 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { Trash2 } from 'lucide-react';
 import { IconButton } from '../IconButton';
 
+const NamelessIconButton = () => (
+  // @ts-expect-error a name is required
+  <IconButton icon={Trash2} />
+);
+
 describe('IconButton', () => {
   it('exposes the tooltip as the accessible name', () => {
     render(<IconButton icon={Trash2} tooltip="Delete skill" />);
@@ -23,11 +28,13 @@ describe('IconButton', () => {
     expect(screen.getByRole('button', { name: 'Delete this skill permanently' })).toHaveAttribute('title', 'Delete');
   });
 
-  it('leaves the button nameless when neither tooltip nor ariaLabel is given', () => {
-    // Deliberate: a nameless icon button is a call-site bug that should stay
-    // visible to an audit rather than be masked by a derived name.
-    render(<IconButton icon={Trash2} />);
-    expect(screen.getByRole('button')).not.toHaveAttribute('aria-label');
+  it('renders type="button" so it cannot submit a surrounding form', () => {
+    render(<IconButton icon={Trash2} tooltip="Delete skill" />);
+    expect(screen.getByRole('button', { name: 'Delete skill' })).toHaveAttribute('type', 'button');
+  });
+
+  it('requires a name at the type level', () => {
+    expect(NamelessIconButton).toBeTypeOf('function');
   });
 
   it('hides the icon from assistive tech so it cannot become the name', () => {
