@@ -1,4 +1,4 @@
-import { useId, useMemo } from 'react';
+import { useCallback, useId, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { Activity, Layers, Radio, Server } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -32,6 +32,9 @@ export function LogsWorkspace() {
 
   const view = useLogsView();
   const { source, sourceCounts } = view;
+  const onTraceClick = useCallback((traceId: string) => {
+    navigate(`/traces?trace=${encodeURIComponent(traceId)}`);
+  }, [navigate]);
 
   const openDetached = () => openDetachedWindow('logs', view.filterQuery || undefined);
   useLogsCommands({ view, onOpenDetached: openDetached });
@@ -81,7 +84,7 @@ export function LogsWorkspace() {
 
           <LogsView
             view={view}
-            onTraceClick={(traceId) => navigate(`/traces?trace=${encodeURIComponent(traceId)}`)}
+            onTraceClick={onTraceClick}
             header={
               source != null && source !== GATEWAY_LOG_SOURCE ? (
                 <PersistedFromMarker serverName={source} signal="logs" />

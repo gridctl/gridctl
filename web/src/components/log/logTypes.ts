@@ -237,6 +237,24 @@ export function logEntryKeys(logs: ParsedLog[]): string[] {
   });
 }
 
+// Keep the previous ParsedLog when a poll repeats the same logEntryKeys
+// identity and the same raw line. Memoized rows then see a stable reference.
+// A changed raw under the same key (level, attrs) must not be reused.
+export function reuseUnchangedLogs(previous: ParsedLog[], next: ParsedLog[]): ParsedLog[] {
+  if (previous.length === 0 || next.length === 0) return next;
+  const previousByKey = new Map<string, ParsedLog>();
+  const previousKeys = logEntryKeys(previous);
+  for (let i = 0; i < previous.length; i++) {
+    previousByKey.set(previousKeys[i], previous[i]);
+  }
+  const nextKeys = logEntryKeys(next);
+  return next.map((log, i) => {
+    const prior = previousByKey.get(nextKeys[i]);
+    if (prior && prior.raw === log.raw) return prior;
+    return log;
+  });
+}
+
 export function formatTimestamp(ts: string): string {
   if (!ts) return '';
   const date = new Date(ts);

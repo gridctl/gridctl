@@ -40,6 +40,10 @@ export function LogsView({
 
   const [exportOpen, setExportOpen] = useState(false);
   const exportRef = useDismiss<HTMLDivElement>(exportOpen, () => setExportOpen(false));
+  const setSource = view.setSource;
+  const onSourceClick = useCallback((source: string) => {
+    setSource(source);
+  }, [setSource]);
 
   const exportFiltered = useCallback(
     (format: 'jsonl' | 'txt') => {
@@ -184,7 +188,7 @@ export function LogsView({
         onClearFilter={view.clearFilters}
         showSource={view.source == null}
         onTraceClick={onTraceClick}
-        onSourceClick={(s) => view.setSource(s)}
+        onSourceClick={onSourceClick}
         fontSize={fontSize}
         containerRef={containerRef}
         header={header}
@@ -194,7 +198,7 @@ export function LogsView({
         searchQuery={view.searchQuery}
         wrap={view.wrap}
         relativeTime={view.relativeTime}
-        timeAnchor={view.lastLoadedAt > 0 ? view.lastLoadedAt : undefined}
+        timeAnchor={view.relativeTime && view.lastLoadedAt > 0 ? view.lastLoadedAt : undefined}
         source={view.source}
         traceFilter={view.traceFilter}
         onShowAllSources={() => view.setSource(null)}

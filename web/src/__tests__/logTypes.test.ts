@@ -4,6 +4,7 @@ import {
   filterParsedLogs,
   formatTimestamp,
   logEntryKeys,
+  reuseUnchangedLogs,
   logSourceOf,
   normalizeLogTimeRangeParam,
   normalizeLogWindowParam,
@@ -209,5 +210,43 @@ describe('logEntryKeys', () => {
     const dup = entry({ message: 'same line' });
     const keys = logEntryKeys([dup, dup, dup]);
     expect(new Set(keys).size).toBe(3);
+  });
+});
+
+describe('reuseUnchangedLogs', () => {
+  it('returns the previous object when identity and raw are unchanged', () => {
+    const prior = entry({ message: 'steady', raw: 'steady-raw' });
+    const parsed = entry({ message: 'steady', raw: 'steady-raw', component: 'other' });
+    const [reused] = reuseUnchangedLogs([prior], [parsed]);
+    expect(reused).toBe(prior);
+  });
+
+  it('returns the new object when raw changes under the same identity', () => {
+    const prior = entry({ message: 'steady', raw: 'old', level: 'INFO' });
+    const parsed = entry({ message: 'steady', raw: 'new', level: 'ERROR' });
+    const [reused] = reuseUnchangedLogs([prior], [parsed]);
+    expect(reused).toBe(parsed);
+    expect(reused).not.toBe(prior);
+  });
+
+  it('reuses by duplicate ordinal, not by the first matching line', () => {
+    const first = entry({ message: 'dup', raw: 'raw-a', timestamp: '2026-07-24T10:00:00Z' });
+    const second = entry({ message: 'dup', raw: 'raw-b', timestamp: '2026-07-24T10:00:00Z' });
+    const nextFirst = entry({ message: 'dup', raw: 'raw-a', timestamp: '2026-07-24T10:00:00Z' });
+    const nextSecond = entry({ message: 'dup', raw: 'raw-b-changed', timestamp: '2026-07-24T10:00:00Z' });
+    const reused = reuseUnchangedLogs([first, second], [nextFirst, nextSecond]);
+    expect(reused[0]).toBe(first);
+    expect(reused[1]).toBe(nextSecond);
+    expect(reused[1]).not.toBe(second);
+  });
+
+  it('does not reuse an entry whose identity moved to a different ordinal', () => {
+    const kept = entry({ message: 'dup', raw: 'raw-a' });
+    const extra = entry({ message: 'dup', raw: 'raw-b' });
+    const only = entry({ message: 'dup', raw: 'raw-b' });
+    const [reused] = reuseUnchangedLogs([kept, extra], [only]);
+    // Ordinal 0 previously held raw-a, so raw-b at ordinal 0 is a new entry.
+    expect(reused).toBe(only);
+    expect(reused).not.toBe(extra);
   });
 });

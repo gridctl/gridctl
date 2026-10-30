@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useInterval } from './useInterval';
-import { DEFAULT_LOG_WINDOW, parseLogEntry, type ParsedLog } from '../components/log/logTypes';
+import { DEFAULT_LOG_WINDOW, parseLogEntry, reuseUnchangedLogs, type ParsedLog } from '../components/log/logTypes';
 import { fetchGatewayLogs } from '../lib/api';
 import { POLLING } from '../lib/constants';
 import { useAuthStore } from '../stores/useAuthStore';
@@ -55,15 +55,20 @@ export function useLogStream({ active, paused = false, lines = DEFAULT_LOG_WINDO
     try {
       const envelope = await fetchGatewayLogs(lines);
       if (!current()) return;
-      let parsed = (envelope.logs ?? []).map(parseLogEntry);
+      const fresh = (envelope.logs ?? []).map(parseLogEntry);
       const clearedBefore = clearedBeforeRef.current;
-      if (clearedBefore != null) {
-        parsed = parsed.filter((log) => {
-          const ts = Date.parse(log.timestamp);
-          return Number.isNaN(ts) || ts > clearedBefore;
-        });
-      }
-      setLogs(parsed);
+      // Functional update so reuse sees the latest committed array, including
+      // a clear that landed while this fetch was in flight.
+      setLogs((prev) => {
+        let parsed = reuseUnchangedLogs(prev, fresh);
+        if (clearedBefore != null) {
+          parsed = parsed.filter((log) => {
+            const ts = Date.parse(log.timestamp);
+            return Number.isNaN(ts) || ts > clearedBefore;
+          });
+        }
+        return parsed;
+      });
       setBufferTotal(envelope.total ?? 0);
       setBufferCapacity(envelope.bufferCapacity ?? 0);
       setLastLoadedAt(Date.now());

@@ -15,6 +15,7 @@ export {
   parseLogEntry,
   formatTimestamp,
   logEntryKeys,
+  reuseUnchangedLogs,
   logSourceOf,
   normalizeLogSourceParam,
   filterParsedLogs,
