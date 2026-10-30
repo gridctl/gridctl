@@ -389,7 +389,7 @@ export function ReviewStep({
             {buildState === 'complete' && <span className="text-[10px] text-status-running">Connected</span>}
           </div>
           {(resolutionError || deployError) && (
-            <p ref={resolutionErrorRef} tabIndex={-1} className="text-xs text-status-error focus:outline-none" role="alert">
+            <p ref={resolutionErrorRef} tabIndex={-1} className="text-xs text-status-error" role="alert">
               {deployError && failurePhase ? `${failurePhase} failed: ${deployError}` : resolutionError}
             </p>
           )}

@@ -1046,7 +1046,7 @@ export function SkillEditor({
                       value={license}
                       onChange={(e) => setLicense(e.target.value)}
                       placeholder="Apache-2.0"
-                      className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-primary/50 transition-colors"
+                      className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-muted/50 focus:border-primary/50 transition-colors"
                     />
                   </div>
                   <div>

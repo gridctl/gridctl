@@ -247,7 +247,7 @@ export function LogStream({
               aria-label="Log entries"
               tabIndex={0}
               aria-activedescendant={navIndex >= 0 ? `log-row-${navIndex}` : undefined}
-              className="relative w-full focus:outline-none"
+              className="relative w-full rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
               style={{ height: virtualizer.getTotalSize() }}
             >
               {virtualizer.getVirtualItems().map((item) => (
@@ -274,7 +274,7 @@ export function LogStream({
             aria-label="Log entries"
             tabIndex={0}
             aria-activedescendant={navIndex >= 0 ? `log-row-${navIndex}` : undefined}
-            className="divide-y divide-border/20 focus:outline-none"
+            className="divide-y divide-border/20 rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
           >
             {logs.map((log, i) => (
               <div

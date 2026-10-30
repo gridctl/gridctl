@@ -429,7 +429,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
             {filtersOpen && (
               <div
                 className={cn(
-                  'absolute right-0 top-full mt-1 z-50 w-52 p-2',
+                  'absolute right-0 top-full mt-1 z-popover w-52 p-2',
                   'rounded-lg border border-border bg-surface-elevated/95',
                   'backdrop-blur-xl shadow-bevel animate-fade-in-scale'
                 )}
@@ -606,9 +606,9 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                     aria-label="Traces"
                     tabIndex={0}
                     aria-activedescendant={activeNavId ? `trace-row-${activeNavId}` : undefined}
-                    className="w-full focus:outline-none"
+                    className="w-full focus-visible:outline-2 focus-visible:outline-primary/60"
                   >
-                    <thead className="sticky top-0 z-10 bg-surface-elevated/95 backdrop-blur-sm">
+                    <thead className="sticky top-0 z-sticky bg-surface-elevated/95 backdrop-blur-sm">
                       <tr className="border-b border-border/30">
                         <th className="px-3 py-1.5 text-left text-[9px] font-medium text-text-muted uppercase tracking-wider">Time</th>
                         <th className="px-3 py-1.5 text-left text-[9px] font-medium text-text-muted uppercase tracking-wider">Tool</th>

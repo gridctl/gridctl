@@ -135,7 +135,7 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
           autoFocus
           className={cn(
             'flex-1 bg-transparent text-xs text-text-primary',
-            'focus:outline-none placeholder:text-text-muted/50',
+            'placeholder:text-text-muted/50',
           )}
         />
         <span className="text-[10px] text-text-muted">

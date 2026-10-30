@@ -145,7 +145,7 @@ export function ListTagInput({
           }}
           className={cn(
             'flex-1 min-w-[6rem] bg-transparent text-xs font-mono text-text-primary',
-            'placeholder:text-text-muted outline-none',
+            'placeholder:text-text-muted',
             enableZoom && 'log-text',
           )}
         />
