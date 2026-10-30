@@ -125,6 +125,7 @@ export function VariableQuickAddForm({
           ref={keyInputRef}
           type="text"
           value={newKey}
+          aria-label="Variable key"
           onChange={(e) => {
             setNewKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''));
             setError(null);
@@ -140,6 +141,7 @@ export function VariableQuickAddForm({
         <VariableValueInput
           type={type}
           value={newValue}
+          ariaLabel="Variable value"
           onChange={(v) => {
             setNewValue(v);
             setError(null);
@@ -164,6 +166,7 @@ export function VariableQuickAddForm({
           <select
             value={newSet}
             onChange={(e) => setNewSet(e.target.value)}
+            aria-label="Variable set"
             className="flex-1 bg-surface border border-border rounded-lg px-3 py-2 text-xs text-text-secondary focus:border-primary/50 outline-none transition-colors"
           >
             <option value="">No set</option>

@@ -35,6 +35,7 @@ export function NewSetForm({
           onChange(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))
         }
         placeholder="set-name"
+        aria-label="New set name"
         autoFocus
         className={cn(
           'flex-1 bg-surface border border-border rounded-lg px-2 py-1 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 outline-none transition-colors',
@@ -46,14 +47,18 @@ export function NewSetForm({
         }}
       />
       <button
+        type="button"
         onClick={onSave}
+        aria-label="Save set"
         className="p-1 rounded hover:bg-surface-highlight transition-colors"
         disabled={!value.trim()}
       >
         <Check size={12} className="text-status-running" />
       </button>
       <button
+        type="button"
         onClick={onCancel}
+        aria-label="Cancel"
         className="p-1 rounded hover:bg-surface-highlight transition-colors"
       >
         <XCircle size={12} className="text-text-muted" />

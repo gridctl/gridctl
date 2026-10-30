@@ -26,6 +26,8 @@ export function ListTagInput({
   compact,
   enableZoom,
   autoFocus,
+  id,
+  ariaLabel,
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -33,6 +35,8 @@ export function ListTagInput({
   compact?: boolean;
   enableZoom?: boolean;
   autoFocus?: boolean;
+  id?: string;
+  ariaLabel?: string;
 }) {
   // Seeded once from the incoming value; thereafter the chips are the source
   // of truth and changes flow up via onChange. Callers remount (by type/edit
@@ -105,10 +109,11 @@ export function ListTagInput({
         ))}
         <input
           ref={inputRef}
+          id={id}
           type="text"
           value={buffer}
           autoFocus={autoFocus}
-          aria-label="Add list item"
+          aria-label={ariaLabel ?? 'Add list item'}
           placeholder={tags.length === 0 ? 'item1, item2, item3' : 'add item…'}
           onChange={(e) => {
             // A pasted/typed comma commits the preceding token.

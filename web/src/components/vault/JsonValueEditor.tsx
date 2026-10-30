@@ -26,6 +26,7 @@ export default function JsonValueEditor({
   onCancel,
   compact,
   ariaLabel = 'JSON value',
+  id,
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -34,6 +35,7 @@ export default function JsonValueEditor({
   onCancel?: () => void;
   compact?: boolean;
   ariaLabel?: string;
+  id?: string;
 }) {
   // Rebuild the editor chrome theme on theme change (CodeMirror's `dark` flag
   // and a few colors aren't CSS-var driven).
@@ -90,6 +92,7 @@ export default function JsonValueEditor({
       }}
       minHeight={compact ? '60px' : '96px'}
       maxHeight={compact ? '160px' : '220px'}
+      id={id}
       aria-label={ariaLabel}
       className="rounded-lg border border-border overflow-hidden bg-surface"
     />
