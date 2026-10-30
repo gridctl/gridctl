@@ -34,6 +34,12 @@ export interface VariableValueInputProps {
   enableZoom?: boolean;
   placeholder?: string;
   autoFocus?: boolean;
+  // id labels the string and number inputs, so a parent label's htmlFor can
+  // name those controls. List keeps "Add list item" and JSON keeps "JSON
+  // value"; forwarding id does not replace those names, and the JSON id sits
+  // on the editor wrapper, which is not a labelable element. Bool ignores id.
+  // ariaLabel follows the same split and defaults to "Value" on string and
+  // number when neither prop is set.
   id?: string;
   ariaLabel?: string;
 }
