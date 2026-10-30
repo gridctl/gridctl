@@ -23,6 +23,19 @@ const LogsWorkspace = lazy(() => import('./components/workspaces/LogsWorkspace')
 const TracesWorkspace = lazy(() => import('./components/workspaces/TracesWorkspace'));
 const ConnectionsWorkspace = lazy(() => import('./components/workspaces/ConnectionsWorkspace'));
 
+// Bookmark redirects for removed paths. Keep through v1.0 so existing links
+// don't 404. The Runs tab lives at /traces?view=runs; /runs and /runs/:runID
+// land there without carrying the id (the Runs view has no selection
+// parameter). /agent lands on the Library's Agents segment.
+// eslint-disable-next-line react-refresh/only-export-components -- shared with the redirect tests so the mirror cannot drift
+export const LEGACY_REDIRECTS: ReadonlyArray<{ from: string; to: string }> = [
+  { from: '/skills', to: '/library' },
+  { from: '/runs', to: '/traces?view=runs' },
+  { from: '/runs/:runID', to: '/traces?view=runs' },
+  { from: '/topology', to: '/stack' },
+  { from: '/agent', to: '/library?kind=agent' },
+];
+
 export function AppRoutes() {
   // Single mount point for theme application + cross-window sync; covers the
   // main shell and every detached popout route below.
@@ -121,17 +134,13 @@ export function AppRoutes() {
       {/* Root redirect — chooses a workspace based on stack + storage. */}
       <Route path="/" element={<RootRedirect />} />
 
-      {/* Bookmark redirects for the workspaces removed when the agent runtime
-          was retired. Keep through v1.0 so existing links don't 404. */}
-      <Route path="/skills" element={<Navigate to="/library" replace />} />
-      <Route path="/runs" element={<Navigate to="/library" replace />} />
-      <Route path="/runs/:runID" element={<Navigate to="/library" replace />} />
-      {/* /topology → /stack: the workspace was renamed when the UI label
-          caught up with the backend's Topology→Stack migration. */}
-      <Route path="/topology" element={<Navigate to="/stack" replace />} />
-      {/* The retired Agent IDE's path now lands on the Library's Agents
-          segment, which is where imported agents actually live. */}
-      <Route path="/agent" element={<Navigate to="/library?kind=agent" replace />} />
+      {LEGACY_REDIRECTS.map((redirect) => (
+        <Route
+          key={redirect.from}
+          path={redirect.from}
+          element={<Navigate to={redirect.to} replace />}
+        />
+      ))}
 
       {/* Detached windows stay frameless — outside AppShell on purpose. */}
       <Route path="/sidebar" element={<DetachedSidebarPage />} />
