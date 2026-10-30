@@ -8,15 +8,15 @@ import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { triggerReload, fetchStackSpec, validateStackSpec } from '../../lib/api';
 import { SpecDiffModal } from '../spec/SpecDiffModal';
-
-const CreationWizard = lazy(() => import('../wizard/CreationWizard').then((m) => ({ default: m.CreationWizard })));
-const GlobalContextDialog = lazy(() => import('../context/GlobalContextDialog').then((m) => ({ default: m.GlobalContextDialog })));
 import { HeaderTelemetryPill } from '../telemetry/HeaderTelemetryPill';
 import { useSpecStore } from '../../stores/useSpecStore';
 import { useWizardStore } from '../../stores/useWizardStore';
 import { LogoWordmark } from './LogoWordmark';
 import { ThemePicker } from '../shell/ThemePicker';
 import { WorkspaceSwitcher } from '../shell/WorkspaceSwitcher';
+
+const CreationWizard = lazy(() => import('../wizard/CreationWizard').then((m) => ({ default: m.CreationWizard })));
+const GlobalContextDialog = lazy(() => import('../context/GlobalContextDialog').then((m) => ({ default: m.GlobalContextDialog })));
 
 interface HeaderProps {
   onRefresh?: () => void;
