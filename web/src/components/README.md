@@ -101,12 +101,12 @@ Overlay stacking uses named steps from `web/src/index.css`. Tailwind maps `--z-i
 | `raised` | 10 | Local lift inside a stacking context (scrims, handles, badges) |
 | `sticky` | 20 | Sticky table headers and in-flow overlays that must stay above raised content |
 | `header` | 30 | App header, slide-over, and the Access Lens dirty bar |
-| `overlay` | 40 | Loading scrims, the shutdown pill, and the header reload banner |
+| `overlay` | 40 | Loading scrims, the vault drag dropzone, the shutdown pill, and the header reload banner |
 | `modal` | 50 | Dialogs, the creation wizard, the spec diff, and confirms |
 | `popover` | 60 | Menus and portaled dropdowns. Above `modal` so a dropdown opened from a dialog paints over it |
-| `toast` | 70 | Toasts and the auth re-entry notice |
+| `toast` | 70 | Toasts and window-only credential notices |
 
-`popover` outranks `modal` because portaled dropdowns opened from inside a modal must paint over it. A popover inside the header (`relative z-header`, its own stacking context) only ranks against header children, so it still paints over the reload banner and cannot reach the toast layer.
+`popover` outranks `modal` because portaled dropdowns opened from inside a modal must paint over it. A popover inside the header (`relative z-header`, its own stacking context) only ranks against header children, so it still paints over the reload banner and cannot reach the toast layer. A fixed dialog inside a `backdrop-blur` header is trapped the same way. The metrics clear confirm is portaled to `document.body` so it covers the viewport. Run recording confirms stay in the workspace and are not portaled.
 
 `CanvasBase` is intentionally small (~120 LOC) - it owns the React Flow
 boilerplate (wrapper element, Background layers, proOptions) and exposes
