@@ -28,7 +28,7 @@ describe('PackChip', () => {
   it('joins a source to its owning pack from the store', () => {
     useRegistryStore.setState({ packs: [teamPack] });
     renderChip(<PackChip source="team-repo" />);
-    expect(screen.getByText('pack: team-pack')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'pack: team-pack' })).toBeInTheDocument();
   });
 
   it('renders nothing while packs are unloaded', () => {
@@ -44,7 +44,7 @@ describe('PackChip', () => {
 
   it('renders directly from a wire-carried tag without any join', () => {
     renderChip(<PackChip pack="wire-pack" />);
-    expect(screen.getByText('pack: wire-pack')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'pack: wire-pack' })).toBeInTheDocument();
   });
 
   it('stops propagation so a chip inside a clickable card never selects it', () => {
@@ -54,7 +54,7 @@ describe('PackChip', () => {
         <PackChip pack="wire-pack" />
       </div>,
     );
-    fireEvent.click(screen.getByText('pack: wire-pack'));
+    fireEvent.click(screen.getByRole('button', { name: 'pack: wire-pack' }));
     expect(onCardClick).not.toHaveBeenCalled();
   });
 });

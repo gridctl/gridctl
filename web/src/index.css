@@ -1,6 +1,10 @@
 @import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
+/* Tailwind's hover: variant is guarded by @media (hover: hover), so
+   group-hover never fires on a touch-only device. hover-none is the fallback. */
+@custom-variant hover-none (@media (hover: none));
+
 @theme {
   /* ============================================
      OBSIDIAN OBSERVATORY - Design System

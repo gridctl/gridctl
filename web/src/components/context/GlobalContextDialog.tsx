@@ -463,7 +463,7 @@ function EditorView({
 
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
-  const { ratio, containerRef, handleMouseDown, isDragging } = useSplitPane(0.5);
+  const { ratio, containerRef, handlePointerDown, isDragging } = useSplitPane(0.5);
 
   const content = draft ?? doc.canonical.content;
   const dirty = draft !== null && draft !== doc.canonical.content;
@@ -656,7 +656,7 @@ function EditorView({
 
         {showPreview && (
           <>
-            <SplitPaneHandle onMouseDown={handleMouseDown} isDragging={isDragging} />
+            <SplitPaneHandle onPointerDown={handlePointerDown} isDragging={isDragging} />
             <div className="flex flex-col min-w-0 min-h-0" style={{ width: `${(1 - ratio) * 100}%` }}>
               <div className="px-4 py-2 border-b border-border/20 flex-shrink-0">
                 <span className="text-xs text-text-muted uppercase tracking-wider">Preview</span>
@@ -1533,7 +1533,7 @@ function FragmentsView({
 
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
-  const { ratio, containerRef, handleMouseDown, isDragging } = useSplitPane(0.5);
+  const { ratio, containerRef, handlePointerDown, isDragging } = useSplitPane(0.5);
 
   const loadFragments = useCallback(async (selectName?: string) => {
     try {
@@ -1827,7 +1827,7 @@ function FragmentsView({
 
               {showPreview && (
                 <>
-                  <SplitPaneHandle onMouseDown={handleMouseDown} isDragging={isDragging} />
+                  <SplitPaneHandle onPointerDown={handlePointerDown} isDragging={isDragging} />
                   <div className="flex flex-col min-w-0 min-h-0" style={{ width: `${(1 - ratio) * 100}%` }}>
                     <div className="px-4 py-2 border-b border-border/20 flex-shrink-0">
                       <span className="text-xs text-text-muted uppercase tracking-wider">Preview</span>
@@ -2043,7 +2043,7 @@ function FragmentRail({
                 onClick={() => onDelete(f.name)}
                 title={`Remove fragment ${f.name}`}
                 aria-label={`Remove fragment ${f.name}`}
-                className="opacity-0 group-hover:opacity-100 p-1 rounded text-text-muted hover:text-status-error hover:bg-status-error/10 focus:outline-none focus:ring-2 focus:ring-status-error/30 focus:opacity-100 transition-all"
+                className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover-none:opacity-100 p-1 rounded text-text-muted hover:text-status-error hover:bg-status-error/10 focus:outline-none focus:ring-2 focus:ring-status-error/30 focus:opacity-100 transition-all"
               >
                 <Trash2 size={10} />
               </button>

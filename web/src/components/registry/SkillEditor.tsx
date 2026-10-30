@@ -478,7 +478,7 @@ export function SkillEditor({
 
   // Resizable split pane: body-heavy by default; committed ratio persisted.
   const persistRatio = useCallback((r: number) => setEditorPrefs({ splitRatio: r }), [setEditorPrefs]);
-  const { ratio, containerRef, handleMouseDown: handleSplitMouseDown, isDragging: splitDragging } = useSplitPane(editorPrefs.splitRatio, 0.25, 0.75, persistRatio);
+  const { ratio, containerRef, handlePointerDown: handleSplitPointerDown, isDragging: splitDragging } = useSplitPane(editorPrefs.splitRatio, 0.25, 0.75, persistRatio);
 
   // Computed
   const lineCount = useMemo(() => body.split('\n').length, [body]);
@@ -1186,7 +1186,7 @@ export function SkillEditor({
             <>
               {/* Resize handle */}
               <SplitPaneHandle
-                onMouseDown={handleSplitMouseDown}
+                onPointerDown={handleSplitPointerDown}
                 isDragging={splitDragging}
               />
 

@@ -45,7 +45,7 @@ export function PackChip({
       title={`Imported through pack ${name}; open the pack detail`}
       className={cn(PACK_CHIP_CLASS, 'hover:bg-secondary/20 transition-colors', className)}
     >
-      pack: {name}
+      pack: <span className="@max-[339px]:hidden">{name}</span>
     </button>
   );
 }

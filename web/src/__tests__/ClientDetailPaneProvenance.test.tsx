@@ -66,7 +66,7 @@ describe('ClientDetailPane context provenance', () => {
     // Both fragment rows render; only the pack-applied one gets a chip.
     expect(within(list).getByText('team-style')).toBeInTheDocument();
     expect(within(list).getByText('personal')).toBeInTheDocument();
-    expect(within(list).getByText('pack: team-pack')).toBeInTheDocument();
+    expect(within(list).getByRole('button', { name: 'pack: team-pack' })).toBeInTheDocument();
     expect(within(list).getAllByText(/^pack:/)).toHaveLength(1);
   });
 

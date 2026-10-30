@@ -136,7 +136,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
               <span className="text-sm font-bold text-text-primary tabular-nums">
                 {data.activeSkills ?? 0}<span className="text-text-muted font-normal">/{data.totalSkills}</span>
               </span>
-              <ExternalLink size={9} className="text-text-muted opacity-0 group-hover:opacity-100 transition-opacity" />
+              <ExternalLink size={9} className="text-text-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover-none:opacity-100 transition-opacity" />
             </div>
           </button>
         )}

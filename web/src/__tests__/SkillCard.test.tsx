@@ -3,6 +3,8 @@ import '@testing-library/jest-dom';
 import { MemoryRouter } from 'react-router';
 import { render, screen, cleanup, within } from '@testing-library/react';
 import { SkillCard } from '../components/registry/SkillCard';
+import { useRegistryStore } from '../stores/useRegistryStore';
+import type { PackListItem } from '../lib/api';
 import type { AgentSkill, SkillSourceStatus } from '../types';
 
 beforeEach(() => {
@@ -87,6 +89,34 @@ describe('SkillCard', () => {
     expect(screen.getByLabelText('Imported from acme/skills')).toBeInTheDocument();
     // State badge remains alongside it.
     expect(screen.getByText('active')).toBeInTheDocument();
+  });
+
+  it('keeps the skill name readable beside a pack chip', () => {
+    const source: SkillSourceStatus = {
+      name: 'acme-skills',
+      repo: 'acme/skills',
+      autoUpdate: false,
+      updateInterval: '',
+      updateAvailable: false,
+      skills: [],
+    };
+    const pack: PackListItem = {
+      name: 'team-pack',
+      origin: { source: 'acme-skills', repo: 'https://github.com/acme/skills' },
+      counts: { skills: 1, agents: 0, rules: 0, wiring: false },
+      applied: true,
+      needs_attention: false,
+    };
+    useRegistryStore.setState({ packs: [pack] });
+    renderCard(skill({ state: 'active' }), source);
+
+    const name = screen.getByText('branch-fork');
+    expect(name).toHaveAttribute('title', 'branch-fork');
+    expect(name.closest('[class*="@container"]')).toBeTruthy();
+
+    const chip = screen.getByTitle('Imported through pack team-pack; open the pack detail');
+    expect(chip).toHaveTextContent('team-pack');
+    expect(chip.querySelector('span')?.className).toContain('@max-[339px]:hidden');
   });
 
   it('uses singular nouns for a count of one', () => {

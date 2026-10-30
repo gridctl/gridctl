@@ -1,5 +1,6 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { cn } from '../../lib/cn';
+import { releasePointerCapture } from '../../lib/pointerCapture';
 
 interface ResizeHandleProps {
   direction: 'horizontal' | 'vertical';
@@ -11,31 +12,51 @@ interface ResizeHandleProps {
 export function ResizeHandle({ direction, onResize, onResizeEnd, className }: ResizeHandleProps) {
   const [isDragging, setIsDragging] = useState(false);
   const startPosRef = useRef(0);
+  const endDragRef = useRef<(() => void) | null>(null);
 
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
+  useEffect(() => () => endDragRef.current?.(), []);
+
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      if (e.button !== 0) return;
       e.preventDefault();
+      const target = e.currentTarget;
+      const pointerId = e.pointerId;
+      if (typeof target.setPointerCapture === 'function') {
+        target.setPointerCapture(pointerId);
+      }
       setIsDragging(true);
       startPosRef.current = direction === 'horizontal' ? e.clientY : e.clientX;
 
-      const handleMouseMove = (moveEvent: MouseEvent) => {
-        const currentPos = direction === 'horizontal' ? moveEvent.clientY : moveEvent.clientX;
+      const handlePointerMove = (moveEvent: Event) => {
+        const point = moveEvent as PointerEvent;
+        const currentPos = direction === 'horizontal' ? point.clientY : point.clientX;
         const delta = startPosRef.current - currentPos;
         startPosRef.current = currentPos;
         onResize(delta);
       };
 
-      const handleMouseUp = () => {
+      let settled = false;
+      const cleanup = () => {
+        if (settled) return;
+        settled = true;
+        endDragRef.current = null;
         setIsDragging(false);
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
+        target.removeEventListener('pointermove', handlePointerMove);
+        target.removeEventListener('pointerup', cleanup);
+        target.removeEventListener('pointercancel', cleanup);
+        window.removeEventListener('blur', cleanup);
+        releasePointerCapture(target, pointerId);
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
         onResizeEnd?.();
       };
 
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
+      endDragRef.current = cleanup;
+      target.addEventListener('pointermove', handlePointerMove);
+      target.addEventListener('pointerup', cleanup);
+      target.addEventListener('pointercancel', cleanup);
+      window.addEventListener('blur', cleanup);
       document.body.style.cursor = direction === 'horizontal' ? 'row-resize' : 'col-resize';
       document.body.style.userSelect = 'none';
     },
@@ -46,9 +67,9 @@ export function ResizeHandle({ direction, onResize, onResizeEnd, className }: Re
 
   return (
     <div
-      onMouseDown={handleMouseDown}
+      onPointerDown={handlePointerDown}
       className={cn(
-        'group relative flex items-center justify-center select-none',
+        'group relative flex items-center justify-center select-none touch-none',
         'transition-colors duration-150',
         isHorizontal ? 'h-1.5 cursor-row-resize' : 'w-1.5 cursor-col-resize',
         'hover:bg-primary/8',

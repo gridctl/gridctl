@@ -7,7 +7,7 @@ interface IconButtonBase {
   onClick?: () => void;
   disabled?: boolean;
   className?: string;
-  size?: 'sm' | 'md';
+  size?: 'sm' | 'md' | 'lg';
   variant?: 'default' | 'ghost';
   /** For stateful toggles: rendered as aria-pressed. */
   pressed?: boolean;
@@ -44,6 +44,8 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
   const sizeClasses = {
     sm: 'p-2',
     md: 'p-2',
+    // size-11 is 44px. Preflight border-box keeps the default 1px border inside that square.
+    lg: 'size-11 p-0 inline-flex items-center justify-center',
   };
   const iconSize = size === 'sm' ? 14 : 16;
 

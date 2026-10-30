@@ -518,6 +518,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
         className="flex-1 min-h-0"
         defaultLayout={defaultLayout}
         onLayoutChanged={onLayoutChanged}
+        resizeTargetMinimumSize={{ coarse: 24, fine: 16 }}
       >
         {/* Trace list */}
         <Panel
@@ -707,7 +708,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                                     copyWithToast(trace.traceId, 'Trace ID');
                                   }}
                                   title={`Copy trace ID ${trace.traceId.slice(0, 8)}…`}
-                                  className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded text-text-muted hover:text-primary hover:bg-surface-highlight transition-all"
+                                  className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover-none:opacity-100 focus:opacity-100 p-1 rounded text-text-muted hover:text-primary hover:bg-surface-highlight transition-all"
                                 >
                                   <Copy size={11} />
                                 </button>

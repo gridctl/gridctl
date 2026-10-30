@@ -108,12 +108,14 @@ export function WorkspaceShell({
       className={cn('flex-1 min-h-0 w-full', className)}
       defaultLayout={defaultLayout}
       onLayoutChanged={onLayoutChanged}
+      resizeTargetMinimumSize={{ coarse: 24, fine: 16 }}
     >
       {left && (
         <Panel
           id={LEFT_ID}
-          defaultSize={defaultLeftPct}
-          minSize={percentFromPx(minLeftPx)}
+          // Numbers are pixels. Percent defaults must be strings, or v4 reads them as pixels.
+          defaultSize={`${defaultLeftPct}`}
+          minSize={minLeftPx}
           collapsible
           collapsedSize={0}
           panelRef={leftPanelRef}
@@ -130,8 +132,8 @@ export function WorkspaceShell({
 
       <Panel
         id={CENTER_ID}
-        defaultSize={100 - (left ? defaultLeftPct : 0) - (right ? defaultRightPct : 0)}
-        minSize={20}
+        defaultSize={`${100 - (left ? defaultLeftPct : 0) - (right ? defaultRightPct : 0)}`}
+        minSize="20%"
       >
         <div className="h-full overflow-hidden">{children}</div>
       </Panel>
@@ -145,8 +147,8 @@ export function WorkspaceShell({
       {right && (
         <Panel
           id={RIGHT_ID}
-          defaultSize={defaultRightPct}
-          minSize={percentFromPx(minRightPx)}
+          defaultSize={`${defaultRightPct}`}
+          minSize={minRightPx}
           collapsible
           collapsedSize={0}
           panelRef={rightPanelRef}
@@ -159,8 +161,4 @@ export function WorkspaceShell({
       )}
     </Group>
   );
-}
-
-function percentFromPx(px: number, reference = 1440): number {
-  return Math.max(5, Math.min(80, (px / reference) * 100));
 }

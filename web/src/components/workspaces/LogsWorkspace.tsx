@@ -198,7 +198,7 @@ function SourcePill({
           aria-label={`View metrics for ${label}`}
           className={cn(
             'absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded',
-            'opacity-0 group-hover/pill:opacity-100 focus-visible:opacity-100',
+            'opacity-0 group-hover/pill:opacity-100 group-focus-within/pill:opacity-100 hover-none:opacity-100 focus-visible:opacity-100',
             'text-text-muted hover:text-primary hover:bg-surface-highlight transition-all',
           )}
         >

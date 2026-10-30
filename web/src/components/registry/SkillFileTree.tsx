@@ -165,7 +165,7 @@ export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: Ski
                           onClick={() => setPendingDelete(file.path)}
                           title="Delete file"
                           aria-label={`Delete file ${file.path}`}
-                          className="opacity-0 group-hover:opacity-100 p-1.5 rounded text-text-muted hover:text-status-error hover:bg-status-error/10 focus:outline-none focus:ring-2 focus:ring-status-error/30 focus:opacity-100 transition-all"
+                          className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover-none:opacity-100 p-1.5 rounded text-text-muted hover:text-status-error hover:bg-status-error/10 focus:outline-none focus:ring-2 focus:ring-status-error/30 focus:opacity-100 transition-all"
                         >
                           <Trash2 size={10} />
                         </button>

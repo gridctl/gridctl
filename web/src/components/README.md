@@ -37,6 +37,15 @@ AppShell owns the only in-shell `<main>`. A workspace root that used to
 render `<main>` is a `<section aria-labelledby>` with one `<h1>`. Give every
 `<aside>` a distinct `aria-label`.
 
+The workspace `nav` scrolls and the action cluster does not shrink, so
+Create, Refresh, Reload Config, theme, and the palette stay mounted when
+the window is narrow. The left group is `min-w-0 flex-1`; without that
+the nav has no bounded width and the pills stay clipped. Below `sm` the
+logo is shorter, the persistence label is visually hidden, and the
+decorative dividers drop. The status bar stays one row; tokenizer, format
+savings, and sessions hide below 800 px. A disconnected error
+truncates, and its `title` carries the full string.
+
 Detached windows (`/sidebar`, `/editor`, `/logs-window`, `/metrics-window`,
 `/traces-window`, `/registry` → `/library-window`) render *outside*
 AppShell - they're popout-friendly single-purpose pages.
@@ -98,7 +107,7 @@ workspaces. Reach for them before duplicating UI:
 | `FailureBanner` | `components/ui/` | Failed refresh when data is already on screen: one alert row and Retry |
 | `Popover` | `components/ui/` | Theme picker, telemetry pill, overlays menu, log level filter, log view options. Escape and a programmatic close return focus to the trigger; an outside click does not |
 | `Field` | `components/ui/` | Label, control, error, then help. Owns the required marker and wires `htmlFor`, `aria-invalid`, and `aria-describedby`. Pass plain label text. A different sibling order keeps its wrapper and uses `useId` |
-| `IconButton` | `components/ui/` | Requires `tooltip` or `ariaLabel`, and renders `type="button"`. `title` alone is not an accessible name |
+| `IconButton` | `components/ui/` | Requires `tooltip` or `ariaLabel`, and renders `type="button"`. `title` alone is not an accessible name. `size="lg"` is a 44 px square, border included; the default size stays `md` |
 
 ## Layering
 
@@ -150,6 +159,23 @@ workspace-specific props.
 - Don't render `<main>` inside a workspace, or `role="tab"` on a route link.
   AppShell owns the in-shell landmark. Give every `<aside>` a distinct
   `aria-label`.
+- Don't pass a percent to `react-resizable-panels` as a number. v4 reads
+  numbers as pixels. Pixel minimums stay numbers; percent defaults and
+  the center floor are strings (the center floor is `"20%"`). Widen a
+  separator hit target with `resizeTargetMinimumSize`
+  (`{ coarse: 24, fine: 16 }`), not a pseudo-element.
+- Don't reveal a row action with only `group-hover:`. Tailwind's `hover:`
+  variant does not fire when the device has no hover. Add
+  `hover-none:opacity-100` and `group-focus-within:opacity-100`. A named
+  group keeps its suffix.
+- Don't start a custom drag with `mousedown` alone. Pointer events,
+  capture, and `touch-none` cover mouse, touch, and pen. `pointerup`,
+  `pointercancel`, and window `blur` share one cleanup
+  (`web/src/lib/pointerCapture.ts`).
+- Don't hide a pack chip name with a min-width container query. The name
+  uses `@max-[339px]:hidden`, so it stays visible unless a query container
+  ancestor is narrower than 339 px. A min-width query is false with no
+  container and would blank the name on every other surface.
 
 ## File map
 

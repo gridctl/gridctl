@@ -464,7 +464,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
               <PackImportWizard />
             </div>
           ) : showPreviewPanel ? (
-            <PanelGroup orientation="horizontal" className="h-full">
+            <PanelGroup orientation="horizontal" className="h-full" resizeTargetMinimumSize={{ coarse: 24, fine: 16 }}>
               {/* Form Panel */}
               <Panel defaultSize={55} minSize={40}>
                 <div className="flex flex-col h-full">

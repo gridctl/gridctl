@@ -1,4 +1,4 @@
-import { useCallback, useId, useMemo, useState } from 'react';
+import { useCallback, useId, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { AlertCircle, RefreshCw, WifiOff } from 'lucide-react';
 import { Sidebar } from '../layout/Sidebar';
@@ -15,6 +15,19 @@ const SIDEBAR_DEFAULT = 320;
 const SIDEBAR_MIN = 280;
 const SIDEBAR_MAX = 600;
 
+// Exported as a test seam. A zero clientWidth (jsdom, first paint) falls back
+// to the constants. Otherwise the open rail stays between 40% and 60% of the
+// container, and the constants win once the container is wide enough.
+// eslint-disable-next-line react-refresh/only-export-components -- test seam
+export function clampSidebarWidth(next: number, containerWidth: number): number {
+  if (containerWidth > 0) {
+    const lo = Math.min(SIDEBAR_MIN, Math.floor(containerWidth * 0.4));
+    const hi = Math.min(SIDEBAR_MAX, Math.floor(containerWidth * 0.6));
+    return Math.min(hi, Math.max(lo, next));
+  }
+  return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, next));
+}
+
 // Stack workspace body: canvas, loading/error overlays, and the right-rail
 // inspector. Rendered inside <AppShell>'s <main> outlet. CSS grid: a canvas
 // column plus a collapsible inspector column (0px when closed) so switching
@@ -22,6 +35,7 @@ const SIDEBAR_MAX = 600;
 export function StackWorkspace() {
   const headingId = useId();
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
 
   // ?spec=1 opens the spec slide-over; the status-bar chip and the palette's
@@ -55,19 +69,21 @@ export function StackWorkspace() {
   }, [refresh]);
 
   const handleSidebarResize = useCallback((delta: number) => {
-    setSidebarWidth((prev) => {
-      const newWidth = prev + delta;
-      return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, newWidth));
-    });
+    // Measure once per drag event, outside the state updater.
+    const containerWidth = containerRef.current?.clientWidth ?? 0;
+    setSidebarWidth((prev) => clampSidebarWidth(prev + delta, containerWidth));
   }, []);
 
   return (
     <div className="absolute inset-0 overflow-hidden">
       <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.stack}</h1>
       <div
+        ref={containerRef}
         className="grid h-full"
         style={{
-          gridTemplateColumns: `minmax(0, 1fr) ${sidebarOpen ? sidebarWidth : 0}px`,
+          // min() is a backstop after a window resize without a drag. A CSS-only
+          // clamp would pin the track at 60% and ignore the drag below 280px.
+          gridTemplateColumns: `minmax(0, 1fr) ${sidebarOpen ? `min(${sidebarWidth}px, 60%)` : '0px'}`,
         }}
       >
         <div className="relative overflow-hidden">

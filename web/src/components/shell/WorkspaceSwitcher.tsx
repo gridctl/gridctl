@@ -52,7 +52,7 @@ function WorkspacePill({ workspace }: WorkspacePillProps) {
         // Icon-only below 1360px: eight text pills plus the right-side action
         // cluster collide on narrower windows, so labels collapse to icons
         // (title + aria-label keep the pills identifiable).
-        'inline-flex items-center gap-1.5 px-2 min-[1360px]:px-3 py-1 rounded-full text-xs font-medium transition-colors',
+        'inline-flex items-center gap-1.5 px-2 min-[1360px]:px-3 py-1 rounded-full text-xs font-medium transition-colors shrink-0',
         'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60',
         isActive
           ? 'bg-primary/15 text-primary border border-primary/30'
@@ -72,7 +72,7 @@ export function WorkspaceSwitcher() {
   return (
     <nav
       aria-label="Workspaces"
-      className="flex items-center gap-1 p-1 rounded-full bg-surface-elevated/60 backdrop-blur-sm border border-border/50"
+      className="flex items-center gap-1 p-1 min-w-0 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden rounded-full bg-surface-elevated/60 backdrop-blur-sm border border-border/50"
     >
       {WORKSPACE_CONFIG.map((ws) => (
         <WorkspacePill key={ws.id} workspace={ws} />

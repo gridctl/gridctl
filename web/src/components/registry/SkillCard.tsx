@@ -95,7 +95,7 @@ export const SkillCard = memo(({
 
       {/* Card body — clickable to open the inspector */}
       <div
-        className={cn('p-3 flex flex-col gap-2 flex-1', onSelect && 'cursor-pointer')}
+        className={cn('p-3 flex flex-col gap-2 flex-1 @container', onSelect && 'cursor-pointer')}
         role={onSelect ? 'button' : undefined}
         tabIndex={onSelect ? 0 : undefined}
         aria-label={onSelect ? `Inspect ${skill.name}` : undefined}
@@ -125,7 +125,7 @@ export const SkillCard = memo(({
                 'flex-shrink-0 mt-0.5 w-4 h-4 rounded border flex items-center justify-center transition-all duration-150',
                 selected
                   ? 'bg-primary/20 border-primary/50 text-primary opacity-100'
-                  : 'border-border/50 text-transparent opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
+                  : 'border-border/50 text-transparent opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover-none:opacity-100',
                 selectionActive && !selected && 'opacity-100',
               )}
             >
@@ -135,7 +135,7 @@ export const SkillCard = memo(({
           <div className="p-1.5 rounded-md border bg-surface-highlight/60 border-border/40 flex-shrink-0 mt-0.5 transition-colors duration-200 group-hover:bg-primary/10 group-hover:border-primary/20 group-focus-within:bg-primary/10 group-focus-within:border-primary/20">
             <BookOpen size={14} className="text-text-muted transition-colors duration-200 group-hover:text-primary/70 group-focus-within:text-primary/70" />
           </div>
-          <span className="font-semibold log-text text-text-primary truncate flex-1 min-w-0 leading-tight mt-0.5">
+          <span title={skill.name} className="font-semibold log-text text-text-primary truncate flex-1 min-w-0 leading-tight mt-0.5">
             {skill.name}
           </span>
           {source && (
