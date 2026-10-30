@@ -200,7 +200,9 @@ function DetachedRegistryContent() {
           />
           {searchQuery && (
             <button
+              type="button"
               onClick={() => setSearchQuery('')}
+              aria-label="Clear search"
               className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-surface-highlight transition-colors"
             >
               <X size={13} className="text-text-muted" />

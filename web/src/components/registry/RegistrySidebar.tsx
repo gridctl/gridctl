@@ -238,7 +238,7 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
                 onClick={handlePopout}
                 disabled={registryDetached}
               />
-              <button onClick={handleClose} className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors group">
+              <button type="button" onClick={handleClose} aria-label="Close" className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors group">
                 <X size={16} className="text-text-muted group-hover:text-text-primary transition-colors" />
               </button>
             </div>
@@ -309,6 +309,7 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
               type="button"
               onClick={() => setSearchQuery('')}
               title="Clear search"
+              aria-label="Clear search"
               className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-surface-highlight transition-colors focus:outline-none focus:ring-2 focus:ring-primary/30"
             >
               <X size={12} className="text-text-muted" />
@@ -517,6 +518,7 @@ function SkillItem({
             onToggleState(skill);
           }}
           title={isActive ? 'Disable skill' : 'Activate skill'}
+          aria-label={isActive ? 'Disable skill' : 'Activate skill'}
           className={cn(
             'p-2 rounded transition-all duration-200 group focus:outline-none focus:ring-2 focus:ring-primary/30',
             isActive ? 'hover:bg-status-pending/10' : 'hover:bg-status-running/10',
