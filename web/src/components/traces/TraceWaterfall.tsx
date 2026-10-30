@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { X, AlertCircle, Copy, Link2, Download } from 'lucide-react';
 import { cn } from '../../lib/cn';
@@ -9,6 +9,7 @@ import { fetchTraceOTLP } from '../../lib/api';
 import { formatDuration, formatTotalDuration } from '../../lib/duration';
 import { computeSelfTimes, computeCriticalPath } from '../../lib/traceMath';
 import { useWorkspaceLayout } from '../../hooks/useWorkspaceLayout';
+import { releasePointerCapture } from '../../lib/pointerCapture';
 import {
   useUIStore,
   TRACES_NAME_COL_MIN_PCT,
@@ -124,36 +125,55 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
   const [liveNameColPct, setLiveNameColPct] = useState<number | null>(null);
   const [isNameColDragging, setNameColDragging] = useState(false);
   const nameColWidth = `${liveNameColPct ?? storedNameColPct}%`;
+  const endDragRef = useRef<(() => void) | null>(null);
 
-  const onNameColDrag = (e: React.MouseEvent) => {
+  useEffect(() => () => endDragRef.current?.(), []);
+
+  const onNameColDrag = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
     e.preventDefault();
     const pane = paneRef.current;
     if (!pane) return;
     const rect = pane.getBoundingClientRect();
     const contentWidth = rect.width - PANE_PADDING_X * 2;
     if (contentWidth <= 0) return;
+    const target = e.currentTarget;
+    const pointerId = e.pointerId;
+    if (typeof target.setPointerCapture === 'function') {
+      target.setPointerCapture(pointerId);
+    }
     setNameColDragging(true);
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
     let latest = storedNameColPct;
-    const onMove = (ev: MouseEvent) => {
-      const pct = ((ev.clientX - rect.left - PANE_PADDING_X) / contentWidth) * 100;
+    const onMove = (ev: Event) => {
+      const pct = (((ev as PointerEvent).clientX - rect.left - PANE_PADDING_X) / contentWidth) * 100;
       latest = Math.round(
         Math.min(TRACES_NAME_COL_MAX_PCT, Math.max(TRACES_NAME_COL_MIN_PCT, pct)) * 10,
       ) / 10;
       setLiveNameColPct(latest);
     };
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
+    let settled = false;
+    const cleanup = () => {
+      if (settled) return;
+      settled = true;
+      endDragRef.current = null;
+      target.removeEventListener('pointermove', onMove);
+      target.removeEventListener('pointerup', cleanup);
+      target.removeEventListener('pointercancel', cleanup);
+      window.removeEventListener('blur', cleanup);
+      releasePointerCapture(target, pointerId);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
       setNameColDragging(false);
       setTracesPrefs({ nameColPct: latest });
       setLiveNameColPct(null);
     };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    endDragRef.current = cleanup;
+    target.addEventListener('pointermove', onMove);
+    target.addEventListener('pointerup', cleanup);
+    target.addEventListener('pointercancel', cleanup);
+    window.addEventListener('blur', cleanup);
   };
 
   const { sorted, depthMap, traceStart, totalDuration, p95, selfTimes, criticalPath, childCounts } = useMemo(() => {
@@ -294,6 +314,7 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
         className="flex-1 min-h-0"
         defaultLayout={defaultLayout}
         onLayoutChanged={onLayoutChanged}
+        resizeTargetMinimumSize={{ coarse: 24, fine: 16 }}
       >
         {/* Waterfall */}
         <Panel id="waterfall-canvas" defaultSize={selectedSpan ? '65' : '100'} minSize={160}>
@@ -302,10 +323,10 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
             <div className="flex items-center h-7 px-3 flex-shrink-0 border-b border-border/20 bg-surface-elevated/10">
               <div style={{ width: nameColWidth }} className="text-[9px] text-text-muted uppercase tracking-wider">Span</div>
               <div
-                onMouseDown={onNameColDrag}
+                onPointerDown={onNameColDrag}
                 title="Drag to resize the span column"
                 className={cn(
-                  'w-1 -ml-1 self-stretch cursor-col-resize flex-shrink-0 rounded transition-colors',
+                  'w-1 -ml-1 self-stretch cursor-col-resize flex-shrink-0 rounded transition-colors touch-none',
                   isNameColDragging ? 'bg-primary/50' : 'hover:bg-primary/30',
                 )}
               />
