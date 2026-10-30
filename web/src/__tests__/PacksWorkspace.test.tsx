@@ -207,6 +207,8 @@ describe('PacksWorkspace', () => {
     renderWorkspace();
     expect(screen.getByText('Loading packs…')).toBeInTheDocument();
     expect(screen.queryByText('No packs imported')).not.toBeInTheDocument();
+    expect(screen.queryAllByRole('main')).toHaveLength(0);
+    expect(screen.getByRole('heading', { level: 1, name: 'Library' })).toBeInTheDocument();
   });
 
   it('teaches the pack convention in the empty state', async () => {

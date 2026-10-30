@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useId, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { AlertCircle, RefreshCw, WifiOff } from 'lucide-react';
 import { Sidebar } from '../layout/Sidebar';
@@ -9,6 +9,7 @@ import { ResizeHandle } from '../ui/ResizeHandle';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { usePolling } from '../../hooks/usePolling';
+import { WORKSPACE_LABELS } from '../../types/workspace';
 
 const SIDEBAR_DEFAULT = 320;
 const SIDEBAR_MIN = 280;
@@ -19,6 +20,7 @@ const SIDEBAR_MAX = 600;
 // column plus a collapsible inspector column (0px when closed) so switching
 // workspaces doesn't shift the canvas.
 export function StackWorkspace() {
+  const headingId = useId();
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -61,6 +63,7 @@ export function StackWorkspace() {
 
   return (
     <div className="absolute inset-0 overflow-hidden">
+      <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.stack}</h1>
       <div
         className="grid h-full"
         style={{
@@ -135,7 +138,7 @@ export function StackWorkspace() {
         </div>
 
         {sidebarOpen && (
-          <aside className="flex flex-row overflow-hidden bg-surface-elevated border-l border-border shadow-pane-left">
+          <aside aria-label="Stack inspector" className="flex flex-row overflow-hidden bg-surface-elevated border-l border-border shadow-pane-left">
             <ResizeHandle
               direction="vertical"
               onResize={handleSidebarResize}

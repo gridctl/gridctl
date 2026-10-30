@@ -65,7 +65,7 @@ export function ToolDetailPanel({
   });
 
   return (
-    <aside className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
+    <aside aria-label="Tool details" className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
       {tool ? (
         <>
           <PaneAnchor />

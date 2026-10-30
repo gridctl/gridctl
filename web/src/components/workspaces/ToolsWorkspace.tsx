@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { Command } from 'cmdk';
 import {
@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { WORKSPACE_LABELS } from '../../types/workspace';
 import { useStackStore } from '../../stores/useStackStore';
 import { useToolsDirtyStore } from '../../stores/useToolsDirtyStore';
 import { useUIStore } from '../../stores/useUIStore';
@@ -82,6 +83,7 @@ const AUDIT_STYLES: Record<AuditState, { dot: string; text: string; label: strin
 // can guard server switches against unsaved edits before the URL changes —
 // the sidebar's stack-based discard flow doesn't map onto URL selection.
 export function ToolsWorkspace() {
+  const headingId = useId();
   const [searchParams, setSearchParams] = useSearchParams();
   const compact = useUIStore((s) => s.compactMode.tools);
 
@@ -552,7 +554,8 @@ export function ToolsWorkspace() {
         minLeftPx={220}
         minRightPx={300}
       >
-        <main className="flex flex-col h-full overflow-hidden">
+        <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
+          <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.tools}</h1>
           <ToolsHeader
             compact={compact}
             serverCount={servers.length}
@@ -639,7 +642,7 @@ export function ToolsWorkspace() {
               </>
             )}
           </div>
-        </main>
+        </section>
       </WorkspaceShell>
 
       <ConfirmDialog
@@ -959,7 +962,7 @@ function ServerRail({
   draftEnabledCount,
 }: ServerRailProps) {
   return (
-    <aside className="h-full flex flex-col bg-surface border-r border-border-subtle">
+    <aside aria-label="Tools rail" className="h-full flex flex-col bg-surface border-r border-border-subtle">
       <div
         className={cn(
           'flex-shrink-0 px-3 border-b border-border-subtle/60',

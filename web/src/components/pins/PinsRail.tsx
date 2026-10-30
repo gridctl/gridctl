@@ -45,7 +45,7 @@ export function PinsRail({
   const visibleCount = kind === 'server' ? entries.length : skillEntries.length;
   const noun = kind === 'server' ? 'server' : 'skill';
   return (
-    <aside className="h-full flex flex-col bg-surface border-r border-border-subtle">
+    <aside aria-label="Pins rail" className="h-full flex flex-col bg-surface border-r border-border-subtle">
       <div
         className={cn(
           'flex-shrink-0 px-3 border-b border-border-subtle/60 flex items-center justify-between gap-2',

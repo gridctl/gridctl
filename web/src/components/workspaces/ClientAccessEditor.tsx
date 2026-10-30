@@ -72,7 +72,7 @@ function ClientList({
   onSelect: (slug: string) => void;
 }) {
   return (
-    <aside className="w-56 flex-shrink-0 border-r border-border-subtle overflow-y-auto scrollbar-dark py-2 pr-2">
+    <aside aria-label="Client list" className="w-56 flex-shrink-0 border-r border-border-subtle overflow-y-auto scrollbar-dark py-2 pr-2">
       <div className="px-3 pb-2 text-[10px] font-medium text-text-muted/60 uppercase tracking-[0.3em]">
         clients
       </div>

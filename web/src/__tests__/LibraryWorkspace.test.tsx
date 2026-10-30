@@ -124,6 +124,12 @@ describe('LibraryWorkspace', () => {
 
   // Icon-only row actions used to expose no accessible name at all, so they
   // were unreachable by role and invisible to assistive tech.
+  it('exposes one workspace heading and no nested main', () => {
+    renderAt('/library');
+    expect(screen.queryAllByRole('main')).toHaveLength(0);
+    expect(screen.getByRole('heading', { level: 1, name: 'Library' })).toBeInTheDocument();
+  });
+
   it('renders a failed state instead of skeleton cards when skills have not loaded', () => {
     useRegistryStore.setState({ skills: null, error: 'boom' });
     renderAt('/library');

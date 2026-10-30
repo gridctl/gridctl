@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, createElement } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, createElement } from 'react';
 import { useSearchParams } from 'react-router';
 import { Bot, Download, List, Package, RefreshCw, Search, X } from 'lucide-react';
 import { cn } from '../../../lib/cn';
+import { WORKSPACE_LABELS } from '../../../types/workspace';
 import { IconButton } from '../../ui/IconButton';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import { showToast } from '../../ui/Toast';
@@ -37,6 +38,7 @@ interface AgentsWorkspaceProps {
  * usage KPIs, and no run chrome.
  */
 export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
+  const headingId = useId();
   const [searchParams, setSearchParams] = useSearchParams();
   const agents = useRegistryStore((s) => s.agents);
   const agentStatuses = useRegistryStore((s) => s.agentStatuses);
@@ -287,7 +289,8 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
   return (
     <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
       <WorkspaceShell workspace="library" defaultRightPct={30} minRightPx={300} right={inspector}>
-        <main className="flex flex-col h-full overflow-hidden">
+        <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
+          <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.library}</h1>
           <header className="flex-shrink-0 bg-surface/30 backdrop-blur-sm border-b border-border-subtle px-6 py-3 flex flex-col gap-2">
             <div className="flex items-center justify-between gap-3">
               <LibraryKindSwitch kind="agent" onChange={onKindChange} />
@@ -425,7 +428,7 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
               </div>
             )}
           </div>
-        </main>
+        </section>
       </WorkspaceShell>
 
       <ConfirmDialog
