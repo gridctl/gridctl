@@ -172,6 +172,7 @@ describe('RunsView', () => {
     const dialog = await screen.findByRole('alertdialog', { name: /enable run recording/i });
     expect(dialog).toHaveTextContent('recorder unavailable');
     expect(within(dialog).getByRole('alert')).toHaveTextContent('recorder unavailable');
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
   });
 
   it('keeps the disable confirm open when the mutation fails and closes it on success', async () => {
@@ -194,6 +195,7 @@ describe('RunsView', () => {
     fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: /^disable$/i }));
     const dialog = await screen.findByRole('alertdialog', { name: /disable run recording/i });
     expect(within(dialog).getByRole('alert')).toHaveTextContent('still recording');
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
   });
 
   it('shows drop counts and wipe partial errors', async () => {

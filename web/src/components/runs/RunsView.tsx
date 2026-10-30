@@ -301,7 +301,8 @@ export function RunsView({ servers }: RunsViewProps) {
             {w.message} ({w.count})
           </p>
         ))}
-        {mutationError && (
+        {/* Enable and disable failures render inside the open confirm. */}
+        {mutationError && !confirmEnable && !confirmDisable && (
           <p className="text-xs text-status-error" role="alert">
             {mutationError}
           </p>
