@@ -32,7 +32,7 @@
     "dompurify": "^3.4.17",
     "fuse.js": "^7.5.0",
     "lucide-react": "^1.61.0",
-    "marked": "^18.0.14",
+    "marked": "^18.1.2",
     "marked-alert": "^2.1.2",
     "prismjs": "^1.30.0",
     "react": "^19.3.1",
