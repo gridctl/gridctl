@@ -250,9 +250,6 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
     enabled: active,
   });
 
-  // Bind the span to the trace whose waterfall was actually clicked (the
-  // rendered detail), not selectedTraceId: an out-of-order detail fetch can
-  // briefly render trace A's waterfall while B is selected.
   // Selection is read from a ref so this callback stays stable across polls
   // and across opening a row. A fresh closure per row would defeat memo.
   const selectedTraceIdRef = useRef(selectedTraceId);
@@ -264,6 +261,9 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
     selectTrace(selectedTraceIdRef.current === traceId ? null : traceId);
   }, [selectTrace]);
 
+  // Bind the span to the trace whose waterfall was actually clicked (the
+  // rendered detail), not selectedTraceId: an out-of-order detail fetch can
+  // briefly render trace A's waterfall while B is selected.
   const selectSpan = useCallback(
     (spanId: string | null) => {
       const traceId = useTracesStore.getState().traceDetail?.traceId;
