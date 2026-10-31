@@ -89,6 +89,29 @@ describe('MarkdownPreview blocks', () => {
     expect(writeText).toHaveBeenCalledWith('echo there');
   });
 
+  it('drops fallback HTML when the same container switches to blocks', () => {
+    const { container, rerender } = render(
+      <MarkdownPreview content={'<div>box</div>\n\n# Top'} />,
+    );
+    expect(container.textContent).toContain('box');
+    expect(container.textContent).toContain('Top');
+    expect(container.querySelector('[data-md-block]')).toBeNull();
+
+    rerender(<MarkdownPreview content={'# Alpha\n\nBeta'} />);
+    const blocks = container.querySelectorAll('[data-md-block]');
+    expect(blocks).toHaveLength(2);
+    expect(container.textContent).not.toContain('box');
+    expect(container.textContent).not.toContain('Top');
+    const root = container.querySelector('.skill-md');
+    expect(root).not.toBeNull();
+    expect(root!.childNodes.length).toBe(blocks.length);
+
+    rerender(<MarkdownPreview content={'<!-- c -->\n\nGamma'} />);
+    expect(container.querySelector('[data-md-block]')).toBeNull();
+    expect(container.textContent).not.toContain('Alpha');
+    expect(container.textContent).toContain('Gamma');
+  });
+
   it('keeps a copied label when another block changes', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {
