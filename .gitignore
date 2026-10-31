@@ -8,6 +8,9 @@ cmd/gridctl/web/
 # Web dependencies and build
 node_modules/
 web/dist/
+# Scratch inputs for web/markdown-preview.browser.mjs. Removed on exit.
+web/markdown-preview.fixture.html
+web/markdown-preview.fixture.tsx
 
 # Go
 *.exe

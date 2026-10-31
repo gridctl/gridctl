@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
-import { copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { extname, join, normalize, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -20,9 +21,12 @@ if (!playwrightPath) {
 
 const KEYS = 'abcdefghijklmnopqrstuvwxyz012345678';
 const root = resolve('web');
-const outDir = '/tmp/opencode/md-preview-dist';
+// Direct children of web/: Vite names the emitted HTML from the path
+// relative to root, and a path outside root is rejected. Gitignored so a
+// hard kill does not leave them untracked. Removed in finally.
 const fixtureHtml = join(root, 'markdown-preview.fixture.html');
 const fixtureEntry = join(root, 'markdown-preview.fixture.tsx');
+let outDir;
 const editors = [
   { id: 'skill', label: 'Skill instructions' },
   { id: 'canonical', label: 'Canonical global context' },
@@ -189,7 +193,8 @@ function serve(dir) {
 }
 
 async function buildFixture() {
-  await mkdir(outDir, { recursive: true });
+  // Unique directory so a second run cannot empty this one.
+  outDir = await mkdtemp(join(tmpdir(), 'md-preview-'));
   await writeFile(fixtureEntry, fixtureSource);
   await writeFile(fixtureHtml, html);
   const viteEntry = resolve('web/node_modules/vite/dist/node/index.js');
@@ -372,4 +377,5 @@ try {
   });
   await rm(fixtureHtml, { force: true });
   await rm(fixtureEntry, { force: true });
+  if (outDir) await rm(outDir, { recursive: true, force: true });
 }
