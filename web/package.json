@@ -37,7 +37,7 @@
     "prismjs": "^1.30.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "react-resizable-panels": "^4.12.3",
+    "react-resizable-panels": "^4.15.0",
     "react-router": "^8.5.1",
     "recharts": "^3.10.1",
     "tailwind-merge": "^3.7.0",
