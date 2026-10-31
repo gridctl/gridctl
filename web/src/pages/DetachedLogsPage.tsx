@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Terminal,
   ChevronDown,
@@ -31,6 +31,9 @@ function DetachedLogsPageContent() {
   const authRequired = useAuthStore(s => s.authRequired);
   const view = useLogsView();
   const { source } = view;
+  const onTraceClick = useCallback((traceId: string) => {
+    window.open(`/traces?trace=${encodeURIComponent(traceId)}`, '_blank', 'noopener');
+  }, []);
 
   const { status } = useSharedStatus({ enabled: !authRequired });
   const nodes = useMemo<NodeOption[]>(() => {
@@ -183,9 +186,7 @@ function DetachedLogsPageContent() {
       {/* Log surface — shared with the workspace, incl. the full control bar */}
       <LogsView
         view={view}
-        onTraceClick={(traceId) =>
-          window.open(`/traces?trace=${encodeURIComponent(traceId)}`, '_blank', 'noopener')
-        }
+        onTraceClick={onTraceClick}
         emptyText="No logs available"
         toolbarExtra={
           <IconButton

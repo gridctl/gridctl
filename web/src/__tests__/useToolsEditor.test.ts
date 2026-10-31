@@ -87,6 +87,16 @@ describe('useToolsEditor', () => {
     expect(result.current.dirty).toBe(false);
   });
 
+  it('keeps toggle identity across consecutive toggles', () => {
+    const { result, rerender } = renderHook(() => useToolsEditor(SERVER, ['query']));
+    const toggle = result.current.toggle;
+    act(() => result.current.toggle('insert'));
+    expect(result.current.toggle).toBe(toggle);
+    rerender();
+    expect(result.current.toggle).toBe(toggle);
+    expect(result.current.selected.has('insert')).toBe(true);
+  });
+
   it('toggles a tool and tracks dirty + diff count', () => {
     const { result } = renderHook(() => useToolsEditor(SERVER, ['query']));
 

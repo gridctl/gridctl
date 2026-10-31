@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   Bold,
@@ -466,6 +466,8 @@ function EditorView({
   const { ratio, containerRef, handlePointerDown, isDragging } = useSplitPane(0.5);
 
   const content = draft ?? doc.canonical.content;
+  // Preview trails the textarea so a long canonical file does not block keystrokes.
+  const deferredContent = useDeferredValue(content);
   const dirty = draft !== null && draft !== doc.canonical.content;
   const markerIssue = RESERVED_MARKERS.find((m) => content.includes(m)) ?? null;
 
@@ -663,7 +665,7 @@ function EditorView({
               </div>
               <div ref={previewRef} className="flex-1 overflow-y-auto scrollbar-dark">
                 <div className="px-5 py-4">
-                  <MarkdownPreview content={content} emptyHint="Canonical context preview" />
+                  <MarkdownPreview content={deferredContent} emptyHint="Canonical context preview" />
                 </div>
               </div>
             </div>
@@ -1576,6 +1578,8 @@ function FragmentsView({
 
   const current = fragments?.find((f) => f.name === selected) ?? null;
   const content = draft ?? current?.content ?? '';
+  // Own deferred value: this editor is a separate component from the canonical view.
+  const deferredContent = useDeferredValue(content);
   const dirty = current !== null && draft !== null && draft !== current.content;
   const markerIssue = RESERVED_MARKERS.find((m) => content.includes(m)) ?? null;
 
@@ -1834,7 +1838,7 @@ function FragmentsView({
                     </div>
                     <div ref={previewRef} className="flex-1 overflow-y-auto scrollbar-dark">
                       <div className="px-5 py-4">
-                        <MarkdownPreview content={content} emptyHint="Fragment preview" />
+                        <MarkdownPreview content={deferredContent} emptyHint="Fragment preview" />
                       </div>
                     </div>
                   </div>

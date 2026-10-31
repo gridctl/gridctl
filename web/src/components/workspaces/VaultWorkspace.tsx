@@ -3,6 +3,7 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
@@ -207,20 +208,24 @@ export function VaultWorkspace() {
   // URL-synced as ?selected=<key> (replace history) so reload and deep-links
   // restore it, mirroring the Library workspace.
   const selectedKey = searchParams.get('selected');
-  const setSelectedKey = useCallback(
-    (key: string | null) => {
-      setSearchParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          if (key) next.set('selected', key);
-          else next.delete('selected');
-          return next;
-        },
-        { replace: true },
-      );
-    },
-    [setSearchParams],
-  );
+  // setSearchParams is recreated whenever the query string changes. Selecting
+  // a row writes ?selected=, so a dependency here would redraw every row.
+  // The ref is updated in an effect, not during render.
+  const setSearchParamsRef = useRef(setSearchParams);
+  useEffect(() => {
+    setSearchParamsRef.current = setSearchParams;
+  }, [setSearchParams]);
+  const setSelectedKey = useCallback((key: string | null) => {
+    setSearchParamsRef.current(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (key) next.set('selected', key);
+        else next.delete('selected');
+        return next;
+      },
+      { replace: true },
+    );
+  }, []);
 
   // ---- Local UI state -----------------------------------------------------
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -1239,7 +1244,7 @@ function VariableList({
           key={variable.key}
           variable={variable}
           selected={variable.key === selectedKey}
-          onSelect={() => onSelect(variable.key)}
+          onSelect={onSelect}
           preview={
             variable.is_secret
               ? SECRET_PREVIEW

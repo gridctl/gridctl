@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import { Link2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { VariableTypeBadge } from './VariableTypeBadge';
@@ -13,7 +13,7 @@ export const VARIABLE_ROW_GRID =
 export interface VariableRowProps {
   variable: Variable;
   selected: boolean;
-  onSelect: () => void;
+  onSelect: (key: string) => void;
   // Pre-computed preview text: the actual value for loaded plaintext, a
   // fixed-length mask for secrets — never the raw secret.
   preview: string;
@@ -24,7 +24,7 @@ export interface VariableRowProps {
 // VariableRow is the workspace's table-like list row. Unlike the former sidebar row (the
 // sidebar's expandable card) it carries no inline expand/edit — clicking
 // selects the variable and all depth lives in the right-rail inspector.
-export function VariableRow({
+export const VariableRow = memo(function VariableRow({
   variable,
   selected,
   onSelect,
@@ -45,7 +45,7 @@ export function VariableRow({
       type="button"
       role="option"
       aria-selected={selected}
-      onClick={onSelect}
+      onClick={() => onSelect(variable.key)}
       className={cn(
         'w-full text-left px-6 border-l-2 border-b border-border-subtle/40 transition-colors',
         'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40 focus-visible:ring-inset',
@@ -96,4 +96,6 @@ export function VariableRow({
       </span>
     </button>
   );
-}
+});
+
+VariableRow.displayName = 'VariableRow';

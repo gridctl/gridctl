@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Eye, Loader2, Pencil } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
@@ -36,6 +36,9 @@ export function AgentEditor({ isOpen, agent, onClose, onSaved }: AgentEditorProp
 
   const name = agent?.name ?? null;
   const loadKey = isOpen && name ? name : null;
+  // Preview and edit are mutually exclusive, so this does not need to trail
+  // the textarea. Memo keeps a parent re-render from re-parsing the same file.
+  const previewBody = useMemo(() => bodyFromRaw(raw), [raw]);
 
   // Render-time reset when the editor opens on a (new) agent: the fetch
   // itself stays in the effect below, but the synchronous state resets
@@ -152,7 +155,7 @@ export function AgentEditor({ isOpen, agent, onClose, onSaved }: AgentEditorProp
           />
         ) : (
           <div className="h-80 overflow-y-auto scrollbar-dark border border-border/30 rounded-lg p-3 skill-md">
-            <MarkdownPreview content={bodyFromRaw(raw)} emptyHint="Nothing to preview yet." />
+            <MarkdownPreview content={previewBody} emptyHint="Nothing to preview yet." />
           </div>
         )}
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Command } from 'cmdk';
 import Fuse from 'fuse.js';
 import {
@@ -153,24 +153,36 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
     commit(nextMode, nextMode === 'all' ? [] : selectedIds);
   };
 
-  const toggle = (operationId: string) => {
-    const next = new Set(selected);
+  // Selection and mode live in refs so toggle's identity does not follow
+  // them. A dependency on selected would change every click and defeat row memo.
+  // The parent passes a fresh onChange, so that is a ref too.
+  const selectedRef = useRef(selected);
+  const modeRef = useRef(mode);
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    selectedRef.current = selected;
+    modeRef.current = mode;
+    onChangeRef.current = onChange;
+  }, [selected, mode, onChange]);
+
+  const toggle = useCallback((operationId: string) => {
+    const next = new Set(selectedRef.current);
     if (next.has(operationId)) next.delete(operationId);
     else next.add(operationId);
     const ids = [...next];
+    const currentMode = modeRef.current;
 
-    // Requirement: deselecting to nothing in Only-selected mode drops the
-    // filter and returns to All, rather than writing include: [] — which means
-    // "expose everything" to the backend while reading as a whitelist.
-    if (ids.length === 0 && mode === 'include') {
+    // Deselecting to nothing in Only-selected mode drops the filter and
+    // returns to All, rather than writing include: [] (expose everything).
+    if (ids.length === 0 && currentMode === 'include') {
       setModeOverride('all');
       setClearedNotice(true);
-      onChange(undefined);
+      onChangeRef.current(undefined);
       return;
     }
     setClearedNotice(false);
-    commit(mode, ids);
-  };
+    onChangeRef.current(buildOperationsFilter(currentMode, ids));
+  }, []);
 
   const selectAllVisible = () => {
     if (mode === 'all') return;
@@ -445,7 +457,7 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
                     op={op}
                     selectable={mode !== 'all'}
                     checked={selected.has(op.operation_id)}
-                    onToggle={() => toggle(op.operation_id)}
+                    onToggle={toggle}
                   />
                 ))}
               </Command.List>
@@ -548,7 +560,7 @@ function FilterChip({
   );
 }
 
-function OperationRow({
+const OperationRow = memo(function OperationRow({
   op,
   selectable,
   checked,
@@ -557,13 +569,13 @@ function OperationRow({
   op: OpenAPIOperation;
   selectable: boolean;
   checked: boolean;
-  onToggle: () => void;
+  onToggle: (operationId: string) => void;
 }) {
   const differs = op.tool_name && op.tool_name !== op.operation_id;
   return (
     <Command.Item
       value={`${op.operation_id} ${op.path}`}
-      onSelect={selectable ? onToggle : undefined}
+      onSelect={selectable ? () => onToggle(op.operation_id) : undefined}
       aria-checked={selectable ? checked : undefined}
       aria-label={operationRowLabel(op)}
       className={cn(
@@ -607,7 +619,9 @@ function OperationRow({
       </div>
     </Command.Item>
   );
-}
+});
+
+OperationRow.displayName = 'OperationRow';
 
 // Manual entry stays available for specs that cannot be fetched while
 // authoring: unexpanded ${VAR} references, or file paths that only resolve on

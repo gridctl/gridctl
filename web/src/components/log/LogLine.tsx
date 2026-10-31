@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Activity, ChevronDown, ChevronRight, Copy } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { copyWithToast } from '../ui/Toast';
@@ -15,10 +15,11 @@ import {
   type ParsedLog,
 } from './logTypes';
 
-export function LogLine({
+export const LogLine = memo(function LogLine({
   log,
   isExpanded,
   onToggle,
+  entryKey,
   source,
   onTraceClick,
   onSourceClick,
@@ -29,7 +30,10 @@ export function LogLine({
 }: {
   log: ParsedLog;
   isExpanded: boolean;
-  onToggle: () => void;
+  /** Expand this entry, or collapse it when the argument is null. */
+  onToggle: (key: string | null) => void;
+  /** logEntryKeys identity for this row. Stable across polls. */
+  entryKey: string;
   /** When set, renders a source column (aggregate all-sources view). */
   source?: string;
   /** When set, trace IDs render as pivots into the trace view. */
@@ -72,7 +76,7 @@ export function LogLine({
             ? 'grid-cols-[8.5em_5.5em_7em_7.5em_1fr_2em]'
             : 'grid-cols-[8.5em_5.5em_7.5em_1fr_2em]',
         )}
-        onClick={onToggle}
+        onClick={() => onToggle(isExpanded ? null : entryKey)}
       >
         {/* Timestamp */}
         <span
@@ -184,7 +188,9 @@ export function LogLine({
       )}
     </div>
   );
-}
+});
+
+LogLine.displayName = 'LogLine';
 
 // Expand panel: full message, promoted MCP fields, copy actions, and the raw
 // attrs collapsed under "Other attributes" — mirrors the trace SpanDetail

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ScrollText, Terminal } from 'lucide-react';
 import { EmptyState, FailedState } from '../ui/EmptyState';
@@ -108,6 +108,12 @@ export function LogStream({
     }
   }, [logs, autoScroll, virtualize, containerRef]);
 
+  // One callback for every row. LogLine chooses expand vs collapse from
+  // entryKey and isExpanded, so this identity does not follow the open row.
+  const onToggle = useCallback((key: string | null) => {
+    onToggleExpand(key);
+  }, [onToggleExpand]);
+
   const handleScroll = () => {
     if (!containerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
@@ -147,7 +153,8 @@ export function LogStream({
     <LogLine
       log={log}
       isExpanded={expandedKey === keys[i]}
-      onToggle={() => onToggleExpand(expandedKey === keys[i] ? null : keys[i])}
+      onToggle={onToggle}
+      entryKey={keys[i]}
       source={showSource ? logSourceOf(log) : undefined}
       onTraceClick={onTraceClick}
       onSourceClick={showSource ? onSourceClick : undefined}

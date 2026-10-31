@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, useId } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, useId, useDeferredValue } from 'react';
 import {
   Library,
   Settings,
@@ -441,6 +441,9 @@ export function SkillEditor({
   const [criteria, setCriteria] = useState<CriterionEntry[]>([]);
   const [state, setState] = useState<ItemState>('draft');
   const [body, setBody] = useState('');
+  // Preview trails the textarea. useDeferredValue lets the keystroke commit
+  // before renderMarkdown runs; it does not interrupt a parse already on the stack.
+  const deferredBody = useDeferredValue(body);
   // Name of the skill whose fetched body has been adopted into `body`; see
   // the hydration block further down.
   const [hydratedFor, setHydratedFor] = useState<string | null>(null);
@@ -1200,7 +1203,7 @@ export function SkillEditor({
                 </div>
                 <div ref={previewRef} className="flex-1 overflow-y-auto scrollbar-dark">
                   <div className="px-5 py-4">
-                    <MarkdownPreview content={body} />
+                    <MarkdownPreview content={deferredBody} />
                   </div>
                 </div>
               </div>
