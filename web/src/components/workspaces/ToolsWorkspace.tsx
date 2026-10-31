@@ -162,20 +162,25 @@ export function ToolsWorkspace() {
     [setSearchParams],
   );
 
-  const applyTool = useCallback(
-    (tool: string | null) => {
-      setSearchParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          if (tool) next.set('tool', tool);
-          else next.delete('tool');
-          return next;
-        },
-        { replace: true },
-      );
-    },
-    [setSearchParams],
-  );
+  // setSearchParams is recreated whenever the query string changes. A row
+  // selection writes ?tool=, so a dependency here would give every row a new
+  // onSelect and defeat memo. The ref is updated in an effect, not during render.
+  const setSearchParamsRef = useRef(setSearchParams);
+  useEffect(() => {
+    setSearchParamsRef.current = setSearchParams;
+  }, [setSearchParams]);
+
+  const applyTool = useCallback((tool: string | null) => {
+    setSearchParamsRef.current(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (tool) next.set('tool', tool);
+        else next.delete('tool');
+        return next;
+      },
+      { replace: true },
+    );
+  }, []);
 
   const toggleAudit = useCallback(() => {
     setSearchParams(
@@ -1392,6 +1397,7 @@ function ServerDetail({
                   auditState={auditState}
                   policyLabel={chip?.label ?? ''}
                   policyTitle={chip?.title ?? ''}
+                  policyTone={chip?.tone ?? ''}
                   onSelect={onSelect}
                   onToggle={toggle}
                   registerRef={registerRef}

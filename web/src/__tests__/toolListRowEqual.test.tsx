@@ -29,6 +29,7 @@ function props(over: Partial<ToolListRowProps> = {}): ToolListRowProps {
     auditState: 'used',
     policyLabel: '',
     policyTitle: '',
+    policyTone: '',
     onSelect: () => {},
     onToggle: () => {},
     registerRef: () => {},
@@ -84,6 +85,7 @@ describe('toolListRowPropsEqual', () => {
     expect(toolListRowPropsEqual(base, props({ ...stable, auditState: 'unused' }))).toBe(false);
     expect(toolListRowPropsEqual(base, props({ ...stable, policyLabel: 'BLOCKED' }))).toBe(false);
     expect(toolListRowPropsEqual(base, props({ ...stable, policyTitle: 'blocked by policy default' }))).toBe(false);
+    expect(toolListRowPropsEqual(base, props({ ...stable, policyTone: 'danger' }))).toBe(false);
     expect(toolListRowPropsEqual(base, props({ ...stable, onSelect: () => {} }))).toBe(false);
     expect(toolListRowPropsEqual(base, props({ ...stable, onToggle: () => {} }))).toBe(false);
     expect(toolListRowPropsEqual(base, props({ ...stable, registerRef: () => {} }))).toBe(false);
@@ -111,5 +113,24 @@ describe('ToolListRow', () => {
     expect(screen.getByText('SAFE')).toBeInTheDocument();
     expect(screen.getByText(/2m ago/)).toBeInTheDocument();
     expect(screen.getByText('list_repos')).toBeInTheDocument();
+  });
+
+  it('follows the policy chip tone instead of a hardcoded danger class', () => {
+    render(
+      <Command shouldFilter={false}>
+        <Command.List>
+          <ToolListRow
+            {...props({
+              policyLabel: 'BLOCKED',
+              policyTitle: 'blocked by policy default',
+              policyTone: 'neutral',
+            })}
+          />
+        </Command.List>
+      </Command>,
+    );
+    const chip = screen.getByText('BLOCKED');
+    expect(chip).toHaveClass('bg-surface-highlight');
+    expect(chip).not.toHaveClass('text-status-error');
   });
 });

@@ -2,7 +2,7 @@ import { memo, useCallback } from 'react';
 import { Command } from 'cmdk';
 import { Check, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import { CHIP_TONE_CLASS, annotationChips } from '../../lib/groups';
+import { CHIP_TONE_CLASS, annotationChips, type AnnotationChip } from '../../lib/groups';
 import type { AuditState } from '../../lib/toolAudit';
 import type { ToolAnnotations } from '../../types';
 import type { ToolRow } from '../../hooks/useToolsEditor';
@@ -51,6 +51,8 @@ export interface ToolListRowProps {
   /** Rendered policy chip label. Empty when the verdict paints nothing. */
   policyLabel: string;
   policyTitle: string;
+  /** Tone declared by policyChip. Empty when the chip is absent. */
+  policyTone: AnnotationChip['tone'] | '';
   onSelect: (name: string) => void;
   onToggle: (name: string) => void;
   registerRef: (name: string, el: HTMLDivElement | null) => void;
@@ -71,6 +73,7 @@ export function toolListRowPropsEqual(prev: ToolListRowProps, next: ToolListRowP
     prev.auditState === next.auditState &&
     prev.policyLabel === next.policyLabel &&
     prev.policyTitle === next.policyTitle &&
+    prev.policyTone === next.policyTone &&
     prev.onSelect === next.onSelect &&
     prev.onToggle === next.onToggle &&
     prev.registerRef === next.registerRef
@@ -86,6 +89,7 @@ export const ToolListRow = memo(function ToolListRow({
   auditState,
   policyLabel,
   policyTitle,
+  policyTone,
   onSelect,
   onToggle,
   registerRef,
@@ -177,7 +181,7 @@ export const ToolListRow = memo(function ToolListRow({
                 title={policyTitle}
                 className={cn(
                   'flex-shrink-0 px-1.5 py-px rounded text-[9px] font-medium',
-                  CHIP_TONE_CLASS.danger,
+                  CHIP_TONE_CLASS[policyTone === '' ? 'danger' : policyTone],
                 )}
               >
                 {policyLabel}
