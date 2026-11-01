@@ -21,6 +21,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { IconButton } from '../ui/IconButton';
@@ -601,7 +602,7 @@ function EditorView({
             onClick={() => void handleSyncAll()}
             disabled={syncing || dirty}
             title={dirty ? 'Save before syncing' : 'Sync every available client'}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-400 border border-emerald-400/25 hover:bg-emerald-400/10 rounded-lg transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-status-running border border-status-running/25 hover:bg-status-running/10 rounded-lg transition-colors disabled:opacity-50"
           >
             <CloudUpload size={12} aria-hidden="true" className={syncing ? 'animate-pulse' : undefined} />
             {syncing ? 'Syncing…' : 'Sync all'}
@@ -1095,13 +1096,14 @@ function DriftResolveDialog({
           >
             Adopt into canon
           </button>
-          <button
+          <Button
+            variant="outline-danger"
+            size="sm"
             onClick={() => void handleOverwrite()}
             disabled={busy}
-            className="px-3 py-1.5 text-xs font-medium text-red-400 border border-red-400/25 rounded-lg hover:bg-red-400/10 transition-colors disabled:opacity-50"
           >
             Overwrite client
-          </button>
+          </Button>
         </div>
       </div>
     </Modal>
@@ -1399,7 +1401,7 @@ function DialogButton({
         variant === 'muted' && 'text-text-muted border-border/40 hover:bg-surface-highlight',
         variant === 'primary' &&
           'font-medium text-primary bg-primary/10 border-primary/25 hover:bg-primary/15',
-        variant === 'danger' && 'font-medium text-red-400 border-red-400/25 hover:bg-red-400/10',
+        variant === 'danger' && 'font-medium text-status-error border-status-error/25 hover:bg-status-error/10',
       )}
     >
       {label}
@@ -1751,7 +1753,7 @@ function FragmentsView({
             onClick={() => void handleSyncAll()}
             disabled={syncing || dirty}
             title={dirty ? 'Save before syncing' : 'Sync every available client'}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-400 border border-emerald-400/25 hover:bg-emerald-400/10 rounded-lg transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-status-running border border-status-running/25 hover:bg-status-running/10 rounded-lg transition-colors disabled:opacity-50"
           >
             <CloudUpload size={12} aria-hidden="true" className={syncing ? 'animate-pulse' : undefined} />
             {syncing ? 'Syncing…' : 'Sync all'}

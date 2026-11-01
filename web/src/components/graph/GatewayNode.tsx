@@ -49,7 +49,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         {/* MCP Servers */}
         <div className="flex items-center justify-between group">
           <div className="flex items-center gap-2.5">
-            <div className="p-1.5 rounded-lg bg-white/[0.04] border border-[var(--color-border-subtle)] group-hover:bg-primary/15 group-hover:border-primary/20 transition-colors">
+            <div className="p-1.5 rounded-lg bg-surface-overlay-2 border border-border-subtle group-hover:bg-primary/15 group-hover:border-primary/20 transition-colors">
               <Server size={12} className="text-text-secondary group-hover:text-primary/70 transition-colors" />
             </div>
             <span className="text-xs text-text-secondary font-medium">MCP Servers</span>
@@ -63,7 +63,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         {data.resourceCount > 0 && (
           <div className="flex items-center justify-between group">
             <div className="flex items-center gap-2.5">
-              <div className="p-1.5 rounded-lg bg-white/[0.04] border border-[var(--color-border-subtle)] group-hover:bg-primary/15 group-hover:border-primary/20 transition-colors">
+              <div className="p-1.5 rounded-lg bg-surface-overlay-2 border border-border-subtle group-hover:bg-primary/15 group-hover:border-primary/20 transition-colors">
                 <Database size={12} className="text-text-secondary group-hover:text-primary/70 transition-colors" />
               </div>
               <span className="text-xs text-text-secondary font-medium">Resources</span>
@@ -78,7 +78,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         {(data.sessions ?? 0) > 0 && (
           <div className="flex items-center justify-between group">
             <div className="flex items-center gap-2.5">
-              <div className="p-1.5 rounded-lg bg-white/[0.04] border border-[var(--color-border-subtle)] group-hover:bg-primary/15 group-hover:border-primary/20 transition-colors">
+              <div className="p-1.5 rounded-lg bg-surface-overlay-2 border border-border-subtle group-hover:bg-primary/15 group-hover:border-primary/20 transition-colors">
                 <Radio size={12} className="text-text-secondary group-hover:text-primary/70 transition-colors" />
               </div>
               <span className="text-xs text-text-secondary font-medium">Sessions</span>
@@ -93,7 +93,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         {(data.clientCount ?? 0) > 0 && (
           <div className="flex items-center justify-between group">
             <div className="flex items-center gap-2.5">
-              <div className="p-1.5 rounded-lg bg-white/[0.04] border border-[var(--color-border-subtle)] group-hover:bg-primary/15 group-hover:border-primary/20 transition-colors">
+              <div className="p-1.5 rounded-lg bg-surface-overlay-2 border border-border-subtle group-hover:bg-primary/15 group-hover:border-primary/20 transition-colors">
                 <Monitor size={12} className="text-text-secondary group-hover:text-primary/70 transition-colors" />
               </div>
               <span className="text-xs text-text-secondary font-medium">Clients</span>
@@ -107,7 +107,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         {/* Tools */}
         <div className="flex items-center justify-between group">
           <div className="flex items-center gap-2.5">
-            <div className="p-1.5 rounded-lg bg-white/[0.04] border border-[var(--color-border-subtle)] group-hover:bg-primary/15 group-hover:border-primary/20 transition-colors">
+            <div className="p-1.5 rounded-lg bg-surface-overlay-2 border border-border-subtle group-hover:bg-primary/15 group-hover:border-primary/20 transition-colors">
               <Wrench size={12} className="text-text-secondary group-hover:text-primary/70 transition-colors" />
             </div>
             <span className="text-xs text-text-secondary font-medium">Total Tools</span>
@@ -127,7 +127,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
             aria-label="Open skills dashboard"
           >
             <div className="flex items-center gap-2.5">
-              <div className="p-1.5 rounded-lg bg-white/[0.04] border border-[var(--color-border-subtle)] group-hover:bg-primary/15 group-hover:border-primary/20 transition-colors">
+              <div className="p-1.5 rounded-lg bg-surface-overlay-2 border border-border-subtle group-hover:bg-primary/15 group-hover:border-primary/20 transition-colors">
                 <Library size={12} className="text-text-secondary group-hover:text-primary/70 transition-colors" />
               </div>
               <span className="text-xs text-text-secondary font-medium">Skills</span>

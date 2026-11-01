@@ -25,15 +25,15 @@ const ClientNode = memo(({ data, selected }: ClientNodeProps) => {
           'bg-gradient-to-b from-surface/95 via-surface/90 to-surface/80',
           'shadow-bevel',
           'flex items-center px-2.5 gap-2',
-          selected && 'border-text-secondary ring-2 ring-white/15',
+          selected && 'border-text-secondary ring-2 ring-text-primary/15',
           !selected && 'border-border hover:shadow-node-hover hover:border-text-secondary/40'
         )}
         style={{ height: LAYOUT.CLIENT_HEIGHT_COMPACT }}
       >
         {/* Top accent */}
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-text-primary/20 to-transparent" />
 
-        <div className="p-1.5 rounded-md border bg-white/[0.04] border-white/10 flex-shrink-0">
+        <div className="p-1.5 rounded-md border bg-surface-overlay-2 border-border flex-shrink-0">
           <Icon size={14} className="text-text-primary" />
         </div>
         <span className="font-semibold text-xs text-text-primary truncate min-w-0">
@@ -62,16 +62,16 @@ const ClientNode = memo(({ data, selected }: ClientNodeProps) => {
         'bg-gradient-to-b from-surface/95 via-surface/90 to-surface/80',
         'shadow-bevel',
         'flex items-center gap-3 px-3',
-        selected && 'border-text-secondary ring-2 ring-white/15',
+        selected && 'border-text-secondary ring-2 ring-text-primary/15',
         !selected && 'border-border hover:shadow-node-hover hover:border-text-secondary/40'
       )}
       style={{ height: LAYOUT.CLIENT_HEIGHT }}
     >
       {/* Top accent */}
-      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-text-primary/20 to-transparent" />
 
       {/* Icon */}
-      <div className="p-2 rounded-lg border bg-white/[0.04] border-white/10 flex-shrink-0">
+      <div className="p-2 rounded-lg border bg-surface-overlay-2 border-border flex-shrink-0">
         <Icon size={20} className="text-text-primary" />
       </div>
 

@@ -225,7 +225,7 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
           <button
             key={variable.key}
             onClick={() => handleSelect(variable.key)}
-            className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-white/[0.04] transition-colors group"
+            className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-surface-overlay-2 transition-colors group"
           >
             <VariableVisibilityIcon isSecret={variable.is_secret} />
             <span className="font-mono text-text-primary truncate flex-1 text-left">{variable.key}</span>
@@ -248,7 +248,7 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
             setCreating(true);
             setError(null);
           }}
-          className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-secondary hover:bg-white/[0.04] transition-colors"
+          className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-secondary hover:bg-surface-overlay-2 transition-colors"
         >
           <Plus size={12} />
           Create New Variable

@@ -18,7 +18,7 @@ function AggregateStatus({ failingSkills, untestedSkills, activeSkills }: {
 }) {
   if (failingSkills > 0) {
     return (
-      <span className="flex items-center gap-0.5 text-[9px] font-medium text-rose-400">
+      <span className="flex items-center gap-0.5 text-[9px] font-medium text-status-error">
         <XCircle size={9} />
         {failingSkills} failing
       </span>
@@ -33,7 +33,7 @@ function AggregateStatus({ failingSkills, untestedSkills, activeSkills }: {
     );
   }
   return (
-    <span className="flex items-center gap-0.5 text-[9px] font-medium text-emerald-400">
+    <span className="flex items-center gap-0.5 text-[9px] font-medium text-status-running">
       <CheckCircle size={9} />
       {activeSkills} active · passing
     </span>

@@ -61,7 +61,7 @@ function Section({
       <button
         type="button"
         onClick={onToggle}
-        className="w-full flex items-center gap-2.5 px-4 py-3 text-left hover:bg-white/[0.02] transition-colors"
+        className="w-full flex items-center gap-2.5 px-4 py-3 text-left hover:bg-surface-overlay-1 transition-colors"
       >
         {expanded ? (
           <ChevronDown size={14} className="text-text-muted flex-shrink-0" />
@@ -319,7 +319,7 @@ function ItemHeader({
   iconColor?: string;
 }) {
   return (
-    <div className="flex items-center gap-2 px-3 py-2 bg-white/[0.02] border border-border/20 rounded-lg group hover:border-border/30 transition-colors">
+    <div className="flex items-center gap-2 px-3 py-2 bg-surface-overlay-1 border border-border/20 rounded-lg group hover:border-border/30 transition-colors">
       <button type="button" onClick={onToggle} className="flex items-center gap-2 flex-1 text-left">
         {expanded ? (
           <ChevronDown size={12} className="text-text-muted flex-shrink-0" />
@@ -430,7 +430,7 @@ function ResourcePresetPicker({ onSelect }: { onSelect: (preset: ResourcePreset 
           key={preset.id}
           type="button"
           onClick={() => onSelect(preset)}
-          className="flex flex-col items-center gap-1 p-2 rounded-lg border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.1] transition-all duration-200 text-center"
+          className="flex flex-col items-center gap-1 p-2 rounded-lg border border-border-subtle bg-surface-overlay-1 hover:bg-surface-overlay-3 hover:border-border transition-all duration-200 text-center"
         >
           <Database size={12} className="text-secondary" />
           <span className="text-[10px] text-text-primary font-medium">{preset.name}</span>
@@ -439,7 +439,7 @@ function ResourcePresetPicker({ onSelect }: { onSelect: (preset: ResourcePreset 
       <button
         type="button"
         onClick={() => onSelect(null)}
-        className="flex flex-col items-center gap-1 p-2 rounded-lg border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.1] transition-all duration-200 text-center"
+        className="flex flex-col items-center gap-1 p-2 rounded-lg border border-border-subtle bg-surface-overlay-1 hover:bg-surface-overlay-3 hover:border-border transition-all duration-200 text-center"
       >
         <Plus size={12} className="text-text-muted" />
         <span className="text-[10px] text-text-muted font-medium">Custom</span>
@@ -661,7 +661,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
         </div>
 
         {data.gateway?.auth?.type && (
-          <div className="space-y-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+          <div className="space-y-3 p-3 rounded-xl bg-surface-overlay-1 border border-border-subtle">
             <div>
               <label htmlFor={`${uid}-token`} className={labelClass}>
                 Token <span className="text-status-error">*</span>

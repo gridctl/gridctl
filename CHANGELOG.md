@@ -18,6 +18,8 @@ All notable changes to gridctl will be documented in this file.
 
 ### Bug Fixes
 
+- Light theme colors now follow `data-theme`. Wizard cards, borders, canvas checkboxes, chart series, trace spans, the autoscale sparkline, edge markers, and glows no longer keep dark-only white tints or hex values. The Connections Drifted badge uses `status-pending`; `status-warning` was never declared, so the badge had no background. New surface-overlay tokens cover the card tints, and new chart tokens cover the series hues. The raw-palette lint rule now rejects every default Tailwind color family, including chart files. In dark, the danger gradient's second stop is `status-error` at 80%, vault list tags use `secondary`, checked tool controls use the primary fill, shared canvas dots use the `border-subtle` token, and the command palette backdrop matches the modal. (#1368)
+
 - Narrow windows no longer clip header actions or wrap the status bar onto itself. Workspace rails keep their declared pixel minimums instead of collapsing to a few dozen pixels, pack-sourced skill cards keep a readable name, and the Stack inspector, skill editor, global context split, and trace waterfall column resize with a pointer, including touch and pen. Row actions stay visible on devices without hover. (#1365)
 
 - The create-server and create-stack wizards, vault prompts, and skill editor now associate each visible label with its control. Icon-only buttons on those forms and in the registry, zoom controls, trace waterfall, and global context dialog have accessible names. Field errors are tied to the control with `aria-invalid` and `aria-describedby`. The skill browse toggle is a checkbox. `IconButton` requires a name and renders `type="button"`. (#1363)

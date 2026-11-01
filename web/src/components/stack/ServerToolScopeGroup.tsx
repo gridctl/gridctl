@@ -201,10 +201,10 @@ export function ServerToolScopeGroup({
                   <span
                     className={cn(
                       'mt-0.5 w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors',
-                      isOn ? 'bg-white/15 border-white/70' : 'border-border/60 bg-background/50',
+                      isOn ? 'bg-primary border-primary' : 'border-border/60 bg-background/50',
                     )}
                   >
-                    {isOn && <Check size={9} className="text-white" aria-hidden="true" />}
+                    {isOn && <Check size={9} className="text-background" aria-hidden="true" />}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span
@@ -271,11 +271,11 @@ function TriStateBox({ checked, indeterminate }: { checked: boolean; indetermina
     <span
       className={cn(
         'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors',
-        checked || indeterminate ? 'bg-white/15 border-white/70' : 'border-border/60 bg-background/50',
+        checked || indeterminate ? 'bg-primary border-primary' : 'border-border/60 bg-background/50',
       )}
     >
-      {checked && <Check size={9} className="text-white" aria-hidden="true" />}
-      {indeterminate && !checked && <Minus size={9} className="text-white" aria-hidden="true" />}
+      {checked && <Check size={9} className="text-background" aria-hidden="true" />}
+      {indeterminate && !checked && <Minus size={9} className="text-background" aria-hidden="true" />}
     </span>
   );
 }

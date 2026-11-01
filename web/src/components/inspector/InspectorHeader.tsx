@@ -8,17 +8,17 @@ const ACCENT_BG: Record<AccentTone, string> = {
   primary: 'bg-primary/10 border-primary/20',
   secondary: 'bg-secondary/10 border-secondary/20',
   tertiary: 'bg-tertiary/10 border-tertiary/20',
-  violet: 'bg-violet-500/10 border-violet-500/20',
+  violet: 'bg-tertiary/10 border-tertiary/20',
   muted: 'bg-surface-elevated/50 border-border/30',
-  // Mirrors the monochrome client node: neutral container, white glyph.
-  neutral: 'bg-white/[0.04] border-white/10',
+  // Mirrors the monochrome client node: overlay fill, theme-aware glyph.
+  neutral: 'bg-surface-overlay-2 border-border',
 };
 
 const ACCENT_TEXT: Record<AccentTone, string> = {
   primary: 'text-primary',
   secondary: 'text-secondary',
   tertiary: 'text-tertiary',
-  violet: 'text-violet-400',
+  violet: 'text-tertiary-light',
   muted: 'text-text-muted',
   neutral: 'text-text-primary',
 };

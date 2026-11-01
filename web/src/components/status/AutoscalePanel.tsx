@@ -25,9 +25,9 @@ function Headline({ status }: { status: AutoscaleStatus }) {
   return (
     <div className="flex items-baseline gap-2 text-sm text-text-primary font-mono tracking-tight">
       <span className="text-text-muted">Current</span>
-      <span className="text-violet-300 font-semibold">{status.current}</span>
+      <span className="text-tertiary-light font-semibold">{status.current}</span>
       <span className="text-text-muted">/ Target</span>
-      <span className="text-violet-300 font-semibold">{status.target}</span>
+      <span className="text-tertiary-light font-semibold">{status.target}</span>
       <span className="text-text-muted">· Range</span>
       <span className="text-text-secondary">
         {status.min}–{status.max}
@@ -116,13 +116,13 @@ function Sparkline({ history, max }: SparklineProps) {
       aria-label="Autoscale current vs target over time"
     >
       {/* Min/max guide bands */}
-      <line x1={0} x2={W} y1={geom.minY} y2={geom.minY} stroke="rgb(139 92 246)" strokeOpacity={0.15} strokeWidth={1} />
-      <line x1={0} x2={W} y1={geom.maxY} y2={geom.maxY} stroke="rgb(139 92 246)" strokeOpacity={0.15} strokeWidth={1} />
+      <line x1={0} x2={W} y1={geom.minY} y2={geom.minY} stroke="var(--color-tertiary)" strokeOpacity={0.15} strokeWidth={1} />
+      <line x1={0} x2={W} y1={geom.maxY} y2={geom.maxY} stroke="var(--color-tertiary)" strokeOpacity={0.15} strokeWidth={1} />
       {/* Target (dashed, 50% opacity) */}
       <path
         d={geom.targetPath}
         fill="none"
-        stroke="rgb(139 92 246)"
+        stroke="var(--color-tertiary)"
         strokeOpacity={0.5}
         strokeWidth={1.5}
         strokeDasharray="3 3"
@@ -133,13 +133,13 @@ function Sparkline({ history, max }: SparklineProps) {
         data-testid="autoscale-sparkline-current"
         d={geom.currentPath}
         fill="none"
-        stroke="rgb(139 92 246)"
+        stroke="var(--color-tertiary)"
         strokeWidth={1.5}
         vectorEffect="non-scaling-stroke"
       />
       {/* Minimal tooltip points: <title> on each current-sample anchor */}
       {geom.points.map((p) => (
-        <circle key={p.sample.t} cx={p.cx} cy={p.cy} r={1.5} fill="rgb(139 92 246)">
+        <circle key={p.sample.t} cx={p.cx} cy={p.cy} r={1.5} fill="var(--color-tertiary)">
           <title>{`current ${p.sample.current} · target ${p.sample.target} · median in-flight ${p.sample.medianInFlight}`}</title>
         </circle>
       ))}

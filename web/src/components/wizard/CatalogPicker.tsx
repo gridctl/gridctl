@@ -179,7 +179,7 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
                   onClick={() => selectEntry(entry.name)}
                   className={cn(
                     'w-full text-left px-4 py-3 border-b border-border/10 transition-all',
-                    isSelected ? 'bg-primary/5 border-l-2 border-l-primary' : 'hover:bg-white/[0.02]',
+                    isSelected ? 'bg-primary/5 border-l-2 border-l-primary' : 'hover:bg-surface-overlay-1',
                   )}
                 >
                   <div className="flex items-center gap-2">
@@ -229,7 +229,7 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
                 </div>
 
                 {/* Install summary */}
-                <div className="rounded-lg bg-background/40 border border-white/[0.04] px-3 py-2.5 space-y-1.5">
+                <div className="rounded-lg bg-background/40 border border-border-subtle px-3 py-2.5 space-y-1.5">
                   <div className="flex items-center gap-2">
                     {(() => {
                       const Icon = INSTALL_ICONS[selected.install.type] ?? Container;

@@ -143,8 +143,12 @@ workspace-specific props.
   `useCommandRegistry().registerCommands(scope, commands)` on mount; clean
   up on unmount. See `useLibraryCommands` for the pattern.
 - Use Tailwind **semantic tokens** (`bg-primary`, `text-secondary`,
-  `border-status-error`) - never raw color literals like `bg-amber-500` in
-  new code.
+  `border-status-error`, `bg-surface-overlay-2`, `stroke-chart-blue`) -
+  never raw palette classes such as `bg-amber-500`. Card tints use
+  `surface-overlay-1` through `surface-overlay-3`. Chart series use
+  `chart-blue`, `chart-cyan`, `chart-pink`, `chart-orange`, and
+  `chart-purple`. The set lives in `web/src/index.css` and re-keys with
+  `data-theme`.
 - Code-split each workspace, detached page, and the header dialogs with
   `React.lazy()` + `<Suspense>`. `routes.tsx` and `Header.tsx` already
   wire this up.
@@ -183,6 +187,12 @@ workspace-specific props.
   uses `@max-[339px]:hidden`, so it stays visible unless a query container
   ancestor is narrower than 339 px. A min-width query is false with no
   container and would blank the name on every other surface.
+- Don't use white or black color utilities for surfaces that must follow
+  the theme. Overlay tokens are already translucent, so do not add a slash
+  modifier. Leave white text on the danger gradient and the danger confirm,
+  the white Connections switch knob, and the black fill on `LogViewer`.
+  The raw-palette lint rule rejects every default Tailwind color family
+  outside tests, including chart files.
 
 ## File map
 

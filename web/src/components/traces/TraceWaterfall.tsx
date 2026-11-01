@@ -35,14 +35,14 @@ interface TraceWaterfallProps {
 
 // Distinct colors for server-keyed spans (in order of preference)
 const SPAN_COLORS = [
-  '#0d9488', // teal
-  '#8b5cf6', // violet
-  '#3b82f6', // blue
-  '#ec4899', // pink
-  '#10b981', // emerald
-  '#f97316', // orange
-  '#06b6d4', // cyan
-  '#a855f7', // purple
+  'var(--color-secondary)',
+  'var(--color-tertiary)',
+  'var(--color-chart-blue)',
+  'var(--color-chart-pink)',
+  'var(--color-status-running)',
+  'var(--color-chart-orange)',
+  'var(--color-chart-cyan)',
+  'var(--color-chart-purple)',
 ];
 
 // Critical-path highlight only earns its ink once the tree is non-trivial.
@@ -359,7 +359,7 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
                 const hasChildren = (childCounts.get(span.spanId) ?? 0) > 0;
                 const selfMs = selfTimes.get(span.spanId);
 
-                const barColor = isError ? '#f43f5e' : isSlow ? '#eab308' : stableColor(server);
+                const barColor = isError ? 'var(--color-status-error)' : isSlow ? 'var(--color-status-pending)' : stableColor(server);
 
                 return (
                   <div

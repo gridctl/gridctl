@@ -1,4 +1,5 @@
 import { Background, BackgroundVariant, useViewport } from '@xyflow/react';
+import { useThemeColors } from '../../themes/useTheme';
 
 /**
  * Zoom-conditional dot layer. Isolated so the stack canvas does not subscribe
@@ -6,6 +7,7 @@ import { Background, BackgroundVariant, useViewport } from '@xyflow/react';
  */
 export function SubGrid() {
   const { zoom } = useViewport();
+  const colors = useThemeColors();
   if (zoom <= 0.8) return null;
   const subGridOpacity = Math.min((zoom - 0.8) * 2.5, 1);
   return (
@@ -14,7 +16,7 @@ export function SubGrid() {
       variant={BackgroundVariant.Dots}
       gap={20}
       size={1}
-      color={`rgba(13, 148, 136, ${0.1 * subGridOpacity})`}
+      color={`color-mix(in srgb, ${colors.secondary} ${Math.round(10 * subGridOpacity)}%, transparent)`}
     />
   );
 }

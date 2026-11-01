@@ -388,11 +388,11 @@ function ConfigureStep({
         return (
           <div
             key={preview.name}
-            className="rounded-xl border border-border/20 bg-white/[0.02] overflow-hidden"
+            className="rounded-xl border border-border/20 bg-surface-overlay-1 overflow-hidden"
           >
             <button
               onClick={() => setExpanded(isExpanded ? null : preview.name)}
-              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] transition-colors"
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-overlay-1 transition-colors"
             >
               <span className="text-xs font-medium text-text-primary flex-1 text-left">
                 {preview.name}
@@ -485,7 +485,7 @@ function AgentsBrowseSection({
         return (
           <label
             key={a.name}
-            className="flex items-start gap-3 px-4 py-3 rounded-xl border border-border/20 bg-white/[0.02] cursor-pointer hover:bg-white/[0.03] transition-colors"
+            className="flex items-start gap-3 px-4 py-3 rounded-xl border border-border/20 bg-surface-overlay-1 cursor-pointer hover:bg-surface-overlay-2 transition-colors"
           >
             <input
               type="checkbox"

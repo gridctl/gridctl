@@ -107,7 +107,7 @@ function Section({
       <button
         type="button"
         onClick={onToggle}
-        className="w-full flex items-center gap-2.5 px-4 py-3 text-left hover:bg-white/[0.02] transition-colors"
+        className="w-full flex items-center gap-2.5 px-4 py-3 text-left hover:bg-surface-overlay-1 transition-colors"
       >
         {expanded ? (
           <ChevronDown size={14} className="text-text-muted flex-shrink-0" />
@@ -316,8 +316,8 @@ function PresetPicker({
             className={cn(
               'flex flex-col items-center gap-1 p-2.5 rounded-lg border transition-all duration-200 text-center',
               selectedPreset === preset.id
-                ? 'bg-secondary/[0.08] border-secondary/30 shadow-[0_0_12px_rgba(13,148,136,0.06)]'
-                : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.1]',
+                ? 'bg-secondary/[0.08] border-secondary/30 shadow-[0_0_12px_--alpha(var(--color-secondary)/6%)]'
+                : 'border-border-subtle bg-surface-overlay-1 hover:bg-surface-overlay-3 hover:border-border',
             )}
           >
             <Database size={14} className={cn(selectedPreset === preset.id ? 'text-secondary' : 'text-text-muted')} />
@@ -333,7 +333,7 @@ function PresetPicker({
             'flex flex-col items-center gap-1 p-2.5 rounded-lg border transition-all duration-200 text-center',
             selectedPreset === 'custom'
               ? 'bg-secondary/[0.08] border-secondary/30'
-              : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.1]',
+              : 'border-border-subtle bg-surface-overlay-1 hover:bg-surface-overlay-3 hover:border-border',
           )}
         >
           <Plus size={14} className="text-text-muted" />

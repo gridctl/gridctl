@@ -1466,7 +1466,7 @@ function VaultEmptyState({ onImport, onAddOne }: VaultEmptyStateProps) {
         <div className="flex items-center justify-center gap-2">
           <button
             onClick={onImport}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-gradient-to-r from-primary to-primary-dark text-background shadow-[0_1px_12px_rgba(245,158,11,0.3)] hover:shadow-[0_2px_18px_rgba(245,158,11,0.4)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200"
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-gradient-to-r from-primary to-primary-dark text-background shadow-[0_1px_12px_--alpha(var(--color-primary)/30%)] hover:shadow-[0_2px_18px_--alpha(var(--color-primary)/40%)] hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200"
           >
             <FileUp size={13} /> Import from .env
           </button>

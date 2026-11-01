@@ -125,7 +125,7 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
             <button
               onClick={() => onDelete(agent)}
               aria-label={`Delete ${agent.name}`}
-              className="p-1.5 rounded-lg hover:bg-red-400/10 transition-colors text-text-muted hover:text-red-400"
+              className="p-1.5 rounded-lg hover:bg-status-error/10 transition-colors text-text-muted hover:text-status-error"
             >
               <Trash2 size={14} />
             </button>

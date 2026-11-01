@@ -1,56 +1,56 @@
 // Adapted from Tremor chartColors [v0.1.0]
-// Customized for Obsidian Observatory dark theme
+// Keys stay categorical; values are semantic tokens so series follow data-theme.
 
 export type ColorUtility = "bg" | "stroke" | "fill" | "text"
 
 export const chartColors = {
   amber: {
-    bg: "bg-amber-500",
-    stroke: "stroke-amber-500",
-    fill: "fill-amber-500",
-    text: "text-amber-500",
+    bg: "bg-primary",
+    stroke: "stroke-primary",
+    fill: "fill-primary",
+    text: "text-primary",
   },
   teal: {
-    bg: "bg-teal-600",
-    stroke: "stroke-teal-600",
-    fill: "fill-teal-600",
-    text: "text-teal-600",
+    bg: "bg-secondary",
+    stroke: "stroke-secondary",
+    fill: "fill-secondary",
+    text: "text-secondary",
   },
   violet: {
-    bg: "bg-violet-500",
-    stroke: "stroke-violet-500",
-    fill: "fill-violet-500",
-    text: "text-violet-500",
+    bg: "bg-tertiary",
+    stroke: "stroke-tertiary",
+    fill: "fill-tertiary",
+    text: "text-tertiary",
   },
   emerald: {
-    bg: "bg-emerald-500",
-    stroke: "stroke-emerald-500",
-    fill: "fill-emerald-500",
-    text: "text-emerald-500",
+    bg: "bg-status-running",
+    stroke: "stroke-status-running",
+    fill: "fill-status-running",
+    text: "text-status-running",
   },
   blue: {
-    bg: "bg-blue-500",
-    stroke: "stroke-blue-500",
-    fill: "fill-blue-500",
-    text: "text-blue-500",
+    bg: "bg-chart-blue",
+    stroke: "stroke-chart-blue",
+    fill: "fill-chart-blue",
+    text: "text-chart-blue",
   },
   rose: {
-    bg: "bg-rose-500",
-    stroke: "stroke-rose-500",
-    fill: "fill-rose-500",
-    text: "text-rose-500",
+    bg: "bg-status-error",
+    stroke: "stroke-status-error",
+    fill: "fill-status-error",
+    text: "text-status-error",
   },
   cyan: {
-    bg: "bg-cyan-500",
-    stroke: "stroke-cyan-500",
-    fill: "fill-cyan-500",
-    text: "text-cyan-500",
+    bg: "bg-chart-cyan",
+    stroke: "stroke-chart-cyan",
+    fill: "fill-chart-cyan",
+    text: "text-chart-cyan",
   },
   gray: {
-    bg: "bg-gray-500",
-    stroke: "stroke-gray-500",
-    fill: "fill-gray-500",
-    text: "text-gray-500",
+    bg: "bg-status-idle",
+    stroke: "stroke-status-idle",
+    fill: "fill-status-idle",
+    text: "text-status-idle",
   },
 } as const satisfies {
   [color: string]: {
@@ -80,10 +80,10 @@ export const getColorClassName = (
   type: ColorUtility,
 ): string => {
   const fallbackColor = {
-    bg: "bg-gray-500",
-    stroke: "stroke-gray-500",
-    fill: "fill-gray-500",
-    text: "text-gray-500",
+    bg: "bg-status-idle",
+    stroke: "stroke-status-idle",
+    fill: "fill-status-idle",
+    text: "text-status-idle",
   }
   return chartColors[color]?.[type] ?? fallbackColor[type]
 }

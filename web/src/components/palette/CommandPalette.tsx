@@ -217,8 +217,8 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
 
   return (
     <div
-      className="fixed inset-0 z-modal flex items-start justify-center"
-      style={{ paddingTop: '13vh', backgroundColor: 'rgba(8,8,10,0.75)', backdropFilter: 'blur(6px)' }}
+      className="fixed inset-0 z-modal flex items-start justify-center bg-background/80 backdrop-blur-sm"
+      style={{ paddingTop: '13vh' }}
       role="dialog"
       aria-modal="true"
       aria-label="Command palette"

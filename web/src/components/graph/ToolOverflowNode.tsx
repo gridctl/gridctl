@@ -122,8 +122,8 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
                     }
                     className={cn(
                       'w-full flex items-center gap-1.5 px-1.5 py-1 rounded-md text-left',
-                      'hover:bg-white/[0.06] transition-colors',
-                      selectedTool === tool && 'bg-white/[0.06]',
+                      'hover:bg-surface-overlay-3 transition-colors',
+                      selectedTool === tool && 'bg-surface-overlay-3',
                       editMode && !on && 'opacity-60',
                     )}
                   >
@@ -131,10 +131,10 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
                       <span
                         className={cn(
                           'w-3 h-3 rounded border flex items-center justify-center flex-shrink-0',
-                          on ? 'bg-white/15 border-white/70' : 'border-border/60 bg-background/50',
+                          on ? 'bg-primary border-primary' : 'border-border/60 bg-background/50',
                         )}
                       >
-                        {on && <Check size={8} className="text-white" aria-hidden="true" />}
+                        {on && <Check size={8} className="text-background" aria-hidden="true" />}
                       </span>
                     ) : (
                       <Wrench size={10} className="text-text-secondary/80 flex-shrink-0" aria-hidden="true" />

@@ -135,9 +135,9 @@ export function Sidebar() {
       <div
         className={cn(
           'absolute top-0 left-0 bottom-0 w-px',
-          colorClass === 'violet' && 'bg-gradient-to-b from-violet-500/40 via-violet-500/20 to-transparent',
+          colorClass === 'violet' && 'bg-gradient-to-b from-tertiary/40 via-tertiary/20 to-transparent',
           colorClass === 'secondary' && 'bg-gradient-to-b from-secondary/40 via-secondary/20 to-transparent',
-          colorClass === 'neutral' && 'bg-gradient-to-b from-white/20 via-white/10 to-transparent'
+          colorClass === 'neutral' && 'bg-gradient-to-b from-text-primary/20 via-text-primary/10 to-transparent'
         )}
       />
 
@@ -151,7 +151,7 @@ export function Sidebar() {
               {isClient ? 'LLM Client' : isServer ? 'MCP Server' : 'Resource'}
             </p>
             {isServer && isExternal && (
-              <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-violet-500/10 text-violet-400 flex items-center gap-0.5">
+              <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-tertiary/10 text-tertiary-light flex items-center gap-0.5">
                 <Globe size={8} />
                 External
               </span>

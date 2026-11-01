@@ -207,7 +207,7 @@ export function SecretGenerator({
                     'rounded px-2 py-1 text-[10px] font-mono font-medium transition-colors',
                     enabled
                       ? 'bg-primary/20 text-primary'
-                      : 'text-text-muted hover:bg-white/[0.04] hover:text-text-primary',
+                      : 'text-text-muted hover:bg-surface-overlay-2 hover:text-text-primary',
                     locked && 'cursor-not-allowed',
                   )}
                 >

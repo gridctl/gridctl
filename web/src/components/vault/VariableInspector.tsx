@@ -750,7 +750,7 @@ function ValueReadView({ type, value }: { type: VariableType; value: string }) {
       <div
         className={cn(
           'text-sm font-mono font-semibold',
-          truthy ? 'text-emerald-300' : 'text-text-muted',
+          truthy ? 'text-status-running' : 'text-text-muted',
         )}
       >
         {truthy ? 'true' : 'false'}
@@ -759,7 +759,7 @@ function ValueReadView({ type, value }: { type: VariableType; value: string }) {
   }
   if (type === 'number') {
     return (
-      <div className="text-sm font-mono font-semibold text-emerald-300">
+      <div className="text-sm font-mono font-semibold text-status-running">
         {value}
       </div>
     );

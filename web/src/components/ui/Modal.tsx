@@ -150,7 +150,7 @@ export function Modal({
                 aria-label="Open in new window"
                 className={cn(
                   'p-1.5 rounded-lg transition-all duration-200 group',
-                  'hover:bg-primary/10 hover:shadow-[0_0_12px_rgba(245,158,11,0.15)]',
+                  'hover:bg-primary/10 hover:shadow-[0_0_12px_--alpha(var(--color-primary)/15%)]',
                   'disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none',
                 )}
               >

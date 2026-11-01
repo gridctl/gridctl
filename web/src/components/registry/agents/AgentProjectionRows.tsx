@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { Cable } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { ProjectedModelChip } from '../ModelChip';
+import { Button } from '../../ui/Button';
 import { Modal } from '../../ui/Modal';
 import { StatePill } from '../../ui/StatePill';
 import { showToast } from '../../ui/Toast';
@@ -333,13 +334,14 @@ function AgentDriftDialog({
               Adopt into canon
             </button>
           )}
-          <button
+          <Button
+            variant="outline-danger"
+            size="sm"
             onClick={onOverwrite}
             disabled={busy}
-            className="px-3 py-1.5 text-xs font-medium text-red-400 border border-red-400/25 rounded-lg hover:bg-red-400/10 transition-colors disabled:opacity-50"
           >
             Overwrite client
-          </button>
+          </Button>
         </div>
       </div>
     </Modal>

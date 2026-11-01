@@ -90,8 +90,8 @@ export function BrowseStep({ previews, selected, onSelectionChange }: BrowseStep
                   'flex items-center gap-2 rounded-lg px-2.5 py-2 cursor-pointer transition-all',
                   'border',
                   isActive
-                    ? 'bg-white/[0.04] border-primary/30'
-                    : 'bg-white/[0.01] border-transparent hover:bg-white/[0.03] hover:border-white/[0.06]',
+                    ? 'bg-surface-overlay-2 border-primary/30'
+                    : 'bg-surface-overlay-1 border-transparent hover:bg-surface-overlay-2 hover:border-border-subtle',
                   !isValid && 'opacity-60',
                 )}
                 onClick={() => setActivePreview(preview.name)}
@@ -152,7 +152,7 @@ export function BrowseStep({ previews, selected, onSelectionChange }: BrowseStep
         </div>
 
         {/* Right column — preview */}
-        <div className="col-span-3 rounded-xl border border-border/20 bg-white/[0.01] overflow-hidden flex flex-col">
+        <div className="col-span-3 rounded-xl border border-border/20 bg-surface-overlay-1 overflow-hidden flex flex-col">
           {activeSkill ? (
             <>
               {/* Preview header */}

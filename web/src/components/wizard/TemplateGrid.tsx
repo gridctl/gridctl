@@ -158,10 +158,10 @@ export function TemplateGrid({ resourceType, selected, onSelect }: TemplateGridP
               onClick={() => onSelect(template.id)}
               className={cn(
                 'group relative text-left p-4 rounded-xl border transition-all duration-200',
-                'bg-white/[0.03] hover:bg-white/[0.06]',
+                'bg-surface-overlay-2 hover:bg-surface-overlay-3',
                 isSelected
-                  ? 'border-primary/50 shadow-[0_0_20px_rgba(245,158,11,0.1)]'
-                  : 'border-white/[0.06] hover:border-white/[0.12]',
+                  ? 'border-primary/50 shadow-[0_0_20px_--alpha(var(--color-primary)/10%)]'
+                  : 'border-border-subtle hover:border-border',
               )}
             >
               {isSelected && (
@@ -175,7 +175,7 @@ export function TemplateGrid({ resourceType, selected, onSelect }: TemplateGridP
               <div className="text-xs text-text-muted mb-3">
                 {template.description}
               </div>
-              <pre className="text-[10px] font-mono text-text-muted/70 leading-relaxed bg-background/40 rounded-lg px-2.5 py-2 border border-white/[0.04] overflow-hidden">
+              <pre className="text-[10px] font-mono text-text-muted/70 leading-relaxed bg-background/40 rounded-lg px-2.5 py-2 border border-border-subtle overflow-hidden">
                 {template.preview}
               </pre>
             </button>

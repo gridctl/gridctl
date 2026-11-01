@@ -165,7 +165,7 @@ function DetachedLogsPageContent() {
                   <SourceOption
                     key={node.name}
                     label={node.name}
-                    dotClass={node.type === 'mcp-server' ? 'bg-violet-400' : 'bg-secondary'}
+                    dotClass={node.type === 'mcp-server' ? 'bg-tertiary-light' : 'bg-secondary'}
                     tag={node.type === 'mcp-server' ? 'server' : node.type}
                     selected={source === node.name}
                     onSelect={() => handleSelectSource(node.name)}

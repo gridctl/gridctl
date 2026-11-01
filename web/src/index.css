@@ -19,6 +19,10 @@
   --color-surface-highlight: #1f1f23;
   --color-border: #27272a;
   --color-border-subtle: rgba(255, 255, 255, 0.06);
+  /* White-alpha card tints. Already translucent, so do not stack a / modifier. */
+  --color-surface-overlay-1: rgba(255, 255, 255, 0.02);
+  --color-surface-overlay-2: rgba(255, 255, 255, 0.04);
+  --color-surface-overlay-3: rgba(255, 255, 255, 0.06);
 
   /* Primary - Warm Amber (Energy, Activity) */
   --color-primary: #f59e0b;
@@ -47,6 +51,13 @@
   --color-status-pending: #eab308;
   --color-status-pending-glow: rgba(234, 179, 8, 0.2);
   --color-status-idle: #64748b;
+
+  /* Categorical chart series. Not status vocabulary; re-keyed in light for contrast. */
+  --color-chart-blue: #3b82f6;
+  --color-chart-cyan: #06b6d4;
+  --color-chart-pink: #ec4899;
+  --color-chart-orange: #f97316;
+  --color-chart-purple: #a855f7;
 
   /* Text - Warm whites */
   --color-text-primary: #fafaf9;
@@ -132,6 +143,10 @@
   --color-surface-highlight: #e1e4e9;
   --color-border: #d3d7de;
   --color-border-subtle: rgba(15, 23, 42, 0.08);
+  /* Slate-alpha overlays so 2-6% tints stay visible on the light surface. */
+  --color-surface-overlay-1: rgba(15, 23, 42, 0.03);
+  --color-surface-overlay-2: rgba(15, 23, 42, 0.05);
+  --color-surface-overlay-3: rgba(15, 23, 42, 0.08);
 
   /* Primary — re-keyed amber (amber-800/900) for contrast on light. Yellow has
      no dark form: to clear 4.5:1 as small text on these warm-tinted surfaces the
@@ -171,6 +186,13 @@
   --color-status-pending: #854d0e;
   --color-status-pending-glow: rgba(133, 77, 14, 0.2);
   --color-status-idle: #6b7280;
+
+  /* Chart hues darkened to clear 3:1 on #f4f6f8. */
+  --color-chart-blue: #1d4ed8;
+  --color-chart-cyan: #0e7490;
+  --color-chart-pink: #be185d;
+  --color-chart-orange: #c2410c;
+  --color-chart-purple: #7e22ce;
 
   /* Text — neutral near-black ramp; muted is darkened a shade from the warm
      palette so secondary descriptions stay readable on the bright canvas. */

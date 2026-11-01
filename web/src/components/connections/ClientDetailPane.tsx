@@ -564,7 +564,7 @@ function AxisBadge({
       <span
         className={cn(
           'text-[10px] px-2 py-0.5 rounded-full border font-medium truncate',
-          tone === 'ok' && 'text-emerald-400 border-emerald-400/25 bg-emerald-400/10',
+          tone === 'ok' && 'text-status-running border-status-running/25 bg-status-running/10',
           tone === 'pending' && 'text-status-pending border-status-pending/30 bg-status-pending/10',
           tone === 'live' && 'text-secondary border-secondary/25 bg-secondary/10',
           tone === 'muted' && 'text-text-muted border-border/40 bg-background/40',

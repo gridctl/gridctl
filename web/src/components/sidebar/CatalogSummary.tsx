@@ -40,7 +40,7 @@ export function CatalogSummary({ data }: { data: CatalogFields }) {
       {data.subscriptionStream && (
         <div className="flex justify-between items-center">
           <span className="text-xs text-text-muted">Listen stream</span>
-          <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-violet-500/10 text-violet-300">
+          <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-tertiary/10 text-tertiary-light">
             {data.subscriptionStream}
           </span>
         </div>
@@ -50,7 +50,7 @@ export function CatalogSummary({ data }: { data: CatalogFields }) {
           {declared.map((badge) => (
             <span
               key={badge.key}
-              className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-violet-500/10 text-violet-300"
+              className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-tertiary/10 text-tertiary-light"
             >
               {badge.label}
             </span>

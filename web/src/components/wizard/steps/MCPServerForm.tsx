@@ -237,7 +237,7 @@ function Section({
       <button
         type="button"
         onClick={onToggle}
-        className="w-full flex items-center gap-2.5 px-4 py-3 text-left hover:bg-white/[0.02] transition-colors"
+        className="w-full flex items-center gap-2.5 px-4 py-3 text-left hover:bg-surface-overlay-1 transition-colors"
       >
         {expanded ? (
           <ChevronDown size={14} className="text-text-muted flex-shrink-0" />
@@ -522,7 +522,7 @@ function PythonSourceFields({
   });
 
   return (
-    <div className="space-y-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+    <div className="space-y-3 p-3 rounded-xl bg-surface-overlay-1 border border-border-subtle">
       <div>
         <label className={labelClass}>Source Type</label>
         <div className="flex gap-2" role="radiogroup" aria-label="Source type">
@@ -545,7 +545,7 @@ function PythonSourceFields({
               })}
               className={cn(
                 'px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
-                source.type === type ? 'bg-primary/10 border-primary/30 text-primary' : 'border-white/[0.06] text-text-muted',
+                source.type === type ? 'bg-primary/10 border-primary/30 text-primary' : 'border-border-subtle text-text-muted',
               )}
             >
               {label}
@@ -600,14 +600,14 @@ function PythonSourceFields({
                 role="radio"
                 aria-checked={!generated}
                 onClick={() => selectCustomDockerfile(source.dockerfile || 'Dockerfile')}
-                className={cn('px-3 py-1.5 rounded-lg text-xs border', !generated ? 'border-primary/30 text-primary' : 'border-white/[0.06] text-text-muted')}
+                className={cn('px-3 py-1.5 rounded-lg text-xs border', !generated ? 'border-primary/30 text-primary' : 'border-border-subtle text-text-muted')}
               >Custom Dockerfile</button>
               <button
                 type="button"
                 role="radio"
                 aria-checked={generated}
                 onClick={selectGeneratedPython}
-                className={cn('px-3 py-1.5 rounded-lg text-xs border', generated ? 'border-primary/30 text-primary' : 'border-white/[0.06] text-text-muted')}
+                className={cn('px-3 py-1.5 rounded-lg text-xs border', generated ? 'border-primary/30 text-primary' : 'border-border-subtle text-text-muted')}
               >Generated Python</button>
             </div>
             {!generated && (
@@ -759,10 +759,10 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                 onClick={() => handleTypeChange(opt.type)}
                 className={cn(
                   'group flex flex-col items-center text-center p-3 rounded-xl border transition-all duration-200',
-                  'bg-white/[0.02] hover:bg-white/[0.05]',
+                  'bg-surface-overlay-1 hover:bg-surface-overlay-3',
                   isSelected
-                    ? 'border-primary/50 bg-primary/[0.06] shadow-[0_0_16px_rgba(245,158,11,0.08)]'
-                    : 'border-white/[0.06] hover:border-white/[0.1]',
+                    ? 'border-primary/50 bg-primary/[0.06] shadow-[0_0_16px_--alpha(var(--color-primary)/8%)]'
+                    : 'border-border-subtle hover:border-border',
                 )}
               >
                 <Icon
@@ -876,7 +876,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
 
           {/* SSH config */}
           {visibility.ssh && (
-            <div className="space-y-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+            <div className="space-y-3 p-3 rounded-xl bg-surface-overlay-1 border border-border-subtle">
               <div className="grid grid-cols-2 gap-2">
                 <Field label="Host" required error={errors?.['ssh.host']}>
                   {({ id, describedBy, invalid }) => (
@@ -1000,7 +1000,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
 
           {/* OpenAPI config */}
           {visibility.openapi && (
-            <div className="space-y-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+            <div className="space-y-3 p-3 rounded-xl bg-surface-overlay-1 border border-border-subtle">
               <Field label="Spec" required error={errors?.['openapi.spec']}>
                 {({ id, describedBy, invalid }) => (
                   <input
@@ -2092,8 +2092,8 @@ function SourceAuthField({
   return (
     <div
       className={cn(
-        'rounded-lg border border-border/30 bg-white/[0.02] transition-colors',
-        open && 'border-border/50 bg-white/[0.03]',
+        'rounded-lg border border-border/30 bg-surface-overlay-1 transition-colors',
+        open && 'border-border/50 bg-surface-overlay-2',
       )}
     >
       <button
