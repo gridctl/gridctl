@@ -8,6 +8,19 @@ export class AuthError extends Error {
   }
 }
 
+export const credentialRejectedMessage = 'The gateway rejected this credential. Check the mode, header, and token against the running stack\'s gateway.auth block.';
+
+export class VerificationError extends Error {
+  kind: 'rejected' | 'forbidden' | 'gateway_error' | 'unexpected';
+  status: number;
+  constructor(kind: VerificationError['kind'], status: number, message: string) {
+    super(message);
+    this.name = 'VerificationError';
+    this.kind = kind;
+    this.status = status;
+  }
+}
+
 export class GatewayRequestError extends Error {
   kind: 'origin' | 'redirect' | 'connection' | 'abort' | 'stale' | 'malformed';
   constructor(kind: GatewayRequestError['kind'], message: string) {
@@ -93,9 +106,20 @@ export async function gatewayRequest(input: string, init: RequestInit = {}, cand
   }
 }
 
+function verificationError(status: number): VerificationError {
+  if (status === 401) return new VerificationError('rejected', status, credentialRejectedMessage);
+  if (status === 403) {
+    return new VerificationError('forbidden', status, 'The gateway refused this browser\'s Host header, not the credential. Open the UI through an allowed host, or add this host to gateway.allowed_hosts.');
+  }
+  if (status >= 500 && status <= 599) {
+    return new VerificationError('gateway_error', status, `The gateway returned a server error (HTTP ${status}). This is not a credential problem. Check gridctl logs and retry.`);
+  }
+  return new VerificationError('unexpected', status, `Gateway verification failed (HTTP ${status}).`);
+}
+
 export async function verifyCredential(candidate: GatewayCredential, signal?: AbortSignal): Promise<void> {
   const response = await gatewayRequest('/api/status', { signal }, candidate);
-  if (!response.ok) throw new Error(`Gateway verification failed (HTTP ${response.status}).`);
+  if (!response.ok) throw verificationError(response.status);
   const body = await response.json();
   if (!body || typeof body.gateway?.name !== 'string' || typeof body.gateway?.version !== 'string' || (body['mcp-servers'] !== null && !Array.isArray(body['mcp-servers']))) {
     throw new GatewayRequestError('malformed', 'Gateway status response has an unexpected shape.');

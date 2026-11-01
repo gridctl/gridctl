@@ -25,6 +25,7 @@ import { useSkillFiles } from '../../hooks/useSkillFiles';
 import { formatManagedDirs, missingManagedDirs } from '../../lib/skillPackage';
 import { useTextZoom } from '../../hooks/useTextZoom';
 import type { AgentSkill, SkillSourceStatus, SkillUsageStat } from '../../types';
+import { describeError, isCancellation } from '../../lib/describeError';
 
 type SkillTab = 'overview' | 'instructions' | 'files';
 
@@ -146,7 +147,10 @@ export function SkillDetailPanel({
       showToast('success', detail ? `Synced "${source.name}": ${detail}` : `"${source.name}" is up to date`);
       onRefresh?.();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Sync failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Sync');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setSyncing(false);
     }

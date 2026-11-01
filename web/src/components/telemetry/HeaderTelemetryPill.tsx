@@ -21,6 +21,7 @@ import {
   useTelemetryStore,
 } from '../../stores/useTelemetryStore';
 import type { TelemetrySignal } from '../../types';
+import { describeError, isCancellation } from '../../lib/describeError';
 
 const SIGNALS: TelemetrySignal[] = ['logs', 'metrics', 'traces'];
 
@@ -205,5 +206,8 @@ function handleError(err: unknown) {
     });
     return;
   }
-  showToast('error', err instanceof Error ? err.message : 'Telemetry update failed');
+  if (!isCancellation(err)) {
+    const described = describeError(err, 'Telemetry update');
+    showToast('error', described.text, { detail: described.fullDetail });
+  }
 }

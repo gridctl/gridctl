@@ -7,6 +7,7 @@ import {
   type ProbedTool,
 } from '../lib/api';
 import { getWizardSessionId } from '../lib/wizardSession';
+import { asError } from '../lib/describeError';
 
 export interface ProbeState {
   loading: boolean;
@@ -67,7 +68,7 @@ export function useProbeServer(): UseProbeServer {
       if (controller.signal.aborted) return null;
       setState({
         loading: false,
-        error: err instanceof Error ? err : new Error(String(err)),
+        error: asError(err),
         tools: null,
         probedAt: null,
         cached: false,

@@ -105,7 +105,7 @@ describe('useCommandRegistry', () => {
     it('filters by fuzzy query on label', () => {
       const { result } = renderHook(() => useCommandRegistry(), { wrapper });
       const cmd1 = makeCommand('navigate:traces', 'Open Traces');
-      const cmd2 = makeCommand('navigate:vault', 'Open Vault');
+      const cmd2 = makeCommand('navigate:vault', 'Open Variables');
 
       act(() => result.current.registerCommands('test', [cmd1, cmd2]));
 

@@ -560,12 +560,12 @@ describe('VaultWorkspace — unencrypted secrets banner', () => {
   it('nudges to encrypt and opens the encrypt drawer', async () => {
     renderWorkspace();
     expect(
-      await screen.findByText(/secrets are stored unencrypted/i),
+      await screen.findByText(/secret values are stored unencrypted/i),
     ).toBeInTheDocument();
 
     // The banner's Encrypt action opens the passphrase drawer in encrypt mode.
     const banner = screen
-      .getByText(/secrets are stored unencrypted/i)
+      .getByText(/secret values are stored unencrypted/i)
       .closest('div')?.parentElement;
     const encryptBtn = Array.from(
       banner?.querySelectorAll('button') ?? [],
@@ -585,7 +585,7 @@ describe('VaultWorkspace — unencrypted secrets banner', () => {
       }),
     );
     expect(
-      screen.queryByText(/secrets are stored unencrypted/i),
+      screen.queryByText(/secret values are stored unencrypted/i),
     ).not.toBeInTheDocument();
   });
 });
@@ -610,7 +610,7 @@ describe('VaultWorkspace — locked state', () => {
     renderWorkspace();
     // Wait for the workspace shell to settle so the lock prompt has rendered.
     await screen.findByText('variables');
-    await screen.findByText('Vault Locked');
+    await screen.findByText('Variables locked');
     const passphraseInput = document.querySelector('input[type="password"]');
     expect(passphraseInput).not.toBeNull();
     // Header Import/Encrypt actions should not be present when locked.
@@ -795,7 +795,7 @@ describe('VaultWorkspace — drag-and-drop while locked', () => {
 
   it('does not show the overlay or open the modal when locked', async () => {
     renderWithToasts();
-    await screen.findByText('Vault Locked');
+    await screen.findByText('Variables locked');
     dispatchDrag('dragenter');
     expect(screen.queryByText(OVERLAY_COPY)).not.toBeInTheDocument();
     dispatchDrag('drop', [fakeFile('a.env', 'FOO=bar')]);

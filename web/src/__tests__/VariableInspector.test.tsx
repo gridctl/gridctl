@@ -79,7 +79,7 @@ describe('VariableInspector — overview state', () => {
     render(
       <VariableInspector {...makeProps({ allVariables: null, locked: true })} />,
     );
-    expect(screen.getByText(/vault is locked/i)).toBeInTheDocument();
+    expect(screen.getByText(/variable store is locked/i)).toBeInTheDocument();
     expect(screen.queryByText('At a glance')).not.toBeInTheDocument();
   });
 });

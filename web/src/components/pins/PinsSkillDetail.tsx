@@ -18,6 +18,7 @@ import { FindingsList } from './PinFindings';
 import { APPROVE_BUTTON_ID, DRIFT_SECTION_ID } from './PinsDriftSection';
 import { RESET_BUTTON_ID, TOOLS_SECTION_ID } from './PinsServerDetail';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { describeError, isCancellation } from '../../lib/describeError';
 import { showToast } from '../ui/Toast';
 
 // ---------------------------------------------------------------------------
@@ -158,7 +159,7 @@ export function PinsSkillDetail({ name, pin, onReset }: PinsSkillDetailProps) {
             {isResetting ? 'Resetting…' : `Reset pin for ${name}`}
           </button>
           <p className="text-2xs text-text-muted">
-            Deletes the pin record; the skill re-pins on the next registry refresh.
+            Deletes the pin record; the skill re-pins on the next Library refresh.
           </p>
         </div>
       </section>
@@ -179,7 +180,7 @@ export function PinsSkillDetail({ name, pin, onReset }: PinsSkillDetailProps) {
                 digest set, findings history, and any approval reason.
               </p>
               <p>
-                On the next registry refresh the skill re-pins from scratch, trusting whatever
+                On the next Library refresh the skill re-pins from scratch, trusting whatever
                 content is on disk at that moment without a diff to review. This cannot be undone.
               </p>
             </div>
@@ -244,16 +245,16 @@ function SkillDriftSection({ skillName }: { skillName: string }) {
       usePinsStore.getState().setSkillPins(updated);
       showToast('success', `Approved content update for ${skillName}`);
     } catch (err) {
+      if (isCancellation(err)) return;
       if (err instanceof HTTPError && err.status === 409) {
-        showToast('error', `${err.message} — reloading the diff for re-review`);
+        showToast('error', `${describeError(err, 'Approve').text} Reloading the diff for re-review.`);
         reloadDiff();
       } else if (err instanceof HTTPError && err.status === 400) {
-        showToast('error', err.message);
+        const described = describeError(err, 'Approve');
+        showToast('error', described.text, { detail: described.fullDetail });
       } else {
-        showToast(
-          'error',
-          `Failed to approve: ${err instanceof Error ? err.message : 'Unknown error'}`,
-        );
+        const described = describeError(err, 'Approve');
+        showToast('error', described.text, { detail: described.fullDetail });
         reloadDiff();
       }
     } finally {

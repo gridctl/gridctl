@@ -297,7 +297,7 @@ function TierCards({
         title="Reset projections and containers"
         danger={false}
       >
-        Removes what gridctl placed elsewhere on this machine. Keeps {gridctlDir} (vault, oauth
+        Removes what gridctl placed elsewhere on this machine. Keeps {gridctlDir} (variable store, oauth
         grants, pins, registry, telemetry).
       </TierCard>
       <TierCard
@@ -309,7 +309,7 @@ function TierCards({
         Everything above, plus permanent deletion of{' '}
         {stats ? (
           <>
-            <Stat label="vault variables" value={stats.vault_variables < 0 ? 'unknown (locked)' : String(stats.vault_variables)} />
+            <Stat label="stored variables" value={stats.vault_variables < 0 ? 'unknown (locked)' : String(stats.vault_variables)} />
             {', '}
             <Stat label="oauth grants" value={String(stats.oauth_servers)} />
             {', '}
@@ -318,7 +318,7 @@ function TierCards({
             <Stat label="telemetry" value={formatBytes(stats.telemetry_bytes)} />
           </>
         ) : (
-          'the vault, oauth grants, pins, and telemetry'
+          'the variable store, oauth grants, pins, and telemetry'
         )}
         . There is no restore command.
       </TierCard>
@@ -492,11 +492,11 @@ function ConfirmView({ preview, tier, phrase, onPhrase, onBack, onCancel, onConf
           {purge ? (
             <>
               <span className="font-mono">{preview.confirm_phrase}</span> is deleted permanently:
-              vault, oauth grants, pins, registry, and telemetry go with it.
+              variable store, oauth grants, pins, registry, and telemetry go with it.
             </>
           ) : (
             <>
-              <span className="font-mono">{preview.confirm_phrase}</span> is preserved (vault, oauth
+              <span className="font-mono">{preview.confirm_phrase}</span> is preserved (variable store, oauth
               grants, pins, registry, telemetry).
             </>
           )}
@@ -525,7 +525,7 @@ function ConfirmView({ preview, tier, phrase, onPhrase, onBack, onCancel, onConf
             )}
           />
           <p id="reset-purge-consequences" className="text-3xs text-text-muted">
-            The backup archive deliberately excludes oauth tokens and daemon state; the vault is
+            The backup archive deliberately excludes oauth tokens and daemon state; the variable store is
             included as ciphertext. There is no restore command.
           </p>
         </div>

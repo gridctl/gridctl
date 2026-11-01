@@ -5,6 +5,7 @@ import { showToast } from '../ui/Toast';
 import { cn } from '../../lib/cn';
 import { fetchSkillDiff, resetSkill } from '../../lib/api';
 import type { SkillDiffResponse } from '../../types';
+import { describeError, isCancellation } from '../../lib/describeError';
 
 interface SkillCompareDialogProps {
   isOpen: boolean;
@@ -76,7 +77,10 @@ export function SkillCompareDialog({
       showToast('success', `"${skillName}" reset to upstream`);
       onTookUpstream();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Reset failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Reset');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setBusy(false);
       setConfirming(false);

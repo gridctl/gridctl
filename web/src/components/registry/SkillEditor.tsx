@@ -45,6 +45,7 @@ import { useBeforeUnloadGuard } from '../../hooks/useBeforeUnloadGuard';
 import { useSplitPane } from '../../hooks/useSplitPane';
 import { SplitPaneHandle } from '../ui/SplitPane';
 import type { AgentSkill, ItemState, SkillSourceStatus, SkillValidationResult } from '../../types';
+import { describeError, isCancellation } from '../../lib/describeError';
 
 // One-time hint shown the first time a user saves an edit to a remote skill,
 // explaining that the edit becomes a local customization sync will preserve.
@@ -772,7 +773,10 @@ export function SkillEditor({
       showToast('success', `"${skill.name}" reset to upstream`);
       if (await onSaved() !== false) onClose();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Reset failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Reset');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setReconciling(false);
       setPendingAction(null);
@@ -787,7 +791,10 @@ export function SkillEditor({
       showToast('success', `"${skill.name}" detached; now a local skill`);
       if (await onSaved() !== false) onClose();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Detach failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Detach');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setReconciling(false);
       setPendingAction(null);
@@ -819,7 +826,10 @@ export function SkillEditor({
       showToast('success', `Forked as "${newName}"`);
       if (await onSaved() !== false) onClose();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Fork failed (name may already exist)');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Fork');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setReconciling(false);
       setForking(false);

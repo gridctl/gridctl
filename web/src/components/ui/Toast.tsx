@@ -12,6 +12,7 @@ interface Toast {
   id: string;
   type: 'success' | 'error' | 'warning';
   message: string;
+  detail?: string;
   action?: ToastAction;
   duration: number;
   persistent: boolean;
@@ -24,6 +25,8 @@ interface ToastOptions {
   persistent?: boolean;
   /** Defaults to true. Set false to hide the dismiss control. */
   dismissible?: boolean;
+  /** Untrimmed server text, shown as the message title on hover. */
+  detail?: string;
 }
 
 interface TimerRecord {
@@ -138,7 +141,7 @@ export function showToast(
   const dismissible = options?.dismissible !== false;
   const next = [...toasts];
   while (next.length >= MAX_VISIBLE) dropOldest(next);
-  next.push({ id, type, message, action: options?.action, duration, persistent, dismissible });
+  next.push({ id, type, message, detail: options?.detail, action: options?.action, duration, persistent, dismissible });
   toasts = next;
   if (!persistent) startTimer(id, duration);
   notify();
@@ -193,7 +196,7 @@ export function ToastContainer() {
           {toast.type === 'success' && <CheckCircle size={14} />}
           {toast.type === 'error' && <XCircle size={14} />}
           {toast.type === 'warning' && <AlertTriangle size={14} />}
-          <span className="flex-1">{toast.message}</span>
+          <span className="flex-1" title={toast.detail}>{toast.message}</span>
           {toast.action && (
             <button
               type="button"

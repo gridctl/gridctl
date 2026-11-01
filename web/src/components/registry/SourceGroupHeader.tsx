@@ -8,6 +8,7 @@ import { summarizeSkillResults, syncCountsMessage } from '../../lib/skillSync';
 import { DriftSyncDialog } from './DriftSyncDialog';
 import type { SkillSourceStatus } from '../../types';
 import { PackChip } from './PackChip';
+import { describeError, isCancellation } from '../../lib/describeError';
 
 interface SourceGroupHeaderProps {
   /** The imported source for this group, or undefined for the "My Skills" group. */
@@ -58,7 +59,10 @@ export function SourceGroupHeader({
       );
       onUpdated?.();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Sync failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Sync');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setUpdating(false);
       setConfirmDrift(false);

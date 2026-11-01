@@ -90,7 +90,7 @@ function DetachedEditorContent() {
     refreshPending.current = true;
     const refreshed = await refreshRegistry();
     refreshPending.current = !refreshed;
-    if (!refreshed) showToast('warning', 'Saved successfully, but the registry refresh did not complete. The editor remains open.');
+    if (!refreshed) showToast('warning', 'Saved successfully, but the Library refresh did not complete. The editor remains open.');
     return refreshed;
   }, [refreshRegistry]);
 

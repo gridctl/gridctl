@@ -5,6 +5,24 @@ URL-routable workspaces. This file documents the shell architecture, the
 Zustand store layout, and the do-and-don't conventions every new component
 should follow.
 
+## Terminology
+
+The encrypted variable workspace is Variables. The route `/vault`, `useVaultStore`, the `vault/` folder, and the palette section id `vault` are unchanged.
+
+The encrypted store itself is the variable store. Lock state reads "Variables locked", "Unlock variables", "Variables unlocked", and "Lock variables". "Vault" or "vault" does not appear in visible text, form labels, tooltips, or `aria-label` values.
+
+Secret-flagged variable values are secrets or secret values. That wording is allowed only when naming values with the secret flag, never as a navigation or section title. A stored variable chosen for auth is "a stored variable", not "a vault secret".
+
+The skills, agents, and packs workspace is Library. "Registry" is reserved for the external MCP Registry in `wizard/CatalogPicker.tsx` (including its lowercase `registry` tier badge) and for the on-disk `~/.gridctl/registry` directory named in `system/ResetDialog.tsx`. The subtitle for the Library header is "Skills & agents".
+
+A server in the stack is an MCP server. Title-case labels use "MCP Server". Not "Server", and not bare "MCP".
+
+The declared stack is Stack. That label is already consistent.
+
+Pin drift toasts use "Pin drift". Both server and skill drift toasts use "Pin drift detected on N …". Per-pane section headers are unchanged.
+
+Creation wizard entry points use "Create new". The header "+" tooltip and the palette command use the same words.
+
 ## Shell architecture
 
 ```
@@ -38,8 +56,9 @@ render `<main>` is a `<section aria-labelledby>` with one `<h1>`. Give every
 `<aside>` a distinct `aria-label`.
 
 The workspace `nav` scrolls and the action cluster does not shrink, so
-Create, Refresh, Reload Config, theme, and the palette stay mounted when
-the window is narrow. The left group is `min-w-0 flex-1`; without that
+Create new, Refresh, Reload Config, theme, the palette, and Forget
+credential (while a credential is held) stay mounted when the window is
+narrow. The left group is `min-w-0 flex-1`; without that
 the nav has no bounded width and the pills stay clipped. Below `sm` the
 logo is shorter, the persistence label is visually hidden, and the
 decorative dividers drop. The status bar stays one row; tokenizer, format
@@ -53,7 +72,11 @@ AppShell. They are popout-friendly single-purpose pages and load on demand.
 `AuthBoundary` wraps the router in `routes.tsx`, covering both the shell and
 all six detached routes. During credential re-entry, existing content stays
 mounted and inert behind `AuthPrompt`; verified window-only storage notices
-remain visible after the prompt closes.
+remain visible after the prompt closes. Forget credential in the main window
+header, and Forget gateway credential in the command palette, clear both
+storage keys and open the prompt. Detached windows do not mount either
+control. A forget in the main window reaches them through the existing
+storage event.
 
 ## Store layout (Zustand slices pattern)
 
@@ -120,12 +143,12 @@ Overlay stacking uses named steps from `web/src/index.css`. Tailwind maps `--z-i
 | `raised` | 10 | Local lift inside a stacking context (scrims, handles, badges) |
 | `sticky` | 20 | Sticky table headers and in-flow overlays that must stay above raised content |
 | `header` | 30 | App header, slide-over, and the Access Lens dirty bar |
-| `overlay` | 40 | Loading scrims, the vault drag dropzone, and the header reload banner |
+| `overlay` | 40 | Loading scrims and the vault drag dropzone |
 | `modal` | 50 | Dialogs, the creation wizard, the spec diff, and confirms |
 | `popover` | 60 | Menus and portaled dropdowns. Above `modal` so a dropdown opened from a dialog paints over it |
 | `toast` | 70 | Toasts and window-only credential notices |
 
-`popover` outranks `modal` because portaled dropdowns opened from inside a modal must paint over it. A popover inside the header (`relative z-header`, its own stacking context) only ranks against header children, so it still paints over the reload banner and cannot reach the toast layer. A fixed dialog inside a `backdrop-blur` header is trapped the same way. The metrics clear confirm is portaled to `document.body` so it covers the viewport. Run recording confirms stay in the workspace and are not portaled.
+`popover` outranks `modal` because portaled dropdowns opened from inside a modal must paint over it. A popover inside the header (`relative z-header`, its own stacking context) only ranks against header children, so it cannot reach the toast layer. Reload results use that toast layer. A fixed dialog inside a `backdrop-blur` header is trapped the same way. The metrics clear confirm is portaled to `document.body` so it covers the viewport. Run recording confirms stay in the workspace and are not portaled.
 
 `CanvasBase` is intentionally small (~120 LOC) - it owns the React Flow
 boilerplate (wrapper element, Background layers, proOptions) and exposes
@@ -156,6 +179,9 @@ workspace-specific props.
 - Code-split each workspace, detached page, and the header dialogs with
   `React.lazy()` + `<Suspense>`. `routes.tsx` and `Header.tsx` already
   wire this up.
+- Toast a caught failure with `describeError` from `web/src/lib/describeError.ts`.
+  Pass `described.text` to `showToast`, and `described.fullDetail` as
+  `detail` when it is set. Skip the toast when `isCancellation` is true.
 
 **Don't**
 
@@ -199,6 +225,8 @@ workspace-specific props.
   outside tests, including chart files.
 - Don't size UI text with a bracketed pixel class. Use `text-3xs`,
   `text-2xs`, `text-xs`, or `text-sm`.
+- Don't pass a raw error to `showToast`, and don't use `String(err)`.
+  `messageOf` and `asError` cover a string or an `Error`.
 
 ## File map
 

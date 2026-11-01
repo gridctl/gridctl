@@ -22,6 +22,7 @@ import {
 } from '../../../lib/api';
 import { useRegistryStore } from '../../../stores/useRegistryStore';
 import type { AgentPreview, SkillPreview } from '../../../types';
+import { describeError, isCancellation } from '../../../lib/describeError';
 
 type ImportStep = 'source' | 'browse' | 'configure' | 'install';
 
@@ -158,7 +159,10 @@ export function SkillImportWizard() {
         showToast('success', `Imported ${parts.join(', ')}`);
       }
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Import failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Import');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setInstalling(false);
       setStep('install');

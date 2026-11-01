@@ -4,6 +4,9 @@ import '@testing-library/jest-dom';
 import { AuthPrompt } from '../components/auth/AuthPrompt';
 import { useAuthStore } from '../stores/useAuthStore';
 import { credentialKey, windowOnlyNotice } from '../lib/credentials';
+import { showToast } from '../components/ui/Toast';
+
+vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn() }));
 
 const status = () => Response.json({ gateway: { name: 'gridctl', version: 'test' }, 'mcp-servers': [] });
 beforeEach(() => {
@@ -20,6 +23,16 @@ function submit() {
 }
 
 describe('AuthPrompt', () => {
+  it('explains the stack key, the CLI command, and the mode select', () => {
+    render(<AuthPrompt />);
+    expect(screen.getByText(/gateway\.auth/)).toBeInTheDocument();
+    expect(screen.getByText(/gridctl var get/)).toBeInTheDocument();
+    const docs = screen.getByRole('link', { name: 'Gateway authentication docs' });
+    expect(docs).toHaveAttribute('href', 'https://github.com/gridctl/gridctl/blob/main/docs/config-schema.md#auth');
+    expect(docs).toHaveAttribute('target', '_blank');
+    expect(screen.getByLabelText('Authentication mode')).toHaveAccessibleDescription(/Bearer sends Authorization: Bearer <token>/);
+  });
+
   it('labels inputs, disables empty submission, and names Show/Hide', () => {
     render(<AuthPrompt />);
     expect(screen.getByRole('heading', { name: 'Authentication Required' })).toBeInTheDocument();
@@ -44,6 +57,7 @@ describe('AuthPrompt', () => {
     resolve(status());
     await waitFor(() => expect(useAuthStore.getState().isAuthenticated).toBe(true));
     expect(localStorage.getItem(credentialKey) !== null).toBe(true);
+    expect(showToast).toHaveBeenCalledWith('success', 'Credential verified and saved in this browser for this origin.', { duration: 6000 });
   });
 
   it('preserves intentional input across mode and header changes', () => {
@@ -56,6 +70,26 @@ describe('AuthPrompt', () => {
     fireEvent.change(screen.getByLabelText('Credential header'), { target: { value: 'X-Credential' } });
     fireEvent.change(screen.getByLabelText('Authentication mode'), { target: { value: 'bearer' } });
     expect(input.value === token).toBe(true);
+  });
+
+  it('uses distinct alert text for rejected, forbidden, and gateway errors', async () => {
+    render(<AuthPrompt />);
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 401, headers: { 'Gridctl-Auth-Rejected': '1' } }));
+    submit();
+    expect(await screen.findByRole('alert')).toHaveTextContent('rejected this credential');
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 401 }));
+    submit();
+    expect(await screen.findByRole('alert')).toHaveTextContent('rejected this credential');
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 403 }));
+    submit();
+    const forbidden = await screen.findByRole('alert');
+    expect(forbidden).toHaveTextContent('Host header');
+    expect(forbidden).not.toHaveTextContent('Origin');
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 500 }));
+    submit();
+    const server = await screen.findByRole('alert');
+    expect(server).toHaveTextContent('server error (HTTP 500)');
+    expect(server.textContent).not.toBe(forbidden.textContent);
   });
 
   it.each([401, 403, 500])('preserves the active credential on HTTP %s', async code => {
@@ -77,6 +111,7 @@ describe('AuthPrompt', () => {
     submit();
     await waitFor(() => expect(useAuthStore.getState().isAuthenticated).toBe(true));
     expect(useAuthStore.getState().notice).toBe(windowOnlyNotice);
+    expect(showToast).not.toHaveBeenCalledWith('success', expect.any(String), expect.anything());
   });
 
   it('rejects a malformed successful status response', async () => {

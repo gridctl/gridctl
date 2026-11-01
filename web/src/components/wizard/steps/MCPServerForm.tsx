@@ -1495,9 +1495,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
         </Section>
       )}
 
-      {/* Section 4: Environment & Secrets */}
+      {/* Section 4: Environment & Variables */}
       <Section
-        title="Environment & Secrets"
+        title="Environment & Variables"
         icon={KeyRound}
         expanded={expandedSections.has('env')}
         onToggle={() => toggleSection('env')}
@@ -2114,7 +2114,7 @@ function SourceAuthField({
       {open && (
         <div className="px-3 pb-3 pt-1 space-y-2 border-t border-border/20">
           <p className="text-3xs text-text-muted">
-            Choose a vault key that holds a Personal Access Token. The server
+            Choose a stored variable that holds a Personal Access Token. The server
             resolves it at clone time; the raw value never enters the YAML.
           </p>
           <div className="flex items-center gap-2">
@@ -2125,7 +2125,7 @@ function SourceAuthField({
                   type="button"
                   onClick={() => onChange(undefined)}
                   className="text-text-muted hover:text-status-error transition-colors"
-                  aria-label="Clear vault selection"
+                  aria-label="Clear variable selection"
                 >
                   <X size={11} />
                 </button>

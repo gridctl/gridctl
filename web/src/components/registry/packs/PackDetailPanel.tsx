@@ -17,6 +17,7 @@ import { describeApplyDoc, groupPackRows, rowPillState } from './packModel';
 import { PackApplyForceDialog } from './PackApplyForceDialog';
 import { PackRemoveDialog } from './PackRemoveDialog';
 import { PackUpdateDialog } from './PackUpdateDialog';
+import { describeError, isCancellation } from '../../../lib/describeError';
 
 interface PackDetailPanelProps {
   name: string | null;
@@ -62,7 +63,10 @@ export function PackDetailPanel({ name, onClose, onChanged }: PackDetailPanelPro
         setCollisionMessage(err.message);
         return;
       }
-      showToast('error', err instanceof Error ? err.message : 'Failed to load pack');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Load pack');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     }
   }, [name]);
 
@@ -92,7 +96,10 @@ export function PackDetailPanel({ name, onClose, onChanged }: PackDetailPanelPro
           setCollisionMessage(err.message);
           return;
         }
-        showToast('error', err instanceof Error ? err.message : 'Failed to load pack');
+        if (!isCancellation(err)) {
+          const described = describeError(err, 'Load pack');
+          showToast('error', described.text, { detail: described.fullDetail });
+        }
       });
     return () => {
       cancelled = true;
@@ -132,7 +139,10 @@ export function PackDetailPanel({ name, onClose, onChanged }: PackDetailPanelPro
           setForceDialog({ drifted: outcome.driftedSkips });
         }
       } catch (err) {
-        showToast('error', err instanceof Error ? err.message : 'Apply failed');
+        if (!isCancellation(err)) {
+          const described = describeError(err, 'Apply');
+          showToast('error', described.text, { detail: described.fullDetail });
+        }
       } finally {
         setBusy(null);
       }
@@ -217,7 +227,7 @@ export function PackDetailPanel({ name, onClose, onChanged }: PackDetailPanelPro
             )}
             {!detail.info.applied && (
               <p className="text-2xs text-text-muted mt-1.5">
-                Imported into the registry. Apply projects skills, agents, rules, and wiring
+                Imported into the Library. Apply projects skills, agents, rules, and wiring
                 to your clients.
               </p>
             )}

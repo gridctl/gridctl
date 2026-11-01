@@ -390,7 +390,7 @@ export function Canvas() {
               <div className="flex items-center gap-2 mt-3">
                 <span className="text-3xs text-text-muted">or add:</span>
                 {[
-                  { type: 'mcp-server' as const, icon: Server, label: 'Server', color: 'text-primary hover:text-primary/80' },
+                  { type: 'mcp-server' as const, icon: Server, label: 'MCP Server', color: 'text-primary hover:text-primary/80' },
                   { type: 'resource' as const, icon: Database, label: 'Resource', color: 'text-secondary hover:text-secondary/80' },
                 ].map((item) => (
                   <button

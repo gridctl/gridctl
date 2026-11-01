@@ -5,6 +5,7 @@ import { useFocusTrap } from '../../../hooks/useFocusTrap';
 import { showToast } from '../../ui/Toast';
 import { removePack, type PackRow } from '../../../lib/api';
 import { packKindLabel, PACK_KIND_ORDER } from './packModel';
+import { describeError, isCancellation } from '../../../lib/describeError';
 
 interface PackRemoveDialogProps {
   packName: string;
@@ -48,7 +49,10 @@ export function PackRemoveDialog({ packName, onClose, onRemoved }: PackRemoveDia
       })
       .catch((err) => {
         if (cancelled) return;
-        showToast('error', err instanceof Error ? err.message : 'Preview failed');
+        if (!isCancellation(err)) {
+          const described = describeError(err, 'Preview');
+          showToast('error', described.text, { detail: described.fullDetail });
+        }
         onCloseRef.current();
       });
     return () => {
@@ -89,7 +93,10 @@ export function PackRemoveDialog({ packName, onClose, onRemoved }: PackRemoveDia
         }
         onRemoved(kept.length > 0);
       } catch (err) {
-        showToast('error', err instanceof Error ? err.message : 'Remove failed');
+        if (!isCancellation(err)) {
+          const described = describeError(err, 'Remove');
+          showToast('error', described.text, { detail: described.fullDetail });
+        }
         setBusy(false);
       }
     },
@@ -123,7 +130,7 @@ export function PackRemoveDialog({ packName, onClose, onRemoved }: PackRemoveDia
                 <p className="mb-1.5">
                   {preview.willRemove.length} resource
                   {preview.willRemove.length === 1 ? '' : 's'} will be removed (projections,
-                  wiring records, then registry entries):
+                  wiring records, then Library entries):
                 </p>
                 <RemoveList rows={preview.willRemove} />
               </div>

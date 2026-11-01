@@ -93,8 +93,8 @@ const resourceTypes: ResourceTypeCard[] = [
   {
     type: 'secret',
     icon: KeyRound,
-    label: 'Secret',
-    description: 'Add secrets to the vault',
+    label: 'Variable',
+    description: 'Add variables to the encrypted store',
     color: 'text-status-pending',
     glowColor: 'color-mix(in srgb, var(--color-status-pending) 10%, transparent)',
   },
@@ -137,7 +137,7 @@ function getResourceCounts(
     resource: resources.length,
     skill: (skills ?? []).length,
     pack: 0, // Off the global poll; the Packs segment owns the count
-    secret: 0, // Vault count not easily available
+    secret: 0, // Variables count not easily available
     'global-context': 0, // Singleton; the dialog shows per-client state
     'client-link': linkedClients,
   };
@@ -827,7 +827,7 @@ function FormRenderer({
       </div>
       <div className="mt-6 p-4 rounded-xl bg-surface-overlay-1 border border-border-subtle text-center">
         <p className="text-xs text-text-muted">
-          Use the Vault panel to manage secrets.
+          Use the Variables workspace to manage variables.
         </p>
       </div>
     </div>

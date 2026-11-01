@@ -29,7 +29,7 @@ export function VaultLockPrompt({ onUnlock }: VaultLockPromptProps) {
       } else {
         // Surface the specific failure (wrong passphrase vs. transport error)
         // rather than blaming every failure on the passphrase.
-        setError(result.error ?? 'Wrong passphrase — unable to decrypt vault');
+        setError(result.error ?? 'Wrong passphrase. The variable store could not be decrypted.');
       }
     } catch (err) {
       setError(
@@ -54,10 +54,10 @@ export function VaultLockPrompt({ onUnlock }: VaultLockPromptProps) {
         </div>
 
         <h3 className="text-sm font-semibold text-text-primary text-center mb-1.5">
-          Vault Locked
+          Variables locked
         </h3>
         <p className="text-xs text-text-muted text-center mb-5">
-          Enter your passphrase to access secrets.
+          Enter your passphrase to unlock the variable store.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -104,7 +104,7 @@ export function VaultLockPrompt({ onUnlock }: VaultLockPromptProps) {
             disabled={!passphrase.trim() || isUnlocking}
             className="w-full"
           >
-            {isUnlocking ? 'Unlocking...' : 'Unlock Vault'}
+            {isUnlocking ? 'Unlocking...' : 'Unlock variables'}
           </Button>
         </form>
       </div>

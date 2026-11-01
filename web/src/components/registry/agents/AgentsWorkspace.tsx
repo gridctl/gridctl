@@ -24,6 +24,7 @@ import {
 } from '../../../lib/api';
 import type { PaletteCommand } from '../../../types/palette';
 import type { RegistryAgent } from '../../../types';
+import { describeError, isCancellation } from '../../../lib/describeError';
 
 interface AgentsWorkspaceProps {
   /** Switch the Library back to the Skills segment (updates ?kind). */
@@ -85,7 +86,10 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
       useRegistryStore.getState().setAgents(list);
       useRegistryStore.getState().setAgentStatuses(statuses);
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Failed to load agents');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Load agents');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     }
   }, []);
 
@@ -203,7 +207,10 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
       showToast(kind, message);
       await refresh();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Sync failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Sync');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setSyncingStale(false);
     }
@@ -238,7 +245,10 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
       if (confirmDelete === selectedName) setSelectedName(null);
       await refresh();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Delete failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Delete');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setConfirmDelete(null);
     }

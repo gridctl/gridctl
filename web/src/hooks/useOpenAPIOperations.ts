@@ -7,6 +7,7 @@ import {
   type ProbeError,
 } from '../lib/api';
 import { getWizardSessionId } from '../lib/wizardSession';
+import { asError } from '../lib/describeError';
 
 export interface OpenAPIOperationsState {
   loading: boolean;
@@ -87,7 +88,7 @@ export function useOpenAPIOperations(): UseOpenAPIOperations {
           ...s,
           loading: false,
           cached: false,
-          error: err instanceof Error ? err : new Error(String(err)),
+          error: asError(err),
         }));
         return null;
       } finally {

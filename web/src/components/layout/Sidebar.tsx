@@ -504,7 +504,7 @@ export function Sidebar() {
                 )}
               >
                 <KeyRound size={14} />
-                Secrets
+                Variables
               </button>
             )}
           </InspectorSection>

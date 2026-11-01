@@ -1091,9 +1091,9 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
         </div>
       </Section>
 
-      {/* Section 5: Secrets */}
+      {/* Section 5: Variable sets */}
       <Section
-        title="Secrets"
+        title="Variable sets"
         icon={KeyRound}
         expanded={expandedSections.has('secrets')}
         onToggle={() => toggleSection('secrets')}
@@ -1107,7 +1107,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
         />
       </Section>
 
-      {/* Section 5: MCP Servers */}
+      {/* Section 6: MCP Servers */}
       <Section
         title="MCP Servers"
         icon={Server}
@@ -1150,7 +1150,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
         </button>
       </Section>
 
-      {/* Section 6: Resources */}
+      {/* Section 7: Resources */}
       <Section
         title="Resources"
         icon={Database}

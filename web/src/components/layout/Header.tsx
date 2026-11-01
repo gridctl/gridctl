@@ -1,5 +1,5 @@
-import { RefreshCw, RotateCcw, Plus, Command } from 'lucide-react';
-import { Suspense, lazy, useState, useRef, useCallback } from 'react';
+import { RefreshCw, RotateCcw, Plus, Command, LogOut } from 'lucide-react';
+import { Suspense, lazy, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
 import { cn } from '../../lib/cn';
@@ -7,6 +7,9 @@ import { IconButton } from '../ui/IconButton';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { triggerReload, fetchStackSpec, validateStackSpec } from '../../lib/api';
+import { describeError, isCancellation } from '../../lib/describeError';
+import { showToast } from '../ui/Toast';
+import { useAuthStore } from '../../stores/useAuthStore';
 import { SpecDiffModal } from '../spec/SpecDiffModal';
 import { HeaderTelemetryPill } from '../telemetry/HeaderTelemetryPill';
 import { useSpecStore } from '../../stores/useSpecStore';
@@ -28,22 +31,19 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
   const connectionStatus = useStackStore((s) => s.connectionStatus);
 
   const toggleCommandPalette = useUIStore((s) => s.toggleCommandPalette);
+  const credential = useAuthStore((s) => s.credential);
   const [isReloading, setIsReloading] = useState(false);
   // Global Context dialog, reachable from the creation wizard's tile.
   const [showGlobalContext, setShowGlobalContext] = useState(false);
   const wizardOpen = useWizardStore((s) => s.isOpen);
-  const [reloadMessage, setReloadMessage] = useState<{ text: string; isError: boolean } | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  const dismissTimer = useRef<ReturnType<typeof setTimeout>>(null);
 
   const executeReload = useCallback(async () => {
     setIsReloading(true);
-    setReloadMessage(null);
-    if (dismissTimer.current) clearTimeout(dismissTimer.current);
 
     try {
       const result = await triggerReload();
-      setReloadMessage({ text: result.message, isError: !result.success });
+      showToast(result.success ? 'success' : 'error', result.message);
       // On successful reload, promote the pending spec (what the user approved)
       // to the applied baseline. Fall back to current spec for direct reloads.
       if (result.success) {
@@ -56,13 +56,12 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
         }
       }
     } catch (err) {
-      setReloadMessage({
-        text: err instanceof Error ? err.message : 'Reload failed',
-        isError: true,
-      });
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Reload');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setIsReloading(false);
-      dismissTimer.current = setTimeout(() => setReloadMessage(null), 4000);
     }
   }, []);
 
@@ -122,21 +121,6 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
         <WorkspaceSwitcher />
       </div>
 
-      {/* Reload notification */}
-      {reloadMessage && (
-        // z-overlay ranks only against header children (backdrop-blur stacking context), so this banner cannot reach toasts; header popovers on z-popover paint over it.
-        <div className={cn(
-          'absolute top-full left-1/2 -translate-x-1/2 mt-2 z-overlay',
-          'px-4 py-2 rounded-lg backdrop-blur-xl border shadow-lg',
-          'text-xs font-medium transition-all duration-300 animate-fade-in-scale',
-          reloadMessage.isError
-            ? 'bg-status-error/10 border-status-error/20 text-status-error'
-            : 'bg-status-running/10 border-status-running/20 text-status-running'
-        )}>
-          {reloadMessage.text}
-        </div>
-      )}
-
       {/* Right: Persistence quick-toggle + Actions. Persistence is the one
           genuinely actionable control from the old status cluster, so it stays
           in the header next to the other actions. */}
@@ -148,6 +132,14 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
         {/* Appearance (light/dark/system) — prominent in the action cluster */}
         <ThemePicker variant="header" placement="down" />
         <div className="hidden sm:block w-px h-5 bg-border/50 mx-0.5" />
+        {credential && (
+          <IconButton
+            icon={LogOut}
+            onClick={() => useAuthStore.getState().forgetCredential()}
+            tooltip="Forget credential"
+            className="hover:text-primary hover:border-primary/30"
+          />
+        )}
         <IconButton
           icon={Command}
           onClick={toggleCommandPalette}
@@ -157,7 +149,7 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
         <IconButton
           icon={Plus}
           onClick={() => useWizardStore.getState().open()}
-          tooltip="Create Resource"
+          tooltip="Create new"
           className="hover:text-primary hover:border-primary/30"
         />
         <IconButton

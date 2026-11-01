@@ -40,7 +40,7 @@ describe('StackForm', () => {
     expect(screen.getByText('Gateway Advanced')).toBeInTheDocument();
     expect(screen.getByText('Network')).toBeInTheDocument();
     expect(screen.getByText('Logging')).toBeInTheDocument();
-    expect(screen.getByText('Secrets')).toBeInTheDocument();
+    expect(screen.getByText('Variable sets')).toBeInTheDocument();
     expect(screen.getByText('MCP Servers')).toBeInTheDocument();
     expect(screen.getByText('Resources')).toBeInTheDocument();
   });
@@ -94,7 +94,7 @@ describe('StackForm', () => {
 
   it('shows secrets section and allows adding set names', () => {
     render(<StackForm data={defaultData()} onChange={onChange} />);
-    fireEvent.click(screen.getByText('Secrets'));
+    fireEvent.click(screen.getByText('Variable sets'));
     expect(screen.getByText('Variable Sets')).toBeInTheDocument();
     expect(screen.getByText('Add set')).toBeInTheDocument();
   });
@@ -105,7 +105,7 @@ describe('StackForm', () => {
       { name: 'prod', count: 5 },
     ]);
     render(<StackForm data={defaultData()} onChange={onChange} />);
-    fireEvent.click(screen.getByText('Secrets'));
+    fireEvent.click(screen.getByText('Variable sets'));
     fireEvent.click(screen.getByText('Add set'));
     await waitFor(() => {
       expect(screen.getByText('dev')).toBeInTheDocument();

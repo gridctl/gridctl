@@ -205,14 +205,14 @@ describe('RegistrySidebar', () => {
     expect(screen.getByText('3 active')).toBeInTheDocument();
   });
 
-  it('shows header with Registry title when not embedded', () => {
+  it('shows header with Library title when not embedded', () => {
     render(<RegistrySidebar />);
-    expect(screen.getByText('Registry')).toBeInTheDocument();
+    expect(screen.getByText('Library')).toBeInTheDocument();
   });
 
   it('hides header when embedded', () => {
     render(<RegistrySidebar embedded />);
-    expect(screen.queryByText('Registry')).not.toBeInTheDocument();
+    expect(screen.queryByText('Library')).not.toBeInTheDocument();
   });
 
   // The registry list no longer carries Markdown bodies, so the collapsed-row

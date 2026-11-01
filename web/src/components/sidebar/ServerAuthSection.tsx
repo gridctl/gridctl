@@ -8,6 +8,7 @@ import {
   waitServerAuthorization,
 } from '../../lib/api';
 import type { ServerAuthInfo } from '../../types';
+import { describeError, isCancellation } from '../../lib/describeError';
 
 /**
  * ServerAuthSection is the Sidebar's downstream authorization panel for
@@ -141,11 +142,11 @@ export function ServerAuthSection({ serverName, authStatus, authIssuer, authExpi
       if (!mounted.current) return;
       // An aborted wait (Cancel, closed popup, unmount) returns silently to
       // idle — never to the failure box.
-      if (err instanceof DOMException && err.name === 'AbortError') {
+      if (isCancellation(err)) {
         setPhase({ kind: 'idle' });
         return;
       }
-      setPhase({ kind: 'failed', message: err instanceof Error ? err.message : String(err) });
+      setPhase({ kind: 'failed', message: describeError(err, 'Sign in').text });
     }
   }, [serverName]);
 
@@ -164,7 +165,7 @@ export function ServerAuthSection({ serverName, authStatus, authIssuer, authExpi
       setDetail(null);
     } catch (err) {
       if (!mounted.current) return;
-      setPhase({ kind: 'failed', message: err instanceof Error ? err.message : String(err) });
+      setPhase({ kind: 'failed', message: describeError(err, 'Sign out').text });
     }
   }, [serverName]);
 

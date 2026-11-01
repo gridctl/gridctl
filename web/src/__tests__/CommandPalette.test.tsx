@@ -157,10 +157,10 @@ describe('CommandPalette', () => {
     });
 
     it('shows recent commands when the registry returns them', () => {
-      const recent = makeCommand({ id: 'navigate:vault', label: 'Open Vault' });
+      const recent = makeCommand({ id: 'navigate:vault', label: 'Open Variables' });
       mockGetRecentCommands.mockReturnValue([recent]);
       render(<CommandPalette isOpen={true} onClose={onClose} />);
-      expect(screen.getByText('Open Vault')).toBeInTheDocument();
+      expect(screen.getByText('Open Variables')).toBeInTheDocument();
     });
   });
 
@@ -211,7 +211,7 @@ describe('CommandPalette', () => {
 
   describe('search', () => {
     it('shows search results when typing in the input', () => {
-      const cmd = makeCommand({ id: 'navigate:vault', label: 'Open Vault' });
+      const cmd = makeCommand({ id: 'navigate:vault', label: 'Open Variables' });
       mockGetSortedCommands.mockImplementation((query?: string) =>
         query === 'vault' ? [cmd] : [],
       );
@@ -219,7 +219,7 @@ describe('CommandPalette', () => {
 
       fireEvent.change(screen.getByRole('combobox'), { target: { value: 'vault' } });
 
-      expect(screen.getByText('Open Vault')).toBeInTheDocument();
+      expect(screen.getByText('Open Variables')).toBeInTheDocument();
     });
 
     it('shows empty state when search has no results', () => {
@@ -242,7 +242,7 @@ describe('CommandPalette', () => {
     });
 
     it('announces result count via aria-live region', () => {
-      const cmd = makeCommand({ id: 'navigate:vault', label: 'Open Vault' });
+      const cmd = makeCommand({ id: 'navigate:vault', label: 'Open Variables' });
       mockGetSortedCommands.mockImplementation((query?: string) =>
         query ? [cmd] : [],
       );

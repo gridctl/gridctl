@@ -441,9 +441,9 @@ export function ResourceForm({ data, onChange, errors }: ResourceFormProps) {
         </div>
       </Section>
 
-      {/* Section 3: Environment & Secrets */}
+      {/* Section 3: Environment & Variables */}
       <Section
-        title="Environment & Secrets"
+        title="Environment & Variables"
         icon={KeyRound}
         expanded={expandedSections.has('env')}
         onToggle={() => toggleSection('env')}

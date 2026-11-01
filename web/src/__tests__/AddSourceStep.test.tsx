@@ -43,7 +43,7 @@ describe('AddSourceStep — auth card', () => {
     const toggle = screen.getByRole('button', { name: /authentication/i });
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByText(/vault secret/i)).toBeInTheDocument();
+    expect(screen.getByText(/stored variable/i)).toBeInTheDocument();
     expect(screen.getByText(/paste token/i)).toBeInTheDocument();
   });
 
@@ -301,7 +301,7 @@ describe('AddSourceStep — unreachable ssh-agent', () => {
       'aria-expanded',
       'true',
     );
-    expect(screen.getByLabelText(/vault secret/i)).toBeChecked();
+    expect(screen.getByLabelText(/stored variable/i)).toBeChecked();
     expect(screen.queryByText(/no ssh-agent reachable/i)).not.toBeInTheDocument();
   });
 

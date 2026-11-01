@@ -17,6 +17,7 @@ import { showToast } from '../../ui/Toast';
 import { validateStackSpec, validateStackResource, appendToStack, saveStack, initializeStack, StackAlreadyActiveError, resolvePythonSource, fetchStatus, type PythonResolution } from '../../../lib/api';
 import type { ValidationIssue, ExecutionReport } from '../../../types';
 import type { MCPServerFormData } from '../../../lib/yaml-builder';
+import { describeError, isCancellation } from '../../../lib/describeError';
 
 interface ReviewStepProps {
   yaml: string;
@@ -209,7 +210,10 @@ export function ReviewStep({
     try {
       await saveStack(yaml, name);
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Save failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Save');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
       setDeploying(false);
       return;
     }

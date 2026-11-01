@@ -14,6 +14,7 @@ import {
 } from '../../../lib/api';
 import { agentClientName, describeSyncResults } from './agentModel';
 import type { AgentProjectionStatus } from '../../../types';
+import { describeError, isCancellation } from '../../../lib/describeError';
 
 interface AgentProjectionRowsProps {
   agentName: string;
@@ -42,7 +43,10 @@ export function AgentProjectionRows({ agentName, statuses, onRefresh }: AgentPro
         showToast('success', okMessage);
         await onRefresh();
       } catch (err) {
-        showToast('error', err instanceof Error ? err.message : 'Action failed');
+        if (!isCancellation(err)) {
+          const described = describeError(err, 'Action');
+          showToast('error', described.text, { detail: described.fullDetail });
+        }
       } finally {
         setBusy(false);
       }
@@ -62,7 +66,10 @@ export function AgentProjectionRows({ agentName, statuses, onRefresh }: AgentPro
         showToast(kind, message);
         await onRefresh();
       } catch (err) {
-        showToast('error', err instanceof Error ? err.message : 'Sync failed');
+        if (!isCancellation(err)) {
+          const described = describeError(err, 'Sync');
+          showToast('error', described.text, { detail: described.fullDetail });
+        }
       } finally {
         setBusy(false);
       }

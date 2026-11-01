@@ -15,6 +15,7 @@ import { PackDetailPanel } from './PackDetailPanel';
 import { packNeedsAttention, sortPacks } from './packModel';
 import { fetchPacks, type PackListItem } from '../../../lib/api';
 import type { PaletteCommand } from '../../../types/palette';
+import { describeError, isCancellation } from '../../../lib/describeError';
 
 interface PacksWorkspaceProps {
   /** Switch the Library segment (updates ?kind). */
@@ -65,7 +66,10 @@ export function PacksWorkspace({ onKindChange }: PacksWorkspaceProps) {
       useRegistryStore.getState().setPacks(list);
       setSegmentLoaded(true);
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Failed to load packs');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Load packs');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     }
   }, []);
 
@@ -79,7 +83,10 @@ export function PacksWorkspace({ onKindChange }: PacksWorkspaceProps) {
       })
       .catch((err) => {
         if (cancelled) return;
-        showToast('error', err instanceof Error ? err.message : 'Failed to load packs');
+        if (!isCancellation(err)) {
+          const described = describeError(err, 'Load packs');
+          showToast('error', described.text, { detail: described.fullDetail });
+        }
       });
     return () => {
       cancelled = true;

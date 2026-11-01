@@ -14,6 +14,7 @@ import { FILE_SORTS, groupFilesByDir, type FileSort } from '../../lib/skillFiles
 import { showToast } from '../ui/Toast';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import type { SkillFile } from '../../types';
+import { describeError, isCancellation } from '../../lib/describeError';
 
 interface SkillFileTreeProps {
   skillName: string;
@@ -68,7 +69,10 @@ export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: Ski
       const updated = await fetchSkillFiles(skillName);
       setFiles(updated);
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Failed to create file');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Create file');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     }
   };
 
@@ -79,7 +83,10 @@ export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: Ski
       const updated = await fetchSkillFiles(skillName);
       setFiles(updated);
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Failed to delete file');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Delete file');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     }
   };
 

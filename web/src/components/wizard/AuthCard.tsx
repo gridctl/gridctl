@@ -95,7 +95,7 @@ export function AuthCard({ controller, ssh }: AuthCardProps) {
                 <legend className="sr-only">Authentication method</legend>
                 {(
                   [
-                    { v: 'vault', label: 'Vault secret', sub: 'recommended' },
+                    { v: 'vault', label: 'Stored variable', sub: 'recommended' },
                     { v: 'token', label: 'Paste token', sub: 'not saved' },
                   ] as const
                 ).map((opt) => (
@@ -131,14 +131,14 @@ export function AuthCard({ controller, ssh }: AuthCardProps) {
                         type="button"
                         onClick={() => setVaultRef('')}
                         className="text-text-muted hover:text-status-error transition-colors"
-                        aria-label="Clear vault selection"
+                        aria-label="Clear variable selection"
                       >
                         <X size={11} />
                       </button>
                     </div>
                   ) : (
                     <div className="flex-1 text-3xs text-text-muted italic px-1">
-                      Choose a vault key →
+                      Choose a variable
                     </div>
                   )}
                   <VariablesPopover onSelect={setVaultRef} />

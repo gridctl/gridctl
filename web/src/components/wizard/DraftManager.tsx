@@ -5,6 +5,7 @@ import { useWizardStore, type WizardDraft } from '../../stores/useWizardStore';
 import { fetchWizardDrafts, saveWizardDraft, deleteWizardDraft } from '../../lib/api';
 import { showToast } from '../ui/Toast';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { describeError, isCancellation } from '../../lib/describeError';
 
 interface DraftManagerProps {
   className?: string;
@@ -51,7 +52,10 @@ export function DraftManager({ className }: DraftManagerProps) {
       setShowSave(false);
       await refreshDrafts();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Failed to save draft');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Save draft');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setSaving(false);
     }
@@ -64,7 +68,10 @@ export function DraftManager({ className }: DraftManagerProps) {
       showToast('success', 'Draft deleted');
       await refreshDrafts();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Failed to delete draft');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Delete draft');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setDeleting(null);
     }

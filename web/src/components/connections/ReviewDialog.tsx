@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Loader2, Plug } from 'lucide-react';
 import { escapeNonPrintable } from '../../lib/nonPrintable';
 import { previewClientLink, type ClientLinkPreview } from '../../lib/api';
+import { describeError } from '../../lib/describeError';
 import type { ClientStatus } from '../../types';
 import { Modal } from '../ui/Modal';
 
@@ -74,7 +75,7 @@ function LinkPreviewCard({ client }: { client: ClientStatus }) {
         if (!cancelled) setPreview(p);
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+        if (!cancelled) setError(describeError(err, 'Preview').text);
       });
     return () => {
       cancelled = true;

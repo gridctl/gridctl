@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchToolUsage } from '../lib/api';
+import { messageOf } from '../lib/describeError';
 import type { ToolUsageResponse } from '../types';
 import { useAuthStore } from '../stores/useAuthStore';
 import { useInterval } from './useInterval';
@@ -45,7 +46,7 @@ export function useToolUsage(enabled: boolean): ToolUsageState {
       setError(null);
     } catch (err) {
       if (!alive.current || useAuthStore.getState().generation !== generation || useAuthStore.getState().authRequired) return;
-      setError(err instanceof Error ? err.message : 'Failed to load tool usage');
+      setError(messageOf(err) || 'Failed to load tool usage');
     }
   }, [generation]);
 

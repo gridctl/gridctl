@@ -5,9 +5,9 @@ import { ReviewStep } from '../components/wizard/steps/ReviewStep';
 import { appendToStack, fetchStatus, initializeStack, resolvePythonSource, saveStack, StackAlreadyActiveError, validateStackResource, validateStackSpec } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
 
-vi.mock('../lib/api', async () => {
-  // Preserve the real StackAlreadyActiveError class so `instanceof` still works
-  // in the component code under test.
+vi.mock('../lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/api')>();
+  // Preserve a local class so `instanceof` still matches the value this file throws.
   class StackAlreadyActiveError extends Error {
     constructor() {
       super('Stack already active');
@@ -15,6 +15,7 @@ vi.mock('../lib/api', async () => {
     }
   }
   return {
+    ...actual,
     saveStack: vi.fn(),
     initializeStack: vi.fn(),
     appendToStack: vi.fn(),
@@ -124,7 +125,7 @@ describe('ReviewStep handleSaveAndLoad', () => {
 
     // saveStack rejected — onDeploy must not be called (user's work is not persisted).
     await waitFor(() =>
-      expect(showToast).toHaveBeenCalledWith('error', 'Save failed: 400'),
+      expect(showToast).toHaveBeenCalledWith('error', 'Save failed: Save failed: 400.', { detail: undefined }),
     );
     expect(onDeploy).not.toHaveBeenCalled();
     expect(initializeStack).not.toHaveBeenCalled();

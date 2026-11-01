@@ -21,7 +21,7 @@ describe('ResourceForm', () => {
     render(<ResourceForm data={defaultData()} onChange={onChange} />);
     expect(screen.getByText('Preset')).toBeInTheDocument();
     expect(screen.getByText('Identity')).toBeInTheDocument();
-    expect(screen.getByText('Environment & Secrets')).toBeInTheDocument();
+    expect(screen.getByText('Environment & Variables')).toBeInTheDocument();
     expect(screen.getByText('Ports')).toBeInTheDocument();
     expect(screen.getByText('Volumes')).toBeInTheDocument();
     expect(screen.getByText('Network')).toBeInTheDocument();

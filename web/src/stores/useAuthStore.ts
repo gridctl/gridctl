@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persistCredential, readCredential, type GatewayCredential } from '../lib/credentials';
+import { clearCredential, persistCredential, readCredential, type GatewayCredential } from '../lib/credentials';
 
 interface AuthState {
   credential: GatewayCredential | null;
@@ -9,6 +9,7 @@ interface AuthState {
   beginAttempt: () => symbol;
   commitAttempt: (attempt: symbol, credential: GatewayCredential) => boolean;
   rejectGeneration: (generation: symbol) => void;
+  forgetCredential: () => void;
   storageChanged: () => void;
   authRequired: boolean;
   isAuthenticated: boolean;
@@ -36,6 +37,17 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   },
   rejectGeneration: (generation) => {
     if (get().generation === generation) set({ authRequired: true, isAuthenticated: false, generation: Symbol() });
+  },
+  forgetCredential: () => {
+    clearCredential();
+    set({
+      credential: null,
+      authRequired: true,
+      isAuthenticated: false,
+      generation: Symbol(),
+      attempt: null,
+      notice: 'Saved credential removed from this browser. Enter a credential to continue.',
+    });
   },
   storageChanged: () => {
     const stored = readCredential();

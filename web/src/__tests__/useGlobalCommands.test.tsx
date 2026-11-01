@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { ReactFlowProvider } from '@xyflow/react';
 import type { ReactNode } from 'react';
@@ -7,6 +7,7 @@ import { CommandRegistryProvider, useCommandRegistry } from '../hooks/useCommand
 import { useGlobalCommands } from '../hooks/useGlobalCommands';
 import { useStackStore } from '../stores/useStackStore';
 import { useUIStore } from '../stores/useUIStore';
+import { useAuthStore } from '../stores/useAuthStore';
 import type { GatewayStatus, MCPServerStatus } from '../types';
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -40,6 +41,27 @@ describe('useGlobalCommands inspect entry', () => {
     useStackStore.getState().setGatewayStatus(status);
     useStackStore.setState({ selectedNodeId: null });
     useUIStore.setState({ sidebarOpen: false });
+    useAuthStore.setState({ credential: null });
+  });
+
+  it('registers Forget gateway credential only while a credential is held', async () => {
+    const { result, rerender } = renderHook(() => useProbe(), { wrapper });
+    await waitFor(() => {
+      expect(result.current.commands.some((command) => command.id === 'action:wizard')).toBe(true);
+    });
+    expect(result.current.commands.some((command) => command.id === 'auth:forget-credential')).toBe(false);
+    act(() => {
+      useAuthStore.setState({ credential: { mode: 'bearer', header: 'Authorization', token: 'held' } });
+    });
+    rerender();
+    await waitFor(() => {
+      expect(result.current.commands.some((command) => command.id === 'auth:forget-credential')).toBe(true);
+    });
+    const command = result.current.commands.find((item) => item.id === 'auth:forget-credential');
+    expect(command?.label).toBe('Forget gateway credential');
+    expect(command?.keywords).toEqual(['auth', 'credential', 'token', 'sign out', 'logout', 'forget']);
+    command?.onSelect();
+    expect(useAuthStore.getState().credential).toBeNull();
   });
 
   it('selects the mcp node id and opens the sidebar', async () => {
