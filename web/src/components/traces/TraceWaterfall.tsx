@@ -319,9 +319,11 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
         {/* Waterfall */}
         <Panel id="waterfall-canvas" defaultSize={selectedSpan ? '65' : '100'} minSize={160}>
           <div ref={paneRef} className="flex flex-col h-full min-h-0 overflow-hidden">
-            {/* Column header row with timeline ruler */}
-            <div className="flex items-center h-7 px-3 flex-shrink-0 border-b border-border/20 bg-surface-elevated/10 overflow-x-auto">
-              <div style={{ width: nameColWidth }} className="text-3xs text-text-muted uppercase tracking-wider whitespace-nowrap">Span</div>
+            {/* Column header row with timeline ruler. The ruler clips instead
+                of scrolling: a private scrollbar would slide Duration off the
+                span rows' duration column. */}
+            <div className="flex items-center h-7 px-3 flex-shrink-0 border-b border-border/20 bg-surface-elevated/10">
+              <div style={{ width: nameColWidth }} className="min-w-0 overflow-hidden text-3xs text-text-muted uppercase tracking-wider whitespace-nowrap">Span</div>
               <div
                 onPointerDown={onNameColDrag}
                 title="Drag to resize the span column"
@@ -330,16 +332,16 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
                   isNameColDragging ? 'bg-primary/50' : 'hover:bg-primary/30',
                 )}
               />
-              <div className="flex-1 grid grid-cols-3 items-center h-full min-w-28" aria-hidden="true">
-                <span className="justify-self-start whitespace-nowrap text-3xs text-text-muted/70 font-mono">0</span>
-                <span className="justify-self-center whitespace-nowrap text-3xs text-text-muted/70 font-mono">
+              <div className="flex-1 grid grid-cols-3 items-center h-full min-w-0 overflow-hidden" aria-hidden="true">
+                <span className="min-w-0 overflow-hidden whitespace-nowrap text-left text-3xs text-text-muted/70 font-mono">0</span>
+                <span className="min-w-0 overflow-hidden whitespace-nowrap text-center text-3xs text-text-muted/70 font-mono">
                   {formatDuration(totalDuration / 2)}
                 </span>
-                <span className="justify-self-end whitespace-nowrap text-3xs text-text-muted/70 font-mono">
+                <span className="min-w-0 overflow-hidden whitespace-nowrap text-right text-3xs text-text-muted/70 font-mono">
                   {formatDuration(totalDuration)}
                 </span>
               </div>
-              <div className="w-24 text-right text-3xs text-text-muted uppercase tracking-wider whitespace-nowrap">Duration</div>
+              <div className="w-24 flex-shrink-0 text-right text-3xs text-text-muted uppercase tracking-wider whitespace-nowrap">Duration</div>
             </div>
 
             {/* Span rows */}
@@ -391,8 +393,9 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
                       </span>
                     </div>
 
-                    {/* Timeline bar column */}
-                    <div className="flex-1 relative h-4">
+                    {/* Timeline bar column. min-w-0 matches the ruler so a narrow
+                        pane shrinks both instead of scrolling the rows alone. */}
+                    <div className="flex-1 relative h-4 min-w-0">
                       <div
                         className={cn(
                           'absolute top-0 h-full rounded-sm opacity-90 transition-opacity hover:opacity-100',

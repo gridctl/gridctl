@@ -6,7 +6,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Features
 
-- The web UI serves Outfit and IBM Plex Mono from the gateway instead of fonts.googleapis.com. Latin subset woff2 files (61,888 bytes) are preloaded from the same origin, and the SIL Open Font License texts are served at `/fonts/LICENSE-outfit.txt` and `/fonts/LICENSE-ibm-plex-mono.txt`. Micro labels use `text-3xs` (10 px at the default root) and `text-2xs` (11 px), so they follow the browser default font size. Nine-pixel and eight-pixel labels are now 10 px. The built UI grew by 70,133 bytes (3,303,008 to 3,373,141). The local binary grew by 73,950 bytes (81,087,522 to 81,161,472).
+- The web UI serves Outfit and IBM Plex Mono from the gateway instead of fonts.googleapis.com. Latin subset woff2 files (61,888 bytes) are preloaded from the same origin, and the SIL Open Font License texts are served at `/fonts/LICENSE-outfit.txt` and `/fonts/LICENSE-ibm-plex-mono.txt`. Micro labels use `text-3xs` (10 px at the default root) and `text-2xs` (11 px), so they follow the browser default font size. Nine-pixel and eight-pixel labels are now 10 px. The built UI grew by 70,293 bytes (3,303,008 to 3,373,301). The local binary grew by 73,950 bytes (81,087,522 to 81,161,472).
 
 - The skill editor and both global-context editors update only the changed block of the markdown preview. Unchanged blocks keep their DOM nodes, so a text selection in the preview survives typing elsewhere in the document. A document that contains raw block HTML keeps the previous whole-document rendering.
 

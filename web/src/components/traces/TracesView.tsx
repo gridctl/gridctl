@@ -630,8 +630,10 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                     </tbody>
                   </table>
                 </div>
-                {/* Keyboard hint strip */}
-                <div className="flex items-center gap-2 px-3 h-5 flex-shrink-0 border-t border-border/20 text-3xs text-text-muted/60 select-none overflow-x-auto">
+                {/* Keyboard hint strip. Nowrap so the wider 10 px labels scroll
+                    sideways instead of wrapping inside h-5. A visible scrollbar
+                    would cover that line, so the bar is hidden. */}
+                <div className="flex items-center gap-2 px-3 h-5 min-w-0 flex-shrink-0 border-t border-border/20 text-3xs text-text-muted/60 select-none overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                   <span><kbd className="font-mono">j</kbd>/<kbd className="font-mono">k</kbd> navigate</span>
                   <span><kbd className="font-mono">↵</kbd> open</span>
                   <span><kbd className="font-mono">esc</kbd> close</span>
