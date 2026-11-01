@@ -156,7 +156,7 @@ export function useVaultManager(
       } else {
         useVaultStore
           .getState()
-          .setError(err instanceof Error ? err.message : 'Failed to load vault');
+          .setError(err instanceof Error ? err.message : 'Failed to load variables');
       }
     } finally {
       useVaultStore.getState().setLoading(false);
@@ -177,7 +177,7 @@ export function useVaultManager(
         if (err instanceof AuthError) {
           return {
             ok: false,
-            error: 'Wrong passphrase — unable to decrypt vault',
+            error: 'Wrong passphrase. The variable store could not be decrypted.',
           };
         }
         return {

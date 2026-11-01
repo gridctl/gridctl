@@ -40,10 +40,10 @@ describe('AuthCard', () => {
   it('expands to both modes with vault preselected', () => {
     render(<Harness />);
     fireEvent.click(screen.getByRole('button', { name: /authentication/i }));
-    expect(screen.getByText(/vault secret/i)).toBeInTheDocument();
+    expect(screen.getByText(/stored variable/i)).toBeInTheDocument();
     expect(screen.getByText(/paste token/i)).toBeInTheDocument();
-    // Vault is the safer option and leads.
-    expect(screen.getByLabelText(/vault secret/i)).toBeChecked();
+    // Stored variable is the safer option and leads.
+    expect(screen.getByLabelText(/stored variable/i)).toBeChecked();
   });
 
   it('points aria-controls at the panel it actually renders', () => {
@@ -80,7 +80,7 @@ describe('AuthCard', () => {
     expect(toggle.textContent).toMatch(/using ssh-agent/i);
     fireEvent.click(toggle);
     expect(screen.queryByPlaceholderText(/personal access token/i)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/vault secret/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/stored variable/i)).not.toBeInTheDocument();
     expect(screen.getAllByText(/using ssh-agent/i).length).toBeGreaterThanOrEqual(1);
   });
 
@@ -188,7 +188,7 @@ describe('useAuthCard buildAuth', () => {
     fireEvent.click(screen.getByRole('button', { name: /authentication/i }));
     fireEvent.click(screen.getByLabelText(/paste token/i));
     act(() => controller?.openInVaultMode('Now using HTTPS.'));
-    expect(screen.getByLabelText(/vault secret/i)).toBeChecked();
+    expect(screen.getByLabelText(/stored variable/i)).toBeChecked();
     expect(screen.getByRole('alert')).toHaveTextContent(/now using https/i);
   });
 });

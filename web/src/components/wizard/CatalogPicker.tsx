@@ -309,14 +309,14 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
                     </div>
                     {selected.inputs?.some((i) => i.secret || i.auth) && (
                       <p className="text-3xs text-text-muted mt-2 leading-relaxed">
-                        Secrets pre-fill as <span className="font-mono text-tertiary">{'${var:KEY}'}</span>{' '}
-                        references; store the values in the vault.
+                        Secret inputs pre-fill as <span className="font-mono text-tertiary">{'${var:KEY}'}</span>{' '}
+                        references; store the values in Variables.
                       </p>
                     )}
                   </div>
                 )}
 
-                {/* Registry trust note */}
+                {/* MCP Registry trust note */}
                 {selected.tier === 'registry' && (
                   <p className="text-3xs text-text-muted leading-relaxed">
                     Registry entries are community publications, not vetted by gridctl.

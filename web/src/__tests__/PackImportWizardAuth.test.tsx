@@ -191,7 +191,7 @@ describe('PackImportWizard — unreachable ssh-agent', () => {
       'aria-expanded',
       'true',
     );
-    expect(screen.getByLabelText(/vault secret/i)).toBeChecked();
+    expect(screen.getByLabelText(/stored variable/i)).toBeChecked();
     // The banner is gone once the user has acted on it.
     expect(screen.queryByText(/no ssh-agent reachable/i)).not.toBeInTheDocument();
   });

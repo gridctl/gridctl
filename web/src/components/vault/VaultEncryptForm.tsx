@@ -58,7 +58,7 @@ export function VaultEncryptForm({
       await onLock(passphrase.trim());
       reset();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to lock vault');
+      setError(err instanceof Error ? err.message : 'Failed to lock variables');
     } finally {
       setIsLocking(false);
     }
@@ -84,8 +84,8 @@ export function VaultEncryptForm({
     <div className={cn('space-y-2', className)}>
       <div className="text-xs text-text-secondary mb-2">
         {encrypting
-          ? 'Encrypt vault with a passphrase:'
-          : 'Lock vault with your passphrase:'}
+          ? 'Encrypt the variable store with a passphrase:'
+          : 'Lock variables with your passphrase:'}
       </div>
       <input
         type="password"
@@ -146,7 +146,7 @@ export function VaultEncryptForm({
               : 'Encrypt'
             : isLocking
               ? 'Locking...'
-              : 'Lock vault'}
+              : 'Lock variables'}
         </Button>
       </div>
     </div>

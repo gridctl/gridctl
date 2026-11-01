@@ -354,7 +354,7 @@ export function VaultWorkspace() {
   const handleUnlock = useCallback(
     async (passphrase: string) => {
       const result = await unlock(passphrase);
-      if (result.ok) showToast('success', 'Vault unlocked');
+      if (result.ok) showToast('success', 'Variables unlocked');
       return result;
     },
     [unlock],
@@ -364,7 +364,7 @@ export function VaultWorkspace() {
     async (passphrase: string) => {
       await lock(passphrase);
       setEncryptOpen(false);
-      showToast('success', encrypted ? 'Vault locked' : 'Vault encrypted');
+      showToast('success', encrypted ? 'Variables locked' : 'Variable store encrypted');
     },
     [lock, encrypted],
   );
@@ -975,7 +975,7 @@ function VaultHeader({
               <IconButton
                 icon={Lock}
                 onClick={onOpenEncrypt}
-                tooltip="Lock vault"
+                tooltip="Lock variables"
                 size="sm"
                 variant="ghost"
               />
@@ -1415,7 +1415,7 @@ function UnencryptedSecretsBanner({
     <div className="flex-shrink-0 px-6 py-2 border-b border-status-pending/20 bg-status-pending/[0.06] flex items-center gap-2">
       <ShieldAlert size={12} className="text-status-pending flex-shrink-0" />
       <div className="flex-1 min-w-0 text-2xs text-text-secondary">
-        Secrets are stored unencrypted on disk. Encrypt the vault with a
+        Secret values are stored unencrypted on disk. Encrypt the variable store with a
         passphrase.
       </div>
       <button

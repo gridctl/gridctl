@@ -70,7 +70,7 @@ export function StatusBar() {
             <span>
               <span className="text-status-running font-semibold">{runningServers}</span>
               <span className="text-text-muted/60">/{(mcpServers ?? []).length}</span>
-              <span className="ml-1">MCP</span>
+              <span className="ml-1">MCP servers</span>
             </span>
             {unhealthyServers > 0 && (
               <>

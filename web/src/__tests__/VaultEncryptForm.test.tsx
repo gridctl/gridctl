@@ -21,7 +21,7 @@ describe('VaultEncryptForm — encrypt mode', () => {
   it('shows first-encrypt copy by default', () => {
     render(<VaultEncryptForm onLock={vi.fn()} onCancel={vi.fn()} />);
     expect(
-      screen.getByText(/encrypt vault with a passphrase/i),
+      screen.getByText(/encrypt the variable store with a passphrase/i),
     ).toBeInTheDocument();
     expect(screen.getByPlaceholderText('New passphrase')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^encrypt$/i })).toBeInTheDocument();
@@ -80,7 +80,7 @@ describe('VaultEncryptForm — lock mode', () => {
       <VaultEncryptForm mode="lock" onLock={onLock} onCancel={vi.fn()} />,
     );
     expect(
-      screen.getByText(/lock vault with your passphrase/i),
+      screen.getByText(/lock variables with your passphrase/i),
     ).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Passphrase')).toBeInTheDocument();
     expect(
@@ -90,7 +90,7 @@ describe('VaultEncryptForm — lock mode', () => {
     // The existing passphrase may predate the length floor — lock mode must
     // not reject it.
     fillPassphrases('old', 'old', 'Passphrase');
-    const submit = screen.getByRole('button', { name: /lock vault/i });
+    const submit = screen.getByRole('button', { name: /lock variables/i });
     expect(submit).toBeEnabled();
     await act(async () => {
       fireEvent.click(submit);
@@ -109,7 +109,7 @@ describe('VaultLockPrompt — unlock errors', () => {
       target: { value: 'anything' },
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /unlock vault/i }));
+      fireEvent.click(screen.getByRole('button', { name: /unlock variables/i }));
     });
     expect(
       screen.getByText('Unlock failed: gateway is down'),
@@ -124,7 +124,7 @@ describe('VaultLockPrompt — unlock errors', () => {
     );
     fireEvent.change(input, { target: { value: 'correct-pass' } });
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /unlock vault/i }));
+      fireEvent.click(screen.getByRole('button', { name: /unlock variables/i }));
     });
     expect(onUnlock).toHaveBeenCalledWith('correct-pass');
     expect(input.value).toBe('');

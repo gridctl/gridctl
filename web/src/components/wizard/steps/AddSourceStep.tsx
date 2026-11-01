@@ -155,7 +155,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
     setUrl(https);
     setAgentBlock(null);
     setError(null);
-    auth.openInVaultMode('Now using HTTPS. Choose a vault secret holding a token with read access.');
+    auth.openInVaultMode('Now using HTTPS. Choose a stored variable holding a token with read access.');
   };
 
   const handleRecentClick = (source: SkillSourceStatus) => {
@@ -306,7 +306,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
         {/* First-run tip when the list is empty */}
         {loadedRecent && recentSources.length === 0 && (
           <p className="text-3xs text-text-muted text-center italic">
-            Private repo? Set your token in Vault first, then choose it above.
+            Private repo? Store your token in Variables first, then choose it above.
           </p>
         )}
       </div>

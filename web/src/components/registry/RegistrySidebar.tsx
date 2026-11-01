@@ -38,6 +38,7 @@ import {
 } from '../../lib/api';
 import { useWizardStore } from '../../stores/useWizardStore';
 import type { AgentSkill, UpdateSummary } from '../../types';
+import { describeError, isCancellation } from '../../lib/describeError';
 
 export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {}) {
   const skills = useRegistryStore((s) => s.skills);
@@ -120,7 +121,10 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
       showToast('success', `Updated ${toUpdate.length} source${toUpdate.length !== 1 ? 's' : ''}`);
       await Promise.all([refreshRegistry(), checkUpdates()]);
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Update failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Update');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setUpdatingAll(false);
     }
@@ -137,7 +141,10 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
       }
       refreshRegistry();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'State change failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'State change');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     }
   }, [refreshRegistry]);
 
@@ -148,7 +155,10 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
       showToast('success', 'Skill deleted');
       refreshRegistry();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Delete failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Delete');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setConfirmDelete(null);
     }
@@ -227,9 +237,9 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
                 <Library size={16} className="text-primary" />
               </div>
               <div className="min-w-0">
-                <h2 className="font-semibold text-text-primary truncate tracking-tight">Registry</h2>
+                <h2 className="font-semibold text-text-primary truncate tracking-tight">Library</h2>
                 <div className="flex items-center gap-1.5">
-                  <p className="text-3xs text-text-muted uppercase tracking-wider">Agent Skills</p>
+                  <p className="text-3xs text-text-muted uppercase tracking-wider">Skills & agents</p>
                 </div>
               </div>
             </div>

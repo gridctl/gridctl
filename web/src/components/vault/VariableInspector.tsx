@@ -448,8 +448,7 @@ export function VariableInspector({
                 <code>secrets.sets</code>.
               </p>
               <p className="text-3xs text-text-muted/80 leading-relaxed">
-                Only <code>{'${var:…}'}</code> / <code>{'${vault:…}'}</code>{' '}
-                references are indexed; plain env strings are not.
+                Only variable references are indexed; plain env strings are not.
               </p>
               <button
                 type="button"
@@ -815,7 +814,7 @@ function InspectorOverview({
 
       {locked ? (
         <p className="text-2xs text-text-muted leading-relaxed">
-          Vault is locked — unlock to browse variables and values.
+          The variable store is locked. Unlock it to browse variables and values.
         </p>
       ) : (
         variables !== null && (

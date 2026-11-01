@@ -206,7 +206,7 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
           const target = drifted
             ? `/pins?server=${encodeURIComponent(drifted)}&view=drift`
             : '/pins';
-          showToast('warning', `Schema drift detected on ${driftedCount} server${driftedCount > 1 ? 's' : ''}`, {
+          showToast('warning', `Pin drift detected on ${driftedCount} server${driftedCount > 1 ? 's' : ''}`, {
             action: { label: 'View', onClick: () => navigate(target) },
             duration: 6000,
           });

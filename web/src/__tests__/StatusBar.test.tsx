@@ -82,7 +82,7 @@ describe('StatusBar', () => {
       mcpServers: [server('s1', true), server('s2', false), server('s3', false)],
     });
     renderBar();
-    expect(screen.getByText('MCP')).toBeInTheDocument();
+    expect(screen.getByText('MCP servers')).toBeInTheDocument();
     // Two unhealthy servers surface here, where the header used to mirror them.
     expect(screen.getByText('err')).toBeInTheDocument();
   });
@@ -90,7 +90,7 @@ describe('StatusBar', () => {
   it('omits the unhealthy indicator when all servers are healthy', () => {
     useStackStore.setState({ mcpServers: [server('s1', true), server('s2', true)] });
     renderBar();
-    expect(screen.getByText('MCP')).toBeInTheDocument();
+    expect(screen.getByText('MCP servers')).toBeInTheDocument();
     expect(screen.queryByText('err')).not.toBeInTheDocument();
   });
 

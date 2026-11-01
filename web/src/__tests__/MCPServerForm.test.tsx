@@ -23,7 +23,7 @@ describe('MCPServerForm', () => {
     expect(screen.getByText('Identity')).toBeInTheDocument();
     expect(screen.getByText('Server Type')).toBeInTheDocument();
     expect(screen.getByText('Configuration')).toBeInTheDocument();
-    expect(screen.getByText('Environment & Secrets')).toBeInTheDocument();
+    expect(screen.getByText('Environment & Variables')).toBeInTheDocument();
     expect(screen.getByText('Advanced')).toBeInTheDocument();
   });
 
@@ -84,7 +84,7 @@ describe('MCPServerForm', () => {
 
   it('names the environment remove button after the row key', () => {
     render(<MCPServerForm data={defaultData({ env: { FOO: 'bar' } })} onChange={onChange} />);
-    fireEvent.click(screen.getByText('Environment & Secrets'));
+    fireEvent.click(screen.getByText('Environment & Variables'));
     expect(screen.getByRole('button', { name: 'Remove FOO' })).toBeInTheDocument();
   });
 

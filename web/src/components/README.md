@@ -5,6 +5,24 @@ URL-routable workspaces. This file documents the shell architecture, the
 Zustand store layout, and the do-and-don't conventions every new component
 should follow.
 
+## Terminology
+
+The encrypted variable workspace is Variables. The route `/vault`, `useVaultStore`, the `vault/` folder, and the palette section id `vault` are unchanged.
+
+The encrypted store itself is the variable store. Lock state reads "Variables locked", "Unlock variables", "Variables unlocked", and "Lock variables". "Vault" or "vault" does not appear in visible text, form labels, tooltips, or `aria-label` values.
+
+Secret-flagged variable values are secrets or secret values. That wording is allowed only when naming values with the secret flag, never as a navigation or section title. A stored variable chosen for auth is "a stored variable", not "a vault secret".
+
+The skills, agents, and packs workspace is Library. "Registry" is reserved for the external MCP Registry in `wizard/CatalogPicker.tsx` (including its lowercase `registry` tier badge) and for the on-disk `~/.gridctl/registry` directory named in `system/ResetDialog.tsx`. The subtitle for the Library header is "Skills & agents".
+
+A server in the stack is an MCP server. Title-case labels use "MCP Server". Not "Server", and not bare "MCP".
+
+The declared stack is Stack. That label is already consistent.
+
+Pin drift toasts use "Pin drift". Both server and skill drift toasts use "Pin drift detected on N …". Per-pane section headers are unchanged.
+
+Creation wizard entry points use "Create new". The header "+" tooltip and the palette command use the same words.
+
 ## Shell architecture
 
 ```

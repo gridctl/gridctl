@@ -117,7 +117,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
           </span>
         </div>
 
-        {/* Skills (Registry) */}
+        {/* Skills (Library) */}
         {(data.totalSkills ?? 0) > 0 && (
           <button
             type="button"

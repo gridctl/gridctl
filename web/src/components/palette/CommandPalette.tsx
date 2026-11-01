@@ -17,14 +17,14 @@ type ScopePrefix = 't:' | 'v:' | 'r:' | '>';
 const SCOPE_CONFIG: Record<ScopePrefix, { label: string; section: PaletteSection }> = {
   't:': { label: 'Traces', section: 'traces' },
   'v:': { label: 'Variables', section: 'vault' },
-  'r:': { label: 'Registry', section: 'registry' },
+  'r:': { label: 'Library', section: 'registry' },
   '>': { label: 'Actions', section: 'global' },
 };
 
 const SECTION_DISPLAY: Record<PaletteSection, { label: string; className: string }> = {
   traces: { label: 'TRACES', className: 'text-secondary bg-secondary/5 border-secondary/20' },
   vault: { label: 'VARIABLES', className: 'text-primary bg-primary/5 border-primary/20' },
-  registry: { label: 'REGISTRY', className: 'text-tertiary bg-tertiary/5 border-tertiary/20' },
+  registry: { label: 'LIBRARY', className: 'text-tertiary bg-tertiary/5 border-tertiary/20' },
   canvas: { label: 'CANVAS', className: 'text-text-muted bg-surface-highlight border-border/30' },
   logs: { label: 'LOGS', className: 'text-text-muted bg-surface-highlight border-border/30' },
   metrics: { label: 'METRICS', className: 'text-secondary bg-secondary/5 border-secondary/20' },
@@ -329,8 +329,8 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
                       <p className="text-sm text-text-muted">Start typing to search commands</p>
                       <p className="text-xs text-text-muted opacity-60">
                         <code className="text-primary/70">t:</code> traces ·{' '}
-                        <code className="text-secondary/70">v:</code> vault ·{' '}
-                        <code className="text-tertiary/70">r:</code> registry ·{' '}
+                        <code className="text-secondary/70">v:</code> variables ·{' '}
+                        <code className="text-tertiary/70">r:</code> library ·{' '}
                         <code className="text-text-muted/70">{'>'}</code> actions
                       </p>
                     </div>
@@ -349,9 +349,9 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
                     </p>
                     <p className="text-xs text-text-muted opacity-70 leading-relaxed">
                       Try <code className="text-primary/80">{'>'}</code> for actions ·{' '}
-                      <code className="text-secondary/80">v:</code> for Vault ·{' '}
+                      <code className="text-secondary/80">v:</code> for Variables ·{' '}
                       <code className="text-primary/70">t:</code> for Traces ·{' '}
-                      <code className="text-tertiary/70">r:</code> for Registry
+                      <code className="text-tertiary/70">r:</code> for Library
                     </p>
                   </div>
                 </Command.Empty>
