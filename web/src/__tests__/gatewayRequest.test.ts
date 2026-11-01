@@ -1,6 +1,6 @@
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 import { credentialHeaders, credentialKey, legacyTokenKey, persistCredential, readCredential } from '../lib/credentials';
-import { AuthError, gatewayRequest, verifyCredential } from '../lib/gatewayRequest';
+import { AuthError, VerificationError, gatewayRequest, verifyCredential } from '../lib/gatewayRequest';
 import { useAuthStore } from '../stores/useAuthStore';
 import { fetchStatus, triggerReload, initializeStack, RestartRequiredError } from '../lib/api';
 import { useTracesStore } from '../stores/useTracesStore';
@@ -153,6 +153,48 @@ describe('request lifecycle', () => {
   it('rejects off-origin URLs before fetch', async () => {
     await expect(gatewayRequest('https://other.invalid/api/status')).rejects.toMatchObject({ kind: 'origin' });
     expect(fetch).not.toHaveBeenCalled();
+  });
+  it('classifies non-2xx verification without treating a header rejection as a status', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 401 }));
+    const rejected = await verifyCredential(candidate()).then(() => null, (error) => error);
+    expect(rejected).toBeInstanceOf(VerificationError);
+    expect(rejected).toMatchObject({
+      kind: 'rejected',
+      status: 401,
+      message: expect.stringContaining('rejected this credential'),
+    });
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 403 }));
+    const forbidden = await verifyCredential(candidate()).then(() => null, (error) => error);
+    expect(forbidden).toMatchObject({ kind: 'forbidden', status: 403 });
+    expect(forbidden.message).toMatch(/Host header/);
+    expect(forbidden.message).toContain('gateway.allowed_hosts');
+    expect(forbidden.message).not.toContain('Origin');
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 503 }));
+    const server = await verifyCredential(candidate()).then(() => null, (error) => error);
+    expect(server).toMatchObject({ kind: 'gateway_error', status: 503 });
+    expect(server.message).toContain('HTTP 503');
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 404 }));
+    const missing = await verifyCredential(candidate()).then(() => null, (error) => error);
+    expect(missing).toMatchObject({ kind: 'unexpected', status: 404 });
+    expect(missing.message).toBe('Gateway verification failed (HTTP 404).');
+    expect(new Set([forbidden.message, server.message, missing.message]).size).toBe(3);
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 401, headers: { 'Gridctl-Auth-Rejected': '1' } }));
+    await expect(verifyCredential(candidate())).rejects.toBeInstanceOf(AuthError);
+  });
+  it('forgetCredential removes both stored keys and replaces the generation', () => {
+    localStorage.setItem(credentialKey, JSON.stringify({ version: 1, ...candidate() }));
+    localStorage.setItem(legacyTokenKey, 'legacy-token');
+    useAuthStore.setState({ credential: candidate(), authRequired: false, isAuthenticated: true, notice: null });
+    const prior = useAuthStore.getState().generation;
+    useAuthStore.getState().forgetCredential();
+    const next = useAuthStore.getState();
+    expect(localStorage.getItem(credentialKey)).toBeNull();
+    expect(localStorage.getItem(legacyTokenKey)).toBeNull();
+    expect(next.credential).toBeNull();
+    expect(next.authRequired).toBe(true);
+    expect(next.isAuthenticated).toBe(false);
+    expect(next.generation).not.toBe(prior);
+    expect(next.notice).toBe('Saved credential removed from this browser. Enter a credential to continue.');
   });
   it.each([301, 302, 307, 308])('rejects visible redirects %s', async status => {
     vi.mocked(fetch).mockResolvedValue(new Response(null, { status }));

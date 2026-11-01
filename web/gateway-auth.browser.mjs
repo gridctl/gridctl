@@ -36,21 +36,25 @@ const server = await createServer({
     configureServer(vite) {
       vite.middlewares.use((req, res, next) => {
         if (req.url === '/destination') { arrivals++; if (req.headers['x-fixture-credential']) secretArrivals++; res.end('destination'); return; }
-        if (req.url === '/__auth_test') {
+        const requestURL = req.originalUrl || req.url || '';
+        const pathOnly = requestURL.split('?')[0];
+        if ((pathOnly === '/__auth_test' || pathOnly === '/__auth_resume') && !requestURL.includes('html-proxy')) {
+          const resume = pathOnly === '/__auth_resume';
           res.setHeader('Content-Type', 'text/html');
-          void vite.transformIndexHtml('/__auth_test', `<html><body><div id="root"></div><script type="module">
+          void vite.transformIndexHtml(resume ? '/__auth_resume' : '/__auth_test', `<html><body><div id="root"></div><script type="module">
             import React from 'react';
             import { createRoot } from 'react-dom/client';
             import { AuthBoundary } from '/src/components/auth/AuthBoundary.tsx';
             import { useAuthStore } from '/src/stores/useAuthStore.ts';
             import { gatewayRequest } from '/src/lib/gatewayRequest.ts';
             import '/src/index.css';
-            useAuthStore.setState({authRequired:true});
+            if (${resume ? 'false' : 'true'}) useAuthStore.setState({authRequired:true});
+            else useAuthStore.setState({authRequired:false, isAuthenticated:true});
             function useSSEReadLoop() {
               const generation = useAuthStore(s => s.generation);
               const authRequired = useAuthStore(s => s.authRequired);
               React.useEffect(() => {
-                if (authRequired) return;
+                if (authRequired || ${resume ? 'true' : 'false'}) return;
                 const controller = new AbortController();
                 let reader;
                 void (async () => {
@@ -129,6 +133,8 @@ try {
   await page.getByLabel('Credential', { exact: true }).waitFor();
   await page.getByLabel('Credential', { exact: true }).fill(await page.evaluate(() => crypto.randomUUID()));
   await page.getByRole('button', { name: 'Authenticate', exact: true }).focus();
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Gateway authentication docs');
   await page.keyboard.press('Tab');
   assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), 'Authentication mode');
   await page.getByRole('button', { name: 'Show credential' }).click();
@@ -350,6 +356,29 @@ try {
     try { await gatewayRequest('/api/status', { signal: controller.signal }); } catch (error) { return error.kind; }
   }), 'abort');
   await memoryOnly.close();
+  rejection = false;
+  fixtureStatus = 200;
+  malformed = false;
+  await context.setOffline(false);
+  await page.goto(`${origin}/__auth_test`);
+  await page.getByLabel('Credential', { exact: true }).fill(await page.evaluate(() => crypto.randomUUID()));
+  await page.getByLabel('Credential', { exact: true }).press('Enter');
+  await page.getByRole('dialog', { name: 'Authentication Required' }).waitFor({ state: 'hidden' });
+  const forgotten = await context.newPage();
+  await forgotten.goto(`${origin}/__auth_resume`);
+  await forgotten.getByRole('button', { name: 'Content' }).waitFor();
+  assert.equal(await forgotten.getByRole('dialog', { name: 'Authentication Required' }).count(), 0);
+  await page.evaluate(async () => {
+    const { useAuthStore } = await import('/src/stores/useAuthStore.ts');
+    useAuthStore.getState().forgetCredential();
+  });
+  await page.getByRole('dialog', { name: 'Authentication Required' }).waitFor();
+  await page.getByText('Saved credential removed from this browser. Enter a credential to continue.').waitFor();
+  assert.equal(await page.evaluate(() => localStorage.getItem('gridctl-auth-credential')), null);
+  assert.equal(await page.evaluate(() => localStorage.getItem('gridctl-auth-token')), null);
+  await forgotten.getByRole('dialog', { name: 'Authentication Required' }).waitFor();
+  await forgotten.getByText('Saved credentials changed in another window').waitFor();
+  await forgotten.close();
   await context.close();
   console.log('Chromium: prompt keyboard/narrow layout, request modes, streaming negotiation, gateway rejection, and same/cross-origin redirect refusal passed.');
 } finally {

@@ -2,9 +2,16 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Button } from '../ui/Button';
-import { verifyCredential } from '../../lib/gatewayRequest';
+import { AuthError, credentialRejectedMessage, GatewayRequestError, VerificationError, verifyCredential } from '../../lib/gatewayRequest';
 import type { GatewayCredential } from '../../lib/credentials';
 import { useAuthStore } from '../../stores/useAuthStore';
+import { showToast } from '../ui/Toast';
+
+function promptError(cause: unknown): string {
+  if (cause instanceof AuthError) return credentialRejectedMessage;
+  if (cause instanceof VerificationError || cause instanceof GatewayRequestError) return cause.message;
+  return 'Credential verification failed.';
+}
 
 export function AuthPrompt() {
   const [token, setToken] = useState('');
@@ -40,10 +47,12 @@ export function AuthPrompt() {
 
     try {
       await verifyCredential(candidate, controller.signal);
-      if (!controller.signal.aborted) commitAttempt(attempt, candidate);
+      if (!controller.signal.aborted && commitAttempt(attempt, candidate) && useAuthStore.getState().notice === null) {
+        showToast('success', 'Credential verified and saved in this browser for this origin.', { duration: 6000 });
+      }
     } catch (cause) {
       if (!controller.signal.aborted && useAuthStore.getState().attempt === attempt) {
-        setError(cause instanceof Error ? cause.message : 'Credential verification failed.');
+        setError(promptError(cause));
         inputRef.current?.focus();
       }
     } finally {
@@ -55,7 +64,7 @@ export function AuthPrompt() {
     // Escape is intentionally not bound: this prompt is an auth gate with nothing to dismiss to.
     <div role="dialog" aria-modal="true" aria-labelledby="auth-title" onKeyDown={event => {
       if (event.key !== 'Tab') return;
-      const fields = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('input, select, button:not(:disabled)'));
+      const fields = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('input, select, button:not(:disabled), a[href]'));
       const first = fields[0];
       const last = fields.at(-1);
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
@@ -73,18 +82,34 @@ export function AuthPrompt() {
         <h2 id="auth-title" className="text-lg font-semibold text-text-primary text-center mb-2">
           Authentication Required
         </h2>
-        <p className="text-sm text-text-muted text-center mb-6">
-          This gateway requires an API token to access.
-        </p>
+        <div className="text-sm text-text-muted text-center mb-4 space-y-2">
+          <p>
+            This gateway was started with <code>gateway.auth</code> in its stack file. Enter that block's token value; if it references a stored variable, read it with <code>gridctl var get &lt;KEY&gt; --plain</code>.
+          </p>
+          <p>
+            The credential is kept in this browser for this origin until the gateway rejects it or you choose Forget credential in the main window's header.{' '}
+            <a
+              href="https://github.com/gridctl/gridctl/blob/main/docs/config-schema.md#auth"
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-2 hover:text-text-primary"
+            >
+              Gateway authentication docs
+            </a>
+          </p>
+        </div>
         {notice && <p role="status" className="text-xs text-text-muted mb-4">{notice}</p>}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <label className="block text-sm text-text-primary">
             Authentication mode
-            <select aria-label="Authentication mode" value={mode} onChange={e => { requestRef.current?.abort(); setMode(e.target.value as GatewayCredential['mode']); }} className="block w-full bg-surface p-2">
+            <select aria-label="Authentication mode" aria-describedby="auth-mode-hint" value={mode} onChange={e => { requestRef.current?.abort(); setMode(e.target.value as GatewayCredential['mode']); }} className="block w-full bg-surface p-2">
               <option value="bearer">Bearer</option>
               <option value="api_key">API key</option>
             </select>
+            <span id="auth-mode-hint" className="mt-1 block text-xs text-text-muted">
+              Bearer sends Authorization: Bearer &lt;token&gt;. API key sends the raw token in the header named below.
+            </span>
           </label>
           {mode === 'api_key' && <label className="block text-sm text-text-primary">
             Credential header

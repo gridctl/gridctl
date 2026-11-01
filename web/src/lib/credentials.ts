@@ -35,6 +35,15 @@ function usableStoredCredential(credential: GatewayCredential): { credential: Ga
   }
 }
 
+export function clearCredential(): void {
+  try {
+    localStorage.removeItem(credentialKey);
+    localStorage.removeItem(legacyTokenKey);
+  } catch {
+    // Storage can be unavailable. The in-memory store still drops the credential.
+  }
+}
+
 export function persistCredential(credential: GatewayCredential): string | null {
   try {
     const existing = localStorage.getItem(credentialKey);

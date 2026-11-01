@@ -23,6 +23,7 @@ import {
   Monitor,
   Plug,
   RotateCcw,
+  LogOut,
 } from 'lucide-react';
 import type { ThemeMode } from '../themes/types';
 import { useCommandRegistry } from './useCommandRegistry';
@@ -32,6 +33,7 @@ import { useTracesStore } from '../stores/useTracesStore';
 import { useVaultStore } from '../stores/useVaultStore';
 import { useRegistryStore } from '../stores/useRegistryStore';
 import { useWizardStore } from '../stores/useWizardStore';
+import { useAuthStore } from '../stores/useAuthStore';
 import { useCanvasActionsStore } from '../stores/useCanvasActionsStore';
 import type { PaletteCommand } from '../types/palette';
 
@@ -55,6 +57,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
   const traces = useTracesStore((s) => s.traces);
   const secrets = useVaultStore((s) => s.variables);
   const skills = useRegistryStore((s) => s.skills);
+  const credential = useAuthStore((s) => s.credential);
 
   // Static navigation commands
   useEffect(() => {
@@ -263,7 +266,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
       },
       {
         id: 'action:wizard',
-        label: 'Open server wizard',
+        label: 'Create new',
         section: 'global',
         icon: <Plus size={14} />,
         keywords: ['wizard', 'create', 'new', 'server', 'add', 'resource'],
@@ -281,6 +284,24 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
     navigate,
     onRefresh,
   ]);
+
+  useEffect(() => {
+    if (!credential) {
+      unregisterCommands('auth-forget');
+      return;
+    }
+    registerCommands('auth-forget', [
+      {
+        id: 'auth:forget-credential',
+        label: 'Forget gateway credential',
+        section: 'global',
+        icon: <LogOut size={14} />,
+        keywords: ['auth', 'credential', 'token', 'sign out', 'logout', 'forget'],
+        onSelect: () => useAuthStore.getState().forgetCredential(),
+      },
+    ]);
+    return () => unregisterCommands('auth-forget');
+  }, [credential, registerCommands, unregisterCommands]);
 
   // Dynamic node commands from stack store
   useEffect(() => {
