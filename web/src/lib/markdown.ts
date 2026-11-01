@@ -1,4 +1,4 @@
-import { Marked } from 'marked';
+import { Marked, type TokensList } from 'marked';
 import markedAlert from 'marked-alert';
 import DOMPurify from 'dompurify';
 import Prism from 'prismjs';
@@ -78,4 +78,68 @@ marked.use({
 export function renderMarkdown(content: string): string {
   const html = marked.parse(content, { breaks: true, gfm: true }) as string;
   return DOMPurify.sanitize(html);
+}
+
+export interface MarkdownBlock {
+  /** token.raw plus an occurrence suffix; stable across keystrokes */
+  key: string;
+  /** DOMPurify output for this block only */
+  html: string;
+}
+
+export interface MarkdownBlockCache {
+  /** JSON of tokens.links; a change invalidates every entry */
+  linksKey: string;
+  byRaw: Map<string, string>;
+}
+
+export interface MarkdownBlocksResult {
+  blocks: MarkdownBlock[];
+  cache: MarkdownBlockCache;
+}
+
+/**
+ * Render markdown as one sanitized block per top-level token.
+ *
+ * Returns null when any top-level token has type `html`. Per-block sanitize
+ * closes an unclosed wrapper inside its own block, and separate
+ * dangerouslySetInnerHTML nodes do not nest, so those documents must use
+ * renderMarkdown. The check is the token type (a comment, a lone break, a
+ * self-contained tag), not a nesting heuristic.
+ *
+ * The cache is keyed by token.raw and is valid only while tokens.links is
+ * unchanged. The lexer resolves a reference link into the paragraph's inline
+ * tokens, so identical raw text can parse to a different href.
+ */
+export function renderMarkdownBlocks(
+  content: string,
+  previous: MarkdownBlockCache | null,
+): MarkdownBlocksResult | null {
+  const tokens = marked.lexer(content);
+  if (tokens.some((token) => token.type === 'html')) return null;
+  // lexer plus parser skips walkTokens. marked-alert rewrites callouts there.
+  const walk = marked.defaults.walkTokens;
+  if (walk) marked.walkTokens(tokens, walk);
+  const linksKey = JSON.stringify(tokens.links);
+  const reuse = previous && previous.linksKey === linksKey ? previous.byRaw : null;
+  const byRaw = new Map<string, string>();
+  const seen = new Map<string, number>();
+  const blocks: MarkdownBlock[] = [];
+  for (const token of tokens) {
+    let html = reuse?.get(token.raw) ?? byRaw.get(token.raw);
+    if (html === undefined) {
+      // parser takes Token[]. links is unused on marked 18; kept so a later
+      // release that resolves references at parse time still sees them.
+      const single: TokensList = Object.assign([token], { links: tokens.links });
+      html = DOMPurify.sanitize(marked.parser(single));
+    }
+    byRaw.set(token.raw, html);
+    // space and def parse to an empty string. Filter on output, not type,
+    // so an empty wrapper is not emitted for every link definition.
+    if (!html) continue;
+    const n = seen.get(token.raw) ?? 0;
+    seen.set(token.raw, n + 1);
+    blocks.push({ key: `${n}\u0000${token.raw}`, html });
+  }
+  return { blocks, cache: { linksKey, byRaw } };
 }

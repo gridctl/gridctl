@@ -860,6 +860,11 @@ body::before {
 }
 .skill-md > :first-child { margin-top: 0; }
 .skill-md > :last-child { margin-bottom: 0; }
+/* Block wrappers are display:contents, so they are the DOM children and
+   add no box. The margin lives on the wrapper's first and last elements.
+   The fallback path has no wrappers; the rules above still apply there. */
+.skill-md > [data-md-block]:first-child > :first-child { margin-top: 0; }
+.skill-md > [data-md-block]:last-child > :last-child { margin-bottom: 0; }
 
 .skill-md h1,
 .skill-md h2,
