@@ -249,7 +249,7 @@ function AcceptanceCriteriaEditor({
         {(entries ?? []).map((entry, i) => (
           <div key={entry.id} className="rounded-lg border border-border/30 bg-background/40 p-3 space-y-2">
             <div className="flex items-start gap-2">
-              <span className="text-[10px] text-text-muted uppercase tracking-wider w-12 pt-2.5 flex-shrink-0 font-mono">
+              <span className="text-3xs text-text-muted uppercase tracking-wider w-12 pt-2.5 flex-shrink-0 font-mono">
                 GIVEN
               </span>
               <input
@@ -269,7 +269,7 @@ function AcceptanceCriteriaEditor({
               </button>
             </div>
             <div className="flex items-start gap-2">
-              <span className="text-[10px] text-text-muted uppercase tracking-wider w-12 pt-2.5 flex-shrink-0 font-mono">
+              <span className="text-3xs text-text-muted uppercase tracking-wider w-12 pt-2.5 flex-shrink-0 font-mono">
                 WHEN
               </span>
               <input
@@ -282,7 +282,7 @@ function AcceptanceCriteriaEditor({
               <div className="w-6 flex-shrink-0" />
             </div>
             <div className="flex items-start gap-2">
-              <span className="text-[10px] text-text-muted uppercase tracking-wider w-12 pt-2.5 flex-shrink-0 font-mono">
+              <span className="text-3xs text-text-muted uppercase tracking-wider w-12 pt-2.5 flex-shrink-0 font-mono">
                 THEN
               </span>
               <input
@@ -928,7 +928,7 @@ export function SkillEditor({
         {/* Provenance strip: only for skills tracked from a git source */}
         {isRemote && source && (
           <div className="flex items-center justify-between gap-3 flex-wrap px-5 py-2 border-b border-border/30 bg-surface/40 flex-shrink-0">
-            <div className="flex items-center gap-2 min-w-0 text-[11px] text-text-muted">
+            <div className="flex items-center gap-2 min-w-0 text-2xs text-text-muted">
               <GitBranch size={12} className="text-text-muted/70 flex-shrink-0" />
               <span className="truncate">
                 Tracked from{' '}
@@ -947,7 +947,7 @@ export function SkillEditor({
               {hasLocalEdits && (
                 <span
                   title="Edited locally; a sync will skip this unless you overwrite"
-                  className="flex-shrink-0 text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-pending/30 bg-status-pending/10 text-status-pending"
+                  className="flex-shrink-0 text-3xs font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-pending/30 bg-status-pending/10 text-status-pending"
                 >
                   Local edits
                 </span>
@@ -965,7 +965,7 @@ export function SkillEditor({
         {/* Fork-as inline input */}
         {forking && (
           <div className="flex items-center gap-2 px-5 py-2 border-b border-border/30 bg-background/40 flex-shrink-0">
-            <span className="text-[11px] text-text-muted flex-shrink-0">Fork as a new local skill:</span>
+            <span className="text-2xs text-text-muted flex-shrink-0">Fork as a new local skill:</span>
             <input
               autoFocus
               value={forkName}
@@ -1012,7 +1012,7 @@ export function SkillEditor({
               )}
             </span>
             <span className="flex items-center gap-1.5 flex-shrink-0">
-              {!showFrontmatter && <span className="text-[10px] text-primary/80">Edit metadata</span>}
+              {!showFrontmatter && <span className="text-3xs text-primary/80">Edit metadata</span>}
               {showFrontmatter ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             </span>
           </button>
@@ -1036,7 +1036,7 @@ export function SkillEditor({
                     )}
                   />
                   {!isNew && (
-                    <p className="text-[10px] text-text-muted mt-1">Name cannot be changed after creation</p>
+                    <p className="text-3xs text-text-muted mt-1">Name cannot be changed after creation</p>
                   )}
                 </div>
 
@@ -1119,7 +1119,7 @@ export function SkillEditor({
           <div className="border-b border-border/30 flex-shrink-0">
             <button
               onClick={() => setShowFiles((v) => !v)}
-              className="flex items-center gap-1.5 px-5 py-1.5 text-[11px] text-text-muted hover:text-text-secondary transition-colors"
+              className="flex items-center gap-1.5 px-5 py-1.5 text-2xs text-text-muted hover:text-text-secondary transition-colors"
             >
               <Files size={12} />
               <span>Files ({skill.fileCount})</span>
@@ -1347,7 +1347,7 @@ function ProvenanceAction({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md transition-colors',
+        'inline-flex items-center gap-1 px-2 py-1 text-2xs font-medium rounded-md transition-colors',
         'text-text-secondary hover:text-text-primary bg-surface-elevated hover:bg-surface-highlight border border-border/40',
         disabled && 'opacity-50 cursor-not-allowed',
       )}

@@ -23,7 +23,7 @@ export function Badge({ status, children, className }: BadgeProps) {
     <div
       className={cn(
         'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border',
-        'text-[10px] uppercase font-semibold tracking-widest',
+        'text-3xs uppercase font-semibold tracking-widest',
         'transition-all duration-200',
         statusStyles[status],
         className

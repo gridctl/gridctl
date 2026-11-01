@@ -22,7 +22,7 @@ export function FindingsList({ findings }: { findings: PinFinding[] | undefined 
         return (
           <li
             key={`${f.code}-${f.field}-${i}`}
-            className={cn('rounded-md border px-2 py-1.5 text-[11px]', severityClasses[f.severity] ?? severityClasses.info)}
+            className={cn('rounded-md border px-2 py-1.5 text-2xs', severityClasses[f.severity] ?? severityClasses.info)}
           >
             <div className="flex items-center gap-1.5">
               <Icon size={11} className="flex-shrink-0" />
@@ -30,17 +30,17 @@ export function FindingsList({ findings }: { findings: PinFinding[] | undefined 
               <span className="text-text-secondary min-w-0 break-words">
                 {escapeNonPrintable(f.message)}
               </span>
-              <span className="ml-auto flex-shrink-0 text-[10px] text-text-muted">
+              <span className="ml-auto flex-shrink-0 text-3xs text-text-muted">
                 {f.field} · {f.confidence} confidence
               </span>
             </div>
             {f.snippet && (
-              <div className="mt-1 pl-4 font-mono text-[10px] text-text-secondary whitespace-pre-wrap break-words">
+              <div className="mt-1 pl-4 font-mono text-3xs text-text-secondary whitespace-pre-wrap break-words">
                 {escapeNonPrintable(f.snippet)}
               </div>
             )}
             {f.decoded && (
-              <div className="mt-1 pl-4 text-[10px] whitespace-pre-wrap break-words">
+              <div className="mt-1 pl-4 text-3xs whitespace-pre-wrap break-words">
                 <span className="text-status-error font-medium">decoded hidden message: </span>
                 <span className="font-mono text-text-secondary">{escapeNonPrintable(f.decoded)}</span>
               </div>
@@ -60,7 +60,7 @@ export function FindingsSummaryBadge({ findings }: { findings: PinFinding[] | un
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium border',
+        'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-3xs font-medium border',
         severityClasses[severity],
       )}
     >

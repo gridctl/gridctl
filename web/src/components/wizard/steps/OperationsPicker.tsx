@@ -235,7 +235,7 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
           <button
             type="button"
             onClick={() => setManualOverride(false)}
-            className="flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+            className="flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
           >
             <ArrowLeft size={10} />
             Back to picker
@@ -261,7 +261,7 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
         <button
           type="button"
           onClick={() => setManualOverride(true)}
-          className="flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+          className="flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
         >
           <Edit3 size={10} />
           Enter operation IDs manually
@@ -271,7 +271,7 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
       <ModeControl mode={mode} onChange={changeMode} />
 
       {clearedNotice && (
-        <p role="status" className="mb-2 text-[10px] text-text-muted">
+        <p role="status" className="mb-2 text-3xs text-text-muted">
           Selection cleared, so the operations filter was removed — all operations in the spec will
           become tools. Pick operations again to filter.
         </p>
@@ -279,7 +279,7 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
 
       {!loaded ? (
         <div className="rounded-lg border border-dashed border-border/40 bg-background/30 px-4 py-5 text-center space-y-3">
-          <p className="text-[11px] text-text-muted leading-relaxed">
+          <p className="text-2xs text-text-muted leading-relaxed">
             {spec
               ? 'Load the spec to search and select operations by name, path, method, or tag.'
               : 'Enter a spec URL or file path above, then load it to pick operations.'}
@@ -291,7 +291,7 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
               disabled={!spec || preview.loading}
               aria-label="Load operations from the OpenAPI spec"
               className={cn(
-                'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors',
+                'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-2xs font-medium transition-colors',
                 'bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30',
                 'disabled:opacity-60 disabled:cursor-not-allowed',
               )}
@@ -313,7 +313,7 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
           <button
             type="button"
             onClick={() => setManualOverride(true)}
-            className="inline-flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+            className="inline-flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
           >
             <Edit3 size={10} />
             Enter operation IDs manually
@@ -322,7 +322,7 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
       ) : (
         <div className="space-y-2">
           {specChanged && (
-            <p role="status" className="text-[10px] text-status-pending">
+            <p role="status" className="text-3xs text-status-pending">
               Spec changed since this list was loaded. Reload to refresh.
             </p>
           )}
@@ -335,7 +335,7 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
               className="flex items-start gap-2 rounded-md border border-status-pending/40 bg-status-pending/[0.05] px-3 py-2"
             >
               <Info size={12} className="text-status-pending flex-shrink-0 mt-0.5" />
-              <p className="text-[10px] text-text-muted">
+              <p className="text-3xs text-text-muted">
                 {total} operations is a large tool surface. Many clients degrade well before this —
                 consider selecting the subset this server actually needs.
               </p>
@@ -348,7 +348,7 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
               className="flex items-start gap-2 rounded-md border border-status-pending/40 bg-status-pending/[0.05] px-3 py-2"
             >
               <AlertTriangle size={12} className="text-status-pending flex-shrink-0 mt-0.5" />
-              <p className="text-[10px] text-text-muted">
+              <p className="text-3xs text-text-muted">
                 {destructiveCount} operation{destructiveCount > 1 ? 's' : ''} using DELETE
                 {destructiveCount > 1 ? ' become tools' : ' becomes a tool'} with this filter. Those
                 tools can destroy data once exposed.
@@ -363,14 +363,14 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
             >
               <Info size={12} className="text-secondary flex-shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] text-text-muted">
+                <p className="text-3xs text-text-muted">
                   Every operation is selected. An enumerated list pins this server to today's spec —
                   operations added later will not be exposed. Using no filter tracks the spec instead.
                 </p>
                 <button
                   type="button"
                   onClick={() => changeMode('all')}
-                  className="mt-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+                  className="mt-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
                 >
                   Switch to All operations
                 </button>
@@ -379,7 +379,7 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
           )}
 
           <div className="rounded-lg border border-border/40 bg-background/60 overflow-hidden">
-            <div className="flex items-center gap-2 px-3 py-2 text-[10px] text-text-muted border-b border-border/30">
+            <div className="flex items-center gap-2 px-3 py-2 text-3xs text-text-muted border-b border-border/30">
               <span className="text-text-secondary font-medium">
                 {formatOperationsCount(mode, selectedIds.length, total)}
               </span>
@@ -389,7 +389,7 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
                     type="button"
                     onClick={selectAllVisible}
                     aria-label="Select all visible operations"
-                    className="text-[10px] text-secondary hover:text-secondary-light transition-colors"
+                    className="text-3xs text-secondary hover:text-secondary-light transition-colors"
                   >
                     Select all
                   </button>
@@ -400,7 +400,7 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
                     type="button"
                     onClick={clearSelection}
                     aria-label="Clear selected operations"
-                    className="text-[10px] text-secondary hover:text-secondary-light transition-colors"
+                    className="text-3xs text-secondary hover:text-secondary-light transition-colors"
                   >
                     Clear
                   </button>
@@ -447,7 +447,7 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
 
               <Command.List className="max-h-72 overflow-y-auto" aria-label="Available operations">
                 <Command.Empty>
-                  <p className="text-[11px] text-text-muted/60 italic py-4 px-3 text-center">
+                  <p className="text-2xs text-text-muted/60 italic py-4 px-3 text-center">
                     No operations match the current search and filters
                   </p>
                 </Command.Empty>
@@ -467,12 +467,12 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
               <p aria-live="polite" className="sr-only">
                 {visible.length} of {total} operations shown
               </p>
-              <p className="text-[10px] text-text-muted">
+              <p className="text-3xs text-text-muted">
                 Showing {visible.length} of {total}
                 {preview.loadedAt && ` · loaded ${formatRelativeTime(preview.loadedAt)}`}
               </p>
               {preview.skippedCount > 0 && (
-                <p className="text-[10px] text-status-pending">
+                <p className="text-3xs text-status-pending">
                   {preview.skippedCount} operation{preview.skippedCount > 1 ? 's' : ''} in this spec
                   cannot become tools and {preview.skippedCount > 1 ? 'are' : 'is'} not listed
                   {firstSkipReason(allOperations) ? ` (${firstSkipReason(allOperations)})` : ''}.
@@ -482,7 +482,7 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
                 type="button"
                 onClick={handleLoad}
                 disabled={preview.loading}
-                className="text-[10px] text-secondary hover:text-secondary-light transition-colors disabled:opacity-60"
+                className="text-3xs text-secondary hover:text-secondary-light transition-colors disabled:opacity-60"
               >
                 {preview.loading ? 'Reloading…' : 'Reload spec'}
               </button>
@@ -516,7 +516,7 @@ function ModeControl({
             onClick={() => onChange(opt.mode)}
             aria-pressed={mode === opt.mode}
             className={cn(
-              'px-3 py-1 rounded-lg text-[10px] font-medium transition-all border',
+              'px-3 py-1 rounded-lg text-3xs font-medium transition-all border',
               mode === opt.mode
                 ? 'bg-primary/10 border-primary/30 text-primary'
                 : 'bg-surface-overlay-1 border-border-subtle text-text-muted hover:text-text-secondary',
@@ -526,7 +526,7 @@ function ModeControl({
           </button>
         ))}
       </div>
-      {active && <p className="mt-1.5 text-[10px] text-text-muted">{active.help}</p>}
+      {active && <p className="mt-1.5 text-3xs text-text-muted">{active.help}</p>}
     </div>
   );
 }
@@ -548,7 +548,7 @@ function FilterChip({
       onClick={onClick}
       aria-pressed={pressed}
       className={cn(
-        'px-1.5 py-0.5 rounded border text-[9px] font-mono uppercase transition-colors',
+        'px-1.5 py-0.5 rounded border text-3xs font-mono uppercase transition-colors',
         pressed
           ? 'bg-primary/15 border-primary/40 text-primary'
           : 'bg-surface-overlay-1 border-border-subtle hover:border-border',
@@ -600,19 +600,19 @@ const OperationRow = memo(function OperationRow({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span
-            className={cn('text-[9px] font-mono font-semibold uppercase w-12 flex-shrink-0', methodColorClass(op.method))}
+            className={cn('text-3xs font-mono font-semibold uppercase w-12 flex-shrink-0', methodColorClass(op.method))}
           >
             {op.method.toUpperCase()}
           </span>
-          <span className="text-[11px] font-mono text-text-secondary truncate">{op.path}</span>
+          <span className="text-2xs font-mono text-text-secondary truncate">{op.path}</span>
           {op.deprecated && (
-            <span className="text-[9px] px-1 rounded bg-status-pending/15 text-status-pending flex-shrink-0">
+            <span className="text-3xs px-1 rounded bg-status-pending/15 text-status-pending flex-shrink-0">
               deprecated
             </span>
           )}
         </div>
-        {op.summary && <div className="text-[10px] text-text-muted truncate mt-0.5">{op.summary}</div>}
-        <div className="text-[10px] font-mono text-text-muted/80 truncate mt-0.5">
+        {op.summary && <div className="text-3xs text-text-muted truncate mt-0.5">{op.summary}</div>}
+        <div className="text-3xs font-mono text-text-muted/80 truncate mt-0.5">
           {op.operation_id}
           {differs && <span className="text-text-muted/60"> → {op.tool_name}</span>}
         </div>
@@ -645,7 +645,7 @@ function ManualEntry({
         rows={4}
         className={cn(inputClass, 'font-mono resize-none')}
       />
-      <p className="mt-1 text-[10px] text-text-muted">
+      <p className="mt-1 text-3xs text-text-muted">
         Use the raw operationId from the spec, not the generated tool name.
       </p>
     </div>
@@ -656,7 +656,7 @@ function ManualEntry({
 // what it removes cannot be restored from the runtime Tools Whitelist.
 function StaticCaption() {
   return (
-    <p className="mt-2 text-[10px] text-text-muted/80">
+    <p className="mt-2 text-3xs text-text-muted/80">
       Operations excluded here never become tools, so they cannot be re-enabled from the Tools
       Whitelist after deploy. The Tools Whitelist in Advanced is the reversible runtime filter.
     </p>
@@ -679,10 +679,10 @@ function PreviewErrorPanel({
     >
       <AlertCircle size={12} className="text-status-error flex-shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0 space-y-1">
-        <p className="text-[11px] text-status-error font-medium">{error.message}</p>
-        {isProbeErr && error.hint && <p className="text-[10px] text-text-muted">{error.hint}</p>}
+        <p className="text-2xs text-status-error font-medium">{error.message}</p>
+        {isProbeErr && error.hint && <p className="text-3xs text-text-muted">{error.hint}</p>}
         {code !== 'invalid_request' && (
-          <p className="text-[10px] text-text-muted">
+          <p className="text-3xs text-text-muted">
             If the spec is only reachable from the gateway host, or its path still contains an
             unexpanded variable, enter operation IDs manually instead.
           </p>
@@ -692,7 +692,7 @@ function PreviewErrorPanel({
             type="button"
             onClick={onRetry}
             aria-label="Retry loading the spec"
-            className="text-[10px] text-secondary hover:text-secondary-light transition-colors"
+            className="text-3xs text-secondary hover:text-secondary-light transition-colors"
           >
             Retry
           </button>

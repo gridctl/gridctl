@@ -256,7 +256,7 @@ export function PackImportWizard() {
             <p className="flex items-center gap-1.5 text-xs text-status-pending font-medium">
               <ShieldAlert size={13} aria-hidden="true" /> No ssh-agent reachable
             </p>
-            <p className="text-[11px] text-text-muted">
+            <p className="text-2xs text-text-muted">
               The gridctl daemon has no usable agent socket. It inherits one only from the
               shell that started it, and can outlive it, so an agent in your own terminal
               does not help here. A token cannot authenticate an SSH URL.
@@ -266,7 +266,7 @@ export function PackImportWizard() {
                 Try HTTPS instead
               </Button>
             )}
-            <p className="text-[11px] text-text-muted">
+            <p className="text-2xs text-text-muted">
               Otherwise: start an agent, add your key, and restart the daemon so it inherits
               the socket.
             </p>
@@ -290,13 +290,13 @@ export function PackImportWizard() {
           <p className="text-sm text-text-primary font-medium flex items-center gap-2">
             <Package size={14} className="text-secondary" /> {preview.pack}
             {preview.version && (
-              <span className="text-[10px] font-mono text-text-muted">v{preview.version}</span>
+              <span className="text-3xs font-mono text-text-muted">v{preview.version}</span>
             )}
           </p>
           {preview.description && (
             <p className="text-xs text-text-muted mt-1">{preview.description}</p>
           )}
-          <p className="text-[11px] text-text-muted mt-1.5">
+          <p className="text-2xs text-text-muted mt-1.5">
             The manifest selects these resources; there is nothing to pick. Import brings
             them into the registry, and Apply projects them to clients afterward.
           </p>
@@ -306,15 +306,15 @@ export function PackImportWizard() {
         <ResolvedKind label="Agents" resources={preview.agents} />
         <ResolvedKind label="Rules" resources={preview.rules} />
         {(preview.sources ?? []).length > 0 && (
-          <p className="text-[11px] text-text-muted">
+          <p className="text-2xs text-text-muted">
             Sources: {(preview.sources ?? []).map((s) => s.name).join(', ')}
           </p>
         )}
         {preview.lock?.state && (
-          <p className="text-[11px] text-text-muted">Lock: {preview.lock.state}</p>
+          <p className="text-2xs text-text-muted">Lock: {preview.lock.state}</p>
         )}
         {preview.wiring && (
-          <p className="text-[11px] text-text-muted">
+          <p className="text-2xs text-text-muted">
             Includes gateway wiring
             {(preview.clients ?? []).length > 0
               ? ` for ${(preview.clients ?? []).join(', ')}`
@@ -323,7 +323,7 @@ export function PackImportWizard() {
           </p>
         )}
         {(preview.unresolved ?? []).length > 0 && (
-          <div className="rounded-lg border border-status-pending/30 bg-status-pending/5 p-2.5 text-[11px] text-text-muted">
+          <div className="rounded-lg border border-status-pending/30 bg-status-pending/5 p-2.5 text-2xs text-text-muted">
             <p className="text-status-pending font-medium mb-1">
               {(preview.unresolved ?? []).length} unresolved
             </p>
@@ -345,7 +345,7 @@ export function PackImportWizard() {
             <p className="flex items-center gap-1.5 text-xs text-status-pending font-medium">
               <AlertTriangle size={13} aria-hidden="true" /> Security findings
             </p>
-            <ul className="text-[11px] text-text-muted space-y-1.5" aria-live="polite">
+            <ul className="text-2xs text-text-muted space-y-1.5" aria-live="polite">
               {flagged.map((r) => (
                 <li key={`${r.kind}:${r.name}`}>
                   <span className="font-mono text-text-secondary">
@@ -374,7 +374,7 @@ export function PackImportWizard() {
                 </span>
               </label>
             ) : (
-              <p className="text-[11px] text-text-muted">
+              <p className="text-2xs text-text-muted">
                 These findings do not block the import; they stay visible so nothing installs
                 unseen.
               </p>
@@ -417,17 +417,17 @@ export function PackImportWizard() {
           your clients.
         </p>
         {(installed.notes ?? []).map((n, i) => (
-          <p key={i} className="text-[11px] text-text-muted">{n}</p>
+          <p key={i} className="text-2xs text-text-muted">{n}</p>
         ))}
         {skipped.length > 0 && (
-          <ul className="text-[11px] text-text-muted text-left max-w-sm space-y-1">
+          <ul className="text-2xs text-text-muted text-left max-w-sm space-y-1">
             {skipped.map((s, i) => (
               <li key={i}>Skipped: {s}</li>
             ))}
           </ul>
         )}
         {unresolved.length > 0 && (
-          <p className="text-[11px] text-status-pending">
+          <p className="text-2xs text-status-pending">
             Unresolved: {unresolved.join(', ')}
           </p>
         )}
@@ -465,10 +465,10 @@ function ResolvedKind({ label, resources }: { label: string; resources: PackPrev
   if (list.length === 0) return null;
   return (
     <div>
-      <p className="text-[10px] uppercase tracking-wider font-medium text-text-muted mb-1">
+      <p className="text-3xs uppercase tracking-wider font-medium text-text-muted mb-1">
         {label} <span className="font-mono normal-case">({list.length})</span>
       </p>
-      <p className="text-[11px] font-mono text-text-secondary">
+      <p className="text-2xs font-mono text-text-secondary">
         {list.map((r) => (r.source ? `${r.name} from ${r.source}` : r.name)).join(', ')}
       </p>
     </div>

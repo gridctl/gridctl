@@ -79,7 +79,7 @@ export function TokenUsageSection({ serverName }: TokenUsageSectionProps) {
       {/* Sparkline */}
       {chartData.length > 1 && (
         <div className="pt-1">
-          <span className="text-[9px] text-text-muted/60 uppercase tracking-wider block mb-1">Last 30 min</span>
+          <span className="text-3xs text-text-muted/60 uppercase tracking-wider block mb-1">Last 30 min</span>
           <div className="rounded-md bg-background/50 p-1.5" role="img" aria-label={`Token usage trend for ${serverName} over last 30 minutes`}>
             <SparkChart
               data={chartData}
@@ -97,13 +97,13 @@ export function TokenUsageSection({ serverName }: TokenUsageSectionProps) {
         <div className="pt-1 border-t border-border/30">
           <div className="flex items-center gap-1.5 mb-2">
             <ArrowDown size={10} className="text-status-running" />
-            <span className="text-[10px] text-text-muted uppercase tracking-wider">Format Savings</span>
+            <span className="text-3xs text-text-muted uppercase tracking-wider">Format Savings</span>
           </div>
           <div className="flex items-baseline gap-2 mb-1.5">
             <span className="text-sm font-bold text-status-running tabular-nums">
               {Math.round(savingsPercent)}%
             </span>
-            <span className="text-[10px] text-text-muted">
+            <span className="text-3xs text-text-muted">
               {formatCompactNumber(savedTokens)} tokens saved
             </span>
           </div>

@@ -117,7 +117,7 @@ function Section({
         <Icon size={14} className="text-secondary flex-shrink-0" />
         <span className="text-xs font-medium text-text-primary">{title}</span>
         {badge && (
-          <span className="ml-auto text-[10px] text-text-muted bg-surface-highlight px-1.5 py-0.5 rounded-full">
+          <span className="ml-auto text-3xs text-text-muted bg-surface-highlight px-1.5 py-0.5 rounded-full">
             {badge}
           </span>
         )}
@@ -179,14 +179,14 @@ function KeyValueEditor({
         <button
           type="button"
           onClick={addEntry}
-          className="flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+          className="flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
         >
           <Plus size={10} />
           Add
         </button>
       </div>
       {entries.length === 0 && (
-        <p className="text-[10px] text-text-muted/60 italic py-2">No entries</p>
+        <p className="text-3xs text-text-muted/60 italic py-2">No entries</p>
       )}
       <div className="space-y-1.5">
         {entries.map(([key, val], i) => (
@@ -260,14 +260,14 @@ function StringArrayEditor({
         <button
           type="button"
           onClick={addItem}
-          className="flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+          className="flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
         >
           <Plus size={10} />
           {addLabel}
         </button>
       </div>
       {value.length === 0 && (
-        <p className="text-[10px] text-text-muted/60 italic py-2">{emptyText}</p>
+        <p className="text-3xs text-text-muted/60 italic py-2">{emptyText}</p>
       )}
       <div className="space-y-1.5">
         {value.map((item, i) => (
@@ -306,7 +306,7 @@ function PresetPicker({
 }) {
   return (
     <div className="space-y-2">
-      <p className="text-[10px] text-text-muted">Start from a preset or create a custom resource</p>
+      <p className="text-3xs text-text-muted">Start from a preset or create a custom resource</p>
       <div className="grid grid-cols-5 gap-1.5">
         {RESOURCE_PRESETS.map((preset) => (
           <button
@@ -321,7 +321,7 @@ function PresetPicker({
             )}
           >
             <Database size={14} className={cn(selectedPreset === preset.id ? 'text-secondary' : 'text-text-muted')} />
-            <span className={cn('text-[10px] font-medium', selectedPreset === preset.id ? 'text-secondary' : 'text-text-primary')}>
+            <span className={cn('text-3xs font-medium', selectedPreset === preset.id ? 'text-secondary' : 'text-text-primary')}>
               {preset.name}
             </span>
           </button>
@@ -337,7 +337,7 @@ function PresetPicker({
           )}
         >
           <Plus size={14} className="text-text-muted" />
-          <span className="text-[10px] text-text-muted font-medium">Custom</span>
+          <span className="text-3xs text-text-muted font-medium">Custom</span>
         </button>
       </div>
     </div>
@@ -474,7 +474,7 @@ export function ResourceForm({ data, onChange, errors }: ResourceFormProps) {
           addLabel="Add port"
           emptyText="No port mappings"
         />
-        <p className="text-[10px] text-text-muted">Format: host:container (e.g., 5432:5432)</p>
+        <p className="text-3xs text-text-muted">Format: host:container (e.g., 5432:5432)</p>
       </Section>
 
       {/* Section 5: Volumes */}
@@ -493,7 +493,7 @@ export function ResourceForm({ data, onChange, errors }: ResourceFormProps) {
           addLabel="Add volume"
           emptyText="No volumes"
         />
-        <p className="text-[10px] text-text-muted">Format: host:container (e.g., ./data:/var/lib/data)</p>
+        <p className="text-3xs text-text-muted">Format: host:container (e.g., ./data:/var/lib/data)</p>
       </Section>
 
       {/* Section 6: Network */}

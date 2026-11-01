@@ -239,13 +239,13 @@ function DetachedMetricsPageContent() {
                     unavailable instead of silently dropping the panel. A
                     retained snapshot keeps rendering (stale beats blank). */}
                 {toolUsageError && sortedTools.length === 0 ? (
-                  <p role="alert" className="text-[11px] text-status-error px-1 py-2">
+                  <p role="alert" className="text-2xs text-status-error px-1 py-2">
                     Tool usage unavailable: {toolUsageError}
                   </p>
                 ) : (
                   <>
                     {toolUsageError && (
-                      <p role="alert" className="text-[11px] text-status-error px-1 pb-2">
+                      <p role="alert" className="text-2xs text-status-error px-1 pb-2">
                         Usage refresh failed: {toolUsageError} — showing the last loaded
                         snapshot
                       </p>
@@ -268,7 +268,7 @@ function DetachedMetricsPageContent() {
       </main>
 
       {/* Footer */}
-      <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-[10px] text-text-muted">
+      <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-3xs text-text-muted">
         <span className="flex items-center gap-2">
           {kpis.total > 0 ? `Session total: ${formatCompactNumber(kpis.total)} tokens` : 'No data'}
           {isPaused ? ' (paused)' : ''}

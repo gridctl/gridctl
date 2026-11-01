@@ -32,7 +32,7 @@ export function VariableTypeSelector({
             type="button"
             onClick={() => onChange(t)}
             className={cn(
-              'rounded px-2 py-1 text-[10px] font-mono transition-colors',
+              'rounded px-2 py-1 text-3xs font-mono transition-colors',
               active
                 ? 'bg-primary/20 text-primary'
                 : 'text-text-muted hover:text-text-primary hover:bg-surface-overlay-2',

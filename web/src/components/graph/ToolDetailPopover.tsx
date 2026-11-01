@@ -133,7 +133,7 @@ const ToolDetailPopover = memo(({ serverName, toolName, positionStyle, onClose }
       <div className="flex items-start gap-2 px-3 py-2 border-b border-border/40">
         <Wrench size={12} className="text-primary/80 flex-shrink-0 mt-0.5" aria-hidden="true" />
         <span
-          className="flex-1 min-w-0 font-mono text-[11px] text-text-primary break-all"
+          className="flex-1 min-w-0 font-mono text-2xs text-text-primary break-all"
           title={prefixedName}
         >
           {prefixedName}
@@ -153,18 +153,18 @@ const ToolDetailPopover = memo(({ serverName, toolName, positionStyle, onClose }
 
       <div className="px-3 py-2.5 space-y-3 max-h-80 overflow-y-auto scrollbar-dark node-scroll nowheel">
         <section className="space-y-1">
-          <h4 className="text-[9px] uppercase tracking-[0.18em] text-text-muted/70">Description</h4>
+          <h4 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">Description</h4>
           {entry?.description ? (
-            <p className="text-[11px] text-text-secondary leading-relaxed break-words whitespace-pre-wrap">
+            <p className="text-2xs text-text-secondary leading-relaxed break-words whitespace-pre-wrap">
               {entry.description}
             </p>
           ) : (
-            <p className="text-[10px] text-text-muted/70 italic">No description available.</p>
+            <p className="text-3xs text-text-muted/70 italic">No description available.</p>
           )}
         </section>
 
         {lastCalledAt && (
-          <p className="text-[10px] text-text-muted">Last used {formatLastUsed(lastCalledAt)}</p>
+          <p className="text-3xs text-text-muted">Last used {formatLastUsed(lastCalledAt)}</p>
         )}
       </div>
 
@@ -172,7 +172,7 @@ const ToolDetailPopover = memo(({ serverName, toolName, positionStyle, onClose }
         <button
           type="button"
           onClick={handleOpenInTools}
-          className="inline-flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+          className="inline-flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
         >
           <ArrowUpRight size={11} aria-hidden="true" />
           Open in Tools
@@ -183,7 +183,7 @@ const ToolDetailPopover = memo(({ serverName, toolName, positionStyle, onClose }
         <button
           type="button"
           onClick={handleCopy}
-          className="inline-flex items-center gap-1 text-[10px] text-text-muted hover:text-text-secondary transition-colors"
+          className="inline-flex items-center gap-1 text-3xs text-text-muted hover:text-text-secondary transition-colors"
         >
           <Copy size={11} aria-hidden="true" />
           Copy name

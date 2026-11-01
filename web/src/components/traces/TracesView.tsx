@@ -308,7 +308,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                 onClick={() => setSegment(seg.value)}
                 aria-pressed={filters.segment === seg.value}
                 className={cn(
-                  'px-2 py-1 text-[10px] font-medium transition-colors',
+                  'px-2 py-1 text-3xs font-medium transition-colors',
                   filters.segment === seg.value
                     ? 'bg-primary/15 text-primary'
                     : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight/40'
@@ -323,7 +323,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
           <select
             value={filters.server}
             onChange={(e) => setServer(e.target.value)}
-            className="h-6 px-1.5 text-[10px] bg-background/60 border border-border/40 rounded text-text-secondary focus:outline-none focus:border-primary/50 max-w-[120px]"
+            className="h-6 px-1.5 text-3xs bg-background/60 border border-border/40 rounded text-text-secondary focus:outline-none focus:border-primary/50 max-w-[120px]"
           >
             <option value="">All servers</option>
             {servers.map((s) => (
@@ -336,7 +336,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
             onClick={() => setFilters({ errorsOnly: !filters.errorsOnly })}
             aria-pressed={filters.errorsOnly}
             className={cn(
-              'h-6 px-2 text-[10px] font-medium rounded border transition-colors flex items-center gap-1',
+              'h-6 px-2 text-3xs font-medium rounded border transition-colors flex items-center gap-1',
               filters.errorsOnly
                 ? 'bg-status-error/15 text-status-error border-status-error/30'
                 : 'bg-background/60 text-text-muted border-border/40 hover:text-text-secondary hover:border-border/60'
@@ -352,14 +352,14 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
             placeholder="Search traces…"
             value={filters.search}
             onChange={(e) => setFilters({ search: e.target.value })}
-            className="h-6 px-2 text-[10px] bg-background/60 border border-border/40 rounded text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-primary/50 w-36"
+            className="h-6 px-2 text-3xs bg-background/60 border border-border/40 rounded text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-primary/50 w-36"
           />
 
           {/* Clear filters */}
           {hasFilters && (
             <button
               onClick={clearFilters}
-              className="h-6 px-1.5 text-[10px] text-text-muted hover:text-text-secondary transition-colors flex items-center gap-1 rounded hover:bg-surface-highlight/30"
+              className="h-6 px-1.5 text-3xs text-text-muted hover:text-text-secondary transition-colors flex items-center gap-1 rounded hover:bg-surface-highlight/30"
             >
               <X size={9} />
               Clear
@@ -367,7 +367,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
           )}
 
           {/* Counts, right-aligned within the left cluster */}
-          <span className="ml-auto text-[10px] text-text-muted font-mono whitespace-nowrap flex-shrink-0 hidden sm:block">
+          <span className="ml-auto text-3xs text-text-muted font-mono whitespace-nowrap flex-shrink-0 hidden sm:block">
             {displayTraces.length} matching
             {infraHidden > 0 && <span className="text-text-muted/60"> · {infraHidden} infra hidden</span>}
             {bufferCapacity > 0 && (
@@ -384,11 +384,11 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
         <div className="flex items-center gap-1 flex-shrink-0">
           {/* Live / paused state */}
           {isPaused ? (
-            <span className="text-[10px] px-2 py-0.5 bg-status-pending/15 text-status-pending rounded-full font-medium border border-status-pending/20">
+            <span className="text-3xs px-2 py-0.5 bg-status-pending/15 text-status-pending rounded-full font-medium border border-status-pending/20">
               Paused
             </span>
           ) : (
-            <span className="flex items-center gap-1 text-[9px] text-status-running font-medium">
+            <span className="flex items-center gap-1 text-3xs text-status-running font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-status-running animate-pulse motion-reduce:animate-none" />
               Live
             </span>
@@ -421,10 +421,10 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                   'backdrop-blur-xl shadow-bevel animate-fade-in-scale'
                 )}
               >
-                <div className="px-1 py-1 text-[9px] uppercase tracking-[0.18em] text-text-muted/70">
+                <div className="px-1 py-1 text-3xs uppercase tracking-[0.18em] text-text-muted/70">
                   Filters
                 </div>
-                <label className="flex items-center justify-between gap-2 px-1 py-1.5 text-[10px] text-text-secondary">
+                <label className="flex items-center justify-between gap-2 px-1 py-1.5 text-3xs text-text-secondary">
                   <span>Min duration</span>
                   <span className="flex items-center gap-1">
                     <input
@@ -434,22 +434,22 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                       onChange={(e) =>
                         setFilters({ minDuration: e.target.value ? Number(e.target.value) : null })
                       }
-                      className="h-6 px-2 text-[10px] bg-background/60 border border-border/40 rounded text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-primary/50 w-16 text-right"
+                      className="h-6 px-2 text-3xs bg-background/60 border border-border/40 rounded text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-primary/50 w-16 text-right"
                       min={0}
                     />
                     <span className="text-text-muted">ms</span>
                   </span>
                 </label>
-                <div className="flex items-center justify-between gap-2 px-1 py-1.5">
-                  <span className="text-[10px] text-text-secondary">Time range</span>
-                  <div className="flex items-center bg-background/60 rounded-md border border-border/40 overflow-hidden">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-1 py-1.5">
+                  <span className="text-3xs text-text-secondary whitespace-nowrap">Time range</span>
+                  <div className="flex flex-shrink-0 items-center bg-background/60 rounded-md border border-border/40 overflow-hidden">
                     {TRACES_TIME_RANGES.map((range) => (
                       <button
                         key={range.value}
                         onClick={() => setFilters({ timeRange: range.value })}
                         aria-pressed={filters.timeRange === range.value}
                         className={cn(
-                          'px-1.5 py-0.5 text-[9px] font-medium transition-colors',
+                          'px-1.5 py-0.5 text-3xs font-medium transition-colors',
                           filters.timeRange === range.value
                             ? 'bg-primary/15 text-primary'
                             : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight/40'
@@ -463,7 +463,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                 {(filtersPopoverActive || hasFilters) && (
                   <button
                     onClick={clearFilters}
-                    className="w-full mt-1 px-1 py-1 text-[10px] text-text-muted hover:text-text-secondary transition-colors flex items-center gap-1 rounded hover:bg-surface-highlight/30"
+                    className="w-full mt-1 px-1 py-1 text-3xs text-text-muted hover:text-text-secondary transition-colors flex items-center gap-1 rounded hover:bg-surface-highlight/30"
                   >
                     <X size={9} /> Clear all filters
                   </button>
@@ -542,7 +542,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                   icon={Activity}
                   title="Tracing is disabled"
                   description={
-                    <>Enable <code className="font-mono text-[10px]">gateway.tracing</code> in stack.yaml to record tool-call traces.</>
+                    <>Enable <code className="font-mono text-3xs">gateway.tracing</code> in stack.yaml to record tool-call traces.</>
                   }
                 />
               ) : infraHidden > 0 ? (
@@ -553,7 +553,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                   action={
                     <button
                       onClick={() => setSegment('all')}
-                      className="text-[10px] text-primary hover:underline"
+                      className="text-3xs text-primary hover:underline"
                     >
                       Show all
                     </button>
@@ -564,7 +564,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                   icon={Activity}
                   title="No traces match your filters"
                   action={
-                    <button onClick={clearFilters} className="text-[10px] text-primary hover:underline">
+                    <button onClick={clearFilters} className="text-3xs text-primary hover:underline">
                       Clear filters
                     </button>
                   }
@@ -598,19 +598,19 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                   >
                     <thead className="sticky top-0 z-sticky bg-surface-elevated/95 backdrop-blur-sm">
                       <tr className="border-b border-border/30">
-                        <th className="px-3 py-1.5 text-left text-[9px] font-medium text-text-muted uppercase tracking-wider">Time</th>
-                        <th className="px-3 py-1.5 text-left text-[9px] font-medium text-text-muted uppercase tracking-wider">Tool</th>
+                        <th className="px-3 py-1.5 text-left text-3xs font-medium text-text-muted uppercase tracking-wider whitespace-nowrap">Time</th>
+                        <th className="px-3 py-1.5 text-left text-3xs font-medium text-text-muted uppercase tracking-wider whitespace-nowrap">Tool</th>
                         {!compact && (
                           <>
-                            <th className="px-3 py-1.5 text-left text-[9px] font-medium text-text-muted uppercase tracking-wider">Client</th>
-                            <th className="px-3 py-1.5 text-left text-[9px] font-medium text-text-muted uppercase tracking-wider">Server</th>
+                            <th className="px-3 py-1.5 text-left text-3xs font-medium text-text-muted uppercase tracking-wider whitespace-nowrap">Client</th>
+                            <th className="px-3 py-1.5 text-left text-3xs font-medium text-text-muted uppercase tracking-wider whitespace-nowrap">Server</th>
                           </>
                         )}
-                        <th className="px-3 py-1.5 text-right text-[9px] font-medium text-text-muted uppercase tracking-wider">Duration</th>
+                        <th className="px-3 py-1.5 text-right text-3xs font-medium text-text-muted uppercase tracking-wider whitespace-nowrap">Duration</th>
                         {!compact && (
-                          <th className="px-3 py-1.5 text-right text-[9px] font-medium text-text-muted uppercase tracking-wider">Spans</th>
+                          <th className="px-3 py-1.5 text-right text-3xs font-medium text-text-muted uppercase tracking-wider whitespace-nowrap">Spans</th>
                         )}
-                        <th className="px-3 py-1.5 text-left text-[9px] font-medium text-text-muted uppercase tracking-wider">Status</th>
+                        <th className="px-3 py-1.5 text-left text-3xs font-medium text-text-muted uppercase tracking-wider whitespace-nowrap">Status</th>
                         {!compact && <th className="w-8" aria-label="Row actions" />}
                       </tr>
                     </thead>
@@ -631,7 +631,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                   </table>
                 </div>
                 {/* Keyboard hint strip */}
-                <div className="flex items-center gap-2 px-3 h-5 flex-shrink-0 border-t border-border/20 text-[9px] text-text-muted/60 select-none">
+                <div className="flex items-center gap-2 px-3 h-5 flex-shrink-0 border-t border-border/20 text-3xs text-text-muted/60 select-none overflow-x-auto">
                   <span><kbd className="font-mono">j</kbd>/<kbd className="font-mono">k</kbd> navigate</span>
                   <span><kbd className="font-mono">↵</kbd> open</span>
                   <span><kbd className="font-mono">esc</kbd> close</span>
@@ -664,7 +664,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                       action={
                         <button
                           onClick={() => selectTrace(null)}
-                          className="text-[10px] text-primary hover:underline"
+                          className="text-3xs text-primary hover:underline"
                         >
                           Clear selection
                         </button>
@@ -694,7 +694,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                           <button
                             onClick={() => onViewLogs(traceDetail.traceId)}
                             title="View logs for this trace"
-                            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
+                            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-3xs font-medium text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
                           >
                             <ScrollText size={11} />
                             View logs
@@ -704,7 +704,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                           <button
                             onClick={() => onViewMetrics(selectedSummary.server)}
                             title={`View metrics for ${selectedSummary.server}`}
-                            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
+                            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-3xs font-medium text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
                           >
                             <Activity size={11} />
                             View metrics

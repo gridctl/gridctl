@@ -64,7 +64,7 @@ export const VariableRow = memo(function VariableRow({
       </span>
       <span>
         {variable.type === 'string' ? (
-          <span className="text-[10px] font-mono text-text-muted/50">
+          <span className="text-3xs font-mono text-text-muted/50">
             string
           </span>
         ) : (
@@ -73,21 +73,21 @@ export const VariableRow = memo(function VariableRow({
       </span>
       <span className="min-w-0">
         {variable.set ? (
-          <span className="inline-flex max-w-full items-center text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-elevated text-text-secondary truncate">
+          <span className="inline-flex max-w-full items-center text-3xs font-mono px-1.5 py-0.5 rounded bg-surface-elevated text-text-secondary truncate">
             {variable.set}
           </span>
         ) : (
-          <span className="text-[10px] text-text-muted/40">—</span>
+          <span className="text-3xs text-text-muted/40">—</span>
         )}
       </span>
-      <span className="text-[10px] font-mono text-text-muted truncate">
+      <span className="text-3xs font-mono text-text-muted truncate">
         {preview}
       </span>
       <span className="flex justify-end">
         {consumerCount > 0 && (
           <span
             title={`Used by ${consumerCount} ${consumerCount === 1 ? 'consumer' : 'consumers'}`}
-            className="inline-flex items-center gap-1 rounded-md px-1.5 py-px text-[10px] font-mono bg-surface-elevated text-text-muted"
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-px text-3xs font-mono bg-surface-elevated text-text-muted"
           >
             <Link2 size={9} />
             {consumerCount}

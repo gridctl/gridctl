@@ -229,7 +229,7 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
               <div className="min-w-0">
                 <h2 className="font-semibold text-text-primary truncate tracking-tight">Registry</h2>
                 <div className="flex items-center gap-1.5">
-                  <p className="text-[10px] text-text-muted uppercase tracking-wider">Agent Skills</p>
+                  <p className="text-3xs text-text-muted uppercase tracking-wider">Agent Skills</p>
                 </div>
               </div>
             </div>
@@ -249,14 +249,14 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
       {/* Item count + New Skill + Import buttons */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-border/20">
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-text-muted">
+          <span className="text-3xs text-text-muted">
             {searchQuery
               ? `${filteredSkills.length} of ${(skills ?? []).length} skills`
               : `${(skills ?? []).length} skills`}
           </span>
           {(updateSummary?.available ?? 0) > 0 && (
             <>
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium flex items-center gap-1 animate-fade-in-scale">
+              <span className="text-3xs px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium flex items-center gap-1 animate-fade-in-scale">
                 <ArrowUpCircle size={10} />
                 {updateSummary?.available} update{(updateSummary?.available ?? 0) !== 1 ? 's' : ''}
               </span>
@@ -264,7 +264,7 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
                 onClick={handleUpdateAll}
                 disabled={updatingAll}
                 className={cn(
-                  'text-[10px] px-1.5 py-0.5 rounded-full font-medium flex items-center gap-1 transition-colors',
+                  'text-3xs px-1.5 py-0.5 rounded-full font-medium flex items-center gap-1 transition-colors',
                   updatingAll
                     ? 'bg-text-muted/10 text-text-muted cursor-wait'
                     : 'bg-secondary/10 text-secondary hover:bg-secondary/20',
@@ -279,13 +279,13 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
         <div className="flex items-center gap-2">
           <button
             onClick={() => openWizard('skill')}
-            className="flex items-center gap-1 text-[10px] text-secondary hover:text-secondary/80 transition-colors"
+            className="flex items-center gap-1 text-3xs text-secondary hover:text-secondary/80 transition-colors"
           >
             <Download size={10} /> Import
           </button>
           <button
             onClick={() => { setEditingSkill(undefined); setShowEditor(true); }}
-            className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors"
+            className="flex items-center gap-1 text-3xs text-primary hover:text-primary/80 transition-colors"
           >
             <Plus size={10} /> New
           </button>
@@ -335,7 +335,7 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
       {/* Status footer */}
       {status && (
         <div className="px-4 py-2 border-t border-border/30 bg-surface/30">
-          <div className="flex items-center justify-between text-[10px] text-text-muted">
+          <div className="flex items-center justify-between text-3xs text-text-muted">
             <span>{status.totalSkills} total</span>
             <span className="text-status-running">{status.activeSkills} active</span>
           </div>
@@ -413,7 +413,7 @@ function SkillsList({
           {isFiltered ? 'No matching skills' : 'No skills registered'}
         </p>
         {!isFiltered && (
-          <p className="text-text-muted text-[10px] mt-1">
+          <p className="text-text-muted text-3xs mt-1">
             Create a SKILL.md to get started
           </p>
         )}
@@ -505,7 +505,7 @@ function SkillItem({
         </span>
         <StateBadge state={skill.state} />
         {skill.fileCount > 0 && (
-          <span className="text-[10px] text-text-muted font-mono flex items-center gap-0.5">
+          <span className="text-3xs text-text-muted font-mono flex items-center gap-0.5">
             <FolderOpen size={9} />
             {skill.fileCount}
           </span>
@@ -537,17 +537,17 @@ function SkillItem({
         <div className="px-3 pb-3 border-t border-border-subtle">
           {/* Description */}
           {skill.description && (
-            <p className="text-[11px] text-text-secondary mt-2 mb-2 leading-relaxed">
+            <p className="text-2xs text-text-secondary mt-2 mb-2 leading-relaxed">
               {skill.description}
             </p>
           )}
 
           {/* Body preview: the first six lines of the instructions. */}
           {bodyLoading && (
-            <p className="text-[10px] text-text-muted mt-2 italic">Loading preview…</p>
+            <p className="text-3xs text-text-muted mt-2 italic">Loading preview…</p>
           )}
           {preview && (
-            <pre className="text-[10px] text-text-muted font-mono bg-background/60 p-2 rounded overflow-x-auto max-h-32 scrollbar-dark leading-relaxed whitespace-pre-wrap">
+            <pre className="text-3xs text-text-muted font-mono bg-background/60 p-2 rounded overflow-x-auto max-h-32 scrollbar-dark leading-relaxed whitespace-pre-wrap">
               {preview}
               {previewTruncated && '\n...'}
             </pre>
@@ -556,12 +556,12 @@ function SkillItem({
           {/* Metadata badges */}
           <div className="flex gap-1 mt-2 flex-wrap">
             {skill.license && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-highlight text-text-muted">
+              <span className="text-3xs px-1.5 py-0.5 rounded bg-surface-highlight text-text-muted">
                 {skill.license}
               </span>
             )}
             {skill.compatibility && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-highlight text-text-muted">
+              <span className="text-3xs px-1.5 py-0.5 rounded bg-surface-highlight text-text-muted">
                 {skill.compatibility}
               </span>
             )}

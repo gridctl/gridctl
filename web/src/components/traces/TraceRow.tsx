@@ -114,7 +114,7 @@ export const TraceRow = memo(function TraceRow({
       <td className="px-3 py-1.5">
         <span
           className={cn(
-            'px-1.5 py-0.5 text-[9px] font-medium rounded-full border',
+            'px-1.5 py-0.5 text-3xs font-medium rounded-full border',
             trace.status === 'error'
               ? 'bg-status-error/10 text-status-error border-status-error/20'
               : 'bg-status-running/10 text-status-running border-status-running/20'

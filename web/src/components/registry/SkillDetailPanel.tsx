@@ -178,7 +178,7 @@ export function SkillDetailPanel({
             {source && (
               <span
                 title={source.repo}
-                className="inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-elevated text-text-muted"
+                className="inline-flex items-center gap-1 text-3xs font-mono px-1.5 py-0.5 rounded bg-surface-elevated text-text-muted"
               >
                 <GitBranch size={10} />
                 {repoInfo ? `${repoInfo.owner}/${repoInfo.repo}` : source.name}
@@ -194,7 +194,7 @@ export function SkillDetailPanel({
                 onClick={() => setShowCompare(true)}
                 aria-label={`Compare ${skill.name} with upstream`}
                 title="Edited locally; a sync will skip this unless you overwrite. Click to compare with upstream."
-                className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-pending/30 bg-status-pending/10 text-status-pending hover:bg-status-pending/20 transition-colors"
+                className="inline-flex items-center gap-1 text-3xs font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-pending/30 bg-status-pending/10 text-status-pending hover:bg-status-pending/20 transition-colors"
               >
                 <GitCompareArrows size={9} aria-hidden="true" />
                 Modified
@@ -210,7 +210,7 @@ export function SkillDetailPanel({
                     ? `Hidden from clients and projection by the skills policy (rule: ${skill.governance.policyRule})`
                     : 'Hidden from clients and projection by the skills policy'
                 }
-                className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-error/30 bg-status-error/10 text-status-error"
+                className="inline-flex items-center gap-1 text-3xs font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-error/30 bg-status-error/10 text-status-error"
               >
                 <ShieldOff size={9} aria-hidden="true" />
                 Blocked by policy
@@ -223,7 +223,7 @@ export function SkillDetailPanel({
             <button
               type="button"
               onClick={() => onEdit(skill)}
-              className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-md transition-colors"
+              className="flex items-center gap-1 px-2 py-1 text-2xs font-medium text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-md transition-colors"
             >
               <Pencil size={11} /> Edit
             </button>
@@ -380,7 +380,7 @@ function IncompletePackageNotice({
     >
       <AlertTriangle size={14} className="text-status-pending flex-shrink-0 mt-0.5" aria-hidden="true" />
       <div className="space-y-1.5 min-w-0">
-        <p className="text-[11px] text-status-pending leading-relaxed">
+        <p className="text-2xs text-status-pending leading-relaxed">
           These instructions reference {formatManagedDirs(missing)}, but no such files are
           installed. Steps that invoke them will fail at run time.
         </p>
@@ -389,12 +389,12 @@ function IncompletePackageNotice({
             type="button"
             onClick={onSync}
             disabled={syncing}
-            className="text-[11px] font-medium text-status-pending underline underline-offset-2 hover:text-status-pending/80 disabled:opacity-60 disabled:no-underline transition-colors"
+            className="text-2xs font-medium text-status-pending underline underline-offset-2 hover:text-status-pending/80 disabled:opacity-60 disabled:no-underline transition-colors"
           >
             {syncing ? 'Syncing…' : `Sync from ${source.name}`}
           </button>
         ) : (
-          <p className="text-[10px] text-status-pending leading-relaxed">
+          <p className="text-3xs text-status-pending leading-relaxed">
             This is a local skill, so add the files directly or re-import it from its source.
           </p>
         )}
@@ -428,11 +428,11 @@ interface SkillInstructionsProps {
  */
 function SkillInstructions({ body, loading, error, viewSource, onToggleSource, zoom }: SkillInstructionsProps) {
   if (loading) {
-    return <p className="text-[11px] text-text-muted">Loading instructions…</p>;
+    return <p className="text-2xs text-text-muted">Loading instructions…</p>;
   }
   if (error) {
     return (
-      <p className="text-[11px] text-status-error" role="alert">
+      <p className="text-2xs text-status-error" role="alert">
         Could not load instructions: {error}
       </p>
     );
@@ -461,7 +461,7 @@ function SkillInstructions({ body, loading, error, viewSource, onToggleSource, z
             type="button"
             onClick={onToggleSource}
             aria-pressed={viewSource}
-            className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium text-text-muted hover:text-text-primary bg-surface-elevated hover:bg-surface-highlight border border-border/40 rounded-md transition-colors"
+            className="flex items-center gap-1.5 px-2 py-1 text-2xs font-medium text-text-muted hover:text-text-primary bg-surface-elevated hover:bg-surface-highlight border border-border/40 rounded-md transition-colors"
           >
             {viewSource ? <Eye size={11} /> : <Code2 size={11} />}
             {viewSource ? 'Rendered' : 'View source'}
@@ -530,7 +530,7 @@ function SkillOverview({
             {skill.description}
           </p>
         ) : (
-          <p className="text-[11px] text-text-muted/70 italic">No description.</p>
+          <p className="text-2xs text-text-muted/70 italic">No description.</p>
         )}
       </Section>
 
@@ -542,7 +542,7 @@ function SkillOverview({
               {calls} {calls === 1 ? 'call' : 'calls'}
             </p>
           ) : (
-            <p className="text-[11px] text-text-muted/80 leading-relaxed">
+            <p className="text-2xs text-text-muted/80 leading-relaxed">
               No recorded calls{observedSince ? `, tracking since ${formatLastUsed(observedSince)}` : ''}.
               Counts are cumulative across served clients, so a zero may mean the skill predates tracking.
             </p>
@@ -625,7 +625,7 @@ function SkillOverview({
               )}
             </dl>
             <ModelHonorList honor={skill.modelPreference.honor} />
-            <p className="text-[10px] text-text-muted/70 leading-relaxed">
+            <p className="text-3xs text-text-muted/70 leading-relaxed">
               A preference is a durable default per projection target; clients keep their own
               resolution order and may override it.
             </p>
@@ -648,7 +648,7 @@ function SkillOverview({
             {tools.map((tool) => (
               <span
                 key={tool}
-                className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-elevated text-text-secondary border border-border/30"
+                className="text-3xs font-mono px-1.5 py-0.5 rounded bg-surface-elevated text-text-secondary border border-border/30"
               >
                 {tool}
               </span>
@@ -720,7 +720,7 @@ function SkillOverview({
 function CriterionRow({ keyword, text }: { keyword: string; text: string }) {
   return (
     <div className="flex items-start gap-2">
-      <span className="text-[9px] text-text-muted uppercase tracking-wider w-10 pt-0.5 flex-shrink-0 font-mono">
+      <span className="text-3xs text-text-muted uppercase tracking-wider w-10 pt-0.5 flex-shrink-0 font-mono">
         {keyword}
       </span>
       <span className="text-xs text-text-secondary leading-relaxed flex-1 break-words">{text}</span>
@@ -731,8 +731,8 @@ function CriterionRow({ keyword, text }: { keyword: string; text: string }) {
 function MetaRow({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
   return (
     <div className="flex items-start justify-between gap-3">
-      <dt className="text-[11px] text-text-muted flex-shrink-0">{label}</dt>
-      <dd className={cn('text-[11px] text-text-secondary text-right break-words', mono && 'font-mono')}>
+      <dt className="text-2xs text-text-muted flex-shrink-0">{label}</dt>
+      <dd className={cn('text-2xs text-text-secondary text-right break-words', mono && 'font-mono')}>
         {value}
       </dd>
     </div>
@@ -742,7 +742,7 @@ function MetaRow({ label, value, mono }: { label: string; value: ReactNode; mono
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-2">
-      <h3 className="text-[10px] uppercase tracking-[0.18em] text-text-muted/70">{title}</h3>
+      <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">{title}</h3>
       {children}
     </section>
   );

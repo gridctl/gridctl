@@ -40,7 +40,7 @@ export function ProviderReferenceSection({
   const current = references.find((ref) => ref.key === selected) ?? null;
   return (
     <section aria-label="Provider references" className="px-6 pb-6">
-      <h2 className="text-[9px] uppercase tracking-[0.24em] text-text-muted/50 mb-2">
+      <h2 className="text-3xs uppercase tracking-[0.24em] text-text-muted/50 mb-2">
         Provider references
       </h2>
       <div role="listbox" aria-label="Provider references">
@@ -54,12 +54,12 @@ export function ProviderReferenceSection({
             className="w-full text-left px-3 py-2 border-b border-border-subtle flex items-center gap-3"
           >
             <span className="font-mono text-xs text-text-primary truncate">{ref.key}</span>
-            <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-surface-elevated text-text-muted">
+            <span className="text-3xs uppercase tracking-wider px-1.5 py-0.5 rounded bg-surface-elevated text-text-muted">
               {ref.provider}
             </span>
-            <span className="text-[10px] text-text-muted">{consumerCount(ref.consumers)}</span>
+            <span className="text-3xs text-text-muted">{consumerCount(ref.consumers)}</span>
             <span
-              className={cn('ml-auto text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded', statusClass(ref.status))}
+              className={cn('ml-auto text-3xs uppercase tracking-wider px-1.5 py-0.5 rounded', statusClass(ref.status))}
               title={ref.error ?? undefined}
             >
               {ref.status}

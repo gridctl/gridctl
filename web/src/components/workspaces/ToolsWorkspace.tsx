@@ -780,10 +780,10 @@ function ToolsHeader({
       )}
     >
       <div className="flex items-center gap-3">
-        <div className="font-sans text-text-muted/60 text-[10px] uppercase tracking-[0.4em]">
+        <div className="font-sans text-text-muted/60 text-3xs uppercase tracking-[0.4em]">
           tools
         </div>
-        <div className="font-mono text-[10px] text-text-muted">
+        <div className="font-mono text-3xs text-text-muted">
           {serverCount} {serverCount === 1 ? 'server' : 'servers'}
         </div>
 
@@ -796,7 +796,7 @@ function ToolsHeader({
             onClick={onOpenGroups}
             aria-label="Open tool groups"
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-medium border transition-colors',
+              'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-3xs font-medium border transition-colors',
               'bg-secondary/10 text-secondary border-secondary/30 hover:bg-secondary/20 hover:border-secondary/50',
             )}
           >
@@ -808,7 +808,7 @@ function ToolsHeader({
             onClick={onOpenAccess}
             aria-label="Open per-client access editor"
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-medium border transition-colors',
+              'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-3xs font-medium border transition-colors',
               'bg-primary/10 text-primary border-primary/30 hover:bg-primary/20 hover:border-primary/50',
             )}
           >
@@ -821,7 +821,7 @@ function ToolsHeader({
             disabled={fleetDisabled}
             aria-label="Open fleet tool actions"
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-medium border transition-colors',
+              'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-3xs font-medium border transition-colors',
               'bg-background/40 text-text-muted border-border/40 hover:text-text-secondary hover:border-border',
               fleetDisabled && 'opacity-40 cursor-not-allowed',
             )}
@@ -835,7 +835,7 @@ function ToolsHeader({
             aria-pressed={auditMode}
             aria-label="Toggle audit mode"
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-medium border transition-colors',
+              'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-3xs font-medium border transition-colors',
               auditMode
                 ? 'bg-primary/15 text-primary border-primary/40'
                 : 'bg-background/40 text-text-muted border-border/40 hover:text-text-secondary hover:border-border',
@@ -845,13 +845,13 @@ function ToolsHeader({
             Audit
           </button>
           {auditMode && (
-            <label className="inline-flex items-center gap-1.5 text-[10px] text-text-muted">
+            <label className="inline-flex items-center gap-1.5 text-3xs text-text-muted">
               <span className="sr-only">Audit lookback window</span>
               <select
                 value={auditWindow}
                 onChange={(e) => onWindowChange(e.target.value as AuditWindow)}
                 aria-label="Audit lookback window"
-                className="bg-background/60 border border-border/40 rounded-md px-1.5 py-1 text-[10px] text-text-secondary focus:outline-none focus:border-primary/50"
+                className="bg-background/60 border border-border/40 rounded-md px-1.5 py-1 text-3xs text-text-secondary focus:outline-none focus:border-primary/50"
               >
                 {AUDIT_WINDOWS.map((w) => (
                   <option key={w.id} value={w.id}>
@@ -865,7 +865,7 @@ function ToolsHeader({
       </div>
 
       {optimizeUnusedCount !== null && (
-        <p className="text-[10px] text-text-muted/80 leading-relaxed" role="status">
+        <p className="text-3xs text-text-muted/80 leading-relaxed" role="status">
           <span className="text-status-pending font-medium">Optimize</span> suggests{' '}
           <span className="text-text-secondary font-medium">{optimizeUnusedCount}</span> unused{' '}
           {optimizeUnusedCount === 1 ? 'tool' : 'tools'} (7d)
@@ -885,7 +885,7 @@ function ToolsHeader({
       )}
 
       {auditMode && (
-        <p className="text-[10px] text-text-muted/80 leading-relaxed" role="status">
+        <p className="text-3xs text-text-muted/80 leading-relaxed" role="status">
           <span className="text-status-running">●</span> used ·{' '}
           <span className="text-status-pending">●</span> unused ·{' '}
           <span className="text-text-muted">●</span> disabled — &ldquo;unused&rdquo; means no
@@ -902,7 +902,7 @@ function ToolsHeader({
         </p>
       )}
       {auditMode && usageNotice && (
-        <p role="alert" className="text-[10px] text-status-error leading-relaxed">
+        <p role="alert" className="text-3xs text-status-error leading-relaxed">
           {usageNotice}
         </p>
       )}
@@ -974,7 +974,7 @@ function ServerRail({
           compact ? 'py-2' : 'py-3',
         )}
       >
-        <div className="text-[10px] font-medium text-text-muted/60 uppercase tracking-[0.3em]">
+        <div className="text-3xs font-medium text-text-muted/60 uppercase tracking-[0.3em]">
           servers
         </div>
       </div>
@@ -993,7 +993,7 @@ function ServerRail({
           />
         ))}
         {servers.length === 0 && (
-          <p className="px-3 py-2 text-[10px] text-text-muted/60 leading-relaxed">
+          <p className="px-3 py-2 text-3xs text-text-muted/60 leading-relaxed">
             No MCP servers in the active stack.
           </p>
         )}
@@ -1043,7 +1043,7 @@ function ServerPill({
       </span>
       {dirty && (
         <span
-          className="flex-shrink-0 text-[9px] font-medium px-1.5 py-0.5 rounded bg-status-pending/15 text-status-pending"
+          className="flex-shrink-0 text-3xs font-medium px-1.5 py-0.5 rounded bg-status-pending/15 text-status-pending"
           title="This server has unsaved tool changes; the count badge shows the draft selection"
         >
           unsaved
@@ -1051,7 +1051,7 @@ function ServerPill({
       )}
       {showUnused && (
         <span
-          className="flex-shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded tabular-nums bg-status-pending/15 text-status-pending"
+          className="flex-shrink-0 text-3xs font-mono px-1.5 py-0.5 rounded tabular-nums bg-status-pending/15 text-status-pending"
           title={`${unusedCount} exposed ${unusedCount === 1 ? 'tool' : 'tools'} unused in the lookback window`}
         >
           {unusedCount} unused
@@ -1059,7 +1059,7 @@ function ServerPill({
       )}
       <span
         className={cn(
-          'flex-shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded tabular-nums',
+          'flex-shrink-0 text-3xs font-mono px-1.5 py-0.5 rounded tabular-nums',
           showDraft
             ? 'bg-status-pending/15 text-status-pending'
             : active
@@ -1240,7 +1240,7 @@ function ServerDetail({
       {/* Count + quick actions. The neutral "empty means all" help text must
           never sit next to a zero draft count — there it would describe the
           re-expose-all footgun as expected behavior. */}
-      <div className="flex items-center gap-2 text-[11px] text-text-muted">
+      <div className="flex items-center gap-2 text-2xs text-text-muted">
         {saveBlocked ? (
           <span role="alert" className="text-status-error">
             <span className="font-medium">0</span> of{' '}
@@ -1260,7 +1260,7 @@ function ServerDetail({
             onClick={selectAll}
             disabled={isSaving}
             aria-label="Select all tools"
-            className="text-[10px] text-secondary hover:text-secondary-light transition-colors disabled:opacity-50"
+            className="text-3xs text-secondary hover:text-secondary-light transition-colors disabled:opacity-50"
           >
             Select all
           </button>
@@ -1270,7 +1270,7 @@ function ServerDetail({
             onClick={clearAll}
             disabled={isSaving}
             aria-label="Clear all tools"
-            className="text-[10px] text-secondary hover:text-secondary-light transition-colors disabled:opacity-50"
+            className="text-3xs text-secondary hover:text-secondary-light transition-colors disabled:opacity-50"
           >
             Clear
           </button>
@@ -1280,7 +1280,7 @@ function ServerDetail({
       {auditMode && unusedSelected.length > 0 && (
         <div className="flex items-center gap-2 rounded-md border border-status-pending/30 bg-status-pending/[0.06] px-3 py-2">
           <Activity size={12} className="text-status-pending flex-shrink-0" aria-hidden="true" />
-          <p className="flex-1 text-[11px] text-text-secondary">
+          <p className="flex-1 text-2xs text-text-secondary">
             <span className="font-medium text-status-pending">{unusedSelected.length}</span> exposed{' '}
             {unusedSelected.length === 1 ? 'tool has' : 'tools have'} no recorded calls in the
             lookback window.
@@ -1290,7 +1290,7 @@ function ServerDetail({
             onClick={() => setRemediateOpen(true)}
             disabled={isSaving}
             aria-label={`Disable ${unusedSelected.length} unused tools`}
-            className="flex-shrink-0 inline-flex items-center gap-1 rounded-md border border-status-pending/40 bg-status-pending/10 px-2 py-1 text-[10px] font-medium text-status-pending hover:bg-status-pending/20 transition-colors disabled:opacity-50"
+            className="flex-shrink-0 inline-flex items-center gap-1 rounded-md border border-status-pending/40 bg-status-pending/10 px-2 py-1 text-3xs font-medium text-status-pending hover:bg-status-pending/20 transition-colors disabled:opacity-50"
           >
             Disable {unusedSelected.length} unused
           </button>
@@ -1298,7 +1298,7 @@ function ServerDetail({
       )}
 
       <div
-        className="flex items-center gap-1.5 flex-wrap text-[10px]"
+        className="flex items-center gap-1.5 flex-wrap text-3xs"
         role="group"
         aria-label="Tool list filters and sort"
       >
@@ -1344,7 +1344,7 @@ function ServerDetail({
               value={sortMode}
               onChange={(e) => onSort(e.target.value as ToolSortMode)}
               aria-label="Sort tools"
-              className="bg-background/60 border border-border/40 rounded-md px-1.5 py-1 text-[10px] text-text-secondary focus:outline-none focus:border-primary/50"
+              className="bg-background/60 border border-border/40 rounded-md px-1.5 py-1 text-3xs text-text-secondary focus:outline-none focus:border-primary/50"
             >
               {TOOL_SORT_MODES.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -1371,7 +1371,7 @@ function ServerDetail({
 
           <Command.List className="max-h-[60vh] overflow-y-auto" aria-label="Available tools">
             <Command.Empty>
-              <p className="text-[11px] text-text-muted/60 italic py-4 px-3 text-center">
+              <p className="text-2xs text-text-muted/60 italic py-4 px-3 text-center">
                 {rows.length === 0
                   ? 'No tools discovered for this server yet.'
                   : visible.length === 0
@@ -1410,7 +1410,7 @@ function ServerDetail({
 
       {hiddenReference && (
         <div role="alert" className="rounded-md border border-status-error/40 bg-status-error/[0.05] px-3 py-2">
-          <p className="text-[11px] text-status-error">{hiddenReference}</p>
+          <p className="text-2xs text-status-error">{hiddenReference}</p>
         </div>
       )}
 
@@ -1421,15 +1421,15 @@ function ServerDetail({
         >
           <AlertCircle size={12} className="text-status-pending flex-shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0 space-y-1">
-            <p className="text-[11px] text-status-pending font-medium">
+            <p className="text-2xs text-status-pending font-medium">
               The stack file was modified outside the canvas.
             </p>
-            <p className="text-[10px] text-text-muted">{conflict}</p>
+            <p className="text-3xs text-text-muted">{conflict}</p>
             <button
               type="button"
               onClick={handleReloadFromDisk}
               aria-label="Reload stack file from disk"
-              className="inline-flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+              className="inline-flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
             >
               <RefreshCw size={10} />
               Reload file
@@ -1445,7 +1445,7 @@ function ServerDetail({
             onClick={handleDiscard}
             disabled={isSaving}
             aria-label="Discard unsaved tool changes"
-            className="flex-shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[11px] font-medium border border-border/40 text-text-secondary hover:text-text-primary hover:bg-surface-highlight/50 transition-colors disabled:opacity-50"
+            className="flex-shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-2xs font-medium border border-border/40 text-text-secondary hover:text-text-primary hover:bg-surface-highlight/50 transition-colors disabled:opacity-50"
           >
             <Undo2 size={11} />
             Discard
@@ -1457,7 +1457,7 @@ function ServerDetail({
           disabled={!dirty || isSaving || saveBlocked}
           aria-label={saveLabel}
           className={cn(
-            'flex-1 inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[11px] font-medium transition-colors',
+            'flex-1 inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-2xs font-medium transition-colors',
             dirty && !isSaving && !saveBlocked
               ? 'bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30'
               : 'bg-surface-highlight/50 text-text-muted border border-border/30 cursor-not-allowed',
@@ -1561,7 +1561,7 @@ interface GlobalResultsProps {
 function GlobalResults({ results, query, serverCount, onPick, auditFor }: GlobalResultsProps) {
   return (
     <div className="px-6 py-4 max-w-4xl space-y-2">
-      <p className="text-[10px] uppercase tracking-[0.18em] text-text-muted/70">
+      <p className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">
         Searching all {serverCount} {serverCount === 1 ? 'server' : 'servers'} ·{' '}
         {results.length} {results.length === 1 ? 'match' : 'matches'}
       </p>
@@ -1586,12 +1586,12 @@ function GlobalResults({ results, query, serverCount, onPick, auditFor }: Global
                     <span className="text-text-primary">{r.tool}</span>
                   </div>
                   {r.description && (
-                    <div className="text-[10px] text-text-muted truncate mt-0.5">{r.description}</div>
+                    <div className="text-3xs text-text-muted truncate mt-0.5">{r.description}</div>
                   )}
                   {auditState && (
                     <div
                       className={cn(
-                        'flex items-center gap-1 text-[10px] mt-0.5',
+                        'flex items-center gap-1 text-3xs mt-0.5',
                         AUDIT_STYLES[auditState].text,
                       )}
                     >

@@ -81,9 +81,9 @@ export function AccessLensEditorBody({ servers }: AccessLensEditorBodyProps) {
       <div className="flex items-center gap-2">
         <ShieldCheck size={14} className="text-primary/70" aria-hidden="true" />
         <h3 className="text-sm font-medium text-text-primary">{clientName}</h3>
-        <span className="font-mono text-[10px] text-text-muted">{clientSlug}</span>
+        <span className="font-mono text-3xs text-text-muted">{clientSlug}</span>
       </div>
-      <p className="text-[11px] text-text-muted leading-relaxed">
+      <p className="text-2xs text-text-muted leading-relaxed">
         Toggle which MCP servers <span className="text-text-secondary">{clientName}</span> can reach,
         and narrow a granted server to specific tools. Edits stage in a draft — the canvas re-lights
         live, but nothing is written until you save.
@@ -92,14 +92,14 @@ export function AccessLensEditorBody({ servers }: AccessLensEditorBodyProps) {
       {createsBlock && (
         <div className="flex items-start gap-2 rounded-md border border-status-pending/30 bg-status-pending/[0.06] px-3 py-2">
           <AlertCircle size={12} className="text-status-pending flex-shrink-0 mt-0.5" aria-hidden="true" />
-          <p className="text-[11px] text-text-secondary leading-relaxed">
+          <p className="text-2xs text-text-secondary leading-relaxed">
             No <span className="font-mono text-status-pending">clients</span> block exists yet. Saving
             creates one; unlisted clients become <span className="font-medium">deny by default</span>.
           </p>
         </div>
       )}
 
-      <div className="flex items-center gap-2 text-[11px] text-text-muted">
+      <div className="flex items-center gap-2 text-2xs text-text-muted">
         <span>
           <span className="text-text-secondary font-medium">{draft.length}</span> of{' '}
           <span className="text-text-secondary font-medium">{serverNames.length}</span> servers
@@ -108,7 +108,7 @@ export function AccessLensEditorBody({ servers }: AccessLensEditorBodyProps) {
           <button
             type="button"
             onClick={() => selectAll(serverNames)}
-            className="text-[10px] text-secondary hover:text-secondary-light transition-colors"
+            className="text-3xs text-secondary hover:text-secondary-light transition-colors"
           >
             All
           </button>
@@ -116,7 +116,7 @@ export function AccessLensEditorBody({ servers }: AccessLensEditorBodyProps) {
           <button
             type="button"
             onClick={clearAll}
-            className="text-[10px] text-secondary hover:text-secondary-light transition-colors"
+            className="text-3xs text-secondary hover:text-secondary-light transition-colors"
           >
             None
           </button>
@@ -125,7 +125,7 @@ export function AccessLensEditorBody({ servers }: AccessLensEditorBodyProps) {
 
       <div className="rounded-lg border border-border/40 bg-background/60 divide-y divide-border/20">
         {serverNames.length === 0 && (
-          <p className="px-3 py-4 text-[11px] text-text-muted/60 italic text-center">
+          <p className="px-3 py-4 text-2xs text-text-muted/60 italic text-center">
             No MCP servers in the active stack.
           </p>
         )}
@@ -159,7 +159,7 @@ export function AccessLensEditorBody({ servers }: AccessLensEditorBodyProps) {
                   {name}
                 </span>
                 {scoped && (
-                  <span className="ml-auto flex-shrink-0 text-[9px] font-mono px-1.5 py-0.5 rounded bg-primary/15 text-primary">
+                  <span className="ml-auto flex-shrink-0 text-3xs font-mono px-1.5 py-0.5 rounded bg-primary/15 text-primary">
                     scoped
                   </span>
                 )}
@@ -183,7 +183,7 @@ export function AccessLensEditorBody({ servers }: AccessLensEditorBodyProps) {
       </div>
 
       {noneSelected && (
-        <p className="text-[10px] text-status-pending" role="status">
+        <p className="text-3xs text-status-pending" role="status">
           Select at least one server to save. An empty list means &ldquo;all servers&rdquo;, not
           &ldquo;deny&rdquo;.
         </p>
@@ -198,14 +198,14 @@ export function AccessLensEditorBody({ servers }: AccessLensEditorBodyProps) {
         >
           <AlertCircle size={12} className="text-status-pending flex-shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0 space-y-1">
-            <p className="text-[11px] text-status-pending font-medium">
+            <p className="text-2xs text-status-pending font-medium">
               The stack file changed on disk.
             </p>
-            <p className="text-[10px] text-text-muted">{conflict}</p>
+            <p className="text-3xs text-text-muted">{conflict}</p>
             <button
               type="button"
               onClick={handleReloadFromDisk}
-              className="inline-flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+              className="inline-flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
             >
               <RefreshCw size={10} />
               Reload file (keeps your draft)
@@ -240,7 +240,7 @@ function RawAllowList({ tools }: { tools: string[] }) {
           type="button"
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
-          className="text-[10px] text-secondary hover:text-secondary-light transition-colors"
+          className="text-3xs text-secondary hover:text-secondary-light transition-colors"
         >
           {open ? 'Hide' : 'View'} raw tools allow-list ({tools.length})
         </button>
@@ -248,7 +248,7 @@ function RawAllowList({ tools }: { tools: string[] }) {
           <button
             type="button"
             onClick={copy}
-            className="inline-flex items-center gap-1 text-[10px] text-text-muted hover:text-text-secondary transition-colors"
+            className="inline-flex items-center gap-1 text-3xs text-text-muted hover:text-text-secondary transition-colors"
           >
             {copied ? <Check size={10} className="text-status-running" /> : <Copy size={10} />}
             {copied ? 'Copied' : 'Copy'}
@@ -256,7 +256,7 @@ function RawAllowList({ tools }: { tools: string[] }) {
         )}
       </div>
       {open && (
-        <pre className="max-h-40 overflow-auto scrollbar-dark rounded-md border border-border/40 bg-background/70 px-3 py-2 text-[10px] font-mono leading-relaxed text-text-secondary">
+        <pre className="max-h-40 overflow-auto scrollbar-dark rounded-md border border-border/40 bg-background/70 px-3 py-2 text-3xs font-mono leading-relaxed text-text-secondary">
           {tools.join('\n')}
         </pre>
       )}

@@ -198,7 +198,7 @@ export function VariableQuickAddForm({
           </Button>
         </div>
       </div>
-      {error && <p className="mt-1.5 text-[10px] text-status-error">{error}</p>}
+      {error && <p className="mt-1.5 text-3xs text-status-error">{error}</p>}
     </form>
   );
 }

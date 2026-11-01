@@ -138,11 +138,11 @@ export function PackRemoveDialog({ packName, onClose, onRemoved }: PackRemoveDia
                 <ul className="max-h-32 overflow-y-auto scrollbar-dark rounded-lg border border-border/40 bg-background/40 divide-y divide-border/20">
                   {preview.kept.map((r, i) => (
                     <li key={`${r.kind}:${r.name}:${i}`} className="px-3 py-1.5">
-                      <span className="font-mono text-[11px] text-text-secondary">
+                      <span className="font-mono text-2xs text-text-secondary">
                         {r.kind}/{r.name}
                       </span>
                       {r.remediation && (
-                        <p className="text-[11px] text-text-muted mt-0.5">{r.remediation}</p>
+                        <p className="text-2xs text-text-muted mt-0.5">{r.remediation}</p>
                       )}
                     </li>
                   ))}
@@ -239,8 +239,8 @@ function RemoveList({ rows }: { rows: PackRow[] }) {
     <ul className="max-h-40 overflow-y-auto scrollbar-dark rounded-lg border border-border/40 bg-background/40 divide-y divide-border/20">
       {PACK_KIND_ORDER.filter((k) => byKind.has(k)).map((kind) => (
         <li key={kind} className="px-3 py-1.5">
-          <span className="text-[10px] uppercase tracking-wider text-text-muted">{packKindLabel(kind)}</span>
-          <p className="font-mono text-[11px] text-text-secondary mt-0.5">
+          <span className="text-3xs uppercase tracking-wider text-text-muted">{packKindLabel(kind)}</span>
+          <p className="font-mono text-2xs text-text-secondary mt-0.5">
             {(byKind.get(kind) ?? []).join(', ')}
           </p>
         </li>

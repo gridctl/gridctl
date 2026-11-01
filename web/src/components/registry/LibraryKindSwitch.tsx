@@ -30,7 +30,7 @@ export function LibraryKindSwitch({
           onClick={() => onChange(opt.key)}
           aria-pressed={kind === opt.key}
           className={cn(
-            'px-2 py-1 rounded-md text-[10px] uppercase tracking-[0.25em] font-medium transition-colors border',
+            'px-2 py-1 rounded-md text-3xs uppercase tracking-[0.25em] font-medium transition-colors border',
             kind === opt.key
               ? 'bg-primary/10 text-primary border-primary/25'
               : 'text-text-muted/60 hover:text-text-secondary hover:bg-surface-highlight border-transparent',

@@ -61,11 +61,11 @@ export function LogsView({
     <div className="flex items-center gap-1 flex-shrink-0">
       {/* Live / paused state */}
       {view.isPaused ? (
-        <span className="text-[10px] px-2 py-0.5 bg-status-pending/15 text-status-pending rounded-full font-medium border border-status-pending/20">
+        <span className="text-3xs px-2 py-0.5 bg-status-pending/15 text-status-pending rounded-full font-medium border border-status-pending/20">
           Paused
         </span>
       ) : (
-        <span className="flex items-center gap-1 text-[9px] text-status-running font-medium">
+        <span className="flex items-center gap-1 text-3xs text-status-running font-medium">
           <span className="w-1.5 h-1.5 rounded-full bg-status-running animate-pulse motion-reduce:animate-none" />
           Live
         </span>
@@ -101,13 +101,13 @@ export function LogsView({
           <div className="absolute right-0 top-full mt-1 z-popover min-w-[130px] py-1 rounded-lg border border-border bg-surface-elevated/95 backdrop-blur-xl shadow-bevel animate-fade-in-scale">
             <button
               onClick={() => exportFiltered('jsonl')}
-              className="w-full px-3 py-1.5 text-left text-[10px] text-text-secondary hover:bg-surface-highlight hover:text-text-primary transition-colors"
+              className="w-full px-3 py-1.5 text-left text-3xs text-text-secondary hover:bg-surface-highlight hover:text-text-primary transition-colors"
             >
               Export as JSONL
             </button>
             <button
               onClick={() => exportFiltered('txt')}
-              className="w-full px-3 py-1.5 text-left text-[10px] text-text-secondary hover:bg-surface-highlight hover:text-text-primary transition-colors"
+              className="w-full px-3 py-1.5 text-left text-3xs text-text-secondary hover:bg-surface-highlight hover:text-text-primary transition-colors"
             >
               Export as TXT
             </button>
@@ -208,7 +208,7 @@ export function LogsView({
       />
 
       {/* Keyboard hint strip */}
-      <div className="flex items-center gap-2 px-3 h-5 flex-shrink-0 border-t border-border/20 text-[9px] text-text-muted/60 select-none">
+      <div className="flex items-center gap-2 px-3 h-5 flex-shrink-0 border-t border-border/20 text-3xs text-text-muted/60 select-none overflow-x-auto">
         <span><kbd className="font-mono">j</kbd>/<kbd className="font-mono">k</kbd> navigate</span>
         <span><kbd className="font-mono">↵</kbd> expand</span>
         <span><kbd className="font-mono">/</kbd> search</span>
@@ -235,7 +235,7 @@ function FilterChip({
       onClick={onClear}
       title={title}
       aria-label={ariaLabel}
-      className="flex items-center gap-1 h-6 px-2 text-[10px] font-mono rounded border bg-primary/10 text-primary border-primary/30 hover:bg-primary/15 transition-colors flex-shrink-0"
+      className="flex items-center gap-1 h-6 px-2 text-3xs font-mono rounded border bg-primary/10 text-primary border-primary/30 hover:bg-primary/15 transition-colors flex-shrink-0"
     >
       {label}
       <X size={9} />

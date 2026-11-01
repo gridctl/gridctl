@@ -96,7 +96,7 @@ export function SidebarTelemetrySection({ serverName }: Props) {
 
   return (
     <div className="space-y-3">
-      <div className="text-[10px] text-text-muted font-mono break-all bg-background/50 px-2 py-1 rounded-md border border-border-subtle">
+      <div className="text-3xs text-text-muted font-mono break-all bg-background/50 px-2 py-1 rounded-md border border-border-subtle">
         {storagePath}
       </div>
 
@@ -127,7 +127,7 @@ export function SidebarTelemetrySection({ serverName }: Props) {
             disabled={pending === 'reset'}
             className={cn(
               'inline-flex items-center gap-1.5 px-2 py-1 rounded-md',
-              'text-[11px] font-medium text-text-secondary',
+              'text-2xs font-medium text-text-secondary',
               'hover:bg-surface-highlight transition-colors',
               'focus:outline-none focus:ring-2 focus:ring-primary/30',
             )}
@@ -142,7 +142,7 @@ export function SidebarTelemetrySection({ serverName }: Props) {
           disabled={serverInventory.length === 0}
           className={cn(
             'inline-flex items-center gap-1.5 ml-auto px-2 py-1 rounded-md',
-            'text-[11px] font-medium transition-colors',
+            'text-2xs font-medium transition-colors',
             serverInventory.length === 0
               ? 'text-text-muted/60 cursor-not-allowed'
               : 'text-status-error hover:bg-status-error/10',
@@ -245,7 +245,7 @@ function TriStateRow({ signal, state, globalDefault, busy, onClick }: RowProps) 
       </span>
       <span
         className={cn(
-          'text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded',
+          'text-3xs font-mono uppercase tracking-wider px-1.5 py-0.5 rounded',
           isOn && 'bg-status-running/10 text-status-running border border-status-running/20',
           isOff && 'bg-status-pending/10 text-status-pending border border-status-pending/20',
           isInherit && 'bg-surface-elevated text-text-muted border border-border/40',

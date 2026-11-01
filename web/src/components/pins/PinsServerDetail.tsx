@@ -129,7 +129,7 @@ export function PinsServerDetail({
           {label}
         </span>
         <span
-          className="flex items-center gap-1 text-[11px] text-text-muted ml-auto"
+          className="flex items-center gap-1 text-2xs text-text-muted ml-auto"
           title={sp.last_verified_at || undefined}
         >
           <Clock size={10} className="text-text-muted/60" />
@@ -151,7 +151,7 @@ export function PinsServerDetail({
         )}
       </div>
 
-      <div className="flex items-center gap-4 text-[11px] text-text-muted">
+      <div className="flex items-center gap-4 text-2xs text-text-muted">
         <span>
           <span className="text-text-secondary font-medium">{sp.tool_count}</span> tools pinned
         </span>
@@ -164,7 +164,7 @@ export function PinsServerDetail({
 
       <section id={TOOLS_SECTION_ID} className="space-y-2 max-w-5xl">
         <div className="flex items-center gap-2">
-          <h3 className="text-[10px] uppercase tracking-[0.18em] text-text-muted/70">
+          <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">
             Pinned tool records
           </h3>
           <button
@@ -174,7 +174,7 @@ export function PinsServerDetail({
               findingsOnly ? 'Show all pinned tools' : 'Show only tools with scan findings'
             }
             className={cn(
-              'h-6 px-2 text-[10px] font-medium rounded border transition-colors flex items-center gap-1 flex-shrink-0',
+              'h-6 px-2 text-3xs font-medium rounded border transition-colors flex items-center gap-1 flex-shrink-0',
               findingsOnly
                 ? 'bg-status-pending/15 text-status-pending border-status-pending/30'
                 : 'bg-background/60 text-text-muted border-border/40 hover:text-text-secondary hover:border-border/60',
@@ -184,7 +184,7 @@ export function PinsServerDetail({
             Findings only
           </button>
           {findingsOnly && (
-            <span className="text-[10px] text-text-muted">
+            <span className="text-3xs text-text-muted">
               {flaggedRecords.length} of {toolRecords.length} tools
             </span>
           )}
@@ -221,7 +221,7 @@ export function PinsServerDetail({
                         )}
                       </div>
                       {rec.description && (
-                        <div className="text-[10px] text-text-muted mt-0.5 whitespace-pre-wrap break-words">
+                        <div className="text-3xs text-text-muted mt-0.5 whitespace-pre-wrap break-words">
                           {escapeNonPrintable(rec.description)}
                         </div>
                       )}
@@ -261,7 +261,7 @@ export function PinsServerDetail({
       {/* Destructive affordance, deliberately far from Approve: resetting
           discards the trust record, and the next verify blindly re-pins. */}
       <section className="pt-4 mt-2 border-t border-border/30 space-y-2 max-w-3xl">
-        <h3 className="text-[10px] uppercase tracking-[0.18em] text-status-error/70">Danger</h3>
+        <h3 className="text-3xs uppercase tracking-[0.18em] text-status-error/70">Danger</h3>
         <div className="flex items-center gap-3">
           <button
             id={RESET_BUTTON_ID}
@@ -281,7 +281,7 @@ export function PinsServerDetail({
             <Trash2 size={11} />
             {isResetting ? 'Resetting…' : `Reset pins for ${name}`}
           </button>
-          <p className="text-[11px] text-text-muted">
+          <p className="text-2xs text-text-muted">
             Deletes the pin record; the server re-pins on the next verify.
           </p>
         </div>

@@ -116,18 +116,18 @@ export function VaultEncryptForm({
       {guidance && (
         <p
           className={cn(
-            'text-[10px]',
+            'text-3xs',
             tooShort ? 'text-status-error' : 'text-status-pending',
           )}
         >
           {guidance}
         </p>
       )}
-      {error && <p className="text-[10px] text-status-error">{error}</p>}
+      {error && <p className="text-3xs text-status-error">{error}</p>}
       <div className="flex justify-end gap-2">
         <button
           onClick={handleCancel}
-          className="px-2 py-1 text-[10px] text-text-secondary hover:text-text-primary rounded transition-colors"
+          className="px-2 py-1 text-3xs text-text-secondary hover:text-text-primary rounded transition-colors"
         >
           Cancel
         </button>

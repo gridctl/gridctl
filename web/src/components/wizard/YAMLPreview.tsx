@@ -92,19 +92,19 @@ export function YAMLPreview({ yaml, className }: YAMLPreviewProps) {
           {!validating && errorCount === 0 && warningCount === 0 && yaml.trim() && (
             <div className="flex items-center gap-1 text-status-running">
               <CheckCircle2 size={12} />
-              <span className="text-[10px] font-medium">Valid</span>
+              <span className="text-3xs font-medium">Valid</span>
             </div>
           )}
           {errorCount > 0 && (
             <div className="flex items-center gap-1 text-status-error">
               <AlertCircle size={12} />
-              <span className="text-[10px] font-medium">{errorCount}</span>
+              <span className="text-3xs font-medium">{errorCount}</span>
             </div>
           )}
           {warningCount > 0 && (
             <div className="flex items-center gap-1 text-status-pending">
               <AlertTriangle size={12} />
-              <span className="text-[10px] font-medium">{warningCount}</span>
+              <span className="text-3xs font-medium">{warningCount}</span>
             </div>
           )}
         </div>
@@ -113,10 +113,10 @@ export function YAMLPreview({ yaml, className }: YAMLPreviewProps) {
       {/* YAML Content */}
       <div className="flex-1 overflow-y-auto scrollbar-dark">
         {yaml.trim() ? (
-          <div className="font-mono text-[11px] leading-[1.7]">
+          <div className="font-mono text-2xs leading-[1.7]">
             {lines.map(({ lineNum, html }) => (
               <div key={lineNum} className="flex group hover:bg-surface-overlay-1">
-                <span className="w-8 flex-shrink-0 text-right pr-3 text-text-muted/40 select-none text-[10px] leading-[1.87]">
+                <span className="w-8 flex-shrink-0 text-right pr-3 text-text-muted/40 select-none text-3xs leading-[1.87]">
                   {lineNum}
                 </span>
                 <span
@@ -140,7 +140,7 @@ export function YAMLPreview({ yaml, className }: YAMLPreviewProps) {
             <div
               key={i}
               className={cn(
-                'flex items-start gap-2 px-4 py-1.5 text-[10px]',
+                'flex items-start gap-2 px-4 py-1.5 text-3xs',
                 issue.severity === 'error'
                   ? 'text-status-error bg-status-error/5'
                   : 'text-status-pending bg-status-pending/5',

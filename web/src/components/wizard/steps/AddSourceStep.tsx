@@ -173,14 +173,14 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
       <div className="space-y-3">
         <div>
           <h3 className="text-sm font-medium text-text-primary mb-0.5">Import from Git</h3>
-          <p className="text-[10px] text-text-muted">
+          <p className="text-3xs text-text-muted">
             Enter a repository URL to discover and import skills
           </p>
         </div>
 
         {/* URL field */}
         <div className="space-y-1.5">
-          <label htmlFor={`${fieldId}-url`} className="text-[10px] text-text-muted uppercase tracking-wider">
+          <label htmlFor={`${fieldId}-url`} className="text-3xs text-text-muted uppercase tracking-wider">
             Repository URL
           </label>
           <div className="relative">
@@ -211,7 +211,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
 
           {/* Validation feedback */}
           {error && (
-            <div className="flex items-center gap-1.5 text-status-error text-[10px]">
+            <div className="flex items-center gap-1.5 text-status-error text-3xs">
               <AlertCircle size={10} />
               <span>{error}</span>
             </div>
@@ -219,7 +219,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
 
           {/* Repo info badge */}
           {repoInfo && !error && (
-            <div className="flex items-center gap-1.5 text-text-muted text-[10px]">
+            <div className="flex items-center gap-1.5 text-text-muted text-3xs">
               <GitBranch size={10} className="text-primary/60" />
               <span className="text-primary/80 font-medium">{repoInfo.owner}/{repoInfo.repo}</span>
             </div>
@@ -229,7 +229,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
         {/* Optional fields row */}
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
-            <label htmlFor={`${fieldId}-ref`} className="text-[10px] text-text-muted uppercase tracking-wider">
+            <label htmlFor={`${fieldId}-ref`} className="text-3xs text-text-muted uppercase tracking-wider">
               Ref <span className="normal-case">(optional)</span>
             </label>
             <input
@@ -242,7 +242,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
             />
           </div>
           <div className="space-y-1">
-            <label htmlFor={`${fieldId}-path`} className="text-[10px] text-text-muted uppercase tracking-wider">
+            <label htmlFor={`${fieldId}-path`} className="text-3xs text-text-muted uppercase tracking-wider">
               Path <span className="normal-case">(optional)</span>
             </label>
             <input
@@ -262,10 +262,10 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
 
         {agentBlock && (
           <div className="rounded-lg border border-status-pending/30 bg-status-pending/5 p-3 space-y-2">
-            <p className="flex items-center gap-1.5 text-[11px] text-status-pending font-medium">
+            <p className="flex items-center gap-1.5 text-2xs text-status-pending font-medium">
               <ShieldAlert size={12} aria-hidden="true" /> No ssh-agent reachable
             </p>
-            <p className="text-[10px] text-text-muted">
+            <p className="text-3xs text-text-muted">
               The gridctl daemon has no usable agent socket. It inherits one only from the
               shell that started it, and can outlive it, so an agent in your own terminal
               does not help here. A token cannot authenticate an SSH URL.
@@ -275,7 +275,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
                 Try HTTPS instead
               </Button>
             )}
-            <p className="text-[10px] text-text-muted">
+            <p className="text-3xs text-text-muted">
               Otherwise: start an agent, add your key, and restart the daemon so it inherits
               the socket.
             </p>
@@ -305,7 +305,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
 
         {/* First-run tip when the list is empty */}
         {loadedRecent && recentSources.length === 0 && (
-          <p className="text-[10px] text-text-muted text-center italic">
+          <p className="text-3xs text-text-muted text-center italic">
             Private repo? Set your token in Vault first, then choose it above.
           </p>
         )}
@@ -316,7 +316,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <Clock size={10} className="text-text-muted" />
-            <span className="text-[10px] text-text-muted uppercase tracking-wider">
+            <span className="text-3xs text-text-muted uppercase tracking-wider">
               Recent Sources
             </span>
           </div>
@@ -344,17 +344,17 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
                         {info ? `${info.owner}/${info.repo}` : source.name}
                       </span>
                       {source.updateAvailable && (
-                        <span className="text-[8px] px-1 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+                        <span className="text-3xs px-1 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
                           update
                         </span>
                       )}
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[10px] text-text-muted truncate">
+                      <span className="text-3xs text-text-muted truncate">
                         {source.skills?.length ?? 0} skill{(source.skills?.length ?? 0) !== 1 ? 's' : ''}
                       </span>
                       {source.ref && (
-                        <span className="text-[10px] text-text-muted font-mono">
+                        <span className="text-3xs text-text-muted font-mono">
                           @ {source.ref}
                         </span>
                       )}

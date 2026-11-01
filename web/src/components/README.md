@@ -149,6 +149,10 @@ workspace-specific props.
   `chart-blue`, `chart-cyan`, `chart-pink`, `chart-orange`, and
   `chart-purple`. The set lives in `web/src/index.css` and re-keys with
   `data-theme`.
+- Use the type scale for UI text: `text-3xs` (10 px at the default
+  root), `text-2xs` (11 px), `text-xs` (12 px), and `text-sm` (14 px).
+  Bracketed pixel sizes are not used in new code. `.log-text`,
+  `.text-zoom`, and `.skill-md` keep their user-adjustable pixel sizes.
 - Code-split each workspace, detached page, and the header dialogs with
   `React.lazy()` + `<Suspense>`. `routes.tsx` and `Header.tsx` already
   wire this up.
@@ -193,6 +197,8 @@ workspace-specific props.
   the white Connections switch knob, and the black fill on `LogViewer`.
   The raw-palette lint rule rejects every default Tailwind color family
   outside tests, including chart files.
+- Don't size UI text with a bracketed pixel class. Use `text-3xs`,
+  `text-2xs`, `text-xs`, or `text-sm`.
 
 ## File map
 

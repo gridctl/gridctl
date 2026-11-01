@@ -98,7 +98,7 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
       <InspectorHeader
         title={agent.name}
         subtitle={
-          <span className="text-[11px] text-text-muted inline-flex items-center gap-1.5">
+          <span className="text-2xs text-text-muted inline-flex items-center gap-1.5">
             {agent.source ? (
               <>
                 from {agent.source}
@@ -148,13 +148,13 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
 
             {modelPref && (
               <div className="flex flex-col gap-1.5">
-                <span className="text-[10px] uppercase tracking-wider text-text-muted inline-flex items-center gap-2">
+                <span className="text-3xs uppercase tracking-wider text-text-muted inline-flex items-center gap-2">
                   Model preference
                   <ModelChip modelPreference={modelPref} />
                 </span>
                 {modelPref.declared && (
                   <div className="flex items-baseline gap-2">
-                    <span className="text-[11px] font-mono text-text-muted w-14 flex-shrink-0">declared</span>
+                    <span className="text-2xs font-mono text-text-muted w-14 flex-shrink-0">declared</span>
                     <span className="text-xs text-text-primary font-mono break-all">
                       {modelPref.declared.value}{' '}
                       <span className="text-text-muted">({modelPref.declared.sourceKey})</span>
@@ -163,7 +163,7 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
                 )}
                 {modelPref.resolved && (
                   <div className="flex items-baseline gap-2">
-                    <span className="text-[11px] font-mono text-text-muted w-14 flex-shrink-0">applied</span>
+                    <span className="text-2xs font-mono text-text-muted w-14 flex-shrink-0">applied</span>
                     <span className="text-xs text-text-primary font-mono break-all">
                       {modelPref.resolved.value}{' '}
                       <span className="text-text-muted">(policy {modelPref.resolved.resolution})</span>
@@ -171,7 +171,7 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
                   </div>
                 )}
                 <ModelHonorList honor={modelPref.honor} />
-                <p className="text-[10px] text-text-muted/70">
+                <p className="text-3xs text-text-muted/70">
                   A preference is a durable default per projection target; clients keep their own
                   resolution order and may override it.
                 </p>
@@ -180,18 +180,18 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
 
             {translated.length > 0 && (
               <div className="flex flex-col gap-1.5">
-                <span className="text-[10px] uppercase tracking-wider text-text-muted">
+                <span className="text-3xs uppercase tracking-wider text-text-muted">
                   Portable frontmatter
                 </span>
                 {translated.map(({ key, field }) => (
                   <div key={key} className="flex items-baseline gap-2">
-                    <span className="text-[11px] font-mono text-text-muted w-14 flex-shrink-0">{key}</span>
+                    <span className="text-2xs font-mono text-text-muted w-14 flex-shrink-0">{key}</span>
                     <span className="text-xs text-text-primary font-mono break-all">
                       {formatExtraValue(field?.value)}
                     </span>
                   </div>
                 ))}
-                <p className="text-[10px] text-text-muted/70">
+                <p className="text-3xs text-text-muted/70">
                   Translated per client on sync; lossy renders drop what a dialect cannot express.
                 </p>
               </div>
@@ -199,12 +199,12 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
 
             {otherExtra.length > 0 && (
               <div className="flex flex-col gap-1.5">
-                <span className="text-[10px] uppercase tracking-wider text-text-muted">
+                <span className="text-3xs uppercase tracking-wider text-text-muted">
                   Other frontmatter ({vendorKeyCount} {vendorKeyCount === 1 ? 'key' : 'keys'}, client-specific)
                 </span>
                 {otherExtra.map((f) => (
                   <div key={f.key} className="flex items-baseline gap-2">
-                    <span className="text-[11px] font-mono text-text-muted flex-shrink-0">{f.key}</span>
+                    <span className="text-2xs font-mono text-text-muted flex-shrink-0">{f.key}</span>
                     <span className="text-xs text-text-secondary font-mono break-all">
                       {formatExtraValue(f.value)}
                     </span>
@@ -215,14 +215,14 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
 
             {agent.dir && (
               <div className="flex flex-col gap-1">
-                <span className="text-[10px] uppercase tracking-wider text-text-muted">Location</span>
-                <span className="text-[11px] font-mono text-text-muted break-all">{agent.dir}</span>
+                <span className="text-3xs uppercase tracking-wider text-text-muted">Location</span>
+                <span className="text-2xs font-mono text-text-muted break-all">{agent.dir}</span>
               </div>
             )}
 
             {statuses.length > 0 && (
               <div className="flex flex-col gap-1">
-                <span className="text-[10px] uppercase tracking-wider text-text-muted">Projected to</span>
+                <span className="text-3xs uppercase tracking-wider text-text-muted">Projected to</span>
                 <span className="text-xs text-text-secondary">
                   {statuses.map((s) => agentClientName(s.client)).join(', ')}
                 </span>
@@ -245,8 +245,8 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
                       aria-pressed={bodyView === view}
                       className={
                         bodyView === view
-                          ? 'px-2 py-1 rounded-md text-[11px] font-medium bg-primary/10 text-primary border border-primary/25 transition-colors'
-                          : 'px-2 py-1 rounded-md text-[11px] font-medium text-text-muted hover:text-text-secondary hover:bg-surface-highlight border border-transparent transition-colors'
+                          ? 'px-2 py-1 rounded-md text-2xs font-medium bg-primary/10 text-primary border border-primary/25 transition-colors'
+                          : 'px-2 py-1 rounded-md text-2xs font-medium text-text-muted hover:text-text-secondary hover:bg-surface-highlight border border-transparent transition-colors'
                       }
                     >
                       {view === 'preview' ? 'Preview' : 'Source'}
@@ -258,7 +258,7 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
                     <MarkdownPreview content={full.body ?? ''} emptyHint="This agent has an empty body." />
                   </div>
                 ) : (
-                  <pre className="text-[11px] font-mono bg-background/60 border border-border/30 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap text-text-secondary">
+                  <pre className="text-2xs font-mono bg-background/60 border border-border/30 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap text-text-secondary">
                     {full.raw ?? ''}
                   </pre>
                 )}

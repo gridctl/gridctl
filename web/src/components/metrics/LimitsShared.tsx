@@ -11,17 +11,17 @@ import { PanelHeader } from './metricsShared';
 function LimitsPanelRow({ entry }: { entry: LimitEntry }) {
   return (
     <li className="flex items-center gap-2 px-3 py-1.5">
-      <span className="w-14 flex-shrink-0 text-[9px] uppercase tracking-wider text-text-muted/70">rate</span>
-      <span className="w-40 flex-shrink-0 truncate font-mono text-[10px] text-text-secondary" title={entry.key}>
+      <span className="w-14 flex-shrink-0 text-3xs uppercase tracking-wider text-text-muted/70">rate</span>
+      <span className="w-40 flex-shrink-0 truncate font-mono text-3xs text-text-secondary" title={entry.key}>
         <span className="text-text-muted/60">{entry.scope}:</span> {entry.key}
       </span>
-      <span className="flex-1 text-[10px] tabular-nums text-text-muted">
+      <span className="flex-1 text-3xs tabular-nums text-text-muted">
         {entry.rate?.calls_per_minute} calls/min
         <span className="text-text-muted/60"> · burst {entry.rate?.burst}</span>
       </span>
       <span
         className={cn(
-          'w-16 flex-shrink-0 text-right text-[9px] font-medium uppercase tracking-wider',
+          'w-16 flex-shrink-0 text-right text-3xs font-medium uppercase tracking-wider',
           entry.state === 'ok' ? 'text-status-running' : limitStateTextClass(entry.state),
         )}
       >
@@ -49,7 +49,7 @@ export function LimitsPanel({ summary }: { summary: LimitsSummary }) {
       label="Rate Limits"
       right={
         elevated > 0 ? (
-          <span className={cn('text-[10px] font-medium', limitStateTextClass(summary.worst))}>
+          <span className={cn('text-3xs font-medium', limitStateTextClass(summary.worst))}>
             {summary.exceededCount > 0
               ? `${summary.exceededCount} exceeded`
               : `${summary.warnCount} near cap`}

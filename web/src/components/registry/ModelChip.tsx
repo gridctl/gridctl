@@ -30,7 +30,7 @@ export function ModelChip({
       aria-label={title}
       data-testid="model-chip"
       className={cn(
-        'text-[9px] font-medium tracking-wider px-1.5 py-0.5 rounded-full border flex-shrink-0 font-mono lowercase',
+        'text-3xs font-medium tracking-wider px-1.5 py-0.5 rounded-full border flex-shrink-0 font-mono lowercase',
         info.viaPolicy
           ? 'border-primary/30 bg-primary/10 text-primary'
           : 'border-border/50 bg-surface-highlight/60 text-text-muted',
@@ -59,7 +59,7 @@ export function ProjectedModelChip({ value, className }: { value?: string; class
       aria-label={title}
       data-testid="projected-model-chip"
       className={cn(
-        'text-[10px] px-1.5 py-0.5 rounded border border-primary/25 bg-primary/10 text-primary font-mono whitespace-nowrap',
+        'text-3xs px-1.5 py-0.5 rounded border border-primary/25 bg-primary/10 text-primary font-mono whitespace-nowrap',
         className,
       )}
     >
@@ -104,7 +104,7 @@ export function ModelHonorList({ honor }: { honor: Record<string, string> | unde
   return (
     <ul className="flex flex-col gap-1" data-testid="model-honor-list">
       {entries.map(([slug, status]) => (
-        <li key={slug} className="flex items-center gap-2 text-[11px]">
+        <li key={slug} className="flex items-center gap-2 text-2xs">
           <span
             aria-hidden="true"
             className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', HONOR_DOT[status] ?? 'bg-status-pending')}
@@ -112,7 +112,7 @@ export function ModelHonorList({ honor }: { honor: Record<string, string> | unde
           <span className="text-text-secondary flex-1 min-w-0 truncate">{TARGET_NAMES[slug] ?? slug}</span>
           <span
             className={cn(
-              'font-mono text-[10px]',
+              'font-mono text-3xs',
               status === 'honored' ? 'text-text-secondary' : 'text-text-muted',
             )}
           >

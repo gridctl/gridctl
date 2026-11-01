@@ -339,7 +339,7 @@ export function EnvImportModal({
               >
                 Import variables
               </h2>
-              <p className="text-[10px] text-text-muted uppercase tracking-[0.18em]">
+              <p className="text-3xs text-text-muted uppercase tracking-[0.18em]">
                 paste · drop · pick a .env or .json file
               </p>
             </div>
@@ -391,7 +391,7 @@ export function EnvImportModal({
             </div>
 
             <div className="flex-shrink-0 flex items-center justify-between gap-2 px-4 py-2 border-t border-border-subtle">
-              <label className="flex items-center gap-1.5 text-[10px] text-text-muted hover:text-text-primary cursor-pointer transition-colors">
+              <label className="flex items-center gap-1.5 text-3xs text-text-muted hover:text-text-primary cursor-pointer transition-colors">
                 <Upload size={11} />
                 Pick a file
                 <input
@@ -401,7 +401,7 @@ export function EnvImportModal({
                   className="hidden"
                 />
               </label>
-              <span className="text-[10px] text-text-muted font-mono">
+              <span className="text-3xs text-text-muted font-mono">
                 {text.length} chars
               </span>
             </div>
@@ -427,7 +427,7 @@ export function EnvImportModal({
               <div className="flex-1 overflow-y-auto scrollbar-dark">
                 <table className="w-full text-left">
                   <thead className="sticky top-0 bg-surface-elevated/95 backdrop-blur-sm">
-                    <tr className="text-[10px] uppercase tracking-[0.18em] text-text-muted border-b border-border-subtle">
+                    <tr className="text-3xs uppercase tracking-[0.18em] text-text-muted border-b border-border-subtle">
                       <th className="px-3 py-2 font-medium">Key</th>
                       <th className="px-2 py-2 font-medium">Value</th>
                       <th className="px-2 py-2 font-medium">Type</th>
@@ -461,7 +461,7 @@ export function EnvImportModal({
                               </span>
                               {exists && !r.skipped && (
                                 <span
-                                  className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-status-pending/15 text-status-pending"
+                                  className="text-3xs font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-status-pending/15 text-status-pending"
                                   title="A variable with this key already exists; importing will overwrite it"
                                 >
                                   overwrites
@@ -473,7 +473,7 @@ export function EnvImportModal({
                             <div className="flex items-center gap-1.5">
                               <code
                                 className={cn(
-                                  'text-[11px] font-mono text-text-secondary break-all min-w-0',
+                                  'text-2xs font-mono text-text-secondary break-all min-w-0',
                                   r.skipped && 'line-through',
                                 )}
                                 style={{ wordBreak: 'break-all' }}
@@ -494,7 +494,7 @@ export function EnvImportModal({
                               )}
                             </div>
                             {rowError && (
-                              <p className="mt-1 text-[10px] text-status-error">
+                              <p className="mt-1 text-3xs text-status-error">
                                 {rowError}
                               </p>
                             )}
@@ -512,7 +512,7 @@ export function EnvImportModal({
                                 updateRow(r.key, { set: e.target.value })
                               }
                               aria-label="Variable set"
-                              className="bg-surface border border-border rounded-md px-1.5 py-0.5 text-[10px] text-text-secondary focus:border-primary/50 outline-none transition-colors"
+                              className="bg-surface border border-border rounded-md px-1.5 py-0.5 text-3xs text-text-secondary focus:border-primary/50 outline-none transition-colors"
                             >
                               <option value="">No set</option>
                               {setNames.map((name) => (
@@ -545,7 +545,7 @@ export function EnvImportModal({
               <div className="flex-shrink-0 border-t border-border-subtle">
                 <button
                   onClick={() => setIgnoredOpen((v) => !v)}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-[10px] uppercase tracking-[0.18em] text-status-pending hover:bg-surface-highlight/40 transition-colors"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-3xs uppercase tracking-[0.18em] text-status-pending hover:bg-surface-highlight/40 transition-colors"
                 >
                   <AlertTriangle size={11} />
                   {parsed.ignored.length} line
@@ -555,7 +555,7 @@ export function EnvImportModal({
                   </span>
                 </button>
                 {ignoredOpen && (
-                  <ul className="max-h-32 overflow-y-auto scrollbar-dark px-3 pb-3 space-y-1 text-[11px] font-mono">
+                  <ul className="max-h-32 overflow-y-auto scrollbar-dark px-3 pb-3 space-y-1 text-2xs font-mono">
                     {parsed.ignored.map((il) => (
                       <li
                         key={`${il.line}-${il.raw}`}
@@ -579,7 +579,7 @@ export function EnvImportModal({
 
         {/* Footer */}
         <footer className="flex-shrink-0 flex items-center justify-between gap-3 px-5 py-3 border-t border-border-subtle">
-          <div className="flex items-center gap-3 text-[11px] font-mono text-text-muted">
+          <div className="flex items-center gap-3 text-2xs font-mono text-text-muted">
             <span>
               <span className="text-status-running font-semibold">{counts.newCount}</span>{' '}
               new
@@ -619,7 +619,7 @@ export function EnvImportModal({
 
           <div className="flex items-center gap-3">
             {submitError && (
-              <span className="text-[10px] text-status-error">{submitError}</span>
+              <span className="text-3xs text-status-error">{submitError}</span>
             )}
             <button
               onClick={onClose}

@@ -76,7 +76,7 @@ export function TransportAdvisor({ serverType, transport }: TransportAdvisorProp
         <div
           key={i}
           className={cn(
-            'flex items-start gap-2 px-2.5 py-1.5 rounded-lg text-[10px] leading-relaxed',
+            'flex items-start gap-2 px-2.5 py-1.5 rounded-lg text-3xs leading-relaxed',
             advisory.level === 'warning'
               ? 'bg-status-pending/10 border border-status-pending/20 text-status-pending'
               : 'bg-primary/5 border border-primary/10 text-text-muted',

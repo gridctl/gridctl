@@ -45,7 +45,7 @@ export function StatePill({ state, className }: { state: ProjectionState; classN
   return (
     <span
       className={cn(
-        'text-[10px] px-2 py-0.5 rounded-full border font-medium whitespace-nowrap',
+        'text-3xs px-2 py-0.5 rounded-full border font-medium whitespace-nowrap',
         PROJECTION_STATE_STYLE[state],
         className,
       )}

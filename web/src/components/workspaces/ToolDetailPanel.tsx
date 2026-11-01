@@ -87,10 +87,10 @@ export function ToolDetailPanel({
             }
             subtitle={
               <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                <span className="text-[10px] font-mono text-primary/80 truncate">{serverName}</span>
+                <span className="text-3xs font-mono text-primary/80 truncate">{serverName}</span>
                 <span
                   className={cn(
-                    'text-[10px] font-mono px-1.5 py-0.5 rounded',
+                    'text-3xs font-mono px-1.5 py-0.5 rounded',
                     enabled
                       ? 'bg-primary/15 text-primary'
                       : 'bg-surface-elevated text-text-muted',
@@ -115,7 +115,7 @@ export function ToolDetailPanel({
                   {tool.description}
                 </p>
               ) : (
-                <p className="text-[11px] text-text-muted/70 italic">No description available.</p>
+                <p className="text-2xs text-text-muted/70 italic">No description available.</p>
               )}
             </Section>
 
@@ -129,7 +129,7 @@ export function ToolDetailPanel({
                   className="rounded-md border border-border/30 bg-background/80 max-h-[45vh]"
                 />
               ) : (
-                <p className="text-[11px] text-text-muted/70 italic">No input schema available.</p>
+                <p className="text-2xs text-text-muted/70 italic">No input schema available.</p>
               )}
             </Section>
 
@@ -145,7 +145,7 @@ export function ToolDetailPanel({
                   {auditMode && auditState && (
                     <div
                       className={cn(
-                        'flex items-center gap-1.5 text-[11px]',
+                        'flex items-center gap-1.5 text-2xs',
                         AUDIT_LABEL[auditState].text,
                       )}
                     >
@@ -187,7 +187,7 @@ function HintsBlock({ annotations }: { annotations?: ToolRow['annotations'] }) {
   const chips = annotationChips(annotations);
   if (chips.length === 0) {
     return (
-      <p className="text-[11px] text-text-muted/70 leading-relaxed">
+      <p className="text-2xs text-text-muted/70 leading-relaxed">
         No annotations declared. Per the MCP spec, undeclared tools are treated as
         potentially destructive and open-world.
       </p>
@@ -200,17 +200,17 @@ function HintsBlock({ annotations }: { annotations?: ToolRow['annotations'] }) {
           <li key={chip.label} className="flex items-start gap-2">
             <span
               className={cn(
-                'flex-shrink-0 px-1.5 py-px rounded text-[9px] font-medium mt-px',
+                'flex-shrink-0 px-1.5 py-px rounded text-3xs font-medium mt-px',
                 CHIP_TONE_CLASS[chip.tone],
               )}
             >
               {chip.label}
             </span>
-            <span className="text-[11px] text-text-secondary leading-relaxed">{chip.title}</span>
+            <span className="text-2xs text-text-secondary leading-relaxed">{chip.title}</span>
           </li>
         ))}
       </ul>
-      <p className="text-[10px] text-text-muted/70 italic">
+      <p className="text-3xs text-text-muted/70 italic">
         Reported by the server, not verified by gridctl.
       </p>
     </div>
@@ -227,13 +227,13 @@ function PolicyBlock({ policy }: { policy?: PolicyToolStatus }) {
         <span
           title={chip.title}
           className={cn(
-            'flex-shrink-0 px-1.5 py-px rounded text-[9px] font-medium mt-px',
+            'flex-shrink-0 px-1.5 py-px rounded text-3xs font-medium mt-px',
             CHIP_TONE_CLASS[chip.tone],
           )}
         >
           {chip.label}
         </span>
-        <span className="text-[11px] text-text-secondary leading-relaxed">{text}</span>
+        <span className="text-2xs text-text-secondary leading-relaxed">{text}</span>
       </div>
     </Section>
   );
@@ -242,7 +242,7 @@ function PolicyBlock({ policy }: { policy?: PolicyToolStatus }) {
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-2">
-      <h3 className="text-[10px] uppercase tracking-[0.18em] text-text-muted/70">{title}</h3>
+      <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">{title}</h3>
       {children}
     </section>
   );

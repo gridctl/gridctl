@@ -88,10 +88,10 @@ export function ServerToolScopeGroup({
       {/* All / Custom segmented toggle. "All" reads as a complete, positive
           state — never an indeterminate checkbox. */}
       <div className="flex items-center gap-2">
-        <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted/70">tools</span>
+        <span className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">tools</span>
         <div className="ml-auto flex items-center gap-1.5">
           {mode === 'custom' && (
-            <span className="font-mono text-[10px] text-primary" aria-live="polite">
+            <span className="font-mono text-3xs text-primary" aria-live="polite">
               {selectedCount}/{total}
             </span>
           )}
@@ -111,7 +111,7 @@ export function ServerToolScopeGroup({
       </div>
 
       {mode === 'all' && (
-        <p className="text-[10px] text-text-muted/70 leading-relaxed">
+        <p className="text-3xs text-text-muted/70 leading-relaxed">
           All {total} tool{total === 1 ? '' : 's'} of{' '}
           <span className="font-mono text-text-secondary">{serverName}</span> are exposed.
         </p>
@@ -121,7 +121,7 @@ export function ServerToolScopeGroup({
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          className="w-full flex items-center gap-1.5 text-left text-[10px] text-text-muted/80 hover:text-text-secondary transition-colors"
+          className="w-full flex items-center gap-1.5 text-left text-3xs text-text-muted/80 hover:text-text-secondary transition-colors"
         >
           <ChevronRight size={11} aria-hidden="true" />
           <span>
@@ -137,7 +137,7 @@ export function ServerToolScopeGroup({
           <button
             type="button"
             onClick={() => setExpanded(false)}
-            className="w-full flex items-center gap-1.5 text-left text-[10px] text-text-muted/80 hover:text-text-secondary transition-colors"
+            className="w-full flex items-center gap-1.5 text-left text-3xs text-text-muted/80 hover:text-text-secondary transition-colors"
           >
             <ChevronDown size={11} aria-hidden="true" />
             <span>{selectedCount} of {total} tools selected</span>
@@ -158,7 +158,7 @@ export function ServerToolScopeGroup({
                 placeholder={`Filter ${total} tools…`}
                 aria-label={`Filter ${serverName} tools`}
                 disabled={disabled}
-                className="w-full rounded-md border border-border/50 bg-background/70 pl-6 pr-2 py-1 text-[11px] text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-primary/50"
+                className="w-full rounded-md border border-border/50 bg-background/70 pl-6 pr-2 py-1 text-2xs text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-primary/50"
               />
             </div>
           )}
@@ -173,7 +173,7 @@ export function ServerToolScopeGroup({
             className="w-full flex items-center gap-2 px-1 py-1 text-left hover:bg-surface-highlight/30 rounded transition-colors disabled:opacity-50"
           >
             <TriStateBox checked={allVisibleSelected} indeterminate={someVisibleSelected} />
-            <span className="text-[10px] text-text-muted">
+            <span className="text-3xs text-text-muted">
               {allVisibleSelected ? 'Clear all' : 'Select all'}
               {query.trim() && ` (${visible.length} shown)`}
             </span>
@@ -181,7 +181,7 @@ export function ServerToolScopeGroup({
 
           <div className="rounded-md border border-border/30 bg-background/40 max-h-56 overflow-y-auto scrollbar-dark divide-y divide-border/15">
             {visible.length === 0 && (
-              <p className="px-3 py-3 text-[10px] text-text-muted/60 italic text-center">
+              <p className="px-3 py-3 text-3xs text-text-muted/60 italic text-center">
                 No tools match &ldquo;{query}&rdquo;.
               </p>
             )}
@@ -209,14 +209,14 @@ export function ServerToolScopeGroup({
                   <span className="min-w-0 flex-1">
                     <span
                       className={cn(
-                        'block text-[11px] font-mono truncate',
+                        'block text-2xs font-mono truncate',
                         isOn ? 'text-text-primary' : 'text-text-secondary',
                       )}
                     >
                       {tool.name}
                     </span>
                     {tool.description && (
-                      <span className="block text-[10px] text-text-muted/70 truncate leading-snug">
+                      <span className="block text-3xs text-text-muted/70 truncate leading-snug">
                         {tool.description}
                       </span>
                     )}
@@ -227,7 +227,7 @@ export function ServerToolScopeGroup({
           </div>
 
           {empty && (
-            <p className="text-[10px] text-status-pending" role="status">
+            <p className="text-3xs text-status-pending" role="status">
               Select at least one tool, or switch back to All. An empty custom list cannot be saved.
             </p>
           )}
@@ -255,7 +255,7 @@ function ModeButton({
       disabled={disabled}
       aria-pressed={active}
       className={cn(
-        'px-2 py-0.5 text-[10px] font-medium transition-colors disabled:opacity-50',
+        'px-2 py-0.5 text-3xs font-medium transition-colors disabled:opacity-50',
         active
           ? 'bg-primary/20 text-primary'
           : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight/40',

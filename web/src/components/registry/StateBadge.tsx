@@ -12,7 +12,7 @@ export function StateBadge({ state, className }: StateBadgeProps) {
   return (
     <span
       className={cn(
-        'inline-flex items-center text-[10px] px-1.5 py-0.5 rounded font-mono border flex-shrink-0',
+        'inline-flex items-center text-3xs px-1.5 py-0.5 rounded font-mono border flex-shrink-0',
         style,
         className,
       )}

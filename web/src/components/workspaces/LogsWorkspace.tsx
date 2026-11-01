@@ -76,8 +76,8 @@ export function LogsWorkspace() {
               compact ? 'py-2' : 'py-3',
             )}
           >
-            <div className="font-sans text-text-muted/60 text-[10px] uppercase tracking-[0.4em]">logs</div>
-            <div className="font-mono text-[10px] text-text-muted truncate">
+            <div className="font-sans text-text-muted/60 text-3xs uppercase tracking-[0.4em]">logs</div>
+            <div className="font-mono text-3xs text-text-muted truncate">
               {source ?? 'all sources'}
             </div>
           </header>
@@ -124,7 +124,7 @@ function SourceRail({ compact, source, onSelectSource, serverNames, totalCount, 
   return (
     <aside aria-label="Logs rail" className="h-full flex flex-col bg-surface border-r border-border-subtle">
       <div className={cn('flex-shrink-0 px-3 border-b border-border-subtle/60', compact ? 'py-2' : 'py-3')}>
-        <div className="text-[10px] font-medium text-text-muted/60 uppercase tracking-[0.3em]">sources</div>
+        <div className="text-3xs font-medium text-text-muted/60 uppercase tracking-[0.3em]">sources</div>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark px-2 py-2 space-y-0.5">
         <SourcePill
@@ -186,7 +186,7 @@ function SourcePill({
         <span className={cn('flex-1 min-w-0 text-xs font-medium truncate', active && 'text-primary')}>{label}</span>
         <span
           className={cn(
-            'flex-shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded tabular-nums',
+            'flex-shrink-0 text-3xs font-mono px-1.5 py-0.5 rounded tabular-nums',
             active ? 'bg-primary/15 text-primary' : 'bg-surface-elevated text-text-muted',
             onViewMetrics && 'group-hover/pill:opacity-0 group-focus-within/pill:opacity-0 transition-opacity',
           )}

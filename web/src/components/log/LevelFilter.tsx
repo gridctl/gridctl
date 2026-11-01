@@ -35,7 +35,7 @@ export function LevelFilter({
         <Filter size={12} />
         <span>Level</span>
         {activeCount < 4 && (
-          <span className="px-1.5 py-0.5 bg-primary/20 rounded text-[10px] font-medium">
+          <span className="px-1.5 py-0.5 bg-primary/20 rounded text-3xs font-medium">
             {activeCount}
           </span>
         )}

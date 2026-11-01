@@ -100,10 +100,10 @@ export function SourceGroupHeader({
             ) : (
               <PenLine size={11} className="flex-shrink-0" />
             )}
-            <span className="text-[10px] uppercase tracking-widest font-medium truncate">{label}</span>
+            <span className="text-3xs uppercase tracking-widest font-medium truncate">{label}</span>
           </button>
           {shortSha && (
-            <span className="text-[10px] font-mono text-text-muted/60" title={source?.commitSha}>
+            <span className="text-3xs font-mono text-text-muted/60" title={source?.commitSha}>
               {shortSha}
             </span>
           )}
@@ -126,14 +126,14 @@ export function SourceGroupHeader({
               onClick={handleUpdate}
               disabled={updating}
               title="Update available, pull latest"
-              className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-60 flex-shrink-0"
+              className="inline-flex items-center gap-1 text-3xs px-1.5 py-0.5 rounded-full border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-60 flex-shrink-0"
             >
               <RefreshCw size={10} className={updating ? 'animate-spin' : undefined} />
               {updating ? 'Syncing…' : 'Sync'}
             </button>
           )}
         </div>
-        <span className="text-[10px] px-1.5 rounded-full bg-surface-highlight text-text-muted flex-shrink-0">
+        <span className="text-3xs px-1.5 rounded-full bg-surface-highlight text-text-muted flex-shrink-0">
           {count} {hasSearch ? 'matched' : 'skills'}
         </span>
       </div>

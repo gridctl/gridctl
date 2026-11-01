@@ -26,7 +26,7 @@ export function VariableSecretToggle({
         type="button"
         onClick={() => onChange(true)}
         className={cn(
-          'inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium transition-colors',
+          'inline-flex items-center gap-1 rounded px-2 py-1 text-3xs font-medium transition-colors',
           isSecret
             ? 'bg-surface-highlight text-text-primary'
             : 'text-text-muted hover:text-text-primary hover:bg-surface-overlay-2',
@@ -39,7 +39,7 @@ export function VariableSecretToggle({
         type="button"
         onClick={() => onChange(false)}
         className={cn(
-          'inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium transition-colors',
+          'inline-flex items-center gap-1 rounded px-2 py-1 text-3xs font-medium transition-colors',
           !isSecret
             ? 'bg-surface-highlight text-text-primary'
             : 'text-text-muted hover:text-text-primary hover:bg-surface-overlay-2',

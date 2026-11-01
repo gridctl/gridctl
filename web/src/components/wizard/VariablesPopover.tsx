@@ -217,7 +217,7 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
       {/* Variable list */}
       <div className="max-h-36 overflow-y-auto scrollbar-dark">
         {filtered.length === 0 && !creating && (
-          <div className="px-3 py-4 text-center text-[10px] text-text-muted">
+          <div className="px-3 py-4 text-center text-3xs text-text-muted">
             {variables === null ? 'Loading...' : 'No variables found'}
           </div>
         )}
@@ -230,7 +230,7 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
             <VariableVisibilityIcon isSecret={variable.is_secret} />
             <span className="font-mono text-text-primary truncate flex-1 text-left">{variable.key}</span>
             <VariableTypeBadge type={variable.type} />
-            <span className="text-[10px] text-text-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover-none:opacity-100 transition-opacity flex items-center gap-1">
+            <span className="text-3xs text-text-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover-none:opacity-100 transition-opacity flex items-center gap-1">
               <Check size={10} />
               Select
             </span>
@@ -256,7 +256,7 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
       ) : (
         <div className="px-3 py-3 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] text-text-muted uppercase tracking-wider font-medium">
+            <span className="text-3xs text-text-muted uppercase tracking-wider font-medium">
               New Variable
             </span>
             <button
@@ -306,7 +306,7 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
             )}
           </div>
           {error && (
-            <p className="text-[10px] text-status-error">{error}</p>
+            <p className="text-3xs text-status-error">{error}</p>
           )}
           <button
             onClick={handleCreate}

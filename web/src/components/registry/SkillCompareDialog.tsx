@@ -166,7 +166,7 @@ function DiffBody({ diff }: { diff: SkillDiffResponse }) {
   if (diff.unifiedDiff) {
     return (
       <div className="flex-1 overflow-auto scrollbar-dark rounded-lg border border-border/30 bg-background/40">
-        <pre className="text-[11px] font-mono leading-relaxed p-3 whitespace-pre">
+        <pre className="text-2xs font-mono leading-relaxed p-3 whitespace-pre">
           {diff.unifiedDiff.split('\n').map((line, i) => (
             <div key={i} className={cn('px-1 -mx-1', diffLineClass(line))}>
               {line || ' '}

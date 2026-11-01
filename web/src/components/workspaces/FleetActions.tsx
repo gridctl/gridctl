@@ -242,7 +242,7 @@ function ConfigureView({
   return (
     <>
       <fieldset className="space-y-1.5">
-        <legend className="text-[10px] uppercase tracking-[0.18em] text-text-muted/70">Scope</legend>
+        <legend className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">Scope</legend>
         <div className="flex gap-2">
           <SegButton active={scope === 'fleet'} onClick={() => onScope('fleet')}>
             All {servers.length} servers
@@ -263,7 +263,7 @@ function ConfigureView({
             {servers.map((s) => (
               <label
                 key={s.name}
-                className="flex items-center gap-2 px-1 py-0.5 rounded text-[11px] text-text-secondary hover:bg-surface-highlight/40 cursor-pointer"
+                className="flex items-center gap-2 px-1 py-0.5 rounded text-2xs text-text-secondary hover:bg-surface-highlight/40 cursor-pointer"
               >
                 <input
                   type="checkbox"
@@ -279,7 +279,7 @@ function ConfigureView({
       </fieldset>
 
       <fieldset className="space-y-1.5">
-        <legend className="text-[10px] uppercase tracking-[0.18em] text-text-muted/70">Action</legend>
+        <legend className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">Action</legend>
         <div className="flex gap-2">
           <SegButton active={action === 'expose-all'} onClick={() => onAction('expose-all')}>
             Expose all tools
@@ -296,7 +296,7 @@ function ConfigureView({
           </SegButton>
         </div>
         {!usageReady && (
-          <p className="text-[10px] text-text-muted/70">
+          <p className="text-3xs text-text-muted/70">
             Disable unused needs the usage snapshot; loading it now (or usage is unavailable on
             this gateway).
           </p>
@@ -305,7 +305,7 @@ function ConfigureView({
 
       {action === 'hide-pattern' && (
         <div className="space-y-1.5">
-          <label htmlFor="fleet-pattern" className="block text-[11px] text-text-secondary">
+          <label htmlFor="fleet-pattern" className="block text-2xs text-text-secondary">
             Glob pattern (e.g. <span className="font-mono text-text-primary">delete_*</span>) — hides matching
             tools, keeps the rest
           </label>
@@ -320,7 +320,7 @@ function ConfigureView({
         </div>
       )}
 
-      <div className="rounded-md border border-border/30 bg-background/40 px-3 py-2 text-[11px] text-text-secondary" role="status">
+      <div className="rounded-md border border-border/30 bg-background/40 px-3 py-2 text-2xs text-text-secondary" role="status">
         {action === 'expose-all' ? (
           plan.entries.length > 0 ? (
             <span>
@@ -373,7 +373,7 @@ function ConfigureView({
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-md px-3 py-1.5 text-[11px] text-text-secondary hover:text-text-primary transition-colors"
+          className="rounded-md px-3 py-1.5 text-2xs text-text-secondary hover:text-text-primary transition-colors"
         >
           Cancel
         </button>
@@ -382,7 +382,7 @@ function ConfigureView({
           onClick={onReview}
           disabled={!canApply}
           className={cn(
-            'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-medium border transition-colors',
+            'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-2xs font-medium border transition-colors',
             canApply
               ? 'bg-primary/20 text-primary border-primary/30 hover:bg-primary/30'
               : 'bg-surface-highlight/50 text-text-muted border-border/30 cursor-not-allowed',
@@ -410,7 +410,7 @@ function ConfirmView({ action, plan, windowLabel, applying, onBack, onConfirm }:
     <>
       <div className="flex items-start gap-2.5 rounded-md border border-status-pending/40 bg-status-pending/[0.06] px-3 py-3" role="status">
         <AlertTriangle size={14} className="text-status-pending flex-shrink-0 mt-0.5" aria-hidden="true" />
-        <p className="text-[12px] text-text-secondary leading-relaxed">
+        <p className="text-xs text-text-secondary leading-relaxed">
           {action === 'expose-all' ? 'Expose all tools on ' : 'Update '}
           <span className="font-mono text-text-primary">{n}</span> server{n === 1 ? '' : 's'}
           {action === 'hide-pattern' && (
@@ -435,7 +435,7 @@ function ConfirmView({ action, plan, windowLabel, applying, onBack, onConfirm }:
       {action === 'disable-unused' && (
         <div className="max-h-40 overflow-y-auto scrollbar-dark rounded-md border border-border/30 bg-background/40 px-3 py-2 space-y-1.5">
           {plan.entries.map((e) => (
-            <div key={e.name} className="text-[10px] leading-relaxed">
+            <div key={e.name} className="text-3xs leading-relaxed">
               <span className="font-mono text-text-primary">{e.name}</span>{' '}
               <span className="text-text-muted">
                 ({e.hidden.length} tool{e.hidden.length === 1 ? '' : 's'}):
@@ -451,7 +451,7 @@ function ConfirmView({ action, plan, windowLabel, applying, onBack, onConfirm }:
           type="button"
           onClick={onBack}
           disabled={applying}
-          className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-[11px] text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-2xs text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
         >
           <ArrowLeft size={11} aria-hidden="true" />
           Back
@@ -460,7 +460,7 @@ function ConfirmView({ action, plan, windowLabel, applying, onBack, onConfirm }:
           type="button"
           onClick={onConfirm}
           disabled={applying}
-          className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-medium border border-status-pending/40 bg-status-pending/10 text-status-pending hover:bg-status-pending/20 transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-2xs font-medium border border-status-pending/40 bg-status-pending/10 text-status-pending hover:bg-status-pending/20 transition-colors disabled:opacity-50"
         >
           {applying ? (
             <>
@@ -488,12 +488,12 @@ function ResultView({ status, summary, errorMsg, onClose }: ResultViewProps) {
     <>
       {status === 'done' && summary && (
         <div className="rounded-md border border-status-running/30 bg-status-running/[0.06] px-3 py-2 space-y-1" role="status">
-          <p className="flex items-center gap-1.5 text-[11px] font-medium text-status-running">
+          <p className="flex items-center gap-1.5 text-2xs font-medium text-status-running">
             <Check size={12} aria-hidden="true" />
             Updated {summary.servers.length} server{summary.servers.length === 1 ? '' : 's'}
             {summary.reloaded ? ' · reloaded once' : ' · reload pending'}
           </p>
-          <ul className="text-[10px] text-text-muted font-mono space-y-0.5">
+          <ul className="text-3xs text-text-muted font-mono space-y-0.5">
             {summary.servers.map((name) => (
               <li key={name}>✓ {name}</li>
             ))}
@@ -503,14 +503,14 @@ function ResultView({ status, summary, errorMsg, onClose }: ResultViewProps) {
       {status === 'error' && errorMsg && (
         <div className="flex items-start gap-2 rounded-md border border-status-error/40 bg-status-error/[0.06] px-3 py-2" role="alert">
           <AlertCircle size={12} className="text-status-error flex-shrink-0 mt-0.5" aria-hidden="true" />
-          <p className="text-[11px] text-status-error">{errorMsg}</p>
+          <p className="text-2xs text-status-error">{errorMsg}</p>
         </div>
       )}
       <div className="flex items-center justify-end pt-1">
         <button
           type="button"
           onClick={onClose}
-          className="rounded-md px-3 py-1.5 text-[11px] font-medium border border-border/40 bg-background/40 text-text-secondary hover:text-text-primary hover:border-border transition-colors"
+          className="rounded-md px-3 py-1.5 text-2xs font-medium border border-border/40 bg-background/40 text-text-secondary hover:text-text-primary hover:border-border transition-colors"
         >
           Close
         </button>
@@ -534,7 +534,7 @@ function SegButton({ active, disabled, onClick, children }: SegButtonProps) {
       disabled={disabled}
       aria-pressed={active}
       className={cn(
-        'flex-1 rounded-md px-2.5 py-1.5 text-[11px] font-medium border transition-colors',
+        'flex-1 rounded-md px-2.5 py-1.5 text-2xs font-medium border transition-colors',
         disabled && 'opacity-40 cursor-not-allowed',
         active
           ? 'bg-primary/15 text-primary border-primary/40'

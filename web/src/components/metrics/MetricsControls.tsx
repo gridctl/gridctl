@@ -42,7 +42,7 @@ export function MetricsControls({
               onClick={() => onTimeRange(range.value)}
               aria-pressed={timeRange === range.value}
               className={cn(
-                'px-2.5 py-1 text-[10px] font-medium transition-colors',
+                'px-2.5 py-1 text-3xs font-medium transition-colors',
                 timeRange === range.value
                   ? 'bg-primary/15 text-primary'
                   : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight/40',
@@ -54,13 +54,13 @@ export function MetricsControls({
         </div>
 
         {timeRange === 'live' && !isPaused && (
-          <span className="flex items-center gap-1 text-[9px] text-status-running font-medium">
+          <span className="flex items-center gap-1 text-3xs text-status-running font-medium">
             <span className="w-1.5 h-1.5 rounded-full bg-status-running animate-pulse motion-reduce:animate-none" />
             Live
           </span>
         )}
         {timeRange === 'live' && isPaused && (
-          <span className="text-[10px] px-2 py-0.5 bg-status-pending/15 text-status-pending rounded-full font-medium border border-status-pending/20">
+          <span className="text-3xs px-2 py-0.5 bg-status-pending/15 text-status-pending rounded-full font-medium border border-status-pending/20">
             Paused
           </span>
         )}

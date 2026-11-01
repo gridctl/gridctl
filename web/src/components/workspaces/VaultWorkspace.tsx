@@ -608,7 +608,7 @@ export function VaultWorkspace() {
           {encryptOpen && !locked && (
             <div className="flex-shrink-0 px-6 py-3 border-b border-border-subtle bg-surface-elevated/40">
               <div className="max-w-md">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-text-muted mb-2">
+                <p className="text-3xs uppercase tracking-[0.18em] text-text-muted mb-2">
                   {encrypted ? 're-enter passphrase to lock' : 'set a passphrase to encrypt'}
                 </p>
                 <VaultEncryptForm
@@ -785,7 +785,7 @@ export function VaultWorkspace() {
                 )}
                 <ProviderReferences />
               </div>
-              <div className="flex items-center gap-2 px-3 h-5 flex-shrink-0 border-t border-border/20 text-[9px] text-text-muted/60 select-none">
+              <div className="flex items-center gap-2 px-3 h-5 flex-shrink-0 border-t border-border/20 text-3xs text-text-muted/60 select-none overflow-x-auto">
                 <span><kbd className="font-mono">j</kbd>/<kbd className="font-mono">k</kbd> navigate</span>
                 <span><kbd className="font-mono">Home</kbd>/<kbd className="font-mono">End</kbd> first and last</span>
                 <span><kbd className="font-mono">↵</kbd> open</span>
@@ -807,7 +807,7 @@ export function VaultWorkspace() {
               Delete <span className="font-mono text-primary">{confirmDelete}</span>?
             </p>
             {confirmDelete && consumerCount(usage[confirmDelete]) > 0 && (
-              <p className="mt-2 px-2.5 py-2 rounded-md bg-status-error/10 border border-status-error/20 text-[11px] text-status-error">
+              <p className="mt-2 px-2.5 py-2 rounded-md bg-status-error/10 border border-status-error/20 text-2xs text-status-error">
                 Used by {consumerCount(usage[confirmDelete])}{' '}
                 {consumerCount(usage[confirmDelete]) === 1
                   ? 'consumer'
@@ -891,7 +891,7 @@ export function VaultWorkspace() {
             <p className="text-sm font-medium">
               Drop a .env or .json file to import
             </p>
-            <p className="text-[11px] text-text-muted">
+            <p className="text-2xs text-text-muted">
               You'll review the parsed variables before anything is saved
             </p>
           </div>
@@ -934,25 +934,25 @@ function VaultHeader({
       )}
     >
       <div className="flex items-center gap-3">
-        <div className="font-sans text-text-muted/60 text-[10px] uppercase tracking-[0.4em]">
+        <div className="font-sans text-text-muted/60 text-3xs uppercase tracking-[0.4em]">
           variables
         </div>
-        <div className="font-mono text-[10px] text-text-muted">
+        <div className="font-mono text-3xs text-text-muted">
           {totalVariables} {totalVariables === 1 ? 'variable' : 'variables'}
         </div>
         {totalSets > 0 && (
-          <div className="font-mono text-[10px] text-secondary">
+          <div className="font-mono text-3xs text-secondary">
             · {totalSets} {totalSets === 1 ? 'set' : 'sets'}
           </div>
         )}
         {encrypted && !locked && (
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-status-running/10 text-status-running flex items-center gap-1">
+          <span className="text-3xs font-mono px-1.5 py-0.5 rounded bg-status-running/10 text-status-running flex items-center gap-1">
             <LockOpen size={9} />
             encrypted
           </span>
         )}
         {locked && (
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-primary/10 text-primary flex items-center gap-1">
+          <span className="text-3xs font-mono px-1.5 py-0.5 rounded bg-primary/10 text-primary flex items-center gap-1">
             <Lock size={9} />
             locked
           </span>
@@ -980,7 +980,7 @@ function VaultHeader({
               totalVariables > 0 && (
                 <button
                   onClick={onOpenEncrypt}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-text-secondary hover:text-text-primary border border-border/40 hover:border-border rounded-lg transition-colors"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-2xs font-medium text-text-secondary hover:text-text-primary border border-border/40 hover:border-border rounded-lg transition-colors"
                 >
                   <Lock size={11} /> Encrypt
                 </button>
@@ -1045,7 +1045,7 @@ function VaultLeftRail({
           compact ? 'py-2' : 'py-3',
         )}
       >
-        <div className="text-[10px] font-medium text-text-muted/60 uppercase tracking-[0.3em]">
+        <div className="text-3xs font-medium text-text-muted/60 uppercase tracking-[0.3em]">
           sets
         </div>
       </div>
@@ -1066,7 +1066,7 @@ function VaultLeftRail({
           />
         )}
         {unassignedCount > 0 && (
-          <p className="px-3 pt-2 pb-1 text-[9px] uppercase tracking-[0.24em] text-text-muted/50">
+          <p className="px-3 pt-2 pb-1 text-3xs uppercase tracking-[0.24em] text-text-muted/50">
             grouped
           </p>
         )}
@@ -1083,7 +1083,7 @@ function VaultLeftRail({
           />
         ))}
         {sets.length === 0 && (
-          <p className="px-3 py-2 text-[10px] text-text-muted/60 leading-relaxed">
+          <p className="px-3 py-2 text-3xs text-text-muted/60 leading-relaxed">
             No sets yet. Groups appear here as you assign variables.
           </p>
         )}
@@ -1106,7 +1106,7 @@ function VaultLeftRail({
           <button
             onClick={() => onNewSetOpen(true)}
             disabled={locked}
-            className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-[10px] uppercase tracking-[0.18em] text-text-muted hover:text-text-primary hover:bg-surface-highlight rounded transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-muted"
+            className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-3xs uppercase tracking-[0.18em] text-text-muted hover:text-text-primary hover:bg-surface-highlight rounded transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-muted"
           >
             <Plus size={11} /> new set
           </button>
@@ -1169,7 +1169,7 @@ function SetPill({
           )}
           <span
             className={cn(
-              'text-[10px] font-mono px-1.5 py-0.5 rounded',
+              'text-3xs font-mono px-1.5 py-0.5 rounded',
               active
                 ? 'bg-primary/15 text-primary'
                 : 'bg-surface-elevated text-text-muted',
@@ -1222,7 +1222,7 @@ function VariableList({
   compact,
 }: VariableListProps) {
   const headerLabel =
-    'text-[9px] uppercase tracking-[0.24em] text-text-muted/50';
+    'text-3xs uppercase tracking-[0.24em] text-text-muted/50';
   return (
     <div role="listbox" aria-label="Variables" className="pb-4">
       <div
@@ -1275,7 +1275,7 @@ function ServerFilterBanner({
   return (
     <div className="flex-shrink-0 px-6 py-2 border-b border-border-subtle bg-primary/[0.04] flex items-center gap-2">
       <Filter size={12} className="text-primary/70 flex-shrink-0" />
-      <div className="flex-1 min-w-0 text-[11px] text-text-secondary">
+      <div className="flex-1 min-w-0 text-2xs text-text-secondary">
         Variables used by{' '}
         <span className="font-mono text-primary">{serverName}</span>
         <span className="text-text-muted/70 ml-2">
@@ -1285,7 +1285,7 @@ function ServerFilterBanner({
       <button
         onClick={onClear}
         aria-label="Clear server filter"
-        className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-text-muted hover:text-text-primary hover:bg-surface-highlight rounded transition-colors"
+        className="flex items-center gap-1 px-2 py-0.5 text-3xs text-text-muted hover:text-text-primary hover:bg-surface-highlight rounded transition-colors"
       >
         <X size={11} /> Clear
       </button>
@@ -1321,7 +1321,7 @@ function RefFilterChips({ active, counts, onSelect }: RefFilterChipsProps) {
             disabled={disabled}
             aria-pressed={isActive}
             className={cn(
-              'flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-medium rounded-full border transition-colors',
+              'flex items-center gap-1.5 px-2 py-0.5 text-3xs font-medium rounded-full border transition-colors',
               'disabled:opacity-40 disabled:cursor-not-allowed',
               isActive
                 ? 'text-primary bg-primary/15 border-primary/30'
@@ -1343,7 +1343,7 @@ function RefFilterChips({ active, counts, onSelect }: RefFilterChipsProps) {
         );
       })}
       {disabled && (
-        <span className="text-[10px] text-text-muted/60">
+        <span className="text-3xs text-text-muted/60">
           usage unavailable
         </span>
       )}
@@ -1370,7 +1370,7 @@ function MissingVariablesBanner({
   return (
     <div className="flex-shrink-0 px-6 py-2 border-b border-status-error/20 bg-status-error/[0.06] flex items-center gap-2">
       <AlertCircle size={12} className="text-status-error/80 flex-shrink-0" />
-      <div className="flex-1 min-w-0 text-[11px] text-text-secondary">
+      <div className="flex-1 min-w-0 text-2xs text-text-secondary">
         The stack references{' '}
         {keys.length === 1 ? 'a variable' : `${keys.length} variables`} with no
         value here: <span className="font-mono text-status-error">{preview}</span>
@@ -1382,7 +1382,7 @@ function MissingVariablesBanner({
       </div>
       <button
         onClick={onCreate}
-        className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-status-error hover:text-status-error/80 border border-status-error/30 hover:border-status-error/50 rounded transition-colors"
+        className="flex items-center gap-1 px-2 py-0.5 text-3xs font-medium text-status-error hover:text-status-error/80 border border-status-error/30 hover:border-status-error/50 rounded transition-colors"
       >
         <Plus size={10} /> Create
       </button>
@@ -1411,13 +1411,13 @@ function UnencryptedSecretsBanner({
   return (
     <div className="flex-shrink-0 px-6 py-2 border-b border-status-pending/20 bg-status-pending/[0.06] flex items-center gap-2">
       <ShieldAlert size={12} className="text-status-pending flex-shrink-0" />
-      <div className="flex-1 min-w-0 text-[11px] text-text-secondary">
+      <div className="flex-1 min-w-0 text-2xs text-text-secondary">
         Secrets are stored unencrypted on disk. Encrypt the vault with a
         passphrase.
       </div>
       <button
         onClick={onEncrypt}
-        className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-status-pending hover:text-status-pending/80 border border-status-pending/30 hover:border-status-pending/50 rounded transition-colors"
+        className="flex items-center gap-1 px-2 py-0.5 text-3xs font-medium text-status-pending hover:text-status-pending/80 border border-status-pending/30 hover:border-status-pending/50 rounded transition-colors"
       >
         <Lock size={10} /> Encrypt
       </button>
@@ -1449,12 +1449,12 @@ function VaultEmptyState({ onImport, onAddOne }: VaultEmptyStateProps) {
           Bring a <code className="font-mono text-text-secondary">.env</code> file
           over, or add a key by hand. Secrets stay encrypted at rest when you
           set a passphrase.
-          <span className="block mt-2 text-[10px] text-text-muted/70">
+          <span className="block mt-2 text-3xs text-text-muted/70">
             Tip: drop a <code className="font-mono text-text-secondary">.env</code> or{' '}
             <code className="font-mono text-text-secondary">.json</code> file
             anywhere on this page.
           </span>
-          <span className="block text-[10px] text-text-muted/70">
+          <span className="block text-3xs text-text-muted/70">
             Or use the CLI:
             <code className="ml-1 font-mono text-text-secondary">
               gridctl var import .env
@@ -1535,7 +1535,7 @@ function NoMatchesState({
             {showImportHint && (
               <button
                 onClick={onImport}
-                className="text-[11px] text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
+                className="text-2xs text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
               >
                 Import .env
               </button>
@@ -1543,7 +1543,7 @@ function NoMatchesState({
             {searchQuery && (
               <button
                 onClick={onClear}
-                className="text-[11px] text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
+                className="text-2xs text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
               >
                 Clear search
               </button>
@@ -1551,7 +1551,7 @@ function NoMatchesState({
             {!searchQuery && refFilter !== 'all' && (
               <button
                 onClick={onClearRefFilter}
-                className="text-[11px] text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
+                className="text-2xs text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
               >
                 Show all variables
               </button>

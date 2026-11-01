@@ -24,7 +24,7 @@ export function VariableTypeBadge({
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-md px-1.5 py-px text-[10px] font-mono font-medium',
+        'inline-flex items-center rounded-md px-1.5 py-px text-3xs font-mono font-medium',
         palette[type],
         className,
       )}

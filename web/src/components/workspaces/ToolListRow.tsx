@@ -156,7 +156,7 @@ export const ToolListRow = memo(function ToolListRow({
               <span
                 key={g}
                 title={`In tool group "${g}"`}
-                className="flex-shrink-0 px-1.5 py-px rounded text-[9px] font-medium bg-secondary/10 text-secondary"
+                className="flex-shrink-0 px-1.5 py-px rounded text-3xs font-medium bg-secondary/10 text-secondary"
               >
                 {g}
               </span>
@@ -169,7 +169,7 @@ export const ToolListRow = memo(function ToolListRow({
                 key={chip.label}
                 title={`${chip.title} (reported by the server, not verified)`}
                 className={cn(
-                  'flex-shrink-0 px-1.5 py-px rounded text-[9px] font-medium',
+                  'flex-shrink-0 px-1.5 py-px rounded text-3xs font-medium',
                   CHIP_TONE_CLASS[chip.tone],
                 )}
               >
@@ -180,7 +180,7 @@ export const ToolListRow = memo(function ToolListRow({
               <span
                 title={policyTitle}
                 className={cn(
-                  'flex-shrink-0 px-1.5 py-px rounded text-[9px] font-medium',
+                  'flex-shrink-0 px-1.5 py-px rounded text-3xs font-medium',
                   CHIP_TONE_CLASS[policyTone === '' ? 'danger' : policyTone],
                 )}
               >
@@ -189,12 +189,12 @@ export const ToolListRow = memo(function ToolListRow({
             )}
           </div>
           {opt.description && (
-            <div className="text-[10px] text-text-muted truncate">{opt.description}</div>
+            <div className="text-3xs text-text-muted truncate">{opt.description}</div>
           )}
           {auditState && (
             <div
               className={cn(
-                'flex items-center gap-1 text-[10px] mt-0.5',
+                'flex items-center gap-1 text-3xs mt-0.5',
                 AUDIT_STYLES[auditState].text,
               )}
             >

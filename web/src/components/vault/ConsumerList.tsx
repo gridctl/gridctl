@@ -73,7 +73,7 @@ export function ConsumerList({
             e.stopPropagation();
             onToggleShowAll?.();
           }}
-          className="px-2 py-0.5 text-[10px] text-primary hover:text-primary/80 transition-colors"
+          className="px-2 py-0.5 text-3xs text-primary hover:text-primary/80 transition-colors"
         >
           {showAll ? 'Show less' : `See all ${entries.length}`}
         </button>
@@ -103,7 +103,7 @@ function ConsumerRow({
         }}
         aria-label={`Go to ${consumer.target ?? consumer.name} (${consumer.field})`}
         title={tooltip}
-        className={`w-full flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-mono text-text-secondary hover:text-primary hover:bg-surface-highlight/50 transition-colors text-left ${indented ? 'pl-5' : ''}`}
+        className={`w-full flex items-center gap-1.5 px-2 py-1 rounded text-3xs font-mono text-text-secondary hover:text-primary hover:bg-surface-highlight/50 transition-colors text-left ${indented ? 'pl-5' : ''}`}
       >
         <ArrowUpRight size={10} className="flex-shrink-0 text-text-muted" />
         <span className="truncate">{label}</span>
@@ -113,7 +113,7 @@ function ConsumerRow({
   return (
     <div
       title={tooltip}
-      className={`flex items-center gap-1.5 px-2 py-1 text-[10px] font-mono text-text-muted ${indented ? 'pl-5' : ''}`}
+      className={`flex items-center gap-1.5 px-2 py-1 text-3xs font-mono text-text-muted ${indented ? 'pl-5' : ''}`}
     >
       <span className="w-2.5 flex-shrink-0 text-center">·</span>
       <span className="truncate">{label}</span>
@@ -152,7 +152,7 @@ function SetGroupRow({
         }}
         aria-expanded={expanded}
         title={`The "${setName}" set is scoped to named workloads and injects into ${parts.join(' and ')} (secrets.sets in stack.yaml)`}
-        className="w-full flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-mono text-text-secondary hover:text-text-primary hover:bg-surface-highlight/50 transition-colors text-left"
+        className="w-full flex items-center gap-1.5 px-2 py-1 rounded text-3xs font-mono text-text-secondary hover:text-text-primary hover:bg-surface-highlight/50 transition-colors text-left"
       >
         {expanded ? (
           <ChevronDown size={10} className="flex-shrink-0 text-text-muted" />

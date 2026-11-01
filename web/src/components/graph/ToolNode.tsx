@@ -74,7 +74,7 @@ const ToolNode = memo(({ data }: ToolNodeProps) => {
             >
               {on && <Check size={9} className="text-background" aria-hidden="true" />}
             </span>
-            <span className="tool-label min-w-0 flex-1 font-mono text-[11px] text-text-secondary truncate tracking-tight">
+            <span className="tool-label min-w-0 flex-1 font-mono text-2xs text-text-secondary truncate tracking-tight">
               {data.name}
             </span>
           </button>
@@ -119,7 +119,7 @@ const ToolNode = memo(({ data }: ToolNodeProps) => {
           {/* min-w-0 lets the flex item shrink; tool-label re-asserts
               overflow:hidden (see index.css) so truncate clips long tool names
               instead of overflowing the pill. */}
-          <span className="tool-label min-w-0 flex-1 font-mono text-[11px] text-text-secondary truncate tracking-tight">
+          <span className="tool-label min-w-0 flex-1 font-mono text-2xs text-text-secondary truncate tracking-tight">
             {data.name}
           </span>
         </button>

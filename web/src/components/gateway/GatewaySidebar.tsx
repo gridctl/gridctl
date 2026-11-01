@@ -41,7 +41,7 @@ const GatewaySidebar = memo(({ onClose }: GatewaySidebarProps) => {
             <h2 className="font-semibold text-text-primary truncate tracking-tight">
               {selectedData?.name ?? 'Gateway'}
             </h2>
-            <p className="text-[10px] text-text-muted font-mono tracking-wider">
+            <p className="text-3xs text-text-muted font-mono tracking-wider">
               {selectedData?.version ?? ''}
             </p>
           </div>
@@ -70,7 +70,7 @@ const GatewaySidebar = memo(({ onClose }: GatewaySidebarProps) => {
                 </div>
                 <span className="text-xs font-medium text-text-primary">
                   Authorization
-                  <span className="ml-1.5 text-[10px] text-status-pending font-mono">
+                  <span className="ml-1.5 text-3xs text-status-pending font-mono">
                     {pendingAuthServers.length} pending
                   </span>
                 </span>
@@ -107,7 +107,7 @@ const GatewaySidebar = memo(({ onClose }: GatewaySidebarProps) => {
               <span className="text-xs font-medium text-text-primary">
                 Manage Skills
                 {skillCount !== null && (
-                  <span className="ml-1.5 text-[10px] text-text-muted font-mono">
+                  <span className="ml-1.5 text-3xs text-text-muted font-mono">
                     ({skillCount})
                   </span>
                 )}

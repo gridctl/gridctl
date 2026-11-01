@@ -101,7 +101,7 @@ function Sparkline({ history, max }: SparklineProps) {
   if (!geom) {
     return (
       <div className="h-10 rounded-md bg-background/40 border border-border/30 flex items-center justify-center">
-        <span className="text-[10px] text-text-muted">Collecting samples…</span>
+        <span className="text-3xs text-text-muted">Collecting samples…</span>
       </div>
     );
   }
@@ -160,10 +160,10 @@ function DecisionFeed({ decisions }: { decisions: AutoscaleDecision[] }) {
         aria-expanded={open}
       >
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] uppercase tracking-widest text-text-muted font-medium">
+          <span className="text-3xs uppercase tracking-widest text-text-muted font-medium">
             Recent Decisions
           </span>
-          <span className="text-[10px] text-text-muted bg-surface-elevated px-1.5 py-0.5 rounded-md font-mono">
+          <span className="text-3xs text-text-muted bg-surface-elevated px-1.5 py-0.5 rounded-md font-mono">
             {count}
           </span>
         </div>
@@ -176,7 +176,7 @@ function DecisionFeed({ decisions }: { decisions: AutoscaleDecision[] }) {
       {open && (
         <ul className="px-2.5 py-2 space-y-1" data-testid="autoscale-decision-feed">
           {count === 0 && (
-            <li className="text-[11px] text-text-muted italic">No scale events yet</li>
+            <li className="text-2xs text-text-muted italic">No scale events yet</li>
           )}
           {decisions.map((d) => (
             <DecisionRow key={`${d.t}-${d.kind}`} decision={d} />
@@ -192,7 +192,7 @@ function DecisionRow({ decision }: { decision: AutoscaleDecision }) {
   const color =
     decision.kind === 'up' ? 'text-primary' : decision.kind === 'down' ? 'text-secondary' : 'text-text-muted';
   return (
-    <li className="flex items-center gap-2 text-[11px] font-mono">
+    <li className="flex items-center gap-2 text-2xs font-mono">
       <span className="text-text-muted">{formatTime(decision.t)}</span>
       <span className={cn('inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md', color)}>
         <Icon size={10} />

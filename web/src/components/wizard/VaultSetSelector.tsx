@@ -161,7 +161,7 @@ export function VaultSetSelector({ value, onChange }: VaultSetSelectorProps) {
       {/* Set list — scrollable without overflow-hidden clipping */}
       <div className="max-h-40 overflow-y-auto scrollbar-dark">
         {available.length === 0 && (
-          <div className="px-3 py-4 text-center text-[10px] text-text-muted">
+          <div className="px-3 py-4 text-center text-3xs text-text-muted">
             {sets === null ? (
               <span className="flex items-center justify-center gap-1.5">
                 <Loader2 size={10} className="animate-spin" />
@@ -179,7 +179,7 @@ export function VaultSetSelector({ value, onChange }: VaultSetSelectorProps) {
             className="w-full flex items-center justify-between px-3 py-2 text-xs hover:bg-surface-overlay-2 transition-colors group"
           >
             <span className="font-mono text-text-primary truncate">{set.name}</span>
-            <span className="text-[10px] text-text-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover-none:opacity-100 transition-opacity flex items-center gap-1">
+            <span className="text-3xs text-text-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover-none:opacity-100 transition-opacity flex items-center gap-1">
               <Check size={10} />
               Select
             </span>
@@ -197,14 +197,14 @@ export function VaultSetSelector({ value, onChange }: VaultSetSelectorProps) {
           ref={triggerRef}
           type="button"
           onClick={() => setOpen(!open)}
-          className="flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+          className="flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
         >
           <Plus size={10} />
           Add set
         </button>
       </div>
       {value.length === 0 && (
-        <p className="text-[10px] text-text-muted/60 italic py-2">
+        <p className="text-3xs text-text-muted/60 italic py-2">
           No secret sets referenced
         </p>
       )}

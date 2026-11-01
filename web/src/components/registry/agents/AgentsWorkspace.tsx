@@ -366,7 +366,7 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
                   <Bot size={32} className="text-text-muted/50" />
                 </div>
                 <span className="text-sm text-text-secondary">No agents imported</span>
-                <span className="text-[11px] text-text-muted max-w-sm">
+                <span className="text-2xs text-text-muted max-w-sm">
                   Agents are discovered from <span className="font-mono">agents/*.md</span> in an
                   imported repository, then projected into each client's agents directory.
                 </span>
@@ -399,10 +399,10 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
                 {groups.map((group) => (
                   <section key={group.source} aria-label={`Agents from ${group.source}`}>
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="text-[10px] uppercase tracking-wider font-medium text-text-muted">
+                      <span className="text-3xs uppercase tracking-wider font-medium text-text-muted">
                         {group.source}
                       </span>
-                      <span className="text-[10px] text-text-muted/60 font-mono">{group.members.length}</span>
+                      <span className="text-3xs text-text-muted/60 font-mono">{group.members.length}</span>
                     </div>
                     <div
                       style={{
@@ -474,7 +474,7 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
 function AgentKpi({ label, value, detail }: { label: string; value: number | null; detail?: string }) {
   return (
     <div className="flex flex-col items-start rounded-lg border bg-background/40 border-border/40 px-3 py-1.5 min-w-[60px]">
-      <span className="text-[10px] uppercase tracking-wider font-medium text-text-muted">{label}</span>
+      <span className="text-3xs uppercase tracking-wider font-medium text-text-muted">{label}</span>
       <span className={cn('font-mono leading-none mt-0.5 text-sm text-text-secondary')}>
         {value === null ? '–' : detail ? `${value} ${detail}` : value}
       </span>

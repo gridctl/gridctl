@@ -68,7 +68,7 @@ export function PackApplyForceDialog({
           </p>
           <ul className="max-h-40 overflow-y-auto scrollbar-dark rounded-lg border border-border/40 bg-background/40 divide-y divide-border/20">
             {driftedRows.map((r, i) => (
-              <li key={`${r.kind}:${r.name}:${r.client ?? ''}:${i}`} className="px-3 py-1.5 font-mono text-[11px] text-text-secondary">
+              <li key={`${r.kind}:${r.name}:${r.client ?? ''}:${i}`} className="px-3 py-1.5 font-mono text-2xs text-text-secondary">
                 {r.kind}/{r.name}
                 {r.client ? ` (${r.client})` : ''}
               </li>

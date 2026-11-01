@@ -90,7 +90,7 @@ export function ListTagInput({
         {tags.map((tag, idx) => (
           <span
             key={`${tag}-${idx}`}
-            className="inline-flex items-center gap-1 rounded-md bg-secondary/10 text-secondary pl-2 pr-1 py-0.5 text-[11px] font-mono"
+            className="inline-flex items-center gap-1 rounded-md bg-secondary/10 text-secondary pl-2 pr-1 py-0.5 text-2xs font-mono"
           >
             {tag}
             <button

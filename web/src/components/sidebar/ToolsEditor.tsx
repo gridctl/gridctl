@@ -70,14 +70,14 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
             handleKeepEditing();
           }}
         >
-          <p className="text-[11px] text-status-pending font-medium">
+          <p className="text-2xs text-status-pending font-medium">
             Discard unsaved changes to {discardPrompt}?
           </p>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handleDiscard}
-              className="text-[10px] px-2 py-1 rounded-md bg-status-pending/20 text-status-pending hover:bg-status-pending/30 transition-colors"
+              className="text-3xs px-2 py-1 rounded-md bg-status-pending/20 text-status-pending hover:bg-status-pending/30 transition-colors"
             >
               Discard
             </button>
@@ -85,7 +85,7 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
               ref={keepEditingRef}
               type="button"
               onClick={handleKeepEditing}
-              className="text-[10px] px-2 py-1 rounded-md border border-border/40 text-text-secondary hover:bg-surface-highlight/50 transition-colors"
+              className="text-3xs px-2 py-1 rounded-md border border-border/40 text-text-secondary hover:bg-surface-highlight/50 transition-colors"
             >
               Keep editing
             </button>
@@ -94,7 +94,7 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
       )}
 
       <div className="rounded-lg border border-border/40 bg-background/60 overflow-hidden">
-        <div className="flex items-center gap-2 px-3 py-2 text-[10px] text-text-muted border-b border-border/30">
+        <div className="flex items-center gap-2 px-3 py-2 text-3xs text-text-muted border-b border-border/30">
           {saveBlocked ? (
             <span role="alert" className="text-status-error">
               <span className="font-medium">0</span> of{' '}
@@ -114,7 +114,7 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
               onClick={selectAll}
               aria-label="Select all tools"
               disabled={isSaving}
-              className="text-[10px] text-secondary hover:text-secondary-light transition-colors disabled:opacity-50"
+              className="text-3xs text-secondary hover:text-secondary-light transition-colors disabled:opacity-50"
             >
               Select all
             </button>
@@ -124,7 +124,7 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
               onClick={clearAll}
               aria-label="Clear all tools"
               disabled={isSaving}
-              className="text-[10px] text-secondary hover:text-secondary-light transition-colors disabled:opacity-50"
+              className="text-3xs text-secondary hover:text-secondary-light transition-colors disabled:opacity-50"
             >
               Clear
             </button>
@@ -145,7 +145,7 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
 
           <Command.List className="max-h-60 overflow-y-auto" aria-label="Available tools">
             <Command.Empty>
-              <p className="text-[11px] text-text-muted/60 italic py-4 px-3 text-center">
+              <p className="text-2xs text-text-muted/60 italic py-4 px-3 text-center">
                 {allTools.length === 0
                   ? 'No tools discovered for this server yet.'
                   : `No tools match "${query}"`}
@@ -189,7 +189,7 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
                       {opt.name}
                     </div>
                     {opt.description && (
-                      <div className="text-[10px] text-text-muted truncate">{opt.description}</div>
+                      <div className="text-3xs text-text-muted truncate">{opt.description}</div>
                     )}
                   </div>
                 </Command.Item>
@@ -201,7 +201,7 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
 
       {hiddenReference && (
         <div role="alert" className="rounded-md border border-status-error/40 bg-status-error/[0.05] px-3 py-2">
-          <p className="text-[11px] text-status-error">{hiddenReference}</p>
+          <p className="text-2xs text-status-error">{hiddenReference}</p>
         </div>
       )}
 
@@ -212,15 +212,15 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
         >
           <AlertCircle size={12} className="text-status-pending flex-shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0 space-y-1">
-            <p className="text-[11px] text-status-pending font-medium">
+            <p className="text-2xs text-status-pending font-medium">
               The stack file was modified outside the canvas.
             </p>
-            <p className="text-[10px] text-text-muted">{conflict}</p>
+            <p className="text-3xs text-text-muted">{conflict}</p>
             <button
               type="button"
               onClick={handleReloadFromDisk}
               aria-label="Reload stack file from disk"
-              className="inline-flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+              className="inline-flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
             >
               <RefreshCw size={10} />
               Reload file
@@ -236,7 +236,7 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
             onClick={handleDiscard}
             disabled={isSaving}
             aria-label="Discard unsaved tool changes"
-            className="flex-shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[11px] font-medium border border-border/40 text-text-secondary hover:text-text-primary hover:bg-surface-highlight/50 transition-colors disabled:opacity-50"
+            className="flex-shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-2xs font-medium border border-border/40 text-text-secondary hover:text-text-primary hover:bg-surface-highlight/50 transition-colors disabled:opacity-50"
           >
             <Undo2 size={11} />
             Discard
@@ -248,7 +248,7 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
           disabled={!dirty || isSaving || saveBlocked}
           aria-label={saveLabel}
           className={cn(
-            'flex-1 inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[11px] font-medium transition-colors',
+            'flex-1 inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-2xs font-medium transition-colors',
             dirty && !isSaving && !saveBlocked
               ? 'bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30'
               : 'bg-surface-highlight/50 text-text-muted border border-border/30 cursor-not-allowed',

@@ -42,7 +42,7 @@ export function ToolsFilterBar({
             onChange={(e) => onQuery(e.target.value)}
             placeholder="Filter tools ( / )"
             aria-label="Filter tools by name or server"
-            className="w-full rounded-md border border-border/40 bg-background/60 pl-7 pr-6 py-1 text-[11px] text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-primary/50"
+            className="w-full rounded-md border border-border/40 bg-background/60 pl-7 pr-6 py-1 text-2xs text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-primary/50"
           />
           {query && (
             <button
@@ -55,11 +55,11 @@ export function ToolsFilterBar({
             </button>
           )}
         </div>
-        <span role="status" className="text-[10px] font-mono tabular-nums text-text-muted whitespace-nowrap">
+        <span role="status" className="text-3xs font-mono tabular-nums text-text-muted whitespace-nowrap">
           {matchCount} of {totalCount} tools
         </span>
         {activeFilterCount >= 2 && (
-          <button type="button" onClick={onClearAll} className="text-[10px] text-primary hover:underline whitespace-nowrap">
+          <button type="button" onClick={onClearAll} className="text-3xs text-primary hover:underline whitespace-nowrap">
             Clear all
           </button>
         )}
@@ -75,7 +75,7 @@ export function ToolsFilterBar({
               onClick={() => onServer(active ? null : server)}
               aria-pressed={active}
               className={cn(
-                'px-2 py-0.5 rounded-full border text-[10px] font-mono transition-colors',
+                'px-2 py-0.5 rounded-full border text-3xs font-mono transition-colors',
                 active
                   ? 'border-primary/40 bg-primary/15 text-primary'
                   : 'border-border/40 text-text-muted hover:text-text-secondary hover:bg-surface-highlight/40',

@@ -149,7 +149,7 @@ function DetachedEditorContent() {
       />
 
       {/* Status bar at bottom */}
-      <div className="fixed bottom-0 left-0 right-0 h-6 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-[10px] text-text-muted z-sticky">
+      <div className="fixed bottom-0 left-0 right-0 h-6 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-3xs text-text-muted z-sticky">
         <span className="flex items-center gap-1.5">
           <Wrench size={10} className="text-primary/60" />
           {itemName ? `Editing: ${itemName}` : 'New skill'}

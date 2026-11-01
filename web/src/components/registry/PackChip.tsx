@@ -5,7 +5,7 @@ import { useRegistryStore } from '../../stores/useRegistryStore';
 /** The chip's visual treatment, shared with non-navigating variants
  *  (the Global Context dialog renders a static span inside its modal). */
 export const PACK_CHIP_CLASS =
-  'text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-secondary/30 bg-secondary/10 text-secondary flex-shrink-0';
+  'text-3xs font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-secondary/30 bg-secondary/10 text-secondary flex-shrink-0';
 
 /**
  * Reverse-ownership provenance chip: names the pack that owns a resource

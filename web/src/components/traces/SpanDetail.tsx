@@ -112,7 +112,7 @@ export function SpanDetail({ span, selfTimeMs, onClose }: SpanDetailProps) {
         <div className="flex items-center gap-2 min-w-0">
           <span
             className={cn(
-              'px-2 py-0.5 text-[10px] font-medium rounded-full border flex-shrink-0',
+              'px-2 py-0.5 text-3xs font-medium rounded-full border flex-shrink-0',
               span.status === 'error'
                 ? 'bg-status-error/10 text-status-error border-status-error/20'
                 : 'bg-status-running/10 text-status-running border-status-running/20'
@@ -120,7 +120,7 @@ export function SpanDetail({ span, selfTimeMs, onClose }: SpanDetailProps) {
           >
             {span.status}
           </span>
-          <span className="text-[10px] text-text-muted font-mono truncate" title={span.spanId}>
+          <span className="text-3xs text-text-muted font-mono truncate" title={span.spanId}>
             {span.spanId.slice(0, 16)}
           </span>
           <button
@@ -134,7 +134,7 @@ export function SpanDetail({ span, selfTimeMs, onClose }: SpanDetailProps) {
 
         {/* Error message: the badge alone doesn't explain what failed */}
         {errMsg && (
-          <div className="rounded-lg bg-status-error/5 border border-status-error/20 px-3 py-2 text-[11px] text-status-error break-words">
+          <div className="rounded-lg bg-status-error/5 border border-status-error/20 px-3 py-2 text-2xs text-status-error break-words">
             {errMsg}
           </div>
         )}
@@ -145,7 +145,7 @@ export function SpanDetail({ span, selfTimeMs, onClose }: SpanDetailProps) {
           <section>
             <div className="flex items-center gap-1.5 mb-2">
               <Clock size={10} className="text-text-muted" />
-              <span className="text-[10px] font-medium text-text-muted uppercase tracking-wider">Timing</span>
+              <span className="text-3xs font-medium text-text-muted uppercase tracking-wider">Timing</span>
             </div>
             <div className="rounded-lg bg-surface-elevated/60 border border-border/30 overflow-hidden">
               <table className="w-full text-xs">
@@ -166,7 +166,7 @@ export function SpanDetail({ span, selfTimeMs, onClose }: SpanDetailProps) {
             <section>
               <div className="flex items-center gap-1.5 mb-2">
                 <Tag size={10} className="text-text-muted" />
-                <span className="text-[10px] font-medium text-text-muted uppercase tracking-wider">MCP</span>
+                <span className="text-3xs font-medium text-text-muted uppercase tracking-wider">MCP</span>
               </div>
               <KVTable rows={promoted.map(({ label, value }) => [label, value] as [string, string])} />
             </section>
@@ -181,7 +181,7 @@ export function SpanDetail({ span, selfTimeMs, onClose }: SpanDetailProps) {
                 className="flex items-center gap-1.5 mb-2 text-text-muted hover:text-text-secondary transition-colors"
               >
                 {showOther ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-                <span className="text-[10px] font-medium uppercase tracking-wider">
+                <span className="text-3xs font-medium uppercase tracking-wider">
                   Other attributes ({otherEntries.length})
                 </span>
               </button>
@@ -194,7 +194,7 @@ export function SpanDetail({ span, selfTimeMs, onClose }: SpanDetailProps) {
             <section>
               <div className="flex items-center gap-1.5 mb-2">
                 <Activity size={10} className="text-text-muted" />
-                <span className="text-[10px] font-medium text-text-muted uppercase tracking-wider">
+                <span className="text-3xs font-medium text-text-muted uppercase tracking-wider">
                   Events ({span.events.length})
                 </span>
               </div>
@@ -203,12 +203,12 @@ export function SpanDetail({ span, selfTimeMs, onClose }: SpanDetailProps) {
                   <div key={idx} className="rounded-lg bg-surface-elevated/60 border border-border/30 p-2.5">
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-xs font-medium text-text-primary">{event.name}</span>
-                      <span className="text-[10px] text-text-muted font-mono">{formatTimestamp(event.timestamp)}</span>
+                      <span className="text-3xs text-text-muted font-mono">{formatTimestamp(event.timestamp)}</span>
                     </div>
                     {Object.keys(event.attributes).length > 0 && (
                       <div className="space-y-0.5">
                         {Object.entries(event.attributes).map(([k, v]) => (
-                          <div key={k} className="flex gap-2 text-[10px]">
+                          <div key={k} className="flex gap-2 text-3xs">
                             <span className="text-text-muted font-mono">{k}:</span>
                             <span className="text-text-secondary font-mono break-all">{v}</span>
                           </div>

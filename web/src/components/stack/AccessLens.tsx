@@ -267,7 +267,7 @@ export function AccessLens({ servers }: AccessLensProps) {
           aria-pressed={enabled}
           aria-label="Toggle Access Lens"
           className={cn(
-            'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium border transition-colors glass-panel',
+            'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-2xs font-medium border transition-colors glass-panel',
             enabled
               ? 'bg-primary/15 text-primary border-primary/40 shadow-glow-primary'
               : 'text-text-muted border-border/40 hover:text-text-secondary hover:border-border',
@@ -278,7 +278,7 @@ export function AccessLens({ servers }: AccessLensProps) {
         </button>
 
         {enabled && (
-          <div className="glass-panel rounded-md px-2.5 py-1.5 text-[10px] text-text-muted flex items-center gap-2" role="status">
+          <div className="glass-panel rounded-md px-2.5 py-1.5 text-3xs text-text-muted flex items-center gap-2" role="status">
             {selectedClient ? (
               <>
                 <span>
@@ -288,7 +288,7 @@ export function AccessLens({ servers }: AccessLensProps) {
                 <button
                   type="button"
                   onClick={openSlideOver}
-                  className="inline-flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+                  className="inline-flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
                 >
                   <PanelRightOpen size={11} aria-hidden="true" />
                   Editor
@@ -314,14 +314,14 @@ export function AccessLens({ servers }: AccessLensProps) {
       {dirty && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-header animate-fade-in-up">
           <div className="glass-panel-elevated shadow-bevel rounded-xl px-4 py-2.5 flex items-center gap-4">
-            <span className="text-[11px] text-text-secondary" role="status">
+            <span className="text-2xs text-text-secondary" role="status">
               <span className="font-mono text-primary">{draft.length}</span> server
               {draft.length === 1 ? '' : 's'} granted ·{' '}
               <span className="font-mono text-primary">{toolsVisible}</span> tool
               {toolsVisible === 1 ? '' : 's'} visible
             </span>
             {pendingInit && (
-              <span className="text-[10px] text-status-pending" role="status">
+              <span className="text-3xs text-status-pending" role="status">
                 A granted server is still initializing — wait before narrowing tools.
               </span>
             )}
@@ -329,7 +329,7 @@ export function AccessLens({ servers }: AccessLensProps) {
             <button
               type="button"
               onClick={discardDraft}
-              className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] text-text-secondary hover:text-text-primary transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-2xs text-text-secondary hover:text-text-primary transition-colors"
             >
               <Undo2 size={12} aria-hidden="true" />
               Discard
@@ -340,7 +340,7 @@ export function AccessLens({ servers }: AccessLensProps) {
               disabled={!canSave}
               aria-label="Save access scope"
               className={cn(
-                'inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-medium border transition-colors',
+                'inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-2xs font-medium border transition-colors',
                 canSave
                   ? 'bg-primary/20 text-primary border-primary/30 hover:bg-primary/30'
                   : 'bg-surface-highlight/50 text-text-muted border-border/30 cursor-not-allowed',
@@ -372,20 +372,20 @@ export function AccessLens({ servers }: AccessLensProps) {
         <div className="space-y-4 text-sm">
           <div className="flex items-start gap-2.5 rounded-md border border-status-pending/40 bg-status-pending/[0.06] px-3 py-3">
             <AlertTriangle size={14} className="text-status-pending flex-shrink-0 mt-0.5" aria-hidden="true" />
-            <p className="text-[12px] text-text-secondary leading-relaxed">{activeExit?.message}</p>
+            <p className="text-xs text-text-secondary leading-relaxed">{activeExit?.message}</p>
           </div>
           <div className="flex items-center justify-end gap-2">
             <button
               type="button"
               onClick={() => resolveExit(activeExit?.cancel)}
-              className="rounded-md px-3 py-1.5 text-[11px] text-text-secondary hover:text-text-primary transition-colors"
+              className="rounded-md px-3 py-1.5 text-2xs text-text-secondary hover:text-text-primary transition-colors"
             >
               Keep editing
             </button>
             <button
               type="button"
               onClick={() => resolveExit(activeExit?.proceed)}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-medium border border-status-pending/40 bg-status-pending/10 text-status-pending hover:bg-status-pending/20 transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-2xs font-medium border border-status-pending/40 bg-status-pending/10 text-status-pending hover:bg-status-pending/20 transition-colors"
             >
               Discard changes
             </button>

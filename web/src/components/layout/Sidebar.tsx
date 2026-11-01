@@ -147,29 +147,29 @@ export function Sidebar() {
         accent={colorClass}
         subtitle={
           <>
-            <p className="text-[10px] text-text-muted uppercase tracking-wider">
+            <p className="text-3xs text-text-muted uppercase tracking-wider">
               {isClient ? 'LLM Client' : isServer ? 'MCP Server' : 'Resource'}
             </p>
             {isServer && isExternal && (
-              <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-tertiary/10 text-tertiary-light flex items-center gap-0.5">
+              <span className="text-3xs px-1 py-0.5 rounded font-medium bg-tertiary/10 text-tertiary-light flex items-center gap-0.5">
                 <Globe size={8} />
                 External
               </span>
             )}
             {isServer && isLocalProcess && (
-              <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-surface-highlight text-text-muted flex items-center gap-0.5">
+              <span className="text-3xs px-1 py-0.5 rounded font-medium bg-surface-highlight text-text-muted flex items-center gap-0.5">
                 <Cpu size={8} />
                 Local
               </span>
             )}
             {isServer && isSSH && (
-              <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-surface-highlight text-text-muted flex items-center gap-0.5">
+              <span className="text-3xs px-1 py-0.5 rounded font-medium bg-surface-highlight text-text-muted flex items-center gap-0.5">
                 <KeyRound size={8} />
                 SSH
               </span>
             )}
             {isServer && isOpenAPI && (
-              <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-surface-highlight text-text-muted flex items-center gap-0.5">
+              <span className="text-3xs px-1 py-0.5 rounded font-medium bg-surface-highlight text-text-muted flex items-center gap-0.5">
                 <FileJson size={8} />
                 OpenAPI
               </span>
@@ -418,20 +418,20 @@ export function Sidebar() {
                       {reach.servers.map((name) => (
                         <span
                           key={name}
-                          className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-background/60 border border-border/40 text-text-secondary"
+                          className="text-3xs font-mono px-1.5 py-0.5 rounded bg-background/60 border border-border/40 text-text-secondary"
                         >
                           {name}
                         </span>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-[11px] text-text-muted leading-relaxed">
+                    <p className="text-2xs text-text-muted leading-relaxed">
                       Reaches the gateway but no servers. Unlisted under a deny default, this client
                       sees nothing.
                     </p>
                   )
                 ) : (
-                  <p className="text-[11px] text-text-muted leading-relaxed">
+                  <p className="text-2xs text-text-muted leading-relaxed">
                     No <span className="font-mono text-text-secondary">clients</span> scope applies;
                     this client can reach every MCP server in the stack.
                   </p>
@@ -544,7 +544,7 @@ export function Sidebar() {
             <button
               type="button"
               onClick={() => navigate(`/tools?server=${encodeURIComponent(data.name)}`)}
-              className="mt-2 inline-flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+              className="mt-2 inline-flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
             >
               <ArrowUpRight size={10} />
               Open in Tools workspace

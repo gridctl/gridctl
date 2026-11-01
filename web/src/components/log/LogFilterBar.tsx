@@ -115,7 +115,7 @@ export function LogFilterBar({
         aria-pressed={errorsOnly}
         title={errorsOnly ? 'Restore previous level selection' : 'Show only ERROR entries'}
         className={cn(
-          'h-6 px-2 text-[10px] font-medium rounded border transition-colors flex items-center gap-1 flex-shrink-0',
+          'h-6 px-2 text-3xs font-medium rounded border transition-colors flex items-center gap-1 flex-shrink-0',
           errorsOnly
             ? 'bg-status-error/15 text-status-error border-status-error/30'
             : 'bg-background/60 text-text-muted border-border/40 hover:text-text-secondary hover:border-border/60'
@@ -145,20 +145,20 @@ export function LogFilterBar({
           aria-label="View options"
           className="absolute right-0 top-full mt-1 w-56 p-2"
         >
-            <div className="px-1 py-1 text-[9px] uppercase tracking-[0.18em] text-text-muted/70">
+            <div className="px-1 py-1 text-3xs uppercase tracking-[0.18em] text-text-muted/70">
               View options
             </div>
             {onWindowSizeChange && (
-              <div className="flex items-center justify-between gap-2 px-1 py-1.5">
-                <span className="text-[10px] text-text-secondary">Window</span>
-                <div className="flex items-center bg-background/60 rounded-md border border-border/40 overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-2 px-1 py-1.5">
+                <span className="text-3xs text-text-secondary whitespace-nowrap">Window</span>
+                <div className="flex flex-shrink-0 items-center bg-background/60 rounded-md border border-border/40 overflow-hidden">
                   {LOG_WINDOW_SIZES.map((n) => (
                     <button
                       key={n}
                       onClick={() => onWindowSizeChange(n)}
                       aria-pressed={windowSize === n}
                       className={cn(
-                        'px-1.5 py-0.5 text-[9px] font-medium transition-colors',
+                        'px-1.5 py-0.5 text-3xs font-medium transition-colors',
                         windowSize === n
                           ? 'bg-primary/15 text-primary'
                           : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight/40'
@@ -171,16 +171,16 @@ export function LogFilterBar({
               </div>
             )}
             {onTimeRangeChange && (
-              <div className="flex items-center justify-between gap-2 px-1 py-1.5">
-                <span className="text-[10px] text-text-secondary">Time range</span>
-                <div className="flex items-center bg-background/60 rounded-md border border-border/40 overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-2 px-1 py-1.5">
+                <span className="text-3xs text-text-secondary whitespace-nowrap">Time range</span>
+                <div className="flex flex-shrink-0 items-center bg-background/60 rounded-md border border-border/40 overflow-hidden">
                   {LOG_TIME_RANGES.map((range) => (
                     <button
                       key={range.value}
                       onClick={() => onTimeRangeChange(range.value)}
                       aria-pressed={timeRange === range.value}
                       className={cn(
-                        'px-1.5 py-0.5 text-[9px] font-medium transition-colors',
+                        'px-1.5 py-0.5 text-3xs font-medium transition-colors',
                         timeRange === range.value
                           ? 'bg-primary/15 text-primary'
                           : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight/40'
@@ -218,7 +218,7 @@ export function LogFilterBar({
 
       {/* Log count, honest against the poll window and the server ring */}
       <span
-        className="text-[10px] text-text-muted font-mono ml-auto whitespace-nowrap"
+        className="text-3xs text-text-muted font-mono ml-auto whitespace-nowrap"
         title={
           windowSize
             ? `Showing the most recent ${windowSize} buffer entries${bufferCapacity > 0 ? ` · ring holds ${bufferTotal} of ${bufferCapacity}` : ''}`
@@ -246,12 +246,12 @@ function PopoverToggle({
 }) {
   return (
     <div className="flex items-center justify-between gap-2 px-1 py-1.5">
-      <span className="text-[10px] text-text-secondary">{label}</span>
+      <span className="text-3xs text-text-secondary">{label}</span>
       <button
         onClick={onToggle}
         aria-pressed={pressed}
         className={cn(
-          'px-1.5 py-0.5 text-[9px] font-medium rounded border transition-colors',
+          'px-1.5 py-0.5 text-3xs font-medium rounded border transition-colors',
           pressed
             ? 'bg-primary/15 text-primary border-primary/30'
             : 'bg-background/60 text-text-muted border-border/40 hover:text-text-secondary'
