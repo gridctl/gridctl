@@ -85,7 +85,7 @@ describe('describeError', () => {
     expect(described.summary).toBe('Save paused');
     expect(described.detail).toBeUndefined();
     expect(described.hint).toBe('Verify your gateway credential to resume.');
-    expect(described.text).toBe('Save paused Verify your gateway credential to resume.');
+    expect(described.text).toBe('Save paused. Verify your gateway credential to resume.');
   });
 
   it('maps gateway transport kinds', () => {
@@ -135,8 +135,14 @@ describe('describeError', () => {
     expect(describeError(new HTTPError(404, 'missing'), 'Delete').hint).toBe(
       'It may have been removed. Refresh and retry.',
     );
+    expect(describeError(new HTTPError(404, 'missing'), 'Delete').text).toBe(
+      'Delete failed: missing. It may have been removed. Refresh and retry.',
+    );
     expect(describeError(new HTTPError(409, 'conflict'), 'Save').hint).toBe(
       'Something changed underneath. Refresh and retry.',
+    );
+    expect(describeError(new HTTPError(409, 'conflict'), 'Save').text).toBe(
+      'Save failed: conflict. Something changed underneath. Refresh and retry.',
     );
     expect(describeError(new HTTPError(503, 'unavailable'), 'Save').hint).toBe(
       'The gateway reported an error. Check gridctl logs.',

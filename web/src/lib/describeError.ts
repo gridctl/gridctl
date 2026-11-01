@@ -22,7 +22,7 @@ export interface ErrorDescription {
   hint?: string;
   /** Untrimmed detail for a title attribute or expandable region. Omitted when identical to detail. */
   fullDetail?: string;
-  /** Composed one-line text: summary, then ": " + detail when present, then " " + hint when present. Ends with a period. */
+  /** Composed one-line text. Summary, then ": " and detail when present. A sentence boundary precedes the hint. Ends with a period. */
   text: string;
 }
 
@@ -156,7 +156,12 @@ function boundDetail(raw: string): { detail?: string; fullDetail?: string } {
 function finish(summary: string, detail?: string, hint?: string, fullDetail?: string): ErrorDescription {
   let text = summary;
   if (detail) text += `: ${detail}`;
-  if (hint) text += ` ${hint}`;
+  if (hint) {
+    // Server messages usually have no trailing period. Close that sentence
+    // before the hint so the two do not run together.
+    if (!/[.!?]$/.test(text)) text += '.';
+    text += ` ${hint}`;
+  }
   if (!text.endsWith('.')) text += '.';
   const described: ErrorDescription = { summary, text };
   if (detail) described.detail = detail;
