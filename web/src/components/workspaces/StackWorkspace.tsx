@@ -136,7 +136,7 @@ export function StackWorkspace() {
                   </div>
                   <button
                     onClick={handleRefresh}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-primary to-primary-dark text-background font-semibold rounded-lg hover:from-primary-light hover:to-primary transition-all shadow-glow-primary hover:shadow-[0_0_30px_rgba(245,158,11,0.3)]"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-primary to-primary-dark text-background font-semibold rounded-lg hover:from-primary-light hover:to-primary transition-all shadow-glow-primary hover:shadow-[0_0_30px_--alpha(var(--color-primary)/30%)]"
                   >
                     <RefreshCw size={16} />
                     Retry Connection

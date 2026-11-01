@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { WORKSPACE_LABELS } from '../../types/workspace';
+import { Button } from '../ui/Button';
 import { IconButton } from '../ui/IconButton';
 import { PopoutButton } from '../ui/PopoutButton';
 import { SkillEditor } from '../registry/SkillEditor';
@@ -1423,7 +1424,7 @@ function BulkActionBar({ count, allSelected, onSelectAll, onEnable, onDisable, o
       <div className="ml-auto flex items-center gap-1.5">
         <button
           onClick={onEnable}
-          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-emerald-400 border border-emerald-400/25 hover:bg-emerald-400/10 transition-colors"
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-status-running border border-status-running/25 hover:bg-status-running/10 transition-colors"
         >
           <Power size={11} /> Enable
         </button>
@@ -1433,12 +1434,14 @@ function BulkActionBar({ count, allSelected, onSelectAll, onEnable, onDisable, o
         >
           <PowerOff size={11} /> Disable
         </button>
-        <button
+        <Button
+          variant="outline-danger"
+          size="sm"
           onClick={onDelete}
-          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-red-400 border border-red-400/25 hover:bg-red-400/10 transition-colors"
+          className="gap-1 px-2 py-1 rounded-md text-[11px]"
         >
           <Trash2 size={11} /> Delete
-        </button>
+        </Button>
         <button
           onClick={onClear}
           aria-label="Clear selection"

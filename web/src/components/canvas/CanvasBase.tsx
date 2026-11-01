@@ -61,7 +61,7 @@ const DEFAULT_BACKGROUNDS: BackgroundLayer[] = [
     variant: BackgroundVariant.Dots,
     gap: 24,
     size: 1,
-    color: 'rgba(255,255,255,0.04)',
+    color: 'var(--color-border-subtle)',
   },
 ];
 

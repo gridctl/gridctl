@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { AlertTriangle, Package, RefreshCw, Trash2, Upload, X, GitBranch } from 'lucide-react';
 import { cn } from '../../../lib/cn';
+import { Button } from '../../ui/Button';
 import { IconButton } from '../../ui/IconButton';
 import { StatePill } from '../../ui/StatePill';
 import { showToast } from '../../ui/Toast';
@@ -154,9 +155,9 @@ export function PackDetailPanel({ name, onClose, onChanged }: PackDetailPanelPro
         <PanelHeader name={name} onClose={onClose} />
         <div
           role="alert"
-          className="m-4 rounded-xl border border-red-400/30 bg-red-400/10 p-4 text-xs text-text-primary space-y-2"
+          className="m-4 rounded-xl border border-status-error/30 bg-status-error/10 p-4 text-xs text-text-primary space-y-2"
         >
-          <div className="flex items-center gap-2 font-medium text-red-400">
+          <div className="flex items-center gap-2 font-medium text-status-error">
             <AlertTriangle size={14} /> Pack name collision
           </div>
           <p className="text-text-secondary">{collisionMessage}</p>
@@ -244,13 +245,15 @@ export function PackDetailPanel({ name, onClose, onChanged }: PackDetailPanelPro
                 <Upload size={11} aria-hidden="true" /> Update from origin
               </button>
               <IconButton icon={RefreshCw} onClick={() => void handleRefresh()} tooltip="Refresh status" size="sm" variant="ghost" />
-              <button
+              <Button
+                variant="outline-danger"
+                size="sm"
                 onClick={() => setShowRemove(true)}
                 disabled={busy !== null}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 border border-red-400/25 hover:bg-red-400/10 rounded-lg transition-colors disabled:opacity-50"
+                className="gap-1.5"
               >
                 <Trash2 size={11} aria-hidden="true" /> Remove
-              </button>
+              </Button>
             </div>
           </div>
 

@@ -56,7 +56,7 @@ const resourceTypes: ResourceTypeCard[] = [
     label: 'Stack',
     description: 'Complete stack with servers and resources',
     color: 'text-primary',
-    glowColor: 'rgba(245, 158, 11, 0.1)',
+    glowColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)',
   },
   {
     type: 'mcp-server',
@@ -64,7 +64,7 @@ const resourceTypes: ResourceTypeCard[] = [
     label: 'MCP Server',
     description: 'Container, external, SSH, or OpenAPI server',
     color: 'text-primary',
-    glowColor: 'rgba(245, 158, 11, 0.1)',
+    glowColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)',
   },
   {
     type: 'resource',
@@ -72,7 +72,7 @@ const resourceTypes: ResourceTypeCard[] = [
     label: 'Resource',
     description: 'Database, cache, or supporting container',
     color: 'text-secondary',
-    glowColor: 'rgba(13, 148, 136, 0.1)',
+    glowColor: 'color-mix(in srgb, var(--color-secondary) 10%, transparent)',
   },
   {
     type: 'skill',
@@ -80,7 +80,7 @@ const resourceTypes: ResourceTypeCard[] = [
     label: 'Skill',
     description: 'Import skills from a Git repository',
     color: 'text-secondary',
-    glowColor: 'rgba(13, 148, 136, 0.1)',
+    glowColor: 'color-mix(in srgb, var(--color-secondary) 10%, transparent)',
   },
   {
     type: 'pack',
@@ -88,7 +88,7 @@ const resourceTypes: ResourceTypeCard[] = [
     label: 'Pack',
     description: 'Import a repo with gridctl-pack.yaml: skills, agents, rules, and wiring as one unit',
     color: 'text-secondary',
-    glowColor: 'rgba(13, 148, 136, 0.1)',
+    glowColor: 'color-mix(in srgb, var(--color-secondary) 10%, transparent)',
   },
   {
     type: 'secret',
@@ -96,7 +96,7 @@ const resourceTypes: ResourceTypeCard[] = [
     label: 'Secret',
     description: 'Add secrets to the vault',
     color: 'text-status-pending',
-    glowColor: 'rgba(234, 179, 8, 0.1)',
+    glowColor: 'color-mix(in srgb, var(--color-status-pending) 10%, transparent)',
   },
   {
     type: 'global-context',
@@ -104,7 +104,7 @@ const resourceTypes: ResourceTypeCard[] = [
     label: 'Global Context',
     description: 'Global rules synced to every linked client',
     color: 'text-secondary',
-    glowColor: 'rgba(13, 148, 136, 0.1)',
+    glowColor: 'color-mix(in srgb, var(--color-secondary) 10%, transparent)',
   },
   {
     type: 'client-link',
@@ -112,7 +112,7 @@ const resourceTypes: ResourceTypeCard[] = [
     label: 'Client Link',
     description: 'Connect LLM clients to the gateway',
     color: 'text-primary',
-    glowColor: 'rgba(245, 158, 11, 0.1)',
+    glowColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)',
   },
 ];
 
@@ -681,7 +681,7 @@ function MCPTemplateStep({
       {mode === 'templates' ? (
         <TemplateGrid resourceType="mcp-server" selected={selected} onSelect={onTemplateSelect} />
       ) : (
-        <div className="flex-1 min-h-0 rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
+        <div className="flex-1 min-h-0 rounded-xl border border-border-subtle bg-surface-overlay-1 overflow-hidden">
           <CatalogPicker onSelect={onCatalogSelect} />
         </div>
       )}
@@ -729,12 +729,12 @@ function TypePicker({
                 'group relative flex flex-col items-center text-center p-5 rounded-xl border transition-all duration-200',
                 'animate-fade-in-up',
                 isGated
-                  ? 'opacity-40 cursor-not-allowed bg-white/[0.03] border-white/[0.06]'
+                  ? 'opacity-40 cursor-not-allowed bg-surface-overlay-2 border-border-subtle'
                   : [
-                      'bg-white/[0.03] hover:bg-white/[0.06]',
+                      'bg-surface-overlay-2 hover:bg-surface-overlay-3',
                       isSelected
-                        ? 'border-primary/50 shadow-[0_0_24px_rgba(245,158,11,0.1)]'
-                        : 'border-white/[0.06] hover:border-white/[0.12]',
+                        ? 'border-primary/50 shadow-[0_0_24px_--alpha(var(--color-primary)/10%)]'
+                        : 'border-border-subtle hover:border-border',
                     ],
               )}
               style={{ animationDelay: `${i * 50}ms`, animationFillMode: 'backwards' }}
@@ -748,7 +748,7 @@ function TypePicker({
                 className={cn(
                   'w-10 h-10 rounded-xl flex items-center justify-center mb-3 transition-all duration-200',
                   'bg-surface-elevated border border-border/40',
-                  !isGated && 'group-hover:border-white/[0.12]',
+                  !isGated && 'group-hover:border-border',
                   isSelected && !isGated && 'border-primary/30',
                 )}
                 style={
@@ -825,7 +825,7 @@ function FormRenderer({
       <div className="text-xs text-text-muted uppercase tracking-wider font-medium mb-2">
         Configure {resourceType}
       </div>
-      <div className="mt-6 p-4 rounded-xl bg-white/[0.02] border border-white/[0.04] text-center">
+      <div className="mt-6 p-4 rounded-xl bg-surface-overlay-1 border border-border-subtle text-center">
         <p className="text-xs text-text-muted">
           Use the Vault panel to manage secrets.
         </p>

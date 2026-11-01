@@ -519,7 +519,7 @@ function ModeControl({
               'px-3 py-1 rounded-lg text-[10px] font-medium transition-all border',
               mode === opt.mode
                 ? 'bg-primary/10 border-primary/30 text-primary'
-                : 'bg-white/[0.02] border-white/[0.06] text-text-muted hover:text-text-secondary',
+                : 'bg-surface-overlay-1 border-border-subtle text-text-muted hover:text-text-secondary',
             )}
           >
             {opt.label}
@@ -551,7 +551,7 @@ function FilterChip({
         'px-1.5 py-0.5 rounded border text-[9px] font-mono uppercase transition-colors',
         pressed
           ? 'bg-primary/15 border-primary/40 text-primary'
-          : 'bg-white/[0.02] border-white/[0.06] hover:border-border',
+          : 'bg-surface-overlay-1 border-border-subtle hover:border-border',
         !pressed && className,
       )}
     >

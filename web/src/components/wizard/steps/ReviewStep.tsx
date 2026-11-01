@@ -250,7 +250,7 @@ export function ReviewStep({
         className={cn(
           'flex items-center gap-3 p-4 rounded-xl border',
           validating
-            ? 'bg-white/[0.02] border-border/30'
+            ? 'bg-surface-overlay-1 border-border/30'
             : hasErrors
               ? 'bg-status-error/5 border-status-error/20'
               : warningCount > 0
@@ -333,7 +333,7 @@ export function ReviewStep({
       )}
 
       {/* Resource Summary */}
-      <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4">
+      <div className="bg-surface-overlay-2 border border-border-subtle rounded-xl p-4">
         <div className="flex items-center gap-2 mb-3">
           <FileCode2 size={14} className="text-primary" />
           <span className="text-xs font-medium text-text-secondary uppercase tracking-wider">

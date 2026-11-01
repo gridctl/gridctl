@@ -225,7 +225,7 @@ function TriStateRow({ signal, state, globalDefault, busy, onClick }: RowProps) 
           aria-hidden
           className={cn(
             'inline-block w-2.5 h-2.5 rounded-full border transition-all duration-200',
-            isOn && 'bg-status-running border-status-running shadow-[0_0_6px_rgba(16,185,129,0.5)]',
+            isOn && 'bg-status-running border-status-running shadow-[0_0_6px_--alpha(var(--color-status-running)/50%)]',
             isOff && 'bg-transparent border-status-pending',
             isInherit && (globalDefault
               ? 'bg-status-running/30 border-status-running/40'

@@ -49,7 +49,7 @@ const ToolNode = memo(({ data }: ToolNodeProps) => {
             'border bg-gradient-to-b from-surface/95 via-surface/90 to-surface/80',
             'shadow-bevel transition-[border-color,box-shadow,background-color] duration-200',
             on
-              ? 'border-white/70 ring-1 ring-white/25'
+              ? 'border-primary/70 ring-1 ring-primary/25'
               : 'border-dashed border-border/50 saturate-[0.4] opacity-70',
           )}
           style={{ height: LAYOUT.TOOL_HEIGHT }}
@@ -69,10 +69,10 @@ const ToolNode = memo(({ data }: ToolNodeProps) => {
             <span
               className={cn(
                 'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors',
-                on ? 'bg-white/15 border-white/70' : 'border-border/60 bg-background/50',
+                on ? 'bg-primary border-primary' : 'border-border/60 bg-background/50',
               )}
             >
-              {on && <Check size={9} className="text-white" aria-hidden="true" />}
+              {on && <Check size={9} className="text-background" aria-hidden="true" />}
             </span>
             <span className="tool-label min-w-0 flex-1 font-mono text-[11px] text-text-secondary truncate tracking-tight">
               {data.name}
@@ -113,7 +113,7 @@ const ToolNode = memo(({ data }: ToolNodeProps) => {
           style={{ height: LAYOUT.TOOL_HEIGHT }}
         >
           {/* Top accent line, matching the client nodes. */}
-          <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+          <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-text-primary/20 to-transparent" />
 
           <Wrench size={11} className="text-text-secondary flex-shrink-0" aria-hidden="true" />
           {/* min-w-0 lets the flex item shrink; tool-label re-asserts

@@ -198,7 +198,7 @@ function DetachedSidebarPageContent() {
                       <span
                         className={cn(
                           'w-1.5 h-1.5 rounded-full',
-                          node.type === 'mcp-server' && 'bg-violet-400',
+                          node.type === 'mcp-server' && 'bg-tertiary-light',
                           node.type === 'resource' && 'bg-secondary'
                         )}
                       />
@@ -315,14 +315,14 @@ function NodeDetails({ node }: { node: NodeOption }) {
         <div
           className={cn(
             'p-2.5 rounded-xl flex-shrink-0 border',
-            colorClass === 'violet' && 'bg-violet-500/10 border-violet-500/20',
+            colorClass === 'violet' && 'bg-tertiary/10 border-tertiary/20',
             colorClass === 'secondary' && 'bg-secondary/10 border-secondary/20'
           )}
         >
           <Icon
             size={18}
             className={cn(
-              colorClass === 'violet' && 'text-violet-400',
+              colorClass === 'violet' && 'text-tertiary-light',
               colorClass === 'secondary' && 'text-secondary'
             )}
           />

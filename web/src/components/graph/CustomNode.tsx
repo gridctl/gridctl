@@ -108,29 +108,29 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
         'border transition-[border-color,box-shadow,background-color] duration-200 ease-out',
         'shadow-bevel',
         isServer
-          ? 'bg-gradient-to-br from-surface/95 to-violet-500/[0.03] border-border'
+          ? 'bg-gradient-to-br from-surface/95 to-tertiary/[0.03] border-border'
           : 'bg-gradient-to-br from-surface/95 to-secondary/[0.02] border-border',
-        selected && isServer && 'border-violet-500 shadow-[0_0_15px_rgba(139,92,246,0.3)] ring-2 ring-violet-500/30',
+        selected && isServer && 'border-tertiary shadow-[0_0_15px_--alpha(var(--color-tertiary)/30%)] ring-2 ring-tertiary/30',
         selected && !isServer && 'border-secondary shadow-glow-secondary ring-2 ring-secondary/30',
         // Autoscale decision ring: inset so it does not fight selection highlighting.
         autoscale?.lastDecision === 'up' && 'ring-2 ring-inset ring-primary/40 animate-pulse-glow',
         autoscale?.lastDecision === 'down' && 'ring-2 ring-inset ring-secondary/40',
         isServer && (data as MCPServerNodeData).enabled === false && 'opacity-60',
         !selected && 'hover:shadow-node-hover',
-        !selected && isServer && !lensActiveForNode && 'hover:border-violet-400/60',
+        !selected && isServer && !lensActiveForNode && 'hover:border-tertiary-light/60',
         !selected && !isServer && 'hover:border-secondary/70',
         // Access Lens draft state (overrides the violet server accents).
         lensActiveForNode && 'cursor-pointer',
         lensActiveForNode && lensGranted &&
-          'border-white/70 ring-2 ring-white/40 shadow-[inset_0_0_24px_rgba(255,255,255,0.10),0_0_16px_rgba(255,255,255,0.16)]',
+          'border-text-primary/70 ring-2 ring-text-primary/40 shadow-[inset_0_0_24px_--alpha(var(--color-text-primary)/10%),0_0_16px_--alpha(var(--color-text-primary)/16%)]',
         lensActiveForNode && !lensGranted &&
           'border-dashed border-border/50 saturate-[0.35]'
       )}
       style={{
         height: isCompact ? LAYOUT.NODE_HEIGHT_COMPACT : undefined,
         ...(heatIntensity > 0 && !selected ? {
-          borderColor: `rgba(245, 158, 11, ${0.2 + heatIntensity * 0.5})`,
-          boxShadow: `0 0 ${8 + heatIntensity * 16}px rgba(245, 158, 11, ${heatIntensity * 0.3})`,
+          borderColor: `color-mix(in srgb, var(--color-primary) ${Math.round((0.2 + heatIntensity * 0.5) * 100)}%, transparent)`,
+          boxShadow: `0 0 ${8 + heatIntensity * 16}px color-mix(in srgb, var(--color-primary) ${Math.round(heatIntensity * 30)}%, transparent)`,
         } : {}),
       }}
     >
@@ -140,14 +140,14 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
         'px-3 py-2.5 flex items-center justify-between relative',
         !isCompact && 'border-b',
         isServer
-          ? 'border-violet-500/10 bg-violet-500/[0.03]'
+          ? 'border-tertiary/10 bg-tertiary/[0.03]'
           : 'border-secondary/10 bg-secondary/[0.03]'
       )}>
         {/* Accent line */}
         <div className={cn(
           'absolute top-0 left-0 right-0 h-px',
           isServer
-            ? 'bg-gradient-to-r from-transparent via-violet-500/40 to-transparent'
+            ? 'bg-gradient-to-r from-transparent via-tertiary/40 to-transparent'
             : 'bg-gradient-to-r from-transparent via-secondary/40 to-transparent'
         )} />
 
@@ -155,13 +155,13 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
           <div className={cn(
             'p-1.5 rounded-lg border',
             isServer
-              ? 'bg-violet-500/10 border-violet-500/20'
+              ? 'bg-tertiary/10 border-tertiary/20'
               : 'bg-secondary/10 border-secondary/20'
           )}>
             <Icon
               size={14}
               className={cn(
-                isServer ? 'text-violet-400' : 'text-secondary'
+                isServer ? 'text-tertiary-light' : 'text-secondary'
               )}
             />
           </div>
@@ -175,7 +175,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
               static ×N badge so operators see reactive scale at a glance. */}
           {isServer && autoscale && (
             <span
-              className="text-[10px] text-violet-300/80 font-mono tracking-tight"
+              className="text-[10px] text-tertiary-light/80 font-mono tracking-tight"
               title={`Autoscale · current ${autoscale.current} / target ${autoscale.target}`}
               aria-label={`Autoscale current ${autoscale.current} of target ${autoscale.target}`}
             >
@@ -186,7 +186,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
               so horizontal-scale servers are recognisable at a glance. */}
           {hasReplicas && (
             <span
-              className="text-[10px] text-violet-300/80 font-mono tracking-tight"
+              className="text-[10px] text-tertiary-light/80 font-mono tracking-tight"
               title={`${replicaCount} replicas`}
               aria-label={`${replicaCount} replicas`}
             >
@@ -214,8 +214,8 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
               className={cn(
                 'flex items-center justify-center w-5 h-5 rounded-md border transition-colors duration-200',
                 isExpanded
-                  ? 'border-violet-500/40 bg-violet-500/15 text-violet-300'
-                  : 'border-border/50 text-text-muted hover:border-violet-400/50 hover:text-violet-300'
+                  ? 'border-tertiary/40 bg-tertiary/15 text-tertiary-light'
+                  : 'border-border/50 text-text-muted hover:border-tertiary-light/50 hover:text-tertiary-light'
               )}
             >
               {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -253,7 +253,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
           {isServer && !hasValidEndpoint && hasValidContainerId && (
             <div className="space-y-1">
               <div className="flex items-center gap-1.5">
-                <Hash size={10} className="text-violet-400" />
+                <Hash size={10} className="text-tertiary-light" />
                 <span className="text-[10px] uppercase tracking-widest font-medium text-text-muted">
                   Container
                 </span>
@@ -329,10 +329,10 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
                   </span>
                 )}
                 {isServer && (data as MCPServerNodeData).capabilities?.prompts && (
-                  <span className="text-[10px] uppercase tracking-wider text-violet-300">prompts</span>
+                  <span className="text-[10px] uppercase tracking-wider text-tertiary-light">prompts</span>
                 )}
                 {isServer && (data as MCPServerNodeData).capabilities?.resources && (
-                  <span className="text-[10px] uppercase tracking-wider text-violet-300">resources</span>
+                  <span className="text-[10px] uppercase tracking-wider text-tertiary-light">resources</span>
                 )}
               </div>
             </div>
@@ -481,7 +481,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
         position={Position.Left}
         className={cn(
           '!w-2.5 !h-2.5 !border-2 !border-background !rounded-full',
-          isServer ? '!bg-violet-500' : '!bg-secondary',
+          isServer ? '!bg-tertiary' : '!bg-secondary',
           'transition-transform duration-200 hover:!scale-125'
         )}
         id="input"
@@ -491,7 +491,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
         position={Position.Right}
         className={cn(
           '!w-2.5 !h-2.5 !border-2 !border-background !rounded-full',
-          isServer ? '!bg-violet-500' : '!bg-secondary',
+          isServer ? '!bg-tertiary' : '!bg-secondary',
           'transition-transform duration-200 hover:!scale-125'
         )}
         id="output"

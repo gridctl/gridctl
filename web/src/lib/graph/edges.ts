@@ -9,6 +9,7 @@
 
 import type { Edge } from '@xyflow/react';
 import type { MCPServerStatus, ResourceStatus, ClientStatus, AgentSkill } from '../../types';
+import type { ThemeColors } from '../../themes/readThemeColors';
 import type { EdgeMetadata } from './types';
 import { COLORS } from '../constants';
 
@@ -31,6 +32,34 @@ function arrowMarker(color: string): { type: 'arrowclosed'; width: number; heigh
 export type EnhancedEdge = Edge & {
   data?: EdgeMetadata;
 };
+
+function relationTypeOf(edge: Edge): string | undefined {
+  const data = edge.data;
+  if (!data || typeof data !== 'object') return undefined;
+  const relation = (data as { relationType?: unknown }).relationType;
+  return typeof relation === 'string' ? relation : undefined;
+}
+
+/**
+ * Recolor arrow markers from live theme colors. React Flow builds the SVG
+ * marker id from markerEnd.color, so a CSS variable cannot be stored there.
+ * Edges without a marker are returned unchanged. The canvas holds plain Edge
+ * values, so the input is wider than EnhancedEdge.
+ */
+export function applyEdgeThemeColors<T extends Edge>(edges: T[], colors: ThemeColors): T[] {
+  return edges.map((edge) => {
+    const markerEnd = edge.markerEnd;
+    if (!markerEnd || typeof markerEnd === 'string') return edge;
+    const relation = relationTypeOf(edge);
+    const color =
+      relation === 'gateway-to-server' ? colors.external
+      : relation === 'gateway-to-resource' ? colors.secondary
+      : relation === 'gateway-to-skill-group' ? colors.tertiary
+      : colors.edgeDefault;
+    if (markerEnd.color === color) return edge;
+    return { ...edge, markerEnd: { ...markerEnd, color } };
+  });
+}
 
 /**
  * Create edges from gateway to MCP servers

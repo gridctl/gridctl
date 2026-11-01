@@ -13,7 +13,7 @@ const CATEGORY_META: Record<string, { icon: LucideIcon; label: string; color: st
   ai: { icon: Bot, label: 'AI & Agents', color: 'text-tertiary' },
   development: { icon: Code, label: 'Development', color: 'text-primary' },
   data: { icon: Database, label: 'Data & Analytics', color: 'text-secondary' },
-  operations: { icon: Activity, label: 'Operations', color: 'text-blue-400' },
+  operations: { icon: Activity, label: 'Operations', color: 'text-secondary' },
 };
 
 /**
@@ -105,7 +105,7 @@ export function RecipePicker({ onSelect, onClose }: RecipePickerProps) {
                 onClick={() => setSelectedId(recipe.id)}
                 className={cn(
                   'w-full text-left px-4 py-3 border-b border-border/10 transition-all',
-                  isSelected ? 'bg-primary/5 border-l-2 border-l-primary' : 'hover:bg-white/[0.02]',
+                  isSelected ? 'bg-primary/5 border-l-2 border-l-primary' : 'hover:bg-surface-overlay-1',
                 )}
               >
                 <div className="flex items-center gap-2">

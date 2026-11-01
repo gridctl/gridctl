@@ -11,11 +11,9 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 // (text-status-pending, bg-primary, …) resolve to var(--color-*) and follow
 // [data-theme]; see web/src/components/README.md.
 //
-// Scoped to amber and yellow because those are the families now fully migrated.
-// The emerald, violet, rose, and sky literals are the same latent bug and should
-// be added here as each one is migrated, so this rule only ever ratchets.
+// The ratchet is complete: every default Tailwind color family is rejected.
 const RAW_PALETTE =
-  String.raw`/\b(?:text|bg|border|ring|fill|stroke|from|via|to|divide|outline|decoration|accent|caret|shadow|placeholder)-(?:amber|yellow)-\d{2,3}\b/`
+  String.raw`/\b(?:text|bg|border|ring|fill|stroke|from|via|to|divide|outline|decoration|accent|caret|shadow|placeholder)-(?:amber|yellow|emerald|green|violet|purple|red|rose|pink|sky|blue|cyan|teal|gray|slate|zinc|neutral|stone|orange|lime|indigo|fuchsia)-\d{2,3}\b/`
 
 const RAW_PALETTE_MESSAGE =
   'Raw Tailwind palette class. These do not re-key per theme and break the light theme. ' +
@@ -25,9 +23,8 @@ export default defineConfig([
   globalIgnores(['dist', 'coverage']),
   {
     files: ['**/*.{ts,tsx}'],
-    // Chart series colors are a categorical palette rather than a status
-    // vocabulary and need their own contrast pass; tests assert on class strings.
-    ignores: ['src/components/chart/**', 'src/**/*.test.{ts,tsx}', 'src/__tests__/**'],
+    // Tests assert on class strings and are not shipped styles.
+    ignores: ['src/**/*.test.{ts,tsx}', 'src/__tests__/**'],
     rules: {
       'no-restricted-syntax': [
         'error',

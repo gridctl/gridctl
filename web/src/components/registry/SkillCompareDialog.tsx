@@ -188,7 +188,7 @@ function DiffBody({ diff }: { diff: SkillDiffResponse }) {
 
 function diffLineClass(line: string): string {
   if (line.startsWith('@@')) return 'text-primary/80 bg-primary/5';
-  if (line.startsWith('+')) return 'text-emerald-300 bg-emerald-500/5';
+  if (line.startsWith('+')) return 'text-status-running bg-status-running/5';
   if (line.startsWith('-')) return 'text-status-error bg-status-error/5';
   return 'text-text-secondary';
 }

@@ -330,8 +330,8 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
                   onClick={() => handleRecentClick(source)}
                   className={cn(
                     'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg',
-                    'bg-white/[0.02] border border-white/[0.04]',
-                    'hover:bg-white/[0.04] hover:border-white/[0.08] transition-all',
+                    'bg-surface-overlay-1 border border-border-subtle',
+                    'hover:bg-surface-overlay-2 hover:border-border-subtle transition-all',
                     'text-left group',
                   )}
                 >

@@ -115,7 +115,7 @@ export function YAMLPreview({ yaml, className }: YAMLPreviewProps) {
         {yaml.trim() ? (
           <div className="font-mono text-[11px] leading-[1.7]">
             {lines.map(({ lineNum, html }) => (
-              <div key={lineNum} className="flex group hover:bg-white/[0.02]">
+              <div key={lineNum} className="flex group hover:bg-surface-overlay-1">
                 <span className="w-8 flex-shrink-0 text-right pr-3 text-text-muted/40 select-none text-[10px] leading-[1.87]">
                   {lineNum}
                 </span>

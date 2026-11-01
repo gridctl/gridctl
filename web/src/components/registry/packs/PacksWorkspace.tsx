@@ -304,7 +304,7 @@ function PackCard({
           {p.version && <span className="text-[10px] font-mono text-text-muted">v{p.version}</span>}
           <span className="flex-1" />
           {p.collision && (
-            <span className="text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-red-400/30 bg-red-400/10 text-red-400">
+            <span className="text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-error/30 bg-status-error/10 text-status-error">
               Name collision
             </span>
           )}

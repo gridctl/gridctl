@@ -48,8 +48,8 @@ export function AuthCard({ controller, ssh }: AuthCardProps) {
     <div
       data-testid="auth-card"
       className={cn(
-        'rounded-lg border border-border/30 bg-white/[0.02] transition-colors',
-        open && 'border-border/50 bg-white/[0.03]',
+        'rounded-lg border border-border/30 bg-surface-overlay-1 transition-colors',
+        open && 'border-border/50 bg-surface-overlay-2',
       )}
     >
       <button
@@ -105,7 +105,7 @@ export function AuthCard({ controller, ssh }: AuthCardProps) {
                       'flex-1 cursor-pointer rounded-md px-2 py-1.5 border text-center transition-colors',
                       mode === opt.v
                         ? 'bg-primary/10 border-primary/30 text-primary'
-                        : 'bg-white/[0.02] border-white/[0.06] text-text-muted hover:text-text-secondary',
+                        : 'bg-surface-overlay-1 border-border-subtle text-text-muted hover:text-text-secondary',
                     )}
                   >
                     <input

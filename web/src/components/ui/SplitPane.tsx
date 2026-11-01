@@ -42,7 +42,7 @@ export function SplitPaneHandle({
         className={cn(
           'absolute top-1/2 -translate-y-1/2 w-px h-12 rounded-full transition-all duration-150',
           'bg-border/30',
-          isDragging && 'bg-primary h-20 shadow-[0_0_8px_rgba(245,158,11,0.4)]',
+          isDragging && 'bg-primary h-20 shadow-[0_0_8px_--alpha(var(--color-primary)/40%)]',
         )}
       />
     </div>

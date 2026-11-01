@@ -15,7 +15,7 @@ interface SkillNodeProps {
 function TestBadge({ status, count }: { status: SkillTestStatus; count: number }) {
   if (status === 'passed') {
     return (
-      <span className="flex items-center gap-0.5 text-[9px] font-medium text-emerald-400">
+      <span className="flex items-center gap-0.5 text-[9px] font-medium text-status-running">
         <CheckCircle size={9} />
         tested
       </span>
@@ -23,7 +23,7 @@ function TestBadge({ status, count }: { status: SkillTestStatus; count: number }
   }
   if (status === 'failing') {
     return (
-      <span className="flex items-center gap-0.5 text-[9px] font-medium text-rose-400">
+      <span className="flex items-center gap-0.5 text-[9px] font-medium text-status-error">
         <XCircle size={9} />
         failing
       </span>

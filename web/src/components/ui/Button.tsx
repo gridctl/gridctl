@@ -2,7 +2,7 @@ import type { ReactNode, ButtonHTMLAttributes } from 'react';
 import { cn } from '../../lib/cn';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'outline-danger';
   size?: 'sm' | 'md' | 'lg';
   children: ReactNode;
 }
@@ -11,8 +11,8 @@ const variants = {
   primary: cn(
     'bg-gradient-to-r from-primary to-primary-dark text-background font-semibold',
     'hover:from-primary-light hover:to-primary',
-    'shadow-[0_2px_12px_rgba(245,158,11,0.2)]',
-    'hover:shadow-[0_4px_20px_rgba(245,158,11,0.3)]',
+    'shadow-[0_2px_12px_--alpha(var(--color-primary)/20%)]',
+    'hover:shadow-[0_4px_20px_--alpha(var(--color-primary)/30%)]',
     'hover:-translate-y-0.5 active:translate-y-0'
   ),
   secondary: cn(
@@ -25,11 +25,12 @@ const variants = {
     'hover:bg-surface-highlight'
   ),
   danger: cn(
-    'bg-gradient-to-r from-status-error to-rose-600 text-white font-semibold',
-    'shadow-[0_2px_12px_rgba(244,63,94,0.2)]',
-    'hover:shadow-[0_4px_20px_rgba(244,63,94,0.3)]',
+    'bg-gradient-to-r from-status-error to-status-error/80 text-white font-semibold',
+    'shadow-[0_2px_12px_--alpha(var(--color-status-error)/20%)]',
+    'hover:shadow-[0_4px_20px_--alpha(var(--color-status-error)/30%)]',
     'hover:-translate-y-0.5 active:translate-y-0'
   ),
+  'outline-danger': 'text-status-error border border-status-error/25 hover:bg-status-error/10',
 };
 
 const sizes = {

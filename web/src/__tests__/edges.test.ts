@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { createAllEdges, createGatewayToSkillGroupEdges } from '../lib/graph/edges';
+import { COLORS } from '../lib/constants';
+import {
+  applyEdgeThemeColors,
+  createAllEdges,
+  createGatewayToSkillGroupEdges,
+  type EnhancedEdge,
+} from '../lib/graph/edges';
+import type { ThemeColors } from '../themes/readThemeColors';
 import type { AgentSkill, ClientStatus, MCPServerStatus, ResourceStatus } from '../types';
 
 describe('edge animation defaults', () => {
@@ -30,5 +37,63 @@ describe('edge animation defaults', () => {
     for (const edge of [...createAllEdges(servers, resources, clients), ...createGatewayToSkillGroupEdges(skills)]) {
       expect(edge.animated).not.toBe(true);
     }
+  });
+});
+
+describe('applyEdgeThemeColors', () => {
+  it('rewrites marker colors by relation and leaves a markerless edge unchanged', () => {
+    const colors = {
+      ...COLORS,
+      external: 'ext-color',
+      secondary: 'sec-color',
+      tertiary: 'ter-color',
+      edgeDefault: 'edge-color',
+    } satisfies ThemeColors;
+    const marker = { type: 'arrowclosed' as const, width: 16, height: 16, color: 'stale' };
+    const server: EnhancedEdge = {
+      id: 'server',
+      source: 'gateway',
+      target: 'mcp',
+      markerEnd: { ...marker },
+      data: { relationType: 'gateway-to-server', isHighlightable: true },
+    };
+    const resource: EnhancedEdge = {
+      id: 'resource',
+      source: 'gateway',
+      target: 'res',
+      markerEnd: { ...marker },
+      data: { relationType: 'gateway-to-resource', isHighlightable: false },
+    };
+    const skillGroup: EnhancedEdge = {
+      id: 'skills',
+      source: 'gateway',
+      target: 'group',
+      markerEnd: { ...marker },
+      data: { relationType: 'gateway-to-skill-group', isHighlightable: false },
+    };
+    const other: EnhancedEdge = {
+      id: 'tool',
+      source: 'mcp',
+      target: 'tool',
+      markerEnd: { ...marker },
+      data: { relationType: 'server-to-tool', isHighlightable: false },
+    };
+    const plain: EnhancedEdge = {
+      id: 'client',
+      source: 'client',
+      target: 'gateway',
+      data: { relationType: 'client-to-gateway', isHighlightable: true },
+    };
+
+    const [nextServer, nextResource, nextSkill, nextOther, nextPlain] = applyEdgeThemeColors(
+      [server, resource, skillGroup, other, plain],
+      colors,
+    );
+
+    expect(nextServer.markerEnd).toMatchObject({ color: 'ext-color' });
+    expect(nextResource.markerEnd).toMatchObject({ color: 'sec-color' });
+    expect(nextSkill.markerEnd).toMatchObject({ color: 'ter-color' });
+    expect(nextOther.markerEnd).toMatchObject({ color: 'edge-color' });
+    expect(nextPlain).toBe(plain);
   });
 });

@@ -20,13 +20,13 @@ const STATUS_LABELS: Record<NodeStatus, string> = {
 };
 
 const dotStyles: Record<NodeStatus, string> = {
-  running: 'bg-status-running shadow-[0_0_8px_rgba(16,185,129,0.4)]',
+  running: 'bg-status-running shadow-[0_0_8px_--alpha(var(--color-status-running)/40%)]',
   stopped: 'bg-status-stopped',
-  error: 'bg-status-error shadow-[0_0_8px_rgba(244,63,94,0.4)]',
-  initializing: 'bg-status-pending shadow-[0_0_8px_rgba(234,179,8,0.4)]',
+  error: 'bg-status-error shadow-[0_0_8px_--alpha(var(--color-status-error)/40%)]',
+  initializing: 'bg-status-pending shadow-[0_0_8px_--alpha(var(--color-status-pending)/40%)]',
   idle: 'bg-status-idle',
   'needs-auth': 'bg-status-pending shadow-[0_0_8px_var(--color-status-pending-glow)]',
-  restarting: 'bg-status-pending shadow-[0_0_8px_rgba(234,179,8,0.4)]',
+  restarting: 'bg-status-pending shadow-[0_0_8px_--alpha(var(--color-status-pending)/40%)]',
 };
 
 export function StatusDot({ status, size = 'sm', pulse = true, label }: StatusDotProps) {

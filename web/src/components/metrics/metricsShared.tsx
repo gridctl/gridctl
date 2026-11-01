@@ -45,7 +45,7 @@ export function SavingsKPICard({ savingsPercent, savedTokens }: { savingsPercent
         <Recycle size={10} className="text-text-muted/70" />
         Format Savings <span className="text-text-muted/50 normal-case tracking-normal">· session</span>
       </span>
-      <span className={cn('text-lg font-bold tabular-nums', hasSavings ? 'text-emerald-400' : 'text-text-muted')}>
+      <span className={cn('text-lg font-bold tabular-nums', hasSavings ? 'text-status-running' : 'text-text-muted')}>
         {hasSavings ? `${Math.round(savingsPercent)}%` : '—'}
       </span>
       {hasSavings && (

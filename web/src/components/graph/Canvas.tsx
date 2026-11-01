@@ -19,6 +19,7 @@ import { useAccessLensStore, buildDraftScope, flattenTools, isDirty } from '../.
 import { useThemeColors } from '../../themes/useTheme';
 import { usePathHighlight } from '../../hooks/usePathHighlight';
 import { cn } from '../../lib/cn';
+import { applyEdgeThemeColors } from '../../lib/graph/edges';
 import { CanvasBase } from '../canvas/CanvasBase';
 import { SpecModeOverlay } from '../spec/SpecModeOverlay';
 import { OverlaysMenu } from './OverlaysMenu';
@@ -252,7 +253,7 @@ export function Canvas() {
   // otherwise only gateway-to-server edges whose token total rose this poll,
   // capped so a busy fleet cannot march every edge.
   const styledEdges = useMemo(() => {
-    const list = edges ?? [];
+    const list = applyEdgeThemeColors(edges ?? [], colors);
     const animatedIds = gatedAnimatedIds(
       list,
       highlightState.hasSelection,
@@ -282,7 +283,7 @@ export function Canvas() {
         ),
       };
     });
-  }, [edges, highlightState, lensActive, activeServers]);
+  }, [edges, highlightState, lensActive, activeServers, colors]);
 
   // Handle node selection. Tool fan-out nodes own their own click handling:
   // each renders an anchored detail popover internally, so a canvas-level click
@@ -397,7 +398,7 @@ export function Canvas() {
                     onClick={() => useWizardStore.getState().open(item.type)}
                     className={cn(
                       'inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium',
-                      'bg-white/[0.03] border border-white/[0.06] hover:border-white/[0.12]',
+                      'bg-surface-overlay-2 border border-border-subtle hover:border-border',
                       'transition-all duration-200',
                       item.color,
                     )}

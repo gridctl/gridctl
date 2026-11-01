@@ -68,7 +68,7 @@ export const SkillCard = memo(({
         'group relative rounded-xl overflow-hidden flex flex-col',
         'backdrop-blur-xl border transition-all duration-200 ease-out',
         'bg-gradient-to-b from-surface/95 via-surface/90 to-primary/[0.02]',
-        'border-white/[0.08] hover:border-primary/40 focus-within:border-primary/40 hover:shadow-node-hover',
+        'border-border-subtle hover:border-primary/40 focus-within:border-primary/40 hover:shadow-node-hover',
         isActive && 'border-primary/50 bg-primary/[0.06] shadow-node-hover',
         className,
       )}
@@ -76,7 +76,7 @@ export const SkillCard = memo(({
       {/* Top accent line — muted at rest, warms on hover/focus (and when active) */}
       <div className={cn(
         'absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent to-transparent transition-colors duration-200',
-        'via-white/10 group-hover:via-primary/40 group-focus-within:via-primary/40',
+        'via-text-primary/10 group-hover:via-primary/40 group-focus-within:via-primary/40',
         isActive && 'via-primary/50',
       )} />
 
@@ -89,7 +89,7 @@ export const SkillCard = memo(({
         aria-hidden="true"
         className={cn(
           'absolute top-0 bottom-0 left-0 w-0.5 transition-colors duration-200',
-          isActive ? 'bg-primary' : 'bg-white/10',
+          isActive ? 'bg-primary' : 'bg-text-primary/10',
         )}
       />
 

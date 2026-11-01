@@ -480,7 +480,7 @@ function SkillItem({
       ref={rowRef}
       className={cn(
         'group rounded-lg bg-surface-elevated/50 border overflow-hidden transition-colors',
-        isSelected ? 'border-primary/40 shadow-[0_0_0_1px_rgba(245,158,11,0.25)]' : 'border-border-subtle',
+        isSelected ? 'border-primary/40 shadow-[0_0_0_1px_--alpha(var(--color-primary)/25%)]' : 'border-border-subtle',
       )}
     >
       {/* Header row */}
@@ -527,7 +527,7 @@ function SkillItem({
           {isActive ? (
             <PowerOff size={12} className="text-text-muted group-hover:text-status-pending transition-colors" />
           ) : (
-            <Power size={12} className="text-text-muted group-hover:text-emerald-400 transition-colors" />
+            <Power size={12} className="text-text-muted group-hover:text-status-running transition-colors" />
           )}
         </button>
       </div>

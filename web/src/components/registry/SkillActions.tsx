@@ -51,7 +51,7 @@ export function SkillActions({
             variant="ghost"
             onClick={() => onToggle(skill)}
             tooltip="Activate skill"
-            className="hover:text-emerald-400"
+            className="hover:text-status-running"
           />
         )
       )}
