@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io/fs"
 	"log/slog"
+	"mime"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -719,6 +720,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Static files (UI) - served at root
 	if s.staticFS != nil {
+		registerStaticMIMETypes()
 		fileServer := http.FileServer(http.FS(s.staticFS))
 		mux.Handle("/", spaHandler(fileServer, s.staticFS))
 	}
@@ -1168,6 +1170,16 @@ func corsMiddleware(allowedOrigins []string, extraHeaders []string, oauthPublic 
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// registerStaticMIMETypes registers extensions the standard library does not
+// map. http.FileServer otherwise depends on the host mime table. The extension
+// is a constant, so AddExtensionType does not fail, but the error is still
+// logged rather than discarded.
+func registerStaticMIMETypes() {
+	if err := mime.AddExtensionType(".woff2", "font/woff2"); err != nil {
+		slog.Warn("static mime: failed to register woff2", "error", err)
+	}
 }
 
 // spaHandler wraps the file server to handle SPA routing.

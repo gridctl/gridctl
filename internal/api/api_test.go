@@ -7,10 +7,12 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/dockerclient"
@@ -1856,5 +1858,52 @@ func TestHandleStatus_OmitsFeaturesWhenEmpty(t *testing.T) {
 		if _, ok := result["feature_details"]; ok {
 			t.Errorf("%s: expected feature_details to be omitted", name)
 		}
+	}
+}
+
+func TestRegisterStaticMIMETypes_Woff2(t *testing.T) {
+	const sentinel = "application/x-test-sentinel"
+	prev := mime.TypeByExtension(".woff2")
+	t.Cleanup(func() {
+		restore := prev
+		if restore == "" {
+			restore = "font/woff2"
+		}
+		if err := mime.AddExtensionType(".woff2", restore); err != nil {
+			t.Errorf("restore .woff2 mime: %v", err)
+		}
+	})
+
+	if err := mime.AddExtensionType(".woff2", sentinel); err != nil {
+		t.Fatalf("set sentinel mime: %v", err)
+	}
+	registerStaticMIMETypes()
+	if got := mime.TypeByExtension(".woff2"); got != "font/woff2" {
+		t.Fatalf("TypeByExtension(.woff2) = %q, want font/woff2", got)
+	}
+
+	// Handler must register the type itself. Reset the sentinel so this
+	// assertion fails when the call in Handler is removed, on every host.
+	if err := mime.AddExtensionType(".woff2", sentinel); err != nil {
+		t.Fatalf("reset sentinel mime: %v", err)
+	}
+	static := fstest.MapFS{
+		"sample.woff2": {Data: []byte("woff2")},
+	}
+	srv := NewServer(mcp.NewGateway(), static)
+	t.Cleanup(srv.Close)
+	_ = srv.Handler()
+	if got := mime.TypeByExtension(".woff2"); got != "font/woff2" {
+		t.Fatalf("Handler left TypeByExtension(.woff2) = %q, want font/woff2", got)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/sample.woff2", nil)
+	spaHandler(http.FileServer(http.FS(static)), static).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "font/woff2" {
+		t.Fatalf("Content-Type = %q, want font/woff2", got)
 	}
 }
