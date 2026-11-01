@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { Bot, Loader2, Plug, Radio } from 'lucide-react';
 import {
-  ClientLinkError,
   fetchClients,
   fetchGlobalContext,
   fetchSessions,
@@ -22,6 +21,7 @@ import { useInterval } from '../../hooks/useInterval';
 import type { AgentProjectionStatus, ClientStatus, SessionEntry, WiringRow } from '../../types';
 import { WORKSPACE_LABELS } from '../../types/workspace';
 import { showToast } from '../ui/Toast';
+import { describeError, isCancellation } from '../../lib/describeError';
 import { EmptyState, FailedState } from '../ui/EmptyState';
 import { GlobalContextDialog } from '../context/GlobalContextDialog';
 import { ResetDialog } from '../system/ResetDialog';
@@ -321,14 +321,9 @@ export default function ConnectionsWorkspace() {
           }
         } catch (err) {
           if (!current()) return;
+          if (isCancellation(err)) return;
           failed.add(client.slug);
-          const detail =
-            err instanceof ClientLinkError && err.hint
-              ? `${err.message} ${err.hint}`
-              : err instanceof Error
-                ? err.message
-                : String(err);
-          showToast('error', `${client.name}: ${detail}`);
+          showToast('error', `${client.name}: ${describeError(err, enable ? 'Link' : 'Unlink').text}`);
         }
         if (!current()) return;
       }
@@ -396,7 +391,7 @@ export default function ConnectionsWorkspace() {
               <EmptyState
                 icon={Plug}
                 tone="primary"
-                title="No client registry available"
+                title="No clients available"
                 description="Start a stack with 'gridctl apply' to detect and link LLM clients."
               />
             </div>

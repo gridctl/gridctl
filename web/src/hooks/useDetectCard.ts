@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { detectServerCard, ProbeError, type DetectedCard, type DetectedCardServer } from '../lib/api';
 import { getWizardSessionId } from '../lib/wizardSession';
+import { asError } from '../lib/describeError';
 
 export interface DetectCardState {
   loading: boolean;
@@ -45,7 +46,7 @@ export function useDetectCard(): UseDetectCard {
       if (generation.current !== current) return null;
       setState({
         loading: false,
-        error: err instanceof Error ? err : new Error(String(err)),
+        error: asError(err),
         result: null,
       });
       return null;

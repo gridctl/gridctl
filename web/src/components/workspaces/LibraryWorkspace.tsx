@@ -76,6 +76,7 @@ import {
 import { extractRepoInfo } from '../../lib/repo';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
 import type { AgentSkill, ItemState, SkillSourceStatus, SkillUsageStat, SourceSyncResult } from '../../types';
+import { describeError, isCancellation } from '../../lib/describeError';
 
 type FilterTab = 'all' | ItemState;
 type SortMode = 'name' | 'state' | 'files' | 'usage';
@@ -118,7 +119,7 @@ export function LibraryWorkspace() {
   const { skillName } = useParams<{ skillName?: string }>();
   const navigate = useNavigate();
 
-  // Registry is fetched by the global usePolling cycle in AppShell — read from
+  // Library data is fetched by the global usePolling cycle in AppShell — read from
   // the store instead of starting a second polling loop here.
   const skills = useRegistryStore((s) => s.skills);
   const registryError = useRegistryStore((s) => s.error);
@@ -529,7 +530,10 @@ export function LibraryWorkspace() {
       useRegistryStore.getState().setStatus(regStatus);
       useRegistryStore.getState().setSkills(regSkills);
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Refresh failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Refresh');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     }
   }, []);
 
@@ -581,7 +585,10 @@ export function LibraryWorkspace() {
           );
         }
       } catch (err) {
-        showToast('error', err instanceof Error ? err.message : 'Sync failed');
+        if (!isCancellation(err)) {
+          const described = describeError(err, 'Sync');
+          showToast('error', described.text, { detail: described.fullDetail });
+        }
       } finally {
         setSyncing(false);
       }
@@ -606,7 +613,10 @@ export function LibraryWorkspace() {
       showToast('success', `Skill "${skill.name}" activated`);
       refreshRegistry();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'State change failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'State change');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     }
   }, [refreshRegistry]);
 
@@ -616,7 +626,10 @@ export function LibraryWorkspace() {
       showToast('success', `Skill "${skill.name}" disabled`);
       refreshRegistry();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'State change failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'State change');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     }
   }, [refreshRegistry]);
 
@@ -630,7 +643,10 @@ export function LibraryWorkspace() {
       // URL doesn't carry a dead ?selected= param.
       if (confirmDelete === selectedName) setSelectedName(null);
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Delete failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Delete');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setConfirmDelete(null);
     }
@@ -783,7 +799,10 @@ export function LibraryWorkspace() {
       clearSelection();
       refreshRegistry();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Bulk update failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Bulk update');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     }
   }, [liveSelected, clearSelection, refreshRegistry]);
 

@@ -12,7 +12,10 @@ vi.mock('../components/ui/Toast', () => ({
   showToast: vi.fn(),
 }));
 
-vi.mock('../lib/api', () => ({
+vi.mock('../lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/api')>();
+  return {
+  ...actual,
   fetchAuthServers: vi.fn(),
   beginServerAuthorization: vi.fn(),
   waitServerAuthorization: vi.fn(),
@@ -30,7 +33,8 @@ vi.mock('../lib/api', () => ({
     not_applicable_count: 0,
     pass_count: 0,
   }),
-}));
+  };
+});
 
 import CustomNode from '../components/graph/CustomNode';
 import { useUIStore } from '../stores/useUIStore';

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStackStore } from '../stores/useStackStore';
 import { TOOL_NAME_DELIMITER } from '../lib/constants';
 import { showToast } from '../components/ui/Toast';
+import { describeError, isCancellation } from '../lib/describeError';
 import {
   AuthError,
   fetchStatus,
@@ -321,7 +322,10 @@ export function useToolsEditor(
             }
             return;
           case 'unknown_tool':
-            showToast('error', err.message);
+            if (!isCancellation(err)) {
+              const described = describeError(err, 'Save');
+              showToast('error', described.text, { detail: described.fullDetail });
+            }
             return;
           case 'hidden_tool_reference': {
             setSelection(savedRef.current);
@@ -331,12 +335,17 @@ export function useToolsEditor(
             return;
           }
           default:
-            showToast('error', err.message);
+            if (!isCancellation(err)) {
+              const described = describeError(err, 'Save');
+              showToast('error', described.text, { detail: described.fullDetail });
+            }
             return;
         }
       }
-      const msg = err instanceof Error ? err.message : 'Save failed';
-      showToast('error', msg);
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Save');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setIsSaving(false);
     }
@@ -382,8 +391,10 @@ export function useToolsEditor(
       useStackStore.getState().setTools(toolsList.tools);
       useStackStore.getState().setToolCatalog(catalogList.tools);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Refresh failed';
-      showToast('error', msg);
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Refresh');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     }
   };
 

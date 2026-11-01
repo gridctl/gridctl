@@ -19,6 +19,7 @@ import {
   isSSHUrl,
   shouldOpenAuthCard,
 } from '../../../lib/gitAuthErrors';
+import { describeError, isCancellation } from '../../../lib/describeError';
 
 interface PackUpdateDialogProps {
   packName: string;
@@ -138,9 +139,13 @@ export function PackUpdateDialog({ packName, origin, onClose, onUpdated }: PackU
         // letting every retry repeat the same refusal.
         setServerFindings(err.findings);
         setTrustAck(false);
-        showToast('error', err.message);
-      } else {
-        showToast('error', err instanceof Error ? err.message : 'Update failed');
+        if (!isCancellation(err)) {
+          const described = describeError(err, 'Update');
+          showToast('error', described.text, { detail: described.fullDetail });
+        }
+      } else if (!isCancellation(err)) {
+        const described = describeError(err, 'Update');
+        showToast('error', described.text, { detail: described.fullDetail });
       }
       setBusy(false);
     }
@@ -180,7 +185,7 @@ export function PackUpdateDialog({ packName, origin, onClose, onUpdated }: PackU
             <div className="space-y-2">
               <p className="text-2xs">
                 This repository needs credentials. Supply them to resolve the manifest, or
-                re-import the pack to store a vault reference for future updates.
+                re-import the pack to store a variable reference for future updates.
               </p>
               <AuthCard controller={auth} ssh={ssh} />
               <button

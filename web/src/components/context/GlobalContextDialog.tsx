@@ -34,6 +34,7 @@ import { SplitPaneHandle } from '../ui/SplitPane';
 import { MarkdownPreview } from '../registry/MarkdownPreview';
 import { applyMarkdownAction, type MarkdownAction } from '../../lib/markdownEdit';
 import { useContextStore } from '../../stores/useContextStore';
+import { describeError, isCancellation } from '../../lib/describeError';
 import {
   adoptGlobalContext,
   deleteContextFragment,
@@ -202,7 +203,10 @@ function useContextScan(): ContextScanEntry[] | null {
       .catch((err) => {
         if (!cancelled) {
           setEntries([]);
-          showToast('error', err instanceof Error ? err.message : 'Scan failed');
+          if (!isCancellation(err)) {
+            const described = describeError(err, 'Scan');
+            showToast('error', described.text, { detail: described.fullDetail });
+          }
         }
       });
     return () => {
@@ -298,7 +302,10 @@ function SetupView() {
       setDoc(doc);
       showToast('success', 'Canonical global context created');
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Setup failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Setup');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setBusy(false);
     }
@@ -381,7 +388,10 @@ function ImportSourceDialog({
       showToast('success', 'Canonical context replaced. Run a sync to propagate.');
       onImported(doc);
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Import failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Import');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
       setBusy(false);
     }
   }, [selected, onImported]);
@@ -491,7 +501,10 @@ function EditorView({
       setDraft((d) => (d === toSave ? null : d));
       showToast('success', 'Canonical context saved. Run a sync to propagate.');
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Save failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Save');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setSaving(false);
     }
@@ -504,7 +517,10 @@ function EditorView({
       showToast(resp.has_failures ? 'warning' : 'success', summarizeSync(resp.results));
       await refresh();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Sync failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Sync');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setSyncing(false);
     }
@@ -869,7 +885,10 @@ function ClientRow({
         showToast('success', okMessage);
         await refresh();
       } catch (err) {
-        showToast('error', err instanceof Error ? err.message : 'Action failed');
+        if (!isCancellation(err)) {
+          const described = describeError(err, 'Action');
+          showToast('error', described.text, { detail: described.fullDetail });
+        }
       } finally {
         setBusy(false);
       }
@@ -1053,7 +1072,10 @@ function DriftResolveDialog({
       showToast('success', `Adopted ${name}'s edit into the canonical context`);
       onResolved(doc);
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Adopt failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Adopt');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
       setBusy(false);
     }
   }, [slug, name, onResolved]);
@@ -1065,7 +1087,10 @@ function DriftResolveDialog({
       showToast('success', `${name} restored from the canonical context`);
       onResolved(null);
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Overwrite failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Overwrite');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
       setBusy(false);
     }
   }, [slug, name, onResolved]);
@@ -1174,7 +1199,10 @@ function FragmentDriftResolveDialog({
         showToast('success', okMessage);
         onResolved();
       } catch (err) {
-        showToast('error', err instanceof Error ? err.message : 'Action failed');
+        if (!isCancellation(err)) {
+          const described = describeError(err, 'Action');
+          showToast('error', described.text, { detail: described.fullDetail });
+        }
         setBusy(false);
       }
     },
@@ -1439,7 +1467,10 @@ function SplitIntoFragmentsDialog({ dirty, onClose }: { dirty: boolean; onClose:
       await refresh();
       onClose();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Failed to create fragment');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Create fragment');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
       setBusy(false);
     }
   }, [name, refresh, onClose]);
@@ -1550,7 +1581,10 @@ function FragmentsView({
       });
     } catch (err) {
       setFragments([]);
-      showToast('error', err instanceof Error ? err.message : 'Failed to load fragments');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Load fragments');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     }
   }, []);
 
@@ -1571,7 +1605,10 @@ function FragmentsView({
       .catch((err) => {
         if (cancelled) return;
         setFragments([]);
-        showToast('error', err instanceof Error ? err.message : 'Failed to load fragments');
+        if (!isCancellation(err)) {
+          const described = describeError(err, 'Load fragments');
+          showToast('error', described.text, { detail: described.fullDetail });
+        }
       });
     return () => {
       cancelled = true;
@@ -1625,7 +1662,10 @@ function FragmentsView({
       await loadFragments(current.name);
       await refresh();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Save failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Save');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setSaving(false);
     }
@@ -1648,7 +1688,10 @@ function FragmentsView({
       );
       await refresh();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Sync failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Sync');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setSyncing(false);
     }
@@ -1662,7 +1705,10 @@ function FragmentsView({
         await loadFragments(name);
         await refresh();
       } catch (err) {
-        showToast('error', err instanceof Error ? err.message : 'Failed to create fragment');
+        if (!isCancellation(err)) {
+          const described = describeError(err, 'Create fragment');
+          showToast('error', described.text, { detail: described.fullDetail });
+        }
       }
     },
     [loadFragments, refresh],
@@ -1677,7 +1723,10 @@ function FragmentsView({
         await loadFragments();
         await refresh();
       } catch (err) {
-        showToast('error', err instanceof Error ? err.message : 'Failed to remove fragment');
+        if (!isCancellation(err)) {
+          const described = describeError(err, 'Remove fragment');
+          showToast('error', described.text, { detail: described.fullDetail });
+        }
       }
     },
     [selected, loadFragments, refresh],

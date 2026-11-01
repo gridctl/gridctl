@@ -24,6 +24,7 @@ import {
   isSSHUrl,
   shouldOpenAuthCard,
 } from '../../../lib/gitAuthErrors';
+import { describeError, isCancellation } from '../../../lib/describeError';
 
 type PackStep = 'source' | 'review' | 'done';
 
@@ -117,7 +118,7 @@ export function PackImportWizard() {
     setRepo(https);
     setAgentBlock(null);
     setSourceError(null);
-    auth.openInVaultMode('Now using HTTPS. Choose a vault secret holding a token with read access.');
+    auth.openInVaultMode('Now using HTTPS. Choose a stored variable holding a token with read access.');
   }, [agentBlock, auth]);
 
   const previewFlagged: PackPreviewResource[] = preview
@@ -148,7 +149,10 @@ export function PackImportWizard() {
       if (err instanceof PackFindingsError) {
         setServerFindings(err.findings);
         setTrustAck(false);
-        showToast('error', err.message);
+        if (!isCancellation(err)) {
+          const described = describeError(err, 'Import');
+          showToast('error', described.text, { detail: described.fullDetail });
+        }
       } else if (isSSHAgentError(err) || shouldOpenAuthCard(err)) {
         // Credentials live on the source step, so that is where the fix is.
         // Going back preserves every field: it is the same component state,
@@ -156,7 +160,10 @@ export function PackImportWizard() {
         handleCloneFailure(err, 'Import failed');
         setStep('source');
       } else {
-        showToast('error', err instanceof Error ? err.message : 'Import failed');
+        if (!isCancellation(err)) {
+          const described = describeError(err, 'Import');
+          showToast('error', described.text, { detail: described.fullDetail });
+        }
       }
     } finally {
       setInstalling(false);
@@ -179,7 +186,10 @@ export function PackImportWizard() {
       const outcome = describeApplyDoc(doc);
       showToast(outcome.kind, outcome.message);
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Apply failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Apply');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setApplying(false);
       goToPack(installed.doc.pack);
@@ -298,7 +308,7 @@ export function PackImportWizard() {
           )}
           <p className="text-2xs text-text-muted mt-1.5">
             The manifest selects these resources; there is nothing to pick. Import brings
-            them into the registry, and Apply projects them to clients afterward.
+            them into the Library, and Apply projects them to clients afterward.
           </p>
         </div>
 
@@ -413,7 +423,7 @@ export function PackImportWizard() {
           {clean ? 'Pack imported' : 'Pack partially imported'}
         </p>
         <p className="text-xs text-text-muted max-w-sm">
-          Imported into the registry. Apply projects skills, agents, rules, and wiring to
+          Imported into the Library. Apply projects skills, agents, rules, and wiring to
           your clients.
         </p>
         {(installed.notes ?? []).map((n, i) => (

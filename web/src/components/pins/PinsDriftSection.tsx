@@ -35,6 +35,7 @@ import { FindingsList } from './PinFindings';
 import { SchemaDiffModal } from './SchemaDiffModal';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { copyWithToast, showToast } from '../ui/Toast';
+import { describeError, isCancellation } from '../../lib/describeError';
 import { downloadTextFile, pinsDiffExportFilename } from '../../lib/download';
 
 // Stable DOM ids: the workspace scrolls to the section for ?view=drift, the
@@ -145,7 +146,10 @@ export function DriftSection({ serverName }: { serverName: string }) {
       usePinsStore.getState().setPins(updated);
       showToast('success', `Pins approved for ${serverName}`);
     } catch (err) {
-      showToast('error', `Failed to approve: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Approve');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
       // The definitions may have changed again since review; reload the diff
       // so the user re-reviews the current state instead of a stale one.
       reloadDiff();

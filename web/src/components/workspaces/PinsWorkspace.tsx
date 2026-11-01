@@ -29,6 +29,7 @@ import { PinsSkillDetail } from '../pins/PinsSkillDetail';
 import { APPROVE_BUTTON_ID, DRIFT_SECTION_ID } from '../pins/PinsDriftSection';
 import { usePinsCommands } from '../pins/usePinsCommands';
 import { showToast } from '../ui/Toast';
+import { describeError, isCancellation } from '../../lib/describeError';
 
 // Valid ?view= targets: drift scrolls to the drift panel, findings and tools
 // both land on the pinned-records table (findings live inside it).
@@ -243,7 +244,10 @@ export function PinsWorkspace() {
           if (p.get('server') === name) p.delete('server');
         });
       } catch (err) {
-        showToast('error', `Failed to reset: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        if (!isCancellation(err)) {
+          const described = describeError(err, `Reset pins for ${name}`);
+          showToast('error', described.text, { detail: described.fullDetail });
+        }
       }
     },
     [updateParams],
@@ -255,7 +259,7 @@ export function PinsWorkspace() {
         await resetSkillPin(name);
         const updated = await fetchSkillPins();
         usePinsStore.getState().setSkillPins(updated);
-        showToast('success', `Pin reset for ${name}; it re-pins on the next registry refresh`);
+        showToast('success', `Pin reset for ${name}; it re-pins on the next Library refresh`);
         updateParams((p) => {
           if (p.get('skill') === name) {
             p.delete('skill');
@@ -263,7 +267,10 @@ export function PinsWorkspace() {
           }
         });
       } catch (err) {
-        showToast('error', `Failed to reset: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        if (!isCancellation(err)) {
+          const described = describeError(err, `Reset pins for ${name}`);
+          showToast('error', described.text, { detail: described.fullDetail });
+        }
       }
     },
     [updateParams],
@@ -415,7 +422,7 @@ export function PinsWorkspace() {
                       icon={Pin}
                       tone="primary"
                       title="No skills pinned yet"
-                      description="Registry skills are pinned automatically when the daemon first observes them. Add a skill to the Library and it appears here after the next refresh."
+                      description="Library skills are pinned automatically when the daemon first observes them. Add a skill to the Library and it appears here after the next refresh."
                       className="flex-1"
                     />
                   )

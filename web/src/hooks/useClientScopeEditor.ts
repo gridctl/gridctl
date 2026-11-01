@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStackStore } from '../stores/useStackStore';
 import { showToast } from '../components/ui/Toast';
+import { describeError, isCancellation } from '../lib/describeError';
 import {
   AuthError,
   ClientScopeError,
@@ -277,10 +278,16 @@ export function useClientScopeEditor(
           showToast('error', `Access saved for ${client.name}, but reload failed: ${err.message}.`);
           return;
         }
-        showToast('error', err.message);
+        if (!isCancellation(err)) {
+          const described = describeError(err, 'Save');
+          showToast('error', described.text, { detail: described.fullDetail });
+        }
         return;
       }
-      showToast('error', err instanceof Error ? err.message : 'Save failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Save');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setIsSaving(false);
     }

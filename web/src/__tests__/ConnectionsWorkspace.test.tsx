@@ -106,7 +106,7 @@ describe('ConnectionsWorkspace', () => {
     expectOneConnectionsHeading();
 
     await act(async () => { clientsFetch.resolve([]); });
-    expect(await screen.findByText('No client registry available')).toBeInTheDocument();
+    expect(await screen.findByText('No clients available')).toBeInTheDocument();
     expectOneConnectionsHeading();
     cleanup();
 
@@ -341,7 +341,7 @@ describe('ConnectionsWorkspace', () => {
     vi.mocked(api.fetchClients).mockRejectedValue(new Error('clients down'));
     renderWorkspace();
     expect(await screen.findByText('Connections unavailable')).toBeInTheDocument();
-    expect(screen.queryByText('No client registry available')).not.toBeInTheDocument();
+    expect(screen.queryByText('No clients available')).not.toBeInTheDocument();
   });
 
   it('renders the teaching empty state when no clients are detected', async () => {
@@ -350,7 +350,7 @@ describe('ConnectionsWorkspace', () => {
     renderWorkspace();
     await waitFor(() => expect(api.fetchClients).toHaveBeenCalled());
     await act(async () => {});
-    expect(screen.getByText('No client registry available')).toBeInTheDocument();
+    expect(screen.getByText('No clients available')).toBeInTheDocument();
     expect(screen.queryByText('Connections unavailable')).not.toBeInTheDocument();
   });
 
@@ -360,11 +360,11 @@ describe('ConnectionsWorkspace', () => {
     vi.mocked(api.fetchClients).mockReturnValue(clientsFetch.promise);
     renderWorkspace();
     expect(screen.getByText('Loading connections…')).toBeInTheDocument();
-    expect(screen.queryByText('No client registry available')).not.toBeInTheDocument();
+    expect(screen.queryByText('No clients available')).not.toBeInTheDocument();
     expect(screen.queryByText('Connections unavailable')).not.toBeInTheDocument();
 
     await act(async () => { clientsFetch.resolve([]); });
-    expect(await screen.findByText('No client registry available')).toBeInTheDocument();
+    expect(await screen.findByText('No clients available')).toBeInTheDocument();
     expect(screen.queryByText('Loading connections…')).not.toBeInTheDocument();
     expect(screen.queryByText('Connections unavailable')).not.toBeInTheDocument();
   });
@@ -379,12 +379,12 @@ describe('ConnectionsWorkspace', () => {
     vi.mocked(api.fetchClients).mockReturnValue(retry.promise);
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(screen.getByText('Connections unavailable')).toBeInTheDocument();
-    expect(screen.queryByText('No client registry available')).not.toBeInTheDocument();
+    expect(screen.queryByText('No clients available')).not.toBeInTheDocument();
     expect(screen.queryByText('Loading connections…')).not.toBeInTheDocument();
 
     await act(async () => { retry.reject(new Error('clients down')); });
     await waitFor(() => expect(api.fetchClients).toHaveBeenCalledTimes(2));
     expect(screen.getByText('Connections unavailable')).toBeInTheDocument();
-    expect(screen.queryByText('No client registry available')).not.toBeInTheDocument();
+    expect(screen.queryByText('No clients available')).not.toBeInTheDocument();
   });
 });

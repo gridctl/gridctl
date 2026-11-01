@@ -30,6 +30,7 @@ import { POLLING } from '../lib/constants';
 import type { AgentSkill, RegistryStatus, ItemState } from '../types';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { useAuthStore } from '../stores/useAuthStore';
+import { describeError, isCancellation } from '../lib/describeError';
 
 type FilterTab = 'all' | ItemState;
 
@@ -106,7 +107,10 @@ function DetachedRegistryContent() {
       showToast('success', `Skill "${skill.name}" activated`);
       fetchData();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'State change failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'State change');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     }
   }, [fetchData]);
 
@@ -116,7 +120,10 @@ function DetachedRegistryContent() {
       showToast('success', `Skill "${skill.name}" disabled`);
       fetchData();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'State change failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'State change');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     }
   }, [fetchData]);
 
@@ -127,7 +134,10 @@ function DetachedRegistryContent() {
       showToast('success', 'Skill deleted');
       fetchData();
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Delete failed');
+      if (!isCancellation(err)) {
+        const described = describeError(err, 'Delete');
+        showToast('error', described.text, { detail: described.fullDetail });
+      }
     } finally {
       setConfirmDelete(null);
     }
@@ -155,7 +165,7 @@ function DetachedRegistryContent() {
           </div>
           <div>
             <span className="text-sm font-semibold text-text-primary tracking-tight">Library</span>
-            <span className="text-3xs text-text-muted uppercase tracking-wider ml-2">Agent Skills</span>
+            <span className="text-3xs text-text-muted uppercase tracking-wider ml-2">Skills & agents</span>
           </div>
         </div>
 
