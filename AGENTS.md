@@ -252,7 +252,7 @@ pkg/token/, pkg/format/, pkg/output/, pkg/jsonrpc/, pkg/state/, pkg/git/, pkg/do
 
 web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). Zustand stores in src/stores/, route map in
                     src/routes.tsx, feature components grouped under src/components/<workspace>/. Nine workspaces:
-                    Stack, Library, Vault (Variables), Tools, Metrics, Pins, Logs, Traces (Runs tab), Connections. The Detached*Page
+                    Stack, Library, Variables (`/vault`), Tools, Metrics, Pins, Logs, Traces (Runs tab), Connections. The Detached*Page
                     files are lazy popout windows that mirror specific panels.
                     src/lib/gatewayRequest.ts owns same-origin, no-redirect credential-bearing fetch.
                     The shell and detached routes do not request `/sse`; status polling is the disconnect signal.
