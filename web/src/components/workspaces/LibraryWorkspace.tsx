@@ -119,7 +119,7 @@ export function LibraryWorkspace() {
   const { skillName } = useParams<{ skillName?: string }>();
   const navigate = useNavigate();
 
-  // Library data is fetched by the global usePolling cycle in AppShell — read from
+  // Library data is fetched by the global usePolling cycle in AppShell. Read from
   // the store instead of starting a second polling loop here.
   const skills = useRegistryStore((s) => s.skills);
   const registryError = useRegistryStore((s) => s.error);
