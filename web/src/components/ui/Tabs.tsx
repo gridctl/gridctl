@@ -101,7 +101,7 @@ interface TabProps {
 
 const TAB_CLASS = cn(
   'px-3 py-1.5 -mb-px',
-  'font-mono text-[10px] uppercase tracking-[0.2em]',
+  'font-mono text-3xs uppercase tracking-[0.2em]',
   'border-b-2 transition-colors',
   'focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/60',
 );

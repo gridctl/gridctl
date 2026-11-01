@@ -176,7 +176,7 @@ function DetachedLogsPageContent() {
           </div>
 
           {isGateway && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-primary/10 text-primary rounded font-medium border border-primary/20">
+            <span className="text-3xs px-1.5 py-0.5 bg-primary/10 text-primary rounded font-medium border border-primary/20">
               Structured
             </span>
           )}
@@ -201,7 +201,7 @@ function DetachedLogsPageContent() {
 
       {/* Footer status bar. Entry counts live in the shared filter bar now —
           repeating them here showed the same numbers twice. */}
-      <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-end px-4 text-[10px] text-text-muted">
+      <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-end px-4 text-3xs text-text-muted">
         <span className="flex items-center gap-1">
           <span className="w-1.5 h-1.5 rounded-full bg-text-muted animate-pulse motion-reduce:animate-none" />
           Detached Window
@@ -235,7 +235,7 @@ function SourceOption({
     >
       <span className={cn('w-1.5 h-1.5 rounded-full', dotClass)} />
       <span className="truncate">{label}</span>
-      <span className="ml-auto text-[10px] text-text-muted uppercase">{tag}</span>
+      <span className="ml-auto text-3xs text-text-muted uppercase">{tag}</span>
     </button>
   );
 }

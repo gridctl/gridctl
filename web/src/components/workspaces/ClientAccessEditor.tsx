@@ -73,7 +73,7 @@ function ClientList({
 }) {
   return (
     <aside aria-label="Client list" className="w-56 flex-shrink-0 border-r border-border-subtle overflow-y-auto scrollbar-dark py-2 pr-2">
-      <div className="px-3 pb-2 text-[10px] font-medium text-text-muted/60 uppercase tracking-[0.3em]">
+      <div className="px-3 pb-2 text-3xs font-medium text-text-muted/60 uppercase tracking-[0.3em]">
         clients
       </div>
       {clients.map((c) => {
@@ -93,7 +93,7 @@ function ClientList({
             <span className="flex-1 min-w-0 text-xs truncate">{c.name}</span>
             <span
               className={cn(
-                'flex-shrink-0 text-[9px] font-mono px-1.5 py-0.5 rounded',
+                'flex-shrink-0 text-3xs font-mono px-1.5 py-0.5 rounded',
                 scoped ? 'bg-primary/15 text-primary' : 'bg-surface-elevated text-text-muted',
               )}
               title={scoped ? 'Scoped to specific servers' : 'Reaches all servers'}
@@ -180,9 +180,9 @@ function ClientScopePane({
       <div className="flex items-center gap-2">
         <ShieldCheck size={14} className="text-primary/70" aria-hidden="true" />
         <h3 className="text-sm font-medium text-text-primary">{client.name}</h3>
-        <span className="font-mono text-[10px] text-text-muted">{client.slug}</span>
+        <span className="font-mono text-3xs text-text-muted">{client.slug}</span>
       </div>
-      <p className="text-[11px] text-text-muted leading-relaxed">
+      <p className="text-2xs text-text-muted leading-relaxed">
         Choose which MCP servers <span className="text-text-secondary">{client.name}</span> can
         reach, and optionally narrow a granted server to specific tools. To deny a client
         entirely, leave it unlisted under a deny default rather than clearing every server here.
@@ -191,7 +191,7 @@ function ClientScopePane({
       {createsBlock && (
         <div className="flex items-start gap-2 rounded-md border border-status-pending/30 bg-status-pending/[0.06] px-3 py-2">
           <AlertCircle size={12} className="text-status-pending flex-shrink-0 mt-0.5" aria-hidden="true" />
-          <p className="text-[11px] text-text-secondary leading-relaxed">
+          <p className="text-2xs text-text-secondary leading-relaxed">
             No <span className="font-mono text-status-pending">clients</span> block exists yet.
             Saving creates one; clients you have not listed will then be{' '}
             <span className="font-medium">denied by default</span>.
@@ -199,7 +199,7 @@ function ClientScopePane({
         </div>
       )}
 
-      <div className="flex items-center gap-2 text-[11px] text-text-muted">
+      <div className="flex items-center gap-2 text-2xs text-text-muted">
         <span>
           <span className="text-text-secondary font-medium">{selected.size}</span> of{' '}
           <span className="text-text-secondary font-medium">{serverNames.length}</span> servers
@@ -209,7 +209,7 @@ function ClientScopePane({
             type="button"
             onClick={selectAll}
             disabled={isSaving}
-            className="text-[10px] text-secondary hover:text-secondary-light transition-colors disabled:opacity-50"
+            className="text-3xs text-secondary hover:text-secondary-light transition-colors disabled:opacity-50"
           >
             All
           </button>
@@ -218,7 +218,7 @@ function ClientScopePane({
             type="button"
             onClick={clearAll}
             disabled={isSaving}
-            className="text-[10px] text-secondary hover:text-secondary-light transition-colors disabled:opacity-50"
+            className="text-3xs text-secondary hover:text-secondary-light transition-colors disabled:opacity-50"
           >
             None
           </button>
@@ -227,7 +227,7 @@ function ClientScopePane({
 
       <div className="rounded-lg border border-border/40 bg-background/60 divide-y divide-border/20">
         {serverNames.length === 0 && (
-          <p className="px-3 py-4 text-[11px] text-text-muted/60 italic text-center">
+          <p className="px-3 py-4 text-2xs text-text-muted/60 italic text-center">
             No MCP servers in the active stack.
           </p>
         )}
@@ -282,20 +282,20 @@ function ClientScopePane({
       </div>
 
       {noneSelected && (
-        <p className="text-[10px] text-status-pending" role="status">
+        <p className="text-3xs text-status-pending" role="status">
           Select at least one server to save.
         </p>
       )}
 
       {emptyCustomGrant && (
-        <p className="text-[10px] text-status-pending" role="status">
+        <p className="text-3xs text-status-pending" role="status">
           A granted server has a Custom tool selection with nothing picked. Select at least one
           tool, or switch it back to All.
         </p>
       )}
 
       {toolAxisBlocked && (
-        <p className="text-[10px] text-status-pending" role="status">
+        <p className="text-3xs text-status-pending" role="status">
           A granted server has not reported its tools yet. Saving tool changes now would hide
           that server for this client; wait for it to initialize or discard the tool edits.
         </p>
@@ -308,14 +308,14 @@ function ClientScopePane({
         >
           <AlertCircle size={12} className="text-status-pending flex-shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0 space-y-1">
-            <p className="text-[11px] text-status-pending font-medium">
+            <p className="text-2xs text-status-pending font-medium">
               The stack file was modified outside the canvas.
             </p>
-            <p className="text-[10px] text-text-muted">{conflict}</p>
+            <p className="text-3xs text-text-muted">{conflict}</p>
             <button
               type="button"
               onClick={handleReloadFromDisk}
-              className="inline-flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+              className="inline-flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
             >
               <RefreshCw size={10} />
               Reload file
@@ -330,7 +330,7 @@ function ClientScopePane({
         disabled={!canSave || isSaving}
         aria-label={canSave ? 'Save client access and reload' : 'Saved'}
         className={cn(
-          'w-full inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[11px] font-medium transition-colors',
+          'w-full inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-2xs font-medium transition-colors',
           canSave && !isSaving
             ? 'bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30'
             : 'bg-surface-highlight/50 text-text-muted border border-border/30 cursor-not-allowed',

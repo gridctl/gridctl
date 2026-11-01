@@ -377,18 +377,18 @@ export function VariableInspector({
         onClose={onClose}
         subtitle={
           <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-            <span className="inline-flex items-center text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-border/40 bg-surface-elevated text-text-muted">
+            <span className="inline-flex items-center text-3xs font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-border/40 bg-surface-elevated text-text-muted">
               {variable.is_secret ? 'Secret' : 'Plaintext'}
             </span>
             {variable.type === 'string' ? (
-              <span className="text-[10px] font-mono text-text-muted/60">
+              <span className="text-3xs font-mono text-text-muted/60">
                 string
               </span>
             ) : (
               <VariableTypeBadge type={variable.type} />
             )}
             {variable.set && (
-              <span className="inline-flex items-center text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-elevated text-text-secondary">
+              <span className="inline-flex items-center text-3xs font-mono px-1.5 py-0.5 rounded bg-surface-elevated text-text-secondary">
                 {variable.set}
               </span>
             )}
@@ -426,7 +426,7 @@ export function VariableInspector({
         <Section title="Referenced in stack">
           {consumers.length > 0 ? (
             <div className="space-y-1">
-              <p className="text-[11px] text-text-secondary">
+              <p className="text-2xs text-text-secondary">
                 Used by {consumers.length}{' '}
                 {consumers.length === 1 ? 'site' : 'sites'}
               </p>
@@ -439,7 +439,7 @@ export function VariableInspector({
             </div>
           ) : usageLoaded ? (
             <div className="rounded-lg border border-border/30 bg-background/40 p-2.5 space-y-1.5">
-              <p className="text-[11px] text-text-secondary leading-relaxed">
+              <p className="text-2xs text-text-secondary leading-relaxed">
                 Not referenced by{' '}
                 <code className="font-mono text-text-primary">
                   {'${var:…}'}
@@ -447,20 +447,20 @@ export function VariableInspector({
                 in the current stack.yaml, and not injected via{' '}
                 <code>secrets.sets</code>.
               </p>
-              <p className="text-[10px] text-text-muted/80 leading-relaxed">
+              <p className="text-3xs text-text-muted/80 leading-relaxed">
                 Only <code>{'${var:…}'}</code> / <code>{'${vault:…}'}</code>{' '}
                 references are indexed; plain env strings are not.
               </p>
               <button
                 type="button"
                 onClick={() => onDelete(variable.key)}
-                className="text-[10px] text-status-error hover:text-status-error/80 underline underline-offset-2 transition-colors"
+                className="text-3xs text-status-error hover:text-status-error/80 underline underline-offset-2 transition-colors"
               >
                 Delete this variable
               </button>
             </div>
           ) : (
-            <p className="text-[11px] text-text-muted leading-relaxed">
+            <p className="text-2xs text-text-muted leading-relaxed">
               Usage unknown — the reference index could not be loaded, so this
               variable may still be in use.
             </p>
@@ -500,7 +500,7 @@ export function VariableInspector({
                 )}
               </div>
               {variable.is_secret && !editIsSecret && (
-                <p className="text-[10px] text-status-pending leading-relaxed">
+                <p className="text-3xs text-status-pending leading-relaxed">
                   Switching to plaintext displays this value in the variable
                   list and makes it visible in logs.
                 </p>
@@ -509,7 +509,7 @@ export function VariableInspector({
                 <button
                   type="button"
                   onClick={cancelEdit}
-                  className="px-2 py-1 text-[10px] text-text-secondary hover:text-text-primary rounded transition-colors"
+                  className="px-2 py-1 text-3xs text-text-secondary hover:text-text-primary rounded transition-colors"
                 >
                   Cancel
                 </button>
@@ -596,7 +596,7 @@ export function VariableInspector({
                 onAssignSet(variable.key, next);
               }}
               aria-label="Move to set"
-              className="mt-2 w-full bg-surface border border-border rounded-lg px-2 py-1 text-[10px] text-text-muted focus:outline-none focus:border-primary/40 transition-colors"
+              className="mt-2 w-full bg-surface border border-border rounded-lg px-2 py-1 text-3xs text-text-muted focus:outline-none focus:border-primary/40 transition-colors"
             >
               <option value="">Move to set…</option>
               {setNames
@@ -704,7 +704,7 @@ function PillButton({
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-medium text-text-secondary hover:text-text-primary border border-border/40 hover:border-border transition-colors"
+      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-3xs font-medium text-text-secondary hover:text-text-primary border border-border/40 hover:border-border transition-colors"
     >
       <Icon size={10} /> {label}
     </button>
@@ -736,7 +736,7 @@ function ValueReadView({ type, value }: { type: VariableType; value: string }) {
         {parseListItems(value).map((item, i) => (
           <span
             key={`${item}-${i}`}
-            className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-elevated text-text-secondary border border-border/30"
+            className="text-3xs font-mono px-1.5 py-0.5 rounded bg-surface-elevated text-text-secondary border border-border/30"
           >
             {item}
           </span>
@@ -808,13 +808,13 @@ function InspectorOverview({
         <h2 className="text-sm font-semibold text-text-primary">
           Variables overview
         </h2>
-        <p className="text-[11px] text-text-muted leading-relaxed">
+        <p className="text-2xs text-text-muted leading-relaxed">
           Select a variable to inspect its value, properties, and stack usage.
         </p>
       </div>
 
       {locked ? (
-        <p className="text-[11px] text-text-muted leading-relaxed">
+        <p className="text-2xs text-text-muted leading-relaxed">
           Vault is locked — unlock to browse variables and values.
         </p>
       ) : (
@@ -868,7 +868,7 @@ function InspectorOverview({
 
 function Tip({ children }: { children: ReactNode }) {
   return (
-    <li className="text-[11px] text-text-muted leading-relaxed pl-3 relative before:content-['·'] before:absolute before:left-0 before:text-text-muted/60">
+    <li className="text-2xs text-text-muted leading-relaxed pl-3 relative before:content-['·'] before:absolute before:left-0 before:text-text-muted/60">
       {children}
     </li>
   );
@@ -885,10 +885,10 @@ function MetaRow({
 }) {
   return (
     <div className="flex items-start justify-between gap-3">
-      <dt className="text-[11px] text-text-muted flex-shrink-0">{label}</dt>
+      <dt className="text-2xs text-text-muted flex-shrink-0">{label}</dt>
       <dd
         className={cn(
-          'text-[11px] text-text-secondary text-right break-words',
+          'text-2xs text-text-secondary text-right break-words',
           mono && 'font-mono',
         )}
       >
@@ -901,7 +901,7 @@ function MetaRow({
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-2">
-      <h3 className="text-[10px] uppercase tracking-[0.18em] text-text-muted/70">
+      <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">
         {title}
       </h3>
       {children}

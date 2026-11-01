@@ -537,13 +537,13 @@ function DangerZoneStrip({ onOpen }: { onOpen: () => void }) {
   return (
     <div className="flex-shrink-0 border-t border-border-subtle bg-surface px-6 py-2">
       <div className="flex items-center justify-between">
-        <span className="text-[11px] text-text-muted">
+        <span className="text-2xs text-text-muted">
           Danger zone: remove everything gridctl placed on this machine
         </span>
         <button
           type="button"
           onClick={onOpen}
-          className="rounded-md px-2.5 py-1 text-[11px] font-medium border border-status-error/30 text-status-error/90 hover:bg-status-error/10 hover:text-status-error transition-colors"
+          className="rounded-md px-2.5 py-1 text-2xs font-medium border border-status-error/30 text-status-error/90 hover:bg-status-error/10 hover:text-status-error transition-colors"
         >
           Reset gridctl…
         </button>
@@ -570,7 +570,7 @@ function ConnectionsHeader({ subtitle }: { subtitle: string }) {
         <h1 className="text-xs font-medium uppercase tracking-[0.4em] text-text-primary">
           Connections
         </h1>
-        <span className="font-mono text-[10px] text-text-muted flex-1 truncate">{subtitle}</span>
+        <span className="font-mono text-3xs text-text-muted flex-1 truncate">{subtitle}</span>
       </div>
     </div>
   );
@@ -600,7 +600,7 @@ function UnjoinedAgentsStrip({
         className="w-full flex items-center gap-2 px-5 py-2 text-left hover:bg-surface-highlight/40 transition-colors"
       >
         <Bot size={12} className="text-text-muted/70 flex-shrink-0" aria-hidden="true" />
-        <span className="text-[11px] text-text-muted">
+        <span className="text-2xs text-text-muted">
           {total} agent projection{total === 1 ? '' : 's'} on non-client targets (
           {slugs.map(agentClientName).join(', ')})
         </span>
@@ -610,7 +610,7 @@ function UnjoinedAgentsStrip({
           {slugs.flatMap((slug) =>
             (agentsByClient.get(slug) ?? []).map((row) => (
               <li key={`${slug}:${row.agent}`} className="flex items-center gap-2 py-0.5">
-                <span className="text-[10px] text-text-muted w-28 truncate flex-shrink-0">
+                <span className="text-3xs text-text-muted w-28 truncate flex-shrink-0">
                   {agentClientName(slug)}
                 </span>
                 <button
@@ -622,7 +622,7 @@ function UnjoinedAgentsStrip({
                 >
                   {row.agent}
                 </button>
-                <span className="text-[10px] text-text-muted/70 ml-auto">{row.state}</span>
+                <span className="text-3xs text-text-muted/70 ml-auto">{row.state}</span>
               </li>
             )),
           )}
@@ -647,7 +647,7 @@ function UnattributedSessionsStrip({ sessions }: { sessions: SessionEntry[] }) {
         className="w-full flex items-center gap-2 px-5 py-2 text-left hover:bg-surface-highlight/40 transition-colors"
       >
         <Radio size={12} className="text-text-muted/70 flex-shrink-0" aria-hidden="true" />
-        <span className="text-[11px] text-text-muted">
+        <span className="text-2xs text-text-muted">
           {sessions.length} session{sessions.length === 1 ? '' : 's'} not matched to a linked client
         </span>
       </button>
@@ -658,7 +658,7 @@ function UnattributedSessionsStrip({ sessions }: { sessions: SessionEntry[] }) {
               <span className="text-xs font-mono text-text-secondary truncate max-w-[260px]" title={s.id}>
                 {sessionIdentity(s)}
               </span>
-              <span className="text-[10px] px-2 py-0.5 rounded-md font-mono font-medium uppercase tracking-wider bg-secondary/10 text-secondary">
+              <span className="text-3xs px-2 py-0.5 rounded-md font-mono font-medium uppercase tracking-wider bg-secondary/10 text-secondary">
                 {s.generation}
               </span>
             </li>

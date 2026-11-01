@@ -4,7 +4,7 @@ import { AlertCircle } from 'lucide-react';
 export function FieldError({ error, id }: { error?: string; id?: string }) {
   if (!error) return null;
   return (
-    <p id={id} className="text-[10px] text-status-error mt-1">
+    <p id={id} className="text-3xs text-status-error mt-1">
       <AlertCircle size={10} className="inline mr-1 -mt-0.5" />
       {error}
     </p>
@@ -57,7 +57,7 @@ export function Field({
       {children({ id, describedBy, invalid })}
       <FieldError id={errorId} error={error} />
       {help && (
-        <p id={helpId} className="text-[10px] text-text-muted mt-1">
+        <p id={helpId} className="text-3xs text-text-muted mt-1">
           {help}
         </p>
       )}

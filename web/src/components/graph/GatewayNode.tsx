@@ -40,7 +40,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         </div>
         <div>
           <h3 className="font-bold text-sm text-text-primary tracking-tight">{data.name}</h3>
-          <p className="text-[10px] text-text-muted font-mono tracking-wider">{data.version}</p>
+          <p className="text-3xs text-text-muted font-mono tracking-wider">{data.version}</p>
         </div>
       </div>
 
@@ -149,7 +149,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
         <div className="flex items-center gap-2 pt-2 mt-1 border-t border-border/50">
           <span
             role="status"
-            className="inline-flex items-center gap-1.5 text-[10px] px-1.5 py-0.5 rounded font-medium border bg-status-running/10 border-status-running/25 text-status-running"
+            className="inline-flex items-center gap-1.5 text-3xs px-1.5 py-0.5 rounded font-medium border bg-status-running/10 border-status-running/25 text-status-running"
           >
             <StatusDot status="running" />
             Gateway Active
@@ -158,7 +158,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
             <span
               role="status"
               title="Code mode is enabled (configured in stack.yaml)"
-              className="inline-flex items-center gap-1.5 text-[10px] px-1.5 py-0.5 rounded font-medium border bg-primary/10 border-primary/20 text-primary"
+              className="inline-flex items-center gap-1.5 text-3xs px-1.5 py-0.5 rounded font-medium border bg-primary/10 border-primary/20 text-primary"
             >
               <Code size={11} />
               Code Mode
@@ -168,7 +168,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
             <span
               role="status"
               title="Deferred tool discovery is enabled (configured in stack.yaml)"
-              className="inline-flex items-center gap-1.5 text-[10px] px-1.5 py-0.5 rounded font-medium border bg-primary/10 border-primary/20 text-primary"
+              className="inline-flex items-center gap-1.5 text-3xs px-1.5 py-0.5 rounded font-medium border bg-primary/10 border-primary/20 text-primary"
             >
               Deferred discovery
             </span>

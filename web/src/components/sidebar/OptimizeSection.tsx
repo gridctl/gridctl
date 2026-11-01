@@ -22,13 +22,13 @@ function FindingRow({ finding }: { finding: OptimizeFinding }) {
           <div className="flex items-baseline gap-2">
             <span className="text-xs font-medium text-text-primary truncate">{finding.title}</span>
             {(finding.impact_tokens_per_week ?? 0) > 0 && (
-              <span className="text-[10px] font-mono text-text-secondary tabular-nums whitespace-nowrap">
+              <span className="text-3xs font-mono text-text-secondary tabular-nums whitespace-nowrap">
                 {formatCompactNumber(finding.impact_tokens_per_week ?? 0)} tok/wk
               </span>
             )}
           </div>
           {!open && (
-            <p className="text-[10px] text-text-muted line-clamp-2 mt-0.5">{finding.summary}</p>
+            <p className="text-3xs text-text-muted line-clamp-2 mt-0.5">{finding.summary}</p>
           )}
         </div>
         <span className="mt-0.5 flex-shrink-0">
@@ -38,9 +38,9 @@ function FindingRow({ finding }: { finding: OptimizeFinding }) {
 
       {open && (
         <div className="mt-2 space-y-2 pt-2 border-t border-border/30">
-          <p className="text-[11px] text-text-secondary">{finding.summary}</p>
+          <p className="text-2xs text-text-secondary">{finding.summary}</p>
           {finding.remediation && (
-            <pre className="text-[10px] font-mono text-text-secondary bg-background/50 rounded-md px-2 py-1.5 overflow-x-auto whitespace-pre-wrap break-words">
+            <pre className="text-3xs font-mono text-text-secondary bg-background/50 rounded-md px-2 py-1.5 overflow-x-auto whitespace-pre-wrap break-words">
               {finding.remediation}
             </pre>
           )}
@@ -86,7 +86,7 @@ export function OptimizeSection() {
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between text-[10px] text-text-muted uppercase tracking-wider px-0.5">
+      <div className="flex items-center justify-between text-3xs text-text-muted uppercase tracking-wider px-0.5">
         <span className="flex items-center gap-1.5">
           <Lightbulb size={10} className="text-primary" />
           {findings.length} finding{findings.length === 1 ? '' : 's'}

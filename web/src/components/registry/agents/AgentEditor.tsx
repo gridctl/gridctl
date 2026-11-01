@@ -126,7 +126,7 @@ export function AgentEditor({ isOpen, agent, onClose, onSaved }: AgentEditorProp
                 onClick={() => setMode(key)}
                 aria-pressed={mode === key}
                 className={cn(
-                  'inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium transition-colors border',
+                  'inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-2xs font-medium transition-colors border',
                   mode === key
                     ? 'bg-primary/10 text-primary border-primary/25'
                     : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight border-transparent',
@@ -136,7 +136,7 @@ export function AgentEditor({ isOpen, agent, onClose, onSaved }: AgentEditorProp
               </button>
             ))}
           </div>
-          <span className="text-[10px] text-text-muted">
+          <span className="text-3xs text-text-muted">
             The whole file is saved verbatim; unknown frontmatter keys round-trip untouched.
           </span>
         </div>
@@ -166,13 +166,13 @@ export function AgentEditor({ isOpen, agent, onClose, onSaved }: AgentEditorProp
         )}
         {findings && findings.length > 0 && (
           <div className="space-y-1" role="alert">
-            <span className="text-[10px] text-text-muted uppercase tracking-wider">
+            <span className="text-3xs text-text-muted uppercase tracking-wider">
               Security findings blocked the save
             </span>
             {findings.map((f, i) => (
               <div
                 key={i}
-                className="text-[11px] px-2 py-1.5 rounded-lg flex items-start gap-1.5 bg-status-error/10 text-status-error"
+                className="text-2xs px-2 py-1.5 rounded-lg flex items-start gap-1.5 bg-status-error/10 text-status-error"
               >
                 <AlertTriangle size={11} className="flex-shrink-0 mt-0.5" />
                 <span>{f.description}</span>

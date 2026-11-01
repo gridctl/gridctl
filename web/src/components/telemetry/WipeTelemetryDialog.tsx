@@ -46,7 +46,7 @@ export function WipeTelemetryDialog({ isOpen, onClose, onConfirm, scope, title, 
           {empty ? (
             <p className="text-text-muted italic">No persisted telemetry exists in scope.</p>
           ) : (
-            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 font-mono text-[11px] text-text-secondary">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 font-mono text-2xs text-text-secondary">
               <dt className="text-text-muted">Total</dt>
               <dd>{formatBytes(summary.totalBytes)}</dd>
               <dt className="text-text-muted">Servers</dt>

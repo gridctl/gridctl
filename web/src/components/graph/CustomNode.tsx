@@ -175,7 +175,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
               static ×N badge so operators see reactive scale at a glance. */}
           {isServer && autoscale && (
             <span
-              className="text-[10px] text-tertiary-light/80 font-mono tracking-tight"
+              className="text-3xs text-tertiary-light/80 font-mono tracking-tight"
               title={`Autoscale · current ${autoscale.current} / target ${autoscale.target}`}
               aria-label={`Autoscale current ${autoscale.current} of target ${autoscale.target}`}
             >
@@ -186,7 +186,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
               so horizontal-scale servers are recognisable at a glance. */}
           {hasReplicas && (
             <span
-              className="text-[10px] text-tertiary-light/80 font-mono tracking-tight"
+              className="text-3xs text-tertiary-light/80 font-mono tracking-tight"
               title={`${replicaCount} replicas`}
               aria-label={`${replicaCount} replicas`}
             >
@@ -195,7 +195,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
           )}
           {/* Inline tool count in compact mode */}
           {isCompact && isServer && toolCount !== null && toolCount !== undefined && (
-            <span className="text-[10px] text-text-muted font-mono">
+            <span className="text-3xs text-text-muted font-mono">
               {toolCount}t
             </span>
           )}
@@ -239,7 +239,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
             <div className="space-y-1">
               <div className="flex items-center gap-1.5">
                 <Wifi size={10} className="text-secondary" />
-                <span className="text-[10px] uppercase tracking-widest font-medium text-text-muted">
+                <span className="text-3xs uppercase tracking-widest font-medium text-text-muted">
                   Endpoint
                 </span>
               </div>
@@ -254,7 +254,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
             <div className="space-y-1">
               <div className="flex items-center gap-1.5">
                 <Hash size={10} className="text-tertiary-light" />
-                <span className="text-[10px] uppercase tracking-widest font-medium text-text-muted">
+                <span className="text-3xs uppercase tracking-widest font-medium text-text-muted">
                   Container
                 </span>
               </div>
@@ -267,7 +267,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
           {/* Image Row (for resources) */}
           {!isServer && image && (
             <div className="space-y-1">
-              <span className="text-[10px] uppercase tracking-widest font-medium text-text-muted">
+              <span className="text-3xs uppercase tracking-widest font-medium text-text-muted">
                 Image
               </span>
               <div className="text-xs text-text-secondary font-mono truncate bg-background/50 px-2 py-1 rounded-md" title={image}>
@@ -285,14 +285,14 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
                   getTransportColorClasses(transport)
                 )}>
                   <TransportIcon size={11} />
-                  <span className="uppercase text-[10px] tracking-wider font-medium">
+                  <span className="uppercase text-3xs tracking-wider font-medium">
                     {transport}
                   </span>
                 </div>
                 {isServer && (data as MCPServerNodeData).outputFormat && (data as MCPServerNodeData).outputFormat !== 'json' && (
                   <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-secondary/10 text-secondary">
                     <FileOutput size={10} />
-                    <span className="uppercase text-[10px] tracking-wider font-medium">
+                    <span className="uppercase text-3xs tracking-wider font-medium">
                       {(data as MCPServerNodeData).outputFormat}
                     </span>
                   </div>
@@ -305,7 +305,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
                     set the server advertised. */}
                 {isServer && ((data as MCPServerNodeData).toolWhitelist?.length ?? 0) > 0 && (
                   <span
-                    className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-primary/10 text-primary text-[10px] font-mono"
+                    className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-primary/10 text-primary text-3xs font-mono"
                     title="Curated tool whitelist"
                     aria-label={`Curated whitelist: ${(data as MCPServerNodeData).toolWhitelist?.length ?? 0} of ${toolCount ?? 0} tools`}
                   >
@@ -314,25 +314,25 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
                   </span>
                 )}
                 {toolCount !== null && toolCount !== undefined && (
-                  <span className="text-text-secondary font-mono text-[11px]">
+                  <span className="text-text-secondary font-mono text-2xs">
                     {toolCount} tools
                   </span>
                 )}
                 {isServer && ((data as MCPServerNodeData).promptCount ?? 0) > 0 && (
-                  <span className="text-text-secondary font-mono text-[11px]" title="Downstream prompts">
+                  <span className="text-text-secondary font-mono text-2xs" title="Downstream prompts">
                     {(data as MCPServerNodeData).promptCount} prompts
                   </span>
                 )}
                 {isServer && ((data as MCPServerNodeData).mcpResourceCount ?? 0) > 0 && (
-                  <span className="text-text-secondary font-mono text-[11px]" title="MCP resources, not stack infrastructure">
+                  <span className="text-text-secondary font-mono text-2xs" title="MCP resources, not stack infrastructure">
                     {(data as MCPServerNodeData).mcpResourceCount} MCP resources
                   </span>
                 )}
                 {isServer && (data as MCPServerNodeData).capabilities?.prompts && (
-                  <span className="text-[10px] uppercase tracking-wider text-tertiary-light">prompts</span>
+                  <span className="text-3xs uppercase tracking-wider text-tertiary-light">prompts</span>
                 )}
                 {isServer && (data as MCPServerNodeData).capabilities?.resources && (
-                  <span className="text-[10px] uppercase tracking-wider text-tertiary-light">resources</span>
+                  <span className="text-3xs uppercase tracking-wider text-tertiary-light">resources</span>
                 )}
               </div>
             </div>
@@ -404,7 +404,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
           {/* Status Badge + Type indicator */}
           <div className="pt-1 flex items-center gap-2">
             {data.status === 'running' ? (
-              <span className="inline-flex items-center gap-1.5 text-[10px] px-1.5 py-0.5 rounded font-medium border bg-status-running/10 border-status-running/25 text-status-running capitalize">
+              <span className="inline-flex items-center gap-1.5 text-3xs px-1.5 py-0.5 rounded font-medium border bg-status-running/10 border-status-running/25 text-status-running capitalize">
                 <span className="w-1.5 h-1.5 rounded-full bg-status-running" />
                 {data.status}
               </span>
@@ -418,7 +418,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
             {isServer && !isExternal && !isLocalProcess && !isSSH && !isOpenAPI && (
               <div className={cn(
                 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border',
-                'text-[10px] font-semibold tracking-wide',
+                'text-3xs font-semibold tracking-wide',
                 'text-text-muted border-border/50'
               )}>
                 <Terminal size={10} />
@@ -428,7 +428,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
             {isExternal && (
               <div className={cn(
                 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border',
-                'text-[10px] font-semibold tracking-wide',
+                'text-3xs font-semibold tracking-wide',
                 'text-text-muted border-border/50'
               )}>
                 <Globe size={10} />
@@ -438,7 +438,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
             {isLocalProcess && (
               <div className={cn(
                 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border',
-                'text-[10px] font-semibold tracking-wide',
+                'text-3xs font-semibold tracking-wide',
                 'text-text-muted border-border/50'
               )}>
                 <Cpu size={10} />
@@ -448,7 +448,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
             {isSSH && (
               <div className={cn(
                 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border',
-                'text-[10px] font-semibold tracking-wide',
+                'text-3xs font-semibold tracking-wide',
                 'text-text-muted border-border/50'
               )}>
                 <KeyRound size={10} />
@@ -458,7 +458,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
             {isOpenAPI && (
               <div className={cn(
                 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border',
-                'text-[10px] font-semibold tracking-wide',
+                'text-3xs font-semibold tracking-wide',
                 'text-text-muted border-border/50'
               )}>
                 <FileJson size={10} />

@@ -383,10 +383,10 @@ export function ReviewStep({
         <div className="rounded-xl border border-primary/20 bg-primary/[0.03] p-4 space-y-3" aria-live="polite">
           <div className="flex items-center justify-between gap-3">
             <span className="text-xs font-medium text-text-primary">Python container build</span>
-            {resolutionPending && <span className="text-[10px] text-primary">Resolving package/ref...</span>}
-            {buildState === 'waiting' && <span className="text-[10px] text-primary">Building image, starting container, and connecting server...</span>}
-            {buildState === 'pending' && <span className="text-[10px] text-status-pending">Deployment is still in progress</span>}
-            {buildState === 'complete' && <span className="text-[10px] text-status-running">Connected</span>}
+            {resolutionPending && <span className="text-3xs text-primary">Resolving package/ref...</span>}
+            {buildState === 'waiting' && <span className="text-3xs text-primary">Building image, starting container, and connecting server...</span>}
+            {buildState === 'pending' && <span className="text-3xs text-status-pending">Deployment is still in progress</span>}
+            {buildState === 'complete' && <span className="text-3xs text-status-running">Connected</span>}
           </div>
           {(resolutionError || deployError) && (
             <p ref={resolutionErrorRef} tabIndex={-1} className="text-xs text-status-error" role="alert">
@@ -405,7 +405,7 @@ export function ReviewStep({
               <div className="col-span-2 text-text-muted">{currentResolution.cached ? 'The matching image is already cached and will be reused.' : 'The first apply builds this image. Unchanged later applies reuse it.'}</div>
             </div>
           )}
-          <ol className="grid grid-cols-2 gap-1 text-[10px] text-text-muted" aria-label="Build phases">
+          <ol className="grid grid-cols-2 gap-1 text-3xs text-text-muted" aria-label="Build phases">
             {['Resolving package/ref', 'Cloning/preparing context', 'Generating Dockerfile', 'Building image', 'Starting container', 'Connecting server'].map((phase) => <li key={phase}>{phase}</li>)}
           </ol>
           {(buildState === 'waiting' || buildState === 'pending' || buildState === 'failed') && (
@@ -417,14 +417,14 @@ export function ReviewStep({
       {resourceType === 'mcp-server' && (
         <details className="rounded-xl border border-border/30 bg-background/30">
           <summary className="cursor-pointer px-4 py-3 text-xs font-medium text-text-secondary">Exact server YAML</summary>
-          <pre className="overflow-x-auto border-t border-border/20 p-4 text-[11px] text-text-secondary"><code>{yaml}</code></pre>
+          <pre className="overflow-x-auto border-t border-border/20 p-4 text-2xs text-text-secondary"><code>{yaml}</code></pre>
         </details>
       )}
 
       {currentResolution?.generatedFile && (
         <details className="rounded-xl border border-border/30 bg-background/30">
           <summary className="cursor-pointer px-4 py-3 text-xs font-medium text-text-secondary">Generated Dockerfile</summary>
-          <pre className="overflow-x-auto border-t border-border/20 p-4 text-[11px] text-text-secondary"><code>{currentResolution.generatedFile.content}</code></pre>
+          <pre className="overflow-x-auto border-t border-border/20 p-4 text-2xs text-text-secondary"><code>{currentResolution.generatedFile.content}</code></pre>
         </details>
       )}
 

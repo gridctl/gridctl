@@ -32,14 +32,14 @@ export function MetricsInspector({ scope, row, onClose, tokenPoints }: MetricsIn
       <PaneAnchor />
       <div className="flex-shrink-0 flex items-center gap-2 px-4 py-3 border-b border-border-subtle">
         <div className="min-w-0">
-          <div className="text-[10px] uppercase tracking-[0.3em] text-text-muted/60">
+          <div className="text-3xs uppercase tracking-[0.3em] text-text-muted/60">
             {scope === 'clients' ? 'client' : scope === 'tools' ? 'tool' : 'server'}
           </div>
           <div className="font-mono text-sm text-text-primary truncate" title={row.name}>
             {row.tool ?? row.name}
           </div>
           {scope === 'tools' && row.server && (
-            <div className="font-mono text-[10px] text-text-muted truncate" title={row.server}>
+            <div className="font-mono text-3xs text-text-muted truncate" title={row.server}>
               {row.server}
             </div>
           )}
@@ -84,7 +84,7 @@ export function MetricsInspector({ scope, row, onClose, tokenPoints }: MetricsIn
         {/* Token sparkline */}
         {tokenSeries.length > 0 && (
           <section className="space-y-1">
-            <h3 className="text-[10px] uppercase tracking-[0.18em] text-text-muted/70">Tokens over time</h3>
+            <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">Tokens over time</h3>
             <div role="img" aria-label={`Token usage over time for ${row.name}`}>
               <AreaChart
                 data={tokenSeries}
@@ -109,7 +109,7 @@ export function MetricsInspector({ scope, row, onClose, tokenPoints }: MetricsIn
             all. Clients get structural wording: no per-client token series
             exists. */}
         {tokenSeries.length === 0 && (
-          <p className="text-[10px] leading-snug text-text-muted/70">
+          <p className="text-3xs leading-snug text-text-muted/70">
             {scope === 'tools'
               ? 'Per-tool time series is not recorded yet; the numbers above are session totals.'
               : scope === 'clients'
@@ -128,9 +128,9 @@ function InspectorOverview() {
   return (
     <aside aria-label="Metrics inspector" className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
       <div className="flex-shrink-0 px-4 py-3 border-b border-border-subtle">
-        <div className="text-[10px] uppercase tracking-[0.3em] text-text-muted/60">inspector</div>
+        <div className="text-3xs uppercase tracking-[0.3em] text-text-muted/60">inspector</div>
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark p-4 space-y-3 text-[11px] leading-relaxed text-text-muted">
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark p-4 space-y-3 text-2xs leading-relaxed text-text-muted">
         <p>Select a client, server, or tool to inspect its token usage and call activity.</p>
         <p>
           Numbers here are measured at the gateway: tokens counted on tool arguments and results,

@@ -100,7 +100,7 @@ export function VariableValueInput({
   const showError = touched && !valid && value !== '';
   const describedBy = showError ? errorId : undefined;
   const errorNode = showError ? (
-    <p id={errorId} className="mt-1 text-[10px] text-status-error">
+    <p id={errorId} className="mt-1 text-3xs text-status-error">
       {!valid ? validation.error : ''}
     </p>
   ) : null;
@@ -207,7 +207,7 @@ export function VariableValueInput({
       {type === 'json' && (
         <Suspense
           fallback={
-            <div className="rounded-lg border border-border bg-surface px-3 py-2 text-[10px] text-text-muted">
+            <div className="rounded-lg border border-border bg-surface px-3 py-2 text-3xs text-text-muted">
               Loading editor…
             </div>
           }

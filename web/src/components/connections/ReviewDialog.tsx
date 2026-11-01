@@ -87,7 +87,7 @@ function LinkPreviewCard({ client }: { client: ClientStatus }) {
         <Plug size={12} className="text-primary" />
         <span className="text-sm text-text-primary">Link {client.name}</span>
         {preview && (
-          <span className="font-mono text-[10px] text-text-muted truncate">{preview.configPath}</span>
+          <span className="font-mono text-3xs text-text-muted truncate">{preview.configPath}</span>
         )}
       </div>
       {error && <div className="text-xs text-status-error">Preview unavailable: {error}</div>}
@@ -104,10 +104,10 @@ function LinkPreviewCard({ client }: { client: ClientStatus }) {
       )}
       {preview?.stackDiff && (
         <details className="mt-2">
-          <summary className="text-[10px] uppercase tracking-wide text-text-muted cursor-pointer">
+          <summary className="text-3xs uppercase tracking-wide text-text-muted cursor-pointer">
             stack.yaml change
           </summary>
-          <pre className="mt-1 text-[10px] font-mono text-text-secondary bg-surface-elevated rounded-md p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+          <pre className="mt-1 text-3xs font-mono text-text-secondary bg-surface-elevated rounded-md p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
             {escapeNonPrintable(preview.stackDiff)}
           </pre>
         </details>
@@ -119,8 +119,8 @@ function LinkPreviewCard({ client }: { client: ClientStatus }) {
 function DiffPane({ label, text }: { label: string; text: string }) {
   return (
     <div className="min-w-0">
-      <div className="text-[10px] uppercase tracking-wide text-text-muted mb-1">{label}</div>
-      <pre className="text-[10px] font-mono text-text-secondary bg-surface-elevated rounded-md p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+      <div className="text-3xs uppercase tracking-wide text-text-muted mb-1">{label}</div>
+      <pre className="text-3xs font-mono text-text-secondary bg-surface-elevated rounded-md p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
         {escapeNonPrintable(text) || '(empty)'}
       </pre>
     </div>

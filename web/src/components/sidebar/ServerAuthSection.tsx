@@ -226,7 +226,7 @@ export function ServerAuthSection({ serverName, authStatus, authIssuer, authExpi
             {scopes.map((scope) => (
               <span
                 key={scope}
-                className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-surface-highlight text-text-secondary"
+                className="text-3xs px-1.5 py-0.5 rounded font-mono bg-surface-highlight text-text-secondary"
               >
                 {scope}
               </span>
@@ -241,7 +241,7 @@ export function ServerAuthSection({ serverName, authStatus, authIssuer, authExpi
           onClick={handleAuthorize}
           disabled={busy}
           className={cn(
-            'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors',
+            'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-2xs font-medium transition-colors',
             'bg-status-pending/15 text-status-pending border border-status-pending/30 hover:bg-status-pending/25',
             'disabled:opacity-60 disabled:cursor-not-allowed',
           )}
@@ -254,7 +254,7 @@ export function ServerAuthSection({ serverName, authStatus, authIssuer, authExpi
             type="button"
             onClick={handleCancel}
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors',
+              'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-2xs font-medium transition-colors',
               'text-text-muted border border-border/50 hover:text-text-primary hover:border-border',
             )}
           >
@@ -267,7 +267,7 @@ export function ServerAuthSection({ serverName, authStatus, authIssuer, authExpi
             onClick={handleSignOut}
             disabled={busy}
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors',
+              'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-2xs font-medium transition-colors',
               'text-text-muted border border-border/50 hover:text-text-primary hover:border-border',
               'disabled:opacity-60 disabled:cursor-not-allowed',
             )}
@@ -283,7 +283,7 @@ export function ServerAuthSection({ serverName, authStatus, authIssuer, authExpi
           role="status"
           className="p-2 rounded-md bg-status-pending/5 border border-status-pending/20 space-y-1.5"
         >
-          <p className="text-[11px] text-status-pending font-medium">
+          <p className="text-2xs text-status-pending font-medium">
             Popup blocked. Open the authorization page yourself:
           </p>
           <div className="flex items-center gap-1.5">
@@ -292,7 +292,7 @@ export function ServerAuthSection({ serverName, authStatus, authIssuer, authExpi
               target="_blank"
               rel="noopener"
               title={phase.authorizeUrl}
-              className="flex-1 text-[11px] text-secondary hover:text-secondary-light underline underline-offset-2 truncate transition-colors"
+              className="flex-1 text-2xs text-secondary hover:text-secondary-light underline underline-offset-2 truncate transition-colors"
             >
               Open authorization page
             </a>
@@ -309,14 +309,14 @@ export function ServerAuthSection({ serverName, authStatus, authIssuer, authExpi
       )}
 
       {phase.kind === 'waiting' && (
-        <p className="text-[10px] text-text-muted">
+        <p className="text-3xs text-text-muted">
           Remote daemon? Authorize from the machine running gridctl with
           'gridctl auth login {serverName}', or use --manual over SSH.
         </p>
       )}
 
       {phase.kind === 'done' && (
-        <p className="text-[11px] text-status-running flex items-center gap-1.5">
+        <p className="text-2xs text-status-running flex items-center gap-1.5">
           <ShieldCheck size={11} />
           Authorized. The server reconnects automatically.
         </p>
@@ -324,7 +324,7 @@ export function ServerAuthSection({ serverName, authStatus, authIssuer, authExpi
 
       {phase.kind === 'failed' && (
         <div role="alert" className="p-2 rounded-md bg-status-error/5 border border-status-error/15">
-          <p className="text-[11px] text-status-error break-words">{phase.message}</p>
+          <p className="text-2xs text-status-error break-words">{phase.message}</p>
         </div>
       )}
     </div>

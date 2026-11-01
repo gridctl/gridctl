@@ -6,18 +6,18 @@ import { usePolicy } from '../../hooks/usePolicy';
 export function PolicySummary() {
   const { report, error } = usePolicy(true);
   if (error && !report) {
-    return <p className="text-[11px] text-text-muted">Policy status is unavailable.</p>;
+    return <p className="text-2xs text-text-muted">Policy status is unavailable.</p>;
   }
   if (!report) {
-    return <p className="text-[11px] text-text-muted">Loading policy…</p>;
+    return <p className="text-2xs text-text-muted">Loading policy…</p>;
   }
   if (!report.configured) {
-    return <p className="text-[11px] text-text-secondary">Policy: not configured</p>;
+    return <p className="text-2xs text-text-secondary">Policy: not configured</p>;
   }
   const rules = report.rules?.length ?? 0;
   const destructive = report.block_destructive ? 'on' : 'off';
   return (
-    <p className="text-[11px] text-text-secondary leading-relaxed">
+    <p className="text-2xs text-text-secondary leading-relaxed">
       Policy: default {report.default || 'allow'}, {rules} {rules === 1 ? 'rule' : 'rules'}, block_destructive {destructive}
     </p>
   );

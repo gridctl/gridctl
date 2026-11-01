@@ -94,7 +94,7 @@ export function ThemePicker({ variant = 'statusbar', placement = 'up' }: ThemePi
           placement === 'down' ? 'top-full mt-2' : 'bottom-full mb-2',
         )}
       >
-          <div className="px-1 pb-1.5 text-[9px] uppercase tracking-[0.18em] text-text-muted/70">
+          <div className="px-1 pb-1.5 text-3xs uppercase tracking-[0.18em] text-text-muted/70">
             Appearance
           </div>
 
@@ -115,7 +115,7 @@ export function ThemePicker({ variant = 'statusbar', placement = 'up' }: ThemePi
                   onClick={() => setThemeMode(mode)}
                   onKeyDown={(e) => onRadioKeyDown(e, i)}
                   className={cn(
-                    'flex-1 flex flex-col items-center gap-1 py-1.5 rounded text-[10px] font-medium',
+                    'flex-1 flex flex-col items-center gap-1 py-1.5 rounded text-3xs font-medium',
                     'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
                     active
                       ? 'bg-surface-highlight text-text-primary shadow-bevel'
@@ -129,7 +129,7 @@ export function ThemePicker({ variant = 'statusbar', placement = 'up' }: ThemePi
             })}
           </div>
 
-          <div className="px-1 pt-2 min-h-[1rem] text-[10px] text-text-muted" aria-live="polite">
+          <div className="px-1 pt-2 min-h-[1rem] text-3xs text-text-muted" aria-live="polite">
             {themeMode === 'system'
               ? `Following system — currently ${resolved === 'light' ? 'Light' : 'Dark'}`
               : ''}

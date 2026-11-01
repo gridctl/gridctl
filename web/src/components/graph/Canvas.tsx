@@ -388,7 +388,7 @@ export function Canvas() {
             {/* Quick-add links — only when a stack is active */}
             {hasActiveStack && (
               <div className="flex items-center gap-2 mt-3">
-                <span className="text-[10px] text-text-muted">or add:</span>
+                <span className="text-3xs text-text-muted">or add:</span>
                 {[
                   { type: 'mcp-server' as const, icon: Server, label: 'Server', color: 'text-primary hover:text-primary/80' },
                   { type: 'resource' as const, icon: Database, label: 'Resource', color: 'text-secondary hover:text-secondary/80' },
@@ -397,7 +397,7 @@ export function Canvas() {
                     key={item.type}
                     onClick={() => useWizardStore.getState().open(item.type)}
                     className={cn(
-                      'inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium',
+                      'inline-flex items-center gap-1 px-2 py-1 rounded-md text-3xs font-medium',
                       'bg-surface-overlay-2 border border-border-subtle hover:border-border',
                       'transition-all duration-200',
                       item.color,

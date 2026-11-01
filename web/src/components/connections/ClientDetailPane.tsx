@@ -128,7 +128,7 @@ export function ClientDetailPane({
                   showToast('success', 'Config path copied');
                 }}
                 title="Copy config path"
-                className="mt-0.5 flex items-center gap-1 font-mono text-[10px] text-text-muted hover:text-text-secondary transition-colors max-w-full"
+                className="mt-0.5 flex items-center gap-1 font-mono text-3xs text-text-muted hover:text-text-secondary transition-colors max-w-full"
               >
                 <span className="truncate">{client.configPath}</span>
                 <Copy size={9} className="flex-shrink-0" />
@@ -179,7 +179,7 @@ export function ClientDetailPane({
           data-testid="client-notes"
         >
           {(client.notes ?? []).map((note) => (
-            <li key={note} className="text-[11px] text-text-muted">
+            <li key={note} className="text-2xs text-text-muted">
               {note}
             </li>
           ))}
@@ -205,7 +205,7 @@ export function ClientDetailPane({
         }
       >
         {wiringFailed && (
-          <p className="text-[11px] text-text-muted px-1">
+          <p className="text-2xs text-text-muted px-1">
             Wiring status could not be loaded.{' '}
             <button
               type="button"
@@ -217,12 +217,12 @@ export function ClientDetailPane({
           </p>
         )}
         {wiringRows === null && !healthFailed && (
-          <p className="text-[11px] text-text-muted px-1">
+          <p className="text-2xs text-text-muted px-1">
             Wiring state has not loaded. It appears once the ownership status fetch resolves.
           </p>
         )}
         {wiringRows !== null && wiringRows.length === 0 && (
-          <p className="text-[11px] text-text-muted px-1">
+          <p className="text-2xs text-text-muted px-1">
             No gateway entry recorded for this client. Use the connect toggle to link it.
           </p>
         )}
@@ -263,15 +263,15 @@ export function ClientDetailPane({
                 )}
               </span>
             </div>
-            {row.detail && <span className="text-[11px] text-text-muted/80 px-1">{row.detail}</span>}
+            {row.detail && <span className="text-2xs text-text-muted/80 px-1">{row.detail}</span>}
             {/* The engine's remediation is the user's map when a state
                 needs a decision; hiding it until an action fails would
                 make the failure the discovery mechanism. */}
             {row.remediation && row.state !== 'in-sync' && (
-              <span className="text-[11px] text-text-muted/60 px-1">{row.remediation}</span>
+              <span className="text-2xs text-text-muted/60 px-1">{row.remediation}</span>
             )}
             {row.target && (
-              <span className="text-[11px] text-text-muted font-mono truncate px-1" title={row.target}>
+              <span className="text-2xs text-text-muted font-mono truncate px-1" title={row.target}>
                 {row.target}
               </span>
             )}
@@ -289,18 +289,18 @@ export function ClientDetailPane({
         }
       >
         {!contextClient && (
-          <p className="text-[11px] text-text-muted px-1">Context state not loaded.</p>
+          <p className="text-2xs text-text-muted px-1">Context state not loaded.</p>
         )}
         {contextClient && (
           <div className="flex items-center gap-2 flex-wrap px-1 py-1.5">
             <StatePill state={contextClient.state} />
             {contextClient.mode && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded border border-border/40 bg-background/40 text-text-muted font-mono whitespace-nowrap">
+              <span className="text-3xs px-1.5 py-0.5 rounded border border-border/40 bg-background/40 text-text-muted font-mono whitespace-nowrap">
                 {contextClient.mode}
               </span>
             )}
             <span
-              className="text-[11px] text-text-muted font-mono truncate flex-1"
+              className="text-2xs text-text-muted font-mono truncate flex-1"
               title={contextClient.target_path ?? contextClient.detail}
             >
               {contextClient.supported ? contextClient.target_path : contextClient.detail}
@@ -347,7 +347,7 @@ export function ClientDetailPane({
             {(contextClient.fragments ?? []).map((f) => (
               <li key={f.name} className="flex items-center gap-2">
                 <StatePill state={f.state} />
-                <span className="text-[11px] text-text-secondary font-mono truncate flex-1">
+                <span className="text-2xs text-text-secondary font-mono truncate flex-1">
                   {f.name}
                 </span>
                 {f.pack && <PackChip pack={f.pack} />}
@@ -371,13 +371,13 @@ export function ClientDetailPane({
         attention={agentRows.some((r) => r.state !== 'in-sync')}
       >
         {!isAgentTarget && (
-          <p className="text-[11px] text-text-muted px-1" data-testid="not-agent-target">
+          <p className="text-2xs text-text-muted px-1" data-testid="not-agent-target">
             Not an agent projection target: agent definitions project to{' '}
             {[...AGENT_TARGET_SLUGS].map(agentClientName).join(', ')}.
           </p>
         )}
         {isAgentTarget && agentRows.length === 0 && (
-          <p className="text-[11px] text-text-muted px-1">
+          <p className="text-2xs text-text-muted px-1">
             No agents projected to this client yet. Manage projections from the Library's Agents
             segment.
           </p>
@@ -386,7 +386,7 @@ export function ClientDetailPane({
           <div key={row.agent} className="flex items-center gap-2 flex-wrap px-1 py-1.5">
             <StatePill state={row.state} />
             <span
-              className="text-[10px] px-1.5 py-0.5 rounded border border-border/40 bg-background/40 text-text-muted font-mono whitespace-nowrap"
+              className="text-3xs px-1.5 py-0.5 rounded border border-border/40 bg-background/40 text-text-muted font-mono whitespace-nowrap"
               title={row.render === 'lossy' ? 'Client-dialect render; unmappable keys dropped' : 'Canonical bytes copied verbatim'}
             >
               {row.render}
@@ -401,7 +401,7 @@ export function ClientDetailPane({
             </button>
             {row.pack && <PackChip pack={row.pack} />}
             {row.detail && (
-              <span className="text-[10px] text-text-muted/70 truncate" title={row.detail}>
+              <span className="text-3xs text-text-muted/70 truncate" title={row.detail}>
                 {row.detail}
               </span>
             )}
@@ -423,7 +423,7 @@ export function ClientDetailPane({
         attention={false}
       >
         <div className="flex items-center gap-2 px-1 py-1.5">
-          <span className="text-[11px] text-text-muted flex-1">
+          <span className="text-2xs text-text-muted flex-1">
             {!scope || !scope.configured
               ? 'No per-client scoping is configured; this client reaches every exposed tool.'
               : scope.unscoped
@@ -454,14 +454,14 @@ export function ClientDetailPane({
         attention={false}
       >
         {sessions === null && (
-          <p className="text-[11px] text-text-muted px-1">
+          <p className="text-2xs text-text-muted px-1">
             {sessionsFailed
               ? 'Session state is unavailable: the sessions endpoint failed (or the daemon predates it).'
               : 'Session state has not loaded yet.'}
           </p>
         )}
         {sessions !== null && attributedSessions.length === 0 && (
-          <p className="text-[11px] text-text-muted px-1" data-testid="sessionless-copy">
+          <p className="text-2xs text-text-muted px-1" data-testid="sessionless-copy">
             No attributed sessions. Stateless-generation clients (2026-07-28) are sessionless by
             design and never appear here.
           </p>
@@ -473,15 +473,15 @@ export function ClientDetailPane({
             </span>
             <span className="flex items-center gap-2">
               {s.protocolVersion && (
-                <span className="text-[10px] font-mono text-text-muted">{s.protocolVersion}</span>
+                <span className="text-3xs font-mono text-text-muted">{s.protocolVersion}</span>
               )}
-              <span className="text-[10px] px-2 py-0.5 rounded-md font-mono font-medium uppercase tracking-wider bg-secondary/10 text-secondary">
+              <span className="text-3xs px-2 py-0.5 rounded-md font-mono font-medium uppercase tracking-wider bg-secondary/10 text-secondary">
                 {s.generation}
               </span>
             </span>
           </div>
         ))}
-        <p className="text-[10px] text-text-muted/60 px-1 pt-1 flex items-center gap-1">
+        <p className="text-3xs text-text-muted/60 px-1 pt-1 flex items-center gap-1">
           <Cable size={9} /> Transport state, not declared links.
         </p>
       </Section>
@@ -558,12 +558,12 @@ function AxisBadge({
 }) {
   return (
     <span className="flex items-center gap-1.5 min-w-0">
-      <span className="text-[9px] uppercase tracking-[0.2em] text-text-muted/70 flex-shrink-0">
+      <span className="text-3xs uppercase tracking-[0.2em] text-text-muted/70 flex-shrink-0">
         {label}
       </span>
       <span
         className={cn(
-          'text-[10px] px-2 py-0.5 rounded-full border font-medium truncate',
+          'text-3xs px-2 py-0.5 rounded-full border font-medium truncate',
           tone === 'ok' && 'text-status-running border-status-running/25 bg-status-running/10',
           tone === 'pending' && 'text-status-pending border-status-pending/30 bg-status-pending/10',
           tone === 'live' && 'text-secondary border-secondary/25 bg-secondary/10',
@@ -617,9 +617,9 @@ function Section({
           {icon}
         </span>
         <span className="text-xs text-text-muted uppercase tracking-wider">{title}</span>
-        <span className="text-[11px] text-text-muted/80 truncate flex-1">{summary}</span>
+        <span className="text-2xs text-text-muted/80 truncate flex-1">{summary}</span>
         {attention && !expanded && (
-          <span className="flex-shrink-0 text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-pending/30 bg-status-pending/10 text-status-pending">
+          <span className="flex-shrink-0 text-3xs font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-pending/30 bg-status-pending/10 text-status-pending">
             Needs attention
           </span>
         )}
@@ -645,7 +645,7 @@ function InlineAction({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'px-2 py-0.5 rounded-md text-[11px] font-medium border transition-colors disabled:opacity-50 whitespace-nowrap',
+        'px-2 py-0.5 rounded-md text-2xs font-medium border transition-colors disabled:opacity-50 whitespace-nowrap',
         subtle
           ? 'text-text-muted border-border/40 hover:bg-surface-highlight'
           : 'text-primary border-primary/25 hover:bg-primary/10',

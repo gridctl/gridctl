@@ -1194,14 +1194,14 @@ function GroupByControl({
   const options = hasCategories ? GROUP_OPTIONS : GROUP_OPTIONS.filter((o) => o.key !== 'category');
   return (
     <div className="flex items-center gap-1" role="group" aria-label="Group skills by">
-      <span className="text-[10px] uppercase tracking-wider text-text-muted/60 mr-0.5">Group</span>
+      <span className="text-3xs uppercase tracking-wider text-text-muted/60 mr-0.5">Group</span>
       {options.map((opt) => (
         <button
           key={opt.key}
           onClick={() => onChange(opt.key)}
           aria-pressed={mode === opt.key}
           className={cn(
-            'px-2 py-1 rounded-md text-[11px] font-medium transition-colors',
+            'px-2 py-1 rounded-md text-2xs font-medium transition-colors',
             mode === opt.key
               ? 'bg-primary/10 text-primary border border-primary/25'
               : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight border border-transparent',
@@ -1230,14 +1230,14 @@ function SortControl({ mode, onChange, usageAvailable }: { mode: SortMode; onCha
   const options = usageAvailable ? [...SORT_OPTIONS, USAGE_SORT_OPTION] : SORT_OPTIONS;
   return (
     <div className="flex items-center gap-1" role="group" aria-label="Sort skills by">
-      <span className="text-[10px] uppercase tracking-wider text-text-muted/60 mr-0.5">Sort</span>
+      <span className="text-3xs uppercase tracking-wider text-text-muted/60 mr-0.5">Sort</span>
       {options.map((opt) => (
         <button
           key={opt.key}
           onClick={() => onChange(opt.key)}
           aria-pressed={mode === opt.key}
           className={cn(
-            'px-2 py-1 rounded-md text-[11px] font-medium transition-colors',
+            'px-2 py-1 rounded-md text-2xs font-medium transition-colors',
             mode === opt.key
               ? 'bg-primary/10 text-primary border border-primary/25'
               : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight border border-transparent',
@@ -1258,14 +1258,14 @@ function SortControl({ mode, onChange, usageAvailable }: { mode: SortMode; onCha
 function WindowControl({ window, onChange }: { window: AuditWindow; onChange: (w: AuditWindow) => void }) {
   return (
     <div className="flex items-center gap-1" role="group" aria-label="Stale lookback window">
-      <span className="text-[10px] uppercase tracking-wider text-text-muted/60 mr-0.5">Window</span>
+      <span className="text-3xs uppercase tracking-wider text-text-muted/60 mr-0.5">Window</span>
       {AUDIT_WINDOWS.map((opt) => (
         <button
           key={opt.id}
           onClick={() => onChange(opt.id)}
           aria-pressed={window === opt.id}
           className={cn(
-            'px-2 py-1 rounded-md text-[11px] font-medium transition-colors',
+            'px-2 py-1 rounded-md text-2xs font-medium transition-colors',
             window === opt.id
               ? 'bg-primary/10 text-primary border border-primary/25'
               : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight border border-transparent',
@@ -1331,7 +1331,7 @@ function FacetChips({
           key={chip.key}
           onClick={chip.onClear}
           aria-label={`Clear ${chip.label} filter: ${chip.value}`}
-          className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border border-primary/25 bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
+          className="inline-flex items-center gap-1 text-3xs px-2 py-0.5 rounded-full border border-primary/25 bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
         >
           <span className="text-text-muted">{chip.label}</span>
           <span className="font-medium">{chip.value}</span>
@@ -1342,7 +1342,7 @@ function FacetChips({
         <button
           onClick={onClearAll}
           aria-label="Clear all filters"
-          className="text-[10px] px-2 py-0.5 rounded-full text-text-muted hover:text-text-secondary hover:bg-surface-highlight transition-colors"
+          className="text-3xs px-2 py-0.5 rounded-full text-text-muted hover:text-text-secondary hover:bg-surface-highlight transition-colors"
         >
           Clear all
         </button>
@@ -1410,27 +1410,27 @@ function BulkActionBar({ count, allSelected, onSelectAll, onEnable, onDisable, o
         {count} selected
       </span>
       {!allSelected && (
-        <button onClick={onSelectAll} className="text-[11px] text-text-muted hover:text-text-secondary transition-colors">
+        <button onClick={onSelectAll} className="text-2xs text-text-muted hover:text-text-secondary transition-colors">
           Select all
         </button>
       )}
       {/* Full-width row so a long sentence never squeezes the actions, and
           placed ahead of them in DOM order so it is read before the buttons. */}
       {caveat && (
-        <span role="status" className="basis-full text-[11px] text-status-pending">
+        <span role="status" className="basis-full text-2xs text-status-pending">
           {caveat}
         </span>
       )}
       <div className="ml-auto flex items-center gap-1.5">
         <button
           onClick={onEnable}
-          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-status-running border border-status-running/25 hover:bg-status-running/10 transition-colors"
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-2xs font-medium text-status-running border border-status-running/25 hover:bg-status-running/10 transition-colors"
         >
           <Power size={11} /> Enable
         </button>
         <button
           onClick={onDisable}
-          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-text-muted border border-border/40 hover:bg-surface-highlight transition-colors"
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-2xs font-medium text-text-muted border border-border/40 hover:bg-surface-highlight transition-colors"
         >
           <PowerOff size={11} /> Disable
         </button>
@@ -1438,14 +1438,14 @@ function BulkActionBar({ count, allSelected, onSelectAll, onEnable, onDisable, o
           variant="outline-danger"
           size="sm"
           onClick={onDelete}
-          className="gap-1 px-2 py-1 rounded-md text-[11px]"
+          className="gap-1 px-2 py-1 rounded-md text-2xs"
         >
           <Trash2 size={11} /> Delete
         </Button>
         <button
           onClick={onClear}
           aria-label="Clear selection"
-          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-text-muted border border-transparent hover:bg-surface-highlight transition-colors"
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-2xs text-text-muted border border-transparent hover:bg-surface-highlight transition-colors"
         >
           <X size={11} /> Clear
         </button>
@@ -1641,7 +1641,7 @@ function KpiCard({ label, count, dot, active, compact, onClick, unknownReason }:
           <span aria-hidden="true" className={cn('inline-block w-1.5 h-1.5 rounded-full flex-shrink-0', stateDotClasses[dot])} />
         )}
         <span className={cn(
-          'text-[10px] uppercase tracking-wider font-medium',
+          'text-3xs uppercase tracking-wider font-medium',
           active && !unknown ? 'text-primary' : 'text-text-muted',
         )}>
           {label}

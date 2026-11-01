@@ -126,7 +126,7 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
       <div aria-label="Tools Picker" aria-busy={probeState.loading}>
         <label className={labelClass}>Tools Whitelist</label>
         <div className="rounded-lg border border-dashed border-border/40 bg-background/30 px-4 py-5 text-center space-y-3">
-          <p className="text-[11px] text-text-muted leading-relaxed">
+          <p className="text-2xs text-text-muted leading-relaxed">
             No tools found for{' '}
             <span className="font-mono text-text-secondary">
               {serverName || 'this server'}
@@ -153,7 +153,7 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
                 disabled={probeState.loading}
                 aria-label="Discover tools by probing the server"
                 className={cn(
-                  'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors',
+                  'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-2xs font-medium transition-colors',
                   'bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30',
                   'disabled:opacity-60 disabled:cursor-not-allowed',
                 )}
@@ -171,7 +171,7 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
                 )}
               </button>
               {probeState.probedAt && (
-                <span className="text-[10px] text-text-muted">
+                <span className="text-3xs text-text-muted">
                   Last discovered: {formatRelativeTime(probeState.probedAt)}
                 </span>
               )}
@@ -188,7 +188,7 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
           <button
             type="button"
             onClick={() => setModeOverride(true)}
-            className="inline-flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+            className="inline-flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
           >
             <Edit3 size={10} />
             Enter tool names manually
@@ -207,7 +207,7 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
             <button
               type="button"
               onClick={() => setModeOverride(false)}
-              className="flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+              className="flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
             >
               <ArrowLeft size={10} />
               Back to search
@@ -227,7 +227,7 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
         <button
           type="button"
           onClick={() => setModeOverride(true)}
-          className="flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+          className="flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
         >
           <Edit3 size={10} />
           Enter tool names manually
@@ -238,7 +238,7 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
 
       <div className="rounded-lg border border-border/40 bg-background/60 overflow-hidden">
         {/* Count + quick actions */}
-        <div className="flex items-center gap-2 px-3 py-2 text-[10px] text-text-muted border-b border-border/30">
+        <div className="flex items-center gap-2 px-3 py-2 text-3xs text-text-muted border-b border-border/30">
           <span>
             <span className="text-text-secondary font-medium">{selected.size}</span> of{' '}
             <span className="text-text-secondary font-medium">{displayTools.length}</span>{' '}
@@ -249,7 +249,7 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
               type="button"
               onClick={selectAllVisible}
               aria-label="Select all visible tools"
-              className="text-[10px] text-secondary hover:text-secondary-light transition-colors"
+              className="text-3xs text-secondary hover:text-secondary-light transition-colors"
             >
               Select all
             </button>
@@ -260,7 +260,7 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
               type="button"
               onClick={clearAll}
               aria-label="Clear all selected tools"
-              className="text-[10px] text-secondary hover:text-secondary-light transition-colors"
+              className="text-3xs text-secondary hover:text-secondary-light transition-colors"
             >
               Clear
             </button>
@@ -284,7 +284,7 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
             aria-label="Available tools"
           >
             <Command.Empty>
-              <p className="text-[11px] text-text-muted/60 italic py-4 px-3 text-center">
+              <p className="text-2xs text-text-muted/60 italic py-4 px-3 text-center">
                 No tools match "{query}"
               </p>
             </Command.Empty>
@@ -326,7 +326,7 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
                       {opt.name}
                     </div>
                     {opt.description && (
-                      <div className="text-[10px] text-text-muted truncate">
+                      <div className="text-3xs text-text-muted truncate">
                         {opt.description}
                       </div>
                     )}
@@ -366,11 +366,11 @@ function ProbeErrorPanel({
       >
         <KeyRound size={12} className="text-status-pending flex-shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0 space-y-1">
-          <p className="text-[11px] text-status-pending font-medium">{error.message}</p>
+          <p className="text-2xs text-status-pending font-medium">{error.message}</p>
           {isProbeErr && error.hint && (
-            <p className="text-[10px] text-text-muted">{error.hint}</p>
+            <p className="text-3xs text-text-muted">{error.hint}</p>
           )}
-          <p className="text-[10px] text-text-muted">
+          <p className="text-3xs text-text-muted">
             After deploy, authorize from the server's sidebar or with
             'gridctl auth login', then discover tools again.
           </p>
@@ -379,7 +379,7 @@ function ProbeErrorPanel({
               type="button"
               onClick={onRetry}
               aria-label="Retry probing the server"
-              className="text-[10px] text-secondary hover:text-secondary-light transition-colors"
+              className="text-3xs text-secondary hover:text-secondary-light transition-colors"
             >
               Retry
             </button>
@@ -396,16 +396,16 @@ function ProbeErrorPanel({
     >
       <AlertCircle size={12} className="text-status-error flex-shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0 space-y-1">
-        <p className="text-[11px] text-status-error font-medium">{error.message}</p>
+        <p className="text-2xs text-status-error font-medium">{error.message}</p>
         {isProbeErr && error.hint && (
-          <p className="text-[10px] text-text-muted">{error.hint}</p>
+          <p className="text-3xs text-text-muted">{error.hint}</p>
         )}
         {showRetry && (
           <button
             type="button"
             onClick={onRetry}
             aria-label="Retry probing the server"
-            className="text-[10px] text-secondary hover:text-secondary-light transition-colors"
+            className="text-3xs text-secondary hover:text-secondary-light transition-colors"
           >
             Retry
           </button>
@@ -460,14 +460,14 @@ function ManualEntry({
         <button
           type="button"
           onClick={addItem}
-          className="flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+          className="flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
         >
           <Plus size={10} />
           Add tool
         </button>
       </div>
       {value.length === 0 && (
-        <p className="text-[10px] text-text-muted/60 italic py-2">
+        <p className="text-3xs text-text-muted/60 italic py-2">
           All tools exposed (no whitelist)
         </p>
       )}
@@ -523,7 +523,7 @@ function ProbeFindingsPanel({ tools }: { tools: ProbedTool[] | null }) {
         aria-expanded={expanded}
       >
         <ShieldAlert size={12} className="flex-shrink-0" />
-        <span className="text-[11px] font-medium">
+        <span className="text-2xs font-medium">
           {findingCount} scan finding{findingCount > 1 ? 's' : ''} on {flagged.length} discovered tool
           {flagged.length > 1 ? 's' : ''}; review before adding
         </span>
@@ -537,13 +537,13 @@ function ProbeFindingsPanel({ tools }: { tools: ProbedTool[] | null }) {
         <div className="mt-2 space-y-2">
           {flagged.map((t) => (
             <div key={t.name} className="space-y-1">
-              <div className="text-[10px] font-mono text-text-secondary">
+              <div className="text-3xs font-mono text-text-secondary">
                 {escapeNonPrintable(t.name)}
               </div>
               <FindingsList findings={t.findings} />
             </div>
           ))}
-          <p className="text-[10px] text-text-muted">
+          <p className="text-3xs text-text-muted">
             Findings are advisory heuristics; they inform review and never block. Pinned servers are
             re-scanned on drift in the Pins workspace.
           </p>

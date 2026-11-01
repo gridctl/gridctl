@@ -60,7 +60,7 @@ export function ServerEnableControl({ name, enabled, overrides }: ServerEnableCo
       {overrides && overrides.length > 0 && (
         <ul className="space-y-1">
           {overrides.map((field) => (
-            <li key={field} className="flex items-center gap-2 text-[10px] text-text-muted">
+            <li key={field} className="flex items-center gap-2 text-3xs text-text-muted">
               <span className="font-mono">{field}</span>
               <span className="rounded border border-border px-1.5 py-0.5 uppercase tracking-wide">overridden locally</span>
             </li>

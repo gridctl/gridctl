@@ -124,7 +124,7 @@ export function DraftManager({ className }: DraftManagerProps) {
         <FolderOpen size={12} />
         Drafts
         {drafts.length > 0 && (
-          <span className="text-[10px] bg-surface-highlight px-1.5 py-0.5 rounded-full text-text-muted">
+          <span className="text-3xs bg-surface-highlight px-1.5 py-0.5 rounded-full text-text-muted">
             {drafts.length}
           </span>
         )}
@@ -186,7 +186,7 @@ export function DraftManager({ className }: DraftManagerProps) {
                     <div className="text-xs font-medium text-text-primary truncate">
                       {draft.name}
                     </div>
-                    <div className="flex items-center gap-1.5 text-[10px] text-text-muted mt-0.5">
+                    <div className="flex items-center gap-1.5 text-3xs text-text-muted mt-0.5">
                       <span className="capitalize">{draft.resourceType}</span>
                       <span>·</span>
                       <Clock size={9} />

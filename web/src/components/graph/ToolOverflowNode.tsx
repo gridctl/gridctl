@@ -73,7 +73,7 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
         style={{ height: LAYOUT.TOOL_HEIGHT }}
       >
         <MoreHorizontal size={12} className="text-text-secondary flex-shrink-0" />
-        <span className="font-mono text-[11px] text-text-secondary tracking-tight">
+        <span className="font-mono text-2xs text-text-secondary tracking-tight">
           +{data.overflowCount} more
         </span>
       </button>
@@ -91,7 +91,7 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
           )}
           style={{ width: cols * LAYOUT.TOOL_WIDTH }}
         >
-          <div className="px-1.5 py-1 text-[9px] uppercase tracking-widest text-text-muted">
+          <div className="px-1.5 py-1 text-3xs uppercase tracking-widest text-text-muted">
             {data.serverName} · {data.overflowCount} more
           </div>
           <ul
@@ -139,7 +139,7 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
                     ) : (
                       <Wrench size={10} className="text-text-secondary/80 flex-shrink-0" aria-hidden="true" />
                     )}
-                    <span className="tool-label min-w-0 flex-1 font-mono text-[11px] text-text-secondary truncate" title={tool}>
+                    <span className="tool-label min-w-0 flex-1 font-mono text-2xs text-text-secondary truncate" title={tool}>
                       {tool}
                     </span>
                   </button>

@@ -33,7 +33,7 @@ function TierBadge({ entry }: { entry: CatalogEntry }) {
   return (
     <span
       className={cn(
-        'px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider font-medium',
+        'px-1.5 py-0.5 rounded text-3xs uppercase tracking-wider font-medium',
         curated
           ? 'bg-primary/15 text-primary'
           : 'bg-surface-highlight text-text-muted',
@@ -139,7 +139,7 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
             'placeholder:text-text-muted/50',
           )}
         />
-        <span className="text-[10px] text-text-muted">
+        <span className="text-3xs text-text-muted">
           {loading ? 'Searching...' : `${entries.length} servers`}
         </span>
       </div>
@@ -148,7 +148,7 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
       {(stale || registryError) && (
         <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border/10 bg-status-pending/5">
           <AlertTriangle size={10} className="text-status-pending flex-shrink-0" />
-          <span className="text-[10px] text-text-muted">
+          <span className="text-3xs text-text-muted">
             {registryError
               ? 'MCP Registry unavailable; showing curated results only'
               : 'MCP Registry unavailable; showing cached results (may be stale)'}
@@ -161,11 +161,11 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
         <div className="w-1/2 border-r border-border/10 overflow-y-auto scrollbar-dark">
           {failed ? (
             <div className="flex items-center justify-center py-16">
-              <span className="text-[10px] text-text-muted">Failed to load the catalog</span>
+              <span className="text-3xs text-text-muted">Failed to load the catalog</span>
             </div>
           ) : entries.length === 0 && !loading ? (
             <div className="flex items-center justify-center py-16">
-              <span className="text-[10px] text-text-muted">
+              <span className="text-3xs text-text-muted">
                 No servers matched &ldquo;{query}&rdquo;
               </span>
             </div>
@@ -192,17 +192,17 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
                   <div className="flex items-center gap-1.5 mt-1.5">
                     <TierBadge entry={entry} />
                     {entry.status === 'deprecated' && (
-                      <span className="px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider font-medium bg-status-pending/15 text-status-pending">
+                      <span className="px-1.5 py-0.5 rounded text-3xs uppercase tracking-wider font-medium bg-status-pending/15 text-status-pending">
                         deprecated
                       </span>
                     )}
                     {entry.unsupported && (
-                      <span className="px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider font-medium bg-surface-highlight text-text-muted">
+                      <span className="px-1.5 py-0.5 rounded text-3xs uppercase tracking-wider font-medium bg-surface-highlight text-text-muted">
                         unsupported
                       </span>
                     )}
                   </div>
-                  <p className="text-[10px] text-text-muted mt-1 leading-relaxed line-clamp-2">
+                  <p className="text-3xs text-text-muted mt-1 leading-relaxed line-clamp-2">
                     {entry.description}
                   </p>
                 </button>
@@ -223,7 +223,7 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
                     </span>
                     <TierBadge entry={selected} />
                   </div>
-                  <p className="text-[10px] text-text-muted leading-relaxed">
+                  <p className="text-3xs text-text-muted leading-relaxed">
                     {selected.description}
                   </p>
                 </div>
@@ -235,14 +235,14 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
                       const Icon = INSTALL_ICONS[selected.install.type] ?? Container;
                       return <Icon size={11} className="text-text-secondary" />;
                     })()}
-                    <span className="text-[10px] text-text-secondary">{catalogInstallLabel(selected)}</span>
+                    <span className="text-3xs text-text-secondary">{catalogInstallLabel(selected)}</span>
                   </div>
-                  <div className="text-[10px] font-mono text-text-muted break-all">
+                  <div className="text-3xs font-mono text-text-muted break-all">
                     {runInContainer
                       ? `${selected.install.identifier}==${selected.install.version}`
                       : selected.install.image || selected.install.url || selected.install.command?.join(' ')}
                   </div>
-                  <div className="text-[10px] text-text-muted">
+                  <div className="text-3xs text-text-muted">
                     Adds server <span className="font-mono text-text-secondary">{catalogServerName(selected)}</span>
                   </div>
                 </div>
@@ -258,27 +258,27 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
                         className="accent-primary"
                       />
                     </label>
-                    <p className="text-[10px] text-text-muted leading-relaxed">
+                    <p className="text-3xs text-text-muted leading-relaxed">
                       Off uses today&apos;s host uvx command. On builds an isolated Python image on first apply and reuses it while inputs stay unchanged.
                     </p>
                     {runInContainer && filepathInput && (
                       <div className="space-y-2 border-t border-primary/10 pt-2">
-                        <p className="text-[10px] text-status-pending">
+                        <p className="text-3xs text-status-pending">
                           This package needs an explicit mount and command path before containerization is available.
                         </p>
-                        <label className="block text-[10px] text-text-secondary">
+                        <label className="block text-3xs text-text-secondary">
                           Host path
                           <input value={hostPath} onChange={(event) => setHostPath(event.target.value)} className="mt-1 w-full rounded bg-background/60 border border-border/40 px-2 py-1.5 font-mono" />
                         </label>
-                        <label className="block text-[10px] text-text-secondary">
+                        <label className="block text-3xs text-text-secondary">
                           Container path
                           <input value={containerPath} onChange={(event) => setContainerPath(event.target.value)} placeholder="/data" className="mt-1 w-full rounded bg-background/60 border border-border/40 px-2 py-1.5 font-mono" />
                         </label>
-                        <label className="block text-[10px] text-text-secondary">
+                        <label className="block text-3xs text-text-secondary">
                           Command, including container path
                           <input value={containerCommand} onChange={(event) => setContainerCommand(event.target.value)} placeholder="server-command /data" className="mt-1 w-full rounded bg-background/60 border border-border/40 px-2 py-1.5 font-mono" />
                         </label>
-                        <label className="flex items-center gap-2 text-[10px] text-text-secondary">
+                        <label className="flex items-center gap-2 text-3xs text-text-secondary">
                           <input type="checkbox" checked={readOnly} onChange={(event) => setReadOnly(event.target.checked)} className="accent-primary" />
                           Mount read-only
                         </label>
@@ -290,12 +290,12 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
                 {/* Inputs */}
                 {(selected.inputs?.length ?? 0) > 0 && (
                   <div>
-                    <div className="text-[10px] text-text-muted uppercase tracking-wider font-medium mb-1.5">
+                    <div className="text-3xs text-text-muted uppercase tracking-wider font-medium mb-1.5">
                       Configuration
                     </div>
                     <div className="space-y-1">
                       {selected.inputs?.map((input) => (
-                        <div key={input.name} className="flex items-center gap-2 text-[10px]">
+                        <div key={input.name} className="flex items-center gap-2 text-3xs">
                           {input.secret || input.auth ? (
                             <KeyRound size={10} className="text-tertiary flex-shrink-0" />
                           ) : (
@@ -308,7 +308,7 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
                       ))}
                     </div>
                     {selected.inputs?.some((i) => i.secret || i.auth) && (
-                      <p className="text-[10px] text-text-muted mt-2 leading-relaxed">
+                      <p className="text-3xs text-text-muted mt-2 leading-relaxed">
                         Secrets pre-fill as <span className="font-mono text-tertiary">{'${var:KEY}'}</span>{' '}
                         references; store the values in the vault.
                       </p>
@@ -318,7 +318,7 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
 
                 {/* Registry trust note */}
                 {selected.tier === 'registry' && (
-                  <p className="text-[10px] text-text-muted leading-relaxed">
+                  <p className="text-3xs text-text-muted leading-relaxed">
                     Registry entries are community publications, not vetted by gridctl.
                   </p>
                 )}
@@ -328,7 +328,7 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
                     href={selected.homepage}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-[10px] text-text-muted hover:text-text-primary transition-colors"
+                    className="inline-flex items-center gap-1 text-3xs text-text-muted hover:text-text-primary transition-colors"
                   >
                     <ExternalLink size={10} />
                     {selected.homepage}
@@ -338,7 +338,7 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
 
               <div className="px-4 py-3 border-t border-border/20">
                 {selected.unsupported ? (
-                  <p className="text-[10px] text-text-muted text-center">
+                  <p className="text-3xs text-text-muted text-center">
                     Unsupported package type ({selected.unsupported}); supported: container images,
                     npm and pypi packages, and remote URLs.
                   </p>
@@ -361,7 +361,7 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
                 <Package size={24} className="text-text-muted/30 mx-auto mb-2" />
-                <p className="text-[10px] text-text-muted">Select a server to preview</p>
+                <p className="text-3xs text-text-muted">Select a server to preview</p>
               </div>
             </div>
           )}

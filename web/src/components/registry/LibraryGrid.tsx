@@ -189,10 +189,10 @@ export function LibraryGrid({
             className="flex flex-col gap-1 mt-2 first:mt-0 animate-fade-in-scale"
           >
             <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-widest text-text-muted font-medium">
+              <span className="text-3xs uppercase tracking-widest text-text-muted font-medium">
                 {key ? toTitleCase(key) : 'Other'}
               </span>
-              <span className="text-[10px] px-1.5 rounded-full bg-surface-highlight text-text-muted">
+              <span className="text-3xs px-1.5 rounded-full bg-surface-highlight text-text-muted">
                 {groupSkillList.length} {hasSearch ? 'matched' : 'skills'}
               </span>
             </div>

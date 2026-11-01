@@ -117,7 +117,7 @@ export function LibraryTable({
                   onClick={() => onSort(col.key)}
                   aria-pressed={sortMode === col.key}
                   className={cn(
-                    'inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-medium transition-colors',
+                    'inline-flex items-center gap-1 text-3xs uppercase tracking-wider font-medium transition-colors',
                     sortMode === col.key ? 'text-primary' : 'text-text-muted hover:text-text-secondary',
                   )}
                 >
@@ -127,11 +127,11 @@ export function LibraryTable({
               </th>
             ))}
             {showCategory && (
-              <th scope="col" className="px-2 py-2 text-left text-[10px] uppercase tracking-wider font-medium text-text-muted">
+              <th scope="col" className="px-2 py-2 text-left text-3xs uppercase tracking-wider font-medium text-text-muted">
                 Category
               </th>
             )}
-            <th scope="col" className="px-2 py-2 text-right text-[10px] uppercase tracking-wider font-medium text-text-muted">
+            <th scope="col" className="px-2 py-2 text-right text-3xs uppercase tracking-wider font-medium text-text-muted">
               Actions
             </th>
           </tr>

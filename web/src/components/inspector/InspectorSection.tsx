@@ -42,7 +42,7 @@ export function InspectorSection({
           )}
           <span className="text-sm font-medium text-text-primary">{title}</span>
           {count !== undefined && (
-            <span className="text-[10px] text-text-muted bg-surface-elevated px-1.5 py-0.5 rounded-md font-mono">
+            <span className="text-3xs text-text-muted bg-surface-elevated px-1.5 py-0.5 rounded-md font-mono">
               {count}
             </span>
           )}

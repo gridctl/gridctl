@@ -80,10 +80,10 @@ const ClientNode = memo(({ data, selected }: ClientNodeProps) => {
         <span className="font-semibold text-xs text-text-primary truncate max-w-full">
           {data.name}
         </span>
-        <span className="text-[9px] text-text-muted font-mono uppercase tracking-wider">
+        <span className="text-3xs text-text-muted font-mono uppercase tracking-wider">
           {data.transport}
         </span>
-        <span className="mt-0.5 inline-flex items-center gap-1.5 text-[10px] px-1.5 py-0.5 rounded font-medium border bg-status-running/10 border-status-running/25 text-status-running">
+        <span className="mt-0.5 inline-flex items-center gap-1.5 text-3xs px-1.5 py-0.5 rounded font-medium border bg-status-running/10 border-status-running/25 text-status-running">
           <StatusDot status={data.status} />
           Linked
         </span>

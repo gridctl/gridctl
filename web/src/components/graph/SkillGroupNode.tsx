@@ -18,7 +18,7 @@ function AggregateStatus({ failingSkills, untestedSkills, activeSkills }: {
 }) {
   if (failingSkills > 0) {
     return (
-      <span className="flex items-center gap-0.5 text-[9px] font-medium text-status-error">
+      <span className="flex items-center gap-0.5 text-3xs font-medium text-status-error">
         <XCircle size={9} />
         {failingSkills} failing
       </span>
@@ -26,14 +26,14 @@ function AggregateStatus({ failingSkills, untestedSkills, activeSkills }: {
   }
   if (untestedSkills > 0) {
     return (
-      <span className="flex items-center gap-0.5 text-[9px] font-medium text-text-muted">
+      <span className="flex items-center gap-0.5 text-3xs font-medium text-text-muted">
         <Minus size={9} />
         {activeSkills} active · untested
       </span>
     );
   }
   return (
-    <span className="flex items-center gap-0.5 text-[9px] font-medium text-status-running">
+    <span className="flex items-center gap-0.5 text-3xs font-medium text-status-running">
       <CheckCircle size={9} />
       {activeSkills} active · passing
     </span>
@@ -65,7 +65,7 @@ const SkillGroupNode = memo(({ data, selected }: SkillGroupNodeProps) => {
         <span className="font-semibold text-xs text-text-primary truncate min-w-0 flex-1">
           {data.groupName}
         </span>
-        <span className="text-[9px] font-medium px-1.5 py-0.5 rounded border text-tertiary bg-tertiary/10 border-tertiary/25 flex-shrink-0">
+        <span className="text-3xs font-medium px-1.5 py-0.5 rounded border text-tertiary bg-tertiary/10 border-tertiary/25 flex-shrink-0">
           {data.totalSkills}
         </span>
 
@@ -107,7 +107,7 @@ const SkillGroupNode = memo(({ data, selected }: SkillGroupNodeProps) => {
         <span className="font-semibold text-xs text-text-primary truncate">
           {data.groupName}
         </span>
-        <span className="text-[9px] font-medium px-1 py-0.5 rounded border text-tertiary bg-tertiary/10 border-tertiary/25 flex-shrink-0">
+        <span className="text-3xs font-medium px-1 py-0.5 rounded border text-tertiary bg-tertiary/10 border-tertiary/25 flex-shrink-0">
           {data.totalSkills}
         </span>
       </div>

@@ -52,7 +52,7 @@ function ShortcutKeys({ keys }: { keys: string[] }) {
       {keys.map((key, i) => (
         <kbd
           key={i}
-          className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] font-mono text-text-muted bg-surface border border-border/50 min-w-[18px]"
+          className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-3xs font-mono text-text-muted bg-surface border border-border/50 min-w-[18px]"
         >
           {key}
         </kbd>
@@ -66,7 +66,7 @@ function SectionBadge({ section }: { section: PaletteSection }) {
   return (
     <span
       className={cn(
-        'shrink-0 text-[10px] font-mono font-medium px-1.5 py-0.5 rounded border',
+        'shrink-0 text-3xs font-mono font-medium px-1.5 py-0.5 rounded border',
         display.className,
       )}
     >
@@ -103,7 +103,7 @@ function PaletteItem({ command, onSelect, showBadge }: PaletteItemProps) {
       )}
       <span className="flex-1 text-sm truncate">{command.label}</span>
       {command.unavailable ? (
-        <span className="shrink-0 text-[10px] text-text-muted/60 font-mono">unavailable</span>
+        <span className="shrink-0 text-3xs text-text-muted/60 font-mono">unavailable</span>
       ) : (
         <>
           {showBadge && <SectionBadge section={command.section} />}
@@ -118,7 +118,7 @@ function GroupHeading({ icon, label }: { icon: React.ReactNode; label: string })
   return (
     <div className="flex items-center gap-1.5 px-4 pt-3 pb-1.5" aria-hidden="true">
       <span className="text-text-muted opacity-50">{icon}</span>
-      <span className="text-[10px] font-semibold text-text-muted tracking-widest uppercase opacity-50">
+      <span className="text-3xs font-semibold text-text-muted tracking-widest uppercase opacity-50">
         {label}
       </span>
     </div>
@@ -250,7 +250,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
             {/* Scope chip */}
             {scope && prefix && (
               <div className="flex items-center gap-1 shrink-0 pl-2 pr-1.5 py-0.5 rounded-full bg-primary/10 border border-primary/25">
-                <span className="text-[11px] font-medium text-primary leading-none">
+                <span className="text-2xs font-medium text-primary leading-none">
                   {SCOPE_CONFIG[prefix].label}
                 </span>
                 <button
@@ -282,7 +282,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
               )}
             />
 
-            <kbd className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-mono text-text-muted bg-surface border border-border/50">
+            <kbd className="shrink-0 px-1.5 py-0.5 rounded text-3xs font-mono text-text-muted bg-surface border border-border/50">
               esc
             </kbd>
           </div>
@@ -364,19 +364,19 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
 
           {/* Footer hints */}
           <div className="flex items-center gap-3 px-4 py-2 border-t border-border/20 shrink-0">
-            <span className="flex items-center gap-1 text-[10px] text-text-muted">
-              <kbd className="px-1 py-0.5 rounded bg-surface border border-border/50 font-mono text-[9px]">
+            <span className="flex items-center gap-1 text-3xs text-text-muted">
+              <kbd className="px-1 py-0.5 rounded bg-surface border border-border/50 font-mono text-3xs">
                 ↑↓
               </kbd>
               navigate
             </span>
-            <span className="flex items-center gap-1 text-[10px] text-text-muted">
-              <kbd className="px-1 py-0.5 rounded bg-surface border border-border/50 font-mono text-[9px]">
+            <span className="flex items-center gap-1 text-3xs text-text-muted">
+              <kbd className="px-1 py-0.5 rounded bg-surface border border-border/50 font-mono text-3xs">
                 ↵
               </kbd>
               select
             </span>
-            <span className="ml-auto text-[10px] text-text-muted opacity-50">
+            <span className="ml-auto text-3xs text-text-muted opacity-50">
               <code className="text-primary/80">t:</code>{' '}
               <code className="text-secondary/80">v:</code>{' '}
               <code className="text-tertiary/80">r:</code>{' '}

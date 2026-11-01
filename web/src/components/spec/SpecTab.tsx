@@ -228,7 +228,7 @@ export function SpecTab() {
             <div key={f.name} className="flex items-start gap-2 text-xs">
               <FlaskConical size={11} className="text-text-muted mt-0.5 flex-shrink-0" />
               <span className="font-mono text-text-secondary">{f.name}</span>
-              <span className="px-1.5 rounded-full border border-border/50 text-text-muted uppercase tracking-wide text-[10px]">
+              <span className="px-1.5 rounded-full border border-border/50 text-text-muted uppercase tracking-wide text-3xs">
                 {f.stage}
               </span>
               {f.description && <span className="text-text-muted">{f.description}</span>}

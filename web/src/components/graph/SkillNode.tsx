@@ -15,7 +15,7 @@ interface SkillNodeProps {
 function TestBadge({ status, count }: { status: SkillTestStatus; count: number }) {
   if (status === 'passed') {
     return (
-      <span className="flex items-center gap-0.5 text-[9px] font-medium text-status-running">
+      <span className="flex items-center gap-0.5 text-3xs font-medium text-status-running">
         <CheckCircle size={9} />
         tested
       </span>
@@ -23,7 +23,7 @@ function TestBadge({ status, count }: { status: SkillTestStatus; count: number }
   }
   if (status === 'failing') {
     return (
-      <span className="flex items-center gap-0.5 text-[9px] font-medium text-status-error">
+      <span className="flex items-center gap-0.5 text-3xs font-medium text-status-error">
         <XCircle size={9} />
         failing
       </span>
@@ -31,7 +31,7 @@ function TestBadge({ status, count }: { status: SkillTestStatus; count: number }
   }
   // untested
   return (
-    <span className="flex items-center gap-0.5 text-[9px] font-medium text-text-muted">
+    <span className="flex items-center gap-0.5 text-3xs font-medium text-text-muted">
       <Minus size={9} />
       {count > 0 ? 'untested' : 'no tests'}
     </span>
@@ -44,7 +44,7 @@ function StateBadge({ state }: { state: SkillNodeData['state'] }) {
   return (
     <span
       className={cn(
-        'text-[9px] font-medium px-1.5 py-0.5 rounded border uppercase tracking-wider',
+        'text-3xs font-medium px-1.5 py-0.5 rounded border uppercase tracking-wider',
         stateBadgeClasses[state],
       )}
     >
@@ -120,7 +120,7 @@ const SkillNode = memo(({ data, selected }: SkillNodeProps) => {
 
       {/* Description */}
       {data.description && (
-        <span className="text-[9px] text-text-muted leading-tight max-w-[140px] line-clamp-2 px-1">
+        <span className="text-3xs text-text-muted leading-tight max-w-[140px] line-clamp-2 px-1">
           {data.description}
         </span>
       )}

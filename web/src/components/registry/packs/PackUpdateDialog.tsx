@@ -162,7 +162,7 @@ export function PackUpdateDialog({ packName, origin, onClose, onUpdated }: PackU
           Update {packName} from origin
         </h2>
         <div id={descId} className="text-xs text-text-muted space-y-2">
-          <p className="font-mono text-[11px] truncate" title={origin.repo}>
+          <p className="font-mono text-2xs truncate" title={origin.repo}>
             {origin.repo}
             {origin.ref ? `@${origin.ref}` : ''}
           </p>
@@ -178,7 +178,7 @@ export function PackUpdateDialog({ packName, origin, onClose, onUpdated }: PackU
               an error with Update disabled and nothing to do about it. */}
           {authFixable && (
             <div className="space-y-2">
-              <p className="text-[11px]">
+              <p className="text-2xs">
                 This repository needs credentials. Supply them to resolve the manifest, or
                 re-import the pack to store a vault reference for future updates.
               </p>
@@ -197,19 +197,19 @@ export function PackUpdateDialog({ packName, origin, onClose, onUpdated }: PackU
               <p className="flex items-center gap-1.5 text-status-pending font-medium">
                 <ShieldAlert size={12} aria-hidden="true" /> No ssh-agent reachable
               </p>
-              <p className="text-[11px]">
+              <p className="text-2xs">
                 This pack was imported over SSH, and the daemon has no usable agent socket.
                 It inherits one only from the shell that started it, and can outlive it. A
                 token cannot authenticate an SSH URL.
               </p>
               {agentHTTPS ? (
                 <>
-                  <p className="text-[11px]">
+                  <p className="text-2xs">
                     Re-import the pack over HTTPS to update it. Updating here cannot switch
                     protocol on its own: that would repoint the origin this pack tracks.
                   </p>
                   <div className="flex items-center gap-2">
-                    <code className="flex-1 truncate rounded-md bg-background/60 border border-border/40 px-2 py-1 text-[11px] font-mono text-text-primary">
+                    <code className="flex-1 truncate rounded-md bg-background/60 border border-border/40 px-2 py-1 text-2xs font-mono text-text-primary">
                       {agentHTTPS}
                     </code>
                     <button
@@ -224,10 +224,10 @@ export function PackUpdateDialog({ packName, origin, onClose, onUpdated }: PackU
                       <Copy size={12} />
                     </button>
                   </div>
-                  {copied && <p className="text-[10px] text-status-running">Copied.</p>}
+                  {copied && <p className="text-3xs text-status-running">Copied.</p>}
                 </>
               ) : (
-                <p className="text-[11px]">
+                <p className="text-2xs">
                   Start an agent, add your key, and restart the daemon so it inherits the
                   socket.
                 </p>
@@ -241,7 +241,7 @@ export function PackUpdateDialog({ packName, origin, onClose, onUpdated }: PackU
                 rules you edited locally are skipped and reported, and the skill and agent
                 selection updates.
               </p>
-              <p className="font-mono text-[11px]">
+              <p className="font-mono text-2xs">
                 {(preview.skills ?? []).length} skills, {(preview.agents ?? []).length} agents,{' '}
                 {(preview.rules ?? []).length} rules{preview.wiring ? ', wiring' : ''}
                 {(preview.unresolved ?? []).length > 0 &&

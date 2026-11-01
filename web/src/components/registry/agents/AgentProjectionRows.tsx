@@ -88,7 +88,7 @@ export function AgentProjectionRows({ agentName, statuses, onRefresh }: AgentPro
     return (
       <div className="flex flex-col items-center gap-3 py-8 text-center" data-testid="agent-never-synced">
         <p className="text-sm text-text-secondary">Not projected to any client yet</p>
-        <p className="text-[11px] text-text-muted max-w-xs">
+        <p className="text-2xs text-text-muted max-w-xs">
           Syncing copies this agent into each detected client's agents directory
           (verbatim for Claude Code, rendered for other clients).
         </p>
@@ -182,7 +182,7 @@ function ProjectionRow({
         <StatePill state={s.state} />
         <span
           title={s.render === 'lossy' ? 'Client-dialect render; unmappable frontmatter keys are dropped' : 'Canonical bytes copied verbatim'}
-          className="text-[10px] px-1.5 py-0.5 rounded border border-border/40 bg-background/40 text-text-muted font-mono whitespace-nowrap"
+          className="text-3xs px-1.5 py-0.5 rounded border border-border/40 bg-background/40 text-text-muted font-mono whitespace-nowrap"
         >
           {s.render}
         </span>
@@ -208,11 +208,11 @@ function ProjectionRow({
           <RowAction label="Unsync" subtle disabled={busy} onClick={onUnsync} />
         </span>
       </div>
-      <span className="text-[11px] text-text-muted font-mono truncate" title={s.target}>
+      <span className="text-2xs text-text-muted font-mono truncate" title={s.target}>
         {s.target}
       </span>
       {s.detail && (
-        <span className="text-[11px] text-text-muted/80" data-testid="projection-detail">
+        <span className="text-2xs text-text-muted/80" data-testid="projection-detail">
           {s.detail}
         </span>
       )}
@@ -236,7 +236,7 @@ function RowAction({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'px-2 py-0.5 rounded-md text-[11px] font-medium border transition-colors disabled:opacity-50',
+        'px-2 py-0.5 rounded-md text-2xs font-medium border transition-colors disabled:opacity-50',
         subtle
           ? 'text-text-muted border-border/40 hover:bg-surface-highlight'
           : 'text-primary border-primary/25 hover:bg-primary/10',

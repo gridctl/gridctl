@@ -86,20 +86,20 @@ export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: Ski
   const grouped = groupFilesByDir(files, sort);
 
   if (loading) {
-    return <p className="text-[10px] text-text-muted p-2">Loading files...</p>;
+    return <p className="text-3xs text-text-muted p-2">Loading files...</p>;
   }
 
   return (
     <div className="border-t border-border/30">
       {/* Header */}
       <div className="flex items-center justify-between gap-2 px-3 py-1.5">
-        <span className="text-[10px] text-text-muted uppercase tracking-wider">Files</span>
+        <span className="text-3xs text-text-muted uppercase tracking-wider">Files</span>
         <div className="flex items-center gap-2">
           {files.length > 1 && <FileSortControl sort={sort} onChange={setSort} />}
           {!readOnly && (
             <button
               onClick={() => setShowNewFile(!showNewFile)}
-              className="text-[10px] text-primary hover:text-primary/80 flex items-center gap-0.5 transition-colors"
+              className="text-3xs text-primary hover:text-primary/80 flex items-center gap-0.5 transition-colors"
             >
               <Plus size={10} /> Add
             </button>
@@ -114,12 +114,12 @@ export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: Ski
             value={newFilePath}
             onChange={(e) => setNewFilePath(e.target.value)}
             placeholder="scripts/my-script.sh"
-            className="flex-1 bg-background/60 border border-border/40 rounded px-2 py-1 text-[10px] font-mono text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-primary/50"
+            className="flex-1 bg-background/60 border border-border/40 rounded px-2 py-1 text-3xs font-mono text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-primary/50"
             onKeyDown={(e) => e.key === 'Enter' && handleCreateFile()}
           />
           <button
             onClick={handleCreateFile}
-            className="px-2 py-1 text-[10px] text-primary bg-primary/10 rounded hover:bg-primary/20 transition-colors"
+            className="px-2 py-1 text-3xs text-primary bg-primary/10 rounded hover:bg-primary/20 transition-colors"
           >
             Create
           </button>
@@ -128,14 +128,14 @@ export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: Ski
 
       {/* File list */}
       {(files ?? []).length === 0 ? (
-        <p className="text-[10px] text-text-muted px-3 pb-2 italic">No supporting files</p>
+        <p className="text-3xs text-text-muted px-3 pb-2 italic">No supporting files</p>
       ) : (
         <div className="px-2 pb-2 space-y-0.5">
           {Object.entries(grouped).map(([dir, dirFiles]) => (
             <div key={dir}>
               <button
                 onClick={() => toggleDir(dir)}
-                className="w-full flex items-center gap-1.5 px-1 py-0.5 text-[10px] text-text-secondary hover:text-text-primary transition-colors"
+                className="w-full flex items-center gap-1.5 px-1 py-0.5 text-3xs text-text-secondary hover:text-text-primary transition-colors"
               >
                 {expandedDirs.has(dir) ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
                 {expandedDirs.has(dir) ? <FolderOpen size={10} className="text-primary/50" /> : <Folder size={10} className="text-text-muted" />}
@@ -152,11 +152,11 @@ export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: Ski
                       <File size={9} className="text-text-muted flex-shrink-0" />
                       <button
                         onClick={() => onSelectFile?.(file.path, '')}
-                        className="text-[10px] font-mono text-text-secondary hover:text-primary flex-1 text-left truncate transition-colors"
+                        className="text-3xs font-mono text-text-secondary hover:text-primary flex-1 text-left truncate transition-colors"
                       >
                         {file.path.split('/').pop()}
                       </button>
-                      <span className="text-[10px] text-text-muted font-mono">
+                      <span className="text-3xs text-text-muted font-mono">
                         {formatFileSize(file.size)}
                       </span>
                       {!readOnly && (
@@ -209,7 +209,7 @@ export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: Ski
 function FileSortControl({ sort, onChange }: { sort: FileSort; onChange: (s: FileSort) => void }) {
   return (
     <div className="flex items-center gap-0.5" role="group" aria-label="Sort files by">
-      <span className="text-[9px] uppercase tracking-wider text-text-muted/60">Sort</span>
+      <span className="text-3xs uppercase tracking-wider text-text-muted/60">Sort</span>
       {FILE_SORTS.map((opt) => (
         <button
           key={opt.key}
@@ -217,7 +217,7 @@ function FileSortControl({ sort, onChange }: { sort: FileSort; onChange: (s: Fil
           onClick={() => onChange(opt.key)}
           aria-pressed={sort === opt.key}
           className={cn(
-            'px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors',
+            'px-1.5 py-0.5 rounded text-3xs font-medium transition-colors',
             sort === opt.key
               ? 'bg-primary/10 text-primary'
               : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight',

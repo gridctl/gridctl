@@ -203,7 +203,7 @@ function DetachedSidebarPageContent() {
                         )}
                       />
                       <span className="truncate">{node.name}</span>
-                      <span className="ml-auto text-[10px] text-text-muted uppercase">
+                      <span className="ml-auto text-3xs text-text-muted uppercase">
                         {node.type === 'mcp-server' ? 'server' : node.type}
                       </span>
                     </button>
@@ -255,7 +255,7 @@ function DetachedSidebarPageContent() {
       </main>
 
       {/* Footer */}
-      <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-[10px] text-text-muted">
+      <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-3xs text-text-muted">
         <span>
           {selectedData?.type === 'mcp-server' ? 'MCP Server' : selectedData?.type === 'resource' ? 'Resource' : ''}
         </span>
@@ -330,7 +330,7 @@ function NodeDetails({ node }: { node: NodeOption }) {
         <div className="min-w-0 flex-1">
           <h2 className="font-semibold text-text-primary truncate text-lg">{node.name}</h2>
           <div className="flex items-center gap-1.5 mt-0.5">
-            <p className="text-[10px] text-text-muted uppercase tracking-wider">
+            <p className="text-3xs text-text-muted uppercase tracking-wider">
               {isServer ? 'MCP Server' : 'Resource'}
             </p>
           </div>

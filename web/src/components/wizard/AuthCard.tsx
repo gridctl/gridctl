@@ -57,11 +57,11 @@ export function AuthCard({ controller, ssh }: AuthCardProps) {
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-text-secondary hover:text-text-primary transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2 text-2xs text-text-secondary hover:text-text-primary transition-colors"
       >
         <ShieldCheck size={12} className="text-primary/70" />
         <span className="font-medium">Authentication</span>
-        <span className="text-text-muted text-[10px]">
+        <span className="text-text-muted text-3xs">
           {ssh ? '— using ssh-agent' : open ? '' : '(optional)'}
         </span>
         <span className="ml-auto text-text-muted">
@@ -76,7 +76,7 @@ export function AuthCard({ controller, ssh }: AuthCardProps) {
               ref={bannerRef}
               role="alert"
               tabIndex={-1}
-              className="flex items-start gap-1.5 text-[10px] text-status-pending bg-status-pending/5 border border-status-pending/20 rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-status-pending/40"
+              className="flex items-start gap-1.5 text-3xs text-status-pending bg-status-pending/5 border border-status-pending/20 rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-status-pending/40"
             >
               <AlertCircle size={10} className="mt-0.5 flex-shrink-0" />
               <span>{banner}</span>
@@ -84,14 +84,14 @@ export function AuthCard({ controller, ssh }: AuthCardProps) {
           )}
 
           {ssh ? (
-            <div className="flex items-center gap-1.5 text-[10px] text-text-muted">
+            <div className="flex items-center gap-1.5 text-3xs text-text-muted">
               <KeyRound size={10} />
               <span>Using ssh-agent — no token needed.</span>
             </div>
           ) : (
             <>
               {/* Mode selector — real radios for accessibility */}
-              <fieldset className="flex gap-1 text-[10px]">
+              <fieldset className="flex gap-1 text-3xs">
                 <legend className="sr-only">Authentication method</legend>
                 {(
                   [
@@ -117,7 +117,7 @@ export function AuthCard({ controller, ssh }: AuthCardProps) {
                       className="sr-only"
                     />
                     <span className="block font-medium">{opt.label}</span>
-                    <span className="block text-[9px] opacity-70">{opt.sub}</span>
+                    <span className="block text-3xs opacity-70">{opt.sub}</span>
                   </label>
                 ))}
               </fieldset>
@@ -125,7 +125,7 @@ export function AuthCard({ controller, ssh }: AuthCardProps) {
               {mode === 'vault' ? (
                 <div className="flex items-center gap-2">
                   {vaultRef ? (
-                    <div className="flex-1 flex items-center justify-between gap-2 bg-background/60 border border-border/40 rounded-md px-2 py-1.5 text-[10px] font-mono text-text-primary">
+                    <div className="flex-1 flex items-center justify-between gap-2 bg-background/60 border border-border/40 rounded-md px-2 py-1.5 text-3xs font-mono text-text-primary">
                       <span className="truncate">{vaultRef}</span>
                       <button
                         type="button"
@@ -137,7 +137,7 @@ export function AuthCard({ controller, ssh }: AuthCardProps) {
                       </button>
                     </div>
                   ) : (
-                    <div className="flex-1 text-[10px] text-text-muted italic px-1">
+                    <div className="flex-1 text-3xs text-text-muted italic px-1">
                       Choose a vault key →
                     </div>
                   )}
@@ -160,7 +160,7 @@ export function AuthCard({ controller, ssh }: AuthCardProps) {
                       data-1p-ignore
                       data-lpignore="true"
                       data-bwignore
-                      className="w-full bg-background/60 border border-border/40 rounded-md pl-2 pr-8 py-1.5 text-[11px] font-mono focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors"
+                      className="w-full bg-background/60 border border-border/40 rounded-md pl-2 pr-8 py-1.5 text-2xs font-mono focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors"
                     />
                     <button
                       type="button"
@@ -172,7 +172,7 @@ export function AuthCard({ controller, ssh }: AuthCardProps) {
                       {revealed ? <EyeOff size={11} /> : <Eye size={11} />}
                     </button>
                   </div>
-                  <p className="text-[10px] text-text-muted">
+                  <p className="text-3xs text-text-muted">
                     Used once for this request — not saved anywhere.
                   </p>
                 </>

@@ -61,7 +61,7 @@ export function RecipePicker({ onSelect, onClose }: RecipePickerProps) {
       <div className="flex items-center gap-2 px-4 py-3 border-b border-border/20">
         <BookOpen size={14} className="text-primary" />
         <span className="text-xs font-medium text-text-primary">Stack Recipes</span>
-        <span className="text-[10px] text-text-muted ml-auto">{recipes.length} templates</span>
+        <span className="text-3xs text-text-muted ml-auto">{recipes.length} templates</span>
       </div>
 
       {/* Category filters */}
@@ -69,7 +69,7 @@ export function RecipePicker({ onSelect, onClose }: RecipePickerProps) {
         <button
           onClick={() => setFilter(null)}
           className={cn(
-            'px-2 py-0.5 rounded text-[10px] transition-all',
+            'px-2 py-0.5 rounded text-3xs transition-all',
             !filter ? 'bg-primary/20 text-primary' : 'text-text-muted hover:text-text-primary',
           )}
         >
@@ -82,7 +82,7 @@ export function RecipePicker({ onSelect, onClose }: RecipePickerProps) {
               key={cat}
               onClick={() => setFilter(filter === cat ? null : cat)}
               className={cn(
-                'flex items-center gap-1 px-2 py-0.5 rounded text-[10px] transition-all',
+                'flex items-center gap-1 px-2 py-0.5 rounded text-3xs transition-all',
                 filter === cat ? 'bg-primary/20 text-primary' : 'text-text-muted hover:text-text-primary',
               )}
             >
@@ -113,7 +113,7 @@ export function RecipePicker({ onSelect, onClose }: RecipePickerProps) {
                   <span className="text-xs font-medium text-text-primary">{recipe.name}</span>
                   <ChevronRight size={10} className="text-text-muted ml-auto" />
                 </div>
-                <p className="text-[10px] text-text-muted mt-1 leading-relaxed">{recipe.description}</p>
+                <p className="text-3xs text-text-muted mt-1 leading-relaxed">{recipe.description}</p>
               </button>
             );
           })}
@@ -124,7 +124,7 @@ export function RecipePicker({ onSelect, onClose }: RecipePickerProps) {
           {selectedRecipe ? (
             <>
               <div className="flex-1 overflow-y-auto p-4">
-                <pre className="text-[10px] font-mono text-text-secondary whitespace-pre-wrap leading-relaxed">
+                <pre className="text-3xs font-mono text-text-secondary whitespace-pre-wrap leading-relaxed">
                   {selectedRecipe.spec}
                 </pre>
               </div>
@@ -151,7 +151,7 @@ export function RecipePicker({ onSelect, onClose }: RecipePickerProps) {
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
                 <Layers size={24} className="text-text-muted/30 mx-auto mb-2" />
-                <p className="text-[10px] text-text-muted">Select a recipe to preview</p>
+                <p className="text-3xs text-text-muted">Select a recipe to preview</p>
               </div>
             </div>
           )}

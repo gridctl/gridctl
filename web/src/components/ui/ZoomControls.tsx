@@ -43,7 +43,7 @@ export function ZoomControls({
         disabled={isDefault}
         title="Reset font size"
         className={cn(
-          'px-1.5 py-1 text-[10px] font-mono tabular-nums transition-all duration-200 min-w-[32px] text-center',
+          'px-1.5 py-1 text-3xs font-mono tabular-nums transition-all duration-200 min-w-[32px] text-center',
           isDefault
             ? 'text-text-muted'
             : 'text-primary hover:bg-surface-highlight cursor-pointer'

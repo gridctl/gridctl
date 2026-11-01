@@ -185,7 +185,7 @@ export function DriftSection({ serverName }: { serverName: string }) {
       <div className="flex items-center gap-2">
         <LockOpen size={12} className="text-status-pending flex-shrink-0" />
         <h3 className="text-xs font-medium text-status-pending">Schema drift</h3>
-        <span className="text-[10px] text-text-muted">
+        <span className="text-3xs text-text-muted">
           {diff ? `${changeCount} ${changeCount === 1 ? 'change' : 'changes'}` : ''}
         </span>
         <div className="ml-auto flex items-center gap-0.5">
@@ -254,11 +254,11 @@ export function DriftSection({ serverName }: { serverName: string }) {
       </div>
 
       {error && (
-        <div role="alert" className="flex items-center gap-2 text-[11px] text-status-error">
+        <div role="alert" className="flex items-center gap-2 text-2xs text-status-error">
           <span className="min-w-0">{error}</span>
           <button
             onClick={reloadDiff}
-            className="flex-shrink-0 inline-flex items-center gap-1 rounded-md border border-border/40 bg-background/40 px-2 py-0.5 text-[10px] text-text-secondary hover:text-text-primary hover:border-border transition-colors"
+            className="flex-shrink-0 inline-flex items-center gap-1 rounded-md border border-border/40 bg-background/40 px-2 py-0.5 text-3xs text-text-secondary hover:text-text-primary hover:border-border transition-colors"
           >
             <RefreshCw size={10} />
             Retry
@@ -267,7 +267,7 @@ export function DriftSection({ serverName }: { serverName: string }) {
       )}
 
       {!diff && !error && (
-        <p className="flex items-center gap-2 text-[11px] text-text-muted">
+        <p className="flex items-center gap-2 text-2xs text-text-muted">
           <Loader2 size={11} className="animate-spin" />
           Comparing pinned definitions against live tools…
         </p>
@@ -288,7 +288,7 @@ export function DriftSection({ serverName }: { serverName: string }) {
           ))}
 
           {diff.new_tools.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-text-muted">
+            <div className="flex flex-wrap items-center gap-1.5 text-2xs text-text-muted">
               <Plus size={11} className="text-status-running" />
               <span>New tools (pinned on approve):</span>
               {diff.new_tools.map((n) => (
@@ -300,7 +300,7 @@ export function DriftSection({ serverName }: { serverName: string }) {
           )}
 
           {diff.removed_tools.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-text-muted">
+            <div className="flex flex-wrap items-center gap-1.5 text-2xs text-text-muted">
               <Minus size={11} className="text-status-error" />
               <span>Removed from server:</span>
               {diff.removed_tools.map((n) => (
@@ -312,7 +312,7 @@ export function DriftSection({ serverName }: { serverName: string }) {
           )}
 
           {changeCount === 0 && (
-            <p className="text-[11px] text-text-muted">
+            <p className="text-2xs text-text-muted">
               The live definitions match the pins again; approving will simply re-verify.
             </p>
           )}
@@ -419,7 +419,7 @@ function ModifiedToolCard({
             {kinds.map((k) => (
               <span
                 key={k}
-                className="text-[10px] px-1.5 py-0.5 rounded bg-status-pending/10 text-status-pending border border-status-pending/20"
+                className="text-3xs px-1.5 py-0.5 rounded bg-status-pending/10 text-status-pending border border-status-pending/20"
               >
                 {CHANGE_KIND_LABELS[k] ?? k}
               </span>
@@ -427,7 +427,7 @@ function ModifiedToolCard({
           </div>
 
           {descriptionUnchanged ? (
-            <div className="flex items-start gap-2 text-[11px]">
+            <div className="flex items-start gap-2 text-2xs">
               <span className="flex-shrink-0 font-mono text-text-muted">
                 <span title={d.old_hash}>{shortPinHash(d.old_hash)}</span> →{' '}
                 <span title={d.new_hash}>{shortPinHash(d.new_hash)}</span>
@@ -452,14 +452,14 @@ function ModifiedToolCard({
           )}
 
           {kinds.includes('schema_uncaptured') && (
-            <p className="text-[11px] text-status-pending">
+            <p className="text-2xs text-status-pending">
               Pinned before schema capture; the old schema is unavailable. Review the new schema
               before approving.
             </p>
           )}
 
           {(d.groups_rewriting?.length ?? 0) > 0 && (
-            <p className="text-[11px] text-text-muted">
+            <p className="text-2xs text-text-muted">
               Also rewritten by groups:{' '}
               {d.groups_rewriting!.map((g, i) => (
                 <span key={g}>
@@ -530,7 +530,7 @@ function DiffRow({
   tokens?: DiffToken[];
 }) {
   return (
-    <div className="flex items-start gap-2 text-[11px]">
+    <div className="flex items-start gap-2 text-2xs">
       <span
         className={cn(
           'flex-shrink-0 w-8 font-mono uppercase',
@@ -612,7 +612,7 @@ function SchemaDiffBlock({
         <button
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
-          className="flex-1 min-w-0 flex items-center gap-1.5 px-2 py-1 text-[11px] text-text-secondary hover:text-text-primary transition-colors"
+          className="flex-1 min-w-0 flex items-center gap-1.5 px-2 py-1 text-2xs text-text-secondary hover:text-text-primary transition-colors"
         >
           {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
           {label}
@@ -627,7 +627,7 @@ function SchemaDiffBlock({
         </button>
       </div>
       {open && (
-        <pre className="px-2 pb-2 text-[10px] font-mono leading-relaxed overflow-x-auto scrollbar-dark">
+        <pre className="px-2 pb-2 text-3xs font-mono leading-relaxed overflow-x-auto scrollbar-dark">
           {visible.map((line, idx) => (
             <div
               key={idx}
@@ -687,7 +687,7 @@ function SchemaBlock({
         <button
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
-          className="flex-1 min-w-0 flex items-center gap-1.5 px-2 py-1 text-[11px] text-text-secondary hover:text-text-primary transition-colors"
+          className="flex-1 min-w-0 flex items-center gap-1.5 px-2 py-1 text-2xs text-text-secondary hover:text-text-primary transition-colors"
         >
           {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
           {label}
@@ -702,7 +702,7 @@ function SchemaBlock({
         </button>
       </div>
       {open && (
-        <pre className="px-2 pb-2 text-[10px] font-mono leading-relaxed text-text-muted overflow-x-auto scrollbar-dark">
+        <pre className="px-2 pb-2 text-3xs font-mono leading-relaxed text-text-muted overflow-x-auto scrollbar-dark">
           {visible.map((line, idx) => (
             <div key={idx} className="whitespace-pre">
               {escapeNonPrintable(line)}

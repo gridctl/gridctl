@@ -61,7 +61,7 @@ export function PinsSkillDetail({ name, pin, onReset }: PinsSkillDetailProps) {
           {hasDrift ? 'Pin drift' : label}
         </span>
         <span
-          className="flex items-center gap-1 text-[11px] text-text-muted ml-auto"
+          className="flex items-center gap-1 text-2xs text-text-muted ml-auto"
           title={pin.last_verified_at || undefined}
         >
           <Clock size={10} className="text-text-muted/60" />
@@ -71,7 +71,7 @@ export function PinsSkillDetail({ name, pin, onReset }: PinsSkillDetailProps) {
         </span>
       </div>
 
-      <div className="flex items-center gap-4 text-[11px] text-text-muted flex-wrap">
+      <div className="flex items-center gap-4 text-2xs text-text-muted flex-wrap">
         {/* Origin is factual provenance, never a trust judgment. */}
         <span className="flex items-center gap-1" title={pin.origin?.commitSha || undefined}>
           <GitBranch size={10} className="text-text-muted/60" />
@@ -99,7 +99,7 @@ export function PinsSkillDetail({ name, pin, onReset }: PinsSkillDetailProps) {
 
       {!hasDrift && (pin.findings?.length ?? 0) > 0 && (
         <section className="space-y-2 max-w-3xl">
-          <h3 className="text-[10px] uppercase tracking-[0.18em] text-text-muted/70">
+          <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">
             Advisory findings on the pinned content
           </h3>
           <FindingsList findings={pin.findings} />
@@ -107,7 +107,7 @@ export function PinsSkillDetail({ name, pin, onReset }: PinsSkillDetailProps) {
       )}
 
       <section id={TOOLS_SECTION_ID} className="space-y-2 max-w-3xl">
-        <h3 className="text-[10px] uppercase tracking-[0.18em] text-text-muted/70">
+        <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">
           Pinned file digests
         </h3>
         <div className="rounded-lg border border-border/40 bg-background/60 overflow-hidden">
@@ -141,7 +141,7 @@ export function PinsSkillDetail({ name, pin, onReset }: PinsSkillDetailProps) {
       </section>
 
       <section className="pt-4 mt-2 border-t border-border/30 space-y-2 max-w-3xl">
-        <h3 className="text-[10px] uppercase tracking-[0.18em] text-status-error/70">Danger</h3>
+        <h3 className="text-3xs uppercase tracking-[0.18em] text-status-error/70">Danger</h3>
         <div className="flex items-center gap-3">
           <button
             id={RESET_BUTTON_ID}
@@ -157,7 +157,7 @@ export function PinsSkillDetail({ name, pin, onReset }: PinsSkillDetailProps) {
             <Trash2 size={11} />
             {isResetting ? 'Resetting…' : `Reset pin for ${name}`}
           </button>
-          <p className="text-[11px] text-text-muted">
+          <p className="text-2xs text-text-muted">
             Deletes the pin record; the skill re-pins on the next registry refresh.
           </p>
         </div>
@@ -269,7 +269,7 @@ function SkillDriftSection({ skillName }: { skillName: string }) {
       <div className="flex items-center gap-3 flex-wrap">
         <h3 className="text-xs font-medium text-status-pending">Pin drift</h3>
         {diff && (
-          <span className="text-[11px] text-text-muted">{driftSummary(diff, documentChanged)}</span>
+          <span className="text-2xs text-text-muted">{driftSummary(diff, documentChanged)}</span>
         )}
         <div className="ml-auto flex items-center gap-2">
           {needsReason && (
@@ -278,7 +278,7 @@ function SkillDriftSection({ skillName }: { skillName: string }) {
               onChange={(e) => setReason(e.target.value)}
               placeholder="Reason (required: advisory findings present)"
               aria-label="Approval reason"
-              className="h-6 w-64 px-2 text-[11px] rounded border border-border/40 bg-background/60 text-text-primary placeholder:text-text-muted/60"
+              className="h-6 w-64 px-2 text-2xs rounded border border-border/40 bg-background/60 text-text-primary placeholder:text-text-muted/60"
             />
           )}
           <button
@@ -291,7 +291,7 @@ function SkillDriftSection({ skillName }: { skillName: string }) {
                 ? 'Approving over unresolved advisory findings requires a reason'
                 : 'Re-pin the current content'
             }
-            className="h-6 px-2.5 text-[11px] font-medium rounded bg-status-running/15 text-status-running border border-status-running/30 hover:bg-status-running/25 transition-colors disabled:opacity-50"
+            className="h-6 px-2.5 text-2xs font-medium rounded bg-status-running/15 text-status-running border border-status-running/30 hover:bg-status-running/25 transition-colors disabled:opacity-50"
           >
             {isApproving ? 'Approving…' : 'Approve'}
           </button>
@@ -299,7 +299,7 @@ function SkillDriftSection({ skillName }: { skillName: string }) {
       </div>
 
       {loadError && (
-        <div role="alert" className="flex items-center gap-3 text-[11px] text-status-error">
+        <div role="alert" className="flex items-center gap-3 text-2xs text-status-error">
           <span>Failed to load the pin diff for {skillName}.</span>
           <button
             onClick={reloadDiff}
@@ -311,7 +311,7 @@ function SkillDriftSection({ skillName }: { skillName: string }) {
       )}
 
       {diff === null && !loadError && (
-        <p className="text-[11px] text-text-muted">Loading diff…</p>
+        <p className="text-2xs text-text-muted">Loading diff…</p>
       )}
 
       {diff && (
@@ -329,7 +329,7 @@ function SkillDriftSection({ skillName }: { skillName: string }) {
 
           {diff.findings.length > 0 && (
             <div className="space-y-1.5">
-              <h4 className="text-[10px] uppercase tracking-[0.18em] text-text-muted/70">
+              <h4 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">
                 Advisory findings on the new content
               </h4>
               <FindingsList findings={diff.findings} />
@@ -365,7 +365,7 @@ function FileChangeList({
 }) {
   if (paths.length === 0) return null;
   return (
-    <div className="text-[11px] font-mono space-y-0.5" aria-label={`${label} files`}>
+    <div className="text-2xs font-mono space-y-0.5" aria-label={`${label} files`}>
       {paths.map((p) => (
         <div key={p} className={cn('flex gap-1.5', tone)}>
           <span>{glyph}</span>
@@ -393,18 +393,18 @@ function SkillDocumentDiff({
   const shown = tokens.slice(0, MAX_DIFF_LINES);
   return (
     <div className="space-y-1">
-      <h4 className="text-[10px] uppercase tracking-[0.18em] text-text-muted/70">
+      <h4 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">
         SKILL.md ({changed} {changed === 1 ? 'line' : 'lines'} changed)
       </h4>
       <div className="rounded border border-border/40 bg-background/60 overflow-x-auto max-h-96 overflow-y-auto scrollbar-dark">
-        <pre className="text-[11px] font-mono leading-relaxed p-2 whitespace-pre-wrap break-words">
+        <pre className="text-2xs font-mono leading-relaxed p-2 whitespace-pre-wrap break-words">
           {shown.map((t, i) => (
             <DiffLine key={i} token={t} />
           ))}
         </pre>
       </div>
       {tokens.length > MAX_DIFF_LINES && (
-        <p className="text-[10px] text-text-muted">
+        <p className="text-3xs text-text-muted">
           Diff truncated at {MAX_DIFF_LINES} lines.
         </p>
       )}

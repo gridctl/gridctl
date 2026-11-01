@@ -59,7 +59,7 @@ export function PinsRail({
               onClick={() => onKindChange(k)}
               aria-pressed={kind === k}
               className={cn(
-                'h-6 px-2 text-[10px] font-medium rounded border transition-colors',
+                'h-6 px-2 text-3xs font-medium rounded border transition-colors',
                 kind === k
                   ? 'bg-primary/10 text-primary border-primary/25'
                   : 'bg-background/60 text-text-muted border-border/40 hover:text-text-secondary hover:border-border/60',
@@ -78,7 +78,7 @@ export function PinsRail({
               : `Show only ${noun}s with drift or warn-or-critical findings`
           }
           className={cn(
-            'h-6 px-2 text-[10px] font-medium rounded border transition-colors flex items-center gap-1 flex-shrink-0',
+            'h-6 px-2 text-3xs font-medium rounded border transition-colors flex items-center gap-1 flex-shrink-0',
             attentionOnly
               ? 'bg-status-pending/15 text-status-pending border-status-pending/30'
               : 'bg-background/60 text-text-muted border-border/40 hover:text-text-secondary hover:border-border/60',
@@ -115,7 +115,7 @@ export function PinsRail({
               // a source header above its member rows.
               <div
                 key={`group:${item.repo}`}
-                className="flex items-center gap-1.5 px-3 pt-2 pb-0.5 text-[10px] text-text-muted/70"
+                className="flex items-center gap-1.5 px-3 pt-2 pb-0.5 text-3xs text-text-muted/70"
                 title={`${item.count} drifted skills from this source`}
               >
                 <GitBranch size={9} />
@@ -146,10 +146,10 @@ export function PinsRail({
         {attentionOnly && visibleCount === 0 && (
           <div className="px-3 py-6 text-center space-y-2">
             <CheckCircle2 size={16} className="mx-auto text-status-running/70" />
-            <p className="text-[11px] text-text-muted">All clear: no drift or findings.</p>
+            <p className="text-2xs text-text-muted">All clear: no drift or findings.</p>
             <button
               onClick={onToggleAttention}
-              className="text-[11px] text-primary hover:underline"
+              className="text-2xs text-primary hover:underline"
             >
               Show all {totalCount} {totalCount === 1 ? noun : `${noun}s`}
             </button>
@@ -204,7 +204,7 @@ function RailRow({
         </span>
         {findingCount > 0 && (
           <span
-            className="flex-shrink-0 inline-flex items-center gap-0.5 text-[10px] text-status-pending"
+            className="flex-shrink-0 inline-flex items-center gap-0.5 text-3xs text-status-pending"
             title={`${findingCount} warn-or-critical finding${findingCount > 1 ? 's' : ''}`}
             aria-label={`${findingCount} finding${findingCount > 1 ? 's' : ''} on ${name}`}
           >
@@ -214,7 +214,7 @@ function RailRow({
         )}
         <span
           className={cn(
-            'flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded',
+            'flex-shrink-0 text-3xs px-1.5 py-0.5 rounded',
             status === 'drift'
               ? 'bg-status-pending/15 text-status-pending'
               : 'bg-surface-elevated text-text-muted',
@@ -223,7 +223,7 @@ function RailRow({
           {label}
         </span>
       </span>
-      <span className="pl-[19px] text-[10px] text-text-muted/70 truncate">{secondary}</span>
+      <span className="pl-[19px] text-3xs text-text-muted/70 truncate">{secondary}</span>
     </button>
   );
 }

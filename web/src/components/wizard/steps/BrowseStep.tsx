@@ -55,14 +55,14 @@ export function BrowseStep({ previews, selected, onSelectionChange }: BrowseStep
           <h3 className="text-sm font-medium text-text-primary">
             {previews.length} skill{previews.length !== 1 ? 's' : ''} found
           </h3>
-          <p className="text-[10px] text-text-muted">
+          <p className="text-3xs text-text-muted">
             {validCount} valid, {selected.size} selected
           </p>
         </div>
 
         <button
           onClick={toggleAll}
-          className="flex items-center gap-1.5 text-[10px] text-primary hover:text-primary/80 transition-colors px-2 py-1 rounded-lg hover:bg-primary/5"
+          className="flex items-center gap-1.5 text-3xs text-primary hover:text-primary/80 transition-colors px-2 py-1 rounded-lg hover:bg-primary/5"
         >
           {previews.filter((p) => p.valid && !p.exists).every((p) => selected.has(p.name))
             ? <CheckSquare size={12} />
@@ -124,7 +124,7 @@ export function BrowseStep({ previews, selected, onSelectionChange }: BrowseStep
                     </span>
                   </div>
                   {preview.description && (
-                    <p className="text-[10px] text-text-muted truncate mt-0.5">
+                    <p className="text-3xs text-text-muted truncate mt-0.5">
                       {preview.description}
                     </p>
                   )}
@@ -133,12 +133,12 @@ export function BrowseStep({ previews, selected, onSelectionChange }: BrowseStep
                 {/* Status badges */}
                 <div className="flex items-center gap-1 flex-shrink-0">
                   {!isValid && (
-                    <span className="text-[8px] px-1 py-0.5 rounded bg-status-error/10 text-status-error">
+                    <span className="text-3xs px-1 py-0.5 rounded bg-status-error/10 text-status-error">
                       invalid
                     </span>
                   )}
                   {isExisting && (
-                    <span className="text-[8px] px-1 py-0.5 rounded bg-primary/10 text-primary">
+                    <span className="text-3xs px-1 py-0.5 rounded bg-primary/10 text-primary">
                       exists
                     </span>
                   )}
@@ -163,23 +163,23 @@ export function BrowseStep({ previews, selected, onSelectionChange }: BrowseStep
                 </div>
                 <div className="flex items-center gap-1.5">
                   {activeSkill.valid ? (
-                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-status-running/10 text-status-running flex items-center gap-1">
+                    <span className="text-3xs px-1.5 py-0.5 rounded-full bg-status-running/10 text-status-running flex items-center gap-1">
                       <CheckCircle2 size={8} />
                       valid
                     </span>
                   ) : (
-                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-status-error/10 text-status-error flex items-center gap-1">
+                    <span className="text-3xs px-1.5 py-0.5 rounded-full bg-status-error/10 text-status-error flex items-center gap-1">
                       <AlertTriangle size={8} />
                       invalid
                     </span>
                   )}
                   {(activeSkill.findings?.length ?? 0) > 0 ? (
-                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-status-pending/10 text-status-pending flex items-center gap-1">
+                    <span className="text-3xs px-1.5 py-0.5 rounded-full bg-status-pending/10 text-status-pending flex items-center gap-1">
                       <ShieldAlert size={8} />
                       flagged
                     </span>
                   ) : (
-                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-status-running/10 text-status-running flex items-center gap-1">
+                    <span className="text-3xs px-1.5 py-0.5 rounded-full bg-status-running/10 text-status-running flex items-center gap-1">
                       <Shield size={8} />
                       safe
                     </span>
@@ -198,7 +198,7 @@ export function BrowseStep({ previews, selected, onSelectionChange }: BrowseStep
 
                 {/* Body preview */}
                 {activeSkill.body && (
-                  <pre className="text-[10px] text-text-muted font-mono bg-background/60 p-3 rounded-lg overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-48 scrollbar-dark">
+                  <pre className="text-3xs text-text-muted font-mono bg-background/60 p-3 rounded-lg overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-48 scrollbar-dark">
                     {activeSkill.body.slice(0, 2000)}
                     {activeSkill.body.length > 2000 && '\n...'}
                   </pre>
@@ -208,7 +208,7 @@ export function BrowseStep({ previews, selected, onSelectionChange }: BrowseStep
                 {(activeSkill.errors?.length ?? 0) > 0 && (
                   <DetailsSection title="Validation Errors" variant="error" defaultOpen>
                     {activeSkill.errors?.map((e, i) => (
-                      <div key={i} className="text-[10px] text-status-error py-0.5">
+                      <div key={i} className="text-3xs text-status-error py-0.5">
                         {e}
                       </div>
                     ))}
@@ -219,7 +219,7 @@ export function BrowseStep({ previews, selected, onSelectionChange }: BrowseStep
                 {(activeSkill.warnings?.length ?? 0) > 0 && (
                   <DetailsSection title="Warnings" variant="warning">
                     {activeSkill.warnings?.map((w, i) => (
-                      <div key={i} className="text-[10px] text-status-pending py-0.5">
+                      <div key={i} className="text-3xs text-status-pending py-0.5">
                         {w}
                       </div>
                     ))}
@@ -233,7 +233,7 @@ export function BrowseStep({ previews, selected, onSelectionChange }: BrowseStep
                       <div
                         key={i}
                         className={cn(
-                          'text-[10px] py-1 flex items-start gap-1.5',
+                          'text-3xs py-1 flex items-start gap-1.5',
                           f.severity === 'danger' ? 'text-status-error' : 'text-status-pending',
                         )}
                       >
@@ -284,7 +284,7 @@ function DetailsSection({
     >
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider"
+        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-3xs font-medium uppercase tracking-wider"
       >
         {open ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
         <span className={variant === 'error' ? 'text-status-error' : 'text-status-pending'}>

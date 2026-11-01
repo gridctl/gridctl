@@ -155,7 +155,7 @@ function DetachedRegistryContent() {
           </div>
           <div>
             <span className="text-sm font-semibold text-text-primary tracking-tight">Library</span>
-            <span className="text-[10px] text-text-muted uppercase tracking-wider ml-2">Agent Skills</span>
+            <span className="text-3xs text-text-muted uppercase tracking-wider ml-2">Agent Skills</span>
           </div>
         </div>
 
@@ -219,7 +219,7 @@ function DetachedRegistryContent() {
               {tab.label}
               <span
                 className={cn(
-                  'text-[10px] px-1.5 py-0 rounded-full font-mono min-w-[18px] text-center transition-colors',
+                  'text-3xs px-1.5 py-0 rounded-full font-mono min-w-[18px] text-center transition-colors',
                   activeTab === tab.key
                     ? 'bg-primary/15 text-primary'
                     : 'bg-surface-highlight text-text-muted',
@@ -260,7 +260,7 @@ function DetachedRegistryContent() {
               <BookOpen size={32} className="text-text-muted/50" />
             </div>
             <span className="text-sm">No skills registered</span>
-            <span className="text-[10px] text-text-muted">Create a SKILL.md to get started</span>
+            <span className="text-3xs text-text-muted">Create a SKILL.md to get started</span>
           </div>
         )}
 
@@ -298,7 +298,7 @@ function DetachedRegistryContent() {
       </main>
 
       {/* Status footer */}
-      <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-[10px] text-text-muted z-raised">
+      <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-3xs text-text-muted z-raised">
         <span>
           {status ? `${status.totalSkills} total` : ''}
           {status ? ` · ` : ''}

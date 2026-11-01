@@ -450,8 +450,8 @@ export function MetricsWorkspace() {
             )}
           >
             <div className="flex items-center gap-3 min-w-0">
-              <div className="font-sans text-text-muted/60 text-[10px] uppercase tracking-[0.4em]">metrics</div>
-              <div className="font-mono text-[10px] text-text-muted truncate">
+              <div className="font-sans text-text-muted/60 text-3xs uppercase tracking-[0.4em]">metrics</div>
+              <div className="font-mono text-3xs text-text-muted truncate">
                 {kpis.total > 0 || windowTotals.total > 0
                   ? `${windowLabel} · ${windowTotals.total.toLocaleString()} tokens`
                   : 'no traffic yet'}
@@ -502,7 +502,7 @@ export function MetricsWorkspace() {
                     type="button"
                     onClick={() => setSelected(null)}
                     aria-label={`Clear focus on ${focusedName}`}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/20 transition-colors"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-3xs font-medium text-primary hover:bg-primary/20 transition-colors"
                   >
                     Focused: {focusedName} <X size={10} aria-hidden="true" />
                   </button>
@@ -520,7 +520,7 @@ export function MetricsWorkspace() {
                 ) : (
                   <TokenChart data={chartData} metricsData={metricsData} />
                 )}
-                {focusNote && <p className="text-[11px] text-text-muted/70">{focusNote}</p>}
+                {focusNote && <p className="text-2xs text-text-muted/70">{focusNote}</p>}
                 <WindowEmptyNote windowTotals={windowTotals} sessionTotal={kpis.total} loaded={metricsData !== null} />
 
 
@@ -595,7 +595,7 @@ export function MetricsWorkspace() {
                         ) : (
                           // Filtered-empty is not "no usage" — the stack has
                           // tool rows, the filters just exclude them all.
-                          <div className="px-3 py-3 flex items-center gap-2 text-[11px] text-text-muted/70">
+                          <div className="px-3 py-3 flex items-center gap-2 text-2xs text-text-muted/70">
                             No tools match the current filters.
                             <button type="button" onClick={clearToolFilters} className="text-primary hover:underline">
                               Clear filters
@@ -674,7 +674,7 @@ function ScopeRail({ compact, scope, onSelectScope, clientCount, serverCount, to
   return (
     <aside aria-label="Metrics rail" className="h-full flex flex-col bg-surface border-r border-border-subtle">
       <div className={cn('flex-shrink-0 px-3 border-b border-border-subtle/60', compact ? 'py-2' : 'py-3')}>
-        <div className="text-[10px] font-medium text-text-muted/60 uppercase tracking-[0.3em]">breakdown</div>
+        <div className="text-3xs font-medium text-text-muted/60 uppercase tracking-[0.3em]">breakdown</div>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark px-2 py-2 space-y-0.5">
         <ScopePill label="Overview" icon={BarChart3} active={scope === 'overview'} onClick={() => onSelectScope('overview')} />
@@ -713,7 +713,7 @@ function ScopePill({
       {count !== undefined && (
         <span
           className={cn(
-            'flex-shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded tabular-nums',
+            'flex-shrink-0 text-3xs font-mono px-1.5 py-0.5 rounded tabular-nums',
             active ? 'bg-primary/15 text-primary' : 'bg-surface-elevated text-text-muted',
           )}
         >
@@ -729,7 +729,7 @@ function ScopePill({
 // ---------------------------------------------------------------------------
 
 function EmptyScopeNote({ text }: { text: string }) {
-  return <p className="px-3 py-3 text-[11px] text-text-muted/70 leading-relaxed">{text}</p>;
+  return <p className="px-3 py-3 text-2xs text-text-muted/70 leading-relaxed">{text}</p>;
 }
 
 function LoadingState() {

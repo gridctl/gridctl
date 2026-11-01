@@ -187,7 +187,7 @@ function PreviewView({ preview, previewError, tier, onTier, onContinue, onCancel
       <div className="space-y-3">
         <div className="flex items-start gap-2 rounded-md border border-status-error/40 bg-status-error/[0.06] px-3 py-2" role="alert">
           <AlertTriangle size={12} className="text-status-error flex-shrink-0 mt-0.5" aria-hidden="true" />
-          <p className="text-[11px] text-status-error">{previewError}</p>
+          <p className="text-2xs text-status-error">{previewError}</p>
         </div>
         <div className="flex justify-end">
           <FooterButton onClick={onCancel}>Close</FooterButton>
@@ -209,7 +209,7 @@ function PreviewView({ preview, previewError, tier, onTier, onContinue, onCancel
 
   return (
     <div className="space-y-4 text-xs">
-      <p className="font-mono text-[10px] text-text-muted">home: {preview.doc.home}</p>
+      <p className="font-mono text-3xs text-text-muted">home: {preview.doc.home}</p>
 
       <TierCards tier={tier} onTier={onTier} stats={preview.doc.purge_stats} gridctlDir={preview.confirm_phrase} />
 
@@ -232,10 +232,10 @@ function PreviewView({ preview, previewError, tier, onTier, onContinue, onCancel
               <AlertTriangle size={12} aria-hidden="true" />
               Kept: your edits are safe ({kept.length})
             </p>
-            <ul className="space-y-0.5 text-[11px] text-text-secondary">
+            <ul className="space-y-0.5 text-2xs text-text-secondary">
               {kept.map((r) => (
                 <li key={r.kind + r.name + (r.client ?? '')} className="flex items-baseline gap-2">
-                  <span className="text-[10px] px-2 py-0.5 rounded-full border font-medium whitespace-nowrap border-status-pending/30 bg-status-pending/10 text-status-pending">
+                  <span className="text-3xs px-2 py-0.5 rounded-full border font-medium whitespace-nowrap border-status-pending/30 bg-status-pending/10 text-status-pending">
                     kept (edited)
                   </span>
                   <span className="min-w-0">
@@ -258,7 +258,7 @@ function PreviewView({ preview, previewError, tier, onTier, onContinue, onCancel
           onClick={onContinue}
           disabled={removableCount === 0 && tier === 'default'}
           className={cn(
-            'rounded-md px-3 py-1.5 text-[11px] font-medium border transition-colors',
+            'rounded-md px-3 py-1.5 text-2xs font-medium border transition-colors',
             'border-status-error/40 bg-status-error/10 text-status-error hover:bg-status-error/20',
             'disabled:opacity-40 disabled:cursor-not-allowed',
           )}
@@ -358,10 +358,10 @@ function TierCard({
           className="mt-0.5 accent-current"
         />
         <span className="space-y-0.5">
-          <span className={cn('block text-[11px] font-semibold', danger ? 'text-status-error' : 'text-text-primary')}>
+          <span className={cn('block text-2xs font-semibold', danger ? 'text-status-error' : 'text-text-primary')}>
             {title}
           </span>
-          <span className="block text-[11px] leading-relaxed text-text-secondary">{children}</span>
+          <span className="block text-2xs leading-relaxed text-text-secondary">{children}</span>
         </span>
       </span>
     </label>
@@ -418,7 +418,7 @@ function ClientGroup({ name, rows }: { name: string; rows: ResetRow[] }) {
       {open && (
         <ul className="border-t border-border/20 px-3 py-1.5 space-y-0.5">
           {rows.map((r, i) => (
-            <li key={i} className="flex items-baseline gap-2 text-[11px]">
+            <li key={i} className="flex items-baseline gap-2 text-2xs">
               {/* Future tense: nothing has been deleted on the preview screen. */}
               <span className="inline-flex items-center gap-1 text-status-error">
                 <Trash2 size={10} aria-hidden="true" />
@@ -429,10 +429,10 @@ function ClientGroup({ name, rows }: { name: string; rows: ResetRow[] }) {
                     : 'will remove'}
               </span>
               <span className="text-text-secondary">{r.kind}</span>
-              <span className="font-mono text-[10px] text-text-muted truncate">{r.path || r.name}</span>
+              <span className="font-mono text-3xs text-text-muted truncate">{r.path || r.name}</span>
             </li>
           ))}
-          <li className="pt-1 text-[10px] text-text-muted">
+          <li className="pt-1 text-3xs text-text-muted">
             Everything else here is not gridctl's and will not be touched.
           </li>
         </ul>
@@ -452,7 +452,7 @@ function summarizeKinds(rows: ResetRow[]): string {
 
 function BackupNote({ purge }: { purge: boolean }) {
   return (
-    <p className="flex items-start gap-1.5 text-[10px] text-text-muted">
+    <p className="flex items-start gap-1.5 text-3xs text-text-muted">
       <Archive size={11} className="flex-shrink-0 mt-px" aria-hidden="true" />
       <span>
         A backup archive is written before anything is deleted
@@ -505,7 +505,7 @@ function ConfirmView({ preview, tier, phrase, onPhrase, onBack, onCancel, onConf
 
       {purge && (
         <div className="space-y-1.5">
-          <label htmlFor="reset-confirm-phrase" className="block text-[11px] font-medium text-status-error">
+          <label htmlFor="reset-confirm-phrase" className="block text-2xs font-medium text-status-error">
             Type {preview.confirm_phrase} to confirm permanent deletion
           </label>
           <input
@@ -517,14 +517,14 @@ function ConfirmView({ preview, tier, phrase, onPhrase, onBack, onCancel, onConf
             spellCheck={false}
             aria-describedby="reset-purge-consequences"
             className={cn(
-              'w-full rounded-md border bg-background/60 px-2.5 py-1.5 font-mono text-[11px]',
+              'w-full rounded-md border bg-background/60 px-2.5 py-1.5 font-mono text-2xs',
               'text-text-primary placeholder:text-text-muted/60 focus:outline-none focus:ring-1',
               phraseOk && phrase !== ''
                 ? 'border-status-error/60 focus:ring-status-error/50'
                 : 'border-border/40 focus:ring-primary/40',
             )}
           />
-          <p id="reset-purge-consequences" className="text-[10px] text-text-muted">
+          <p id="reset-purge-consequences" className="text-3xs text-text-muted">
             The backup archive deliberately excludes oauth tokens and daemon state; the vault is
             included as ciphertext. There is no restore command.
           </p>
@@ -543,7 +543,7 @@ function ConfirmView({ preview, tier, phrase, onPhrase, onBack, onCancel, onConf
             onClick={onConfirm}
             disabled={!phraseOk}
             className={cn(
-              'rounded-md px-3 py-1.5 text-[11px] font-medium border transition-colors',
+              'rounded-md px-3 py-1.5 text-2xs font-medium border transition-colors',
               'border-status-error/50 bg-status-error/15 text-status-error hover:bg-status-error/25',
               'disabled:opacity-40 disabled:cursor-not-allowed',
             )}
@@ -579,7 +579,7 @@ function RunningView({ tier, gridctlDir }: { tier: Tier; gridctlDir: string }) {
         <Loader2 size={13} className="animate-spin text-status-error" aria-hidden="true" />
         Resetting… this dialog stays open until the result arrives.
       </p>
-      <ul className="space-y-1 text-[11px] text-text-secondary">
+      <ul className="space-y-1 text-2xs text-text-secondary">
         {RUN_STEPS.map((step) => (
           <li key={step}>{step}</li>
         ))}
@@ -612,9 +612,9 @@ function ResultView({
       <div className="space-y-3 text-xs">
         <div className="flex items-start gap-2 rounded-md border border-status-error/40 bg-status-error/[0.06] px-3 py-2" role="alert">
           <AlertTriangle size={12} className="text-status-error flex-shrink-0 mt-0.5" aria-hidden="true" />
-          <p className="text-[11px] text-status-error">{execError ?? 'Reset failed before it could report a result.'}</p>
+          <p className="text-2xs text-status-error">{execError ?? 'Reset failed before it could report a result.'}</p>
         </div>
-        <p className="text-[10px] text-text-muted">
+        <p className="text-3xs text-text-muted">
           Nothing is removed until the backup succeeds, and reset is idempotent: fix the cause and
           run it again.
         </p>
@@ -645,14 +645,14 @@ function ResultView({
           {result.kept?.length ? ` · ${result.kept.length} kept` : ''}
         </p>
         {result.failed > 0 && (
-          <p className="text-[11px] text-text-secondary">
+          <p className="text-2xs text-text-secondary">
             Reset is idempotent; run it again to retry the failures.
           </p>
         )}
       </div>
 
       {failedRows.length > 0 && (
-        <ul className="space-y-0.5 text-[11px]">
+        <ul className="space-y-0.5 text-2xs">
           {failedRows.map((r, i) => (
             <li key={i} className="text-status-error">
               <span className="font-mono">{r.kind} {r.name}</span>
@@ -663,7 +663,7 @@ function ResultView({
       )}
 
       {result.backup_path && (
-        <p className="flex items-start gap-1.5 text-[10px] text-text-muted">
+        <p className="flex items-start gap-1.5 text-3xs text-text-muted">
           <Archive size={11} className="flex-shrink-0 mt-px" aria-hidden="true" />
           <span>
             Backup saved: <span className="font-mono">{result.backup_path}</span>. A safety copy,
@@ -672,7 +672,7 @@ function ResultView({
         </p>
       )}
 
-      <p className="text-[10px] text-text-muted">The interface will reload into the empty state.</p>
+      <p className="text-3xs text-text-muted">The interface will reload into the empty state.</p>
       <div className="flex justify-end">
         <DoneButton />
       </div>
@@ -689,7 +689,7 @@ function DoneButton() {
     <button
       type="button"
       onClick={() => pageReload.current()}
-      className="rounded-md px-3 py-1.5 text-[11px] font-medium border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+      className="rounded-md px-3 py-1.5 text-2xs font-medium border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
     >
       Done
     </button>
@@ -700,7 +700,7 @@ function DoneButton() {
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-text-primary">
+    <h3 className="mb-1.5 text-3xs font-semibold uppercase tracking-[0.2em] text-text-primary">
       {children}
     </h3>
   );
@@ -721,7 +721,7 @@ function FooterButton({
       onClick={onClick}
       // Cancel-first focus inside an alert flow is the repo's safety convention.
       autoFocus={autoFocus}
-      className="rounded-md px-3 py-1.5 text-[11px] font-medium border border-border/40 bg-background/40 text-text-secondary hover:text-text-primary hover:border-border transition-colors"
+      className="rounded-md px-3 py-1.5 text-2xs font-medium border border-border/40 bg-background/40 text-text-secondary hover:text-text-primary hover:border-border transition-colors"
     >
       {children}
     </button>

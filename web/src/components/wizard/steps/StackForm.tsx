@@ -71,7 +71,7 @@ function Section({
         <Icon size={14} className="text-primary flex-shrink-0" />
         <span className="text-xs font-medium text-text-primary">{title}</span>
         {badge && (
-          <span className="ml-auto text-[10px] text-text-muted bg-surface-highlight px-1.5 py-0.5 rounded-full">
+          <span className="ml-auto text-3xs text-text-muted bg-surface-highlight px-1.5 py-0.5 rounded-full">
             {badge}
           </span>
         )}
@@ -129,14 +129,14 @@ function KeyValueEditor({
         <button
           type="button"
           onClick={addEntry}
-          className="flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+          className="flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
         >
           <Plus size={10} />
           Add
         </button>
       </div>
       {entries.length === 0 && (
-        <p className="text-[10px] text-text-muted/60 italic py-2">No entries</p>
+        <p className="text-3xs text-text-muted/60 italic py-2">No entries</p>
       )}
       <div className="space-y-1.5">
         {entries.map(([key, val], i) => (
@@ -210,14 +210,14 @@ function StringArrayEditor({
         <button
           type="button"
           onClick={addItem}
-          className="flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+          className="flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
         >
           <Plus size={10} />
           {addLabel}
         </button>
       </div>
       {value.length === 0 && (
-        <p className="text-[10px] text-text-muted/60 italic py-2">{emptyText}</p>
+        <p className="text-3xs text-text-muted/60 italic py-2">{emptyText}</p>
       )}
       <div className="space-y-1.5">
         {value.map((item, i) => (
@@ -433,7 +433,7 @@ function ResourcePresetPicker({ onSelect }: { onSelect: (preset: ResourcePreset 
           className="flex flex-col items-center gap-1 p-2 rounded-lg border border-border-subtle bg-surface-overlay-1 hover:bg-surface-overlay-3 hover:border-border transition-all duration-200 text-center"
         >
           <Database size={12} className="text-secondary" />
-          <span className="text-[10px] text-text-primary font-medium">{preset.name}</span>
+          <span className="text-3xs text-text-primary font-medium">{preset.name}</span>
         </button>
       ))}
       <button
@@ -442,7 +442,7 @@ function ResourcePresetPicker({ onSelect }: { onSelect: (preset: ResourcePreset 
         className="flex flex-col items-center gap-1 p-2 rounded-lg border border-border-subtle bg-surface-overlay-1 hover:bg-surface-overlay-3 hover:border-border transition-all duration-200 text-center"
       >
         <Plus size={12} className="text-text-muted" />
-        <span className="text-[10px] text-text-muted font-medium">Custom</span>
+        <span className="text-3xs text-text-muted font-medium">Custom</span>
       </button>
     </div>
   );
@@ -604,7 +604,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-elevated/60 border border-border/30 text-xs text-text-muted">
               <Zap size={12} className="text-primary" />
               {data.version || '1'}
-              <span className="text-[10px] ml-auto opacity-60">locked</span>
+              <span className="text-3xs ml-auto opacity-60">locked</span>
             </div>
           </div>
         </div>
@@ -618,7 +618,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
         onToggle={() => toggleSection('gateway')}
         badge={gatewayFieldCount > 0 ? `${gatewayFieldCount}` : undefined}
       >
-        <p className="text-[10px] text-text-muted mb-2">Optional gateway configuration for the stack</p>
+        <p className="text-3xs text-text-muted mb-2">Optional gateway configuration for the stack</p>
 
         {/* Allowed Origins */}
         <StringArrayEditor
@@ -716,7 +716,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
                   placeholder="X-API-Key"
                   className={cn(inputClass, 'font-mono')}
                 />
-                <p className="text-[10px] text-text-muted mt-1">Header that carries the API key value</p>
+                <p className="text-3xs text-text-muted mt-1">Header that carries the API key value</p>
               </div>
             )}
           </div>
@@ -767,7 +767,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
       >
         {/* Tracing sub-group */}
         <div className="space-y-3">
-          <p className="text-[11px] font-medium text-text-muted uppercase tracking-wide">Tracing</p>
+          <p className="text-2xs font-medium text-text-muted uppercase tracking-wide">Tracing</p>
           <div className="flex items-center gap-3">
             <input
               type="checkbox"
@@ -786,7 +786,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
             <label htmlFor="tracing-enabled" className="text-xs text-text-secondary cursor-pointer">
               Enabled
             </label>
-            <p className="text-[10px] text-text-muted">Default: on</p>
+            <p className="text-3xs text-text-muted">Default: on</p>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
@@ -830,7 +830,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
                   })
                 }
               />
-              <p className="text-[10px] text-text-muted mt-1">e.g. 12h, 48h, 7d</p>
+              <p className="text-3xs text-text-muted mt-1">e.g. 12h, 48h, 7d</p>
             </div>
           </div>
           <div>
@@ -876,7 +876,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
 
         {/* Schema Pinning sub-group */}
         <div className="space-y-3 mt-4">
-          <p className="text-[11px] font-medium text-text-muted uppercase tracking-wide">Schema Pinning</p>
+          <p className="text-2xs font-medium text-text-muted uppercase tracking-wide">Schema Pinning</p>
           <div className="flex items-center gap-3">
             <input
               type="checkbox"
@@ -934,7 +934,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
 
         {/* Performance sub-group */}
         <div className="space-y-3 mt-4">
-          <p className="text-[11px] font-medium text-text-muted uppercase tracking-wide">Performance</p>
+          <p className="text-2xs font-medium text-text-muted uppercase tracking-wide">Performance</p>
           {data.gateway?.codeMode === 'on' && (
             <div>
               <label htmlFor={`${uid}-code-timeout`} className={labelClass}>Code Mode Timeout</label>
@@ -954,7 +954,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
                   })
                 }
               />
-              <p className="text-[10px] text-text-muted mt-1">Seconds. Default: 30</p>
+              <p className="text-3xs text-text-muted mt-1">Seconds. Default: 30</p>
             </div>
           )}
           <div>
@@ -975,7 +975,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
                 })
               }
             />
-            <p className="text-[10px] text-text-muted mt-1">Bytes. Default: 64KB (65536)</p>
+            <p className="text-3xs text-text-muted mt-1">Bytes. Default: 64KB (65536)</p>
           </div>
         </div>
       </Section>
@@ -1039,7 +1039,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
               className={cn(inputClass, 'font-mono')}
               onChange={(e) => onChange({ logging: { ...data.logging, file: e.target.value || undefined } })}
             />
-            <p className="text-[10px] text-text-muted mt-1">When set, logs are written to this file and the web UI ring buffer</p>
+            <p className="text-3xs text-text-muted mt-1">When set, logs are written to this file and the web UI ring buffer</p>
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div>
@@ -1055,7 +1055,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
                   onChange({ logging: { ...data.logging, maxSizeMB: e.target.value ? Number(e.target.value) : undefined } })
                 }
               />
-              <p className="text-[10px] text-text-muted mt-1">Default: 100</p>
+              <p className="text-3xs text-text-muted mt-1">Default: 100</p>
             </div>
             <div>
               <label htmlFor={`${uid}-max-age`} className={labelClass}>Max Age (Days)</label>
@@ -1070,7 +1070,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
                   onChange({ logging: { ...data.logging, maxAgeDays: e.target.value ? Number(e.target.value) : undefined } })
                 }
               />
-              <p className="text-[10px] text-text-muted mt-1">Default: 7</p>
+              <p className="text-3xs text-text-muted mt-1">Default: 7</p>
             </div>
             <div>
               <label htmlFor={`${uid}-max-backups`} className={labelClass}>Max Backups</label>
@@ -1085,7 +1085,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
                   onChange({ logging: { ...data.logging, maxBackups: e.target.value ? Number(e.target.value) : undefined } })
                 }
               />
-              <p className="text-[10px] text-text-muted mt-1">Default: 3</p>
+              <p className="text-3xs text-text-muted mt-1">Default: 3</p>
             </div>
           </div>
         </div>
@@ -1116,7 +1116,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
         badge={serverCount > 0 ? `${serverCount}` : undefined}
       >
         {serverCount === 0 && (
-          <p className="text-[10px] text-text-muted/60 italic py-2">No MCP servers configured</p>
+          <p className="text-3xs text-text-muted/60 italic py-2">No MCP servers configured</p>
         )}
         <div className="space-y-2">
           {(data.mcpServers ?? []).map((server, i) => (
@@ -1159,7 +1159,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
         badge={resourceCount > 0 ? `${resourceCount}` : undefined}
       >
         {resourceCount === 0 && !showResourcePresets && (
-          <p className="text-[10px] text-text-muted/60 italic py-2">No resources configured</p>
+          <p className="text-3xs text-text-muted/60 italic py-2">No resources configured</p>
         )}
         {showResourcePresets && (
           <ResourcePresetPicker onSelect={(preset) => addResource(preset)} />

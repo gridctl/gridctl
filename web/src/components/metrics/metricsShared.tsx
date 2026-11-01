@@ -25,7 +25,7 @@ import type {
 export function KPICard({ label, value, colorClass }: { label: string; value: number; colorClass: string }) {
   return (
     <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
-      <span className="text-[10px] text-text-muted uppercase tracking-wider block mb-1">{label}</span>
+      <span className="text-3xs text-text-muted uppercase tracking-wider block mb-1">{label}</span>
       <span className={cn('text-lg font-bold tabular-nums', colorClass)}>{formatCompactNumber(value)}</span>
     </div>
   );
@@ -41,7 +41,7 @@ export function SavingsKPICard({ savingsPercent, savedTokens }: { savingsPercent
   const hasSavings = savingsPercent > 0;
   return (
     <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
-      <span className="text-[10px] text-text-muted uppercase tracking-wider flex items-center gap-1 mb-1">
+      <span className="text-3xs text-text-muted uppercase tracking-wider flex items-center gap-1 mb-1">
         <Recycle size={10} className="text-text-muted/70" />
         Format Savings <span className="text-text-muted/50 normal-case tracking-normal">· session</span>
       </span>
@@ -49,7 +49,7 @@ export function SavingsKPICard({ savingsPercent, savedTokens }: { savingsPercent
         {hasSavings ? `${Math.round(savingsPercent)}%` : '—'}
       </span>
       {hasSavings && (
-        <span className="block mt-1 text-[9px] leading-snug text-text-muted/60">
+        <span className="block mt-1 text-3xs leading-snug text-text-muted/60">
           {formatCompactNumber(savedTokens)} tokens saved by output-format conversion
         </span>
       )}
@@ -78,15 +78,15 @@ export function MetricsKpiRow({
 }) {
   return (
     <div className="space-y-1.5">
-      <span className="block text-[10px] uppercase tracking-[0.18em] text-text-muted/70">{windowLabel}</span>
+      <span className="block text-3xs uppercase tracking-[0.18em] text-text-muted/70">{windowLabel}</span>
       <div className="grid gap-3 grid-cols-4">
         <KPICard label="Input Tokens" value={windowTotals.input} colorClass="text-secondary" />
         <KPICard label="Output Tokens" value={windowTotals.output} colorClass="text-primary" />
         <KPICard label="Total Tokens" value={windowTotals.total} colorClass="text-text-primary" />
         <SavingsKPICard savingsPercent={kpis.savingsPercent} savedTokens={kpis.savedTokens} />
       </div>
-      {focusLine && <p className="text-[10px] font-mono text-text-secondary">{focusLine}</p>}
-      <p className="text-[10px] font-mono text-text-muted">
+      {focusLine && <p className="text-3xs font-mono text-text-secondary">{focusLine}</p>}
+      <p className="text-3xs font-mono text-text-muted">
         Session total: {kpis.total.toLocaleString()} tokens
       </p>
     </div>
@@ -107,7 +107,7 @@ export function WindowEmptyNote({
 }) {
   if (!loaded || !windowTotals.isEmpty || sessionTotal === 0) return null;
   return (
-    <p className="text-[11px] text-text-muted/70">
+    <p className="text-2xs text-text-muted/70">
       No activity in this window. The session line above covers the full recorded history.
     </p>
   );
@@ -178,9 +178,9 @@ export function TokenChart({
   return (
     <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-[11px] font-medium text-text-secondary">{title}</span>
+        <span className="text-2xs font-medium text-text-secondary">{title}</span>
         {metricsData && (
-          <span className="text-[9px] text-text-muted font-mono">
+          <span className="text-3xs text-text-muted font-mono">
             {metricsData.data_points?.length ?? 0} points &middot; {metricsData.interval} interval
           </span>
         )}
@@ -225,7 +225,7 @@ export function PanelHeader({
     <div className="rounded-lg bg-surface-elevated/60 border border-border/30 overflow-hidden">
       <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-border/30 bg-surface-highlight/30">
         <Icon size={11} className="text-text-muted" />
-        <span className="text-[11px] font-medium text-text-secondary">{label}</span>
+        <span className="text-2xs font-medium text-text-secondary">{label}</span>
         {right && <span className="ml-auto">{right}</span>}
       </div>
       {children}
@@ -240,7 +240,7 @@ export function ViewAllButton({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="text-[10px] font-medium text-primary hover:underline"
+      className="text-3xs font-medium text-primary hover:underline"
     >
       View all
     </button>
@@ -316,7 +316,7 @@ export function ScrollableBreakdown({ children }: { children: ReactNode }) {
 export function InspectorStat({ label, value, className }: { label: string; value: string; className?: string }) {
   return (
     <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-2.5">
-      <span className="text-[9px] text-text-muted uppercase tracking-wider block mb-0.5">{label}</span>
+      <span className="text-3xs text-text-muted uppercase tracking-wider block mb-0.5">{label}</span>
       <span className={cn('text-sm font-bold tabular-nums', className)}>{value}</span>
     </div>
   );

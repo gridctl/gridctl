@@ -264,7 +264,7 @@ function SourceOptions({
             onChange={() => onChoice(opt.value)}
           />
           <span className="text-sm text-text-primary whitespace-nowrap">{opt.label}</span>
-          <span className={cn('text-[11px] text-text-muted truncate min-w-0 flex-1', opt.mono && 'font-mono')}>
+          <span className={cn('text-2xs text-text-muted truncate min-w-0 flex-1', opt.mono && 'font-mono')}>
             {opt.hint}
           </span>
         </label>
@@ -555,7 +555,7 @@ function EditorView({
       {/* Action header */}
       <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border/30 flex-shrink-0">
         <span
-          className="text-[11px] text-text-muted font-mono truncate min-w-0"
+          className="text-2xs text-text-muted font-mono truncate min-w-0"
           title={doc.canonical.path}
         >
           {doc.canonical.path}
@@ -807,9 +807,9 @@ function ClientsStrip({
         )}
         <MonitorSmartphone size={13} className="text-text-muted/70 flex-shrink-0" aria-hidden="true" />
         <span className="text-xs text-text-muted uppercase tracking-wider">Clients</span>
-        <span className="text-[11px] text-text-muted/80 truncate">{summary}</span>
+        <span className="text-2xs text-text-muted/80 truncate">{summary}</span>
         {needsAttention && !expanded && (
-          <span className="flex-shrink-0 text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-pending/30 bg-status-pending/10 text-status-pending">
+          <span className="flex-shrink-0 text-3xs font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-pending/30 bg-status-pending/10 text-status-pending">
             Needs attention
           </span>
         )}
@@ -894,7 +894,7 @@ function ClientRow({
       {c.mode && (
         <span
           title="How this client receives the context in fragments mode"
-          className="text-[10px] px-1.5 py-0.5 rounded border border-border/40 bg-background/40 text-text-muted font-mono whitespace-nowrap"
+          className="text-3xs px-1.5 py-0.5 rounded border border-border/40 bg-background/40 text-text-muted font-mono whitespace-nowrap"
         >
           {c.mode}
         </span>
@@ -903,14 +903,14 @@ function ClientRow({
         {c.name}
         {c.unofficial && c.supported && (
           <span
-            className="ml-1 text-[10px] text-text-secondary"
+            className="ml-1 text-3xs text-text-secondary"
             title="Path sourced unofficially; it may move without an upstream release note"
           >
             (unofficial path)
           </span>
         )}
       </span>
-      <span className="text-[11px] text-text-muted font-mono truncate flex-1" title={c.target_path ?? c.detail}>
+      <span className="text-2xs text-text-muted font-mono truncate flex-1" title={c.target_path ?? c.detail}>
         {c.supported ? c.target_path : c.detail}
         {c.supported && !c.available && c.state === 'never-synced' && ' (client not detected)'}
       </span>
@@ -967,7 +967,7 @@ function FragmentStatusLine({
   return (
     <li className="flex items-center gap-2">
       <StatePill state={f.state} />
-      <span className="text-[11px] text-text-secondary font-mono truncate flex-1">{f.name}</span>
+      <span className="text-2xs text-text-secondary font-mono truncate flex-1">{f.name}</span>
       {f.pack && (
         // Static inside the modal: navigating under an open dialog would
         // change the route invisibly, so provenance here is display only.
@@ -1002,7 +1002,7 @@ function ClientAction({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'px-2 py-0.5 rounded-md text-[11px] font-medium border transition-colors disabled:opacity-50',
+        'px-2 py-0.5 rounded-md text-2xs font-medium border transition-colors disabled:opacity-50',
         subtle
           ? 'text-text-muted border-border/40 hover:bg-surface-highlight'
           : 'text-primary border-primary/25 hover:bg-primary/10',
@@ -1078,7 +1078,7 @@ function DriftResolveDialog({
           edit to make it the new canon, or overwrite the client to restore the canon. A
           timestamped backup precedes every write.
         </p>
-        <pre className="text-[11px] font-mono bg-background/60 border border-border/30 rounded-lg p-3 overflow-x-auto max-h-72 overflow-y-auto scrollbar-dark whitespace-pre">
+        <pre className="text-2xs font-mono bg-background/60 border border-border/30 rounded-lg p-3 overflow-x-auto max-h-72 overflow-y-auto scrollbar-dark whitespace-pre">
           {diff ?? 'Loading diff…'}
         </pre>
         <div className="flex items-center justify-end gap-2">
@@ -1209,7 +1209,7 @@ function FragmentDriftResolveDialog({
                   )}
                 >
                   <StatePill state={f.state} />
-                  <span className="text-[11px] font-mono text-text-primary truncate">{f.name}</span>
+                  <span className="text-2xs font-mono text-text-primary truncate">{f.name}</span>
                 </button>
               </li>
             ))}
@@ -1243,7 +1243,7 @@ function FragmentDriftResolveDialog({
               canon. A timestamped backup precedes every write.
             </p>
           )}
-          <pre className="text-[11px] font-mono bg-background/60 border border-border/30 rounded-lg p-3 overflow-x-auto max-h-72 overflow-y-auto scrollbar-dark whitespace-pre">
+          <pre className="text-2xs font-mono bg-background/60 border border-border/30 rounded-lg p-3 overflow-x-auto max-h-72 overflow-y-auto scrollbar-dark whitespace-pre">
             {diff ?? 'Loading diff…'}
           </pre>
           {multiFile ? (
@@ -1284,7 +1284,7 @@ function FragmentDriftResolveDialog({
             />
           )}
           {multiFile && (
-            <p className="text-[11px] text-text-muted">
+            <p className="text-2xs text-text-muted">
               Force overwrite rewrites every projected fragment from the canonical store;
               fragments you did not touch rewrite identically.
             </p>
@@ -1331,14 +1331,14 @@ function CompiledCaptureActions({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2 flex-wrap">
-        <label htmlFor="capture-fragment" className="text-[11px] text-text-muted">
+        <label htmlFor="capture-fragment" className="text-2xs text-text-muted">
           Capture into
         </label>
         <select
           id="capture-fragment"
           value={choice}
           onChange={(e) => setChoice(e.target.value)}
-          className="bg-background/60 border border-border/40 rounded-lg px-2 py-1.5 text-[11px] font-mono text-text-primary focus:outline-none focus:border-primary/50"
+          className="bg-background/60 border border-border/40 rounded-lg px-2 py-1.5 text-2xs font-mono text-text-primary focus:outline-none focus:border-primary/50"
         >
           {fragmentNames.map((n) => (
             <option key={n} value={n}>
@@ -1353,12 +1353,12 @@ function CompiledCaptureActions({
             onChange={(e) => setNewName(e.target.value)}
             placeholder="captured-from-client"
             aria-label="New capture fragment name"
-            className="flex-1 min-w-32 bg-background/60 border border-border/40 rounded-lg px-2 py-1.5 text-[11px] font-mono text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50"
+            className="flex-1 min-w-32 bg-background/60 border border-border/40 rounded-lg px-2 py-1.5 text-2xs font-mono text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50"
           />
         )}
       </div>
       {isNew && newName && !valid && (
-        <p className="text-[11px] text-status-error">
+        <p className="text-2xs text-status-error">
           Lowercase letters, digits, and hyphens only.
         </p>
       )}
@@ -1463,7 +1463,7 @@ function SplitIntoFragmentsDialog({ dirty, onClose }: { dirty: boolean; onClose:
           className="bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50"
         />
         {name && !valid && (
-          <p className="text-[11px] text-status-error">
+          <p className="text-2xs text-status-error">
             Lowercase letters, digits, and hyphens only.
           </p>
         )}
@@ -1721,7 +1721,7 @@ function FragmentsView({
     <div className="flex flex-col h-[calc(100%+2rem)] -mx-6 -my-4">
       {/* Action header */}
       <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border/30 flex-shrink-0">
-        <span className="text-[11px] text-text-muted font-mono truncate min-w-0" title={fragmentPath}>
+        <span className="text-2xs text-text-muted font-mono truncate min-w-0" title={fragmentPath}>
           {fragmentPath}
         </span>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -1972,10 +1972,10 @@ function FragmentRail({
   return (
     <div className="w-60 flex-shrink-0 border-r border-border/30 flex flex-col min-h-0">
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/20 flex-shrink-0">
-        <span className="text-[10px] text-text-muted uppercase tracking-wider">Fragments</span>
+        <span className="text-3xs text-text-muted uppercase tracking-wider">Fragments</span>
         <button
           onClick={() => setShowNew((s) => !s)}
-          className="text-[10px] text-primary hover:text-primary/80 flex items-center gap-0.5 transition-colors"
+          className="text-3xs text-primary hover:text-primary/80 flex items-center gap-0.5 transition-colors"
         >
           <Plus size={10} /> Add
         </button>
@@ -1988,12 +1988,12 @@ function FragmentRail({
             onKeyDown={(e) => e.key === 'Enter' && submitNew()}
             placeholder="10-style"
             aria-label="New fragment name"
-            className="flex-1 min-w-0 bg-background/60 border border-border/40 rounded px-2 py-1 text-[10px] font-mono text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-primary/50"
+            className="flex-1 min-w-0 bg-background/60 border border-border/40 rounded px-2 py-1 text-3xs font-mono text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-primary/50"
           />
           <button
             onClick={submitNew}
             disabled={!valid}
-            className="px-2 py-1 text-[10px] text-primary bg-primary/10 rounded hover:bg-primary/20 transition-colors disabled:opacity-50"
+            className="px-2 py-1 text-3xs text-primary bg-primary/10 rounded hover:bg-primary/20 transition-colors disabled:opacity-50"
           >
             Create
           </button>
@@ -2001,9 +2001,9 @@ function FragmentRail({
       )}
       <div className="flex-1 overflow-y-auto scrollbar-dark py-1">
         {fragments === null ? (
-          <p className="text-[10px] text-text-muted px-3 py-2">Loading fragments…</p>
+          <p className="text-3xs text-text-muted px-3 py-2">Loading fragments…</p>
         ) : fragments.length === 0 ? (
-          <p className="text-[10px] text-text-muted px-3 py-2 italic">No fragments yet</p>
+          <p className="text-3xs text-text-muted px-3 py-2 italic">No fragments yet</p>
         ) : (
           fragments.map((f) => (
             <div
@@ -2021,7 +2021,7 @@ function FragmentRail({
                 onClick={() => onSelect(f.name)}
                 title={f.description || f.name}
                 className={cn(
-                  'text-[11px] font-mono flex-1 text-left truncate transition-colors',
+                  'text-2xs font-mono flex-1 text-left truncate transition-colors',
                   selected === f.name ? 'text-primary' : 'text-text-secondary hover:text-primary',
                 )}
               >
@@ -2038,12 +2038,12 @@ function FragmentRail({
               {(f.paths ?? []).length > 0 && (
                 <span
                   title={`paths: ${(f.paths ?? []).join(', ')}`}
-                  className="text-[9px] px-1 py-0.5 rounded border border-border/40 text-text-muted font-mono flex-shrink-0"
+                  className="text-3xs px-1 py-0.5 rounded border border-border/40 text-text-muted font-mono flex-shrink-0"
                 >
                   globs
                 </span>
               )}
-              <span className="text-[10px] text-text-muted font-mono flex-shrink-0">{f.bytes}B</span>
+              <span className="text-3xs text-text-muted font-mono flex-shrink-0">{f.bytes}B</span>
               <button
                 type="button"
                 onClick={() => onDelete(f.name)}

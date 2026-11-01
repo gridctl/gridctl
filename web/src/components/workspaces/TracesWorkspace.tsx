@@ -117,7 +117,7 @@ export function TracesWorkspace() {
             controls="traces-tabpanel"
             onSelect={selectTraces}
             className={cn(
-              'font-sans text-[10px] uppercase tracking-[0.4em] px-2 py-1 rounded border-b-0 border-transparent mb-0',
+              'font-sans text-3xs uppercase tracking-[0.4em] px-2 py-1 rounded border-b-0 border-transparent mb-0',
               view === 'traces' ? 'text-primary' : 'text-text-muted/60',
             )}
           >
@@ -129,14 +129,14 @@ export function TracesWorkspace() {
             controls="traces-tabpanel"
             onSelect={selectRuns}
             className={cn(
-              'font-sans text-[10px] uppercase tracking-[0.4em] px-2 py-1 rounded border-b-0 border-transparent mb-0',
+              'font-sans text-3xs uppercase tracking-[0.4em] px-2 py-1 rounded border-b-0 border-transparent mb-0',
               view === 'runs' ? 'text-primary' : 'text-text-muted/60',
             )}
           >
             runs
           </Tab>
         </Tabs>
-        <div className="font-mono text-[10px] text-text-muted truncate">
+        <div className="font-mono text-3xs text-text-muted truncate">
           {view === 'runs'
             ? `${runCount} dispatch record${runCount === 1 ? '' : 's'}${runPartial ? ' (partial)' : ''}`
             : selectedTraceId

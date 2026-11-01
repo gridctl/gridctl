@@ -15,22 +15,22 @@ export function Badges({ client }: { client: ClientStatus }) {
   return (
     <span className="flex items-center gap-1">
       {client.linked && (
-        <span className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-status-running/15 text-status-running">
+        <span className="text-3xs uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-status-running/15 text-status-running">
           Linked
         </span>
       )}
       {client.declared && (
-        <span className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-primary/15 text-primary">
+        <span className="text-3xs uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-primary/15 text-primary">
           Declared
         </span>
       )}
       {client.drifted && (
-        <span className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-status-pending/15 text-status-pending">
+        <span className="text-3xs uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-status-pending/15 text-status-pending">
           Drifted
         </span>
       )}
       {client.detected && !client.linked && (
-        <span className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-surface-elevated text-text-muted">
+        <span className="text-3xs uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-surface-elevated text-text-muted">
           Detected
         </span>
       )}
@@ -115,7 +115,7 @@ export function ConnectionsRail({
   return (
     <aside aria-label="Connections rail" className="h-full flex flex-col bg-surface border-r border-border-subtle">
       <div className="flex-shrink-0 px-3 py-3 border-b border-border-subtle/60 flex items-center justify-between gap-2">
-        <span className="text-[10px] font-medium uppercase tracking-[0.3em] text-text-muted">
+        <span className="text-3xs font-medium uppercase tracking-[0.3em] text-text-muted">
           Clients
         </span>
         <button
@@ -127,7 +127,7 @@ export function ConnectionsRail({
               : 'Show only clients with wiring, context, or agent drift'
           }
           className={cn(
-            'h-6 px-2 text-[10px] font-medium rounded border transition-colors flex items-center gap-1 flex-shrink-0',
+            'h-6 px-2 text-3xs font-medium rounded border transition-colors flex items-center gap-1 flex-shrink-0',
             attentionOnly
               ? 'bg-status-pending/15 text-status-pending border-status-pending/30'
               : 'bg-background/60 text-text-muted border-border/40 hover:text-text-secondary hover:border-border/60',
@@ -210,8 +210,8 @@ export function ConnectionsRail({
         {attentionOnly && clients.length === 0 && (
           <div className="px-3 py-6 text-center space-y-2">
             <CheckCircle2 size={16} className="mx-auto text-status-running/70" />
-            <p className="text-[11px] text-text-muted">All clear: no wiring, context, or agent drift.</p>
-            <button onClick={onToggleAttention} className="text-[11px] text-primary hover:underline">
+            <p className="text-2xs text-text-muted">All clear: no wiring, context, or agent drift.</p>
+            <button onClick={onToggleAttention} className="text-2xs text-primary hover:underline">
               Show all {totalCount} {totalCount === 1 ? 'client' : 'clients'}
             </button>
           </div>

@@ -219,7 +219,7 @@ export function SkillImportWizard() {
           <div key={label} className="flex items-center gap-2">
             <div
               className={cn(
-                'flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold transition-all',
+                'flex items-center justify-center w-5 h-5 rounded-full text-3xs font-bold transition-all',
                 i === stepIdx
                   ? 'bg-primary text-background'
                   : i < stepIdx
@@ -231,7 +231,7 @@ export function SkillImportWizard() {
             </div>
             <span
               className={cn(
-                'text-[10px] tracking-wider uppercase',
+                'text-3xs tracking-wider uppercase',
                 i === stepIdx ? 'text-text-primary font-medium' : 'text-text-muted',
               )}
             >
@@ -375,7 +375,7 @@ function ConfigureStep({
     <div className="space-y-2">
       <div className="mb-3">
         <h3 className="text-sm font-medium text-text-primary">Configure Skills</h3>
-        <p className="text-[10px] text-text-muted mt-0.5">
+        <p className="text-3xs text-text-muted mt-0.5">
           Review settings before installing
         </p>
       </div>
@@ -398,13 +398,13 @@ function ConfigureStep({
                 {preview.name}
               </span>
               {hasFindings && (
-                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-status-pending/10 text-status-pending flex items-center gap-1">
+                <span className="text-3xs px-1.5 py-0.5 rounded-full bg-status-pending/10 text-status-pending flex items-center gap-1">
                   <AlertTriangle size={8} />
                   {preview.findings?.length} finding{(preview.findings?.length ?? 0) !== 1 ? 's' : ''}
                 </span>
               )}
               {preview.exists && (
-                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
+                <span className="text-3xs px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
                   exists
                 </span>
               )}
@@ -426,12 +426,12 @@ function ConfigureStep({
                 {/* Security findings */}
                 {hasFindings && (
                   <div className="space-y-1">
-                    <span className="text-[10px] text-text-muted uppercase tracking-wider">Security Findings</span>
+                    <span className="text-3xs text-text-muted uppercase tracking-wider">Security Findings</span>
                     {preview.findings?.map((f, i) => (
                       <div
                         key={i}
                         className={cn(
-                          'text-[10px] px-2 py-1.5 rounded-lg flex items-start gap-1.5',
+                          'text-3xs px-2 py-1.5 rounded-lg flex items-start gap-1.5',
                           f.severity === 'danger'
                             ? 'bg-status-error/10 text-status-error'
                             : 'bg-status-pending/10 text-status-pending',
@@ -476,7 +476,7 @@ function AgentsBrowseSection({
     <div className="mt-4 space-y-2">
       <div>
         <h3 className="text-sm font-medium text-text-primary">Agents</h3>
-        <p className="text-[10px] text-text-muted mt-0.5">
+        <p className="text-3xs text-text-muted mt-0.5">
           Subagent definitions found under agents/*.md; projected to client agent directories
         </p>
       </div>
@@ -498,22 +498,22 @@ function AgentsBrowseSection({
               <span className="flex items-center gap-2">
                 <span className="text-xs font-medium text-text-primary">{a.name}</span>
                 {findingsCount > 0 && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-status-pending/10 text-status-pending flex items-center gap-1">
+                  <span className="text-3xs px-1.5 py-0.5 rounded-full bg-status-pending/10 text-status-pending flex items-center gap-1">
                     <AlertTriangle size={8} />
                     {findingsCount} finding{findingsCount !== 1 ? 's' : ''}
                   </span>
                 )}
                 {a.exists && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
+                  <span className="text-3xs px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
                     exists
                   </span>
                 )}
               </span>
-              <span className="block text-[10px] text-text-muted mt-0.5 truncate">
+              <span className="block text-3xs text-text-muted mt-0.5 truncate">
                 {a.description}
               </span>
               {!a.valid && a.errors && a.errors.length > 0 && (
-                <span className="block text-[10px] text-status-error mt-0.5">{a.errors[0]}</span>
+                <span className="block text-3xs text-status-error mt-0.5">{a.errors[0]}</span>
               )}
               {/* Finding descriptions render inline: selecting a flagged
                   agent grants trust for the import, so the user must be
@@ -522,7 +522,7 @@ function AgentsBrowseSection({
                 <span
                   key={i}
                   className={cn(
-                    'mt-1 text-[10px] px-2 py-1 rounded-lg flex items-start gap-1.5',
+                    'mt-1 text-3xs px-2 py-1 rounded-lg flex items-start gap-1.5',
                     f.severity === 'danger'
                       ? 'bg-status-error/10 text-status-error'
                       : 'bg-status-pending/10 text-status-pending',
@@ -564,7 +564,7 @@ function InstallStep({
           <div className="absolute inset-0 rounded-full border-2 border-primary/30 animate-ping" />
         </div>
         <h3 className="text-sm font-medium text-text-primary mb-1">Importing...</h3>
-        <p className="text-[10px] text-text-muted">Cloning repository and validating its contents</p>
+        <p className="text-3xs text-text-muted">Cloning repository and validating its contents</p>
       </div>
     );
   }
@@ -600,7 +600,7 @@ function InstallStep({
         <h3 className="text-sm font-medium text-text-primary">
           {allSucceeded ? 'Import Complete' : totalImported > 0 ? 'Partially Imported' : 'Import Failed'}
         </h3>
-        <p className="text-[10px] text-text-muted mt-0.5">
+        <p className="text-3xs text-text-muted mt-0.5">
           {[
             `${result.imported.length} skill${result.imported.length !== 1 ? 's' : ''}`,
             result.importedAgents.length > 0
@@ -616,7 +616,7 @@ function InstallStep({
       {/* Imported skills */}
       {result.imported.length > 0 && (
         <div className="space-y-1">
-          <span className="text-[10px] text-text-muted uppercase tracking-wider px-1">Imported skills</span>
+          <span className="text-3xs text-text-muted uppercase tracking-wider px-1">Imported skills</span>
           {result.imported.map((name) => (
             <div
               key={name}
@@ -632,7 +632,7 @@ function InstallStep({
       {/* Imported agents, named individually */}
       {result.importedAgents.length > 0 && (
         <div className="space-y-1">
-          <span className="text-[10px] text-text-muted uppercase tracking-wider px-1">Imported agents</span>
+          <span className="text-3xs text-text-muted uppercase tracking-wider px-1">Imported agents</span>
           {result.importedAgents.map((name) => (
             <div
               key={name}
@@ -649,7 +649,7 @@ function InstallStep({
           agents are separate namespaces, so one name can appear in both. */}
       {totalSkipped > 0 && (
         <div className="space-y-1">
-          <span className="text-[10px] text-text-muted uppercase tracking-wider px-1">Skipped</span>
+          <span className="text-3xs text-text-muted uppercase tracking-wider px-1">Skipped</span>
           {[
             ...result.skipped.map((s) => ({ ...s, key: `skill-${s.name}` })),
             ...result.skippedAgents.map((s) => ({ ...s, key: `agent-${s.name}` })),
@@ -661,7 +661,7 @@ function InstallStep({
               <AlertTriangle size={12} className="text-status-pending flex-shrink-0 mt-0.5" />
               <div>
                 <span className="text-xs text-text-primary font-medium">{s.name}</span>
-                <p className="text-[10px] text-text-muted mt-0.5">{s.reason}</p>
+                <p className="text-3xs text-text-muted mt-0.5">{s.reason}</p>
               </div>
             </div>
           ))}
@@ -671,11 +671,11 @@ function InstallStep({
       {/* Warnings */}
       {result.warnings.length > 0 && (
         <div className="space-y-1">
-          <span className="text-[10px] text-text-muted uppercase tracking-wider px-1">Warnings</span>
+          <span className="text-3xs text-text-muted uppercase tracking-wider px-1">Warnings</span>
           {result.warnings.map((w, i) => (
             <div
               key={i}
-              className="text-[10px] px-3 py-2 rounded-lg bg-status-pending/5 text-status-pending"
+              className="text-3xs px-3 py-2 rounded-lg bg-status-pending/5 text-status-pending"
             >
               {w}
             </div>

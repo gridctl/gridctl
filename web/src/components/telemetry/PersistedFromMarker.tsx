@@ -54,7 +54,7 @@ export function PersistedFromMarker({ serverName, signal }: Props) {
   if (!date) return null;
 
   return (
-    <div className="px-3 py-1.5 flex items-center gap-2 text-[10px] text-text-muted/80 font-mono select-none">
+    <div className="px-3 py-1.5 flex items-center gap-2 text-3xs text-text-muted/80 font-mono select-none">
       <span aria-hidden className="flex-1 h-px bg-border-subtle" />
       <span>── persisted from {formatDateOnly(date)} ──</span>
       <span aria-hidden className="flex-1 h-px bg-border-subtle" />

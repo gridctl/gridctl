@@ -247,7 +247,7 @@ function Section({
         <Icon size={14} className="text-primary flex-shrink-0" />
         <span className="text-xs font-medium text-text-primary">{title}</span>
         {badge && (
-          <span className="ml-auto text-[10px] text-text-muted bg-surface-highlight px-1.5 py-0.5 rounded-full">
+          <span className="ml-auto text-3xs text-text-muted bg-surface-highlight px-1.5 py-0.5 rounded-full">
             {badge}
           </span>
         )}
@@ -286,7 +286,7 @@ function CustomHeadersEditor({
         placeholder={{ key: 'X-Tenant', value: '${var:TENANT}' }}
         showSecrets
       />
-      <p className="text-[10px] text-text-muted mt-1">Use a ${'{'}var:KEY{'}'} reference. Values are treated as sensitive.</p>
+      <p className="text-3xs text-text-muted mt-1">Use a ${'{'}var:KEY{'}'} reference. Values are treated as sensitive.</p>
       {Object.entries(rowErrors).map(([name, message]) => (
         <FieldError key={name} error={`${name}: ${message}`} />
       ))}
@@ -340,14 +340,14 @@ function KeyValueEditor({
         <button
           type="button"
           onClick={addEntry}
-          className="flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+          className="flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
         >
           <Plus size={10} />
           Add
         </button>
       </div>
       {entries.length === 0 && (
-        <p className="text-[10px] text-text-muted/60 italic py-2">No entries</p>
+        <p className="text-3xs text-text-muted/60 italic py-2">No entries</p>
       )}
       <div className="space-y-1.5">
         {entries.map(([key, val], i) => (
@@ -417,19 +417,19 @@ function CommandArrayBuilder({
         <button
           type="button"
           onClick={addItem}
-          className="flex items-center gap-1 text-[10px] text-secondary hover:text-secondary-light transition-colors"
+          className="flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
         >
           <Plus size={10} />
           Add argument
         </button>
       </div>
       {value.length === 0 && (
-        <p className="text-[10px] text-text-muted/60 italic py-2">No command specified</p>
+        <p className="text-3xs text-text-muted/60 italic py-2">No command specified</p>
       )}
       <div className="space-y-1.5">
         {value.map((item, i) => (
           <div key={i} className="flex items-center gap-1.5">
-            <span className="text-[10px] text-text-muted w-4 text-right flex-shrink-0">{i === 0 ? '$' : ''}</span>
+            <span className="text-3xs text-text-muted w-4 text-right flex-shrink-0">{i === 0 ? '$' : ''}</span>
             <input
               type="text"
               value={item}
@@ -580,7 +580,7 @@ function PythonSourceFields({
               <div>
                 <label htmlFor="source-ref" className={labelClass}>Ref</label>
                 <input id="source-ref" value={source.ref ?? ''} onChange={(event) => updateSource({ ref: event.target.value })} placeholder="main" className={cn(inputClass, 'font-mono')} />
-                {(!source.ref || !/^[0-9a-f]{40}$/i.test(source.ref)) && <p className="text-[10px] text-status-pending mt-1">This ref resembles a mutable branch. Review will show the resolved commit.</p>}
+                {(!source.ref || !/^[0-9a-f]{40}$/i.test(source.ref)) && <p className="text-3xs text-status-pending mt-1">This ref resembles a mutable branch. Review will show the resolved commit.</p>}
               </div>
               <SourceAuthField value={source.auth?.credentialRef} onChange={(credentialRef) => updateSource({ auth: credentialRef ? { method: 'token', credentialRef } : undefined })} />
             </>
@@ -611,7 +611,7 @@ function PythonSourceFields({
               >Generated Python</button>
             </div>
             {!generated && (
-              <p className="text-[10px] text-text-muted mt-1">
+              <p className="text-3xs text-text-muted mt-1">
                 Custom Dockerfiles can derive from Gridctl&apos;s Python runtime base. That image is a foundation, not a ready MCP server. Keep stdio explicit, pin a tested digest, and do not replace Generated Python 3.10-3.13 automatically. See docs/mcp-runtime-python.md.
               </p>
             )}
@@ -657,7 +657,7 @@ function PythonSourceFields({
         </details>
       )}
 
-      {generated && <p className="text-[10px] text-text-muted">The first apply builds an image. Later applies reuse it while all build inputs stay unchanged.</p>}
+      {generated && <p className="text-3xs text-text-muted">The first apply builds an image. Later applies reuse it while all build inputs stay unchanged.</p>}
     </div>
   );
 }
@@ -772,10 +772,10 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                     isSelected ? 'text-primary' : 'text-text-muted group-hover:text-text-secondary',
                   )}
                 />
-                <span className={cn('text-[11px] font-medium', isSelected ? 'text-primary' : 'text-text-primary')}>
+                <span className={cn('text-2xs font-medium', isSelected ? 'text-primary' : 'text-text-primary')}>
                   {opt.label}
                 </span>
-                <span className="text-[9px] text-text-muted leading-tight mt-0.5 line-clamp-2">
+                <span className="text-3xs text-text-muted leading-tight mt-0.5 line-clamp-2">
                   {opt.description}
                 </span>
               </button>
@@ -853,10 +853,10 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
               </div>
               <FieldError id={`${uid}-url-error`} error={errors?.url} />
               {cardDetect.error && (
-                <p className="text-[10px] text-status-error mt-1">{cardDetect.error.message}</p>
+                <p className="text-3xs text-status-error mt-1">{cardDetect.error.message}</p>
               )}
               {cardInputs.length > 0 && (
-                <ul className="mt-1 space-y-0.5 text-[10px] text-text-muted">
+                <ul className="mt-1 space-y-0.5 text-3xs text-text-muted">
                   {cardInputs.map((input) => (
                     <li key={input.name}>
                       {input.name}
@@ -972,7 +972,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                   placeholder="~/.ssh/known_hosts"
                   className={cn(inputClass, 'font-mono')}
                 />
-                <p className="text-[10px] text-text-muted mt-1">Optional — enables StrictHostKeyChecking=yes</p>
+                <p className="text-3xs text-text-muted mt-1">Optional — enables StrictHostKeyChecking=yes</p>
               </div>
               <div>
                 <label htmlFor={`${uid}-jump-host`} className={labelClass}>Jump Host</label>
@@ -993,7 +993,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                   placeholder="[user@]bastion.example.com[:22]"
                   className={cn(inputClass, 'font-mono')}
                 />
-                <p className="text-[10px] text-text-muted mt-1">Optional — bastion/jump host for multi-hop SSH</p>
+                <p className="text-3xs text-text-muted mt-1">Optional — bastion/jump host for multi-hop SSH</p>
               </div>
             </div>
           )}
@@ -1253,7 +1253,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                       placeholder="read:data write:data"
                       className={inputClass}
                     />
-                    <p className="text-[10px] text-text-muted mt-1">Space or comma-separated</p>
+                    <p className="text-3xs text-text-muted mt-1">Space or comma-separated</p>
                   </div>
                 </div>
               )}
@@ -1399,9 +1399,9 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                 <div>
                   <label htmlFor="insecureSkipVerify" className="text-xs text-text-secondary cursor-pointer">
                     Skip TLS Verification
-                    <span className="ml-2 text-[10px] text-status-error font-medium">Dangerous — dev only</span>
+                    <span className="ml-2 text-3xs text-status-error font-medium">Dangerous — dev only</span>
                   </label>
-                  <p className="text-[10px] text-text-muted mt-0.5">Disables certificate validation. Never use in production.</p>
+                  <p className="text-3xs text-text-muted mt-0.5">Disables certificate validation. Never use in production.</p>
                 </div>
               </div>
             </Section>
@@ -1425,7 +1425,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                     <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-elevated/60 border border-border/30 text-xs text-text-muted">
                       <Zap size={12} className="text-primary" />
                       {typeOption.transportDefault || 'N/A'}
-                      <span className="text-[10px] ml-auto opacity-60">locked</span>
+                      <span className="text-3xs ml-auto opacity-60">locked</span>
                     </div>
                   ) : (
                     <select
@@ -1578,7 +1578,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
               placeholder="./data:/data:ro"
               className={cn(inputClass, 'font-mono')}
             />
-            <p className="text-[10px] text-text-muted mt-1">Comma-separated host:container[:mode] mounts; ./ and ../ are relative to the stack file</p>
+            <p className="text-3xs text-text-muted mt-1">Comma-separated host:container[:mode] mounts; ./ and ../ are relative to the stack file</p>
           </div>
         )}
 
@@ -1597,7 +1597,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
             <option value="true">Enable</option>
             <option value="false">Disable</option>
           </select>
-          <p className="text-[10px] text-text-muted mt-1">Override the gateway-level schema pinning setting for this server</p>
+          <p className="text-3xs text-text-muted mt-1">Override the gateway-level schema pinning setting for this server</p>
         </div>
 
         {visibility.autoscale && (
@@ -1680,7 +1680,7 @@ function ScalingControl({
             tabIndex={mode === m ? 0 : -1}
             onClick={() => setMode(m)}
             className={cn(
-              'px-3 py-1.5 rounded-md text-[11px] font-medium transition-colors',
+              'px-3 py-1.5 rounded-md text-2xs font-medium transition-colors',
               mode === m
                 ? 'bg-primary/15 text-primary'
                 : 'text-text-muted hover:text-text-secondary',
@@ -1713,7 +1713,7 @@ function ScalingControl({
             className={cn(inputClass, errors?.replicas && 'border-status-error/50')}
           />
           <FieldError id={`${uid}-replicas-error`} error={errors?.replicas} />
-          <p className="text-[10px] text-text-muted mt-1">Number of parallel instances to run (1–32). Supported for container, local-process, and SSH transports.</p>
+          <p className="text-3xs text-text-muted mt-1">Number of parallel instances to run (1–32). Supported for container, local-process, and SSH transports.</p>
           {data.replicas !== undefined && data.replicas > 1 && (
             <div className="mt-3">
               <label htmlFor={`${uid}-replica-policy`} className={labelClass}>Replica Policy</label>
@@ -1730,7 +1730,7 @@ function ScalingControl({
                 <option value="round-robin">Round-robin</option>
                 <option value="least-connections">Least connections</option>
               </select>
-              <p className="text-[10px] text-text-muted mt-1">How tool calls are distributed across replicas</p>
+              <p className="text-3xs text-text-muted mt-1">How tool calls are distributed across replicas</p>
             </div>
           )}
         </div>
@@ -1819,7 +1819,7 @@ function AutoscaleFields({
           className={cn(inputClass, errors?.['autoscale.target_in_flight'] && 'border-status-error/50')}
         />
         <FieldError id={`${uid}-target-error`} error={errors?.['autoscale.target_in_flight']} />
-        <p className="text-[10px] text-text-muted mt-1">
+        <p className="text-3xs text-text-muted mt-1">
           gridctl adds replicas when the average in-flight request count exceeds this.
         </p>
       </div>
@@ -1839,7 +1839,7 @@ function AutoscaleFields({
             className={cn(inputClass, 'font-mono', errors?.['autoscale.scale_up_after'] && 'border-status-error/50')}
           />
           <FieldError id={`${uid}-scale-up-error`} error={errors?.['autoscale.scale_up_after']} />
-          <p className="text-[10px] text-text-muted mt-1">
+          <p className="text-3xs text-text-muted mt-1">
             Wait this long while above target before spawning a replica (min 10s).
           </p>
         </div>
@@ -1857,7 +1857,7 @@ function AutoscaleFields({
             className={cn(inputClass, 'font-mono', errors?.['autoscale.scale_down_after'] && 'border-status-error/50')}
           />
           <FieldError id={`${uid}-scale-down-error`} error={errors?.['autoscale.scale_down_after']} />
-          <p className="text-[10px] text-text-muted mt-1">
+          <p className="text-3xs text-text-muted mt-1">
             Wait this long while below target before reaping a replica (min 1m).
           </p>
         </div>
@@ -1883,7 +1883,7 @@ function AutoscaleFields({
           className={cn(inputClass, errors?.['autoscale.warm_pool'] && 'border-status-error/50')}
         />
         <FieldError id={`${uid}-warm-pool-error`} error={errors?.['autoscale.warm_pool']} />
-        <p className="text-[10px] text-text-muted mt-1">
+        <p className="text-3xs text-text-muted mt-1">
           Extra idle replicas kept above the load-derived target.
         </p>
       </div>
@@ -1900,13 +1900,13 @@ function AutoscaleFields({
           <label htmlFor="autoscale-idle-to-zero" className="text-xs text-text-secondary cursor-pointer">
             Scale to zero when idle
           </label>
-          <p className="text-[10px] text-text-muted mt-0.5">
+          <p className="text-3xs text-text-muted mt-0.5">
             Allow reaping every replica after sustained idle. First request after idle may be slower.
           </p>
         </div>
       </div>
 
-      <p className="text-[11px] text-text-secondary border-t border-border/20 pt-2 font-mono">
+      <p className="text-2xs text-text-secondary border-t border-border/20 pt-2 font-mono">
         Autoscale {data.min}–{data.max} replicas · {data.targetInFlight} concurrent/replica
       </p>
     </div>
@@ -1931,7 +1931,7 @@ function ExternalAuthFields({
 
   return (
     <div className="space-y-3">
-      <p className="text-[10px] text-text-muted">
+      <p className="text-3xs text-text-muted">
         How gridctl authenticates to the remote server: a bearer token, a
         custom header, or OAuth 2.1 brokered by the gateway.
       </p>
@@ -1970,7 +1970,7 @@ function ExternalAuthFields({
             />
             <VariablesPopover onSelect={(ref) => update({ token: ref })} />
           </div>
-          <p className="text-[10px] text-text-muted mt-1">
+          <p className="text-3xs text-text-muted mt-1">
             Sent as "Authorization: Bearer". Prefer a {'${var:KEY}'} reference over a literal secret.
           </p>
         </div>
@@ -2006,7 +2006,7 @@ function ExternalAuthFields({
               />
               <VariablesPopover onSelect={(ref) => update({ value: ref })} />
             </div>
-            <p className="text-[10px] text-text-muted mt-1">
+            <p className="text-3xs text-text-muted mt-1">
               Prefer a {'${var:KEY}'} reference over a literal secret.
             </p>
           </div>
@@ -2015,7 +2015,7 @@ function ExternalAuthFields({
 
       {auth?.type === 'oauth' && (
         <div className="space-y-3">
-          <p className="text-[10px] text-text-muted">
+          <p className="text-3xs text-text-muted">
             gridctl runs the browser login after deploy and refreshes tokens
             automatically. All fields are optional: dynamic client
             registration is used when they are left empty.
@@ -2035,7 +2035,7 @@ function ExternalAuthFields({
               placeholder="read write"
               className={inputClass}
             />
-            <p className="text-[10px] text-text-muted mt-1">
+            <p className="text-3xs text-text-muted mt-1">
               Space or comma-separated. Empty uses the scopes the server advertises.
             </p>
           </div>
@@ -2068,7 +2068,7 @@ function ExternalAuthFields({
               </div>
             </div>
           </div>
-          <p className="text-[10px] text-text-muted">
+          <p className="text-3xs text-text-muted">
             Only needed for providers that refuse dynamic registration. Prefer
             a {'${var:KEY}'} reference for the secret.
           </p>
@@ -2100,11 +2100,11 @@ function SourceAuthField({
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-text-secondary hover:text-text-primary transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2 text-2xs text-text-secondary hover:text-text-primary transition-colors"
       >
         <ShieldCheck size={12} className="text-primary/70" />
         <span className="font-medium">Repository Authentication</span>
-        <span className="text-text-muted text-[10px]">
+        <span className="text-text-muted text-3xs">
           {value ? '' : '(optional, for private repos)'}
         </span>
         <span className="ml-auto text-text-muted">
@@ -2113,13 +2113,13 @@ function SourceAuthField({
       </button>
       {open && (
         <div className="px-3 pb-3 pt-1 space-y-2 border-t border-border/20">
-          <p className="text-[10px] text-text-muted">
+          <p className="text-3xs text-text-muted">
             Choose a vault key that holds a Personal Access Token. The server
             resolves it at clone time; the raw value never enters the YAML.
           </p>
           <div className="flex items-center gap-2">
             {value ? (
-              <div className="flex-1 flex items-center justify-between gap-2 bg-background/60 border border-border/40 rounded-md px-2 py-1.5 text-[10px] font-mono text-text-primary">
+              <div className="flex-1 flex items-center justify-between gap-2 bg-background/60 border border-border/40 rounded-md px-2 py-1.5 text-3xs font-mono text-text-primary">
                 <span className="truncate">{value}</span>
                 <button
                   type="button"
@@ -2131,7 +2131,7 @@ function SourceAuthField({
                 </button>
               </div>
             ) : (
-              <div className="flex-1 text-[10px] text-text-muted italic px-1">
+              <div className="flex-1 text-3xs text-text-muted italic px-1">
                 No credential selected
               </div>
             )}

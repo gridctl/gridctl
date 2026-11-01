@@ -221,7 +221,7 @@ export function PacksWorkspace({ onKindChange }: PacksWorkspaceProps) {
                   <Package size={32} className="text-text-muted/50" />
                 </div>
                 <span className="text-sm text-text-secondary">No packs imported</span>
-                <span className="text-[11px] text-text-muted max-w-md">
+                <span className="text-2xs text-text-muted max-w-md">
                   A pack is one git repository with a{' '}
                   <span className="font-mono">gridctl-pack.yaml</span> manifest selecting
                   skills, agents, rules, and wiring, so a single import configures a whole
@@ -241,7 +241,7 @@ export function PacksWorkspace({ onKindChange }: PacksWorkspaceProps) {
                       void navigator.clipboard?.writeText('gridctl pack add <repo-url>');
                       showToast('success', 'CLI command copied');
                     }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-mono text-text-muted border border-border/40 hover:bg-surface-highlight rounded-lg transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-2xs font-mono text-text-muted border border-border/40 hover:bg-surface-highlight rounded-lg transition-colors"
                     title="Copy the CLI command"
                   >
                     <Copy size={11} /> gridctl pack add
@@ -301,28 +301,28 @@ function PackCard({
         <div className="flex items-center gap-2">
           <Package size={14} className={attention ? 'text-status-pending' : 'text-text-muted/70'} aria-hidden="true" />
           <span className="text-sm font-medium text-text-primary">{p.name}</span>
-          {p.version && <span className="text-[10px] font-mono text-text-muted">v{p.version}</span>}
+          {p.version && <span className="text-3xs font-mono text-text-muted">v{p.version}</span>}
           <span className="flex-1" />
           {p.collision && (
-            <span className="text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-error/30 bg-status-error/10 text-status-error">
+            <span className="text-3xs font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-error/30 bg-status-error/10 text-status-error">
               Name collision
             </span>
           )}
           {!p.applied && !p.collision && (
-            <span className="text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-pending/30 bg-status-pending/10 text-status-pending">
+            <span className="text-3xs font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-pending/30 bg-status-pending/10 text-status-pending">
               Not applied
             </span>
           )}
           {p.applied && p.needs_attention && (
-            <span className="text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-pending/30 bg-status-pending/10 text-status-pending">
+            <span className="text-3xs font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-pending/30 bg-status-pending/10 text-status-pending">
               Needs attention
             </span>
           )}
         </div>
         {p.description && (
-          <p className="text-[11px] text-text-muted mt-1 line-clamp-2">{p.description}</p>
+          <p className="text-2xs text-text-muted mt-1 line-clamp-2">{p.description}</p>
         )}
-        <div className="flex items-center gap-2 mt-1.5 text-[10px] text-text-muted/80 font-mono">
+        <div className="flex items-center gap-2 mt-1.5 text-3xs text-text-muted/80 font-mono">
           <span>{counts.length ? counts.join(' · ') : 'empty selection'}</span>
           {(p.unresolved ?? []).length > 0 && (
             <span className="text-status-pending">{(p.unresolved ?? []).length} unresolved</span>
@@ -336,7 +336,7 @@ function PackCard({
 function PackKpi({ label, value }: { label: string; value: number | null }) {
   return (
     <div className="flex flex-col items-start rounded-lg border bg-background/40 border-border/40 px-3 py-1.5 min-w-[60px]">
-      <span className="text-[10px] uppercase tracking-wider font-medium text-text-muted">{label}</span>
+      <span className="text-3xs uppercase tracking-wider font-medium text-text-muted">{label}</span>
       <span className="font-mono leading-none mt-0.5 text-sm text-text-secondary">
         {value === null ? '–' : value}
       </span>

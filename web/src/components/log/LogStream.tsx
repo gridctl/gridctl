@@ -197,7 +197,7 @@ export function LogStream({
             description="The entries expired from the buffer or were never correlated."
             action={
               onClearTrace && (
-                <button onClick={onClearTrace} className="text-[10px] text-primary hover:underline">
+                <button onClick={onClearTrace} className="text-3xs text-primary hover:underline">
                   Clear trace filter
                 </button>
               )
@@ -211,12 +211,12 @@ export function LogStream({
             action={
               <span className="flex items-center gap-3">
                 {onShowAllSources && (
-                  <button onClick={onShowAllSources} className="text-[10px] text-primary hover:underline">
+                  <button onClick={onShowAllSources} className="text-3xs text-primary hover:underline">
                     Show all sources
                   </button>
                 )}
                 {onClearFilter && (
-                  <button onClick={onClearFilter} className="text-[10px] text-primary hover:underline">
+                  <button onClick={onClearFilter} className="text-3xs text-primary hover:underline">
                     Clear filters
                   </button>
                 )}
@@ -229,7 +229,7 @@ export function LogStream({
             title="No entries match your filters"
             action={
               onClearFilter && (
-                <button onClick={onClearFilter} className="text-[10px] text-primary hover:underline">
+                <button onClick={onClearFilter} className="text-3xs text-primary hover:underline">
                   Clear filters
                 </button>
               )

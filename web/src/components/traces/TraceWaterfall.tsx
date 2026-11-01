@@ -253,11 +253,11 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
       {/* Header */}
       <div className="h-9 flex items-center justify-between px-3 flex-shrink-0 border-b border-border/30 bg-surface-elevated/20">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[10px] font-medium text-text-muted uppercase tracking-wider flex-shrink-0">Trace</span>
+          <span className="text-3xs font-medium text-text-muted uppercase tracking-wider flex-shrink-0">Trace</span>
           <span className="text-xs font-mono text-text-primary truncate" title={trace.traceId}>
             {trace.traceId.slice(0, 16)}
           </span>
-          <span className="text-[10px] text-text-muted flex-shrink-0">
+          <span className="text-3xs text-text-muted flex-shrink-0">
             {trace.spans.length} spans · {formatTotalDuration(totalDuration)}
           </span>
           {hasError && (
@@ -319,9 +319,11 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
         {/* Waterfall */}
         <Panel id="waterfall-canvas" defaultSize={selectedSpan ? '65' : '100'} minSize={160}>
           <div ref={paneRef} className="flex flex-col h-full min-h-0 overflow-hidden">
-            {/* Column header row with timeline ruler */}
+            {/* Column header row with timeline ruler. The ruler clips instead
+                of scrolling: a private scrollbar would slide Duration off the
+                span rows' duration column. */}
             <div className="flex items-center h-7 px-3 flex-shrink-0 border-b border-border/20 bg-surface-elevated/10">
-              <div style={{ width: nameColWidth }} className="text-[9px] text-text-muted uppercase tracking-wider">Span</div>
+              <div style={{ width: nameColWidth }} className="min-w-0 overflow-hidden text-3xs text-text-muted uppercase tracking-wider whitespace-nowrap">Span</div>
               <div
                 onPointerDown={onNameColDrag}
                 title="Drag to resize the span column"
@@ -330,16 +332,16 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
                   isNameColDragging ? 'bg-primary/50' : 'hover:bg-primary/30',
                 )}
               />
-              <div className="flex-1 relative h-full" aria-hidden="true">
-                <span className="absolute left-0 top-1/2 -translate-y-1/2 text-[8px] text-text-muted/70 font-mono">0</span>
-                <span className="absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 text-[8px] text-text-muted/70 font-mono">
+              <div className="flex-1 grid grid-cols-3 items-center h-full min-w-0 overflow-hidden" aria-hidden="true">
+                <span className="min-w-0 overflow-hidden whitespace-nowrap text-left text-3xs text-text-muted/70 font-mono">0</span>
+                <span className="min-w-0 overflow-hidden whitespace-nowrap text-center text-3xs text-text-muted/70 font-mono">
                   {formatDuration(totalDuration / 2)}
                 </span>
-                <span className="absolute right-0 top-1/2 -translate-y-1/2 text-[8px] text-text-muted/70 font-mono">
+                <span className="min-w-0 overflow-hidden whitespace-nowrap text-right text-3xs text-text-muted/70 font-mono">
                   {formatDuration(totalDuration)}
                 </span>
               </div>
-              <div className="w-24 text-right text-[9px] text-text-muted uppercase tracking-wider">Duration</div>
+              <div className="w-24 flex-shrink-0 text-right text-3xs text-text-muted uppercase tracking-wider whitespace-nowrap">Duration</div>
             </div>
 
             {/* Span rows */}
@@ -382,7 +384,7 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
                       )}
                       <span
                         className={cn(
-                          'text-[10px] truncate font-mono',
+                          'text-3xs truncate font-mono',
                           isError ? 'text-status-error' : 'text-text-secondary'
                         )}
                         title={span.name}
@@ -391,8 +393,9 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
                       </span>
                     </div>
 
-                    {/* Timeline bar column */}
-                    <div className="flex-1 relative h-4">
+                    {/* Timeline bar column. min-w-0 matches the ruler so a narrow
+                        pane shrinks both instead of scrolling the rows alone. */}
+                    <div className="flex-1 relative h-4 min-w-0">
                       <div
                         className={cn(
                           'absolute top-0 h-full rounded-sm opacity-90 transition-opacity hover:opacity-100',
@@ -409,9 +412,9 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
 
                     {/* Duration: total, with self time when children exist */}
                     <div className="w-24 flex flex-col items-end justify-center leading-tight flex-shrink-0">
-                      <span className="text-[10px] text-text-muted font-mono">{formatDuration(span.duration)}</span>
+                      <span className="text-3xs text-text-muted font-mono whitespace-nowrap">{formatDuration(span.duration)}</span>
                       {hasChildren && selfMs != null && (
-                        <span className="text-[8px] text-text-muted/60 font-mono">self {formatDuration(selfMs)}</span>
+                        <span className="text-3xs text-text-muted/60 font-mono whitespace-nowrap">self {formatDuration(selfMs)}</span>
                       )}
                     </div>
                   </div>
@@ -428,25 +431,25 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
                       className="w-2 h-2 rounded-sm flex-shrink-0"
                       style={{ backgroundColor: stableColor(srv) }}
                     />
-                    <span className="text-[9px] text-text-muted font-mono">{srv}</span>
+                    <span className="text-3xs text-text-muted font-mono">{srv}</span>
                   </div>
                 ))}
                 {sorted.some((s) => s.status === 'error') && (
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <div className="w-2 h-2 rounded-sm bg-status-error" />
-                    <span className="text-[9px] text-text-muted">error</span>
+                    <span className="text-3xs text-text-muted">error</span>
                   </div>
                 )}
                 {sorted.some((s) => s.duration > p95 && s.status !== 'error') && (
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <div className="w-2 h-2 rounded-sm bg-status-pending" />
-                    <span className="text-[9px] text-text-muted">slow (&gt;p95)</span>
+                    <span className="text-3xs text-text-muted">slow (&gt;p95)</span>
                   </div>
                 )}
                 {criticalPath.size > 0 && (
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <div className="w-2 h-2 rounded-sm bg-surface-elevated ring-1 ring-text-primary/70" />
-                    <span className="text-[9px] text-text-muted">critical path</span>
+                    <span className="text-3xs text-text-muted">critical path</span>
                   </div>
                 )}
               </div>

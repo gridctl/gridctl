@@ -432,7 +432,7 @@ export function RunsView({ servers }: RunsViewProps) {
             </p>
           ) : (
             <table className="w-full text-sm" role="grid" aria-label="Run records">
-              <thead className="text-left text-[10px] uppercase tracking-wider text-text-muted">
+              <thead className="text-left text-3xs uppercase tracking-wider text-text-muted">
                 <tr>
                   <th className="px-6 py-2">Returned</th>
                   <th className="px-2 py-2">Target</th>

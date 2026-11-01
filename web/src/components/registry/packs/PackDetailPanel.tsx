@@ -186,7 +186,7 @@ export function PackDetailPanel({ name, onClose, onChanged }: PackDetailPanelPro
             {detail.info.description && (
               <p className="text-xs text-text-secondary">{detail.info.description}</p>
             )}
-            <div className="flex items-center gap-2 mt-1.5 text-[10px] text-text-muted font-mono flex-wrap">
+            <div className="flex items-center gap-2 mt-1.5 text-3xs text-text-muted font-mono flex-wrap">
               {detail.info.version && <span>v{detail.info.version}</span>}
               {detail.info.author && <span>by {detail.info.author}</span>}
               <span className="inline-flex items-center gap-1 truncate max-w-full" title={detail.info.origin.repo}>
@@ -201,7 +201,7 @@ export function PackDetailPanel({ name, onClose, onChanged }: PackDetailPanelPro
               )}
             </div>
             {(detail.info.sources ?? []).length > 0 && (
-              <ul className="mt-1.5 flex flex-col gap-0.5 text-[10px] text-text-muted font-mono">
+              <ul className="mt-1.5 flex flex-col gap-0.5 text-3xs text-text-muted font-mono">
                 {(detail.info.sources ?? []).map((src) => (
                   <li key={src.name} title={src.commit_sha}>
                     {src.name} {src.repo}
@@ -211,12 +211,12 @@ export function PackDetailPanel({ name, onClose, onChanged }: PackDetailPanelPro
               </ul>
             )}
             {lastApply && (
-              <p className="text-[11px] text-text-muted mt-1.5" aria-live="polite">
+              <p className="text-2xs text-text-muted mt-1.5" aria-live="polite">
                 Applied {lastApply.applied}/{lastApply.total} resources.
               </p>
             )}
             {!detail.info.applied && (
-              <p className="text-[11px] text-text-muted mt-1.5">
+              <p className="text-2xs text-text-muted mt-1.5">
                 Imported into the registry. Apply projects skills, agents, rules, and wiring
                 to your clients.
               </p>
@@ -260,13 +260,13 @@ export function PackDetailPanel({ name, onClose, onChanged }: PackDetailPanelPro
           {/* Child resources, grouped by kind in manifest order. */}
           <div className="px-4 py-3 flex flex-col gap-4">
             {detail.rows.length === 0 && (
-              <p className="text-[11px] text-text-muted">
+              <p className="text-2xs text-text-muted">
                 Nothing projected yet. Apply to see per-resource state here.
               </p>
             )}
             {groupPackRows(detail.rows).map((group) => (
               <section key={group.kind} aria-label={`${group.label} rows`}>
-                <div className="text-[10px] uppercase tracking-wider font-medium text-text-muted mb-1.5">
+                <div className="text-3xs uppercase tracking-wider font-medium text-text-muted mb-1.5">
                   {group.label}
                 </div>
                 <ul className="flex flex-col divide-y divide-border/20 rounded-lg border border-border/30 bg-background/30">
@@ -350,7 +350,7 @@ function PackRowLine({ row, onNavigate }: { row: PackRow; onNavigate: (to: strin
         {pill ? (
           <StatePill state={pill} />
         ) : (
-          <span className="text-[10px] px-2 py-0.5 rounded-full border border-border/40 bg-background/40 text-text-muted font-medium whitespace-nowrap">
+          <span className="text-3xs px-2 py-0.5 rounded-full border border-border/40 bg-background/40 text-text-muted font-medium whitespace-nowrap">
             {row.action || 'pending'}
           </span>
         )}
@@ -366,15 +366,15 @@ function PackRowLine({ row, onNavigate }: { row: PackRow; onNavigate: (to: strin
           <span className="text-xs font-mono text-text-primary truncate">{row.name}</span>
         )}
         {row.client && (
-          <span className="text-[10px] text-text-muted font-mono whitespace-nowrap">{row.client}</span>
+          <span className="text-3xs text-text-muted font-mono whitespace-nowrap">{row.client}</span>
         )}
       </div>
-      {row.detail && <p className="text-[11px] text-text-muted mt-1">{row.detail}</p>}
+      {row.detail && <p className="text-2xs text-text-muted mt-1">{row.detail}</p>}
       {row.remediation && (
-        <p className="text-[11px] text-text-secondary mt-0.5">{remediationProse(row)}</p>
+        <p className="text-2xs text-text-secondary mt-0.5">{remediationProse(row)}</p>
       )}
       {isNoGatewayRow(row) && (
-        <p className="text-[11px] text-text-secondary mt-0.5">
+        <p className="text-2xs text-text-secondary mt-0.5">
           Start a gateway from the Stack workspace, then apply again.
         </p>
       )}

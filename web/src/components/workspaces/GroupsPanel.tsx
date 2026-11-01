@@ -30,7 +30,7 @@ export function GroupsPanel({ isOpen, onClose, report, toolCatalog }: GroupsPane
         <div className="py-10 text-center space-y-2">
           <Boxes size={24} className="mx-auto text-text-muted/30" aria-hidden="true" />
           <p className="text-xs text-text-muted">No tool groups configured.</p>
-          <p className="text-[11px] text-text-muted/70">
+          <p className="text-2xs text-text-muted/70">
             Declare a <span className="font-mono text-text-secondary">groups:</span> block in
             stack.yaml to serve curated tool bundles at their own endpoints.
           </p>
@@ -59,7 +59,7 @@ export function GroupsPanel({ isOpen, onClose, report, toolCatalog }: GroupsPane
                         <Boxes size={11} className={isActive ? 'text-primary' : 'text-text-muted'} aria-hidden="true" />
                         <span className="text-xs font-mono text-text-primary truncate">{g.name}</span>
                       </div>
-                      <div className="text-[10px] text-text-muted mt-0.5">
+                      <div className="text-3xs text-text-muted mt-0.5">
                         {g.member_count} {g.member_count === 1 ? 'tool' : 'tools'}
                       </div>
                     </button>
@@ -88,9 +88,9 @@ function GroupDetail({ group, toolCatalog }: { group: GroupStatus; toolCatalog: 
           <EndpointCopy endpoint={group.endpoint} />
         </div>
         {group.description && (
-          <p className="text-[11px] text-text-muted mt-1">{group.description}</p>
+          <p className="text-2xs text-text-muted mt-1">{group.description}</p>
         )}
-        <p className="text-[10px] text-text-muted/70 mt-1">
+        <p className="text-3xs text-text-muted/70 mt-1">
           Link a client:{' '}
           <span className="font-mono text-text-secondary">
             gridctl link &lt;client&gt; --group {group.name}
@@ -103,7 +103,7 @@ function GroupDetail({ group, toolCatalog }: { group: GroupStatus; toolCatalog: 
           <MemberRow key={m.canonical} member={m} toolCatalog={toolCatalog} />
         ))}
         {group.members.length === 0 && (
-          <li className="text-[11px] text-text-muted/70 italic py-3">
+          <li className="text-2xs text-text-muted/70 italic py-3">
             No live tools resolve into this group yet. Members appear once their servers
             connect.
           </li>
@@ -126,7 +126,7 @@ function MemberRow({ member, toolCatalog }: { member: GroupToolStatus; toolCatal
         <span className="text-xs font-mono text-text-primary">{member.name}</span>
         {member.renamed && (
           <span
-            className="inline-flex items-center gap-1 text-[10px] text-text-muted"
+            className="inline-flex items-center gap-1 text-3xs text-text-muted"
             title="Renamed at the group's exposure boundary; enforcement uses the canonical name"
           >
             <CornerDownRight size={10} aria-hidden="true" />
@@ -139,7 +139,7 @@ function MemberRow({ member, toolCatalog }: { member: GroupToolStatus; toolCatal
               key={chip.label}
               title={chip.title}
               className={cn(
-                'px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wider',
+                'px-1.5 py-0.5 rounded text-3xs font-medium uppercase tracking-wider',
                 CHIP_TONE_CLASS[chip.tone],
               )}
             >
@@ -150,9 +150,9 @@ function MemberRow({ member, toolCatalog }: { member: GroupToolStatus; toolCatal
       </div>
 
       {member.description && (
-        <p className="text-[11px] text-text-secondary mt-1.5 leading-relaxed">
+        <p className="text-2xs text-text-secondary mt-1.5 leading-relaxed">
           {member.rewritten && (
-            <span className="text-[9px] uppercase tracking-wider text-primary/80 mr-1.5">
+            <span className="text-3xs uppercase tracking-wider text-primary/80 mr-1.5">
               rewritten
             </span>
           )}
@@ -160,8 +160,8 @@ function MemberRow({ member, toolCatalog }: { member: GroupToolStatus; toolCatal
         </p>
       )}
       {original && original !== member.description && (
-        <p className="text-[10px] text-text-muted/70 mt-1 leading-relaxed">
-          <span className="text-[9px] uppercase tracking-wider mr-1.5">original</span>
+        <p className="text-3xs text-text-muted/70 mt-1 leading-relaxed">
+          <span className="text-3xs uppercase tracking-wider mr-1.5">original</span>
           {original}
         </p>
       )}
@@ -191,7 +191,7 @@ function EndpointCopy({ endpoint }: { endpoint: string }) {
       aria-label={`Copy endpoint URL ${url}`}
       title={url}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[10px] font-mono transition-colors',
+        'inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-3xs font-mono transition-colors',
         copied
           ? 'border-status-running/40 bg-status-running/10 text-status-running'
           : 'border-border/40 bg-background/40 text-text-muted hover:text-text-secondary hover:border-border',

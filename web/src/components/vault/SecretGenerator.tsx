@@ -169,7 +169,7 @@ export function SecretGenerator({
         >
           {/* Length */}
           <div className="flex items-center gap-2">
-            <span className="w-12 shrink-0 text-[10px] text-text-muted">Length</span>
+            <span className="w-12 shrink-0 text-3xs text-text-muted">Length</span>
             <input
               ref={lengthRef}
               type="range"
@@ -181,7 +181,7 @@ export function SecretGenerator({
               aria-valuetext={`${length} characters`}
               className="flex-1 accent-primary"
             />
-            <span className="w-6 text-right text-[10px] font-mono tabular-nums text-text-primary">
+            <span className="w-6 text-right text-3xs font-mono tabular-nums text-text-primary">
               {length}
             </span>
           </div>
@@ -204,7 +204,7 @@ export function SecretGenerator({
                   onClick={() => toggleClass(key)}
                   title={locked ? 'At least one class is required' : label}
                   className={cn(
-                    'rounded px-2 py-1 text-[10px] font-mono font-medium transition-colors',
+                    'rounded px-2 py-1 text-3xs font-mono font-medium transition-colors',
                     enabled
                       ? 'bg-primary/20 text-primary'
                       : 'text-text-muted hover:bg-surface-overlay-2 hover:text-text-primary',
@@ -219,7 +219,7 @@ export function SecretGenerator({
 
           {/* Entropy + actions */}
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[10px] font-mono text-text-muted">~{bits} bits</span>
+            <span className="text-3xs font-mono text-text-muted">~{bits} bits</span>
             <div className="flex items-center gap-1.5">
               {generated && (
                 <button

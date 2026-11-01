@@ -116,7 +116,7 @@ export function HeaderTelemetryPill() {
         aria-label="Stack telemetry persistence"
         className="absolute top-full mt-2 right-0 w-64 p-3"
       >
-          <div className="text-[10px] uppercase tracking-widest font-medium text-text-muted px-1 pb-2">
+          <div className="text-3xs uppercase tracking-widest font-medium text-text-muted px-1 pb-2">
             Stack-global signals
           </div>
           <ul className="space-y-1">
@@ -148,7 +148,7 @@ export function HeaderTelemetryPill() {
                     </span>
                     <span
                       className={cn(
-                        'text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded',
+                        'text-3xs font-mono uppercase tracking-wider px-1.5 py-0.5 rounded',
                         isOn
                           ? 'bg-status-running/10 text-status-running border border-status-running/20'
                           : 'bg-surface-elevated text-text-muted border border-border/40',

@@ -410,7 +410,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
                 </div>
               ))}
             </div>
-            <span className="text-[10px] text-text-muted uppercase tracking-wider">
+            <span className="text-3xs text-text-muted uppercase tracking-wider">
               {stepLabels[currentStep]}
             </span>
           </div>
@@ -740,7 +740,7 @@ function TypePicker({
               style={{ animationDelay: `${i * 50}ms`, animationFillMode: 'backwards' }}
             >
               {count > 0 && (
-                <div className="absolute top-2.5 right-2.5 text-[10px] font-medium text-text-muted bg-surface-highlight px-1.5 py-0.5 rounded-full">
+                <div className="absolute top-2.5 right-2.5 text-3xs font-medium text-text-muted bg-surface-highlight px-1.5 py-0.5 rounded-full">
                   {count}
                 </div>
               )}
@@ -768,7 +768,7 @@ function TypePicker({
               <div className="text-sm font-medium text-text-primary mb-1">
                 {rt.label}
               </div>
-              <div className="text-[10px] text-text-muted leading-relaxed">
+              <div className="text-3xs text-text-muted leading-relaxed">
                 {rt.description}
               </div>
             </button>
@@ -852,7 +852,7 @@ function ExpertEditor({
           <span>{error}</span>
         </div>
       )}
-      <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-background/40 border border-border/40 text-text-muted text-[11px]">
+      <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-background/40 border border-border/40 text-text-muted text-2xs">
         <AlertCircle size={12} className="mt-0.5 shrink-0" />
         <span>
           Python source fields, commands, mounts, and common settings return to the form when
@@ -865,7 +865,7 @@ function ExpertEditor({
         aria-label="YAML"
         spellCheck={false}
         className={cn(
-          'w-full flex-1 min-h-0 font-mono text-[11px] leading-[1.7] resize-none',
+          'w-full flex-1 min-h-0 font-mono text-2xs leading-[1.7] resize-none',
           'bg-background/40 border rounded-xl px-4 py-3',
           'focus:outline-none focus:border-primary/50 text-text-primary',
           'placeholder:text-text-muted/50 scrollbar-dark transition-colors',

@@ -175,7 +175,7 @@ export function TemplateGrid({ resourceType, selected, onSelect }: TemplateGridP
               <div className="text-xs text-text-muted mb-3">
                 {template.description}
               </div>
-              <pre className="text-[10px] font-mono text-text-muted/70 leading-relaxed bg-background/40 rounded-lg px-2.5 py-2 border border-border-subtle overflow-hidden">
+              <pre className="text-3xs font-mono text-text-muted/70 leading-relaxed bg-background/40 rounded-lg px-2.5 py-2 border border-border-subtle overflow-hidden">
                 {template.preview}
               </pre>
             </button>

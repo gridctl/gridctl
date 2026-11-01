@@ -32,7 +32,7 @@ export function SavingsCard({
   const actionable = findings.filter((f) => f.severity !== 'info');
   if (actionable.length === 0) {
     return (
-      <p className="text-[11px] text-text-muted/70 line-clamp-1" title={findings[0].summary}>
+      <p className="text-2xs text-text-muted/70 line-clamp-1" title={findings[0].summary}>
         Optimize: {findings[0].summary}
       </p>
     );
@@ -53,7 +53,7 @@ export function SavingsCard({
             <>
               <span
                 className={cn(
-                  'inline-flex items-center gap-1 flex-shrink-0 rounded border px-1.5 py-0.5 text-[9px] uppercase tracking-wider',
+                  'inline-flex items-center gap-1 flex-shrink-0 rounded border px-1.5 py-0.5 text-3xs uppercase tracking-wider',
                   severityClasses[finding.severity],
                 )}
               >
@@ -62,7 +62,7 @@ export function SavingsCard({
               </span>
               <span className="flex-1 min-w-0 truncate text-left text-xs text-text-primary">{finding.title}</span>
               {(finding.impact_tokens_per_week ?? 0) > 0 && (
-                <span className="flex-shrink-0 text-[10px] font-mono tabular-nums text-text-secondary">
+                <span className="flex-shrink-0 text-3xs font-mono tabular-nums text-text-secondary">
                   {formatCompactNumber(finding.impact_tokens_per_week ?? 0)} tok/wk
                 </span>
               )}
@@ -90,7 +90,7 @@ export function SavingsCard({
       </ul>
       {/* When the list is capped, say where the rest live. */}
       {hiddenCount > 0 && (
-        <p className="px-3.5 pb-2 text-[10px] text-text-muted/70">
+        <p className="px-3.5 pb-2 text-3xs text-text-muted/70">
           +{hiddenCount} more in the gateway sidebar's Optimize section.
         </p>
       )}

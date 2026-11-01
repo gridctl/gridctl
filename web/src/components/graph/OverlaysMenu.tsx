@@ -64,7 +64,7 @@ export function OverlaysMenu() {
         aria-label="Canvas overlays"
         className="absolute bottom-full left-0 mb-2 w-44 p-1"
       >
-          <div className="px-2 py-1 text-[9px] uppercase tracking-[0.18em] text-text-muted/70">
+          <div className="px-2 py-1 text-3xs uppercase tracking-[0.18em] text-text-muted/70">
             Overlays
           </div>
           {items.map(({ key, label, icon: Icon, active, toggle, accent }) => (
@@ -75,7 +75,7 @@ export function OverlaysMenu() {
               aria-checked={active}
               onClick={toggle}
               className={cn(
-                'w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[11px]',
+                'w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-2xs',
                 'transition-colors hover:bg-surface-highlight',
                 active ? 'text-text-primary' : 'text-text-muted',
               )}
