@@ -50,5 +50,10 @@ export function readThemeColors(): ThemeColors {
     transportHttp: read(s, '--color-secondary', COLORS.transportHttp),
     transportStdio: read(s, '--color-primary', COLORS.transportStdio),
     transportSse: read(s, '--color-tertiary', COLORS.transportSse),
+    chartBlue: read(s, '--color-chart-blue', COLORS.chartBlue),
+    chartCyan: read(s, '--color-chart-cyan', COLORS.chartCyan),
+    chartPink: read(s, '--color-chart-pink', COLORS.chartPink),
+    chartOrange: read(s, '--color-chart-orange', COLORS.chartOrange),
+    chartPurple: read(s, '--color-chart-purple', COLORS.chartPurple),
   };
 }

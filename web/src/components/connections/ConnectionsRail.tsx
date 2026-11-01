@@ -25,7 +25,7 @@ export function Badges({ client }: { client: ClientStatus }) {
         </span>
       )}
       {client.drifted && (
-        <span className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-status-warning/15 text-status-warning">
+        <span className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-status-pending/15 text-status-pending">
           Drifted
         </span>
       )}

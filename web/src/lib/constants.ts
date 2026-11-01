@@ -83,6 +83,13 @@ export const COLORS = {
   // Edge colors
   edgeDefault: '#27272a',
   edgeAnimated: '#f59e0b',
+
+  // Categorical chart series (dark seed; live values come from --color-chart-*)
+  chartBlue: '#3b82f6',
+  chartCyan: '#06b6d4',
+  chartPink: '#ec4899',
+  chartOrange: '#f97316',
+  chartPurple: '#a855f7',
 } as const;
 
 // Node type identifiers
