@@ -368,6 +368,9 @@ try {
   await forgotten.goto(`${origin}/__auth_resume`);
   await forgotten.getByRole('button', { name: 'Content' }).waitFor();
   assert.equal(await forgotten.getByRole('dialog', { name: 'Authentication Required' }).count(), 0);
+  // The resume harness forces authRequired false, so a hidden dialog does not
+  // show that this page read the saved credential.
+  assert.notEqual(await forgotten.evaluate(async () => (await import('/src/stores/useAuthStore.ts')).useAuthStore.getState().credential), null);
   await page.evaluate(async () => {
     const { useAuthStore } = await import('/src/stores/useAuthStore.ts');
     useAuthStore.getState().forgetCredential();
