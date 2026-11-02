@@ -113,8 +113,7 @@ export function tokenizeJSON(content: string): Line[] | null {
   return lines;
 }
 
-// TODO: dedupe with SpecTab.highlightYAMLLine — kept duplicated to avoid
-// SpecTab regression risk (per PR 2 architecture guidance).
+// Kept separate from SpecTab.highlightYAMLLine so a shared helper cannot change the spec view.
 function highlightYAMLLine(line: string): HighlightedToken[] {
   const tokens: HighlightedToken[] = [];
 

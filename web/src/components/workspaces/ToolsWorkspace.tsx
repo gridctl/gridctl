@@ -817,9 +817,13 @@ function ToolsHeader({
           </button>
           <button
             type="button"
-            onClick={onOpenFleet}
-            disabled={fleetDisabled}
+            onClick={() => {
+              if (fleetDisabled) return;
+              onOpenFleet();
+            }}
+            aria-disabled={fleetDisabled}
             aria-label="Open fleet tool actions"
+            title={fleetDisabled ? 'No servers in the stack' : undefined}
             className={cn(
               'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-3xs font-medium border transition-colors',
               'bg-background/40 text-text-muted border-border/40 hover:text-text-secondary hover:border-border',

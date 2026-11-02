@@ -24,6 +24,7 @@ import { Button } from '../ui/Button';
 import { useWizardStore, type WizardStep } from '../../stores/useWizardStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { useRegistryStore } from '../../stores/useRegistryStore';
+import { useVaultStore } from '../../stores/useVaultStore';
 import { buildYAML, customHeaderErrors, parseYAMLToForm, type ResourceType, type WizardFormData, type MCPServerFormData } from '../../lib/yaml-builder';
 import { formatOperationsSummary } from '../../lib/openapiOperations';
 import { catalogEntryToFormData, type CatalogContainerOptions } from '../../lib/catalog';
@@ -130,15 +131,17 @@ function getResourceCounts(
   resources: { name: string }[],
   skills: { name: string }[] | null,
   linkedClients: number,
-): Record<ResourceType, number> {
+  secretCount: number | null,
+  packCount: number | null,
+): Record<ResourceType, number | null> {
   return {
-    stack: 0, // Not a countable entity
+    stack: null,
     'mcp-server': mcpServers.length,
     resource: resources.length,
     skill: (skills ?? []).length,
-    pack: 0, // Off the global poll; the Packs segment owns the count
-    secret: 0, // Variables count not easily available
-    'global-context': 0, // Singleton; the dialog shows per-client state
+    pack: packCount,
+    secret: secretCount,
+    'global-context': null,
     'client-link': linkedClients,
   };
 }
@@ -192,11 +195,20 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
   const mcpServers = useMemo(() => mcpServersRaw ?? [], [mcpServersRaw]);
   const resources = useMemo(() => resourcesRaw ?? [], [resourcesRaw]);
   const skills = useRegistryStore((s) => s.skills);
+  const packs = useRegistryStore((s) => s.packs);
+  const variables = useVaultStore((s) => s.variables);
   const clients = useStackStore((s) => s.clients);
   const linkedClients = useMemo(() => clients.filter((c) => c.linked).length, [clients]);
   const counts = useMemo(
-    () => getResourceCounts(mcpServers, resources, skills, linkedClients),
-    [mcpServers, resources, skills, linkedClients],
+    () => getResourceCounts(
+      mcpServers,
+      resources,
+      skills,
+      linkedClients,
+      variables == null ? null : variables.length,
+      packs == null ? null : packs.length,
+    ),
+    [mcpServers, resources, skills, linkedClients, variables, packs],
   );
 
   // Map template ID to mcp-server form data so the Configure screen reflects the chosen template
@@ -568,7 +580,7 @@ function renderStepContent(
   setYamlContent: (content: string) => void,
   yamlError: string | null,
   generatedYaml: string,
-  counts: Record<ResourceType, number>,
+  counts: Record<ResourceType, number | null>,
   onDeploy: () => void,
   onCatalogSelect: (entry: CatalogEntry, container?: CatalogContainerOptions) => void,
   operationsSummary: string | null,
@@ -699,7 +711,7 @@ function TypePicker({
 }: {
   selected: ResourceType | null;
   onSelect: (type: ResourceType) => void;
-  counts: Record<ResourceType, number>;
+  counts: Record<ResourceType, number | null>;
 }) {
   const stackName = useStackStore((s) => s.stackName);
   const hasActiveStack = stackName !== '';
@@ -719,6 +731,7 @@ function TypePicker({
           const Icon = rt.icon;
           const isSelected = selected === rt.type;
           const count = counts[rt.type];
+          const showCount = typeof count === 'number' && count > 0;
           const isGated = STACK_GATED_TYPES.includes(rt.type) && !hasActiveStack;
           return (
             <button
@@ -739,7 +752,7 @@ function TypePicker({
               )}
               style={{ animationDelay: `${i * 50}ms`, animationFillMode: 'backwards' }}
             >
-              {count > 0 && (
+              {showCount && (
                 <div className="absolute top-2.5 right-2.5 text-3xs font-medium text-text-muted bg-surface-highlight px-1.5 py-0.5 rounded-full">
                   {count}
                 </div>

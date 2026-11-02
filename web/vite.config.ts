@@ -20,7 +20,7 @@ export default defineConfig({
             },
             {
               name: 'vendor-graph',
-              test: /node_modules[\\/](@xyflow|@dagrejs)[\\/]/,
+              test: /node_modules[\\/]@xyflow[\\/]/,
               priority: 20,
               includeDependenciesRecursively: false,
             },
