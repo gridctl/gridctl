@@ -47,7 +47,8 @@ Creation wizard entry points use "Create new". The header "+" tooltip and the pa
 The shell is constant across workspaces; only the `<Outlet />` body and the
 right rail change. Workspace switching is done via React Router `NavLink`s
 in the header, the `⌘1`-`⌘9` shortcuts, or the command palette. `⌘J` jumps
-to the Logs workspace. The switcher is `<nav aria-label="Workspaces">` with
+to the Logs workspace. Press `?` outside a field or dialog to open the
+keyboard shortcuts panel. The switcher is `<nav aria-label="Workspaces">` with
 `aria-current="page"` on the active link. It is not a tab list. Fit view
 (`f`, `⌘0`) and canvas zoom apply only on Stack. `⌘F` is left to the browser.
 
@@ -56,7 +57,7 @@ render `<main>` is a `<section aria-labelledby>` with one `<h1>`. Give every
 `<aside>` a distinct `aria-label`.
 
 The workspace `nav` scrolls and the action cluster does not shrink, so
-Create new, Refresh, Reload Config, theme, the palette, and Forget
+Create new, Refresh, Reload Config, theme, Preferences, the palette, and Forget
 credential (while a credential is held) stay mounted when the window is
 narrow. The left group is `min-w-0 flex-1`; without that
 the nav has no bounded width and the pills stay clipped. Below `sm` the
@@ -133,6 +134,11 @@ workspaces. Reach for them before duplicating UI:
 | `Popover` | `components/ui/` | Theme picker, telemetry pill, overlays menu, log level filter, log view options. Escape and a programmatic close return focus to the trigger; an outside click does not |
 | `Field` | `components/ui/` | Label, control, error, then help. Owns the required marker and wires `htmlFor`, `aria-invalid`, and `aria-describedby`. Pass plain label text. A different sibling order keeps its wrapper and uses `useId` |
 | `IconButton` | `components/ui/` | Requires `tooltip` or `ariaLabel`, and renders `type="button"`. `title` alone is not an accessible name. `size="lg"` is a 44 px square, border included; the default size stays `md` |
+| `Switch` | `components/ui/` | The only `role="switch"` control. `BoolToggle` and the Connections link toggle render it. `label` is the accessible name |
+| `Badge` | `components/ui/` | Status badges keep the dot. `tone` (`neutral`, `primary`, `success`, `warning`) is a dot-free pill. Connections client badges use `tone` |
+| `PopoutButton` | `components/ui/` | Opens a detached window. `detached` keeps it enabled, switches the icon, and reads "Detached. Click to focus" |
+| `PreferencesDialog` | `components/shell/` | Header and palette. Theme, compact mode for the seven workspaces that read it, and text size |
+| `ShortcutsPanel` | `components/shell/` | Opens on `?`, from the palette, and from Preferences. One static binding table, grouped by scope |
 
 ## Layering
 
@@ -219,8 +225,7 @@ workspace-specific props.
   container and would blank the name on every other surface.
 - Don't use white or black color utilities for surfaces that must follow
   the theme. Overlay tokens are already translucent, so do not add a slash
-  modifier. Leave white text on the danger gradient and the danger confirm,
-  the white Connections switch knob, and the black fill on `LogViewer`.
+  modifier. Leave white text on the danger gradient and the danger confirm.
   The raw-palette lint rule rejects every default Tailwind color family
   outside tests, including chart files.
 - Don't size UI text with a bracketed pixel class. Use `text-3xs`,
