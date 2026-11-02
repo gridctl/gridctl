@@ -2,7 +2,7 @@
  * Graph module - Layout engines and transformation
  *
  * This module provides:
- * - Layout engine interface and implementations (Dagre, Butterfly)
+ * - Layout engine interface and the butterfly implementation
  * - Node and edge creation functions
  * - Graph transformation from backend data to React Flow
  */
