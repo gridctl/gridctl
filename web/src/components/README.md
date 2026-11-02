@@ -41,6 +41,8 @@ Creation wizard entry points use "Create new". The header "+" tooltip and the pa
 │   └── <ConnectionsWorkspace> /connections
 ├── <StatusBar>        connection · servers · sessions · tokens · spec
 ├── <CommandPalette>   workspace-scoped via the command registry
+├── <PreferencesDialog> theme, compact mode, and text size
+├── <ShortcutsPanel>   keyboard shortcuts (`?`)
 └── <ToastContainer>
 ```
 
@@ -136,7 +138,7 @@ workspaces. Reach for them before duplicating UI:
 | `IconButton` | `components/ui/` | Requires `tooltip` or `ariaLabel`, and renders `type="button"`. `title` alone is not an accessible name. `size="lg"` is a 44 px square, border included; the default size stays `md` |
 | `Switch` | `components/ui/` | The only `role="switch"` control. `BoolToggle` and the Connections link toggle render it. `label` is the accessible name |
 | `Badge` | `components/ui/` | Status badges keep the dot. `tone` (`neutral`, `primary`, `success`, `warning`) is a dot-free pill. Connections client badges use `tone` |
-| `PopoutButton` | `components/ui/` | Opens a detached window. `detached` keeps it enabled, switches the icon, and reads "Detached. Click to focus" |
+| `PopoutButton` | `components/ui/` | Opens a detached window. `detached` switches the icon and reads "Detached. Click to focus". Call sites leave it enabled and focus that window |
 | `PreferencesDialog` | `components/shell/` | Header and palette. Theme, compact mode for the seven workspaces that read it, and text size |
 | `ShortcutsPanel` | `components/shell/` | Opens on `?`, from the palette, and from Preferences. One static binding table, grouped by scope |
 
