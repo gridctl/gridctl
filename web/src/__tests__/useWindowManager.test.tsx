@@ -150,6 +150,38 @@ describe('useWindowManager.openDetachedWindow', () => {
     expect(openSpy).not.toHaveBeenCalled();
   });
 
+  it('recovers a named window, focuses it, and re-arms the close poll', () => {
+    stubWindow.closed = true;
+    useUIStore.setState({ logsDetached: true });
+    const recovered = {
+      closed: false,
+      focus: vi.fn(),
+      close: vi.fn(),
+      addEventListener: vi.fn(),
+      document: { title: '' },
+      location: { href: 'http://localhost/logs-window' },
+    };
+    openSpy.mockReturnValueOnce(recovered as unknown as Window);
+
+    let focus: ((type?: 'registry' | 'logs') => void) | null = null;
+    render(<ConditionalHost onReady={(_open, focusWindow) => { focus = focusWindow; }} />);
+
+    act(() => {
+      focus!('logs');
+    });
+
+    expect(openSpy).toHaveBeenCalledWith('', 'gridctl-logs');
+    expect(recovered.focus).toHaveBeenCalledTimes(1);
+    expect(recovered.close).not.toHaveBeenCalled();
+    expect(useUIStore.getState().logsDetached).toBe(true);
+
+    act(() => {
+      recovered.closed = true;
+      vi.advanceTimersByTime(500);
+    });
+    expect(useUIStore.getState().logsDetached).toBe(false);
+  });
+
   it('closes a blank named window and clears the detached flag', () => {
     stubWindow.closed = true;
     useUIStore.setState({ logsDetached: true });
@@ -179,6 +211,11 @@ describe('useWindowManager.openDetachedWindow', () => {
 
 function DetachedLogs() {
   useDetachedWindowSync('logs');
+  return null;
+}
+
+function DetachedRegistry() {
+  useDetachedWindowSync('registry');
   return null;
 }
 
@@ -212,5 +249,43 @@ describe('useWindowManager WHO_IS_OPEN', () => {
     expect(openSpy).not.toHaveBeenCalled();
     detached.unmount();
     openSpy.mockRestore();
+  });
+
+  it('does not close the inspector when a ping reply is for an already-detached popout', async () => {
+    useUIStore.setState({ registryDetached: true, sidebarOpen: true });
+    const detached = render(<DetachedRegistry />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    useUIStore.setState({ registryDetached: true, sidebarOpen: true });
+
+    render(<MainWindow />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(useUIStore.getState().sidebarOpen).toBe(true);
+    expect(useUIStore.getState().registryDetached).toBe(true);
+    detached.unmount();
+  });
+
+  it('closes the in-shell panel only when a registry popout is first reported', async () => {
+    useUIStore.setState({ registryDetached: false, sidebarOpen: true });
+    const detached = render(<DetachedRegistry />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    useUIStore.setState({ registryDetached: false, sidebarOpen: true });
+
+    render(<MainWindow />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(useUIStore.getState().registryDetached).toBe(true);
+    expect(useUIStore.getState().sidebarOpen).toBe(false);
+    detached.unmount();
   });
 });

@@ -40,6 +40,24 @@ function isDetachable(value: string | undefined): value is DetachableWindow {
   return value != null && DETACHABLE.has(value);
 }
 
+function isDetached(type: DetachableWindow): boolean {
+  const state = useUIStore.getState();
+  switch (type) {
+    case 'logs':
+      return state.logsDetached;
+    case 'sidebar':
+      return state.sidebarDetached;
+    case 'editor':
+      return state.editorDetached;
+    case 'registry':
+      return state.registryDetached;
+    case 'metrics':
+      return state.metricsDetached;
+    case 'traces':
+      return state.tracesDetached;
+  }
+}
+
 // Module-scope: detached windows live for the lifetime of the opener page,
 // not the lifetime of any particular component instance. A per-component ref
 // caused unmount cleanups to close windows that openDetachedWindow had only
@@ -124,18 +142,25 @@ export function useWindowManager() {
     if (!isDetachable(windowType)) return;
 
     if (message.type === 'WINDOW_OPENED') {
-      markOpened(windowType);
+      // Closing the in-shell panel is a false-to-true transition.
+      // openDetachedWindow already closes it on a local open. A ping
+      // reply from a popout that is already detached must not run that
+      // side effect again, or mounting the Stack inspector (or any other
+      // consumer) closes the inspector while the Library popout is open.
+      if (isDetached(windowType)) setDetached(windowType, true);
+      else markOpened(windowType);
     } else if (message.type === 'WINDOW_CLOSED') {
       clearDetached(windowType);
     }
-  }, [markOpened, clearDetached]);
+  }, [markOpened, clearDetached, setDetached]);
 
   const { postMessage } = useBroadcastChannel({
     onMessage: handleMessage,
   });
 
-  // One ping per channel instance. Open popouts reply with WINDOW_OPENED,
-  // which the handler above already treats as the detached flag.
+  // One ping per channel instance. Open popouts reply with WINDOW_OPENED.
+  // The handler restores a flag that is not yet set and does not re-close
+  // the in-shell panel when that popout is already detached.
   useEffect(() => {
     postMessage({ type: 'WHO_IS_OPEN', source: 'main' });
   }, [postMessage]);
