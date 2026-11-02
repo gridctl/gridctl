@@ -3,7 +3,9 @@ import { CheckCircle2, ShieldAlert } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { getClientIcon } from '../../lib/clientIcons';
 import type { ClientStatus } from '../../types';
-import { isConnected, type ClientHealth } from './connectionsModel';
+import { Badge } from '../ui/Badge';
+import { Switch } from '../ui/Switch';
+import { clientBadges, isConnected, type ClientHealth } from './connectionsModel';
 
 // ClientBrandIcon resolves the brand mark per render via createElement so no
 // component value is created during render (react-hooks/static-components).
@@ -11,29 +13,14 @@ export function ClientBrandIcon({ slug, size }: { slug: string; size?: number })
   return createElement(getClientIcon(slug), { size });
 }
 
-export function Badges({ client }: { client: ClientStatus }) {
+export function ClientBadgeList({ client }: { client: ClientStatus }) {
   return (
     <span className="flex items-center gap-1">
-      {client.linked && (
-        <span className="text-3xs uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-status-running/15 text-status-running">
-          Linked
-        </span>
-      )}
-      {client.declared && (
-        <span className="text-3xs uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-primary/15 text-primary">
-          Declared
-        </span>
-      )}
-      {client.drifted && (
-        <span className="text-3xs uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-status-pending/15 text-status-pending">
-          Drifted
-        </span>
-      )}
-      {client.detected && !client.linked && (
-        <span className="text-3xs uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-surface-elevated text-text-muted">
-          Detected
-        </span>
-      )}
+      {clientBadges(client).map((badge) => (
+        <Badge key={badge.label} tone={badge.tone}>
+          {badge.label}
+        </Badge>
+      ))}
     </span>
   );
 }
@@ -53,31 +40,14 @@ export function ConnectToggle({
   const canLink = client.detected;
   const staged = desired !== isConnected(client);
   return (
-    <button
-      role="switch"
-      aria-checked={desired}
-      aria-label={`Link ${client.name}`}
+    <Switch
+      checked={desired}
+      onChange={() => onToggle()}
+      label={`Link ${client.name}`}
       disabled={!canLink && !desired && !staged}
-      onClick={(e) => {
-        e.stopPropagation();
-        onToggle();
-      }}
       title={!canLink && !desired ? 'Client not detected on this machine' : undefined}
-      className={cn(
-        'relative w-9 h-5 rounded-full transition-colors flex-shrink-0 border',
-        desired
-          ? 'bg-primary border-primary'
-          : 'bg-text-muted/20 border-text-muted/30 opacity-70',
-        !canLink && !desired && !staged && 'opacity-40 cursor-not-allowed',
-      )}
-    >
-      <span
-        className={cn(
-          'absolute top-0.5 left-0 w-4 h-4 rounded-full bg-white shadow-sm transition-transform',
-          desired ? 'translate-x-[18px]' : 'translate-x-0.5',
-        )}
-      />
-    </button>
+      onClick={(e) => e.stopPropagation()}
+    />
   );
 }
 
@@ -199,7 +169,7 @@ export function ConnectionsRail({
                   )}
                 </span>
                 <span className="block mt-0.5">
-                  <Badges client={c} />
+                  <ClientBadgeList client={c} />
                 </span>
               </span>
               <ConnectToggle client={c} desired={desiredOf(c)} onToggle={() => onToggle(c)} />

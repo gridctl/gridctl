@@ -159,4 +159,27 @@ describe('useKeyboardShortcuts — editable targets and browser chords', () => {
     expect(fit.defaultPrevented).toBe(false);
     expect(bare.defaultPrevented).toBe(false);
   });
+
+  it('opens shortcuts on ? and ignores the key in a field or dialog', () => {
+    const onOpenShortcuts = vi.fn();
+    renderHook(() => useKeyboardShortcuts({ onOpenShortcuts }));
+
+    dispatchKey('?');
+    expect(onOpenShortcuts).toHaveBeenCalledTimes(1);
+
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    dispatchKey('?', {}, input);
+    expect(onOpenShortcuts).toHaveBeenCalledTimes(1);
+    input.remove();
+
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    const button = document.createElement('button');
+    dialog.appendChild(button);
+    document.body.appendChild(dialog);
+    dispatchKey('?', {}, button);
+    expect(onOpenShortcuts).toHaveBeenCalledTimes(1);
+    dialog.remove();
+  });
 });

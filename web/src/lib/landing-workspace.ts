@@ -1,17 +1,19 @@
 // Pure helpers for resolving the `/` landing workspace. Lives outside the
 // React component file so Fast Refresh and tree-shaking stay happy.
+import { prefKey, readPref } from './preferences';
 import { isWorkspace, type Workspace } from '../types/workspace';
 
-export const LAST_WORKSPACE_GLOBAL_KEY = 'gridctl:last-workspace';
-export const LAST_WORKSPACE_PER_STACK_PREFIX = 'gridctl:last-workspace:';
+export const LAST_WORKSPACE_NAME = 'last-workspace';
+export const LAST_WORKSPACE_GLOBAL_KEY = prefKey(LAST_WORKSPACE_NAME);
+export const LAST_WORKSPACE_PER_STACK_PREFIX = prefKey('last-workspace:');
 
 function readStoredWorkspace(stackId: string | null): Workspace | null {
   try {
     if (stackId) {
-      const perStack = localStorage.getItem(`${LAST_WORKSPACE_PER_STACK_PREFIX}${stackId}`);
+      const perStack = readPref(`last-workspace:${stackId}`);
       if (isWorkspace(perStack)) return perStack;
     }
-    const global = localStorage.getItem(LAST_WORKSPACE_GLOBAL_KEY);
+    const global = readPref(LAST_WORKSPACE_NAME);
     if (isWorkspace(global)) return global;
   } catch {
     // localStorage may be unavailable (private browsing); fall through.

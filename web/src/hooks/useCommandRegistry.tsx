@@ -9,8 +9,9 @@ import {
 import type { ReactNode } from 'react';
 import type { PaletteCommand, PaletteSection } from '../types/palette';
 import type { Workspace } from '../types/workspace';
+import { readPref, writePref } from '../lib/preferences';
 
-const FRECENCY_KEY = 'gridctl-palette-frecency';
+const FRECENCY_NAME = 'palette-frecency';
 
 interface FrecencyEntry {
   count: number;
@@ -21,7 +22,7 @@ type FrecencyMap = Map<string, FrecencyEntry>;
 
 function loadFrecency(): FrecencyMap {
   try {
-    const raw = localStorage.getItem(FRECENCY_KEY);
+    const raw = readPref(FRECENCY_NAME);
     if (!raw) return new Map();
     const parsed = JSON.parse(raw) as Record<string, FrecencyEntry>;
     return new Map(Object.entries(parsed));
@@ -31,11 +32,7 @@ function loadFrecency(): FrecencyMap {
 }
 
 function saveFrecency(map: FrecencyMap): void {
-  try {
-    localStorage.setItem(FRECENCY_KEY, JSON.stringify(Object.fromEntries(map)));
-  } catch {
-    // Ignore write errors (e.g. private browsing quota)
-  }
+  writePref(FRECENCY_NAME, JSON.stringify(Object.fromEntries(map)));
 }
 
 // Score decays to 0 over 7 days; multiplied by use count

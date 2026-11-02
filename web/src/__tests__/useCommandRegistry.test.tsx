@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { CommandRegistryProvider, useCommandRegistry } from '../hooks/useCommandRegistry';
+import { prefKey } from '../lib/preferences';
 import type { PaletteCommand } from '../types/palette';
 
 // --- Helpers ---
@@ -158,7 +159,7 @@ describe('useCommandRegistry', () => {
 
       act(() => result.current.recordUsage('navigate:traces'));
 
-      const stored = JSON.parse(localStorage.getItem('gridctl-palette-frecency') ?? '{}');
+      const stored = JSON.parse(localStorage.getItem(prefKey('palette-frecency')) ?? '{}');
       expect(stored['navigate:traces']).toBeDefined();
       expect(stored['navigate:traces'].count).toBe(1);
     });
@@ -171,7 +172,7 @@ describe('useCommandRegistry', () => {
         result.current.recordUsage('navigate:traces');
       });
 
-      const stored = JSON.parse(localStorage.getItem('gridctl-palette-frecency') ?? '{}');
+      const stored = JSON.parse(localStorage.getItem(prefKey('palette-frecency')) ?? '{}');
       expect(stored['navigate:traces'].count).toBe(2);
     });
 
@@ -181,7 +182,7 @@ describe('useCommandRegistry', () => {
 
       act(() => result.current.recordUsage('navigate:traces'));
 
-      const stored = JSON.parse(localStorage.getItem('gridctl-palette-frecency') ?? '{}');
+      const stored = JSON.parse(localStorage.getItem(prefKey('palette-frecency')) ?? '{}');
       expect(stored['navigate:traces'].lastUsed).toBeGreaterThanOrEqual(before);
     });
   });
@@ -246,7 +247,7 @@ describe('useCommandRegistry', () => {
     it('loads frecency data from localStorage on initialization', () => {
       // Pre-seed localStorage before the hook mounts
       localStorage.setItem(
-        'gridctl-palette-frecency',
+        prefKey('palette-frecency'),
         JSON.stringify({ 'navigate:traces': { count: 5, lastUsed: Date.now() - 1000 } }),
       );
 
@@ -262,7 +263,7 @@ describe('useCommandRegistry', () => {
     });
 
     it('handles corrupted localStorage gracefully', () => {
-      localStorage.setItem('gridctl-palette-frecency', '{invalid json}');
+      localStorage.setItem(prefKey('palette-frecency'), '{invalid json}');
 
       // Should not throw; falls back to empty frecency map
       expect(() => renderHook(() => useCommandRegistry(), { wrapper })).not.toThrow();

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ToolDetailPanel } from '../components/workspaces/ToolDetailPanel';
+import { prefKey } from '../lib/preferences';
 import type { ToolRow } from '../hooks/useToolsEditor';
 
 const TOOL: ToolRow = {
@@ -59,7 +60,7 @@ describe('ToolDetailPanel', () => {
     renderPanel();
     fireEvent.click(screen.getByTitle(/increase font size/i));
     expect(screen.getByText('13px')).toBeInTheDocument();
-    expect(localStorage.getItem('gridctl-tools-zoom')).toBe('13');
+    expect(localStorage.getItem(prefKey('tools-zoom'))).toBe('13');
   });
 
   it('shows the Usage section with calls and tokens outside audit mode', () => {

@@ -24,6 +24,7 @@ import { useSkillBody } from '../../hooks/useSkillBody';
 import { useSkillFiles } from '../../hooks/useSkillFiles';
 import { formatManagedDirs, missingManagedDirs } from '../../lib/skillPackage';
 import { useTextZoom } from '../../hooks/useTextZoom';
+import { LIBRARY_TEXT_ZOOM } from '../../lib/textZoomDefaults';
 import type { AgentSkill, SkillSourceStatus, SkillUsageStat } from '../../types';
 import { describeError, isCancellation } from '../../lib/describeError';
 
@@ -109,8 +110,11 @@ export function SkillDetailPanel({
     isMax: instrIsMax,
     isDefault: instrIsDefault,
   } = useTextZoom({
-    storageKey: 'gridctl-library-zoom',
-    defaultSize: 13,
+    storageKey: LIBRARY_TEXT_ZOOM.name,
+    defaultSize: LIBRARY_TEXT_ZOOM.defaultSize,
+    minSize: LIBRARY_TEXT_ZOOM.minSize,
+    maxSize: LIBRARY_TEXT_ZOOM.maxSize,
+    step: LIBRARY_TEXT_ZOOM.step,
     containerRef: instructionsRef,
   });
 

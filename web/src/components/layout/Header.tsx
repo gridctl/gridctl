@@ -1,4 +1,4 @@
-import { RefreshCw, RotateCcw, Plus, Command, LogOut } from 'lucide-react';
+import { RefreshCw, RotateCcw, Plus, Command, LogOut, SlidersHorizontal } from 'lucide-react';
 import { Suspense, lazy, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
@@ -130,7 +130,13 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
         {isConnected && <HeaderTelemetryPill />}
         {isConnected && <div className="hidden sm:block w-px h-5 bg-border/50 mx-0.5" />}
         {/* Appearance (light/dark/system) — prominent in the action cluster */}
-        <ThemePicker variant="header" placement="down" />
+        <ThemePicker />
+        <IconButton
+          icon={SlidersHorizontal}
+          onClick={() => useUIStore.getState().setPreferencesOpen(true)}
+          tooltip="Preferences"
+          className="hover:text-primary hover:border-primary/30"
+        />
         <div className="hidden sm:block w-px h-5 bg-border/50 mx-0.5" />
         {credential && (
           <IconButton

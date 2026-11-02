@@ -24,6 +24,8 @@ import {
   Plug,
   RotateCcw,
   LogOut,
+  SlidersHorizontal,
+  Keyboard,
 } from 'lucide-react';
 import type { ThemeMode } from '../themes/types';
 import { useCommandRegistry } from './useCommandRegistry';
@@ -50,6 +52,8 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
   const toggleSpecMode = useUIStore((s) => s.toggleSpecMode);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
   const setThemeMode = useUIStore((s) => s.setThemeMode);
+  const setPreferencesOpen = useUIStore((s) => s.setPreferencesOpen);
+  const setShortcutsOpen = useUIStore((s) => s.setShortcutsOpen);
 
   const mcpServers = useStackStore((s) => s.mcpServers);
   const selectNode = useStackStore((s) => s.selectNode);
@@ -161,7 +165,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
     return () => unregisterCommands('navigation');
   }, [registerCommands, unregisterCommands, navigate]);
 
-  // Appearance — theme switching, mirrors the StatusBar ThemePicker.
+  // Appearance commands mirror the header ThemePicker. Open Preferences is the same dialog.
   useEffect(() => {
     const set = (mode: ThemeMode) => () => setThemeMode(mode);
     const commands: PaletteCommand[] = [
@@ -189,10 +193,27 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         keywords: ['appearance', 'theme', 'system', 'auto', 'os', 'preference'],
         onSelect: set('system'),
       },
+      {
+        id: 'preferences:open',
+        label: 'Open Preferences',
+        section: 'global',
+        icon: <SlidersHorizontal size={14} />,
+        keywords: ['settings', 'preferences', 'appearance', 'compact', 'text size', 'font'],
+        onSelect: () => setPreferencesOpen(true),
+      },
+      {
+        id: 'help:shortcuts',
+        label: 'Keyboard shortcuts',
+        section: 'global',
+        icon: <Keyboard size={14} />,
+        shortcut: ['?'],
+        keywords: ['keyboard', 'shortcuts', 'help', 'keys', 'bindings'],
+        onSelect: () => setShortcutsOpen(true),
+      },
     ];
     registerCommands('appearance', commands);
     return () => unregisterCommands('appearance');
-  }, [registerCommands, unregisterCommands, setThemeMode]);
+  }, [registerCommands, unregisterCommands, setThemeMode, setPreferencesOpen, setShortcutsOpen]);
 
   // Canvas actions and global actions
   useEffect(() => {

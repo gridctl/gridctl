@@ -5,6 +5,7 @@ import type {
   WiringRow,
 } from '../../types';
 import type { ContextClientStatus } from '../../lib/api';
+import type { BadgeTone } from '../ui/Badge';
 
 // Desired connection state per slug, staged locally until Apply. Only
 // slugs whose desired state differs from the current state are present.
@@ -16,6 +17,15 @@ export type StagedChanges = Record<string, boolean>;
 // the Declared badge still distinguishes declared from merely linked.
 export function isConnected(c: ClientStatus): boolean {
   return c.linked || Boolean(c.declared);
+}
+
+export function clientBadges(client: ClientStatus): { label: string; tone: BadgeTone }[] {
+  const badges: { label: string; tone: BadgeTone }[] = [];
+  if (client.linked) badges.push({ label: 'Linked', tone: 'success' });
+  if (client.declared) badges.push({ label: 'Declared', tone: 'primary' });
+  if (client.drifted) badges.push({ label: 'Drifted', tone: 'warning' });
+  if (client.detected && !client.linked) badges.push({ label: 'Detected', tone: 'neutral' });
+  return badges;
 }
 
 // Wiring states that need a human decision. `missing` is excluded: a

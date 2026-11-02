@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useTextZoom } from '../hooks/useTextZoom';
+import { prefKey, writePref } from '../lib/preferences';
 
-const KEY = 'gridctl-test-zoom';
+const KEY = 'test-zoom';
 
 beforeEach(() => {
   localStorage.clear();
@@ -16,14 +17,14 @@ describe('useTextZoom', () => {
   });
 
   it('restores a valid persisted size', () => {
-    localStorage.setItem(KEY, '17');
+    localStorage.setItem(prefKey(KEY), '17');
     const { result } = renderHook(() => useTextZoom({ storageKey: KEY, defaultSize: 13 }));
     expect(result.current.fontSize).toBe(17);
     expect(result.current.isDefault).toBe(false);
   });
 
   it('ignores an out-of-range persisted size and falls back to the default', () => {
-    localStorage.setItem(KEY, '999');
+    localStorage.setItem(prefKey(KEY), '999');
     const { result } = renderHook(() =>
       useTextZoom({ storageKey: KEY, defaultSize: 13, maxSize: 22 }),
     );
@@ -36,11 +37,11 @@ describe('useTextZoom', () => {
     );
     act(() => result.current.zoomIn());
     expect(result.current.fontSize).toBe(15);
-    expect(localStorage.getItem(KEY)).toBe('15');
+    expect(localStorage.getItem(prefKey(KEY))).toBe('15');
 
     act(() => result.current.zoomOut());
     expect(result.current.fontSize).toBe(13);
-    expect(localStorage.getItem(KEY)).toBe('13');
+    expect(localStorage.getItem(prefKey(KEY))).toBe('13');
   });
 
   it('clamps at the min and max bounds and flips isMin/isMax', () => {
@@ -68,7 +69,7 @@ describe('useTextZoom', () => {
     act(() => result.current.resetZoom());
     expect(result.current.fontSize).toBe(13);
     expect(result.current.isDefault).toBe(true);
-    expect(localStorage.getItem(KEY)).toBe('13');
+    expect(localStorage.getItem(prefKey(KEY))).toBe('13');
   });
 
   it('exposes the current size as the --text-zoom-size custom property', () => {
@@ -78,5 +79,30 @@ describe('useTextZoom', () => {
     act(() => result.current.zoomIn());
     const next = result.current.containerProps.style as Record<string, string>;
     expect(next['--text-zoom-size']).toBe('14px');
+  });
+
+  it('updates a mounted consumer when the preference is written elsewhere', () => {
+    const { result } = renderHook(() => useTextZoom({ storageKey: KEY, defaultSize: 13 }));
+    expect(result.current.fontSize).toBe(13);
+    act(() => writePref(KEY, '16'));
+    expect(result.current.fontSize).toBe(16);
+  });
+
+  it('still advances fontSize when storage writes throw', () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('storage blocked');
+    });
+    try {
+      const { result } = renderHook(() => useTextZoom({ storageKey: KEY, defaultSize: 13 }));
+      act(() => result.current.zoomIn());
+      expect(result.current.fontSize).toBe(14);
+      expect(localStorage.getItem(prefKey(KEY))).toBeNull();
+      act(() => result.current.zoomIn());
+      expect(result.current.fontSize).toBe(15);
+    } finally {
+      setItem.mockRestore();
+      writePref(KEY, '13');
+      localStorage.removeItem(prefKey(KEY));
+    }
   });
 });
