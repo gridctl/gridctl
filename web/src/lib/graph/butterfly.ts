@@ -154,22 +154,15 @@ export class ButterflyLayoutEngine implements LayoutEngine {
     return nodes.map((node) => {
       const { height } = getNodeDimensions(node, compact);
 
-      // Check for preserved position (user-dragged)
-      const preserved = preservedPositions?.get(node.id);
-      if (preserved) {
-        return { ...node, position: preserved };
-      }
-
-      // Calculate position: left-align nodes within zone (all share same left edge)
-      const position = {
+      // A dragged node still reserves its slot so later nodes do not shift up.
+      const slot = {
         x: config.baseX - maxWidth / 2,
         y: currentY,
       };
-
-      // Advance Y for next node
       currentY += height + spacing;
 
-      return { ...node, position };
+      const preserved = preservedPositions?.get(node.id);
+      return { ...node, position: preserved ?? slot };
     });
   }
 }
