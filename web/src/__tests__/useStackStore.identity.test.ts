@@ -138,6 +138,42 @@ describe('useStackStore graph identity', () => {
     expect(useStackStore.getState().nodes.find((node) => node.id === 'mcp-jira')?.selected).not.toBe(true);
   });
 
+  it('keeps sibling client slots after a drag on the next poll', () => {
+    const clients: ClientStatus[] = [
+      { ...linked, name: 'Alpha', slug: 'alpha' },
+      { ...linked, name: 'Beta', slug: 'beta' },
+      { ...linked, name: 'Gamma', slug: 'gamma' },
+    ];
+    useStackStore.getState().setGatewayStatus(status([makeServer('github')]));
+    useStackStore.getState().setClients(clients);
+    const before = useStackStore.getState().nodes;
+    const first = before.find((node) => node.id === 'client-alpha');
+    const middle = before.find((node) => node.id === 'client-beta');
+    const third = before.find((node) => node.id === 'client-gamma');
+    expect(first).toBeDefined();
+    expect(middle).toBeDefined();
+    expect(third).toBeDefined();
+
+    const dragged = { x: middle!.position.x + 30, y: middle!.position.y + 40 };
+    useStackStore.getState().setNodes(
+      before.map((node) => (
+        node.id === 'client-beta' ? { ...node, position: dragged } : node
+      )),
+    );
+    useStackStore.getState().recordDraggedPositions([{
+      id: 'client-beta',
+      type: 'position',
+      position: dragged,
+      dragging: false,
+    }]);
+    useStackStore.getState().setGatewayStatus(status([makeServer('github')]));
+
+    const after = useStackStore.getState().nodes;
+    expect(after.find((node) => node.id === 'client-alpha')?.position).toEqual(first!.position);
+    expect(after.find((node) => node.id === 'client-gamma')?.position).toEqual(third!.position);
+    expect(after.find((node) => node.id === 'client-beta')?.position).toEqual(dragged);
+  });
+
   it('keeps a dragged position across the next poll', () => {
     useStackStore.getState().setGatewayStatus(status([makeServer('github')]));
     useStackStore.getState().setNodes(
