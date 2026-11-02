@@ -1276,26 +1276,34 @@ function FragmentDriftResolveDialog({
           </pre>
           {multiFile ? (
             <div className="flex items-center justify-end gap-2">
-              <DialogButton label="Cancel" onClick={onClose} disabled={busy} variant="muted" />
+              <Button type="button" size="sm" variant="ghost" onClick={onClose} disabled={busy}>
+                Cancel
+              </Button>
               {identity && selected && (
-                <DialogButton
-                  label={`Adopt ${selected}`}
-                  disabled={busy}
+                <Button
+                  type="button"
+                  size="sm"
                   variant="primary"
+                  disabled={busy}
                   onClick={() =>
                     void run(
                       () => adoptGlobalContext(client.slug, { fragment: selected }),
                       `Adopted "${selected}" from ${client.name} into the canonical store`,
                     )
                   }
-                />
+                >
+                  {`Adopt ${selected}`}
+                </Button>
               )}
-              <DialogButton
-                label="Force overwrite"
+              <Button
+                type="button"
+                size="sm"
+                variant="outline-danger"
                 disabled={busy}
-                variant="danger"
                 onClick={handleOverwrite}
-              />
+              >
+                Force overwrite
+              </Button>
             </div>
           ) : (
             <CompiledCaptureActions
@@ -1391,49 +1399,29 @@ function CompiledCaptureActions({
         </p>
       )}
       <div className="flex items-center justify-end gap-2">
-        <DialogButton label="Cancel" onClick={onClose} disabled={busy} variant="muted" />
-        <DialogButton
-          label={valid ? `Capture into ${target}` : 'Capture'}
-          disabled={busy || !valid}
+        <Button type="button" size="sm" variant="ghost" onClick={onClose} disabled={busy}>
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          size="sm"
           variant="primary"
+          disabled={busy || !valid}
           onClick={() => onCapture(target)}
-        />
-        <DialogButton
-          label="Force overwrite"
+        >
+          {valid ? `Capture into ${target}` : 'Capture'}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline-danger"
           disabled={busy}
-          variant="danger"
           onClick={onOverwrite}
-        />
+        >
+          Force overwrite
+        </Button>
       </div>
     </div>
-  );
-}
-
-function DialogButton({
-  label,
-  onClick,
-  disabled,
-  variant,
-}: {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  variant: 'muted' | 'primary' | 'danger';
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={cn(
-        'px-3 py-1.5 text-xs rounded-lg border transition-colors disabled:opacity-50',
-        variant === 'muted' && 'text-text-muted border-border/40 hover:bg-surface-highlight',
-        variant === 'primary' &&
-          'font-medium text-primary bg-primary/10 border-primary/25 hover:bg-primary/15',
-        variant === 'danger' && 'font-medium text-status-error border-status-error/25 hover:bg-status-error/10',
-      )}
-    >
-      {label}
-    </button>
   );
 }
 

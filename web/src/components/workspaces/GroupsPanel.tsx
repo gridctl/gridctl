@@ -49,10 +49,10 @@ export function GroupsPanel({ isOpen, onClose, report, toolCatalog }: GroupsPane
                       onClick={() => setActiveName(g.name)}
                       aria-current={isActive}
                       className={cn(
-                        'w-full text-left rounded-md px-2.5 py-2 border-l-2 transition-colors',
+                        'w-full text-left rounded-md px-2.5 py-2 transition-colors',
                         isActive
-                          ? 'border-l-primary bg-primary/[0.07]'
-                          : 'border-l-transparent hover:bg-surface-highlight/40',
+                          ? 'bg-primary/10 text-primary'
+                          : 'text-text-secondary hover:bg-surface-highlight/50',
                       )}
                     >
                       <div className="flex items-center gap-1.5">

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import '@testing-library/jest-dom';
 import { render, screen } from '@testing-library/react';
-import { Badges } from '../components/connections/ConnectionsRail';
+import { ClientBadgeList } from '../components/connections/ConnectionsRail';
 import type { ClientStatus } from '../types';
 
 const drifted: ClientStatus = {
@@ -15,7 +15,7 @@ const drifted: ClientStatus = {
 
 describe('ConnectionsRail badges', () => {
   it('renders Drifted with the pending status token', () => {
-    render(<Badges client={drifted} />);
+    render(<ClientBadgeList client={drifted} />);
     expect(screen.getByText('Drifted').className).toContain('status-pending');
   });
 });

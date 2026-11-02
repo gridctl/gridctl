@@ -17,7 +17,7 @@ import {
 } from '../../lib/api';
 import { AGENT_TARGET_SLUGS, agentClientName } from '../registry/agents/agentModel';
 import type { AgentProjectionStatus, ClientStatus, SessionEntry, WiringRow } from '../../types';
-import { ClientBrandIcon, Badges } from './ConnectionsRail';
+import { ClientBrandIcon, ClientBadgeList } from './ConnectionsRail';
 import { sessionIdentity, type ClientHealth } from './connectionsModel';
 
 interface ClientDetailPaneProps {
@@ -119,7 +119,7 @@ export function ClientDetailPane({
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-2">
               <h2 className="font-semibold text-text-primary truncate tracking-tight">{client.name}</h2>
-              <Badges client={client} />
+              <ClientBadgeList client={client} />
             </span>
             {client.configPath && (
               <button

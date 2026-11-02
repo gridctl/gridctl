@@ -3,7 +3,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type ComponentType,
   type ReactNode,
 } from 'react';
 import {
@@ -543,17 +542,13 @@ export function VariableInspector({
                   </span>
                 </Button>
                 {variable.is_secret && (
-                  <PillButton
-                    icon={isRevealed ? EyeOff : Eye}
-                    label={isRevealed ? 'Hide' : 'Reveal'}
-                    onClick={handleReveal}
-                  />
+                  <Button type="button" variant="ghost" size="sm" onClick={handleReveal}>
+                    {isRevealed ? <EyeOff size={10} /> : <Eye size={10} />} {isRevealed ? 'Hide' : 'Reveal'}
+                  </Button>
                 )}
-                <PillButton
-                  icon={Pencil}
-                  label="Edit value"
-                  onClick={() => void startEdit()}
-                />
+                <Button type="button" variant="ghost" size="sm" onClick={() => void startEdit()}>
+                  <Pencil size={10} /> Edit value
+                </Button>
               </div>
             </div>
           )}
@@ -623,18 +618,19 @@ export function VariableInspector({
           )}
         >
           {canRotate && (
-            <PillButton
-              icon={RefreshCw}
-              label="Rotate secret"
-              onClick={() => setConfirmRotate(true)}
-            />
+            <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmRotate(true)}>
+              <RefreshCw size={10} /> Rotate secret
+            </Button>
           )}
           {navigableConsumer && (
-            <PillButton
-              icon={ArrowUpRight}
-              label="Jump to Stack"
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
               onClick={() => onConsumerClick?.(navigableConsumer)}
-            />
+            >
+              <ArrowUpRight size={10} /> Jump to Stack
+            </Button>
           )}
         </div>
       )}
@@ -686,27 +682,6 @@ export function VariableInspector({
         variant="danger"
       />
     </aside>
-  );
-}
-
-// Ghost-pill action button shared by the value and footer action rows.
-function PillButton({
-  icon: Icon,
-  label,
-  onClick,
-}: {
-  icon: ComponentType<{ size?: number; className?: string }>;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-3xs font-medium text-text-secondary hover:text-text-primary border border-border/40 hover:border-border transition-colors"
-    >
-      <Icon size={10} /> {label}
-    </button>
   );
 }
 

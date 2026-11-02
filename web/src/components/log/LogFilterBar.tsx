@@ -1,6 +1,7 @@
 import { useRef, useState, type RefObject } from 'react';
 import { AlertCircle, Search, SlidersHorizontal } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { Button } from '../ui/Button';
 import { LevelFilter } from './LevelFilter';
 import { ZoomControls } from '../ui/ZoomControls';
 import { IconButton } from '../ui/IconButton';
@@ -193,10 +194,10 @@ export function LogFilterBar({
               </div>
             )}
             {onToggleWrap && (
-              <PopoverToggle label="Wrap lines" pressed={wrap} onToggle={onToggleWrap} />
+              <OptionToggle label="Wrap lines" pressed={wrap} onToggle={onToggleWrap} />
             )}
             {onToggleRelativeTime && (
-              <PopoverToggle
+              <OptionToggle
                 label="Relative timestamps"
                 pressed={relativeTime}
                 onToggle={onToggleRelativeTime}
@@ -235,7 +236,7 @@ export function LogFilterBar({
   );
 }
 
-function PopoverToggle({
+function OptionToggle({
   label,
   pressed,
   onToggle,
@@ -247,18 +248,16 @@ function PopoverToggle({
   return (
     <div className="flex items-center justify-between gap-2 px-1 py-1.5">
       <span className="text-3xs text-text-secondary">{label}</span>
-      <button
-        onClick={onToggle}
+      <Button
+        type="button"
+        size="sm"
+        variant={pressed ? 'primary' : 'ghost'}
         aria-pressed={pressed}
-        className={cn(
-          'px-1.5 py-0.5 text-3xs font-medium rounded border transition-colors',
-          pressed
-            ? 'bg-primary/15 text-primary border-primary/30'
-            : 'bg-background/60 text-text-muted border-border/40 hover:text-text-secondary'
-        )}
+        onClick={onToggle}
+        className="px-1.5 py-0.5 text-3xs"
       >
         {pressed ? 'On' : 'Off'}
-      </button>
+      </Button>
     </div>
   );
 }
