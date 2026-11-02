@@ -47,7 +47,7 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
   const registryDetached = useUIStore((s) => s.registryDetached);
   const editorDetached = useUIStore((s) => s.editorDetached);
   const selectNode = useStackStore((s) => s.selectNode);
-  const { openDetachedWindow } = useWindowManager();
+  const { openDetachedWindow, focusDetachedWindow } = useWindowManager();
 
   // Editor state
   const [showEditor, setShowEditor] = useState(false);
@@ -93,7 +93,8 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
   };
 
   const handlePopout = () => {
-    openDetachedWindow('registry');
+    if (registryDetached) focusDetachedWindow('registry');
+    else openDetachedWindow('registry');
   };
 
   const refreshRegistry = useCallback(async () => {
@@ -244,10 +245,7 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
               </div>
             </div>
             <div className="flex items-center gap-1">
-              <PopoutButton
-                onClick={handlePopout}
-                disabled={registryDetached}
-              />
+              <PopoutButton onClick={handlePopout} detached={registryDetached} />
               <button type="button" onClick={handleClose} aria-label="Close" className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors group">
                 <X size={16} className="text-text-muted group-hover:text-text-primary transition-colors" />
               </button>
@@ -380,8 +378,12 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
         onClose={() => { setShowEditor(false); setEditingSkill(undefined); }}
         onSaved={refreshRegistry}
         skill={editingSkill}
-        popoutDisabled={editorDetached}
+        popoutDetached={editorDetached}
         onPopout={() => {
+          if (editorDetached) {
+            focusDetachedWindow('editor');
+            return;
+          }
           const params = editingSkill
             ? `type=skill&name=${encodeURIComponent(editingSkill.name)}`
             : 'type=skill';

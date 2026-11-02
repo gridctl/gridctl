@@ -17,6 +17,8 @@ interface ShortcutOptions {
   onSwitchToWorkspace?: (id: Workspace) => void;
   // Cmd/Ctrl+\ toggles Compact Mode for the active workspace.
   onToggleCompactMode?: () => void;
+  // ? opens the keyboard shortcuts panel. Ignored in fields and dialogs.
+  onOpenShortcuts?: () => void;
 }
 
 const WORKSPACE_BY_KEY: ReadonlyMap<string, Workspace> = new Map(
@@ -90,6 +92,15 @@ export function useKeyboardShortcuts(options: ShortcutOptions) {
       if (isMod && e.key === '\\') {
         e.preventDefault();
         options.onToggleCompactMode?.();
+      }
+
+      // Keyboard shortcuts panel. ? is Shift+/ on a US keyboard, so shift is
+      // expected. Dialogs own their keys; fields are already excluded above.
+      if (e.key === '?' && !e.altKey && !e.metaKey && !e.ctrlKey && options.onOpenShortcuts) {
+        const target = e.target instanceof Element ? e.target : null;
+        if (target?.closest('[role="dialog"]')) return;
+        e.preventDefault();
+        options.onOpenShortcuts();
       }
     };
 

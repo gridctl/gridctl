@@ -24,7 +24,7 @@ export function TracesWorkspace() {
   const navigate = useNavigate();
   const compact = useUIStore((s) => s.compactMode.traces);
   const tracesDetached = useUIStore((s) => s.tracesDetached);
-  const { openDetachedWindow } = useWindowManager();
+  const { openDetachedWindow, focusDetachedWindow } = useWindowManager();
 
   const mcpServers = useStackStore((s) => s.mcpServers);
   const servers = useMemo(() => mcpServers.map((s) => s.name).sort(), [mcpServers]);
@@ -162,9 +162,8 @@ export function TracesWorkspace() {
             onViewMetrics={(server) => navigate(`/metrics?scope=servers&selected=${encodeURIComponent(server)}`)}
             toolbarExtra={
               <PopoutButton
-                onClick={() => openDetachedWindow('traces')}
-                tooltip="Open in separate window"
-                disabled={tracesDetached}
+                onClick={() => (tracesDetached ? focusDetachedWindow('traces') : openDetachedWindow('traces'))}
+                detached={tracesDetached}
               />
             }
           />

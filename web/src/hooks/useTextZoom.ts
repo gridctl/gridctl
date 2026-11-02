@@ -1,6 +1,8 @@
-import { useState, useCallback, useEffect, useRef, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, type RefObject } from 'react';
+import { usePref, writePref } from '../lib/preferences';
 
 interface TextZoomOptions {
+  /** Preference name. The hook prefixes it; do not pass a raw storage key. */
   storageKey: string;
   defaultSize: number;
   minSize?: number;
@@ -25,25 +27,12 @@ interface TextZoomResult {
   };
 }
 
-function loadSize(key: string, defaultSize: number, min: number, max: number): number {
-  try {
-    const stored = localStorage.getItem(key);
-    if (stored) {
-      const parsed = Number(stored);
-      if (!isNaN(parsed) && parsed >= min && parsed <= max) return parsed;
-    }
-  } catch {
-    // Private browsing or quota exceeded
+function parseSize(stored: string | null, defaultSize: number, min: number, max: number): number {
+  if (stored) {
+    const parsed = Number(stored);
+    if (!isNaN(parsed) && parsed >= min && parsed <= max) return parsed;
   }
   return defaultSize;
-}
-
-function saveSize(key: string, size: number): void {
-  try {
-    localStorage.setItem(key, String(size));
-  } catch {
-    // Ignore storage errors
-  }
 }
 
 export function useTextZoom(options: TextZoomOptions): TextZoomResult {
@@ -57,33 +46,29 @@ export function useTextZoom(options: TextZoomOptions): TextZoomResult {
   } = options;
 
   const internalRef = useRef<HTMLDivElement>(null);
-  const [fontSize, setFontSize] = useState(() => loadSize(storageKey, defaultSize, minSize, maxSize));
+  const stored = usePref(storageKey);
+  const fontSize = parseSize(stored, defaultSize, minSize, maxSize);
 
   const clamp = useCallback(
     (size: number) => Math.min(maxSize, Math.max(minSize, size)),
     [minSize, maxSize],
   );
 
+  const write = useCallback((size: number) => {
+    writePref(storageKey, String(size));
+  }, [storageKey]);
+
   const zoomIn = useCallback(() => {
-    setFontSize((prev) => {
-      const next = clamp(prev + step);
-      saveSize(storageKey, next);
-      return next;
-    });
-  }, [storageKey, step, clamp]);
+    write(clamp(fontSize + step));
+  }, [fontSize, step, clamp, write]);
 
   const zoomOut = useCallback(() => {
-    setFontSize((prev) => {
-      const next = clamp(prev - step);
-      saveSize(storageKey, next);
-      return next;
-    });
-  }, [storageKey, step, clamp]);
+    write(clamp(fontSize - step));
+  }, [fontSize, step, clamp, write]);
 
   const resetZoom = useCallback(() => {
-    setFontSize(defaultSize);
-    saveSize(storageKey, defaultSize);
-  }, [storageKey, defaultSize]);
+    write(defaultSize);
+  }, [write, defaultSize]);
 
   // Ctrl+Scroll zoom - attach to external ref if provided, else internal ref
   useEffect(() => {

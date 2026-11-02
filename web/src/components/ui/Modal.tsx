@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useId, useRef, type ReactNode } from 'react';
-import { X, Maximize2, Minimize2, ExternalLink } from 'lucide-react';
+import { X, Maximize2, Minimize2, ExternalLink, AppWindow } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 
@@ -13,10 +13,12 @@ interface ModalProps {
   /** Show an expand toggle that steps the panel up one size from its base
    *  (default -> wide, wide -> full, full -> fullscreen). */
   expandable?: boolean;
-  /** Callback to pop out into a new window */
+  /** Callback to pop out into a new window, or focus it when already detached. */
   onPopout?: () => void;
-  /** Disable popout button (e.g., already detached) */
+  /** Disable popout button (e.g., already detached). Ignored when popoutDetached is set. */
   popoutDisabled?: boolean;
+  /** Panel is already in a detached window. The button stays enabled and focuses it. */
+  popoutDetached?: boolean;
   /** Base size of the panel (the expand toggle steps up from here) */
   size?: ModalSize;
   /** Flush mode: panel fills the entire viewport (for detached windows) */
@@ -44,6 +46,7 @@ export function Modal({
   expandable,
   onPopout,
   popoutDisabled,
+  popoutDetached,
   size: forcedSize,
   flush,
 }: ModalProps) {
@@ -145,22 +148,29 @@ export function Modal({
               <button
                 type="button"
                 onClick={onPopout}
-                disabled={popoutDisabled}
-                title="Open in new window"
-                aria-label="Open in new window"
+                disabled={popoutDetached ? false : popoutDisabled}
+                title={popoutDetached ? 'Detached. Click to focus' : 'Open in new window'}
+                aria-label={popoutDetached ? 'Detached. Click to focus' : 'Open in new window'}
                 className={cn(
                   'p-1.5 rounded-lg transition-all duration-200 group',
                   'hover:bg-primary/10 hover:shadow-[0_0_12px_--alpha(var(--color-primary)/15%)]',
                   'disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none',
                 )}
               >
-                <ExternalLink
-                  size={14}
-                  className={cn(
-                    'text-text-muted transition-all duration-200',
-                    'group-hover:text-primary group-hover:scale-110 group-hover:-translate-y-px group-hover:translate-x-px',
-                  )}
-                />
+                {popoutDetached ? (
+                  <AppWindow
+                    size={14}
+                    className="text-text-muted transition-colors group-hover:text-primary"
+                  />
+                ) : (
+                  <ExternalLink
+                    size={14}
+                    className={cn(
+                      'text-text-muted transition-all duration-200',
+                      'group-hover:text-primary group-hover:scale-110 group-hover:-translate-y-px group-hover:translate-x-px',
+                    )}
+                  />
+                )}
               </button>
             )}
             <button

@@ -210,7 +210,7 @@ export function LibraryWorkspace() {
   const isLoading = skills === null;
   const hasSkills = (skills ?? []).length > 0;
 
-  const { openDetachedWindow } = useWindowManager();
+  const { openDetachedWindow, focusDetachedWindow } = useWindowManager();
   const compact = useUIStore((s) => s.compactMode.library);
   const toggleCompact = useUIStore((s) => s.toggleCompactMode);
   // Select mode pins the multi-select checkboxes visible. Any live selection
@@ -658,8 +658,9 @@ export function LibraryWorkspace() {
   }, []);
 
   const handlePopout = useCallback(() => {
-    openDetachedWindow('registry');
-  }, [openDetachedWindow]);
+    if (useUIStore.getState().registryDetached) focusDetachedWindow('registry');
+    else openDetachedWindow('registry');
+  }, [openDetachedWindow, focusDetachedWindow]);
 
   const handleShowAll = useCallback(() => {
     setSearchParams(
@@ -1569,7 +1570,7 @@ function LibraryHeader({ kindSwitch, onNewSkill, onImportSkill, onGlobalContext,
             onClick={onSync}
           />
           <IconButton icon={RefreshCw} onClick={onRefresh} tooltip="Refresh" size="sm" variant="ghost" />
-          <PopoutButton onClick={onPopout} disabled={registryDetached} tooltip="Open in new window" />
+          <PopoutButton onClick={onPopout} detached={registryDetached} />
         </div>
       </div>
 

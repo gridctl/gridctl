@@ -3,6 +3,8 @@ import { Outlet, useLocation, useNavigate } from 'react-router';
 import { Header } from '../layout/Header';
 import { StatusBar } from '../layout/StatusBar';
 import { CommandPalette } from '../palette/CommandPalette';
+import { PreferencesDialog } from './PreferencesDialog';
+import { ShortcutsPanel } from './ShortcutsPanel';
 import { ToastContainer } from '../ui/Toast';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { useStackStore } from '../../stores/useStackStore';
@@ -13,10 +15,7 @@ import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useCanvasActionsStore } from '../../stores/useCanvasActionsStore';
 import { useGlobalCommands } from '../../hooks/useGlobalCommands';
 import { documentTitleForWorkspace, isWorkspace, type Workspace } from '../../types/workspace';
-import {
-  LAST_WORKSPACE_GLOBAL_KEY,
-  LAST_WORKSPACE_PER_STACK_PREFIX,
-} from '../../lib/landing-workspace';
+import { writePref } from '../../lib/preferences';
 
 const HEADER_HEIGHT = 56;
 const STATUSBAR_HEIGHT = 32;
@@ -28,14 +27,8 @@ function workspaceFromPath(pathname: string): Workspace | null {
 }
 
 function persistLastWorkspace(ws: Workspace, stackId: string | null) {
-  try {
-    localStorage.setItem(LAST_WORKSPACE_GLOBAL_KEY, ws);
-    if (stackId) {
-      localStorage.setItem(`${LAST_WORKSPACE_PER_STACK_PREFIX}${stackId}`, ws);
-    }
-  } catch {
-    // localStorage may be unavailable; persistence is best-effort.
-  }
+  writePref('last-workspace', ws);
+  if (stackId) writePref(`last-workspace:${stackId}`, ws);
 }
 
 export function AppShell() {
@@ -51,6 +44,7 @@ export function AppShell() {
   const setActiveWorkspace = useUIStore((s) => s.setActiveWorkspace);
   const activeWorkspace = useUIStore((s) => s.activeWorkspace);
   const toggleCompactMode = useUIStore((s) => s.toggleCompactMode);
+  const setShortcutsOpen = useUIStore((s) => s.setShortcutsOpen);
 
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -110,6 +104,7 @@ export function AppShell() {
       navigate(`/${id}`);
     },
     onToggleCompactMode: () => toggleCompactMode(activeWorkspace),
+    onOpenShortcuts: () => setShortcutsOpen(true),
   });
 
   useGlobalCommands({ onRefresh: handleRefresh });
@@ -143,6 +138,8 @@ export function AppShell() {
         isOpen={commandPaletteOpen}
         onClose={() => setCommandPaletteOpen(false)}
       />
+      <PreferencesDialog />
+      <ShortcutsPanel />
     </div>
   );
 }

@@ -58,7 +58,7 @@ export function Sidebar() {
   const mcpServers = useStackStore((s) => s.mcpServers);
   const enableAccessLens = useAccessLensStore((s) => s.setEnabled);
   const openAccessLensEditor = useAccessLensStore((s) => s.openSlideOver);
-  const { openDetachedWindow } = useWindowManager();
+  const { openDetachedWindow, focusDetachedWindow } = useWindowManager();
   const navigate = useNavigate();
 
   const handleClose = () => {
@@ -117,7 +117,8 @@ export function Sidebar() {
   };
 
   const handlePopout = () => {
-    openDetachedWindow('sidebar', `node=${encodeURIComponent(data.name)}`);
+    if (sidebarDetached) focusDetachedWindow('sidebar');
+    else openDetachedWindow('sidebar', `node=${encodeURIComponent(data.name)}`);
   };
 
   const handleViewSecrets = () => {
@@ -178,7 +179,7 @@ export function Sidebar() {
         }
         onClose={handleClose}
         actions={
-          <PopoutButton onClick={handlePopout} disabled={sidebarDetached} />
+          <PopoutButton onClick={handlePopout} detached={sidebarDetached} />
         }
       />
 
@@ -480,7 +481,7 @@ export function Sidebar() {
         {/* Controls Section (not for clients - they aren't containers) */}
         {!isClient && (
           <InspectorSection title="Actions" icon={Terminal} defaultOpen>
-            <ControlBar name={data.name} variant={isServer ? 'mcp-server' : 'mcp-server'} />
+            <ControlBar name={data.name} variant="mcp-server" />
             <button
               onClick={handleShowLogs}
               className={cn(

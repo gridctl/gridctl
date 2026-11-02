@@ -6,6 +6,7 @@ import { useCommandRegistry } from '../../hooks/useCommandRegistry';
 import { useUIStore } from '../../stores/useUIStore';
 import { showToast } from '../ui/Toast';
 import type { PaletteCommand, PaletteSection } from '../../types/palette';
+import { ShortcutKeys } from '../ui/ShortcutKeys';
 
 interface CommandPaletteProps {
   isOpen: boolean;
@@ -44,21 +45,6 @@ function parsePrefixScope(input: string): {
     }
   }
   return { scope: null, prefix: null, query: input };
-}
-
-function ShortcutKeys({ keys }: { keys: string[] }) {
-  return (
-    <span className="flex items-center gap-0.5 shrink-0 ml-2">
-      {keys.map((key, i) => (
-        <kbd
-          key={i}
-          className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-3xs font-mono text-text-muted bg-surface border border-border/50 min-w-[18px]"
-        >
-          {key}
-        </kbd>
-      ))}
-    </span>
-  );
 }
 
 function SectionBadge({ section }: { section: PaletteSection }) {
@@ -107,7 +93,7 @@ function PaletteItem({ command, onSelect, showBadge }: PaletteItemProps) {
       ) : (
         <>
           {showBadge && <SectionBadge section={command.section} />}
-          {command.shortcut && <ShortcutKeys keys={command.shortcut} />}
+          {command.shortcut && <span className="ml-2"><ShortcutKeys keys={command.shortcut} /></span>}
         </>
       )}
     </Command.Item>

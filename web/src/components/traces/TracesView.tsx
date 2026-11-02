@@ -26,6 +26,7 @@ import {
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useTextZoom } from '../../hooks/useTextZoom';
+import { TRACES_TEXT_ZOOM } from '../../lib/textZoomDefaults';
 import { useListNav } from '../../hooks/useListNav';
 import { useDismiss } from '../../hooks/useDismiss';
 import { useContainerWidth } from '../../hooks/useContainerWidth';
@@ -115,10 +116,11 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
   const compact = listWidth > 0 && listWidth < 480;
 
   const { fontSize, zoomIn, zoomOut, resetZoom, isMin, isMax, isDefault } = useTextZoom({
-    storageKey: 'gridctl-traces-font-size',
-    defaultSize: 11,
-    minSize: 8,
-    maxSize: 20,
+    storageKey: TRACES_TEXT_ZOOM.name,
+    defaultSize: TRACES_TEXT_ZOOM.defaultSize,
+    minSize: TRACES_TEXT_ZOOM.minSize,
+    maxSize: TRACES_TEXT_ZOOM.maxSize,
+    step: TRACES_TEXT_ZOOM.step,
     containerRef,
   });
 

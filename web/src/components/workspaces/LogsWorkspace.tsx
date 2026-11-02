@@ -27,7 +27,7 @@ export function LogsWorkspace() {
   const navigate = useNavigate();
   const compact = useUIStore((s) => s.compactMode.logs);
   const logsDetached = useUIStore((s) => s.logsDetached);
-  const { openDetachedWindow } = useWindowManager();
+  const { openDetachedWindow, focusDetachedWindow } = useWindowManager();
   const mcpServers = useStackStore((s) => s.mcpServers);
 
   const view = useLogsView();
@@ -36,7 +36,10 @@ export function LogsWorkspace() {
     navigate(`/traces?trace=${encodeURIComponent(traceId)}`);
   }, [navigate]);
 
-  const openDetached = () => openDetachedWindow('logs', view.filterQuery || undefined);
+  const openDetached = () => {
+    if (logsDetached) focusDetachedWindow('logs');
+    else openDetachedWindow('logs', view.filterQuery || undefined);
+  };
   useLogsCommands({ view, onOpenDetached: openDetached });
 
   // Rail entries stay stable across filters: deployed servers plus any source
@@ -92,11 +95,7 @@ export function LogsWorkspace() {
             }
             emptyText="No logs yet"
             toolbarExtra={
-              <PopoutButton
-                onClick={openDetached}
-                tooltip="Open in separate window"
-                disabled={logsDetached}
-              />
+              <PopoutButton onClick={openDetached} detached={logsDetached} />
             }
           />
         </section>

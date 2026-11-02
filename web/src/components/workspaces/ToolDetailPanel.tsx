@@ -10,6 +10,7 @@ import { formatLastUsed, type AuditState } from '../../lib/toolAudit';
 import { CHIP_TONE_CLASS, annotationChips, policyChip, policyDetailText } from '../../lib/groups';
 import type { PolicyToolStatus } from '../../lib/api';
 import { useTextZoom } from '../../hooks/useTextZoom';
+import { TOOLS_TEXT_ZOOM } from '../../lib/textZoomDefaults';
 import type { ToolRow } from '../../hooks/useToolsEditor';
 import type { ToolUsageStat } from '../../types';
 
@@ -59,8 +60,11 @@ export function ToolDetailPanel({
   // pane (own storageKey) like the Logs/Traces zoom; 12px stays the default.
   const contentRef = useRef<HTMLDivElement>(null);
   const { fontSize, zoomIn, zoomOut, resetZoom, isMin, isMax, isDefault } = useTextZoom({
-    storageKey: 'gridctl-tools-zoom',
-    defaultSize: 12,
+    storageKey: TOOLS_TEXT_ZOOM.name,
+    defaultSize: TOOLS_TEXT_ZOOM.defaultSize,
+    minSize: TOOLS_TEXT_ZOOM.minSize,
+    maxSize: TOOLS_TEXT_ZOOM.maxSize,
+    step: TOOLS_TEXT_ZOOM.step,
     containerRef: contentRef,
   });
 

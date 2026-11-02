@@ -92,7 +92,7 @@ export function MetricsWorkspace() {
   const tokenUsage = useStackStore((s) => s.tokenUsage);
   const mcpServers = useStackStore((s) => s.mcpServers);
 
-  const { openDetachedWindow } = useWindowManager();
+  const { openDetachedWindow, focusDetachedWindow } = useWindowManager();
 
   // ---- URL state ----------------------------------------------------------
   const scope: Scope = isScope(searchParams.get('scope')) ? (searchParams.get('scope') as Scope) : 'overview';
@@ -467,7 +467,12 @@ export function MetricsWorkspace() {
                 setLiveMsg('Metrics refreshed');
               }}
               onClear={() => void clear()}
-              right={<PopoutButton onClick={() => openDetachedWindow('metrics')} disabled={metricsDetached} />}
+              right={(
+                <PopoutButton
+                  onClick={() => (metricsDetached ? focusDetachedWindow('metrics') : openDetachedWindow('metrics'))}
+                  detached={metricsDetached}
+                />
+              )}
             />
           </header>
 

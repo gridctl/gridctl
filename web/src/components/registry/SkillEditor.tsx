@@ -46,10 +46,11 @@ import { useSplitPane } from '../../hooks/useSplitPane';
 import { SplitPaneHandle } from '../ui/SplitPane';
 import type { AgentSkill, ItemState, SkillSourceStatus, SkillValidationResult } from '../../types';
 import { describeError, isCancellation } from '../../lib/describeError';
+import { readPref, writePref } from '../../lib/preferences';
 
 // One-time hint shown the first time a user saves an edit to a remote skill,
 // explaining that the edit becomes a local customization sync will preserve.
-const LOCAL_EDIT_NOTE_KEY = 'gridctl-skill-local-edit-note-seen';
+const LOCAL_EDIT_NOTE_NAME = 'skill-local-edit-note-seen';
 
 // --- Types ---
 
@@ -392,6 +393,7 @@ interface SkillEditorProps {
   source?: SkillSourceStatus;
   onPopout?: () => void;
   popoutDisabled?: boolean;
+  popoutDetached?: boolean;
   size?: 'default' | 'wide' | 'full';
   flush?: boolean;
 }
@@ -404,6 +406,7 @@ export function SkillEditor({
   source,
   onPopout,
   popoutDisabled,
+  popoutDetached,
   size,
   flush,
 }: SkillEditorProps) {
@@ -709,19 +712,13 @@ export function SkillEditor({
         showToast('success', `Skill "${name}" updated`);
         // First time a tracked skill is edited, explain that the change becomes
         // a local customization that future syncs will preserve.
-        if (isRemote && body !== originalBody) {
-          try {
-            if (!localStorage.getItem(LOCAL_EDIT_NOTE_KEY)) {
-              localStorage.setItem(LOCAL_EDIT_NOTE_KEY, '1');
-              showToast(
-                'warning',
-                'Saved as a local customization. Future syncs will skip this skill unless you overwrite.',
-                { duration: 6000 },
-              );
-            }
-          } catch {
-            // localStorage unavailable (private mode): skip the one-time note.
-          }
+        if (isRemote && body !== originalBody && !readPref(LOCAL_EDIT_NOTE_NAME)) {
+          writePref(LOCAL_EDIT_NOTE_NAME, '1');
+          showToast(
+            'warning',
+            'Saved as a local customization. Future syncs will skip this skill unless you overwrite.',
+            { duration: 6000 },
+          );
         }
       }
       if (await onSaved() !== false) onClose();
@@ -871,6 +868,7 @@ export function SkillEditor({
       flush={flush}
       onPopout={onPopout}
       popoutDisabled={popoutDisabled}
+      popoutDetached={popoutDetached}
     >
       {/* Fill the modal's padded content box (100% + the cancelled py-4) so the
           editor grows with the panel: 85vh base, 94vh expanded, full viewport

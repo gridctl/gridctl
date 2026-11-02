@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, act } from '@testing-library/react';
+import { render, act, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { useEffect } from 'react';
 import { useUIStore } from '../stores/useUIStore';
 import { useWindowManager } from '../hooks/useWindowManager';
+import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
+import { ToastContainer } from '../components/ui/Toast';
 
 // A test harness that calls useWindowManager from inside a component which is
 // conditionally rendered based on useUIStore.sidebarOpen. This mirrors how
@@ -12,15 +14,18 @@ import { useWindowManager } from '../hooks/useWindowManager';
 // unmounts in the same commit. Before the fix, the unmount cleanup closed the
 // just-opened window. After the fix, the module-scope windowRefs survives the
 // unmount and the window stays open.
-function PopoutHarness({ onReady }: { onReady: (open: () => void) => void }) {
-  const { openDetachedWindow } = useWindowManager();
+function PopoutHarness({ onReady }: { onReady: (open: () => void, focus: (type?: 'registry' | 'logs') => void) => void }) {
+  const { openDetachedWindow, focusDetachedWindow } = useWindowManager();
   useEffect(() => {
-    onReady(() => openDetachedWindow('registry'));
-  }, [onReady, openDetachedWindow]);
+    onReady(
+      () => openDetachedWindow('registry'),
+      (type = 'registry') => focusDetachedWindow(type),
+    );
+  }, [onReady, openDetachedWindow, focusDetachedWindow]);
   return null;
 }
 
-function ConditionalHost({ onReady }: { onReady: (open: () => void) => void }) {
+function ConditionalHost({ onReady }: { onReady: (open: () => void, focus: (type?: 'registry' | 'logs') => void) => void }) {
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
   return sidebarOpen ? <PopoutHarness onReady={onReady} /> : null;
 }
@@ -36,6 +41,7 @@ interface StubWindow {
   close: ReturnType<typeof vi.fn>;
   addEventListener: ReturnType<typeof vi.fn>;
   document: { title: string };
+  location: { href: string };
 }
 
 describe('useWindowManager.openDetachedWindow', () => {
@@ -50,6 +56,7 @@ describe('useWindowManager.openDetachedWindow', () => {
       close: vi.fn(),
       addEventListener: vi.fn(),
       document: { title: '' },
+      location: { href: 'http://localhost/library-window' },
     };
     openSpy = vi.spyOn(window, 'open').mockReturnValue(stubWindow as unknown as Window);
     vi.useFakeTimers();
@@ -102,5 +109,108 @@ describe('useWindowManager.openDetachedWindow', () => {
     expect(openSpy).toHaveBeenCalledTimes(1);
     expect(useUIStore.getState().registryDetached).toBe(false);
     expect(useUIStore.getState().sidebarOpen).toBe(true);
+  });
+
+  it('shows a warning toast whose action opens the same route when the popup is blocked', () => {
+    openSpy.mockReturnValueOnce(null);
+    let openRegistry: (() => void) | null = null;
+    render(
+      <>
+        <ToastContainer />
+        <ConditionalHost onReady={(open) => { openRegistry = open; }} />
+      </>,
+    );
+
+    act(() => {
+      openRegistry!();
+    });
+
+    expect(useUIStore.getState().registryDetached).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    expect(openSpy).toHaveBeenLastCalledWith('/library-window', '_blank');
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+  });
+
+  it('focuses the existing window without opening another', () => {
+    let openRegistry: (() => void) | null = null;
+    let focus: ((type?: 'registry' | 'logs') => void) | null = null;
+    render(<ConditionalHost onReady={(open, focusWindow) => { openRegistry = open; focus = focusWindow; }} />);
+
+    act(() => {
+      openRegistry!();
+    });
+    stubWindow.focus.mockClear();
+    openSpy.mockClear();
+
+    act(() => {
+      focus!();
+    });
+
+    expect(stubWindow.focus).toHaveBeenCalledTimes(1);
+    expect(openSpy).not.toHaveBeenCalled();
+  });
+
+  it('closes a blank named window and clears the detached flag', () => {
+    stubWindow.closed = true;
+    useUIStore.setState({ logsDetached: true });
+    const blank = {
+      closed: false,
+      focus: vi.fn(),
+      close: vi.fn(),
+      addEventListener: vi.fn(),
+      document: { title: '' },
+      location: { href: 'about:blank' },
+    };
+    openSpy.mockReturnValueOnce(blank as unknown as Window);
+
+    let focus: ((type?: 'registry' | 'logs') => void) | null = null;
+    render(<ConditionalHost onReady={(_open, focusWindow) => { focus = focusWindow; }} />);
+
+    act(() => {
+      focus!('logs');
+    });
+
+    expect(openSpy).toHaveBeenCalledWith('', 'gridctl-logs');
+    expect(blank.close).toHaveBeenCalledTimes(1);
+    expect(useUIStore.getState().logsDetached).toBe(false);
+    blank.closed = true;
+  });
+});
+
+function DetachedLogs() {
+  useDetachedWindowSync('logs');
+  return null;
+}
+
+function MainWindow() {
+  useWindowManager();
+  return null;
+}
+
+describe('useWindowManager WHO_IS_OPEN', () => {
+  afterEach(() => {
+    cleanup();
+    useUIStore.setState({ logsDetached: false });
+  });
+
+  it('restores the detached flag from a popout reply without calling window.open', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+    useUIStore.setState({ logsDetached: false });
+    const detached = render(<DetachedLogs />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    useUIStore.setState({ logsDetached: false });
+
+    render(<MainWindow />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(useUIStore.getState().logsDetached).toBe(true);
+    expect(openSpy).not.toHaveBeenCalled();
+    detached.unmount();
+    openSpy.mockRestore();
   });
 });

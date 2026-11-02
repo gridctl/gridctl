@@ -47,6 +47,18 @@ export const COMPACT_MODE_DEFAULTS: CompactModeMap = {
   connections: false,
 };
 
+// Workspaces that actually read compactMode. Stack and Connections have no
+// compact layout, so Preferences does not offer a switch for them.
+export const COMPACT_MODE_WORKSPACES: readonly Workspace[] = [
+  'library',
+  'vault',
+  'tools',
+  'metrics',
+  'pins',
+  'logs',
+  'traces',
+];
+
 export interface CompactModeSlice {
   compactMode: CompactModeMap;
   setCompactMode: (workspace: Workspace, value: boolean) => void;
@@ -151,6 +163,12 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   commandPaletteOpen: boolean;
   setCommandPaletteOpen: (open: boolean) => void;
   toggleCommandPalette: () => void;
+
+  // Preferences and shortcut help (not persisted)
+  preferencesOpen: boolean;
+  setPreferencesOpen: (open: boolean) => void;
+  shortcutsOpen: boolean;
+  setShortcutsOpen: (open: boolean) => void;
 
   // Reset dialog (the machine-wide `gridctl reset` surface): opened from
   // the Connections danger zone or the command palette. Transient.
@@ -361,6 +379,10 @@ export const useUIStore = create<UIState>()(
 
       // Command palette (always starts closed)
       commandPaletteOpen: false,
+      preferencesOpen: false,
+      setPreferencesOpen: (preferencesOpen) => set({ preferencesOpen }),
+      shortcutsOpen: false,
+      setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
 
       // Reset dialog (always starts closed)
       resetDialogOpen: false,
