@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useTextZoom } from '../hooks/useTextZoom';
 import { prefKey, writePref } from '../lib/preferences';
@@ -86,5 +86,23 @@ describe('useTextZoom', () => {
     expect(result.current.fontSize).toBe(13);
     act(() => writePref(KEY, '16'));
     expect(result.current.fontSize).toBe(16);
+  });
+
+  it('still advances fontSize when storage writes throw', () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('storage blocked');
+    });
+    try {
+      const { result } = renderHook(() => useTextZoom({ storageKey: KEY, defaultSize: 13 }));
+      act(() => result.current.zoomIn());
+      expect(result.current.fontSize).toBe(14);
+      expect(localStorage.getItem(prefKey(KEY))).toBeNull();
+      act(() => result.current.zoomIn());
+      expect(result.current.fontSize).toBe(15);
+    } finally {
+      setItem.mockRestore();
+      writePref(KEY, '13');
+      localStorage.removeItem(prefKey(KEY));
+    }
   });
 });

@@ -4,32 +4,44 @@ export const PREF_PREFIX = 'gridctl-pref-';
 
 const listeners = new Map<string, Set<() => void>>();
 
+// Session copy of a preference whose storage write was rejected (blocked
+// site data, private mode, quota). Reads prefer it over a stale or missing
+// storage value so the control still moves. A later successful write drops
+// the copy and storage is the source of truth again.
+const sessionPrefs = new Map<string, string>();
+
 export function prefKey(name: string): string {
   return `${PREF_PREFIX}${name}`;
 }
 
 export function readPref(name: string): string | null {
+  const key = prefKey(name);
+  if (sessionPrefs.has(key)) return sessionPrefs.get(key) ?? null;
   try {
-    return localStorage.getItem(prefKey(name));
+    return localStorage.getItem(key);
   } catch {
     return null;
   }
 }
 
 export function writePref(name: string, value: string): void {
+  const key = prefKey(name);
   try {
-    localStorage.setItem(prefKey(name), value);
+    localStorage.setItem(key, value);
+    sessionPrefs.delete(key);
   } catch {
-    return;
+    sessionPrefs.set(key, value);
   }
   notifyPref(name);
 }
 
 export function removePref(name: string): void {
+  const key = prefKey(name);
+  sessionPrefs.delete(key);
   try {
-    localStorage.removeItem(prefKey(name));
+    localStorage.removeItem(key);
   } catch {
-    return;
+    // Storage rejected the delete. The session copy is already gone.
   }
   notifyPref(name);
 }

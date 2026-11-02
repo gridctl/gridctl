@@ -1,5 +1,5 @@
-import { describe, expect, it, beforeEach } from 'vitest';
-import { migratePreferences, prefKey } from '../lib/preferences';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { migratePreferences, prefKey, readPref, writePref } from '../lib/preferences';
 
 const LEGACY = [
   ['gridctl-log-font-size', 'log-font-size', '11'],
@@ -48,5 +48,23 @@ describe('migratePreferences', () => {
     migratePreferences();
     expect(localStorage.getItem(prefKey('tools-zoom'))).toBe('12');
     expect(localStorage.getItem('gridctl-tools-zoom')).toBe('18');
+  });
+
+  it('returns the session value when storage reads throw after a rejected write', () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('storage blocked');
+    });
+    writePref('zoom-fallback', '16');
+    setItem.mockRestore();
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('storage blocked');
+    });
+    try {
+      expect(readPref('zoom-fallback')).toBe('16');
+    } finally {
+      getItem.mockRestore();
+      writePref('zoom-fallback', '16');
+      localStorage.removeItem(prefKey('zoom-fallback'));
+    }
   });
 });
