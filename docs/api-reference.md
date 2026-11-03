@@ -1,6 +1,6 @@
 # REST API Reference
 
-The gridctl gateway exposes a REST API for managing stacks, secrets, skills, packs, schema and skill pins, the global context (including rule fragments), agent projection and client wiring, usage telemetry, traces, run records, optimize findings, daemon reset, live tool invocation and discovery, and MCP protocol interactions. By default the gateway listens on port `8180`.
+The gridctl gateway exposes a REST API for managing stacks, secrets, skills, packs, schema, skill, and context pins, the global context (including rule fragments), agent projection and client wiring, usage telemetry, traces, run records, optimize findings, daemon reset, live tool invocation and discovery, and MCP protocol interactions. By default the gateway listens on port `8180`.
 
 ## Authentication
 
@@ -2821,7 +2821,7 @@ Registry skill and agent responses also carry a `modelPreference` object when th
 
 TOFU content pins for global context fragments, or for the canonical `AGENTS.md` when fragments mode is off. Stackless, authenticated, and never `503` when the store is empty: the UI polls `GET /api/context/pins`. See [Fragment pins](global-context.md#fragment-pins).
 
-A pin record uses these fields: `hash`, `document` (omitted when empty), `source` (`local` or `pack`, omitted when empty), `pack` (omitted when empty), `approved_reason` (omitted when empty), `pinned_at`, `last_verified_at`, `status` (`pinned` or `drift`), `findings` (omitted when empty), and `approvals` (omitted when empty, rebuilt from the approvals log, newest first).
+A pin record uses these fields: `hash`, `document` (omitted when empty), `source` (`local` or `pack`, omitted when empty), `pack` (omitted when empty), `approved_reason` (omitted when empty), `pinned_at`, `last_verified_at`, `status` (`pinned` or `drift`), `findings` (omitted when empty), and `approvals` (omitted when empty, rebuilt from the approvals log, newest first, last 10). The diff response does not repeat that history.
 
 #### `GET /api/context/pins`
 
