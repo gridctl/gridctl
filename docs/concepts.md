@@ -10,7 +10,7 @@ A stack is the YAML file (`stack.yaml`, or any path you pass to `gridctl apply`)
 
 ## Pack
 
-A pack is a git repository with a `gridctl-pack.yaml` manifest: a versioned selection of skills, agents, hooks, rule fragments, gateway wiring, and an optional stack file, pinned on add at `~/.gridctl/packs/<name>/<commit>/`. A booster pack extends another pack's stack with a fragment; `pack apply` composes them into one gateway on the base pack's port. `gridctl-pack.lock.yaml`, written by `gridctl pack lock`, pins each external source commit so two machines import the same revisions. `gridctl pack add` imports that selection, and `gridctl pack apply` starts a carried stack from the CLI only, then projects skills, agents, hooks, rules, and wiring. Hook projection writes Claude Code only and reports other clients. REST and the web UI project skills, agents, rules, and wiring, but not hooks in this release, and they do not start, stop, or reload the daemon ([Packs](packs.md), [Carrying a stack](packs.md#carrying-a-stack), [Lock file](packs.md#lock-file)).
+A pack is a git repository with a `gridctl-pack.yaml` manifest: a versioned selection of skills, agents, hooks, rule fragments, gateway wiring, and an optional stack file, pinned on add at `~/.gridctl/packs/<name>/<commit>/`. A booster pack extends another pack's stack with a fragment; `pack apply` composes them into one gateway on the base pack's port. `gridctl-pack.lock.yaml`, written by `gridctl pack lock`, pins each external source commit so two machines import the same revisions. `gridctl pack add` imports that selection, and `gridctl pack apply` starts a carried stack from the CLI only, then projects skills, agents, hooks, rules, and wiring. Hook projection writes Claude Code only and reports other clients. REST and the web UI project skills, agents, rules, and wiring. They do not project or unsync hooks, and pack status over REST stays on the store-presence row. They do not start, stop, or reload the daemon ([Packs](packs.md), [Carrying a stack](packs.md#carrying-a-stack), [Lock file](packs.md#lock-file)).
 
 ## Skill
 
@@ -42,7 +42,7 @@ The registry is the local store at `~/.gridctl/registry/` for skills, agents, an
 
 ## Projection
 
-Projection copies skills, agents, hooks, global context, and wiring onto client disks and records each destination in `~/.gridctl/project.lock.yaml` (revision 4 when a hook entry is present). Named skills use `gridctl skill project`, imported agents use `gridctl skill project sync --kind agent`, imported hooks use `gridctl skill project sync --kind hook` (Claude Code only), global context uses `gridctl ctx sync`, and wiring uses `gridctl project sync --kind wiring`. Linking runs none of these commands ([Projecting skills into clients](skills.md#projecting-skills-into-clients), [Hooks](hooks.md#projection)).
+Projection copies skills, agents, hooks, global context, and wiring onto client disks and records each destination in `~/.gridctl/project.lock.yaml`. A rewrite stamps revision 4, which adds hook entries. A higher revision is kept. Named skills use `gridctl skill project`, imported agents use `gridctl skill project sync --kind agent`, imported hooks use `gridctl skill project sync --kind hook` (Claude Code only), global context uses `gridctl ctx sync`, and wiring uses `gridctl project sync --kind wiring`. Linking runs none of these commands ([Projecting skills into clients](skills.md#projecting-skills-into-clients), [Hooks](hooks.md#projection)).
 
 ## Group
 

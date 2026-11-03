@@ -266,7 +266,7 @@ Skill and agent authors can declare a model preference in frontmatter (top-level
 
 The stack-level [`model_preferences:` block](config-schema.md#model-preferences) adds policy: per-scope defaults and per-name overrides (raise or lower), applied when projections sync with `rewrite: true`. The rewrite lands in projected files only; the registry canonical never changes, so skill pins cannot drift from policy. Because a symlink cannot carry a rewrite, an affected skill projection is forced to copy channel and status names the reason (`copy (model policy)`); removing the policy (or `rewrite: false`) restores the symlink on the next policy-aware sync. The daemon applies the loaded stack's policy on every reconcile; on the CLI, pass `--stack <path>` to `skill project sync`. A sync without stack context never reverts a rewritten projection; status shows `model policy: unknown (no stack loaded)` until a policy-aware sync decides.
 
-Pack interaction: packs re-import canonical skills and agents, and the next policy-aware projection re-stamps the operator's overrides, so a team default survives every pack update without hand-patching. Pack manifests do not carry model policy themselves; that stays operator stack config.
+Pack interaction: packs re-import canonical skills and agents, and the next policy-aware projection re-stamps the operator's overrides, so a team default survives every pack update without hand-patching. Pack manifests do not carry model policy themselves; that stays operator stack config. Hooks have no model preference and no adopt.
 
 ### Adopt a hand edit
 
