@@ -2583,7 +2583,18 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/pins
         "name": "github__create_pull_request",
         "pinned_at": "2026-03-24T09:14:22Z"
       }
-    }
+    },
+    "approvals": [
+      {
+        "approved_at": "2026-10-02T15:04:05Z",
+        "approved_by": "wcollins",
+        "approved_by_source": "declared",
+        "approved_hash": "abc123...",
+        "bound": false,
+        "reason": "Reviewed the new pull-request schema",
+        "evidence": ["https://example.test/pull/42"]
+      }
+    ]
   }
 }
 ```
@@ -2660,8 +2671,10 @@ Fields on each modified tool:
 
 Re-pins the current live tool definitions for a server, clearing drift status.
 Ordinary servers supply tools through the running gateway router. Optional JSON
-body: `{"expected_server_hash":"<live_server_hash from diff>"}`. A mismatched
+body: `{"expected_server_hash":"<live_server_hash from diff>","reason":"<why>","evidence":["<opaque ref>"],"approved_by":"<name>"}`.
+`reason` and `evidence` are optional. Evidence references are stored as text and never fetched. A mismatched
 hash returns `409`; an empty body retains ordinary unconditional approval.
+Attribution order: a verified OAuth principal (`approved_by_source: oauth`), else a non-empty `approved_by` (`declared`), else the daemon's local OS user (`os_user`). `approved_by` is attribution, not authentication. A credential-shaped reason or reference returns `400`.
 
 Card-trust approval requires a nonempty `expected_server_hash` and uses the
 service's immutable snapshot. It performs an unconditional bounded card refetch,
@@ -2686,7 +2699,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/pins/gi
 ```
 
 **Errors:**
-- `400` - Invalid JSON body, or card approval without `expected_server_hash`
+- `400` - Invalid JSON body, card approval without `expected_server_hash`, or a refused reason or evidence reference (credential-shaped, empty, too long, or more than 16)
 - `404` - No pins found for that server, or server not found in gateway
 - `409` - Reviewed hash changed; card registration unavailable; or card approval failed its refresh, generation, revision, or persistence check
 - `500` - Ordinary tool fingerprinting or persistence failed
@@ -2731,7 +2744,19 @@ Every skill pin, keyed by skill name. Returns `200` with an empty object when sk
     "pinned_at": "2026-08-01T10:00:00Z",
     "last_verified_at": "2026-08-01T10:05:00Z",
     "status": "pinned",
-    "findings": []
+    "findings": [],
+    "composite_hash": "4be1…",
+    "approvals": [
+      {
+        "approved_at": "2026-10-02T15:04:05Z",
+        "approved_by": "wcollins",
+        "approved_by_source": "os_user",
+        "approved_hash": "4be1…",
+        "bound": true,
+        "reason": "Adds runbook step 4",
+        "evidence": ["https://example.test/pull/42"]
+      }
+    ]
   }
 }
 ```
@@ -2760,13 +2785,13 @@ What changed since the pin, plus the `composite_hash` an approval must echo. Vie
 
 #### `POST /api/skill-pins/{name}/approve`
 
-Re-pins the current content. Optional body: `{ "expected_hash": "<composite_hash from the diff>", "reason": "<justification>" }`. `409` when the content changed since the reviewed diff; `400` when the content carries unresolved advisory findings and no reason is given; `404` when the skill is not in the registry.
+Re-pins the current content. Optional body: `{ "expected_hash": "<composite_hash from the diff>", "reason": "<justification>", "evidence": ["<opaque ref>"], "approved_by": "<name>" }`. Evidence references are stored as text and never fetched. Attribution order: a verified OAuth principal (`approved_by_source: oauth`), else a non-empty `approved_by` (`declared`), else the daemon's local OS user (`os_user`). `approved_by` is attribution, not authentication. `409` when the content changed since the reviewed diff; `400` when the content carries unresolved advisory findings and no reason is given, or when a reason or evidence reference is refused (credential-shaped, empty, too long, or more than 16); `404` when the skill is not in the registry.
 
 #### `DELETE /api/skill-pins/{name}`
 
 Deletes the pin record (`204`); the next registry refresh re-pins fresh. `404` when no pin exists.
 
-Registry skill responses (`GET /api/registry/skills`, `GET /api/registry/skills/{name}`) additionally carry a `governance` object when known: `source` (`local` | `git`), `origin`, `pinStatus` (`pinned` | `drift`), `findingsCount`, `maxFindingSeverity`, and — when a `skills:` policy denies the skill — `policyDenied` with the matching `policyRule`.
+Registry skill responses (`GET /api/registry/skills`, `GET /api/registry/skills/{name}`) additionally carry a `governance` object when known: `source` (`local` | `git`), `origin`, `pinStatus` (`pinned` | `drift`), `findingsCount`, `maxFindingSeverity`, `lastApprovedAt`, `lastApprovedBy`, and, when a `skills:` policy denies the skill, `policyDenied` with the matching `policyRule`.
 
 Registry skill and agent responses also carry a `modelPreference` object when the item declares a model preference or a `model_preferences:` policy resolves one (absent otherwise, so older frontends see nothing new):
 

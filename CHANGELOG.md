@@ -4,6 +4,10 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Skill and tool pin approvals can record a reason and repeatable opaque evidence references. `gridctl skill pins approve` and `gridctl pins approve` accept `--reason` and `--evidence`. Each approval appends an entry (time, approver, bound hash, reason, and references, newest first, 10 kept) to `~/.gridctl/pins/approvals/skills/<stack>.json` or `~/.gridctl/pins/approvals/tools/<stack>.json`. Skill pin records gain `approvals` and `composite_hash`. Tool pin records gain `approvals`, and card-trust approvals record one bound entry inside the card transaction. `list --format json` and `diff` JSON include the history (`last_approval` on diff). `gridctl info --json` advertises `schemas.pin_approvals`. The security report adds `skill.pin.approval` and `pin.schema.approval`, not fail predicates, with reason codes `approval_recorded` and `approval_unrecorded`. `gridctl.security-report.v1` is unchanged. An older binary rejects a snapshot whose checks use the new predicates or reason codes on import: `validateImportedReport` refuses unknown predicates and reason codes rather than ignoring them. Credential-shaped references and reasons are refused at input and are not stored.
+
 ## [1.0.0-rc.4] - 2026-11-03
 
 ### Features

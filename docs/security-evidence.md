@@ -40,6 +40,8 @@ Coverage "complete" refers only to this named inventory, not to complete securit
 | `pin.scan.findings` | Stored advisory findings, including historical rows when scanning is later disabled or findings are suppressed. No findings without coverage is unknown, not a clean scan |
 | `skill.pin.baseline` | Skill pin presence, scoped to skill subjects |
 | `skill.pin.continuity` | Skill pin drift |
+| `skill.pin.approval` | Whether an explicit skill approval entry exists. Pass with `approval_recorded` or `approval_unrecorded`. Not a fail predicate. The report carries the bound hash only |
+| `pin.schema.approval` | Whether an explicit tool-schema approval entry exists. Pass with `approval_recorded` or `approval_unrecorded`. Not a fail predicate. The report carries the bound hash only |
 | `source.declared` | Authored source or image identity |
 | `source.build_digest` | Declared build-input digest (not authenticated verification) |
 | `source.image_observed` | Observed image reference when a snapshot supplies it |
@@ -54,7 +56,7 @@ Coverage "complete" refers only to this named inventory, not to complete securit
 | `execution.enforcement` | Recorded execution outcome. Container predicates are N/A for non-container subjects |
 | `policy.declared` | Whether a per-tool `policy:` block is declared. Pass with `policy_declared` or `policy_undeclared`. Not a fail predicate. A declared policy is name-based; tool output is not inspected |
 
-Fail predicates (exit `1`): `pin.schema.continuity` when stored status is drift, `skill.pin.continuity` when stored status is drift, and `execution.enforcement` when recorded outcome is failed, refused, or ineligible. Heuristic findings are warnings. Pins are not explicit approvals.
+Fail predicates (exit `1`): `pin.schema.continuity` when stored status is drift, `skill.pin.continuity` when stored status is drift, and `execution.enforcement` when recorded outcome is failed, refused, or ineligible. Heuristic findings are warnings. Pins are not explicit approvals unless an approval entry is recorded. `skill.pin.approval` and `pin.schema.approval` are not fail predicates.
 
 An A2A declaration reports source kind `a2a` and is non-container for execution
 evidence. This classification does not fetch an Agent Card or establish card

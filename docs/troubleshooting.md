@@ -73,6 +73,11 @@ and continues.
 Skill pins. `~/.gridctl/pins/skills/<stack>.json` is the same check against
 `skill_pins`, including the unknown-advertisement warning.
 
+Approval logs. `~/.gridctl/pins/approvals/skills/<stack>.json` and
+`~/.gridctl/pins/approvals/tools/<stack>.json` are the same check against
+`pin_approvals`, including the unknown-advertisement warning. A missing log
+is compatible.
+
 Project lock. `~/.gridctl/project.lock.yaml` has `version` above the target's
 `project_lock`. Restore the copy under `~/.gridctl/project-migration-backup/`
 first.
