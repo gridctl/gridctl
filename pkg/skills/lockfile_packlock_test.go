@@ -63,7 +63,62 @@ func TestLockFile_FragmentRoundTrip(t *testing.T) {
 	assert.Equal(t, "infra", frag.Name)
 	assert.Equal(t, "sha256:abc", frag.ContentHash)
 	assert.Equal(t, "/tmp/co", frag.CheckoutDir)
-	assert.Equal(t, lockVersionPackLock, got.Version)
+	// ReadLockFile reports the reader's maximum. The on-disk stamp stays at
+	// the fragment version when the record has no hooks.
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), "version: 8")
+	assert.Equal(t, ImportLockVersion, got.Version)
+}
+
+func TestLockFile_HooksStampVersion9AndRetainSource(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hooks.lock.yaml")
+	in := &LockFile{Sources: map[string]LockedSource{
+		"pack": {
+			Repo: "https://example.com/pack",
+			Skills: map[string]LockedSkill{
+				"alpha": {Path: "skills/alpha", ContentHash: "h"},
+			},
+			Pack: &LockedPack{Name: "team", Hooks: []string{"block-force-push"}, Rules: []string{"style"}},
+		},
+	}}
+	require.NoError(t, WriteLockFile(path, in))
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), "version: 9")
+
+	without := &LockFile{Sources: map[string]LockedSource{
+		"plain": {Repo: "https://example.com/skills", Pack: &LockedPack{Name: "plain", Skills: []string{"alpha"}}},
+	}}
+	plainPath := filepath.Join(dir, "plain.lock.yaml")
+	require.NoError(t, WriteLockFile(plainPath, without))
+	plain, err := os.ReadFile(plainPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(plain), "version: 2")
+	assert.NotContains(t, string(plain), "version: 9")
+
+	lf, err := ReadLockFile(path)
+	require.NoError(t, err)
+	lf.RemoveSkill("alpha")
+	src, ok := lf.Sources["pack"]
+	require.True(t, ok, "source must survive while hooks or rules remain")
+	assert.Equal(t, []string{"block-force-push"}, src.Pack.Hooks)
+	lf.RemoveHook("block-force-push")
+	src, ok = lf.Sources["pack"]
+	require.True(t, ok, "source must survive while rules remain")
+	assert.Empty(t, src.Pack.Hooks)
+	// Drop the rules and confirm the source goes once nothing remains.
+	src.Pack.Rules = nil
+	lf.Sources["pack"] = src
+	lf.RemoveAgent("missing")
+	// RemoveAgent on a missing name is a no-op. Clear by removing the last
+	// retained selection through the skill path after re-adding a skill.
+	src.Skills = map[string]LockedSkill{"beta": {Path: "b"}}
+	lf.Sources["pack"] = src
+	lf.RemoveSkill("beta")
+	_, ok = lf.Sources["pack"]
+	assert.False(t, ok)
 }
 
 func TestLockFile_PackLockNewerRefused(t *testing.T) {
@@ -72,7 +127,7 @@ func TestLockFile_PackLockNewerRefused(t *testing.T) {
 	}
 	dir := t.TempDir()
 	newer := filepath.Join(dir, "newer.lock.yaml")
-	require.NoError(t, os.WriteFile(newer, []byte("version: 9\nsources: {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(newer, []byte("version: 10\nsources: {}\n"), 0o644))
 	_, err := ReadLockFile(newer)
 	require.ErrorIs(t, err, ErrNewerImportLockVersion)
 }

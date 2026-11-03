@@ -70,6 +70,10 @@ func DiscoverLocal(ctx context.Context, root, subpath string, logger *slog.Logge
 	if err != nil {
 		return nil, fmt.Errorf("discovering agents: %w", err)
 	}
+	hooks, malformedHooks, err := discoverHooks(searchDir, root)
+	if err != nil {
+		return nil, fmt.Errorf("discovering hooks: %w", err)
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -86,16 +90,20 @@ func DiscoverLocal(ctx context.Context, root, subpath string, logger *slog.Logge
 		logger.Warn(w)
 	}
 	if len(skills) == 0 && len(agents) == 0 {
+		var empty error
 		if len(filtered) > 0 {
-			return nil, fmt.Errorf("no importable skills or agents found in %s (managed copies skipped)", root)
+			empty = fmt.Errorf("no importable skills or agents found in %s (managed copies skipped)", root)
+		} else if len(malformed) > 0 {
+			empty = fmt.Errorf("no importable skills found: %s", summarizeMalformed(malformed))
+		} else if len(malformedAgents) > 0 {
+			empty = fmt.Errorf("no importable agents found: %s", summarizeMalformed(malformedAgents))
+		} else {
+			empty = fmt.Errorf("no importable skills or agents found in %s", root)
 		}
-		if len(malformed) > 0 {
-			return nil, fmt.Errorf("no importable skills found: %s", summarizeMalformed(malformed))
+		if len(hooks) > 0 {
+			return nil, &hooksDiscoveredError{count: len(hooks), err: empty}
 		}
-		if len(malformedAgents) > 0 {
-			return nil, fmt.Errorf("no importable agents found: %s", summarizeMalformed(malformedAgents))
-		}
-		return nil, fmt.Errorf("no importable skills or agents found in %s", root)
+		return nil, empty
 	}
 
 	return &LocalDiscovery{
@@ -105,6 +113,8 @@ func DiscoverLocal(ctx context.Context, root, subpath string, logger *slog.Logge
 			Malformed:       malformed,
 			Agents:          agents,
 			MalformedAgents: malformedAgents,
+			Hooks:           hooks,
+			MalformedHooks:  malformedHooks,
 			FilteredSkills:  filtered,
 		},
 		Warnings: warnings,

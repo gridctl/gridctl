@@ -13,7 +13,10 @@ import (
 	"time"
 
 	gitpkg "github.com/gridctl/gridctl/pkg/git"
+	"github.com/gridctl/gridctl/pkg/hookpins"
+	"github.com/gridctl/gridctl/pkg/pins"
 	"github.com/gridctl/gridctl/pkg/registry"
+	"github.com/gridctl/gridctl/pkg/skillpins"
 )
 
 // AuthConfig carries authentication configuration for a git operation.
@@ -149,6 +152,13 @@ type ImportOptions struct {
 	// for the pack repository when skills: is empty, so declaring sources
 	// does not change that import-all.
 	SelectionIsImportAll bool
+	// SelectedHooks imports exactly these hook names. Hooks are never
+	// import-all. An empty list imports none.
+	SelectedHooks []string
+	// ImportHooks is the pack-only gate. skill add leaves it false, so
+	// discovered hooks are counted for the hint and not installed.
+	// pack add and skill update of a pack repository set it.
+	ImportHooks bool
 }
 
 // ImportResult contains the results of an import operation.
@@ -160,7 +170,24 @@ type ImportResult struct {
 	// import discovered under the agents/*.md convention.
 	ImportedAgents []ImportedAgent `json:"importedAgents,omitempty"`
 	SkippedAgents  []SkippedAgent  `json:"skippedAgents,omitempty"`
+	// ImportedHooks and SkippedHooks record hook definitions imported
+	// through a pack. skill add leaves them empty and sets DiscoveredHooks
+	// so the caller can print the pack hint.
+	ImportedHooks   []ImportedHook `json:"importedHooks,omitempty"`
+	SkippedHooks    []SkippedHook  `json:"skippedHooks,omitempty"`
+	DiscoveredHooks int            `json:"discoveredHooks,omitempty"`
 }
+
+// ImportedHook records a successfully imported hook definition.
+type ImportedHook struct {
+	Name     string            `json:"name"`
+	Path     string            `json:"path"`
+	Origin   *Origin           `json:"origin,omitempty"`
+	Findings []SecurityFinding `json:"findings,omitempty"`
+}
+
+// SkippedHook aliases SkippedSkill so hook call sites read as what they are.
+type SkippedHook = SkippedSkill
 
 // ImportedSkill records a successfully imported skill.
 type ImportedSkill struct {
@@ -265,17 +292,22 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportRes
 		}
 	}
 
-	if len(result.Skills) == 0 && len(result.Agents) == 0 {
+	importingHooks := opts.ImportHooks && len(opts.SelectedHooks) > 0
+	if len(result.Skills) == 0 && len(result.Agents) == 0 && !importingHooks {
+		var empty error
 		if len(result.Malformed) > 0 {
-			return nil, fmt.Errorf("no importable skills found: %s", summarizeMalformed(result.Malformed))
+			empty = fmt.Errorf("no importable skills found: %s", summarizeMalformed(result.Malformed))
+		} else if len(result.MalformedAgents) > 0 {
+			empty = fmt.Errorf("no importable agents found: %s", summarizeMalformed(result.MalformedAgents))
+		} else if opts.Kind == SourceKindLocal {
+			empty = fmt.Errorf("no importable skills or agents found in %s", opts.Repo)
+		} else {
+			empty = fmt.Errorf("no SKILL.md or agents/*.md files found in repository")
 		}
-		if len(result.MalformedAgents) > 0 {
-			return nil, fmt.Errorf("no importable agents found: %s", summarizeMalformed(result.MalformedAgents))
+		if n := len(result.Hooks); n > 0 {
+			return nil, &hooksDiscoveredError{count: n, err: empty}
 		}
-		if opts.Kind == SourceKindLocal {
-			return nil, fmt.Errorf("no importable skills or agents found in %s", opts.Repo)
-		}
-		return nil, fmt.Errorf("no SKILL.md or agents/*.md files found in repository")
+		return nil, empty
 	}
 
 	imp.logger.Info("discovered skills", "count", len(result.Skills), "agents", len(result.Agents))
@@ -312,7 +344,7 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportRes
 	}
 	opts.SourceName = sourceName
 
-	importResult := &ImportResult{Warnings: discoverWarnings}
+	importResult := &ImportResult{Warnings: discoverWarnings, DiscoveredHooks: len(result.Hooks)}
 	// Surface parse failures on fresh imports only. Update re-imports with
 	// PreserveState, and warning about a permanently broken sibling SKILL.md
 	// on every sync would just train users to ignore warnings.
@@ -321,6 +353,9 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportRes
 			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("%s: failed to parse: %s", m.Path, m.Err))
 		}
 		for _, m := range result.MalformedAgents {
+			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("%s: failed to parse: %s", m.Path, m.Err))
+		}
+		for _, m := range result.MalformedHooks {
 			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("%s: failed to parse: %s", m.Path, m.Err))
 		}
 	}
@@ -563,6 +598,9 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportRes
 	}
 
 	lockedAgents, keptAgents := imp.importAgents(ctx, result, opts, sourceName, lf, importResult)
+	if err := imp.importHooks(ctx, result, opts, importResult); err != nil {
+		return nil, err
+	}
 
 	// Update lock file. Re-read inside the critical section so concurrent
 	// Import calls (e.g. from handleSkillSourcesSyncAll's bounded fan-out)
@@ -825,6 +863,161 @@ func (imp *Importer) importAgents(ctx context.Context, result *CloneResult, opts
 	return lockedAgents, kept
 }
 
+// importHooks installs selected hook definitions. Hooks import only when
+// ImportHooks is set (pack add, or skill update of a pack repository).
+// Any scan finding blocks unless Trust is set. A hook whose registry bytes
+// differ from its installed hash is not overwritten unless Force or
+// PackImport is set; a forced overwrite keeps hook.json.pre-<sha>.
+func (imp *Importer) importHooks(ctx context.Context, result *CloneResult, opts ImportOptions, importResult *ImportResult) error {
+	if !opts.ImportHooks || len(opts.SelectedHooks) == 0 || result == nil {
+		return nil
+	}
+	byName := make(map[string]DiscoveredHook, len(result.Hooks))
+	for _, h := range result.Hooks {
+		byName[h.Name] = h
+	}
+	selected := append([]string(nil), opts.SelectedHooks...)
+	sort.Strings(selected)
+	for _, name := range selected {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		discovered, ok := byName[name]
+		if !ok {
+			importResult.SkippedHooks = append(importResult.SkippedHooks, SkippedHook{
+				Name:   name,
+				Reason: fmt.Sprintf("hooks:%s: not found in the pack repository", name),
+			})
+			continue
+		}
+		if err := ValidateHookName(name); err != nil {
+			importResult.SkippedHooks = append(importResult.SkippedHooks, SkippedHook{Name: name, Reason: err.Error()})
+			continue
+		}
+		scan := ScanHook(name, discovered.Definition.Raw, discovered.Dir)
+		importResult.Warnings = append(importResult.Warnings, discovered.Definition.Warnings...)
+		if !scan.Safe && !opts.Trust {
+			importResult.SkippedHooks = append(importResult.SkippedHooks, SkippedHook{
+				Name:   name,
+				Reason: fmt.Sprintf("security findings detected (use --trust to proceed):\n%s", FormatFindings(scan.Findings)),
+			})
+			continue
+		}
+		dest := HookDir(imp.registryDir, name)
+		if !withinDir(HooksRoot(imp.registryDir), dest) {
+			importResult.SkippedHooks = append(importResult.SkippedHooks, SkippedHook{
+				Name:   name,
+				Reason: fmt.Sprintf("resolved directory %q escapes the registry", name),
+			})
+			continue
+		}
+		if existing, gerr := GetHook(imp.registryDir, name); gerr == nil {
+			origin, oerr := ReadOrigin(existing.Dir)
+			current, cerr := ContentHashFile(filepath.Join(existing.Dir, "hook.json"))
+			drifted := oerr == nil && origin.InstalledHash != "" && cerr == nil && current != origin.InstalledHash
+			if drifted && !opts.Force && !opts.PackImport {
+				importResult.SkippedHooks = append(importResult.SkippedHooks, SkippedHook{
+					Name:   name,
+					Reason: fmt.Sprintf("hook %q has local edits (use --force to overwrite)", name),
+				})
+				continue
+			}
+			if drifted {
+				suffix := "local"
+				if oerr == nil && origin.InstalledHash != "" {
+					suffix = ShortSHA(origin.InstalledHash)
+				}
+				if _, berr := backupHookFile(existing.Dir, suffix); berr != nil {
+					return fmt.Errorf("backing up hook %s: %w", name, berr)
+				}
+			}
+		}
+		warnings, ierr := installHookTree(discovered.Dir, dest, discovered.Definition.Raw)
+		for _, w := range warnings {
+			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("%s: %s", name, w))
+		}
+		if ierr != nil {
+			var le *limitError
+			if errors.As(ierr, &le) {
+				importResult.SkippedHooks = append(importResult.SkippedHooks, SkippedHook{
+					Name:   name,
+					Reason: fmt.Sprintf("hook files exceed limits: %s", le.reason),
+				})
+				continue
+			}
+			return fmt.Errorf("installing hook %s: %w", name, ierr)
+		}
+		installedHash, _ := ContentHashFile(filepath.Join(dest, "hook.json"))
+		authMethod, sshUser, sshKeyPath := persistedAuth(opts.Auth)
+		origin := &Origin{
+			Repo:          opts.Repo,
+			Ref:           opts.Ref,
+			Path:          discovered.Path,
+			CommitSHA:     result.CommitSHA,
+			ImportedAt:    time.Now().UTC(),
+			Kind:          opts.Kind,
+			ContentHash:   discovered.ContentHash,
+			InstalledHash: installedHash,
+			CredentialRef: opts.Auth.CredentialRef,
+			AuthMethod:    authMethod,
+			SSHUser:       sshUser,
+			SSHKeyPath:    sshKeyPath,
+		}
+		if opts.Kind == SourceKindLocal {
+			origin.Ref = ""
+			origin.CommitSHA = ""
+			origin.CredentialRef = ""
+			origin.AuthMethod = ""
+			origin.SSHUser = ""
+			origin.SSHKeyPath = ""
+		}
+		if err := WriteOrigin(dest, origin); err != nil {
+			importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("failed to write origin for hook %s: %v", name, err))
+		}
+		source := hookpins.SourceGit
+		if opts.Kind == SourceKindLocal {
+			source = hookpins.SourceLocal
+		}
+		if err := hookpins.New().Pin(ctx, hookpins.PinRequest{
+			Name:     name,
+			Dir:      dest,
+			Findings: hookPinFindings(scan.Findings),
+			Source:   source,
+			Origin:   &skillpins.OriginRef{Repo: origin.Repo, Ref: origin.Ref, CommitSHA: origin.CommitSHA},
+		}); err != nil {
+			return fmt.Errorf("pinning hook %s: %w", name, err)
+		}
+		imported := ImportedHook{Name: name, Path: discovered.Path, Origin: origin}
+		if len(scan.Findings) > 0 {
+			imported.Findings = scan.Findings
+		}
+		importResult.ImportedHooks = append(importResult.ImportedHooks, imported)
+		imp.logger.Info("imported hook", "name", name)
+	}
+	return nil
+}
+
+func hookPinFindings(in []SecurityFinding) []pins.Finding {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]pins.Finding, 0, len(in))
+	for _, f := range in {
+		sev := pins.SeverityWarn
+		if f.Severity == "danger" {
+			sev = pins.SeverityCritical
+		}
+		out = append(out, pins.Finding{
+			Code:     "hook-scan",
+			Severity: sev,
+			Field:    f.StepID,
+			Message:  f.Description,
+			Snippet:  f.Pattern,
+		})
+	}
+	return out
+}
+
 // summarizeMalformed renders malformed SKILL.md entries for the zero-skills
 // error, capped so a repository full of bad files stays readable.
 func summarizeMalformed(malformed []MalformedSkill) string {
@@ -891,18 +1084,26 @@ func (imp *Importer) Update(ctx context.Context, skillName string, dryRun, force
 	skillDir := imp.skillDir(skillName)
 	origin, err := ReadOrigin(skillDir)
 	isSkill := err == nil
+	isHook := false
 	if err != nil {
-		// The name may be an imported agent: agents share the drift-safe
-		// update flow, and the re-import below refreshes every kind the
-		// source ships anyway.
+		// The name may be an imported agent or hook: both share the
+		// drift-safe update flow, and the re-import below refreshes every
+		// kind the source ships anyway.
 		if agentOrigin, aerr := ReadOrigin(AgentDir(imp.registryDir, skillName)); aerr == nil {
 			origin = agentOrigin
 			skillDir = AgentDir(imp.registryDir, skillName)
+		} else if hookOrigin, herr := ReadOrigin(HookDir(imp.registryDir, skillName)); herr == nil {
+			origin = hookOrigin
+			skillDir = HookDir(imp.registryDir, skillName)
+			isHook = true
 		} else {
 			return nil, fmt.Errorf("skill %q has no origin (not an imported skill): %w", skillName, err)
 		}
 	}
 	if origin.IsLocal() {
+		if isHook {
+			return nil, fmt.Errorf("hook %q was not imported from a pack repository", skillName)
+		}
 		return imp.updateLocal(ctx, skillName, skillDir, origin, isSkill, dryRun, force, trust)
 	}
 	if len(ignoreLock) == 0 || !ignoreLock[0] {
@@ -942,14 +1143,20 @@ func (imp *Importer) Update(ctx context.Context, skillName string, dryRun, force
 	}
 
 	if dryRun {
-		if needsSupportingInstall && !changed {
-			return &ImportResult{
-				Warnings: []string{fmt.Sprintf("%s needs a supporting-file reinstall", skillName)},
-			}, nil
+		warnings := []string{}
+		if isHook || needsSupportingInstall && !changed {
+			if isHook {
+				warnings = append(warnings, fmt.Sprintf("%s: hook update available", skillName))
+			} else if needsSupportingInstall && !changed {
+				warnings = append(warnings, fmt.Sprintf("%s needs a supporting-file reinstall", skillName))
+			}
+		} else {
+			warnings = append(warnings, fmt.Sprintf("%s: update available (%s → %s)", skillName, ShortSHA(origin.CommitSHA), ShortSHA(newSHA)))
 		}
-		return &ImportResult{
-			Warnings: []string{fmt.Sprintf("%s: update available (%s → %s)", skillName, ShortSHA(origin.CommitSHA), ShortSHA(newSHA))},
-		}, nil
+		return &ImportResult{Warnings: warnings}, nil
+	}
+	if isHook {
+		return imp.reimportPackHooks(ctx, origin, trust, force)
 	}
 
 	if changed {
@@ -991,7 +1198,62 @@ func (imp *Importer) Update(ctx context.Context, skillName string, dryRun, force
 		}
 	}
 
+	hookResult, herr := imp.reimportPackHooks(ctx, origin, trust, force)
+	if herr != nil {
+		return result, herr
+	}
+	if hookResult != nil {
+		result.ImportedHooks = append(result.ImportedHooks, hookResult.ImportedHooks...)
+		result.SkippedHooks = append(result.SkippedHooks, hookResult.SkippedHooks...)
+		result.Warnings = append(result.Warnings, hookResult.Warnings...)
+	}
 	return result, nil
+}
+
+// reimportPackHooks refreshes the hooks recorded on the pack that imported
+// origin's repository. A repository that is not a pack, or a pack with no
+// hooks, is a no-op. Discovery is at the repository root: hook definitions
+// live at hooks/<name>/hook.json there, not beside a skill.
+func (imp *Importer) reimportPackHooks(ctx context.Context, origin *Origin, trust, force bool) (*ImportResult, error) {
+	if origin == nil || origin.IsLocal() || origin.Repo == "" {
+		return nil, nil
+	}
+	lf, err := ReadLockFile(imp.lockPath)
+	if err != nil {
+		return nil, err
+	}
+	var hooks []string
+	ref := origin.Ref
+	for _, src := range lf.Sources {
+		if src.Pack == nil || len(src.Pack.Hooks) == 0 || src.Repo != origin.Repo {
+			continue
+		}
+		hooks = append([]string(nil), src.Pack.Hooks...)
+		if src.Ref != "" {
+			ref = src.Ref
+		}
+		break
+	}
+	if len(hooks) == 0 {
+		return nil, nil
+	}
+	auth, err := imp.authFromOrigin(origin)
+	if err != nil {
+		return nil, err
+	}
+	return imp.Import(ctx, ImportOptions{
+		Repo:           origin.Repo,
+		Ref:            ref,
+		Trust:          trust,
+		Force:          force,
+		Auth:           auth,
+		ImportHooks:    true,
+		SelectedHooks:  hooks,
+		ExactSelection: true,
+		Selected:       []string{},
+		SelectedAgents: []string{},
+		PreserveState:  true,
+	})
 }
 
 // ErrSourceLocked marks an update of a member source pinned by a pack lock.

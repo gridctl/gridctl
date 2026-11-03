@@ -271,3 +271,48 @@ func TestParse_RequiresRoundTrip(t *testing.T) {
 		t.Fatalf("ignored-key requires = %+v", ignored.Requires)
 	}
 }
+
+func TestParse_Hooks(t *testing.T) {
+	m, err := Parse([]byte(validManifest + "hooks: [block-force-push, audit-log]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Hooks) != 2 || m.Hooks[0] != "block-force-push" || m.Hooks[1] != "audit-log" {
+		t.Fatalf("hooks = %#v", m.Hooks)
+	}
+	if m.Warnings() != nil {
+		t.Fatalf("warnings = %v, want nil", m.Warnings())
+	}
+
+	legacy := strings.Replace(validManifest, "apiVersion: gridctl.dev/v1\n", "apiVersion: gridctl.dev/v1alpha1\n", 1)
+	got, err := Parse([]byte(legacy + "hooks: [block-force-push]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Hooks) != 1 || got.Warnings() != nil {
+		t.Fatalf("v1alpha1 hooks = %#v warnings = %v", got.Hooks, got.Warnings())
+	}
+
+	unchanged, err := Parse([]byte(validManifest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(unchanged.Hooks) != 0 {
+		t.Fatalf("absent hooks = %#v", unchanged.Hooks)
+	}
+
+	cases := []struct {
+		label string
+		body  string
+		want  string
+	}{
+		{"mapping", "hooks:\n  - name: a\n    source: other\n", "hooks come only from the pack repository"},
+		{"bad name", "hooks: [Not_A_Name]\n", "invalid hook name"},
+	}
+	for _, tc := range cases {
+		_, err := Parse([]byte(validManifest + tc.body))
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: error %v should contain %q", tc.label, err, tc.want)
+		}
+	}
+}

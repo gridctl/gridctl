@@ -171,6 +171,12 @@ type Manifest struct {
 	// rules/*.md (or fragments/*.md) discovery. Empty means none
 	// (rules are opt-in, never import-all).
 	Rules []string `yaml:"rules,omitempty" json:"rules,omitempty"`
+	// Hooks selects hook definitions from the pack repository's
+	// hooks/<name>/hook.json discovery. Empty means none (hooks are
+	// opt-in, never import-all). Entries are names only: hooks do not
+	// come from external sources. Accepted on every supported
+	// apiVersion, including v1alpha1, with no warning.
+	Hooks HookList `yaml:"hooks,omitempty" json:"hooks,omitempty"`
 	// Variables documents value-free prerequisites. Installing a pack never
 	// writes these declarations to a stack or variable store.
 	Variables map[string]VariableDeclaration `yaml:"variables,omitempty" json:"variables,omitempty"`
@@ -372,7 +378,67 @@ func (m *Manifest) Validate() error {
 	if err := m.validateSelections(m.Agents, "agent"); err != nil {
 		return err
 	}
+	if err := m.validateHookNames(); err != nil {
+		return err
+	}
 	return m.validateRuleNames()
+}
+
+// HookList is an opt-in list of hook names from the pack repository.
+// A mapping is a validation error: hooks do not come from external sources.
+type HookList []string
+
+// UnmarshalYAML accepts a sequence of strings. A mapping entry is refused
+// with a message that hooks come only from the pack repository.
+func (h *HookList) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind != yaml.SequenceNode {
+		return fmt.Errorf("hooks come only from the pack repository; entries must be names (line %d)", value.Line)
+	}
+	names := make([]string, 0, len(value.Content))
+	for _, item := range value.Content {
+		if item.Kind != yaml.ScalarNode {
+			return fmt.Errorf("hooks come only from the pack repository; a {name, source} mapping is not allowed (line %d)", item.Line)
+		}
+		var name string
+		if err := item.Decode(&name); err != nil {
+			return err
+		}
+		names = append(names, name)
+	}
+	*h = names
+	return nil
+}
+
+// UnmarshalJSON accepts a JSON array of strings. An object entry is the
+// same refusal as the YAML mapping form.
+func (h *HookList) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		*h = nil
+		return nil
+	}
+	var raw []json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("hooks come only from the pack repository; a {name, source} mapping is not allowed")
+	}
+	names := make([]string, 0, len(raw))
+	for _, item := range raw {
+		var name string
+		if err := json.Unmarshal(item, &name); err != nil {
+			return fmt.Errorf("hooks come only from the pack repository; a {name, source} mapping is not allowed")
+		}
+		names = append(names, name)
+	}
+	*h = names
+	return nil
+}
+
+func (m *Manifest) validateHookNames() error {
+	for _, name := range m.Hooks {
+		if !namePattern.MatchString(name) {
+			return fmt.Errorf("invalid hook name %q: must be lowercase alphanumerics and hyphens", name)
+		}
+	}
+	return nil
 }
 
 // SkillNames returns skill selections that come from the pack repository.
