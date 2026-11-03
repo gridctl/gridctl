@@ -9,9 +9,17 @@ linters:
     - unused
     - gosec
     - usetesting
-  disable:
     - depguard
   settings:
+    depguard:
+      rules:
+        hooks-no-exec:
+          files:
+            - "**/pkg/hooksync/**"
+            - "**/pkg/hookpins/**"
+          deny:
+            - pkg: os/exec
+              desc: gridctl never executes projected hooks
     errcheck:
       check-blank: false
     usetesting:
