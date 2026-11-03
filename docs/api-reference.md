@@ -2683,7 +2683,7 @@ Ordinary servers supply tools through the running gateway router. Optional JSON
 body: `{"expected_server_hash":"<live_server_hash from diff>","reason":"<why>","evidence":["<opaque ref>"],"approved_by":"<name>"}`.
 `reason` and `evidence` are optional. An empty reason is allowed. Evidence references are stored as text and never fetched. A mismatched
 hash returns `409`; an empty body retains ordinary unconditional approval.
-Attribution order: a verified OAuth principal (`approved_by_source: oauth`), else a non-empty `approved_by` (`declared`), else the daemon's local OS user (`os_user`). `approved_by` is attribution, not authentication. A reason that is credential-shaped or too long, or a refused evidence reference, returns `400`.
+Attribution order: a verified OAuth principal (`approved_by_source: oauth`), else a non-empty `approved_by` (`declared`), else the daemon's local OS user (`os_user`). `approved_by` is attribution, not authentication. A credential-shaped or overlong `approved_by` is refused before resolution, including when a verified principal would otherwise win. A reason that is credential-shaped or too long, a refused evidence reference, or a refused approver name returns `400`. The success body includes `approved_by`, `approved_by_source`, and `evidence_count` for the entry that was stored.
 
 Card-trust approval requires a nonempty `expected_server_hash` and uses the
 service's immutable snapshot. It performs an unconditional bounded card refetch,
@@ -2703,12 +2703,15 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/pins/gi
 {
   "server": "github",
   "tool_count": 23,
-  "status": "approved"
+  "status": "approved",
+  "approved_by": "wcollins",
+  "approved_by_source": "declared",
+  "evidence_count": 1
 }
 ```
 
 **Errors:**
-- `400` - Invalid JSON body, card approval without `expected_server_hash`, a reason that is credential-shaped or too long, or an evidence reference that is empty, credential-shaped, too long, or one of more than 16
+- `400` - Invalid or oversized JSON body, card approval without `expected_server_hash`, a reason that is credential-shaped or too long, an evidence reference that is empty, credential-shaped, too long, or one of more than 16, or an approver name that is credential-shaped or longer than 256 bytes
 - `404` - No pins found for that server, or server not found in gateway
 - `409` - Reviewed hash changed; card registration unavailable; or card approval failed its refresh, generation, revision, or persistence check. An approvals-log write failure on the card path is `a2a: card pin approval failed` and is mapped here, not to `500`
 - `500` - Ordinary tool fingerprinting or persistence failed
@@ -2794,7 +2797,7 @@ What changed since the pin, plus the `composite_hash` an approval must echo. Vie
 
 #### `POST /api/skill-pins/{name}/approve`
 
-Re-pins the current content. Optional body: `{ "expected_hash": "<composite_hash from the diff>", "reason": "<justification>", "evidence": ["<opaque ref>"], "approved_by": "<name>" }`. Evidence references are stored as text and never fetched. Attribution order: a verified OAuth principal (`approved_by_source: oauth`), else a non-empty `approved_by` (`declared`), else the daemon's local OS user (`os_user`). `approved_by` is attribution, not authentication. `409` when the content changed since the reviewed diff; `400` when unresolved advisory findings have no reason, when a reason is credential-shaped or too long, or when an evidence reference is empty, credential-shaped, too long, or one of more than 16; `404` when the skill is not in the registry.
+Re-pins the current content. Optional body: `{ "expected_hash": "<composite_hash from the diff>", "reason": "<justification>", "evidence": ["<opaque ref>"], "approved_by": "<name>" }`. Evidence references are stored as text and never fetched. Attribution order: a verified OAuth principal (`approved_by_source: oauth`), else a non-empty `approved_by` (`declared`), else the daemon's local OS user (`os_user`). `approved_by` is attribution, not authentication. A credential-shaped or overlong `approved_by` is refused before resolution, including when a verified principal would otherwise win. Success includes `approved_by`, `approved_by_source`, and `evidence_count` for the entry that was stored. `409` when the content changed since the reviewed diff; `400` when unresolved advisory findings have no reason, when the body is oversized, when a reason is credential-shaped or too long, when an approver name is credential-shaped or longer than 256 bytes, or when an evidence reference is empty, credential-shaped, too long, or one of more than 16; `404` when the skill is not in the registry.
 
 #### `DELETE /api/skill-pins/{name}`
 
