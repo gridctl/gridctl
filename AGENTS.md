@@ -187,10 +187,14 @@ pkg/skillsext/      Registry Skills over MCP provider: generation-cached canonic
                     handshake opt-in, stateless declaration, and protocol error mapping. No downstream skills aggregation.
 pkg/skills/         Skill, agent, and hook import: git import, local directory import, client skill-location import, lockfile, fingerprinting, updater, security scan. Hooks import only through a pack manifest.
 pkg/project/        Unified projection engine: one lockfile (~/.gridctl/project.lock.yaml), flock, hashing, backups,
-                    drift states, and migrate-on-read. The kind packages below are its tenants.
+                    drift states, and migrate-on-read. Tenants are skills, agents, hooks (revision 4), context,
+                    wiring, and service.
 pkg/skillsync/      Projects active registry skills into native client skill directories (`gridctl skill project`).
 pkg/agentsync/      Projects imported agents to clients: identity copy for Claude Code, rendered dialects for
                     OpenCode, Copilot, and Gemini CLI (`gridctl skill project --kind agent`).
+pkg/hooksync/       Projects imported hooks into Claude Code settings (`gridctl skill project --kind hook`).
+                    Script copies live under ~/.gridctl/hooks/. Matcher groups are an RFC 6902 patch of
+                    ~/.claude/settings.json. gridctl never executes a hook. Other clients are reported.
 pkg/contexts/       Global agent-context projection (`gridctl ctx`): one canonical file, or opt-in rule fragments
                     with multi-file and compiled per-client assembly. A narrow pinner hook runs before a real
                     sync. Fragments-mode migration renames an AGENTS.md pin to `00-default`.
@@ -268,7 +272,7 @@ web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). 
                     AuthBoundary covers the shell and all six detached routes with generation-guarded re-entry.
 
 tests/adversarial/  Declarative scenario index (`index.yaml`) for mandatory-execution accounting. Not a runner.
-tests/integration/  Real-runtime suites (build tag `integration`). `hooks_pack_test.go` covers pack hook import, scan blocking, `--trust`, the version 9 stamp, the skill add hint, and the hook pin `--stack` refusal with a race-built CLI child. Cover gateway lifecycle, hot reload, autoscaler,
+tests/integration/  Real-runtime suites (build tag `integration`). `hooks_pack_test.go` covers pack hook import, scan blocking, `--trust`, the version 9 stamp, the skill add hint, the hook pin `--stack` refusal, and Claude Code projection against a real settings file, with a race-built CLI child. Cover gateway lifecycle, hot reload, autoscaler,
                     replicas, transports (incl. Podman), private git auth, generated Python source builds,
                     downstream prompt and resource aggregation,
                     the Python MCP runtime base and its derivatives, digest-cache lookup, optimize heuristics,

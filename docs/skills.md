@@ -233,7 +233,7 @@ A lockfile that contains a local source is stamped version 6. A lockfile without
 
 `gridctl skill project` syncs selected active skills into native client skill directories, so one managed library works in clients that never fetch MCP prompts and auto-triggers in clients that read skills from disk.
 
-Nothing is projected by default. Unlike `gridctl ctx sync`, which projects one small file to every client, projecting all active skills would flood each client's skill discovery context, so the projection set is an explicit allow-list built by naming skills:
+Nothing is projected by default. Unlike `gridctl ctx sync`, which projects one small file to every client, projecting all active skills would flood each client's skill discovery context, so the projection set is an explicit allow-list built by naming skills. `--kind hook` projects imported hooks into Claude Code settings instead. See [Hooks](hooks.md#projection). Hooks have no adopt.
 
 ```bash
 gridctl skill project sync incident-triage                      # every available target
@@ -280,7 +280,7 @@ Adopt reads the projected copy, backs up the registry's current `SKILL.md` as `S
 
 Adopted files count as local edits in the update flow: `gridctl skill update` sees the registry copy diverging from its import origin and refuses to overwrite it without `--force`, exactly as if the edit had been made in the registry directly. One hand-edit vocabulary, whichever side the edit landed on.
 
-Symlinked projections have nothing to adopt (the registry copy is the source of truth; edits made through the link are already in the registry), and adopt refuses empty or invalid projected content rather than truncating a skill. Exit codes follow the family convention: `0` adopted, `1` nothing to adopt, `2` infrastructure error.
+Symlinked projections have nothing to adopt (the registry copy is the source of truth; edits made through the link are already in the registry), and adopt refuses empty or invalid projected content rather than truncating a skill. Exit codes follow the family convention: `0` adopted, `1` nothing to adopt, `2` infrastructure error. Hooks have no adopt. `gridctl skill project adopt --kind hook` exits 1 with a fixed refusal. Use `--force` to rewrite a drifted hook, or unsync to remove it.
 
 Projections carrying a model policy rewrite adopt safely: the model keys are policy-owned, so adopt restores them to the author's canonical declaration before write-back. A copy whose only delta is the policy rewrite adopts nothing, and a real edit adopts without ever writing the policy-resolved value into the registry.
 
@@ -318,7 +318,7 @@ gridctl skill add https://github.com/acme/agents
 gridctl skill list --kind agent
 ```
 
-Each imported agent lands verbatim at `~/.gridctl/registry/agents/<name>/AGENT.md` with the same `.origin.json` sidecar, lockfile tracking, and security scan skills get; the scan covers the agent body and frontmatter values (hooks and command strings live there), and findings gate the import behind the same `--trust` flow. An agent file must carry frontmatter with a `description`; the name comes from the `name` key or the filename stem, and must be lowercase letters, digits, and hyphens (no colons, which Claude Code refuses). Frontmatter beyond `name` and `description` (`tools`, `model`, `hooks`, `mcpServers`, `permissionMode`, vendor keys) passes through untouched: the stored file is byte-identical to the source.
+Each imported agent lands verbatim at `~/.gridctl/registry/agents/<name>/AGENT.md` with the same `.origin.json` sidecar, lockfile tracking, and security scan skills get; the scan covers the agent body and frontmatter values (hooks and command strings live there), and findings gate the import behind the same `--trust` flow. An agent file must carry frontmatter with a `description`; the name comes from the `name` key or the filename stem, and must be lowercase letters, digits, and hyphens (no colons, which Claude Code refuses). Frontmatter beyond `name` and `description` (`tools`, `model`, `hooks`, `mcpServers`, `permissionMode`, vendor keys) passes through untouched: the stored file is byte-identical to the source. That `hooks` key is the Claude Code frontmatter passthrough. It is still passed through on the identity target and dropped on rendered targets. It is not a pack hook. Pack hooks live in `hooks/<name>/hook.json` and are projected separately. See [Hooks](hooks.md).
 
 Projection is per-kind and always a copy of the single file:
 
@@ -340,6 +340,8 @@ The Library workspace carries a `Skills | Agents` segment (also reachable as `/l
 ## What gridctl deliberately does not do
 
 A short list of choices worth knowing about.
+
+**Hook execution.** gridctl never executes content it projects and never interposes in a client's hook lifecycle. A pack hook is scanned before installation, content-pinned, and projected only from approved bytes. The guarantees are the scoped lint rule that denies `os/exec` under `pkg/hooksync` and `pkg/hookpins`, the reconcile regression test, and the designated scenarios in [adversarial regression gates](adversarial-regression-gates.md). See [Hooks](hooks.md#what-gridctl-deliberately-does-not-do).
 
 **Execution.** gridctl 0.1.x removed the typed-skill execution surface (TS sandbox, Go plugins, run ledger, approval gates, agent IDE). Skills are prose; upstream clients are responsible for using them. If you need an agent runtime, reach for LangGraph / CrewAI / AutoGen / OpenAI Agents SDK and let gridctl be the MCP gateway underneath. The retired surfaces were `gridctl agent {init,dev,build,validate}`, `gridctl run`, the Agent IDE run ledger, `/api/agent/*`, `/api/playground/*`, and the Stage / Runs / Playground UI workspaces, while today's `gridctl runs` is the separate metadata-only record included in v1.0.0-rc.2, described in [Run records](usage-observability.md#run-records).
 
