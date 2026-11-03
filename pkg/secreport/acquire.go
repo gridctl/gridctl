@@ -426,6 +426,11 @@ func serverPinView(rec *pins.ServerPins, scan *ScanDeclView) ServerPinView {
 		PinnedAt:       rec.PinnedAt.UTC(),
 		LastVerifiedAt: rec.LastVerifiedAt.UTC(),
 	}
+	if len(rec.Approvals) > 0 {
+		view.ApprovalRecorded = true
+		view.ApprovedAt = rec.Approvals[0].ApprovedAt.UTC()
+		view.ApprovedHash = SanitizeDigest(rec.Approvals[0].ApprovedHash)
+	}
 	ignore := map[string]bool{}
 	if scan != nil {
 		for _, code := range scan.Ignore {
@@ -468,6 +473,11 @@ func SkillPinViewFromStore(ps *skillpins.Store) *SkillPinView {
 			Source:         SanitizeIdentifier(rec.Source),
 			PinnedAt:       rec.PinnedAt.UTC(),
 			LastVerifiedAt: rec.LastVerifiedAt.UTC(),
+		}
+		if len(rec.Approvals) > 0 {
+			item.ApprovalRecorded = true
+			item.ApprovedAt = rec.Approvals[0].ApprovedAt.UTC()
+			item.ApprovedHash = SanitizeDigest(rec.Approvals[0].ApprovedHash)
 		}
 		for _, finding := range rec.Findings {
 			item.FindingCodes = append(item.FindingCodes, SanitizeIdentifier(finding.Code))

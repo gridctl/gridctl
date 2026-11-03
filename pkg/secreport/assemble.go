@@ -176,6 +176,7 @@ func pinChecks(in Inputs) []Check {
 		out = append(out, check("pin.schema.scheme.gateway", PredPinScheme, gatewaySubject(), OutcomeUnknown, "store_unavailable", "Pin hash scheme coverage cannot be established.", unknownEvidence(), nil))
 		out = append(out, check("pin.scan.coverage.gateway", PredPinScanCoverage, gatewaySubject(), OutcomeUnknown, "store_unavailable", "Advisory scan coverage metadata is unavailable.", unknownEvidence(), []string{"Cross-server P006 evidence is not collected at report time."}))
 		out = append(out, check("pin.scan.findings.gateway", PredPinScanFindings, gatewaySubject(), OutcomeUnknown, "store_unavailable", "Stored advisory findings are unavailable.", unknownEvidence(), []string{"Absence of findings is not a completed clean scan."}))
+		out = append(out, check("pin.schema.approval.gateway", PredPinSchemaApproval, gatewaySubject(), OutcomeUnknown, "store_unavailable", "Schema pin approval presence cannot be established.", unknownEvidence(), []string{approvalExclusionLimitation}))
 		return out
 	}
 	storeOutcome, storeReason, storeText := OutcomePass, "store_available", "Schema pin store snapshot is available. Records are not explicit approvals."
@@ -186,6 +187,7 @@ func pinChecks(in Inputs) []Check {
 	servers := serverNames(in)
 	if len(servers) == 0 {
 		out = append(out, check("pin.schema.baseline.gateway", PredPinBaseline, gatewaySubject(), OutcomePass, "no_declared_servers", "No declared MCP servers; pin baseline is a known empty configuration.", declaredEvidence(), nil))
+		out = append(out, check("pin.schema.approval.gateway", PredPinSchemaApproval, gatewaySubject(), OutcomeNotApplicable, "no_declared_servers", "Schema pin approval is not applicable without declared servers.", declaredEvidence(), []string{approvalExclusionLimitation}))
 	}
 	for _, name := range servers {
 		rec, ok := in.Pins.Servers[name]
@@ -193,9 +195,11 @@ func pinChecks(in Inputs) []Check {
 			out = append(out, check("pin.schema.baseline."+name, PredPinBaseline, serverSubject(name), OutcomePass, "pin_record_absent", "No pin record is stored for "+name+". That is a configuration fact, not a policy violation.", declaredEvidence(), nil, viewPinsAction(name)))
 			out = append(out, check("pin.schema.continuity."+name, PredPinContinuity, serverSubject(name), OutcomeNotApplicable, "no_pin_record", "Continuity is not applicable without a stored pin record.", declaredEvidence(), []string{"Not applicable because no pin record exists."}, viewPinsAction(name)))
 			out = append(out, check("pin.schema.scheme."+name, PredPinScheme, serverSubject(name), OutcomeNotApplicable, "no_pin_record", "Hash scheme coverage is not applicable without a stored pin record.", declaredEvidence(), []string{"Not applicable because no pin record exists."}))
+			out = append(out, check("pin.schema.approval."+name, PredPinSchemaApproval, serverSubject(name), OutcomeNotApplicable, "no_pin_record", "Schema pin approval is not applicable without a stored pin record.", declaredEvidence(), []string{"Not applicable because no pin record exists."}, viewPinsAction(name)))
 			out = append(out, scanFindingCheck(name, rec, false, in.Pins.Scan))
 			continue
 		}
+		out = append(out, approvalCheck("pin.schema.approval."+name, PredPinSchemaApproval, serverSubject(name), rec.ApprovalRecorded, rec.ApprovedAt, rec.ApprovedHash, viewPinsAction(name)))
 		out = append(out, check("pin.schema.baseline."+name, PredPinBaseline, serverSubject(name), OutcomePass, "pin_record_present", "A stored pin record exists for "+name+". Presence is not explicit approval.", declaredEvidence(), []string{"Automatic additions are not distinguished from human approval."}, viewPinsAction(name)))
 		out = append(out, continuityCheck(name, rec))
 		out = append(out, schemeCheck(name, rec))
@@ -315,11 +319,13 @@ func skillPinChecks(in Inputs) []Check {
 	if in.SkillPins == nil {
 		out = append(out, check("skill.pin.baseline.gateway", PredSkillPinBaseline, gatewaySubject(), OutcomeUnknown, "store_unavailable", "Skill pin store snapshot unavailable.", unknownEvidence(), []string{"Skill pins are scoped to skill subjects only."}))
 		out = append(out, check("skill.pin.continuity.gateway", PredSkillPinContinuity, gatewaySubject(), OutcomeUnknown, "store_unavailable", "Skill pin continuity cannot be established.", unknownEvidence(), nil))
+		out = append(out, check("skill.pin.approval.gateway", PredSkillPinApproval, gatewaySubject(), OutcomeUnknown, "store_unavailable", "Skill pin approval presence cannot be established.", unknownEvidence(), []string{approvalExclusionLimitation}))
 		return out
 	}
 	if len(in.SkillPins.Skills) == 0 {
 		out = append(out, check("skill.pin.baseline.gateway", PredSkillPinBaseline, gatewaySubject(), OutcomePass, "no_skill_pin_records", "No skill pin records are stored. That is a configuration fact, not a policy violation.", declaredEvidence(), []string{"Skill pins do not imply downstream server trust."}))
 		out = append(out, check("skill.pin.continuity.gateway", PredSkillPinContinuity, gatewaySubject(), OutcomeNotApplicable, "no_skill_pin_records", "Skill pin continuity is not applicable without records.", declaredEvidence(), []string{"Not applicable because no skill pin records exist."}))
+		out = append(out, check("skill.pin.approval.gateway", PredSkillPinApproval, gatewaySubject(), OutcomeNotApplicable, "no_skill_pin_records", "Skill pin approval is not applicable without records.", declaredEvidence(), []string{"Not applicable because no skill pin records exist."}))
 		return out
 	}
 	names := make([]string, 0, len(in.SkillPins.Skills))
@@ -341,8 +347,24 @@ func skillPinChecks(in Inputs) []Check {
 		} else {
 			out = append(out, check("skill.pin.continuity."+name, PredSkillPinContinuity, skillSubject(name), OutcomePass, "skill_pin_pinned", "Stored skill pin status is pinned for "+name+".", ev, nil, viewSkillPinsAction(name)))
 		}
+		out = append(out, approvalCheck("skill.pin.approval."+name, PredSkillPinApproval, skillSubject(name), rec.ApprovalRecorded, rec.ApprovedAt, rec.ApprovedHash, viewSkillPinsAction(name)))
 	}
 	return out
+}
+
+const approvalExclusionLimitation = "Approver name, reason text, and evidence references are excluded from this report."
+
+func approvalCheck(id, predicate string, subject Subject, recorded bool, at time.Time, hash string, action *Action) Check {
+	if !recorded {
+		return check(id, predicate, subject, OutcomePass, "approval_unrecorded",
+			"The pin was recorded on first sight and no explicit approval entry exists, which is a fact, not a finding.",
+			declaredEvidence(), []string{approvalExclusionLimitation, "Absence of an approval entry is a fact, not a finding."}, action)
+	}
+	ev := observedEvidence(at)
+	ev.Digest = SanitizeDigest(hash)
+	return check(id, predicate, subject, OutcomePass, "approval_recorded",
+		"An explicit approval entry is recorded. The bound hash is in the evidence digest.",
+		ev, []string{approvalExclusionLimitation, "An approval entry is operator attribution, not authentication."}, action)
 }
 
 func sourceChecks(in Inputs) []Check {
