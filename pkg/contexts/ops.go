@@ -118,7 +118,11 @@ type SyncResult struct {
 	Action     string `json:"action"`
 	// Detail carries honest render loss: frontmatter a client's dialect
 	// cannot express, named rather than silently dropped.
-	Detail     string `json:"detail,omitempty"`
+	Detail string `json:"detail,omitempty"`
+	// PinDrift is true when this row's fragment, or the whole document in
+	// single-file and compiled modes, is in pin drift. Projection still
+	// proceeds. Additive: absent when false.
+	PinDrift   bool   `json:"pin_drift,omitempty"`
 	BackupPath string `json:"backup_path,omitempty"`
 	Diff       string `json:"diff,omitempty"`
 	Error      string `json:"error,omitempty"`
@@ -396,7 +400,9 @@ func (m *Manager) SyncAll(ctx context.Context, opts SyncOptions) ([]SyncResult, 
 		return nil, err
 	}
 	var results []SyncResult
+	var pinDrift []string
 	err = m.store.Mutate(ctx, opts.DryRun, func(pl *project.Lock) error {
+		pinDrift = m.pinBeforeProject(ctx, opts)
 		lf := viewFromLock(pl)
 		flf := fragmentViewFromLock(pl)
 		results = make([]SyncResult, 0, len(Targets()))
@@ -497,6 +503,7 @@ func (m *Manager) SyncAll(ctx context.Context, opts SyncOptions) ([]SyncResult, 
 		}
 		return nil
 	})
+	annotatePinDrift(results, pinDrift)
 	return results, err
 }
 
@@ -576,7 +583,9 @@ func (m *Manager) syncClientLocked(ctx context.Context, slug string, opts SyncOp
 		return nil, err
 	}
 	var results []SyncResult
+	var pinDrift []string
 	err = m.store.Mutate(ctx, opts.DryRun, func(pl *project.Lock) error {
+		pinDrift = m.pinBeforeProject(ctx, opts)
 		lf := viewFromLock(pl)
 		flf := fragmentViewFromLock(pl)
 		if src.active && m.usesMultiFile(t) {
@@ -615,6 +624,7 @@ func (m *Manager) syncClientLocked(ctx context.Context, slug string, opts SyncOp
 		}
 		return nil
 	})
+	annotatePinDrift(results, pinDrift)
 	return results, err
 }
 

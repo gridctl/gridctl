@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -428,6 +429,14 @@ func (m *Manager) activateFragments() (migrated bool, backup string, err error) 
 	dest := m.fragmentPath(migratedFragmentName)
 	if err := atomicWriteFile(dest, []byte(strings.TrimRight(content, "\n")+"\n")); err != nil {
 		return false, "", err
+	}
+	// The migration rewrites trailing newlines, so the bytes are not
+	// identical, but the pin hash is. Move the record before the canonical
+	// file disappears so a later pass does not treat AGENTS.md as missing.
+	if m.pinner != nil {
+		if rerr := m.pinner.Rename(context.Background(), canonicalFileName, migratedFragmentName); rerr != nil {
+			slog.Warn("contexts: fragment pin rename failed", "from", canonicalFileName, "to", migratedFragmentName, "error", rerr)
+		}
 	}
 	if err := os.Remove(m.CanonicalPath()); err != nil {
 		return false, "", fmt.Errorf("removing migrated canonical file: %w", err)

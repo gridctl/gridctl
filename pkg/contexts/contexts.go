@@ -78,9 +78,10 @@ const starterTemplate = `# Global Agent Context
 // cross-process lock (shared with skill projections, so a slow context
 // sync can briefly block a skill sync and vice versa).
 type Manager struct {
-	home  string
-	store *project.Store
-	mu    sync.Mutex
+	home   string
+	store  *project.Store
+	mu     sync.Mutex
+	pinner Pinner
 }
 
 // NewManager builds a Manager rooted at the user's home directory.
