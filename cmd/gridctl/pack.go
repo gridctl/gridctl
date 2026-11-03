@@ -97,10 +97,10 @@ var packAddCmd = &cobra.Command{
 	Use:   "add <repo-url>",
 	Short: "Import a pack from a git repository",
 	Long: `Clones the repository, reads ` + pack.ManifestFileName + ` at its root, and
-imports exactly the manifest's selection of skills, agents, and rule
-fragments into the local stores (empty skill and agent lists mean
+imports exactly the manifest's selection of skills, agents, rule
+fragments, and hooks into the local stores (empty skill and agent lists mean
 everything discovered in the pack repository; external sources are never
-import-all; rules are opt-in, an empty list means none). Declared
+import-all; rules and hooks are opt-in, an empty list means none). Declared
 sources print a Sources: block after the import line. --source-auth
 overrides one source (name=vault-key:KEY or name=ssh-key:path). Nothing
 touches client files or the gateway; that is 'pack apply'.
@@ -301,13 +301,7 @@ func runPackAdd(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Man
 		if doc.Wiring {
 			wiringLabel = "yes"
 		}
-		if len(doc.Rules) > 0 {
-			fmt.Fprintf(stdout, "%s pack %q (%d skills, %d agents, %d rules, wiring: %s) from %s\n",
-				verb, doc.Pack, len(doc.Skills), len(doc.Agents), len(doc.Rules), wiringLabel, repo)
-		} else {
-			fmt.Fprintf(stdout, "%s pack %q (%d skills, %d agents, wiring: %s) from %s\n",
-				verb, doc.Pack, len(doc.Skills), len(doc.Agents), wiringLabel, repo)
-		}
+		fmt.Fprintf(stdout, "%s pack %q (%s) from %s\n", verb, doc.Pack, packImportCounts(doc, wiringLabel), repo)
 		printPackSources(stdout, stderr, doc.Sources)
 		if doc.Stack != nil {
 			if doc.Stack.Fragment {
@@ -349,6 +343,21 @@ func runPackAdd(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.Man
 		return ctxExitAttention
 	}
 	return ctxExitOK
+}
+
+func packImportCounts(doc packops.AddDoc, wiringLabel string) string {
+	parts := []string{
+		fmt.Sprintf("%d skills", len(doc.Skills)),
+		fmt.Sprintf("%d agents", len(doc.Agents)),
+	}
+	if len(doc.Rules) > 0 {
+		parts = append(parts, fmt.Sprintf("%d rules", len(doc.Rules)))
+	}
+	if len(doc.Hooks) > 0 {
+		parts = append(parts, fmt.Sprintf("%d hooks", len(doc.Hooks)))
+	}
+	parts = append(parts, "wiring: "+wiringLabel)
+	return strings.Join(parts, ", ")
 }
 
 func packAddPartial(doc packops.AddDoc) bool {

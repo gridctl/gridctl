@@ -59,6 +59,7 @@ type PreviewResult struct {
 	Skills      []PreviewResource `json:"skills"`
 	Agents      []PreviewResource `json:"agents"`
 	Rules       []PreviewResource `json:"rules"`
+	Hooks       []PreviewResource `json:"hooks,omitempty"`
 	Unresolved  []string          `json:"unresolved,omitempty"`
 	Warnings    []string          `json:"warnings,omitempty"`
 	Stack       *StackSummary     `json:"stack,omitempty"`
@@ -166,6 +167,8 @@ func Preview(ctx context.Context, opts PreviewOptions) (*PreviewResult, error) {
 			res.Agents = append(res.Agents, pr)
 		case "rule":
 			res.Rules = append(res.Rules, pr)
+		case "hook":
+			res.Hooks = append(res.Hooks, pr)
 		}
 	}
 	return res, nil
@@ -231,6 +234,18 @@ func scanResources(clone *skills.CloneResult, resolved resolvedSelection, discov
 					pr.Findings = scan.Findings
 					pr.Blocking = true
 				}
+				break
+			}
+		}
+		keep(pr)
+	}
+	for _, name := range resolved.hooks {
+		pr := PreviewResource{Kind: "hook", Name: name}
+		for _, dh := range clone.Hooks {
+			if dh.Name == name && dh.Definition != nil {
+				scan := skills.ScanHook(name, dh.Definition.Raw, dh.Dir)
+				pr.Findings = scan.Findings
+				pr.Blocking = !scan.Safe
 				break
 			}
 		}

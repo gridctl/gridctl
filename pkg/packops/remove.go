@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/agentsync"
 	"github.com/gridctl/gridctl/pkg/contexts"
+	"github.com/gridctl/gridctl/pkg/hookpins"
 	"github.com/gridctl/gridctl/pkg/project"
 	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/skillsync"
@@ -108,6 +111,9 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 		for _, n := range locked.Rules {
 			rows = append(rows, Row{Kind: "rule", Name: n, Action: "would-remove"})
 		}
+		for _, n := range locked.Hooks {
+			rows = append(rows, Row{Kind: "hook", Name: n, Action: "would-remove"})
+		}
 		if locked.Wiring {
 			rows = append(rows, Row{Kind: "wiring", Name: "gridctl", Action: "would-remove"})
 		}
@@ -201,6 +207,13 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 			continue
 		}
 		rows = append(rows, Row{Kind: "agent", Name: n, Action: "removed", Detail: "registry entry removed"})
+	}
+	home, herr := m.homeDir()
+	if herr != nil {
+		return nil, herr
+	}
+	if err := removePackHooks(ctx, home, locked.Hooks, &rows); err != nil {
+		return nil, err
 	}
 
 	// Partial removal keeps a truthful pack record covering what stayed.
@@ -321,6 +334,34 @@ func (m *Managers) removePackWiring(ctx context.Context, packName string, force 
 	return rows, kept, nil
 }
 
+// removePackHooks deletes imported hook directories, sidecars, and pin
+// records. There are no projections to retire in this release.
+func removePackHooks(ctx context.Context, home string, names []string, rows *[]Row) error {
+	if len(names) == 0 {
+		return nil
+	}
+	registryDir := filepath.Join(home, ".gridctl", "registry")
+	pins := hookpins.New()
+	if err := pins.Load(); err != nil && !errors.Is(err, hookpins.ErrCorrupt) {
+		return err
+	}
+	for _, name := range names {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := skills.DeleteHook(registryDir, name); err != nil && !os.IsNotExist(err) && !strings.Contains(err.Error(), "not found") {
+			*rows = append(*rows, Row{Kind: "hook", Name: name, Action: "error", Detail: err.Error()})
+			continue
+		}
+		if err := pins.Reset(ctx, name); err != nil && !errors.Is(err, hookpins.ErrNotPinned) {
+			*rows = append(*rows, Row{Kind: "hook", Name: name, Action: "error", Detail: err.Error()})
+			continue
+		}
+		*rows = append(*rows, Row{Kind: "hook", Name: name, Action: "removed", Detail: "registry entry removed"})
+	}
+	return nil
+}
+
 // trimLockedPack drops the pack record, or shrinks it to the resources
 // a partial removal kept. The read-modify-write cycle holds the import
 // lockfile's cross-process lock.
@@ -359,8 +400,15 @@ func trimLockedPack(ctx context.Context, lockPath, name string, kept []string) e
 				agentsKept = append(agentsKept, n)
 			}
 		}
+		var hooksKept []string
+		for _, n := range src.Pack.Hooks {
+			if keptSet["hook/"+n] {
+				hooksKept = append(hooksKept, n)
+			}
+		}
 		src.Pack.Skills = skillsKept
 		src.Pack.Agents = agentsKept
+		src.Pack.Hooks = hooksKept
 		if len(src.Pack.Sources) > 0 {
 			for sourceName, ps := range src.Pack.Sources {
 				ps.Skills = filterKept(ps.Skills, "skill", keptSet)

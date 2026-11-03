@@ -39,7 +39,10 @@ var (
 	skillPinsApproveExpect   string
 	skillPinsApproveReason   string
 	skillPinsApproveEvidence []string
+	skillPinsKind            string
 )
+
+var errHookPinsStack = errors.New("--stack does not apply to hook pins")
 
 var skillPinsCmd = &cobra.Command{
 	Use:   "pins",
@@ -63,12 +66,19 @@ var skillPinsListCmd = &cobra.Command{
 Default output is a styled table; use '--format json' for machine-readable
 output including per-file digests, provenance, and advisory findings.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := prepareSkillPinsKind(); err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+			os.Exit(pinsExitInfrastructure)
+		}
 		format, err := resolveFormat(skillPinsListFormat, cmd.Flags().Changed("format"), *skillPinsListJSON)
 		if err != nil {
 			return err
 		}
 		if err := resolvePlain(*skillPinsListPlain, format); err != nil {
 			return err
+		}
+		if skillPinsKind == skillKindHook {
+			return runHookPinsList(format)
 		}
 		return runSkillPinsList(format)
 	},
@@ -87,6 +97,10 @@ Exit codes:
   2  infrastructure error (no stack, unreadable pin store, unknown skill)`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := prepareSkillPinsKind(); err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+			os.Exit(pinsExitInfrastructure)
+		}
 		format, err := resolveFormat(skillPinsVerifyFormat, cmd.Flags().Changed("format"), *skillPinsVerifyJSON)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -99,6 +113,13 @@ Exit codes:
 		if err := validateFailOnFindings(skillPinsVerifyFailOn); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(pinsExitInfrastructure)
+		}
+		if skillPinsKind == skillKindHook {
+			exit := runHookPinsVerify(os.Stdout, os.Stderr, skill, format, skillPinsVerifyFailOn)
+			if exit != pinsExitOK {
+				os.Exit(exit)
+			}
+			return nil
 		}
 		exit := runSkillPinsVerify(os.Stdout, os.Stderr, skill, format, skillPinsVerifyFailOn)
 		if exit != pinsExitOK {
@@ -125,6 +146,10 @@ Exit codes:
   2  infrastructure error (no stack, skill not found or not pinned)`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := prepareSkillPinsKind(); err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+			os.Exit(pinsExitInfrastructure)
+		}
 		format, err := resolveFormat(skillPinsDiffFormat, cmd.Flags().Changed("format"), *skillPinsDiffJSON)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -133,6 +158,13 @@ Exit codes:
 		if err := validateFailOnFindings(skillPinsDiffFailOn); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(pinsExitInfrastructure)
+		}
+		if skillPinsKind == skillKindHook {
+			exit := runHookPinsDiff(os.Stdout, os.Stderr, args[0], format, skillPinsDiffFailOn)
+			if exit != pinsExitOK {
+				os.Exit(exit)
+			}
+			return nil
 		}
 		exit := runSkillPinsDiff(os.Stdout, os.Stderr, args[0], format, skillPinsDiffFailOn)
 		if exit != pinsExitOK {
@@ -161,6 +193,13 @@ The approval is recorded with the local OS user, the time, and the hash it
 bound to. approved_by is attribution, not authentication.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := prepareSkillPinsKind(); err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+			os.Exit(pinsExitInfrastructure)
+		}
+		if skillPinsKind == skillKindHook {
+			return runHookPinsApprove(cmd.Context(), args[0], skillPinsApproveExpect, skillPinsApproveReason, skillPinsApproveEvidence)
+		}
 		return runSkillPinsApprove(cmd.Context(), args[0], skillPinsApproveExpect, skillPinsApproveReason, skillPinsApproveEvidence)
 	},
 }
@@ -171,12 +210,20 @@ var skillPinsResetCmd = &cobra.Command{
 	Long:  "Remove a skill's pin record. It is re-pinned fresh on the next registry refresh.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := prepareSkillPinsKind(); err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+			os.Exit(pinsExitInfrastructure)
+		}
+		if skillPinsKind == skillKindHook {
+			return runHookPinsReset(cmd.Context(), args[0])
+		}
 		return runSkillPinsReset(args[0])
 	},
 }
 
 func init() {
 	skillPinsCmd.PersistentFlags().StringVar(&skillPinsStack, "stack", "", "Stack name (auto-detected if only one stack is deployed)")
+	skillPinsCmd.PersistentFlags().StringVar(&skillPinsKind, "kind", "skill", "Resource kind: skill or hook. Hook pins are not stack-scoped")
 
 	skillPinsListCmd.Flags().StringVar(&skillPinsListFormat, "format", "", "Output format: 'json' for machine-readable output (default: table)")
 	skillPinsListJSON = addJSONAlias(skillPinsListCmd)

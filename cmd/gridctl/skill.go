@@ -17,6 +17,7 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/config"
 	gitpkg "github.com/gridctl/gridctl/pkg/git"
+	"github.com/gridctl/gridctl/pkg/hookpins"
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/skillpins"
@@ -88,7 +89,7 @@ var skillListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all skills with origin info",
 	Long: "List all skills showing source origin (local/remote) and update status. " +
-		"Pass --kind agent to list imported agent definitions instead.",
+		"Pass --kind agent to list imported agent definitions, or --kind hook to list imported hooks.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var err error
 		if skillListFormat, err = resolveFormat(skillListFormat, cmd.Flags().Changed("format"), *skillListJSON); err != nil {
@@ -97,11 +98,14 @@ var skillListCmd = &cobra.Command{
 		if err := resolvePlain(*skillListPlain, skillListFormat); err != nil {
 			return err
 		}
-		if err := validProjectKind(skillListKind); err != nil {
+		if err := validRegistryKind(skillListKind); err != nil {
 			return err
 		}
-		if skillListKind == skillProjectKindAgent {
+		switch skillListKind {
+		case skillProjectKindAgent:
 			return runSkillListAgents()
+		case skillKindHook:
+			return runSkillListHooks()
 		}
 		return runSkillList()
 	},
@@ -137,10 +141,10 @@ This command is also available as 'gridctl skill sync' for parity with the
 var skillRemoveCmd = &cobra.Command{
 	Use:   "remove <name>",
 	Short: "Remove an imported skill or agent",
-	Long:  "Remove a skill (or, with --kind agent, an agent) and clean up its origin file and lock entry.",
+	Long:  "Remove a skill (or, with --kind agent, an agent, or --kind hook, a hook) and clean up its origin file and lock entry.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := validProjectKind(skillRemoveKind); err != nil {
+		if err := validRegistryKind(skillRemoveKind); err != nil {
 			return err
 		}
 		return runSkillRemove(args[0], skillRemoveKind)
@@ -160,10 +164,10 @@ var skillPinCmd = &cobra.Command{
 var skillInfoCmd = &cobra.Command{
 	Use:   "info <name>",
 	Short: "Show skill origin and update status",
-	Long:  "Display detailed information about a skill's (or, with --kind agent, an agent's) remote origin and update status.",
+	Long:  "Display detailed information about a skill's (or, with --kind agent or --kind hook, that kind's) remote origin and update status.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := validProjectKind(skillInfoKind); err != nil {
+		if err := validRegistryKind(skillInfoKind); err != nil {
 			return err
 		}
 		return runSkillInfo(args[0], skillInfoKind)
@@ -206,12 +210,12 @@ func init() {
 
 	skillListCmd.Flags().BoolVar(&skillListRemote, "remote", false, "Show only remote (imported) skills")
 	skillListCmd.Flags().StringVar(&skillListFormat, "format", "", "Output format (json)")
-	skillListCmd.Flags().StringVar(&skillListKind, "kind", "skill", "Resource kind to list: skill or agent")
+	skillListCmd.Flags().StringVar(&skillListKind, "kind", "skill", "Resource kind to list: skill, agent, or hook")
 	skillListJSON = addJSONAlias(skillListCmd)
 	skillListPlain = addPlainFlag(skillListCmd)
 
-	skillRemoveCmd.Flags().StringVar(&skillRemoveKind, "kind", "skill", "Resource kind to remove: skill or agent")
-	skillInfoCmd.Flags().StringVar(&skillInfoKind, "kind", "skill", "Resource kind to inspect: skill or agent")
+	skillRemoveCmd.Flags().StringVar(&skillRemoveKind, "kind", "skill", "Resource kind to remove: skill, agent, or hook")
+	skillInfoCmd.Flags().StringVar(&skillInfoKind, "kind", "skill", "Resource kind to inspect: skill, agent, or hook")
 
 	skillUpdateCmd.Flags().BoolVar(&skillUpdateDryRun, "dry-run", false, "Show changes without applying")
 	skillUpdateCmd.Flags().BoolVar(&skillUpdateForce, "force", false, "Force update even if no changes detected")
@@ -452,6 +456,7 @@ func runSkillAdd(ctx context.Context, repoURL string) error {
 		Auth:       authCfg,
 	})
 	if err != nil {
+		printHookImportHint(skills.DiscoveredHookCount(err))
 		classified := gitpkg.ClassifyError(err)
 		printSkillAuthHint(os.Stderr, repoURL, classified)
 		return gitpkg.RedactError(classified)
@@ -492,6 +497,9 @@ func runSkillAdd(ctx context.Context, repoURL string) error {
 	fmt.Printf("Imported %d skill(s), %d agent(s) from %s\n", len(result.Imported), len(result.ImportedAgents), repoURL)
 	if len(result.ImportedAgents) > 0 {
 		fmt.Println("List agents with 'gridctl skill list --kind agent', project them with 'gridctl skill project sync --kind agent'.")
+	}
+	if result.DiscoveredHooks > 0 && len(result.ImportedHooks) == 0 {
+		printHookImportHint(result.DiscoveredHooks)
 	}
 
 	return nil
@@ -535,6 +543,7 @@ func runSkillAddLocal(ctx context.Context, dir string) error {
 		Rename:     skillAddRename,
 	})
 	if err != nil {
+		printHookImportHint(skills.DiscoveredHookCount(err))
 		return err
 	}
 	printer := output.New()
@@ -566,7 +575,17 @@ func runSkillAddLocal(ctx context.Context, dir string) error {
 	if len(result.ImportedAgents) > 0 {
 		fmt.Println("List agents with 'gridctl skill list --kind agent', project them with 'gridctl skill project sync --kind agent'.")
 	}
+	if result.DiscoveredHooks > 0 && len(result.ImportedHooks) == 0 {
+		printHookImportHint(result.DiscoveredHooks)
+	}
 	return printProjectionHints(ctx, home, []string{root})
+}
+
+func printHookImportHint(n int) {
+	if n <= 0 {
+		return
+	}
+	fmt.Println(skills.HookImportHint(n))
 }
 
 func printProjectionHints(ctx context.Context, home string, roots []string) error {
@@ -580,6 +599,121 @@ func writeProjectionHints(ctx context.Context, w io.Writer, home string, roots [
 	}
 	for _, client := range clients {
 		fmt.Fprintln(w, skills.ProjectionHint(client))
+	}
+	return nil
+}
+
+// runSkillListHooks implements `skill list --kind hook`.
+func runSkillListHooks() error {
+	hooks, err := skills.ListHooks(registryDir())
+	if err != nil {
+		return err
+	}
+	if len(hooks) == 0 {
+		fmt.Println("No hooks in registry. Import some with 'gridctl pack add <repo>'.")
+		return nil
+	}
+	pins := hookpins.New()
+	_ = pins.Load()
+	type hookEntry struct {
+		Kind        string   `json:"kind"`
+		Name        string   `json:"name"`
+		Description string   `json:"description"`
+		Events      []string `json:"events"`
+		Scripts     int      `json:"scripts"`
+		Source      string   `json:"source"`
+		PinStatus   string   `json:"pin_status"`
+	}
+	var entries []hookEntry
+	for _, h := range hooks {
+		entry := hookEntry{
+			Kind:        "hook",
+			Name:        h.Name,
+			Description: h.Definition.Description,
+			Events:      h.Definition.Events,
+			Scripts:     len(h.Definition.Scripts),
+			Source:      "local",
+			PinStatus:   "unpinned",
+		}
+		if entry.Events == nil {
+			entry.Events = []string{}
+		}
+		if origin, oerr := skills.ReadOrigin(h.Dir); oerr == nil {
+			entry.Source = origin.Repo
+			if origin.IsLocal() {
+				entry.Source = "local"
+			}
+		}
+		if pin, ok := pins.Get(h.Name); ok {
+			entry.PinStatus = pin.Status
+		}
+		entries = append(entries, entry)
+	}
+	if skillListFormat == "json" {
+		data, _ := json.MarshalIndent(entries, "", "  ")
+		fmt.Println(string(data))
+		return nil
+	}
+	t := output.NewTableWriter(os.Stdout, *skillListPlain)
+	t.AppendHeader(table.Row{"Name", "Description", "Events", "Scripts", "Pin"})
+	for _, e := range entries {
+		t.AppendRow(table.Row{e.Name, e.Description, strings.Join(e.Events, ","), e.Scripts, e.PinStatus})
+	}
+	t.Render()
+	return nil
+}
+
+func runSkillRemoveHook(name string) error {
+	if _, err := skills.GetHook(registryDir(), name); err != nil {
+		return err
+	}
+	if err := skills.DeleteHook(registryDir(), name); err != nil {
+		return err
+	}
+	if err := skills.MutateLockFile(context.Background(), skills.LockFilePath(), func(lf *skills.LockFile) (bool, error) {
+		lf.RemoveHook(name)
+		return true, nil
+	}); err != nil {
+		return fmt.Errorf("updating lock file: %w", err)
+	}
+	pins := hookpins.New()
+	if err := pins.Load(); err == nil {
+		if err := pins.Reset(context.Background(), name); err != nil && !errors.Is(err, hookpins.ErrNotPinned) {
+			return err
+		}
+	}
+	output.New().Info("Removed hook", "name", name)
+	return nil
+}
+
+func runSkillInfoHook(name string) error {
+	hook, err := skills.GetHook(registryDir(), name)
+	if err != nil {
+		return err
+	}
+	printer := output.New()
+	origin, oerr := skills.ReadOrigin(hook.Dir)
+	if oerr != nil {
+		printer.Info("Local hook", "name", name, "description", hook.Definition.Description)
+	} else if origin.IsLocal() {
+		printer.Info("Local-dir hook", "name", name, "path", origin.Repo, "hash", origin.ContentHash)
+	} else {
+		printer.Info("Remote hook",
+			"name", name,
+			"repo", origin.Repo,
+			"ref", origin.Ref,
+			"commit", skills.ShortSHA(origin.CommitSHA),
+			"imported", origin.ImportedAt.Format(time.RFC3339),
+		)
+	}
+	fmt.Printf("  Description: %s\n", hook.Definition.Description)
+	fmt.Printf("  Events: %s\n", strings.Join(hook.Definition.Events, ", "))
+	fmt.Printf("  Scripts: %d\n", len(hook.Definition.Scripts))
+	pins := hookpins.New()
+	if err := pins.Load(); err == nil {
+		if pin, ok := pins.Get(name); ok {
+			fmt.Printf("  Pin: %s\n", pin.Status)
+		}
 	}
 	return nil
 }
@@ -775,7 +909,61 @@ func driftedImports(store *registry.Store, name string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return append(drifted, driftedAgents...), nil
+	drifted = append(drifted, driftedAgents...)
+	hooks, err := driftedHookNames(name)
+	if err != nil {
+		return nil, err
+	}
+	return append(drifted, hooks...), nil
+}
+
+// driftedHookNames reports hooks whose hook.json no longer matches the
+// installed hash. An empty name checks every imported hook. A skill or
+// agent name also checks hooks recorded on that source's pack, because
+// skill update re-imports them.
+func driftedHookNames(name string) ([]string, error) {
+	hooks, err := skills.ListHooks(registryDir())
+	if err != nil {
+		return nil, err
+	}
+	want := map[string]bool{}
+	if name == "" {
+		for _, h := range hooks {
+			want[h.Name] = true
+		}
+	} else {
+		want[name] = true
+		if lf, lerr := skills.ReadLockFile(skills.LockFilePath()); lerr == nil && lf != nil {
+			if _, src, ok := lf.FindSkillSource(name); ok && src.Pack != nil {
+				for _, h := range src.Pack.Hooks {
+					want[h] = true
+				}
+			}
+			if _, src, ok := lf.FindAgentSource(name); ok && src.Pack != nil {
+				for _, h := range src.Pack.Hooks {
+					want[h] = true
+				}
+			}
+		}
+	}
+	var drifted []string
+	for _, h := range hooks {
+		if !want[h.Name] {
+			continue
+		}
+		origin, oerr := skills.ReadOrigin(h.Dir)
+		if oerr != nil || origin.InstalledHash == "" {
+			continue
+		}
+		current, cerr := skills.ContentHashFile(filepath.Join(h.Dir, "hook.json"))
+		if cerr != nil {
+			continue
+		}
+		if current != origin.InstalledHash {
+			drifted = append(drifted, h.Name)
+		}
+	}
+	return drifted, nil
 }
 
 // driftedAgent inspects one imported agent for local edits.
@@ -834,6 +1022,9 @@ func runSkillUpdate(ctx context.Context, name string) error {
 		}
 		for _, imported := range result.ImportedAgents {
 			printer.Info("Updated agent", "name", imported.Name)
+		}
+		for _, imported := range result.ImportedHooks {
+			printer.Info("Updated hook", "name", imported.Name)
 		}
 		return nil
 	}
@@ -1002,6 +1193,9 @@ func runSkillRemove(name, kind string) error {
 		printer.Info("Removed agent", "name", name)
 		return nil
 	}
+	if kind == skillKindHook {
+		return runSkillRemoveHook(name)
+	}
 	if err := imp.Remove(name); err != nil {
 		return err
 	}
@@ -1034,6 +1228,9 @@ func runSkillInfo(name, kind string) error {
 
 	imp := newImporter(store)
 	var info *skills.SkillInfo
+	if kind == skillKindHook {
+		return runSkillInfoHook(name)
+	}
 	if kind == skillProjectKindAgent {
 		info, err = imp.AgentInfo(name)
 	} else {
