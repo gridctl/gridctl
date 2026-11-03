@@ -22,7 +22,7 @@ An agent is an imported definition at `~/.gridctl/registry/agents/<name>/AGENT.m
 
 ## Rule fragment
 
-A rule fragment is one markdown file in the opt-in library at `~/.gridctl/context/fragments/*.md`, and a pack ships the same kind of file from `rules/*.md` or `fragments/*.md`. `gridctl ctx add`, `ctx list`, and `ctx rm` manage the local library ([Rule fragments](global-context.md#rule-fragments-opt-in)).
+A rule fragment is one markdown file in the opt-in library at `~/.gridctl/context/fragments/*.md`, and a pack ships the same kind of file from `rules/*.md` or `fragments/*.md`. `gridctl ctx add`, `ctx list`, and `ctx rm` manage the local library ([Rule fragments](global-context.md#rule-fragments-opt-in)). Content pins record a digest of each fragment, or of the single `AGENTS.md` when fragments mode is off, and hold later changes as pin drift until a human approves them ([Fragment pins](global-context.md#fragment-pins)).
 
 ## Global context
 
@@ -66,6 +66,6 @@ A service is a user-scoped supervisor unit written by `gridctl service install`,
 
 `gridctl pack add` imports the manifest's selection and pins a carried stack checkout under `~/.gridctl/packs/<name>/<commit>/`. `gridctl pack apply` starts that stack from the CLI and projects the selected skills, agents, rules, and wiring. A booster composes onto that gateway instead of starting its own. REST and the web UI can project those resources. They do not start, stop, or reload the daemon, and they do not write the pack lock. See [Carrying a stack](packs.md#carrying-a-stack) and [Extending another pack's stack](packs.md#extending-another-packs-stack).
 
-What stays on the host: variable values in `~/.gridctl/vault/` (`gridctl var`), tool pins in `~/.gridctl/pins/{stackName}.json` and skill pins in `~/.gridctl/pins/skills/` (`gridctl pins`, `gridctl skill pins`), approval logs in `~/.gridctl/pins/approvals/`, and lockfiles `~/.gridctl/project.lock.yaml` and `~/.gridctl/skills.lock.yaml`. Commit the stack, the pack manifest, `gridctl-pack.lock.yaml` when you run `gridctl pack lock`, and the instruction files. Do not commit those stores. See [Variables](cli-reference.md#variables), [schema pinning](config-schema.md#gateway), and [skill pins](skills.md#skill-pins-and-exposure-policy).
+What stays on the host: variable values in `~/.gridctl/vault/` (`gridctl var`), tool pins in `~/.gridctl/pins/{stackName}.json`, skill pins in `~/.gridctl/pins/skills/`, and context pins in `~/.gridctl/pins/context/` (`gridctl pins`, `gridctl skill pins`, `gridctl ctx pins`), approval logs in `~/.gridctl/pins/approvals/`, and lockfiles `~/.gridctl/project.lock.yaml` and `~/.gridctl/skills.lock.yaml`. Commit the stack, the pack manifest, `gridctl-pack.lock.yaml` when you run `gridctl pack lock`, and the instruction files. Do not commit those stores. See [Variables](cli-reference.md#variables), [schema pinning](config-schema.md#gateway), and [skill pins](skills.md#skill-pins-and-exposure-policy).
 
 Repeatable setup is those pinned inputs on a host that can run them, not a hermetic rebuild or identical agent behavior. Stability labels are in [Project status](project-status.md).

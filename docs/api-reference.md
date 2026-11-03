@@ -2817,9 +2817,86 @@ Registry skill and agent responses also carry a `modelPreference` object when th
 
 `declared` is the author's frontmatter declaration (`sourceKey` is `model`, `metadata.preferred-model`, or `metadata.model`). `resolved` appears only when a loaded stack policy default or override decides the value; `resolution` names the winning source (`default` | `override`), and an author declaration a policy leaves untouched stays `declared`-only. `honor` maps projection target slugs to what each target does with the preference (`honored` | `ignored` | `unknown` | `dropped-on-render`).
 
+### Context Pins
+
+TOFU content pins for global context fragments, or for the canonical `AGENTS.md` when fragments mode is off. Stackless, authenticated, and never `503` when the store is empty: the UI polls `GET /api/context/pins`. See [Fragment pins](global-context.md#fragment-pins).
+
+A pin record uses these fields: `hash`, `document` (omitted when empty), `source` (`local` or `pack`, omitted when empty), `pack` (omitted when empty), `approved_reason` (omitted when empty), `pinned_at`, `last_verified_at`, `status` (`pinned` or `drift`), `findings` (omitted when empty), and `approvals` (omitted when empty, rebuilt from the approvals log, newest first).
+
+#### `GET /api/context/pins`
+
+Every context pin, keyed by fragment name. `200` with `{}` when the store is empty. `500` when the store cannot be read.
+
+```json
+{
+  "style": {
+    "hash": "c1:9f2c…",
+    "document": "# Style\n",
+    "source": "local",
+    "pinned_at": "2026-11-03T10:00:00Z",
+    "last_verified_at": "2026-11-03T10:05:00Z",
+    "status": "pinned",
+    "approvals": [
+      {
+        "approved_at": "2026-11-03T10:04:05Z",
+        "approved_by": "wcollins",
+        "approved_by_source": "os_user",
+        "approved_hash": "4be1…",
+        "bound": true,
+        "reason": "Reviewed the style edit",
+        "evidence": ["https://example.test/pull/42"]
+      }
+    ]
+  }
+}
+```
+
+#### `GET /api/context/pins/{name}`
+
+One pin record. `404` when unpinned (`No pin found for fragment: <name>`). `500` when the store cannot be read.
+
+#### `GET /api/context/pins/{name}/diff`
+
+What changed since the pin, plus the `composite_hash` an approval must echo. Viewing a diff never persists anything. `findings` is always an array, never null.
+
+```json
+{
+  "fragment": "style",
+  "status": "drift",
+  "composite_hash": "4be1…",
+  "old_document": "# Style\n",
+  "new_document": "# Style\n\nPrefer rg.\n",
+  "findings": []
+}
+```
+
+`500` when the fragment content could not be hashed (`ErrDigestUnavailable`, checked before absence). `404` when the fragment is absent or not pinned. `500` on any other verify failure.
+
+#### `POST /api/context/pins/{name}/approve`
+
+Re-pins the current content. Body: `{ "expected_hash": "<composite_hash from the diff>", "reason": "<justification>", "evidence": ["<opaque ref>"], "approved_by": "<name>" }`. Evidence references are stored as text and never fetched. Attribution order matches skill pins: a verified OAuth principal (`approved_by_source: oauth`), else a non-empty `approved_by` (`declared`), else the daemon's local OS user (`os_user`). `approved_by` is attribution, not authentication.
+
+Success is `200`:
+
+```json
+{
+  "fragment": "style",
+  "status": "approved",
+  "approved_by": "wcollins",
+  "approved_by_source": "os_user",
+  "evidence_count": 1
+}
+```
+
+`409` when `expected_hash` does not match the current composite hash (`fetch the diff again and re-review`). `400` when unresolved advisory findings have no reason, when the body is oversized or invalid JSON, when a reason is credential-shaped or too long, when an approver name is credential-shaped or longer than 256 bytes, or when an evidence reference is empty, credential-shaped, too long, or one of more than 16. `404` when the fragment is absent or not pinned. `500` when the content could not be hashed.
+
+#### `DELETE /api/context/pins/{name}`
+
+Deletes the pin record (`204`). The approvals log is left in place. The next write pass re-pins the fragment. `404` when no pin exists. `500` when the store cannot be read or the delete fails.
+
 ### Global Context
 
-Manage the canonical global agent-context file (`~/.gridctl/context/AGENTS.md`) and its projection into each linked client's global context location. Backs `gridctl ctx` and the web UI's Global Context dialog; see [Global Context Sync](global-context.md) for concepts (write strategies, drift, adoption). These endpoints are pure file operations against the gateway host's home directory and work in stackless mode.
+Manage the canonical global agent-context file (`~/.gridctl/context/AGENTS.md`) and its projection into each linked client's global context location. Backs `gridctl ctx` and the web UI's Global Context dialog; see [Global Context Sync](global-context.md) for concepts (write strategies, drift, adoption, fragment pins). These endpoints are pure file operations against the gateway host's home directory and work in stackless mode.
 
 #### `GET /api/context`
 
@@ -2859,7 +2936,12 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/context
       "state": "unsupported",
       "detail": "global User Rules are stored in app-internal storage; no supported file path"
     }
-  ]
+  ],
+  "pins": {
+    "drifted": [],
+    "missing": [],
+    "unpinned": ["AGENTS.md"]
+  }
 }
 ```
 
@@ -2868,6 +2950,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/context
 | `canonical` | object | Canonical file path, existence, and content (`content` is empty when `exists` is false) |
 | `needs_sync` | bool | True when any client is `stale`, `drifted`, or `target-missing` |
 | `clients` | []object | One entry per known client |
+| `pins` | object | Additive pin summary: `drifted`, `missing`, and `unpinned` string arrays, never null. A read does not pin |
 
 Per-client fields: `slug`, `name`, `supported`, `available` (client detected on this machine), `unofficial` (the target path rests on unofficial sourcing rather than published client docs; omitted when false), `strategy` (`dedicated-file`, `import-shim`, or `block`; omitted for unsupported clients), `target_path`, `state`, `detail` (human-readable reason or hint), and `synced_at` (omitted when never synced).
 
@@ -2877,7 +2960,7 @@ In fragments mode, multi-file clients also carry a `fragments` array with one `{
 
 #### `PUT /api/context`
 
-Saves the canonical content (creating the file when absent) and returns the same document as `GET /api/context`. A timestamped backup of the previous revision precedes the write.
+Saves the canonical content (creating the file when absent) and returns the same document as `GET /api/context`, plus `pin_status` (`pinned`, `drift`, or `unpinned`) computed after the save. The save does not pin and does not approve. A timestamped backup of the previous revision precedes the write.
 
 **Auth:** Yes
 
@@ -2968,13 +3051,21 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
       "strategy": "import-shim",
       "target_path": "/home/user/.gemini/GEMINI.md",
       "action": "updated",
-      "backup_path": "/home/user/.gemini/GEMINI.md.gridctl-backup-20260715-132212"
+      "backup_path": "/home/user/.gemini/GEMINI.md.gridctl-backup-20260715-132212",
+      "pin_drift": true
     }
-  ]
+  ],
+  "pins": {
+    "drifted": ["AGENTS.md"],
+    "missing": [],
+    "unpinned": []
+  }
 }
 ```
 
 **Action values:** `"created"` | `"updated"` | `"unchanged"` | `"skipped-drift"` | `"skipped-unavailable"` | `"error"`, plus `"would-create"` | `"would-update"` under `dry_run`
+
+The response adds `pins` (`drifted`, `missing`, `unpinned`, never null). A result row whose fragment, or the whole document in single-file and compiled modes, is in pin drift carries `pin_drift: true`. `dry_run: false` pins unseen fragments. `dry_run: true` does not pin. Pin drift does not fail the request.
 
 Unknown slugs, unsupported clients, and a missing canonical file abort the request (`400`/`404`); a per-client runtime failure becomes an `"error"` result row so earlier writes are still reported. Drifted targets are skipped (never silently overwritten) unless `force` is set.
 
@@ -3065,7 +3156,7 @@ Lists rule fragments when fragments mode is active (`active: false` and an empty
 
 #### `PUT /api/context/fragments/{name}`
 
-Creates or overwrites a fragment. Body `{ "content": "..." }` installs that body (activating fragments mode if needed). Omitting content scaffolds a starter fragment via the same path as `gridctl ctx add`.
+Creates or overwrites a fragment. Body `{ "content": "..." }` installs that body (activating fragments mode if needed). Omitting content scaffolds a starter fragment via the same path as `gridctl ctx add`. The response adds `pin_status` (`pinned`, `drift`, or `unpinned`) computed after the save. The save does not pin and does not approve. A create without content returns `{ "name", "path", "migrated", "pin_status" }`. A content save returns `{ "name", "saved", "migrated", "pin_status" }`.
 
 #### `DELETE /api/context/fragments/{name}`
 

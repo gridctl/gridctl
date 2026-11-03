@@ -127,6 +127,8 @@ For sharing, use [stack export](../cli-reference.md#export-semantics) or the Sta
 
 Schema pins record trust on first use. Drift handling defaults to `warn`; select `gateway.security.schema_pinning.action: block` if detected changes should stop calls until review. Check global and per-server enablement rather than assuming a local setting installs a verifier.
 
+Context fragments use the same observation model on a stackless store. `gridctl ctx pins verify` reports pin drift (exit 1) without blocking projection, and `gridctl ctx pins diff <name>` shows the pinned and current documents plus the `composite_hash` an approval must echo. Approving that hash records consent. It does not establish that the fragment is safe to load. See [Fragment pins](../global-context.md#fragment-pins).
+
 Use `gridctl pins verify` to inspect continuity and `gridctl pins diff <server>` to review changes before approval. Compare against the intended upstream update. Resetting or approving a pin accepts a new baseline; it does not establish publisher identity, implementation safety, or trustworthy tool results. An approval may record a reason and opaque evidence references. Those references are not fetched. The recorded approver is attribution, not authentication, and a credential-shaped approver name is refused before it is stored. First contact is trusted, new tools are automatically pinned, and removed tools warn. See [schema pinning](../config-schema.md#security) for exact behavior.
 
 Poisoning findings are advisory heuristics. Review suspicious descriptions and cross-server references, but treat clean scans and unchanged schemas as limited observations. They cannot prevent a model from following hostile runtime output.

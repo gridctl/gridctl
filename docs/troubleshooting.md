@@ -78,6 +78,14 @@ Approval logs. `~/.gridctl/pins/approvals/skills/<stack>.json` and
 `pin_approvals`, including the unknown-advertisement warning. A missing log
 is compatible.
 
+Context pins. `~/.gridctl/pins/context/global.json` is checked once, against
+`context_pins`, and a mismatch is a warning, not a refusal. An absent file is
+silent. An unreadable or unparsable file, a target that does not advertise
+`context_pins`, or a non-integer advertisement each print one warning that
+context pin compatibility is unknown. A target that advertises a lower integer
+than the file's version warns that the older binary will not read the context
+pin file. None of these stop the daemon.
+
 Project lock. `~/.gridctl/project.lock.yaml` has `version` above the target's
 `project_lock`. Restore the copy under `~/.gridctl/project-migration-backup/`
 first.
@@ -1072,6 +1080,26 @@ Set `scan: false` to disable the scanner: stack-time findings, API decoration, a
 ### A finding reports "hidden characters" I cannot see
 
 That is the point of the finding: zero-width characters, bidi controls, and Unicode Tags-block sequences render invisibly in most UIs but are read by the model. Every gridctl surface escapes them as visible sequences (`\u200b`, `\u202e`) so they become visible, and when a Tags-block sequence decodes to ASCII the smuggled message is shown as evidence. Treat a decoded hidden message in a tool description as hostile until proven otherwise; reset or remove the server rather than approving.
+
+### A fragment shows pin drift
+
+Pin drift means the fragment (or `AGENTS.md`, when fragments mode is off) changed since its content pin. Projection still wrote the new bytes. Review the change, then approve the reviewed hash or drop the record.
+
+```bash
+gridctl ctx pins diff style
+gridctl ctx pins approve style --expect <composite_hash>
+gridctl ctx pins reset style
+```
+
+`diff` prints the byte-count summary and the exact approve line, including `--expect`. Pass `--reason` when the fragment carries advisory findings. Repeat `--evidence` with an opaque reference. A credential-shaped reference is refused and nothing is written.
+
+Five cases:
+
+- **Drift.** `gridctl ctx pins diff <name>` shows the old and new documents. `gridctl ctx pins approve <name> --expect <composite_hash>` re-pins that content. A stale `--expect` is refused and the record is unchanged.
+- **Approve with `--expect`.** Copy `composite_hash` from `gridctl ctx pins diff <name> --format json`. Approval without `--expect` is allowed when you accept the current bytes, and still requires `--reason` when findings are present.
+- **Reset.** `gridctl ctx pins reset <name>` deletes the pin. The approvals log is kept. The next `gridctl ctx sync` re-pins the fragment silently.
+- **Missing.** The name is still pinned but the fragment file is gone (for example after `gridctl ctx rm`). `verify` lists it as missing and exits 0 when nothing else drifted. `reset` drops the record. Do not treat missing as drift.
+- **Unreadable.** A pinned fragment that cannot be read fails closed as drift, not as missing and not as pinned. `gridctl ctx pins diff <name>` exits 2 and says the content could not be hashed. Fix the file mode before approving.
 
 ### What the scan cannot catch
 
