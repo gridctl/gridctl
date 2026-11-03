@@ -86,6 +86,11 @@ func (s *Store) scanSettings() (bool, []string) {
 }
 
 func (s *Store) ensurePath() error {
+	// The file lock does not order these fields for the race detector or
+	// the Go memory model. Two first calls on a New() store would otherwise
+	// race on path and logPath.
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.path != "" {
 		if s.logPath == "" {
 			s.logPath = filepath.Join(filepath.Dir(s.path), "approvals", "context", "global.json")
@@ -281,9 +286,12 @@ func (s *Store) Verify(ctx context.Context, name string, src Source) (*VerifyRes
 	return result, nil
 }
 
-// Approve re-pins the current content and appends an approval entry. The
-// log is written inside the file lock before the pin file. A log error
-// leaves the pin file unchanged. Reset does not touch the log.
+// Approve re-pins the current content and appends an approval entry. A
+// present fragment with no record is pinned by this approval, matching
+// skill pins: the call is a review of current content, not a check that a
+// record already exists. Absent fragments return ErrNoDocument from the
+// source. The log is written inside the file lock before the pin file. A
+// log error leaves the pin file unchanged. Reset does not touch the log.
 func (s *Store) Approve(ctx context.Context, name string, src Source, req ApproveRequest) error {
 	if err := ctx.Err(); err != nil {
 		return err
