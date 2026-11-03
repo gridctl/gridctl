@@ -116,6 +116,24 @@ func TestValidateReferences_CleansAndBounds(t *testing.T) {
 	}
 }
 
+func TestValidateApprover(t *testing.T) {
+	if err := ValidateApprover("  "); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateApprover("wcollins"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateApprover(strings.Repeat("a", maxApproverBytes+1)); !errors.Is(err, ErrInvalidApprover) {
+		t.Fatalf("long = %v", err)
+	}
+	if err := ValidateApprover("Bearer abc"); !errors.Is(err, ErrCredentialShaped) || !strings.Contains(err.Error(), "remove it and retry") {
+		t.Fatalf("shaped = %v", err)
+	}
+	if err := ValidateApprover("https://user:tok@example.test/x"); !errors.Is(err, ErrCredentialShaped) {
+		t.Fatalf("userinfo = %v", err)
+	}
+}
+
 func TestValidateReason(t *testing.T) {
 	if err := ValidateReason(""); err != nil {
 		t.Fatal(err)

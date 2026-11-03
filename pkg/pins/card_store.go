@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/mcp"
@@ -75,6 +76,10 @@ func (ps *PinStore) ApproveCard(ctx context.Context, server string, snapshot mcp
 	if err != nil {
 		return err
 	}
+	approvedBy := strings.TrimSpace(approval.ApprovedBy)
+	if err := pinapprovals.ValidateApprover(approvedBy); err != nil {
+		return err
+	}
 	return ps.cardTransaction(ctx, func() (bool, error) {
 		if _, err := validateCardSnapshot(snapshot); err != nil {
 			return false, err
@@ -82,7 +87,7 @@ func (ps *PinStore) ApproveCard(ctx context.Context, server string, snapshot mcp
 		if err := ps.loadApprovalsLocked(ctx); err != nil {
 			return false, err
 		}
-		by, source := approval.ApprovedBy, approval.ApprovedBySource
+		by, source := approvedBy, approval.ApprovedBySource
 		if by == "" {
 			source = ""
 		}

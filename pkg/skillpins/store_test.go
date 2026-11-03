@@ -546,6 +546,34 @@ func TestApprove_RefusesCredentialBeforeWrite(t *testing.T) {
 	}
 }
 
+func TestApprove_RefusesApproverBeforeWrite(t *testing.T) {
+	reg := newTestRegistry(t)
+	writeSkill(t, reg, "benign", benignSkill)
+	dir := t.TempDir()
+	ps := NewWithPath(dir, "lab")
+	if _, err := ps.Sync(reg); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(dir, "lab.skills.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ps.Approve(t.Context(), "benign", reg, ApproveRequest{ApprovedBy: "Bearer abc", ApprovedBySource: pinapprovals.SourceDeclared})
+	if !errors.Is(err, pinapprovals.ErrCredentialShaped) {
+		t.Fatalf("err = %v", err)
+	}
+	after, err := os.ReadFile(filepath.Join(dir, "lab.skills.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("refused approver rewrote the pin file")
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "approvals", "skills", "lab.json")); !os.IsNotExist(statErr) {
+		t.Fatal("refused approver wrote the approvals log")
+	}
+}
+
 func TestReset_HistorySurvives(t *testing.T) {
 	reg := newTestRegistry(t)
 	writeSkill(t, reg, "benign", benignSkill)

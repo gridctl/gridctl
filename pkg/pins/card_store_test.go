@@ -4,9 +4,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/pinapprovals"
 )
 
 func storeSnapshot(t *testing.T, generation uint64, card, endpoint string) mcp.PinSnapshot {
@@ -126,5 +128,72 @@ func TestCardStore_LegacyRecoveryCannotEraseFailure(t *testing.T) {
 	}
 	if err := s.ApproveCard(context.Background(), "agent", snapshot, mcp.CardApproval{}); err == nil {
 		t.Fatal("approval bypassed mandatory load failure")
+	}
+}
+
+func TestCardStore_ApproveRecordsOneBoundEntry(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir := t.TempDir()
+	s := NewWithPath(dir, "test")
+	ctx := context.Background()
+	first := storeSnapshot(t, 1, "first", "")
+	if _, err := s.VerifyCard(ctx, "agent", first); err != nil {
+		t.Fatal(err)
+	}
+	changed := storeSnapshot(t, 2, "changed bytes", "")
+	before, err := os.ReadFile(s.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A directory where the log temp file must be created makes the append
+	// fail before pinServer. The pin file must stay byte-for-byte unchanged.
+	if err := os.MkdirAll(s.logPath+".tmp", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ApproveCard(ctx, "agent", changed, mcp.CardApproval{
+		ApprovedBy:       "wcollins",
+		ApprovedBySource: pinapprovals.SourceDeclared,
+		Reason:           "reviewed card",
+		Evidence:         []string{"https://example.test/pr/1"},
+	}); err == nil {
+		t.Fatal("log write failure approved")
+	}
+	after, err := os.ReadFile(s.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("failed log write rewrote the pin file")
+	}
+	if sp, _ := s.GetServer("agent"); sp.ServerHash != first.Hash() {
+		t.Fatal("failed log write published the candidate")
+	}
+	os.RemoveAll(s.logPath + ".tmp")
+
+	if err := s.ApproveCard(ctx, "agent", changed, mcp.CardApproval{
+		ApprovedBy:       "wcollins",
+		ApprovedBySource: pinapprovals.SourceDeclared,
+		Reason:           "reviewed card",
+		Evidence:         []string{" https://example.test/pr/1 ", "https://example.test/pr/1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sp, ok := s.GetServer("agent")
+	if !ok || len(sp.Approvals) != 1 {
+		t.Fatalf("approvals = %+v", sp)
+	}
+	got := sp.Approvals[0]
+	if !got.Bound || got.ApprovedHash != changed.Hash() || got.ApprovedHash != sp.ServerHash {
+		t.Fatalf("entry = %+v snapshot %s server %s", got, changed.Hash(), sp.ServerHash)
+	}
+	if got.ApprovedBy != "wcollins" || len(got.Evidence) != 1 {
+		t.Fatalf("entry = %+v", got)
+	}
+	logData, err := os.ReadFile(s.logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(logData), `"approved_hash"`) != 1 {
+		t.Fatalf("log recorded more than one entry: %s", logData)
 	}
 }

@@ -1,13 +1,10 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"time"
 
-	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/pinapprovals"
 	"github.com/gridctl/gridctl/pkg/pins"
 	"github.com/gridctl/gridctl/pkg/registry"
@@ -125,7 +122,8 @@ type approveSkillPinRequest struct {
 	Reason string `json:"reason"`
 	// Evidence is opaque references. They are stored as text and never fetched.
 	Evidence []string `json:"evidence"`
-	// ApprovedBy is a caller-declared name. A verified principal wins over it.
+	// ApprovedBy is a caller-declared name. A credential-shaped or overlong
+	// name is refused before resolution. Otherwise a verified principal wins.
 	ApprovedBy string `json:"approved_by"`
 }
 
@@ -143,7 +141,11 @@ func (s *Server) handleApproveSkillPin(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 
 	var body approveSkillPinRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+	if err := decodeApproveBody(r, &body); err != nil {
+		if errors.Is(err, errApproveBodyTooLarge) {
+			writeJSONError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		writeJSONError(w, "Invalid JSON body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -156,7 +158,11 @@ func (s *Server) handleApproveSkillPin(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	approvedBy, approvedBySource := pinapprovals.ResolveApprover(mcp.PrincipalFromContext(r.Context()), body.ApprovedBy)
+	approvedBy, approvedBySource, err := resolveApprovalAttribution(r, body.ApprovedBy)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	err = s.skillPinStore.Approve(r.Context(), name, s.registryServer.Store(), skillpins.ApproveRequest{
 		ExpectedHash:     body.ExpectedHash,
@@ -166,10 +172,7 @@ func (s *Server) handleApproveSkillPin(w http.ResponseWriter, r *http.Request) {
 		ApprovedBySource: approvedBySource,
 	})
 	switch {
-	case errors.Is(err, pinapprovals.ErrCredentialShaped),
-		errors.Is(err, pinapprovals.ErrInvalidReference),
-		errors.Is(err, pinapprovals.ErrTooManyReferences),
-		errors.Is(err, pinapprovals.ErrReasonTooLong):
+	case approvalInputStatus(err):
 		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
 	case errors.Is(err, skillpins.ErrDigestUnavailable):
@@ -189,7 +192,7 @@ func (s *Server) handleApproveSkillPin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, map[string]any{"skill": name, "status": "approved"})
+	writeApproveJSON(w, map[string]any{"skill": name, "status": "approved"}, approvedBy, approvedBySource, len(evidence))
 }
 
 // handleResetSkillPin deletes a skill's pin record; the next registry

@@ -18,6 +18,7 @@ var (
 	ErrCredentialShaped  = errors.New("credential-shaped value")
 	ErrTooManyReferences = errors.New("too many evidence references")
 	ErrReasonTooLong     = errors.New("approval reason too long")
+	ErrInvalidApprover   = errors.New("invalid approver")
 )
 
 // ValidateReference trims ref and refuses an empty value, a value longer
@@ -73,6 +74,21 @@ func ValidateReason(reason string) error {
 		return nil
 	}
 	return credentialShape(reason)
+}
+
+// ValidateApprover trims name and refuses a value longer than 256 bytes or
+// one that is credential-shaped. Empty, including whitespace-only, is
+// allowed: attribution then falls through to the next source. The check
+// does not authenticate the name.
+func ValidateApprover(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil
+	}
+	if len(name) > maxApproverBytes {
+		return fmt.Errorf("%w: approver is longer than %d bytes; shorten it and retry", ErrInvalidApprover, maxApproverBytes)
+	}
+	return credentialShape(name)
 }
 
 func credentialShape(s string) error {

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -457,6 +458,10 @@ func (ps *Store) Approve(ctx context.Context, name string, src SkillSource, req 
 	if err != nil {
 		return err
 	}
+	approvedBy := strings.TrimSpace(req.ApprovedBy)
+	if err := pinapprovals.ValidateApprover(approvedBy); err != nil {
+		return err
+	}
 	sk, err := src.GetSkill(name)
 	if err != nil {
 		return err
@@ -480,7 +485,7 @@ func (ps *Store) Approve(ctx context.Context, name string, src SkillSource, req 
 		if err := ps.loadApprovalsLocked(ctx); err != nil {
 			return err
 		}
-		by, source := req.ApprovedBy, req.ApprovedBySource
+		by, source := approvedBy, req.ApprovedBySource
 		if by == "" {
 			source = ""
 		}

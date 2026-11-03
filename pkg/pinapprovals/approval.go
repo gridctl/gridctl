@@ -36,6 +36,9 @@ const (
 	maxReferenceBytes = 2048
 	maxReasonBytes    = 4096
 	maxReferences     = 16
+	// maxApproverBytes caps declared and resolved approver names. The field
+	// is attribution text stored in the approvals log, not an identity claim.
+	maxApproverBytes = 256
 )
 
 // Entry is one explicit approval. ApprovedAt is RFC 3339 UTC. ApprovedHash

@@ -354,6 +354,10 @@ func (ps *PinStore) Approve(ctx context.Context, serverName string, tools []mcp.
 	if err != nil {
 		return err
 	}
+	approvedBy := strings.TrimSpace(req.ApprovedBy)
+	if err := pinapprovals.ValidateApprover(approvedBy); err != nil {
+		return err
+	}
 	hash, err := HashTools(tools)
 	if err != nil {
 		return err
@@ -365,7 +369,7 @@ func (ps *PinStore) Approve(ctx context.Context, serverName string, tools []mcp.
 		if err := ps.loadApprovalsLocked(ctx); err != nil {
 			return nil, err
 		}
-		by, source := req.ApprovedBy, req.ApprovedBySource
+		by, source := approvedBy, req.ApprovedBySource
 		if by == "" {
 			source = ""
 		}
