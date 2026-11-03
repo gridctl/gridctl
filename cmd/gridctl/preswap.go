@@ -132,6 +132,13 @@ func checkPreswap(ctx context.Context, in preswapInput) (preswapResult, error) {
 // read is a warning, not a refusal: an older binary ignores the file and
 // the daemon still starts.
 func contextPinWarnings(in preswapInput) []string {
+	// A nil target advertises no schemas. checkPreswap already emits
+	// unknownSchemasWarning for that case. A second context-pin line would
+	// warn twice for one condition. Tool and skill pin checks are not
+	// reached when the target is nil.
+	if in.Target == nil {
+		return nil
+	}
 	path, err := state.ContextPinsPath()
 	if err != nil {
 		return nil
@@ -147,10 +154,7 @@ func contextPinWarnings(in preswapInput) []string {
 	if err := json.Unmarshal(data, &head); err != nil {
 		return []string{fmt.Sprintf("warning: %s could not be parsed; context pin compatibility is unknown", path)}
 	}
-	advertised := ""
-	if in.Target != nil {
-		advertised = in.Target.ContextPins
-	}
+	advertised := in.Target.ContextPins
 	if advertised == "" {
 		return []string{fmt.Sprintf("warning: %s does not advertise a context pin version; context pin compatibility is unknown", in.TargetTag)}
 	}

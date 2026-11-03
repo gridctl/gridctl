@@ -160,7 +160,10 @@ var ctxPinsResetCmd = &cobra.Command{
 	Long:  "Remove a fragment's pin record. It is re-pinned on the next sync. Approval history is kept.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runCtxPinsReset(cmd.Context(), os.Stdout, os.Stderr, args[0])
+		if code := runCtxPinsReset(cmd.Context(), os.Stdout, os.Stderr, args[0]); code != pinsExitOK {
+			os.Exit(code)
+		}
+		return nil
 	},
 }
 
@@ -468,9 +471,6 @@ func runCtxPinsApprove(ctx context.Context, stdout, stderr io.Writer, name, expe
 	case errors.Is(err, ctxpins.ErrNoDocument):
 		fmt.Fprintf(stderr, "fragment %q not found in the context store (for a deleted fragment, run 'gridctl ctx pins reset %s')\n", name, name)
 		os.Exit(pinsExitInfrastructure)
-	case errors.Is(err, ctxpins.ErrNotPinned):
-		fmt.Fprintf(stderr, "no pin found for fragment %q (see 'gridctl ctx pins list')\n", name)
-		os.Exit(pinsExitInfrastructure)
 	case errors.Is(err, ctxpins.ErrHashMismatch):
 		return fmt.Errorf("fragment content changed since the reviewed diff (run 'gridctl ctx pins diff %s' to re-review)", name)
 	case errors.Is(err, ctxpins.ErrReasonRequired):
@@ -484,22 +484,22 @@ func runCtxPinsApprove(ctx context.Context, stdout, stderr io.Writer, name, expe
 	return nil
 }
 
-func runCtxPinsReset(ctx context.Context, stdout, stderr io.Writer, name string) error {
+func runCtxPinsReset(ctx context.Context, stdout, stderr io.Writer, name string) int {
 	store, _, err := loadCtxPins(ctx)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
-		os.Exit(pinsExitInfrastructure)
+		return pinsExitInfrastructure
 	}
 	if err := store.Reset(ctx, name); err != nil {
 		if errors.Is(err, ctxpins.ErrNotPinned) {
 			fmt.Fprintf(stderr, "no pin found for fragment %q (see 'gridctl ctx pins list')\n", name)
-			os.Exit(pinsExitInfrastructure)
+			return pinsExitInfrastructure
 		}
 		fmt.Fprintln(stderr, err)
-		os.Exit(pinsExitInfrastructure)
+		return pinsExitInfrastructure
 	}
 	fmt.Fprintf(stdout, "✓ Pin reset for fragment %s. It is re-pinned on the next sync.\n", name)
-	return nil
+	return pinsExitOK
 }
 
 func loadCtxPins(ctx context.Context) (*ctxpins.Store, ctxpins.Source, error) {

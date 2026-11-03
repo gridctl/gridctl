@@ -468,7 +468,7 @@ func runCtxStatus(ctx context.Context, stdout, stderr io.Writer, mgr *contexts.M
 		return ctxExitInfrastructure
 	}
 	fragmentsActive := mgr.FragmentsActive()
-	pins, perr := loadContextPinSummary(ctx, mgr)
+	pins, perr := loadContextPinSummary(ctx, stderr, mgr)
 	if perr != nil {
 		fmt.Fprintln(stderr, perr)
 		return ctxExitInfrastructure
@@ -555,7 +555,7 @@ func runCtxSync(ctx context.Context, stdout, stderr io.Writer, mgr *contexts.Man
 		}
 	}
 
-	pins, perr := loadContextPinSummary(ctx, mgr)
+	pins, perr := loadContextPinSummary(ctx, stderr, mgr)
 	if perr != nil {
 		fmt.Fprintln(stderr, perr)
 		return ctxExitInfrastructure

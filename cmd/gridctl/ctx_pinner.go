@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/contexts"
@@ -90,13 +91,29 @@ type ctxPinsSummaryDoc struct {
 	Unpinned []string `json:"unpinned"`
 }
 
-func loadContextPinSummary(ctx context.Context, mgr *contexts.Manager) (ctxPinsSummaryDoc, error) {
+func emptyCtxPinsSummary() ctxPinsSummaryDoc {
+	return ctxPinsSummaryDoc{Drifted: []string{}, Missing: []string{}, Unpinned: []string{}}
+}
+
+func warnContextPinSummary(stderr io.Writer, err error) {
+	slog.Warn("ctx: context pin summary unavailable", "error", err)
+	if stderr != nil {
+		fmt.Fprintf(stderr, "warning: context pin summary unavailable: %v\n", err)
+	}
+}
+
+// loadContextPinSummary is observe-only. A pin-file error warns and returns
+// an empty summary so ctx status and ctx sync keep their existing exit
+// codes. Document-source errors still fail the command: those are about
+// the context store, not the pin file.
+func loadContextPinSummary(ctx context.Context, stderr io.Writer, mgr *contexts.Manager) (ctxPinsSummaryDoc, error) {
 	store := ctxpins.New()
 	enabled, ignore := ctxpins.DeployedScanConfig()
 	store.SetScanConfig(enabled, ignore)
 	records, err := store.GetAll(ctx)
 	if err != nil {
-		return ctxPinsSummaryDoc{}, err
+		warnContextPinSummary(stderr, err)
+		return emptyCtxPinsSummary(), nil
 	}
 	src, err := contextDocumentSource(ctx, mgr)
 	if err != nil {

@@ -176,6 +176,14 @@ func TestContextPinWarnings_AbsentSilentAndOlderTargetWarnsOnce(t *testing.T) {
 	writeJSON(t, path, `{"version":"1"}`)
 	got = mustPreswap(t, preswapInput{TargetTag: "older", Target: blank})
 	assertHas(t, got.Warnings, "older does not advertise a context pin version; context pin compatibility is unknown")
+
+	got = mustPreswap(t, preswapInput{TargetTag: "v0.1.0"})
+	for _, line := range got.Warnings {
+		if strings.Contains(line, "context pin") {
+			t.Fatalf("nil target warned about context pins: %v", got.Warnings)
+		}
+	}
+	assertHas(t, got.Warnings, unknownSchemasWarning("v0.1.0"))
 }
 
 func TestCheckPreswap_WarningsAndForce(t *testing.T) {
