@@ -1,6 +1,7 @@
 package skillpins
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/pinapprovals"
 	"github.com/gridctl/gridctl/pkg/pins"
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/state"
@@ -47,6 +49,8 @@ var (
 type Store struct {
 	stackName string
 	path      string
+	logPath   string
+	log       *pinapprovals.Log
 	mu        sync.RWMutex
 	data      *PinFile
 
@@ -73,13 +77,24 @@ func New(stackName string) *Store {
 // ps.mu.
 func (ps *Store) ensurePath() error {
 	if ps.path != "" {
+		if ps.logPath == "" {
+			// A caller that set path without logPath (tests that construct
+			// the store directly) keeps the log beside that path, never
+			// under the real home.
+			ps.logPath = filepath.Join(filepath.Dir(ps.path), "approvals", "skills", ps.stackName+".json")
+		}
 		return nil
 	}
 	p, err := state.SkillPinsPath(ps.stackName)
 	if err != nil {
 		return fmt.Errorf("skillpins: resolving pin file path: %w", err)
 	}
+	lp, err := state.SkillPinApprovalsPath(ps.stackName)
+	if err != nil {
+		return fmt.Errorf("skillpins: resolving approvals log path: %w", err)
+	}
 	ps.path = p
+	ps.logPath = lp
 	return nil
 }
 
@@ -89,6 +104,7 @@ func NewWithPath(dir, stackName string) *Store {
 	ps := &Store{
 		stackName:   stackName,
 		path:        filepath.Join(dir, stackName+".skills.json"),
+		logPath:     filepath.Join(dir, "approvals", "skills", stackName+".json"),
 		scanEnabled: true,
 	}
 	ps.data = ps.emptyPinFile()
@@ -125,6 +141,21 @@ func (ps *Store) Load() error {
 	if err := ps.ensurePath(); err != nil {
 		return err
 	}
+	pinErr := ps.loadPinFileLocked()
+	// Load has no caller context. Cancellation of a later Approve still
+	// applies to the log write; this read is the startup and CLI path.
+	logErr := ps.loadApprovalsLocked(context.Background())
+	if logErr != nil {
+		return logErr
+	}
+	if pinErr != nil {
+		return pinErr
+	}
+	ps.projectApprovalsLocked()
+	return nil
+}
+
+func (ps *Store) loadPinFileLocked() error {
 	data, err := os.ReadFile(ps.path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -150,6 +181,47 @@ func (ps *Store) Load() error {
 	}
 	ps.data = &pf
 	return nil
+}
+
+// loadApprovalsLocked opens and reads the approvals log. A corrupt log is
+// logged and treated as empty history. A newer-version log is returned as
+// skillpins.ErrNewerVersion so startup and the CLI refuse it the same way
+// they refuse a newer pin file. Caller holds ps.mu.
+func (ps *Store) loadApprovalsLocked(ctx context.Context) error {
+	if err := ps.ensurePath(); err != nil {
+		return err
+	}
+	if ps.log == nil {
+		ps.log = pinapprovals.Open(ps.logPath, ps.stackName, pinapprovals.KindSkill)
+	}
+	err := ps.log.Load(ctx)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, pinapprovals.ErrCorrupt) {
+		slog.Warn("skillpins: approvals log unreadable; continuing with empty history", "path", ps.logPath, "error", err)
+		return nil
+	}
+	if errors.Is(err, pinapprovals.ErrNewerVersion) {
+		return fmt.Errorf("skillpins: %w: %v", ErrNewerVersion, err)
+	}
+	return fmt.Errorf("skillpins: loading approvals log: %w", err)
+}
+
+func (ps *Store) projectApprovalsLocked() {
+	for name, pin := range ps.data.Skills {
+		if pin == nil {
+			continue
+		}
+		ps.applyApprovalsLocked(name, pin)
+	}
+}
+
+func (ps *Store) applyApprovalsLocked(name string, pin *SkillPin) {
+	if ps.log != nil {
+		pin.Approvals = ps.log.History(name)
+	}
+	pin.CompositeHash = CompositeHash(pin.SkillHash, pin.Files)
 }
 
 // GetAll returns a deep-copied snapshot of every skill pin, keyed by skill
@@ -185,6 +257,7 @@ func copySkillPin(pin *SkillPin) *SkillPin {
 	out := *pin
 	out.Files = append([]FileDigest(nil), pin.Files...)
 	out.Findings = append([]pins.Finding(nil), pin.Findings...)
+	out.Approvals = pinapprovals.CloneEntries(pin.Approvals)
 	if pin.Origin != nil {
 		origin := *pin.Origin
 		out.Origin = &origin
@@ -354,13 +427,36 @@ func (ps *Store) CurrentCompositeHash(name string, src SkillSource) (string, err
 	return CompositeHash(skillHash, files), nil
 }
 
-// Approve re-pins a skill's current content, clearing pin drift.
-// expectedHash, when non-empty, must match the current composite hash or
-// ErrHashMismatch is returned — binding the approval to the reviewed
-// content. When the current content carries unresolved advisory findings,
-// a non-empty reason is required (ErrReasonRequired otherwise) and is
-// persisted on the record.
-func (ps *Store) Approve(name string, src SkillSource, expectedHash, reason string) error {
+// ApproveRequest is one explicit skill approval. ExpectedHash, when
+// non-empty, must match the current composite hash. Evidence is stored as
+// returned by pinapprovals.ValidateReferences, not as the caller supplied it.
+type ApproveRequest struct {
+	ExpectedHash     string
+	Reason           string
+	Evidence         []string
+	ApprovedBy       string
+	ApprovedBySource string
+}
+
+// Approve re-pins a skill's current content, clearing pin drift, and appends
+// an approval entry. Reason and references are validated before any file
+// write. ExpectedHash, when non-empty, must match the current composite hash
+// or ErrHashMismatch is returned. When the current content carries unresolved
+// advisory findings, a non-empty reason is required (ErrReasonRequired
+// otherwise) and is persisted on the record as ApprovedReason. The approvals
+// log is appended inside the file lock before the pin file is rewritten; a
+// log error leaves the pin file unchanged.
+func (ps *Store) Approve(ctx context.Context, name string, src SkillSource, req ApproveRequest) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := pinapprovals.ValidateReason(req.Reason); err != nil {
+		return err
+	}
+	evidence, err := pinapprovals.ValidateReferences(req.Evidence)
+	if err != nil {
+		return err
+	}
 	sk, err := src.GetSkill(name)
 	if err != nil {
 		return err
@@ -369,23 +465,60 @@ func (ps *Store) Approve(name string, src SkillSource, expectedHash, reason stri
 	if err != nil {
 		return err
 	}
-	if expectedHash != "" && expectedHash != CompositeHash(skillHash, files) {
+	composite := CompositeHash(skillHash, files)
+	if req.ExpectedHash != "" && req.ExpectedHash != composite {
 		return fmt.Errorf("skillpins: skill %q: %w", name, ErrHashMismatch)
 	}
 
-	return ps.withFileLock(func() error {
+	err = ps.withFileLock(func() error {
 		ps.mu.Lock()
 		defer ps.mu.Unlock()
 
-		if findings := ps.scanFindings(sk); len(findings) > 0 && reason == "" {
+		if findings := ps.scanFindings(sk); len(findings) > 0 && req.Reason == "" {
 			return fmt.Errorf("skillpins: skill %q has %d advisory finding(s): %w", name, len(findings), ErrReasonRequired)
 		}
-		ps.pinSkill(src, sk, skillHash, files, time.Now().UTC(), reason)
+		if err := ps.loadApprovalsLocked(ctx); err != nil {
+			return err
+		}
+		by, source := req.ApprovedBy, req.ApprovedBySource
+		if by == "" {
+			source = ""
+		}
+		entry := pinapprovals.Entry{
+			ApprovedAt:       time.Now().UTC(),
+			ApprovedBy:       by,
+			ApprovedBySource: source,
+			ApprovedHash:     composite,
+			Bound:            req.ExpectedHash != "",
+			Reason:           req.Reason,
+			Evidence:         evidence,
+		}
+		if err := ps.log.Append(ctx, name, entry); err != nil {
+			return err
+		}
+		ps.pinSkill(src, sk, skillHash, files, time.Now().UTC(), req.Reason)
 		return ps.saveLocked()
 	})
+	if err != nil {
+		return err
+	}
+	source := req.ApprovedBySource
+	if req.ApprovedBy == "" {
+		source = ""
+	}
+	slog.Info("skillpins: recorded approval",
+		"skill", name,
+		"bound", req.ExpectedHash != "",
+		"approver_source", source,
+		"evidence_count", len(evidence),
+		"has_reason", req.Reason != "",
+	)
+	return nil
 }
 
 // Reset deletes the pin record for a skill. The next Sync re-pins it fresh.
+// History in the approvals log is left untouched, so the fresh pin still
+// shows the prior entries.
 func (ps *Store) Reset(name string) error {
 	return ps.withFileLock(func() error {
 		ps.mu.Lock()
@@ -416,6 +549,7 @@ func (ps *Store) pinSkill(src SkillSource, sk *registry.AgentSkill, skillHash st
 		Status:         StatusPinned,
 		Findings:       ps.scanFindings(sk),
 	}
+	ps.applyApprovalsLocked(sk.Name, pin)
 	if doc, err := registry.RenderSkillMD(sk); err == nil {
 		pin.Document = string(doc)
 	}

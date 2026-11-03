@@ -2,11 +2,14 @@ package skillpins
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/gridctl/gridctl/pkg/pinapprovals"
 	"github.com/gridctl/gridctl/pkg/registry"
 )
 
@@ -193,7 +196,7 @@ func TestApprove_RepinsAndBindsToHash(t *testing.T) {
 	}
 
 	// Stale expected hash is rejected.
-	if err := ps.Approve("benign", reg, "stale", ""); !errors.Is(err, ErrHashMismatch) {
+	if err := ps.Approve(t.Context(), "benign", reg, ApproveRequest{ExpectedHash: "stale"}); !errors.Is(err, ErrHashMismatch) {
 		t.Fatalf("stale hash: err = %v, want ErrHashMismatch", err)
 	}
 
@@ -201,7 +204,7 @@ func TestApprove_RepinsAndBindsToHash(t *testing.T) {
 	if err != nil {
 		t.Fatalf("composite hash: %v", err)
 	}
-	if err := ps.Approve("benign", reg, current, ""); err != nil {
+	if err := ps.Approve(t.Context(), "benign", reg, ApproveRequest{ExpectedHash: current}); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
 	pin, _ := ps.Get("benign")
@@ -231,10 +234,10 @@ func TestApprove_FindingsRequireReason(t *testing.T) {
 		t.Fatal("fixture did not trip the advisory scanner; the reason gate is untested")
 	}
 
-	if err := ps.Approve("tripping", reg, "", ""); !errors.Is(err, ErrReasonRequired) {
+	if err := ps.Approve(t.Context(), "tripping", reg, ApproveRequest{}); !errors.Is(err, ErrReasonRequired) {
 		t.Fatalf("approve without reason: err = %v, want ErrReasonRequired", err)
 	}
-	if err := ps.Approve("tripping", reg, "", "training material; quotes attack phrasing"); err != nil {
+	if err := ps.Approve(t.Context(), "tripping", reg, ApproveRequest{Reason: "training material; quotes attack phrasing"}); err != nil {
 		t.Fatalf("approve with reason: %v", err)
 	}
 	pin, _ = ps.Get("tripping")
@@ -251,7 +254,7 @@ func TestApprove_ScanDisabledNeedsNoReason(t *testing.T) {
 	if _, err := ps.Sync(reg); err != nil {
 		t.Fatalf("sync: %v", err)
 	}
-	if err := ps.Approve("tripping", reg, "", ""); err != nil {
+	if err := ps.Approve(t.Context(), "tripping", reg, ApproveRequest{}); err != nil {
 		t.Fatalf("approve with scanner off: %v", err)
 	}
 }
@@ -376,7 +379,7 @@ func TestVerify_CompositeHashMatchesDiffContent(t *testing.T) {
 	if vr.CompositeHash == "" {
 		t.Fatal("verify did not carry a composite hash")
 	}
-	if err := ps.Approve("benign", reg, vr.CompositeHash, ""); err != nil {
+	if err := ps.Approve(t.Context(), "benign", reg, ApproveRequest{ExpectedHash: vr.CompositeHash}); err != nil {
 		t.Fatalf("approve with verify's composite hash: %v", err)
 	}
 }
@@ -462,5 +465,200 @@ func TestProvenance_GitOrigin(t *testing.T) {
 	}
 	if pin.Origin == nil || pin.Origin.Repo != "https://example.com/r.git" || pin.Origin.CommitSHA != "abc123" {
 		t.Fatalf("origin = %+v", pin.Origin)
+	}
+}
+
+func TestApprove_RecordsHistory(t *testing.T) {
+	reg := newTestRegistry(t)
+	writeSkill(t, reg, "benign", benignSkill)
+	dir := t.TempDir()
+	ps := NewWithPath(dir, "lab")
+	if _, err := ps.Sync(reg); err != nil {
+		t.Fatal(err)
+	}
+	current, err := ps.CurrentCompositeHash("benign", reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := ApproveRequest{
+		ExpectedHash:     current,
+		Reason:           "Adds runbook step 4",
+		Evidence:         []string{" https://example.test/pr/1 ", "https://example.test/pr/1", "plan/review/incident-triage.md"},
+		ApprovedBy:       "wcollins",
+		ApprovedBySource: pinapprovals.SourceOSUser,
+	}
+	if err := ps.Approve(t.Context(), "benign", reg, req); err != nil {
+		t.Fatal(err)
+	}
+	pin, ok := ps.Get("benign")
+	if !ok || len(pin.Approvals) != 1 {
+		t.Fatalf("approvals = %+v", pin)
+	}
+	got := pin.Approvals[0]
+	if !got.Bound || got.ApprovedHash != pin.CompositeHash || got.ApprovedHash != current {
+		t.Fatalf("entry = %+v composite %s", got, pin.CompositeHash)
+	}
+	if got.ApprovedBy != "wcollins" || got.ApprovedBySource != pinapprovals.SourceOSUser {
+		t.Fatalf("approver = %q %q", got.ApprovedBy, got.ApprovedBySource)
+	}
+	if len(got.Evidence) != 2 || got.Evidence[0] != "https://example.test/pr/1" {
+		t.Fatalf("evidence = %#v", got.Evidence)
+	}
+	if got.ApprovedAt.IsZero() || got.ApprovedAt.Location().String() != "UTC" {
+		t.Fatalf("approved_at = %v", got.ApprovedAt)
+	}
+
+	// Unbound approval still records the composite hash.
+	if err := ps.Approve(t.Context(), "benign", reg, ApproveRequest{Reason: "second"}); err != nil {
+		t.Fatal(err)
+	}
+	pin, _ = ps.Get("benign")
+	if len(pin.Approvals) != 2 || pin.Approvals[0].Bound || pin.Approvals[0].ApprovedHash != pin.CompositeHash {
+		t.Fatalf("second = %+v", pin.Approvals)
+	}
+}
+
+func TestApprove_RefusesCredentialBeforeWrite(t *testing.T) {
+	reg := newTestRegistry(t)
+	writeSkill(t, reg, "benign", benignSkill)
+	dir := t.TempDir()
+	ps := NewWithPath(dir, "lab")
+	if _, err := ps.Sync(reg); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(dir, "lab.skills.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ps.Approve(t.Context(), "benign", reg, ApproveRequest{Evidence: []string{"Bearer abc"}})
+	if !errors.Is(err, pinapprovals.ErrCredentialShaped) {
+		t.Fatalf("err = %v", err)
+	}
+	after, err := os.ReadFile(filepath.Join(dir, "lab.skills.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("refused approval rewrote the pin file")
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "approvals", "skills", "lab.json")); !os.IsNotExist(statErr) {
+		t.Fatal("refused approval wrote the approvals log")
+	}
+}
+
+func TestReset_HistorySurvives(t *testing.T) {
+	reg := newTestRegistry(t)
+	writeSkill(t, reg, "benign", benignSkill)
+	ps := newTestStore(t)
+	if _, err := ps.Sync(reg); err != nil {
+		t.Fatal(err)
+	}
+	if err := ps.Approve(t.Context(), "benign", reg, ApproveRequest{Reason: "reviewed", ApprovedBy: "wcollins", ApprovedBySource: pinapprovals.SourceOSUser}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ps.Reset("benign"); err != nil {
+		t.Fatal(err)
+	}
+	res, err := ps.Sync(reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Pinned) != 1 {
+		t.Fatalf("pinned = %v", res.Pinned)
+	}
+	pin, ok := ps.Get("benign")
+	if !ok || len(pin.Approvals) != 1 || pin.Approvals[0].Reason != "reviewed" {
+		t.Fatalf("history after reset = %+v", pin)
+	}
+}
+
+func TestLoad_ProjectsApprovalsFromLog(t *testing.T) {
+	reg := newTestRegistry(t)
+	writeSkill(t, reg, "benign", benignSkill)
+	dir := t.TempDir()
+	ps := NewWithPath(dir, "lab")
+	if _, err := ps.Sync(reg); err != nil {
+		t.Fatal(err)
+	}
+	if err := ps.Approve(t.Context(), "benign", reg, ApproveRequest{Reason: "kept in the log"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// An older writer drops derived fields. Reload must rebuild them.
+	data, err := os.ReadFile(ps.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pf PinFile
+	if err := json.Unmarshal(data, &pf); err != nil {
+		t.Fatal(err)
+	}
+	for _, pin := range pf.Skills {
+		pin.Approvals = nil
+		pin.CompositeHash = ""
+	}
+	stripped, err := json.MarshalIndent(pf, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ps.path, stripped, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reloaded := NewWithPath(dir, "lab")
+	if err := reloaded.Load(); err != nil {
+		t.Fatal(err)
+	}
+	pin, ok := reloaded.Get("benign")
+	if !ok || len(pin.Approvals) != 1 || pin.Approvals[0].Reason != "kept in the log" || pin.CompositeHash == "" {
+		t.Fatalf("reloaded = %+v", pin)
+	}
+}
+
+func TestLoad_NewerApprovalsLog(t *testing.T) {
+	dir := t.TempDir()
+	ps := NewWithPath(dir, "lab")
+	if err := os.MkdirAll(filepath.Dir(ps.logPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ps.logPath, []byte(`{"version":"2","stack":"lab","kind":"skill","subjects":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := ps.Load()
+	if !errors.Is(err, ErrNewerVersion) {
+		t.Fatalf("err = %v", err)
+	}
+	if !strings.Contains(err.Error(), ps.logPath) {
+		t.Fatalf("message = %q, path %s", err.Error(), ps.logPath)
+	}
+}
+
+func TestApprove_LogAppendPrecedesPinRewrite(t *testing.T) {
+	reg := newTestRegistry(t)
+	writeSkill(t, reg, "benign", benignSkill)
+	dir := t.TempDir()
+	ps := NewWithPath(dir, "lab")
+	if _, err := ps.Sync(reg); err != nil {
+		t.Fatal(err)
+	}
+	// A file where the pin directory must be created makes saveLocked fail
+	// after the log append: the parent of the pin path is a file.
+	blocker := filepath.Join(dir, "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ps.path = filepath.Join(blocker, "lab.skills.json")
+	err := ps.Approve(t.Context(), "benign", reg, ApproveRequest{Reason: "after the log"})
+	if err == nil {
+		t.Fatal("expected pin rewrite to fail")
+	}
+	if _, statErr := os.Stat(ps.logPath); statErr != nil {
+		t.Fatalf("approvals log missing after failed pin rewrite: %v", statErr)
+	}
+	data, err := os.ReadFile(ps.logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "after the log") {
+		t.Fatalf("log = %s", data)
 	}
 }
