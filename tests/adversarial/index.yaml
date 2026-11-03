@@ -551,3 +551,16 @@ scenarios:
     budgets:
       max_payload_bytes: 1048576
       max_duration: 4m
+  - id: pin-approval-credential-refusal
+    owner_package: pkg/pinapprovals
+    owner_issue: "1480"
+    package: github.com/gridctl/gridctl/pkg/pinapprovals
+    test: TestValidateReference_RefusesCredentialShapes
+    lanes: [unit]
+    expected_boundary: a reference carrying URL userinfo or a default redaction-pattern match is refused before any file write
+    nonclaims:
+      - does not detect secrets outside the default redaction patterns
+      - does not inspect or fetch the referenced resource
+    budgets:
+      max_payload_bytes: 4096
+      max_duration: 5s

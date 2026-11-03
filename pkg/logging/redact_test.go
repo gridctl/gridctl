@@ -9,6 +9,31 @@ import (
 	"testing"
 )
 
+func TestMatchesRedactPattern(t *testing.T) {
+	a2a := "gca2a_c1_" + strings.Repeat("a", 43)
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{name: "a2a token", input: "prefix " + a2a + " suffix", want: true},
+		{name: "authorization header", input: "Authorization: Basic dXNlcjpwYXNz", want: true},
+		{name: "bearer token", input: "connecting with Bearer eyJtoken", want: true},
+		{name: "key value secret", input: "set token=ghp_xxxxxxxxxxxx", want: true},
+		{name: "ordinary url", input: "https://github.com/acme/skills/pull/42", want: false},
+		{name: "prose mentioning token", input: "token rotated per policy", want: false},
+		{name: "local path", input: "plan/review/incident-triage.md", want: false},
+		{name: "empty", input: "", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := MatchesRedactPattern(tt.input); got != tt.want {
+				t.Fatalf("MatchesRedactPattern(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRedactString(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -241,6 +241,20 @@ func RedactString(s string) string {
 	return applySensitiveValues(s)
 }
 
+// MatchesRedactPattern reports whether s matches any default redaction
+// pattern. It does not consult the process-wide exact-value registry: a
+// match there would confirm a guessed secret, and the registry is empty in
+// the stackless CLI process. Callers that refuse credential-shaped input
+// use this predicate so a refusal never depends on resolved secrets.
+func MatchesRedactPattern(s string) bool {
+	for _, p := range defaultRedactPatterns {
+		if p.MatchString(s) {
+			return true
+		}
+	}
+	return false
+}
+
 // attrsToAny converts []slog.Attr to []any for slog.Group().
 func attrsToAny(attrs []slog.Attr) []any {
 	result := make([]any, len(attrs))
