@@ -508,3 +508,141 @@ func TestHooksPack_RemoveAndApprove(t *testing.T) {
 		t.Fatalf("pack remove left the hook: %v", err)
 	}
 }
+
+func TestHooksPack_ProjectSyncPreservesSiblings(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	bin := hookCLI(t)
+	home := t.TempDir()
+	repo := commitPack(t, hookPackFiles("#!/bin/sh\nexit 0\n", ""), map[string]os.FileMode{
+		"hooks/block-force-push/scripts/block.sh": 0o755,
+	})
+	if stdout, stderr, code := runHookCLI(t, bin, home, "pack", "add", repo); code != 0 {
+		t.Fatalf("pack add exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	claude := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claude, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := "{\n  // keep this comment\n  \"permissions\": {\"allow\": [\"Bash\"]},\n  \"hooks\": {\n    \"PreToolUse\": [\n      {\"matcher\": \"Write\", \"hooks\": [{\"type\": \"command\", \"command\": \"echo hi\"}]}\n    ]\n  }\n}\n"
+	settings := filepath.Join(claude, "settings.json")
+	if err := os.WriteFile(settings, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, code := runHookCLI(t, bin, home, "skill", "project", "sync", "--kind", "hook", "block-force-push")
+	if code != 0 {
+		t.Fatalf("sync exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "copied") {
+		t.Fatalf("sync output:\n%s", stdout)
+	}
+	got, err := os.ReadFile(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(got)
+	if !strings.Contains(text, "gridctl hook block-force-push") || !strings.Contains(text, "// keep this comment") || !strings.Contains(text, "echo hi") || !strings.Contains(text, `"permissions"`) {
+		t.Fatalf("settings after sync:\n%s", text)
+	}
+	if !strings.HasPrefix(text, "{\n  // keep this comment\n") {
+		t.Fatalf("prefix changed:\n%s", text)
+	}
+	again, _, againCode := runHookCLI(t, bin, home, "skill", "project", "sync", "--kind", "hook", "block-force-push")
+	if againCode != 0 || !strings.Contains(again, "unchanged") {
+		t.Fatalf("second sync exit %d\n%s", againCode, again)
+	}
+	statusOut, _, statusCode := runHookCLI(t, bin, home, "skill", "project", "status", "--format", "json")
+	if statusCode != 0 || !strings.Contains(statusOut, `"kind": "hook"`) || !strings.Contains(statusOut, `"script_dir"`) {
+		t.Fatalf("status exit %d\n%s", statusCode, statusOut)
+	}
+	unsyncOut, unsyncErr, unsyncCode := runHookCLI(t, bin, home, "skill", "project", "unsync", "--kind", "hook", "block-force-push")
+	if unsyncCode != 0 {
+		t.Fatalf("unsync exit %d\n%s\n%s", unsyncCode, unsyncOut, unsyncErr)
+	}
+	after, err := os.ReadFile(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(after), "gridctl hook") || !strings.Contains(string(after), "echo hi") || !strings.Contains(string(after), "// keep this comment") {
+		t.Fatalf("settings after unsync:\n%s", after)
+	}
+}
+
+func TestHooksPack_PackApplyRemoveKeepsUserGroups(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	bin := hookCLI(t)
+	home := t.TempDir()
+	repo := commitPack(t, hookPackFiles("#!/bin/sh\nexit 0\n", ""), map[string]os.FileMode{
+		"hooks/block-force-push/scripts/block.sh": 0o755,
+	})
+	if stdout, stderr, code := runHookCLI(t, bin, home, "pack", "add", repo); code != 0 {
+		t.Fatalf("pack add exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	claude := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claude, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := "{\n  // keep this comment\n  \"permissions\": {\"allow\": [\"Bash\"]},\n  \"hooks\": {\n    \"PreToolUse\": [\n      {\"matcher\": \"Write\", \"hooks\": [{\"type\": \"command\", \"command\": \"echo hi\"}]}\n    ]\n  }\n}\n"
+	settings := filepath.Join(claude, "settings.json")
+	if err := os.WriteFile(settings, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, code := runHookCLI(t, bin, home, "pack", "apply", "hook-pack")
+	if code != 0 {
+		t.Fatalf("pack apply exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "hook") || !strings.Contains(stdout, "copied") || !strings.Contains(stdout, "block-force-push") {
+		t.Fatalf("pack apply output:\n%s", stdout)
+	}
+	got, err := os.ReadFile(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), "gridctl hook block-force-push") || !strings.Contains(string(got), "echo hi") || !strings.Contains(string(got), "// keep this comment") {
+		t.Fatalf("settings after apply:\n%s", got)
+	}
+	statusOut, statusErr, statusCode := runHookCLI(t, bin, home, "pack", "status", "hook-pack", "--format", "json")
+	if statusCode != 0 {
+		t.Fatalf("pack status exit %d\n%s\n%s", statusCode, statusOut, statusErr)
+	}
+	if !strings.Contains(statusOut, `"kind": "hook"`) || !strings.Contains(statusOut, `"client": "claude-code"`) || !strings.Contains(statusOut, `"state": "in-sync"`) {
+		t.Fatalf("pack status:\n%s", statusOut)
+	}
+	removeOut, removeErr, removeCode := runHookCLI(t, bin, home, "pack", "remove", "hook-pack")
+	if removeCode != 0 {
+		t.Fatalf("pack remove exit %d\n%s\n%s", removeCode, removeOut, removeErr)
+	}
+	after, err := os.ReadFile(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(after), "gridctl hook") || !strings.Contains(string(after), "echo hi") || !strings.Contains(string(after), "// keep this comment") {
+		t.Fatalf("settings after pack remove:\n%s", after)
+	}
+}
+
+func TestHooksPack_AdoptAndUnsupported(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	bin := hookCLI(t)
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".gemini"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, stderr, code := runHookCLI(t, bin, home, "skill", "project", "adopt", "block-force-push", "--kind", "hook", "--client", "claude-code")
+	if code != 1 || !strings.Contains(stderr, "adopt is not supported for hooks in this release") {
+		t.Fatalf("adopt exit %d\n%s", code, stderr)
+	}
+	stdout, _, syncCode := runHookCLI(t, bin, home, "skill", "project", "sync", "--kind", "hook", "--clients", "gemini")
+	if syncCode != 1 || !strings.Contains(stdout, "skipped-unsupported") || !strings.Contains(stdout, "~/.gemini/settings.json hooks key") {
+		t.Fatalf("unsupported exit %d\n%s", syncCode, stdout)
+	}
+	_, nonsenseErr, nonsenseCode := runHookCLI(t, bin, home, "skill", "project", "sync", "--kind", "hook", "--clients", "nonsense")
+	if nonsenseCode != 2 || !strings.Contains(nonsenseErr, "unknown client") {
+		t.Fatalf("unknown client exit %d\n%s", nonsenseCode, nonsenseErr)
+	}
+}

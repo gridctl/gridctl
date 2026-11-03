@@ -8,6 +8,7 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/agentsync"
 	"github.com/gridctl/gridctl/pkg/contexts"
+	"github.com/gridctl/gridctl/pkg/hooksync"
 	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/skillsync"
@@ -103,6 +104,28 @@ func (m *Managers) Apply(ctx context.Context, name string, opts ApplyOptions) (*
 				continue
 			}
 			addRow(Row{Kind: "agent", Name: r.Agent, Client: r.Client, Action: r.Action, Detail: firstNonEmpty(r.Error, r.Detail)})
+		}
+	}
+
+	// Hooks after skills and agents, before rules. Unsupported clients are
+	// reported, not written.
+	hookNames := filterForeign(locked.Hooks, "hook", foreign, addRow)
+	if len(hookNames) > 0 && m.Hooks != nil {
+		results, herr := m.Hooks.Sync(ctx, hookNames, hooksync.SyncOptions{Force: opts.Force, DryRun: opts.DryRun, Pack: name})
+		if herr != nil {
+			addRow(Row{Kind: "hook", Name: strings.Join(hookNames, ","), Action: "error", Detail: herr.Error()})
+		} else {
+			for _, r := range results {
+				if r.Action == hooksync.ActionSkippedUnavailable {
+					continue
+				}
+				addRow(Row{Kind: "hook", Name: r.Hook, Client: r.Client, Action: r.Action, Detail: firstNonEmpty(r.Error, r.Detail), Remediation: r.Remediation})
+			}
+		}
+		for _, c := range m.Hooks.DetectedUnsupported() {
+			for _, hookName := range hookNames {
+				addRow(Row{Kind: "hook", Name: hookName, Client: c.Slug, Action: hooksync.ActionSkippedUnsupported, Detail: c.Location})
+			}
 		}
 	}
 

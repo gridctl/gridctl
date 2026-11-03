@@ -13,6 +13,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/agentsync"
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/contexts"
+	"github.com/gridctl/gridctl/pkg/hooksync"
 	"github.com/gridctl/gridctl/pkg/pack"
 	"github.com/gridctl/gridctl/pkg/project"
 	"github.com/gridctl/gridctl/pkg/skills"
@@ -134,6 +135,13 @@ func (m *Managers) Statuses(ctx context.Context, opts StatusOptions) ([]PackStat
 	if err != nil {
 		return nil, err
 	}
+	var hookStatuses []hooksync.ProjectionStatus
+	if m.Hooks != nil {
+		hookStatuses, err = m.Hooks.Statuses(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	collisions := map[string][]string{}
 	for _, ps := range sources {
@@ -150,7 +158,7 @@ func (m *Managers) Statuses(ctx context.Context, opts StatusOptions) ([]PackStat
 			}
 		}
 		cache, _ := skills.ReadUpdateCacheAt(skills.UpdateCachePath())
-		rows, attention := m.statusRowsFor(p, ps.Source.Repo, members, cache, skillStatuses, agentStatuses, wiringRows, ruleDeps)
+		rows, attention := m.statusRowsFor(p, ps.Source.Repo, members, cache, skillStatuses, agentStatuses, wiringRows, ruleDeps, hookStatuses)
 		info := PackInfo{
 			Name:        p.Name,
 			Version:     p.Version,
@@ -235,7 +243,7 @@ func (m *Managers) loadRuleStatusDeps(ctx context.Context, sources []packSource)
 
 // statusRowsFor builds one pack's rows in kind order: stack, skills,
 // agents, rules, wiring, unresolved.
-func (m *Managers) statusRowsFor(p *skills.LockedPack, packRepo string, members map[string]skills.LockedSource, cache *skills.UpdateStatus, skillStatuses []skillsync.ProjectionStatus, agentStatuses []agentsync.ProjectionStatus, wiringRows []wiring.Row, ruleDeps *ruleStatusDeps) ([]Row, bool) {
+func (m *Managers) statusRowsFor(p *skills.LockedPack, packRepo string, members map[string]skills.LockedSource, cache *skills.UpdateStatus, skillStatuses []skillsync.ProjectionStatus, agentStatuses []agentsync.ProjectionStatus, wiringRows []wiring.Row, ruleDeps *ruleStatusDeps, hookStatuses []hooksync.ProjectionStatus) ([]Row, bool) {
 	var rows []Row
 	attention := false
 	home, homeErr := m.homeDir()
@@ -361,11 +369,17 @@ func (m *Managers) statusRowsFor(p *skills.LockedPack, packRepo string, members 
 			attention = attention || state != skillsync.StateInSync
 		}
 	}
-	// Hooks have no projection in this release. A store-presence row says
-	// whether the imported definition is still in the registry.
+	// Hooks: per-client projection state when projected, otherwise a
+	// store-presence row for a hook that was imported and never projected.
 	registryDir := ""
 	if homeErr == nil {
 		registryDir = filepath.Join(home, ".gridctl", "registry")
+	}
+	hookByName := map[string][]hooksync.ProjectionStatus{}
+	for _, s := range hookStatuses {
+		if inSelection(p.Hooks, s.Hook) {
+			hookByName[s.Hook] = append(hookByName[s.Hook], s)
+		}
 	}
 	for _, n := range p.Hooks {
 		if homeErr != nil {
@@ -394,7 +408,14 @@ func (m *Managers) statusRowsFor(p *skills.LockedPack, packRepo string, members 
 			attention = true
 			continue
 		}
-		rows = append(rows, Row{Kind: "hook", Name: n, State: skillsync.StateInSync, Detail: "imported; projection is not available in this release"})
+		if projected := hookByName[n]; len(projected) > 0 {
+			for _, s := range projected {
+				rows = append(rows, Row{Kind: "hook", Name: s.Hook, Client: s.Client, State: s.State, Detail: s.Detail, Remediation: s.Remediation})
+				attention = attention || needsAttention(s.State)
+			}
+			continue
+		}
+		rows = append(rows, Row{Kind: "hook", Name: n, State: skillsync.StateInSync, Detail: "imported; not projected"})
 	}
 	for _, r := range wiringRows {
 		if r.Pack == p.Name {

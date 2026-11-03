@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	gitpkg "github.com/gridctl/gridctl/pkg/git"
+	"github.com/gridctl/gridctl/pkg/hooksync"
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/pack"
 	"github.com/gridctl/gridctl/pkg/packops"
@@ -68,8 +69,12 @@ func newPackManagers() (*packops.Managers, error) {
 	if err != nil {
 		return nil, err
 	}
+	hm, err := hooksync.NewManager(registryDir())
+	if err != nil {
+		return nil, err
+	}
 	return &packops.Managers{
-		Skills: sm, Agents: am, Wiring: wm, Contexts: cm, Home: home,
+		Skills: sm, Agents: am, Hooks: hm, Wiring: wm, Contexts: cm, Home: home,
 		Launcher:        packStackLauncher{},
 		StoredVariables: packStoredVariables,
 	}, nil

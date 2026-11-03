@@ -121,7 +121,7 @@ func TestRunSkillProjectStatusJSONAndExitCodes(t *testing.T) {
 	var out, errOut bytes.Buffer
 
 	// Empty set: clean exit, guidance message.
-	exit := runSkillProjectStatus(context.Background(), &out, &errOut, mgr, nil, "", true)
+	exit := runSkillProjectStatus(context.Background(), &out, &errOut, mgr, nil, nil, "", true)
 	if exit != ctxExitOK {
 		t.Fatalf("empty status exit = %d", exit)
 	}
@@ -135,7 +135,7 @@ func TestRunSkillProjectStatusJSONAndExitCodes(t *testing.T) {
 	}
 
 	out.Reset()
-	exit = runSkillProjectStatus(context.Background(), &out, &errOut, mgr, nil, "json", false)
+	exit = runSkillProjectStatus(context.Background(), &out, &errOut, mgr, nil, nil, "json", false)
 	if exit != ctxExitOK {
 		t.Fatalf("status exit = %d", exit)
 	}
@@ -159,7 +159,7 @@ func TestRunSkillProjectStatusJSONAndExitCodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	out.Reset()
-	exit = runSkillProjectStatus(context.Background(), &out, &errOut, mgr, nil, "", true)
+	exit = runSkillProjectStatus(context.Background(), &out, &errOut, mgr, nil, nil, "", true)
 	if exit != ctxExitAttention {
 		t.Errorf("missing-target exit = %d, want %d", exit, ctxExitAttention)
 	}

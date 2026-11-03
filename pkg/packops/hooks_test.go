@@ -76,7 +76,7 @@ func TestStatusRowsFor_HookPresence(t *testing.T) {
 	rows, attention := m.statusRowsFor(&skills.LockedPack{
 		Name:  "hook-pack",
 		Hooks: []string{"good", "bad", "gone"},
-	}, "", nil, nil, nil, nil, nil, nil)
+	}, "", nil, nil, nil, nil, nil, nil, nil)
 	if !attention {
 		t.Fatal("invalid and missing hooks should need attention")
 	}
