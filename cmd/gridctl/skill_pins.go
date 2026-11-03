@@ -533,17 +533,21 @@ func renderSkillPinsDiffText(w io.Writer, doc skillPinsDiffDoc) {
 func runSkillPinsApprove(ctx context.Context, skill, expectHash, reason string, evidence []string) error {
 	cleaned, err := pinapprovals.ValidateReferences(evidence)
 	if err != nil {
-		return approvalInputError(err)
+		return err
 	}
 	if err := pinapprovals.ValidateReason(reason); err != nil {
-		return approvalInputError(err)
+		return err
 	}
 	name, source := pinapprovals.LocalUser()
+	if err := pinapprovals.ValidateApprover(name); err != nil {
+		return err
+	}
 	if st := runningSkillPinsDaemon(); st != nil {
-		if err := approveSkillPinViaAPI(st, skill, expectHash, reason, cleaned, name); err != nil {
+		body, err := approveSkillPinViaAPI(st, skill, expectHash, reason, cleaned, name)
+		if err != nil {
 			return err
 		}
-		printRecordedApproval(name, pinapprovals.SourceDeclared, len(cleaned))
+		printDaemonApproval(body, len(cleaned))
 		return nil
 	}
 
@@ -567,11 +571,6 @@ func runSkillPinsApprove(ctx context.Context, skill, expectHash, reason string, 
 		return fmt.Errorf("skill content changed since the reviewed diff (run 'gridctl skill pins diff %s' to re-review)", skill)
 	case errors.Is(err, skillpins.ErrReasonRequired):
 		return fmt.Errorf("skill %q carries unresolved advisory findings; pass --reason to approve over them", skill)
-	case errors.Is(err, pinapprovals.ErrCredentialShaped),
-		errors.Is(err, pinapprovals.ErrInvalidReference),
-		errors.Is(err, pinapprovals.ErrTooManyReferences),
-		errors.Is(err, pinapprovals.ErrReasonTooLong):
-		return approvalInputError(err)
 	case err != nil:
 		return err
 	}
@@ -580,7 +579,7 @@ func runSkillPinsApprove(ctx context.Context, skill, expectHash, reason string, 
 	return nil
 }
 
-func approveSkillPinViaAPI(st *state.DaemonState, skill, expectHash, reason string, evidence []string, approvedBy string) error {
+func approveSkillPinViaAPI(st *state.DaemonState, skill, expectHash, reason string, evidence []string, approvedBy string) ([]byte, error) {
 	payload, err := json.Marshal(map[string]any{
 		"expected_hash": expectHash,
 		"reason":        reason,
@@ -588,42 +587,42 @@ func approveSkillPinViaAPI(st *state.DaemonState, skill, expectHash, reason stri
 		"approved_by":   approvedBy,
 	})
 	if err != nil {
-		return fmt.Errorf("encoding request: %w", err)
+		return nil, fmt.Errorf("encoding request: %w", err)
 	}
 	url := fmt.Sprintf("http://localhost:%d/api/skill-pins/%s/approve", st.Port, skill)
 	api := newDaemonAPIFor(*st, pinsAPITimeout)
 	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(string(payload)))
 	if err != nil {
-		return fmt.Errorf("creating request: %w", err)
+		return nil, fmt.Errorf("creating request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	api.authorize(req)
 	resp, err := api.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("calling skill pins API: %w", err)
+		return nil, fmt.Errorf("calling skill pins API: %w", err)
 	}
 	defer resp.Body.Close()
 	if err := api.describeUnauthorized(resp); err != nil {
-		return err
+		return nil, err
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("reading response: %w", err)
+		return nil, fmt.Errorf("reading response: %w", err)
 	}
 	switch resp.StatusCode {
 	case http.StatusOK:
 		fmt.Printf("✓ Approved content update for skill %s\n", skill)
-		return nil
+		return body, nil
 	case http.StatusNotFound:
-		return fmt.Errorf("%s (for a deleted skill, run 'gridctl skill pins reset %s')",
+		return nil, fmt.Errorf("%s (for a deleted skill, run 'gridctl skill pins reset %s')",
 			apiErrorMessage(body, "skill not found: "+skill), skill)
 	case http.StatusConflict:
-		return fmt.Errorf("%s (run 'gridctl skill pins diff %s' to re-review)",
+		return nil, fmt.Errorf("%s (run 'gridctl skill pins diff %s' to re-review)",
 			apiErrorMessage(body, "skill content changed since review"), skill)
 	case http.StatusBadRequest:
-		return fmt.Errorf("%s", apiErrorMessage(body, "approve rejected"))
+		return nil, fmt.Errorf("%s", apiErrorMessage(body, "approve rejected"))
 	default:
-		return fmt.Errorf("approve failed: %s", string(body))
+		return nil, fmt.Errorf("approve failed: %s", string(body))
 	}
 }
 

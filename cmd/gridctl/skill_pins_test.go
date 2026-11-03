@@ -3,7 +3,9 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/gridctl/gridctl/pkg/pinapprovals"
 	"github.com/gridctl/gridctl/pkg/pins"
 	"github.com/gridctl/gridctl/pkg/skillpins"
 )
@@ -71,5 +73,27 @@ func TestRenderSkillPinsDiffText(t *testing.T) {
 	renderSkillPinsDiffText(&b, clean)
 	if !strings.Contains(b.String(), "verified") {
 		t.Fatalf("clean diff text = %q", b.String())
+	}
+
+	when := time.Date(2026, 10, 2, 15, 4, 5, 0, time.UTC)
+	doc.LastApproval = &pinapprovals.Entry{
+		ApprovedAt:       when,
+		ApprovedBy:       "wcollins",
+		ApprovedBySource: pinapprovals.SourceDeclared,
+		Reason:           "Adds runbook step 4",
+		Evidence:         []string{"https://example.test/pr/1"},
+	}
+	b.Reset()
+	renderSkillPinsDiffText(&b, doc)
+	out = b.String()
+	for _, want := range []string{
+		"last approved 2026-10-02T15:04:05Z by wcollins (declared)",
+		"Adds runbook step 4",
+		"https://example.test/pr/1",
+		`--reason "<why>"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("diff text missing %q:\n%s", want, out)
+		}
 	}
 }

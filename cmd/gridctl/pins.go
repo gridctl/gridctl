@@ -829,17 +829,20 @@ func escapeNonPrintable(s string) string {
 func runPinsApprove(server, expectHash, reason string, evidence []string) error {
 	cleaned, err := pinapprovals.ValidateReferences(evidence)
 	if err != nil {
-		return approvalInputError(err)
+		return err
 	}
 	if err := pinapprovals.ValidateReason(reason); err != nil {
-		return approvalInputError(err)
+		return err
 	}
-	name, source := pinapprovals.LocalUser()
-	sentBody := expectHash != "" || reason != "" || len(cleaned) > 0
-	recordedSource := source
-	if sentBody && name != "" {
-		// The daemon cannot verify a name supplied in the body.
-		recordedSource = pinapprovals.SourceDeclared
+	name, _ := pinapprovals.LocalUser()
+	payload, err := pinsApproveBody(expectHash, reason, name, cleaned)
+	if err != nil {
+		return err
+	}
+	if len(payload) > 0 {
+		if err := pinapprovals.ValidateApprover(name); err != nil {
+			return err
+		}
 	}
 
 	st, err := resolveRunningStack()
@@ -850,16 +853,7 @@ func runPinsApprove(server, expectHash, reason string, evidence []string) error 
 	url := fmt.Sprintf("http://localhost:%d/api/pins/%s/approve", st.Port, server)
 
 	var reqBody io.Reader
-	if sentBody {
-		payload, err := json.Marshal(map[string]any{
-			"expected_server_hash": expectHash,
-			"reason":               reason,
-			"evidence":             cleaned,
-			"approved_by":          name,
-		})
-		if err != nil {
-			return fmt.Errorf("encoding request: %w", err)
-		}
+	if len(payload) > 0 {
 		reqBody = strings.NewReader(string(payload))
 	}
 
@@ -908,14 +902,62 @@ func runPinsApprove(server, expectHash, reason string, evidence []string) error 
 	}
 
 	fmt.Printf("✓ Approved schema update for %s (%d tools re-pinned)\n", server, result.ToolCount)
-	printRecordedApproval(name, recordedSource, len(cleaned))
+	printDaemonApproval(body, len(cleaned))
 	return nil
 }
 
-// approvalInputError returns the package error unchanged. Its text already
-// names the refused shape and says to remove it and retry.
-func approvalInputError(err error) error {
-	return err
+// pinsApproveBody is the JSON posted when any of expect, reason, or evidence
+// is set. A nil result keeps the unconditional approve byte-for-byte unchanged.
+func pinsApproveBody(expectHash, reason, approvedBy string, evidence []string) ([]byte, error) {
+	if expectHash == "" && reason == "" && len(evidence) == 0 {
+		return nil, nil
+	}
+	payload, err := json.Marshal(map[string]any{
+		"expected_server_hash": expectHash,
+		"reason":               reason,
+		"evidence":             evidence,
+		"approved_by":          approvedBy,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encoding request: %w", err)
+	}
+	return payload, nil
+}
+
+// recordedApproval is the attribution the daemon stored. OK is false when the
+// response does not carry evidence_count, which is the presence marker for
+// this field set. The CLI must not invent a source in that case.
+type recordedApproval struct {
+	Name   string
+	Source string
+	Count  int
+	OK     bool
+}
+
+func recordedApprovalFrom(body []byte) recordedApproval {
+	var raw struct {
+		ApprovedBy       string `json:"approved_by"`
+		ApprovedBySource string `json:"approved_by_source"`
+		EvidenceCount    *int   `json:"evidence_count"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil || raw.EvidenceCount == nil {
+		return recordedApproval{}
+	}
+	return recordedApproval{
+		Name:   raw.ApprovedBy,
+		Source: raw.ApprovedBySource,
+		Count:  *raw.EvidenceCount,
+		OK:     true,
+	}
+}
+
+func printDaemonApproval(body []byte, fallbackCount int) {
+	rec := recordedApprovalFrom(body)
+	if !rec.OK {
+		printRecordedApproval("", "", fallbackCount)
+		return
+	}
+	printRecordedApproval(rec.Name, rec.Source, rec.Count)
 }
 
 func printRecordedApproval(name, source string, evidenceCount int) {
