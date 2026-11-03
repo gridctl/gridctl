@@ -31,6 +31,7 @@ import {
   fetchGlobalContextDiff,
   saveContextFragment,
 } from '../lib/api';
+import * as toastMod from '../components/ui/Toast';
 
 const fragmentsDoc: ContextDoc = {
   canonical: { path: '/home/u/.gridctl/context/AGENTS.md', exists: false, content: '' },
@@ -125,6 +126,32 @@ describe('GlobalContextDialog fragments mode', () => {
 
     await waitFor(() => {
       expect(saveContextFragment).toHaveBeenCalledWith('00-default', '# Edited rules\n');
+    });
+  });
+
+  it('renders a pin drift chip from GET /api/context pins', async () => {
+    vi.mocked(fetchGlobalContext).mockResolvedValue({
+      ...fragmentsDoc,
+      pins: { drifted: ['10-style'], missing: [], unpinned: ['00-default'] },
+    });
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    await screen.findByText('10-style');
+    expect(screen.getByRole('button', { name: 'Pin drift' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Unpinned' })).toBeInTheDocument();
+  });
+
+  it('adds pin drift to the fragment save toast', async () => {
+    const spy = vi.spyOn(toastMod, 'showToast').mockImplementation(() => 'toast');
+    vi.mocked(saveContextFragment).mockResolvedValue({ name: '00-default', pin_status: 'drift' });
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    const editor = await screen.findByLabelText('Fragment 00-default');
+    fireEvent.change(editor, { target: { value: '# Edited rules\n' } });
+    fireEvent.click(screen.getByText('Save'));
+    await waitFor(() => {
+      expect(spy).toHaveBeenCalledWith(
+        'success',
+        'Fragment saved. Run a sync to propagate. Pin drift: review and approve in Pins',
+      );
     });
   });
 

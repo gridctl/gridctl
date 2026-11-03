@@ -6,6 +6,8 @@ import (
 	"net/http"
 
 	"github.com/gridctl/gridctl/pkg/contexts"
+	"github.com/gridctl/gridctl/pkg/ctxpins"
+	"github.com/gridctl/gridctl/pkg/skills"
 )
 
 // contextsMgr returns the global-context manager, lazily built against
@@ -14,22 +16,45 @@ import (
 // pure file operations and work in stackless mode.
 func (s *Server) contextsMgr() (*contexts.Manager, error) {
 	s.contextsOnce.Do(func() {
+		if s.contextsManager == nil {
+			mgr, err := contexts.NewManager()
+			if err != nil {
+				s.contextsErr = err
+				return
+			}
+			s.contextsManager = mgr
+		}
+		// Attach once, before any request goroutine observes the manager.
+		// A per-request SetPinner races with sync reads of m.pinner.
+		// Injected managers are wired here too, after test setup, so the
+		// captured lock path is the one requests see.
 		if s.contextsManager != nil {
-			return
+			s.attachContextPinner(s.contextsManager)
 		}
-		mgr, err := contexts.NewManager()
-		if err != nil {
-			s.contextsErr = err
-			return
-		}
-		s.contextsManager = mgr
 	})
 	return s.contextsManager, s.contextsErr
+}
+
+// attachContextPinner wires the stackless pin store onto a manager. Call
+// it once, before the manager is shared. REST pack apply pins through
+// this path, the same as the CLI.
+func (s *Server) attachContextPinner(mgr *contexts.Manager) {
+	if mgr == nil {
+		return
+	}
+	lockPath := s.skillLockPath
+	if lockPath == "" {
+		lockPath = skills.LockFilePath()
+	}
+	mgr.SetPinner(&apiContextPinner{srv: s, lockPath: lockPath})
 }
 
 // SetContextsManager overrides the global-context manager. Must be
 // called before the server handles its first request (it races with the
 // lazy sync.Once initialization otherwise); tests call it during setup.
+// The pinner is not attached here: direct Manager calls in tests are not
+// the server path, and skillLockPath may still be unset. contextsMgr
+// attaches once on first use, including for an injected manager.
 func (s *Server) SetContextsManager(m *contexts.Manager) {
 	s.contextsManager = m
 }
@@ -85,6 +110,7 @@ type contextDoc struct {
 	FragmentsActive bool                    `json:"fragments_active,omitempty"`
 	NeedsSync       bool                    `json:"needs_sync"`
 	Clients         []contexts.ClientStatus `json:"clients"`
+	Pins            ctxPinsSummaryDoc       `json:"pins"`
 }
 
 // buildContextDoc assembles the canonical + per-client state document.
@@ -104,6 +130,11 @@ func (s *Server) buildContextDoc(r *http.Request, mgr *contexts.Manager) (contex
 	}
 	doc.Clients = statuses
 	doc.NeedsSync = contexts.NeedsSync(statuses)
+	pins, err := s.contextPinSummary(r.Context(), mgr)
+	if err != nil {
+		return doc, err
+	}
+	doc.Pins = pins
 	return doc, nil
 }
 
@@ -143,7 +174,20 @@ func (s *Server) handleContextPut(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	s.respondContextDoc(w, r, mgr)
+	doc, err := s.buildContextDoc(r, mgr)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	status, err := s.contextFragmentPinStatus(r.Context(), mgr, ctxpins.CanonicalName)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, struct {
+		contextDoc
+		PinStatus string `json:"pin_status"`
+	}{contextDoc: doc, PinStatus: status})
 }
 
 // handleContextScan lists what already exists at each client's likely
@@ -248,10 +292,16 @@ func (s *Server) handleContextSync(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	pins, err := s.contextPinSummary(r.Context(), mgr)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	writeJSON(w, map[string]any{
 		"dry_run":      opts.DryRun,
 		"has_failures": contexts.HasFailures(results),
 		"results":      results,
+		"pins":         pins,
 	})
 }
 
@@ -406,7 +456,12 @@ func (s *Server) handleContextFragmentPut(w http.ResponseWriter, r *http.Request
 			writeJSONError(w, aerr.Error(), status)
 			return
 		}
-		writeJSON(w, map[string]any{"name": name, "path": res.CreatedPath, "migrated": res.Migrated})
+		status, serr := s.contextFragmentPinStatus(r.Context(), mgr, name)
+		if serr != nil {
+			writeJSONError(w, serr.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"name": name, "path": res.CreatedPath, "migrated": res.Migrated, "pin_status": status})
 		return
 	}
 	// Validate client-supplied content up front so malformed frontmatter
@@ -424,7 +479,12 @@ func (s *Server) handleContextFragmentPut(w http.ResponseWriter, r *http.Request
 		writeJSONError(w, ierr.Error(), status)
 		return
 	}
-	writeJSON(w, map[string]any{"name": name, "saved": true, "migrated": res.Migrated})
+	status, serr := s.contextFragmentPinStatus(r.Context(), mgr, name)
+	if serr != nil {
+		writeJSONError(w, serr.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{"name": name, "saved": true, "migrated": res.Migrated, "pin_status": status})
 }
 
 // handleContextFragmentDelete removes a fragment.

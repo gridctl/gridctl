@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/contexts"
+	"github.com/gridctl/gridctl/pkg/ctxpins"
 	"github.com/gridctl/gridctl/pkg/output"
 
 	"github.com/jedib0t/go-pretty/v6/table"
@@ -100,7 +101,7 @@ converts it into a fragment library.
 ` + "\nTo import servers, skills, agents, and context in one run, use `gridctl import <client> --kind all`.",
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr, err := contexts.NewManager()
+		mgr, err := newContextManager()
 		if err != nil {
 			return err
 		}
@@ -135,7 +136,7 @@ Exit codes:
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
 		}
-		mgr, err := contexts.NewManager()
+		mgr, err := newContextManager()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
@@ -181,7 +182,7 @@ Exit codes:
 			fmt.Fprintln(os.Stderr, "--check inspects all clients and performs no writes; it cannot be combined with named clients, --force, or --dry-run")
 			os.Exit(ctxExitInfrastructure)
 		}
-		mgr, err := contexts.NewManager()
+		mgr, err := newContextManager()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
@@ -211,7 +212,7 @@ per-fragment summary.
 Exit codes: 0 no differences, 1 differences found, 2 error.`,
 	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr, err := contexts.NewManager()
+		mgr, err := newContextManager()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
@@ -240,7 +241,7 @@ In fragments mode:
                       the whole managed body into one designated fragment`,
 	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr, err := contexts.NewManager()
+		mgr, err := newContextManager()
 		if err != nil {
 			return err
 		}
@@ -266,7 +267,7 @@ Exit codes: 0 success, 2 error.`,
 		if err != nil {
 			return err
 		}
-		mgr, err := contexts.NewManager()
+		mgr, err := newContextManager()
 		if err != nil {
 			return err
 		}
@@ -284,11 +285,11 @@ Composition order is filename-lexicographic; numeric prefixes are
 recommended.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr, err := contexts.NewManager()
+		mgr, err := newContextManager()
 		if err != nil {
 			return err
 		}
-		return runCtxAdd(os.Stdout, mgr, args[0])
+		return runCtxAdd(cmd.Context(), os.Stdout, os.Stderr, mgr, args[0])
 	},
 }
 
@@ -300,7 +301,7 @@ var ctxRmCmd = &cobra.Command{
 fragment are removed on the next 'gridctl ctx sync'.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr, err := contexts.NewManager()
+		mgr, err := newContextManager()
 		if err != nil {
 			return err
 		}
@@ -319,7 +320,7 @@ created are removed entirely. Content the user owns is preserved.`,
 		if err != nil {
 			return err
 		}
-		mgr, merr := contexts.NewManager()
+		mgr, merr := newContextManager()
 		if merr != nil {
 			return merr
 		}
@@ -338,7 +339,7 @@ In fragments mode a fragment name is required; bare 'ctx edit' lists
 available fragments.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr, err := contexts.NewManager()
+		mgr, err := newContextManager()
 		if err != nil {
 			return err
 		}
@@ -456,6 +457,7 @@ type ctxStatusDoc struct {
 	Fragments     bool                    `json:"fragments,omitempty"`
 	NeedsSync     bool                    `json:"needs_sync"`
 	Clients       []contexts.ClientStatus `json:"clients"`
+	Pins          ctxPinsSummaryDoc       `json:"pins"`
 }
 
 // runCtxStatus renders per-client state and returns the exit code.
@@ -466,12 +468,18 @@ func runCtxStatus(ctx context.Context, stdout, stderr io.Writer, mgr *contexts.M
 		return ctxExitInfrastructure
 	}
 	fragmentsActive := mgr.FragmentsActive()
+	pins, perr := loadContextPinSummary(ctx, stderr, mgr)
+	if perr != nil {
+		fmt.Fprintln(stderr, perr)
+		return ctxExitInfrastructure
+	}
 	doc := ctxStatusDoc{
 		SchemaVersion: ctxJSONSchemaVersion,
 		Canonical:     ctxCanonicalDoc{Path: mgr.CanonicalPath(), Exists: mgr.HasCanonical()},
 		Fragments:     fragmentsActive,
 		NeedsSync:     contexts.NeedsSync(statuses),
 		Clients:       statuses,
+		Pins:          pins,
 	}
 
 	if strings.EqualFold(format, "json") {
@@ -501,6 +509,7 @@ func runCtxStatus(ctx context.Context, stdout, stderr io.Writer, mgr *contexts.M
 			}
 		}
 		t.Render()
+		writeContextPinSummary(stdout, doc.Pins)
 	}
 
 	if doc.NeedsSync {
@@ -515,6 +524,7 @@ type ctxSyncDoc struct {
 	DryRun        bool                  `json:"dry_run"`
 	HasFailures   bool                  `json:"has_failures"`
 	Results       []contexts.SyncResult `json:"results"`
+	Pins          ctxPinsSummaryDoc     `json:"pins"`
 }
 
 // runCtxSync performs the sync and returns the exit code.
@@ -545,11 +555,17 @@ func runCtxSync(ctx context.Context, stdout, stderr io.Writer, mgr *contexts.Man
 		}
 	}
 
+	pins, perr := loadContextPinSummary(ctx, stderr, mgr)
+	if perr != nil {
+		fmt.Fprintln(stderr, perr)
+		return ctxExitInfrastructure
+	}
 	doc := ctxSyncDoc{
 		SchemaVersion: ctxJSONSchemaVersion,
 		DryRun:        opts.DryRun,
 		HasFailures:   contexts.HasFailures(results),
 		Results:       results,
+		Pins:          pins,
 	}
 
 	if strings.EqualFold(format, "json") {
@@ -598,6 +614,7 @@ func runCtxSync(ctx context.Context, stdout, stderr io.Writer, mgr *contexts.Man
 				fmt.Fprintf(stdout, "\n--- %s ---\n%s", label, r.Diff)
 			}
 		}
+		writeContextPinSummary(stdout, doc.Pins)
 	}
 
 	if doc.HasFailures {
@@ -749,20 +766,21 @@ func runCtxList(w io.Writer, mgr *contexts.Manager, format string) error {
 }
 
 // runCtxAdd creates a fragment, printing migration when it activates the mode.
-func runCtxAdd(w io.Writer, mgr *contexts.Manager, name string) error {
+func runCtxAdd(ctx context.Context, stdout, stderr io.Writer, mgr *contexts.Manager, name string) error {
 	res, err := mgr.AddFragment(name, "")
 	if err != nil {
 		return err
 	}
 	if res.Migrated {
-		fmt.Fprintf(w, "Activated fragments mode: migrated %s → fragments/00-default.md\n", mgr.CanonicalPath())
+		fmt.Fprintf(stdout, "Activated fragments mode: migrated %s → fragments/00-default.md\n", mgr.CanonicalPath())
 		if res.MigratedBackup != "" {
-			fmt.Fprintf(w, "Backup: %s\n", res.MigratedBackup)
+			fmt.Fprintf(stdout, "Backup: %s\n", res.MigratedBackup)
 		}
 	}
-	fmt.Fprintf(w, "✓ Created fragment %q at %s\n", name, res.CreatedPath)
-	fmt.Fprintln(w, "Composition order is filename-lexicographic; use numeric prefixes (00-, 10-) to control order.")
-	fmt.Fprintln(w, "Run 'gridctl ctx sync' to project fragments to available clients.")
+	fmt.Fprintf(stdout, "✓ Created fragment %q at %s\n", name, res.CreatedPath)
+	fmt.Fprintln(stdout, "Composition order is filename-lexicographic; use numeric prefixes (00-, 10-) to control order.")
+	fmt.Fprintln(stdout, "Run 'gridctl ctx sync' to project fragments to available clients.")
+	printContextPinAfterWrite(ctx, stdout, stderr, mgr, name, true)
 	return nil
 }
 
@@ -856,6 +874,11 @@ func runCtxEdit(ctx context.Context, stdout, stderr io.Writer, mgr *contexts.Man
 	}
 	fmt.Fprintln(stdout)
 	runCtxStatus(ctx, stdout, stderr, mgr, "", false)
+	edited := fragment
+	if edited == "" {
+		edited = ctxpins.CanonicalName
+	}
+	printContextPinAfterWrite(ctx, stdout, stderr, mgr, edited, false)
 	fmt.Fprintln(stdout, "\nRun 'gridctl ctx sync' to propagate changes.")
 	return nil
 }
@@ -910,4 +933,3 @@ func ctxActionLabel(r contexts.SyncResult) string {
 		return "— " + r.Action
 	}
 }
-

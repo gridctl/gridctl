@@ -683,6 +683,8 @@ func TestPathHelpers_DeriveFromHome(t *testing.T) {
 		{"SkillPinsPath", func() (string, error) { return SkillPinsPath("s") }, filepath.Join(home, ".gridctl", "pins", "skills", "s.json")},
 		{"SkillPinApprovalsPath", func() (string, error) { return SkillPinApprovalsPath("s") }, filepath.Join(home, ".gridctl", "pins", "approvals", "skills", "s.json")},
 		{"PinApprovalsPath", func() (string, error) { return PinApprovalsPath("s") }, filepath.Join(home, ".gridctl", "pins", "approvals", "tools", "s.json")},
+		{"ContextPinsPath", ContextPinsPath, filepath.Join(home, ".gridctl", "pins", "context", "global.json")},
+		{"ContextPinApprovalsPath", ContextPinApprovalsPath, filepath.Join(home, ".gridctl", "pins", "approvals", "context", "global.json")},
 		{"TelemetryServerDir", func() (string, error) { return TelemetryServerDir("st", "sv") }, filepath.Join(home, ".gridctl", "telemetry", "st", "sv")},
 	}
 	for _, tc := range cases {
@@ -719,5 +721,23 @@ func TestPinApprovalsPath_DisjointFromPinFiles(t *testing.T) {
 	}
 	if skillApprovals == toolCollision || skillApprovals == skillCollision || skillApprovals == approvals {
 		t.Fatalf("skill approvals path %s is not disjoint", skillApprovals)
+	}
+	contextPins, err := ContextPinsPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	contextNamedStack, err := PinsPath("context")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contextPins == contextNamedStack {
+		t.Fatalf("context pin path %s collides with a stack named context", contextPins)
+	}
+	contextApprovals, err := ContextPinApprovalsPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contextApprovals == contextPins || contextApprovals == approvals || contextApprovals == skillApprovals {
+		t.Fatalf("context approvals path %s is not disjoint", contextApprovals)
 	}
 }

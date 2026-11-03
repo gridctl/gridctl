@@ -22,6 +22,8 @@ Unrelated skips, optional SSH, and platform-inapplicable tests remain allowed ou
 
 The reviewed source of mandatory identities is `tests/adversarial/index.yaml`. It is declarative: no commands, regex selectors, retries, or provisioning. CI still runs the existing whole suites. Rename a test in the same change as the index entry; scenario IDs stay stable.
 
+Unit-lane package coverage includes `pkg/ctxpins`: `ctxpins-unreadable-fails-closed` (an unreadable pinned fragment is drift, not missing or pinned) and `ctxpins-approve-expect-mismatch` (approve with a stale composite hash is refused and the record is unchanged).
+
 List identities and focused reproduction commands:
 
 ```bash

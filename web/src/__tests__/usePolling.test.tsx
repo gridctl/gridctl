@@ -45,6 +45,7 @@ describe('usePolling retry registration', () => {
     vi.spyOn(api, 'fetchClients').mockResolvedValue([]);
     vi.spyOn(api, 'fetchServerPins').mockResolvedValue({});
     vi.spyOn(api, 'fetchSkillPins').mockResolvedValue({});
+    vi.spyOn(api, 'fetchContextPins').mockResolvedValue({});
     vi.spyOn(api, 'fetchRegistryStatus').mockResolvedValue({ totalSkills: 0, activeSkills: 0 });
     vi.spyOn(api, 'fetchRegistrySkills').mockResolvedValue([]);
     vi.spyOn(api, 'fetchSkillSources').mockResolvedValue([]);

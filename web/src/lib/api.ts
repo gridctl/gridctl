@@ -2569,6 +2569,87 @@ export async function approveSkillPin(
  * Returns 204 with no body, so this cannot use fetchJSON.
  * DELETE /api/skill-pins/{name}
  */
+export interface ContextPin {
+  hash: string;
+  document?: string;
+  source?: 'local' | 'pack';
+  pack?: string;
+  approved_reason?: string;
+  pinned_at: string;
+  last_verified_at: string;
+  status: 'pinned' | 'drift';
+  findings?: PinFinding[];
+  approvals?: PinApproval[];
+}
+
+/** Review diff for one context fragment. findings is never null. */
+export interface ContextPinsDiff {
+  fragment: string;
+  status: 'pinned' | 'drift';
+  composite_hash: string;
+  old_document?: string;
+  new_document?: string;
+  findings: PinFinding[];
+}
+
+/** GET /api/context/pins */
+export async function fetchContextPins(): Promise<Record<string, ContextPin>> {
+  return fetchJSON<Record<string, ContextPin>>('/api/context/pins');
+}
+
+/** GET /api/context/pins/{name}/diff */
+export async function fetchContextPinDiff(name: string): Promise<ContextPinsDiff> {
+  return fetchJSON<ContextPinsDiff>(`/api/context/pins/${encodeURIComponent(name)}/diff`);
+}
+
+/** POST /api/context/pins/{name}/approve */
+export async function approveContextPin(
+  name: string,
+  expectedHash: string,
+  reason?: string,
+  evidence?: string[],
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/context/pins/${encodeURIComponent(name)}/approve`, {
+    method: 'POST',
+    headers: buildHeaders(),
+    body: JSON.stringify({
+      expected_hash: expectedHash,
+      reason: reason ?? '',
+      ...(evidence && evidence.length > 0 ? { evidence } : {}),
+    }),
+  });
+  if (response.status === 401) throw new AuthError('Authentication required');
+  if (!response.ok) {
+    let message = `API error: ${response.status} ${response.statusText}`;
+    try {
+      const body = (await response.json()) as { error?: string };
+      if (body?.error) message = body.error;
+    } catch {
+      // Non-JSON error body; keep the status-line message.
+    }
+    throw new HTTPError(response.status, message);
+  }
+}
+
+/** DELETE /api/context/pins/{name} */
+export async function resetContextPin(name: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/context/pins/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+    headers: buildHeaders(),
+  });
+  if (response.status === 401) throw new AuthError('Authentication required');
+  if (!response.ok) {
+    let message = `API error: ${response.status} ${response.statusText}`;
+    try {
+      const body = (await response.json()) as { error?: string };
+      if (body?.error) message = body.error;
+    } catch {
+      // Non-JSON error body; keep the status-line message.
+    }
+    throw new Error(message);
+  }
+}
+
 export async function resetSkillPin(name: string): Promise<void> {
   const response = await fetch(`${API_BASE}/api/skill-pins/${encodeURIComponent(name)}`, {
     method: 'DELETE',
@@ -3123,11 +3204,19 @@ export interface ContextClientStatus {
   fragments?: ContextFragmentStatus[];
 }
 
+export interface ContextPinsSummary {
+  drifted: string[];
+  missing: string[];
+  unpinned: string[];
+}
+
 export interface ContextDoc {
   canonical: { path: string; exists: boolean; content: string };
   fragments_active?: boolean;
   needs_sync: boolean;
   clients: ContextClientStatus[];
+  pins?: ContextPinsSummary;
+  pin_status?: 'pinned' | 'drift' | 'unpinned';
 }
 
 /** One rule fragment in composition (filename-lexicographic) order. */
@@ -3259,8 +3348,8 @@ export async function fetchContextFragments(): Promise<{
 export async function saveContextFragment(
   name: string,
   content: string,
-): Promise<{ name: string; migrated?: boolean }> {
-  return mutateJSON<{ name: string; migrated?: boolean }>(
+): Promise<{ name: string; migrated?: boolean; pin_status?: 'pinned' | 'drift' | 'unpinned' }> {
+  return mutateJSON<{ name: string; migrated?: boolean; pin_status?: 'pinned' | 'drift' | 'unpinned' }>(
     `/api/context/fragments/${encodeURIComponent(name)}`,
     'PUT',
     { content },

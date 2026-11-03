@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/config"
+	"github.com/gridctl/gridctl/pkg/ctxpins"
 	"github.com/gridctl/gridctl/pkg/pins"
 	"github.com/gridctl/gridctl/pkg/skillpins"
 )
@@ -483,6 +484,37 @@ func SkillPinViewFromStore(ps *skillpins.Store) *SkillPinView {
 			item.FindingCodes = append(item.FindingCodes, SanitizeIdentifier(finding.Code))
 		}
 		view.Skills[SanitizeIdentifier(name)] = item
+	}
+	return view
+}
+
+// ContextPinViewFromStore projects a context pin store into value-free
+// report inputs. A nil store or a load error (corrupt or newer file) yields
+// nil so the assembler reports availability unknown rather than an empty pass.
+func ContextPinViewFromStore(ctx context.Context, store *ctxpins.Store) *ContextPinView {
+	if store == nil {
+		return nil
+	}
+	records, err := store.GetAll(ctx)
+	if err != nil {
+		return nil
+	}
+	view := &ContextPinView{Available: true, Fragments: map[string]ContextPinRecordView{}}
+	for name, rec := range records {
+		if rec == nil {
+			continue
+		}
+		item := ContextPinRecordView{
+			Status:         SanitizeIdentifier(rec.Status),
+			Source:         SanitizeIdentifier(rec.Source),
+			Pack:           SanitizeIdentifier(rec.Pack),
+			PinnedAt:       rec.PinnedAt.UTC(),
+			LastVerifiedAt: rec.LastVerifiedAt.UTC(),
+		}
+		for _, finding := range rec.Findings {
+			item.FindingCodes = append(item.FindingCodes, SanitizeIdentifier(finding.Code))
+		}
+		view.Fragments[SanitizeIdentifier(name)] = item
 	}
 	return view
 }

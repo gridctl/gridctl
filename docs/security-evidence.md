@@ -16,7 +16,7 @@ gridctl doctor --security --source gateway:http://localhost:8180 --json
 
 | Kind | Behavior |
 |------|----------|
-| `file:` | Offline parse of authored stack YAML without environment expansion, secret resolution, builds, or registry lookups. Local `extends` may be followed. Optional producer snapshots (pins, execution, startup) are unknown. |
+| `file:` | Offline parse of authored stack YAML without environment expansion, secret resolution, builds, or registry lookups. Local `extends` may be followed. Optional producer snapshots (pins, execution, startup) are unknown. Context pins are unknown here, the same as skill pins. |
 | `snapshot:` | Offline re-render of a `gridctl.security-report.v1` DTO. Unknown fields, invalid enums, duplicate check IDs, and malformed verified claims are rejected. Original timestamps and typed facts are preserved. The result is supplied historical evidence, not a fresh verification. Imported `verified` claims are treated as declared source assertions. |
 | `gateway:` | Authenticated GET of `/api/security-report` only. Redirects, credential-bearing URLs, and URL query or fragment values are rejected. Recorded daemon credentials attach only when the selected base is a loopback control-plane origin; they are never sent to another host. |
 
@@ -41,6 +41,8 @@ Coverage "complete" refers only to this named inventory, not to complete securit
 | `skill.pin.baseline` | Skill pin presence, scoped to skill subjects |
 | `skill.pin.continuity` | Skill pin drift |
 | `skill.pin.approval` | Whether an explicit skill approval entry exists. Pass with `approval_recorded` or `approval_unrecorded`. Not a fail predicate. The report carries the bound hash only |
+| `context.pin.baseline` | Context pin presence, scoped to context subjects. Pass with an empty store is a configuration fact, not a policy violation. Unknown when the view is unavailable |
+| `context.pin.continuity` | Context pin drift. Fail when stored status is drift. Unknown when the view is unavailable. Not applicable when the store is empty |
 | `pin.schema.approval` | Whether an explicit tool-schema approval entry exists. Pass with `approval_recorded` or `approval_unrecorded`. Not a fail predicate. The report carries the bound hash only |
 | `source.declared` | Authored source or image identity |
 | `source.build_digest` | Declared build-input digest (not authenticated verification) |
@@ -56,7 +58,9 @@ Coverage "complete" refers only to this named inventory, not to complete securit
 | `execution.enforcement` | Recorded execution outcome. Container predicates are N/A for non-container subjects |
 | `policy.declared` | Whether a per-tool `policy:` block is declared. Pass with `policy_declared` or `policy_undeclared`. Not a fail predicate. A declared policy is name-based; tool output is not inspected |
 
-Fail predicates (exit `1`): `pin.schema.continuity` when stored status is drift, `skill.pin.continuity` when stored status is drift, and `execution.enforcement` when recorded outcome is failed, refused, or ineligible. Heuristic findings are warnings. Pins are not explicit approvals unless an approval entry is recorded. `skill.pin.approval` and `pin.schema.approval` are not fail predicates.
+Fail predicates (exit `1`): `pin.schema.continuity` when stored status is drift, `skill.pin.continuity` when stored status is drift, `context.pin.continuity` when stored status is drift, and `execution.enforcement` when recorded outcome is failed, refused, or ineligible. Heuristic findings are warnings. Pins are not explicit approvals unless an approval entry is recorded. `skill.pin.approval` and `pin.schema.approval` are not fail predicates. There is no `context.pin.approval` predicate.
+
+Subject kinds are `gateway`, `server`, `skill`, `replica`, and `context`. Context pin checks use subject kind `context`. Per-fragment checks link to View context pins (`view_context_pins`) at `/pins?kind=context&fragment=<name>`.
 
 An A2A declaration reports source kind `a2a` and is non-container for execution
 evidence. This classification does not fetch an Agent Card or establish card
@@ -67,7 +71,7 @@ approval, connectivity, or hosted compatibility. See
 
 Every fact, message, location, and action is allowlisted. Bounded identifiers (subject names, tool names, package/version, producer names, digest/revision identifiers) may still contain operator-authored secrets; this report cannot detect them. Truncation bounds length; it is not redaction.
 
-Excluded from output and action links: raw config, credential fields and default operands, expansion-bearing source fields (the operand is omitted, not copied), command arrays, scan snippets and decoded text, raw errors and free text, URL userinfo/query/fragment values, approver names, approval reasons, evidence references, and arbitrary provenance URLs. Limitation text is reconstructed from a known catalog. Actions are links to existing review surfaces such as View pins. There is no approval, auto-fix, or generated secret-bearing command.
+Excluded from output and action links: raw config, credential fields and default operands, expansion-bearing source fields (the operand is omitted, not copied), command arrays, scan snippets and decoded text, raw errors and free text, URL userinfo/query/fragment values, approver names, approval reasons, evidence references, and arbitrary provenance URLs. Limitation text is reconstructed from a known catalog. Actions are links to existing review surfaces such as View pins and View context pins (`/pins?kind=context&fragment=<name>`). There is no approval, auto-fix, or generated secret-bearing command.
 
 ## API and UI
 

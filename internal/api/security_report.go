@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/ctxpins"
 	"github.com/gridctl/gridctl/pkg/execution"
 	"github.com/gridctl/gridctl/pkg/secreport"
 )
@@ -42,6 +43,7 @@ func (s *Server) passiveSecurityReport(ctx context.Context) *secreport.Report {
 	}
 	in.Pins = secreport.PinViewFromStore(s.pinStore, enabled, scan)
 	in.SkillPins = secreport.SkillPinViewFromStore(s.skillPinStore)
+	in.ContextPins = secreport.ContextPinViewFromStore(ctx, s.contextPinStoreForReport())
 	if s.authType != "" || s.authToken != "" || s.gatewayAddr != "" || s.originsMode != "" {
 		in.Startup = &secreport.StartupView{
 			AuthEnabled:        s.oauthEnabled || s.authToken != "",
@@ -54,6 +56,14 @@ func (s *Server) passiveSecurityReport(ctx context.Context) *secreport.Report {
 	}
 	in.Execution = s.passiveExecutionViews()
 	return secreport.Assemble(time.Now().UTC(), in)
+}
+
+func (s *Server) contextPinStoreForReport() *ctxpins.Store {
+	store, err := s.contextPins()
+	if err != nil || store == nil {
+		return ctxpins.New()
+	}
+	return store
 }
 
 func (s *Server) passiveExecutionViews() []secreport.ExecutionView {

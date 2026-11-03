@@ -52,6 +52,24 @@ For CI or a shell prompt, `gridctl ctx sync --check` performs no writes and exit
 
 `ctx status` enumerates every known client, synced or not; `gridctl skill project status` lists only recorded projections. The asymmetry is deliberate and mirrors what each command manages: one canon that targets all clients by default versus an explicit per-skill allow-list.
 
+## Fragment pins
+
+Pin drift is a fact about the source, separate from the two client facts above. A write pass (`gridctl ctx sync`, `gridctl ctx add`, `gridctl ctx edit`, and `gridctl pack apply`) silently records a digest the first time it sees a fragment, or the single `AGENTS.md` when fragments mode is off. A later content change stays pin drift until a human approves or resets it. Projection warns and continues. It does not refuse, and `ctx status`, `ctx sync`, `ctx sync --check`, and `ctx diff` keep their existing exit codes. An unreadable or newer pin file warns on those commands and on the context document routes; it does not change their exits or status codes. `ctx pins` and `/api/context/pins` still fail on that file.
+
+| Term | What moved | What to do |
+|---|---|---|
+| stale | The canonical source changed since the last sync. The client copy is intact but behind. | `gridctl ctx sync` |
+| drifted | The client's managed content was hand-edited. | `gridctl ctx diff <client>`, then adopt or `gridctl ctx sync --force` |
+| pin drift | The fragment (or `AGENTS.md`) changed since its content pin. | `gridctl ctx pins diff <name>`, then `gridctl ctx pins approve <name> --expect <composite_hash>` |
+
+Pins live at `~/.gridctl/pins/context/global.json` (version `1`). Approval history lives at `~/.gridctl/pins/approvals/context/global.json`. The record's `approvals` list is rebuilt from that log, newest first, and keeps the last 10 entries. Reset deletes the pin and leaves the log. The hash is `c1:` over CRLF-normalized bytes with trailing newlines trimmed, so a pin and the projection lockfile agree on whether content changed. Advisory poisoning findings (P001–P005) ride on the record and never change the hash. The `gateway.security.schema_pinning.scan` and `scan_ignore` knobs govern this scanner when exactly one stack is deployed. Zero stacks, more than one stack, or a stack that does not load keep the defaults: scan on, nothing ignored. A nil `scan` is on. Approving over findings requires `--reason`. Repeat `--evidence` with an opaque reference. References are stored as text and never fetched. A credential-shaped reference, reason, or approver name is refused.
+
+For CI, `gridctl ctx pins verify` exits `0` when every pin matches, `1` on pin drift or when `--fail-on-findings warn|critical` sees findings at or above that severity, and `2` on an infrastructure error (home unresolvable, unreadable or newer pin file, unknown fragment, not pinned). An unreadable pinned fragment is drift (exit 1), not missing. `gridctl ctx pins diff` exits `2` in that case. That check does not replace `ctx sync --check`, which still reports client drift, staleness, and missing targets, and does not write pins.
+
+A pack rule is pinned on `gridctl pack apply`, not on `pack add`. A later upstream edit is recorded as pin drift on the next `pack apply`. `pack add --trust` bypasses the import scan only and does not approve a pin. Edits made through `ctx edit` or the web editor are not auto-approved. The first fragment add renames a pin for `AGENTS.md` to `00-default` and keeps `pinned_at`. Approval history is copied onto `00-default`; the old subject stays in the log. An existing `00-default` pin is left in place.
+
+`ctx status` and `ctx sync` print one summary line when any fragment is drifted, missing, or unpinned: `Pin drift: <names>; missing: <names>; unpinned: <names> (review with 'gridctl ctx pins diff')`, omitting empty parts. Their JSON documents gain a `pins` object (`drifted`, `missing`, `unpinned`). See [ctx pins](cli-reference.md#global-context).
+
 ## Rule fragments (opt-in)
 
 By default `ctx` manages a single AGENTS.md. `gridctl ctx add <name>` activates **fragments mode**: the store becomes `~/.gridctl/context/fragments/*.md`, each an ordinary markdown file with optional YAML frontmatter (`description`, `paths:` glob list). On first add, the existing AGENTS.md is backed up and becomes `fragments/00-default.md` (no special casing afterward). Read-only commands (`status`, `sync --dry-run`, `diff`, `list`) never create the directory or migrate.

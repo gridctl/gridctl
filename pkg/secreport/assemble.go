@@ -23,6 +23,7 @@ func Assemble(generatedAt time.Time, in Inputs) *Report {
 	report.Source.StackName = SanitizeIdentifier(report.Source.StackName)
 	report.Checks = append(report.Checks, pinChecks(in)...)
 	report.Checks = append(report.Checks, skillPinChecks(in)...)
+	report.Checks = append(report.Checks, contextPinChecks(in)...)
 	report.Checks = append(report.Checks, sourceChecks(in)...)
 	report.Checks = append(report.Checks, varChecks(in)...)
 	report.Checks = append(report.Checks, gatewayChecks(in)...)
@@ -115,6 +116,10 @@ func serverSubject(name string) Subject {
 
 func skillSubject(name string) Subject {
 	return Subject{Kind: SubjectSkill, Name: SanitizeIdentifier(name)}
+}
+
+func contextSubject(name string) Subject {
+	return Subject{Kind: SubjectContext, Name: SanitizeIdentifier(name)}
 }
 
 func replicaSubject(server, replica string) Subject {
@@ -348,6 +353,41 @@ func skillPinChecks(in Inputs) []Check {
 			out = append(out, check("skill.pin.continuity."+name, PredSkillPinContinuity, skillSubject(name), OutcomePass, "skill_pin_pinned", "Stored skill pin status is pinned for "+name+".", ev, nil, viewSkillPinsAction(name)))
 		}
 		out = append(out, approvalCheck("skill.pin.approval."+name, PredSkillPinApproval, skillSubject(name), rec.ApprovalRecorded, rec.ApprovedAt, rec.ApprovedHash, viewSkillPinsAction(name)))
+	}
+	return out
+}
+
+func contextPinChecks(in Inputs) []Check {
+	var out []Check
+	if in.ContextPins == nil || !in.ContextPins.Available {
+		out = append(out, check("context.pin.baseline.gateway", PredContextPinBaseline, gatewaySubject(), OutcomeUnknown, "store_unavailable", "Context pin store snapshot unavailable.", unknownEvidence(), []string{"Context pins are scoped to context subjects only.", "Context pins observe content and do not block projection."}))
+		out = append(out, check("context.pin.continuity.gateway", PredContextPinContinuity, gatewaySubject(), OutcomeUnknown, "store_unavailable", "Context pin continuity cannot be established.", unknownEvidence(), []string{"Context pins observe content and do not block projection."}))
+		return out
+	}
+	if len(in.ContextPins.Fragments) == 0 {
+		out = append(out, check("context.pin.baseline.gateway", PredContextPinBaseline, gatewaySubject(), OutcomePass, "no_context_pin_records", "No context pin records are stored. That is a configuration fact, not a policy violation.", declaredEvidence(), []string{"Context pins do not imply downstream server trust.", "Context pins observe content and do not block projection."}))
+		out = append(out, check("context.pin.continuity.gateway", PredContextPinContinuity, gatewaySubject(), OutcomeNotApplicable, "no_context_pin_records", "Context pin continuity is not applicable without records.", declaredEvidence(), []string{"Not applicable because no context pin records exist."}))
+		return out
+	}
+	names := make([]string, 0, len(in.ContextPins.Fragments))
+	for name := range in.ContextPins.Fragments {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		rec := in.ContextPins.Fragments[name]
+		out = append(out, check("context.pin.baseline."+name, PredContextPinBaseline, contextSubject(name), OutcomePass, "context_pin_present", "A stored context pin exists for "+name+". Import provenance is not a trust level.", declaredEvidence(), []string{"Context pins are scoped to context subjects only.", "Context pins observe content and do not block projection."}, viewContextPinsAction(name)))
+		ev := declaredEvidence()
+		if !rec.LastVerifiedAt.IsZero() {
+			t := rec.LastVerifiedAt
+			ev.VerifiedAt = &t
+			ev.FreshnessCondition = "last_verified_at_is_not_scan_time"
+		}
+		if rec.Status == "drift" {
+			out = append(out, check("context.pin.continuity."+name, PredContextPinContinuity, contextSubject(name), OutcomeFail, "context_pin_drift", "Stored context pin status is drift for "+name+".", ev, []string{"Known negative observation from the context pin store.", "Context pins observe content and do not block projection."}, viewContextPinsAction(name)))
+		} else {
+			out = append(out, check("context.pin.continuity."+name, PredContextPinContinuity, contextSubject(name), OutcomePass, "context_pin_pinned", "Stored context pin status is pinned for "+name+".", ev, nil, viewContextPinsAction(name)))
+		}
 	}
 	return out
 }
@@ -858,6 +898,12 @@ func sanitizeReport(report *Report, untrusted bool) *Report {
 			}
 			if action.ID == ActionViewSkillPins && strings.HasPrefix(action.Path, "/pins?") {
 				if rebuilt := viewSkillPinsAction(item.Subject.Name); rebuilt != nil {
+					item.Actions = append(item.Actions, *rebuilt)
+				}
+				continue
+			}
+			if action.ID == ActionViewContextPins && strings.HasPrefix(action.Path, "/pins?") {
+				if rebuilt := viewContextPinsAction(item.Subject.Name); rebuilt != nil {
 					item.Actions = append(item.Actions, *rebuilt)
 				}
 			}

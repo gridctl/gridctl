@@ -186,6 +186,29 @@ func PinApprovalsPath(name string) (string, error) {
 	return filepath.Join(dir, "approvals", "tools", name+".json"), nil
 }
 
+// ContextPinsPath returns the stackless context pin file
+// (<home>/.gridctl/pins/context/global.json). A subdirectory, not
+// pins/context.json, keeps the file disjoint from a stack literally named
+// "context" (PinsPath("context") would otherwise be the same path).
+func ContextPinsPath() (string, error) {
+	dir, err := PinsDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "context", "global.json"), nil
+}
+
+// ContextPinApprovalsPath returns the approvals log for context pins
+// (<home>/.gridctl/pins/approvals/context/global.json). The directory keeps
+// the log disjoint from the pin file and from stack-scoped approval logs.
+func ContextPinApprovalsPath() (string, error) {
+	dir, err := PinsDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "approvals", "context", "global.json"), nil
+}
+
 // StatePath returns the path to a state file for a stack.
 func StatePath(name string) (string, error) {
 	dir, err := StateDir()

@@ -56,7 +56,7 @@ func knownFreshness(v string) bool {
 
 func knownSubjectKind(v string) bool {
 	switch v {
-	case SubjectGateway, SubjectServer, SubjectSkill, SubjectReplica:
+	case SubjectGateway, SubjectServer, SubjectSkill, SubjectReplica, SubjectContext:
 		return true
 	default:
 		return false
@@ -105,6 +105,11 @@ var limitationCatalog = map[string]bool{
 	"Skill pins do not imply downstream server trust.":                                                             true,
 	"Not applicable because no skill pin records exist.":                                                           true,
 	"Known negative observation from the skill pin store.":                                                         true,
+	"Context pins are scoped to context subjects only.":                                                            true,
+	"Context pins do not imply downstream server trust.":                                                           true,
+	"Not applicable because no context pin records exist.":                                                         true,
+	"Known negative observation from the context pin store.":                                                       true,
+	"Context pins observe content and do not block projection.":                                                    true,
 	"Declared source; running artifact verification unavailable.":                                                  true,
 	"Not applicable for non-container subjects. This is not a claim that remote execution is secure.":              true,
 	"Not applicable for non-container subjects.":                                                                   true,

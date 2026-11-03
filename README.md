@@ -389,7 +389,7 @@ Learn more → [Policy](docs/config-schema.md#policy-per-tool-call-policy)
 
 ### Schema Pinning
 
-Gridctl pins every tool definition the first time it sees it and flags drift on later applies, so a server that quietly rewrites a tool's description or schema surfaces as a reviewable diff instead of reaching your agent unnoticed. Pinned definitions are also scanned for injection signals: hidden instructions, sensitive-file references, hidden Unicode, and cross-server tool shadowing. Skill documents get the same trust-on-first-use treatment (`gridctl skill pins`): per-file digests over the whole document set, drift held for human approval, and the same injection heuristics as advisory findings.
+Gridctl pins every tool definition the first time it sees it and flags drift on later applies, so a server that quietly rewrites a tool's description or schema surfaces as a reviewable diff instead of reaching your agent unnoticed. Pinned definitions are also scanned for injection signals: hidden instructions, sensitive-file references, hidden Unicode, and cross-server tool shadowing. Skill documents get the same trust-on-first-use treatment (`gridctl skill pins`): per-file digests over the whole document set, drift held for human approval, and the same injection heuristics as advisory findings. Context fragments, or the single `AGENTS.md` when fragments mode is off, are pinned the same way (`gridctl ctx pins`): a write pass records the first digest, later edits stay pin drift until approved, and projection warns rather than refusing.
 
 ```bash
 gridctl pins verify                # Exit 1 on drift

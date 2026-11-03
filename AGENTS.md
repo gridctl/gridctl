@@ -94,9 +94,10 @@ The shape of the codebase from the outside in:
 
 ```
 cmd/gridctl/        Cobra CLI entry points, one file per subcommand (apply, serve, call, tools, link, var, skill, ctx, pack, project, optimize, runs, …).
-                    embed.go pulls in cmd/gridctl/web/dist via go:embed under the embed_web build tag.
+                    ctx_pins.go is `gridctl ctx pins`. embed.go pulls in cmd/gridctl/web/dist via go:embed under the embed_web build tag.
 cmd/scenarioverify/ Repository test utility that checks designated Go test identities against a completed `go test -json` capture. Not a gridctl subcommand.
-internal/api/       REST handlers backing the web UI (one file per resource: stack, skills, vault, pins, telemetry, traces, runs, tools_call, tools_discover, …).
+internal/api/       REST handlers backing the web UI (one file per resource: stack, skills, vault, pins, context_pins, telemetry, traces, runs, tools_call, tools_discover, …).
+                    context_pins.go serves `/api/context/pins`.
                     Python source validation, resolution previews, generated files, and status provenance live in
                     python_sources.go. The Server struct in api.go wires together every pkg/* subsystem the UI needs.
                     Server.Handler assembles HTTP routes and CORS/Host/auth middleware; wrapAuth selects
@@ -191,13 +192,17 @@ pkg/skillsync/      Projects active registry skills into native client skill dir
 pkg/agentsync/      Projects imported agents to clients: identity copy for Claude Code, rendered dialects for
                     OpenCode, Copilot, and Gemini CLI (`gridctl skill project --kind agent`).
 pkg/contexts/       Global agent-context projection (`gridctl ctx`): one canonical file, or opt-in rule fragments
-                    with multi-file and compiled per-client assembly.
+                    with multi-file and compiled per-client assembly. A narrow pinner hook runs before a real
+                    sync. Fragments-mode migration renames an AGENTS.md pin to `00-default`.
 pkg/wiring/         Key-level ownership of gateway entries merged into client MCP configs (`gridctl project`, link/unlink).
 pkg/pack/           gridctl-pack.yaml manifest schema, including named external `sources`, a scalar or mapping `stack` (`file` and optional `extends`), optional `requires.gridctl`, and `gridctl-pack.lock.yaml`; pkg/packops owns add, lock honoring, and composition against the lockfile and launcher, including per-source clone and auth, and checks `requires.gridctl` on add, apply, and preview. The CLI injects stack launch and reload; REST leaves the launcher nil and does not start, stop, or reload a carried daemon, and it does not write the pack lock.
-pkg/pinapprovals/   Approval entries and the versioned approvals log under `pins/approvals/`. Skill and tool pin stores project the log onto each record; the log is the source of truth.
+pkg/pinapprovals/   Approval entries and the versioned approvals log under `pins/approvals/`. Skill, tool, and context pin stores project the log onto each record; the log is the source of truth.
 pkg/skillpins/      TOFU pins over skill documents (per-file digests, findings, approval entries); the `gridctl skill pins` store. History lives in `pins/approvals/skills/`.
                     ComputeManifest is the shared complete hash walk for pins and Skills over MCP, excluding links,
                     dotfiles, temporary files, and nested skills. Publication limits live in pkg/skillsext, not hashing.
+pkg/ctxpins/        TOFU pins over global context fragments, or the canonical AGENTS.md when fragments mode is off.
+                    The `gridctl ctx pins` store at `~/.gridctl/pins/context/global.json`. Stateless between calls.
+                    History lives in `pins/approvals/context/`.
 pkg/runs/           Metadata-only persisted dispatch records (`gridctl runs`). Opt-in stack-level JSONL with a bounded queue, single writer, retention, and coordinated wipe.
 pkg/service/        User-scoped systemd and launchd units (`gridctl service`): render, lockfile ownership (kind `service`), an allowlisted unit environment, and supervisor control.
 pkg/limits/         Enforces the `limits:` block: token-bucket rate limits on the tool-call dispatch path.
@@ -253,7 +258,8 @@ pkg/token/, pkg/format/, pkg/output/, pkg/jsonrpc/, pkg/state/, pkg/git/, pkg/do
 
 web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). Zustand stores in src/stores/, route map in
                     src/routes.tsx, feature components grouped under src/components/<workspace>/. Nine workspaces:
-                    Stack, Library, Variables (`/vault`), Tools, Metrics, Pins, Logs, Traces (Runs tab), Connections. The Detached*Page
+                    Stack, Library, Variables (`/vault`), Tools, Metrics, Pins, Logs, Traces (Runs tab), Connections. The Pins
+                    workspace has a Context tab beside Server and Skills. The Detached*Page
                     files are lazy popout windows that mirror specific panels.
                     src/lib/gatewayRequest.ts owns same-origin, no-redirect credential-bearing fetch.
                     The shell and detached routes do not request `/sse`; status polling is the disconnect signal.

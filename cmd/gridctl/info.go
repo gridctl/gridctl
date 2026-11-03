@@ -40,6 +40,7 @@ type infoSchemas struct {
 	ToolPins     string `json:"tool_pins"`
 	SkillPins    string `json:"skill_pins"`
 	PinApprovals string `json:"pin_approvals"`
+	ContextPins  string `json:"context_pins"`
 }
 
 var infoCmd = &cobra.Command{
@@ -117,6 +118,7 @@ func advertisedInfoSchemas() *infoSchemas {
 		ToolPins:     s.ToolPins,
 		SkillPins:    s.SkillPins,
 		PinApprovals: s.PinApprovals,
+		ContextPins:  s.ContextPins,
 	}
 }
 
@@ -124,8 +126,8 @@ func formatInfoSchemasLine(s *infoSchemas) string {
 	if s == nil {
 		return "Schemas:  unknown"
 	}
-	return fmt.Sprintf("Schemas:  daemon_state=%d project_lock=%d import_lock=%d tool_pins=%s skill_pins=%s pin_approvals=%s",
-		s.DaemonState, s.ProjectLock, s.ImportLock, s.ToolPins, s.SkillPins, s.PinApprovals)
+	return fmt.Sprintf("Schemas:  daemon_state=%d project_lock=%d import_lock=%d tool_pins=%s skill_pins=%s pin_approvals=%s context_pins=%s",
+		s.DaemonState, s.ProjectLock, s.ImportLock, s.ToolPins, s.SkillPins, s.PinApprovals, s.ContextPins)
 }
 
 // rootlessNetworkStack describes the rootless Podman networking stack.

@@ -28,6 +28,8 @@ import { IconButton } from '../ui/IconButton';
 import { StatePill } from '../ui/StatePill';
 import { PACK_CHIP_CLASS } from '../registry/PackChip';
 import { showToast } from '../ui/Toast';
+import { ContextPinChip, ContextPinReviewModal } from './ContextPinChip';
+import { contextPinStatus } from '../../lib/contextGovernance';
 import { useBeforeUnloadGuard } from '../../hooks/useBeforeUnloadGuard';
 import { useSplitPane } from '../../hooks/useSplitPane';
 import { SplitPaneHandle } from '../ui/SplitPane';
@@ -470,6 +472,7 @@ function EditorView({
   });
   const [showImport, setShowImport] = useState(false);
   const [showSplit, setShowSplit] = useState(false);
+  const [reviewPin, setReviewPin] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
 
   const bodyRef = useRef<HTMLTextAreaElement>(null);
@@ -499,7 +502,12 @@ function EditorView({
       // Only clear the draft if nothing was typed while the PUT was in
       // flight; otherwise those keystrokes would be discarded.
       setDraft((d) => (d === toSave ? null : d));
-      showToast('success', 'Canonical context saved. Run a sync to propagate.');
+      showToast(
+        'success',
+        next.pin_status === 'drift'
+          ? 'Canonical context saved. Run a sync to propagate. Pin drift: review and approve in Pins'
+          : 'Canonical context saved. Run a sync to propagate.',
+      );
     } catch (err) {
       if (!isCancellation(err)) {
         const described = describeError(err, 'Save');
@@ -652,7 +660,13 @@ function EditorView({
           style={showPreview ? { width: `${ratio * 100}%` } : { width: '100%' }}
         >
           <div className="flex items-center justify-between gap-2 px-4 py-1.5 border-b border-border/20 flex-shrink-0">
-            <span className="text-xs text-text-muted uppercase tracking-wider">Markdown</span>
+            <span className="text-xs text-text-muted uppercase tracking-wider flex items-center gap-2">
+              Markdown
+              <ContextPinChip
+                status={contextPinStatus('AGENTS.md', doc.pins)}
+                onReview={() => setReviewPin(true)}
+              />
+            </span>
             <div className="flex items-center gap-0.5">
               <EditorToolbarButton icon={Bold} label="Bold" onClick={() => applyMarkdown('bold')} />
               <EditorToolbarButton icon={Heading} label="Heading" onClick={() => applyMarkdown('heading')} />
@@ -728,6 +742,7 @@ function EditorView({
       )}
 
       {showSplit && <SplitIntoFragmentsDialog dirty={dirty} onClose={() => setShowSplit(false)} />}
+      {reviewPin && <ContextPinReviewModal name="AGENTS.md" onClose={() => setReviewPin(false)} />}
 
       {driftSlug && (
         <DriftResolveDialog
@@ -1537,6 +1552,7 @@ function FragmentsView({
   const [spotlightSlug, setSpotlightSlug] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(true);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [reviewFragment, setReviewFragment] = useState<string | null>(null);
 
   // Deep link from the Connections hub: spotlight the client's row, and
   // open the review directly only when the target is unambiguous (compiled
@@ -1644,9 +1660,14 @@ function FragmentsView({
     const toSave = draft;
     setSaving(true);
     try {
-      await saveContextFragment(current.name, toSave);
+      const saved = await saveContextFragment(current.name, toSave);
       setDraft((d) => (d === toSave ? null : d));
-      showToast('success', 'Fragment saved. Run a sync to propagate.');
+      showToast(
+        'success',
+        saved.pin_status === 'drift'
+          ? 'Fragment saved. Run a sync to propagate. Pin drift: review and approve in Pins'
+          : 'Fragment saved. Run a sync to propagate.',
+      );
       await loadFragments(current.name);
       await refresh();
     } catch (err) {
@@ -1832,7 +1853,12 @@ function FragmentsView({
           onAdd={handleAdd}
           onDelete={setPendingDelete}
           outOfSync={fragmentOutOfSync(doc.clients)}
+          pins={doc.pins}
+          onReviewPin={setReviewFragment}
         />
+        {reviewFragment && (
+          <ContextPinReviewModal name={reviewFragment} onClose={() => setReviewFragment(null)} />
+        )}
 
         {/* Editor area, identical grammar to the single-file view */}
         <div ref={containerRef} className="flex-1 flex min-w-0 min-h-0 group/split">
@@ -1986,6 +2012,8 @@ function FragmentRail({
   onAdd,
   onDelete,
   outOfSync,
+  pins,
+  onReviewPin,
 }: {
   fragments: ContextFragment[] | null;
   selected: string | null;
@@ -1994,6 +2022,8 @@ function FragmentRail({
   onDelete: (name: string) => void;
   /** Fragment name to client names holding a non-synced copy (drift dots). */
   outOfSync?: Map<string, string[]>;
+  pins?: ContextDoc['pins'];
+  onReviewPin?: (name: string) => void;
 }) {
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState('');
@@ -2064,6 +2094,12 @@ function FragmentRail({
               >
                 {f.name}
               </button>
+              {onReviewPin && (
+                <ContextPinChip
+                  status={contextPinStatus(f.name, pins)}
+                  onReview={() => onReviewPin(f.name)}
+                />
+              )}
               {(outOfSync?.get(f.name) ?? []).length > 0 && (
                 <span
                   role="img"

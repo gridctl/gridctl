@@ -138,6 +138,54 @@ func TestCheckPreswap_Refusals(t *testing.T) {
 	})
 }
 
+func TestContextPinWarnings_AbsentSilentAndOlderTargetWarnsOnce(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+
+	got := mustPreswap(t, preswapInput{TargetTag: "v0.1.0"})
+	for _, line := range got.Warnings {
+		if strings.Contains(line, "context pin") {
+			t.Fatalf("absent file warned: %v", got.Warnings)
+		}
+	}
+
+	path := filepath.Join(home, ".gridctl", "pins", "context", "global.json")
+	writeJSON(t, path, `{"version":"2"}`)
+	target := &versions.Schemas{ContextPins: "1"}
+	got = mustPreswap(t, preswapInput{TargetTag: "v1.0.0-rc.3", Target: target})
+	if len(got.Refusals) != 0 {
+		t.Fatalf("context pins refused: %v", got.Refusals)
+	}
+	assertHas(t, got.Warnings, path+" is version 2; v1.0.0-rc.3 reads version 1 and will not read the context pin file")
+	count := 0
+	for _, line := range got.Warnings {
+		if strings.Contains(line, "context pin") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("context pin warnings = %d: %v", count, got.Warnings)
+	}
+
+	writeJSON(t, path, `not-json`)
+	got = mustPreswap(t, preswapInput{TargetTag: "v1.0.0-rc.3", Target: target})
+	assertHas(t, got.Warnings, "could not be parsed; context pin compatibility is unknown")
+
+	blank := &versions.Schemas{}
+	writeJSON(t, path, `{"version":"1"}`)
+	got = mustPreswap(t, preswapInput{TargetTag: "older", Target: blank})
+	assertHas(t, got.Warnings, "older does not advertise a context pin version; context pin compatibility is unknown")
+
+	got = mustPreswap(t, preswapInput{TargetTag: "v0.1.0"})
+	for _, line := range got.Warnings {
+		if strings.Contains(line, "context pin") {
+			t.Fatalf("nil target warned about context pins: %v", got.Warnings)
+		}
+	}
+	assertHas(t, got.Warnings, unknownSchemasWarning("v0.1.0"))
+}
+
 func TestCheckPreswap_WarningsAndForce(t *testing.T) {
 	target := &versions.Schemas{DaemonState: 2, ProjectLock: 1, ImportLock: 8, ToolPins: "2", SkillPins: "1"}
 	own := target

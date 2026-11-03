@@ -88,5 +88,12 @@
   "target_path": "$HOME/.copilot/instructions/gridctl.instructions.md",
   "action": "skipped-unavailable"
   }
+  ],
+  "pins": {
+  "drifted": [],
+  "missing": [],
+  "unpinned": [
+  "AGENTS.md"
   ]
+  }
 }

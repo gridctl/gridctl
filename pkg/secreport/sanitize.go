@@ -107,6 +107,14 @@ func viewSkillPinsAction(skill string) *Action {
 	return &Action{ID: ActionViewSkillPins, Label: "View skill pins", Path: "/pins?kind=skill&skill=" + url.QueryEscape(name)}
 }
 
+func viewContextPinsAction(fragment string) *Action {
+	name := SanitizeIdentifier(fragment)
+	if name == "" || !safeActionName(name) {
+		return nil
+	}
+	return &Action{ID: ActionViewContextPins, Label: "View context pins", Path: "/pins?kind=context&fragment=" + url.QueryEscape(name)}
+}
+
 func safeActionName(name string) bool {
 	if name == "" {
 		return false

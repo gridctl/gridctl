@@ -20,6 +20,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/builder"
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/contexts"
+	"github.com/gridctl/gridctl/pkg/ctxpins"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/execution"
 	"github.com/gridctl/gridctl/pkg/limits"
@@ -145,6 +146,13 @@ type Server struct {
 	contextsManager *contexts.Manager
 	contextsOnce    sync.Once
 	contextsErr     error
+
+	// contextPinStore is the stackless fragment pin store. Tests inject one
+	// via SetContextPinStore before the first request. The store is
+	// stateless, so one instance for the process is correct: each call
+	// reloads the file. contextPinsOnce publishes that pointer once.
+	contextPinStore *ctxpins.Store
+	contextPinsOnce sync.Once
 
 	// Wiring ownership manager (pkg/wiring), lazily built against the
 	// real home directory on first use; tests inject a temp-home manager
@@ -559,6 +567,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/context/fragments", s.handleContextFragmentsList)
 	mux.HandleFunc("PUT /api/context/fragments/{name}", s.handleContextFragmentPut)
 	mux.HandleFunc("DELETE /api/context/fragments/{name}", s.handleContextFragmentDelete)
+	mux.HandleFunc("GET /api/context/pins", s.handleListContextPins)
+	mux.HandleFunc("GET /api/context/pins/{name}", s.handleGetContextPin)
+	mux.HandleFunc("GET /api/context/pins/{name}/diff", s.handleContextPinDiff)
+	mux.HandleFunc("POST /api/context/pins/{name}/approve", s.handleApproveContextPin)
+	mux.HandleFunc("DELETE /api/context/pins/{name}", s.handleResetContextPin)
 
 	// Variable store endpoints — canonical /api/var/* surface plus a
 	// deprecated /api/vault/* alias that wears Deprecation/Sunset headers.

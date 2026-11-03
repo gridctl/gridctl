@@ -564,3 +564,29 @@ scenarios:
     budgets:
       max_payload_bytes: 4096
       max_duration: 5s
+  - id: ctxpins-unreadable-fails-closed
+    owner_package: pkg/ctxpins
+    owner_issue: "1479"
+    package: github.com/gridctl/gridctl/pkg/ctxpins
+    test: TestCtxpins_UnreadableFailsClosed
+    lanes: [unit]
+    expected_boundary: an unreadable pinned fragment is reported as drift, not missing or pinned
+    nonclaims:
+      - does not prove filesystem permission enforcement
+      - does not block projection of other fragments
+    budgets:
+      max_payload_bytes: 4096
+      max_duration: 5s
+  - id: ctxpins-approve-expect-mismatch
+    owner_package: pkg/ctxpins
+    owner_issue: "1479"
+    package: github.com/gridctl/gridctl/pkg/ctxpins
+    test: TestCtxpins_ApproveExpectMismatch
+    lanes: [unit]
+    expected_boundary: approve with a stale composite hash is refused and the record is unchanged
+    nonclaims:
+      - does not authenticate the approver
+      - does not fetch evidence references
+    budgets:
+      max_payload_bytes: 4096
+      max_duration: 5s
