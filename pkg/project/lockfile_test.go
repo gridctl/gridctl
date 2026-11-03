@@ -258,8 +258,62 @@ projections:
 		t.Fatal(err)
 	}
 	out := string(data)
-	if !strings.Contains(out, "revision: 3") || !strings.Contains(out, "discovery: deferred") {
+	if !strings.Contains(out, "revision: 4") || !strings.Contains(out, "discovery: deferred") {
 		t.Fatalf("rewritten lockfile:\n%s", out)
+	}
+}
+
+func TestHookEntrySurvivesSkillRewrite(t *testing.T) {
+	home := t.TempDir()
+	s := NewStore(home)
+	content := `version: 1
+revision: 4
+projections:
+    - kind: hook
+      client: claude-code
+      source: block
+      path: /tmp/settings.json#hooks/block
+      channel: merge-key
+      config_path: /tmp/settings.json
+      script_dir: /tmp/hooks/block
+      tree_hash: sha256:abc
+      hashes:
+        - sha256:def
+      synced_at: 2026-07-30T12:00:00Z
+    - kind: skill
+      client: claude-code
+      source: alpha
+      path: /dest/a
+      channel: symlink
+      synced_at: 2026-07-30T12:00:00Z
+`
+	if err := os.MkdirAll(filepath.Dir(s.Path()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.Path(), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Load(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	mustMutate(t, s, func(l *Lock) error {
+		// An older binary that does not project hooks rewrites only the
+		// skill kind. The hook entry, including script_dir, must survive.
+		if err := l.ReplaceKind(KindSkill, []*Entry{testEntry(KindSkill, "claude-code", "beta", "/dest/b")}); err != nil {
+			return err
+		}
+		return l.Save()
+	})
+	l, err := s.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	hook := l.Get(KindHook, "claude-code", "block")
+	if hook == nil || hook.ScriptDir != "/tmp/hooks/block" || hook.TreeHash != "sha256:abc" {
+		t.Fatalf("hook entry did not survive a skill rewrite: %+v", hook)
+	}
+	if l.Get(KindSkill, "claude-code", "beta") == nil {
+		t.Fatal("skill rewrite was not recorded")
 	}
 }
 

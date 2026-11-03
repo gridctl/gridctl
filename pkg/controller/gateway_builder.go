@@ -2074,6 +2074,10 @@ func reconcileSkillProjections(ctx context.Context, inst *GatewayInstance, home 
 	// client config endpoints change only on explicit user action, and a
 	// daemon silently rewriting them would be the exact failure mode
 	// wiring ownership exists to prevent. Keep it out of this loop.
+	// The hook kind (pkg/hooksync) is deliberately NOT reconciled here
+	// for the same reason: a daemon must not patch client settings or
+	// rewrite hook scripts. A registry change surfaces as stale until an
+	// explicit sync or pack apply.
 	skillModelPolicy, agentModelPolicy := inst.CurrentModelPolicies()
 	mgr := skillsync.NewManagerWithHome(home, inst.RegistryServer.Store())
 	// The reconcile enforces the stack's skill exposure policy: denied

@@ -590,3 +590,40 @@ scenarios:
     budgets:
       max_payload_bytes: 4096
       max_duration: 5s
+  - id: hooks-settings-merge-preserves-siblings
+    owner_package: pkg/hooksync
+    owner_issue: "1478"
+    package: github.com/gridctl/gridctl/pkg/hooksync
+    test: TestSync_SettingsMergePreservesSiblings
+    lanes: [unit]
+    expected_boundary: a hook sync patches only gridctl-owned matcher groups and leaves every byte outside them, including user groups, sibling keys, comments, and formatting, unchanged
+    nonclaims:
+      - does not prove the client loads the group
+      - does not cover a settings file hujson cannot parse
+    budgets:
+      max_payload_bytes: 65536
+      max_duration: 5s
+  - id: hooks-sync-projects-pinned-bytes-only
+    owner_package: pkg/hooksync
+    owner_issue: "1478"
+    package: github.com/gridctl/gridctl/pkg/hooksync
+    test: TestSync_ProjectsPinnedBytesOnly
+    lanes: [unit]
+    expected_boundary: unapproved registry changes never reach the settings file or the script copy, and a synced script copy equals the pinned bytes
+    nonclaims:
+      - does not prove the client executes the copied script
+    budgets:
+      max_payload_bytes: 65536
+      max_duration: 5s
+  - id: hooks-reconcile-ignores-projections
+    owner_package: pkg/controller
+    owner_issue: "1478"
+    package: github.com/gridctl/gridctl/pkg/controller
+    test: TestReconcileSkillProjections_IgnoresHooks
+    lanes: [unit]
+    expected_boundary: the daemon reconcile pass never writes a hook projection
+    nonclaims:
+      - does not cover an explicit sync
+    budgets:
+      max_payload_bytes: 65536
+      max_duration: 5s

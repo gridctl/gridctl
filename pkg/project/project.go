@@ -1,6 +1,7 @@
 // Package project is the generic projection engine behind pkg/skillsync,
-// pkg/contexts, pkg/agentsync, and pkg/wiring: "project canonical content
-// into per-client locations with lockfile-tracked ownership." The engine
+// pkg/contexts, pkg/agentsync, pkg/wiring, and pkg/hooksync: "project
+// canonical content into per-client locations with lockfile-tracked
+// ownership." The engine
 // owns the unified lockfile (schema, two-tier versioning, migration from
 // the legacy lockfiles, cross-process locking) and the shared vocabulary
 // (states, dry-run actions, hash-scheme prefix, atomic writes, backup
@@ -37,6 +38,11 @@ const (
 	// KindAgent projects imported agent definitions into client agent
 	// directories as single files (pkg/agentsync).
 	KindAgent Kind = "agent"
+	// KindHook projects imported hook scripts and matcher groups
+	// (pkg/hooksync). Path is the composite "<settings path>#hooks/<name>"
+	// so several hooks share one settings file. ScriptDir is the
+	// gridctl-owned script copy. Revision 4.
+	KindHook Kind = "hook"
 	// KindWiring records ownership of gateway entries merged into client
 	// MCP configs (pkg/wiring): key-level ownership inside files gridctl
 	// does not otherwise own, per Article XVI.
@@ -157,6 +163,13 @@ type Entry struct {
 	// Empty means the stack default. Revision 3.
 	Discovery string   `yaml:"discovery,omitempty"`
 	Hashes    []string `yaml:"hashes,omitempty"`
+
+	// KindHook attributes. ScriptDir is the absolute directory the
+	// projected scripts were copied to. Path is the composite settings
+	// locator; ConfigPath is the settings file; Hashes is the canonical
+	// hash history of the owned matcher groups; TreeHash is the script
+	// copy. Revision 4.
+	ScriptDir string `yaml:"script_dir,omitempty"`
 
 	// Pack tags the projection with the pack that applied it (empty =
 	// not pack-managed). Any kind may carry it; `gridctl pack` uses it
