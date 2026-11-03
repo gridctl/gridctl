@@ -12,6 +12,8 @@ import { parseAcceptanceCriterion } from '../../lib/skillCriteria';
 import { skillCategory } from '../../lib/skillMeta';
 import { originLabel } from '../../lib/skillGovernance';
 import { formatLastUsed } from '../../lib/toolAudit';
+import { escapeNonPrintable } from '../../lib/nonPrintable';
+import { formatRelativeTime } from '../../lib/time';
 import { InspectorHeader, PaneAnchor } from '../inspector';
 import { Tab, Tabs } from '../ui/Tabs';
 import { IconButton } from '../ui/IconButton';
@@ -565,6 +567,16 @@ function SkillOverview({
             {/* Rendered only when a pin record exists: a policy-only
                 governance object (or a just-reset skill) must never read as
                 "Pinned" — that would be a false trust statement. */}
+            {skill.governance.lastApprovedAt && (
+              <MetaRow
+                label="Last approved"
+                value={`${formatRelativeTime(new Date(skill.governance.lastApprovedAt))}${
+                  skill.governance.lastApprovedBy
+                    ? ` by ${escapeNonPrintable(skill.governance.lastApprovedBy)}`
+                    : ''
+                }`}
+              />
+            )}
             {skill.governance.pinStatus && (
             <MetaRow
               label="Pin"

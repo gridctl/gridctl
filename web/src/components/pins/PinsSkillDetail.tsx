@@ -20,6 +20,8 @@ import { RESET_BUTTON_ID, TOOLS_SECTION_ID } from './PinsServerDetail';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { describeError, isCancellation } from '../../lib/describeError';
 import { showToast } from '../ui/Toast';
+import { ApprovalFields, PinApprovalHistory } from './PinApprovalHistory';
+import { credentialRefusalText, splitEvidence } from './pinApproval';
 
 // ---------------------------------------------------------------------------
 // Skill detail - pin drift review (prose diff + file changes) + pinned files
@@ -95,6 +97,8 @@ export function PinsSkillDetail({ name, pin, onReset }: PinsSkillDetailProps) {
           </span>
         )}
       </div>
+
+      <PinApprovalHistory approvals={pin.approvals} />
 
       {hasDrift && <SkillDriftSection skillName={name} />}
 
@@ -201,6 +205,7 @@ function SkillDriftSection({ skillName }: { skillName: string }) {
   const [attempt, setAttempt] = useState(0);
   const [isApproving, setIsApproving] = useState(false);
   const [reason, setReason] = useState('');
+  const [evidence, setEvidence] = useState('');
 
   // No synchronous reset here: the section is remounted per skill (the
   // workspace keys the detail on the active name), so diff starts null; a
@@ -240,7 +245,13 @@ function SkillDriftSection({ skillName }: { skillName: string }) {
     if (!diff || isApproving) return;
     setIsApproving(true);
     try {
-      await approveSkillPin(skillName, diff.composite_hash, reason.trim() || undefined);
+      const refs = splitEvidence(evidence);
+      const reasonText = reason.trim() || undefined;
+      if (refs.length > 0) {
+        await approveSkillPin(skillName, diff.composite_hash, reasonText, refs);
+      } else {
+        await approveSkillPin(skillName, diff.composite_hash, reasonText);
+      }
       const updated = await fetchSkillPins();
       usePinsStore.getState().setSkillPins(updated);
       showToast('success', `Approved content update for ${skillName}`);
@@ -250,8 +261,13 @@ function SkillDriftSection({ skillName }: { skillName: string }) {
         showToast('error', `${describeError(err, 'Approve').text} Reloading the diff for re-review.`);
         reloadDiff();
       } else if (err instanceof HTTPError && err.status === 400) {
-        const described = describeError(err, 'Approve');
-        showToast('error', described.text, { detail: described.fullDetail });
+        const refused = credentialRefusalText(err);
+        if (refused) {
+          showToast('error', refused, { detail: refused });
+        } else {
+          const described = describeError(err, 'Approve');
+          showToast('error', described.text, { detail: described.fullDetail });
+        }
       } else {
         const described = describeError(err, 'Approve');
         showToast('error', described.text, { detail: described.fullDetail });
@@ -272,16 +288,14 @@ function SkillDriftSection({ skillName }: { skillName: string }) {
         {diff && (
           <span className="text-2xs text-text-muted">{driftSummary(diff, documentChanged)}</span>
         )}
-        <div className="ml-auto flex items-center gap-2">
-          {needsReason && (
-            <input
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="Reason (required: advisory findings present)"
-              aria-label="Approval reason"
-              className="h-6 w-64 px-2 text-2xs rounded border border-border/40 bg-background/60 text-text-primary placeholder:text-text-muted/60"
-            />
-          )}
+        <div className="ml-auto flex items-start gap-2">
+          <ApprovalFields
+            reason={reason}
+            onReason={setReason}
+            evidence={evidence}
+            onEvidence={setEvidence}
+            reasonRequired={needsReason}
+          />
           <button
             id={APPROVE_BUTTON_ID}
             onClick={() => void doApprove()}

@@ -2326,6 +2326,7 @@ export interface ServerPins {
   tool_count: number;
   status: 'pinned' | 'drift' | 'approved_pending_redeploy';
   tools: Record<string, PinRecord>;
+  approvals?: PinApproval[];
 }
 
 /**
@@ -2380,6 +2381,7 @@ export interface PinsDiff {
   modified_tools: PinsToolDiff[];
   new_tools: string[];
   removed_tools: string[];
+  last_approval?: PinApproval;
 }
 
 /**
@@ -2401,13 +2403,17 @@ export async function fetchPinsDiff(serverName: string): Promise<PinsDiff> {
 export async function approveServerPins(
   serverName: string,
   expectedServerHash?: string,
+  reason?: string,
+  evidence?: string[],
 ): Promise<void> {
+  const body: { expected_server_hash?: string; reason?: string; evidence?: string[] } = {};
+  if (expectedServerHash) body.expected_server_hash = expectedServerHash;
+  if (reason) body.reason = reason;
+  if (evidence && evidence.length > 0) body.evidence = evidence;
   const response = await fetch(`${API_BASE}/api/pins/${encodeURIComponent(serverName)}/approve`, {
     method: 'POST',
     headers: buildHeaders(),
-    ...(expectedServerHash
-      ? { body: JSON.stringify({ expected_server_hash: expectedServerHash }) }
-      : {}),
+    ...(Object.keys(body).length > 0 ? { body: JSON.stringify(body) } : {}),
   });
   if (response.status === 401) throw new AuthError('Authentication required');
   if (!response.ok) {
@@ -2459,6 +2465,17 @@ export interface SkillFileDigest {
  * skill approvals take effect immediately, there is no redeploy step).
  * Findings are advisory, same contract as PinFinding.
  */
+/** One explicit pin approval. References are opaque text, never links. */
+export interface PinApproval {
+  approved_at: string;
+  approved_by?: string;
+  approved_by_source?: 'os_user' | 'declared' | 'oauth';
+  approved_hash: string;
+  bound: boolean;
+  reason?: string;
+  evidence?: string[];
+}
+
 export interface SkillPin {
   skill_hash: string;
   files?: SkillFileDigest[];
@@ -2472,6 +2489,8 @@ export interface SkillPin {
   last_verified_at: string;
   status: 'pinned' | 'drift';
   findings?: PinFinding[];
+  approvals?: PinApproval[];
+  composite_hash?: string;
 }
 
 /**
@@ -2490,6 +2509,7 @@ export interface SkillPinsDiff {
   removed_files: string[];
   modified_files: string[];
   findings: PinFinding[];
+  last_approval?: PinApproval;
 }
 
 /**
@@ -2520,11 +2540,16 @@ export async function approveSkillPin(
   name: string,
   expectedHash: string,
   reason?: string,
+  evidence?: string[],
 ): Promise<void> {
   const response = await fetch(`${API_BASE}/api/skill-pins/${encodeURIComponent(name)}/approve`, {
     method: 'POST',
     headers: buildHeaders(),
-    body: JSON.stringify({ expected_hash: expectedHash, reason: reason ?? '' }),
+    body: JSON.stringify({
+      expected_hash: expectedHash,
+      reason: reason ?? '',
+      ...(evidence && evidence.length > 0 ? { evidence } : {}),
+    }),
   });
   if (response.status === 401) throw new AuthError('Authentication required');
   if (!response.ok) {

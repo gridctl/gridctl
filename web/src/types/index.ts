@@ -628,6 +628,8 @@ export interface SkillGovernance {
   maxFindingSeverity?: 'info' | 'warn' | 'critical';
   policyDenied?: boolean;
   policyRule?: string;
+  lastApprovedAt?: string;
+  lastApprovedBy?: string;
 }
 
 // --- Agents (imported agent definitions) ---
