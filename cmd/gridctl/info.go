@@ -34,11 +34,12 @@ type infoJSON struct {
 
 // infoSchemas is the schemas object of `gridctl info --json`.
 type infoSchemas struct {
-	DaemonState int    `json:"daemon_state"`
-	ProjectLock int    `json:"project_lock"`
-	ImportLock  int    `json:"import_lock"`
-	ToolPins    string `json:"tool_pins"`
-	SkillPins   string `json:"skill_pins"`
+	DaemonState  int    `json:"daemon_state"`
+	ProjectLock  int    `json:"project_lock"`
+	ImportLock   int    `json:"import_lock"`
+	ToolPins     string `json:"tool_pins"`
+	SkillPins    string `json:"skill_pins"`
+	PinApprovals string `json:"pin_approvals"`
 }
 
 var infoCmd = &cobra.Command{
@@ -110,11 +111,12 @@ func runInfo(asJSON bool) error {
 func advertisedInfoSchemas() *infoSchemas {
 	s := currentSchemas()
 	return &infoSchemas{
-		DaemonState: s.DaemonState,
-		ProjectLock: s.ProjectLock,
-		ImportLock:  s.ImportLock,
-		ToolPins:    s.ToolPins,
-		SkillPins:   s.SkillPins,
+		DaemonState:  s.DaemonState,
+		ProjectLock:  s.ProjectLock,
+		ImportLock:   s.ImportLock,
+		ToolPins:     s.ToolPins,
+		SkillPins:    s.SkillPins,
+		PinApprovals: s.PinApprovals,
 	}
 }
 
@@ -122,8 +124,8 @@ func formatInfoSchemasLine(s *infoSchemas) string {
 	if s == nil {
 		return "Schemas:  unknown"
 	}
-	return fmt.Sprintf("Schemas:  daemon_state=%d project_lock=%d import_lock=%d tool_pins=%s skill_pins=%s",
-		s.DaemonState, s.ProjectLock, s.ImportLock, s.ToolPins, s.SkillPins)
+	return fmt.Sprintf("Schemas:  daemon_state=%d project_lock=%d import_lock=%d tool_pins=%s skill_pins=%s pin_approvals=%s",
+		s.DaemonState, s.ProjectLock, s.ImportLock, s.ToolPins, s.SkillPins, s.PinApprovals)
 }
 
 // rootlessNetworkStack describes the rootless Podman networking stack.

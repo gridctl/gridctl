@@ -163,6 +163,19 @@ func TestCheckPreswap_WarningsAndForce(t *testing.T) {
 		assertHas(t, got.Warnings, "warning: v1.0.0 does not advertise a tool pin version; pin compatibility for netops is unknown")
 	})
 
+	t.Run("unknown approvals version", func(t *testing.T) {
+		dir := preswapHome(t)
+		writeJSON(t, filepath.Join(dir, "state", "netops.json"), `{"schema_version":2,"stack_name":"netops","pid":1}`)
+		writeJSON(t, filepath.Join(dir, "pins", "approvals", "skills", "netops.json"), `{"version":"1"}`)
+		blank := *target
+		blank.PinApprovals = ""
+		got := mustPreswap(t, pinInput(t, dir, &blank, own))
+		if len(got.Refusals) != 0 {
+			t.Fatalf("refusals = %v", got.Refusals)
+		}
+		assertHas(t, got.Warnings, "warning: v1.0.0 does not advertise a skill approvals pin version; pin compatibility for netops is unknown")
+	})
+
 	t.Run("unparsable pin is not zero", func(t *testing.T) {
 		dir := preswapHome(t)
 		writeJSON(t, filepath.Join(dir, "state", "netops.json"), `{"schema_version":2,"stack_name":"netops","pid":1}`)
@@ -288,6 +301,28 @@ func TestPreswapInputPathsMatchHelpers(t *testing.T) {
 	if gotSkill != wantSkill {
 		t.Fatalf("skill pin = %s, helper = %s", gotSkill, wantSkill)
 	}
+	wantSkillApprovals, err := state.SkillPinApprovalsPath("lab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotSkillApprovals, err := in.SkillApprovals("lab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotSkillApprovals != wantSkillApprovals {
+		t.Fatalf("skill approvals = %s, helper = %s", gotSkillApprovals, wantSkillApprovals)
+	}
+	wantToolApprovals, err := state.PinApprovalsPath("lab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotToolApprovals, err := in.ToolApprovals("lab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotToolApprovals != wantToolApprovals {
+		t.Fatalf("tool approvals = %s, helper = %s", gotToolApprovals, wantToolApprovals)
+	}
 }
 
 func preswapHome(t *testing.T) string {
@@ -310,6 +345,12 @@ func pinInput(t *testing.T, dir string, target, own *versions.Schemas) preswapIn
 		StateDir:  filepath.Join(dir, "state"),
 		ToolPin:   func(name string) (string, error) { return filepath.Join(dir, "pins", name+".json"), nil },
 		SkillPin:  func(name string) (string, error) { return filepath.Join(dir, "pins", "skills", name+".json"), nil },
+		SkillApprovals: func(name string) (string, error) {
+			return filepath.Join(dir, "pins", "approvals", "skills", name+".json"), nil
+		},
+		ToolApprovals: func(name string) (string, error) {
+			return filepath.Join(dir, "pins", "approvals", "tools", name+".json"), nil
+		},
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/pinapprovals"
 	"github.com/gridctl/gridctl/pkg/pins"
 	"github.com/gridctl/gridctl/pkg/project"
 	"github.com/gridctl/gridctl/pkg/skillpins"
@@ -30,11 +31,12 @@ const (
 // binary is recorded from these constants; a downloaded binary is probed.
 func currentSchemas() *versions.Schemas {
 	return &versions.Schemas{
-		DaemonState: state.DaemonStateSchemaVersion,
-		ProjectLock: project.LockVersion,
-		ImportLock:  skills.ImportLockVersion,
-		ToolPins:    pins.FileVersion,
-		SkillPins:   skillpins.FileVersion,
+		DaemonState:  state.DaemonStateSchemaVersion,
+		ProjectLock:  project.LockVersion,
+		ImportLock:   skills.ImportLockVersion,
+		ToolPins:     pins.FileVersion,
+		SkillPins:    skillpins.FileVersion,
+		PinApprovals: pinapprovals.FileVersion,
 	}
 }
 

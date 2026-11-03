@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/gridctl/gridctl/pkg/pinapprovals"
 	"github.com/gridctl/gridctl/pkg/pins"
 	"github.com/gridctl/gridctl/pkg/project"
 	"github.com/gridctl/gridctl/pkg/skillpins"
@@ -30,6 +31,9 @@ func TestInfoSchemasMatchConstants(t *testing.T) {
 	}
 	if schemas.SkillPins != skillpins.FileVersion {
 		t.Errorf("skill_pins = %q, want %q", schemas.SkillPins, skillpins.FileVersion)
+	}
+	if schemas.PinApprovals != pinapprovals.FileVersion {
+		t.Errorf("pin_approvals = %q, want %q", schemas.PinApprovals, pinapprovals.FileVersion)
 	}
 
 	// Both output paths carry the same object. The error path is the

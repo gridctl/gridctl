@@ -12,6 +12,7 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/gridctl/gridctl/pkg/output"
+	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/versions"
 )
 
@@ -136,6 +137,8 @@ func (u *upgrader) preswapInput(target string, schemas *versions.Schemas) (presw
 	in.SkillPin = func(name string) (string, error) {
 		return filepath.Join(home, ".gridctl", "pins", "skills", name+".json"), nil
 	}
+	in.SkillApprovals = state.SkillPinApprovalsPath
+	in.ToolApprovals = state.PinApprovalsPath
 	return in, nil
 }
 

@@ -80,8 +80,8 @@ func TestCurrentSchemasMatchConstants(t *testing.T) {
 	if got.DaemonState != state.DaemonStateSchemaVersion || got.ToolPins != pins.FileVersion {
 		t.Fatalf("schemas = %+v", got)
 	}
-	if got.SkillPins == "" {
-		t.Fatal("skill pin version empty")
+	if got.SkillPins == "" || got.PinApprovals == "" {
+		t.Fatal("pin version empty")
 	}
 }
 

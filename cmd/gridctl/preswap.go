@@ -23,14 +23,16 @@ const preswapMaxExtendsDepth = 10
 // Pin path funcs resolve a stack name to the tool and skill pin files.
 // A missing file is compatible. Paths are read as named; nothing is expanded.
 type preswapInput struct {
-	TargetTag   string
-	Target      *versions.Schemas
-	Own         *versions.Schemas
-	StateDir    string
-	ProjectLock string
-	ImportLock  string
-	ToolPin     func(name string) (string, error)
-	SkillPin    func(name string) (string, error)
+	TargetTag      string
+	Target         *versions.Schemas
+	Own            *versions.Schemas
+	StateDir       string
+	ProjectLock    string
+	ImportLock     string
+	ToolPin        func(name string) (string, error)
+	SkillPin       func(name string) (string, error)
+	SkillApprovals func(name string) (string, error)
+	ToolApprovals  func(name string) (string, error)
 }
 
 // preswapResult is one line per problem. Refusals exit 2 unless --force
@@ -204,6 +206,18 @@ func pinRefusalsFor(in preswapInput, h namedHead) (refusals, warnings []string) 
 	if in.SkillPin != nil {
 		path, err := in.SkillPin(h.Head.StackName)
 		r, w := onePin(in, h.Head.StackName, "skill", path, err, in.Target.SkillPins)
+		refusals = append(refusals, r...)
+		warnings = append(warnings, w...)
+	}
+	if in.SkillApprovals != nil {
+		path, err := in.SkillApprovals(h.Head.StackName)
+		r, w := onePin(in, h.Head.StackName, "skill approvals", path, err, in.Target.PinApprovals)
+		refusals = append(refusals, r...)
+		warnings = append(warnings, w...)
+	}
+	if in.ToolApprovals != nil {
+		path, err := in.ToolApprovals(h.Head.StackName)
+		r, w := onePin(in, h.Head.StackName, "tool approvals", path, err, in.Target.PinApprovals)
 		refusals = append(refusals, r...)
 		warnings = append(warnings, w...)
 	}

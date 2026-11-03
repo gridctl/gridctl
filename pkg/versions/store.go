@@ -69,11 +69,12 @@ var (
 // as null). Pin fields are strings because the on-disk constants are
 // strings; an absent pin field decodes as "".
 type Schemas struct {
-	DaemonState int    `json:"daemon_state"`
-	ProjectLock int    `json:"project_lock"`
-	ImportLock  int    `json:"import_lock"`
-	ToolPins    string `json:"tool_pins"`
-	SkillPins   string `json:"skill_pins"`
+	DaemonState  int    `json:"daemon_state"`
+	ProjectLock  int    `json:"project_lock"`
+	ImportLock   int    `json:"import_lock"`
+	ToolPins     string `json:"tool_pins"`
+	SkillPins    string `json:"skill_pins"`
+	PinApprovals string `json:"pin_approvals"`
 }
 
 // Entry is one retained binary.
