@@ -67,7 +67,7 @@ approval, connectivity, or hosted compatibility. See
 
 Every fact, message, location, and action is allowlisted. Bounded identifiers (subject names, tool names, package/version, producer names, digest/revision identifiers) may still contain operator-authored secrets; this report cannot detect them. Truncation bounds length; it is not redaction.
 
-Excluded from output and action links: raw config, credential fields and default operands, expansion-bearing source fields (the operand is omitted, not copied), command arrays, scan snippets and decoded text, raw errors and free text, URL userinfo/query/fragment values, and arbitrary provenance URLs. Limitation text is reconstructed from a known catalog. Actions are links to existing review surfaces such as View pins. There is no approval, auto-fix, or generated secret-bearing command.
+Excluded from output and action links: raw config, credential fields and default operands, expansion-bearing source fields (the operand is omitted, not copied), command arrays, scan snippets and decoded text, raw errors and free text, URL userinfo/query/fragment values, approver names, approval reasons, evidence references, and arbitrary provenance URLs. Limitation text is reconstructed from a known catalog. Actions are links to existing review surfaces such as View pins. There is no approval, auto-fix, or generated secret-bearing command.
 
 ## API and UI
 

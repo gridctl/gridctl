@@ -279,7 +279,7 @@ Protects against rug pull attacks (CVE-2025-54136 class) by hashing tool definit
 
 When `scan` is on, each tool's name, description, and both schemas are checked at pin and drift time for injection signals: hidden-instruction phrases (`P001`), references to sensitive files (`P002`), sensitive-action language (`P003`), suspicious emphasis words (`P004`), hidden Unicode including decoded Tags-block payloads (`P005`), and cross-server tool shadowing (`P006`). P006 warns when a description names another server's distinctively named tool, or a generic tool name (`search`, `fetch`) qualified by its owning server's name; a bare mention of another server is info-tier only. Matching runs on Unicode-normalized text so zero-width, homoglyph, and leetspeak evasion does not defeat it, and quoted matches are downgraded so a tool that documents attack phrases is not flagged as one. Findings render beside the drift diff in `gridctl pins diff`, the diff API, and the Pins workspace; they inform the approve decision and never gate it. Static heuristics are one detection layer, not a complete defense: forwarded `_meta`, `icons`, `execution`, and unknown annotation keys are not scanned, and attacks carried in runtime tool output are invisible to any pin-time check.
 
-Pin files are stored in `~/.gridctl/pins/{stackName}.json`. Use `gridctl pins` subcommands to inspect, approve, or reset tool pins. Per-server tool-pin opt-out is available via `pin_schemas: false`. Neither switch disables the separate [A2A card-trust service](#a2a), whose records require hash-bound approval and cannot be reset through the pins API.
+Pin files are stored in `~/.gridctl/pins/{stackName}.json`. Approval history lives in `~/.gridctl/pins/approvals/tools/{stackName}.json`; reset deletes the pin record and leaves that log. Use `gridctl pins` subcommands to inspect, approve, or reset tool pins. Per-server tool-pin opt-out is available via `pin_schemas: false`. Neither switch disables the separate [A2A card-trust service](#a2a), whose records require hash-bound approval and cannot be reset through the pins API.
 
 Pins recorded before output schemas were fingerprinted are upgraded in place: each pin verifies under the scheme it was recorded with, and clean pins are silently rewritten to the current scheme (which pins the output schema for the first time) on the next verify cycle. A fingerprint-scheme change never surfaces as drift.
 
@@ -1305,7 +1305,8 @@ the same identity require approval. Existing pins missing the identity record
 also require approval. Storage failures fail closed. Approval requires the
 complete `expected_server_hash` (`gridctl pins approve --expect`), performs a
 fresh bounded GET, and checks the registration generation and candidate revision
-before persistence and publication. A stale approval cannot release a newer
+before persistence and publication. Persistence records one bound entry in the
+tool approvals log. A stale approval cannot release a newer
 candidate or another policy block. Reload preserves card pins on A2A edits and
 removal. Observed card drift retires all affected handles immediately. Approval
 publishes new authority; it never revives handles from the previous card.
