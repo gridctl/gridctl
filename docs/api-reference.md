@@ -2888,7 +2888,7 @@ Success is `200`:
 }
 ```
 
-`409` when `expected_hash` does not match the current composite hash (`fetch the diff again and re-review`). `400` when unresolved advisory findings have no reason, when the body is oversized or invalid JSON, when a reason is credential-shaped or too long, when an approver name is credential-shaped or longer than 256 bytes, or when an evidence reference is empty, credential-shaped, too long, or one of more than 16. `404` when the fragment is absent or not pinned. `500` when the content could not be hashed.
+`409` when `expected_hash` does not match the current composite hash (`fetch the diff again and re-review`). `400` when unresolved advisory findings have no reason, when the body is oversized or invalid JSON, when a reason is credential-shaped or too long, when an approver name is credential-shaped or longer than 256 bytes, or when an evidence reference is empty, credential-shaped, too long, or one of more than 16. `404` when the fragment is absent. A present fragment with no pin record is pinned by this approval. `500` when the content could not be hashed.
 
 #### `DELETE /api/context/pins/{name}`
 
@@ -2950,7 +2950,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/context
 | `canonical` | object | Canonical file path, existence, and content (`content` is empty when `exists` is false) |
 | `needs_sync` | bool | True when any client is `stale`, `drifted`, or `target-missing` |
 | `clients` | []object | One entry per known client |
-| `pins` | object | Additive pin summary: `drifted`, `missing`, and `unpinned` string arrays, never null. A read does not pin |
+| `pins` | object | Additive pin summary: `drifted`, `missing`, and `unpinned` string arrays, never null. A read does not pin. An unreadable or newer pin file is logged and yields empty arrays; this route stays 200. `GET /api/context/pins` still returns 500 for that file |
 
 Per-client fields: `slug`, `name`, `supported`, `available` (client detected on this machine), `unofficial` (the target path rests on unofficial sourcing rather than published client docs; omitted when false), `strategy` (`dedicated-file`, `import-shim`, or `block`; omitted for unsupported clients), `target_path`, `state`, `detail` (human-readable reason or hint), and `synced_at` (omitted when never synced).
 
@@ -2960,7 +2960,7 @@ In fragments mode, multi-file clients also carry a `fragments` array with one `{
 
 #### `PUT /api/context`
 
-Saves the canonical content (creating the file when absent) and returns the same document as `GET /api/context`, plus `pin_status` (`pinned`, `drift`, or `unpinned`) computed after the save. The save does not pin and does not approve. A timestamped backup of the previous revision precedes the write.
+Saves the canonical content (creating the file when absent) and returns the same document as `GET /api/context`, plus `pin_status` (`pinned`, `drift`, or `unpinned`) computed after the save. The save does not pin and does not approve. If the pin file cannot be read, `pin_status` is `unpinned` and the save still returns 200. A timestamped backup of the previous revision precedes the write.
 
 **Auth:** Yes
 
@@ -3156,7 +3156,7 @@ Lists rule fragments when fragments mode is active (`active: false` and an empty
 
 #### `PUT /api/context/fragments/{name}`
 
-Creates or overwrites a fragment. Body `{ "content": "..." }` installs that body (activating fragments mode if needed). Omitting content scaffolds a starter fragment via the same path as `gridctl ctx add`. The response adds `pin_status` (`pinned`, `drift`, or `unpinned`) computed after the save. The save does not pin and does not approve. A create without content returns `{ "name", "path", "migrated", "pin_status" }`. A content save returns `{ "name", "saved", "migrated", "pin_status" }`.
+Creates or overwrites a fragment. Body `{ "content": "..." }` installs that body (activating fragments mode if needed). Omitting content scaffolds a starter fragment via the same path as `gridctl ctx add`. The response adds `pin_status` (`pinned`, `drift`, or `unpinned`) computed after the save. The save does not pin and does not approve. If the pin file cannot be read, `pin_status` is `unpinned` and the save still returns 200. A create without content returns `{ "name", "path", "migrated", "pin_status" }`. A content save returns `{ "name", "saved", "migrated", "pin_status" }`.
 
 #### `DELETE /api/context/fragments/{name}`
 

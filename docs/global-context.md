@@ -54,7 +54,7 @@ For CI or a shell prompt, `gridctl ctx sync --check` performs no writes and exit
 
 ## Fragment pins
 
-Pin drift is a fact about the source, separate from the two client facts above. A write pass (`gridctl ctx sync`, `gridctl ctx add`, `gridctl ctx edit`, and `gridctl pack apply`) silently records a digest the first time it sees a fragment, or the single `AGENTS.md` when fragments mode is off. A later content change stays pin drift until a human approves or resets it. Projection warns and continues. It does not refuse, and `ctx status`, `ctx sync`, `ctx sync --check`, and `ctx diff` keep their existing exit codes.
+Pin drift is a fact about the source, separate from the two client facts above. A write pass (`gridctl ctx sync`, `gridctl ctx add`, `gridctl ctx edit`, and `gridctl pack apply`) silently records a digest the first time it sees a fragment, or the single `AGENTS.md` when fragments mode is off. A later content change stays pin drift until a human approves or resets it. Projection warns and continues. It does not refuse, and `ctx status`, `ctx sync`, `ctx sync --check`, and `ctx diff` keep their existing exit codes. An unreadable or newer pin file warns on those commands and on the context document routes; it does not change their exits or status codes. `ctx pins` and `/api/context/pins` still fail on that file.
 
 | Term | What moved | What to do |
 |---|---|---|
