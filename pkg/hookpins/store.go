@@ -49,17 +49,17 @@ type Store struct {
 	log  *pinapprovals.Log
 }
 
-// New creates a Store for ~/.gridctl/pins/hooks.json. The path is resolved
-// on first use so construction stays error-free.
+// New creates a Store for ~/.gridctl/pins/hooks/global.json. The path is
+// resolved on first use so construction stays error-free.
 func New() *Store {
 	return &Store{}
 }
 
-// NewWithPath creates a Store that keeps pins in dir/hooks.json.
+// NewWithPath creates a Store that keeps pins in dir/hooks/global.json.
 // Intended for tests; it never resolves the real home.
 func NewWithPath(dir string) *Store {
 	return &Store{
-		path:    filepath.Join(dir, "hooks.json"),
+		path:    filepath.Join(dir, "hooks", "global.json"),
 		logPath: filepath.Join(dir, "approvals", "hooks", "global.json"),
 	}
 }
@@ -425,7 +425,7 @@ func (s *Store) Approve(ctx context.Context, name, registryDir string, req Appro
 			return fmt.Errorf("hookpins: hook %q: %w", name, ErrNotPinned)
 		}
 		findings := req.Findings
-		if len(findings) == 0 {
+		if !req.Scanned && len(findings) == 0 {
 			findings = pin.Findings
 		}
 		if len(findings) > 0 && req.Reason == "" {
@@ -457,7 +457,13 @@ func (s *Store) Approve(ctx context.Context, name, registryDir string, req Appro
 		pin.ApprovedReason = req.Reason
 		pin.LastVerifiedAt = now
 		pin.Status = StatusPinned
-		if len(req.Findings) > 0 {
+		if req.Scanned {
+			if len(req.Findings) == 0 {
+				pin.Findings = nil
+			} else {
+				pin.Findings = append([]pins.Finding(nil), req.Findings...)
+			}
+		} else if len(req.Findings) > 0 {
 			pin.Findings = append([]pins.Finding(nil), req.Findings...)
 		}
 		pin.Approvals = pinapprovals.CloneEntries(s.log.History(name))

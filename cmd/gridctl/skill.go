@@ -491,6 +491,7 @@ func runSkillAdd(ctx context.Context, repoURL string) error {
 	}
 
 	if len(result.Imported) == 0 && len(result.ImportedAgents) == 0 {
+		printHookImportHint(result.DiscoveredHooks)
 		return fmt.Errorf("nothing was imported")
 	}
 
@@ -569,6 +570,7 @@ func runSkillAddLocal(ctx context.Context, dir string) error {
 		printer.Warn(warning)
 	}
 	if len(result.Imported) == 0 && len(result.ImportedAgents) == 0 {
+		printHookImportHint(result.DiscoveredHooks)
 		return fmt.Errorf("nothing was imported")
 	}
 	fmt.Printf("Imported %d skill(s), %d agent(s) from %s (local)\n", len(result.Imported), len(result.ImportedAgents), root)
@@ -586,6 +588,12 @@ func printHookImportHint(n int) {
 		return
 	}
 	fmt.Println(skills.HookImportHint(n))
+}
+
+func printSkippedHooks(skipped []skills.SkippedHook) {
+	for _, s := range skipped {
+		fmt.Printf("Skipped: %s (hook): %s\n", s.Name, s.Reason)
+	}
 }
 
 func printProjectionHints(ctx context.Context, home string, roots []string) error {
@@ -623,20 +631,30 @@ func runSkillListHooks() error {
 		Scripts     int      `json:"scripts"`
 		Source      string   `json:"source"`
 		PinStatus   string   `json:"pin_status"`
+		Error       string   `json:"error,omitempty"`
 	}
 	var entries []hookEntry
 	for _, h := range hooks {
 		entry := hookEntry{
-			Kind:        "hook",
-			Name:        h.Name,
-			Description: h.Definition.Description,
-			Events:      h.Definition.Events,
-			Scripts:     len(h.Definition.Scripts),
-			Source:      "local",
-			PinStatus:   "unpinned",
+			Kind:      "hook",
+			Name:      h.Name,
+			Events:    []string{},
+			Source:    "local",
+			PinStatus: "unpinned",
 		}
-		if entry.Events == nil {
-			entry.Events = []string{}
+		if h.Err != "" || h.Definition == nil {
+			entry.Description = "(broken)"
+			entry.Error = h.Err
+			if entry.Error == "" {
+				entry.Error = "hook.json is missing or does not validate"
+			}
+		} else {
+			entry.Description = h.Definition.Description
+			entry.Events = h.Definition.Events
+			entry.Scripts = len(h.Definition.Scripts)
+			if entry.Events == nil {
+				entry.Events = []string{}
+			}
 		}
 		if origin, oerr := skills.ReadOrigin(h.Dir); oerr == nil {
 			entry.Source = origin.Repo
@@ -660,13 +678,18 @@ func runSkillListHooks() error {
 		t.AppendRow(table.Row{e.Name, e.Description, strings.Join(e.Events, ","), e.Scripts, e.PinStatus})
 	}
 	t.Render()
+	for _, e := range entries {
+		if e.Error == "" {
+			continue
+		}
+		fmt.Printf("warning: hook %s is not a valid definition (%s); remove it with 'gridctl skill remove %s --kind hook'\n", e.Name, e.Error, e.Name)
+	}
 	return nil
 }
 
 func runSkillRemoveHook(name string) error {
-	if _, err := skills.GetHook(registryDir(), name); err != nil {
-		return err
-	}
+	// DeleteHook stats the directory. A hook.json that no longer
+	// validates must still be removable.
 	if err := skills.DeleteHook(registryDir(), name); err != nil {
 		return err
 	}
@@ -877,29 +900,36 @@ func runSkillList() error {
 // hash every installed skill).
 func driftedImports(store *registry.Store, name string) ([]string, error) {
 	if name != "" {
+		var drifted []string
 		sk, err := store.GetSkill(name)
 		if err != nil {
-			// The name may be an imported agent; agents share the
-			// drift-safe update gate.
-			return driftedAgent(name)
+			// The name may be an imported agent or hook. Both share the
+			// drift-safe update gate. A skill name that is not drifted
+			// still checks hooks recorded on that source's pack.
+			agents, aerr := driftedAgent(name)
+			if aerr != nil {
+				return nil, aerr
+			}
+			drifted = append(drifted, agents...)
+		} else {
+			dir := sk.Dir
+			if dir == "" {
+				dir = sk.Name
+			}
+			skillDir := filepath.Join(registryDir(), "skills", dir)
+			origin, oerr := skills.ReadOrigin(skillDir)
+			if oerr == nil && origin.InstalledHash != "" {
+				current, cerr := skills.ContentHashFile(filepath.Join(skillDir, "SKILL.md"))
+				if cerr == nil && current != origin.InstalledHash {
+					drifted = append(drifted, name)
+				}
+			}
 		}
-		dir := sk.Dir
-		if dir == "" {
-			dir = sk.Name
+		hooks, herr := driftedHookNames(name)
+		if herr != nil {
+			return nil, herr
 		}
-		skillDir := filepath.Join(registryDir(), "skills", dir)
-		origin, err := skills.ReadOrigin(skillDir)
-		if err != nil || origin.InstalledHash == "" {
-			return nil, nil
-		}
-		current, err := skills.ContentHashFile(filepath.Join(skillDir, "SKILL.md"))
-		if err != nil {
-			return nil, nil
-		}
-		if current != origin.InstalledHash {
-			return []string{name}, nil
-		}
-		return nil, nil
+		return append(drifted, hooks...), nil
 	}
 	drifted, err := skills.DetectDrift(context.Background(), store, skills.LockFilePath(), "")
 	if err != nil {
@@ -1014,6 +1044,9 @@ func runSkillUpdate(ctx context.Context, name string) error {
 		if err != nil {
 			return err
 		}
+		if result == nil {
+			return nil
+		}
 		for _, w := range result.Warnings {
 			printer.Info(w)
 		}
@@ -1025,6 +1058,10 @@ func runSkillUpdate(ctx context.Context, name string) error {
 		}
 		for _, imported := range result.ImportedHooks {
 			printer.Info("Updated hook", "name", imported.Name)
+		}
+		printSkippedHooks(result.SkippedHooks)
+		if len(result.SkippedHooks) > 0 {
+			return fmt.Errorf("hook update skipped")
 		}
 		return nil
 	}
@@ -1096,6 +1133,7 @@ func runSkillUpdate(ctx context.Context, name string) error {
 		failedSources = map[string]bool{}
 		syncedSources = map[string]bool{}
 		pinnedSources = map[string]bool{}
+		skippedHooks  []skills.SkippedHook
 	)
 
 	for _, sr := range remoteSkills {
@@ -1114,6 +1152,10 @@ func runSkillUpdate(ctx context.Context, name string) error {
 			failedSources[sr.source] = true
 			continue
 		}
+		if result == nil {
+			syncedSources[sr.source] = true
+			continue
+		}
 		for _, w := range result.Warnings {
 			printer.Info(w)
 		}
@@ -1125,6 +1167,10 @@ func runSkillUpdate(ctx context.Context, name string) error {
 			printer.Info("Updated agent", "name", imported.Name)
 			updatedSkills++
 		}
+		for _, imported := range result.ImportedHooks {
+			printer.Info("Updated hook", "name", imported.Name)
+		}
+		skippedHooks = append(skippedHooks, result.SkippedHooks...)
 		if !failedSources[sr.source] {
 			syncedSources[sr.source] = true
 		}
@@ -1136,6 +1182,8 @@ func runSkillUpdate(ctx context.Context, name string) error {
 	for src := range failedSources {
 		delete(syncedSources, src)
 	}
+
+	printSkippedHooks(skippedHooks)
 
 	if skillUpdateDryRun {
 		return nil

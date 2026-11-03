@@ -1,7 +1,7 @@
 // Package hookpins records TOFU content pins for imported hooks at
-// ~/.gridctl/pins/hooks.json. A pin is written by the import that installs
-// the hook. A later byte change made any other way is pin drift until a
-// human approves it. gridctl never executes a hook.
+// ~/.gridctl/pins/hooks/global.json. A pin is written by the import that
+// installs the hook. A later byte change made any other way is pin drift
+// until a human approves it. gridctl never executes a hook.
 package hookpins
 
 import (
@@ -25,7 +25,9 @@ const (
 )
 
 // PinFile is the top-level JSON structure stored at
-// ~/.gridctl/pins/hooks.json. Hook pins are not stack-scoped.
+// ~/.gridctl/pins/hooks/global.json. Hook pins are not stack-scoped.
+// The subdirectory keeps this file disjoint from the tool pin file of a
+// stack named hooks.
 type PinFile struct {
 	Version string              `json:"version"`
 	Hooks   map[string]*HookPin `json:"hooks"`
@@ -42,16 +44,16 @@ type HookPin struct {
 	Files []skillpins.FileDigest `json:"files,omitempty"`
 	// Document is the hook.json text as pinned, kept so drift review can
 	// show a diff.
-	Document       string                `json:"document,omitempty"`
-	Source         string                `json:"source,omitempty"`
-	Origin         *skillpins.OriginRef  `json:"origin,omitempty"`
-	ApprovedReason string                `json:"approved_reason,omitempty"`
-	PinnedAt       time.Time             `json:"pinned_at"`
-	LastVerifiedAt time.Time             `json:"last_verified_at"`
-	Status         string                `json:"status"`
-	Findings       []pins.Finding        `json:"findings,omitempty"`
-	Approvals      []pinapprovals.Entry  `json:"approvals,omitempty"`
-	CompositeHash  string                `json:"composite_hash,omitempty"`
+	Document       string               `json:"document,omitempty"`
+	Source         string               `json:"source,omitempty"`
+	Origin         *skillpins.OriginRef `json:"origin,omitempty"`
+	ApprovedReason string               `json:"approved_reason,omitempty"`
+	PinnedAt       time.Time            `json:"pinned_at"`
+	LastVerifiedAt time.Time            `json:"last_verified_at"`
+	Status         string               `json:"status"`
+	Findings       []pins.Finding       `json:"findings,omitempty"`
+	Approvals      []pinapprovals.Entry `json:"approvals,omitempty"`
+	CompositeHash  string               `json:"composite_hash,omitempty"`
 }
 
 // VerifyResult is the outcome of verifying one hook against its pin.
@@ -64,15 +66,15 @@ type VerifyResult struct {
 
 // HookDiff describes how a hook moved since its pin.
 type HookDiff struct {
-	Name           string         `json:"name"`
-	OldHash        string         `json:"old_definition_hash"`
-	NewHash        string         `json:"new_definition_hash"`
-	OldDocument    string         `json:"old_document,omitempty"`
-	NewDocument    string         `json:"new_document,omitempty"`
-	AddedFiles     []string       `json:"added_files,omitempty"`
-	RemovedFiles   []string       `json:"removed_files,omitempty"`
-	ModifiedFiles  []string       `json:"modified_files,omitempty"`
-	Findings       []pins.Finding `json:"findings,omitempty"`
+	Name          string         `json:"name"`
+	OldHash       string         `json:"old_definition_hash"`
+	NewHash       string         `json:"new_definition_hash"`
+	OldDocument   string         `json:"old_document,omitempty"`
+	NewDocument   string         `json:"new_document,omitempty"`
+	AddedFiles    []string       `json:"added_files,omitempty"`
+	RemovedFiles  []string       `json:"removed_files,omitempty"`
+	ModifiedFiles []string       `json:"modified_files,omitempty"`
+	Findings      []pins.Finding `json:"findings,omitempty"`
 }
 
 // DocumentChanged reports whether hook.json moved.
@@ -94,9 +96,13 @@ type ApproveRequest struct {
 	Evidence         []string
 	ApprovedBy       string
 	ApprovedBySource string
-	// Findings are advisory results for the content being approved. A
-	// non-empty list requires Reason.
+	// Findings are advisory results for the content being approved. When
+	// Scanned is true, Findings is the current scan, including an empty
+	// list that clears findings recorded on an earlier pin. When Scanned
+	// is false and Findings is empty, the stored findings are kept.
+	// A non-empty effective list requires Reason.
 	Findings []pins.Finding
+	Scanned  bool
 }
 
 // PinRequest is the content an accepted import pins.

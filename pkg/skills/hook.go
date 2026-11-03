@@ -407,6 +407,8 @@ func walkHookStrings(v any, fn func(string) error) error {
 // ScanHook checks hook.json and every regular text file in hookDir for
 // dangerous patterns. Like an agent definition, any finding of any severity
 // blocks: the client executes this content. Symlinks are not followed.
+// hook.json is scanned from hookJSON when those bytes are provided, and
+// the walk skips that name so a definition finding is recorded once.
 func ScanHook(name string, hookJSON []byte, hookDir string) *ScanResult {
 	result := &ScanResult{SkillName: name, Safe: true}
 	if len(hookJSON) > 0 {
@@ -420,12 +422,16 @@ func ScanHook(name string, hookJSON []byte, hookDir string) *ScanResult {
 			if d.IsDir() || d.Type()&os.ModeSymlink != 0 || !d.Type().IsRegular() {
 				return nil
 			}
+			rel, _ := filepath.Rel(hookDir, path)
+			rel = filepath.ToSlash(rel)
+			if rel == "hook.json" && len(hookJSON) > 0 {
+				return nil
+			}
 			data, rerr := os.ReadFile(path) // #nosec G304 -- walking a caller-supplied hook directory; symlinks are not followed
 			if rerr != nil || !isScannable(data) {
 				return nil
 			}
-			rel, _ := filepath.Rel(hookDir, path)
-			scanText(filepath.ToSlash(rel), string(data), result)
+			scanText(rel, string(data), result)
 			return nil
 		})
 	}
@@ -452,12 +458,16 @@ type InstalledHook struct {
 	// Dir is the hook's canonical directory (holds hook.json and its
 	// .origin.json sidecar).
 	Dir string
+	// Err is set when the directory is present but hook.json is missing
+	// or does not validate. List and remove still see the hook. Info
+	// and parse-required callers use GetHook, which returns the error.
+	Err string
 }
 
 // ListHooks returns the hooks in the canonical store, sorted by name.
-// A missing store directory is the normal no-hooks state. Entries whose
-// hook.json is missing or unparseable are skipped: the store lists what
-// it can serve.
+// A missing store directory is the normal no-hooks state. A directory
+// whose hook.json is missing or does not validate is returned with Err
+// set so a hand edit cannot hide the hook from list or remove.
 func ListHooks(registryDir string) ([]InstalledHook, error) {
 	root := HooksRoot(registryDir)
 	dirs, err := os.ReadDir(root)
@@ -473,15 +483,21 @@ func ListHooks(registryDir string) ([]InstalledHook, error) {
 			continue
 		}
 		dir := filepath.Join(root, d.Name())
+		entry := InstalledHook{Name: d.Name(), Dir: dir}
 		data, rerr := os.ReadFile(filepath.Join(dir, "hook.json")) // #nosec G304 -- fixed name inside the managed store
 		if rerr != nil {
+			entry.Err = rerr.Error()
+			hooks = append(hooks, entry)
 			continue
 		}
 		def, perr := ParseHookJSON(data, dir)
 		if perr != nil {
+			entry.Err = perr.Error()
+			hooks = append(hooks, entry)
 			continue
 		}
-		hooks = append(hooks, InstalledHook{Name: d.Name(), Definition: def, Dir: dir})
+		entry.Definition = def
+		hooks = append(hooks, entry)
 	}
 	sort.Slice(hooks, func(i, j int) bool { return hooks[i].Name < hooks[j].Name })
 	return hooks, nil
@@ -588,8 +604,14 @@ func installHookTree(srcDir, dstDir string, raw []byte) ([]string, error) {
 		if mode == 0 {
 			mode = 0o644
 		}
+		// WriteFile does not change the mode of a file that already
+		// exists. A re-import that turns the executable bit on must
+		// still leave a parseable script.
 		if err := os.WriteFile(out, f.content, mode); err != nil {
 			return warnings, fmt.Errorf("writing %s: %w", f.rel, err)
+		}
+		if err := os.Chmod(out, mode); err != nil {
+			return warnings, fmt.Errorf("setting mode on %s: %w", f.rel, err)
 		}
 		keep[f.rel] = struct{}{}
 	}

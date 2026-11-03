@@ -5,6 +5,7 @@ package integration
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -109,6 +110,43 @@ func commitPack(t *testing.T, files map[string]string, modes map[string]os.FileM
 	return dir
 }
 
+func commitPackChange(t *testing.T, dir string, files map[string]string, modes map[string]os.FileMode) {
+	t.Helper()
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, content := range files {
+		full := filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		mode := os.FileMode(0o644)
+		if modes != nil && modes[path] != 0 {
+			mode = modes[path]
+		}
+		if err := os.WriteFile(full, []byte(content), mode); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := wt.Add(path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := wt.Commit("update", &git.CommitOptions{
+		Author: &object.Signature{Name: "test", Email: "test@test.com"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func hookPinFile(home string) string {
+	return filepath.Join(home, ".gridctl", "pins", "hooks", "global.json")
+}
+
 func hookPackFiles(script, extra string) map[string]string {
 	manifest := `apiVersion: gridctl.dev/v1
 kind: Pack
@@ -137,10 +175,10 @@ hooks: [block-force-push]
 }
 `
 	return map[string]string{
-		"gridctl-pack.yaml":                          manifest,
-		"hooks/block-force-push/hook.json":           hook,
-		"hooks/block-force-push/scripts/block.sh":    script,
-		"skills/alpha/SKILL.md":                      "---\nname: alpha\ndescription: Alpha skill\n---\n\nDo alpha.\n",
+		"gridctl-pack.yaml":                       manifest,
+		"hooks/block-force-push/hook.json":        hook,
+		"hooks/block-force-push/scripts/block.sh": script,
+		"skills/alpha/SKILL.md":                   "---\nname: alpha\ndescription: Alpha skill\n---\n\nDo alpha.\n",
 	}
 }
 
@@ -170,7 +208,7 @@ func TestHooksPack_ImportStampsVersion9(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(home, ".gridctl", "registry", "hooks", "block-force-push", "hook.json")); err != nil {
 		t.Fatal(err)
 	}
-	pin, err := os.ReadFile(filepath.Join(home, ".gridctl", "pins", "hooks.json"))
+	pin, err := os.ReadFile(hookPinFile(home))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,6 +251,20 @@ func TestHooksPack_ScanBlocksWithoutTrust(t *testing.T) {
 			if _, err := os.Stat(filepath.Join(home, ".gridctl", "registry", "hooks", "block-force-push")); !os.IsNotExist(err) {
 				t.Fatalf("hook was installed despite the finding: %v", err)
 			}
+			// Criterion 4 says "installs nothing". The CLI keeps the
+			// per-resource gate used for skills and rules: the hook is
+			// not installed, and other selected resources still import.
+			// POST /api/packs refuses the whole import before any write.
+			if _, err := os.Stat(filepath.Join(home, ".gridctl", "registry", "skills", "alpha", "SKILL.md")); err != nil {
+				t.Fatalf("selected skill should still import: %v", err)
+			}
+			lock, err := os.ReadFile(filepath.Join(home, ".gridctl", "skills.lock.yaml"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(lock), "version: 9") || strings.Contains(string(lock), "block-force-push") {
+				t.Fatalf("skipped hook stamped the lock:\n%s", lock)
+			}
 		})
 	}
 }
@@ -233,7 +285,7 @@ func TestHooksPack_TrustPinsFinding(t *testing.T) {
 	if !strings.Contains(stdout, "1 hooks") {
 		t.Fatalf("import line:\n%s", stdout)
 	}
-	pin, err := os.ReadFile(filepath.Join(home, ".gridctl", "pins", "hooks.json"))
+	pin, err := os.ReadFile(hookPinFile(home))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,5 +362,149 @@ func TestHooksPack_ShellKeyRefused(t *testing.T) {
 	}
 	if !strings.Contains(combined, `"shell"`) {
 		t.Fatalf("shell key not named:\n%s", combined)
+	}
+}
+
+func TestHooksPack_SkillAddHintWhenSkipped(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	bin := hookCLI(t)
+	home := t.TempDir()
+	repo := commitPack(t, hookPackFiles("#!/bin/sh\nexit 0\n", ""), map[string]os.FileMode{
+		"hooks/block-force-push/scripts/block.sh": 0o755,
+	})
+	if _, _, code := runHookCLI(t, bin, home, "skill", "add", repo); code != 0 {
+		t.Fatal("first skill add failed")
+	}
+	stdout, stderr, code := runHookCLI(t, bin, home, "skill", "add", repo)
+	combined := stdout + stderr
+	if code == 0 {
+		t.Fatalf("second skill add should fail when nothing new imports:\n%s", combined)
+	}
+	if !strings.Contains(combined, "1 hook definition(s) not imported") {
+		t.Fatalf("hint missing when every skill was skipped:\n%s", combined)
+	}
+}
+
+func TestHooksPack_UpdateReportsSkippedHook(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	bin := hookCLI(t)
+	home := t.TempDir()
+	repo := commitPack(t, hookPackFiles("#!/bin/sh\nexit 0\n", ""), map[string]os.FileMode{
+		"hooks/block-force-push/scripts/block.sh": 0o755,
+	})
+	if stdout, stderr, code := runHookCLI(t, bin, home, "pack", "add", repo); code != 0 {
+		t.Fatalf("pack add exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	script := filepath.Join(home, ".gridctl", "registry", "hooks", "block-force-push", "scripts", "block.sh")
+	before, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitPackChange(t, repo, map[string]string{
+		"hooks/block-force-push/scripts/block.sh": "#!/bin/sh\nchmod 777 /tmp/x\n",
+	}, map[string]os.FileMode{
+		"hooks/block-force-push/scripts/block.sh": 0o755,
+	})
+	stdout, stderr, code := runHookCLI(t, bin, home, "skill", "update", "block-force-push")
+	combined := stdout + stderr
+	if code != 1 {
+		t.Fatalf("update exit %d, want 1\n%s", code, combined)
+	}
+	if !strings.Contains(combined, "Skipped:") || !strings.Contains(combined, "block-force-push") || !strings.Contains(combined, "--trust") {
+		t.Fatalf("skip reason missing:\n%s", combined)
+	}
+	after, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("skipped update overwrote the registry script")
+	}
+	stdout, stderr, code = runHookCLI(t, bin, home, "skill", "update", "--trust", "block-force-push")
+	combined = stdout + stderr
+	if code != 0 || !strings.Contains(combined, "Updated hook") {
+		t.Fatalf("trusted update exit %d\n%s", code, combined)
+	}
+}
+
+func TestHooksPack_BrokenHookRemovable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	bin := hookCLI(t)
+	home := t.TempDir()
+	repo := commitPack(t, hookPackFiles("#!/bin/sh\nexit 0\n", ""), map[string]os.FileMode{
+		"hooks/block-force-push/scripts/block.sh": 0o755,
+	})
+	if stdout, stderr, code := runHookCLI(t, bin, home, "pack", "add", repo); code != 0 {
+		t.Fatalf("pack add exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	hookFile := filepath.Join(home, ".gridctl", "registry", "hooks", "block-force-push", "hook.json")
+	if err := os.WriteFile(hookFile, []byte(`{"extra":1}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	listOut, _, listCode := runHookCLI(t, bin, home, "skill", "list", "--kind", "hook", "--format", "json")
+	if listCode != 0 || !strings.Contains(listOut, "block-force-push") || !strings.Contains(listOut, `"error"`) {
+		t.Fatalf("broken hook hidden from list, exit %d\n%s", listCode, listOut)
+	}
+	if strings.Contains(listOut, "No hooks in registry") {
+		t.Fatalf("list claimed the registry was empty:\n%s", listOut)
+	}
+	stdout, stderr, code := runHookCLI(t, bin, home, "skill", "remove", "block-force-push", "--kind", "hook")
+	if code != 0 {
+		t.Fatalf("remove exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	if _, err := os.Stat(filepath.Dir(hookFile)); !os.IsNotExist(err) {
+		t.Fatalf("broken hook directory remains: %v", err)
+	}
+}
+
+func TestHooksPack_RemoveAndApprove(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	bin := hookCLI(t)
+	home := t.TempDir()
+	repo := commitPack(t, hookPackFiles("#!/bin/sh\nexit 0\n", ""), map[string]os.FileMode{
+		"hooks/block-force-push/scripts/block.sh": 0o755,
+	})
+	if stdout, stderr, code := runHookCLI(t, bin, home, "pack", "add", repo); code != 0 {
+		t.Fatalf("pack add exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	diffOut, diffErr, diffCode := runHookCLI(t, bin, home, "skill", "pins", "diff", "block-force-push", "--kind", "hook", "--format", "json")
+	if diffCode != 0 {
+		t.Fatalf("diff exit %d\n%s\n%s", diffCode, diffOut, diffErr)
+	}
+	var diff struct {
+		CompositeHash string `json:"composite_hash"`
+	}
+	if err := json.Unmarshal([]byte(diffOut), &diff); err != nil || diff.CompositeHash == "" {
+		t.Fatalf("diff json: %v\n%s", err, diffOut)
+	}
+	stdout, stderr, code := runHookCLI(t, bin, home, "skill", "pins", "approve", "block-force-push", "--kind", "hook", "--expect", diff.CompositeHash, "--reason", "reviewed", "--evidence", "https://example.com/review/1")
+	if code != 0 {
+		t.Fatalf("approve exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	log, err := os.ReadFile(filepath.Join(home, ".gridctl", "pins", "approvals", "hooks", "global.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(log), "reviewed") || !strings.Contains(string(log), "https://example.com/review/1") {
+		t.Fatalf("approval log:\n%s", log)
+	}
+	listOut, _, listCode := runHookCLI(t, bin, home, "skill", "pins", "list", "--kind", "hook", "--format", "json")
+	if listCode != 0 || !strings.Contains(listOut, "reviewed") {
+		t.Fatalf("list exit %d\n%s", listCode, listOut)
+	}
+	stdout, stderr, code = runHookCLI(t, bin, home, "pack", "remove", "hook-pack")
+	if code != 0 {
+		t.Fatalf("pack remove exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".gridctl", "registry", "hooks", "block-force-push")); !os.IsNotExist(err) {
+		t.Fatalf("pack remove left the hook: %v", err)
 	}
 }

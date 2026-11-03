@@ -911,9 +911,11 @@ func (imp *Importer) importHooks(ctx context.Context, result *CloneResult, opts 
 			})
 			continue
 		}
-		if existing, gerr := GetHook(imp.registryDir, name); gerr == nil {
-			origin, oerr := ReadOrigin(existing.Dir)
-			current, cerr := ContentHashFile(filepath.Join(existing.Dir, "hook.json"))
+		// Presence is the directory, not a successful parse. A hand edit
+		// that no longer validates is still a local copy to back up.
+		if _, statErr := os.Stat(dest); statErr == nil {
+			origin, oerr := ReadOrigin(dest)
+			current, cerr := ContentHashFile(filepath.Join(dest, "hook.json"))
 			drifted := oerr == nil && origin.InstalledHash != "" && cerr == nil && current != origin.InstalledHash
 			if drifted && !opts.Force && !opts.PackImport {
 				importResult.SkippedHooks = append(importResult.SkippedHooks, SkippedHook{
@@ -927,7 +929,7 @@ func (imp *Importer) importHooks(ctx context.Context, result *CloneResult, opts 
 				if oerr == nil && origin.InstalledHash != "" {
 					suffix = ShortSHA(origin.InstalledHash)
 				}
-				if _, berr := backupHookFile(existing.Dir, suffix); berr != nil {
+				if _, berr := backupHookFile(dest, suffix); berr != nil {
 					return fmt.Errorf("backing up hook %s: %w", name, berr)
 				}
 			}

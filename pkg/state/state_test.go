@@ -685,7 +685,7 @@ func TestPathHelpers_DeriveFromHome(t *testing.T) {
 		{"PinApprovalsPath", func() (string, error) { return PinApprovalsPath("s") }, filepath.Join(home, ".gridctl", "pins", "approvals", "tools", "s.json")},
 		{"ContextPinsPath", ContextPinsPath, filepath.Join(home, ".gridctl", "pins", "context", "global.json")},
 		{"ContextPinApprovalsPath", ContextPinApprovalsPath, filepath.Join(home, ".gridctl", "pins", "approvals", "context", "global.json")},
-		{"HookPinsPath", HookPinsPath, filepath.Join(home, ".gridctl", "pins", "hooks.json")},
+		{"HookPinsPath", HookPinsPath, filepath.Join(home, ".gridctl", "pins", "hooks", "global.json")},
 		{"HookPinApprovalsPath", HookPinApprovalsPath, filepath.Join(home, ".gridctl", "pins", "approvals", "hooks", "global.json")},
 		{"TelemetryServerDir", func() (string, error) { return TelemetryServerDir("st", "sv") }, filepath.Join(home, ".gridctl", "telemetry", "st", "sv")},
 	}
@@ -752,5 +752,12 @@ func TestPinApprovalsPath_DisjointFromPinFiles(t *testing.T) {
 	}
 	if hookApprovals == hookPins || hookApprovals == approvals || hookApprovals == skillApprovals || hookApprovals == contextApprovals {
 		t.Fatalf("hook approvals path %s is not disjoint", hookApprovals)
+	}
+	hookNamedStack, err := PinsPath("hooks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hookPins == hookNamedStack {
+		t.Fatalf("hook pin path %s collides with a stack named hooks", hookPins)
 	}
 }

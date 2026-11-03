@@ -373,8 +373,24 @@ func (m *Managers) statusRowsFor(p *skills.LockedPack, packRepo string, members 
 			attention = true
 			continue
 		}
+		dir := skills.HookDir(registryDir, n)
+		if _, err := os.Stat(dir); err != nil {
+			detail := "not in the hook registry; re-run 'gridctl pack add'"
+			if !os.IsNotExist(err) {
+				detail = err.Error()
+			}
+			rows = append(rows, Row{Kind: "hook", Name: n, State: "missing", Detail: detail})
+			attention = true
+			continue
+		}
 		if _, err := skills.GetHook(registryDir, n); err != nil {
-			rows = append(rows, Row{Kind: "hook", Name: n, State: "missing", Detail: "not in the hook registry; re-run 'gridctl pack add'"})
+			rows = append(rows, Row{
+				Kind:        "hook",
+				Name:        n,
+				State:       "drifted",
+				Detail:      err.Error(),
+				Remediation: fmt.Sprintf("review with 'gridctl skill pins diff %s --kind hook' or remove with 'gridctl skill remove %s --kind hook'", n, n),
+			})
 			attention = true
 			continue
 		}

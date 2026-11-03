@@ -210,15 +210,17 @@ func ContextPinApprovalsPath() (string, error) {
 }
 
 // HookPinsPath returns the stackless hook pin file
-// (<home>/.gridctl/pins/hooks.json). Hook pins are not stack-scoped.
-// The path is the same as PinsPath("hooks"), so a stack named hooks
-// shares this file with hook pins.
+// (<home>/.gridctl/pins/hooks/global.json). A subdirectory, not
+// pins/hooks.json, keeps the file disjoint from a stack literally named
+// "hooks" (PinsPath("hooks") would otherwise be the same path). Hook
+// pins are not stack-scoped. Approval history is
+// HookPinApprovalsPath, which already uses the same layout.
 func HookPinsPath() (string, error) {
 	dir, err := PinsDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "hooks.json"), nil
+	return filepath.Join(dir, "hooks", "global.json"), nil
 }
 
 // HookPinApprovalsPath returns the approvals log for hook pins

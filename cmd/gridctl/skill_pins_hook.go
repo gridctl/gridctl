@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/hookpins"
@@ -88,23 +89,15 @@ func sortedMapKeysHook(m map[string]*hookpins.HookPin) []string {
 	for name := range m {
 		names = append(names, name)
 	}
-	sortStrings(names)
+	sort.Strings(names)
 	return names
 }
 
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j] < s[j-1]; j-- {
-			s[j], s[j-1] = s[j-1], s[j]
-		}
-	}
-}
-
 type hookPinsVerifyDoc struct {
-	SchemaVersion int    `json:"schema_version"`
-	HasDrift      bool   `json:"has_drift"`
+	SchemaVersion int                  `json:"schema_version"`
+	HasDrift      bool                 `json:"has_drift"`
 	Hooks         []hookPinsVerifyHook `json:"hooks"`
-	Missing       []string `json:"missing"`
+	Missing       []string             `json:"missing"`
 }
 
 type hookPinsVerifyHook struct {
@@ -229,10 +222,12 @@ func runHookPinsApprove(ctx context.Context, name, expectHash, reason string, ev
 	if err != nil {
 		return err
 	}
-	findings := []pins.Finding{}
-	if hook, herr := skills.GetHook(registryDir(), name); herr == nil {
+	var findings []pins.Finding
+	scanned := false
+	if hook, herr := skills.GetHook(registryDir(), name); herr == nil && hook.Definition != nil {
 		scan := skills.ScanHook(name, hook.Definition.Raw, hook.Dir)
 		findings = hookScanFindings(scan)
+		scanned = true
 	}
 	err = ps.Approve(ctx, name, registryDir(), hookpins.ApproveRequest{
 		ExpectedHash:     expectHash,
@@ -241,6 +236,7 @@ func runHookPinsApprove(ctx context.Context, name, expectHash, reason string, ev
 		ApprovedBy:       by,
 		ApprovedBySource: source,
 		Findings:         findings,
+		Scanned:          scanned,
 	})
 	switch {
 	case errors.Is(err, hookpins.ErrHashMismatch):
