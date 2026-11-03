@@ -197,7 +197,7 @@ pkg/contexts/       Global agent-context projection (`gridctl ctx`): one canonic
 pkg/wiring/         Key-level ownership of gateway entries merged into client MCP configs (`gridctl project`, link/unlink).
 pkg/pack/           gridctl-pack.yaml manifest schema, including named external `sources`, an opt-in `hooks:` list, a scalar or mapping `stack` (`file` and optional `extends`), optional `requires.gridctl`, and `gridctl-pack.lock.yaml`; pkg/packops owns add, lock honoring, and composition against the lockfile and launcher, including per-source clone and auth, hook import rows, and checks `requires.gridctl` on add, apply, and preview. The CLI injects stack launch and reload; REST leaves the launcher nil and does not start, stop, or reload a carried daemon, and it does not write the pack lock.
 pkg/pinapprovals/   Approval entries and the versioned approvals log under `pins/approvals/`. Skill, tool, context, and hook pin stores project the log onto each record; the log is the source of truth.
-pkg/hookpins/       TOFU pins over imported hooks at `~/.gridctl/pins/hooks.json`. Not stack-scoped. History lives in `pins/approvals/hooks/`.
+pkg/hookpins/       TOFU pins over imported hooks at `~/.gridctl/pins/hooks.json`. Not stack-scoped. That path is also the tool pin file for a stack named `hooks`. History lives in `pins/approvals/hooks/`.
 pkg/skillpins/      TOFU pins over skill documents (per-file digests, findings, approval entries); the `gridctl skill pins` store. History lives in `pins/approvals/skills/`.
                     ComputeManifest is the shared complete hash walk for pins and Skills over MCP, excluding links,
                     dotfiles, temporary files, and nested skills. Publication limits live in pkg/skillsext, not hashing.
