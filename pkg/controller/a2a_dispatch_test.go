@@ -69,7 +69,7 @@ func TestInstallSchemaPinning_A2ADispatchAfterStartup(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := g.CardTrust().Approve(t.Context(), "agent", snapshot.Hash()); err != nil {
+			if err := g.CardTrust().Approve(t.Context(), "agent", snapshot.Hash(), mcp.CardApproval{}); err != nil {
 				t.Fatal(err)
 			}
 			if call().IsError || calls.Load() != 2 {

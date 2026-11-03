@@ -26,10 +26,20 @@ type CardPinDecision struct {
 	NewIdentity bool
 }
 
+// CardApproval is the operator attribution for one card-trust approval.
+// It is a value type so pkg/mcp does not import the approvals log package.
+// ApprovedBy is attribution, not authentication. Evidence is opaque text.
+type CardApproval struct {
+	ApprovedBy       string
+	ApprovedBySource string
+	Reason           string
+	Evidence         []string
+}
+
 // CardPinStorage persists complete snapshots before granting card trust. Verify
 // never approves changed bytes under an existing configured identity.
 type CardPinStorage interface {
 	VerifyCard(context.Context, string, PinSnapshot) (CardPinDecision, error)
 	CheckCard(context.Context, string, PinSnapshot) (CardPinDecision, error)
-	ApproveCard(context.Context, string, PinSnapshot) error
+	ApproveCard(context.Context, string, PinSnapshot, CardApproval) error
 }

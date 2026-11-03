@@ -205,7 +205,7 @@ func (s *CardTrustService) Approved(ctx context.Context, server string, generati
 // registration/revision. Network I/O never holds the service gate. Persistence
 // and publication share the gate, so a replacement cannot be unblocked by an old
 // fetch. Failure leaves the current block and approved evidence untouched.
-func (s *CardTrustService) Approve(ctx context.Context, server, expected string) error {
+func (s *CardTrustService) Approve(ctx context.Context, server, expected string, approval CardApproval) error {
 	if expected == "" {
 		return errors.New("a2a: expected_server_hash is required")
 	}
@@ -253,7 +253,9 @@ func (s *CardTrustService) Approve(ctx context.Context, server, expected string)
 		e.retireOnce()
 		return errors.New("a2a: stale card approval")
 	}
-	if err := s.storage.ApproveCard(ctx, server, fresh); err != nil {
+	if err := s.storage.ApproveCard(ctx, server, fresh, approval); err != nil {
+		// Storage errors, including an approvals-log write failure, stay
+		// behind this message. The handler maps it to 409.
 		return errors.New("a2a: card pin approval failed")
 	}
 	if e.approvalCheck != nil {

@@ -311,6 +311,36 @@ func TestUpgradeRollback_StateAware(t *testing.T) {
 		}
 		assertVersion(ctx, t, bin, home, "v9.0.2")
 	})
+
+	t.Run("skill approvals", func(t *testing.T) {
+		home := filepath.Join(dir, "approvals-home")
+		if err := os.MkdirAll(home, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		bin := upgradedInstall(ctx, t, home, newBin, copyOld)
+		stateDir := filepath.Join(home, ".gridctl", "state")
+		if err := os.MkdirAll(stateDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(stateDir, "lab.json"), []byte("{\"schema_version\":2,\"stack_name\":\"lab\",\"stack_file\":\"\",\"pid\":0}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		approvalsDir := filepath.Join(home, ".gridctl", "pins", "approvals", "skills")
+		if err := os.MkdirAll(approvalsDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(approvalsDir, "lab.json"), []byte("{\"version\":\"9\"}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		stdout, stderr, code := runUpgrade(ctx, t, bin, home, "", "", "upgrade", "--rollback", "--yes")
+		if code != 2 {
+			t.Fatalf("approvals refusal exit = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+		}
+		if !strings.Contains(stderr, "approvals/skills/lab.json is version 9") || !strings.Contains(stderr, "Rollback to v9.0.1 refused:") {
+			t.Fatalf("stderr = %s", stderr)
+		}
+		assertVersion(ctx, t, bin, home, "v9.0.2")
+	})
 }
 
 // upgradePair installs newBin over oldBin through a local release server so
@@ -387,11 +417,12 @@ func assertProbedSchemasMatchBinary(ctx context.Context, t *testing.T, bin, home
 }
 
 type retainedSchemas struct {
-	DaemonState int    `json:"daemon_state"`
-	ProjectLock int    `json:"project_lock"`
-	ImportLock  int    `json:"import_lock"`
-	ToolPins    string `json:"tool_pins"`
-	SkillPins   string `json:"skill_pins"`
+	DaemonState  int    `json:"daemon_state"`
+	ProjectLock  int    `json:"project_lock"`
+	ImportLock   int    `json:"import_lock"`
+	ToolPins     string `json:"tool_pins"`
+	SkillPins    string `json:"skill_pins"`
+	PinApprovals string `json:"pin_approvals"`
 }
 
 func retainedSchemasFor(t *testing.T, home, tag string) *retainedSchemas {

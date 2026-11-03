@@ -91,7 +91,7 @@ func TestSkillPins_DiskWatchLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("composite hash: %v", err)
 	}
-	if err := ps.Approve("pinned-skill", srv.Store(), composite, ""); err != nil {
+	if err := ps.Approve(t.Context(), "pinned-skill", srv.Store(), skillpins.ApproveRequest{ExpectedHash: composite}); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
 	if err := refresh(); err != nil {

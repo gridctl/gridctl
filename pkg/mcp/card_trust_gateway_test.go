@@ -39,7 +39,9 @@ func (s *gatewayCardStorage) VerifyCard(context.Context, string, PinSnapshot) (C
 func (s *gatewayCardStorage) CheckCard(ctx context.Context, name string, snapshot PinSnapshot) (CardPinDecision, error) {
 	return s.VerifyCard(ctx, name, snapshot)
 }
-func (s *gatewayCardStorage) ApproveCard(context.Context, string, PinSnapshot) error { return nil }
+func (s *gatewayCardStorage) ApproveCard(context.Context, string, PinSnapshot, CardApproval) error {
+	return nil
+}
 
 type gatewayToolVerifier struct {
 	tools []Tool
@@ -107,7 +109,7 @@ func TestGateway_VerifySnapshotPins(t *testing.T) {
 			if err != nil || pending.Hash() != "changed" {
 				t.Fatal("pending evidence unavailable")
 			}
-			if err := g.CardTrust().Approve(ctx, "agent", "changed"); err != nil {
+			if err := g.CardTrust().Approve(ctx, "agent", "changed", CardApproval{}); err != nil {
 				t.Fatal(err)
 			}
 			if g.blockedServers["agent"] != (mode == "block") {
@@ -141,7 +143,7 @@ func TestGateway_CardTrustTeardown(t *testing.T) {
 				t.Fatal(err)
 			}
 			done := make(chan error, 1)
-			go func() { done <- g.CardTrust().Approve(ctx, "agent", first.Hash()) }()
+			go func() { done <- g.CardTrust().Approve(ctx, "agent", first.Hash(), CardApproval{}) }()
 			<-entered
 			if shutdown {
 				g.Close()

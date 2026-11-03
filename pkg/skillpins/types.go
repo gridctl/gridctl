@@ -14,6 +14,7 @@ package skillpins
 import (
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/pinapprovals"
 	"github.com/gridctl/gridctl/pkg/pins"
 )
 
@@ -59,9 +60,11 @@ type OriginRef struct {
 }
 
 // SkillPin holds the pin state for a single skill. Document, Findings,
-// Source, and Origin are derived data in the pkg/pins sense: an older
-// gridctl rewriting the file drops them without a file-version bump, and
-// only the digests are load-bearing for drift.
+// Source, Origin, Approvals, and CompositeHash are derived data in the
+// pkg/pins sense: an older gridctl rewriting the file drops them without a
+// file-version bump, and only the digests are load-bearing for drift.
+// Approvals is rebuilt from the approvals log on every load. CompositeHash
+// is recomputed from the digests. Dropping either loses nothing.
 type SkillPin struct {
 	// SkillHash is the digest of the canonical SKILL.md rendering.
 	SkillHash string `json:"skill_hash"`
@@ -82,6 +85,11 @@ type SkillPin struct {
 	Status         string    `json:"status"`
 	// Findings are advisory poisoning-scan results for the pinned content.
 	Findings []pins.Finding `json:"findings,omitempty"`
+	// Approvals is the projected history, newest first. The log under
+	// pins/approvals/skills/ is the source of truth.
+	Approvals []pinapprovals.Entry `json:"approvals,omitempty"`
+	// CompositeHash is the approval-binding fingerprint of the pinned digests.
+	CompositeHash string `json:"composite_hash,omitempty"`
 }
 
 // VerifyResult is the outcome of verifying one skill against its pin.

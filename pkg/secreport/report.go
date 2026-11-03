@@ -49,6 +49,8 @@ const (
 	PredPinScanFindings       = "pin.scan.findings"
 	PredSkillPinBaseline      = "skill.pin.baseline"
 	PredSkillPinContinuity    = "skill.pin.continuity"
+	PredSkillPinApproval      = "skill.pin.approval"
+	PredPinSchemaApproval     = "pin.schema.approval"
 	PredSourceDeclared        = "source.declared"
 	PredSourceBuildDigest     = "source.build_digest"
 	PredSourceImageObserved   = "source.image_observed"
@@ -75,6 +77,8 @@ var PredicateInventory = []string{
 	PredPinScanFindings,
 	PredSkillPinBaseline,
 	PredSkillPinContinuity,
+	PredSkillPinApproval,
+	PredPinSchemaApproval,
 	PredSourceDeclared,
 	PredSourceBuildDigest,
 	PredSourceImageObserved,

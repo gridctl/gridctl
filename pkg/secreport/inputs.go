@@ -102,6 +102,11 @@ type ServerPinView struct {
 	LegacySchemeCount  int
 	CurrentSchemeCount int
 	Findings           []FindingView
+	// Approval fields are presence and the bound hash only. Reason text,
+	// references, and the approver name stay out of the report.
+	ApprovalRecorded bool
+	ApprovedAt       time.Time
+	ApprovedHash     string
 }
 
 // FindingView is stored advisory metadata without snippets or decoded text.
@@ -121,11 +126,14 @@ type SkillPinView struct {
 
 // SkillPinRecordView is one skill pin without document bodies.
 type SkillPinRecordView struct {
-	Status         string
-	Source         string
-	PinnedAt       time.Time
-	LastVerifiedAt time.Time
-	FindingCodes   []string
+	Status           string
+	Source           string
+	PinnedAt         time.Time
+	LastVerifiedAt   time.Time
+	FindingCodes     []string
+	ApprovalRecorded bool
+	ApprovedAt       time.Time
+	ApprovedHash     string
 }
 
 // StartupView is a value-free active startup security snapshot.

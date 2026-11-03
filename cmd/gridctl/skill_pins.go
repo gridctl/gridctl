@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/output"
+	"github.com/gridctl/gridctl/pkg/pinapprovals"
 	"github.com/gridctl/gridctl/pkg/pins"
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/skillpins"
@@ -24,18 +26,19 @@ import (
 const skillPinsJSONSchemaVersion = 1
 
 var (
-	skillPinsStack         string
-	skillPinsListFormat    string
-	skillPinsListJSON      *bool
-	skillPinsListPlain     *bool
-	skillPinsVerifyFormat  string
-	skillPinsVerifyJSON    *bool
-	skillPinsVerifyFailOn  string
-	skillPinsDiffFormat    string
-	skillPinsDiffJSON      *bool
-	skillPinsDiffFailOn    string
-	skillPinsApproveExpect string
-	skillPinsApproveReason string
+	skillPinsStack           string
+	skillPinsListFormat      string
+	skillPinsListJSON        *bool
+	skillPinsListPlain       *bool
+	skillPinsVerifyFormat    string
+	skillPinsVerifyJSON      *bool
+	skillPinsVerifyFailOn    string
+	skillPinsDiffFormat      string
+	skillPinsDiffJSON        *bool
+	skillPinsDiffFailOn      string
+	skillPinsApproveExpect   string
+	skillPinsApproveReason   string
+	skillPinsApproveEvidence []string
 )
 
 var skillPinsCmd = &cobra.Command{
@@ -148,11 +151,17 @@ Pass --expect with the composite_hash from 'skill pins diff --format json'
 to bind the approval to the reviewed content: if the skill changes again
 between review and approval, the approve is rejected.
 
-A skill whose current content carries unresolved advisory findings requires
---reason; the justification is persisted on the pin record.`,
+--reason records why the change was accepted. It is required when the
+current content carries unresolved advisory findings, and optional otherwise.
+Repeat --evidence with an opaque reference (a pull request URL, an issue, a
+review, a local report path). References are stored as text and never
+fetched. Credential-shaped values are refused.
+
+The approval is recorded with the local OS user, the time, and the hash it
+bound to. approved_by is attribution, not authentication.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runSkillPinsApprove(args[0], skillPinsApproveExpect, skillPinsApproveReason)
+		return runSkillPinsApprove(cmd.Context(), args[0], skillPinsApproveExpect, skillPinsApproveReason, skillPinsApproveEvidence)
 	},
 }
 
@@ -184,7 +193,8 @@ func init() {
 		"Exit 1 when scan findings at or above this severity exist: 'warn' or 'critical' (default: findings never affect the exit code)")
 
 	skillPinsApproveCmd.Flags().StringVar(&skillPinsApproveExpect, "expect", "", "Reviewed composite_hash from 'skill pins diff'; approval is rejected if the content no longer matches")
-	skillPinsApproveCmd.Flags().StringVar(&skillPinsApproveReason, "reason", "", "Justification for approving over unresolved advisory findings")
+	skillPinsApproveCmd.Flags().StringVar(&skillPinsApproveReason, "reason", "", "Reason for this approval (required when unresolved advisory findings are present)")
+	skillPinsApproveCmd.Flags().StringArrayVar(&skillPinsApproveEvidence, "evidence", nil, "Opaque evidence reference (repeatable). Stored as text and never fetched")
 
 	skillPinsCmd.AddCommand(skillPinsListCmd)
 	skillPinsCmd.AddCommand(skillPinsVerifyCmd)
@@ -406,18 +416,19 @@ func skillFindingsAtOrAbove(pinned map[string]*skillpins.SkillPin, names []strin
 
 // skillPinsDiffDoc is the machine-readable document for `skill pins diff`.
 type skillPinsDiffDoc struct {
-	SchemaVersion   int            `json:"schema_version"`
-	Stack           string         `json:"stack"`
-	Skill           string         `json:"skill"`
-	Status          string         `json:"status"`
-	CompositeHash   string         `json:"composite_hash"`
-	DocumentChanged bool           `json:"document_changed"`
-	OldDocument     string         `json:"old_document,omitempty"`
-	NewDocument     string         `json:"new_document,omitempty"`
-	AddedFiles      []string       `json:"added_files"`
-	RemovedFiles    []string       `json:"removed_files"`
-	ModifiedFiles   []string       `json:"modified_files"`
-	Findings        []pins.Finding `json:"findings"`
+	SchemaVersion   int                 `json:"schema_version"`
+	Stack           string              `json:"stack"`
+	Skill           string              `json:"skill"`
+	Status          string              `json:"status"`
+	CompositeHash   string              `json:"composite_hash"`
+	DocumentChanged bool                `json:"document_changed"`
+	OldDocument     string              `json:"old_document,omitempty"`
+	NewDocument     string              `json:"new_document,omitempty"`
+	AddedFiles      []string            `json:"added_files"`
+	RemovedFiles    []string            `json:"removed_files"`
+	ModifiedFiles   []string            `json:"modified_files"`
+	Findings        []pins.Finding      `json:"findings"`
+	LastApproval    *pinapprovals.Entry `json:"last_approval,omitempty"`
 }
 
 func runSkillPinsDiff(stdout, stderr io.Writer, skill, format, failOn string) int {
@@ -462,6 +473,10 @@ func runSkillPinsDiff(stdout, stderr io.Writer, skill, format, failOn string) in
 		doc.RemovedFiles = d.RemovedFiles
 		doc.ModifiedFiles = d.ModifiedFiles
 		doc.Findings = d.Findings
+	}
+	if pin, ok := ps.Get(skill); ok && len(pin.Approvals) > 0 {
+		latest := pin.Approvals[0]
+		doc.LastApproval = &latest
 	}
 
 	if strings.EqualFold(format, "json") {
@@ -511,19 +526,42 @@ func renderSkillPinsDiffText(w io.Writer, doc skillPinsDiffDoc) {
 	for _, f := range doc.Findings {
 		fmt.Fprintf(w, "    %s [%s/%s] %s: %s\n", findingGlyph(f.Severity), f.Code, f.Severity, f.Field, escapeNonPrintable(f.Message))
 	}
-	fmt.Fprintf(w, "    approve with: gridctl skill pins approve %s --expect %s\n", doc.Skill, doc.CompositeHash)
+	renderLastApproval(w, doc.LastApproval)
+	fmt.Fprintf(w, "    approve with: gridctl skill pins approve %s --expect %s --reason \"<why>\"\n", doc.Skill, doc.CompositeHash)
 }
 
-func runSkillPinsApprove(skill, expectHash, reason string) error {
+func runSkillPinsApprove(ctx context.Context, skill, expectHash, reason string, evidence []string) error {
+	cleaned, err := pinapprovals.ValidateReferences(evidence)
+	if err != nil {
+		return err
+	}
+	if err := pinapprovals.ValidateReason(reason); err != nil {
+		return err
+	}
+	name, source := pinapprovals.LocalUser()
+	if err := pinapprovals.ValidateApprover(name); err != nil {
+		return err
+	}
 	if st := runningSkillPinsDaemon(); st != nil {
-		return approveSkillPinViaAPI(st, skill, expectHash, reason)
+		body, err := approveSkillPinViaAPI(st, skill, expectHash, reason, cleaned, name)
+		if err != nil {
+			return err
+		}
+		printDaemonApproval(body, len(cleaned))
+		return nil
 	}
 
 	_, ps, reg, err := loadSkillPinsForCLI()
 	if err != nil {
 		return err
 	}
-	err = ps.Approve(skill, reg, expectHash, reason)
+	err = ps.Approve(ctx, skill, reg, skillpins.ApproveRequest{
+		ExpectedHash:     expectHash,
+		Reason:           reason,
+		Evidence:         cleaned,
+		ApprovedBy:       name,
+		ApprovedBySource: source,
+	})
 	switch {
 	case errors.Is(err, skillpins.ErrDigestUnavailable):
 		return fmt.Errorf("skill %q content could not be hashed; fix the unreadable file before approving (%v)", skill, err)
@@ -537,48 +575,54 @@ func runSkillPinsApprove(skill, expectHash, reason string) error {
 		return err
 	}
 	fmt.Printf("✓ Approved content update for skill %s\n", skill)
+	printRecordedApproval(name, source, len(cleaned))
 	return nil
 }
 
-func approveSkillPinViaAPI(st *state.DaemonState, skill, expectHash, reason string) error {
-	payload, err := json.Marshal(map[string]string{"expected_hash": expectHash, "reason": reason})
+func approveSkillPinViaAPI(st *state.DaemonState, skill, expectHash, reason string, evidence []string, approvedBy string) ([]byte, error) {
+	payload, err := json.Marshal(map[string]any{
+		"expected_hash": expectHash,
+		"reason":        reason,
+		"evidence":      evidence,
+		"approved_by":   approvedBy,
+	})
 	if err != nil {
-		return fmt.Errorf("encoding request: %w", err)
+		return nil, fmt.Errorf("encoding request: %w", err)
 	}
 	url := fmt.Sprintf("http://localhost:%d/api/skill-pins/%s/approve", st.Port, skill)
 	api := newDaemonAPIFor(*st, pinsAPITimeout)
 	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(string(payload)))
 	if err != nil {
-		return fmt.Errorf("creating request: %w", err)
+		return nil, fmt.Errorf("creating request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	api.authorize(req)
 	resp, err := api.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("calling skill pins API: %w", err)
+		return nil, fmt.Errorf("calling skill pins API: %w", err)
 	}
 	defer resp.Body.Close()
 	if err := api.describeUnauthorized(resp); err != nil {
-		return err
+		return nil, err
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("reading response: %w", err)
+		return nil, fmt.Errorf("reading response: %w", err)
 	}
 	switch resp.StatusCode {
 	case http.StatusOK:
 		fmt.Printf("✓ Approved content update for skill %s\n", skill)
-		return nil
+		return body, nil
 	case http.StatusNotFound:
-		return fmt.Errorf("%s (for a deleted skill, run 'gridctl skill pins reset %s')",
+		return nil, fmt.Errorf("%s (for a deleted skill, run 'gridctl skill pins reset %s')",
 			apiErrorMessage(body, "skill not found: "+skill), skill)
 	case http.StatusConflict:
-		return fmt.Errorf("%s (run 'gridctl skill pins diff %s' to re-review)",
+		return nil, fmt.Errorf("%s (run 'gridctl skill pins diff %s' to re-review)",
 			apiErrorMessage(body, "skill content changed since review"), skill)
 	case http.StatusBadRequest:
-		return fmt.Errorf("%s", apiErrorMessage(body, "approve rejected"))
+		return nil, fmt.Errorf("%s", apiErrorMessage(body, "approve rejected"))
 	default:
-		return fmt.Errorf("approve failed: %s", string(body))
+		return nil, fmt.Errorf("approve failed: %s", string(body))
 	}
 }
 

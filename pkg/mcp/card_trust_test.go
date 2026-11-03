@@ -52,7 +52,7 @@ func TestCardTrustService_Lifecycle(t *testing.T) {
 		t.Fatal("blocked generation admitted")
 	}
 	for _, expected := range []string{"", first.Hash()} {
-		if err := service.Approve(ctx, "agent", expected); err == nil {
+		if err := service.Approve(ctx, "agent", expected, mcp.CardApproval{}); err == nil {
 			t.Fatal("unbound/stale approval accepted")
 		}
 	}
@@ -60,7 +60,7 @@ func TestCardTrustService_Lifecycle(t *testing.T) {
 		t.Fatal("invalid approval fetched card")
 	}
 	fresh = changed
-	if err := service.Approve(ctx, "agent", changed.Hash()); err != nil {
+	if err := service.Approve(ctx, "agent", changed.Hash(), mcp.CardApproval{}); err != nil {
 		t.Fatal(err)
 	}
 	if fetched.Load() != 1 {
@@ -78,7 +78,7 @@ func TestCardTrustService_Lifecycle(t *testing.T) {
 	if err := service.Unregister(ctx, "agent", 1); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.Approve(ctx, "agent", first.Hash()); err == nil {
+	if err := service.Approve(ctx, "agent", first.Hash(), mcp.CardApproval{}); err == nil {
 		t.Fatal("unregistered source approved")
 	}
 }
@@ -107,7 +107,7 @@ func TestCardTrustService_ApprovalRaces(t *testing.T) {
 				t.Fatal("drift accepted")
 			}
 			done := make(chan error, 1)
-			go func() { done <- service.Approve(ctx, "agent", changed.Hash()) }()
+			go func() { done <- service.Approve(ctx, "agent", changed.Hash(), mcp.CardApproval{}) }()
 			<-entered
 			generation := uint64(1)
 			switch race {

@@ -2583,7 +2583,18 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/pins
         "name": "github__create_pull_request",
         "pinned_at": "2026-03-24T09:14:22Z"
       }
-    }
+    },
+    "approvals": [
+      {
+        "approved_at": "2026-10-02T15:04:05Z",
+        "approved_by": "wcollins",
+        "approved_by_source": "declared",
+        "approved_hash": "abc123...",
+        "bound": false,
+        "reason": "Reviewed the new pull-request schema",
+        "evidence": ["https://example.test/pull/42"]
+      }
+    ]
   }
 }
 ```
@@ -2610,7 +2621,7 @@ pinning is disabled.
 
 #### `GET /api/pins/{server}/diff`
 
-Recomputes the per-tool delta between a server's pinned definitions and its live tools. Read-only: viewing a diff never mutates pin state. `live_server_hash` fingerprints the live definitions; pass it back as `expected_server_hash` on approve to bind the approval to this reviewed snapshot.
+Recomputes the per-tool delta between a server's pinned definitions and its live tools. Read-only: viewing a diff never mutates pin state. `live_server_hash` fingerprints the live definitions; pass it back as `expected_server_hash` on approve to bind the approval to this reviewed snapshot. `last_approval` is the newest approval entry when one exists, and is omitted otherwise.
 
 **Auth:** Yes
 
@@ -2639,7 +2650,16 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/pins/github/dif
     }
   ],
   "new_tools": [],
-  "removed_tools": []
+  "removed_tools": [],
+  "last_approval": {
+    "approved_at": "2026-10-02T15:04:05Z",
+    "approved_by": "wcollins",
+    "approved_by_source": "declared",
+    "approved_hash": "abc123...",
+    "bound": false,
+    "reason": "Reviewed the new pull-request schema",
+    "evidence": ["https://example.test/pull/42"]
+  }
 }
 ```
 
@@ -2660,8 +2680,10 @@ Fields on each modified tool:
 
 Re-pins the current live tool definitions for a server, clearing drift status.
 Ordinary servers supply tools through the running gateway router. Optional JSON
-body: `{"expected_server_hash":"<live_server_hash from diff>"}`. A mismatched
+body: `{"expected_server_hash":"<live_server_hash from diff>","reason":"<why>","evidence":["<opaque ref>"],"approved_by":"<name>"}`.
+`reason` and `evidence` are optional. An empty reason is allowed. Evidence references are stored as text and never fetched. A mismatched
 hash returns `409`; an empty body retains ordinary unconditional approval.
+Attribution order: a verified OAuth principal (`approved_by_source: oauth`), else a non-empty `approved_by` (`declared`), else the daemon's local OS user (`os_user`). `approved_by` is attribution, not authentication. A credential-shaped or overlong `approved_by` is refused before resolution, including when a verified principal would otherwise win. A reason that is credential-shaped or too long, a refused evidence reference, or a refused approver name returns `400`. The success body includes `approved_by`, `approved_by_source`, and `evidence_count` for the entry that was stored.
 
 Card-trust approval requires a nonempty `expected_server_hash` and uses the
 service's immutable snapshot. It performs an unconditional bounded card refetch,
@@ -2681,21 +2703,24 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/pins/gi
 {
   "server": "github",
   "tool_count": 23,
-  "status": "approved"
+  "status": "approved",
+  "approved_by": "wcollins",
+  "approved_by_source": "declared",
+  "evidence_count": 1
 }
 ```
 
 **Errors:**
-- `400` - Invalid JSON body, or card approval without `expected_server_hash`
+- `400` - Invalid or oversized JSON body, card approval without `expected_server_hash`, a reason that is credential-shaped or too long, an evidence reference that is empty, credential-shaped, too long, or one of more than 16, or an approver name that is credential-shaped or longer than 256 bytes
 - `404` - No pins found for that server, or server not found in gateway
-- `409` - Reviewed hash changed; card registration unavailable; or card approval failed its refresh, generation, revision, or persistence check
+- `409` - Reviewed hash changed; card registration unavailable; or card approval failed its refresh, generation, revision, or persistence check. An approvals-log write failure on the card path is `a2a: card pin approval failed` and is mapped here, not to `500`
 - `500` - Ordinary tool fingerprinting or persistence failed
 - `503` - Pin store not available
 
 #### `DELETE /api/pins/{server}`
 
 Deletes ordinary tool pins for a server, which will be re-pinned on the next
-deploy. Card-trust records cannot be reset through this endpoint: it returns
+deploy. The approvals log is left in place, so the fresh pin still shows the prior entries. Card-trust records cannot be reset through this endpoint: it returns
 `409` with `A2A card trust requires hash-bound approval`.
 
 **Auth:** Yes
@@ -2731,7 +2756,19 @@ Every skill pin, keyed by skill name. Returns `200` with an empty object when sk
     "pinned_at": "2026-08-01T10:00:00Z",
     "last_verified_at": "2026-08-01T10:05:00Z",
     "status": "pinned",
-    "findings": []
+    "findings": [],
+    "composite_hash": "4be1…",
+    "approvals": [
+      {
+        "approved_at": "2026-10-02T15:04:05Z",
+        "approved_by": "wcollins",
+        "approved_by_source": "os_user",
+        "approved_hash": "4be1…",
+        "bound": true,
+        "reason": "Adds runbook step 4",
+        "evidence": ["https://example.test/pull/42"]
+      }
+    ]
   }
 }
 ```
@@ -2760,13 +2797,13 @@ What changed since the pin, plus the `composite_hash` an approval must echo. Vie
 
 #### `POST /api/skill-pins/{name}/approve`
 
-Re-pins the current content. Optional body: `{ "expected_hash": "<composite_hash from the diff>", "reason": "<justification>" }`. `409` when the content changed since the reviewed diff; `400` when the content carries unresolved advisory findings and no reason is given; `404` when the skill is not in the registry.
+Re-pins the current content. Optional body: `{ "expected_hash": "<composite_hash from the diff>", "reason": "<justification>", "evidence": ["<opaque ref>"], "approved_by": "<name>" }`. Evidence references are stored as text and never fetched. Attribution order: a verified OAuth principal (`approved_by_source: oauth`), else a non-empty `approved_by` (`declared`), else the daemon's local OS user (`os_user`). `approved_by` is attribution, not authentication. A credential-shaped or overlong `approved_by` is refused before resolution, including when a verified principal would otherwise win. Success includes `approved_by`, `approved_by_source`, and `evidence_count` for the entry that was stored. `409` when the content changed since the reviewed diff; `400` when unresolved advisory findings have no reason, when the body is oversized, when a reason is credential-shaped or too long, when an approver name is credential-shaped or longer than 256 bytes, or when an evidence reference is empty, credential-shaped, too long, or one of more than 16; `404` when the skill is not in the registry.
 
 #### `DELETE /api/skill-pins/{name}`
 
-Deletes the pin record (`204`); the next registry refresh re-pins fresh. `404` when no pin exists.
+Deletes the pin record (`204`); the next registry refresh re-pins fresh. The approvals log is left in place, so the fresh pin still shows the prior entries. `404` when no pin exists.
 
-Registry skill responses (`GET /api/registry/skills`, `GET /api/registry/skills/{name}`) additionally carry a `governance` object when known: `source` (`local` | `git`), `origin`, `pinStatus` (`pinned` | `drift`), `findingsCount`, `maxFindingSeverity`, and — when a `skills:` policy denies the skill — `policyDenied` with the matching `policyRule`.
+Registry skill responses (`GET /api/registry/skills`, `GET /api/registry/skills/{name}`) additionally carry a `governance` object when known: `source` (`local` | `git`), `origin`, `pinStatus` (`pinned` | `drift`), `findingsCount`, `maxFindingSeverity`, `lastApprovedAt`, `lastApprovedBy`, and, when a `skills:` policy denies the skill, `policyDenied` with the matching `policyRule`.
 
 Registry skill and agent responses also carry a `modelPreference` object when the item declares a model preference or a `model_preferences:` policy resolves one (absent otherwise, so older frontends see nothing new):
 

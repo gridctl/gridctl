@@ -1,6 +1,7 @@
 package secreport
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -49,6 +50,72 @@ func TestAssemble_PinDriftIsFailure(t *testing.T) {
 	}
 	if ExitCode(report) != 1 {
 		t.Fatalf("exit=%d", ExitCode(report))
+	}
+}
+
+func TestAssemble_PinApprovalPresence(t *testing.T) {
+	approvedAt := time.Date(2026, 10, 2, 15, 4, 5, 0, time.UTC)
+	report := Assemble(approvedAt, Inputs{
+		Source: SourceIdentity{Kind: SourceFile, Display: "stack.yaml"},
+		Stack: &StackView{Name: "demo", Servers: []ServerView{
+			{Name: "fetch", Kind: "container"},
+			{Name: "bare", Kind: "process"},
+		}, Gateway: &GatewayDeclView{}, SetMembers: map[string][]string{}},
+		Pins: &PinView{Available: true, Enabled: true, Servers: map[string]ServerPinView{
+			"fetch": {Status: "pinned", ApprovalRecorded: true, ApprovedAt: approvedAt, ApprovedHash: "abc123"},
+		}},
+		SkillPins: &SkillPinView{Available: true, Skills: map[string]SkillPinRecordView{
+			"triage":  {Status: "pinned", ApprovalRecorded: true, ApprovedAt: approvedAt, ApprovedHash: "def456"},
+			"unnoted": {Status: "pinned"},
+		}},
+	})
+	var recorded, unrecorded int
+	raw, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	for _, banned := range []string{"wcollins", "Bearer abc", "https://example.test/pr/1", "Adds runbook"} {
+		if strings.Contains(text, banned) {
+			t.Fatalf("report leaked %q", banned)
+		}
+	}
+	for _, c := range report.Checks {
+		switch c.Predicate {
+		case PredPinSchemaApproval, PredSkillPinApproval:
+			if c.Outcome != OutcomePass && c.Outcome != OutcomeNotApplicable {
+				t.Fatalf("%s outcome = %s", c.ID, c.Outcome)
+			}
+			if c.ReasonCode == "approval_recorded" {
+				recorded++
+				if c.Outcome != OutcomePass || c.Evidence.Digest == "" || c.Evidence.ObservedAt == nil {
+					t.Fatalf("recorded = %+v", c)
+				}
+			}
+			if c.ReasonCode == "approval_unrecorded" {
+				unrecorded++
+				if c.Outcome != OutcomePass || c.Evidence.Digest != "" {
+					t.Fatalf("unrecorded = %+v", c)
+				}
+				if !strings.Contains(c.Explanation, "recorded on first sight") || !strings.Contains(c.Explanation, "fact, not a finding") {
+					t.Fatalf("explanation = %s", c.Explanation)
+				}
+			}
+		}
+	}
+	if recorded != 2 || unrecorded != 1 {
+		t.Fatalf("recorded=%d unrecorded=%d", recorded, unrecorded)
+	}
+	for _, pred := range []string{PredSkillPinApproval, PredPinSchemaApproval} {
+		if !knownPredicate(pred) || failPredicateAllowed(pred) {
+			t.Fatalf("%s catalog", pred)
+		}
+	}
+	if !knownReasonCode("approval_recorded") || !knownReasonCode("approval_unrecorded") {
+		t.Fatal("reason codes missing from catalog")
+	}
+	if !knownLimitation(approvalExclusionLimitation) {
+		t.Fatal("approval limitation missing from catalog")
 	}
 }
 

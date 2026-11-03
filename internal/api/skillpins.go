@@ -1,11 +1,11 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
+	"time"
 
+	"github.com/gridctl/gridctl/pkg/pinapprovals"
 	"github.com/gridctl/gridctl/pkg/pins"
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/skillpins"
@@ -118,8 +118,13 @@ type approveSkillPinRequest struct {
 	// Empty approves unconditionally.
 	ExpectedHash string `json:"expected_hash"`
 	// Reason is the human justification, required when the current content
-	// carries unresolved advisory findings.
+	// carries unresolved advisory findings, and optional otherwise.
 	Reason string `json:"reason"`
+	// Evidence is opaque references. They are stored as text and never fetched.
+	Evidence []string `json:"evidence"`
+	// ApprovedBy is a caller-declared name. A credential-shaped or overlong
+	// name is refused before resolution. Otherwise a verified principal wins.
+	ApprovedBy string `json:"approved_by"`
 }
 
 // handleApproveSkillPin re-pins a skill's current content, clearing drift.
@@ -136,13 +141,40 @@ func (s *Server) handleApproveSkillPin(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 
 	var body approveSkillPinRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+	if err := decodeApproveBody(r, &body); err != nil {
+		if errors.Is(err, errApproveBodyTooLarge) {
+			writeJSONError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		writeJSONError(w, "Invalid JSON body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := pinapprovals.ValidateReason(body.Reason); err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	evidence, err := pinapprovals.ValidateReferences(body.Evidence)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	approvedBy, approvedBySource, err := resolveApprovalAttribution(r, body.ApprovedBy)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
-	err := s.skillPinStore.Approve(name, s.registryServer.Store(), body.ExpectedHash, body.Reason)
+	err = s.skillPinStore.Approve(r.Context(), name, s.registryServer.Store(), skillpins.ApproveRequest{
+		ExpectedHash:     body.ExpectedHash,
+		Reason:           body.Reason,
+		Evidence:         evidence,
+		ApprovedBy:       approvedBy,
+		ApprovedBySource: approvedBySource,
+	})
 	switch {
+	case approvalInputStatus(err):
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
 	case errors.Is(err, skillpins.ErrDigestUnavailable):
 		writeJSONError(w, "Skill content could not be hashed: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -160,7 +192,7 @@ func (s *Server) handleApproveSkillPin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, map[string]any{"skill": name, "status": "approved"})
+	writeApproveJSON(w, map[string]any{"skill": name, "status": "approved"}, approvedBy, approvedBySource, len(evidence))
 }
 
 // handleResetSkillPin deletes a skill's pin record; the next registry
@@ -196,6 +228,8 @@ type skillGovernance struct {
 	MaxFindingSeverity string               `json:"maxFindingSeverity,omitempty"`
 	PolicyDenied       bool                 `json:"policyDenied,omitempty"`
 	PolicyRule         string               `json:"policyRule,omitempty"`
+	LastApprovedAt     string               `json:"lastApprovedAt,omitempty"`
+	LastApprovedBy     string               `json:"lastApprovedBy,omitempty"`
 }
 
 // skillGovernanceFor assembles the governance summary for one skill, or nil
@@ -211,6 +245,10 @@ func (s *Server) skillGovernanceFor(name string) *skillGovernance {
 			g.PinStatus = pin.Status
 			g.FindingsCount = len(pin.Findings)
 			g.MaxFindingSeverity = pins.MaxSeverity(pin.Findings)
+			if len(pin.Approvals) > 0 {
+				g.LastApprovedAt = pin.Approvals[0].ApprovedAt.UTC().Format(time.RFC3339)
+				g.LastApprovedBy = pin.Approvals[0].ApprovedBy
+			}
 			populated = true
 		}
 	}

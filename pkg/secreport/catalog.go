@@ -129,6 +129,9 @@ var limitationCatalog = map[string]bool{
 	"Observed execution evidence is not continuous monitoring.":                                                    true,
 	"Imported snapshots cannot authenticate verification claims.":                                                  true,
 	"A declared policy is name-based; tool output is not inspected.":                                               true,
+	"Approver name, reason text, and evidence references are excluded from this report.":                           true,
+	"Absence of an approval entry is a fact, not a finding.":                                                       true,
+	"An approval entry is operator attribution, not authentication.":                                               true,
 }
 
 func sanitizeFacts(in CheckFacts) CheckFacts {

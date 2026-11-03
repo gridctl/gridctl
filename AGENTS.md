@@ -194,7 +194,8 @@ pkg/contexts/       Global agent-context projection (`gridctl ctx`): one canonic
                     with multi-file and compiled per-client assembly.
 pkg/wiring/         Key-level ownership of gateway entries merged into client MCP configs (`gridctl project`, link/unlink).
 pkg/pack/           gridctl-pack.yaml manifest schema, including named external `sources`, a scalar or mapping `stack` (`file` and optional `extends`), optional `requires.gridctl`, and `gridctl-pack.lock.yaml`; pkg/packops owns add, lock honoring, and composition against the lockfile and launcher, including per-source clone and auth, and checks `requires.gridctl` on add, apply, and preview. The CLI injects stack launch and reload; REST leaves the launcher nil and does not start, stop, or reload a carried daemon, and it does not write the pack lock.
-pkg/skillpins/      TOFU pins over skill documents (per-file digests, findings); the `gridctl skill pins` store.
+pkg/pinapprovals/   Approval entries and the versioned approvals log under `pins/approvals/`. Skill and tool pin stores project the log onto each record; the log is the source of truth.
+pkg/skillpins/      TOFU pins over skill documents (per-file digests, findings, approval entries); the `gridctl skill pins` store. History lives in `pins/approvals/skills/`.
                     ComputeManifest is the shared complete hash walk for pins and Skills over MCP, excluding links,
                     dotfiles, temporary files, and nested skills. Publication limits live in pkg/skillsext, not hashing.
 pkg/runs/           Metadata-only persisted dispatch records (`gridctl runs`). Opt-in stack-level JSONL with a bounded queue, single writer, retention, and coordinated wipe.
@@ -211,7 +212,7 @@ pkg/secrets/        Host resolution of `${secret:<provider>/<path>}` at apply an
 pkg/vault/          Encrypted variable store (XChaCha20-Poly1305 + Argon2id). The `gridctl var` and (deprecated) `gridctl vault` CLIs. `GRIDCTL_VAULT_PASSPHRASE_FILE` unlocks from a user-owned file; gridctl never creates it.
 pkg/varrun/         Explicit stored-variable delivery to child processes, including output redaction and signal forwarding.
 pkg/varscan/        Exact stored-secret scanning for working-tree files and staged Git blobs.
-pkg/pins/           TOFU schema pinning for tool definitions; drift surfaces in pkg/pins + `gridctl pins`.
+pkg/pins/           TOFU schema pinning for tool definitions; drift surfaces in pkg/pins + `gridctl pins`. Approval entries are recorded in `pins/approvals/tools/`.
                     card_snapshot.go and card_store.go supply immutable digest-only card/identity evidence and
                     fail-closed, cross-process-locked card transactions using the existing pin-file format.
 pkg/secreport/      Passive security evidence report DTO and assembler for `gridctl doctor --security` and GET /api/security-report.
@@ -282,7 +283,7 @@ tests/integration/  Real-runtime suites (build tag `integration`). Cover gateway
                     pack_composition_test.go (`integration && !windows`) drives booster composition through a real local-process daemon.
                     pack_lock_test.go (`integration && !windows`) covers lock honoring across homes against a local git HTTP fixture.
                     secret_providers_test.go covers exec apply, redaction, export, plan, rotation reload, failure, and recovery with real subprocesses.
-                    upgrade_rollback_test.go (`integration && !windows`) upgrades and rolls back two race-built children through a local release server, with no Docker. It also checks a status version mismatch, `--rollback --restart`, and exit 2 when a project lock or tool pin file version is hand-bumped.
+                    upgrade_rollback_test.go (`integration && !windows`) upgrades and rolls back two race-built children through a local release server, with no Docker. It also checks a status version mismatch, `--rollback --restart`, and exit 2 when a project lock, tool pin file, or approvals log version is hand-bumped.
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, a2a, mcp-apps, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
                     portable-pack, booster-pack, python-sources, python-runtime, execution, security-evidence, stack-configs, stack-declaration-policy, runs).

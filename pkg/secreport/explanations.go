@@ -63,6 +63,10 @@ func explanationFor(reason, subject string, facts CheckFacts) string {
 		return "Stored skill pin status is drift for " + name + "."
 	case "skill_pin_pinned":
 		return "Stored skill pin status is pinned for " + name + "."
+	case "approval_recorded":
+		return "An explicit approval entry is recorded. The bound hash is in the evidence digest."
+	case "approval_unrecorded":
+		return "The pin was recorded on first sight and no explicit approval entry exists, which is a fact, not a finding."
 	case "noncontainer_subject":
 		if facts.Kind != "" {
 			return "Container-specific evidence is not applicable for " + facts.Kind + " subjects."
@@ -236,7 +240,8 @@ var knownReasons = map[string]bool{
 	"scan_disabled": true, "scan_time_unknown": true, "scan_config_known": true,
 	"findings_unavailable": true, "findings_absent_no_coverage": true, "findings_present": true,
 	"findings_present_suppressed": true, "no_skill_pin_records": true, "skill_pin_present": true,
-	"skill_pin_drift": true, "skill_pin_pinned": true, "noncontainer_subject": true,
+	"skill_pin_drift": true, "skill_pin_pinned": true, "approval_recorded": true,
+	"approval_unrecorded": true, "noncontainer_subject": true,
 	"source_undeclared": true, "source_declared": true, "digest_declared": true,
 	"digest_unavailable": true, "image_observed": true, "image_unobserved": true,
 	"manifest_present": true, "manifest_unavailable": true, "signature_bound": true,

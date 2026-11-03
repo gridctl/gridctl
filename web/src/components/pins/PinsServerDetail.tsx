@@ -8,6 +8,7 @@ import { formatRelativeTime } from '../../lib/time';
 import { pinStatusMeta } from './pinStatus';
 import { FindingsList, FindingsSummaryBadge } from './PinFindings';
 import { DriftSection, REVERIFY_BUTTON_ID } from './PinsDriftSection';
+import { PinApprovalHistory } from './PinApprovalHistory';
 import { ResetPinsDialog } from './ResetPinsDialog';
 import { showToast } from '../ui/Toast';
 
@@ -159,6 +160,8 @@ export function PinsServerDetail({
           <span title={sp.pinned_at}>first pinned {formatRelativeTime(new Date(sp.pinned_at))}</span>
         )}
       </div>
+
+      <PinApprovalHistory approvals={sp.approvals} />
 
       {hasDrift && <DriftSection serverName={name} />}
 

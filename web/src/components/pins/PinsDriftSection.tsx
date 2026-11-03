@@ -36,6 +36,8 @@ import { SchemaDiffModal } from './SchemaDiffModal';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { copyWithToast, showToast } from '../ui/Toast';
 import { describeError, isCancellation } from '../../lib/describeError';
+import { ApprovalFields } from './PinApprovalHistory';
+import { credentialRefusalText, splitEvidence } from './pinApproval';
 import { downloadTextFile, pinsDiffExportFilename } from '../../lib/download';
 
 // Stable DOM ids: the workspace scrolls to the section for ?view=drift, the
@@ -69,6 +71,8 @@ export function DriftSection({ serverName }: { serverName: string }) {
   const [isApproving, setIsApproving] = useState(false);
   const [isReverifying, setIsReverifying] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [evidence, setEvidence] = useState('');
   // Bumped by Retry and by a failed approve so the effect refetches.
   const [attempt, setAttempt] = useState(0);
 
@@ -141,14 +145,27 @@ export function DriftSection({ serverName }: { serverName: string }) {
     try {
       // Bind the approval to the reviewed snapshot: the gateway rejects with
       // 409 if the live definitions no longer hash to what was rendered here.
-      await approveServerPins(serverName, diff.live_server_hash);
+      const refs = splitEvidence(evidence);
+      const reasonText = reason.trim();
+      if (refs.length > 0) {
+        await approveServerPins(serverName, diff.live_server_hash, reasonText || undefined, refs);
+      } else if (reasonText) {
+        await approveServerPins(serverName, diff.live_server_hash, reasonText);
+      } else {
+        await approveServerPins(serverName, diff.live_server_hash);
+      }
       const updated = await fetchServerPins();
       usePinsStore.getState().setPins(updated);
       showToast('success', `Pins approved for ${serverName}`);
     } catch (err) {
       if (!isCancellation(err)) {
-        const described = describeError(err, 'Approve');
-        showToast('error', described.text, { detail: described.fullDetail });
+        const refused = credentialRefusalText(err);
+        if (refused) {
+          showToast('error', refused, { detail: refused });
+        } else {
+          const described = describeError(err, 'Approve');
+          showToast('error', described.text, { detail: described.fullDetail });
+        }
       }
       // The definitions may have changed again since review; reload the diff
       // so the user re-reviews the current state instead of a stale one.
@@ -222,6 +239,13 @@ export function DriftSection({ serverName }: { serverName: string }) {
             <RefreshCw size={11} className={cn(isReverifying && 'animate-spin')} />
           </button>
         </div>
+        <ApprovalFields
+          reason={reason}
+          onReason={setReason}
+          evidence={evidence}
+          onEvidence={setEvidence}
+          reasonRequired={false}
+        />
         <button
           id={APPROVE_BUTTON_ID}
           onClick={handleApproveClick}

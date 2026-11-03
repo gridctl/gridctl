@@ -162,6 +162,30 @@ func SkillPinsPath(name string) (string, error) {
 	return filepath.Join(dir, "skills", name+".json"), nil
 }
 
+// SkillPinApprovalsPath returns the approvals log for a stack's skill pins
+// (<home>/.gridctl/pins/approvals/skills/{name}.json). The directory, not a
+// filename suffix, keeps the namespace disjoint from both pin files: pin
+// paths do not validate the stack name, so a suffix beside the pin file
+// would also be the pin file of a stack named with that suffix.
+func SkillPinApprovalsPath(name string) (string, error) {
+	dir, err := PinsDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "approvals", "skills", name+".json"), nil
+}
+
+// PinApprovalsPath returns the approvals log for a stack's tool-schema pins
+// (<home>/.gridctl/pins/approvals/tools/{name}.json). The directory, not a
+// filename suffix, keeps the namespace disjoint from both pin files.
+func PinApprovalsPath(name string) (string, error) {
+	dir, err := PinsDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "approvals", "tools", name+".json"), nil
+}
+
 // StatePath returns the path to a state file for a stack.
 func StatePath(name string) (string, error) {
 	dir, err := StateDir()

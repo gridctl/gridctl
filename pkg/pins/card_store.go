@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/pinapprovals"
 	"github.com/gridctl/gridctl/pkg/state"
 )
 
@@ -60,11 +63,44 @@ func (ps *PinStore) verifyCard(ctx context.Context, server string, snapshot mcp.
 	return decision, nil
 }
 
-// ApproveCard persists a reviewed snapshot. The owning trust service must hold
-// its generation/revision lock throughout this transaction and publication.
-func (ps *PinStore) ApproveCard(ctx context.Context, server string, snapshot mcp.PinSnapshot) error {
+// ApproveCard persists a reviewed snapshot and one approval entry. The owning
+// trust service must hold its generation/revision lock throughout this
+// transaction and publication. The log append runs inside the transaction,
+// before pinServer, so a log error fails the transaction before the pin file
+// is rewritten. Bound is always true: card approval requires an expected hash.
+func (ps *PinStore) ApproveCard(ctx context.Context, server string, snapshot mcp.PinSnapshot, approval mcp.CardApproval) error {
+	if err := pinapprovals.ValidateReason(approval.Reason); err != nil {
+		return err
+	}
+	evidence, err := pinapprovals.ValidateReferences(approval.Evidence)
+	if err != nil {
+		return err
+	}
+	approvedBy := strings.TrimSpace(approval.ApprovedBy)
+	if err := pinapprovals.ValidateApprover(approvedBy); err != nil {
+		return err
+	}
 	return ps.cardTransaction(ctx, func() (bool, error) {
 		if _, err := validateCardSnapshot(snapshot); err != nil {
+			return false, err
+		}
+		if err := ps.loadApprovalsLocked(ctx); err != nil {
+			return false, err
+		}
+		by, source := approvedBy, approval.ApprovedBySource
+		if by == "" {
+			source = ""
+		}
+		entry := pinapprovals.Entry{
+			ApprovedAt:       time.Now().UTC(),
+			ApprovedBy:       by,
+			ApprovedBySource: source,
+			ApprovedHash:     snapshot.Hash(),
+			Bound:            true,
+			Reason:           approval.Reason,
+			Evidence:         evidence,
+		}
+		if err := ps.log.Append(ctx, server, entry); err != nil {
 			return false, err
 		}
 		_, err := ps.pinServer(server, snapshot.Records())

@@ -169,6 +169,60 @@ func TestHandleSkillPinDiff_DriftAndApprove(t *testing.T) {
 	}
 }
 
+func TestHandleApproveSkillPin_AttributionAndRefusal(t *testing.T) {
+	server, ps, store := setupSkillPinsServer(t, "alpha")
+	approve := func(t *testing.T, body string, principal string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := loopbackRequest(http.MethodPost, "/api/skill-pins/alpha/approve", strings.NewReader(body))
+		req.SetPathValue("name", "alpha")
+		if principal != "" {
+			req = req.WithContext(mcp.WithPrincipal(req.Context(), principal))
+		}
+		w := httptest.NewRecorder()
+		server.handleApproveSkillPin(w, req)
+		return w
+	}
+
+	w := approve(t, `{"evidence":["Bearer abc"]}`, "")
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "bearer token") {
+		t.Fatalf("credential refusal = %d %s", w.Code, w.Body.String())
+	}
+	if pin, ok := ps.Get("alpha"); ok && len(pin.Approvals) != 0 {
+		t.Fatal("refused approval was recorded")
+	}
+
+	w = approve(t, `{"approved_by":"declared-name","reason":"reviewed"}`, "oauth-principal")
+	if w.Code != http.StatusOK {
+		t.Fatalf("oauth approve = %d %s", w.Code, w.Body.String())
+	}
+	pin, ok := ps.Get("alpha")
+	if !ok || len(pin.Approvals) != 1 || pin.Approvals[0].ApprovedBy != "oauth-principal" || pin.Approvals[0].ApprovedBySource != "oauth" {
+		t.Fatalf("oauth entry = %+v", pin)
+	}
+
+	w = approve(t, `{"approved_by":"declared-name"}`, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("declared approve = %d %s", w.Code, w.Body.String())
+	}
+	pin, _ = ps.Get("alpha")
+	if pin.Approvals[0].ApprovedBy != "declared-name" || pin.Approvals[0].ApprovedBySource != "declared" {
+		t.Fatalf("declared entry = %+v", pin.Approvals[0])
+	}
+
+	w = approve(t, `{}`, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("os user approve = %d %s", w.Code, w.Body.String())
+	}
+	pin, _ = ps.Get("alpha")
+	if pin.Approvals[0].ApprovedBySource != "os_user" && pin.Approvals[0].ApprovedBy != "" {
+		t.Fatalf("os user entry = %+v", pin.Approvals[0])
+	}
+	if pin.Approvals[0].ApprovedBy == "" && pin.Approvals[0].ApprovedBySource != "" {
+		t.Fatalf("empty approver kept a source: %+v", pin.Approvals[0])
+	}
+	_ = store
+}
+
 func TestHandleSkillPinReset(t *testing.T) {
 	server, ps, _ := setupSkillPinsServer(t, "alpha")
 

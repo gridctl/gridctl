@@ -69,7 +69,7 @@ func (s *a2aUnitPins) CheckCard(ctx context.Context, name string, snapshot PinSn
 	return s.VerifyCard(ctx, name, snapshot)
 }
 
-func (s *a2aUnitPins) ApproveCard(_ context.Context, name string, snapshot PinSnapshot) error {
+func (s *a2aUnitPins) ApproveCard(_ context.Context, name string, snapshot PinSnapshot, _ CardApproval) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.approved[name] = snapshot
@@ -267,11 +267,11 @@ func TestA2AClient_DriftAndApprovalRetireAuthority(t *testing.T) {
 		t.Fatal("card drift permitted RPC")
 	}
 	pending := c.PinSnapshot()
-	if err := c.trust.Approve(context.Background(), c.Name(), ""); err == nil {
+	if err := c.trust.Approve(context.Background(), c.Name(), "", CardApproval{}); err == nil {
 		t.Fatal("unbound approval succeeded")
 	}
 	gets := fixture.gets.Load()
-	if err := c.trust.Approve(context.Background(), c.Name(), pending.Hash()); err != nil {
+	if err := c.trust.Approve(context.Background(), c.Name(), pending.Hash(), CardApproval{}); err != nil {
 		t.Fatal(err)
 	}
 	if fixture.gets.Load() != gets+1 {
@@ -310,7 +310,7 @@ func TestA2AClient_PendingRegistrationPublishesOnlyOnApproval(t *testing.T) {
 	if got := a2aUnitCall(t, next, "send", map[string]any{"message": "candidate"}); got["error"] != "card_approval_required" || fixture.calls.Load() != before {
 		t.Fatal("unapproved registration became callable")
 	}
-	if err := next.trust.Approve(context.Background(), next.Name(), next.PinSnapshot().Hash()); err != nil {
+	if err := next.trust.Approve(context.Background(), next.Name(), next.PinSnapshot().Hash(), CardApproval{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(next.Tools()) != 4 || publications.Load() != 1 || next.Ping(context.Background()) != nil {

@@ -363,7 +363,7 @@ func TestA2AAdapter_ApprovalClearsVerifiedSchemaBlock(t *testing.T) {
 	}
 	// Persist the same approved card with an older generated-tool definition,
 	// as an adapter upgrade can encounter. This is the real pin store.
-	if err := store.Approve("agent", old); err != nil {
+	if err := store.Approve(t.Context(), "agent", old, pins.ApproveRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	g.UnregisterMCPServer("agent")
@@ -379,7 +379,7 @@ func TestA2AAdapter_ApprovalClearsVerifiedSchemaBlock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := g.CardTrust().Approve(t.Context(), "agent", snapshot.Hash()); err != nil {
+	if err := g.CardTrust().Approve(t.Context(), "agent", snapshot.Hash(), mcp.CardApproval{}); err != nil {
 		t.Fatal(err)
 	}
 	result, err = g.CallTool(t.Context(), "agent__send", map[string]any{"message": "approved"})

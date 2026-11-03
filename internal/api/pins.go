@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/pinapprovals"
 	"github.com/gridctl/gridctl/pkg/pins"
 )
 
@@ -42,12 +44,13 @@ type pinsToolDiff struct {
 // pass it back as expected_server_hash on approve to bind the approval to
 // this reviewed snapshot.
 type pinsDiffResponse struct {
-	Server         string         `json:"server"`
-	Status         string         `json:"status"`
-	LiveServerHash string         `json:"live_server_hash"`
-	ModifiedTools  []pinsToolDiff `json:"modified_tools"`
-	NewTools       []string       `json:"new_tools"`
-	RemovedTools   []string       `json:"removed_tools"`
+	Server         string              `json:"server"`
+	Status         string              `json:"status"`
+	LiveServerHash string              `json:"live_server_hash"`
+	ModifiedTools  []pinsToolDiff      `json:"modified_tools"`
+	NewTools       []string            `json:"new_tools"`
+	RemovedTools   []string            `json:"removed_tools"`
+	LastApproval   *pinapprovals.Entry `json:"last_approval,omitempty"`
 }
 
 // rewritingFor maps a drifted tool's raw name to the groups whose overrides
@@ -310,10 +313,75 @@ func (s *Server) handlePinsDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, buildPinsDiffResponse(vr, liveHash, s.newScanContext().shadowFindings(serverName, tools),
+	resp := buildPinsDiffResponse(vr, liveHash, s.newScanContext().shadowFindings(serverName, tools),
 		func(toolName string) []string {
 			return s.gateway.CurrentGroupPolicy().GroupsRewritingTool(mcp.PrefixTool(serverName, toolName))
-		}))
+		})
+	if sp, ok := store.GetServer(serverName); ok && len(sp.Approvals) > 0 {
+		latest := sp.Approvals[0]
+		resp.LastApproval = &latest
+	}
+	writeJSON(w, resp)
+}
+
+// approveRequestMaxBytes bounds pin and skill-pin approve bodies. A valid
+// body is a reason (4096 bytes), sixteen references (2048 each), and a short
+// approver name, plus JSON overhead. 128 KiB leaves room for escaping without
+// accepting an unbounded write into the approvals log.
+const approveRequestMaxBytes = 128 * 1024
+
+var errApproveBodyTooLarge = errors.New("request body too large")
+
+func decodeApproveBody(r *http.Request, dest any) error {
+	if r == nil || r.Body == nil {
+		return nil
+	}
+	data, err := io.ReadAll(io.LimitReader(r.Body, approveRequestMaxBytes+1))
+	if err != nil {
+		return fmt.Errorf("reading request body: %w", err)
+	}
+	if len(data) > approveRequestMaxBytes {
+		return errApproveBodyTooLarge
+	}
+	if len(strings.TrimSpace(string(data))) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(data, dest); err != nil {
+		return err
+	}
+	return nil
+}
+
+func approvalInputStatus(err error) bool {
+	return errors.Is(err, pinapprovals.ErrCredentialShaped) ||
+		errors.Is(err, pinapprovals.ErrInvalidReference) ||
+		errors.Is(err, pinapprovals.ErrTooManyReferences) ||
+		errors.Is(err, pinapprovals.ErrReasonTooLong) ||
+		errors.Is(err, pinapprovals.ErrInvalidApprover)
+}
+
+// resolveApprovalAttribution validates the declared name before resolution,
+// then validates the name that will be stored. A credential-shaped declared
+// name is refused even when a verified principal would otherwise win, so the
+// value never reaches the approvals log.
+func resolveApprovalAttribution(r *http.Request, declared string) (string, string, error) {
+	declared = strings.TrimSpace(declared)
+	if err := pinapprovals.ValidateApprover(declared); err != nil {
+		return "", "", err
+	}
+	name, source := pinapprovals.ResolveApprover(mcp.PrincipalFromContext(r.Context()), declared)
+	name = strings.TrimSpace(name)
+	if err := pinapprovals.ValidateApprover(name); err != nil {
+		return "", "", err
+	}
+	return name, source, nil
+}
+
+func writeApproveJSON(w http.ResponseWriter, fields map[string]any, approvedBy, approvedBySource string, evidenceCount int) {
+	fields["approved_by"] = approvedBy
+	fields["approved_by_source"] = approvedBySource
+	fields["evidence_count"] = evidenceCount
+	writeJSON(w, fields)
 }
 
 // handleApprovePins re-pins the current tool definitions for a server, clearing drift.
@@ -334,14 +402,38 @@ func (s *Server) handleApprovePins(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		ExpectedServerHash string `json:"expected_server_hash"`
+		ExpectedServerHash string   `json:"expected_server_hash"`
+		Reason             string   `json:"reason"`
+		Evidence           []string `json:"evidence"`
+		// ApprovedBy is a caller-declared name. A credential-shaped or overlong
+		// name is refused before resolution. Otherwise a verified principal wins.
+		ApprovedBy string `json:"approved_by"`
 	}
-	if r.Body != nil {
-		// A missing or empty body is fine; only a malformed one is an error.
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
-			writeJSONError(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+	if err := decodeApproveBody(r, &body); err != nil {
+		if errors.Is(err, errApproveBodyTooLarge) {
+			writeJSONError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		writeJSONError(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	// Validate before either branch so a refused reference or approver is 400
+	// and never reaches ApproveCard. A log failure on the card path still
+	// surfaces as the trust service's "a2a: card pin approval failed" message,
+	// which this handler maps to 409.
+	if err := pinapprovals.ValidateReason(body.Reason); err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	evidence, err := pinapprovals.ValidateReferences(body.Evidence)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	approvedBy, approvedBySource, err := resolveApprovalAttribution(r, body.ApprovedBy)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	if snapshot := s.cardSnapshot(r.Context(), serverName); snapshot != nil {
@@ -349,11 +441,20 @@ func (s *Server) handleApprovePins(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, "A2A approval requires expected_server_hash", http.StatusBadRequest)
 			return
 		}
-		if err := s.gateway.CardTrust().Approve(r.Context(), serverName, body.ExpectedServerHash); err != nil {
+		if err := s.gateway.CardTrust().Approve(r.Context(), serverName, body.ExpectedServerHash, mcp.CardApproval{
+			ApprovedBy:       approvedBy,
+			ApprovedBySource: approvedBySource,
+			Reason:           body.Reason,
+			Evidence:         evidence,
+		}); err != nil {
 			writeJSONError(w, err.Error(), http.StatusConflict)
 			return
 		}
-		writeJSON(w, map[string]any{"server": serverName, "tool_count": len(snapshot.Records()), "status": "approved"})
+		writeApproveJSON(w, map[string]any{
+			"server":     serverName,
+			"tool_count": len(snapshot.Records()),
+			"status":     "approved",
+		}, approvedBy, approvedBySource, len(evidence))
 		return
 	}
 	if s.hasCardPins(serverName, store) {
@@ -389,16 +490,26 @@ func (s *Server) handleApprovePins(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := store.Approve(serverName, tools); err != nil {
+	if err := store.Approve(r.Context(), serverName, tools, pins.ApproveRequest{
+		ExpectedHash:     body.ExpectedServerHash,
+		Reason:           body.Reason,
+		Evidence:         evidence,
+		ApprovedBy:       approvedBy,
+		ApprovedBySource: approvedBySource,
+	}); err != nil {
+		if approvalInputStatus(err) {
+			writeJSONError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		writeJSONError(w, "Failed to approve pins: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	writeJSON(w, map[string]interface{}{
+	writeApproveJSON(w, map[string]any{
 		"server":     serverName,
 		"tool_count": len(tools),
 		"status":     "approved",
-	})
+	}, approvedBy, approvedBySource, len(evidence))
 }
 
 // handleResetPins deletes the pin record for a server.
