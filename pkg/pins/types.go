@@ -1,6 +1,10 @@
 package pins
 
-import "time"
+import (
+	"time"
+
+	"github.com/gridctl/gridctl/pkg/pinapprovals"
+)
 
 // Status values for ServerPins.
 const (
@@ -11,29 +15,32 @@ const (
 
 // Verify status values returned in VerifyResult.
 const (
-	VerifyStatusPinned       = "pinned"       // first pin, just stored
-	VerifyStatusVerified     = "verified"     // hashes match
-	VerifyStatusDrift        = "drift"        // tool hashes changed
-	VerifyStatusNewTools     = "new_tools"    // server added tools (no drift, auto-pinned)
+	VerifyStatusPinned       = "pinned"        // first pin, just stored
+	VerifyStatusVerified     = "verified"      // hashes match
+	VerifyStatusDrift        = "drift"         // tool hashes changed
+	VerifyStatusNewTools     = "new_tools"     // server added tools (no drift, auto-pinned)
 	VerifyStatusRemovedTools = "removed_tools" // server removed tools (warning only)
 )
 
 // PinFile is the top-level JSON structure stored at ~/.gridctl/pins/{stackName}.json.
 type PinFile struct {
-	Version   string                `json:"version"`
-	Stack     string                `json:"stack"`
-	CreatedAt time.Time             `json:"created_at"`
+	Version   string                 `json:"version"`
+	Stack     string                 `json:"stack"`
+	CreatedAt time.Time              `json:"created_at"`
 	Servers   map[string]*ServerPins `json:"servers"`
 }
 
-// ServerPins holds the pin state for a single MCP server.
+// ServerPins holds the pin state for a single MCP server. Approvals is
+// derived: rebuilt from the approvals log on every load. An older gridctl
+// rewriting the file drops it without a file-version bump and loses nothing.
 type ServerPins struct {
-	ServerHash     string               `json:"server_hash"`
-	PinnedAt       time.Time            `json:"pinned_at"`
-	LastVerifiedAt time.Time            `json:"last_verified_at"`
-	ToolCount      int                  `json:"tool_count"`
-	Status         string               `json:"status"`
+	ServerHash     string                `json:"server_hash"`
+	PinnedAt       time.Time             `json:"pinned_at"`
+	LastVerifiedAt time.Time             `json:"last_verified_at"`
+	ToolCount      int                   `json:"tool_count"`
+	Status         string                `json:"status"`
 	Tools          map[string]*PinRecord `json:"tools"`
+	Approvals      []pinapprovals.Entry  `json:"approvals,omitempty"`
 }
 
 // PinRecord holds the hash and metadata for a single tool definition.

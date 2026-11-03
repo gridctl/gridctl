@@ -49,7 +49,7 @@ func TestCardStore_TrustAndRestart(t *testing.T) {
 	if old.ServerHash != first.Hash() {
 		t.Fatal("verification replaced approved evidence")
 	}
-	if err := s.ApproveCard(ctx, "agent", changed); err != nil {
+	if err := s.ApproveCard(ctx, "agent", changed, mcp.CardApproval{}); err != nil {
 		t.Fatal(err)
 	}
 	d, err = s.VerifyCard(ctx, "agent", changed)
@@ -80,7 +80,7 @@ func TestCardStore_MigrationAndFailure(t *testing.T) {
 	if err := os.Mkdir(s.path+".tmp", 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ApproveCard(ctx, "agent", snapshot); err == nil {
+	if err := s.ApproveCard(ctx, "agent", snapshot, mcp.CardApproval{}); err == nil {
 		t.Fatal("write failure approved")
 	}
 	after, _ := s.GetServer("agent")
@@ -124,7 +124,7 @@ func TestCardStore_LegacyRecoveryCannotEraseFailure(t *testing.T) {
 	if _, err := s.VerifyCard(context.Background(), "agent", snapshot); err == nil {
 		t.Fatal("legacy recovery erased mandatory load failure")
 	}
-	if err := s.ApproveCard(context.Background(), "agent", snapshot); err == nil {
+	if err := s.ApproveCard(context.Background(), "agent", snapshot, mcp.CardApproval{}); err == nil {
 		t.Fatal("approval bypassed mandatory load failure")
 	}
 }

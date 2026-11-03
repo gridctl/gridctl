@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/pinapprovals"
 	"github.com/gridctl/gridctl/pkg/pins"
 )
 
@@ -42,12 +43,13 @@ type pinsToolDiff struct {
 // pass it back as expected_server_hash on approve to bind the approval to
 // this reviewed snapshot.
 type pinsDiffResponse struct {
-	Server         string         `json:"server"`
-	Status         string         `json:"status"`
-	LiveServerHash string         `json:"live_server_hash"`
-	ModifiedTools  []pinsToolDiff `json:"modified_tools"`
-	NewTools       []string       `json:"new_tools"`
-	RemovedTools   []string       `json:"removed_tools"`
+	Server         string              `json:"server"`
+	Status         string              `json:"status"`
+	LiveServerHash string              `json:"live_server_hash"`
+	ModifiedTools  []pinsToolDiff      `json:"modified_tools"`
+	NewTools       []string            `json:"new_tools"`
+	RemovedTools   []string            `json:"removed_tools"`
+	LastApproval   *pinapprovals.Entry `json:"last_approval,omitempty"`
 }
 
 // rewritingFor maps a drifted tool's raw name to the groups whose overrides
@@ -310,10 +312,15 @@ func (s *Server) handlePinsDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, buildPinsDiffResponse(vr, liveHash, s.newScanContext().shadowFindings(serverName, tools),
+	resp := buildPinsDiffResponse(vr, liveHash, s.newScanContext().shadowFindings(serverName, tools),
 		func(toolName string) []string {
 			return s.gateway.CurrentGroupPolicy().GroupsRewritingTool(mcp.PrefixTool(serverName, toolName))
-		}))
+		})
+	if sp, ok := store.GetServer(serverName); ok && len(sp.Approvals) > 0 {
+		latest := sp.Approvals[0]
+		resp.LastApproval = &latest
+	}
+	writeJSON(w, resp)
 }
 
 // handleApprovePins re-pins the current tool definitions for a server, clearing drift.
@@ -334,7 +341,10 @@ func (s *Server) handleApprovePins(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		ExpectedServerHash string `json:"expected_server_hash"`
+		ExpectedServerHash string   `json:"expected_server_hash"`
+		Reason             string   `json:"reason"`
+		Evidence           []string `json:"evidence"`
+		ApprovedBy         string   `json:"approved_by"`
 	}
 	if r.Body != nil {
 		// A missing or empty body is fine; only a malformed one is an error.
@@ -343,13 +353,32 @@ func (s *Server) handleApprovePins(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Validate before either branch so a refused reference is 400 and never
+	// reaches ApproveCard. A log failure on the card path still surfaces as
+	// the trust service's "a2a: card pin approval failed" message, which this
+	// handler maps to 409.
+	if err := pinapprovals.ValidateReason(body.Reason); err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	evidence, err := pinapprovals.ValidateReferences(body.Evidence)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	approvedBy, approvedBySource := pinapprovals.ResolveApprover(mcp.PrincipalFromContext(r.Context()), body.ApprovedBy)
 
 	if snapshot := s.cardSnapshot(r.Context(), serverName); snapshot != nil {
 		if body.ExpectedServerHash == "" {
 			writeJSONError(w, "A2A approval requires expected_server_hash", http.StatusBadRequest)
 			return
 		}
-		if err := s.gateway.CardTrust().Approve(r.Context(), serverName, body.ExpectedServerHash); err != nil {
+		if err := s.gateway.CardTrust().Approve(r.Context(), serverName, body.ExpectedServerHash, mcp.CardApproval{
+			ApprovedBy:       approvedBy,
+			ApprovedBySource: approvedBySource,
+			Reason:           body.Reason,
+			Evidence:         evidence,
+		}); err != nil {
 			writeJSONError(w, err.Error(), http.StatusConflict)
 			return
 		}
@@ -389,7 +418,13 @@ func (s *Server) handleApprovePins(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := store.Approve(serverName, tools); err != nil {
+	if err := store.Approve(r.Context(), serverName, tools, pins.ApproveRequest{
+		ExpectedHash:     body.ExpectedServerHash,
+		Reason:           body.Reason,
+		Evidence:         evidence,
+		ApprovedBy:       approvedBy,
+		ApprovedBySource: approvedBySource,
+	}); err != nil {
 		writeJSONError(w, "Failed to approve pins: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

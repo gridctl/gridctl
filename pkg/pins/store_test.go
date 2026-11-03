@@ -244,7 +244,7 @@ func TestPinStore_ApproveClearsDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := ps.Approve("server1", drifted); err != nil {
+	if err := ps.Approve(t.Context(), "server1", drifted, ApproveRequest{}); err != nil {
 		t.Fatalf("Approve: %v", err)
 	}
 
@@ -392,7 +392,7 @@ func TestPinStore_ApprovePinnedAtPreserved(t *testing.T) {
 	time.Sleep(2 * time.Millisecond)
 
 	updated := []mcp.Tool{{Name: "t", Description: "updated", InputSchema: json.RawMessage(`{}`)}}
-	if err := ps.Approve("srv", updated); err != nil {
+	if err := ps.Approve(t.Context(), "srv", updated, ApproveRequest{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -687,7 +687,7 @@ func TestPinStore_OutputSchemaDriftDetected(t *testing.T) {
 	}
 
 	// Approve re-pins the changed contract; the next verify is clean.
-	if err := ps.Approve("server1", drifted); err != nil {
+	if err := ps.Approve(t.Context(), "server1", drifted, ApproveRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	result, err = ps.VerifyOrPin("server1", drifted)

@@ -56,7 +56,7 @@ func TestInstallSchemaPinning_MandatoryCardTrust(t *testing.T) {
 			if err := gw.CardTrust().Observe(ctx, "agent", changed); err == nil {
 				t.Fatal("legacy mode disabled card drift enforcement")
 			}
-			if err := gw.CardTrust().Approve(ctx, "agent", changed.Hash()); err != nil {
+			if err := gw.CardTrust().Approve(ctx, "agent", changed.Hash(), mcp.CardApproval{}); err != nil {
 				t.Fatal(err)
 			}
 			if mode == "disabled" && gw.SchemaVerifier() != nil {

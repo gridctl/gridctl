@@ -1,6 +1,7 @@
 package pins
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/mcp"
+	"github.com/gridctl/gridctl/pkg/pinapprovals"
 	"github.com/gridctl/gridctl/pkg/state"
 )
 
@@ -49,6 +51,8 @@ var (
 type PinStore struct {
 	stackName  string
 	path       string
+	logPath    string
+	log        *pinapprovals.Log
 	mu         sync.RWMutex
 	data       *PinFile
 	loadFailed bool // mandatory card trust cannot use legacy empty-store recovery
@@ -77,13 +81,23 @@ func New(stackName string) *PinStore {
 // ps.mu.
 func (ps *PinStore) ensurePath() error {
 	if ps.path != "" {
+		if ps.logPath == "" {
+			// A caller that set path without logPath keeps the log beside
+			// that path, never under the real home.
+			ps.logPath = filepath.Join(filepath.Dir(ps.path), "approvals", "tools", ps.stackName+".json")
+		}
 		return nil
 	}
 	p, err := state.PinsPath(ps.stackName)
 	if err != nil {
 		return fmt.Errorf("pins: resolving pin file path: %w", err)
 	}
+	lp, err := state.PinApprovalsPath(ps.stackName)
+	if err != nil {
+		return fmt.Errorf("pins: resolving approvals log path: %w", err)
+	}
 	ps.path = p
+	ps.logPath = lp
 	return nil
 }
 
@@ -93,6 +107,7 @@ func NewWithPath(dir, stackName string) *PinStore {
 	ps := &PinStore{
 		stackName:   stackName,
 		path:        filepath.Join(dir, stackName+".json"),
+		logPath:     filepath.Join(dir, "approvals", "tools", stackName+".json"),
 		scanEnabled: true,
 	}
 	ps.data = ps.emptyPinFile()
@@ -147,11 +162,26 @@ func (ps *PinStore) Load() error {
 	if err := ps.ensurePath(); err != nil {
 		return err
 	}
+	pinErr := ps.loadPinFileLocked()
+	// Load has no caller context. Approve and card transactions pass theirs
+	// into the log write.
+	logErr := ps.loadApprovalsLocked(context.Background())
+	if logErr != nil {
+		return logErr
+	}
+	if pinErr != nil {
+		return pinErr
+	}
+	ps.projectApprovalsLocked()
+	ps.loadFailed = false
+	return nil
+}
+
+func (ps *PinStore) loadPinFileLocked() error {
 	data, err := os.ReadFile(ps.path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			ps.data = ps.emptyPinFile()
-			ps.loadFailed = false
 			return nil
 		}
 		return fmt.Errorf("pins: reading pin file: %w", err)
@@ -172,8 +202,46 @@ func (ps *PinStore) Load() error {
 		pf.Servers = make(map[string]*ServerPins)
 	}
 	ps.data = &pf
-	ps.loadFailed = false
 	return nil
+}
+
+// loadApprovalsLocked opens and reads the tool approvals log. A corrupt log
+// is logged and treated as empty history. A newer-version log is returned as
+// pins.ErrNewerVersion. Caller holds ps.mu.
+func (ps *PinStore) loadApprovalsLocked(ctx context.Context) error {
+	if err := ps.ensurePath(); err != nil {
+		return err
+	}
+	if ps.log == nil {
+		ps.log = pinapprovals.Open(ps.logPath, ps.stackName, pinapprovals.KindTool)
+	}
+	err := ps.log.Load(ctx)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, pinapprovals.ErrCorrupt) {
+		slog.Warn("pins: approvals log unreadable; continuing with empty history", "path", ps.logPath, "error", err)
+		return nil
+	}
+	if errors.Is(err, pinapprovals.ErrNewerVersion) {
+		return fmt.Errorf("pins: %w: %v", ErrNewerVersion, err)
+	}
+	return fmt.Errorf("pins: loading approvals log: %w", err)
+}
+
+func (ps *PinStore) projectApprovalsLocked() {
+	for name, sp := range ps.data.Servers {
+		if sp == nil {
+			continue
+		}
+		ps.applyApprovalsLocked(name, sp)
+	}
+}
+
+func (ps *PinStore) applyApprovalsLocked(name string, sp *ServerPins) {
+	if ps.log != nil {
+		sp.Approvals = ps.log.History(name)
+	}
 }
 
 // GetAll returns a deep-copied snapshot of all server pin records. Callers
@@ -210,6 +278,7 @@ func copyServerPins(sp *ServerPins) *ServerPins {
 		return nil
 	}
 	out := *sp
+	out.Approvals = pinapprovals.CloneEntries(sp.Approvals)
 	out.Tools = make(map[string]*PinRecord, len(sp.Tools))
 	for name, rec := range sp.Tools {
 		recCopy := *rec
@@ -258,12 +327,60 @@ func (ps *PinStore) Verify(serverName string, tools []mcp.Tool) (*VerifyResult, 
 	return ps.buildVerifyResult(serverName, sp, tools)
 }
 
-// Approve re-pins the current tool definitions for a server, clearing drift.
-func (ps *PinStore) Approve(serverName string, tools []mcp.Tool) error {
-	_, err := ps.withFileLock(func() (*VerifyResult, error) {
+// ApproveRequest is one explicit tool-schema approval. There is no
+// findings-require-reason gate. ExpectedHash is recorded as Bound when
+// non-empty; the caller rejects a stale hash before Approve.
+type ApproveRequest struct {
+	ExpectedHash     string
+	Reason           string
+	Evidence         []string
+	ApprovedBy       string
+	ApprovedBySource string
+}
+
+// Approve re-pins the current tool definitions for a server, clearing drift,
+// and appends an approval entry. Reason and references are validated before
+// any file write. The log append runs inside the file lock before the pin
+// file is rewritten; a log error leaves the pin file unchanged. ApprovedHash
+// is the server hash pinServer stores.
+func (ps *PinStore) Approve(ctx context.Context, serverName string, tools []mcp.Tool, req ApproveRequest) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := pinapprovals.ValidateReason(req.Reason); err != nil {
+		return err
+	}
+	evidence, err := pinapprovals.ValidateReferences(req.Evidence)
+	if err != nil {
+		return err
+	}
+	hash, err := HashTools(tools)
+	if err != nil {
+		return err
+	}
+	_, err = ps.withFileLock(func() (*VerifyResult, error) {
 		ps.mu.Lock()
 		defer ps.mu.Unlock()
 
+		if err := ps.loadApprovalsLocked(ctx); err != nil {
+			return nil, err
+		}
+		by, source := req.ApprovedBy, req.ApprovedBySource
+		if by == "" {
+			source = ""
+		}
+		entry := pinapprovals.Entry{
+			ApprovedAt:       time.Now().UTC(),
+			ApprovedBy:       by,
+			ApprovedBySource: source,
+			ApprovedHash:     hash,
+			Bound:            req.ExpectedHash != "",
+			Reason:           req.Reason,
+			Evidence:         evidence,
+		}
+		if err := ps.log.Append(ctx, serverName, entry); err != nil {
+			return nil, err
+		}
 		if _, err := ps.pinServer(serverName, tools); err != nil {
 			return nil, err
 		}
@@ -360,7 +477,7 @@ func (ps *PinStore) pinServer(serverName string, tools []mcp.Tool) (*VerifyResul
 		pinnedAt = existing.PinnedAt
 	}
 
-	ps.data.Servers[serverName] = &ServerPins{
+	record := &ServerPins{
 		ServerHash:     hashStrings(hashes),
 		PinnedAt:       pinnedAt,
 		LastVerifiedAt: now,
@@ -368,6 +485,8 @@ func (ps *PinStore) pinServer(serverName string, tools []mcp.Tool) (*VerifyResul
 		Status:         StatusPinned,
 		Tools:          toolRecords,
 	}
+	ps.applyApprovalsLocked(serverName, record)
+	ps.data.Servers[serverName] = record
 
 	slog.Info("pins: pinned server", "server", serverName, "tools", len(tools))
 	return &VerifyResult{ServerName: serverName, Status: VerifyStatusPinned}, nil

@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	"github.com/gridctl/gridctl/pkg/output"
+	"github.com/gridctl/gridctl/pkg/pinapprovals"
 	"github.com/gridctl/gridctl/pkg/pins"
 	"github.com/gridctl/gridctl/pkg/state"
 
@@ -38,17 +39,19 @@ const (
 const pinsJSONSchemaVersion = 2
 
 var (
-	pinsStack         string
-	pinsExitCode      bool
-	pinsListFormat    string
-	pinsListJSON      *bool
-	pinsListPlain     *bool
-	pinsVerifyFormat  string
-	pinsVerifyJSON    *bool
-	pinsDiffFormat    string
-	pinsDiffJSON      *bool
-	pinsDiffFailOn    string
-	pinsApproveExpect string
+	pinsStack           string
+	pinsExitCode        bool
+	pinsListFormat      string
+	pinsListJSON        *bool
+	pinsListPlain       *bool
+	pinsVerifyFormat    string
+	pinsVerifyJSON      *bool
+	pinsDiffFormat      string
+	pinsDiffJSON        *bool
+	pinsDiffFailOn      string
+	pinsApproveExpect   string
+	pinsApproveReason   string
+	pinsApproveEvidence []string
 )
 
 var pinsCmd = &cobra.Command{
@@ -249,10 +252,15 @@ var pinsApproveCmd = &cobra.Command{
 Pass --expect with the live_server_hash from 'pins diff --format json' to
 bind the approval to the reviewed definitions: if the server's tools change
 again between review and approval, the approve is rejected instead of
-silently pinning definitions nobody saw.`,
+silently pinning definitions nobody saw.
+
+--reason records why the change was accepted. Repeat --evidence with an
+opaque reference. References are stored as text and never fetched.
+Credential-shaped values are refused. approved_by is attribution, not
+authentication.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runPinsApprove(args[0], pinsApproveExpect)
+		return runPinsApprove(args[0], pinsApproveExpect, pinsApproveReason, pinsApproveEvidence)
 	},
 }
 
@@ -286,6 +294,8 @@ func init() {
 		"Exit 1 when scan findings at or above this severity exist: 'warn' or 'critical' (default: findings never affect the exit code)")
 
 	pinsApproveCmd.Flags().StringVar(&pinsApproveExpect, "expect", "", "Reviewed live_server_hash from 'pins diff'; approval is rejected if the live definitions no longer match")
+	pinsApproveCmd.Flags().StringVar(&pinsApproveReason, "reason", "", "Reason for this approval")
+	pinsApproveCmd.Flags().StringArrayVar(&pinsApproveEvidence, "evidence", nil, "Opaque evidence reference (repeatable). Stored as text and never fetched")
 
 	pinsCmd.AddCommand(pinsListCmd)
 	pinsCmd.AddCommand(pinsVerifyCmd)
@@ -531,12 +541,13 @@ type pinsToolDiff struct {
 // fingerprints the live definitions; pass it to 'pins approve --expect' to
 // bind the approval to this reviewed snapshot.
 type pinsDiffServer struct {
-	Name           string         `json:"name"`
-	Status         string         `json:"status"`
-	LiveServerHash string         `json:"live_server_hash"`
-	ModifiedTools  []pinsToolDiff `json:"modified_tools"`
-	NewTools       []string       `json:"new_tools"`
-	RemovedTools   []string       `json:"removed_tools"`
+	Name           string              `json:"name"`
+	Status         string              `json:"status"`
+	LiveServerHash string              `json:"live_server_hash"`
+	ModifiedTools  []pinsToolDiff      `json:"modified_tools"`
+	NewTools       []string            `json:"new_tools"`
+	RemovedTools   []string            `json:"removed_tools"`
+	LastApproval   *pinapprovals.Entry `json:"last_approval,omitempty"`
 }
 
 // pinsDiffDoc is the machine-readable document emitted by `pins diff --format json`.
@@ -593,12 +604,13 @@ func fetchPinsDiff(st *state.DaemonState, server string) (*pinsDiffServer, error
 	}
 
 	var wire struct {
-		Server         string         `json:"server"`
-		Status         string         `json:"status"`
-		LiveServerHash string         `json:"live_server_hash"`
-		ModifiedTools  []pinsToolDiff `json:"modified_tools"`
-		NewTools       []string       `json:"new_tools"`
-		RemovedTools   []string       `json:"removed_tools"`
+		Server         string              `json:"server"`
+		Status         string              `json:"status"`
+		LiveServerHash string              `json:"live_server_hash"`
+		ModifiedTools  []pinsToolDiff      `json:"modified_tools"`
+		NewTools       []string            `json:"new_tools"`
+		RemovedTools   []string            `json:"removed_tools"`
+		LastApproval   *pinapprovals.Entry `json:"last_approval,omitempty"`
 	}
 	if err := json.Unmarshal(body, &wire); err != nil {
 		return nil, fmt.Errorf("parsing response: %w", err)
@@ -610,6 +622,7 @@ func fetchPinsDiff(st *state.DaemonState, server string) (*pinsDiffServer, error
 		ModifiedTools:  wire.ModifiedTools,
 		NewTools:       wire.NewTools,
 		RemovedTools:   wire.RemovedTools,
+		LastApproval:   wire.LastApproval,
 	}, nil
 }
 
@@ -700,9 +713,11 @@ func renderPinsDiffText(w io.Writer, doc pinsDiffDoc) {
 		}
 		fmt.Fprintf(w, "%s (%s)\n", sv.Name, sv.Status)
 		if len(sv.ModifiedTools)+len(sv.NewTools)+len(sv.RemovedTools) == 0 {
+			renderLastApproval(w, sv.LastApproval)
 			fmt.Fprintln(w, "  ✓ no changes")
 			continue
 		}
+		renderLastApproval(w, sv.LastApproval)
 		for _, d := range sv.ModifiedTools {
 			if len(d.ChangeKinds) > 0 {
 				fmt.Fprintf(w, "  ~ %s  [%s]\n", escapeNonPrintable(d.Name), strings.Join(d.ChangeKinds, ", "))
@@ -734,6 +749,7 @@ func renderPinsDiffText(w io.Writer, doc pinsDiffDoc) {
 		for _, name := range sv.RemovedTools {
 			fmt.Fprintf(w, "  - %s (removed from server)\n", escapeNonPrintable(name))
 		}
+		fmt.Fprintf(w, "  approve with: gridctl pins approve %s --expect %s --reason \"<why>\"\n", sv.Name, sv.LiveServerHash)
 	}
 }
 
@@ -810,7 +826,22 @@ func escapeNonPrintable(s string) string {
 	return b.String()
 }
 
-func runPinsApprove(server, expectHash string) error {
+func runPinsApprove(server, expectHash, reason string, evidence []string) error {
+	cleaned, err := pinapprovals.ValidateReferences(evidence)
+	if err != nil {
+		return approvalInputError(err)
+	}
+	if err := pinapprovals.ValidateReason(reason); err != nil {
+		return approvalInputError(err)
+	}
+	name, source := pinapprovals.LocalUser()
+	sentBody := expectHash != "" || reason != "" || len(cleaned) > 0
+	recordedSource := source
+	if sentBody && name != "" {
+		// The daemon cannot verify a name supplied in the body.
+		recordedSource = pinapprovals.SourceDeclared
+	}
+
 	st, err := resolveRunningStack()
 	if err != nil {
 		return err
@@ -819,8 +850,13 @@ func runPinsApprove(server, expectHash string) error {
 	url := fmt.Sprintf("http://localhost:%d/api/pins/%s/approve", st.Port, server)
 
 	var reqBody io.Reader
-	if expectHash != "" {
-		payload, err := json.Marshal(map[string]string{"expected_server_hash": expectHash})
+	if sentBody {
+		payload, err := json.Marshal(map[string]any{
+			"expected_server_hash": expectHash,
+			"reason":               reason,
+			"evidence":             cleaned,
+			"approved_by":          name,
+		})
 		if err != nil {
 			return fmt.Errorf("encoding request: %w", err)
 		}
@@ -856,6 +892,9 @@ func runPinsApprove(server, expectHash string) error {
 		return fmt.Errorf("%s (run 'gridctl pins diff %s' to review the current definitions)",
 			apiErrorMessage(body, "tool definitions changed since review"), server)
 	}
+	if resp.StatusCode == http.StatusBadRequest {
+		return fmt.Errorf("%s", apiErrorMessage(body, "approve rejected"))
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("approve failed: %s", string(body))
 	}
@@ -869,7 +908,40 @@ func runPinsApprove(server, expectHash string) error {
 	}
 
 	fmt.Printf("✓ Approved schema update for %s (%d tools re-pinned)\n", server, result.ToolCount)
+	printRecordedApproval(name, recordedSource, len(cleaned))
 	return nil
+}
+
+// approvalInputError returns the package error unchanged. Its text already
+// names the refused shape and says to remove it and retry.
+func approvalInputError(err error) error {
+	return err
+}
+
+func printRecordedApproval(name, source string, evidenceCount int) {
+	refs := fmt.Sprintf("%d reference(s)", evidenceCount)
+	if name == "" {
+		fmt.Printf("  recorded approval, %s\n", refs)
+		return
+	}
+	fmt.Printf("  recorded approval by %s (%s), %s\n", name, source, refs)
+}
+
+func renderLastApproval(w io.Writer, entry *pinapprovals.Entry) {
+	if entry == nil {
+		return
+	}
+	line := fmt.Sprintf("    last approved %s", entry.ApprovedAt.UTC().Format(time.RFC3339))
+	if entry.ApprovedBy != "" {
+		line += fmt.Sprintf(" by %s (%s)", escapeNonPrintable(entry.ApprovedBy), escapeNonPrintable(entry.ApprovedBySource))
+	}
+	fmt.Fprintln(w, line)
+	if entry.Reason != "" {
+		fmt.Fprintln(w, "    "+escapeNonPrintable(entry.Reason))
+	}
+	for _, ref := range entry.Evidence {
+		fmt.Fprintln(w, "    "+escapeNonPrintable(ref))
+	}
 }
 
 func runPinsReset(server string) error {

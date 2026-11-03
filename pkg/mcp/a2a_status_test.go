@@ -79,7 +79,7 @@ func TestA2AClient_HealthDoesNotDelayApproval(t *testing.T) {
 	if status := g.Status(); len(status) != 1 || status[0].A2AStatus.CardTrust != "approval_required" {
 		t.Fatalf("missing trust status: %+v", status)
 	}
-	if err := g.cardTrust.Approve(ctx, "agent", c.PinSnapshot().Hash()); err != nil {
+	if err := g.cardTrust.Approve(ctx, "agent", c.PinSnapshot().Hash(), CardApproval{}); err != nil {
 		t.Fatal(err)
 	}
 	result, err := g.CallTool(ctx, "agent__send", map[string]any{"message": "approved"})

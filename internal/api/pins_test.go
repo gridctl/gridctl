@@ -297,7 +297,7 @@ func TestHandlePinsDiff_Drift(t *testing.T) {
 	if sp, ok := ps.GetServer("myserver"); !ok || len(sp.Tools) != 3 {
 		t.Error("diff mutated stored pins")
 	}
-	if err := ps.Approve("myserver", live); err != nil {
+	if err := ps.Approve(t.Context(), "myserver", live, pins.ApproveRequest{}); err != nil {
 		t.Fatalf("Approve: %v", err)
 	}
 	if sp, _ := ps.GetServer("myserver"); sp.Status != pins.StatusPinned {

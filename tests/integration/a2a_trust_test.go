@@ -59,7 +59,7 @@ func TestA2AAdapter_ApprovalCannotPublishAcrossReplacement(t *testing.T) {
 			}
 			f.mu.Unlock()
 			done := make(chan error, 1)
-			go func() { done <- g.CardTrust().Approve(ctx, "agent", snapshot.Hash()) }()
+			go func() { done <- g.CardTrust().Approve(ctx, "agent", snapshot.Hash(), mcp.CardApproval{}) }()
 			select {
 			case <-entered:
 			case <-ctx.Done():
@@ -219,7 +219,7 @@ func TestA2AAdapter_PinIOFailsClosed(t *testing.T) {
 					t.Fatal(err)
 				}
 				failWrite()
-				if err := g.CardTrust().Approve(t.Context(), "agent", snapshot.Hash()); err == nil {
+				if err := g.CardTrust().Approve(t.Context(), "agent", snapshot.Hash(), mcp.CardApproval{}); err == nil {
 					t.Fatal("failed persistence published approval")
 				}
 				result, err = g.CallTool(t.Context(), "agent__send", map[string]any{"message": "blocked"})
