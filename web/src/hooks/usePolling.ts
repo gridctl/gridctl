@@ -3,14 +3,15 @@ import { useNavigate } from 'react-router';
 import { useStackStore } from '../stores/useStackStore';
 import { useAuthStore } from '../stores/useAuthStore';
 import { useRegistryStore } from '../stores/useRegistryStore';
-import { usePinsStore, countFindingServers, firstDriftedServer, firstFindingsServer, countDriftedSkills, countFindingSkills, firstDriftedSkill, firstFindingsSkill, serverPinsChanged } from '../stores/usePinsStore';
+import { usePinsStore, countFindingServers, firstDriftedServer, firstFindingsServer, countDriftedSkills, countFindingSkills, firstDriftedSkill, firstFindingsSkill, countDriftedContexts, countFindingContexts, firstDriftedContext, firstFindingsContext, serverPinsChanged } from '../stores/usePinsStore';
 import { useTelemetryStore } from '../stores/useTelemetryStore';
 import { useSpecStore } from '../stores/useSpecStore';
 import { useUIStore } from '../stores/useUIStore';
-import { fetchStatus, fetchTools, fetchToolCatalog, fetchClients, fetchRegistryStatus, fetchRegistrySkills, fetchSkillSources, fetchServerPins, fetchSkillPins, fetchStackSpec, fetchStackHealth, getTelemetryInventory, AuthError, isFeatureUnavailable } from '../lib/api';
+import { fetchStatus, fetchTools, fetchToolCatalog, fetchClients, fetchRegistryStatus, fetchRegistrySkills, fetchSkillSources, fetchServerPins, fetchSkillPins, fetchContextPins, fetchStackSpec, fetchStackHealth, getTelemetryInventory, AuthError, isFeatureUnavailable } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
 import { POLLING } from '../lib/constants';
 import { skillPinsUrl } from '../lib/skillGovernance';
+import { contextPinsUrl } from '../lib/contextGovernance';
 import { GatewayRequestError } from '../lib/gatewayRequest';
 import type { GatewayStatus } from '../types';
 import { useBroadcastChannel, type BroadcastMessage } from './useBroadcastChannel';
@@ -21,6 +22,8 @@ let _prevDriftCount = 0;
 let _prevFindingCount = 0;
 let _prevSkillDriftCount = 0;
 let _prevSkillFindingCount = 0;
+let _prevContextDriftCount = 0;
+let _prevContextFindingCount = 0;
 
 // The shell is the only scheduler. Stack and the retry banners call through
 // this slot; unmount clears it so a late Retry is a no-op.
@@ -276,6 +279,45 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
           }
         } else {
           usePinsStore.getState().setSkillPinsError(
+            isConnectionFailure(err) ? 'Gateway connection unavailable' : failureMessage(err),
+          );
+        }
+      }
+
+      try {
+        const contextPins = await fetchContextPins();
+        if (!current()) return;
+        usePinsStore.getState().setContextPins(contextPins);
+
+        const contextDriftCount = countDriftedContexts(contextPins);
+        if (contextDriftCount > 0 && _prevContextDriftCount === 0) {
+          const drifted = firstDriftedContext(contextPins);
+          showToast('warning', `Pin drift detected on ${contextDriftCount} fragment${contextDriftCount > 1 ? 's' : ''}`, {
+            action: { label: 'View', onClick: () => navigate(contextPinsUrl(drifted, 'drift')) },
+            duration: 6000,
+          });
+        }
+        _prevContextDriftCount = contextDriftCount;
+
+        const contextFindingCount = countFindingContexts(contextPins);
+        if (contextFindingCount > 0 && _prevContextFindingCount === 0) {
+          const flagged = firstFindingsContext(contextPins);
+          showToast('warning', `Advisory findings on ${contextFindingCount} fragment${contextFindingCount > 1 ? 's' : ''}`, {
+            action: { label: 'View', onClick: () => navigate(contextPinsUrl(flagged, 'findings')) },
+            duration: 6000,
+          });
+        }
+        _prevContextFindingCount = contextFindingCount;
+      } catch (err) {
+        if (!current()) return;
+        if (isFeatureUnavailable(err)) {
+          if (usePinsStore.getState().contextPins === null) {
+            usePinsStore.getState().setContextPins({});
+          } else {
+            usePinsStore.getState().setContextPinsError(null);
+          }
+        } else {
+          usePinsStore.getState().setContextPinsError(
             isConnectionFailure(err) ? 'Gateway connection unavailable' : failureMessage(err),
           );
         }

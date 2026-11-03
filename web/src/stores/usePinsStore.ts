@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
-import type { ServerPins, SkillPin } from '../lib/api';
+import type { ContextPin, ServerPins, SkillPin } from '../lib/api';
 
 interface PinsState {
   pins: Record<string, ServerPins> | null;
@@ -15,6 +15,10 @@ interface PinsState {
   skillPinsError: string | null;
   setSkillPins: (skillPins: Record<string, SkillPin>) => void;
   setSkillPinsError: (error: string | null) => void;
+  contextPins: Record<string, ContextPin> | null;
+  contextPinsError: string | null;
+  setContextPins: (contextPins: Record<string, ContextPin>) => void;
+  setContextPinsError: (error: string | null) => void;
 }
 
 /**
@@ -49,6 +53,10 @@ export const usePinsStore = create<PinsState>()(
     skillPinsError: null,
     setSkillPins: (skillPins) => set({ skillPins, skillPinsError: null }),
     setSkillPinsError: (skillPinsError) => set({ skillPinsError }),
+    contextPins: null,
+    contextPinsError: null,
+    setContextPins: (contextPins) => set({ contextPins, contextPinsError: null }),
+    setContextPinsError: (contextPinsError) => set({ contextPinsError }),
   }))
 );
 
@@ -182,4 +190,53 @@ export const useFirstDriftedSkill = () => {
 export const useFirstFindingsSkill = () => {
   const skillPins = usePinsStore((s) => s.skillPins);
   return useMemo(() => firstFindingsSkill(skillPins), [skillPins]);
+};
+
+export const contextHasAlertFindings = (pin: ContextPin): boolean =>
+  (pin.findings ?? []).some((f) => f.severity === 'warn' || f.severity === 'critical');
+
+export const countDriftedContexts = (contextPins: Record<string, ContextPin> | null): number => {
+  if (!contextPins) return 0;
+  return Object.values(contextPins).filter((p) => p.status === 'drift').length;
+};
+
+export const countFindingContexts = (contextPins: Record<string, ContextPin> | null): number => {
+  if (!contextPins) return 0;
+  return Object.values(contextPins).filter(contextHasAlertFindings).length;
+};
+
+export const firstDriftedContext = (contextPins: Record<string, ContextPin> | null): string | null => {
+  if (!contextPins) return null;
+  const names = Object.keys(contextPins)
+    .filter((name) => contextPins[name].status === 'drift')
+    .sort((a, b) => a.localeCompare(b));
+  return names[0] ?? null;
+};
+
+export const firstFindingsContext = (contextPins: Record<string, ContextPin> | null): string | null => {
+  if (!contextPins) return null;
+  const names = Object.keys(contextPins)
+    .filter((name) => contextHasAlertFindings(contextPins[name]))
+    .sort((a, b) => a.localeCompare(b));
+  return names[0] ?? null;
+};
+
+export const useDriftedContextCount = () => {
+  const contextPins = usePinsStore((s) => s.contextPins);
+  return useMemo(() => countDriftedContexts(contextPins), [contextPins]);
+};
+
+export const useFindingContextCount = () => {
+  const contextPins = usePinsStore((s) => s.contextPins);
+  return useMemo(() => countFindingContexts(contextPins), [contextPins]);
+};
+
+export const useFirstDriftedContext = () => {
+  const contextPins = usePinsStore((s) => s.contextPins);
+  return useMemo(() => firstDriftedContext(contextPins), [contextPins]);
+};
+
+export const useFirstFindingsContext = () => {
+  const contextPins = usePinsStore((s) => s.contextPins);
+  return useMemo(() => firstFindingsContext(contextPins), [contextPins]);
 };

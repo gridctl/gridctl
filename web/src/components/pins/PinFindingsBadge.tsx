@@ -2,12 +2,15 @@ import { useNavigate } from 'react-router';
 import { ShieldAlert } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { skillPinsUrl } from '../../lib/skillGovernance';
+import { contextPinsUrl } from '../../lib/contextGovernance';
 import {
   usePinsStore,
   useFindingServerCount,
   useFirstFindingsServer,
   useFindingSkillCount,
   useFirstFindingsSkill,
+  useFindingContextCount,
+  useFirstFindingsContext,
 } from '../../stores/usePinsStore';
 
 // PinFindingsBadge is the status-bar chip for poisoning-scan findings,
@@ -20,17 +23,21 @@ export function PinFindingsBadge() {
   const firstFindings = useFirstFindingsServer();
   const skillFindingCount = useFindingSkillCount();
   const firstFindingsSkill = useFirstFindingsSkill();
+  const contextFindingCount = useFindingContextCount();
+  const firstFindingsContext = useFirstFindingsContext();
   const navigate = useNavigate();
 
-  if (pins === null && skillFindingCount === 0) return null;
-  if (findingCount === 0 && skillFindingCount === 0) return null;
+  if (pins === null && skillFindingCount === 0 && contextFindingCount === 0) return null;
+  if (findingCount === 0 && skillFindingCount === 0 && contextFindingCount === 0) return null;
 
-  // The server-only label is unchanged; skills join the tally only when
-  // they actually carry findings.
+  // The server-only label is unchanged; skills and fragments join the tally
+  // only when they actually carry findings.
   const parts: string[] = [];
   if (findingCount > 0) parts.push(`${findingCount} server${findingCount > 1 ? 's' : ''}`);
   if (skillFindingCount > 0)
     parts.push(`${skillFindingCount} skill${skillFindingCount > 1 ? 's' : ''}`);
+  if (contextFindingCount > 0)
+    parts.push(`${contextFindingCount} fragment${contextFindingCount > 1 ? 's' : ''}`);
   const label = `Findings: ${parts.join(' · ')}`;
 
   return (
@@ -41,7 +48,9 @@ export function PinFindingsBadge() {
             ? `/pins?server=${encodeURIComponent(firstFindings)}&view=findings`
             : firstFindingsSkill
               ? skillPinsUrl(firstFindingsSkill, 'findings')
-              : '/pins',
+              : firstFindingsContext
+                ? contextPinsUrl(firstFindingsContext, 'findings')
+                : '/pins',
         )
       }
       className={cn('flex items-center gap-2 transition-colors hover:opacity-80 text-status-pending')}
