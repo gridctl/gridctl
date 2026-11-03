@@ -10,7 +10,7 @@ A stack is the YAML file (`stack.yaml`, or any path you pass to `gridctl apply`)
 
 ## Pack
 
-A pack is a git repository with a `gridctl-pack.yaml` manifest: a versioned selection of skills, agents, rule fragments, gateway wiring, and an optional stack file, pinned on add at `~/.gridctl/packs/<name>/<commit>/`. A booster pack extends another pack's stack with a fragment; `pack apply` composes them into one gateway on the base pack's port. `gridctl-pack.lock.yaml`, written by `gridctl pack lock`, pins each external source commit so two machines import the same revisions. `gridctl pack add` imports that selection, and `gridctl pack apply` starts a carried stack from the CLI only, then projects the selected resources; REST and the web UI project resources but do not start, stop, or reload the daemon ([Packs](packs.md), [Carrying a stack](packs.md#carrying-a-stack), [Lock file](packs.md#lock-file)).
+A pack is a git repository with a `gridctl-pack.yaml` manifest: a versioned selection of skills, agents, hooks, rule fragments, gateway wiring, and an optional stack file, pinned on add at `~/.gridctl/packs/<name>/<commit>/`. A booster pack extends another pack's stack with a fragment; `pack apply` composes them into one gateway on the base pack's port. `gridctl-pack.lock.yaml`, written by `gridctl pack lock`, pins each external source commit so two machines import the same revisions. `gridctl pack add` imports that selection, and `gridctl pack apply` starts a carried stack from the CLI only, then projects the selected resources; REST and the web UI project resources but do not start, stop, or reload the daemon ([Packs](packs.md), [Carrying a stack](packs.md#carrying-a-stack), [Lock file](packs.md#lock-file)).
 
 ## Skill
 
@@ -19,6 +19,10 @@ A skill is Agent Skills prose at `~/.gridctl/registry/skills/<name>/SKILL.md`, w
 ## Agent
 
 An agent is an imported definition at `~/.gridctl/registry/agents/<name>/AGENT.md`, copied from `agents/*.md`, and it is not the removed Agent IDE. `gridctl skill list --kind agent` and `gridctl skill project sync --kind agent` act on that kind ([Agent definitions](skills.md#agent-definitions)).
+
+## Hook
+
+A hook is a directory `hooks/<name>/` in a pack repository, holding `hook.json` and the scripts that file names. `gridctl pack add` imports the names listed under `hooks:` into `~/.gridctl/registry/hooks/<name>/`, scans them, and pins the bytes. gridctl does not execute a hook. Projection into a client settings file is not available in this release ([Hooks](hooks.md)).
 
 ## Rule fragment
 
