@@ -4,6 +4,8 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.0-rc.4] - 2026-11-03
+
 ### Features
 
 - The web UI names a blocked popout and keeps the source panel in place. The warning stays until dismissed. Open opens the same route in a new tab and does not clear the warning. A detached panel's button stays enabled and reads "Detached. Click to focus"; clicking it focuses that window, and a missing window clears the detached state instead of leaving a blank popup. Reloading the main window asks open popouts to report back. A reply restores the detached indicator without opening a new window, and a reply for a popout that is already detached does not close the Stack inspector. Preferences, in the header and the command palette, sets the theme, compact mode for the seven workspaces that use it, and text size for Library, Tools, Traces, and the log font. Text size still changes when the browser refuses the storage write; the new size stays in memory for the session and is not persisted. `?`, the command palette, and Preferences open a keyboard shortcuts panel grouped by the handler that actually fires each chord. Existing preference values move to `gridctl-pref-*` keys on load. Shared switch, badge, and button primitives replace the one-off controls, wizard tiles show a count only when one is known and positive, and the Fleet button explains why it will not open when the stack has no servers.
