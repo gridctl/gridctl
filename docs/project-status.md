@@ -9,7 +9,7 @@ Gridctl is preparing its 1.0 release. This page tracks the stability tier of eac
 
 Nearly every shipped feature surface is Stable as of the release candidate; the table below marks the exceptions. The Experimental tier also covers features that ship dark behind the `experimental:` feature-flag registry (see [Config Schema](config-schema.md#experimental-feature-flags)).
 
-Release baseline: **v1.0.0-rc.3** (see [CHANGELOG.md](../CHANGELOG.md) for release-by-release detail).
+Release baseline: **v1.0.0-rc.4** (see [CHANGELOG.md](../CHANGELOG.md) for release-by-release detail).
 
 ## Feature stability
 
