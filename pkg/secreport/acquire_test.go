@@ -101,6 +101,73 @@ func TestSnapshotPreservesGeneratedAt(t *testing.T) {
 	}
 }
 
+func TestLoadSnapshot_PinApprovalPredicates(t *testing.T) {
+	approvedAt := time.Date(2026, 10, 2, 15, 4, 5, 0, time.UTC)
+	original := Assemble(approvedAt, Inputs{
+		Source: SourceIdentity{Kind: SourceFile, Display: "stack.yaml"},
+		Stack: &StackView{Name: "demo", Servers: []ServerView{
+			{Name: "fetch", Kind: "container"},
+			{Name: "bare", Kind: "process"},
+		}, Gateway: &GatewayDeclView{}, SetMembers: map[string][]string{}},
+		Pins: &PinView{Available: true, Enabled: true, Servers: map[string]ServerPinView{
+			"fetch": {Status: "pinned", ApprovalRecorded: true, ApprovedAt: approvedAt, ApprovedHash: "abc123"},
+		}},
+		SkillPins: &SkillPinView{Available: true, Skills: map[string]SkillPinRecordView{
+			"triage":  {Status: "pinned", ApprovalRecorded: true, ApprovedAt: approvedAt, ApprovedHash: "def456"},
+			"unnoted": {Status: "pinned"},
+		}},
+	})
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := ParseSnapshot(data)
+	if err != nil {
+		t.Fatalf("ParseSnapshot: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "report.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadSnapshot(context.Background(), path)
+	if err != nil {
+		t.Fatalf("LoadSnapshot: %v", err)
+	}
+	want := map[string]string{}
+	for _, c := range parsed.Checks {
+		if c.Predicate == PredSkillPinApproval || c.Predicate == PredPinSchemaApproval {
+			want[c.ID] = c.ReasonCode
+		}
+	}
+	if len(want) == 0 {
+		t.Fatal("assembled report had no approval checks")
+	}
+	got := map[string]string{}
+	for _, c := range loaded.Checks {
+		if c.Predicate == PredSkillPinApproval || c.Predicate == PredPinSchemaApproval {
+			got[c.ID] = c.ReasonCode
+		}
+	}
+	if len(got) != len(want) {
+		t.Fatalf("loaded %d approval checks, parsed %d", len(got), len(want))
+	}
+	var recorded, unrecorded int
+	for id, reason := range want {
+		if got[id] != reason {
+			t.Fatalf("%s reason = %s, want %s", id, got[id], reason)
+		}
+		switch reason {
+		case "approval_recorded":
+			recorded++
+		case "approval_unrecorded":
+			unrecorded++
+		}
+	}
+	if recorded == 0 || unrecorded == 0 {
+		t.Fatalf("recorded=%d unrecorded=%d", recorded, unrecorded)
+	}
+}
+
 func TestGatewayRejectsRedirectAndUserinfo(t *testing.T) {
 	redir := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "http://example.invalid/steal", http.StatusFound)
