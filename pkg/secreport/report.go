@@ -31,9 +31,11 @@ const (
 	SubjectServer  = "server"
 	SubjectSkill   = "skill"
 	SubjectReplica = "replica"
+	SubjectContext = "context"
 
-	ActionViewPins      = "view_pins"
-	ActionViewSkillPins = "view_skill_pins"
+	ActionViewPins        = "view_pins"
+	ActionViewSkillPins   = "view_skill_pins"
+	ActionViewContextPins = "view_context_pins"
 
 	CoverageComplete = "complete"
 	CoveragePartial  = "partial"
@@ -50,6 +52,8 @@ const (
 	PredSkillPinBaseline      = "skill.pin.baseline"
 	PredSkillPinContinuity    = "skill.pin.continuity"
 	PredSkillPinApproval      = "skill.pin.approval"
+	PredContextPinBaseline    = "context.pin.baseline"
+	PredContextPinContinuity  = "context.pin.continuity"
 	PredPinSchemaApproval     = "pin.schema.approval"
 	PredSourceDeclared        = "source.declared"
 	PredSourceBuildDigest     = "source.build_digest"
@@ -78,6 +82,8 @@ var PredicateInventory = []string{
 	PredSkillPinBaseline,
 	PredSkillPinContinuity,
 	PredSkillPinApproval,
+	PredContextPinBaseline,
+	PredContextPinContinuity,
 	PredPinSchemaApproval,
 	PredSourceDeclared,
 	PredSourceBuildDigest,
@@ -99,6 +105,7 @@ var PredicateInventory = []string{
 var FailPredicates = []string{
 	PredPinContinuity,
 	PredSkillPinContinuity,
+	PredContextPinContinuity,
 	PredExecutionEnforcement,
 }
 

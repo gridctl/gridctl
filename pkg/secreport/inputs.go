@@ -5,12 +5,13 @@ import "time"
 // Inputs is the typed safe snapshot the assembler consumes. Nil optional
 // producers yield unknown checks rather than fabricated evidence.
 type Inputs struct {
-	Source    SourceIdentity
-	Stack     *StackView
-	Pins      *PinView
-	SkillPins *SkillPinView
-	Startup   *StartupView
-	Execution []ExecutionView
+	Source      SourceIdentity
+	Stack       *StackView
+	Pins        *PinView
+	SkillPins   *SkillPinView
+	ContextPins *ContextPinView
+	Startup     *StartupView
+	Execution   []ExecutionView
 }
 
 // StackView is a value-free authored configuration projection.
@@ -134,6 +135,23 @@ type SkillPinRecordView struct {
 	ApprovalRecorded bool
 	ApprovedAt       time.Time
 	ApprovedHash     string
+}
+
+// ContextPinView is stored context-pin evidence scoped to context subjects.
+// It carries no document body, finding message, or path.
+type ContextPinView struct {
+	Available bool
+	Fragments map[string]ContextPinRecordView
+}
+
+// ContextPinRecordView is one fragment pin without document content.
+type ContextPinRecordView struct {
+	Status         string
+	Source         string
+	Pack           string
+	PinnedAt       time.Time
+	LastVerifiedAt time.Time
+	FindingCodes   []string
 }
 
 // StartupView is a value-free active startup security snapshot.
