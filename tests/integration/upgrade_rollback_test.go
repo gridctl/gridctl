@@ -417,9 +417,9 @@ func assertProbedSchemasMatchBinary(ctx context.Context, t *testing.T, bin, home
 }
 
 type retainedSchemas struct {
-	DaemonState int    `json:"daemon_state"`
-	ProjectLock int    `json:"project_lock"`
-	ImportLock  int    `json:"import_lock"`
+	DaemonState  int    `json:"daemon_state"`
+	ProjectLock  int    `json:"project_lock"`
+	ImportLock   int    `json:"import_lock"`
 	ToolPins     string `json:"tool_pins"`
 	SkillPins    string `json:"skill_pins"`
 	PinApprovals string `json:"pin_approvals"`
