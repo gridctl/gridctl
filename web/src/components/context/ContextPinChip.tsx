@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { cn } from '../../lib/cn';
-import { fetchContextPins, type ContextPin } from '../../lib/api';
+import { fetchContextPins, resetContextPin, type ContextPin } from '../../lib/api';
+import { usePinsStore } from '../../stores/usePinsStore';
 import { Modal } from '../ui/Modal';
 import { PinsContextDetail } from '../pins/PinsContextDetail';
 
@@ -54,7 +55,15 @@ export function ContextPinReviewModal({
   return (
     <Modal isOpen onClose={onClose} title={`${name} changed since its pin`} size="wide">
       {pin ? (
-        <PinsContextDetail name={name} pin={pin} onReset={async () => onClose()} />
+        <PinsContextDetail
+          name={name}
+          pin={pin}
+          onReset={async (fragment) => {
+            await resetContextPin(fragment);
+            usePinsStore.getState().setContextPins(await fetchContextPins());
+            onClose();
+          }}
+        />
       ) : (
         <p className="text-xs text-text-muted p-4">No pin record for {name}.</p>
       )}

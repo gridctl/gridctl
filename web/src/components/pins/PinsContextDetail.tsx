@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import type { ContextPin, ContextPinsDiff } from '../../lib/api';
-import { approveContextPin, fetchContextPinDiff, HTTPError } from '../../lib/api';
+import { approveContextPin, fetchContextPinDiff, fetchContextPins, HTTPError } from '../../lib/api';
+import { usePinsStore } from '../../stores/usePinsStore';
 import { escapeNonPrintable } from '../../lib/nonPrintable';
 import { describeError } from '../../lib/describeError';
 import { showToast } from '../ui/Toast';
@@ -141,13 +142,15 @@ function ContextDriftSection({ name }: { name: string }) {
     };
   }, [name]);
 
-  const needsReason = (diff?.findings ?? []).some((f) => f.severity === 'warn' || f.severity === 'critical');
+  // The server requires a reason for any finding, including info.
+  const needsReason = (diff?.findings ?? []).length > 0;
 
   const doApprove = async () => {
     if (!diff) return;
     setIsApproving(true);
     try {
       await approveContextPin(name, diff.composite_hash, reason.trim() || undefined);
+      usePinsStore.getState().setContextPins(await fetchContextPins());
       showToast('success', `Approved ${name}`);
       setReason('');
     } catch (err) {
