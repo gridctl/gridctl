@@ -36,8 +36,8 @@ import { SchemaDiffModal } from './SchemaDiffModal';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { copyWithToast, showToast } from '../ui/Toast';
 import { describeError, isCancellation } from '../../lib/describeError';
-import { ApprovalFields, PinApprovalHistory } from './PinApprovalHistory';
-import { credentialRefusalText, latestApprovals, splitEvidence } from './pinApproval';
+import { ApprovalFields } from './PinApprovalHistory';
+import { credentialRefusalText, splitEvidence } from './pinApproval';
 import { downloadTextFile, pinsDiffExportFilename } from '../../lib/download';
 
 // Stable DOM ids: the workspace scrolls to the section for ?view=drift, the
@@ -73,7 +73,6 @@ export function DriftSection({ serverName }: { serverName: string }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [reason, setReason] = useState('');
   const [evidence, setEvidence] = useState('');
-  const approvals = usePinsStore((s) => s.pins?.[serverName]?.approvals);
   // Bumped by Retry and by a failed approve so the effect refetches.
   const [attempt, setAttempt] = useState(0);
 
@@ -281,7 +280,6 @@ export function DriftSection({ serverName }: { serverName: string }) {
           )}
         </button>
       </div>
-      <PinApprovalHistory approvals={latestApprovals(approvals, diff?.last_approval)} />
 
       {error && (
         <div role="alert" className="flex items-center gap-2 text-2xs text-status-error">

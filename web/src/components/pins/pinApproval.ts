@@ -1,4 +1,4 @@
-import type { PinApproval } from '../../lib/api';
+import { HTTPError } from '../../lib/api';
 
 export function splitEvidence(text: string): string[] {
   const seen = new Set<string>();
@@ -12,24 +12,10 @@ export function splitEvidence(text: string): string[] {
   return out;
 }
 
-export function latestApprovals(record?: PinApproval[], fallback?: PinApproval): PinApproval[] | undefined {
-  if (record && record.length > 0) return record;
-  if (fallback) return [fallback];
-  return undefined;
-}
-
+// A 400 from an approve call is an input refusal. Show the server text.
+// Branch on the status, not on message substrings.
 export function credentialRefusalText(err: unknown): string | null {
-  if (!err || typeof err !== 'object' || !('status' in err) || !('message' in err)) return null;
-  const status = (err as { status?: number }).status;
-  const message = String((err as { message?: string }).message ?? '');
-  if (status !== 400) return null;
-  if (
-    message.includes('URL carries userinfo') ||
-    message.includes('bearer token') ||
-    message.includes('key=value secret') ||
-    message.includes('credential-shaped')
-  ) {
-    return message;
-  }
-  return null;
+  if (!(err instanceof HTTPError) || err.status !== 400) return null;
+  const message = err.message.trim();
+  return message === '' ? null : message;
 }

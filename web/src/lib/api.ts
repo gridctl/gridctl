@@ -2424,7 +2424,7 @@ export async function approveServerPins(
     } catch {
       // Non-JSON error body; keep the status-line message.
     }
-    throw new Error(message);
+    throw new HTTPError(response.status, message);
   }
 }
 

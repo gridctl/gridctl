@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { PinApprovalHistory } from './PinApprovalHistory';
+import { ApprovalFields, PinApprovalHistory } from './PinApprovalHistory';
 import type { PinApproval } from '../../lib/api';
 
 vi.mock('../ui/Toast', () => ({ showToast: vi.fn(), copyWithToast: vi.fn() }));
@@ -36,5 +36,22 @@ describe('PinApprovalHistory', () => {
     expect(screen.queryByRole('link')).toBeNull();
     expect(container.textContent).toContain('https://example.test/pull/42');
     expect(container.textContent).toContain('\\u202e');
+  });
+});
+
+describe('ApprovalFields', () => {
+  it('labels the reason and evidence inputs and switches the reason placeholder', () => {
+    const { rerender } = render(
+      <ApprovalFields reason="" onReason={() => {}} evidence="" onEvidence={() => {}} reasonRequired={false} />,
+    );
+    expect(screen.getByLabelText('Approval reason')).toHaveAttribute('placeholder', 'Reason (optional)');
+    expect(screen.getByLabelText('Evidence references, one per line')).toBeInTheDocument();
+    expect(screen.getByText('Evidence references, one per line')).toBeInTheDocument();
+
+    rerender(<ApprovalFields reason="" onReason={() => {}} evidence="" onEvidence={() => {}} reasonRequired />);
+    expect(screen.getByLabelText('Approval reason')).toHaveAttribute(
+      'placeholder',
+      'Reason (required: advisory findings present)',
+    );
   });
 });
