@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/gridctl/gridctl/pkg/contexts"
@@ -62,14 +63,19 @@ func (s *Server) SetContextPinStore(store *ctxpins.Store) {
 }
 
 func (s *Server) contextPins() (*ctxpins.Store, error) {
-	if s.contextPinStore != nil {
-		return s.contextPinStore, nil
+	s.contextPinsOnce.Do(func() {
+		if s.contextPinStore != nil {
+			return
+		}
+		store := ctxpins.New()
+		enabled, ignore := ctxpins.DeployedScanConfig()
+		store.SetScanConfig(enabled, ignore)
+		s.contextPinStore = store
+	})
+	if s.contextPinStore == nil {
+		return nil, errors.New("context pin store unavailable")
 	}
-	store := ctxpins.New()
-	enabled, ignore := ctxpins.DeployedScanConfig()
-	store.SetScanConfig(enabled, ignore)
-	s.contextPinStore = store
-	return store, nil
+	return s.contextPinStore, nil
 }
 
 func (s *Server) contextPinSource(ctx context.Context, mgr *contexts.Manager) (ctxpins.Source, error) {
@@ -94,6 +100,13 @@ type ctxPinsSummaryDoc struct {
 	Unpinned []string `json:"unpinned"`
 }
 
+func emptyCtxPinsSummary() ctxPinsSummaryDoc {
+	return ctxPinsSummaryDoc{Drifted: []string{}, Missing: []string{}, Unpinned: []string{}}
+}
+
+// contextPinSummary is observe-only. A pin-file error is logged and does
+// not fail the context document: ctx status and the editor must keep
+// working when the pin file is corrupt or newer than this binary.
 func (s *Server) contextPinSummary(ctx context.Context, mgr *contexts.Manager) (ctxPinsSummaryDoc, error) {
 	store, err := s.contextPins()
 	if err != nil {
@@ -101,7 +114,8 @@ func (s *Server) contextPinSummary(ctx context.Context, mgr *contexts.Manager) (
 	}
 	records, err := store.GetAll(ctx)
 	if err != nil {
-		return ctxPinsSummaryDoc{}, err
+		slog.Warn("context: pin summary unavailable", "error", err)
+		return emptyCtxPinsSummary(), nil
 	}
 	src, err := s.contextPinSource(ctx, mgr)
 	if err != nil {
@@ -122,7 +136,10 @@ func (s *Server) contextFragmentPinStatus(ctx context.Context, mgr *contexts.Man
 	}
 	pin, _, err := store.Get(ctx, name)
 	if err != nil {
-		return "", err
+		// name is a request path value. The pin-file error already names
+		// the file, so the fragment is omitted rather than logged raw.
+		slog.Warn("context: fragment pin status unavailable", "error", err)
+		return "unpinned", nil
 	}
 	src, err := s.contextPinSource(ctx, mgr)
 	if err != nil {
@@ -302,8 +319,10 @@ func (s *Server) handleApproveContextPin(w http.ResponseWriter, r *http.Request)
 	case errors.Is(err, ctxpins.ErrDigestUnavailable):
 		writeJSONError(w, "Fragment content could not be hashed: "+err.Error(), http.StatusInternalServerError)
 		return
-	case errors.Is(err, ctxpins.ErrNoDocument), errors.Is(err, ctxpins.ErrNotPinned):
-		writeJSONError(w, "No pin found for fragment: "+name, http.StatusNotFound)
+	case errors.Is(err, ctxpins.ErrNoDocument):
+		// Approve re-pins a present fragment that has no record. 404 is
+		// only for a fragment that is not in the context store.
+		writeJSONError(w, "Fragment not found: "+name, http.StatusNotFound)
 		return
 	case errors.Is(err, ctxpins.ErrHashMismatch):
 		writeJSONError(w, "Fragment content changed since the reviewed diff; fetch the diff again and re-review", http.StatusConflict)

@@ -148,9 +148,11 @@ type Server struct {
 	contextsErr     error
 
 	// contextPinStore is the stackless fragment pin store. Tests inject one
-	// via SetContextPinStore. The store is stateless, so one instance for
-	// the process is correct: each call reloads the file.
+	// via SetContextPinStore before the first request. The store is
+	// stateless, so one instance for the process is correct: each call
+	// reloads the file. contextPinsOnce publishes that pointer once.
 	contextPinStore *ctxpins.Store
+	contextPinsOnce sync.Once
 
 	// Wiring ownership manager (pkg/wiring), lazily built against the
 	// real home directory on first use; tests inject a temp-home manager

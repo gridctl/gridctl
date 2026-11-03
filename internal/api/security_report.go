@@ -59,10 +59,11 @@ func (s *Server) passiveSecurityReport(ctx context.Context) *secreport.Report {
 }
 
 func (s *Server) contextPinStoreForReport() *ctxpins.Store {
-	if s.contextPinStore != nil {
-		return s.contextPinStore
+	store, err := s.contextPins()
+	if err != nil || store == nil {
+		return ctxpins.New()
 	}
-	return ctxpins.New()
+	return store
 }
 
 func (s *Server) passiveExecutionViews() []secreport.ExecutionView {

@@ -16,25 +16,28 @@ import (
 // pure file operations and work in stackless mode.
 func (s *Server) contextsMgr() (*contexts.Manager, error) {
 	s.contextsOnce.Do(func() {
+		if s.contextsManager == nil {
+			mgr, err := contexts.NewManager()
+			if err != nil {
+				s.contextsErr = err
+				return
+			}
+			s.contextsManager = mgr
+		}
+		// Attach once, before any request goroutine observes the manager.
+		// A per-request SetPinner races with sync reads of m.pinner.
+		// Injected managers are wired here too, after test setup, so the
+		// captured lock path is the one requests see.
 		if s.contextsManager != nil {
-			return
+			s.attachContextPinner(s.contextsManager)
 		}
-		mgr, err := contexts.NewManager()
-		if err != nil {
-			s.contextsErr = err
-			return
-		}
-		s.contextsManager = mgr
 	})
-	if s.contextsManager != nil {
-		s.attachContextPinner(s.contextsManager)
-	}
 	return s.contextsManager, s.contextsErr
 }
 
-// attachContextPinner wires the stackless pin store onto a manager. A
-// manager injected by tests is wired on first use too, so REST pack apply
-// pins through the same path as the CLI.
+// attachContextPinner wires the stackless pin store onto a manager. Call
+// it once, before the manager is shared. REST pack apply pins through
+// this path, the same as the CLI.
 func (s *Server) attachContextPinner(mgr *contexts.Manager) {
 	if mgr == nil {
 		return
@@ -49,6 +52,9 @@ func (s *Server) attachContextPinner(mgr *contexts.Manager) {
 // SetContextsManager overrides the global-context manager. Must be
 // called before the server handles its first request (it races with the
 // lazy sync.Once initialization otherwise); tests call it during setup.
+// The pinner is not attached here: direct Manager calls in tests are not
+// the server path, and skillLockPath may still be unset. contextsMgr
+// attaches once on first use, including for an injected manager.
 func (s *Server) SetContextsManager(m *contexts.Manager) {
 	s.contextsManager = m
 }
