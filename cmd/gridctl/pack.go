@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/gridctl/gridctl/pkg/contexts"
 	gitpkg "github.com/gridctl/gridctl/pkg/git"
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/pack"
@@ -65,7 +64,7 @@ func newPackManagers() (*packops.Managers, error) {
 	if err != nil {
 		return nil, err
 	}
-	cm, err := contexts.NewManager()
+	cm, err := newContextManager()
 	if err != nil {
 		return nil, err
 	}

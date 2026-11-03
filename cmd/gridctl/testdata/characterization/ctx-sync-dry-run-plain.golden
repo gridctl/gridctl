@@ -23,3 +23,5 @@ vscode  dedicated-file  — skipped-unavailable  $HOME/.copilot/instructions/gri
 
 
 opencode: target was hand-edited. Inspect with 'gridctl ctx diff opencode', keep the edit with 'gridctl ctx adopt opencode', or overwrite with 'gridctl ctx sync --force opencode'
+
+unpinned: AGENTS.md (review with 'gridctl ctx pins diff')

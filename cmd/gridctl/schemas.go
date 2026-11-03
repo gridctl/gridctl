@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/ctxpins"
 	"github.com/gridctl/gridctl/pkg/pinapprovals"
 	"github.com/gridctl/gridctl/pkg/pins"
 	"github.com/gridctl/gridctl/pkg/project"
@@ -37,6 +38,7 @@ func currentSchemas() *versions.Schemas {
 		ToolPins:     pins.FileVersion,
 		SkillPins:    skillpins.FileVersion,
 		PinApprovals: pinapprovals.FileVersion,
+		ContextPins:  ctxpins.FileVersion,
 	}
 }
 

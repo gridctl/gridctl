@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/versions"
 	"gopkg.in/yaml.v3"
 )
@@ -95,6 +96,7 @@ func checkPreswap(ctx context.Context, in preswapInput) (preswapResult, error) {
 	if err := ctx.Err(); err != nil {
 		return out, err
 	}
+	out.Warnings = append(out.Warnings, contextPinWarnings(in)...)
 	if in.Target == nil {
 		out.Warnings = append(out.Warnings, unknownSchemasWarning(in.TargetTag))
 		return out, nil
@@ -123,6 +125,51 @@ func checkPreswap(ctx context.Context, in preswapInput) (preswapResult, error) {
 	out.Refusals = append(out.Refusals, lockRefusals...)
 	out.Warnings = append(out.Warnings, lockWarnings...)
 	return out, nil
+}
+
+// contextPinWarnings checks the stackless context pin file once. An absent
+// file is silent. Unlike tool and skill pins, a version the target cannot
+// read is a warning, not a refusal: an older binary ignores the file and
+// the daemon still starts.
+func contextPinWarnings(in preswapInput) []string {
+	path, err := state.ContextPinsPath()
+	if err != nil {
+		return nil
+	}
+	data, err := os.ReadFile(path) // #nosec G304 -- path is the fixed context pin file under the gridctl home
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return []string{fmt.Sprintf("warning: %s could not be read; context pin compatibility is unknown", path)}
+	}
+	var head pinHead
+	if err := json.Unmarshal(data, &head); err != nil {
+		return []string{fmt.Sprintf("warning: %s could not be parsed; context pin compatibility is unknown", path)}
+	}
+	advertised := ""
+	if in.Target != nil {
+		advertised = in.Target.ContextPins
+	}
+	if advertised == "" {
+		return []string{fmt.Sprintf("warning: %s does not advertise a context pin version; context pin compatibility is unknown", in.TargetTag)}
+	}
+	targetVer, err := strconv.Atoi(advertised)
+	if err != nil {
+		return []string{fmt.Sprintf("warning: %s advertises context pin version %q, which is not an integer; context pin compatibility is unknown", in.TargetTag, advertised)}
+	}
+	fileVer, unknown, warn := parsePinFileVersion(head.Version)
+	if unknown {
+		return []string{fmt.Sprintf("warning: %s has pin version %q, which is not an integer; context pin compatibility is unknown", path, head.Version)}
+	}
+	var warnings []string
+	if warn != "" {
+		warnings = append(warnings, warn)
+	}
+	if fileVer > targetVer {
+		warnings = append(warnings, fmt.Sprintf("warning: %s is version %d; %s reads version %d and will not read the context pin file", path, fileVer, in.TargetTag, targetVer))
+	}
+	return warnings
 }
 
 func unknownSchemasWarning(tag string) string {
