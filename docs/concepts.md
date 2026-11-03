@@ -2,7 +2,7 @@
 
 Gridctl keeps an agent setup in files you can commit, then runs the gateway and applies the rest to the clients you select. This page defines the words the other guides use. It does not rename them.
 
-A committed stack declares servers. A pack selects skills, agents, rules, and wiring, and may carry a stack. [`gridctl link`](cli-reference.md#llm-clients) writes the gateway endpoint into a client config and does not install skills, agents, or rules. Those move by [projection](#projection), and only onto clients that can read that resource ([skill channels](skills.md#how-skills-reach-the-model), [context coverage](global-context.md#write-strategies)). Secret values and lockfiles stay on the host. A tool call is not a cross-host reproduction.
+A committed stack declares servers. A pack selects skills, agents, hooks, rules, and wiring, and may carry a stack. [`gridctl link`](cli-reference.md#llm-clients) writes the gateway endpoint into a client config and does not install skills, agents, or rules. Those move by [projection](#projection), and only onto clients that can read that resource ([skill channels](skills.md#how-skills-reach-the-model), [context coverage](global-context.md#write-strategies)). Secret values and lockfiles stay on the host. A tool call is not a cross-host reproduction.
 
 ## Stack
 
@@ -10,7 +10,7 @@ A stack is the YAML file (`stack.yaml`, or any path you pass to `gridctl apply`)
 
 ## Pack
 
-A pack is a git repository with a `gridctl-pack.yaml` manifest: a versioned selection of skills, agents, rule fragments, gateway wiring, and an optional stack file, pinned on add at `~/.gridctl/packs/<name>/<commit>/`. A booster pack extends another pack's stack with a fragment; `pack apply` composes them into one gateway on the base pack's port. `gridctl-pack.lock.yaml`, written by `gridctl pack lock`, pins each external source commit so two machines import the same revisions. `gridctl pack add` imports that selection, and `gridctl pack apply` starts a carried stack from the CLI only, then projects the selected resources; REST and the web UI project resources but do not start, stop, or reload the daemon ([Packs](packs.md), [Carrying a stack](packs.md#carrying-a-stack), [Lock file](packs.md#lock-file)).
+A pack is a git repository with a `gridctl-pack.yaml` manifest: a versioned selection of skills, agents, hooks, rule fragments, gateway wiring, and an optional stack file, pinned on add at `~/.gridctl/packs/<name>/<commit>/`. A booster pack extends another pack's stack with a fragment; `pack apply` composes them into one gateway on the base pack's port. `gridctl-pack.lock.yaml`, written by `gridctl pack lock`, pins each external source commit so two machines import the same revisions. `gridctl pack add` imports that selection, and `gridctl pack apply` starts a carried stack from the CLI only, then projects skills, agents, rules, and wiring. It does not project hooks. REST and the web UI project those same resources but do not start, stop, or reload the daemon ([Packs](packs.md), [Carrying a stack](packs.md#carrying-a-stack), [Lock file](packs.md#lock-file)).
 
 ## Skill
 
@@ -24,6 +24,10 @@ An agent is an imported definition at `~/.gridctl/registry/agents/<name>/AGENT.m
 
 A rule fragment is one markdown file in the opt-in library at `~/.gridctl/context/fragments/*.md`, and a pack ships the same kind of file from `rules/*.md` or `fragments/*.md`. `gridctl ctx add`, `ctx list`, and `ctx rm` manage the local library ([Rule fragments](global-context.md#rule-fragments-opt-in)). Content pins record a digest of each fragment, or of the single `AGENTS.md` when fragments mode is off, and hold later changes as pin drift until a human approves them ([Fragment pins](global-context.md#fragment-pins)).
 
+## Hook
+
+A hook is a directory `hooks/<name>/` in a pack repository, holding `hook.json` and the scripts that file names. `gridctl pack add` imports the names listed under `hooks:` into `~/.gridctl/registry/hooks/<name>/`, scans them, and pins the bytes. gridctl does not execute a hook. Projection into a client settings file is not available ([Hooks](hooks.md)).
+
 ## Global context
 
 Global context is the user-level instruction file at `~/.gridctl/context/AGENTS.md`, in the [agents.md](https://agents.md) convention; fragments mode replaces that file with the library above. `gridctl ctx` projects it into client locations that have a writable global file, and per-project `AGENTS.md` files stay in their repositories ([The canonical file](global-context.md#the-canonical-file)).
@@ -34,7 +38,7 @@ Wiring is the gateway entry `gridctl link` writes into a client MCP config, with
 
 ## Registry
 
-The registry is the local store at `~/.gridctl/registry/` for skills and agents, and it is not declared in stack YAML. Skills enter through `gridctl skill add` (a git repo, or a local directory), `gridctl skill import`, `gridctl import <client> --kind all`, a pack, the Library workspace, or the REST API; local-directory import, client-home import, and `--kind` are included in v1.0.0-rc.2. `~/.gridctl/skills.yaml` is a display list only, and `gridctl skill update` does not read it ([Skills](skills.md), [Skill sources](config-schema.md#skill-sources)).
+The registry is the local store at `~/.gridctl/registry/` for skills, agents, and hooks, and it is not declared in stack YAML. Hooks enter only through `gridctl pack add`. Skills enter through `gridctl skill add` (a git repo, or a local directory), `gridctl skill import`, `gridctl import <client> --kind all`, a pack, the Library workspace, or the REST API; local-directory import, client-home import, and `--kind` are included in v1.0.0-rc.2. `~/.gridctl/skills.yaml` is a display list only, and `gridctl skill update` does not read it ([Skills](skills.md), [Skill sources](config-schema.md#skill-sources)).
 
 ## Projection
 

@@ -21,10 +21,12 @@ const (
 	// first. Older entries are dropped on append.
 	MaxHistory = 10
 
-	// KindSkill, KindTool, and KindContext are the log file kind discriminants.
+	// KindSkill, KindTool, KindContext, and KindHook are the log file kind
+	// discriminants.
 	KindSkill   = "skill"
 	KindTool    = "tool"
 	KindContext = "context"
+	KindHook    = "hook"
 
 	// Attribution sources. os_user is the local OS account, declared is a
 	// name the caller supplied and this process did not verify, and oauth

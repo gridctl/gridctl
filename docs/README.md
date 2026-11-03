@@ -7,11 +7,11 @@ Guides and references for gridctl.
 New to gridctl? Read in this order:
 
 1. **[Installation](installation.md)** - get the binary on your machine
-2. **[Concepts](concepts.md)** - stack, pack, skill, agent, rule, registry, projection, and link
+2. **[Concepts](concepts.md)** - stack, pack, skill, agent, hook, rule, registry, projection, and link
 3. **[Quick Start](../README.md#-quick-start)** - apply a pinned server and call a live tool
 4. **[Configuration Reference](config-schema.md)** - the shape of `stack.yaml`
 5. **[Skills](skills.md)** - serve skills to upstream MCP clients and project skills and agents onto disk
-6. **[Packs](packs.md)** - import skills, agents (including from declared external repositories), rules, wiring, and an optional stack as one unit from a git repo, extend a base pack with a fragment, and pin source commits with `gridctl pack lock`
+6. **[Packs](packs.md)** - import skills, agents (including from declared external repositories), hooks, rules, wiring, and an optional stack as one unit from a git repo, extend a base pack with a fragment, and pin source commits with `gridctl pack lock`
 7. **[Scaling](scaling.md)** and **[Usage Observability](usage-observability.md)** - operate at volume
 8. **[Troubleshooting](troubleshooting.md)** - when something goes wrong
 
@@ -35,9 +35,10 @@ New to gridctl? Read in this order:
 
 | Document | Description |
 |----------|-------------|
-| [Concepts](concepts.md) | Stack, pack, skill, agent, rule fragment, global context, wiring, registry, projection, group, client profile, call policy, link, and service |
+| [Concepts](concepts.md) | Stack, pack, skill, agent, hook, rule fragment, global context, wiring, registry, projection, group, client profile, call policy, link, and service |
 | [Skills](skills.md) | Author `SKILL.md` files, serve prompts, resources, and Skills over MCP manifests, import from git, a local directory, or a client home, and project skills and agents onto disk via `gridctl skill project` |
-| [Packs](packs.md) | One `gridctl-pack.yaml` manifest importing skills, agents (including from declared external repositories), rule fragments, wiring, and an optional stack as a unit, with tag-exact removal, booster fragments, and `gridctl-pack.lock.yaml` |
+| [Packs](packs.md) | One `gridctl-pack.yaml` manifest importing skills, agents (including from declared external repositories), hooks, rule fragments, wiring, and an optional stack as a unit, with tag-exact removal, booster fragments, and `gridctl-pack.lock.yaml` |
+| [Hooks](hooks.md) | Pack hook definitions: `hook.json` schema, import, scan, `--trust`, and content pins. Projection is not available in this release |
 | [Tools Workspace](tools-workspace.md) | Curate the exposed tool surface - whitelists, policy verdicts, Audit Mode, annotation hints, fleet actions, per-client access, and groups |
 | [Gateway authentication](config-schema.md#auth) | Shared credentials and OAuth resource-server mode (included in v1.0.0-rc.3), issuer setup, authenticated client profiles, and credential recovery |
 | [Global Context Sync](global-context.md) | Manage the global context (one canonical AGENTS.md, or an opt-in rule fragment library with per-client assembly) via `gridctl ctx`, the web UI, or the REST API |

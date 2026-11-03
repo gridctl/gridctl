@@ -70,6 +70,7 @@ type AddDoc struct {
 	Skills         []string                                    `json:"skills"`
 	Agents         []string                                    `json:"agents"`
 	Rules          []string                                    `json:"rules,omitempty"`
+	Hooks          []string                                    `json:"hooks,omitempty"`
 	Wiring         bool                                        `json:"wiring"`
 	Unresolved     []string                                    `json:"unresolved,omitempty"`
 	Skipped        []string                                    `json:"skipped,omitempty"`
@@ -160,6 +161,9 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 	stackSummary, stackWarnings := m.resolveCarriedStack(ctx, clone, manifest, &resolved, opts.DryRun)
 	stackWarnings = append(stackWarnings, sourceWarnings...)
 	stackWarnings = append(stackWarnings, unknownSourceAuthWarnings(manifest, opts.SourceAuth)...)
+	for _, malformed := range clone.MalformedHooks {
+		stackWarnings = append(stackWarnings, fmt.Sprintf("%s: %s", malformed.Path, malformed.Err))
+	}
 
 	if opts.BlockOnFindings && !opts.Trust {
 		if flagged := scanSelection(clone, resolved, discoveredRules); len(flagged) > 0 {
@@ -178,6 +182,7 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 			Skills:        orEmpty(resolved.skills),
 			Agents:        orEmpty(resolved.agents),
 			Rules:         resolved.rules,
+			Hooks:         resolved.hooks,
 			Wiring:        manifest.Wiring,
 			Unresolved:    resolved.unresolved,
 			Warnings:      append(manifest.Warnings(), stackWarnings...),
@@ -189,7 +194,10 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 		Notes: []string{},
 	}
 
-	if !opts.DryRun && len(manifest.Sources) == 0 && (len(resolved.skills) > 0 || len(resolved.agents) > 0) {
+	if opts.DryRun {
+		appendHookScan(&res.Doc, clone, resolved.hooks, opts.Trust)
+	}
+	if !opts.DryRun && len(manifest.Sources) == 0 && (len(resolved.skills) > 0 || len(resolved.agents) > 0 || len(resolved.hooks) > 0) {
 		// Selection lists ride to the importer as the manifest wrote them
 		// (unresolved names match nothing, so exactly the resolved subset
 		// imports); an empty agents list expands to the discovered set so
@@ -208,6 +216,8 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 			Trust:          opts.Trust,
 			Selected:       selectedSkills,
 			SelectedAgents: selectedAgents,
+			SelectedHooks:  resolved.hooks,
+			ImportHooks:    len(resolved.hooks) > 0,
 			Discovered:     clone,
 			PackImport:     true,
 			// Discovered is set, so the importer does not re-clone and Auth
@@ -220,6 +230,8 @@ func (m *Managers) Add(ctx context.Context, imp *skills.Importer, opts AddOption
 			return nil, ierr
 		}
 		appendImportSkips(&res.Doc, result)
+		resolved.hooks = importedHookNames(result)
+		res.Doc.Hooks = resolved.hooks
 	}
 	if !opts.DryRun && len(manifest.Sources) > 0 {
 		if err := importPackAndSources(ctx, imp, opts, manifest, clone, &resolved, &res.Doc); err != nil {
@@ -268,6 +280,7 @@ type resolvedSelection struct {
 	skills []string
 	agents []string
 	rules  []string
+	hooks  []string
 	// ruleFiles carries per-rule provenance for what actually installed,
 	// populated by installPackRules and persisted alongside rules.
 	ruleFiles         map[string]skills.LockedRule
@@ -479,6 +492,18 @@ func resolvePackSelection(m *pack.Manifest, clone *skills.CloneResult, sources m
 			out.unresolved = append(out.unresolved, "rules:"+name)
 		}
 	}
+	// Hooks: empty means none (opt-in, pack repository only).
+	discoveredHooks := map[string]bool{}
+	for _, h := range clone.Hooks {
+		discoveredHooks[h.Name] = true
+	}
+	for _, name := range m.Hooks {
+		if discoveredHooks[name] {
+			out.hooks = append(out.hooks, name)
+		} else {
+			out.unresolved = append(out.unresolved, "hooks:"+name)
+		}
+	}
 	return out
 }
 
@@ -594,6 +619,7 @@ func recordLockedPack(ctx context.Context, lockPath string, m *pack.Manifest, re
 			Skills:            resolved.skills,
 			Agents:            resolved.agents,
 			Rules:             resolved.rules,
+			Hooks:             resolved.hooks,
 			RuleFiles:         resolved.ruleFiles,
 			Unresolved:        resolved.unresolved,
 			Variables:         lockedVariableDeclarations(m.Variables),
@@ -703,12 +729,57 @@ func appendImportSkips(doc *AddDoc, result *skills.ImportResult) {
 	for _, s := range result.SkippedAgents {
 		doc.Skipped = append(doc.Skipped, fmt.Sprintf("%s (agent): %s", s.Name, s.Reason))
 	}
+	for _, s := range result.SkippedHooks {
+		doc.Skipped = append(doc.Skipped, fmt.Sprintf("%s (hook): %s", s.Name, s.Reason))
+	}
 	doc.Warnings = append(doc.Warnings, result.Warnings...)
+}
+
+func importedHookNames(result *skills.ImportResult) []string {
+	if result == nil || len(result.ImportedHooks) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(result.ImportedHooks))
+	for _, h := range result.ImportedHooks {
+		names = append(names, h.Name)
+	}
+	slices.Sort(names)
+	return names
+}
+
+// appendHookScan records hook scan findings on a dry-run document. Any
+// finding blocks, matching the import gate, so a blocking hook is also a
+// skipped row.
+func appendHookScan(doc *AddDoc, clone *skills.CloneResult, names []string, trust bool) {
+	if clone == nil || len(names) == 0 {
+		return
+	}
+	byName := map[string]skills.DiscoveredHook{}
+	for _, h := range clone.Hooks {
+		byName[h.Name] = h
+	}
+	var keep []string
+	for _, name := range names {
+		h, ok := byName[name]
+		if !ok || h.Definition == nil {
+			continue
+		}
+		scan := skills.ScanHook(name, h.Definition.Raw, h.Dir)
+		if scan.Safe || trust {
+			keep = append(keep, name)
+			if len(scan.Findings) > 0 {
+				doc.Warnings = append(doc.Warnings, fmt.Sprintf("%s (hook): %s", name, skills.FormatFindings(scan.Findings)))
+			}
+			continue
+		}
+		doc.Skipped = append(doc.Skipped, fmt.Sprintf("%s (hook): security findings detected (use --trust to proceed):\n%s", name, skills.FormatFindings(scan.Findings)))
+	}
+	doc.Hooks = keep
 }
 
 func importPackAndSources(ctx context.Context, imp *skills.Importer, opts AddOptions, manifest *pack.Manifest, clone *skills.CloneResult, resolved *resolvedSelection, doc *AddDoc) error {
 	packSkills, packAgents := packLocalNames(resolved)
-	if len(packSkills) > 0 || len(packAgents) > 0 {
+	if len(packSkills) > 0 || len(packAgents) > 0 || len(resolved.hooks) > 0 {
 		result, err := imp.Import(ctx, skills.ImportOptions{
 			Repo:                 opts.Repo,
 			Ref:                  opts.Ref,
@@ -716,6 +787,8 @@ func importPackAndSources(ctx context.Context, imp *skills.Importer, opts AddOpt
 			Trust:                opts.Trust,
 			Selected:             nonNilNames(packSkills),
 			SelectedAgents:       nonNilNames(packAgents),
+			SelectedHooks:        resolved.hooks,
+			ImportHooks:          len(resolved.hooks) > 0,
 			Discovered:           clone,
 			PackImport:           true,
 			ExactSelection:       true,
@@ -731,6 +804,8 @@ func importPackAndSources(ctx context.Context, imp *skills.Importer, opts AddOpt
 				resolved.skills = removeName(resolved.skills, skipped.Name)
 			}
 		}
+		resolved.hooks = importedHookNames(result)
+		doc.Hooks = resolved.hooks
 	}
 	for _, name := range slices.Sorted(maps.Keys(resolved.sources)) {
 		if err := ctx.Err(); err != nil {

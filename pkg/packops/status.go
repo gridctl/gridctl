@@ -44,6 +44,7 @@ type Counts struct {
 	Skills int  `json:"skills"`
 	Agents int  `json:"agents"`
 	Rules  int  `json:"rules"`
+	Hooks  int  `json:"hooks,omitempty"`
 	Wiring bool `json:"wiring"`
 	// Stack is true when the pack carries a resolved stack record.
 	// omitempty keeps packs without a stack on the previous JSON shape.
@@ -162,7 +163,7 @@ func (m *Managers) Statuses(ctx context.Context, opts StatusOptions) ([]PackStat
 				CommitSHA: ps.Source.CommitSHA,
 				FetchedAt: ps.Source.FetchedAt,
 			},
-			Counts:     Counts{Skills: len(p.Skills), Agents: len(p.Agents), Rules: len(p.Rules), Wiring: p.Wiring, Stack: p.Stack != nil || p.Fragment != nil, Sources: len(p.Sources)},
+			Counts:     Counts{Skills: len(p.Skills), Agents: len(p.Agents), Rules: len(p.Rules), Hooks: len(p.Hooks), Wiring: p.Wiring, Stack: p.Stack != nil || p.Fragment != nil, Sources: len(p.Sources)},
 			Extends:    packExtends(p),
 			Sources:    statusSourceSummaries(p),
 			Unresolved: p.Unresolved,
@@ -359,6 +360,41 @@ func (m *Managers) statusRowsFor(p *skills.LockedPack, packRepo string, members 
 			rows = append(rows, Row{Kind: "rule", Name: n, Client: e.Client, State: state})
 			attention = attention || state != skillsync.StateInSync
 		}
+	}
+	// Hooks have no projection in this release. A store-presence row says
+	// whether the imported definition is still in the registry.
+	registryDir := ""
+	if homeErr == nil {
+		registryDir = filepath.Join(home, ".gridctl", "registry")
+	}
+	for _, n := range p.Hooks {
+		if homeErr != nil {
+			rows = append(rows, Row{Kind: "hook", Name: n, State: "missing", Detail: homeErr.Error()})
+			attention = true
+			continue
+		}
+		dir := skills.HookDir(registryDir, n)
+		if _, err := os.Stat(dir); err != nil {
+			detail := "not in the hook registry; re-run 'gridctl pack add'"
+			if !os.IsNotExist(err) {
+				detail = err.Error()
+			}
+			rows = append(rows, Row{Kind: "hook", Name: n, State: "missing", Detail: detail})
+			attention = true
+			continue
+		}
+		if _, err := skills.GetHook(registryDir, n); err != nil {
+			rows = append(rows, Row{
+				Kind:        "hook",
+				Name:        n,
+				State:       "drifted",
+				Detail:      err.Error(),
+				Remediation: fmt.Sprintf("review with 'gridctl skill pins diff %s --kind hook' or remove with 'gridctl skill remove %s --kind hook'", n, n),
+			})
+			attention = true
+			continue
+		}
+		rows = append(rows, Row{Kind: "hook", Name: n, State: skillsync.StateInSync, Detail: "imported; projection is not available in this release"})
 	}
 	for _, r := range wiringRows {
 		if r.Pack == p.Name {

@@ -57,7 +57,19 @@ var (
 const (
 	skillProjectKindSkill = "skill"
 	skillProjectKindAgent = "agent"
+	skillKindHook         = "hook"
 )
+
+// validRegistryKind accepts the registry kinds skill list, info, and remove
+// understand. Hook is not a projection kind in this release, so skill project
+// keeps validProjectKind.
+func validRegistryKind(kind string) error {
+	switch kind {
+	case skillProjectKindSkill, skillProjectKindAgent, skillKindHook:
+		return nil
+	}
+	return fmt.Errorf("unknown --kind %q (supported: skill, agent, hook)", kind)
+}
 
 // validProjectKind rejects unknown --kind values before any manager is
 // built. The default "skill" keeps every existing command line behaving

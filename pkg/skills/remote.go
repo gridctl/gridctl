@@ -10,8 +10,10 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 
@@ -45,6 +47,12 @@ type CloneResult struct {
 	// that are not parseable agent definitions.
 	Agents          []DiscoveredAgent
 	MalformedAgents []MalformedAgent
+	// Hooks are hook definitions discovered at hooks/<name>/hook.json
+	// under the search root. MalformedHooks records directories that
+	// look like hooks but failed validation, including a directory name
+	// that does not match the name field.
+	Hooks          []DiscoveredHook
+	MalformedHooks []MalformedHook
 	// FilteredSkills are relative skill paths DiscoverLocal skipped because
 	// they carry .origin.json. Git discovery leaves this nil.
 	FilteredSkills []string
@@ -61,6 +69,20 @@ type MalformedSkill struct {
 // MalformedAgent aliases MalformedSkill so agent call sites read as what
 // they are; the shape and JSON encoding are identical.
 type MalformedAgent = MalformedSkill
+
+// MalformedHook aliases MalformedSkill so hook call sites read as what
+// they are; the shape and JSON encoding are identical.
+type MalformedHook = MalformedSkill
+
+// DiscoveredHook is a hook definition found at hooks/<name>/hook.json
+// under the discovery root. A hook directory inside a skill is not a hook.
+type DiscoveredHook struct {
+	Name        string
+	Path        string // Relative path from repo root to the hook directory
+	Dir         string // Absolute path of the hook directory in the clone
+	Definition  *HookDefinition
+	ContentHash string
+}
 
 // DiscoveredSkill represents a SKILL.md found in a cloned repo.
 type DiscoveredSkill struct {
@@ -246,6 +268,13 @@ func discoverAt(repoPath, subPath string, logger *slog.Logger) (*CloneResult, er
 	for _, m := range malformedAgents {
 		logger.Warn("skipping malformed agent definition", "path", m.Path, "error", m.Err)
 	}
+	hooks, malformedHooks, err := discoverHooks(searchDir, repoPath)
+	if err != nil {
+		return nil, fmt.Errorf("discovering hooks: %w", err)
+	}
+	for _, m := range malformedHooks {
+		logger.Warn("skipping malformed hook definition", "path", m.Path, "error", m.Err)
+	}
 	return &CloneResult{
 		RepoPath:        repoPath,
 		CommitSHA:       commitSHA,
@@ -253,6 +282,8 @@ func discoverAt(repoPath, subPath string, logger *slog.Logger) (*CloneResult, er
 		Malformed:       malformed,
 		Agents:          agents,
 		MalformedAgents: malformedAgents,
+		Hooks:           hooks,
+		MalformedHooks:  malformedHooks,
 	}, nil
 }
 
@@ -569,6 +600,90 @@ func discoverAgents(searchDir, repoRoot string) ([]DiscoveredAgent, []MalformedA
 	})
 
 	return agents, malformed, err
+}
+
+// discoverHooks reads hooks/<name>/hook.json directly under searchDir.
+// It does not walk into skill directories. A directory name that does not
+// match the name field, or a hook.json that fails validation, is malformed
+// and is not imported.
+func discoverHooks(searchDir, repoRoot string) ([]DiscoveredHook, []MalformedHook, error) {
+	root := filepath.Join(searchDir, "hooks")
+	info, err := os.Lstat(root)
+	if err != nil {
+		// A skill or agent update can scope discovery to a file. Joining
+		// "hooks" onto that path is not a directory, and that is "no hooks",
+		// not a failed import.
+		if os.IsNotExist(err) || errors.Is(err, syscall.ENOTDIR) {
+			return nil, nil, nil
+		}
+		return nil, nil, err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, nil, nil
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) || errors.Is(err, syscall.ENOTDIR) {
+			return nil, nil, nil
+		}
+		return nil, nil, err
+	}
+	var hooks []DiscoveredHook
+	var malformed []MalformedHook
+	record := func(path string, cause error) {
+		rel, relErr := filepath.Rel(repoRoot, path)
+		if relErr != nil {
+			rel = path
+		}
+		malformed = append(malformed, MalformedHook{Path: rel, Err: cause.Error()})
+	}
+	for _, e := range entries {
+		if !e.IsDir() || e.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+		dir := filepath.Join(root, e.Name())
+		hookFile := filepath.Join(dir, "hook.json")
+		info, statErr := os.Lstat(hookFile)
+		if statErr != nil {
+			if os.IsNotExist(statErr) {
+				continue
+			}
+			record(dir, statErr)
+			continue
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			record(hookFile, fmt.Errorf("hook.json must be a regular file"))
+			continue
+		}
+		data, rerr := os.ReadFile(hookFile) // #nosec G304 -- walking the cloned repo
+		if rerr != nil {
+			record(hookFile, rerr)
+			continue
+		}
+		if err := ValidateHookName(e.Name()); err != nil {
+			record(dir, err)
+			continue
+		}
+		def, perr := ParseHookJSON(data, dir)
+		if perr != nil {
+			record(hookFile, perr)
+			continue
+		}
+		if def.Name != e.Name() {
+			record(dir, fmt.Errorf("hook %s: name %q does not match directory %q", e.Name(), def.Name, e.Name()))
+			continue
+		}
+		rel, _ := filepath.Rel(repoRoot, dir)
+		hooks = append(hooks, DiscoveredHook{
+			Name:        def.Name,
+			Path:        filepath.ToSlash(rel),
+			Dir:         dir,
+			Definition:  def,
+			ContentHash: contentHash(data),
+		})
+	}
+	sort.Slice(hooks, func(i, j int) bool { return hooks[i].Name < hooks[j].Name })
+	return hooks, malformed, nil
 }
 
 func contentHash(data []byte) string {

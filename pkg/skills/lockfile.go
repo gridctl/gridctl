@@ -24,6 +24,7 @@ const (
 	lockVersionLocal       = 6
 	lockVersionPackSources = 7
 	lockVersionPackLock    = 8
+	lockVersionPackHooks   = 9
 )
 
 // ImportLockVersion is the highest skills.lock.yaml schema version this
@@ -36,7 +37,8 @@ const (
 // sources (LockedPack.Sources and LockedSource.PackMember); version 8
 // added pack lock state (LockedPack.Lock), member lock pins
 // (LockedSource.LockedBy), and booster fragment records
-// (LockedPack.Fragment). Files are
+// (LockedPack.Fragment); version 9 added pack hook selections
+// (LockedPack.Hooks). Files are
 // written at the lowest version that can represent them (see WriteLockFile).
 // A reader whose maximum is 4 understands SSH fields only and must refuse a
 // file that carries a stack record or an unresolved-detail map rather than
@@ -44,8 +46,9 @@ const (
 // a file that carries a local source. A reader whose maximum is 6 must refuse
 // a file that carries pack sources or a pack member marker. A reader whose
 // maximum is 7 must refuse a file that carries a pack lock state, a member
-// locked by a pack lock, or a booster fragment record.
-const ImportLockVersion = lockVersionPackLock
+// locked by a pack lock, or a booster fragment record. A reader whose
+// maximum is 8 must refuse a file that carries a non-empty hook selection.
+const ImportLockVersion = lockVersionPackHooks
 
 // ErrNewerImportLockVersion signals a skills.lock.yaml written by a
 // newer gridctl. Callers must never paper over it: acting on state a
@@ -116,6 +119,11 @@ type LockedPack struct {
 	Clients     []string `yaml:"clients,omitempty"`
 	Skills      []string `yaml:"skills,omitempty"`
 	Agents      []string `yaml:"agents,omitempty"`
+	// Hooks lists hook definitions imported from the pack repository.
+	// A non-empty list stamps lockVersionPackHooks. An older reader has
+	// no field for the key and would drop it on the next write. Hooks
+	// come only from the pack repository, never from an external source.
+	Hooks []string `yaml:"hooks,omitempty"`
 	// Rules lists context rule fragments imported from the pack repo.
 	// Superseded by RuleFiles, which adds per-rule provenance; retained so
 	// lockfiles written before that keep loading, and kept in sync on write
@@ -378,6 +386,9 @@ func WriteLockFile(path string, lf *LockFile) error {
 			(src.Pack.Lock != nil || src.Pack.Fragment != nil) {
 			lf.Version = lockVersionPackLock
 		}
+		if src.Pack != nil && len(src.Pack.Hooks) > 0 && lf.Version < lockVersionPackHooks {
+			lf.Version = lockVersionPackHooks
+		}
 	}
 
 	data, err := yaml.Marshal(lf)
@@ -419,20 +430,38 @@ func (lf *LockFile) RemoveSource(name string) {
 	delete(lf.Sources, name)
 }
 
+// packRetainsSource reports whether a source's pack record still lists
+// hooks, rules, or a stack. Those selections are not skills or agents, so
+// removing the last skill or agent must not drop them.
+func packRetainsSource(src LockedSource) bool {
+	if src.Pack == nil {
+		return false
+	}
+	p := src.Pack
+	return len(p.Hooks) > 0 || len(p.Rules) > 0 || p.Stack != nil || p.Fragment != nil
+}
+
+// dropSourceIfEmpty removes a source that no longer records skills, agents,
+// or a pack selection that must survive on its own.
+func (lf *LockFile) dropSourceIfEmpty(srcName string, src LockedSource) {
+	if len(src.Skills) == 0 && len(src.Agents) == 0 && !packRetainsSource(src) {
+		delete(lf.Sources, srcName)
+		return
+	}
+	if src.IsLocal() {
+		src.ContentHash = CombineTrackedSourceHash(src.Skills, src.Agents)
+	}
+	lf.Sources[srcName] = src
+}
+
 // RemoveSkill removes a single skill from the lock file, cleaning up the
-// source when neither skills nor agents remain under it.
+// source when neither skills nor agents remain under it and the pack record
+// does not still list hooks, rules, or a stack.
 func (lf *LockFile) RemoveSkill(skillName string) {
 	for srcName, src := range lf.Sources {
 		if _, ok := src.Skills[skillName]; ok {
 			delete(src.Skills, skillName)
-			if len(src.Skills) == 0 && len(src.Agents) == 0 {
-				delete(lf.Sources, srcName)
-			} else {
-				if src.IsLocal() {
-					src.ContentHash = CombineTrackedSourceHash(src.Skills, src.Agents)
-				}
-				lf.Sources[srcName] = src
-			}
+			lf.dropSourceIfEmpty(srcName, src)
 			return
 		}
 	}
@@ -449,22 +478,54 @@ func (lf *LockFile) FindSkillSource(skillName string) (string, *LockedSource, bo
 }
 
 // RemoveAgent removes a single agent from the lock file, cleaning up the
-// source when neither skills nor agents remain under it.
+// source when neither skills nor agents remain under it and the pack record
+// does not still list hooks, rules, or a stack.
 func (lf *LockFile) RemoveAgent(agentName string) {
 	for srcName, src := range lf.Sources {
 		if _, ok := src.Agents[agentName]; ok {
 			delete(src.Agents, agentName)
-			if len(src.Skills) == 0 && len(src.Agents) == 0 {
-				delete(lf.Sources, srcName)
-			} else {
-				if src.IsLocal() {
-					src.ContentHash = CombineTrackedSourceHash(src.Skills, src.Agents)
-				}
-				lf.Sources[srcName] = src
-			}
+			lf.dropSourceIfEmpty(srcName, src)
 			return
 		}
 	}
+}
+
+// RemoveHook removes one hook name from the pack record that lists it.
+// The source stays when skills, agents, rules, or a stack remain.
+func (lf *LockFile) RemoveHook(name string) {
+	for srcName, src := range lf.Sources {
+		if src.Pack == nil || !containsLockedName(src.Pack.Hooks, name) {
+			continue
+		}
+		src.Pack.Hooks = removeLockedName(src.Pack.Hooks, name)
+		lf.dropSourceIfEmpty(srcName, src)
+		return
+	}
+}
+
+func containsLockedName(names []string, name string) bool {
+	for _, n := range names {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
+func removeLockedName(names []string, name string) []string {
+	if len(names) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(names)-1)
+	for _, n := range names {
+		if n != name {
+			out = append(out, n)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // FindAgentSource finds the source name for a given agent.
