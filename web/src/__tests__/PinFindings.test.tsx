@@ -57,6 +57,42 @@ describe('FindingsList', () => {
     expect(document.body.textContent).not.toContain('\u202E');
   });
 
+  it('escapes hidden characters in the field', () => {
+    render(
+      <FindingsList
+        findings={[
+          {
+            code: 'hook-scan',
+            severity: 'warn',
+            confidence: 'high',
+            field: 'scripts/run\u202e.sh:line-3',
+            message: 'matched pattern',
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText(/scripts\/run\\u202e\.sh:line-3/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('\u202E');
+  });
+
+  it('omits the confidence label when confidence is empty', () => {
+    render(
+      <FindingsList
+        findings={[
+          {
+            code: 'hook-scan',
+            severity: 'warn',
+            confidence: '',
+            field: 'scripts/run.sh:line-3',
+            message: 'world-writable permissions',
+          } as unknown as PinFinding,
+        ]}
+      />,
+    );
+    expect(screen.queryByText(/confidence/)).not.toBeInTheDocument();
+    expect(screen.getByText('hook-scan')).toBeInTheDocument();
+  });
+
   it('labels decoded payloads distinctly', () => {
     render(<FindingsList findings={[critical]} />);
     expect(screen.getByText(/decoded hidden message:/)).toBeInTheDocument();

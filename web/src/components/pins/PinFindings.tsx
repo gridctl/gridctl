@@ -9,10 +9,10 @@ import type { PinFinding } from '../../lib/api';
 // disables or gates any action. Severity presentation comes from the shared
 // lib/severity maps, the same vocabulary OptimizeSection uses.
 
-// FindingsList renders poisoning-scan findings for one tool. Snippets and
-// decoded payloads quote attacker-controlled text and always pass through
-// escapeNonPrintable - a hidden-Unicode finding rendered raw would re-hide
-// the very payload it flags.
+// FindingsList renders poisoning-scan findings. Message, snippet, decoded
+// payload, and field quote attacker-controlled text and always pass through
+// escapeNonPrintable. Field is a pack-author path for hook findings. A
+// hidden-Unicode finding rendered raw would re-hide the payload it flags.
 export function FindingsList({ findings }: { findings: PinFinding[] | undefined }) {
   if (!findings || findings.length === 0) return null;
   return (
@@ -31,7 +31,7 @@ export function FindingsList({ findings }: { findings: PinFinding[] | undefined 
                 {escapeNonPrintable(f.message)}
               </span>
               <span className="ml-auto flex-shrink-0 text-3xs text-text-muted">
-                {f.field} · {f.confidence} confidence
+                {escapeNonPrintable(f.field)}{f.confidence ? ` · ${f.confidence} confidence` : ''}
               </span>
             </div>
             {f.snippet && (

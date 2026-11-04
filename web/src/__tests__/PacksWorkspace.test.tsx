@@ -374,6 +374,27 @@ describe('PackImportWizard', () => {
     );
   }
 
+  it('escapes hidden characters in finding descriptions', async () => {
+    vi.mocked(previewPack).mockResolvedValue({
+      ...previewResult,
+      rules: [],
+      hooks: [
+        {
+          kind: 'hook',
+          name: 'block-force-push',
+          findings: [{ description: 'piped\u200bshell download' }],
+        },
+      ],
+    });
+    renderWizard();
+    fireEvent.change(screen.getByLabelText('Pack repository URL'), {
+      target: { value: 'https://github.com/acme/team-pack' },
+    });
+    fireEvent.click(screen.getByText('Preview pack'));
+    expect(await screen.findByText(/piped\\u200bshell download/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('\u200b');
+  });
+
   it('labels a resource that came from an external source', async () => {
     vi.mocked(previewPack).mockResolvedValue({
       ...previewResult,

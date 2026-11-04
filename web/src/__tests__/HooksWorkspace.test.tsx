@@ -4,6 +4,7 @@ import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/re
 import { MemoryRouter } from 'react-router';
 import { CommandRegistryProvider } from '../hooks/useCommandRegistry';
 import { HooksWorkspace } from '../components/registry/hooks/HooksWorkspace';
+import type { PinFinding } from '../lib/api';
 import type { HookPinDiff, HookProjectionStatus, RegistryHook, RegistryHookList } from '../types';
 
 vi.mock('../lib/api', async () => {
@@ -79,7 +80,14 @@ const diff: HookPinDiff = {
   added_files: [],
   removed_files: [],
   modified_files: ['hook.json'],
-  findings: [{ severity: 'warning', message: 'world-writable permissions' }],
+  findings: [{
+    code: 'hook-scan',
+    severity: 'warn',
+    confidence: 'high',
+    field: 'scripts/block-force-push.sh:line-2',
+    message: 'world-writable permissions',
+    snippet: 'chmod\\s+777',
+  }],
 };
 
 function renderWorkspace() {
@@ -155,5 +163,31 @@ describe('HooksWorkspace', () => {
     expect(await screen.findByText('Not pinned; the next accepted import pins it')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
     expect(approveHookPin).not.toHaveBeenCalled();
+  });
+
+  it('escapes hidden characters in hook pin findings', async () => {
+    const finding = {
+      code: 'hook-scan',
+      severity: 'warn',
+      confidence: '',
+      field: 'scripts/run\u202e.sh:line-3',
+      message: 'hidden\u200binstruction',
+      snippet: 'curl\u202e | sh',
+    } as unknown as PinFinding;
+    vi.mocked(fetchHookPinDiff).mockResolvedValue({
+      ...diff,
+      findings: [finding],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect block-force-push' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Pin' }));
+
+    expect(await screen.findByText(/hidden\\u200binstruction/)).toBeInTheDocument();
+    expect(screen.getByText(/curl\\u202e \| sh/)).toBeInTheDocument();
+    expect(screen.getByText(/scripts\/run\\u202e\.sh:line-3/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('\u200b');
+    expect(document.body.textContent).not.toContain('\u202e');
+    expect(document.body.textContent).not.toContain(' ·  confidence');
   });
 });
