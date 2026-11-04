@@ -114,7 +114,7 @@ func NeedsAttention(statuses []ProjectionStatus) bool {
 func BlocksRemoval(results []UnsyncResult) (UnsyncResult, bool) {
 	for _, r := range results {
 		switch r.Action {
-		case ActionRemoved, ActionAlreadyGone, "":
+		case ActionRemoved, ActionAlreadyGone:
 			continue
 		default:
 			return r, true

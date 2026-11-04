@@ -18,6 +18,7 @@ func TestBlocksRemoval_RowKinds(t *testing.T) {
 	}{
 		{ActionRemoved, false},
 		{ActionAlreadyGone, false},
+		{"", true},
 		{ActionSkippedDrift, true},
 		{ActionSkippedUnmanaged, true},
 		{ActionError, true},
@@ -31,7 +32,11 @@ func TestBlocksRemoval_RowKinds(t *testing.T) {
 			continue
 		}
 		msg := RemovalRefusal("block", row)
-		if !strings.Contains(msg, "claude-code") || !strings.Contains(msg, "unsync") || !strings.Contains(msg, "--force") || !strings.Contains(msg, tc.action) {
+		wantAction := tc.action
+		if wantAction == "" {
+			wantAction = "error"
+		}
+		if !strings.Contains(msg, "claude-code") || !strings.Contains(msg, "unsync") || !strings.Contains(msg, "--force") || !strings.Contains(msg, wantAction) {
 			t.Errorf("%s refusal = %q", tc.action, msg)
 		}
 	}
