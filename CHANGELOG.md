@@ -14,6 +14,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Bug Fixes
 
+- The Library hook pin tab renders scan findings through the shared findings list, with the finding code, file and line, and matched pattern, and escapes non-printable characters in every finding field. The pack import review step escapes finding text the same way.
 - A removed or empty hook script copy is restored on the next sync instead of being reported as a hand edit. `pack apply` counts `skipped-unsupported` hook rows in `Applied N/M` and does not exit 1 for those rows alone. Hook sync preserves a settings file's mode and does not write its backup wider than 0644. A missing `hooks` key is inserted as one pretty-printed value on its own line.
 - The Library hook pin tab shows added, removed, and modified files and a line diff of `hook.json`. Approve stays disabled when the hook is not pinned.
 - The example `block-force-push` script denies `git push --force` and `git push -f` when the flag follows the remote, and does not treat `--force-with-lease` or `--force-if-includes` as `--force`.

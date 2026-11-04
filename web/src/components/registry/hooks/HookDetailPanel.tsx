@@ -17,6 +17,7 @@ import { cn } from '../../../lib/cn';
 import { describeError, isCancellation } from '../../../lib/describeError';
 import { diffLines, MAX_DIFF_LINES, type DiffToken } from '../../../lib/diff';
 import { escapeNonPrintable } from '../../../lib/nonPrintable';
+import { FindingsList } from '../../pins/PinFindings';
 import { describeHookSync, hookClientName, projectedScriptPath } from './hookModel';
 import type { HookPinDiff, HookProjectionStatus, HookUnsupportedClient, RegistryHook } from '../../../types';
 
@@ -299,11 +300,12 @@ function HookPinPanel({ name, onRefresh }: { name: string; onRefresh: () => Prom
       )}
       {loadError && <p className="text-xs text-status-error">{loadError}</p>}
       {findingsExist && (
-        <ul aria-label="Pin findings" className="text-2xs text-status-pending">
-          {findings.map((f, i) => (
-            <li key={i}>{f.severity ? `${f.severity}: ` : ''}{f.message || 'finding'}</li>
-          ))}
-        </ul>
+        <section className="space-y-2 max-w-3xl">
+          <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">
+            Advisory findings on the pinned content
+          </h3>
+          <FindingsList findings={findings} />
+        </section>
       )}
       {diff && (
         <>

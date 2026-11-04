@@ -2344,10 +2344,10 @@ export async function updateStackRuns(body: {
 // === Pins API ===
 
 /**
- * One poisoning-scan signal on a tool definition. Advisory only: findings
- * inform the approve decision and never block anything. snippet and decoded
- * quote attacker-controlled text and MUST be rendered through
- * escapeNonPrintable.
+ * One poisoning-scan signal on a pinned definition. Advisory only: findings
+ * inform the approve decision and never block anything. message, field,
+ * snippet, and decoded quote attacker-controlled text and MUST be rendered
+ * through escapeNonPrintable. field is a pack-author path for hook findings.
  */
 export interface PinFinding {
   code: string;

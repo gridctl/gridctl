@@ -25,6 +25,7 @@ import {
   shouldOpenAuthCard,
 } from '../../../lib/gitAuthErrors';
 import { describeError, isCancellation } from '../../../lib/describeError';
+import { escapeNonPrintable } from '../../../lib/nonPrintable';
 
 type PackStep = 'source' | 'review' | 'done';
 
@@ -364,7 +365,7 @@ export function PackImportWizard() {
                   </span>
                   {(r.findings ?? []).map((f, i) => (
                     <p key={i} className="ml-3">
-                      {f.description ?? f.pattern ?? 'flagged content'}
+                      {escapeNonPrintable(f.description ?? f.pattern ?? 'flagged content')}
                     </p>
                   ))}
                 </li>

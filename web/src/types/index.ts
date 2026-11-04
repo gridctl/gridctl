@@ -1,3 +1,5 @@
+import type { PinFinding } from '../lib/api';
+
 // Transport type matching backend pkg/mcp/types.go
 export type Transport = 'http' | 'stdio' | 'sse';
 
@@ -793,7 +795,7 @@ export interface HookPin {
   status: string;
   definition_hash?: string;
   document?: string;
-  findings?: { message?: string; severity?: string; code?: string }[];
+  findings?: PinFinding[];
   composite_hash?: string;
   approved_reason?: string;
 }
@@ -807,7 +809,7 @@ export interface HookPinDiff {
   added_files: string[];
   removed_files: string[];
   modified_files: string[];
-  findings: { message?: string; severity?: string; code?: string }[];
+  findings: PinFinding[];
 }
 
 // Response of POST /api/project/agents/adopt.
