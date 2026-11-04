@@ -3656,7 +3656,7 @@ Manage imported hooks (`~/.gridctl/registry/hooks/<name>/hook.json`). Hooks ente
 
 #### `GET /api/registry/hooks`
 
-Lists installed hooks and the unsupported-client table. Each hook carries `name`, `description`, `events`, `scripts`, `source`, and `pin_status`.
+Lists installed hooks and the full unsupported-client table (detected or not). Each hook carries `name`, `description`, `dialect` (omitted when the definition does not validate), `events` (always an array), `scripts` (a count), `source`, and `pin_status` (`pinned`, `drift`, or `unpinned`). `source` is the origin repository, or `local` for a directory import, and is omitted when no origin is recorded. A directory whose `hook.json` does not validate stays listed, with description `(broken)` and `error` set.
 
 **Auth:** Yes
 
@@ -3675,7 +3675,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/registry/hooks
       "dialect": "claude-code",
       "events": ["PreToolUse"],
       "scripts": 1,
-      "source": "network-eng",
+      "source": "https://github.com/acme/team-pack",
       "pin_status": "pinned"
     }
   ],
@@ -3692,7 +3692,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/registry/hooks
 
 #### `GET /api/registry/hooks/{name}`
 
-Returns one hook: the definition, files, pin status, and projection chips. `hooks` is the matcher-group object from `hook.json`. `document` is the file text. A directory whose `hook.json` does not validate is still returned, with `error` set, so it can be removed.
+Returns one hook: the definition, files, pin status, and projection chips. `hooks` is the matcher-group object from `hook.json`. `document` is the file text. `files` is `{path, size}` for each regular file except `.origin.json`, dot-prefixed entries, and `*.pre-*` backups. `projections` is the same row shape as `GET /api/project/hooks/status`, or `[]` when none are recorded. A directory whose `hook.json` does not validate is still returned, with `error` set, so it can be removed. Unknown names are `404` (`hook not found: <name>`).
 
 **Auth:** Yes
 
@@ -3704,7 +3704,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/registry/hooks/
 
 #### `DELETE /api/registry/hooks/{name}`
 
-Retires projections first, then removes the registry directory, the lock entry, and the pin. A row whose action is not `removed` or `already-gone` (`skipped-drift`, `skipped-unmanaged`, or `error`) returns `409` and leaves the hook in place. The error names the client and `gridctl skill project unsync --kind hook <name> --force`. If the projection manager cannot be built, the delete is `503` and the registry hook stays.
+Retires projections first, then removes the registry directory, the lock entry, and the pin. A row whose action is not `removed` or `already-gone` (`skipped-drift`, `skipped-unmanaged`, or `error`) returns `409` and leaves the hook in place. The body is `hook <name> could not be unsynced on <client> (<action>); run 'gridctl skill project unsync --kind hook <name> --force' before removing`. If the projection manager cannot be built, the delete is `503` (`Hook projection not available: <err>`) and the registry hook stays. Unknown names are `404` (`hook not found: <name>`).
 
 **Auth:** Yes
 
@@ -3714,7 +3714,7 @@ Retires projections first, then removes the registry directory, the lock entry, 
 
 ### Hook Projection
 
-Per-client projection of imported hooks: the REST face of `gridctl skill project --kind hook`. Rows use the same JSON fields as the CLI. `POST /api/project/hooks/adopt` is not registered (`404`).
+Per-client projection of imported hooks: the REST face of `gridctl skill project --kind hook`. Responses are the engine rows, not the CLI document. They do not add `kind` or wrap sync and unsync in `{schema_version, results}`. `POST /api/project/hooks/adopt` is not registered (`404`). When the projection manager cannot be built, status, sync, and unsync return `503` (`Hook projection not available: <err>`).
 
 #### `GET /api/project/hooks/status`
 
@@ -3744,6 +3744,8 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project/hooks/s
 ]
 ```
 
+`detail` and `remediation` are omitted when empty. `pack` is omitted for a projection made outside a pack. No recorded projections returns `[]`.
+
 #### `POST /api/project/hooks/sync`
 
 Projects named hooks, or every imported hook when `hooks` is omitted. An empty body syncs every hook to every available target.
@@ -3756,11 +3758,11 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project
   -d '{"hooks": ["block-force-push"], "clients": ["claude-code"], "force": false, "dry_run": false}'
 ```
 
-**Response:** one row per hook and client (`hook`, `client`, `action`, optional `detail`, `remediation`, `script_dir`).
+**Response:** an array, one row per hook and client: `client`, `action`, and optional `hook`, `channel`, `target`, `detail`, `remediation`, `backup_path`, `error`, `script_dir`. An unknown hook is `404` (`unknown hook: <name> (see 'gridctl skill list --kind hook')`). An unknown client is `400` (`unknown client: "<slug>" (known clients: ...)`). A newer project lockfile is `409`.
 
 #### `POST /api/project/hooks/unsync`
 
-Removes recorded groups. Name `hooks` or set `all: true`. An empty body is `400`.
+Removes recorded groups. Name `hooks` or set `all: true`. Also accepts `clients`, `force`, and `dry_run`. A body that names neither `hooks` nor `all` is `400` (`name hooks to unsync, or set all`). A named hook that is not projected is `409` (`hook is not projected: <name>`).
 
 **Auth:** Yes
 
@@ -3770,7 +3772,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project
   -d '{"hooks": ["block-force-push"]}'
 ```
 
-**Response:** per-projection removal rows (`hook`, `client`, `target`, `action`).
+**Response:** an array of removal rows: `hook`, `client`, `target`, `action`, and optional `detail`, `backup_path`, `error`.
 
 ---
 
@@ -3780,19 +3782,19 @@ Content pins for imported hooks at `~/.gridctl/pins/hooks/global.json`. Hook pin
 
 #### `GET /api/hook-pins`
 
-Returns every hook pin, keyed by name. A missing store returns `{}`.
+Returns every hook pin, keyed by name. A missing store, or a store that cannot be loaded, returns `{}`.
 
 **Auth:** Yes
 
 #### `GET /api/hook-pins/{name}`
 
-Returns one pin record. Unknown names are `404`.
+Returns one pin record. Unknown names are `404` (`No pin found for hook: <name>`). A store that cannot be loaded is `503` (`Hook pinning not available`). Diff, approve, and reset use that same `503`.
 
 **Auth:** Yes
 
 #### `GET /api/hook-pins/{name}/diff`
 
-Returns the current composite hash and, when the bytes moved, the document and file diff. `composite_hash` is the value `expect` must echo.
+Returns the current composite hash and, when the bytes moved, the document and file diff. `composite_hash` is the value `expect` must echo. Unknown hooks and missing pins are `404`. `added_files`, `removed_files`, `modified_files`, and `findings` are always arrays.
 
 **Auth:** Yes
 
@@ -3812,7 +3814,7 @@ Returns the current composite hash and, when the bytes moved, the document and f
 
 #### `POST /api/hook-pins/{name}/approve`
 
-Re-pins the current bytes. `expect` binds the approval to the reviewed composite hash (`expected_hash` is accepted as an alias). `reason` is required when the current scan still has findings. A stale `expect` is `409`. A missing reason on findings is `400`.
+Re-pins the current bytes. Body: `expect` (the reviewed composite hash; `expected_hash` is accepted as an alias), optional `reason`, optional `evidence` (opaque references, stored as text and never fetched), and optional `approved_by`. `reason` is required when the current scan still has findings. A stale `expect` is `409` (`Hook content changed since the reviewed diff; fetch the diff again and re-review`). A missing reason on findings is `400` (`This hook carries unresolved findings; approving it requires a reason`). Unknown hooks and missing pins are `404`. Credential-shaped or overlong `reason`, `approved_by`, and `evidence` are refused the same way as skill pin approve.
 
 **Auth:** Yes
 
@@ -3822,11 +3824,11 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/hook-pi
   -d '{"expect": "abc123", "reason": "reviewed the script"}'
 ```
 
-**Response:** `{"hook": "block-force-push", "status": "approved", ...}` with the approval attribution fields used by skill pins.
+**Response:** `hook`, `status` (`approved`), `approved_by`, `approved_by_source`, and `evidence_count`. Attribution matches skill pin approve: a verified OAuth principal, else a non-empty `approved_by`, else the daemon's local OS user.
 
 #### `DELETE /api/hook-pins/{name}`
 
-Deletes the pin record. The next accepted import pins fresh.
+Deletes the pin record. It does not unsync projections. The next accepted import pins fresh. The approvals log is left in place. Unknown names are `404` (`No pin found for hook: <name>`).
 
 **Auth:** Yes
 
@@ -3917,7 +3919,7 @@ A pack name claimed by more than one imported source carries `"collision": true`
 
 #### `GET /api/packs/{name}`
 
-One pack's identity (`info`, the list item's fields) plus its per-resource state rows and `needs_attention`. A carried stack is the first row: `in-sync` (running `StackFile` matches the pin), `stale` (running from an older checkout under `~/.gridctl/packs/<name>/`; attention, detail names the commit when known), `drifted` (running from any other path; attention), `missing` (nothing running; not attention), or `target-missing` (checkout or stack file absent; attention, remediation `re-run 'gridctl pack add'`). An `in-sync` stack row whose `~/.gridctl/overrides/<pack>.yaml` exists sets `detail` to `override: <path>` and is not attention. Then one `source` row per pinned external source, in name order: `in-sync` (pinned as recorded, not verified current) or `stale` (attention; the update cache lists a newer commit for one of its skills; remediation `re-run 'gridctl pack add <pack-repo>'`). A vault-token source, or a source that recorded no skills, stays `in-sync` and appends `, freshness not checked`. Then skill rows. Skill, agent, and wiring rows are per-client; rule rows are per-client once applied (state joined from the pack-tagged projection lock entries and the context engine's per-fragment status; coverage is per fragment-file projection, so compiled clients' whole-document state stays on `GET /api/context`), with a single store-presence row for a rule that was imported but never projected. Hook rows follow rules. This server does not read hook projections, so a valid imported hook is `in-sync` with detail `imported; not projected` even after a CLI sync. A recorded name whose directory is absent is `missing` with detail `not in the hook registry; re-run 'gridctl pack add'`. A directory that is present but whose `hook.json` does not validate is `drifted`, with the parse error in `detail` and a `remediation` that names `gridctl skill pins diff <name> --kind hook` and `gridctl skill remove <name> --kind hook`. CLI `pack status` is the per-client view. An unresolved hook is an `unresolved` row named `hooks:<name>`. An unresolved stack is an `unresolved` row named `stack:<path>`, not a `stack` row, and its `detail` is the export or path error when one was recorded. A base with attached boosters adds a `fragment` row per booster after the stack row (`in-sync`, `stale`, `missing`). A pack that recorded a lock adds a `lock` row (`honored`, `absent`, `stale`, `ignored`) before source rows. `info.extends` is the base pack name for a booster and is omitted otherwise. `counts.stack` is also true when a fragment resolved.
+One pack's identity (`info`, the list item's fields) plus its per-resource state rows and `needs_attention`. A carried stack is the first row: `in-sync` (running `StackFile` matches the pin), `stale` (running from an older checkout under `~/.gridctl/packs/<name>/`; attention, detail names the commit when known), `drifted` (running from any other path; attention), `missing` (nothing running; not attention), or `target-missing` (checkout or stack file absent; attention, remediation `re-run 'gridctl pack add'`). An `in-sync` stack row whose `~/.gridctl/overrides/<pack>.yaml` exists sets `detail` to `override: <path>` and is not attention. Then one `source` row per pinned external source, in name order: `in-sync` (pinned as recorded, not verified current) or `stale` (attention; the update cache lists a newer commit for one of its skills; remediation `re-run 'gridctl pack add <pack-repo>'`). A vault-token source, or a source that recorded no skills, stays `in-sync` and appends `, freshness not checked`. Then skill rows. Skill, agent, and wiring rows are per-client; rule rows are per-client once applied (state joined from the pack-tagged projection lock entries and the context engine's per-fragment status; coverage is per fragment-file projection, so compiled clients' whole-document state stays on `GET /api/context`), with a single store-presence row for a rule that was imported but never projected. Hook rows follow rules: one row per client when the hook is projected (state, detail, and remediation from that projection), or a store-presence row (`in-sync`, detail `imported; not projected`) when it was imported and never projected. A recorded name whose directory is absent is `missing` with detail `not in the hook registry; re-run 'gridctl pack add'`. A directory that is present but whose `hook.json` does not validate is `drifted`, with the parse error in `detail` and a `remediation` that names `gridctl skill pins diff <name> --kind hook` and `gridctl skill remove <name> --kind hook`. REST and `gridctl pack status` use the same rows. An unresolved hook is an `unresolved` row named `hooks:<name>`. An unresolved stack is an `unresolved` row named `stack:<path>`, not a `stack` row, and its `detail` is the export or path error when one was recorded. A base with attached boosters adds a `fragment` row per booster after the stack row (`in-sync`, `stale`, `missing`). A pack that recorded a lock adds a `lock` row (`honored`, `absent`, `stale`, `ignored`) before source rows. `info.extends` is the base pack name for a booster and is omitted otherwise. `counts.stack` is also true when a fragment resolved.
 
 **Auth:** Yes
 
