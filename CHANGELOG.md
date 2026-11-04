@@ -14,6 +14,8 @@ All notable changes to gridctl will be documented in this file.
 
 ### Bug Fixes
 
+- A removed or empty hook script copy is restored on the next sync instead of being reported as a hand edit. `pack apply` counts `skipped-unsupported` hook rows in `Applied N/M` and does not exit 1 for those rows alone. Hook sync preserves a settings file's mode and does not write its backup wider than 0644. A missing `hooks` key is inserted as one pretty-printed value on its own line.
+
 - A registry hook whose `hook.json` no longer validates stays in `skill list --kind hook` and can be removed. `skill update` prints `Skipped: <name> (hook):` when a hook fails the scan or drift gate, and a named update exits 1. A re-import refreshes a script's executable bit. Approving a hook whose current bytes scan clean clears findings recorded earlier. Hook pins use `~/.gridctl/pins/hooks/global.json` so they do not share a file with tool pins for a stack named `hooks`.
 
 ### Security
