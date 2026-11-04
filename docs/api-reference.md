@@ -3778,7 +3778,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project
 
 ### Hook Pins
 
-Content pins for imported hooks at `~/.gridctl/pins/hooks/global.json`. Hook pins are not stack-scoped. Reset is `DELETE /api/hook-pins/{name}`. `POST /api/hook-pins/{name}/reset` is not registered (`404`).
+Content pins for imported hooks at `~/.gridctl/pins/hooks/global.json`. Hook pins are not stack-scoped. Reset is `DELETE /api/hook-pins/{name}`. `POST /api/hook-pins/{name}/reset` is not registered (`404`). A name that is not lowercase letters, digits, and hyphens is `404` (`No pin found for hook: <name>`) on get, diff, approve, and reset, and is not joined onto the registry path.
 
 #### `GET /api/hook-pins`
 

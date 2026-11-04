@@ -15,12 +15,14 @@ All notable changes to gridctl will be documented in this file.
 ### Bug Fixes
 
 - A removed or empty hook script copy is restored on the next sync instead of being reported as a hand edit. `pack apply` counts `skipped-unsupported` hook rows in `Applied N/M` and does not exit 1 for those rows alone. Hook sync preserves a settings file's mode and does not write its backup wider than 0644. A missing `hooks` key is inserted as one pretty-printed value on its own line.
+- The Library hook pin tab shows added, removed, and modified files and a line diff of `hook.json`. Approve stays disabled when the hook is not pinned.
+- The example `block-force-push` script denies `git push --force` and `git push -f` when the flag follows the remote, and does not treat `--force-with-lease` or `--force-if-includes` as `--force`.
 
 - A registry hook whose `hook.json` no longer validates stays in `skill list --kind hook` and can be removed. `skill update` prints `Skipped: <name> (hook):` when a hook fails the scan or drift gate, and a named update exits 1. A re-import refreshes a script's executable bit. Approving a hook whose current bytes scan clean clears findings recorded earlier. Hook pins use `~/.gridctl/pins/hooks/global.json` so they do not share a file with tool pins for a stack named `hooks`.
 
 ### Security
 
-- Hook import is gated by the danger-pattern scanner and a content pin. Any finding of any severity skips that hook on `gridctl pack add` unless `--trust` (exit 1; other selected resources still import). `POST /api/packs` refuses the whole import with 409 before any write. A finding accepted with `--trust` is stored on the pin. Approving later drift requires `--expect` and, when findings remain, `--reason`. Projection writes only approved pin bytes. An unapproved registry edit is skipped and does not change the settings file or the script copy. gridctl does not execute hook scripts.
+- Hook import is gated by the danger-pattern scanner and a content pin. Any finding of any severity skips that hook on `gridctl pack add` unless `--trust` (exit 1; other selected resources still import). `POST /api/packs` refuses the whole import with 409 before any write. A finding accepted with `--trust` is stored on the pin. Approving later drift requires `--expect` and, when findings remain, `--reason`. Projection writes only approved pin bytes. An unapproved registry edit is skipped and does not change the settings file or the script copy. gridctl does not execute hook scripts. Hook pin routes, and the store's diff, approve, and composite-hash lookup, reject a name that is not lowercase letters, digits, and hyphens before reading the registry.
 
 ## [1.0.0-rc.4] - 2026-11-03
 
