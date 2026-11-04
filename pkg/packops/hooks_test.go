@@ -365,7 +365,44 @@ func TestRemove_KeepsHookWhenUnsyncBlocked(t *testing.T) {
 
 func TestRemove_RemovesNeverProjectedHook(t *testing.T) {
 	mgrs, imp, home := seedHookPack(t)
-	doc, err := mgrs.Remove(t.Context(), imp, "hook-pack", RemoveOptions{})
+	registry := filepath.Join(home, ".gridctl", "registry", "hooks", "block")
+
+	// A hook with no projection record is absent from unsync results.
+	// The preview must still report would-remove, not treat that absence
+	// as a block, and must not write.
+	doc, err := mgrs.Remove(t.Context(), imp, "hook-pack", RemoveOptions{DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !doc.DryRun {
+		t.Fatal("dry_run flag missing")
+	}
+	if len(doc.Kept) != 0 {
+		t.Fatalf("kept = %v, want empty", doc.Kept)
+	}
+	var hookRows []Row
+	for _, row := range doc.Rows {
+		if row.Kind == "hook" {
+			hookRows = append(hookRows, row)
+		}
+	}
+	if len(hookRows) != 1 || hookRows[0].Name != "block" || hookRows[0].Action != "would-remove" {
+		t.Fatalf("hook rows = %+v", hookRows)
+	}
+	if _, err := os.Stat(filepath.Join(registry, "hook.json")); err != nil {
+		t.Fatalf("dry run removed the registry hook: %v", err)
+	}
+	assertHookPin(t, home, "block", true)
+	assertHookProjection(t, home, "block", false)
+	locked, err := mgrs.LoadLockedPack("hook-pack")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locked.Hooks) != 1 || locked.Hooks[0] != "block" {
+		t.Fatalf("pack hooks = %v", locked.Hooks)
+	}
+
+	doc, err = mgrs.Remove(t.Context(), imp, "hook-pack", RemoveOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -381,7 +418,6 @@ func TestRemove_RemovesNeverProjectedHook(t *testing.T) {
 	if !removed {
 		t.Fatalf("rows = %+v", doc.Rows)
 	}
-	registry := filepath.Join(home, ".gridctl", "registry", "hooks", "block")
 	if _, err := os.Stat(registry); !os.IsNotExist(err) {
 		t.Fatalf("never-projected hook still present: %v", err)
 	}
