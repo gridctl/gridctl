@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"context"
+
+	"github.com/gridctl/gridctl/pkg/hooksync"
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/resetops"
 	"github.com/gridctl/gridctl/pkg/state"
@@ -238,5 +241,130 @@ func TestResetExecute_PurgeSelfTermination(t *testing.T) {
 	}
 	if _, err := os.Stat(gridctlDir); !os.IsNotExist(err) {
 		t.Error("finalize must complete the purge RemoveAll")
+	}
+}
+
+// apiFakeHooks is a resetops hook manager for handler tests. The field
+// type is unexported; the method set is what the assignment checks.
+type apiFakeHooks struct {
+	statuses []hooksync.ProjectionStatus
+	unsynced [][]string
+}
+
+func (f *apiFakeHooks) Statuses(context.Context) ([]hooksync.ProjectionStatus, error) {
+	return f.statuses, nil
+}
+
+func (f *apiFakeHooks) Unsync(_ context.Context, names []string, _ hooksync.UnsyncOptions) ([]hooksync.UnsyncResult, error) {
+	f.unsynced = append(f.unsynced, append([]string(nil), names...))
+	var out []hooksync.UnsyncResult
+	for _, n := range names {
+		res := hooksync.UnsyncResult{Hook: n, Action: hooksync.ActionRemoved}
+		for _, s := range f.statuses {
+			if s.Hook == n {
+				res.Client = s.Client
+				res.Target = s.Target
+				break
+			}
+		}
+		out = append(out, res)
+	}
+	return out, nil
+}
+
+func TestResetPreview_IncludesHookRow(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(state.HomeEnv, home)
+	settings := filepath.Join(home, ".claude", "settings.json")
+	scriptDir := filepath.Join(home, ".gridctl", "hooks", "block-force-push")
+	hooks := &apiFakeHooks{statuses: []hooksync.ProjectionStatus{{
+		Hook: "block-force-push", Client: "claude-code", State: hooksync.StateInSync,
+		Target: settings, ScriptDir: scriptDir,
+	}}}
+	srv := NewServer(mcp.NewGateway(), nil)
+	srv.SetResetManagers(&resetops.Managers{Home: home, Hooks: hooks})
+
+	rec := serveReset(t, srv, resetRequest(t, "/api/reset/preview", `{}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("preview status = %d, body %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Doc *resetops.Doc `json:"doc"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Doc == nil {
+		t.Fatal("preview doc is nil")
+	}
+	var found bool
+	for _, r := range resp.Doc.Rows {
+		if r.Kind == "hook" && r.Name == "block-force-push" && r.Client == "claude-code" && r.Path == settings && r.ScriptDir == scriptDir && r.Action == resetops.ActionWouldRemove {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("preview rows = %+v, want a hook would-remove row", resp.Doc.Rows)
+	}
+
+	var pv struct {
+		ConfirmToken string `json:"confirm_token"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &pv); err != nil {
+		t.Fatalf("decode token: %v", err)
+	}
+	body := `{"confirm_token":"` + pv.ConfirmToken + `"}`
+	rec = serveReset(t, srv, resetRequest(t, "/api/reset", body))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("execute status = %d, body %s", rec.Code, rec.Body.String())
+	}
+	if len(hooks.unsynced) != 1 || len(hooks.unsynced[0]) != 1 || hooks.unsynced[0][0] != "block-force-push" {
+		t.Fatalf("execute Unsync calls = %v, want [block-force-push]", hooks.unsynced)
+	}
+	var executed resetops.Doc
+	if err := json.Unmarshal(rec.Body.Bytes(), &executed); err != nil {
+		t.Fatalf("decode execute: %v", err)
+	}
+	var removed bool
+	for _, r := range executed.Rows {
+		if r.Kind == "hook" && r.Action == resetops.ActionRemoved && r.Name == "block-force-push" {
+			removed = true
+		}
+	}
+	if !removed {
+		t.Fatalf("execute rows = %+v, want a removed hook row", executed.Rows)
+	}
+}
+
+func TestResetExecute_MissingHookManagerCounted(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(state.HomeEnv, home)
+	srv := NewServer(mcp.NewGateway(), nil)
+	srv.SetResetManagers(&resetops.Managers{Home: home, Missing: []string{"hook"}})
+
+	rec := serveReset(t, srv, resetRequest(t, "/api/reset/preview", `{}`))
+	var pv struct {
+		ConfirmToken string `json:"confirm_token"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &pv); err != nil {
+		t.Fatalf("decode preview: %v", err)
+	}
+	body := `{"confirm_token":"` + pv.ConfirmToken + `"}`
+	rec = serveReset(t, srv, resetRequest(t, "/api/reset", body))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("execute status = %d, body %s", rec.Code, rec.Body.String())
+	}
+	var doc resetops.Doc
+	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+		t.Fatalf("decode doc: %v", err)
+	}
+	var skipped bool
+	for _, r := range doc.Rows {
+		if r.Kind == "hook" && r.Action == resetops.ActionSkipped {
+			skipped = true
+		}
+	}
+	if !skipped || doc.Failed != 1 {
+		t.Fatalf("missing hook manager: skipped=%v Failed=%d rows=%+v", skipped, doc.Failed, doc.Rows)
 	}
 }

@@ -35,11 +35,13 @@ var resetCmd = &cobra.Command{
 	Short: "Remove everything gridctl placed on this machine",
 	Long: `Removes every artifact gridctl created outside its own directory:
 projected skills, agents, and context rules in client directories,
+projected hook groups in Claude Code settings and their script copies,
 gateway entries gridctl owns inside shared client MCP configs, and the
 containers, networks, and daemons of every stack under the active home.
 
 The default tier PRESERVES ~/.gridctl (vault, oauth grants, pins,
-registry, cache, telemetry, logs). --purge deletes ~/.gridctl as well.
+registry, cache, telemetry, logs). --purge deletes ~/.gridctl as well,
+after those hook groups have been retired from Claude Code settings.
 
 Removal is ownership-driven: only lockfile-recorded artifacts are
 touched, hand-edited files are kept unless --force, and entries gridctl
@@ -102,6 +104,12 @@ func newResetManagers(printer *output.Printer) (*resetops.Managers, func(), erro
 		m.Missing = append(m.Missing, "agent")
 	} else {
 		m.Agents = am
+	}
+	if hm, err := newHookProjectManager(); err != nil {
+		printer.Warn("hook projections unavailable; their removal is skipped", "error", err)
+		m.Missing = append(m.Missing, "hook")
+	} else {
+		m.Hooks = hm
 	}
 	if cm, err := contexts.NewManager(); err != nil {
 		printer.Warn("context manager unavailable; context removal is skipped", "error", err)
@@ -189,7 +197,7 @@ func runReset(ctx context.Context, format string) error {
 	}
 	phaseTitles := map[string]string{
 		"backup": "Writing backup", "services": "Removing installed services", "daemons": "Stopping daemons",
-		"projections": "Removing skill and agent projections",
+		"projections": "Removing skill, agent, and hook projections",
 		"contexts":    "Removing context rules",
 		"wiring":      "Removing gateway entries from client configs",
 		"containers":  "Removing containers and networks", "state": "Removing state files",

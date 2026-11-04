@@ -13,6 +13,7 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/agentsync"
 	"github.com/gridctl/gridctl/pkg/contexts"
+	"github.com/gridctl/gridctl/pkg/hooksync"
 	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/skillsync"
 	"github.com/gridctl/gridctl/pkg/state"
@@ -685,4 +686,383 @@ func TestExecute_UnidentifiableOrphanNeverSignaled(t *testing.T) {
 			t.Fatalf("an orphan that cannot prove its home must never be signaled: %+v", r)
 		}
 	}
+}
+
+type fakeHooks struct {
+	statuses     []hooksync.ProjectionStatus
+	unsynced     [][]string
+	force        bool
+	actionByName map[string]string
+	detailByName map[string]string
+	errorByName  map[string]string
+	onUnsync     func()
+}
+
+func (f *fakeHooks) Statuses(context.Context) ([]hooksync.ProjectionStatus, error) {
+	return f.statuses, nil
+}
+
+func (f *fakeHooks) Unsync(_ context.Context, names []string, opts hooksync.UnsyncOptions) ([]hooksync.UnsyncResult, error) {
+	copied := append([]string(nil), names...)
+	f.unsynced = append(f.unsynced, copied)
+	f.force = opts.Force
+	if f.onUnsync != nil {
+		f.onUnsync()
+	}
+	var out []hooksync.UnsyncResult
+	for _, n := range names {
+		action := hooksync.ActionRemoved
+		if f.actionByName != nil && f.actionByName[n] != "" {
+			action = f.actionByName[n]
+		}
+		res := hooksync.UnsyncResult{Hook: n, Action: action}
+		for _, s := range f.statuses {
+			if s.Hook == n {
+				res.Client = s.Client
+				res.Target = s.Target
+				break
+			}
+		}
+		if f.detailByName != nil {
+			res.Detail = f.detailByName[n]
+		}
+		if f.errorByName != nil {
+			res.Error = f.errorByName[n]
+		}
+		out = append(out, res)
+	}
+	return out, nil
+}
+
+func TestPreview_HookRows(t *testing.T) {
+	home := sandboxHome(t)
+	settings := filepath.Join(home, ".claude", "settings.json")
+	hooks := &fakeHooks{statuses: []hooksync.ProjectionStatus{
+		{Hook: "clean", Client: "claude-code", State: hooksync.StateInSync, Target: settings, ScriptDir: filepath.Join(home, ".gridctl", "hooks", "clean")},
+		{Hook: "edited", Client: "claude-code", State: hooksync.StateDrifted, Target: settings, ScriptDir: filepath.Join(home, ".gridctl", "hooks", "edited"),
+			Detail: "script copy was edited since gridctl wrote it"},
+	}}
+	m := &Managers{Home: home, Hooks: hooks}
+
+	doc, err := m.Preview(context.Background(), Options{})
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	var clean, edited Row
+	var sawClean, sawEdited bool
+	for _, r := range doc.Rows {
+		switch r.Name {
+		case "clean":
+			clean, sawClean = r, true
+		case "edited":
+			edited, sawEdited = r, true
+		}
+	}
+	if !sawClean || clean.Kind != "hook" || clean.Action != ActionWouldRemove || clean.Client != "claude-code" || clean.Path != settings || clean.ScriptDir != hooks.statuses[0].ScriptDir {
+		t.Errorf("in-sync hook row = %+v, want would-remove with client, path, and script dir", clean)
+	}
+	if !sawEdited || edited.Action != ActionKeptDrift || edited.Detail != hookKeptDetail {
+		t.Errorf("drifted hook row = %+v, want kept-drift", edited)
+	}
+	if len(doc.Kept) != 1 || doc.Kept[0] != "hook/edited" {
+		t.Errorf("Kept = %v, want [hook/edited]", doc.Kept)
+	}
+
+	forced, err := m.Preview(context.Background(), Options{Force: true})
+	if err != nil {
+		t.Fatalf("Preview force: %v", err)
+	}
+	for _, r := range forced.Rows {
+		if r.Action == ActionKeptDrift {
+			t.Errorf("forced preview still keeps %s", r.Name)
+		}
+	}
+}
+
+func TestExecute_HookDriftPreFilteredAndForcePassed(t *testing.T) {
+	home := sandboxHome(t)
+	settings := filepath.Join(home, ".claude", "settings.json")
+	hooks := &fakeHooks{statuses: []hooksync.ProjectionStatus{
+		{Hook: "clean", Client: "claude-code", State: hooksync.StateInSync, Target: settings, ScriptDir: filepath.Join(home, ".gridctl", "hooks", "clean")},
+		{Hook: "edited", Client: "claude-code", State: hooksync.StateDrifted, Target: settings, ScriptDir: filepath.Join(home, ".gridctl", "hooks", "edited"),
+			Detail: "script copy was edited since gridctl wrote it"},
+	}}
+	m := &Managers{Home: home, Hooks: hooks}
+
+	doc, err := m.Execute(context.Background(), Options{}, nil)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(hooks.unsynced) != 1 || len(hooks.unsynced[0]) != 1 || hooks.unsynced[0][0] != "clean" {
+		t.Fatalf("Unsync received %v; only the non-drifted name must be passed", hooks.unsynced)
+	}
+	if hooks.force {
+		t.Fatal("Unsync Force = true, want false")
+	}
+	var keptRow Row
+	var nKept int
+	for _, r := range doc.Rows {
+		if r.Kind == "hook" && r.Action == ActionKeptDrift {
+			keptRow = r
+			nKept++
+		}
+	}
+	if nKept != 1 || keptRow.Name != "edited" || keptRow.Client != "claude-code" || keptRow.Path != settings || keptRow.Detail != hookKeptDetail {
+		t.Errorf("kept row = %+v (count %d), want one kept-drift row for edited", keptRow, nKept)
+	}
+	if countKept(doc.Kept, "hook/edited") != 1 {
+		t.Errorf("Kept = %v, want hook/edited once", doc.Kept)
+	}
+
+	forced, err := m.Execute(context.Background(), Options{Force: true}, nil)
+	if err != nil {
+		t.Fatalf("Execute force: %v", err)
+	}
+	if len(hooks.unsynced) != 2 || !sameNames(hooks.unsynced[1], []string{"clean", "edited"}) {
+		t.Fatalf("forced Unsync received %v, want both names", hooks.unsynced)
+	}
+	if !hooks.force {
+		t.Fatal("forced Unsync Force = false, want true")
+	}
+	for _, r := range forced.Rows {
+		if r.Action == ActionKeptDrift {
+			t.Errorf("forced execute still keeps %+v", r)
+		}
+	}
+}
+
+func TestExecute_HookUnsyncResultsMapped(t *testing.T) {
+	home := sandboxHome(t)
+	names := []string{"gone", "missing", "raced", "bad", "boom"}
+	var statuses []hooksync.ProjectionStatus
+	for _, n := range names {
+		statuses = append(statuses, hooksync.ProjectionStatus{Hook: n, Client: "claude-code", State: hooksync.StateInSync, Target: filepath.Join(home, n+".json")})
+	}
+	hooks := &fakeHooks{
+		statuses: statuses,
+		actionByName: map[string]string{
+			"gone":    hooksync.ActionRemoved,
+			"missing": hooksync.ActionAlreadyGone,
+			"raced":   hooksync.ActionSkippedDrift,
+			"bad":     hooksync.ActionSkippedUnmanaged,
+			"boom":    hooksync.ActionError,
+		},
+		detailByName: map[string]string{"bad": "settings file is not valid JSON or JSONC: unexpected end of input"},
+		errorByName:  map[string]string{"boom": "write failed"},
+	}
+	m := &Managers{Home: home, Hooks: hooks}
+
+	doc, err := m.Execute(context.Background(), Options{}, nil)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	actions := map[string]string{}
+	for _, r := range doc.Rows {
+		if r.Kind == "hook" {
+			actions[r.Name] = r.Action
+		}
+	}
+	if actions["gone"] != ActionRemoved || actions["missing"] != ActionAlreadyGone || actions["raced"] != ActionKeptDrift {
+		t.Errorf("ok actions = %v", actions)
+	}
+	if actions["bad"] != ActionFailed || actions["boom"] != ActionFailed {
+		t.Errorf("failure actions = %v", actions)
+	}
+	if doc.Failed != 2 {
+		t.Errorf("Failed = %d, want 2", doc.Failed)
+	}
+	if countKept(doc.Kept, "hook/raced") != 1 {
+		t.Errorf("Kept = %v, want hook/raced once", doc.Kept)
+	}
+}
+
+func TestExecute_HookUnparsableSettingsFails(t *testing.T) {
+	home := sandboxHome(t)
+	settings := filepath.Join(home, ".claude", "settings.json")
+	detail := hooksync.SettingsUnparsableDetail + "unexpected end of input"
+	hooks := &fakeHooks{
+		statuses: []hooksync.ProjectionStatus{{
+			Hook: "broken", Client: "claude-code", State: hooksync.StateDrifted, Target: settings, Detail: detail,
+		}},
+		actionByName: map[string]string{"broken": hooksync.ActionSkippedUnmanaged},
+		detailByName: map[string]string{"broken": detail},
+	}
+	m := &Managers{Home: home, Hooks: hooks}
+
+	preview, err := m.Preview(context.Background(), Options{})
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	if len(preview.Kept) != 0 {
+		t.Fatalf("preview Kept = %v, want empty", preview.Kept)
+	}
+	var skipped int
+	for _, r := range preview.Rows {
+		if r.Kind != "hook" {
+			continue
+		}
+		if r.Action == ActionKeptDrift {
+			t.Fatalf("parse error must not preview as kept-drift: %+v", r)
+		}
+		if r.Action == ActionSkipped && r.Name == "broken" && r.Detail == hookUnparsableDetail {
+			skipped++
+		}
+	}
+	if skipped != 1 {
+		t.Fatalf("preview rows = %+v, want one skipped hook row", preview.Rows)
+	}
+
+	doc, err := m.Execute(context.Background(), Options{}, nil)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(hooks.unsynced) != 1 || len(hooks.unsynced[0]) != 1 || hooks.unsynced[0][0] != "broken" {
+		t.Fatalf("Unsync received %v, want [broken]", hooks.unsynced)
+	}
+	var failed Row
+	var nFailed int
+	for _, r := range doc.Rows {
+		if r.Kind == "hook" && r.Action == ActionFailed {
+			failed = r
+			nFailed++
+		}
+		if r.Action == ActionKeptDrift {
+			t.Errorf("parse error emitted kept-drift: %+v", r)
+		}
+	}
+	if nFailed != 1 || failed.Error != detail || doc.Failed != 1 || len(doc.Kept) != 0 {
+		t.Errorf("failed row = %+v, Failed = %d, Kept = %v", failed, doc.Failed, doc.Kept)
+	}
+
+	forced, err := m.Execute(context.Background(), Options{Force: true}, nil)
+	if err != nil {
+		t.Fatalf("Execute force: %v", err)
+	}
+	if !hooks.force || len(hooks.unsynced) != 2 || hooks.unsynced[1][0] != "broken" {
+		t.Fatalf("force must still unsync the parse-error name, got force=%v calls=%v", hooks.force, hooks.unsynced)
+	}
+	if forced.Failed != 1 || len(forced.Kept) != 0 {
+		t.Errorf("forced parse error Failed = %d, Kept = %v", forced.Failed, forced.Kept)
+	}
+}
+
+func TestExecute_MissingHookManagerCounted(t *testing.T) {
+	home := sandboxHome(t)
+	m := &Managers{Home: home, Missing: []string{"hook"}}
+
+	doc, err := m.Execute(context.Background(), Options{}, nil)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	var skipped bool
+	for _, r := range doc.Rows {
+		if r.Kind == "hook" && r.Action == ActionSkipped {
+			skipped = true
+		}
+	}
+	if !skipped || doc.Failed != 1 {
+		t.Errorf("missing hook manager: skipped=%v Failed=%d rows=%+v", skipped, doc.Failed, doc.Rows)
+	}
+}
+
+func TestExecute_HookUnsyncBeforePurge(t *testing.T) {
+	home := sandboxHome(t)
+	gridctlDir := filepath.Join(home, ".gridctl")
+	if err := os.MkdirAll(gridctlDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	hooks := &fakeHooks{
+		statuses: []hooksync.ProjectionStatus{{
+			Hook: "block", Client: "claude-code", State: hooksync.StateInSync,
+			Target: filepath.Join(home, ".claude", "settings.json"),
+		}},
+		onUnsync: func() {
+			if _, err := os.Stat(gridctlDir); err != nil {
+				t.Errorf("hook unsync ran after %s was removed: %v", gridctlDir, err)
+			}
+		},
+	}
+	m := &Managers{Home: home, Hooks: hooks}
+
+	if _, err := m.Execute(context.Background(), Options{Purge: true}, nil); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(hooks.unsynced) != 1 {
+		t.Fatalf("Unsync calls = %d, want 1", len(hooks.unsynced))
+	}
+	if _, err := os.Stat(gridctlDir); !os.IsNotExist(err) {
+		t.Fatalf("purge must remove %s, stat err = %v", gridctlDir, err)
+	}
+}
+
+func TestBackup_IncludesHookScriptDir(t *testing.T) {
+	home := sandboxHome(t)
+	settings := filepath.Join(home, ".claude", "settings.json")
+	scriptDir := filepath.Join(home, ".gridctl", "hooks", "block-force-push")
+	script := filepath.Join(scriptDir, "scripts", "block.sh")
+	if err := os.MkdirAll(filepath.Dir(settings), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(settings, []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(scriptDir, "hook.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := &Managers{Home: home, Hooks: &fakeHooks{statuses: []hooksync.ProjectionStatus{{
+		Hook: "block-force-push", Client: "claude-code", State: hooksync.StateInSync,
+		Target: settings, ScriptDir: scriptDir,
+	}}}}
+
+	doc, err := m.Preview(context.Background(), Options{})
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	path, err := m.Backup(context.Background(), doc, time.Unix(1700000000, 0))
+	if err != nil {
+		t.Fatalf("Backup: %v", err)
+	}
+	names := tarNames(t, path)
+	for _, want := range []string{
+		".claude/settings.json",
+		".gridctl/hooks/block-force-push/scripts/block.sh",
+		".gridctl/hooks/block-force-push/hook.json",
+	} {
+		if !names[want] {
+			t.Errorf("backup missing %s; has %v", want, names)
+		}
+	}
+}
+
+func countKept(kept []string, want string) int {
+	n := 0
+	for _, k := range kept {
+		if k == want {
+			n++
+		}
+	}
+	return n
+}
+
+func sameNames(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	seen := map[string]int{}
+	for _, n := range got {
+		seen[n]++
+	}
+	for _, n := range want {
+		seen[n]--
+		if seen[n] < 0 {
+			return false
+		}
+	}
+	return true
 }

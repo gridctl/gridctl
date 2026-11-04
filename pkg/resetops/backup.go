@@ -106,7 +106,10 @@ func (m *Managers) backupSet(doc *Doc) ([]string, error) {
 			continue // purge archives exclude daemon state (resolved tokens)
 		}
 		switch r.Action {
-		case ActionWouldRemove, ActionDropRecord:
+		case ActionWouldRemove:
+			add(r.Path)
+			add(r.ScriptDir)
+		case ActionDropRecord:
 			add(r.Path)
 		}
 	}

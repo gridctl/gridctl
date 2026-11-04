@@ -97,6 +97,11 @@ func (s *Server) resetMgr() (*resetops.Managers, error) {
 		} else {
 			m.Missing = append(m.Missing, "agent")
 		}
+		if hm, err := s.hooksMgr(); err == nil {
+			m.Hooks = hm
+		} else {
+			m.Missing = append(m.Missing, "hook")
+		}
 		if cm, err := s.contextsMgr(); err == nil {
 			m.Contexts = cm
 		} else {

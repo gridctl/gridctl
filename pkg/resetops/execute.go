@@ -2,11 +2,13 @@ package resetops
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/agentsync"
+	"github.com/gridctl/gridctl/pkg/hooksync"
 	"github.com/gridctl/gridctl/pkg/skillsync"
 	"github.com/gridctl/gridctl/pkg/state"
 )
@@ -160,7 +162,9 @@ func (m *Managers) Execute(ctx context.Context, opts Options, progress Progress)
 	if err := ctx.Err(); err != nil {
 		return doc, err
 	}
-	// Phase 2: skill and agent projections, drift pre-filtered.
+	// Phase 2: skill, agent, and hook projections, drift pre-filtered.
+	// An unparsable hook settings file is not pre-filtered: Unsync
+	// reports it as skipped-unmanaged, which this phase counts as failed.
 	progress("projections", nil)
 	if m.Skills != nil {
 		if names := removableNames(uniqueSkillNames(inv.skills), inv.keptSkills); len(names) > 0 {
@@ -182,6 +186,39 @@ func (m *Managers) Execute(ctx context.Context, opts Options, progress Progress)
 			} else {
 				for _, r := range results {
 					ok(Row{Kind: "agent", Name: r.Agent, Client: r.Client, Path: r.Target, Action: r.Action})
+				}
+			}
+		}
+	}
+	if m.Hooks != nil {
+		for _, s := range inv.hooks {
+			if !inv.keptHooks[s.Hook] {
+				continue
+			}
+			ok(Row{Kind: "hook", Name: s.Hook, Client: s.Client, Path: s.Target, ScriptDir: s.ScriptDir, Action: ActionKeptDrift,
+				Detail: hookKeptDetail})
+			appendKept(doc, "hook/"+s.Hook)
+		}
+		if names := removableNames(uniqueHookNames(inv.hooks), inv.keptHooks); len(names) > 0 {
+			results, err := m.Hooks.Unsync(ctx, names, hooksync.UnsyncOptions{Force: opts.Force})
+			if err != nil {
+				fail(Row{Kind: "hook", Name: fmt.Sprintf("%d hooks", len(names))}, err)
+			} else {
+				for _, r := range results {
+					row := Row{Kind: "hook", Name: r.Hook, Client: r.Client, Path: r.Target, ScriptDir: hookScriptDir(inv.hooks, r.Hook, r.Client)}
+					switch r.Action {
+					case hooksync.ActionRemoved, hooksync.ActionAlreadyGone:
+						row.Action = r.Action
+						row.Detail = r.Detail
+						ok(row)
+					case hooksync.ActionSkippedDrift:
+						row.Action = ActionKeptDrift
+						row.Detail = hookKeptDetail
+						ok(row)
+						appendKept(doc, "hook/"+r.Hook)
+					default:
+						fail(row, errors.New(hookResultError(r)))
+					}
 				}
 			}
 		}
@@ -356,6 +393,41 @@ func uniqueSkillNames(rows []skillsync.ProjectionStatus) []string {
 
 func uniqueAgentNames(rows []agentsync.ProjectionStatus) []string {
 	return uniqueNames(len(rows), func(i int) string { return rows[i].Agent })
+}
+
+func uniqueHookNames(rows []hooksync.ProjectionStatus) []string {
+	return uniqueNames(len(rows), func(i int) string { return rows[i].Hook })
+}
+
+func hookScriptDir(rows []hooksync.ProjectionStatus, name, client string) string {
+	for _, s := range rows {
+		if s.Hook == name && s.Client == client {
+			return s.ScriptDir
+		}
+	}
+	return ""
+}
+
+func appendKept(doc *Doc, entry string) {
+	for _, k := range doc.Kept {
+		if k == entry {
+			return
+		}
+	}
+	doc.Kept = append(doc.Kept, entry)
+}
+
+// hookResultError is the failure text for an unsync result that did not
+// retire the projection. Error wins when both are set; a result with
+// neither still names the action so the row is not blank.
+func hookResultError(r hooksync.UnsyncResult) string {
+	if r.Error != "" {
+		return r.Error
+	}
+	if r.Detail != "" {
+		return r.Detail
+	}
+	return "unexpected hook unsync result: " + r.Action
 }
 
 func uniqueNames(n int, name func(int) string) []string {

@@ -1,6 +1,6 @@
 // Package resetops implements the machine-wide reset cascade behind
 // `gridctl reset` and POST /api/reset. It composes the kind managers
-// that own every write (skillsync, agentsync, contexts, wiring) plus
+// that own every write (skillsync, agentsync, hooksync, contexts, wiring) plus
 // the daemon/runtime state helpers; like pkg/packops it owns only the
 // orchestration, never a write path of its own.
 //
@@ -25,6 +25,7 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/agentsync"
 	"github.com/gridctl/gridctl/pkg/contexts"
+	"github.com/gridctl/gridctl/pkg/hooksync"
 	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/skillsync"
 	"github.com/gridctl/gridctl/pkg/state"
@@ -96,13 +97,14 @@ type Options struct {
 
 // Row is one artifact line in reset output.
 type Row struct {
-	Kind   string `json:"kind"` // skill | agent | context | wiring | service | daemon | containers | state-file | gridctl-dir
-	Name   string `json:"name"`
-	Client string `json:"client,omitempty"`
-	Path   string `json:"path,omitempty"`
-	Action string `json:"action"`
-	Detail string `json:"detail,omitempty"`
-	Error  string `json:"error,omitempty"`
+	Kind      string `json:"kind"` // skill | agent | hook | context | wiring | service | daemon | containers | state-file | gridctl-dir
+	Name      string `json:"name"`
+	Client    string `json:"client,omitempty"`
+	Path      string `json:"path,omitempty"`
+	ScriptDir string `json:"script_dir,omitempty"`
+	Action    string `json:"action"`
+	Detail    string `json:"detail,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 // PurgeStats enumerates what --purge destroys beyond the cascade, so
@@ -141,10 +143,10 @@ type Doc struct {
 // (row == nil) or one completed row. Never called concurrently.
 type Progress func(phase string, row *Row)
 
-// skillSyncer, agentSyncer, contextSyncer, and wireManager are the
-// slices of the kind managers reset consumes; interfaces so unit tests
-// exercise the cascade without real client trees (mocks are unit-test
-// only per Article IV).
+// skillSyncer, agentSyncer, hookSyncer, contextSyncer, and wireManager
+// are the slices of the kind managers reset consumes; interfaces so unit
+// tests exercise the cascade without real client trees (mocks are
+// unit-test only per Article IV).
 type skillSyncer interface {
 	Statuses(ctx context.Context) ([]skillsync.ProjectionStatus, error)
 	Unsync(ctx context.Context, names []string, opts skillsync.UnsyncOptions) ([]skillsync.UnsyncResult, error)
@@ -158,6 +160,11 @@ type agentSyncer interface {
 type contextSyncer interface {
 	Statuses(ctx context.Context) ([]contexts.ClientStatus, error)
 	Unsync(ctx context.Context, slug string) ([]contexts.UnsyncResult, error)
+}
+
+type hookSyncer interface {
+	Statuses(ctx context.Context) ([]hooksync.ProjectionStatus, error)
+	Unsync(ctx context.Context, names []string, opts hooksync.UnsyncOptions) ([]hooksync.UnsyncResult, error)
 }
 
 type wireManager interface {
@@ -186,6 +193,7 @@ type Runtime interface {
 type Managers struct {
 	Skills   skillSyncer
 	Agents   agentSyncer
+	Hooks    hookSyncer
 	Contexts contextSyncer
 	Wiring   wireManager
 	Runtime  Runtime
@@ -205,12 +213,14 @@ type Managers struct {
 type inventory struct {
 	skills       []skillsync.ProjectionStatus
 	agents       []agentsync.ProjectionStatus
+	hooks        []hooksync.ProjectionStatus
 	contextRows  []contexts.ClientStatus
 	wiringRows   []wiring.Row
 	services     []Row
 	stacks       []state.DaemonState
 	keptSkills   map[string]bool
 	keptAgents   map[string]bool
+	keptHooks    map[string]bool
 	keptContexts map[string]bool
 
 	// orphanPID is a foreground gridctl process on the default port with
@@ -228,6 +238,7 @@ func (m *Managers) collect(ctx context.Context, opts Options) (*inventory, error
 	inv := &inventory{
 		keptSkills:   map[string]bool{},
 		keptAgents:   map[string]bool{},
+		keptHooks:    map[string]bool{},
 		keptContexts: map[string]bool{},
 	}
 	var err error
@@ -239,6 +250,11 @@ func (m *Managers) collect(ctx context.Context, opts Options) (*inventory, error
 	if m.Agents != nil {
 		if inv.agents, err = m.Agents.Statuses(ctx); err != nil {
 			return nil, fmt.Errorf("reading agent projections: %w", err)
+		}
+	}
+	if m.Hooks != nil {
+		if inv.hooks, err = m.Hooks.Statuses(ctx); err != nil {
+			return nil, fmt.Errorf("reading hook projections: %w", err)
 		}
 	}
 	if m.Contexts != nil {
@@ -261,9 +277,13 @@ func (m *Managers) collect(ctx context.Context, opts Options) (*inventory, error
 	}
 	inv.scanOrphan(m.Home)
 
-	// Drift pre-filter (the packops splitKept rule, extended to contexts):
-	// skillsync/agentsync/contexts unsync is NOT drift-aware, so a drifted
-	// resource must be excluded before Unsync or the hand-edit is deleted.
+	// Drift pre-filter (the packops splitKept rule, extended to contexts
+	// and hooks): skillsync/agentsync/contexts unsync is NOT drift-aware,
+	// and hooksync unsync cannot see a hand-edited script copy, so a
+	// drifted resource must be excluded before Unsync or the hand-edit
+	// is deleted. An unparsable settings file is also StateDrifted, but
+	// Unsync reports it as skipped-unmanaged with or without Force, so
+	// it is not kept here: passing the name makes the failure visible.
 	if !opts.Force {
 		for _, s := range inv.skills {
 			if s.State == skillsync.StateDrifted {
@@ -273,6 +293,11 @@ func (m *Managers) collect(ctx context.Context, opts Options) (*inventory, error
 		for _, a := range inv.agents {
 			if a.State == agentsync.StateDrifted {
 				inv.keptAgents[a.Agent] = true
+			}
+		}
+		for _, h := range inv.hooks {
+			if h.State == hooksync.StateDrifted && !hooksync.SettingsUnparsable(h.Detail) {
+				inv.keptHooks[h.Hook] = true
 			}
 		}
 		for _, c := range inv.contextRows {
@@ -340,6 +365,22 @@ func (inv *inventory) rows(opts Options) ([]Row, []string) {
 		kept = append(kept, "agent/"+name)
 	}
 
+	for _, h := range inv.hooks {
+		if inv.keptHooks[h.Hook] {
+			continue // one kept row per resource, below
+		}
+		if hooksync.SettingsUnparsable(h.Detail) {
+			rows = append(rows, Row{Kind: "hook", Name: h.Hook, Client: h.Client, Path: h.Target, Action: ActionSkipped,
+				Detail: hookUnparsableDetail})
+			continue
+		}
+		rows = append(rows, Row{Kind: "hook", Name: h.Hook, Client: h.Client, Path: h.Target, ScriptDir: h.ScriptDir, Action: ActionWouldRemove})
+	}
+	for name := range inv.keptHooks {
+		rows = append(rows, Row{Kind: "hook", Name: name, Action: ActionKeptDrift, Detail: hookKeptDetail})
+		kept = append(kept, "hook/"+name)
+	}
+
 	for _, c := range inv.contextRows {
 		if !contextSynced(c) {
 			continue
@@ -403,6 +444,14 @@ func (inv *inventory) rows(opts Options) ([]Row, []string) {
 // contextKeptDetail is the shared drift-kept wording for context rows,
 // used by both the preview and the executor so they cannot diverge.
 const contextKeptDetail = "the context artifact was hand-edited; kept (re-run with --force to remove)"
+
+// hookKeptDetail is the shared drift-kept wording for hook rows.
+const hookKeptDetail = "a projection of this hook was hand-edited; kept (re-run with --force to remove)"
+
+// hookUnparsableDetail is the dry-run wording for a settings file that
+// does not parse. Execution reports that projection as failed; --force
+// is not a remediation.
+const hookUnparsableDetail = "settings file does not parse; reset will report this projection as failed (repair or remove the file, then re-run)"
 
 // wiringDisposition classifies one wiring record for both the preview
 // and the executor: the row action (preview form), the shared detail

@@ -63,6 +63,20 @@ describe('ResetDialog', () => {
     expect(screen.getAllByText(/no restore command/i).length).toBeGreaterThan(0);
   });
 
+  it('lists a hook row under its client', async () => {
+    vi.mocked(fetchResetPreview).mockResolvedValue(previewResponse({
+      rows: [
+        { kind: 'hook', name: 'block-force-push', client: 'claude-code', path: '/Users/demo/.claude/settings.json', action: 'would-remove' },
+      ],
+    }));
+    render(<ResetDialog isOpen onClose={() => {}} />);
+    const group = await screen.findByRole('button', { name: /claude-code/i });
+    expect(group).toHaveTextContent(/1 hook/);
+    fireEvent.click(group);
+    expect(screen.getByText('hook')).toBeInTheDocument();
+    expect(screen.getByText('/Users/demo/.claude/settings.json')).toBeInTheDocument();
+  });
+
   it('refetches the preview when the tier changes (tokens are tier-bound)', async () => {
     vi.mocked(fetchResetPreview).mockResolvedValue(previewResponse());
     render(<ResetDialog isOpen onClose={() => {}} />);
