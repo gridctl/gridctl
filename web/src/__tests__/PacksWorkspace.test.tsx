@@ -79,6 +79,7 @@ describe('registryKind', () => {
   it('accepts the three catalog kinds and nothing else', () => {
     expect(isRegistryKind('skill')).toBe(true);
     expect(isRegistryKind('agent')).toBe(true);
+    expect(isRegistryKind('hook')).toBe(true);
     expect(isRegistryKind('pack')).toBe(true);
     expect(isRegistryKind('bundle')).toBe(false);
     expect(isRegistryKind(null)).toBe(false);

@@ -107,7 +107,7 @@ export function PackUpdateDialog({ packName, origin, onClose, onUpdated }: PackU
   }, [handleKeyDown]);
 
   const previewFlagged = preview
-    ? [...(preview.skills ?? []), ...(preview.agents ?? []), ...(preview.rules ?? [])].filter(
+    ? [...(preview.skills ?? []), ...(preview.agents ?? []), ...(preview.rules ?? []), ...(preview.hooks ?? [])].filter(
         (r) => (r.findings ?? []).length > 0,
       )
     : [];
@@ -248,7 +248,7 @@ export function PackUpdateDialog({ packName, origin, onClose, onUpdated }: PackU
               </p>
               <p className="font-mono text-2xs">
                 {(preview.skills ?? []).length} skills, {(preview.agents ?? []).length} agents,{' '}
-                {(preview.rules ?? []).length} rules{preview.wiring ? ', wiring' : ''}
+                {(preview.hooks ?? []).length} hooks, {(preview.rules ?? []).length} rules{preview.wiring ? ', wiring' : ''}
                 {(preview.unresolved ?? []).length > 0 &&
                   ` (${(preview.unresolved ?? []).length} unresolved)`}
               </p>
