@@ -1044,10 +1044,6 @@ export async function fetchRegistryHook(name: string): Promise<RegistryHook> {
   return fetchJSON<RegistryHook>(`/api/registry/hooks/${encodeURIComponent(name)}`);
 }
 
-export async function deleteRegistryHook(name: string): Promise<void> {
-  return mutateJSON<void>(`/api/registry/hooks/${encodeURIComponent(name)}`, 'DELETE');
-}
-
 export async function fetchHookProjectionStatus(): Promise<HookProjectionStatus[]> {
   return fetchJSON<HookProjectionStatus[]>('/api/project/hooks/status');
 }

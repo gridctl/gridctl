@@ -26,6 +26,7 @@ import {
   fetchHookProjectionStatus,
   fetchRegistryHook,
   fetchRegistryHooks,
+  HTTPError,
   syncHookProjections,
 } from '../lib/api';
 
@@ -128,11 +129,13 @@ describe('HooksWorkspace', () => {
     expect(screen.getByText('/tmp/demo/.gridctl/hooks/block-force-push')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Pin' }));
-    const reason = await screen.findByLabelText('Approve reason');
+    expect(await screen.findByText(/world-writable permissions/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Modified files')).toHaveTextContent('hook.json');
+    expect(screen.getByLabelText('Hook pin diff')).toHaveTextContent('edited');
+    const reason = screen.getByLabelText('Approve reason');
     expect(reason).toBeRequired();
     const approve = screen.getByRole('button', { name: 'Approve' });
     expect(approve).toBeDisabled();
-    expect(screen.getByText(/world-writable permissions/)).toBeInTheDocument();
 
     fireEvent.change(reason, { target: { value: 'reviewed the script' } });
     expect(approve).toBeEnabled();
@@ -140,5 +143,17 @@ describe('HooksWorkspace', () => {
     await waitFor(() => {
       expect(approveHookPin).toHaveBeenCalledWith('block-force-push', 'abc123', 'reviewed the script');
     });
+  });
+
+  it('disables approve when the hook is not pinned', async () => {
+    vi.mocked(fetchHookPinDiff).mockRejectedValue(new HTTPError(404, 'No pin found for hook: block-force-push'));
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect block-force-push' }));
+    fireEvent.click(await screen.findByRole('tab', { name: 'Pin' }));
+
+    expect(await screen.findByText('Not pinned; the next accepted import pins it')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+    expect(approveHookPin).not.toHaveBeenCalled();
   });
 });

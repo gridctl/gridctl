@@ -9,12 +9,16 @@ import {
   approveHookPin,
   fetchHookPinDiff,
   fetchRegistryHook,
+  HTTPError,
   syncHookProjections,
   unsyncHookProjections,
 } from '../../../lib/api';
+import { cn } from '../../../lib/cn';
 import { describeError, isCancellation } from '../../../lib/describeError';
+import { diffLines, MAX_DIFF_LINES, type DiffToken } from '../../../lib/diff';
+import { escapeNonPrintable } from '../../../lib/nonPrintable';
 import { describeHookSync, hookClientName, projectedScriptPath } from './hookModel';
-import type { HookProjectionStatus, HookUnsupportedClient, RegistryHook } from '../../../types';
+import type { HookPinDiff, HookProjectionStatus, HookUnsupportedClient, RegistryHook } from '../../../types';
 
 type HookTab = 'definition' | 'projection' | 'pin';
 
@@ -228,38 +232,47 @@ function UnsupportedChips({ clients }: { clients: HookUnsupportedClient[] }) {
 }
 
 function HookPinPanel({ name, onRefresh }: { name: string; onRefresh: () => Promise<void> | void }) {
-  const [diffText, setDiffText] = useState<string>('');
-  const [expectHash, setExpectHash] = useState('');
-  const [findings, setFindings] = useState<{ message?: string; severity?: string }[]>([]);
+  const [diff, setDiff] = useState<HookPinDiff | null>(null);
+  const [notPinned, setNotPinned] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState('');
 
   useEffect(() => {
     let cancelled = false;
     fetchHookPinDiff(name)
-      .then((diff) => {
+      .then((next) => {
         if (cancelled) return;
-        setStatus(diff.status);
-        setExpectHash(diff.composite_hash);
-        setFindings(diff.findings ?? []);
-        const parts = [diff.old_document, diff.new_document].filter(Boolean);
-        setDiffText(parts.join('\n---\n'));
+        setNotPinned(false);
+        setLoadError('');
+        setDiff(next);
       })
       .catch((err) => {
-        if (!cancelled && !isCancellation(err)) {
-          setDiffText('');
-          setFindings([]);
+        if (cancelled || isCancellation(err)) return;
+        setDiff(null);
+        if (err instanceof HTTPError && err.status === 404) {
+          setNotPinned(true);
+          setLoadError('');
+          return;
         }
+        setNotPinned(false);
+        setLoadError(describeError(err, 'Load hook pin diff').text);
       });
     return () => {
       cancelled = true;
     };
   }, [name]);
 
+  const findings = diff?.findings ?? [];
   const findingsExist = findings.length > 0;
+  const expectHash = diff?.composite_hash ?? '';
+  const approveDisabled = busy || notPinned || loadError !== '' || expectHash === '' || (findingsExist && reason.trim() === '');
+  const oldDocument = diff?.old_document ?? '';
+  const newDocument = diff?.new_document ?? '';
+  const documentChanged = diff !== null && oldDocument !== newDocument;
+
   const approve = async () => {
-    if (findingsExist && reason.trim() === '') return;
+    if (approveDisabled) return;
     setBusy(true);
     try {
       await approveHookPin(name, expectHash, reason.trim());
@@ -276,9 +289,15 @@ function HookPinPanel({ name, onRefresh }: { name: string; onRefresh: () => Prom
     }
   };
 
+  const statusLabel = notPinned ? 'not pinned' : diff?.status || (loadError ? 'unavailable' : 'loading');
+
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-xs">Pin status: <span className="font-mono">{status || 'unknown'}</span></p>
+      <p className="text-xs">Pin status: <span className="font-mono">{statusLabel}</span></p>
+      {notPinned && (
+        <p className="text-xs text-text-muted">Not pinned; the next accepted import pins it</p>
+      )}
+      {loadError && <p className="text-xs text-status-error">{loadError}</p>}
       {findingsExist && (
         <ul aria-label="Pin findings" className="text-2xs text-status-pending">
           {findings.map((f, i) => (
@@ -286,8 +305,17 @@ function HookPinPanel({ name, onRefresh }: { name: string; onRefresh: () => Prom
           ))}
         </ul>
       )}
-      {diffText && (
-        <pre className="text-2xs font-mono whitespace-pre-wrap bg-surface-highlight/40 rounded p-2 max-h-40 overflow-auto">{diffText}</pre>
+      {diff && (
+        <>
+          <HookFileChangeList label="Added" paths={diff.added_files} glyph="+" tone="text-status-running" />
+          <HookFileChangeList label="Removed" paths={diff.removed_files} glyph="-" tone="text-status-error" />
+          <HookFileChangeList label="Modified" paths={diff.modified_files} glyph="~" tone="text-status-pending" />
+          {documentChanged ? (
+            <HookDocumentDiff oldDocument={oldDocument} newDocument={newDocument} />
+          ) : (
+            <p className="text-2xs text-text-muted">hook.json unchanged</p>
+          )}
+        </>
       )}
       <label className="text-2xs text-text-muted" htmlFor="hook-pin-reason">
         Reason{findingsExist ? ' (required when findings exist)' : ''}
@@ -296,13 +324,78 @@ function HookPinPanel({ name, onRefresh }: { name: string; onRefresh: () => Prom
         id="hook-pin-reason"
         aria-label="Approve reason"
         required={findingsExist}
+        disabled={notPinned || loadError !== ''}
         value={reason}
         onChange={(e) => setReason(e.target.value)}
         className="text-xs rounded border border-border bg-background p-2 min-h-16"
       />
-      <Button size="sm" disabled={busy || (findingsExist && reason.trim() === '')} onClick={() => void approve()}>
+      <Button size="sm" disabled={approveDisabled} onClick={() => void approve()}>
         Approve
       </Button>
     </div>
+  );
+}
+
+function HookFileChangeList({
+  label,
+  paths,
+  glyph,
+  tone,
+}: {
+  label: string;
+  paths: string[];
+  glyph: string;
+  tone: string;
+}) {
+  if (paths.length === 0) return null;
+  return (
+    <div className="text-2xs font-mono space-y-0.5" aria-label={`${label} files`}>
+      {paths.map((p) => (
+        <div key={p} className={cn('flex gap-1.5', tone)}>
+          <span>{glyph}</span>
+          <span className="break-all">{escapeNonPrintable(p)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function HookDocumentDiff({ oldDocument, newDocument }: { oldDocument: string; newDocument: string }) {
+  const tokens = diffLines(oldDocument, newDocument);
+  const changed = tokens.filter((t) => t.kind !== 'same').length;
+  const shown = tokens.slice(0, MAX_DIFF_LINES);
+  return (
+    <div className="space-y-1">
+      <h4 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">
+        hook.json ({changed} {changed === 1 ? 'line' : 'lines'} changed)
+      </h4>
+      <div className="rounded border border-border/40 bg-background/60 overflow-x-auto max-h-40 overflow-y-auto" aria-label="Hook pin diff">
+        <pre className="text-2xs font-mono leading-relaxed p-2 whitespace-pre-wrap break-words">
+          {shown.map((token, i) => (
+            <HookDiffLine key={i} token={token} />
+          ))}
+        </pre>
+      </div>
+      {tokens.length > MAX_DIFF_LINES && (
+        <p className="text-3xs text-text-muted">Diff truncated at {MAX_DIFF_LINES} lines.</p>
+      )}
+    </div>
+  );
+}
+
+function HookDiffLine({ token }: { token: DiffToken }) {
+  const prefix = token.kind === 'added' ? '+ ' : token.kind === 'removed' ? '- ' : '  ';
+  return (
+    <span
+      className={cn(
+        'block px-1',
+        token.kind === 'added' && 'bg-status-running/10 text-status-running',
+        token.kind === 'removed' && 'bg-status-error/10 text-status-error',
+        token.kind === 'same' && 'text-text-secondary',
+      )}
+    >
+      {prefix}
+      {escapeNonPrintable(token.text)}
+    </span>
   );
 }
