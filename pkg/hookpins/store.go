@@ -330,7 +330,10 @@ func (s *Store) Sync(ctx context.Context, registryDir string) (*SyncResult, erro
 // Verify builds the diff for one hook without writing. CompositeHash is the
 // fingerprint of the current bytes, the value approve --expect binds to.
 func (s *Store) Verify(name, registryDir string) (*VerifyResult, error) {
-	dir := filepath.Join(registryDir, "hooks", name)
+	dir, err := registryHookDir(registryDir, name)
+	if err != nil {
+		return nil, err
+	}
 	if _, err := os.Stat(filepath.Join(dir, "hook.json")); err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("hookpins: hook %q: %w", name, ErrNotFound)
@@ -377,7 +380,10 @@ func (s *Store) Diff(name, registryDir string) (*VerifyResult, error) {
 
 // CurrentCompositeHash is the approval fingerprint of the hook's current bytes.
 func (s *Store) CurrentCompositeHash(name, registryDir string) (string, error) {
-	dir := filepath.Join(registryDir, "hooks", name)
+	dir, err := registryHookDir(registryDir, name)
+	if err != nil {
+		return "", err
+	}
 	defHash, _, files, err := digestTree(dir)
 	if err != nil {
 		return "", err
@@ -391,6 +397,10 @@ func (s *Store) Approve(ctx context.Context, name, registryDir string, req Appro
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	dir, err := registryHookDir(registryDir, name)
+	if err != nil {
+		return err
+	}
 	if err := pinapprovals.ValidateReason(req.Reason); err != nil {
 		return err
 	}
@@ -402,7 +412,6 @@ func (s *Store) Approve(ctx context.Context, name, registryDir string, req Appro
 	if err := pinapprovals.ValidateApprover(approvedBy); err != nil {
 		return err
 	}
-	dir := filepath.Join(registryDir, "hooks", name)
 	defHash, document, files, err := digestTree(dir)
 	if err != nil {
 		return err

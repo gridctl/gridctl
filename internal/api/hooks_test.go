@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -10,7 +11,9 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/hookpins"
 	"github.com/gridctl/gridctl/pkg/hooksync"
+	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/pins"
+	"github.com/gridctl/gridctl/pkg/registry"
 )
 
 func setupHookTestServer(t *testing.T) (*Server, string, string) {
@@ -240,5 +243,57 @@ func TestHandleHookPins_ApproveRequiresReason(t *testing.T) {
 	rec = doJSON(t, srv, http.MethodPost, "/api/hook-pins/block/approve", `{"expect":"`+diff.CompositeHash+`","reason":"reviewed the script"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("approve = %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleHookPins_RejectsEncodedPathName(t *testing.T) {
+	root := t.TempDir()
+	registryDir := filepath.Join(root, "home", "registry")
+	if err := os.MkdirAll(registryDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	regServer := registry.New(registry.NewStore(registryDir))
+	if err := regServer.Initialize(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	srv := NewServer(mcp.NewGateway(), nil)
+	srv.SetRegistryServer(regServer)
+
+	outside := filepath.Join(root, "home", "outside")
+	marker := "OUTSIDE_HOOK_MARKER"
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(`{"name":"outside","description":"` + marker + `","dialect":"claude-code","hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"./scripts/run.sh"}]}]}}`)
+	if err := os.WriteFile(filepath.Join(outside, "hook.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ps := hookpins.NewWithPath(filepath.Join(root, "pins"))
+	if err := ps.Pin(t.Context(), hookpins.PinRequest{Name: "../../outside", Dir: outside}); err != nil {
+		t.Fatal(err)
+	}
+	srv.SetHookPinStore(ps)
+
+	unknown := doJSON(t, srv, http.MethodGet, "/api/hook-pins/missing/diff", "")
+	if unknown.Code != http.StatusNotFound {
+		t.Fatalf("unknown diff = %d: %s", unknown.Code, unknown.Body.String())
+	}
+
+	escaped := "/api/hook-pins/..%2F..%2Foutside"
+	diffRec := doJSON(t, srv, http.MethodGet, escaped+"/diff", "")
+	if diffRec.Code != http.StatusNotFound || strings.Contains(diffRec.Body.String(), marker) || !strings.Contains(diffRec.Body.String(), "No pin found for hook:") {
+		t.Fatalf("diff = %d: %s", diffRec.Code, diffRec.Body.String())
+	}
+	approveRec := doJSON(t, srv, http.MethodPost, escaped+"/approve", `{"expect":"deadbeef","reason":"no"}`)
+	if approveRec.Code != http.StatusNotFound || strings.Contains(approveRec.Body.String(), marker) || strings.Contains(approveRec.Body.String(), "changed since") {
+		t.Fatalf("approve = %d: %s", approveRec.Code, approveRec.Body.String())
+	}
+	getRec := doJSON(t, srv, http.MethodGet, escaped, "")
+	if getRec.Code != http.StatusNotFound || strings.Contains(getRec.Body.String(), marker) {
+		t.Fatalf("get = %d: %s", getRec.Code, getRec.Body.String())
+	}
+	resetRec := doJSON(t, srv, http.MethodDelete, escaped, "")
+	if resetRec.Code != http.StatusNotFound || strings.Contains(resetRec.Body.String(), marker) {
+		t.Fatalf("reset = %d: %s", resetRec.Code, resetRec.Body.String())
 	}
 }

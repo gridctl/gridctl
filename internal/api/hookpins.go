@@ -78,6 +78,9 @@ func (s *Server) handleGetHookPin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
+	if rejectHookPinName(w, name) {
+		return
+	}
 	pin, ok := ps.Get(name)
 	if !ok {
 		writeJSONError(w, "No pin found for hook: "+name, http.StatusNotFound)
@@ -99,6 +102,9 @@ func (s *Server) handleHookPinDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
+	if rejectHookPinName(w, name) {
+		return
+	}
 	vr, err := ps.Verify(name, s.registryServer.Store().Dir())
 	switch {
 	case errors.Is(err, hookpins.ErrDigestUnavailable):
@@ -173,6 +179,9 @@ func (s *Server) handleApproveHookPin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
+	if rejectHookPinName(w, name) {
+		return
+	}
 	var body approveHookPinRequest
 	if err := decodeApproveBody(r, &body); err != nil {
 		if errors.Is(err, errApproveBodyTooLarge) {
@@ -233,6 +242,17 @@ func (s *Server) handleApproveHookPin(w http.ResponseWriter, r *http.Request) {
 	writeApproveJSON(w, map[string]any{"hook": name, "status": "approved"}, approvedBy, approvedBySource, len(evidence))
 }
 
+// rejectHookPinName refuses a name that is not a hook name before any
+// registry path is built. The 404 matches a missing pin so the route does
+// not say whether a directory exists.
+func rejectHookPinName(w http.ResponseWriter, name string) bool {
+	if skills.ValidateHookName(name) == nil {
+		return false
+	}
+	writeJSONError(w, "No pin found for hook: "+name, http.StatusNotFound)
+	return true
+}
+
 func scanHookForApproval(name, registryDir string) ([]pins.Finding, bool) {
 	hook, err := skills.GetHook(registryDir, name)
 	if err != nil || hook.Definition == nil {
@@ -268,6 +288,9 @@ func (s *Server) handleResetHookPin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
+	if rejectHookPinName(w, name) {
+		return
+	}
 	if _, ok := ps.Get(name); !ok {
 		writeJSONError(w, "No pin found for hook: "+name, http.StatusNotFound)
 		return
