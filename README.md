@@ -8,7 +8,7 @@
 
 <p align="center">
   MCP servers, skills, agent definitions, and rules, declared in files you commit.<br>
-  Gridctl runs MCP servers behind one gateway; separate projection writes skills, agents, and rules to supported clients.
+  Gridctl runs MCP servers behind one gateway; separate projection writes skills, agents, hooks, and rules to supported clients.
 </p>
 
 <p align="center">
@@ -461,11 +461,13 @@ Skills follow the [agentskills.io specification](https://agentskills.io): author
 
 The registry holds more than skills. The same import pipeline discovers Claude Code subagent definitions (`agents/*.md`) from a git repository, a local directory, or a client home (`gridctl skill import`, or `gridctl import <client> --kind agents` (included in v1.0.0-rc.2)). `gridctl skill project sync <skill>` places named skills onto compatible clients. `gridctl skill project sync --kind agent` places every imported agent onto separate agent targets: an identity copy for Claude Code, and rendered dialects for OpenCode, Copilot, and Gemini CLI. Copilot is an agent projection target, not one of the linkable MCP clients. A shared lockfile tracks every projected file, so drift is detected, hand edits are adoptable, and unsync removes exactly what gridctl wrote. The global context can likewise become a library of rule fragments with per-client assembly; see [Global Context Sync](docs/global-context.md).
 
+Hooks travel with a pack, not with `skill add`. See [Hooks](docs/hooks.md).
+
 Learn more → [Skills guide](docs/skills.md)
 
 ### Packs
 
-A pack is a git repo with a `gridctl-pack.yaml` manifest: a versioned selection of skills, agents, hook definitions, rule fragments, gateway wiring, and an optional stack. Hooks are opt-in and come from the pack repository only. `pack add` imports and pins them. `pack apply` does not project them. See [Hooks](docs/hooks.md). A booster extends another pack's stack with a fragment, and `gridctl pack lock` writes `gridctl-pack.lock.yaml` so source commits stay pinned. `pack add` imports that selection, then `pack apply` starts a carried stack and projects skills, agents, rules, and wiring, with secret values supplied on the host. Skills and agents may also come from git repositories the manifest names. Rules, hooks, and the stack still come from the pack repository. Starting, replacing, and reloading the carried stack are CLI-only; REST and the web UI project resources but do not start, stop, or reload the daemon, and they do not write the pack lock.
+A pack is a git repo with a `gridctl-pack.yaml` manifest: a versioned selection of skills, agents, hook definitions, rule fragments, gateway wiring, and an optional stack. Hooks are opt-in and come from the pack repository only. `pack add` imports and pins them. `pack apply` projects them to Claude Code and reports other clients. See [Hooks](docs/hooks.md). A booster extends another pack's stack with a fragment, and `gridctl pack lock` writes `gridctl-pack.lock.yaml` so source commits stay pinned. `pack add` imports that selection, then `pack apply` starts a carried stack and projects skills, agents, hooks, rules, and wiring, with secret values supplied on the host. Skills and agents may also come from git repositories the manifest names. Rules, hooks, and the stack still come from the pack repository. Starting, replacing, and reloading the carried stack are CLI-only; REST and the web UI project resources, including hooks, but do not start, stop, or reload the daemon, and they do not write the pack lock.
 
 ```bash
 gridctl pack add <git-repo>               # Clone, scan, and import the manifest's selection
@@ -504,7 +506,7 @@ Learn more → [Packs guide](docs/packs.md)
 | [`otlp-jaeger.yaml`](examples/tracing/otlp-jaeger.yaml) | Export traces to Jaeger via OTLP |
 | [`otel-collector.yaml`](examples/tracing/otel-collector.yaml) | Export traces and metrics to a local collector |
 | [`runs/stack.yaml`](examples/runs/stack.yaml) | Included in v1.0.0-rc.2: opt-in metadata-only persisted dispatch records |
-| [`portable-pack/`](examples/portable-pack) | Team pack: skills, agents, wiring, a local-process stack, and a commented external source example from one manifest |
+| [`portable-pack/`](examples/portable-pack) | Team pack: skills, agents, a Claude Code hook, wiring, a local-process stack, and a commented external source example from one manifest |
 | [`booster-pack/`](examples/booster-pack) | Fragment pack that composes one local-process server onto the `network-eng` pack |
 
 ## 📖 Documentation

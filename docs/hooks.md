@@ -63,7 +63,7 @@ The danger-pattern scanner runs over `hook.json` and every text file in the dire
 
 ## Projection
 
-One target exists: slug `claude-code`, settings file `~/.claude/settings.json`, available when `~/.claude` is a directory. The path is the `~` template expanded against `GRIDCTL_HOME` when that variable is set, otherwise the OS home. A missing `~/.claude` is `skipped-unavailable` with detail `client not initialized on this machine`. Other clients are reported and not written. `gridctl pack apply` projects hooks. REST `POST /api/packs/{name}/apply` and the web UI do not, and they add no hook rows. A REST delete removes the registry hook and does not unsync settings groups or the script copy.
+One target exists: slug `claude-code`, settings file `~/.claude/settings.json`, available when `~/.claude` is a directory. The path is the `~` template expanded against `GRIDCTL_HOME` when that variable is set, otherwise the OS home. A missing `~/.claude` is `skipped-unavailable` with detail `client not initialized on this machine`. Other clients are reported and not written. `gridctl pack apply` projects hooks. REST `POST /api/packs/{name}/apply` and the Library Hooks segment do the same, including `skipped-unsupported` rows for detected clients this release does not write. `DELETE /api/packs/{name}` unsyncs those projections before it removes the registry hook. `DELETE /api/registry/hooks/{name}` refuses with 409 when a projection is drifted, unparseable, or otherwise not retired, and names `gridctl skill project unsync --kind hook <name> --force`. If the projection manager cannot be built, the delete is 503 and the registry hook stays. `gridctl skill remove --kind hook` uses the same refusal.
 
 ```bash
 gridctl skill project sync --kind hook
@@ -131,7 +131,7 @@ Skill `metadata` is stored as strings. Nested values become compact JSON, so the
 
 `skill project status` and `sync` append one detail line per required hook that is not `in-sync` for that client: `requires hook <name>: not enforced on <client> (<reason>)`. Reason is `not projected`, `drifted`, `stale`, `pin drift`, or `client has no hook target`. A missing target is reported as `not projected`. State, `needs_attention`, and exit codes do not change. Skill and agent JSON rows gain `requires_hooks` (declared names) and `unenforced_hooks` (names and reasons). Hook rows do not. If hook projection status cannot be read during sync, gridctl prints `warning: hook projection status unavailable: <err>` and skips those lines for that run. The sync exit code does not change.
 
-Set `requires.gridctl` on a pack that selects hooks to the release that ships this projection. An older `pack.Parse` ignores `hooks:` and imports the pack without them.
+Set `requires.gridctl` on a pack that selects hooks to `>=1.0.0-rc.5`, the release after 1.0.0-rc.4. An older `pack.Parse` ignores `hooks:` and imports the pack without them. The Library workspace lists hooks at `/library?kind=hook`.
 
 ## Pins
 

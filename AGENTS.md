@@ -97,6 +97,7 @@ cmd/gridctl/        Cobra CLI entry points, one file per subcommand (apply, serv
                     ctx_pins.go is `gridctl ctx pins`. embed.go pulls in cmd/gridctl/web/dist via go:embed under the embed_web build tag.
 cmd/scenarioverify/ Repository test utility that checks designated Go test identities against a completed `go test -json` capture. Not a gridctl subcommand.
 internal/api/       REST handlers backing the web UI (one file per resource: stack, skills, vault, pins, context_pins, telemetry, traces, runs, tools_call, tools_discover, …).
+                    hooks.go serves `/api/registry/hooks` and `/api/project/hooks`. hookpins.go serves `/api/hook-pins`.
                     context_pins.go serves `/api/context/pins`.
                     Python source validation, resolution previews, generated files, and status provenance live in
                     python_sources.go. The Server struct in api.go wires together every pkg/* subsystem the UI needs.
@@ -199,7 +200,7 @@ pkg/contexts/       Global agent-context projection (`gridctl ctx`): one canonic
                     with multi-file and compiled per-client assembly. A narrow pinner hook runs before a real
                     sync. Fragments-mode migration renames an AGENTS.md pin to `00-default`.
 pkg/wiring/         Key-level ownership of gateway entries merged into client MCP configs (`gridctl project`, link/unlink).
-pkg/pack/           gridctl-pack.yaml manifest schema, including named external `sources`, an opt-in `hooks:` list, a scalar or mapping `stack` (`file` and optional `extends`), optional `requires.gridctl`, and `gridctl-pack.lock.yaml`; pkg/packops owns add, lock honoring, and composition against the lockfile and launcher, including per-source clone and auth, hook import rows, CLI hook projection, and checks `requires.gridctl` on add, apply, and preview. The CLI injects stack launch and reload; REST leaves the launcher nil and does not start, stop, or reload a carried daemon, does not write the pack lock, and does not project or unsync hooks.
+pkg/pack/           gridctl-pack.yaml manifest schema, including named external `sources`, an opt-in `hooks:` list, a scalar or mapping `stack` (`file` and optional `extends`), optional `requires.gridctl`, and `gridctl-pack.lock.yaml`; pkg/packops owns add, lock honoring, and composition against the lockfile and launcher, including per-source clone and auth, hook import rows, hook projection, and checks `requires.gridctl` on add, apply, and preview. The CLI injects stack launch and reload; REST leaves the launcher nil and does not start, stop, or reload a carried daemon, and does not write the pack lock. REST pack apply and remove project and unsync hooks through the same hook manager as the CLI.
 pkg/pinapprovals/   Approval entries and the versioned approvals log under `pins/approvals/`. Skill, tool, context, and hook pin stores project the log onto each record; the log is the source of truth.
 pkg/hookpins/       TOFU pins over imported hooks at `~/.gridctl/pins/hooks/global.json`. Not stack-scoped. A subdirectory keeps the file disjoint from the tool pin file for a stack named `hooks`. History lives in `pins/approvals/hooks/`.
 pkg/skillpins/      TOFU pins over skill documents (per-file digests, findings, approval entries); the `gridctl skill pins` store. History lives in `pins/approvals/skills/`.
@@ -298,6 +299,7 @@ tests/integration/  Real-runtime suites (build tag `integration`). `hooks_pack_t
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, a2a, mcp-apps, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
                     portable-pack, booster-pack, python-sources, python-runtime, execution, security-evidence, stack-configs, stack-declaration-policy, runs).
+                    examples/portable-pack ships hooks/block-force-push (hook.json and a PreToolUse script) with requires.gridctl >=1.0.0-rc.5.
                     examples/_mock-servers/ is the source for `task mock:servers`.
 scripts/            Build/test helpers and release tooling: release.py owns gate, inventory, verification, draft/public,
                     and tap policy; release-tools.py pins executables and the SPDX schema; check_goreleaser_cask.py runs

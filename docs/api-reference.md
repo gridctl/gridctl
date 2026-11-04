@@ -3650,6 +3650,190 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project
 
 ---
 
+### Hook Registry
+
+Manage imported hooks (`~/.gridctl/registry/hooks/<name>/hook.json`). Hooks enter only through a pack. There is no create or update route: edit a hook by re-importing its pack. gridctl never executes a hook.
+
+#### `GET /api/registry/hooks`
+
+Lists installed hooks and the unsupported-client table. Each hook carries `name`, `description`, `events`, `scripts`, `source`, and `pin_status`.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/registry/hooks
+```
+
+**Response:**
+
+```json
+{
+  "hooks": [
+    {
+      "name": "block-force-push",
+      "description": "Deny git push --force before it runs",
+      "dialect": "claude-code",
+      "events": ["PreToolUse"],
+      "scripts": 1,
+      "source": "network-eng",
+      "pin_status": "pinned"
+    }
+  ],
+  "unsupported_clients": [
+    {
+      "slug": "gemini",
+      "name": "Gemini CLI",
+      "location": "~/.gemini/settings.json hooks key",
+      "detected": false
+    }
+  ]
+}
+```
+
+#### `GET /api/registry/hooks/{name}`
+
+Returns one hook: the definition, files, pin status, and projection chips. `hooks` is the matcher-group object from `hook.json`. `document` is the file text. A directory whose `hook.json` does not validate is still returned, with `error` set, so it can be removed.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/registry/hooks/block-force-push
+```
+
+**Response:** the list item plus `dir`, `document`, `hooks`, `files`, `warnings`, and `projections`.
+
+#### `DELETE /api/registry/hooks/{name}`
+
+Retires projections first, then removes the registry directory, the lock entry, and the pin. A row whose action is not `removed` or `already-gone` (`skipped-drift`, `skipped-unmanaged`, or `error`) returns `409` and leaves the hook in place. The error names the client and `gridctl skill project unsync --kind hook <name> --force`. If the projection manager cannot be built, the delete is `503` and the registry hook stays.
+
+**Auth:** Yes
+
+**Response:** `204 No Content`
+
+---
+
+### Hook Projection
+
+Per-client projection of imported hooks: the REST face of `gridctl skill project --kind hook`. Rows use the same JSON fields as the CLI. `POST /api/project/hooks/adopt` is not registered (`404`).
+
+#### `GET /api/project/hooks/status`
+
+Returns every recorded (hook, client) row.
+
+**Auth:** Yes
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project/hooks/status
+```
+
+**Response:**
+
+```json
+[
+  {
+    "hook": "block-force-push",
+    "client": "claude-code",
+    "channel": "merge-key",
+    "render": "identity",
+    "state": "in-sync",
+    "target": "/home/user/.claude/settings.json",
+    "script_dir": "/home/user/.gridctl/hooks/block-force-push",
+    "pack": "network-eng",
+    "synced_at": "2026-11-04T12:00:00Z"
+  }
+]
+```
+
+#### `POST /api/project/hooks/sync`
+
+Projects named hooks, or every imported hook when `hooks` is omitted. An empty body syncs every hook to every available target.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project/hooks/sync \
+  -H "Content-Type: application/json" \
+  -d '{"hooks": ["block-force-push"], "clients": ["claude-code"], "force": false, "dry_run": false}'
+```
+
+**Response:** one row per hook and client (`hook`, `client`, `action`, optional `detail`, `remediation`, `script_dir`).
+
+#### `POST /api/project/hooks/unsync`
+
+Removes recorded groups. Name `hooks` or set `all: true`. An empty body is `400`.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project/hooks/unsync \
+  -H "Content-Type: application/json" \
+  -d '{"hooks": ["block-force-push"]}'
+```
+
+**Response:** per-projection removal rows (`hook`, `client`, `target`, `action`).
+
+---
+
+### Hook Pins
+
+Content pins for imported hooks at `~/.gridctl/pins/hooks/global.json`. Hook pins are not stack-scoped. Reset is `DELETE /api/hook-pins/{name}`. `POST /api/hook-pins/{name}/reset` is not registered (`404`).
+
+#### `GET /api/hook-pins`
+
+Returns every hook pin, keyed by name. A missing store returns `{}`.
+
+**Auth:** Yes
+
+#### `GET /api/hook-pins/{name}`
+
+Returns one pin record. Unknown names are `404`.
+
+**Auth:** Yes
+
+#### `GET /api/hook-pins/{name}/diff`
+
+Returns the current composite hash and, when the bytes moved, the document and file diff. `composite_hash` is the value `expect` must echo.
+
+**Auth:** Yes
+
+```json
+{
+  "hook": "block-force-push",
+  "status": "drift",
+  "composite_hash": "abc123",
+  "old_document": "{...}",
+  "new_document": "{...}",
+  "added_files": [],
+  "removed_files": [],
+  "modified_files": ["hook.json"],
+  "findings": []
+}
+```
+
+#### `POST /api/hook-pins/{name}/approve`
+
+Re-pins the current bytes. `expect` binds the approval to the reviewed composite hash (`expected_hash` is accepted as an alias). `reason` is required when the current scan still has findings. A stale `expect` is `409`. A missing reason on findings is `400`.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/hook-pins/block-force-push/approve \
+  -H "Content-Type: application/json" \
+  -d '{"expect": "abc123", "reason": "reviewed the script"}'
+```
+
+**Response:** `{"hook": "block-force-push", "status": "approved", ...}` with the approval attribution fields used by skill pins.
+
+#### `DELETE /api/hook-pins/{name}`
+
+Deletes the pin record. The next accepted import pins fresh.
+
+**Auth:** Yes
+
+**Response:** `204 No Content`
+
+---
+
 ### Wiring Ownership
 
 Per-client gateway-entry ownership: the REST face of `gridctl project status|adopt --kind wiring`, backed by the wiring ownership records in the unified project lockfile. States use the wiring vocabulary: `in-sync`, `stale` (gateway port or entry shape changed), `drifted` (edited since gridctl wrote it), `target-missing`, `foreign` (an entry at gridctl's name that gridctl never recorded), and `missing` (detected client, nothing recorded, nothing present). This is the full form of the fact `GET /api/clients` collapses into its single `drifted` boolean.
@@ -3841,13 +4025,13 @@ Projects one pack. Apply is additive and never transactional: each resource succ
 | `force` | bool | Overwrite drifted or foreign resources after backup (`--force`) |
 | `dry_run` | bool | Report what would change without writing (`--dry-run`) |
 
-An empty or absent body is a plain apply. **Response:** the apply document: `applied`, `total`, and per-resource `rows` (kind, name, client, action, detail, remediation). A carried stack is the first row. Over REST its action is `skipped-unavailable`, detail `stack deploy is not available over this interface`, remediation `run 'gridctl pack apply <name>' from the CLI`. The wiring row is `skipped-unavailable` with detail `pack stack is not running` and remediation `resolve the stack row above, then re-run 'gridctl pack apply <name>'`. Drifted resources are skipped with a remediation hint unless forced; resources tagged by a different pack are refused with the owning pack named. CLI `pack apply` adds one hook row per hook and client, including `skipped-unsupported` for detected clients this release does not write. Those rows are counted in `applied`/`total` and do not by themselves make the CLI exit 1. REST apply does not project hooks and adds no hook rows.
+An empty or absent body is a plain apply. **Response:** the apply document: `applied`, `total`, and per-resource `rows` (kind, name, client, action, detail, remediation). A carried stack is the first row. Over REST its action is `skipped-unavailable`, detail `stack deploy is not available over this interface`, remediation `run 'gridctl pack apply <name>' from the CLI`. The wiring row is `skipped-unavailable` with detail `pack stack is not running` and remediation `resolve the stack row above, then re-run 'gridctl pack apply <name>'`. Drifted resources are skipped with a remediation hint unless forced; resources tagged by a different pack are refused with the owning pack named. `pack apply` adds one hook row per hook and client, including `skipped-unsupported` for detected clients this release does not write. Those rows are counted in `applied`/`total`. Over the CLI they do not by themselves make the command exit 1. REST apply returns the same hook rows.
 
 **Errors:** `404` - Pack not imported; `409` - Name collision; `422` - the recorded `requires.gridctl` is unsatisfied or invalid, and nothing is projected, including when `dry_run` is set. The body is `{"error":"..."}` with the same pack message as add. A pack imported before the field existed has no recorded floor and is not checked.
 
 #### `DELETE /api/packs/{name}`
 
-Cascade removal in dependency order: the stack step first when a stack record exists, then pack-tagged projections are unsynced, pack-tagged wiring records removed through the ownership manager, then registry entries (including hook directories, sidecars, and pin records) and the pack record. CLI `pack remove` unsyncs hook projections first and leaves user groups in place. A REST delete does not unsync them: registry hook directories, sidecars, and pin records are still removed, and settings groups and script copies stay. `?dry_run=1` returns the cascade preview (`would-remove` rows plus the drift-kept list) without executing; `?force=1` removes hand-edited projections too. A partial removal trims the pack record to the kept resources rather than deleting it, so the response's `kept` list is the truth about what remains.
+Cascade removal in dependency order: the stack step first when a stack record exists, then pack-tagged projections are unsynced, pack-tagged wiring records removed through the ownership manager, then registry entries (including hook directories, sidecars, and pin records) and the pack record. `pack remove` unsyncs hook projections first and leaves user groups in place. REST delete does the same unsync before it removes registry hook directories, sidecars, and pin records. A drifted projection is kept unless `force` is set. `?dry_run=1` returns the cascade preview (`would-remove` rows plus the drift-kept list) without executing; `?force=1` removes hand-edited projections too. A partial removal trims the pack record to the kept resources rather than deleting it, so the response's `kept` list is the truth about what remains.
 
 This release cannot stop a daemon. If a pack-owned daemon is running, a real delete returns a first `stack` row of `skipped-unavailable` with detail `stack deploy is not available over this interface` and remediation `gridctl destroy <name>`, and leaves that daemon, `~/.gridctl/packs/<name>/`, and the pack record in place so `gridctl pack remove` can finish the job. `?dry_run=1` still reports `would-remove` and a stop for that daemon; the preview does not mean REST can perform the stop. A same-named daemon running from another path is not stopped. A real delete gets no stack row for it and still removes the pack checkout. `?dry_run=1` reports `would-remove` for that checkout and says the daemon is left running. When nothing is running, delete removes the checkout. Stop the daemon with `gridctl pack remove` before deleting the pack here. Deleting a base with attached boosters is refused before any write. `?force=1` removes the base and leaves each booster's fragment record. Deleting a booster while the base daemon is running from the composed file does not reload: the stack row is `skipped-unavailable` with remediation `run 'gridctl pack remove <name>' from the CLI`, and the pack record stays.
 
