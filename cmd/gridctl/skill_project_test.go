@@ -16,6 +16,30 @@ import (
 // newSkillProjectTestManager returns a projection Manager rooted at a
 // temp home with one active skill "demo" in the registry and ~/.claude
 // pre-created.
+func TestLoadRequiresCache_StatusErrorSkipsAnnotation(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+	lock := filepath.Join(home, ".gridctl", "project.lock.yaml")
+	if err := os.MkdirAll(filepath.Dir(lock), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lock, []byte("version: 99\nrevision: 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	if cache := loadRequiresCache(context.Background(), &stderr); cache != nil {
+		t.Fatal("expected nil cache when hook status cannot be read")
+	}
+	if !strings.Contains(stderr.String(), "warning: hook projection status unavailable:") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+	required, gaps, lines := (*requiresCache)(nil).annotate([]string{"keep"}, "skill", "demo", "claude-code")
+	if required != nil || gaps != nil || len(lines) != 1 || lines[0] != "keep" {
+		t.Fatalf("nil annotate = %v %v %v", required, gaps, lines)
+	}
+}
+
 func newSkillProjectTestManager(t *testing.T) (*skillsync.Manager, string) {
 	t.Helper()
 	home := t.TempDir()

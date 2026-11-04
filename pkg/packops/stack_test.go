@@ -802,8 +802,9 @@ func TestTallyRows_StackActions(t *testing.T) {
 		{Action: "started"}, {Action: "replaced"}, {Action: "unchanged"},
 		{Action: "would-start"}, {Action: "would-replace"},
 		{Action: "skipped-variables"}, {Action: "skipped-running"}, {Action: "skipped-unavailable"},
+		{Action: "skipped-unsupported"},
 	})
-	if applied != 5 || failed != 3 {
+	if applied != 6 || failed != 3 {
 		t.Fatalf("applied=%d failed=%d", applied, failed)
 	}
 }

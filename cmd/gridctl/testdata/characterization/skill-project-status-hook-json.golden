@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "needs_attention": false,
+  "projections": [
+  {
+  "kind": "skill",
+  "skill": "triage",
+  "client": "claude-code",
+  "channel": "symlink",
+  "target": "$HOME/.claude/skills/triage",
+  "render": "identity",
+  "state": "in-sync",
+  "synced_at": "<TS>",
+  "requires_hooks": [
+  "missing-hook"
+  ],
+  "unenforced_hooks": [
+  {
+  "name": "missing-hook",
+  "reason": "not projected"
+  }
+  ]
+  },
+  {
+  "kind": "hook",
+  "hook": "block",
+  "client": "claude-code",
+  "channel": "merge-key",
+  "render": "identity",
+  "state": "in-sync",
+  "target": "$HOME/.claude/settings.json",
+  "script_dir": "$HOME/.gridctl/hooks/block",
+  "synced_at": "<TS>"
+  }
+  ]
+}

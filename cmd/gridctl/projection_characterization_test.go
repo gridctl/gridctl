@@ -19,6 +19,8 @@ import (
 	"testing"
 
 	"github.com/gridctl/gridctl/pkg/contexts"
+	"github.com/gridctl/gridctl/pkg/hookpins"
+	"github.com/gridctl/gridctl/pkg/hooksync"
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/skillsync"
 )
@@ -204,6 +206,74 @@ func TestCharacterizationSkillProjectStatus(t *testing.T) {
 		t.Fatalf("json exit = %d, want 1", exit)
 	}
 	assertGolden(t, "skill-project-status-json", normalizeCharOutput(stdout.String(), home))
+}
+
+func TestCharacterizationHookProjectStatus(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+	regDir := filepath.Join(home, ".gridctl", "registry")
+	skillDir := filepath.Join(regDir, "skills", "triage")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skill := "---\nname: triage\ndescription: Characterization skill triage\nstate: active\nmetadata:\n  requires:\n    hooks:\n      - missing-hook\n---\nTriage body.\n"
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skill), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	hookDir := filepath.Join(regDir, "hooks", "block", "scripts")
+	if err := os.MkdirAll(hookDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hookDir, "run.sh"), []byte("#!/bin/sh\necho no\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(`{"name":"block","description":"block force push","dialect":"claude-code","hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"./scripts/run.sh"}]}]}}`)
+	if err := os.WriteFile(filepath.Join(regDir, "hooks", "block", "hook.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pins := hookpins.NewWithPath(filepath.Join(home, ".gridctl", "pins"))
+	if err := pins.Pin(t.Context(), hookpins.PinRequest{Name: "block", Dir: filepath.Join(regDir, "hooks", "block")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	store := registry.NewStore(regDir)
+	if err := store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	skillMgr := skillsync.NewManagerWithHome(home, store)
+	hookMgr := hooksync.NewManagerWithHome(home, regDir)
+	ctx := context.Background()
+	if _, err := skillMgr.Sync(ctx, []string{"triage"}, skillsync.SyncOptions{Clients: []string{"claude-code"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := hookMgr.Sync(ctx, []string{"block"}, hooksync.SyncOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	if exit := runSkillProjectStatus(ctx, &stdout, &stderr, skillMgr, nil, hookMgr, "", true); exit != ctxExitOK {
+		t.Fatalf("exit = %d, want 0 (stderr: %s)", exit, stderr.String())
+	}
+	text := stdout.String()
+	if !strings.Contains(text, "requires hook missing-hook: not enforced on claude-code (not projected)") {
+		t.Fatalf("text missing requires line:\n%s", text)
+	}
+	assertGolden(t, "skill-project-status-hook-plain", normalizeCharOutput(text, home))
+
+	stdout.Reset()
+	if exit := runSkillProjectStatus(ctx, &stdout, &stderr, skillMgr, nil, hookMgr, "json", false); exit != ctxExitOK {
+		t.Fatalf("json exit = %d, want 0 (stderr: %s)", exit, stderr.String())
+	}
+	jsonOut := stdout.String()
+	for _, want := range []string{`"kind": "hook"`, `"hook": "block"`, `"script_dir"`, `"requires_hooks"`, `"unenforced_hooks"`, `"reason": "not projected"`} {
+		if !strings.Contains(jsonOut, want) {
+			t.Fatalf("json missing %s:\n%s", want, jsonOut)
+		}
+	}
+	assertGolden(t, "skill-project-status-hook-json", normalizeCharOutput(jsonOut, home))
 }
 
 func TestCharacterizationSkillProjectSyncDryRun(t *testing.T) {

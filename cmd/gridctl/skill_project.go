@@ -109,13 +109,20 @@ copy) plus lossy rendered dialects for 'opencode', 'copilot', and
 'gemini'; dropped frontmatter keys are named in sync output, and adopt
 is refused on rendered targets.
 
+Hook targets (--kind hook): 'claude-code' (~/.claude/settings.json).
+Scripts are copied to ~/.gridctl/hooks/<name>/ and matcher groups are
+patched into the settings file in exec form. Gemini CLI, Cursor,
+Copilot, Windsurf, Antigravity, and OpenCode are reported and not
+written. Adopt is refused.
+
 The MCP prompt channel is unchanged: clients that render prompts
 (Gemini CLI, Cursor, Windsurf) keep receiving skills that way.`,
 	Example: `  gridctl skill project sync my-skill               Project to every available client
   gridctl skill project sync my-skill --clients claude-code
   gridctl skill project sync                        Re-sync the projected set
   gridctl skill project sync --kind agent           Project every imported agent
-  gridctl skill project status                      Per-projection state (both kinds)
+  gridctl skill project sync --kind hook            Project imported hooks to Claude Code
+  gridctl skill project status                      Per-projection state (skills, agents, and hooks)
   gridctl skill project adopt my-skill --client antigravity   Pull a hand edit back
   gridctl skill project unsync --all                Remove every projection`,
 }
@@ -185,8 +192,8 @@ Exit codes:
 				DryRun:  skillProjectSyncDryRun,
 				Force:   skillProjectSyncForce,
 			}
-			hookStatuses, _ := hookMgrForSync(cmd.Context())
-			if exit := runAgentProjectSyncAnnotated(cmd.Context(), os.Stdout, os.Stderr, mgr, args, opts, format, *skillProjectSyncPlain, hookStatuses); exit != ctxExitOK {
+			cache := loadRequiresCache(cmd.Context(), os.Stderr)
+			if exit := runAgentProjectSyncAnnotated(cmd.Context(), os.Stdout, os.Stderr, mgr, args, opts, format, *skillProjectSyncPlain, cache); exit != ctxExitOK {
 				os.Exit(exit)
 			}
 			return nil
@@ -203,8 +210,8 @@ Exit codes:
 			DryRun:  skillProjectSyncDryRun,
 			Force:   skillProjectSyncForce,
 		}
-		hookStatuses, _ := hookMgrForSync(cmd.Context())
-		if exit := runSkillProjectSyncAnnotated(cmd.Context(), os.Stdout, os.Stderr, mgr, args, opts, format, *skillProjectSyncPlain, hookStatuses); exit != ctxExitOK {
+		cache := loadRequiresCache(cmd.Context(), os.Stderr)
+		if exit := runSkillProjectSyncAnnotated(cmd.Context(), os.Stdout, os.Stderr, mgr, args, opts, format, *skillProjectSyncPlain, cache); exit != ctxExitOK {
 			os.Exit(exit)
 		}
 		return nil
@@ -482,23 +489,23 @@ type agentSyncRow struct {
 	UnenforcedHooks []hooksync.UnenforcedHook `json:"unenforced_hooks,omitempty"`
 }
 
-func skillSyncRowsAnnotated(results []skillsync.SyncResult, hookStatuses []hooksync.ProjectionStatus) ([]skillSyncRow, []string) {
+func skillSyncRowsAnnotated(results []skillsync.SyncResult, cache *requiresCache) ([]skillSyncRow, []string) {
 	rows := make([]skillSyncRow, len(results))
 	var lines []string
 	for i, r := range results {
 		row := skillSyncRow{Kind: skillProjectKindSkill, SyncResult: r}
-		row.RequiresHooks, row.UnenforcedHooks, lines = annotateRequires(lines, "skill", r.Skill, r.Client, hookStatuses)
+		row.RequiresHooks, row.UnenforcedHooks, lines = cache.annotate(lines, "skill", r.Skill, r.Client)
 		rows[i] = row
 	}
 	return rows, lines
 }
 
-func agentSyncRowsAnnotated(results []agentsync.SyncResult, hookStatuses []hooksync.ProjectionStatus) ([]agentSyncRow, []string) {
+func agentSyncRowsAnnotated(results []agentsync.SyncResult, cache *requiresCache) ([]agentSyncRow, []string) {
 	rows := make([]agentSyncRow, len(results))
 	var lines []string
 	for i, r := range results {
 		row := agentSyncRow{Kind: skillProjectKindAgent, SyncResult: r}
-		row.RequiresHooks, row.UnenforcedHooks, lines = annotateRequires(lines, "agent", r.Agent, r.Client, hookStatuses)
+		row.RequiresHooks, row.UnenforcedHooks, lines = cache.annotate(lines, "agent", r.Agent, r.Client)
 		rows[i] = row
 	}
 	return rows, lines
@@ -517,14 +524,14 @@ func runSkillProjectSync(ctx context.Context, stdout, stderr io.Writer, mgr *ski
 	return runSkillProjectSyncAnnotated(ctx, stdout, stderr, mgr, names, opts, format, plain, nil)
 }
 
-func runSkillProjectSyncAnnotated(ctx context.Context, stdout, stderr io.Writer, mgr *skillsync.Manager, names []string, opts skillsync.SyncOptions, format string, plain bool, hookStatuses []hooksync.ProjectionStatus) int {
+func runSkillProjectSyncAnnotated(ctx context.Context, stdout, stderr io.Writer, mgr *skillsync.Manager, names []string, opts skillsync.SyncOptions, format string, plain bool, cache *requiresCache) int {
 	warnCoScannedDuplicates(stderr, names, opts.Clients)
 	results, err := mgr.Sync(ctx, names, opts)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return ctxExitInfrastructure
 	}
-	rows, requiresLines := skillSyncRowsAnnotated(results, hookStatuses)
+	rows, requiresLines := skillSyncRowsAnnotated(results, cache)
 	doc := skillProjectSyncDoc{
 		SchemaVersion: skillProjectJSONSchemaVersion,
 		DryRun:        opts.DryRun,
@@ -649,14 +656,15 @@ func runSkillProjectStatus(ctx context.Context, stdout, stderr io.Writer, mgr *s
 	}
 	rows := make([]any, 0, len(statuses)+len(agentStatuses)+len(hookStatuses))
 	var requiresLines []string
+	cache := newRequiresCache(hookStatuses)
 	for _, s := range statuses {
 		row := skillStatusRow{Kind: skillProjectKindSkill, ProjectionStatus: s}
-		row.RequiresHooks, row.UnenforcedHooks, requiresLines = annotateRequires(requiresLines, "skill", s.Skill, s.Client, hookStatuses)
+		row.RequiresHooks, row.UnenforcedHooks, requiresLines = cache.annotate(requiresLines, "skill", s.Skill, s.Client)
 		rows = append(rows, row)
 	}
 	for _, s := range agentStatuses {
 		row := agentStatusRow{Kind: skillProjectKindAgent, ProjectionStatus: s}
-		row.RequiresHooks, row.UnenforcedHooks, requiresLines = annotateRequires(requiresLines, "agent", s.Agent, s.Client, hookStatuses)
+		row.RequiresHooks, row.UnenforcedHooks, requiresLines = cache.annotate(requiresLines, "agent", s.Agent, s.Client)
 		rows = append(rows, row)
 	}
 	for _, s := range hookStatuses {
@@ -874,13 +882,13 @@ type agentProjectSyncDoc struct {
 
 // runAgentProjectSync performs an agent-kind sync and returns the exit
 // code. With no names, every imported agent is projected.
-func runAgentProjectSyncAnnotated(ctx context.Context, stdout, stderr io.Writer, mgr *agentsync.Manager, names []string, opts agentsync.SyncOptions, format string, plain bool, hookStatuses []hooksync.ProjectionStatus) int {
+func runAgentProjectSyncAnnotated(ctx context.Context, stdout, stderr io.Writer, mgr *agentsync.Manager, names []string, opts agentsync.SyncOptions, format string, plain bool, cache *requiresCache) int {
 	results, err := mgr.Sync(ctx, names, opts)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return ctxExitInfrastructure
 	}
-	rows, requiresLines := agentSyncRowsAnnotated(results, hookStatuses)
+	rows, requiresLines := agentSyncRowsAnnotated(results, cache)
 	doc := agentProjectSyncDoc{
 		SchemaVersion: skillProjectJSONSchemaVersion,
 		DryRun:        opts.DryRun,

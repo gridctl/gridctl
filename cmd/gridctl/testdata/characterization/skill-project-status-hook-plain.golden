@@ -1,0 +1,5 @@
+SKILL  CLIENT  CHANNEL  RENDER  STATE  TARGET
+triage  claude-code  symlink  identity  ✓ in-sync  $HOME/.claude/skills/triage
+block (hook)  claude-code  merge-key  identity  ✓ in-sync  $HOME/.claude/settings.json
+
+triage → claude-code: requires hook missing-hook: not enforced on claude-code (not projected)

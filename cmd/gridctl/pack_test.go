@@ -12,6 +12,8 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/gridctl/gridctl/pkg/config"
+	"github.com/gridctl/gridctl/pkg/hookpins"
+	"github.com/gridctl/gridctl/pkg/hooksync"
 	"github.com/gridctl/gridctl/pkg/packops"
 	"github.com/gridctl/gridctl/pkg/project"
 	"github.com/gridctl/gridctl/pkg/skills"
@@ -66,6 +68,56 @@ func packFixture(t *testing.T, manifest string, extra map[string]string) string 
 		t.Fatal(err)
 	}
 	return dir
+}
+
+func TestRunPackApply_UnsupportedHookExitsZero(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".gemini"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(home, ".gridctl", "registry", "hooks", "block")
+	if err := os.MkdirAll(filepath.Join(dir, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "scripts", "run.sh"), []byte("#!/bin/sh\necho no\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(`{"name":"block","description":"d","dialect":"claude-code","hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"./scripts/run.sh"}]}]}}`)
+	if err := os.WriteFile(filepath.Join(dir, "hook.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pins := hookpins.NewWithPath(filepath.Join(home, ".gridctl", "pins"))
+	if err := pins.Pin(t.Context(), hookpins.PinRequest{Name: "block", Dir: dir}); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(home, ".gridctl", "skills.lock.yaml")
+	lf := &skills.LockFile{Sources: map[string]skills.LockedSource{
+		"hook-pack": {
+			Repo: "https://example.com/hook-pack.git",
+			Pack: &skills.LockedPack{Name: "hook-pack", Hooks: []string{"block"}},
+		},
+	}}
+	if err := skills.WriteLockFile(lockPath, lf); err != nil {
+		t.Fatal(err)
+	}
+	mgrs := &packops.Managers{
+		Home:     home,
+		LockPath: lockPath,
+		Hooks:    hooksync.NewManagerWithHome(home, filepath.Join(home, ".gridctl", "registry")),
+	}
+	var stdout, stderr bytes.Buffer
+	exit := runPackApply(context.Background(), &stdout, &stderr, mgrs, "hook-pack", false, false, nil, 0, false, "", false)
+	if exit != ctxExitOK {
+		t.Fatalf("exit = %d\nstdout:\n%s\nstderr:\n%s", exit, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "skipped-unsupported") || !strings.Contains(stdout.String(), "Applied 2/2") {
+		t.Fatalf("stdout = %s", stdout.String())
+	}
 }
 
 func TestPrintPackLock_Note(t *testing.T) {

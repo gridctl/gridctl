@@ -472,13 +472,18 @@ var packApplyCmd = &cobra.Command{
 step runs first: the gateway starts from the pinned checkout (or is
 left unchanged when it already matches), then skills and agents project
 through the same engines as 'gridctl skill project sync' (scoped to the
-pack's selection), rule fragments through 'gridctl ctx sync', and, when
-the manifest declares wiring, the gateway entry through the same
-machinery as 'gridctl project sync --kind wiring'. Wiring for a
-stack-carrying pack uses the pack daemon's port. --port selects that
-port (default 8180). --force also replaces a same-named daemon that was
-not started from this pack. Every projection is tagged with the pack
-name; for rules only pack-shipped fragments carry the tag.
+pack's selection), hooks through the Claude Code settings projection,
+rule fragments through 'gridctl ctx sync', and, when the manifest
+declares wiring, the gateway entry through the same machinery as
+'gridctl project sync --kind wiring'. Wiring for a stack-carrying pack
+uses the pack daemon's port. --port selects that port (default 8180).
+--force also replaces a same-named daemon that was not started from
+this pack. Every projection is tagged with the pack name; for rules
+only pack-shipped fragments carry the tag.
+
+Hook rows include one skipped-unsupported line per detected client this
+release does not write. Those rows are counted in Applied N/M and do
+not by themselves make apply exit 1.
 
 Apply is additive and never transactional: each resource succeeds or
 skips independently, drifted resources are skipped with an adopt or
@@ -487,7 +492,7 @@ skips independently, drifted resources are skipped with an adopt or
 An unsatisfied recorded requires.gridctl floor exits 1 and projects nothing.
 
 Exit codes:
-  0  everything applied
+  0  everything applied, ignoring informational skipped-unsupported hook rows
   1  a resource was skipped or failed, or the recorded requires.gridctl floor is unsatisfied
   2  infrastructure error`,
 	Args: cobra.ExactArgs(1),
@@ -569,6 +574,8 @@ func renderPackRows(w io.Writer, rows []packops.Row, plain bool) {
 // packActionLabel decorates actions/states with the shared glyphs.
 func packActionLabel(action string) string {
 	switch {
+	case action == "skipped-unsupported":
+		return "— " + action
 	case strings.HasPrefix(action, "skipped") || action == "error" || action == "unresolved" || action == "drifted" || action == "target-missing" || action == "foreign":
 		return "✗ " + action
 	case strings.HasPrefix(action, "would-") || action == "stale" || action == "missing":
