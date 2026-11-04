@@ -215,45 +215,63 @@ func applyPatch(tree hujson.Value, ops []patchOp) ([]byte, error) {
 }
 
 func prettyValue(v any, indent string) ([]byte, error) {
+	return prettyPrefixed(v, "", indent)
+}
+
+func prettyPrefixed(v any, prefix, indent string) ([]byte, error) {
 	if indent == "" {
 		indent = "  "
 	}
-	return json.MarshalIndent(v, "", indent)
+	return json.MarshalIndent(v, prefix, indent)
 }
 
 // appendOps builds add operations for groups that are not already in the
-// file. exists reports whether a pointer is present before this patch.
+// file. A missing hooks key or event array is one pretty-printed value,
+// not an empty container plus a later append. hujson drops leading
+// whitespace on an inserted value, so the caller separates a glued key.
 func appendOps(sf *settingsFile, groups []renderedGroup) ([]patchOp, error) {
 	if len(groups) == 0 {
 		return nil, nil
 	}
-	var ops []patchOp
+	indent := "  "
+	if sf != nil {
+		indent = sf.indentOrDefault()
+	}
 	hooksPresent := sf != nil && sf.Parsed && sf.Tree.Find("/hooks") != nil
 	if !hooksPresent {
-		empty, err := prettyValue(map[string]any{}, sf.indentOrDefault())
+		value, err := prettyPrefixed(groupedHooks(groups), indent, indent)
 		if err != nil {
 			return nil, err
 		}
-		ops = append(ops, patchOp{Op: "add", Path: "/hooks", Value: empty})
+		return []patchOp{{Op: "add", Path: "/hooks", Value: value}}, nil
 	}
-	seenEvent := map[string]bool{}
+	byEvent := map[string][]renderedGroup{}
+	var order []string
 	for _, g := range groups {
-		if seenEvent[g.Event] {
+		if _, ok := byEvent[g.Event]; !ok {
+			order = append(order, g.Event)
+		}
+		byEvent[g.Event] = append(byEvent[g.Event], g)
+	}
+	var ops []patchOp
+	var appending []renderedGroup
+	for _, event := range order {
+		ptr := "/hooks/" + pointerEscape(event)
+		if sf.Tree.Find(ptr) == nil {
+			arr := make([]any, 0, len(byEvent[event]))
+			for _, g := range byEvent[event] {
+				arr = append(arr, g.Value)
+			}
+			value, err := prettyPrefixed(arr, indent+indent, indent)
+			if err != nil {
+				return nil, err
+			}
+			ops = append(ops, patchOp{Op: "add", Path: ptr, Value: value})
 			continue
 		}
-		seenEvent[g.Event] = true
-		ptr := "/hooks/" + pointerEscape(g.Event)
-		present := hooksPresent && sf.Tree.Find(ptr) != nil
-		if present {
-			continue
-		}
-		empty, err := prettyValue([]any{}, sf.indentOrDefault())
-		if err != nil {
-			return nil, err
-		}
-		ops = append(ops, patchOp{Op: "add", Path: ptr, Value: empty})
+		appending = append(appending, byEvent[event]...)
 	}
-	for _, g := range groups {
+	for _, g := range appending {
 		value, err := prettyInserted(g.Value, sf, g.Event)
 		if err != nil {
 			return nil, err
@@ -261,6 +279,77 @@ func appendOps(sf *settingsFile, groups []renderedGroup) ([]patchOp, error) {
 		ops = append(ops, patchOp{Op: "add", Path: "/hooks/" + pointerEscape(g.Event) + "/-", Value: value})
 	}
 	return ops, nil
+}
+
+func groupedHooks(groups []renderedGroup) map[string][]any {
+	out := map[string][]any{}
+	for _, g := range groups {
+		out[g.Event] = append(out[g.Event], g.Value)
+	}
+	return out
+}
+
+// separateNewKeys puts a key this patch inserted on its own line when
+// hujson glues `,"key":` to the previous value. Only that inserted
+// separator changes. A key that already existed in before is left alone,
+// including its surrounding bytes.
+func separateNewKeys(before, after []byte, indent string) []byte {
+	if indent == "" {
+		indent = "  "
+	}
+	out := after
+	for _, key := range insertedKeys(before, after) {
+		pad := indent
+		if key != "hooks" {
+			pad = indent + indent
+		}
+		out = separateKey(before, out, key, pad)
+	}
+	return out
+}
+
+func insertedKeys(before, after []byte) []string {
+	var keys []string
+	seen := map[string]bool{}
+	rest := after
+	for {
+		idx := bytes.Index(rest, []byte(`,"`))
+		if idx < 0 || idx+2 >= len(rest) {
+			break
+		}
+		rest = rest[idx+2:]
+		end := bytes.IndexByte(rest, '"')
+		if end <= 0 {
+			break
+		}
+		key := string(rest[:end])
+		rest = rest[end:]
+		if seen[key] || bytes.Contains(before, []byte(`"`+key+`"`)) {
+			continue
+		}
+		seen[key] = true
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+func separateKey(before, after []byte, key, pad string) []byte {
+	if bytes.Contains(before, []byte(`"`+key+`"`)) {
+		return after
+	}
+	glued := []byte(`,"` + key + `":`)
+	idx := bytes.Index(after, glued)
+	if idx < 0 {
+		return after
+	}
+	rest := after[idx+len(glued):]
+	// hujson drops the value's leading whitespace, so "{" or "[" sits on
+	// the colon. A space makes the inserted object read like the file.
+	if len(rest) > 0 && (rest[0] == '{' || rest[0] == '[') {
+		rest = append([]byte{' '}, rest...)
+	}
+	replacement := append([]byte(",\n"+pad+`"`+key+`":`), rest...)
+	return append(append([]byte{}, after[:idx]...), replacement...)
 }
 
 // prettyInserted renders a group with the file's indent and a leading
@@ -407,7 +496,38 @@ func writeSettings(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return project.AtomicWriteFile(path, data)
+	mode := existingSettingsMode(path)
+	if err := project.AtomicWriteFile(path, data); err != nil {
+		return err
+	}
+	if mode == 0 {
+		return nil
+	}
+	if err := os.Chmod(path, mode); err != nil {
+		return fmt.Errorf("restoring settings mode: %w", err)
+	}
+	return nil
+}
+
+// existingSettingsMode is the source mode clamped so a rewrite never
+// grants group or other write. Zero means the file is new.
+func existingSettingsMode(path string) os.FileMode {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return 0
+	}
+	return clampSettingsMode(info.Mode())
+}
+
+// clampSettingsMode keeps owner read/write and group/other read, and
+// drops anything wider than 0644. A mode with no remaining bits becomes
+// 0600 rather than world-readable.
+func clampSettingsMode(mode os.FileMode) os.FileMode {
+	perm := mode.Perm() & 0o644
+	if perm == 0 {
+		return 0o600
+	}
+	return perm
 }
 
 func newSettings(groups []renderedGroup, indent string) ([]byte, error) {
@@ -463,7 +583,7 @@ func createBackup(path string) (string, error) {
 			return "", fmt.Errorf("choosing a backup path for %s", path)
 		}
 	}
-	if err := os.WriteFile(backupPath, data, 0o644); err != nil {
+	if err := os.WriteFile(backupPath, data, clampSettingsMode(info.Mode())); err != nil {
 		return "", fmt.Errorf("writing settings backup: %w", err)
 	}
 	pruneBackups(path)

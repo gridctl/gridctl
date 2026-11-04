@@ -28,7 +28,6 @@ const (
 	ActionWouldUpdate        = project.ActionWouldUpdate
 	ActionWouldRemove        = "would-remove"
 	ActionAlreadyGone        = "already-gone"
-	ActionNotProjected       = "not-projected"
 	ActionError              = project.ActionError
 
 	StateInSync        = project.StateInSync
@@ -36,8 +35,9 @@ const (
 	StateDrifted       = project.StateDrifted
 	StateTargetMissing = project.StateTargetMissing
 
-	foreignDetail = "settings groups already point at this hook's script directory but gridctl has no record of writing them"
-	removedDetail = "the recorded groups were removed from the settings file"
+	foreignDetail       = "settings groups already point at this hook's script directory but gridctl has no record of writing them"
+	removedDetail       = "the recorded groups were removed from the settings file"
+	scriptRemovedDetail = "the script copy was removed"
 )
 
 // SyncOptions configure a sync pass.
@@ -290,6 +290,7 @@ type hookWork struct {
 	located     []locatedGroup
 	replace     bool
 	remove      bool
+	scriptsOnly bool
 	createdFile bool
 }
 
@@ -422,7 +423,12 @@ func (m *Manager) planHook(h skills.InstalledHook, t Target, sf *settingsFile, l
 			return w
 		}
 	}
-	currentTree, _ := treeHash(scriptDir)
+	currentTree, terr := treeHash(scriptDir)
+	if terr != nil {
+		w.res.Action = ActionError
+		w.res.Error = terr.Error()
+		return w
+	}
 	rec := lf.entry(h.Name, t.Slug)
 	w.createdFile = sf.Missing
 	if rec != nil {
@@ -456,19 +462,38 @@ func (m *Manager) planHook(h skills.InstalledHook, t Target, sf *settingsFile, l
 		w.remove = true
 		w.res.Action = ActionUpdated
 	default:
-		scriptsDrifted := currentTree != "" && currentTree != rec.TreeHash && currentTree != plannedTree
+		// "" is gone (missing or empty), not a hand edit. The unchanged
+		// branch must not treat it as a match: that would skip the restore.
+		scriptsGone := currentTree == ""
+		scriptsDrifted := !scriptsGone && currentTree != rec.TreeHash && currentTree != plannedTree
 		if scriptsDrifted && !opts.Force {
 			w.res.Action = ActionSkippedDrift
 			w.res.Detail = "script copy was edited since gridctl wrote it"
 			return w
 		}
-		if currentHash == plannedHash && (currentTree == plannedTree || currentTree == "") {
+		settingsMatch := currentHash == plannedHash
+		if settingsMatch && currentTree == plannedTree {
 			w.res.Action = ActionUnchanged
 			w.plannedHash = plannedHash
 			return w
 		}
+		if settingsMatch && sameShape(located, groups) {
+			// Groups are what gridctl wrote. Refresh scripts only, so a
+			// removed copy or a forced overwrite does not append a second
+			// group into the settings file.
+			w.write = true
+			w.scriptsOnly = true
+			w.res.Action = ActionUpdated
+			if scriptsGone {
+				w.res.Detail = scriptRemovedDetail
+			}
+			return w
+		}
 		w.write = true
 		w.res.Action = ActionUpdated
+		if scriptsGone {
+			w.res.Detail = scriptRemovedDetail
+		}
 		if sameShape(located, groups) && !scriptsDrifted {
 			w.replace = true
 			w.remove = false
@@ -537,9 +562,18 @@ func (m *Manager) applyClient(sf *settingsFile, work []hookWork, opts SyncOption
 			return err
 		}
 	}
+	var patching []hookWork
+	for _, w := range writing {
+		if !w.scriptsOnly {
+			patching = append(patching, w)
+		}
+	}
+	if len(patching) == 0 {
+		return nil
+	}
 	if sf.Missing {
 		var groups []renderedGroup
-		for _, w := range writing {
+		for _, w := range patching {
 			groups = append(groups, w.groups...)
 		}
 		data, err := newSettings(groups, "  ")
@@ -552,8 +586,8 @@ func (m *Manager) applyClient(sf *settingsFile, work []hookWork, opts SyncOption
 	var replacing []patchOp
 	var removing []locatedGroup
 	var appending []renderedGroup
-	for i := range writing {
-		w := &writing[i]
+	for i := range patching {
+		w := &patching[i]
 		if w.replace {
 			rep, rerr := replaceOps(w.located, w.groups, indent)
 			if rerr != nil {
@@ -591,6 +625,7 @@ func (m *Manager) applyClient(sf *settingsFile, work []hookWork, opts SyncOption
 	if err != nil {
 		return err
 	}
+	packed = separateNewKeys(sf.Raw, packed, sf.indentOrDefault())
 	return writeSettings(sf.Path, packed)
 }
 
@@ -947,13 +982,24 @@ func (m *Manager) statusFor(name, client string, entry *Entry) ProjectionStatus 
 			partial = true
 		}
 	}
-	currentTree, _ := treeHash(entry.ScriptDir)
-	scriptDrift := currentTree != entry.TreeHash
+	currentTree, terr := treeHash(entry.ScriptDir)
+	if terr != nil {
+		ps.State = StateTargetMissing
+		ps.Detail = terr.Error()
+		return ps
+	}
+	scriptGone := currentTree == ""
+	scriptDrift := !scriptGone && currentTree != entry.TreeHash
 	var currentHash string
 	if !partial {
 		currentHash, _ = groupsHash(locatedAsRendered(located))
 	}
 	settingsDrift := partial || !hashRecorded(entry.Hashes, currentHash)
+	if scriptGone && !settingsDrift {
+		ps.State = StateTargetMissing
+		ps.Detail = "script copy is empty (" + entry.ScriptDir + ")"
+		return ps
+	}
 	if settingsDrift || scriptDrift {
 		ps.State = StateDrifted
 		switch {

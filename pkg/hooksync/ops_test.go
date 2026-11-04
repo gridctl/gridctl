@@ -568,3 +568,245 @@ func mustRead(t *testing.T, path string) []byte {
 	}
 	return data
 }
+
+func TestSync_RestoresRemovedScriptCopy(t *testing.T) {
+	home, registry := testHome(t)
+	installHook(t, registry, "block", "#!/bin/sh\necho no\n")
+	pinHook(t, home, registry, "block")
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mgr := NewManagerWithHome(home, registry)
+	first, err := mgr.Sync(t.Context(), []string{"block"}, SyncOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first) != 1 || first[0].Action != ActionCopied {
+		t.Fatalf("first = %+v", first)
+	}
+	scriptDir := first[0].ScriptDir
+	settings := first[0].Target
+	before, err := os.ReadFile(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(scriptDir); err != nil {
+		t.Fatal(err)
+	}
+
+	statuses, err := mgr.Statuses(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(statuses) != 1 || statuses[0].State != StateTargetMissing || !strings.Contains(statuses[0].Detail, "script directory is gone") {
+		t.Fatalf("status = %+v", statuses)
+	}
+	skipped, err := mgr.Sync(t.Context(), []string{"block"}, SyncOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skipped) != 1 || skipped[0].Action != ActionUpdated || skipped[0].Detail != scriptRemovedDetail {
+		t.Fatalf("sync after delete = %+v", skipped)
+	}
+	if _, err := os.Stat(filepath.Join(scriptDir, "scripts", "run.sh")); err != nil {
+		t.Fatalf("script was not restored: %v", err)
+	}
+	after, err := os.ReadFile(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("settings rewritten while restoring scripts:\n%s", after)
+	}
+	again, err := mgr.Sync(t.Context(), []string{"block"}, SyncOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(again) != 1 || again[0].Action != ActionUnchanged {
+		t.Fatalf("second sync = %+v", again)
+	}
+
+	if err := os.RemoveAll(scriptDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(scriptDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	empty, err := mgr.Sync(t.Context(), []string{"block"}, SyncOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(empty) != 1 || empty[0].Action != ActionUpdated || empty[0].Detail != scriptRemovedDetail {
+		t.Fatalf("sync after empty dir = %+v", empty)
+	}
+	if _, err := os.Stat(filepath.Join(scriptDir, "hook.json")); err != nil {
+		t.Fatalf("empty copy was not restored: %v", err)
+	}
+}
+
+func TestSync_ForceScriptDriftDoesNotDuplicateGroups(t *testing.T) {
+	home, registry := testHome(t)
+	installHook(t, registry, "block", "#!/bin/sh\necho no\n")
+	pinHook(t, home, registry, "block")
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mgr := NewManagerWithHome(home, registry)
+	first, err := mgr.Sync(t.Context(), []string{"block"}, SyncOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(first[0].ScriptDir, "scripts", "run.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho edited\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	settings := first[0].Target
+	before := mustRead(t, settings)
+	skipped, err := mgr.Sync(t.Context(), []string{"block"}, SyncOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if skipped[0].Action != ActionSkippedDrift || !strings.Contains(skipped[0].Detail, "script copy was edited") {
+		t.Fatalf("sync = %+v", skipped)
+	}
+	forced, err := mgr.Sync(t.Context(), []string{"block"}, SyncOptions{Force: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if forced[0].Action != ActionUpdated {
+		t.Fatalf("force = %+v", forced)
+	}
+	got := mustRead(t, script)
+	if string(got) != "#!/bin/sh\necho no\n" {
+		t.Fatalf("script = %q", got)
+	}
+	after := mustRead(t, settings)
+	if string(after) != string(before) {
+		t.Fatalf("force rewrote settings:\n%s", after)
+	}
+	if strings.Count(string(after), "gridctl hook block") != 1 {
+		t.Fatalf("group duplicated:\n%s", after)
+	}
+}
+
+func TestSync_PreservesSettingsMode(t *testing.T) {
+	home, registry := testHome(t)
+	installHook(t, registry, "block", "#!/bin/sh\necho no\n")
+	pinHook(t, home, registry, "block")
+	claude := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claude, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	settings := filepath.Join(claude, "settings.json")
+	if err := os.WriteFile(settings, []byte("{\n  \"env\": {\"TOKEN\": \"secret\"}\n}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mgr := NewManagerWithHome(home, registry)
+	results, err := mgr.Sync(t.Context(), []string{"block"}, SyncOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Action != ActionCopied {
+		t.Fatalf("results = %+v", results)
+	}
+	info, err := os.Stat(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("settings mode = %o, want 600", info.Mode().Perm())
+	}
+	var backups int
+	entries, err := os.ReadDir(claude)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if !strings.Contains(e.Name(), backupSuffix) {
+			continue
+		}
+		backups++
+		bi, err := e.Info()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bi.Mode().Perm() != 0o600 {
+			t.Fatalf("backup %s mode = %o, want 600", e.Name(), bi.Mode().Perm())
+		}
+	}
+	if backups != 1 {
+		t.Fatalf("backup count = %d", backups)
+	}
+}
+
+func TestSync_InsertsHooksKeyOnOwnLine(t *testing.T) {
+	home, registry := testHome(t)
+	installHook(t, registry, "block", "#!/bin/sh\necho no\n")
+	pinHook(t, home, registry, "block")
+	claude := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claude, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := []byte("{\n  // keep this comment\n  \"permissions\": {\"allow\": [\"Bash\"]},\n  \"env\": {\"TOKEN\": \"secret\"}\n}\n")
+	settings := filepath.Join(claude, "settings.json")
+	if err := os.WriteFile(settings, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mgr := NewManagerWithHome(home, registry)
+	results, err := mgr.Sync(t.Context(), []string{"block"}, SyncOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Action != ActionCopied {
+		t.Fatalf("results = %+v", results)
+	}
+	got := string(mustRead(t, settings))
+	if !strings.HasPrefix(got, "{\n  // keep this comment\n  \"permissions\": {\"allow\": [\"Bash\"]},\n  \"env\": {\"TOKEN\": \"secret\"}") {
+		t.Fatalf("sibling prefix changed:\n%s", got)
+	}
+	if strings.Contains(got, `,"hooks":`) || strings.Contains(got, `,"PreToolUse":`) {
+		t.Fatalf("inserted key is glued to the previous value:\n%s", got)
+	}
+	if !strings.Contains(got, "\n  \"hooks\": {") {
+		t.Fatalf("hooks key is not on its own line with the file indent:\n%s", got)
+	}
+	if !strings.Contains(got, "\n    \"PreToolUse\": [") || !strings.Contains(got, "\n        \"matcher\"") {
+		t.Fatalf("inserted subtree is not pretty-printed:\n%s", got)
+	}
+	if !strings.Contains(got, "// keep this comment") || !strings.Contains(got, `"permissions"`) {
+		t.Fatalf("sibling content lost:\n%s", got)
+	}
+}
+
+func TestSync_InsertsMissingEventArrayOnOwnLine(t *testing.T) {
+	home, registry := testHome(t)
+	installHook(t, registry, "block", "#!/bin/sh\necho no\n")
+	pinHook(t, home, registry, "block")
+	claude := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claude, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := []byte("{\n  \"hooks\": {\n    \"PostToolUse\": []\n  },\n  \"zebra\": true\n}\n")
+	settings := filepath.Join(claude, "settings.json")
+	if err := os.WriteFile(settings, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mgr := NewManagerWithHome(home, registry)
+	results, err := mgr.Sync(t.Context(), []string{"block"}, SyncOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Action != ActionCopied {
+		t.Fatalf("results = %+v", results)
+	}
+	got := string(mustRead(t, settings))
+	if !strings.Contains(got, "\"PostToolUse\": []") || !strings.Contains(got, "\"zebra\": true") {
+		t.Fatalf("sibling content lost:\n%s", got)
+	}
+	if strings.Contains(got, `,"PreToolUse":`) {
+		t.Fatalf("event key is glued:\n%s", got)
+	}
+	if !strings.Contains(got, "\n    \"PreToolUse\": [") {
+		t.Fatalf("event array is not on its own line:\n%s", got)
+	}
+}

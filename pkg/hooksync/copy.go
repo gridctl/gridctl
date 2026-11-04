@@ -110,11 +110,23 @@ func skipCopyEntry(name string) bool {
 }
 
 // treeHash fingerprints a script copy: sorted relative paths and per-file
-// content hashes. A missing directory hashes as empty.
+// content hashes. A missing directory, a non-directory, or a directory
+// with no regular files returns "" so callers can tell "gone" from a
+// hand edit. An empty manifest hash would collide with that signal.
 func treeHash(dir string) (string, error) {
+	info, err := os.Stat(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("hashing %s: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return "", nil
+	}
 	type manifestEntry struct{ rel, sum string }
 	var entries []manifestEntry
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if os.IsNotExist(err) && path == dir {
 				return fs.SkipAll
@@ -141,6 +153,9 @@ func treeHash(dir string) (string, error) {
 	})
 	if err != nil {
 		return "", fmt.Errorf("hashing %s: %w", dir, err)
+	}
+	if len(entries) == 0 {
+		return "", nil
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].rel < entries[j].rel })
 	h := sha256.New()
