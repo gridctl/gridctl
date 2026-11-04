@@ -702,14 +702,18 @@ by the pack record itself.
 
 A resource whose projection was hand-edited (drifted) is skipped with a
 remediation hint unless --force; everything else still removes, and the
-skipped resources stay imported so nothing is lost. Removing a skill
+skipped resources stay imported so nothing is lost. A hook whose unsync
+rows are not all removed or already-gone is kept, including under
+--force, and reported with the same refusal as 'gridctl skill remove
+--kind hook'. --force clears hand-edited groups only. --dry-run reports
+that keep instead of would-remove. Removing a skill
 removes all of its projections, including any made outside the pack.
 A full removal drops member lock sources. --dry-run reports those
 sources as would-remove only when nothing is kept.
 
 Exit codes:
   0  removed cleanly
-  1  partial (drifted resources kept)
+  1  partial (a resource was kept)
   2  infrastructure error`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -752,7 +756,7 @@ func runPackRemove(ctx context.Context, stdout, stderr io.Writer, mgrs *packops.
 	} else {
 		renderPackRows(stdout, doc.Rows, false)
 		if len(doc.Kept) > 0 {
-			fmt.Fprintf(stdout, "\nKept (drifted, re-run with --force to remove): %s\n", strings.Join(doc.Kept, ", "))
+			fmt.Fprintf(stdout, "\nKept: %s\n", strings.Join(doc.Kept, ", "))
 		} else if label, blocked := blockedPackRemoval(doc.Rows); blocked && !dryRun {
 			fmt.Fprintf(stdout, "\nPack %q not removed: %s.\n", name, label)
 		} else if !dryRun {

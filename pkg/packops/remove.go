@@ -40,8 +40,9 @@ type RemoveDoc struct {
 // Remove cascades one pack's removal in dependency order: pack-tagged
 // projections are unsynced, pack-tagged wiring records removed through
 // the ownership manager, then the registry entries and the pack record
-// itself. A drifted resource is kept unless forced; the trimmed pack
-// record stays truthful about what remains.
+// itself. A drifted resource is kept unless forced. A hook is also kept
+// when any unsync row is not removed or already-gone, including under
+// force. The trimmed pack record stays truthful about what remains.
 func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string, opts RemoveOptions) (*RemoveDoc, error) {
 	locked, err := m.LoadLockedPack(name)
 	if err != nil {
@@ -113,8 +114,11 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 		for _, n := range locked.Rules {
 			rows = append(rows, Row{Kind: "rule", Name: n, Action: "would-remove"})
 		}
-		for _, n := range removableHooks {
-			rows = append(rows, Row{Kind: "hook", Name: n, Action: "would-remove"})
+		// A dry-run unsync rewrites a retiring row from removed to
+		// would-remove. Count that as retired here only; the real run
+		// must not, or a healthy preview fills kept and exits 1.
+		if err := m.previewPackHookRemoval(ctx, removableHooks, opts.Force, &rows, &kept); err != nil {
+			return nil, err
 		}
 		if locked.Wiring {
 			rows = append(rows, Row{Kind: "wiring", Name: "gridctl", Action: "would-remove"})
@@ -214,10 +218,11 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 	if herr != nil {
 		return nil, herr
 	}
-	if err := m.unsyncPackHooks(ctx, removableHooks, opts.Force, &rows); err != nil {
+	retiredHooks, err := m.unsyncPackHooks(ctx, removableHooks, opts.Force, &rows, &kept)
+	if err != nil {
 		return nil, err
 	}
-	if err := removePackHooks(ctx, home, removableHooks, &rows); err != nil {
+	if err := removePackHooks(ctx, home, retiredHooks, &rows); err != nil {
 		return nil, err
 	}
 
@@ -268,27 +273,135 @@ func (m *Managers) driftedPackResources(ctx context.Context) (map[string]bool, m
 }
 
 // unsyncPackHooks retracts pack-tagged hook projections before the
-// registry entries are deleted. Drifted projections are not in names
-// unless the caller passed --force.
-func (m *Managers) unsyncPackHooks(ctx context.Context, names []string, force bool, rows *[]Row) error {
+// registry entries are deleted. It returns the names that may proceed:
+// hooks that were never projected, and hooks whose unsync rows all
+// retired. A hook with any row that hooksync.BlocksRemoval rejects is
+// kept whole (one refusal row, a hook/<name> kept entry, no registry
+// delete). Drifted projections are not in names unless the caller
+// passed --force. Force still reaches the unsync, so hand-edited groups
+// can clear; a parse error or a retired client still blocks.
+func (m *Managers) unsyncPackHooks(ctx context.Context, names []string, force bool, rows *[]Row, kept *[]string) ([]string, error) {
 	if len(names) == 0 || m.Hooks == nil {
-		return nil
+		return names, nil
 	}
-	projected, err := projectedNames(ctx, m.Home, project.KindHook, names)
+	results, err := m.hookUnsyncResults(ctx, names, force, false)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if len(projected) == 0 {
-		return nil
-	}
-	results, err := m.Hooks.Unsync(ctx, projected, hooksync.UnsyncOptions{Force: force})
-	if err != nil {
-		return err
-	}
+	blocked := classifyHookUnsync(results, false)
 	for _, r := range results {
+		if _, ok := blocked[r.Hook]; ok {
+			continue
+		}
 		*rows = append(*rows, Row{Kind: "hook", Name: r.Hook, Client: r.Client, Action: r.Action, Detail: firstNonEmpty(r.Error, r.Detail)})
 	}
+	var removable []string
+	for _, name := range names {
+		if row, ok := blocked[name]; ok {
+			keepBlockedHook(name, row, rows, kept)
+			continue
+		}
+		removable = append(removable, name)
+	}
+	return removable, nil
+}
+
+// previewPackHookRemoval reports hook removal without writing. A hook
+// whose dry-run rows are all would-remove or already-gone is reported as
+// would-remove, matching a preview that would succeed. Any other row is
+// kept and reported with the same refusal as a real remove. A hook that
+// was never projected stays would-remove. Member-source would-remove rows
+// stay the caller's concern: they appear only when kept is empty.
+func (m *Managers) previewPackHookRemoval(ctx context.Context, names []string, force bool, rows *[]Row, kept *[]string) error {
+	if len(names) == 0 {
+		return nil
+	}
+	if m.Hooks == nil {
+		for _, n := range names {
+			*rows = append(*rows, Row{Kind: "hook", Name: n, Action: "would-remove"})
+		}
+		return nil
+	}
+	results, err := m.hookUnsyncResults(ctx, names, force, true)
+	if err != nil {
+		return err
+	}
+	blocked := classifyHookUnsync(results, true)
+	for _, name := range names {
+		if row, ok := blocked[name]; ok {
+			keepBlockedHook(name, row, rows, kept)
+			continue
+		}
+		*rows = append(*rows, Row{Kind: "hook", Name: name, Action: "would-remove"})
+	}
 	return nil
+}
+
+// hookUnsyncResults runs hook unsync for the projected subset of names.
+// dryRun is passed through so a preview writes nothing. Never-projected
+// names are absent from the results; the caller treats that absence as
+// removable.
+func (m *Managers) hookUnsyncResults(ctx context.Context, names []string, force, dryRun bool) ([]hooksync.UnsyncResult, error) {
+	projected, err := projectedNames(ctx, m.Home, project.KindHook, names)
+	if err != nil {
+		return nil, err
+	}
+	if len(projected) == 0 {
+		return nil, nil
+	}
+	return m.Hooks.Unsync(ctx, projected, hooksync.UnsyncOptions{Force: force, DryRun: dryRun})
+}
+
+// classifyHookUnsync groups unsync rows by hook and returns the first
+// blocking row for each hook that cannot be deleted. dryRun counts
+// would-remove as retired, because that is what a dry-run removed row
+// becomes. The real run does not: blockingHookUnsync then delegates to
+// hooksync.BlocksRemoval, which treats would-remove as blocking. A hook
+// with two client rows is blocked if either row blocks.
+func classifyHookUnsync(results []hooksync.UnsyncResult, dryRun bool) map[string]hooksync.UnsyncResult {
+	byName := map[string][]hooksync.UnsyncResult{}
+	for _, r := range results {
+		byName[r.Hook] = append(byName[r.Hook], r)
+	}
+	blocked := map[string]hooksync.UnsyncResult{}
+	for name, hookRows := range byName {
+		if row, ok := blockingHookUnsync(hookRows, dryRun); ok {
+			blocked[name] = row
+		}
+	}
+	return blocked
+}
+
+// blockingHookUnsync reports the first row that keeps the hook. A real
+// run uses hooksync.BlocksRemoval, which continues only on removed and
+// already-gone. A dry run must not call that helper unchanged: Unsync
+// rewrites a row that would retire from removed to would-remove, and
+// BlocksRemoval treats would-remove as blocking.
+func blockingHookUnsync(rows []hooksync.UnsyncResult, dryRun bool) (hooksync.UnsyncResult, bool) {
+	if !dryRun {
+		return hooksync.BlocksRemoval(rows)
+	}
+	for _, r := range rows {
+		switch r.Action {
+		case hooksync.ActionWouldRemove, hooksync.ActionAlreadyGone:
+			continue
+		default:
+			return r, true
+		}
+	}
+	return hooksync.UnsyncResult{}, false
+}
+
+func keepBlockedHook(name string, row hooksync.UnsyncResult, rows *[]Row, kept *[]string) {
+	*rows = append(*rows, Row{
+		Kind:        "hook",
+		Name:        name,
+		Client:      row.Client,
+		Action:      row.Action,
+		Detail:      firstNonEmpty(row.Error, row.Detail),
+		Remediation: hooksync.RemovalRefusal(name, row),
+	})
+	*kept = append(*kept, "hook/"+name)
 }
 
 // splitKept separates removable names from drift-kept ones, emitting
@@ -380,7 +493,8 @@ func (m *Managers) removePackWiring(ctx context.Context, packName string, force 
 }
 
 // removePackHooks deletes imported hook directories, sidecars, and pin
-// records. Projections are retired by unsyncPackHooks first.
+// records. names are the hooks whose projections retired, or that were
+// never projected. A kept hook must not be passed here.
 func removePackHooks(ctx context.Context, home string, names []string, rows *[]Row) error {
 	if len(names) == 0 {
 		return nil

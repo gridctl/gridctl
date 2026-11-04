@@ -120,6 +120,88 @@ func TestRunPackApply_UnsupportedHookExitsZero(t *testing.T) {
 	}
 }
 
+func TestRunPackRemove_KeepsBlockedHook(t *testing.T) {
+	t.Setenv("GRIDCTL_HOME", "")
+	imp, freshManagers := packTestEnv(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GRIDCTL_HOME", home)
+	dir := filepath.Join(home, ".gridctl", "registry", "hooks", "block")
+	if err := os.MkdirAll(filepath.Join(dir, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "scripts", "run.sh"), []byte("#!/bin/sh\necho no\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(`{"name":"block","description":"d","dialect":"claude-code","hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"./scripts/run.sh"}]}]}}`)
+	if err := os.WriteFile(filepath.Join(dir, "hook.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pins := hookpins.NewWithPath(filepath.Join(home, ".gridctl", "pins"))
+	if err := pins.Pin(t.Context(), hookpins.PinRequest{Name: "block", Dir: dir}); err != nil {
+		t.Fatal(err)
+	}
+	lf := &skills.LockFile{Sources: map[string]skills.LockedSource{
+		"hook-pack": {
+			Repo: "https://example.com/hook-pack.git",
+			Pack: &skills.LockedPack{Name: "hook-pack", Hooks: []string{"block"}},
+		},
+	}}
+	if err := skills.WriteLockFile(skills.LockFilePath(), lf); err != nil {
+		t.Fatal(err)
+	}
+	mgrs := freshManagers()
+	if _, err := mgrs.Apply(t.Context(), "hook-pack", packops.ApplyOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".claude", "settings.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	exit := runPackRemove(context.Background(), &stdout, &stderr, mgrs, imp, "hook-pack", true, false, "")
+	if exit != ctxExitAttention {
+		t.Fatalf("exit = %d\nstdout:\n%s\nstderr:\n%s", exit, stdout.String(), stderr.String())
+	}
+	out := stdout.String()
+	if strings.Contains(out, "removed.") {
+		t.Fatalf("stdout claimed removal:\n%s", out)
+	}
+	if !strings.Contains(out, "skipped-unmanaged") || !strings.Contains(out, "unsync --kind hook block --force") {
+		t.Fatalf("stdout = %s", out)
+	}
+	if !strings.Contains(out, "Kept: hook/block") || strings.Contains(out, "re-run with --force to remove") {
+		t.Fatalf("kept line = %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "hook.json")); err != nil {
+		t.Fatalf("registry hook removed: %v", err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	exit = runPackRemove(context.Background(), &stdout, &stderr, mgrs, imp, "hook-pack", true, false, "json")
+	if exit != ctxExitAttention {
+		t.Fatalf("json exit = %d\n%s%s", exit, stdout.String(), stderr.String())
+	}
+	var doc packops.RemoveDoc
+	if err := json.Unmarshal(stdout.Bytes(), &doc); err != nil {
+		t.Fatalf("json = %s: %v", stdout.String(), err)
+	}
+	if len(doc.Kept) != 1 || doc.Kept[0] != "hook/block" {
+		t.Fatalf("kept = %v", doc.Kept)
+	}
+	var saw bool
+	for _, row := range doc.Rows {
+		if row.Kind == "hook" && row.Action == "skipped-unmanaged" && strings.Contains(row.Remediation, "unsync --kind hook block --force") {
+			saw = true
+		}
+	}
+	if !saw {
+		t.Fatalf("rows = %+v", doc.Rows)
+	}
+}
+
 func TestPrintPackLock_Note(t *testing.T) {
 	var buf bytes.Buffer
 	printPackLock(&buf, &packops.LockSummary{
