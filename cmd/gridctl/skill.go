@@ -689,18 +689,20 @@ func runSkillListHooks() error {
 }
 
 func runSkillRemoveHook(name string) error {
-	// Retire projections before the registry entry. A drifted projection
-	// is kept; the operator unsyncs it with --force first.
-	if mgr, err := newHookProjectManager(); err == nil {
-		results, uerr := mgr.Unsync(context.Background(), []string{name}, hooksync.UnsyncOptions{})
-		if uerr != nil && !errors.Is(uerr, hooksync.ErrNotProjected) {
-			return uerr
-		}
-		for _, r := range results {
-			if r.Action == hooksync.ActionSkippedDrift {
-				return fmt.Errorf("hook %s is drifted on %s; run 'gridctl skill project unsync --kind hook %s --force' before removing", name, r.Client, name)
-			}
-		}
+	// Retire projections before the registry entry. A manager that cannot
+	// be built is not "nothing to unsync": deleting anyway would leave the
+	// settings groups and script copy in place. A row that is not removed
+	// or already-gone is kept; the operator unsyncs it with --force first.
+	mgr, err := newHookProjectManager()
+	if err != nil {
+		return fmt.Errorf("hook projection not available: %w", err)
+	}
+	results, uerr := mgr.Unsync(context.Background(), []string{name}, hooksync.UnsyncOptions{})
+	if uerr != nil && !errors.Is(uerr, hooksync.ErrNotProjected) {
+		return uerr
+	}
+	if row, blocked := hooksync.BlocksRemoval(results); blocked {
+		return errors.New(hooksync.RemovalRefusal(name, row))
 	}
 	// DeleteHook stats the directory. A hook.json that no longer
 	// validates must still be removable.

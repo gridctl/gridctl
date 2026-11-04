@@ -108,6 +108,35 @@ func NeedsAttention(statuses []ProjectionStatus) bool {
 	return false
 }
 
+// BlocksRemoval reports the first unsync row that did not retire the
+// projection. removed and already-gone allow a registry delete to proceed.
+// skipped-drift, skipped-unmanaged, error, and any other action do not.
+func BlocksRemoval(results []UnsyncResult) (UnsyncResult, bool) {
+	for _, r := range results {
+		switch r.Action {
+		case ActionRemoved, ActionAlreadyGone, "":
+			continue
+		default:
+			return r, true
+		}
+	}
+	return UnsyncResult{}, false
+}
+
+// RemovalRefusal is the operator message for a blocked registry delete.
+// It names the client and the unsync --force command.
+func RemovalRefusal(name string, row UnsyncResult) string {
+	client := row.Client
+	if client == "" {
+		client = "unknown"
+	}
+	action := row.Action
+	if action == "" {
+		action = "error"
+	}
+	return fmt.Sprintf("hook %s could not be unsynced on %s (%s); run 'gridctl skill project unsync --kind hook %s --force' before removing", name, client, action, name)
+}
+
 // HasFailures reports whether any sync result needs the caller's attention.
 // Every skipped or failed row counts. Dry-run would-* rows do not.
 func HasFailures(results []SyncResult) bool {
