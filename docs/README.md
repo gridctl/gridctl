@@ -38,7 +38,7 @@ New to gridctl? Read in this order:
 | [Concepts](concepts.md) | Stack, pack, skill, agent, hook, rule fragment, global context, wiring, registry, projection, group, client profile, call policy, link, and service |
 | [Skills](skills.md) | Author `SKILL.md` files, serve prompts, resources, and Skills over MCP manifests, import from git, a local directory, or a client home, and project skills and agents onto disk via `gridctl skill project` |
 | [Packs](packs.md) | One `gridctl-pack.yaml` manifest importing skills, agents (including from declared external repositories), hooks, rule fragments, wiring, and an optional stack as a unit, with tag-exact removal, booster fragments, and `gridctl-pack.lock.yaml` |
-| [Hooks](hooks.md) | Pack hook definitions: `hook.json` schema, import, scan, `--trust`, and content pins. Projection is not available in this release |
+| [Hooks](hooks.md) | Pack hook definitions: `hook.json` schema, import, scan, `--trust`, content pins, and projection into Claude Code user settings |
 | [Tools Workspace](tools-workspace.md) | Curate the exposed tool surface - whitelists, policy verdicts, Audit Mode, annotation hints, fleet actions, per-client access, and groups |
 | [Gateway authentication](config-schema.md#auth) | Shared credentials and OAuth resource-server mode (included in v1.0.0-rc.3), issuer setup, authenticated client profiles, and credential recovery |
 | [Global Context Sync](global-context.md) | Manage the global context (one canonical AGENTS.md, or an opt-in rule fragment library with per-client assembly) via `gridctl ctx`, the web UI, or the REST API |

@@ -1123,7 +1123,7 @@ Git-sourced MCP server image builds use a separate builder namespace. Each activ
 
 ### "written by a newer gridctl version" on ctx, skill project, or project commands
 
-The unified projection lockfile (`~/.gridctl/project.lock.yaml`) carries a schema version, and an older gridctl refuses to touch a file written by a newer one rather than risk corrupting it. Upgrade gridctl on this machine, or restore the pre-migration state from `~/.gridctl/project-migration-backup/` if you need to stay on the older version.
+The unified projection lockfile (`~/.gridctl/project.lock.yaml`) carries a schema version, and an older gridctl refuses to touch a file written by a newer one rather than risk corrupting it. A rewrite now stamps revision 4. That is the additive tier: an older gridctl of the same schema version still reads the file, and a higher revision is kept. The refusal above is the schema version, not the revision. Upgrade gridctl on this machine, or restore the pre-migration state from `~/.gridctl/project-migration-backup/` if you need to stay on the older version.
 
 ### "import lockfile was written by a newer gridctl version"
 

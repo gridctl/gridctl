@@ -16,6 +16,30 @@ import (
 // newSkillProjectTestManager returns a projection Manager rooted at a
 // temp home with one active skill "demo" in the registry and ~/.claude
 // pre-created.
+func TestLoadRequiresCache_StatusErrorSkipsAnnotation(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+	lock := filepath.Join(home, ".gridctl", "project.lock.yaml")
+	if err := os.MkdirAll(filepath.Dir(lock), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lock, []byte("version: 99\nrevision: 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	if cache := loadRequiresCache(context.Background(), &stderr); cache != nil {
+		t.Fatal("expected nil cache when hook status cannot be read")
+	}
+	if !strings.Contains(stderr.String(), "warning: hook projection status unavailable:") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+	required, gaps, lines := (*requiresCache)(nil).annotate([]string{"keep"}, "skill", "demo", "claude-code")
+	if required != nil || gaps != nil || len(lines) != 1 || lines[0] != "keep" {
+		t.Fatalf("nil annotate = %v %v %v", required, gaps, lines)
+	}
+}
+
 func newSkillProjectTestManager(t *testing.T) (*skillsync.Manager, string) {
 	t.Helper()
 	home := t.TempDir()
@@ -121,7 +145,7 @@ func TestRunSkillProjectStatusJSONAndExitCodes(t *testing.T) {
 	var out, errOut bytes.Buffer
 
 	// Empty set: clean exit, guidance message.
-	exit := runSkillProjectStatus(context.Background(), &out, &errOut, mgr, nil, "", true)
+	exit := runSkillProjectStatus(context.Background(), &out, &errOut, mgr, nil, nil, "", true)
 	if exit != ctxExitOK {
 		t.Fatalf("empty status exit = %d", exit)
 	}
@@ -135,7 +159,7 @@ func TestRunSkillProjectStatusJSONAndExitCodes(t *testing.T) {
 	}
 
 	out.Reset()
-	exit = runSkillProjectStatus(context.Background(), &out, &errOut, mgr, nil, "json", false)
+	exit = runSkillProjectStatus(context.Background(), &out, &errOut, mgr, nil, nil, "json", false)
 	if exit != ctxExitOK {
 		t.Fatalf("status exit = %d", exit)
 	}
@@ -159,7 +183,7 @@ func TestRunSkillProjectStatusJSONAndExitCodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	out.Reset()
-	exit = runSkillProjectStatus(context.Background(), &out, &errOut, mgr, nil, "", true)
+	exit = runSkillProjectStatus(context.Background(), &out, &errOut, mgr, nil, nil, "", true)
 	if exit != ctxExitAttention {
 		t.Errorf("missing-target exit = %d, want %d", exit, ctxExitAttention)
 	}

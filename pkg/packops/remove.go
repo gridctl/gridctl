@@ -12,6 +12,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/agentsync"
 	"github.com/gridctl/gridctl/pkg/contexts"
 	"github.com/gridctl/gridctl/pkg/hookpins"
+	"github.com/gridctl/gridctl/pkg/hooksync"
 	"github.com/gridctl/gridctl/pkg/project"
 	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/skillsync"
@@ -50,7 +51,7 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 	// Drift pre-check: a hand-edited projection means the user changed
 	// something gridctl would destroy; without force the whole resource
 	// (projections + registry entry) is kept.
-	driftedSkills, driftedAgents, err := m.driftedPackResources(ctx)
+	driftedSkills, driftedAgents, driftedHooks, err := m.driftedPackResources(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -100,6 +101,7 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 	memberSkills, memberAgents := memberOwnedNames(lf, name)
 	removableSkills := splitKept(unionNames(locked.Skills, memberSkills), driftedSkills, opts.Force, "skill", &rows, &kept)
 	removableAgents := splitKept(unionNames(locked.Agents, memberAgents), driftedAgents, opts.Force, "agent", &rows, &kept)
+	removableHooks := splitKept(locked.Hooks, driftedHooks, opts.Force, "hook", &rows, &kept)
 
 	if opts.DryRun {
 		for _, n := range removableSkills {
@@ -111,7 +113,7 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 		for _, n := range locked.Rules {
 			rows = append(rows, Row{Kind: "rule", Name: n, Action: "would-remove"})
 		}
-		for _, n := range locked.Hooks {
+		for _, n := range removableHooks {
 			rows = append(rows, Row{Kind: "hook", Name: n, Action: "would-remove"})
 		}
 		if locked.Wiring {
@@ -212,7 +214,10 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 	if herr != nil {
 		return nil, herr
 	}
-	if err := removePackHooks(ctx, home, locked.Hooks, &rows); err != nil {
+	if err := m.unsyncPackHooks(ctx, removableHooks, opts.Force, &rows); err != nil {
+		return nil, err
+	}
+	if err := removePackHooks(ctx, home, removableHooks, &rows); err != nil {
 		return nil, err
 	}
 
@@ -226,12 +231,13 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 
 // driftedPackResources reports which resources have a drifted projection
 // anywhere.
-func (m *Managers) driftedPackResources(ctx context.Context) (map[string]bool, map[string]bool, error) {
+func (m *Managers) driftedPackResources(ctx context.Context) (map[string]bool, map[string]bool, map[string]bool, error) {
 	driftedSkills := map[string]bool{}
 	driftedAgents := map[string]bool{}
+	driftedHooks := map[string]bool{}
 	sst, err := m.Skills.Statuses(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	for _, s := range sst {
 		if s.State == skillsync.StateDrifted {
@@ -240,14 +246,49 @@ func (m *Managers) driftedPackResources(ctx context.Context) (map[string]bool, m
 	}
 	ast, err := m.Agents.Statuses(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	for _, s := range ast {
 		if s.State == agentsync.StateDrifted {
 			driftedAgents[s.Agent] = true
 		}
 	}
-	return driftedSkills, driftedAgents, nil
+	if m.Hooks != nil {
+		hst, herr := m.Hooks.Statuses(ctx)
+		if herr != nil {
+			return nil, nil, nil, herr
+		}
+		for _, s := range hst {
+			if s.State == hooksync.StateDrifted {
+				driftedHooks[s.Hook] = true
+			}
+		}
+	}
+	return driftedSkills, driftedAgents, driftedHooks, nil
+}
+
+// unsyncPackHooks retracts pack-tagged hook projections before the
+// registry entries are deleted. Drifted projections are not in names
+// unless the caller passed --force.
+func (m *Managers) unsyncPackHooks(ctx context.Context, names []string, force bool, rows *[]Row) error {
+	if len(names) == 0 || m.Hooks == nil {
+		return nil
+	}
+	projected, err := projectedNames(ctx, m.Home, project.KindHook, names)
+	if err != nil {
+		return err
+	}
+	if len(projected) == 0 {
+		return nil
+	}
+	results, err := m.Hooks.Unsync(ctx, projected, hooksync.UnsyncOptions{Force: force})
+	if err != nil {
+		return err
+	}
+	for _, r := range results {
+		*rows = append(*rows, Row{Kind: "hook", Name: r.Hook, Client: r.Client, Action: r.Action, Detail: firstNonEmpty(r.Error, r.Detail)})
+	}
+	return nil
 }
 
 // splitKept separates removable names from drift-kept ones, emitting
@@ -256,9 +297,13 @@ func splitKept(names []string, drifted map[string]bool, force bool, kind string,
 	var removable []string
 	for _, n := range names {
 		if drifted[n] && !force {
+			remediation := fmt.Sprintf("keep the edit with 'gridctl skill project adopt --kind %s %s --client <slug>' before removing, or force removal with --force", kind, n)
+			if kind == "hook" {
+				remediation = fmt.Sprintf("force removal with --force, or rewrite with 'gridctl skill project sync --kind hook %s --force'", n)
+			}
 			*rows = append(*rows, Row{Kind: kind, Name: n, Action: "skipped-drift",
 				Detail:      "a projection of this " + kind + " was hand-edited",
-				Remediation: fmt.Sprintf("keep the edit with 'gridctl skill project adopt --kind %s %s --client <slug>' before removing, or force removal with --force", kind, n)})
+				Remediation: remediation})
 			*kept = append(*kept, kind+"/"+n)
 			continue
 		}
@@ -335,7 +380,7 @@ func (m *Managers) removePackWiring(ctx context.Context, packName string, force 
 }
 
 // removePackHooks deletes imported hook directories, sidecars, and pin
-// records. There are no projections to retire in this release.
+// records. Projections are retired by unsyncPackHooks first.
 func removePackHooks(ctx context.Context, home string, names []string, rows *[]Row) error {
 	if len(names) == 0 {
 		return nil

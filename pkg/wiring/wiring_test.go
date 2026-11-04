@@ -405,7 +405,7 @@ func TestLink_DiscoveryStaysInSync(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), "revision: 3") || !strings.Contains(string(raw), "discovery: deferred") {
+	if !strings.Contains(string(raw), "revision: 4") || !strings.Contains(string(raw), "discovery: deferred") {
 		t.Fatalf("lockfile = %s", raw)
 	}
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/agentsync"
 	"github.com/gridctl/gridctl/pkg/config"
+	"github.com/gridctl/gridctl/pkg/hooksync"
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/skillsync"
@@ -41,6 +42,7 @@ var (
 	skillProjectUnsyncAll     bool
 	skillProjectUnsyncClients []string
 	skillProjectUnsyncDryRun  bool
+	skillProjectUnsyncForce   bool
 	skillProjectUnsyncFormat  string
 	skillProjectUnsyncKind    string
 	skillProjectUnsyncJSON    *bool
@@ -76,10 +78,10 @@ func validRegistryKind(kind string) error {
 // exactly as before.
 func validProjectKind(kind string) error {
 	switch kind {
-	case skillProjectKindSkill, skillProjectKindAgent:
+	case skillProjectKindSkill, skillProjectKindAgent, skillKindHook:
 		return nil
 	}
-	return fmt.Errorf("unknown --kind %q (supported: skill, agent)", kind)
+	return fmt.Errorf("unknown --kind %q (supported: skill, agent, hook)", kind)
 }
 
 var skillProjectCmd = &cobra.Command{
@@ -107,13 +109,20 @@ copy) plus lossy rendered dialects for 'opencode', 'copilot', and
 'gemini'; dropped frontmatter keys are named in sync output, and adopt
 is refused on rendered targets.
 
+Hook targets (--kind hook): 'claude-code' (~/.claude/settings.json).
+Scripts are copied to ~/.gridctl/hooks/<name>/ and matcher groups are
+patched into the settings file in exec form. Gemini CLI, Cursor,
+Copilot, Windsurf, Antigravity, and OpenCode are reported and not
+written. Adopt is refused.
+
 The MCP prompt channel is unchanged: clients that render prompts
 (Gemini CLI, Cursor, Windsurf) keep receiving skills that way.`,
 	Example: `  gridctl skill project sync my-skill               Project to every available client
   gridctl skill project sync my-skill --clients claude-code
   gridctl skill project sync                        Re-sync the projected set
   gridctl skill project sync --kind agent           Project every imported agent
-  gridctl skill project status                      Per-projection state (both kinds)
+  gridctl skill project sync --kind hook            Project imported hooks to Claude Code
+  gridctl skill project status                      Per-projection state (skills, agents, and hooks)
   gridctl skill project adopt my-skill --client antigravity   Pull a hand edit back
   gridctl skill project unsync --all                Remove every projection`,
 }
@@ -155,6 +164,22 @@ Exit codes:
 			fmt.Fprintln(os.Stderr, perr)
 			os.Exit(ctxExitInfrastructure)
 		}
+		if skillProjectSyncKind == skillKindHook {
+			mgr, err := newHookProjectManager()
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(ctxExitInfrastructure)
+			}
+			opts := hooksync.SyncOptions{
+				Clients: skillProjectSyncClients,
+				DryRun:  skillProjectSyncDryRun,
+				Force:   skillProjectSyncForce,
+			}
+			if exit := runHookProjectSync(cmd.Context(), os.Stdout, os.Stderr, mgr, args, opts, format, *skillProjectSyncPlain); exit != ctxExitOK {
+				os.Exit(exit)
+			}
+			return nil
+		}
 		if skillProjectSyncKind == skillProjectKindAgent {
 			mgr, err := newAgentProjectManager()
 			if err != nil {
@@ -167,7 +192,8 @@ Exit codes:
 				DryRun:  skillProjectSyncDryRun,
 				Force:   skillProjectSyncForce,
 			}
-			if exit := runAgentProjectSync(cmd.Context(), os.Stdout, os.Stderr, mgr, args, opts, format, *skillProjectSyncPlain); exit != ctxExitOK {
+			cache := loadRequiresCache(cmd.Context(), os.Stderr)
+			if exit := runAgentProjectSyncAnnotated(cmd.Context(), os.Stdout, os.Stderr, mgr, args, opts, format, *skillProjectSyncPlain, cache); exit != ctxExitOK {
 				os.Exit(exit)
 			}
 			return nil
@@ -184,7 +210,8 @@ Exit codes:
 			DryRun:  skillProjectSyncDryRun,
 			Force:   skillProjectSyncForce,
 		}
-		if exit := runSkillProjectSync(cmd.Context(), os.Stdout, os.Stderr, mgr, args, opts, format, *skillProjectSyncPlain); exit != ctxExitOK {
+		cache := loadRequiresCache(cmd.Context(), os.Stderr)
+		if exit := runSkillProjectSyncAnnotated(cmd.Context(), os.Stdout, os.Stderr, mgr, args, opts, format, *skillProjectSyncPlain, cache); exit != ctxExitOK {
 			os.Exit(exit)
 		}
 		return nil
@@ -195,8 +222,8 @@ var skillProjectStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show per-projection state",
 	Long: `Shows the state of every projection: (skill, client) pairs and, when
-agents are imported, (agent, client) pairs in the same table (no --kind
-flag; status always reports both kinds).
+agents or hooks are projected, those rows in the same table (no --kind
+flag; status always reports skills, agents, and recorded hooks).
 
 States: in-sync, stale (registry content changed since the copy was
 made, or the skill left the active set), drifted (the projected copy or
@@ -236,7 +263,12 @@ Exit codes:
 			os.Exit(ctxExitInfrastructure)
 		}
 		agentMgr.SetModelPolicy(agentPol)
-		if exit := runSkillProjectStatus(cmd.Context(), os.Stdout, os.Stderr, mgr, agentMgr, format, *skillProjectStatusPlain); exit != ctxExitOK {
+		hookMgr, err := newHookProjectManager()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(ctxExitInfrastructure)
+		}
+		if exit := runSkillProjectStatus(cmd.Context(), os.Stdout, os.Stderr, mgr, agentMgr, hookMgr, format, *skillProjectStatusPlain); exit != ctxExitOK {
 			os.Exit(exit)
 		}
 		return nil
@@ -249,7 +281,9 @@ var skillProjectUnsyncCmd = &cobra.Command{
 	Long: `Removes projections gridctl created: symlinks are unlinked and copied
 directories removed after a timestamped backup. Files gridctl did not
 create are never touched. Removed skills leave the projection set.
-Pass --kind agent to remove agent projections instead.`,
+Pass --kind agent to remove agent projections, or --kind hook to remove
+recorded hook groups and the script copy. Unrecorded settings groups
+are never deleted.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		format, err := resolveFormat(skillProjectUnsyncFormat, cmd.Flags().Changed("format"), *skillProjectUnsyncJSON)
 		if err != nil {
@@ -257,6 +291,19 @@ Pass --kind agent to remove agent projections instead.`,
 		}
 		if err := validProjectKind(skillProjectUnsyncKind); err != nil {
 			return err
+		}
+		if skillProjectUnsyncKind == skillKindHook {
+			mgr, merr := newHookProjectManager()
+			if merr != nil {
+				return merr
+			}
+			opts := hooksync.UnsyncOptions{
+				All:     skillProjectUnsyncAll,
+				Clients: skillProjectUnsyncClients,
+				DryRun:  skillProjectUnsyncDryRun,
+				Force:   skillProjectUnsyncForce,
+			}
+			return runHookProjectUnsync(cmd.Context(), os.Stdout, mgr, args, opts, format)
 		}
 		if skillProjectUnsyncKind == skillProjectKindAgent {
 			mgr, merr := newAgentProjectManager()
@@ -319,6 +366,10 @@ Exit codes:
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
 		}
+		if skillProjectAdoptKind == skillKindHook {
+			fmt.Fprintln(os.Stderr, "adopt is not supported for hooks in this release; use --force to rewrite or unsync to remove")
+			os.Exit(ctxExitAttention)
+		}
 		if skillProjectAdoptKind == skillProjectKindAgent {
 			mgr, err := newAgentProjectManager()
 			if err != nil {
@@ -348,7 +399,7 @@ func init() {
 	skillProjectSyncCmd.Flags().BoolVar(&skillProjectSyncDryRun, "dry-run", false, "Show what would change without writing")
 	skillProjectSyncCmd.Flags().BoolVar(&skillProjectSyncForce, "force", false, "Overwrite drifted copies and unmanaged destination paths (after a backup)")
 	skillProjectSyncCmd.Flags().StringVar(&skillProjectSyncFormat, "format", "", "Output format: 'json' for machine-readable output (default: table)")
-	skillProjectSyncCmd.Flags().StringVar(&skillProjectSyncKind, "kind", "skill", "Resource kind to sync: skill or agent (agents are always copied)")
+	skillProjectSyncCmd.Flags().StringVar(&skillProjectSyncKind, "kind", "skill", "Resource kind to sync: skill, agent, or hook")
 	skillProjectSyncCmd.Flags().StringVar(&skillProjectSyncStack, "stack", "", "Stack file whose model_preferences policy applies to this sync (default: no policy; previously rewritten projections are preserved)")
 	skillProjectSyncJSON = addJSONAlias(skillProjectSyncCmd)
 	skillProjectSyncPlain = addPlainFlag(skillProjectSyncCmd)
@@ -361,14 +412,15 @@ func init() {
 	skillProjectUnsyncCmd.Flags().BoolVar(&skillProjectUnsyncAll, "all", false, "Remove every projection")
 	skillProjectUnsyncCmd.Flags().StringSliceVar(&skillProjectUnsyncClients, "clients", nil, "Only remove projections for these client slugs")
 	skillProjectUnsyncCmd.Flags().BoolVar(&skillProjectUnsyncDryRun, "dry-run", false, "Show what would be removed without writing")
+	skillProjectUnsyncCmd.Flags().BoolVar(&skillProjectUnsyncForce, "force", false, "Remove hand-edited hook groups (hooks only; other kinds ignore this flag)")
 	skillProjectUnsyncCmd.Flags().StringVar(&skillProjectUnsyncFormat, "format", "", "Output format: 'json' for machine-readable output (default: text)")
-	skillProjectUnsyncCmd.Flags().StringVar(&skillProjectUnsyncKind, "kind", "skill", "Resource kind to unsync: skill or agent")
+	skillProjectUnsyncCmd.Flags().StringVar(&skillProjectUnsyncKind, "kind", "skill", "Resource kind to unsync: skill, agent, or hook")
 	skillProjectUnsyncJSON = addJSONAlias(skillProjectUnsyncCmd)
 
 	skillProjectAdoptCmd.Flags().StringVar(&skillProjectAdoptClient, "client", "", "Client slug whose projected copy to adopt (required)")
 	_ = skillProjectAdoptCmd.MarkFlagRequired("client")
 	skillProjectAdoptCmd.Flags().StringVar(&skillProjectAdoptFormat, "format", "", "Output format: 'json' for machine-readable output (default: text)")
-	skillProjectAdoptCmd.Flags().StringVar(&skillProjectAdoptKind, "kind", "skill", "Resource kind to adopt: skill or agent")
+	skillProjectAdoptCmd.Flags().StringVar(&skillProjectAdoptKind, "kind", "skill", "Resource kind to adopt: skill or agent (hook is refused)")
 	skillProjectAdoptJSON = addJSONAlias(skillProjectAdoptCmd)
 
 	skillProjectCmd.AddCommand(skillProjectSyncCmd)
@@ -425,28 +477,38 @@ func newAgentProjectManager() (*agentsync.Manager, error) {
 type skillSyncRow struct {
 	Kind string `json:"kind"`
 	skillsync.SyncResult
+	RequiresHooks   []string                  `json:"requires_hooks,omitempty"`
+	UnenforcedHooks []hooksync.UnenforcedHook `json:"unenforced_hooks,omitempty"`
 }
 
 // agentSyncRow is one agent sync result tagged with its kind.
 type agentSyncRow struct {
 	Kind string `json:"kind"`
 	agentsync.SyncResult
+	RequiresHooks   []string                  `json:"requires_hooks,omitempty"`
+	UnenforcedHooks []hooksync.UnenforcedHook `json:"unenforced_hooks,omitempty"`
 }
 
-func skillSyncRows(results []skillsync.SyncResult) []skillSyncRow {
+func skillSyncRowsAnnotated(results []skillsync.SyncResult, cache *requiresCache) ([]skillSyncRow, []string) {
 	rows := make([]skillSyncRow, len(results))
+	var lines []string
 	for i, r := range results {
-		rows[i] = skillSyncRow{Kind: skillProjectKindSkill, SyncResult: r}
+		row := skillSyncRow{Kind: skillProjectKindSkill, SyncResult: r}
+		row.RequiresHooks, row.UnenforcedHooks, lines = cache.annotate(lines, "skill", r.Skill, r.Client)
+		rows[i] = row
 	}
-	return rows
+	return rows, lines
 }
 
-func agentSyncRows(results []agentsync.SyncResult) []agentSyncRow {
+func agentSyncRowsAnnotated(results []agentsync.SyncResult, cache *requiresCache) ([]agentSyncRow, []string) {
 	rows := make([]agentSyncRow, len(results))
+	var lines []string
 	for i, r := range results {
-		rows[i] = agentSyncRow{Kind: skillProjectKindAgent, SyncResult: r}
+		row := agentSyncRow{Kind: skillProjectKindAgent, SyncResult: r}
+		row.RequiresHooks, row.UnenforcedHooks, lines = cache.annotate(lines, "agent", r.Agent, r.Client)
+		rows[i] = row
 	}
-	return rows
+	return rows, lines
 }
 
 // skillProjectSyncDoc is the machine-readable sync document.
@@ -459,17 +521,22 @@ type skillProjectSyncDoc struct {
 
 // runSkillProjectSync performs the sync and returns the exit code.
 func runSkillProjectSync(ctx context.Context, stdout, stderr io.Writer, mgr *skillsync.Manager, names []string, opts skillsync.SyncOptions, format string, plain bool) int {
+	return runSkillProjectSyncAnnotated(ctx, stdout, stderr, mgr, names, opts, format, plain, nil)
+}
+
+func runSkillProjectSyncAnnotated(ctx context.Context, stdout, stderr io.Writer, mgr *skillsync.Manager, names []string, opts skillsync.SyncOptions, format string, plain bool, cache *requiresCache) int {
 	warnCoScannedDuplicates(stderr, names, opts.Clients)
 	results, err := mgr.Sync(ctx, names, opts)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return ctxExitInfrastructure
 	}
+	rows, requiresLines := skillSyncRowsAnnotated(results, cache)
 	doc := skillProjectSyncDoc{
 		SchemaVersion: skillProjectJSONSchemaVersion,
 		DryRun:        opts.DryRun,
 		HasFailures:   skillsync.HasFailures(results),
-		Results:       skillSyncRows(results),
+		Results:       rows,
 	}
 	if strings.EqualFold(format, "json") {
 		if err := output.EncodeJSON(stdout, doc); err != nil {
@@ -506,6 +573,9 @@ func runSkillProjectSync(ctx context.Context, stdout, stderr io.Writer, mgr *ski
 				fmt.Fprintf(stdout, "\n%s → %s: %s\n", r.Skill, r.Client, r.Detail)
 			}
 		}
+		for _, line := range requiresLines {
+			fmt.Fprintf(stdout, "\n%s\n", line)
+		}
 	}
 	if doc.HasFailures {
 		return ctxExitAttention
@@ -538,6 +608,8 @@ func warnCoScannedDuplicates(stderr io.Writer, names, clients []string) {
 type skillStatusRow struct {
 	Kind string `json:"kind"`
 	skillsync.ProjectionStatus
+	RequiresHooks   []string                  `json:"requires_hooks,omitempty"`
+	UnenforcedHooks []hooksync.UnenforcedHook `json:"unenforced_hooks,omitempty"`
 }
 
 // agentStatusRow is one agent status row tagged with its kind. Agent
@@ -545,6 +617,8 @@ type skillStatusRow struct {
 type agentStatusRow struct {
 	Kind string `json:"kind"`
 	agentsync.ProjectionStatus
+	RequiresHooks   []string                  `json:"requires_hooks,omitempty"`
+	UnenforcedHooks []hooksync.UnenforcedHook `json:"unenforced_hooks,omitempty"`
 }
 
 // skillProjectStatusDoc is the machine-readable status document. The
@@ -556,9 +630,9 @@ type skillProjectStatusDoc struct {
 	Projections    []any `json:"projections"`
 }
 
-// runSkillProjectStatus renders per-projection state for both kinds and
-// returns the exit code. agentMgr may be nil (skill rows only).
-func runSkillProjectStatus(ctx context.Context, stdout, stderr io.Writer, mgr *skillsync.Manager, agentMgr *agentsync.Manager, format string, plain bool) int {
+// runSkillProjectStatus renders per-projection state and returns the
+// exit code. agentMgr and hookMgr may be nil.
+func runSkillProjectStatus(ctx context.Context, stdout, stderr io.Writer, mgr *skillsync.Manager, agentMgr *agentsync.Manager, hookMgr *hooksync.Manager, format string, plain bool) int {
 	statuses, err := mgr.Statuses(ctx)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
@@ -572,16 +646,33 @@ func runSkillProjectStatus(ctx context.Context, stdout, stderr io.Writer, mgr *s
 			return ctxExitInfrastructure
 		}
 	}
-	rows := make([]any, 0, len(statuses)+len(agentStatuses))
+	var hookStatuses []hooksync.ProjectionStatus
+	if hookMgr != nil {
+		hookStatuses, err = hookMgr.Statuses(ctx)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return ctxExitInfrastructure
+		}
+	}
+	rows := make([]any, 0, len(statuses)+len(agentStatuses)+len(hookStatuses))
+	var requiresLines []string
+	cache := newRequiresCache(hookStatuses)
 	for _, s := range statuses {
-		rows = append(rows, skillStatusRow{Kind: skillProjectKindSkill, ProjectionStatus: s})
+		row := skillStatusRow{Kind: skillProjectKindSkill, ProjectionStatus: s}
+		row.RequiresHooks, row.UnenforcedHooks, requiresLines = cache.annotate(requiresLines, "skill", s.Skill, s.Client)
+		rows = append(rows, row)
 	}
 	for _, s := range agentStatuses {
-		rows = append(rows, agentStatusRow{Kind: skillProjectKindAgent, ProjectionStatus: s})
+		row := agentStatusRow{Kind: skillProjectKindAgent, ProjectionStatus: s}
+		row.RequiresHooks, row.UnenforcedHooks, requiresLines = cache.annotate(requiresLines, "agent", s.Agent, s.Client)
+		rows = append(rows, row)
+	}
+	for _, s := range hookStatuses {
+		rows = append(rows, hookStatusRow{Kind: skillKindHook, ProjectionStatus: s})
 	}
 	doc := skillProjectStatusDoc{
 		SchemaVersion:  skillProjectJSONSchemaVersion,
-		NeedsAttention: skillsync.NeedsAttention(statuses) || agentsync.NeedsAttention(agentStatuses),
+		NeedsAttention: skillsync.NeedsAttention(statuses) || agentsync.NeedsAttention(agentStatuses) || hooksync.NeedsAttention(hookStatuses),
 		Projections:    rows,
 	}
 	if strings.EqualFold(format, "json") {
@@ -604,6 +695,9 @@ func runSkillProjectStatus(ctx context.Context, stdout, stderr io.Writer, mgr *s
 			// so no reason label applies (a rewrite surfaces via detail).
 			t.AppendRow(table.Row{s.Agent + " (agent)", s.Client, s.Channel, s.Render, agentProjectStateLabel(s), s.Target})
 		}
+		for _, s := range hookStatuses {
+			t.AppendRow(table.Row{s.Hook + " (hook)", s.Client, s.Channel, s.Render, hookProjectStateLabel(s), s.Target})
+		}
 		t.Render()
 		for _, s := range statuses {
 			if s.Detail != "" {
@@ -614,6 +708,14 @@ func runSkillProjectStatus(ctx context.Context, stdout, stderr io.Writer, mgr *s
 			if s.Detail != "" {
 				fmt.Fprintf(stdout, "\n%s → %s: %s\n", s.Agent, s.Client, s.Detail)
 			}
+		}
+		for _, s := range hookStatuses {
+			if s.Detail != "" {
+				fmt.Fprintf(stdout, "\n%s → %s: %s\n", s.Hook, s.Client, s.Detail)
+			}
+		}
+		for _, line := range requiresLines {
+			fmt.Fprintf(stdout, "\n%s\n", line)
 		}
 	}
 	if doc.NeedsAttention {
@@ -780,17 +882,18 @@ type agentProjectSyncDoc struct {
 
 // runAgentProjectSync performs an agent-kind sync and returns the exit
 // code. With no names, every imported agent is projected.
-func runAgentProjectSync(ctx context.Context, stdout, stderr io.Writer, mgr *agentsync.Manager, names []string, opts agentsync.SyncOptions, format string, plain bool) int {
+func runAgentProjectSyncAnnotated(ctx context.Context, stdout, stderr io.Writer, mgr *agentsync.Manager, names []string, opts agentsync.SyncOptions, format string, plain bool, cache *requiresCache) int {
 	results, err := mgr.Sync(ctx, names, opts)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return ctxExitInfrastructure
 	}
+	rows, requiresLines := agentSyncRowsAnnotated(results, cache)
 	doc := agentProjectSyncDoc{
 		SchemaVersion: skillProjectJSONSchemaVersion,
 		DryRun:        opts.DryRun,
 		HasFailures:   agentsync.HasFailures(results),
-		Results:       agentSyncRows(results),
+		Results:       rows,
 	}
 	if strings.EqualFold(format, "json") {
 		if err := output.EncodeJSON(stdout, doc); err != nil {
@@ -819,6 +922,9 @@ func runAgentProjectSync(ctx context.Context, stdout, stderr io.Writer, mgr *age
 			if r.Detail != "" && r.Error == "" {
 				fmt.Fprintf(stdout, "\n%s → %s: %s\n", r.Agent, r.Client, r.Detail)
 			}
+		}
+		for _, line := range requiresLines {
+			fmt.Fprintf(stdout, "\n%s\n", line)
 		}
 	}
 	if doc.HasFailures {

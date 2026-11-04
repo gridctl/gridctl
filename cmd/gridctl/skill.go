@@ -18,6 +18,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/config"
 	gitpkg "github.com/gridctl/gridctl/pkg/git"
 	"github.com/gridctl/gridctl/pkg/hookpins"
+	"github.com/gridctl/gridctl/pkg/hooksync"
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/skillpins"
@@ -688,6 +689,19 @@ func runSkillListHooks() error {
 }
 
 func runSkillRemoveHook(name string) error {
+	// Retire projections before the registry entry. A drifted projection
+	// is kept; the operator unsyncs it with --force first.
+	if mgr, err := newHookProjectManager(); err == nil {
+		results, uerr := mgr.Unsync(context.Background(), []string{name}, hooksync.UnsyncOptions{})
+		if uerr != nil && !errors.Is(uerr, hooksync.ErrNotProjected) {
+			return uerr
+		}
+		for _, r := range results {
+			if r.Action == hooksync.ActionSkippedDrift {
+				return fmt.Errorf("hook %s is drifted on %s; run 'gridctl skill project unsync --kind hook %s --force' before removing", name, r.Client, name)
+			}
+		}
+	}
 	// DeleteHook stats the directory. A hook.json that no longer
 	// validates must still be removable.
 	if err := skills.DeleteHook(registryDir(), name); err != nil {

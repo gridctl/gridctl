@@ -1,8 +1,8 @@
 # Hooks
 
-A hook is a directory `hooks/<name>/` in a pack repository. It holds `hook.json` and the scripts that file names. `gridctl pack add` imports the hooks the manifest selects into `~/.gridctl/registry/hooks/<name>/`, scans them, and pins the bytes. gridctl does not run the scripts, and it does not write them into a client settings file.
+A hook is a directory `hooks/<name>/` in a pack repository. It holds `hook.json` and the scripts that file names. `gridctl pack add` imports the hooks the manifest selects into `~/.gridctl/registry/hooks/<name>/`, scans them, and pins the bytes. gridctl does not run the scripts. `gridctl pack apply` and `gridctl skill project sync --kind hook` copy the scripts to `~/.gridctl/hooks/<name>/` and patch matcher groups into Claude Code's user settings file. Execution belongs to the client.
 
-Projection into a client settings file is not available. Import and pins are. `pack status` reports an imported hook as present in the registry and does not write a client file. The text row is `in-sync`. The detail line is `hook <name>: imported; projection is not available in this release`. JSON uses `state: "in-sync"` and the same detail. A name recorded on the pack but missing from the registry is `missing`, with detail `not in the hook registry; re-run 'gridctl pack add'`. A directory that is present but whose `hook.json` no longer validates is `drifted`. The detail is the parse error. The remediation is `review with 'gridctl skill pins diff <name> --kind hook' or remove with 'gridctl skill remove <name> --kind hook'`. A hook that was skipped at add is not recorded, so status does not list it.
+`pack status` reports a projected hook per client. A hook that was imported and never projected is a store-presence row (`in-sync`, detail `imported; not projected`). A name recorded on the pack but missing from the registry is `missing`, with detail `not in the hook registry; re-run 'gridctl pack add'`. A directory that is present but whose `hook.json` no longer validates is `drifted`. The detail is the parse error. The remediation is `review with 'gridctl skill pins diff <name> --kind hook' or remove with 'gridctl skill remove <name> --kind hook'`. A hook that was skipped at add is not recorded, so status does not list it.
 
 ## hook.json
 
@@ -57,11 +57,81 @@ The danger-pattern scanner runs over `hook.json` and every text file in the dire
 
 `gridctl skill info <name> --kind hook` prints the origin, then Description, Events, Scripts, and Pin. A definition that does not validate exits 1 with the parse error.
 
-`gridctl skill remove <name> --kind hook` deletes the registry directory and sidecar, trims the name from the pack record, and resets the pin. Removal checks that the directory exists. It does not require `hook.json` to validate. There are no client projections to retire. The source record stays when the pack still lists other hooks, rules, or a stack.
+`gridctl skill remove <name> --kind hook` retires projections first, then deletes the registry directory and sidecar, trims the name from the pack record, and resets the pin. A drifted projection is kept and the command exits 1 with `hook <name> is drifted on <client>; run 'gridctl skill project unsync --kind hook <name> --force' before removing`. Removal checks that the directory exists. It does not require `hook.json` to validate. The source record stays when the pack still lists other hooks, rules, or a stack.
 
-`gridctl pack remove` deletes each pack hook's registry directory, sidecar, and pin record, then trims `Hooks`. `--dry-run` reports `would-remove` rows. It does not retire a client projection, because none was written.
+`gridctl pack remove` unsyncs pack-tagged hook projections, then deletes each pack hook's registry directory, sidecar, and pin record, and trims `Hooks`. A drifted projection is kept unless `--force`. `--dry-run` reports `would-remove` rows. User groups in the settings file are left in place.
 
-`gridctl skill project sync --kind hook` is rejected before any projection work: exit 2, `unknown --kind "hook" (supported: skill, agent)`.
+## Projection
+
+One target exists: slug `claude-code`, settings file `~/.claude/settings.json`, available when `~/.claude` is a directory. The path is the `~` template expanded against `GRIDCTL_HOME` when that variable is set, otherwise the OS home. A missing `~/.claude` is `skipped-unavailable` with detail `client not initialized on this machine`. Other clients are reported and not written. `gridctl pack apply` projects hooks. REST `POST /api/packs/{name}/apply` and the web UI do not, and they add no hook rows. A REST delete removes the registry hook and does not unsync settings groups or the script copy.
+
+```bash
+gridctl skill project sync --kind hook
+gridctl skill project sync --kind hook block-force-push --clients claude-code
+gridctl pack apply hook-pack
+gridctl skill project status
+gridctl skill project unsync --kind hook block-force-push
+```
+
+Exit `0` is a clean sync, `1` is any skipped or failed row, and `2` is infrastructure (an unknown client or hook, or a newer lockfile). With no imported hooks and `~/.claude` present, sync prints `No hooks imported yet. Run 'gridctl pack add <repo>' to import hooks.` and exits 0. With no imported hooks and `~/.claude` absent, sync still reports `skipped-unavailable` and exits 1.
+
+Sync copies the registry hook directory to `~/.gridctl/hooks/<name>/` (directories `0700`, files `0600`, or `0700` when the source is executable). `.origin.json`, dot-prefixed entries, and `*.pre-*` backups are not copied. A previous copy whose tree hash differs from the recorded one is backed up under `~/.gridctl/project-backups/hook/<name>/` before it is replaced, unless that copy was hand-edited. A hand-edited copy is drift. A removed or empty script directory is not a hand edit. Status reports `target-missing` (`script directory is gone` when the directory is absent, `script copy is empty` when the directory has no files). The next sync restores the copy (`updated`, detail `the script copy was removed`) and leaves the settings file unchanged when the recorded groups still match.
+
+Each matcher group is written under `hooks.<Event>` in the settings file. The handler `command` is the absolute path of the copied script. `args` is always present, including `[]` when the author set none, so Claude Code runs the handler in exec form and does not pass the home path through a shell. When the author set no `statusMessage`, sync writes `"statusMessage": "gridctl hook <name>"`. A `shell` key is refused at import, by name, because it would route the pinned script back through a shell.
+
+The owned-group locator is the script path. A group under `hooks.<Event>` is a gridctl group for hook `<name>` when every handler has `type: "command"` and a `command` under that hook's script directory. The locator finds groups. It does not claim them. An unrecorded group, whatever its hash, is `skipped-foreign` with detail `settings groups already point at this hook's script directory but gridctl has no record of writing them` unless `--force`. A group with one handler under the script directory and one elsewhere is a hand edit and is `drifted`.
+
+Before any settings write, sync verifies the pin. Registry bytes that do not match the approved pin are `skipped-pin-drift`. The remediation is `gridctl skill pins approve <name> --kind hook --expect <composite_hash>`. Neither the settings file nor the script copy changes until that approval. A settings file that `hujson` cannot parse is `skipped-unmanaged` with detail `settings file is not valid JSON or JSONC: <parse error>`. `--force` does not override that. A missing settings file is created with only a `hooks` object, and `created_file` is recorded. Unsync does not delete that file. It leaves an empty `hooks` object when the last gridctl group goes.
+
+Every settings write is an RFC 6902 patch on the parsed hujson tree, then `Pack`. gridctl does not call `Format` or `Standardize` on the tree it writes. Comments, trailing commas, key order, and every byte outside the patched elements stay as they were found. A timestamped backup `settings.json.gridctl-backup-<ts>` is written beside the file first, and three are retained. The patch may append a group (`/hooks/<Event>/-`), replace a located group, remove a group on unsync, add an event array, or add the `hooks` key. Inserted groups are pretty-printed with the file's indent. A missing `hooks` key or event array is one pretty-printed value, placed on its own line, not a compact container glued to the previous value. The settings file's mode is preserved and is never widened past `0644`. The backup beside it is written with that same mode.
+
+`project.lock.yaml` revision 4 records hook entries. `Path` is `<settings path>#hooks/<name>` so several hooks share one file. `script_dir` is the script copy. `hashes` is the canonical hash history of the owned groups, newest last, capped at five. An older revision 3 file loads. Any rewrite of a lower revision, including a hook sync, stamps 4. A higher revision is kept. An older gridctl keeps a `hook` entry as an unknown kind and does not remove it.
+
+### Status and unsync
+
+`gridctl skill project status` lists hook rows without a flag. Text columns are `HOOK (hook)`, `CLIENT`, `CHANNEL` (`merge-key`), `RENDER` (`identity`), `STATE`, and `TARGET` (the settings path). JSON rows carry `kind: "hook"`, `hook`, `client`, `channel`, `render`, `state`, `target`, `script_dir`, `pack`, `synced_at`, and optional `detail` and `remediation`.
+
+| State | Meaning |
+|---|---|
+| `in-sync` | The settings groups and the script copy match what was synced, and the pin is clean. |
+| `stale` | The registry bytes or the planned render differ from what was synced, including pin drift. The detail names which side moved. |
+| `drifted` | The settings groups or the script copy were hand-edited. The detail names the script directory. |
+| `target-missing` | The settings file, the located groups, or the script directory is gone, or `~/.claude` is absent. |
+
+Exit `0` is clean, `1` is any row that needs attention, and `2` is infrastructure.
+
+`unsync --kind hook` removes located groups whose hash is one gridctl recorded, drops an event array that became empty, and leaves the `hooks` object and every sibling byte untouched. It backs up and removes the script copy, then purges the record. Groups gridctl did not record are never deleted. `--force` removes located groups whose hash is not recorded. A recorded entry whose groups are already gone is `already-gone`. With no recorded projections, `unsync --kind hook --all` prints `Nothing to unsync.` and exits 0. A named unsync of a hook that is not projected exits 1 with `hook is not projected: <name> (check 'gridctl skill project status')`.
+
+`gridctl skill project adopt --kind hook` exits 1 with `adopt is not supported for hooks in this release; use --force to rewrite or unsync to remove`.
+
+### Clients this release does not write
+
+| Slug | Native location |
+|---|---|
+| `gemini` | `~/.gemini/settings.json hooks key` |
+| `cursor` | `~/.cursor/hooks.json` |
+| `copilot` | `~/.copilot/hooks/*.json` |
+| `windsurf` | `~/.codeium/windsurf/hooks.json` |
+| `antigravity` | `~/.gemini/config/hooks.json` |
+| `opencode` | `plugins only (~/.config/opencode/plugins/)` |
+
+`--clients gemini` is one `skipped-unsupported` row whose detail is that location, and that sync exits 1 because the client was requested. `--clients nonsense` exits 2. A sync with no `--clients` prints one stderr note per detected client from that table: `note: <slug> (<native location>) has a hook mechanism but is not a projection target in this release`. That note does not change the exit code. `gridctl pack apply` prints one `skipped-unsupported` row per detected client in this table, counts those rows in `Applied N/M`, and does not exit 1 for them alone. Exit 1 stays reserved for rows the user can act on.
+
+### requires.hooks
+
+A skill may declare hooks in frontmatter:
+
+```yaml
+metadata:
+  requires:
+    hooks: [block-force-push]
+```
+
+Skill `metadata` is stored as strings. Nested values become compact JSON, so the registry round trip emits `requires` as `{"hooks":["block-force-push"]}`, not as the author's nested YAML. An agent declares the same key under `metadata` in its frontmatter. The agent reader uses the raw YAML node. A value that is not a string array is ignored. Do not put this list in a skill's `hooks` frontmatter key. That key is the Claude Code passthrough and is still dropped on rendered agent targets.
+
+`skill project status` and `sync` append one detail line per required hook that is not `in-sync` for that client: `requires hook <name>: not enforced on <client> (<reason>)`. Reason is `not projected`, `drifted`, `stale`, `pin drift`, or `client has no hook target`. A missing target is reported as `not projected`. State, `needs_attention`, and exit codes do not change. Skill and agent JSON rows gain `requires_hooks` (declared names) and `unenforced_hooks` (names and reasons). Hook rows do not. If hook projection status cannot be read during sync, gridctl prints `warning: hook projection status unavailable: <err>` and skips those lines for that run. The sync exit code does not change.
+
+Set `requires.gridctl` on a pack that selects hooks to the release that ships this projection. An older `pack.Parse` ignores `hooks:` and imports the pack without them.
 
 ## Pins
 
@@ -87,4 +157,6 @@ gridctl skill pins reset block-force-push --kind hook
 
 ## What gridctl deliberately does not do
 
-gridctl does not execute a hook and does not write a client settings file. `gridctl skill project --kind hook` is not a projection command.
+gridctl never executes a hook, a script, or `hook.json`. It stores, scans, pins, and places. It does not interpose in a client's hook lifecycle. It does not translate the Claude Code dialect into Gemini CLI, Cursor, Copilot, Windsurf, Antigravity, or OpenCode. Those clients are reported, not written. It does not adopt unrecorded groups. It does not reconcile hook projections from the daemon. A registry change stays `stale` until an explicit sync or `pack apply`. It does not project project-scope settings (`.claude/settings.json` and the other clients' project files). It does not import hooks from pack external `sources:`, from `skill add`, or from a user's existing settings file.
+
+Content a client executes automatically on an event is scanned before installation, content-pinned, and projected only from approved bytes. The guarantees are the scoped lint rule that denies `os/exec` under `pkg/hooksync` and `pkg/hookpins`, the reconcile regression test, and the three designated scenarios `hooks-settings-merge-preserves-siblings`, `hooks-sync-projects-pinned-bytes-only`, and `hooks-reconcile-ignores-projections`. No constitution amendment is included in this change.

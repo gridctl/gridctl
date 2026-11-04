@@ -15,6 +15,7 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/agentsync"
 	"github.com/gridctl/gridctl/pkg/contexts"
+	"github.com/gridctl/gridctl/pkg/hooksync"
 	"github.com/gridctl/gridctl/pkg/project"
 	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/skillsync"
@@ -66,6 +67,7 @@ func (e *packError) Unwrap() error { return e.reason }
 type Managers struct {
 	Skills   *skillsync.Manager
 	Agents   *agentsync.Manager
+	Hooks    *hooksync.Manager
 	Wiring   *wiring.Manager
 	Contexts *contexts.Manager
 	Home     string
@@ -187,7 +189,7 @@ func foreignPackTags(ctx context.Context, home, packName string) (map[string]str
 		return nil, err
 	}
 	foreign := map[string]string{}
-	for _, kind := range []project.Kind{project.KindSkill, project.KindAgent, project.KindWiring, project.KindContextFragment} {
+	for _, kind := range []project.Kind{project.KindSkill, project.KindAgent, project.KindHook, project.KindWiring, project.KindContextFragment} {
 		for _, e := range l.Entries(kind) {
 			if e.Pack != "" && e.Pack != packName {
 				foreign[string(kind)+"/"+e.Source] = e.Pack
@@ -214,9 +216,15 @@ func filterForeign(names []string, kind string, foreign map[string]string, addRo
 }
 
 // TallyRows counts clean rows vs rows needing attention.
+// skipped-unsupported is informational: those clients are not writable
+// in this release, so the row is counted as applied. Exit 1 stays
+// reserved for rows the user can act on. runPackApply exits 1 when
+// Total > Applied, so an informational row does not fail the command.
 func TallyRows(rows []Row) (applied, failed int) {
 	for _, r := range rows {
 		switch {
+		case r.Action == hooksync.ActionSkippedUnsupported:
+			applied++
 		case strings.HasPrefix(r.Action, "skipped") || r.Action == "error" || r.Action == "unresolved":
 			failed++
 		default:

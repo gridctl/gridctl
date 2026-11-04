@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gridctl/gridctl/pkg/hookpins"
+	"github.com/gridctl/gridctl/pkg/hooksync"
 	"github.com/gridctl/gridctl/pkg/pack"
 	"github.com/gridctl/gridctl/pkg/skills"
 )
@@ -76,7 +78,7 @@ func TestStatusRowsFor_HookPresence(t *testing.T) {
 	rows, attention := m.statusRowsFor(&skills.LockedPack{
 		Name:  "hook-pack",
 		Hooks: []string{"good", "bad", "gone"},
-	}, "", nil, nil, nil, nil, nil, nil)
+	}, "", nil, nil, nil, nil, nil, nil, nil)
 	if !attention {
 		t.Fatal("invalid and missing hooks should need attention")
 	}
@@ -116,6 +118,75 @@ func TestRemovePackHooks_DeletesInvalid(t *testing.T) {
 	}
 	if len(rows) != 1 || rows[0].Action != "removed" {
 		t.Fatalf("rows = %+v", rows)
+	}
+}
+
+func TestApply_UnsupportedHookIsInformational(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".gemini"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	name := "block"
+	dir := filepath.Join(home, ".gridctl", "registry", "hooks", name)
+	if err := os.MkdirAll(filepath.Join(dir, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "scripts", "run.sh"), []byte("#!/bin/sh\necho no\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(`{"name":"block","description":"d","dialect":"claude-code","hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"./scripts/run.sh"}]}]}}`)
+	if err := os.WriteFile(filepath.Join(dir, "hook.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pins := hookpins.NewWithPath(filepath.Join(home, ".gridctl", "pins"))
+	if err := pins.Pin(t.Context(), hookpins.PinRequest{Name: name, Dir: dir}); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(home, ".gridctl", "skills.lock.yaml")
+	lf := &skills.LockFile{Sources: map[string]skills.LockedSource{
+		"hook-pack": {
+			Repo: "https://example.com/hook-pack.git",
+			Pack: &skills.LockedPack{Name: "hook-pack", Hooks: []string{name}},
+		},
+	}}
+	if err := skills.WriteLockFile(lockPath, lf); err != nil {
+		t.Fatal(err)
+	}
+	mgrs := &Managers{
+		Home:     home,
+		LockPath: lockPath,
+		Hooks:    hooksync.NewManagerWithHome(home, filepath.Join(home, ".gridctl", "registry")),
+	}
+	doc, err := mgrs.Apply(t.Context(), "hook-pack", ApplyOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Applied != doc.Total || doc.Applied < 2 {
+		t.Fatalf("applied %d/%d, want informational rows counted as applied\nrows=%+v", doc.Applied, doc.Total, doc.Rows)
+	}
+	var copied, unsupported bool
+	for _, row := range doc.Rows {
+		if row.Kind != "hook" || row.Name != name {
+			continue
+		}
+		switch row.Action {
+		case "copied":
+			if row.Client == "claude-code" {
+				copied = true
+			}
+		case hooksync.ActionSkippedUnsupported:
+			if row.Client == "gemini" && row.Detail == "~/.gemini/settings.json hooks key" {
+				unsupported = true
+			}
+		}
+	}
+	if !copied || !unsupported {
+		t.Fatalf("rows = %+v", doc.Rows)
 	}
 }
 

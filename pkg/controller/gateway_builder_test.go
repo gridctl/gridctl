@@ -14,6 +14,8 @@ import (
 	"testing"
 
 	"github.com/gridctl/gridctl/pkg/config"
+	"github.com/gridctl/gridctl/pkg/hookpins"
+	"github.com/gridctl/gridctl/pkg/hooksync"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/mcpauth"
@@ -765,6 +767,84 @@ func TestReconcileSkillProjections_EmptyStoreLeavesHomeUntouched(t *testing.T) {
 	if !strings.Contains(string(data), "alpha") {
 		t.Errorf("lockfile lost its projection entry:\n%s", data)
 	}
+}
+
+// TestReconcileSkillProjections_IgnoresHooks is the guard for the
+// exclusion comment above reconcileSkillProjections: a recorded hook
+// projection is not rewritten when the registry hook changes.
+func TestReconcileSkillProjections_IgnoresHooks(t *testing.T) {
+	home := t.TempDir()
+	registry := filepath.Join(home, ".gridctl", "registry")
+	dir := filepath.Join(registry, "hooks", "block", "scripts")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := []byte("#!/bin/sh\necho pinned\n")
+	if err := os.WriteFile(filepath.Join(dir, "run.sh"), script, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(`{"name":"block","description":"block force push","dialect":"claude-code","hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"./scripts/run.sh"}]}]}}`)
+	if err := os.WriteFile(filepath.Join(registry, "hooks", "block", "hook.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pins := hookpins.NewWithPath(filepath.Join(home, ".gridctl", "pins"))
+	if err := pins.Pin(t.Context(), hookpins.PinRequest{Name: "block", Dir: filepath.Join(registry, "hooks", "block")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mgr := hooksync.NewManagerWithHome(home, registry)
+	if _, err := mgr.Sync(t.Context(), []string{"block"}, hooksync.SyncOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(home, ".gridctl", "project.lock.yaml")
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	scriptCopy := filepath.Join(home, ".gridctl", "hooks", "block", "scripts", "run.sh")
+	beforeLock := mustReadFile(t, lockPath)
+	beforeSettings := mustReadFile(t, settingsPath)
+	beforeScript := mustReadFile(t, scriptCopy)
+
+	edited := strings.ReplaceAll(string(raw), "block force push", "edited after sync")
+	if err := os.WriteFile(filepath.Join(registry, "hooks", "block", "hook.json"), []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	builder := NewGatewayBuilder(Config{Port: 8180}, &config.Stack{Name: "test"}, "/path/stack.yaml", runtime.NewOrchestrator(nil, nil), &runtime.UpResult{})
+	builder.registryDir = t.TempDir()
+	builder.homeDir = home
+	inst, err := builder.Build(false)
+	if err != nil {
+		t.Fatalf("Build() returned error: %v", err)
+	}
+	handler := logging.NewRedactingHandler(logging.NewBufferHandler(logging.NewLogBuffer(100), nil))
+	reconcileSkillProjections(context.Background(), inst, home, slog.New(handler))
+
+	if got := mustReadFile(t, lockPath); got != beforeLock {
+		t.Fatalf("reconcile rewrote the hook lockfile entry")
+	}
+	if got := mustReadFile(t, settingsPath); got != beforeSettings {
+		t.Fatal("reconcile rewrote the settings file")
+	}
+	if got := mustReadFile(t, scriptCopy); got != beforeScript {
+		t.Fatal("reconcile rewrote the script copy")
+	}
+	statuses, err := mgr.Statuses(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(statuses) != 1 || statuses[0].State != hooksync.StateStale || !strings.Contains(statuses[0].Detail, "pin drift") {
+		t.Fatalf("status = %+v, want stale with pin drift", statuses)
+	}
+}
+
+func mustReadFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }
 
 func TestGatewayBuilder_SetupHotReload_WithWatch(t *testing.T) {
