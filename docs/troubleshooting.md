@@ -1145,13 +1145,18 @@ the state. A pack-carried daemon is stopped with the other stacks. The
 default tier keeps `~/.gridctl/packs/` and the import lockfile, so
 `gridctl pack apply <name>` starts it again. `--purge` removes that
 checkout; `gridctl pack add` then `gridctl pack apply` recreates it.
+Re-project hooks with `gridctl pack apply <name>` or `gridctl skill project sync --kind hook`.
+Groups left in Claude Code settings by a purge from an older build are
+foreign; `gridctl skill project sync --kind hook --force`, then
+`gridctl skill project unsync --kind hook --all`, clears them.
 
 ```bash
-gridctl apply <stack.yaml>      # stacks you applied yourself
-gridctl pack add <repo>         # skills, agents, rules, wiring, and a pinned stack checkout
-gridctl pack apply <name>       # project the pack, and start a carried stack
-gridctl skill add <repo>        # individually imported skills
-gridctl link <client>           # gateway entries in client configs
+gridctl apply <stack.yaml>           # stacks you applied yourself
+gridctl pack add <repo>              # skills, agents, rules, wiring, and a pinned stack checkout
+gridctl pack apply <name>            # project the pack, and start a carried stack
+gridctl skill project sync --kind hook  # re-project imported hooks
+gridctl skill add <repo>             # individually imported skills
+gridctl link <client>                # gateway entries in client configs
 ```
 
 Manual fallback: extract the archive from the home directory it was
