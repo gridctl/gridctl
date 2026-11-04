@@ -382,3 +382,39 @@ func TestApprove_LogAppendPrecedesPinRewrite(t *testing.T) {
 		t.Fatalf("log = %s", data)
 	}
 }
+
+func TestVerifyApprove_RejectsPathName(t *testing.T) {
+	root := t.TempDir()
+	registryDir := filepath.Join(root, "home", "registry")
+	outside := filepath.Join(root, "home", "outside")
+	marker := "OUTSIDE_HOOK_MARKER"
+	writeHook(t, outside, `{"name":"outside","description":"`+marker+`"}`, "#!/bin/sh\nexit 0\n")
+	ps := NewWithPath(filepath.Join(root, "pins"))
+	if err := ps.Load(); err != nil {
+		t.Fatal(err)
+	}
+	// Pin accepts a caller-supplied directory. A poisoned key must not let
+	// Verify or Approve follow that name out of the registry.
+	if err := ps.Pin(t.Context(), PinRequest{Name: "../../outside", Dir: outside, Source: SourceLocal}); err != nil {
+		t.Fatal(err)
+	}
+
+	name := "../../outside"
+	vr, err := ps.Verify(name, registryDir)
+	if err == nil || vr != nil {
+		t.Fatalf("verify = %+v, %v; want name rejection", vr, err)
+	}
+	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrNotPinned) || errors.Is(err, ErrHashMismatch) || strings.Contains(err.Error(), marker) {
+		t.Fatalf("verify treated the escaped name as a hook: %v", err)
+	}
+	if !strings.Contains(err.Error(), "hook name") {
+		t.Fatalf("verify error = %v", err)
+	}
+	if _, err := ps.CurrentCompositeHash(name, registryDir); err == nil || strings.Contains(err.Error(), marker) {
+		t.Fatalf("composite hash = %v", err)
+	}
+	err = ps.Approve(t.Context(), name, registryDir, ApproveRequest{ExpectedHash: "deadbeef", Reason: "no"})
+	if err == nil || errors.Is(err, ErrHashMismatch) || errors.Is(err, ErrNotPinned) || strings.Contains(err.Error(), marker) {
+		t.Fatalf("approve = %v", err)
+	}
+}

@@ -4,6 +4,7 @@ import type { RegistryKind } from '../../lib/registryKind';
 const KIND_OPTIONS: { key: RegistryKind; label: string }[] = [
   { key: 'skill', label: 'Skills' },
   { key: 'agent', label: 'Agents' },
+  { key: 'hook', label: 'Hooks' },
   { key: 'pack', label: 'Packs' },
 ];
 

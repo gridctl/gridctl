@@ -1,6 +1,10 @@
 ---
 name: incident-triage
 description: Triage a network incident from symptoms to a suspected layer
+metadata:
+  requires:
+    hooks:
+      - block-force-push
 ---
 
 # Incident triage

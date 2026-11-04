@@ -66,8 +66,13 @@ func (s *Server) packsMgr() (*packops.Managers, error) {
 			s.packsErr = err
 			return
 		}
+		hm, err := s.hooksMgr()
+		if err != nil {
+			s.packsErr = err
+			return
+		}
 		s.packsManagers = &packops.Managers{
-			Skills: sm, Agents: am, Wiring: wm, Contexts: cm, Home: home, LockPath: s.lockFilePath(),
+			Skills: sm, Agents: am, Hooks: hm, Wiring: wm, Contexts: cm, Home: home, LockPath: s.lockFilePath(),
 			// Launcher stays nil: this release does not deploy a pack stack
 			// over REST. StoredVariables lets apply report unmet keys when
 			// the vault is unlocked; a locked vault falls through to the

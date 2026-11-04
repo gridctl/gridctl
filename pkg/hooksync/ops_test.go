@@ -11,6 +11,37 @@ import (
 	"github.com/gridctl/gridctl/pkg/skills"
 )
 
+func TestBlocksRemoval_RowKinds(t *testing.T) {
+	cases := []struct {
+		action  string
+		blocked bool
+	}{
+		{ActionRemoved, false},
+		{ActionAlreadyGone, false},
+		{"", true},
+		{ActionSkippedDrift, true},
+		{ActionSkippedUnmanaged, true},
+		{ActionError, true},
+	}
+	for _, tc := range cases {
+		row, blocked := BlocksRemoval([]UnsyncResult{{Hook: "block", Client: "claude-code", Action: tc.action}})
+		if blocked != tc.blocked {
+			t.Errorf("%s blocked = %v, want %v", tc.action, blocked, tc.blocked)
+		}
+		if !tc.blocked {
+			continue
+		}
+		msg := RemovalRefusal("block", row)
+		wantAction := tc.action
+		if wantAction == "" {
+			wantAction = "error"
+		}
+		if !strings.Contains(msg, "claude-code") || !strings.Contains(msg, "unsync") || !strings.Contains(msg, "--force") || !strings.Contains(msg, wantAction) {
+			t.Errorf("%s refusal = %q", tc.action, msg)
+		}
+	}
+}
+
 func TestSync_SettingsMergePreservesSiblings(t *testing.T) {
 	home, registry := testHome(t)
 	installHook(t, registry, "block", "#!/bin/sh\necho no\n")

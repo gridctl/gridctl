@@ -49,6 +49,7 @@ import { LibraryKindSwitch } from '../registry/LibraryKindSwitch';
 import { isRegistryKind, type RegistryKind } from '../../lib/registryKind';
 import { fetchPacks } from '../../lib/api';
 import { AgentsWorkspace } from '../registry/agents/AgentsWorkspace';
+import { HooksWorkspace } from '../registry/hooks/HooksWorkspace';
 import { PacksWorkspace } from '../registry/packs/PacksWorkspace';
 import { hasAnyCategory, skillCategory } from '../../lib/skillMeta';
 import {
@@ -505,7 +506,7 @@ export function LibraryWorkspace() {
   // clear the shared ?selected param behind the agents dialogs, or silently
   // eat a press on an invisible skills multi-selection.
   useEffect(() => {
-    if (kind === 'agent' || kind === 'pack') return;
+    if (kind === 'agent' || kind === 'hook' || kind === 'pack') return;
     if (!selectedName && selectedNames.size === 0) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || showEditor) return;
@@ -849,6 +850,9 @@ export function LibraryWorkspace() {
   // hook order stays identical across kind switches.
   if (kind === 'agent') {
     return <AgentsWorkspace onKindChange={setKind} />;
+  }
+  if (kind === 'hook') {
+    return <HooksWorkspace onKindChange={setKind} />;
   }
   if (kind === 'pack') {
     return <PacksWorkspace onKindChange={setKind} />;

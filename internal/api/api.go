@@ -23,6 +23,8 @@ import (
 	"github.com/gridctl/gridctl/pkg/ctxpins"
 	"github.com/gridctl/gridctl/pkg/dockerclient"
 	"github.com/gridctl/gridctl/pkg/execution"
+	"github.com/gridctl/gridctl/pkg/hookpins"
+	"github.com/gridctl/gridctl/pkg/hooksync"
 	"github.com/gridctl/gridctl/pkg/limits"
 	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/mcp"
@@ -167,6 +169,19 @@ type Server struct {
 	agentsManager *agentsync.Manager
 	agentsOnce    sync.Once
 	agentsErr     error
+
+	// Hook projection manager (pkg/hooksync), lazily built against the
+	// real home directory and the live registry dir on first use; tests
+	// inject a temp manager via SetHooksManager. packsMgr uses the same
+	// manager so REST pack apply and remove project and unsync hooks.
+	hooksManager *hooksync.Manager
+	hooksOnce    sync.Once
+	hooksErr     error
+
+	// hookPins is the stackless hook pin store. Tests inject one via
+	// SetHookPinStore. The store reloads on each call.
+	hookPins     *hookpins.Store
+	hookPinsOnce sync.Once
 
 	// Pack orchestration engine (pkg/packops), lazily built from the
 	// other kind managers on first use; tests inject a temp-home engine
@@ -555,6 +570,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/skill-pins/{name}/approve", s.handleApproveSkillPin)
 	mux.HandleFunc("DELETE /api/skill-pins/{name}", s.handleResetSkillPin)
 
+	// Hook pin endpoints. Hook pins are not stack-scoped. Reset is DELETE;
+	// POST /api/hook-pins/{name}/reset is not registered.
+	mux.HandleFunc("GET /api/hook-pins", s.handleListHookPins)
+	mux.HandleFunc("GET /api/hook-pins/{name}", s.handleGetHookPin)
+	mux.HandleFunc("GET /api/hook-pins/{name}/diff", s.handleHookPinDiff)
+	mux.HandleFunc("POST /api/hook-pins/{name}/approve", s.handleApproveHookPin)
+	mux.HandleFunc("DELETE /api/hook-pins/{name}", s.handleResetHookPin)
+
 	// Global context (pkg/contexts) — pure file operations, stackless-safe.
 	mux.HandleFunc("GET /api/context", s.handleContextGet)
 	mux.HandleFunc("PUT /api/context", s.handleContextPut)
@@ -702,6 +725,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/project/agents/sync", s.handleProjectAgentsSync)
 	mux.HandleFunc("POST /api/project/agents/unsync", s.handleProjectAgentsUnsync)
 	mux.HandleFunc("POST /api/project/agents/adopt", s.handleProjectAgentsAdopt)
+
+	// Hook registry endpoints. Hooks are edited by re-importing their pack,
+	// so there is no PUT. Delete retires projections first.
+	mux.HandleFunc("GET /api/registry/hooks", s.handleRegistryHooksList)
+	mux.HandleFunc("GET /api/registry/hooks/{name}", s.handleRegistryHookGet)
+	mux.HandleFunc("DELETE /api/registry/hooks/{name}", s.handleRegistryHookDelete)
+
+	// Hook projection endpoints (pkg/hooksync). Adopt is not registered.
+	mux.HandleFunc("GET /api/project/hooks/status", s.handleProjectHooksStatus)
+	mux.HandleFunc("POST /api/project/hooks/sync", s.handleProjectHooksSync)
+	mux.HandleFunc("POST /api/project/hooks/unsync", s.handleProjectHooksUnsync)
 
 	// Wiring ownership endpoints (pkg/wiring): the REST face of
 	// `gridctl project status|adopt --kind wiring`.

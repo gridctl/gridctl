@@ -31,7 +31,7 @@ gridctl apply examples/python-sources/pypi.yaml
 | [🔑 secrets-vault/](secrets-vault/) | Encrypted variables, variable sets, and external secret providers |
 | [📈 autoscale/](autoscale/) | Reactive autoscaling of MCP server replicas |
 | [🧳 portable-stack/](portable-stack/) | Stack that stays committable by keeping every per-environment value in the variable store |
-| [🎒 portable-pack/](portable-pack/) | Pack repo: skills, agents, rules, a local-process stack, and a commented external source example behind one `gridctl-pack.yaml` |
+| [🎒 portable-pack/](portable-pack/) | Pack repo: skills, agents, a Claude Code hook, rules, a local-process stack, and a commented external source example behind one `gridctl-pack.yaml` |
 | [booster-pack/](booster-pack/) | Fragment pack that composes one local-process server onto the `network-eng` pack |
 | [🔭 tracing/](tracing/) | Distributed tracing, OTLP trace export, and opt-in OTLP metrics |
 | [Run records](runs/) | Included in v1.0.0-rc.2: opt-in metadata-only persisted dispatch records |
@@ -46,7 +46,7 @@ gridctl apply examples/python-sources/pypi.yaml
 4. **Platforms**: `platforms/github-mcp.yaml` - third-party MCP servers
 5. **OpenAPI**: `openapi/openapi-basic.yaml` - turn any REST API into MCP tools
 6. **Registry**: `registry/registry-basic.yaml` - Skills as MCP prompts, resources, and Skills over MCP manifests (imports also discover agents)
-7. **Packs**: `portable-pack/` - one manifest importing skills, agents, rules, and a local-process stack as a unit, with a commented external source example. `booster-pack/` composes a fragment onto that pack
+7. **Packs**: `portable-pack/` - one manifest importing skills, agents, a Claude Code hook, rules, and a local-process stack as a unit, with a commented external source example. `booster-pack/` composes a fragment onto that pack
 8. **Scaling**: `autoscale/autoscale-basic.yaml` - reactive autoscaling of MCP replicas
 
 > **Note:** Getting-started examples use digest-pinned `alpine:3.22` placeholders (`sleep`) to focus on infrastructure concepts, not MCP server logic. The first example that serves a tool is `python-sources/pypi.yaml`.

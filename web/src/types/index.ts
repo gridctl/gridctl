@@ -703,6 +703,113 @@ export interface AgentUnsyncResult {
   backup_path?: string;
 }
 
+// --- Hooks (imported hook definitions) ---
+
+export interface HookHandler {
+  type: string;
+  command: string;
+  args?: string[];
+  if?: string;
+  timeout?: number;
+  statusMessage?: string;
+}
+
+export interface HookMatcherGroup {
+  matcher?: string;
+  hooks?: HookHandler[];
+}
+
+export interface HookFile {
+  path: string;
+  size: number;
+}
+
+export type HookProjectionState = 'in-sync' | 'stale' | 'drifted' | 'target-missing';
+
+export interface HookProjectionStatus {
+  hook: string;
+  client: string;
+  channel: string;
+  render: string;
+  state: HookProjectionState;
+  target: string;
+  script_dir?: string;
+  pack?: string;
+  synced_at?: string;
+  detail?: string;
+  remediation?: string;
+}
+
+export interface HookUnsupportedClient {
+  slug: string;
+  name: string;
+  location: string;
+  detected: boolean;
+}
+
+// RegistryHook mirrors GET /api/registry/hooks. The list omits document,
+// matcher groups, and files; the single-hook GET includes them.
+export interface RegistryHook {
+  name: string;
+  description: string;
+  dialect?: string;
+  events: string[];
+  scripts: number;
+  source?: string;
+  pin_status: string;
+  error?: string;
+  dir?: string;
+  document?: string;
+  hooks?: Record<string, HookMatcherGroup[]>;
+  files?: HookFile[];
+  warnings?: string[];
+  projections?: HookProjectionStatus[];
+}
+
+export interface RegistryHookList {
+  hooks: RegistryHook[];
+  unsupported_clients: HookUnsupportedClient[];
+}
+
+export interface HookSyncResult {
+  hook?: string;
+  client: string;
+  action: string;
+  detail?: string;
+  error?: string;
+  remediation?: string;
+}
+
+export interface HookUnsyncResult {
+  hook: string;
+  client: string;
+  target: string;
+  action: string;
+  detail?: string;
+  error?: string;
+}
+
+export interface HookPin {
+  status: string;
+  definition_hash?: string;
+  document?: string;
+  findings?: { message?: string; severity?: string; code?: string }[];
+  composite_hash?: string;
+  approved_reason?: string;
+}
+
+export interface HookPinDiff {
+  hook: string;
+  status: string;
+  composite_hash: string;
+  old_document?: string;
+  new_document?: string;
+  added_files: string[];
+  removed_files: string[];
+  modified_files: string[];
+  findings: { message?: string; severity?: string; code?: string }[];
+}
+
 // Response of POST /api/project/agents/adopt.
 export interface AgentAdoptResult {
   agent: string;

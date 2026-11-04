@@ -10,6 +10,12 @@ author:
   name: Example Team
 skills: [incident-triage]
 agents: [neteng-reviewer]
+# Hooks are opt-in and come only from this repository. Empty means none.
+hooks: [block-force-push]
+# Projection support starts at the release after 1.0.0-rc.4. Older readers
+# ignore hooks: and import the pack without them.
+requires:
+  gridctl: ">=1.0.0-rc.5"
 # External skills and agents are declared, not discovered. Uncomment and
 # replace the SHA with the commit you have reviewed. One repo per source.
 # Token flags on pack add apply to this repository only; use --source-auth

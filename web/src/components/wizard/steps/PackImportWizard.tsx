@@ -122,7 +122,7 @@ export function PackImportWizard() {
   }, [agentBlock, auth]);
 
   const previewFlagged: PackPreviewResource[] = preview
-    ? [...(preview.skills ?? []), ...(preview.agents ?? []), ...(preview.rules ?? [])].filter(
+    ? [...(preview.skills ?? []), ...(preview.agents ?? []), ...(preview.rules ?? []), ...(preview.hooks ?? [])].filter(
         (r) => (r.findings ?? []).length > 0,
       )
     : [];
@@ -314,6 +314,7 @@ export function PackImportWizard() {
 
         <ResolvedKind label="Skills" resources={preview.skills} />
         <ResolvedKind label="Agents" resources={preview.agents} />
+        <ResolvedKind label="Hooks" resources={preview.hooks ?? []} />
         <ResolvedKind label="Rules" resources={preview.rules} />
         {(preview.sources ?? []).length > 0 && (
           <p className="text-2xs text-text-muted">

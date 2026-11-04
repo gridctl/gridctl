@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, createElement } from 'react';
 import { useSearchParams } from 'react-router';
-import { Bot, Download, List, Package, RefreshCw, Search, X } from 'lucide-react';
+import { Bot, Download, List, Package, RefreshCw, Search, Webhook, X } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { WORKSPACE_LABELS } from '../../../types/workspace';
 import { IconButton } from '../../ui/IconButton';
@@ -150,6 +150,15 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
         icon: createElement(List, { size: 14 }),
         keywords: ['skills', 'segment', 'switch', 'kind'],
         onSelect: () => onKindChange('skill'),
+      },
+      {
+        id: 'library:view-hooks',
+        label: 'Library: View Hooks',
+        section: 'registry',
+        workspaces: ['library'],
+        icon: createElement(Webhook, { size: 14 }),
+        keywords: ['hooks', 'hook', 'segment', 'switch', 'kind'],
+        onSelect: () => onKindChange('hook'),
       },
       {
         id: 'library:view-packs',

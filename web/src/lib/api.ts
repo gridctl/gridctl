@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, SessionsResponse, RegistryAgent, AgentProjectionStatus, AgentSyncResult, AgentUnsyncResult, AgentAdoptResult, SecurityFinding, WiringRow, WiringAdoptResult, SecurityReport } from '../types';
+import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, SessionsResponse, RegistryAgent, AgentProjectionStatus, AgentSyncResult, AgentUnsyncResult, AgentAdoptResult, RegistryHook, RegistryHookList, HookProjectionStatus, HookSyncResult, HookUnsyncResult, HookPin, HookPinDiff, SecurityFinding, WiringRow, WiringAdoptResult, SecurityReport } from '../types';
 
 import { gatewayRequest, AuthError, GatewayRequestError } from './gatewayRequest';
 import { useAuthStore } from '../stores/useAuthStore';
@@ -1032,6 +1032,54 @@ export async function unsyncAgentProjections(body: {
 
 export async function adoptAgentProjection(agent: string, client: string): Promise<AgentAdoptResult> {
   return mutateJSON<AgentAdoptResult>('/api/project/agents/adopt', 'POST', { agent, client });
+}
+
+// --- Hooks (REST face of the hook registry, projection, and pins) ---
+
+export async function fetchRegistryHooks(): Promise<RegistryHookList> {
+  return fetchJSON<RegistryHookList>('/api/registry/hooks');
+}
+
+export async function fetchRegistryHook(name: string): Promise<RegistryHook> {
+  return fetchJSON<RegistryHook>(`/api/registry/hooks/${encodeURIComponent(name)}`);
+}
+
+export async function fetchHookProjectionStatus(): Promise<HookProjectionStatus[]> {
+  return fetchJSON<HookProjectionStatus[]>('/api/project/hooks/status');
+}
+
+export async function syncHookProjections(body?: {
+  hooks?: string[];
+  clients?: string[];
+  force?: boolean;
+  dry_run?: boolean;
+}): Promise<HookSyncResult[]> {
+  return mutateJSON<HookSyncResult[]>('/api/project/hooks/sync', 'POST', body ?? {});
+}
+
+export async function unsyncHookProjections(body: {
+  hooks?: string[];
+  clients?: string[];
+  all?: boolean;
+  force?: boolean;
+  dry_run?: boolean;
+}): Promise<HookUnsyncResult[]> {
+  return mutateJSON<HookUnsyncResult[]>('/api/project/hooks/unsync', 'POST', body);
+}
+
+export async function fetchHookPin(name: string): Promise<HookPin> {
+  return fetchJSON<HookPin>(`/api/hook-pins/${encodeURIComponent(name)}`);
+}
+
+export async function fetchHookPinDiff(name: string): Promise<HookPinDiff> {
+  return fetchJSON<HookPinDiff>(`/api/hook-pins/${encodeURIComponent(name)}/diff`);
+}
+
+export async function approveHookPin(name: string, expectHash: string, reason: string): Promise<void> {
+  return mutateJSON<void>(`/api/hook-pins/${encodeURIComponent(name)}/approve`, 'POST', {
+    expect: expectHash,
+    reason,
+  });
 }
 
 // --- Wiring ownership (REST face of `gridctl project --kind wiring`) ---
@@ -3495,6 +3543,7 @@ export interface PackPreview {
   skills: PackPreviewResource[];
   agents: PackPreviewResource[];
   rules: PackPreviewResource[];
+  hooks?: PackPreviewResource[];
   unresolved?: string[];
   warnings?: string[];
   stack?: PackStackSummary;
