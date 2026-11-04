@@ -19,7 +19,7 @@ func TestSync_SettingsMergePreservesSiblings(t *testing.T) {
 	if err := os.MkdirAll(claude, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	original := []byte("{\n  // keep this comment\n  \"permissions\": {\"allow\": [\"Bash\"]},\n  \"hooks\": {\n    \"PreToolUse\": [\n      {\"matcher\": \"Write\", \"hooks\": [{\"type\": \"command\", \"command\": \"echo hi\"}]}\n    ]\n  },\n  \"zebra\": true\n}\n")
+	original := []byte("{\n  // keep this comment\n  \"permissions\": {\"allow\": [\"Bash\",],},\n  \"hooks\": {\n    \"PreToolUse\": [\n      {\"matcher\": \"Write\", \"hooks\": [{\"type\": \"command\", \"command\": \"echo hi\"}]}\n    ]\n  },\n  \"zebra\": true, // last\n}\n")
 	settings := filepath.Join(claude, "settings.json")
 	if err := os.WriteFile(settings, original, 0o644); err != nil {
 		t.Fatal(err)
@@ -68,6 +68,9 @@ func TestSync_SettingsMergePreservesSiblings(t *testing.T) {
 	}
 	if !strings.Contains(text, "// keep this comment") || !strings.Contains(text, `"zebra": true`) || !strings.Contains(text, `"permissions"`) {
 		t.Fatalf("sibling content lost:\n%s", text)
+	}
+	if !strings.Contains(text, `{"allow": ["Bash",],}`) || !strings.Contains(text, `"zebra": true, // last`) {
+		t.Fatalf("trailing commas outside the patch were dropped:\n%s", text)
 	}
 	backups := 0
 	entries, err := os.ReadDir(claude)
@@ -414,6 +417,86 @@ func TestUnsync_RemovesOnlyGridctlGroup(t *testing.T) {
 	again, err := mgr.Unsync(t.Context(), []string{"block"}, UnsyncOptions{})
 	if err == nil || !strings.Contains(err.Error(), "not projected") {
 		t.Fatalf("second unsync = %v, %+v", err, again)
+	}
+}
+
+// writeMergedGroup replaces the settings file with one hand-merged group
+// whose handlers point at both hooks' script directories, followed by a
+// user group and a trailing comma.
+func writeMergedGroup(t *testing.T, home, settings string) string {
+	t.Helper()
+	l, err := project.NewStore(home).Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := l.Get(project.KindHook, "claude-code", "alpha")
+	b := l.Get(project.KindHook, "claude-code", "beta")
+	if a == nil || b == nil {
+		t.Fatal("hooks were not recorded")
+	}
+	merged := `{"matcher": "Bash", "hooks": [{"type": "command", "command": "` + filepath.Join(a.ScriptDir, "scripts", "run.sh") + `"}, {"type": "command", "command": "` + filepath.Join(b.ScriptDir, "scripts", "run.sh") + `"}]}`
+	data := "{\n  \"hooks\": {\n    \"PreToolUse\": [\n      " + merged + ",\n      {\"matcher\": \"Write\", \"hooks\": [{\"type\": \"command\", \"command\": \"echo user\"}]},\n    ]\n  }\n}\n"
+	if err := os.WriteFile(settings, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return merged
+}
+
+func TestMergedGroup_ForceKeepsFollowingUserGroup(t *testing.T) {
+	for _, mode := range []string{"unsync", "sync"} {
+		t.Run(mode, func(t *testing.T) {
+			home, registry := testHome(t)
+			for _, name := range []string{"alpha", "beta"} {
+				installHook(t, registry, name, "#!/bin/sh\necho no\n")
+				pinHook(t, home, registry, name)
+			}
+			claude := filepath.Join(home, ".claude")
+			if err := os.MkdirAll(claude, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			settings := filepath.Join(claude, "settings.json")
+			mgr := NewManagerWithHome(home, registry)
+			if _, err := mgr.Sync(t.Context(), []string{"alpha", "beta"}, SyncOptions{}); err != nil {
+				t.Fatal(err)
+			}
+			merged := writeMergedGroup(t, home, settings)
+
+			if mode == "unsync" {
+				results, err := mgr.Unsync(t.Context(), nil, UnsyncOptions{All: true, Force: true})
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, r := range results {
+					if r.Action != ActionRemoved {
+						t.Fatalf("unsync = %+v", results)
+					}
+				}
+			} else {
+				results, err := mgr.Sync(t.Context(), []string{"alpha", "beta"}, SyncOptions{Force: true})
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, r := range results {
+					if r.Action != ActionUpdated {
+						t.Fatalf("sync = %+v", results)
+					}
+				}
+			}
+			got, err := os.ReadFile(settings)
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := string(got)
+			if !strings.Contains(text, "echo user") || !strings.Contains(text, `"PreToolUse"`) {
+				t.Fatalf("user group after the merged group was deleted:\n%s", text)
+			}
+			if strings.Contains(text, merged) {
+				t.Fatalf("merged group survived:\n%s", text)
+			}
+			if mode == "sync" && (strings.Count(text, "gridctl hook alpha") != 1 || strings.Count(text, "gridctl hook beta") != 1) {
+				t.Fatalf("sync did not restore one group per hook:\n%s", text)
+			}
+		})
 	}
 }
 

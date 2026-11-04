@@ -192,9 +192,16 @@ func (op patchOp) render() string {
 	return fmt.Sprintf(`{"op":%q,"path":%q,"value":%s}`, op.Op, op.Path, op.Value)
 }
 
-func applyPatch(tree hujson.Value, ops []patchOp) ([]byte, error) {
+// applyPatch patches a fresh parse of raw. Value.Clone drops trailing
+// commas, so the written tree must come from the file bytes, never a
+// clone. A failed patch discards the parse.
+func applyPatch(raw []byte, ops []patchOp) ([]byte, error) {
 	if len(ops) == 0 {
-		return tree.Pack(), nil
+		return raw, nil
+	}
+	tree, err := hujson.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing settings: %w", err)
 	}
 	var b strings.Builder
 	b.WriteByte('[')
@@ -205,13 +212,12 @@ func applyPatch(tree hujson.Value, ops []patchOp) ([]byte, error) {
 		b.WriteString(op.render())
 	}
 	b.WriteByte(']')
-	clone := tree.Clone()
-	if err := clone.Patch([]byte(b.String())); err != nil {
+	if err := tree.Patch([]byte(b.String())); err != nil {
 		return nil, fmt.Errorf("patching settings: %w", err)
 	}
 	// Pack preserves the original trailing newline. Do not add one: that
 	// would change a byte outside the patch.
-	return clone.Pack(), nil
+	return tree.Pack(), nil
 }
 
 func prettyValue(v any, indent string) ([]byte, error) {
@@ -434,8 +440,30 @@ func replaceOps(located []locatedGroup, groups []renderedGroup, indent string) (
 	return ops, nil
 }
 
+// uniqueLocated drops repeated (event, index) pairs. A hand-merged group
+// with handlers under two hooks' script directories is located, as
+// partial, by both hooks; removing its index twice would delete the next
+// element too.
+func uniqueLocated(located []locatedGroup) []locatedGroup {
+	type key struct {
+		event string
+		index int
+	}
+	seen := map[key]bool{}
+	out := make([]locatedGroup, 0, len(located))
+	for _, g := range located {
+		k := key{g.Event, g.Index}
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, g)
+	}
+	return out
+}
+
 func removeOps(located []locatedGroup) []patchOp {
-	sorted := append([]locatedGroup(nil), located...)
+	sorted := uniqueLocated(located)
 	sort.Slice(sorted, func(i, j int) bool {
 		if sorted[i].Event != sorted[j].Event {
 			return sorted[i].Event > sorted[j].Event
@@ -453,7 +481,7 @@ func removeOps(located []locatedGroup) []patchOp {
 // lengths is the element count before those removes.
 func dropEmptyEvents(lengths map[string]int, removed []locatedGroup) []patchOp {
 	count := map[string]int{}
-	for _, g := range removed {
+	for _, g := range uniqueLocated(removed) {
 		count[g.Event]++
 	}
 	var events []string

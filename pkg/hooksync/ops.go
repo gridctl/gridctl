@@ -606,9 +606,10 @@ func (m *Manager) applyClient(sf *settingsFile, work []hookWork, opts SyncOption
 	// Replaces do not change array length, so indexes computed against
 	// the current tree stay valid. Removes then run in descending index
 	// order. A hook either replaces its own groups or removes them,
-	// never both, and two hooks do not share a group, so a replace and
-	// a remove never name the same index. Appends use /- and do not
-	// depend on those indexes.
+	// never both. Only a partial group can be located by two hooks, and
+	// a partial group is never replaced, so a replace and a remove never
+	// name the same index; removeOps drops a partial group's repeated
+	// index. Appends use /- and do not depend on those indexes.
 	ops := append(replacing, removeOps(removing)...)
 	add, err := appendOps(sf, appending)
 	if err != nil {
@@ -621,7 +622,7 @@ func (m *Manager) applyClient(sf *settingsFile, work []hookWork, opts SyncOption
 	if _, err := createBackup(sf.Path); err != nil {
 		return err
 	}
-	packed, err := applyPatch(sf.Tree, ops)
+	packed, err := applyPatch(sf.Raw, ops)
 	if err != nil {
 		return err
 	}
@@ -890,7 +891,7 @@ func applyUnsync(sf *settingsFile, removing []locatedGroup) error {
 	if _, err := createBackup(sf.Path); err != nil {
 		return err
 	}
-	packed, err := applyPatch(sf.Tree, ops)
+	packed, err := applyPatch(sf.Raw, ops)
 	if err != nil {
 		return err
 	}
