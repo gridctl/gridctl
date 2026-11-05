@@ -1212,6 +1212,37 @@ and errors are masked, so raw-name joins can differ. This diagnostic-output
 change is included in v1.0.0-rc.2; log wording is not a versioned contract.
 See [diagnostic privacy and migration](usage-observability.md#diagnostic-privacy-and-migration).
 
+## daemon failed to become ready
+
+`gridctl apply` in daemon mode waits up to 60 seconds for `/ready`. `gridctl serve` waits up to 30 seconds for `/health`. A failure has two outcomes. The exit code is 1 either way. The wait budget is unchanged, and a process that is still running is not stopped.
+
+### The daemon exited during startup
+
+The first line is `gateway daemon exited during startup (PID N, exit status S)`. Apply and serve print this as soon as the child exits, instead of waiting out the budget. The next lines are a short tail of the daemon log (at most 20 lines and 4096 bytes), with registered secrets masked, then:
+
+```text
+Check logs at ~/.gridctl/logs/<stack>.log
+Run 'gridctl logs <stack>' for the full log
+```
+
+For `gridctl serve`, the log name is `gridctl` (`gridctl logs gridctl`).
+
+The child removes its state file on exit, so the next apply is not blocked by "already running". Read the tail before retrying. A permission error on `~/.gridctl/pins/<stack>.json` is one cause: the child cannot load the pin file, writes `pins: reading pin file: ... permission denied` to the log, and exits within about a second.
+
+### The daemon is still running
+
+The first line stays `daemon failed to become ready: readiness check timed out after 1m0s` for apply, or `daemon failed to start: health check timed out after 30s` for serve. The following lines name the PID and port, the last readiness or health response (a server that is still registering looks like `503 MCP server not initialized: <name>`), and the commands to inspect or stop the process:
+
+```text
+gridctl status
+gridctl logs <stack> -f
+gridctl destroy <stack path>
+```
+
+`gridctl serve` names `gridctl stop` instead of destroy.
+
+The gateway is left running. A slow external server can become ready after the budget. Check status before destroying it. Applying again while that process is up reports that the stack is already running and names the same destroy command.
+
 ## General
 
 ### Getting help
