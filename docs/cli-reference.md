@@ -49,6 +49,13 @@ Gateway credentials: REST-backed commands use non-empty `GRIDCTL_GATEWAY_TOKEN` 
 | `gridctl status` | Show running stacks; `-s` / `--stack` filters to one stack, `--replicas` expands to one row per replica, `--json` for machine-readable output. A disabled server's STATE is `disabled` (no new column). JSON adds `enabled: false` and optional `overrides` on that server, and `override` on the gateway object when one is active. Text prints `override: <path>` under the gateway row. The gateway table has a VERSION column, empty when the state file has no `binary_version`. When a running daemon's version is non-empty and differs from this CLI, status prints one stderr line per daemon: `warning: <stack> runs gridctl <version>; this CLI is <version>. Restart it: <command>`. An empty version is an older state file, not a mismatch. `--json` includes `binary_version` and does not print that warning. A foreground `apply -f` or `serve -f` is listed while its state file exists. |
 | `gridctl logs [stack]` | Tail the gateway daemon log (`~/.gridctl/logs/<stack>.log`), including INFO source-build phases and image-build diagnostics tagged with `server` and `phase` for filtering. `-f` / `--follow` streams, `-n` / `--tail <N>` picks the line count (default 100), `--server <name>` switches to that containerized MCP server's stdout/stderr instead, and `-s` / `--stack <name>` names the stack explicitly. Stack auto-detected when exactly one is running. On Linux, if a service entry exists for the stack, the command prints `Logs for the service go to the journal; run 'gridctl service logs <name>'` and exits 0 without tailing the daemon log or reading `--server` container logs, even when `~/.gridctl/logs/<name>.log` already exists. macOS still tails that file. |
 
+Daemon-mode `gridctl apply` waits up to 60 seconds for `/ready` and exits 1 if
+that wait fails. `gridctl serve`, and `gridctl apply` with no stack file, wait
+up to 30 seconds for `/health`. A child that exits is reported as soon as it
+exits. A child still running at the deadline is left running. `--quiet` still
+prints the error. See
+[daemon failed to become ready](troubleshooting.md#daemon-failed-to-become-ready).
+
 Experimental [A2A declarations](config-schema.md#a2a) validate only with the
 `a2a` flag enabled. Apply discovers and pins the Agent Card without requiring a
 container runtime. `status` identifies the source as `a2a`; server rows in JSON

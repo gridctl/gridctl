@@ -1214,32 +1214,33 @@ See [diagnostic privacy and migration](usage-observability.md#diagnostic-privacy
 
 ## daemon failed to become ready
 
-`gridctl apply` in daemon mode waits up to 60 seconds for `/ready`. `gridctl serve` waits up to 30 seconds for `/health`. A failure has two outcomes. The exit code is 1 either way. The wait budget is unchanged, and a process that is still running is not stopped.
+`gridctl apply` in daemon mode waits up to 60 seconds for `/ready`. `gridctl serve`, and `gridctl apply` with no stack file, wait up to 30 seconds for `/health`. A failure has two outcomes. The exit code is 1 either way. The wait budget is unchanged, and a process that is still running is not stopped. `--quiet` still prints the error. `gridctl pack apply` puts the same text in the stack row detail.
 
 ### The daemon exited during startup
 
-The first line is `gateway daemon exited during startup (PID N, exit status S)`. Apply and serve print this as soon as the child exits, instead of waiting out the budget. The next lines are a short tail of the daemon log (at most 20 lines and 4096 bytes), with registered secrets masked, then:
+The first line is `gateway daemon exited during startup (PID N, exit status S)`. Apply and serve print this as soon as the child exits, instead of waiting out the budget. `S` is the process exit code, including `0` when the child exited cleanly during startup, or `unknown` when the status could not be read. When the log can be read and is non-empty, the next line is `Last lines of <log path>:` followed by at most 20 lines and 4096 bytes. Registered secrets are masked. A value this command never loaded can still appear, because the tail repeats text already on disk. Then:
 
 ```text
-Check logs at ~/.gridctl/logs/<stack>.log
-Run 'gridctl logs <stack>' for the full log
+Check logs at ~/.gridctl/logs/<name>.log
+Run 'gridctl logs <name>' for the full log
 ```
 
-For `gridctl serve`, the log name is `gridctl` (`gridctl logs gridctl`).
+`<name>` is the stack name. For `gridctl serve`, and for `gridctl apply` with no stack file, the name is `gridctl` (`Check logs at ~/.gridctl/logs/gridctl.log` and `gridctl logs gridctl`).
 
-The child removes its state file on exit, so the next apply is not blocked by "already running". Read the tail before retrying. A permission error on `~/.gridctl/pins/<stack>.json` is one cause: the child cannot load the pin file, writes `pins: reading pin file: ... permission denied` to the log, and exits within about a second.
+The child removes its state file on exit, so the next apply is not blocked by "already running". Read the tail before retrying. A permission error on `~/.gridctl/pins/<stack>.json` is one cause: the child cannot load the pin file, writes `pins: reading pin file: ... permission denied` to the log, and exits within about a second. A gateway port already in use exits the child the same way. The tail includes `bind: address already in use`, and the parent does not wait out the budget. See [Address already in use](#address-already-in-use) to find the other process.
 
 ### The daemon is still running
 
-The first line stays `daemon failed to become ready: readiness check timed out after 1m0s` for apply, or `daemon failed to start: health check timed out after 30s` for serve. The following lines name the PID and port, the last readiness or health response (a server that is still registering looks like `503 MCP server not initialized: <name>`), and the commands to inspect or stop the process:
+The first line stays `daemon failed to become ready: readiness check timed out after 1m0s` for apply, or `daemon failed to start: health check timed out after 30s` for serve and for apply with no stack file. The next lines are:
 
 ```text
-gridctl status
-gridctl logs <stack> -f
-gridctl destroy <stack path>
+The gateway process is still running (PID N, port P); last readiness response: 503 MCP server not initialized: <server>
+It may still become ready; check with 'gridctl status' or 'gridctl logs <name> -f'
+To stop it: gridctl destroy <stack path>
+Check logs at ~/.gridctl/logs/<name>.log
 ```
 
-`gridctl serve` names `gridctl stop` instead of destroy.
+A server that is still registering produces that 503 body. If the child never answered, the response is `no response`. Serve, and apply with no stack file, say `last health response`, `gridctl logs gridctl -f`, and `To stop it: gridctl stop`. `gridctl logs` uses the stack name. Destroy uses the path passed to apply. That path is not quoted.
 
 The gateway is left running. A slow external server can become ready after the budget. Check status before destroying it. Applying again while that process is up reports that the stack is already running and names the same destroy command.
 
