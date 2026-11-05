@@ -102,6 +102,8 @@ Exit `0` is clean, `1` is any row that needs attention, and `2` is infrastructur
 
 `unsync --kind hook` removes located groups whose hash is one gridctl recorded, drops an event array that became empty, and leaves the `hooks` object and every sibling byte untouched. It backs up and removes the script copy, then purges the record. Groups gridctl did not record are never deleted. `--force` removes located groups whose hash is not recorded. A recorded entry whose groups are already gone is `already-gone`. With no recorded projections, `unsync --kind hook --all` prints `Nothing to unsync.` and exits 0. A named unsync of a hook that is not projected exits 1 with `hook is not projected: <name> (check 'gridctl skill project status')`.
 
+`gridctl reset` unsyncs projected hooks after services are removed and daemons stop, and before the later deletions. `--purge` retires in-sync settings groups before it deletes `~/.gridctl`. A hand-edited group is kept (`kept-drift`) unless `--force`, including under `--purge`. A hand-edited script copy is kept on the default tier; `--purge` still deletes it with `~/.gridctl`. A settings file that does not parse is reported as `failed` and left untouched; `--force` does not change that, and `--dry-run` shows the projection as `skipped`. The text preview lists that row under SKIPPED with its detail and does not count it as recreatable. The `hook` row's `script_dir` is the script copy. The pre-reset archive includes the settings file and that copy for a `would-remove` row.
+
 `gridctl skill project adopt --kind hook` exits 1 with `adopt is not supported for hooks in this release; use --force to rewrite or unsync to remove`.
 
 ### Clients this release does not write

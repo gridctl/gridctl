@@ -11,6 +11,18 @@ import (
 	"github.com/gridctl/gridctl/pkg/skills"
 )
 
+func TestSettingsUnparsable(t *testing.T) {
+	if !SettingsUnparsable(SettingsUnparsableDetail + "unexpected end of input") {
+		t.Fatal("parse-error prefix must match")
+	}
+	if SettingsUnparsable("script copy was edited since gridctl wrote it") {
+		t.Fatal("script drift must not match the parse-error prefix")
+	}
+	if SettingsUnparsable("") {
+		t.Fatal("empty detail must not match")
+	}
+}
+
 func TestBlocksRemoval_RowKinds(t *testing.T) {
 	cases := []struct {
 		action  string

@@ -38,7 +38,16 @@ const (
 	foreignDetail       = "settings groups already point at this hook's script directory but gridctl has no record of writing them"
 	removedDetail       = "the recorded groups were removed from the settings file"
 	scriptRemovedDetail = "the script copy was removed"
+
+	// SettingsUnparsableDetail is the prefix used when a settings file is
+	// not valid JSON or JSONC. Force does not override that case.
+	SettingsUnparsableDetail = "settings file is not valid JSON or JSONC: "
 )
+
+// SettingsUnparsable reports whether detail names an unparsable settings file.
+func SettingsUnparsable(detail string) bool {
+	return strings.HasPrefix(detail, SettingsUnparsableDetail)
+}
 
 // SyncOptions configure a sync pass.
 type SyncOptions struct {
@@ -340,7 +349,7 @@ func (m *Manager) syncClient(ctx context.Context, lf *LockFile, t Target, hooks 
 		for i := range work {
 			if work[i].res.Action == "" {
 				work[i].res.Action = ActionSkippedUnmanaged
-				work[i].res.Detail = "settings file is not valid JSON or JSONC: " + sf.ParseErr.Error()
+				work[i].res.Detail = SettingsUnparsableDetail + sf.ParseErr.Error()
 				work[i].write = false
 			}
 		}
@@ -831,7 +840,7 @@ func (m *Manager) unsyncClient(lf *LockFile, client string, keys []recordKey, op
 			it.purge = true
 			it.res.Action = ActionAlreadyGone
 			if sf.ParseErr != nil {
-				it.res.Detail = "settings file is not valid JSON or JSONC: " + sf.ParseErr.Error()
+				it.res.Detail = SettingsUnparsableDetail + sf.ParseErr.Error()
 				it.purge = false
 				it.res.Action = ActionSkippedUnmanaged
 			}
@@ -992,7 +1001,7 @@ func (m *Manager) statusFor(name, client string, entry *Entry) ProjectionStatus 
 	}
 	if sf.ParseErr != nil {
 		ps.State = StateDrifted
-		ps.Detail = "settings file is not valid JSON or JSONC: " + sf.ParseErr.Error()
+		ps.Detail = SettingsUnparsableDetail + sf.ParseErr.Error()
 		return ps
 	}
 	if _, err := os.Stat(entry.ScriptDir); err != nil {

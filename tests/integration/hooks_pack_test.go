@@ -3,9 +3,12 @@
 package integration
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -645,4 +648,291 @@ func TestHooksPack_AdoptAndUnsupported(t *testing.T) {
 	if nonsenseCode != 2 || !strings.Contains(nonsenseErr, "unknown client") {
 		t.Fatalf("unknown client exit %d\n%s", nonsenseCode, nonsenseErr)
 	}
+}
+
+const hookResetKeptDetail = "a projection of this hook was hand-edited; kept (re-run with --force to remove)"
+
+type hookResetDoc struct {
+	Rows []struct {
+		Kind      string `json:"kind"`
+		Name      string `json:"name"`
+		Client    string `json:"client"`
+		Path      string `json:"path"`
+		ScriptDir string `json:"script_dir"`
+		Action    string `json:"action"`
+		Detail    string `json:"detail"`
+		Error     string `json:"error"`
+	} `json:"rows"`
+	Kept       []string `json:"kept"`
+	Failed     int      `json:"failed"`
+	BackupPath string   `json:"backup_path"`
+}
+
+func hookResetSettings() string {
+	return "{\n  // keep this comment\n  \"permissions\": {\"allow\": [\"Bash\"]},\n  \"hooks\": {\n    \"PreToolUse\": [\n      {\"matcher\": \"Write\", \"hooks\": [{\"type\": \"command\", \"command\": \"echo hi\"}]}\n    ]\n  }\n}\n"
+}
+
+func projectResetHook(t *testing.T, bin, home, repo string) string {
+	t.Helper()
+	if stdout, stderr, code := runHookCLI(t, bin, home, "pack", "add", repo); code != 0 {
+		t.Fatalf("pack add exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	claude := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claude, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	settings := filepath.Join(claude, "settings.json")
+	if err := os.WriteFile(settings, []byte(hookResetSettings()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, code := runHookCLI(t, bin, home, "skill", "project", "sync", "--kind", "hook", "block-force-push")
+	if code != 0 {
+		t.Fatalf("sync exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	return settings
+}
+
+func decodeHookReset(t *testing.T, stdout string) hookResetDoc {
+	t.Helper()
+	var doc hookResetDoc
+	if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+		t.Fatalf("decode reset json: %v\n%s", err, stdout)
+	}
+	return doc
+}
+
+func hookResetRow(doc hookResetDoc, action string) (found bool, client, path, detail, errText, scriptDir string) {
+	for _, r := range doc.Rows {
+		if r.Kind == "hook" && r.Name == "block-force-push" && r.Action == action {
+			return true, r.Client, r.Path, r.Detail, r.Error, r.ScriptDir
+		}
+	}
+	return false, "", "", "", "", ""
+}
+
+func TestHooksPack_ResetRetiresProjections(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	bin := hookCLI(t)
+	repo := commitPack(t, hookPackFiles("#!/bin/sh\nexit 0\n", ""), map[string]os.FileMode{
+		"hooks/block-force-push/scripts/block.sh": 0o755,
+	})
+
+	t.Run("default and purge", func(t *testing.T) {
+		home := t.TempDir()
+		settings := projectResetHook(t, bin, home, repo)
+		scriptDir := filepath.Join(home, ".gridctl", "hooks", "block-force-push")
+
+		dryOut, dryErr, dryCode := runHookCLI(t, bin, home, "reset", "--dry-run", "--format", "json")
+		if dryCode != 0 {
+			t.Fatalf("dry-run exit %d\n%s\n%s", dryCode, dryOut, dryErr)
+		}
+		dry := decodeHookReset(t, dryOut)
+		found, client, path, _, _, script := hookResetRow(dry, "would-remove")
+		if !found || client != "claude-code" || path != settings || script != scriptDir {
+			t.Fatalf("dry-run hook row found=%v client=%q path=%q script_dir=%q\n%s", found, client, path, script, dryOut)
+		}
+
+		stdout, stderr, code := runHookCLI(t, bin, home, "reset", "--yes", "--format", "json")
+		if code != 0 {
+			t.Fatalf("reset exit %d\n%s\n%s", code, stdout, stderr)
+		}
+		doc := decodeHookReset(t, stdout)
+		found, client, _, _, _, _ = hookResetRow(doc, "removed")
+		if !found || client != "claude-code" {
+			t.Fatalf("reset hook row found=%v client=%q\n%s", found, client, stdout)
+		}
+		got, err := os.ReadFile(settings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(got), "gridctl hook") || !strings.Contains(string(got), "echo hi") || !strings.Contains(string(got), "// keep this comment") {
+			t.Fatalf("settings after reset:\n%s", got)
+		}
+		if _, err := os.Stat(scriptDir); !os.IsNotExist(err) {
+			t.Fatalf("script copy still present: %v", err)
+		}
+		names := hookResetArchive(t, doc.BackupPath)
+		if !names[".claude/settings.json"] || !names[".gridctl/hooks/block-force-push/scripts/block.sh"] || !names[".gridctl/hooks/block-force-push/hook.json"] {
+			t.Fatalf("backup missing settings or script copy: %v", names)
+		}
+
+		again, againErr, againCode := runHookCLI(t, bin, home, "skill", "project", "sync", "--kind", "hook", "block-force-push")
+		if againCode != 0 {
+			t.Fatalf("re-sync exit %d\n%s\n%s", againCode, again, againErr)
+		}
+		purgeOut, purgeErr, purgeCode := runHookCLI(t, bin, home, "reset", "--yes", "--purge", "--format", "json")
+		if purgeCode != 0 {
+			t.Fatalf("purge exit %d\n%s\n%s", purgeCode, purgeOut, purgeErr)
+		}
+		after, err := os.ReadFile(settings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(after), "gridctl hook") {
+			t.Fatalf("settings after purge still names the hook:\n%s", after)
+		}
+		if _, err := os.Stat(filepath.Join(home, ".gridctl")); !os.IsNotExist(err) {
+			t.Fatalf("purge left ~/.gridctl: %v", err)
+		}
+	})
+
+	t.Run("drift", func(t *testing.T) {
+		home := t.TempDir()
+		settings := projectResetHook(t, bin, home, repo)
+		got, err := os.ReadFile(settings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		edited := strings.Replace(string(got), `"matcher": "Bash"`, `"matcher": "Edited"`, 1)
+		if edited == string(got) {
+			t.Fatalf("projected matcher not found:\n%s", got)
+		}
+		if err := os.WriteFile(settings, []byte(edited), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		stdout, stderr, code := runHookCLI(t, bin, home, "reset", "--yes", "--format", "json")
+		if code != 1 {
+			t.Fatalf("drift reset exit %d, want 1\n%s\n%s", code, stdout, stderr)
+		}
+		doc := decodeHookReset(t, stdout)
+		found, client, path, detail, _, _ := hookResetRow(doc, "kept-drift")
+		if !found || client != "claude-code" || path != settings || detail != hookResetKeptDetail {
+			t.Fatalf("kept-drift row found=%v client=%q path=%q detail=%q\n%s", found, client, path, detail, stdout)
+		}
+		if !containsString(doc.Kept, "hook/block-force-push") {
+			t.Fatalf("kept = %v, want hook/block-force-push", doc.Kept)
+		}
+		still, err := os.ReadFile(settings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(still), "gridctl hook") || !strings.Contains(string(still), `"matcher": "Edited"`) {
+			t.Fatalf("drifted group was removed:\n%s", still)
+		}
+
+		forced, forcedErr, forcedCode := runHookCLI(t, bin, home, "reset", "--yes", "--force", "--format", "json")
+		if forcedCode != 0 {
+			t.Fatalf("force reset exit %d\n%s\n%s", forcedCode, forced, forcedErr)
+		}
+		forcedDoc := decodeHookReset(t, forced)
+		found, _, _, _, _, _ = hookResetRow(forcedDoc, "removed")
+		if !found {
+			t.Fatalf("force reset did not remove the hook:\n%s", forced)
+		}
+		after, err := os.ReadFile(settings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(after), "gridctl hook") {
+			t.Fatalf("group remains after --force:\n%s", after)
+		}
+	})
+
+	t.Run("script drift", func(t *testing.T) {
+		home := t.TempDir()
+		settings := projectResetHook(t, bin, home, repo)
+		script := filepath.Join(home, ".gridctl", "hooks", "block-force-push", "scripts", "block.sh")
+		if err := os.WriteFile(script, []byte("#!/bin/sh\n# hand edit\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		stdout, stderr, code := runHookCLI(t, bin, home, "reset", "--yes", "--format", "json")
+		if code != 1 {
+			t.Fatalf("script-drift reset exit %d, want 1\n%s\n%s", code, stdout, stderr)
+		}
+		doc := decodeHookReset(t, stdout)
+		found, client, path, detail, _, _ := hookResetRow(doc, "kept-drift")
+		if !found || client != "claude-code" || path != settings || detail != hookResetKeptDetail {
+			t.Fatalf("script kept-drift row found=%v client=%q path=%q detail=%q\n%s", found, client, path, detail, stdout)
+		}
+		if _, err := os.Stat(script); err != nil {
+			t.Fatalf("script copy was removed: %v", err)
+		}
+		still, err := os.ReadFile(settings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(still), "gridctl hook") {
+			t.Fatalf("settings group was removed with the script edit:\n%s", still)
+		}
+	})
+
+	t.Run("unparsable settings", func(t *testing.T) {
+		home := t.TempDir()
+		settings := projectResetHook(t, bin, home, repo)
+		broken := []byte("{\n")
+		if err := os.WriteFile(settings, broken, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		dryOut, dryErr, dryCode := runHookCLI(t, bin, home, "reset", "--dry-run", "--format", "json")
+		if dryCode != 0 {
+			t.Fatalf("dry-run exit %d\n%s\n%s", dryCode, dryOut, dryErr)
+		}
+		dry := decodeHookReset(t, dryOut)
+		if found, _, _, _, _, _ := hookResetRow(dry, "kept-drift"); found {
+			t.Fatalf("unparsable settings previewed as kept-drift:\n%s", dryOut)
+		}
+		found, _, _, _, _, _ := hookResetRow(dry, "skipped")
+		if !found {
+			t.Fatalf("dry-run rows missing skipped hook:\n%s", dryOut)
+		}
+
+		stdout, stderr, code := runHookCLI(t, bin, home, "reset", "--yes", "--format", "json")
+		if code != 1 {
+			t.Fatalf("parse-error reset exit %d, want 1\n%s\n%s", code, stdout, stderr)
+		}
+		doc := decodeHookReset(t, stdout)
+		found, _, _, _, errText, _ := hookResetRow(doc, "failed")
+		if !found || !strings.HasPrefix(errText, "settings file is not valid JSON or JSONC") {
+			t.Fatalf("failed row found=%v error=%q\n%s", found, errText, stdout)
+		}
+		for _, k := range doc.Kept {
+			if strings.HasPrefix(k, "hook/") {
+				t.Fatalf("kept contains %q", k)
+			}
+		}
+		after, err := os.ReadFile(settings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(after, broken) {
+			t.Fatalf("settings file changed:\n%s", after)
+		}
+	})
+}
+
+func containsString(ss []string, want string) bool {
+	for _, s := range ss {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}
+
+func hookResetArchive(t *testing.T, archive string) map[string]bool {
+	t.Helper()
+	f, err := os.Open(archive)
+	if err != nil {
+		t.Fatalf("open archive: %v", err)
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatalf("gzip: %v", err)
+	}
+	tr := tar.NewReader(gz)
+	names := map[string]bool{}
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("tar: %v", err)
+		}
+		names[hdr.Name] = true
+	}
+	return names
 }
