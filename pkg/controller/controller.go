@@ -262,19 +262,25 @@ func (sc *StackController) runStacklessDaemonChild(ctx context.Context) error {
 // runStacklessDaemonMode forks a stackless child and waits for health.
 func (sc *StackController) runStacklessDaemonMode() error {
 	daemon := NewDaemonManager(sc.config)
-	pid, err := daemon.ForkStackless()
+	handle, err := daemon.ForkStackless()
 	if err != nil {
 		return fmt.Errorf("failed to start daemon: %w", err)
 	}
 
 	logPath, _ := state.LogPath("gridctl")
-	if err := daemon.WaitForHealth(sc.config.Port, 30*time.Second); err != nil {
-		return fmt.Errorf("daemon failed to start: %w\nCheck logs at %s", err, logPath)
+	if err := daemon.WaitForHealth(sc.config.Port, 30*time.Second, handle); err != nil {
+		return formatDaemonStartupFailure(err, daemonFailureOptions{
+			logPath:  logPath,
+			logsName: "gridctl",
+			stopCmd:  "gridctl stop",
+			endpoint: "health",
+			vault:    sc.vaultStore,
+		})
 	}
 
 	fmt.Printf("gridctl started in stackless mode\n")
 	fmt.Printf("  Web UI: http://localhost:%d\n", sc.config.Port)
-	fmt.Printf("  PID:    %d\n", pid)
+	fmt.Printf("  PID:    %d\n", handle.PID)
 	fmt.Printf("  Logs:   %s\n", logPath)
 	// Teardown instructions always print (scripts capture them); extra
 	// conversational hints go through Printer.Hint and are TTY-only.
@@ -661,16 +667,24 @@ func (sc *StackController) runDaemonMode(ctx context.Context, stack *config.Stac
 	reporter.StartPhase("Starting gateway", true)
 
 	daemon := NewDaemonManager(sc.config)
-	pid, err := daemon.Fork(stack)
+	handle, err := daemon.Fork(stack)
 	if err != nil {
 		reporter.EndPhase(false)
 		return fmt.Errorf("failed to start daemon: %w", err)
 	}
 
 	stackLogPath, _ := state.LogPath(stack.Name)
-	if err := daemon.WaitForReady(sc.config.Port, 60*time.Second); err != nil {
+	if err := daemon.WaitForReady(sc.config.Port, 60*time.Second, handle); err != nil {
+		// Leave the child running. It can become ready after the budget,
+		// and stopping it here would hide that from the next apply.
 		reporter.EndPhase(false)
-		return fmt.Errorf("daemon failed to become ready: %w\nCheck logs at %s", err, stackLogPath)
+		return formatDaemonStartupFailure(err, daemonFailureOptions{
+			logPath:  stackLogPath,
+			logsName: stack.Name,
+			stopCmd:  "gridctl destroy " + sc.config.StackPath,
+			endpoint: "ready",
+			vault:    sc.vaultStore,
+		})
 	}
 
 	st, err := state.Load(stack.Name)
@@ -692,7 +706,7 @@ func (sc *StackController) runDaemonMode(ctx context.Context, stack *config.Stac
 	} else if !sc.config.Silent {
 		fmt.Printf("Stack '%s' started successfully\n", stack.Name)
 		fmt.Printf("  Gateway: http://localhost:%d\n", st.Port)
-		fmt.Printf("  PID: %d\n", pid)
+		fmt.Printf("  PID: %d\n", handle.PID)
 		fmt.Printf("  Logs: %s\n", stackLogPath)
 		fmt.Printf("\nUse 'gridctl destroy %s' to stop\n", sc.config.StackPath)
 	}
