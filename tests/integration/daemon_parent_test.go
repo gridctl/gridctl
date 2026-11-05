@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -105,10 +106,33 @@ func TestDaemonParent_ChildExitSurfaced(t *testing.T) {
 	}
 }
 
+// TestDaemonParent_ProcessListCanRun checks the non-Linux listing itself.
+// Linux uses /proc in the assertion above; this still runs ps so a broken
+// fallback command fails here instead of only on Darwin.
+func TestDaemonParent_ProcessListCanRun(t *testing.T) {
+	cmdline, err := daemonChildCommandPS(filepath.Join(t.TempDir(), "stack.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmdline != "" {
+		t.Fatalf("ps listing matched a child that was never started: %s", cmdline)
+	}
+}
+
 // daemonChildCommand returns the command line of a process started as this
-// stack's daemon child, or empty when none remains. A missing /proc is an
-// error so the assertion cannot pass by failing to look.
+// stack's daemon child, or empty when none remains. Linux reads /proc, which
+// is the command line the kernel recorded. Other Unix systems have no /proc
+// (Darwin in particular, and this file's !windows tag includes them), so they
+// list processes with ps. A failure to list is an error: the "no child"
+// assertion must not pass because the scan could not look.
 func daemonChildCommand(stackPath string) (string, error) {
+	if runtime.GOOS == "linux" {
+		return daemonChildCommandProc(stackPath)
+	}
+	return daemonChildCommandPS(stackPath)
+}
+
+func daemonChildCommandProc(stackPath string) (string, error) {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
 		return "", fmt.Errorf("reading /proc: %w", err)
@@ -123,9 +147,30 @@ func daemonChildCommand(stackPath string) (string, error) {
 			continue
 		}
 		text := strings.ReplaceAll(string(raw), "\x00", " ")
-		if strings.Contains(text, "--daemon-child") && strings.Contains(text, stackPath) {
+		if commandLineIsDaemonChild(text, stackPath) {
 			return text, nil
 		}
 	}
 	return "", nil
+}
+
+func daemonChildCommandPS(stackPath string) (string, error) {
+	// -ww disables the terminal-width cap. Darwin ps otherwise truncates
+	// args, which can drop a long temp stack path and hide a live child.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "ps", "-axww", "-o", "args=").Output()
+	if err != nil {
+		return "", fmt.Errorf("listing processes: %w", err)
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if commandLineIsDaemonChild(line, stackPath) {
+			return line, nil
+		}
+	}
+	return "", nil
+}
+
+func commandLineIsDaemonChild(text, stackPath string) bool {
+	return strings.Contains(text, "--daemon-child") && strings.Contains(text, stackPath)
 }
