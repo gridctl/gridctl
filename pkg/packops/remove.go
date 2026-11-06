@@ -710,10 +710,10 @@ func trimLockedPack(ctx context.Context, lockPath, name string, kept []string) e
 		src.Pack.Skills = skillsKept
 		src.Pack.Agents = agentsKept
 		src.Pack.Hooks = hooksKept
-		// Rules follow the same kept set. Deleting keys leaves an empty
-		// non-nil RuleFiles map when one already existed. migrateRuleFiles
-		// backfills only when the map is nil, so a nil map would resurrect
-		// dropped names from Rules on the next read.
+		// Rules and RuleFiles are trimmed together. migrateRuleFiles
+		// backfills only from Rules, so a dropped name cannot return.
+		// The field is omitempty, so an empty map is omitted on write
+		// and reads back as nil; the trimmed Rules list is the guard.
 		var rulesKept []string
 		for _, n := range src.Pack.Rules {
 			if keptSet["rule/"+n] {
