@@ -83,10 +83,12 @@ export function PackRemoveDialog({ packName, onClose, onRemoved }: PackRemoveDia
         const kept = doc.kept ?? [];
         if (kept.length > 0) {
           // Aftermath honesty: the trimmed record remains; never say
-          // "removed" while it does.
+          // "removed" while it does. A kept rule carries its own
+          // remediation; skill and agent drift still uses the adopt sentence.
+          const follow = keptFollowUp(doc.rows, kept);
           showToast(
             'warning',
-            `${packName} still exists with ${kept.length} kept member${kept.length === 1 ? '' : 's'} (locally edited). Adopt the edits or remove with overwrite to finish.`,
+            `${packName} still exists with ${kept.length} kept member${kept.length === 1 ? '' : 's'} (locally edited). ${follow}`,
           );
         } else {
           showToast('success', `Pack "${packName}" removed`);
@@ -232,6 +234,20 @@ export function PackRemoveDialog({ packName, onClose, onRemoved }: PackRemoveDia
       </div>
     </div>
   );
+}
+
+const adoptSentence = 'Adopt the edits or remove with overwrite to finish.';
+
+/** First remediation on a row whose kind/name is listed in kept.
+ *  kept entries are `<kind>/<name>`, not the bare name. */
+function keptFollowUp(rows: PackRow[] | undefined, kept: string[]): string {
+  const names = new Set(kept);
+  for (const row of rows ?? []) {
+    if (names.has(`${row.kind}/${row.name}`) && row.remediation) {
+      return row.remediation;
+    }
+  }
+  return adoptSentence;
 }
 
 /** The will-remove rows, grouped by kind in manifest order. */
