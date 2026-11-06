@@ -42,7 +42,10 @@ type RemoveDoc struct {
 // the ownership manager, then the registry entries and the pack record
 // itself. A drifted resource is kept unless forced. A hook is also kept
 // when any unsync row is not removed or already-gone, including under
-// force. The trimmed pack record stays truthful about what remains.
+// force. Rule store files follow the pack record, not the projection
+// list. A locally modified or unknown-provenance rule is kept unless
+// forced. An unreadable rule is kept even under force. The trimmed pack
+// record stays truthful about what remains.
 func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string, opts RemoveOptions) (*RemoveDoc, error) {
 	locked, err := m.LoadLockedPack(name)
 	if err != nil {
@@ -111,8 +114,13 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 		for _, n := range removableAgents {
 			rows = append(rows, Row{Kind: "agent", Name: n, Action: "would-remove"})
 		}
-		for _, n := range locked.Rules {
-			rows = append(rows, Row{Kind: "rule", Name: n, Action: "would-remove"})
+		// Same classification as the real run, so a preview that says
+		// would-remove is a preview that would delete the store file.
+		// UnsyncPackFragments is not called here: it mutates the
+		// projection lockfile. A nil contexts manager emits no rule
+		// rows, matching the real run.
+		if len(locked.Rules) > 0 && m.Contexts != nil {
+			appendRuleStoreRows(name, packSourceRepo(lf, name), m.classifyPackRules(locked), opts.Force, true, nil, &rows, &kept)
 		}
 		// A dry-run unsync rewrites a retiring row from removed to
 		// would-remove. Count that as retired here only; the real run
@@ -164,29 +172,25 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 		}
 	}
 
-	// 2. Pack-tagged rule fragment projections (by tag, never by name).
+	// 2. Pack-tagged rule projections retract by tag. Store files follow
+	// the pack record: a rule that was never projected, or whose
+	// projections were already unsynced, is still removed when the
+	// recorded hash matches. Classify before any write. An unreadable
+	// store file is kept, including under --force, because there is
+	// nothing to compare and RemoveFragment must not be called for it.
 	if len(locked.Rules) > 0 && m.Contexts != nil {
-		results, ruleNames, uerr := m.Contexts.UnsyncPackFragments(ctx, name)
+		classified := m.classifyPackRules(locked)
+		results, _, uerr := m.Contexts.UnsyncPackFragments(ctx, name)
 		if uerr != nil {
 			return nil, uerr
 		}
 		for _, r := range results {
 			rows = append(rows, Row{Kind: "rule", Name: r.Fragment, Client: r.Slug, Action: r.Action})
 		}
-		// Drop store files only for fragments the pack listed and that
-		// lost their pack projections; a user fragment of the same name
-		// created afterward is not in locked.Rules at remove time only
-		// if they renamed — we only remove names still listed on the pack.
-		for _, n := range ruleNames {
-			if !containsString(locked.Rules, n) {
-				continue
-			}
-			if _, rerr := m.Contexts.RemoveFragment(n); rerr != nil && !errors.Is(rerr, contexts.ErrNoFragment) {
-				rows = append(rows, Row{Kind: "rule", Name: n, Action: "error", Detail: rerr.Error()})
-				continue
-			}
-			rows = append(rows, Row{Kind: "rule", Name: n, Action: "removed", Detail: "fragment store entry removed"})
-		}
+		appendRuleStoreRows(name, packSourceRepo(lf, name), classified, opts.Force, false, func(n string) error {
+			_, rerr := m.Contexts.RemoveFragment(n)
+			return rerr
+		}, &rows, &kept)
 	}
 
 	// 3. Wiring records: delete only what ownership proves is ours;
@@ -404,6 +408,144 @@ func keepBlockedHook(name string, row hooksync.UnsyncResult, rows *[]Row, kept *
 	*kept = append(*kept, "hook/"+name)
 }
 
+// ruleClass is the store state of one name in a pack's rule list,
+// read before any remove write.
+type ruleClass int
+
+const (
+	ruleClassAbsent ruleClass = iota
+	ruleClassUnreadable
+	ruleClassModified
+	ruleClassRemovable
+)
+
+// classifiedRule is one pack-listed fragment. Unreadable never becomes
+// removable: there is no hash to compare, and RemoveFragment must not
+// be called for it. Modified becomes removable only when the caller
+// passes --force.
+type classifiedRule struct {
+	name  string
+	class ruleClass
+	err   error
+	prior skills.LockedRule
+}
+
+// classifyPackRules reads each name in locked.Rules. Callers must check
+// m.Contexts != nil first. ErrNoFragment and ErrFragmentsInactive are
+// absent, so a home that deactivated fragments mode does not block pack
+// remove. Any other read error, including a frontmatter parse error
+// (ReadFragment returns no fragment), is unreadable and is kept.
+func (m *Managers) classifyPackRules(locked *skills.LockedPack) []classifiedRule {
+	if locked == nil {
+		return nil
+	}
+	out := make([]classifiedRule, 0, len(locked.Rules))
+	for _, name := range locked.Rules {
+		var prior skills.LockedRule
+		if locked.RuleFiles != nil {
+			prior = locked.RuleFiles[name]
+		}
+		frag, err := m.Contexts.ReadFragment(name)
+		switch {
+		case errors.Is(err, contexts.ErrNoFragment), errors.Is(err, contexts.ErrFragmentsInactive):
+			out = append(out, classifiedRule{name: name, class: ruleClassAbsent})
+		case err != nil:
+			out = append(out, classifiedRule{name: name, class: ruleClassUnreadable, err: err})
+		case ruleIsUnmodified(prior, frag.Raw):
+			out = append(out, classifiedRule{name: name, class: ruleClassRemovable, prior: prior})
+		default:
+			out = append(out, classifiedRule{name: name, class: ruleClassModified, prior: prior})
+		}
+	}
+	return out
+}
+
+// appendRuleStoreRows emits one store row per classified rule, in record
+// order. dryRun writes nothing. A kept name is appended as rule/<name>
+// so trimLockedPack retains the pack record and a retry is possible.
+// An error row without that kept entry would drop the record and let
+// the CLI print a success line for a file that is still on disk.
+func appendRuleStoreRows(packName, repo string, classified []classifiedRule, force, dryRun bool, remove func(string) error, rows *[]Row, kept *[]string) {
+	for _, c := range classified {
+		removable := c.class == ruleClassRemovable || (c.class == ruleClassModified && force)
+		switch {
+		case c.class == ruleClassAbsent:
+			*rows = append(*rows, Row{Kind: "rule", Name: c.name, Action: "already-gone", Detail: "not in the fragment store"})
+		case c.class == ruleClassUnreadable:
+			detail := "fragment could not be read"
+			if c.err != nil {
+				detail = c.err.Error()
+			}
+			*rows = append(*rows, Row{
+				Kind:        "rule",
+				Name:        c.name,
+				Action:      "error",
+				Detail:      detail,
+				Remediation: fmt.Sprintf("fix or remove the fragment with 'gridctl ctx rm %s', then re-run 'gridctl pack remove %s'", c.name, packName),
+			})
+			*kept = append(*kept, "rule/"+c.name)
+		case c.class == ruleClassModified && !force:
+			*rows = append(*rows, Row{
+				Kind:        "rule",
+				Name:        c.name,
+				Action:      "skipped-drift",
+				Detail:      "the fragment store copy differs from what the pack installed",
+				Remediation: ruleDriftRemediation(packName, repo, c.name, c.prior),
+			})
+			*kept = append(*kept, "rule/"+c.name)
+		case removable && dryRun:
+			*rows = append(*rows, Row{Kind: "rule", Name: c.name, Action: "would-remove"})
+		case removable:
+			if remove == nil {
+				*rows = append(*rows, Row{Kind: "rule", Name: c.name, Action: "error", Detail: "fragment store is not available"})
+				*kept = append(*kept, "rule/"+c.name)
+				continue
+			}
+			if err := remove(c.name); err != nil {
+				if errors.Is(err, contexts.ErrNoFragment) {
+					*rows = append(*rows, Row{Kind: "rule", Name: c.name, Action: "already-gone", Detail: "not in the fragment store"})
+					continue
+				}
+				*rows = append(*rows, Row{Kind: "rule", Name: c.name, Action: "error", Detail: err.Error()})
+				*kept = append(*kept, "rule/"+c.name)
+				continue
+			}
+			*rows = append(*rows, Row{
+				Kind:        "rule",
+				Name:        c.name,
+				Action:      "removed",
+				Detail:      "fragment store entry removed",
+				Remediation: "run 'gridctl ctx sync' to drop projected client files for this fragment",
+			})
+		}
+	}
+}
+
+// ruleDriftRemediation names both ways out of a local edit, or the
+// re-add path when the lockfile has no recorded hash. An empty hash is
+// unknown provenance, which ruleIsUnmodified never treats as a match.
+func ruleDriftRemediation(packName, repo, name string, prior skills.LockedRule) string {
+	if prior.ContentHash == "" {
+		target := repo
+		if target == "" {
+			target = packName
+		}
+		return fmt.Sprintf("re-run 'gridctl pack add %s' to record provenance, or force removal with --force", target)
+	}
+	return fmt.Sprintf("keep the edit by renaming the fragment, or discard it with 'gridctl ctx rm %s' before removing, or force removal with --force", name)
+}
+
+func packSourceRepo(lf *skills.LockFile, name string) string {
+	if lf == nil {
+		return ""
+	}
+	_, src, ok := lf.FindPackSource(name)
+	if !ok || src == nil {
+		return ""
+	}
+	return src.Repo
+}
+
 // splitKept separates removable names from drift-kept ones, emitting
 // skip rows for the latter.
 func splitKept(names []string, drifted map[string]bool, force bool, kind string, rows *[]Row, kept *[]string) []string {
@@ -568,6 +710,24 @@ func trimLockedPack(ctx context.Context, lockPath, name string, kept []string) e
 		src.Pack.Skills = skillsKept
 		src.Pack.Agents = agentsKept
 		src.Pack.Hooks = hooksKept
+		// Rules follow the same kept set. Deleting keys leaves an empty
+		// non-nil RuleFiles map when one already existed. migrateRuleFiles
+		// backfills only when the map is nil, so a nil map would resurrect
+		// dropped names from Rules on the next read.
+		var rulesKept []string
+		for _, n := range src.Pack.Rules {
+			if keptSet["rule/"+n] {
+				rulesKept = append(rulesKept, n)
+			}
+		}
+		src.Pack.Rules = rulesKept
+		if src.Pack.RuleFiles != nil {
+			for n := range src.Pack.RuleFiles {
+				if !keptSet["rule/"+n] {
+					delete(src.Pack.RuleFiles, n)
+				}
+			}
+		}
 		if len(src.Pack.Sources) > 0 {
 			for sourceName, ps := range src.Pack.Sources {
 				ps.Skills = filterKept(ps.Skills, "skill", keptSet)
