@@ -472,10 +472,10 @@ A pack is a git repo with a `gridctl-pack.yaml` manifest: a versioned selection 
 ```bash
 gridctl pack add <git-repo>               # Clone, scan, and import the manifest's selection
 gridctl pack apply team-pack              # Start a carried stack, then project to detected clients
-gridctl pack remove team-pack             # Cascade removal by pack tag, never by name match
+gridctl pack remove team-pack             # Remove tagged projections and installed rule files
 ```
 
-Every projection a pack applies is tagged with the pack name in the lockfile, which is what makes `pack status` and removal exact: resources you created yourself are never claimed or deleted.
+Every projection a pack applies is tagged with the pack name in the lockfile, which is what makes `pack status` and projection removal exact: resources you created yourself are never claimed or deleted. `pack remove` also deletes each rule file the pack record lists, including one that was never projected, and keeps a locally modified copy unless `--force`. An unreadable copy is kept even with `--force`.
 
 Learn more → [Packs guide](docs/packs.md)
 

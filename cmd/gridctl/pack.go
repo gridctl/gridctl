@@ -700,6 +700,17 @@ its value is one gridctl recorded), and only then do the pack's skills,
 agents, and installed rule fragments leave the local stores, followed
 by the pack record itself.
 
+Rule fragment projections still retract by pack tag, the store file of
+every rule the pack record lists is removed whether or not a projection
+existed, and a locally modified or unreadable rule is kept. A local
+edit is kept unless --force. A rule with no recorded provenance is
+kept until 'gridctl pack add' records it, or until --force. An
+unreadable fragment is kept even with --force. --dry-run reports that
+keep. A compiled client document is refreshed by the next 'gridctl ctx
+sync'. If that removal leaves the fragment store empty, that sync
+reports that no fragments exist and leaves the compiled document in
+place.
+
 A resource whose projection was hand-edited (drifted) is skipped with a
 remediation hint unless --force; everything else still removes, and the
 skipped resources stay imported so nothing is lost. A hook whose unsync
