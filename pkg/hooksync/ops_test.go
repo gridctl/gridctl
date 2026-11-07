@@ -558,6 +558,22 @@ func TestUnsync_RestoresFileWithoutHooksKey(t *testing.T) {
 			t.Fatalf("settings after unsync:\n%q\nwant:\n%q", got, fixture)
 		}
 	})
+
+	t.Run("created file becomes empty object", func(t *testing.T) {
+		home, registry, settings := setup(t, "")
+		if err := os.Remove(settings); err != nil {
+			t.Fatal(err)
+		}
+		mgr := NewManagerWithHome(home, registry)
+		syncOne(t, mgr, "block")
+		if !strings.Contains(string(mustRead(t, settings)), "gridctl hook block") {
+			t.Fatalf("sync did not create settings:\n%s", mustRead(t, settings))
+		}
+		unsyncOne(t, mgr, home, "block")
+		if got := string(mustRead(t, settings)); got != "{\n}\n" {
+			t.Fatalf("settings after unsync:\n%q\nwant:\n%q", got, "{\n}\n")
+		}
+	})
 }
 
 // writeMergedGroup replaces the settings file with one hand-merged group
