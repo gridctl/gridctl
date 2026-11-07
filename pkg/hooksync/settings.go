@@ -498,6 +498,15 @@ func dropEmptyEvents(lengths map[string]int, removed []locatedGroup) []patchOp {
 	return ops
 }
 
+// dropEmptyHooks removes the hooks key when the dropped events were all of its
+// members, created by sync or not (the Article XVI exception in docs/hooks.md).
+func dropEmptyHooks(lengths map[string]int, dropped []patchOp) []patchOp {
+	if len(lengths) == 0 || len(dropped) != len(lengths) {
+		return nil
+	}
+	return []patchOp{{Op: "remove", Path: "/hooks"}}
+}
+
 func (sf *settingsFile) indentOrDefault() string {
 	if sf == nil || sf.Indent == "" {
 		return "  "

@@ -603,6 +603,19 @@ scenarios:
     budgets:
       max_payload_bytes: 65536
       max_duration: 5s
+  - id: hooks-unsync-restores-missing-hooks-key
+    owner_package: pkg/hooksync
+    owner_issue: "1497"
+    package: github.com/gridctl/gridctl/pkg/hooksync
+    test: TestUnsync_RestoresFileWithoutHooksKey
+    lanes: [unit]
+    expected_boundary: an unsync that removes the last gridctl group also removes an emptied event array and an emptied hooks object, so a file that had no hooks key before sync returns to its original bytes
+    nonclaims:
+      - does not restore a trailing comma that sync consumed on the previous last member
+      - does not delete a settings file gridctl created
+    budgets:
+      max_payload_bytes: 65536
+      max_duration: 5s
   - id: hooks-sync-projects-pinned-bytes-only
     owner_package: pkg/hooksync
     owner_issue: "1478"

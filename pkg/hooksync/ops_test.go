@@ -463,6 +463,119 @@ func TestUnsync_RemovesOnlyGridctlGroup(t *testing.T) {
 	}
 }
 
+func TestUnsync_RestoresFileWithoutHooksKey(t *testing.T) {
+	syncOne := func(t *testing.T, mgr *Manager, name string) {
+		t.Helper()
+		results, err := mgr.Sync(t.Context(), []string{name}, SyncOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 1 || results[0].Action != ActionCopied {
+			t.Fatalf("sync %s = %+v", name, results)
+		}
+	}
+	unsyncOne := func(t *testing.T, mgr *Manager, home, name string) {
+		t.Helper()
+		results, err := mgr.Unsync(t.Context(), []string{name}, UnsyncOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) != 1 || results[0].Action != ActionRemoved {
+			t.Fatalf("unsync %s = %+v", name, results)
+		}
+		l, err := project.NewStore(home).Load(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if e := l.Get(project.KindHook, "claude-code", name); e != nil {
+			t.Fatalf("record for %s remained: %+v", name, e)
+		}
+	}
+	setup := func(t *testing.T, fixture string) (home, registry, settings string) {
+		t.Helper()
+		home, registry = testHome(t)
+		installHook(t, registry, "block", "#!/bin/sh\necho no\n")
+		pinHook(t, home, registry, "block")
+		claude := filepath.Join(home, ".claude")
+		if err := os.MkdirAll(claude, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		settings = filepath.Join(claude, "settings.json")
+		if err := os.WriteFile(settings, []byte(fixture), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return home, registry, settings
+	}
+
+	cases := []struct {
+		name    string
+		fixture string
+		want    string
+	}{
+		{name: "two-space indent", fixture: "{\n  \"agentPushNotifEnabled\": true,\n  \"permissions\": {\"allow\": [\"Bash\"]}\n}\n"},
+		{name: "no trailing newline", fixture: "{\n  \"a\": true\n}"},
+		{name: "tab indent", fixture: "{\n\t\"a\": true\n}\n"},
+		{name: "empty object", fixture: "{}\n"},
+		{name: "user event array kept", fixture: "{\n  \"hooks\": {\n    \"PostToolUse\": []\n  },\n  \"zebra\": true\n}\n"},
+		{name: "non-array member kept", fixture: "{\n  \"hooks\": {\"note\": 1}\n}\n"},
+		{name: "pre-existing empty hooks removed", fixture: "{\n  \"a\": true,\n  \"hooks\": {}\n}\n", want: "{\n  \"a\": true\n}\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			home, registry, settings := setup(t, tc.fixture)
+			mgr := NewManagerWithHome(home, registry)
+			syncOne(t, mgr, "block")
+			unsyncOne(t, mgr, home, "block")
+			want := tc.want
+			if want == "" {
+				want = tc.fixture
+			}
+			if got := string(mustRead(t, settings)); got != want {
+				t.Fatalf("settings after unsync:\n%q\nwant:\n%q", got, want)
+			}
+		})
+	}
+
+	t.Run("two hooks on different events", func(t *testing.T) {
+		fixture := "{\n  \"a\": true\n}\n"
+		home, registry, settings := setup(t, fixture)
+		installHook(t, registry, "beta", "#!/bin/sh\necho no\n")
+		rewriteHook(t, registry, "beta", `{"name":"beta","description":"post","dialect":"claude-code","hooks":{"PostToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"./scripts/run.sh"}]}]}}`)
+		pinHook(t, home, registry, "beta")
+		mgr := NewManagerWithHome(home, registry)
+		syncOne(t, mgr, "block")
+		syncOne(t, mgr, "beta")
+		unsyncOne(t, mgr, home, "block")
+		mid := string(mustRead(t, settings))
+		if !strings.Contains(mid, `"hooks"`) || !strings.Contains(mid, `"PostToolUse"`) || !strings.Contains(mid, "gridctl hook beta") {
+			t.Fatalf("beta group or hooks key lost:\n%s", mid)
+		}
+		if strings.Contains(mid, `"PreToolUse"`) {
+			t.Fatalf("emptied event remained:\n%s", mid)
+		}
+		unsyncOne(t, mgr, home, "beta")
+		if got := string(mustRead(t, settings)); got != fixture {
+			t.Fatalf("settings after unsync:\n%q\nwant:\n%q", got, fixture)
+		}
+	})
+
+	t.Run("created file becomes empty object", func(t *testing.T) {
+		home, registry, settings := setup(t, "")
+		if err := os.Remove(settings); err != nil {
+			t.Fatal(err)
+		}
+		mgr := NewManagerWithHome(home, registry)
+		syncOne(t, mgr, "block")
+		if !strings.Contains(string(mustRead(t, settings)), "gridctl hook block") {
+			t.Fatalf("sync did not create settings:\n%s", mustRead(t, settings))
+		}
+		unsyncOne(t, mgr, home, "block")
+		if got := string(mustRead(t, settings)); got != "{\n}\n" {
+			t.Fatalf("settings after unsync:\n%q\nwant:\n%q", got, "{\n}\n")
+		}
+	})
+}
+
 // writeMergedGroup replaces the settings file with one hand-merged group
 // whose handlers point at both hooks' script directories, followed by a
 // user group and a trailing comma.
