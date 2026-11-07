@@ -9,7 +9,7 @@ Gridctl is preparing its 1.0 release. This page tracks the stability tier of eac
 
 Nearly every shipped feature surface is Stable as of the release candidate; the table below marks the exceptions. The Experimental tier also covers features that ship dark behind the `experimental:` feature-flag registry (see [Config Schema](config-schema.md#experimental-feature-flags)).
 
-Release baseline: **v1.0.0-rc.4** (see [CHANGELOG.md](../CHANGELOG.md) for release-by-release detail).
+Release baseline: **v1.0.0-rc.5** (see [CHANGELOG.md](../CHANGELOG.md) for release-by-release detail).
 
 ## Feature stability
 
@@ -53,7 +53,7 @@ Release baseline: **v1.0.0-rc.4** (see [CHANGELOG.md](../CHANGELOG.md) for relea
 | Global context sync (ctx) | Stable | Backward compatible in 0.x. `gridctl import <client> --kind context`, included in v1.0.0-rc.2, adopts a client file only when no canonical file exists and fragments mode is off, and it does not pass `--force` |
 | Rules fragment library (ctx add / list / rm, fragments mode) | Stable | Backward compatible in 0.x |
 | Skill governance pins (skill pins, skills: policy) | Stable | Symlink exclusion, included in v1.0.0-rc.3, changes existing pins that included links; review and approve the new composite after inspecting the diff. See [migration](skills.md#skill-pins-and-exposure-policy) |
-| Rule fragment pins (`ctx pins`, `/api/context/pins`) | Implemented | Ships in the next release candidate. Pins warn and do not block projection. `gridctl doctor --security --source gateway:` exits 1 while a fragment is in pin drift. Older releases reject a security-report snapshot that contains the new checks. See [Fragment pins](global-context.md#fragment-pins) |
+| Rule fragment pins (`ctx pins`, `/api/context/pins`) | Implemented | Included in v1.0.0-rc.5. Pins warn and do not block projection. `gridctl doctor --security --source gateway:` exits 1 while a fragment is in pin drift. Older releases reject a security-report snapshot that contains the new checks. See [Fragment pins](global-context.md#fragment-pins) |
 | Model preferences (model_preferences: block, projection rewrite) | Stable | Backward compatible in 0.x |
 | Model routing policy (`gridctl models`) | Removed in v1.0.0-rc.2 | See the [changelog](../CHANGELOG.md). `model_preferences:` is unrelated and unchanged |
 | Outbound MCP-to-A2A adapter | Experimental | Included in v1.0.0-rc.2, off by default. A2A 1.0/0.3 JSON-RPC, mandatory card-byte trust, and secret context/task capabilities. Absolute 24-hour expiry; replacement/restart invalidates handles, with no recovery by label or history. Shared-agent memory remains a downstream trust boundary. See [A2A configuration](config-schema.md#a2a) |
