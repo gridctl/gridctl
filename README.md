@@ -320,7 +320,7 @@ gridctl groups                     # Groups, member counts, and endpoints
 gridctl link cursor --group release
 ```
 
-With `gateway.auth` configured, grouped endpoints require the same credential as `/mcp` on every request. Linking selects an endpoint but does not provision credentials. Unreleased OAuth resource-server mode (`gateway.auth.type: oauth`) validates an external issuer's JWTs and uses the verified identity claim for client profiles and session ownership. A compatible MCP host discovers the issuer and completes login; CLI commands use `GRIDCTL_GATEWAY_TOKEN`. Bearer and API-key modes retain self-declared client selectors. See [gateway authentication](docs/config-schema.md#auth) and [the OAuth example](examples/gateways/gateway-oauth.yaml), including HTTPS and origin-allowlist requirements for remote access.
+With `gateway.auth` configured, grouped endpoints require the same credential as `/mcp` on every request. Linking selects an endpoint but does not provision credentials. OAuth resource-server mode (`gateway.auth.type: oauth`), included in v1.0.0-rc.3, validates an external issuer's JWTs and uses the verified identity claim for client profiles and session ownership. A compatible MCP host discovers the issuer and completes login; CLI commands use `GRIDCTL_GATEWAY_TOKEN`. Bearer and API-key modes retain self-declared client selectors. See [gateway authentication](docs/config-schema.md#auth) and [the OAuth example](examples/gateways/gateway-oauth.yaml), including HTTPS and origin-allowlist requirements for remote access.
 
 For deployment and review steps, read the [Practical Security Guide](docs/security/practical-guide.md), which distinguishes current defaults, opt-in controls, and release availability.
 
