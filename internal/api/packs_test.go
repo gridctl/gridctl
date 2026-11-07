@@ -14,6 +14,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/contexts"
 	"github.com/gridctl/gridctl/pkg/packops"
+	"github.com/gridctl/gridctl/pkg/skillpins"
 	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/skillsync"
 	"github.com/gridctl/gridctl/pkg/wiring"
@@ -38,6 +39,7 @@ func setupPackTestServer(t *testing.T) (*Server, string) {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
 	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -192,6 +194,33 @@ func TestHandlePacks_AddListDetailRemove(t *testing.T) {
 	}
 	if rec := doJSON(t, srv, http.MethodGet, "/api/packs/team-pack", ""); rec.Code != http.StatusNotFound {
 		t.Fatalf("detail after remove = %d, want 404", rec.Code)
+	}
+}
+
+func TestHandlePackRemove_ResetsPin(t *testing.T) {
+	srv, _ := setupPackTestServer(t)
+	repo := packRepoFixture(t, packTestManifest, nil)
+	rec := doJSON(t, srv, http.MethodPost, "/api/packs", `{"repo":`+jsonQuote(repo)+`}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("add = %d: %s", rec.Code, rec.Body.String())
+	}
+	ps := skillpins.NewWithPath(t.TempDir(), "lab")
+	if _, err := ps.Sync(srv.registryServer.Store()); err != nil {
+		t.Fatal(err)
+	}
+	srv.SetSkillPinStore(ps)
+	srv.SetStackName("lab")
+
+	rec = doJSON(t, srv, http.MethodDelete, "/api/packs/team-pack", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("remove = %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "registry entry removed, pin reset (lab)") {
+		t.Fatalf("remove doc missing pin reset detail: %s", rec.Body.String())
+	}
+	pin := doJSON(t, srv, http.MethodGet, "/api/skill-pins/alpha", "")
+	if pin.Code != http.StatusNotFound {
+		t.Fatalf("pin after pack remove = %d, want 404: %s", pin.Code, pin.Body.String())
 	}
 }
 

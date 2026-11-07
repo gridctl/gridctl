@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/hookpins"
 	"github.com/gridctl/gridctl/pkg/hooksync"
 	"github.com/gridctl/gridctl/pkg/project"
+	"github.com/gridctl/gridctl/pkg/skillpins"
 	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/skillsync"
 	"github.com/gridctl/gridctl/pkg/wiring"
@@ -109,7 +111,7 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 
 	if opts.DryRun {
 		for _, n := range removableSkills {
-			rows = append(rows, Row{Kind: "skill", Name: n, Action: "would-remove"})
+			rows = append(rows, Row{Kind: "skill", Name: n, Action: "would-remove", Detail: skillPinDryRunDetail(imp, n)})
 		}
 		for _, n := range removableAgents {
 			rows = append(rows, Row{Kind: "agent", Name: n, Action: "would-remove"})
@@ -205,11 +207,18 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 	// 4. Registry entries, then the pack record (which the source GC
 	// drops automatically when its last resource goes).
 	for _, n := range removableSkills {
-		if rerr := imp.Remove(n); rerr != nil {
+		res, rerr := imp.RemoveSkill(ctx, n)
+		if rerr != nil {
 			rows = append(rows, Row{Kind: "skill", Name: n, Action: "error", Detail: rerr.Error()})
 			continue
 		}
-		rows = append(rows, Row{Kind: "skill", Name: n, Action: "removed", Detail: "registry entry removed"})
+		detail := "registry entry removed"
+		if res != nil && len(res.PinsReset) > 0 {
+			stacks := append([]string(nil), res.PinsReset...)
+			slices.Sort(stacks)
+			detail = fmt.Sprintf("registry entry removed, pin reset (%s)", strings.Join(stacks, ", "))
+		}
+		rows = append(rows, Row{Kind: "skill", Name: n, Action: "removed", Detail: detail})
 	}
 	for _, n := range removableAgents {
 		if rerr := imp.RemoveAgent(n); rerr != nil {
@@ -236,6 +245,36 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 	}
 
 	return &RemoveDoc{SchemaVersion: SchemaVersion, Pack: name, Rows: rows, Kept: kept}, nil
+}
+
+// skillPinDryRunDetail reports pin files that hold name, without writing.
+// A bare importer (no resetter) returns an empty detail and reads no pin
+// file. Files that fail to load are skipped. A directory listing error is
+// logged and treated as no preview, matching a real removal, which logs
+// the same class of error and still removes the skill.
+func skillPinDryRunDetail(imp *skills.Importer, name string) string {
+	if imp == nil || !imp.HasSkillPinResetter() {
+		return ""
+	}
+	stacks, err := skillpins.ListStacks()
+	if err != nil {
+		slog.Warn("skill pin dry-run listing failed", "skill", name, "error", err)
+		return ""
+	}
+	var present []string
+	for _, stack := range stacks {
+		ps := skillpins.New(stack)
+		if err := ps.Load(); err != nil {
+			continue
+		}
+		if _, ok := ps.Get(name); ok {
+			present = append(present, stack)
+		}
+	}
+	if len(present) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("would reset pin (%s)", strings.Join(present, ", "))
 }
 
 // driftedPackResources reports which resources have a drifted projection

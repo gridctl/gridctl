@@ -718,7 +718,12 @@ rows are not all removed or already-gone is kept, including under
 --force, and reported with the same refusal as 'gridctl skill remove
 --kind hook'. --force clears hand-edited groups only. --dry-run reports
 that keep instead of would-remove. Removing a skill
-removes all of its projections, including any made outside the pack.
+removes all of its projections, including any made outside the pack,
+and resets the skill's content pin. The detail names the stacks that
+were reset. --dry-run previews that reset and writes nothing. The
+approvals log is left in place. A pin-reset problem does not fail the
+removal. A stack whose daemon is running elsewhere is left alone; the
+log names 'gridctl skill pins reset <name> --stack <stack>'.
 A full removal drops member lock sources. --dry-run reports those
 sources as would-remove only when nothing is kept.
 

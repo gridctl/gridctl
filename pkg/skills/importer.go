@@ -231,6 +231,23 @@ type Importer struct {
 	// concurrent callers (e.g. handleSkillSourcesSyncAll's bounded fan-out)
 	// still parallelize their clones.
 	lockfileMu sync.Mutex
+	// skillPinResetter resets a removed skill's pin records. Nil means
+	// Remove and RemoveSkill do not read any pin file.
+	skillPinResetter SkillPinResetter
+}
+
+// SkillPinResetter resets a removed skill's pin records. reset lists the
+// stacks whose records were actually deleted. A nil resetter means no pin
+// reset: Remove and RemoveSkill do not call ListStacks, ResetOnDisk, or
+// read any pin file.
+type SkillPinResetter func(ctx context.Context, name string) (reset []string, err error)
+
+// RemoveResult is the pin outcome of a successful registry removal.
+// PinResetErr is set when the registry entry is gone but the pin reset
+// did not finish. It is not the removal's error.
+type RemoveResult struct {
+	PinsReset   []string
+	PinResetErr error
 }
 
 // NewImporter creates a new skill importer.
@@ -250,6 +267,23 @@ func NewImporter(store *registry.Store, registryDir, lockPath string, logger *sl
 // sources that do.
 func (imp *Importer) SetCredentialResolver(r CredentialResolver) {
 	imp.credentialResolver = r
+}
+
+// SetSkillPinResetter installs the callback that resets a removed skill's
+// pin records. A nil resetter disables pin reset. Production removal paths
+// install one; tests that must not read the real home leave it unset.
+func (imp *Importer) SetSkillPinResetter(r SkillPinResetter) {
+	if imp == nil {
+		return
+	}
+	imp.skillPinResetter = r
+}
+
+// HasSkillPinResetter reports whether a pin reset will run after a
+// successful registry delete. Callers that preview pin resets must check
+// this first so a bare importer never reads a pin file.
+func (imp *Importer) HasSkillPinResetter() bool {
+	return imp != nil && imp.skillPinResetter != nil
 }
 
 // Import clones a repo, discovers skills and agents, validates, scans,
@@ -1038,26 +1072,57 @@ func summarizeMalformed(malformed []MalformedSkill) string {
 }
 
 // Remove removes an imported skill and cleans up origin and lock entries.
+// It discards the pin-reset report. Call RemoveSkill to see which stacks
+// were reset.
 func (imp *Importer) Remove(skillName string) error {
-	skillDir := imp.skillDir(skillName)
+	_, err := imp.RemoveSkill(context.Background(), skillName)
+	return err
+}
+
+// RemoveSkill removes an imported skill, then resets its pin when a
+// resetter is installed. A registry or lock error is returned unchanged
+// and the pin is left in place. After the registry delete succeeds, the
+// lock update ignores cancellation so a disconnected caller cannot leave
+// the directory gone and the lock entry in place. The resetter still
+// honors ctx. A resetter error is logged and stored on the result; the
+// returned error is nil because the registry entry is gone. A nil
+// resetter reads no pin file.
+func (imp *Importer) RemoveSkill(ctx context.Context, name string) (*RemoveResult, error) {
+	skillDir := imp.skillDir(name)
 
 	// Delete origin file
 	_ = DeleteOrigin(skillDir)
 
 	// Delete from registry
-	if err := imp.store.DeleteSkill(skillName); err != nil {
-		return fmt.Errorf("deleting skill: %w", err)
+	if err := imp.store.DeleteSkill(name); err != nil {
+		return nil, fmt.Errorf("deleting skill: %w", err)
 	}
 
-	// Update lock file under the cross-process import lock.
-	if err := MutateLockFile(context.Background(), imp.lockPath, func(lf *LockFile) (bool, error) {
-		lf.RemoveSkill(skillName)
+	// The registry delete already succeeded. Detach cancellation so a
+	// disconnected caller cannot leave the directory gone and the lock
+	// entry in place. The resetter below still honors ctx.
+	if err := MutateLockFile(context.WithoutCancel(ctx), imp.lockPath, func(lf *LockFile) (bool, error) {
+		lf.RemoveSkill(name)
 		return true, nil
 	}); err != nil {
-		return fmt.Errorf("updating lock file: %w", err)
+		return nil, fmt.Errorf("updating lock file: %w", err)
 	}
 
-	return nil
+	result := &RemoveResult{}
+	if imp.skillPinResetter == nil {
+		return result, nil
+	}
+	reset, err := imp.skillPinResetter(ctx, name)
+	result.PinsReset = append([]string(nil), reset...)
+	if err != nil {
+		logger := imp.logger
+		if logger == nil {
+			logger = slog.Default()
+		}
+		logger.Warn("skill pin reset failed", "skill", name, "error", err)
+		result.PinResetErr = fmt.Errorf("resetting skill pin: %w", err)
+	}
+	return result, nil
 }
 
 func provenanceFor(opts ImportOptions, relPath, destDir string) (string, string) {

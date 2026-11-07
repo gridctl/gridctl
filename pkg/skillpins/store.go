@@ -523,7 +523,9 @@ func (ps *Store) Approve(ctx context.Context, name string, src SkillSource, req 
 
 // Reset deletes the pin record for a skill. The next Sync re-pins it fresh.
 // History in the approvals log is left untouched, so the fresh pin still
-// shows the prior entries.
+// shows the prior entries. Reset does not reload from disk: calling it on
+// a store that was never loaded writes an empty file. The daemon's live
+// store uses Reset. Disk resets of a throwaway store use ResetPersisted.
 func (ps *Store) Reset(name string) error {
 	return ps.withFileLock(func() error {
 		ps.mu.Lock()
@@ -532,6 +534,133 @@ func (ps *Store) Reset(name string) error {
 		delete(ps.data.Skills, name)
 		return ps.saveLocked()
 	})
+}
+
+// ListStacks returns the stack names of existing skill pin files
+// (<pins>/skills/*.json), sorted. A missing directory is an empty list,
+// not an error. Temporary files are ignored. A name that is not a single
+// .json basename is ignored so a stray file never becomes a stack name.
+func ListStacks() ([]string, error) {
+	dir, err := state.PinsDir()
+	if err != nil {
+		return nil, fmt.Errorf("skillpins: resolving pins directory: %w", err)
+	}
+	entries, err := os.ReadDir(filepath.Join(dir, "skills"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("skillpins: reading skill pin directory: %w", err)
+	}
+	var names []string
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".json") || strings.HasSuffix(name, ".tmp") {
+			continue
+		}
+		base := filepath.Base(name)
+		if base != name || strings.ContainsAny(base, `/\`) {
+			continue
+		}
+		stack := strings.TrimSuffix(base, ".json")
+		if stack == "" || stack == "." || stack == ".." {
+			continue
+		}
+		names = append(names, stack)
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// ResetPersisted deletes name from the on-disk pin file and reports whether
+// the record was present. It is for a freshly constructed New(stack) that
+// the caller discards. loadPinFileLocked empties the in-memory map before
+// returning ErrCorrupt or ErrNewerVersion, so this must never be called on
+// the daemon's live store: the next dirty Sync would persist that empty
+// map. The approvals log is not read or written. A missing record returns
+// (false, nil) without saving. A file that fails to load is returned
+// without saving.
+func (ps *Store) ResetPersisted(ctx context.Context, name string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	var removed bool
+	err := ps.withFileLock(func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		ps.mu.Lock()
+		defer ps.mu.Unlock()
+		if err := ps.ensurePath(); err != nil {
+			return err
+		}
+		if err := ps.loadPinFileLocked(); err != nil {
+			return err
+		}
+		if _, ok := ps.data.Skills[name]; !ok {
+			return nil
+		}
+		delete(ps.data.Skills, name)
+		if err := ps.saveLocked(); err != nil {
+			return err
+		}
+		removed = true
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return removed, nil
+}
+
+// ResetOnDisk resets name in every on-disk skill pin file except those skip
+// returns true for. A nil skip excludes nothing. Each remaining file is
+// loaded on a throwaway New(stack); files that fail to load are recorded in
+// skipped and logged, not rewritten. Stacks excluded by skip are omitted
+// from both lists. err is reserved for ListStacks and context errors.
+func ResetOnDisk(ctx context.Context, name string, skip func(stack string) bool) (reset []string, skipped []string, err error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	stacks, err := ListStacks()
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, stack := range stacks {
+		if err := ctx.Err(); err != nil {
+			return reset, skipped, err
+		}
+		if skip != nil && skip(stack) {
+			continue
+		}
+		removed, rerr := New(stack).ResetPersisted(ctx, name)
+		if rerr != nil {
+			if errors.Is(rerr, context.Canceled) || errors.Is(rerr, context.DeadlineExceeded) {
+				return reset, skipped, rerr
+			}
+			slog.Warn("skill pin file skipped", "skill", name, "stack", stack, "category", pinLoadCategory(rerr))
+			skipped = append(skipped, stack)
+			continue
+		}
+		if removed {
+			reset = append(reset, stack)
+		}
+	}
+	return reset, skipped, nil
+}
+
+// pinLoadCategory names a pin-file load failure without the path or contents.
+func pinLoadCategory(err error) string {
+	switch {
+	case errors.Is(err, ErrCorrupt):
+		return "corrupt"
+	case errors.Is(err, ErrNewerVersion):
+		return "newer_version"
+	case os.IsPermission(err):
+		return "permission"
+	default:
+		return "unreadable"
+	}
 }
 
 // pinSkill records a fresh pin for a skill. Caller must hold ps.mu.Lock().

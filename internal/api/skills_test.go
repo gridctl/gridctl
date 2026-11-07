@@ -16,6 +16,7 @@ import (
 
 	"github.com/gridctl/gridctl/pkg/mcp"
 	"github.com/gridctl/gridctl/pkg/registry"
+	"github.com/gridctl/gridctl/pkg/skillpins"
 	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -208,6 +209,51 @@ func TestHandleSkills_UpdatesEmpty(t *testing.T) {
 
 	if summary.Available != 0 {
 		t.Errorf("expected 0 updates, got %d", summary.Available)
+	}
+}
+
+func TestHandleSkills_SourceRemove_ResetsPin(t *testing.T) {
+	t.Setenv("GRIDCTL_HOME", t.TempDir())
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkill(t, regServer, "alpha", registry.StateActive)
+	seedSkillSource(t, srv, "my-source", "https://github.com/org/repo", "alpha")
+
+	ps := skillpins.NewWithPath(t.TempDir(), "lab")
+	if _, err := ps.Sync(regServer.Store()); err != nil {
+		t.Fatal(err)
+	}
+	srv.SetSkillPinStore(ps)
+	srv.SetStackName("lab")
+
+	req := loopbackRequest(http.MethodDelete, "/api/skills/sources/my-source", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Removed   []string            `json:"removed"`
+		Source    string              `json:"source"`
+		PinsReset map[string][]string `json:"pins_reset"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Source != "my-source" {
+		t.Fatalf("source = %q", body.Source)
+	}
+	if len(body.Removed) != 1 || body.Removed[0] != "alpha" {
+		t.Fatalf("removed = %v", body.Removed)
+	}
+	if got := body.PinsReset["alpha"]; len(got) != 1 || got[0] != "lab" {
+		t.Fatalf("pins_reset = %v", body.PinsReset)
+	}
+
+	pinReq := loopbackRequest(http.MethodGet, "/api/skill-pins/alpha", nil)
+	pinRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(pinRec, pinReq)
+	if pinRec.Code != http.StatusNotFound {
+		t.Fatalf("pin after source remove = %d, want 404: %s", pinRec.Code, pinRec.Body.String())
 	}
 }
 
