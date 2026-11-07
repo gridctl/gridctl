@@ -237,6 +237,39 @@ func TestImporterRemoveSkill_ResetErrorKeepsRemoval(t *testing.T) {
 	assert.Empty(t, lf.Sources)
 }
 
+func TestImporterRemoveSkill_CanceledContextStillScrubsLock(t *testing.T) {
+	store, dir := setupTestRegistry(t)
+	lockPath := filepath.Join(dir, "skills.lock.yaml")
+	createTestSkill(t, store, "test-skill")
+	skillDir := filepath.Join(dir, "skills", "test-skill")
+	require.NoError(t, WriteLockFile(lockPath, &LockFile{Sources: map[string]LockedSource{
+		"repo": {Skills: map[string]LockedSkill{"test-skill": {ContentHash: "hash"}}},
+	}}))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var saw context.Context
+	imp := NewImporter(store, dir, lockPath, slog.New(slog.DiscardHandler))
+	imp.SetSkillPinResetter(func(ctx context.Context, name string) ([]string, error) {
+		saw = ctx
+		return nil, ctx.Err()
+	})
+	res, err := imp.RemoveSkill(ctx, "test-skill")
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	require.ErrorIs(t, res.PinResetErr, context.Canceled)
+	require.NotNil(t, saw)
+	require.ErrorIs(t, saw.Err(), context.Canceled)
+
+	_, statErr := os.Stat(skillDir)
+	assert.True(t, os.IsNotExist(statErr), "skill directory still present")
+	lf, err := ReadLockFile(lockPath)
+	require.NoError(t, err)
+	_, _, found := lf.FindSkillSource("test-skill")
+	assert.False(t, found, "lock entry survived a canceled removal")
+}
+
 func TestImporterPin(t *testing.T) {
 	store, dir := setupTestRegistry(t)
 	lockPath := filepath.Join(dir, "skills.lock.yaml")

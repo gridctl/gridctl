@@ -1081,9 +1081,12 @@ func (imp *Importer) Remove(skillName string) error {
 
 // RemoveSkill removes an imported skill, then resets its pin when a
 // resetter is installed. A registry or lock error is returned unchanged
-// and the pin is left in place. After both succeed, a resetter error is
-// logged and stored on the result; the returned error is nil because the
-// registry entry is gone. A nil resetter reads no pin file.
+// and the pin is left in place. After the registry delete succeeds, the
+// lock update ignores cancellation so a disconnected caller cannot leave
+// the directory gone and the lock entry in place. The resetter still
+// honors ctx. A resetter error is logged and stored on the result; the
+// returned error is nil because the registry entry is gone. A nil
+// resetter reads no pin file.
 func (imp *Importer) RemoveSkill(ctx context.Context, name string) (*RemoveResult, error) {
 	skillDir := imp.skillDir(name)
 
@@ -1095,8 +1098,10 @@ func (imp *Importer) RemoveSkill(ctx context.Context, name string) (*RemoveResul
 		return nil, fmt.Errorf("deleting skill: %w", err)
 	}
 
-	// Update lock file under the cross-process import lock.
-	if err := MutateLockFile(ctx, imp.lockPath, func(lf *LockFile) (bool, error) {
+	// The registry delete already succeeded. Detach cancellation so a
+	// disconnected caller cannot leave the directory gone and the lock
+	// entry in place. The resetter below still honors ctx.
+	if err := MutateLockFile(context.WithoutCancel(ctx), imp.lockPath, func(lf *LockFile) (bool, error) {
 		lf.RemoveSkill(name)
 		return true, nil
 	}); err != nil {
