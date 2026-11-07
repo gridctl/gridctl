@@ -924,8 +924,10 @@ func applyUnsync(sf *settingsFile, removing []locatedGroup) error {
 	if sf == nil || !sf.Parsed || len(removing) == 0 {
 		return nil
 	}
-	ops := removeOps(removing)
-	ops = append(ops, dropEmptyEvents(eventLengths(sf), removing)...)
+	lengths := eventLengths(sf)
+	dropped := dropEmptyEvents(lengths, removing)
+	ops := append(removeOps(removing), dropped...)
+	ops = append(ops, dropEmptyHooks(lengths, dropped)...)
 	if _, err := createBackup(sf.Path); err != nil {
 		return err
 	}

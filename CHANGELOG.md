@@ -26,6 +26,8 @@ All notable changes to gridctl will be documented in this file.
 - The Library hook pin tab shows added, removed, and modified files and a line diff of `hook.json`. Approve stays disabled when the hook is not pinned.
 - The example `block-force-push` script denies `git push --force` and `git push -f` when the flag follows the remote, and does not treat `--force-with-lease` or `--force-if-includes` as `--force`.
 
+- Hook unsync removes the `hooks` key when gridctl's own removals leave nothing under it, so a `~/.claude/settings.json` that had no `hooks` key before `sync --kind hook` returns to its original bytes after `unsync --kind hook`, except a trailing comma on the previous last member, which sync consumed as a separator and unsync does not restore. `pack remove`, `skill remove --kind hook`, `reset`, and the REST unsync routes share the change. A `hooks` object that still holds a user group, a user event array, or any other member is left as it was. A settings file gridctl created is not deleted; it becomes an empty object.
+
 - A registry hook whose `hook.json` no longer validates stays in `skill list --kind hook` and can be removed. `skill update` prints `Skipped: <name> (hook):` when a hook fails the scan or drift gate, and a named update exits 1. A re-import refreshes a script's executable bit. Approving a hook whose current bytes scan clean clears findings recorded earlier. Hook pins use `~/.gridctl/pins/hooks/global.json` so they do not share a file with tool pins for a stack named `hooks`.
 
 ### Security
