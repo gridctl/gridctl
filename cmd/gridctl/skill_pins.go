@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/gridctl/gridctl/pkg/output"
@@ -693,26 +695,152 @@ func runSkillPinsReset(skill string) error {
 }
 
 func resetSkillPinViaAPI(st *state.DaemonState, skill string) error {
-	url := fmt.Sprintf("http://localhost:%d/api/skill-pins/%s", st.Port, skill)
-	api := newDaemonAPIFor(*st, pinsAPITimeout)
-	resp, err := api.Do(http.MethodDelete, url, nil)
+	status, body, err := deleteSkillPinViaAPI(st, skill)
 	if err != nil {
-		return fmt.Errorf("calling skill pins API: %w", err)
-	}
-	defer resp.Body.Close()
-	if err := api.describeUnauthorized(resp); err != nil {
 		return err
 	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("reading response: %w", err)
-	}
-	if resp.StatusCode == http.StatusNotFound {
+	if status == http.StatusNotFound {
 		return fmt.Errorf("no pin found for skill %q (see 'gridctl skill pins list')", skill)
 	}
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+	if status != http.StatusOK && status != http.StatusNoContent {
 		return fmt.Errorf("reset failed: %s", string(body))
 	}
 	fmt.Printf("✓ Pin reset for skill %s. It is re-pinned on the next registry refresh.\n", skill)
 	return nil
+}
+
+// resetSkillPinViaAPISilent is the removal-path variant of resetSkillPinViaAPI.
+// 404 means the skill was not pinned and is not an error. Other non-2xx
+// responses are errors; the caller warns and does not count the stack.
+// It does not print.
+func resetSkillPinViaAPISilent(st *state.DaemonState, skill string) (bool, error) {
+	status, _, err := deleteSkillPinViaAPI(st, skill)
+	if err != nil {
+		return false, err
+	}
+	if status == http.StatusNotFound {
+		return false, nil
+	}
+	if status != http.StatusOK && status != http.StatusNoContent {
+		return false, fmt.Errorf("skill pins API returned %d", status)
+	}
+	return true, nil
+}
+
+func deleteSkillPinViaAPI(st *state.DaemonState, skill string) (int, []byte, error) {
+	if st == nil {
+		return 0, nil, errors.New("no daemon state")
+	}
+	url := fmt.Sprintf("http://localhost:%d/api/skill-pins/%s", st.Port, skill)
+	api := newDaemonAPIFor(*st, pinsAPITimeout)
+	resp, err := api.Do(http.MethodDelete, url, nil)
+	if err != nil {
+		return 0, nil, fmt.Errorf("calling skill pins API: %w", err)
+	}
+	defer resp.Body.Close()
+	if err := api.describeUnauthorized(resp); err != nil {
+		return resp.StatusCode, nil, err
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return resp.StatusCode, nil, fmt.Errorf("reading response: %w", err)
+	}
+	return resp.StatusCode, body, nil
+}
+
+// skillPinStackClass is how a removal resetter treats one stack's pin file.
+type skillPinStackClass int
+
+const (
+	skillPinStackStopped skillPinStackClass = iota
+	skillPinStackRunning
+	skillPinStackUnreadable
+)
+
+// classifySkillPinStack matches the daemon resetter: a missing state file
+// is stopped, a loaded running daemon is running, and any other load error
+// is unreadable. A loaded state whose process is gone is stopped.
+func classifySkillPinStack(stack string) (skillPinStackClass, *state.DaemonState, error) {
+	st, err := state.Load(stack)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return skillPinStackStopped, nil, nil
+		}
+		return skillPinStackUnreadable, nil, err
+	}
+	if state.IsRunning(st) {
+		return skillPinStackRunning, st, nil
+	}
+	return skillPinStackStopped, st, nil
+}
+
+// skillPinAPIReset resets one running stack's pin through its daemon API.
+// reset is false when the skill was not pinned. A non-nil error means the
+// stack was not reset.
+type skillPinAPIReset func(st *state.DaemonState, skill string) (reset bool, err error)
+
+// cliSkillPinResetter is the removal resetter installed by newImporter.
+func cliSkillPinResetter(ctx context.Context, name string) ([]string, error) {
+	return resetSkillPinsForRemoval(ctx, name, resetSkillPinViaAPISilent)
+}
+
+// resetSkillPinsForRemoval resets name in every stack pin file. Running
+// stacks go through api. Stopped stacks go through ResetOnDisk. Unreadable
+// state files are skipped. The error is reserved for ListStacks and context
+// errors; an API refusal is logged and does not fail the removal.
+func resetSkillPinsForRemoval(ctx context.Context, name string, api skillPinAPIReset) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	stacks, err := skillpins.ListStacks()
+	if err != nil {
+		return nil, err
+	}
+	skip := map[string]bool{}
+	var reset []string
+	for _, stack := range stacks {
+		class, st, lerr := classifySkillPinStack(stack)
+		switch class {
+		case skillPinStackRunning:
+			skip[stack] = true
+			if api == nil {
+				slog.Warn(fmt.Sprintf("skill pin left in place: stack %s pin reset refused; run 'gridctl skill pins reset %s --stack %s'", stack, name, stack),
+					"skill", name, "stack", stack)
+				continue
+			}
+			ok, aerr := api(st, name)
+			if aerr != nil {
+				slog.Warn(fmt.Sprintf("skill pin left in place: stack %s pin reset refused; run 'gridctl skill pins reset %s --stack %s'", stack, name, stack),
+					"skill", name, "stack", stack)
+				continue
+			}
+			if ok {
+				reset = append(reset, stack)
+			}
+		case skillPinStackUnreadable:
+			skip[stack] = true
+			slog.Warn("skill pin left in place: stack state unreadable",
+				"skill", name, "stack", stack, "category", cliStateLoadCategory(lerr))
+		}
+	}
+	diskReset, _, derr := skillpins.ResetOnDisk(ctx, name, func(stack string) bool {
+		return skip[stack]
+	})
+	if derr != nil {
+		return append(reset, diskReset...), derr
+	}
+	reset = append(reset, diskReset...)
+	sort.Strings(reset)
+	return reset, nil
+}
+
+func cliStateLoadCategory(err error) string {
+	switch {
+	case errors.Is(err, state.ErrNewerSchema):
+		return "newer_schema"
+	case os.IsPermission(err):
+		return "permission"
+	default:
+		return "corrupt"
+	}
 }

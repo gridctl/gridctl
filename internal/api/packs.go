@@ -114,6 +114,7 @@ func (s *Server) packsImporter() (*skills.Importer, error) {
 	store := s.registryServer.Store()
 	imp := skills.NewImporter(store, store.Dir(), s.lockFilePath(), slog.Default())
 	imp.SetCredentialResolver(s.credentialResolver())
+	imp.SetSkillPinResetter(s.skillPinResetter())
 	return imp, nil
 }
 

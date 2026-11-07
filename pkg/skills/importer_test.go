@@ -2,12 +2,15 @@ package skills
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -15,6 +18,8 @@ import (
 	"github.com/gridctl/gridctl/pkg/builder"
 	gitpkg "github.com/gridctl/gridctl/pkg/git"
 	"github.com/gridctl/gridctl/pkg/registry"
+	"github.com/gridctl/gridctl/pkg/skillpins"
+	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -73,6 +78,163 @@ func TestImporterRemove(t *testing.T) {
 	lf2, err := ReadLockFile(lockPath)
 	require.NoError(t, err)
 	assert.Empty(t, lf2.Sources)
+}
+
+func writeImporterPin(t *testing.T, stack string, skills map[string]*skillpins.SkillPin) (string, []byte) {
+	t.Helper()
+	path, err := state.SkillPinsPath(stack)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+	pf := &skillpins.PinFile{
+		Version:   "1",
+		Stack:     stack,
+		CreatedAt: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		Skills:    skills,
+	}
+	data, err := json.MarshalIndent(pf, "", "  ")
+	require.NoError(t, err)
+	data = append(data, '\n')
+	require.NoError(t, os.WriteFile(path, data, 0o600))
+	return path, data
+}
+
+func importerSamplePin() *skillpins.SkillPin {
+	when := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	return &skillpins.SkillPin{
+		SkillHash:      "abc",
+		Status:         skillpins.StatusPinned,
+		PinnedAt:       when,
+		LastVerifiedAt: when,
+	}
+}
+
+func TestImporterRemove_NilResetterReadsNoPins(t *testing.T) {
+	t.Setenv("GRIDCTL_HOME", t.TempDir())
+	store, dir := setupTestRegistry(t)
+	lockPath := filepath.Join(dir, "skills.lock.yaml")
+	createTestSkill(t, store, "test-skill")
+	require.NoError(t, WriteLockFile(lockPath, &LockFile{Sources: map[string]LockedSource{
+		"repo": {Skills: map[string]LockedSkill{"test-skill": {ContentHash: "hash"}}},
+	}}))
+	path, before := writeImporterPin(t, "daily", map[string]*skillpins.SkillPin{
+		"test-skill": importerSamplePin(),
+	})
+
+	imp := NewImporter(store, dir, lockPath, slog.Default())
+	require.NoError(t, imp.Remove("test-skill"))
+
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, string(before), string(after))
+}
+
+func TestImporterRemoveSkill_ResetsPinsAcrossStacks(t *testing.T) {
+	t.Setenv("GRIDCTL_HOME", t.TempDir())
+	store, dir := setupTestRegistry(t)
+	lockPath := filepath.Join(dir, "skills.lock.yaml")
+	createTestSkill(t, store, "test-skill")
+	require.NoError(t, WriteLockFile(lockPath, &LockFile{Sources: map[string]LockedSource{
+		"repo": {Skills: map[string]LockedSkill{"test-skill": {ContentHash: "hash"}}},
+	}}))
+	_, _ = writeImporterPin(t, "a", map[string]*skillpins.SkillPin{
+		"test-skill": importerSamplePin(),
+		"other":      importerSamplePin(),
+	})
+	bPath, bBefore := writeImporterPin(t, "b", map[string]*skillpins.SkillPin{
+		"other": importerSamplePin(),
+	})
+	logPath, err := state.SkillPinApprovalsPath("a")
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(logPath), 0o755))
+	logBefore := []byte("approvals-sentinel\n")
+	require.NoError(t, os.WriteFile(logPath, logBefore, 0o600))
+
+	imp := NewImporter(store, dir, lockPath, slog.Default())
+	imp.SetSkillPinResetter(func(ctx context.Context, name string) ([]string, error) {
+		reset, _, err := skillpins.ResetOnDisk(ctx, name, nil)
+		return reset, err
+	})
+	res, err := imp.RemoveSkill(t.Context(), "test-skill")
+	require.NoError(t, err)
+	require.Equal(t, []string{"a"}, res.PinsReset)
+	require.NoError(t, res.PinResetErr)
+
+	fresh := skillpins.New("a")
+	require.NoError(t, fresh.Load())
+	_, ok := fresh.Get("test-skill")
+	assert.False(t, ok)
+	_, ok = fresh.Get("other")
+	assert.True(t, ok)
+
+	bAfter, err := os.ReadFile(bPath)
+	require.NoError(t, err)
+	assert.Equal(t, string(bBefore), string(bAfter))
+	logAfter, err := os.ReadFile(logPath)
+	require.NoError(t, err)
+	assert.Equal(t, string(logBefore), string(logAfter))
+}
+
+func TestImporterRemoveSkill_DeleteFailureLeavesPin(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can remove a mode 0555 directory")
+	}
+	t.Setenv("GRIDCTL_HOME", t.TempDir())
+	store, dir := setupTestRegistry(t)
+	lockPath := filepath.Join(dir, "skills.lock.yaml")
+	createTestSkill(t, store, "test-skill")
+	skillDir := filepath.Join(dir, "skills", "test-skill")
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "keep"), []byte("x"), 0o644))
+	require.NoError(t, os.Chmod(skillDir, 0o555))
+	t.Cleanup(func() { _ = os.Chmod(skillDir, 0o755) })
+	require.NoError(t, WriteLockFile(lockPath, &LockFile{Sources: map[string]LockedSource{
+		"repo": {Skills: map[string]LockedSkill{"test-skill": {ContentHash: "hash"}}},
+	}}))
+	pinPath, pinBefore := writeImporterPin(t, "daily", map[string]*skillpins.SkillPin{
+		"test-skill": importerSamplePin(),
+	})
+
+	called := false
+	imp := NewImporter(store, dir, lockPath, slog.Default())
+	imp.SetSkillPinResetter(func(context.Context, string) ([]string, error) {
+		called = true
+		return []string{"daily"}, nil
+	})
+	_, err := imp.RemoveSkill(t.Context(), "test-skill")
+	require.Error(t, err)
+	assert.False(t, called, "resetter ran after a failed registry delete")
+
+	pinAfter, err := os.ReadFile(pinPath)
+	require.NoError(t, err)
+	assert.Equal(t, string(pinBefore), string(pinAfter))
+	lf, err := ReadLockFile(lockPath)
+	require.NoError(t, err)
+	_, _, found := lf.FindSkillSource("test-skill")
+	assert.True(t, found, "lock entry removed after a failed registry delete")
+}
+
+func TestImporterRemoveSkill_ResetErrorKeepsRemoval(t *testing.T) {
+	store, dir := setupTestRegistry(t)
+	lockPath := filepath.Join(dir, "skills.lock.yaml")
+	createTestSkill(t, store, "test-skill")
+	skillDir := filepath.Join(dir, "skills", "test-skill")
+	require.NoError(t, WriteLockFile(lockPath, &LockFile{Sources: map[string]LockedSource{
+		"repo": {Skills: map[string]LockedSkill{"test-skill": {ContentHash: "hash"}}},
+	}}))
+
+	imp := NewImporter(store, dir, lockPath, slog.New(slog.DiscardHandler))
+	imp.SetSkillPinResetter(func(context.Context, string) ([]string, error) {
+		return []string{"a"}, errors.New("boom")
+	})
+	res, err := imp.RemoveSkill(t.Context(), "test-skill")
+	require.NoError(t, err)
+	require.Equal(t, []string{"a"}, res.PinsReset)
+	require.Error(t, res.PinResetErr)
+	assert.ErrorContains(t, res.PinResetErr, "boom")
+	_, statErr := os.Stat(skillDir)
+	assert.True(t, os.IsNotExist(statErr), "skill directory still present")
+	lf, err := ReadLockFile(lockPath)
+	require.NoError(t, err)
+	assert.Empty(t, lf.Sources)
 }
 
 func TestImporterPin(t *testing.T) {

@@ -142,7 +142,7 @@ This command is also available as 'gridctl skill sync' for parity with the
 var skillRemoveCmd = &cobra.Command{
 	Use:   "remove <name>",
 	Short: "Remove an imported skill or agent",
-	Long:  "Remove a skill (or, with --kind agent, an agent, or --kind hook, a hook) and clean up its origin file and lock entry.",
+	Long:  "Remove a skill (or, with --kind agent, an agent, or --kind hook, a hook) and clean up its origin file and lock entry. A skill removal also resets its content pin and leaves the approvals log in place.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := validRegistryKind(skillRemoveKind); err != nil {
@@ -271,6 +271,7 @@ func newImporter(store *registry.Store) *skills.Importer {
 	logger := slog.Default()
 	imp := skills.NewImporter(store, registryDir(), skills.LockFilePath(), logger)
 	imp.SetCredentialResolver(cliCredentialResolver)
+	imp.SetSkillPinResetter(cliSkillPinResetter)
 	return imp
 }
 
@@ -1260,10 +1261,14 @@ func runSkillRemove(name, kind string) error {
 	if kind == skillKindHook {
 		return runSkillRemoveHook(name)
 	}
-	if err := imp.Remove(name); err != nil {
+	res, err := imp.RemoveSkill(context.Background(), name)
+	if err != nil {
 		return err
 	}
-
+	if res != nil && len(res.PinsReset) > 0 {
+		printer.Info("Removed skill", "name", name, "pins_reset", strings.Join(res.PinsReset, ","))
+		return nil
+	}
 	printer.Info("Removed skill", "name", name)
 	return nil
 }
@@ -1434,7 +1439,7 @@ func runSkillTry(ctx context.Context, repoURL string) error {
 			slog.Warn("failed to load registry for cleanup", "error", err)
 			return
 		}
-		cleanImp := skills.NewImporter(cleanStore, registryDir(), skills.LockFilePath(), slog.Default())
+		cleanImp := newImporter(cleanStore)
 		for _, name := range importedNames {
 			if err := cleanImp.Remove(name); err != nil {
 				slog.Warn("failed to clean up ephemeral skill", "name", name, "error", err)

@@ -6,11 +6,14 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gridctl/gridctl/pkg/pinapprovals"
 	"github.com/gridctl/gridctl/pkg/registry"
+	"github.com/gridctl/gridctl/pkg/state"
 )
 
 const benignSkill = `---
@@ -688,5 +691,284 @@ func TestApprove_LogAppendPrecedesPinRewrite(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "after the log") {
 		t.Fatalf("log = %s", data)
+	}
+}
+
+func sandboxPinsHome(t *testing.T) {
+	t.Helper()
+	t.Setenv("GRIDCTL_HOME", t.TempDir())
+}
+
+func writeStackPin(t *testing.T, stack string, skills map[string]*SkillPin) (string, []byte) {
+	t.Helper()
+	path, err := state.SkillPinsPath(stack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if skills == nil {
+		skills = map[string]*SkillPin{}
+	}
+	pf := &PinFile{
+		Version:   "1",
+		Stack:     stack,
+		CreatedAt: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		Skills:    skills,
+	}
+	data, err := json.MarshalIndent(pf, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path, data
+}
+
+func samplePin() *SkillPin {
+	when := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	return &SkillPin{
+		SkillHash:      "abc",
+		Status:         StatusPinned,
+		PinnedAt:       when,
+		LastVerifiedAt: when,
+	}
+}
+
+func TestResetPersisted_RemovesOnlyNamedRecord(t *testing.T) {
+	sandboxPinsHome(t)
+	_, _ = writeStackPin(t, "lab", map[string]*SkillPin{
+		"alpha": samplePin(),
+		"beta":  samplePin(),
+	})
+	removed, err := New("lab").ResetPersisted(t.Context(), "alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !removed {
+		t.Fatal("expected the named record to be removed")
+	}
+	fresh := New("lab")
+	if err := fresh.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := fresh.Get("alpha"); ok {
+		t.Fatal("alpha survived reset")
+	}
+	if _, ok := fresh.Get("beta"); !ok {
+		t.Fatal("beta was removed with alpha")
+	}
+}
+
+func TestResetPersisted_AbsentDoesNotWrite(t *testing.T) {
+	sandboxPinsHome(t)
+	path, before := writeStackPin(t, "lab", map[string]*SkillPin{"alpha": samplePin()})
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	removed, err := New("lab").ResetPersisted(t.Context(), "missing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed {
+		t.Fatal("absent name reported as removed")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("absent reset rewrote the pin file")
+	}
+	info2, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.ModTime().Equal(info2.ModTime()) {
+		t.Fatalf("mtime changed from %s to %s", info.ModTime(), info2.ModTime())
+	}
+}
+
+func TestResetPersisted_CorruptFileUntouched(t *testing.T) {
+	sandboxPinsHome(t)
+	path, err := state.SkillPinsPath("lab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	garbage := []byte("not json")
+	if err := os.WriteFile(path, garbage, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = New("lab").ResetPersisted(t.Context(), "alpha")
+	if !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("err = %v, want ErrCorrupt", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(garbage) {
+		t.Fatal("corrupt file was rewritten")
+	}
+
+	newer := []byte(`{"version":"99","stack":"lab","skills":{}}`)
+	if err := os.WriteFile(path, newer, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = New("lab").ResetPersisted(t.Context(), "alpha")
+	if !errors.Is(err, ErrNewerVersion) {
+		t.Fatalf("err = %v, want ErrNewerVersion", err)
+	}
+	after, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(newer) {
+		t.Fatal("newer-version file was rewritten")
+	}
+}
+
+func TestResetPersisted_LeavesApprovalsLog(t *testing.T) {
+	sandboxPinsHome(t)
+	reg := newTestRegistry(t)
+	writeSkill(t, reg, "benign", benignSkill)
+	ps := New("lab")
+	if _, err := ps.Sync(reg); err != nil {
+		t.Fatal(err)
+	}
+	if err := ps.Approve(t.Context(), "benign", reg, ApproveRequest{Reason: "reviewed", ApprovedBy: "wcollins", ApprovedBySource: pinapprovals.SourceOSUser}); err != nil {
+		t.Fatal(err)
+	}
+	logPath, err := state.SkillPinApprovalsPath("lab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	removed, err := New("lab").ResetPersisted(t.Context(), "benign")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !removed {
+		t.Fatal("expected the pin to be removed")
+	}
+	after, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("reset rewrote the approvals log")
+	}
+}
+
+func TestResetPersisted_CanceledDoesNotWrite(t *testing.T) {
+	sandboxPinsHome(t)
+	path, before := writeStackPin(t, "lab", map[string]*SkillPin{"alpha": samplePin()})
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	removed, err := New("lab").ResetPersisted(ctx, "alpha")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want canceled", err)
+	}
+	if removed {
+		t.Fatal("canceled reset reported a removal")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("canceled reset rewrote the pin file")
+	}
+}
+
+func TestListStacks(t *testing.T) {
+	sandboxPinsHome(t)
+	got, err := ListStacks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("missing directory returned %v", got)
+	}
+	dir, err := state.PinsDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	skillsDir := filepath.Join(dir, "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"c.json", "a.json", "b.json", "skip.tmp", "notes.txt", "nested.json.tmp"} {
+		if err := os.WriteFile(filepath.Join(skillsDir, name), []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err = ListStacks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got, []string{"a", "b", "c"}) {
+		t.Fatalf("stacks = %v, want [a b c]", got)
+	}
+}
+
+func TestResetOnDisk_SkipsAndReports(t *testing.T) {
+	sandboxPinsHome(t)
+	_, _ = writeStackPin(t, "one", map[string]*SkillPin{"alpha": samplePin()})
+	_, _ = writeStackPin(t, "two", map[string]*SkillPin{"alpha": samplePin()})
+	keepPath, keepBytes := writeStackPin(t, "keep", map[string]*SkillPin{"alpha": samplePin()})
+	badPath, err := state.SkillPinsPath("bad")
+	if err != nil {
+		t.Fatal(err)
+	}
+	garbage := []byte("not json")
+	if err := os.WriteFile(badPath, garbage, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reset, skipped, err := ResetOnDisk(t.Context(), "alpha", func(stack string) bool {
+		return stack == "keep"
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(reset, []string{"one", "two"}) {
+		t.Fatalf("reset = %v, want [one two]", reset)
+	}
+	if !slices.Equal(skipped, []string{"bad"}) {
+		t.Fatalf("skipped = %v, want [bad]", skipped)
+	}
+	if slices.Contains(reset, "keep") || slices.Contains(skipped, "keep") {
+		t.Fatalf("predicate-skipped stack appeared in reset=%v skipped=%v", reset, skipped)
+	}
+	after, err := os.ReadFile(badPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(garbage) {
+		t.Fatal("corrupt file was rewritten")
+	}
+	kept, err := os.ReadFile(keepPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(kept) != string(keepBytes) {
+		t.Fatal("predicate-skipped file was rewritten")
+	}
+	fresh := New("one")
+	if err := fresh.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := fresh.Get("alpha"); ok {
+		t.Fatal("alpha survived in the reset stack")
 	}
 }

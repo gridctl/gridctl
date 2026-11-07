@@ -334,6 +334,7 @@ func TestHandleRegistry_UpdateSkill_NotFound(t *testing.T) {
 // --- Skills: delete ---
 
 func TestHandleRegistry_DeleteSkill(t *testing.T) {
+	t.Setenv("GRIDCTL_HOME", t.TempDir())
 	srv, regServer := setupRegistryTestServer(t)
 	seedSkill(t, regServer, "deletable-skill", registry.StateDraft)
 
@@ -356,11 +357,34 @@ func TestHandleRegistry_DeleteSkill(t *testing.T) {
 	}
 }
 
+func TestHandleRegistry_DeleteSkill_ResetsPin(t *testing.T) {
+	t.Setenv("GRIDCTL_HOME", t.TempDir())
+	srv, _, _ := setupSkillPinsServer(t, "alpha")
+	srv.SetStackName("test-stack")
+	srv.SetSkillSourcePaths(filepath.Join(t.TempDir(), "skills.lock.yaml"), filepath.Join(t.TempDir(), "skills.yaml"))
+
+	handler := srv.Handler()
+	req := loopbackRequest(http.MethodDelete, "/api/registry/skills/alpha", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	req = loopbackRequest(http.MethodGet, "/api/skill-pins/alpha", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("pin after delete = %d, want 404: %s", rec.Code, rec.Body.String())
+	}
+}
+
 // TestHandleRegistry_DeleteSkill_CleansLockFile verifies that deleting a skill
 // via the HTTP/UI path also scrubs it from skills.lock.yaml, so a later sync
 // doesn't try to update a now-deleted skill. Regression for ghost-skill sync
 // failures.
 func TestHandleRegistry_DeleteSkill_CleansLockFile(t *testing.T) {
+	t.Setenv("GRIDCTL_HOME", t.TempDir())
 	srv, regServer := setupRegistryTestServer(t)
 	seedSkill(t, regServer, "skill-a", registry.StateActive)
 	seedSkill(t, regServer, "skill-b", registry.StateActive)
@@ -659,6 +683,7 @@ func TestHandleRegistry_ProgressiveDisclosure(t *testing.T) {
 // --- Progressive disclosure: deleting last item deregisters from router ---
 
 func TestHandleRegistry_ProgressiveDisclosure_Deregister(t *testing.T) {
+	t.Setenv("GRIDCTL_HOME", t.TempDir())
 	srv, regServer := setupRegistryTestServer(t)
 	seedSkill(t, regServer, "only-skill", registry.StateActive)
 

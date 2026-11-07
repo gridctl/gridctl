@@ -563,15 +563,27 @@ func (s *Server) handleSkillSourceRemove(w http.ResponseWriter, r *http.Request)
 	store := s.registryServer.Store()
 	registryDir := store.Dir()
 	imp := skills.NewImporter(store, registryDir, lockPath, slog.Default())
+	imp.SetSkillPinResetter(s.skillPinResetter())
 
-	// Remove each skill from this source
+	// Remove each skill from this source. A pin-reset problem is logged by
+	// RemoveSkill and does not drop the skill from removed.
 	var removed []string
+	var pinsReset map[string][]string
 	for skillName := range src.Skills {
-		if err := imp.Remove(skillName); err != nil {
+		res, err := imp.RemoveSkill(r.Context(), skillName)
+		if err != nil {
 			slog.Warn("failed to remove skill", "skill", skillName, "error", err)
 			continue
 		}
 		removed = append(removed, skillName)
+		if res != nil && len(res.PinsReset) > 0 {
+			if pinsReset == nil {
+				pinsReset = map[string][]string{}
+			}
+			stacks := append([]string(nil), res.PinsReset...)
+			sort.Strings(stacks)
+			pinsReset[skillName] = stacks
+		}
 	}
 
 	// Agents the source shipped leave with it too.
@@ -585,10 +597,14 @@ func (s *Server) handleSkillSourceRemove(w http.ResponseWriter, r *http.Request)
 
 	s.refreshRegistryRouter()
 
-	writeJSON(w, map[string]any{
+	resp := map[string]any{
 		"removed": removed,
 		"source":  sourceName,
-	})
+	}
+	if len(pinsReset) > 0 {
+		resp["pins_reset"] = pinsReset
+	}
+	writeJSON(w, resp)
 }
 
 // handleSkillSourceCheck triggers an update check for a source.

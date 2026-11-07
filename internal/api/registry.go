@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/skills"
@@ -215,6 +216,17 @@ func (s *Server) handleRegistrySkillDelete(w http.ResponseWriter, r *http.Reques
 		return true, nil
 	}); err != nil {
 		slog.Default().Warn("delete skill: failed to clean lock file", "skill", name, "error", err)
+	}
+
+	// Reset before the registry refresh. Sync lists a removed skill as
+	// Missing and does not delete the record, so the in-memory Reset is
+	// what clears it. A pin-reset problem does not change the 204.
+	reset, rerr := s.skillPinResetter()(r.Context(), name)
+	if len(reset) > 0 {
+		slog.Info("delete skill: pin reset", "skill", name, "stacks", strings.Join(reset, ",")) // #nosec G706 -- name is the deleted skill identifier; stacks are pin-file basenames
+	}
+	if rerr != nil {
+		slog.Warn("delete skill: pin reset failed", "skill", name, "error", rerr) // #nosec G706 -- name is the deleted skill identifier
 	}
 
 	s.refreshRegistryRouter()
