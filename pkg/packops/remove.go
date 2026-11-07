@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -110,11 +111,7 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 
 	if opts.DryRun {
 		for _, n := range removableSkills {
-			detail, derr := skillPinDryRunDetail(imp, n)
-			if derr != nil {
-				return nil, derr
-			}
-			rows = append(rows, Row{Kind: "skill", Name: n, Action: "would-remove", Detail: detail})
+			rows = append(rows, Row{Kind: "skill", Name: n, Action: "would-remove", Detail: skillPinDryRunDetail(imp, n)})
 		}
 		for _, n := range removableAgents {
 			rows = append(rows, Row{Kind: "agent", Name: n, Action: "would-remove"})
@@ -252,15 +249,17 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 
 // skillPinDryRunDetail reports pin files that hold name, without writing.
 // A bare importer (no resetter) returns an empty detail and reads no pin
-// file. Files that fail to load are skipped. A ListStacks error fails the
-// preview rather than claiming there is nothing to reset.
-func skillPinDryRunDetail(imp *skills.Importer, name string) (string, error) {
+// file. Files that fail to load are skipped. A directory listing error is
+// logged and treated as no preview, matching a real removal, which logs
+// the same class of error and still removes the skill.
+func skillPinDryRunDetail(imp *skills.Importer, name string) string {
 	if imp == nil || !imp.HasSkillPinResetter() {
-		return "", nil
+		return ""
 	}
 	stacks, err := skillpins.ListStacks()
 	if err != nil {
-		return "", err
+		slog.Warn("skill pin dry-run listing failed", "skill", name, "error", err)
+		return ""
 	}
 	var present []string
 	for _, stack := range stacks {
@@ -273,9 +272,9 @@ func skillPinDryRunDetail(imp *skills.Importer, name string) (string, error) {
 		}
 	}
 	if len(present) == 0 {
-		return "", nil
+		return ""
 	}
-	return fmt.Sprintf("would reset pin (%s)", strings.Join(present, ", ")), nil
+	return fmt.Sprintf("would reset pin (%s)", strings.Join(present, ", "))
 }
 
 // driftedPackResources reports which resources have a drifted projection

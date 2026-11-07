@@ -1,10 +1,13 @@
 package packops
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -122,5 +125,52 @@ func TestRemove_DryRunPreviewsPinReset(t *testing.T) {
 	}
 	if string(before) != string(after) {
 		t.Fatal("dry run rewrote the pin file")
+	}
+}
+
+func TestRemove_DryRunPinListErrorDoesNotFail(t *testing.T) {
+	mgrs, imp, home := seedPinnedSkillPack(t)
+	pinsSkills := filepath.Join(home, ".gridctl", "pins", "skills")
+	if err := os.RemoveAll(pinsSkills); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(pinsSkills), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pinsSkills, []byte("not-a-directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	doc, err := mgrs.Remove(t.Context(), imp, "pin-pack", RemoveOptions{DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := skillRow(t, doc, "alpha")
+	if row.Action != "would-remove" {
+		t.Fatalf("action = %q, want would-remove", row.Action)
+	}
+	if row.Detail != "" {
+		t.Fatalf("detail = %q, want empty", row.Detail)
+	}
+	logged := logs.String()
+	if !strings.Contains(logged, "skill pin dry-run listing failed") || !strings.Contains(logged, `"skill":"alpha"`) {
+		t.Fatalf("log = %s", logged)
+	}
+
+	doc, err = mgrs.Remove(t.Context(), imp, "pin-pack", RemoveOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row = skillRow(t, doc, "alpha")
+	if row.Action != "removed" {
+		t.Fatalf("action = %q, want removed", row.Action)
+	}
+	if row.Detail != "registry entry removed" {
+		t.Fatalf("detail = %q", row.Detail)
 	}
 }
