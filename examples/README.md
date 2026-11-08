@@ -84,7 +84,7 @@ gridctl apply examples/python-sources/pypi.yaml
 | deferred-discovery | http (container) | Deferred `search_tools` and `call_tool` without code execution; placeholder container |
 | gateway-basic | http | Gateway to an existing MCP server, tokenizer config |
 | gateway-remote | http | Authenticated remote gateway access through HTTPS or an encrypted tunnel |
-| [gateway-oauth](gateways/gateway-oauth.yaml) | http behind HTTPS proxy | Unreleased OAuth resource-server mode, external issuer, resource audience, and explicit origins; replace deployment values before use |
+| [gateway-oauth](gateways/gateway-oauth.yaml) | http behind HTTPS proxy | OAuth resource-server mode, external issuer, resource audience, and explicit origins; replace deployment values before use |
 | var-basic | stdio, http | `${var:KEY}` references and value-free `variables:` declarations |
 | var-sets | http (containers) | Variable sets fanning out to all workloads |
 | var-sets-scoped | stdio | Variable sets scoped to named servers and resources |
