@@ -32,6 +32,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/metrics"
 	"github.com/gridctl/gridctl/pkg/packops"
 	"github.com/gridctl/gridctl/pkg/pins"
+	"github.com/gridctl/gridctl/pkg/proposals"
 	"github.com/gridctl/gridctl/pkg/provisioner"
 	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/reload"
@@ -203,6 +204,12 @@ type Server struct {
 	resetExit       func(int)
 
 	pythonSources pythonSourcePlanner
+
+	// proposalStoreOverride replaces the stackless proposal store; nil
+	// builds proposals.New() per call. proposalResolverWrap lets tests
+	// wrap the live target resolver to inject faults.
+	proposalStoreOverride *proposals.Store
+	proposalResolverWrap  func(proposals.Resolver) proposals.Resolver
 }
 
 // SetWiringManager injects the wiring ownership manager. Tests use it
@@ -595,6 +602,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/context/pins/{name}/diff", s.handleContextPinDiff)
 	mux.HandleFunc("POST /api/context/pins/{name}/approve", s.handleApproveContextPin)
 	mux.HandleFunc("DELETE /api/context/pins/{name}", s.handleResetContextPin)
+
+	// Proposals: staged changes to governed documents. Stackless; the
+	// store reloads on every call.
+	mux.HandleFunc("POST /api/proposals", s.handleCreateProposal)
+	mux.HandleFunc("GET /api/proposals", s.handleListProposals)
+	mux.HandleFunc("GET /api/proposals/{id}", s.handleGetProposal)
+	mux.HandleFunc("POST /api/proposals/{id}/approve", s.handleApproveProposal)
+	mux.HandleFunc("POST /api/proposals/{id}/reject", s.handleRejectProposal)
 
 	// Variable store endpoints — canonical /api/var/* surface plus a
 	// deprecated /api/vault/* alias that wears Deprecation/Sunset headers.
