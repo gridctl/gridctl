@@ -137,6 +137,7 @@ var limitationCatalog = map[string]bool{
 	"Approver name, reason text, and evidence references are excluded from this report.":                           true,
 	"Absence of an approval entry is a fact, not a finding.":                                                       true,
 	"An approval entry is operator attribution, not authentication.":                                               true,
+	"Pending proposals are held, unapplied changes; this count is not a finding.":                                  true,
 }
 
 func sanitizeFacts(in CheckFacts) CheckFacts {
@@ -181,6 +182,13 @@ func sanitizeFacts(in CheckFacts) CheckFacts {
 			v = 0
 		}
 		out.RuleCount = intPtr(v)
+	}
+	if in.PendingProposals != nil {
+		v := *in.PendingProposals
+		if v < 0 {
+			v = 0
+		}
+		out.PendingProposals = intPtr(v)
 	}
 	if in.BlockDestructive != nil {
 		v := *in.BlockDestructive

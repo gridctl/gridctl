@@ -28,6 +28,7 @@ func Assemble(generatedAt time.Time, in Inputs) *Report {
 	report.Checks = append(report.Checks, varChecks(in)...)
 	report.Checks = append(report.Checks, gatewayChecks(in)...)
 	report.Checks = append(report.Checks, executionChecks(in)...)
+	report.Checks = append(report.Checks, proposalCheck(in))
 	sort.SliceStable(report.Checks, func(i, j int) bool {
 		if report.Checks[i].Predicate != report.Checks[j].Predicate {
 			return predicateIndex(report.Checks[i].Predicate) < predicateIndex(report.Checks[j].Predicate)
@@ -390,6 +391,29 @@ func contextPinChecks(in Inputs) []Check {
 		}
 	}
 	return out
+}
+
+const proposalLimitation = "Pending proposals are held, unapplied changes; this count is not a finding."
+
+// proposalCheck reports how many proposals wait for review. It never
+// fails: a pending proposal is a held change, not a negative observation.
+func proposalCheck(in Inputs) Check {
+	lim := []string{proposalLimitation}
+	if in.Proposals == nil || !in.Proposals.Available {
+		return check("proposal.pending.gateway", PredProposalPending, gatewaySubject(), OutcomeUnknown, "store_unavailable", "Proposal store snapshot unavailable.", unknownEvidence(), lim)
+	}
+	count := in.Proposals.Pending
+	if count < 0 {
+		count = 0
+	}
+	if count == 0 {
+		item := check("proposal.pending.gateway", PredProposalPending, gatewaySubject(), OutcomePass, "no_pending_proposals", "No pending proposals are held for review.", declaredEvidence(), lim)
+		item.Facts = CheckFacts{PendingProposals: intPtr(0)}
+		return item
+	}
+	item := check("proposal.pending.gateway", PredProposalPending, gatewaySubject(), OutcomePass, "proposals_pending", proposalCountText(count)+" held for review.", declaredEvidence(), lim)
+	item.Facts = CheckFacts{PendingProposals: intPtr(count)}
+	return item
 }
 
 const approvalExclusionLimitation = "Approver name, reason text, and evidence references are excluded from this report."

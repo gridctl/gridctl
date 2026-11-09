@@ -206,6 +206,13 @@ func explanationFor(reason, subject string, facts CheckFacts) string {
 		return text
 	case "policy_undeclared":
 		return "No per-tool call policy is declared."
+	case "proposals_pending":
+		if facts.PendingProposals != nil {
+			return proposalCountText(*facts.PendingProposals) + " held for review."
+		}
+		return "Pending proposals are held for review."
+	case "no_pending_proposals":
+		return "No pending proposals are held for review."
 	default:
 		return "Unrecognized claim."
 	}
@@ -218,6 +225,14 @@ func policyRuleCountText(count int) string {
 		noun = "rule"
 	}
 	return strconv.Itoa(count) + " " + noun
+}
+
+// proposalCountText is "1 pending proposal is" or "N pending proposals are".
+func proposalCountText(count int) string {
+	if count == 1 {
+		return "1 pending proposal is"
+	}
+	return strconv.Itoa(count) + " pending proposals are"
 }
 
 func joinCodes(codes []string) string {
@@ -265,4 +280,5 @@ var knownReasons = map[string]bool{
 	"execution_hygiene": true, "execution_failed": true, "execution_observed": true,
 	"execution_ineligible": true, "execution_eligible": true, "execution_outcome_unknown": true,
 	"policy_declared": true, "policy_undeclared": true,
+	"proposals_pending": true, "no_pending_proposals": true,
 }
