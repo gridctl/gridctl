@@ -4,6 +4,10 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- `gridctl info --json` advertises `schemas.proposals` (`"1"`), the version of staged proposal files under `~/.gridctl/proposals/`, and the text `Schemas:` line gains `proposals=1`. Retained-binary entries in `gridctl upgrade --list --format json` gain the same `proposals` key; entries recorded by earlier releases read it as empty, which means unknown. `gridctl upgrade --rollback` reads the `version` of every proposal file once and refuses when one is newer than the target reads, naming the file (`Delete or move the proposal file before rolling back`). `--force` downgrades that refusal to a warning. A target that does not advertise `proposals` prints one warning and is not refused. An absent directory is silent.
+
 ## [1.0.0-rc.5] - 2026-11-07
 
 ### Features
