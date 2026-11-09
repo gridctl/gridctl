@@ -513,7 +513,7 @@ Learn more → [Packs guide](docs/packs.md)
 
 - **Getting started**: [Installation](docs/installation.md)
 - **Reference**: [CLI](docs/cli-reference.md) · [Configuration](docs/config-schema.md) · [REST API](docs/api-reference.md)
-- **Guides**: [Concepts](docs/concepts.md) · [Skills](docs/skills.md) · [Packs](docs/packs.md) · [Hooks](docs/hooks.md) · [Tools Workspace](docs/tools-workspace.md) · [Global Context Sync](docs/global-context.md) · [Scaling](docs/scaling.md) · [Usage Observability](docs/usage-observability.md)
+- **Guides**: [Concepts](docs/concepts.md) · [Skills](docs/skills.md) · [Packs](docs/packs.md) · [Hooks](docs/hooks.md) · [Proposals](docs/proposals.md) · [Tools Workspace](docs/tools-workspace.md) · [Global Context Sync](docs/global-context.md) · [Scaling](docs/scaling.md) · [Usage Observability](docs/usage-observability.md)
 - **Operations**: [Project Status](docs/project-status.md) · [Troubleshooting](docs/troubleshooting.md)
 
 Full index at [`docs/`](docs/README.md).

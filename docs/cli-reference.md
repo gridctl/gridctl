@@ -339,7 +339,8 @@ A proposal is a staged unified diff against one governed document: a
 registry skill, a context fragment (or `AGENTS.md` when fragments mode is
 off), or an imported hook. It is stored at `~/.gridctl/proposals/<id>.json`
 and nothing reaches the target until it is approved. Proposals are
-stackless; `--stack` only selects the skill pin store.
+stackless; `--stack` only selects the skill pin store. See
+[Proposals](proposals.md) for the apply and record paths.
 
 | Command | Purpose |
 |---|---|

@@ -2896,7 +2896,7 @@ Deletes the pin record (`204`). The approvals log is left in place. The next wri
 
 ### Proposals
 
-Staged changes to one governed document (a registry skill, a context fragment or `AGENTS.md` when fragments mode is off, or an imported hook), stored at `~/.gridctl/proposals/<id>.json`. Stackless and authenticated like every `/api/` route. The daemon holds no proposal state; every call reloads the store. Backs `gridctl propose` and `gridctl proposals`.
+Staged changes to one governed document (a registry skill, a context fragment or `AGENTS.md` when fragments mode is off, or an imported hook), stored at `~/.gridctl/proposals/<id>.json`. Stackless and authenticated like every `/api/` route. The daemon holds no proposal state; every call reloads the store. Backs `gridctl propose`, `gridctl proposals`, and the Library's Proposals segment. See [Proposals](proposals.md).
 
 Error bodies are `{"error": "<text>"}`. Status mapping across these routes: `400` for a validation refusal (invalid field, `kind: agent`, an unsupported diff, a credential-shaped or overlong value, more than 15 evidence references, a missing reject reason, a reason required by findings, invalid JSON, or an oversized body); `404` for an unknown or malformed id, or a missing target; `409` for a stale base, unreviewed pin drift on the apply path, or a proposal that is not pending; `422` when the diff does not apply (a hunk mismatch, a `SKILL.md` or fragment that does not parse after the apply, or a target write that failed and was restored); `500` for a re-pin failure after the target was written (the body still carries the updated record) and for a write failure whose restore also failed; `503` when the registry or the relevant pin store is not available.
 

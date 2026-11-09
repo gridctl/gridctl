@@ -273,7 +273,8 @@ pkg/token/, pkg/format/, pkg/output/, pkg/jsonrpc/, pkg/state/, pkg/git/, pkg/do
 web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). Zustand stores in src/stores/, route map in
                     src/routes.tsx, feature components grouped under src/components/<workspace>/. Nine workspaces:
                     Stack, Library, Variables (`/vault`), Tools, Metrics, Pins, Logs, Traces (Runs tab), Connections. The Pins
-                    workspace has a Context tab beside Server and Skills. The Detached*Page
+                    workspace has a Context tab beside Server and Skills. The Library kind switch has Skills, Agents, Hooks,
+                    Packs, and Proposals segments; registry/proposals/ reviews staged proposals over `/api/proposals`. The Detached*Page
                     files are lazy popout windows that mirror specific panels.
                     src/lib/gatewayRequest.ts owns same-origin, no-redirect credential-bearing fetch.
                     The shell and detached routes do not request `/sse`; status polling is the disconnect signal.
@@ -303,7 +304,8 @@ tests/integration/  Real-runtime suites (build tag `integration`). `hooks_pack_t
                     pack_composition_test.go (`integration && !windows`) drives booster composition through a real local-process daemon.
                     pack_lock_test.go (`integration && !windows`) covers lock honoring across homes against a local git HTTP fixture.
                     secret_providers_test.go covers exec apply, redaction, export, plan, rotation reload, failure, and recovery with real subprocesses.
-                    upgrade_rollback_test.go (`integration && !windows`) upgrades and rolls back two race-built children through a local release server, with no Docker. It also checks a status version mismatch, `--rollback --restart`, and exit 2 when a project lock, tool pin file, or approvals log version is hand-bumped.
+                    upgrade_rollback_test.go (`integration && !windows`) upgrades and rolls back two race-built children through a local release server, with no Docker. It also checks a status version mismatch, `--rollback --restart`, and exit 2 when a project lock, tool pin file, approvals log, or proposal file version is hand-bumped, plus `--force` and a target that does not advertise `proposals`.
+                    proposals_test.go (`integration && !windows`) drives `propose` and `proposals` with a race-built CLI child against a real registry, context store, and pin stores: apply and record paths, stale base, pin drift, findings, refusals, fragment render normalization, a newer proposal file, and a skill approve routed through a real foreground daemon with no Docker.
 examples/           Example stack YAMLs grouped by surface (getting-started, transports, openapi, a2a, mcp-apps, registry, secrets-vault,
                     code-mode, platforms, tracing, access-control, autoscale, declarative-link, gateways, portable-stack,
                     portable-pack, booster-pack, python-sources, python-runtime, execution, security-evidence, stack-configs, stack-declaration-policy, runs).
@@ -319,7 +321,7 @@ scripts/            Build/test helpers and release tooling: release.py owns gate
                     run-verified-tests.sh captures go test JSON and runs cmd/scenarioverify for designated Gatekeeper lanes.
 docs/               User-facing documentation (cli-reference, config-schema, api-reference, concepts, skills, hooks, packs, tools-workspace,
                     global-context, scaling, usage-observability, installation, release-verification,
-                    project-status, troubleshooting, execution, mcp-runtime-python, security/threat-model, security-evidence,
+                    project-status, troubleshooting, proposals, execution, mcp-runtime-python, security/threat-model, security-evidence,
                     stack-declaration-policy, adversarial-regression-gates, capability-primitives, a2a-verification,
                     deferred-discovery-verification,
                     security/practical-guide).
