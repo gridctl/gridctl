@@ -678,6 +678,7 @@ func TestPathHelpers_DeriveFromHome(t *testing.T) {
 	}{
 		{"VaultDir", VaultDir, filepath.Join(home, ".gridctl", "vault")},
 		{"PinsDir", PinsDir, filepath.Join(home, ".gridctl", "pins")},
+		{"ProposalsDir", ProposalsDir, filepath.Join(home, ".gridctl", "proposals")},
 		{"StacksDir", StacksDir, filepath.Join(home, ".gridctl", "stacks")},
 		{"PinsPath", func() (string, error) { return PinsPath("s") }, filepath.Join(home, ".gridctl", "pins", "s.json")},
 		{"SkillPinsPath", func() (string, error) { return SkillPinsPath("s") }, filepath.Join(home, ".gridctl", "pins", "skills", "s.json")},

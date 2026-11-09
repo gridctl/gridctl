@@ -129,6 +129,16 @@ func PinsDir() (string, error) {
 	return filepath.Join(base, "pins"), nil
 }
 
+// ProposalsDir returns the directory for staged proposal files
+// (<home>/.gridctl/proposals).
+func ProposalsDir() (string, error) {
+	base, err := BaseDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "proposals"), nil
+}
+
 // StacksDir returns the directory for saved stack files (<home>/.gridctl/stacks).
 func StacksDir() (string, error) {
 	base, err := BaseDir()

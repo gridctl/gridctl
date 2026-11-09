@@ -184,6 +184,14 @@ func GuardSourceKey(lf *LockFile, name string, kind, repo string) error {
 	return nil
 }
 
+// SkillOwners returns the sorted names of lockfile sources whose Skills
+// map lists name. Pack-selected names that appear only in a pack record's
+// selection list are not included; callers that need them read
+// LockedPack.Skills.
+func SkillOwners(lf *LockFile, name string) []string {
+	return skillOwners(lf, name)
+}
+
 func skillOwners(lf *LockFile, name string) []string {
 	return ownersOf(lf, name, true)
 }
