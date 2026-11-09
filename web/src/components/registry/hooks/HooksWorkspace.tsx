@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useState, createElement } from 'react';
 import { useSearchParams } from 'react-router';
-import { List, Package, RefreshCw, Bot } from 'lucide-react';
+import { List, Package, RefreshCw, Bot, FileDiff } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { WORKSPACE_LABELS } from '../../../types/workspace';
 import { IconButton } from '../../ui/IconButton';
@@ -108,6 +108,15 @@ export function HooksWorkspace({ onKindChange }: HooksWorkspaceProps) {
         icon: createElement(Package, { size: 14 }),
         keywords: ['packs', 'segment', 'switch', 'kind'],
         onSelect: () => onKindChange('pack'),
+      },
+      {
+        id: 'library:view-proposals',
+        label: 'Library: View Proposals',
+        section: 'registry',
+        workspaces: ['library'],
+        icon: createElement(FileDiff, { size: 14 }),
+        keywords: ['proposals', 'proposal', 'review', 'staged', 'segment', 'switch', 'kind'],
+        onSelect: () => onKindChange('proposal'),
       },
     ];
     registerCommands('library-hooks', commands);
