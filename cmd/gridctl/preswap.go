@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/gridctl/gridctl/pkg/proposals"
 	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/versions"
 	"gopkg.in/yaml.v3"
@@ -34,6 +35,9 @@ type preswapInput struct {
 	SkillPin       func(name string) (string, error)
 	SkillApprovals func(name string) (string, error)
 	ToolApprovals  func(name string) (string, error)
+	// ProposalsDir is the stackless proposals directory. Empty skips the
+	// proposal check.
+	ProposalsDir string
 }
 
 // preswapResult is one line per problem. Refusals exit 2 unless --force
@@ -124,7 +128,81 @@ func checkPreswap(ctx context.Context, in preswapInput) (preswapResult, error) {
 	}
 	out.Refusals = append(out.Refusals, lockRefusals...)
 	out.Warnings = append(out.Warnings, lockWarnings...)
+	propRefusals, propWarnings, err := proposalRefusals(ctx, in)
+	if err != nil {
+		return out, err
+	}
+	out.Refusals = append(out.Refusals, propRefusals...)
+	out.Warnings = append(out.Warnings, propWarnings...)
 	return out, nil
+}
+
+// proposalRefusals reads the version head of every *.json file in the
+// proposals directory once (proposals are stackless) and refuses each file
+// newer than the target reads. An absent or empty directory is silent. A
+// target that does not advertise a proposals version warns once and does
+// not refuse. At most proposals.MaxListFiles files are read.
+func proposalRefusals(ctx context.Context, in preswapInput) (refusals, warnings []string, err error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	if in.ProposalsDir == "" || in.Target == nil {
+		return nil, nil, nil
+	}
+	entries, err := os.ReadDir(in.ProposalsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil, nil
+		}
+		return nil, []string{fmt.Sprintf("warning: %s could not be read; proposal compatibility was not checked", in.ProposalsDir)}, nil
+	}
+	var files []string
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		if len(files) >= proposals.MaxListFiles {
+			warnings = append(warnings, fmt.Sprintf("warning: %s holds more than %d proposal files; the rest were not checked", in.ProposalsDir, proposals.MaxListFiles))
+			break
+		}
+		files = append(files, filepath.Join(in.ProposalsDir, entry.Name()))
+	}
+	if len(files) == 0 {
+		return nil, warnings, nil
+	}
+	advertised := in.Target.Proposals
+	if advertised == "" {
+		return nil, append(warnings, fmt.Sprintf("warning: %s does not advertise a proposals version; proposal compatibility is unknown", in.TargetTag)), nil
+	}
+	targetVer, err := strconv.Atoi(advertised)
+	if err != nil {
+		return nil, append(warnings, fmt.Sprintf("warning: %s advertises proposals version %q, which is not an integer; proposal compatibility is unknown", in.TargetTag, advertised)), nil
+	}
+	for _, path := range files {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, err
+		}
+		data, err := os.ReadFile(path) // #nosec G304 -- path is a *.json file in the proposals directory
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("warning: %s could not be read; proposal compatibility was not checked", path))
+			continue
+		}
+		var head pinHead
+		if err := json.Unmarshal(data, &head); err != nil {
+			warnings = append(warnings, fmt.Sprintf("warning: %s could not be parsed; proposal compatibility is unknown", path))
+			continue
+		}
+		fileVer, unknown, _ := parsePinFileVersion(head.Version)
+		if unknown {
+			warnings = append(warnings, fmt.Sprintf("warning: %s has proposal version %q, which is not an integer; proposal compatibility is unknown", path, head.Version))
+			continue
+		}
+		if fileVer > targetVer {
+			refusals = append(refusals, fmt.Sprintf("%s is version %d; %s reads version %d. Delete or move the proposal file before rolling back.",
+				path, fileVer, in.TargetTag, targetVer))
+		}
+	}
+	return refusals, warnings, nil
 }
 
 // contextPinWarnings checks the stackless context pin file once. An absent

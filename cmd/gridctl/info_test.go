@@ -2,12 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/gridctl/gridctl/pkg/ctxpins"
 	"github.com/gridctl/gridctl/pkg/pinapprovals"
 	"github.com/gridctl/gridctl/pkg/pins"
 	"github.com/gridctl/gridctl/pkg/project"
+	"github.com/gridctl/gridctl/pkg/proposals"
 	"github.com/gridctl/gridctl/pkg/skillpins"
 	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/state"
@@ -39,6 +41,9 @@ func TestInfoSchemasMatchConstants(t *testing.T) {
 	if schemas.ContextPins != ctxpins.FileVersion {
 		t.Errorf("context_pins = %q, want %q", schemas.ContextPins, ctxpins.FileVersion)
 	}
+	if schemas.Proposals != proposals.FileVersion {
+		t.Errorf("proposals = %q, want %q", schemas.Proposals, proposals.FileVersion)
+	}
 
 	// Both output paths carry the same object. The error path is the
 	// runtime-detection failure; the success path is a detected runtime.
@@ -62,5 +67,8 @@ func TestInfoSchemasMatchConstants(t *testing.T) {
 	line := formatInfoSchemasLine(schemas)
 	if line == "" || line[:8] != "Schemas:" {
 		t.Fatalf("text line = %q", line)
+	}
+	if !strings.Contains(line, "proposals=1") {
+		t.Fatalf("text line = %q, want proposals=1", line)
 	}
 }

@@ -83,6 +83,14 @@ func digestedFile(f registry.SkillFile) bool {
 	return true
 }
 
+// DigestedFile reports whether a supporting file participates in the pin
+// digest set. It does not apply the nested-skill exclusion, which needs
+// the whole directory listing. pkg/proposals checks its diff path rules
+// against it.
+func DigestedFile(f registry.SkillFile) bool {
+	return digestedFile(f)
+}
+
 // ComputeDigests hashes a skill's whole document set: the canonical SKILL.md
 // plus every digested supporting file, sorted by path. File-read failures
 // wrap ErrDigestUnavailable with the underlying cause flattened (%v, not

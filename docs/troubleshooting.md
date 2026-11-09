@@ -86,6 +86,15 @@ context pin compatibility is unknown. A target that advertises a lower integer
 than the file's version warns that the older binary will not read the context
 pin file. None of these stop the daemon.
 
+Proposals. Each `*.json` file under `~/.gridctl/proposals/` has a `version`
+above the target's `proposals`. Delete or move the proposal file before
+rolling back. The directory is checked once, not per stack. An absent or
+empty directory is silent. A file that cannot be read or parsed, or whose
+version is not an integer, is a warning. A target that advertises schemas but
+leaves `proposals` empty, or advertises a non-integer, prints one warning that
+proposal compatibility is unknown and continues. Only the first 10,000 files
+are read; a larger directory prints a warning that the rest were not checked.
+
 Project lock. `~/.gridctl/project.lock.yaml` has `version` above the target's
 `project_lock`. Restore the copy under `~/.gridctl/project-migration-backup/`
 first.

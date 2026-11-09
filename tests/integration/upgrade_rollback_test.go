@@ -424,6 +424,7 @@ type retainedSchemas struct {
 	SkillPins    string `json:"skill_pins"`
 	PinApprovals string `json:"pin_approvals"`
 	ContextPins  string `json:"context_pins"`
+	Proposals    string `json:"proposals"`
 }
 
 func retainedSchemasFor(t *testing.T, home, tag string) *retainedSchemas {
