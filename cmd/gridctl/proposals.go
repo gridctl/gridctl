@@ -332,36 +332,36 @@ func printProposalError(w io.Writer, err error) {
 
 // proposalTargets builds a resolver from the on-disk stores a kind needs.
 // withSkillPins loads the resolved stack's skill pin store; a stack that
-// cannot be resolved leaves it nil and returns the reason as stackErr, so
-// read paths report pin status unknown and an apply-path approve reports
+// cannot be resolved leaves it nil and returns the reason as stackProblem,
+// so read paths report pin status unknown and an apply-path approve reports
 // the store as unavailable. An unknown kind gets an empty resolver; the
 // store refuses the kind before resolving.
-func proposalTargets(kind, stackFlag string, withSkillPins bool) (*proposals.Targets, error, error) {
+func proposalTargets(kind, stackFlag string, withSkillPins bool) (*proposals.Targets, string, error) {
 	targets := &proposals.Targets{LockPath: skills.LockFilePath()}
 	switch kind {
 	case proposals.KindSkill:
 		reg, err := loadRegistry()
 		if err != nil {
-			return nil, nil, err
+			return nil, "", err
 		}
 		targets.Registry = reg
 		if !withSkillPins {
-			return targets, nil, nil
+			return targets, "", nil
 		}
 		stack, serr := resolveStackNamed(stackFlag)
 		if serr != nil {
-			return targets, serr, nil
+			return targets, serr.Error(), nil
 		}
 		ps := skillpins.New(stack)
 		if err := ps.Load(); err != nil {
-			return nil, nil, err
+			return nil, "", err
 		}
 		targets.SkillPins = ps
 		targets.Stack = stack
 	case proposals.KindContext:
 		mgr, err := newContextManager()
 		if err != nil {
-			return nil, nil, err
+			return nil, "", err
 		}
 		store := ctxpins.New()
 		enabled, ignore := ctxpins.DeployedScanConfig()
@@ -371,16 +371,16 @@ func proposalTargets(kind, stackFlag string, withSkillPins bool) (*proposals.Tar
 	case proposals.KindHook:
 		reg, err := loadRegistry()
 		if err != nil {
-			return nil, nil, err
+			return nil, "", err
 		}
 		hp := hookpins.New()
 		if err := hp.Load(); err != nil {
-			return nil, nil, err
+			return nil, "", err
 		}
 		targets.Registry = reg
 		targets.HookPins = hp
 	}
-	return targets, nil, nil
+	return targets, "", nil
 }
 
 func readProposalDocument(stdin io.Reader, src string) ([]byte, int, error) {
@@ -758,7 +758,7 @@ func runProposalsApprove(ctx context.Context, stdout, stderr io.Writer, id, stac
 			return approveProposalViaAPI(stdout, stderr, st, id, reason, cleaned, by, format)
 		}
 	}
-	targets, stackErr, err := proposalTargets(current.Kind, stack, true)
+	targets, stackProblem, err := proposalTargets(current.Kind, stack, true)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return proposalsExitInfrastructure
@@ -771,8 +771,8 @@ func runProposalsApprove(ctx context.Context, stdout, stderr io.Writer, id, stac
 	}, targets)
 	if err != nil && p == nil {
 		printProposalError(stderr, err)
-		if errors.Is(err, proposals.ErrStoreUnavailable) && stackErr != nil {
-			fmt.Fprintf(stderr, "skill pin store unavailable: %v\n", stackErr)
+		if errors.Is(err, proposals.ErrStoreUnavailable) && stackProblem != "" {
+			fmt.Fprintf(stderr, "skill pin store unavailable: %s\n", stackProblem)
 		}
 		return proposalExit(err, proposalsExitRefused)
 	}
