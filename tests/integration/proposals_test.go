@@ -300,6 +300,7 @@ func TestProposals_LocalSkillApply(t *testing.T) {
 	deleteDiff := "--- a/references/runbook.md\n+++ /dev/null\n@@ -1,3 +0,0 @@\n-# Runbook\n-\n-Step one.\n"
 	for name, d := range map[string]string{
 		"delete":  deleteDiff,
+		"rename":  "--- a/SKILL.md\n+++ b/OTHER.md\n@@ -1 +1 @@\n-x\n+y\n",
 		"dotfile": proposalDiff(t, ".hidden", "", "x\n"),
 		"tmp":     proposalDiff(t, "notes.tmp", "", "x\n"),
 		"escape":  proposalDiff(t, "../other/SKILL.md", "", "x\n"),
@@ -483,7 +484,7 @@ func TestProposals_RecordPaths(t *testing.T) {
 		{"skill", "alpha", "pack", "gridctl pack add"},
 		{"skill", "gitskill", "git", "gridctl skill update"},
 		{"skill", "localskill", "local-import", sourceDir + " and run 'gridctl skill update'"},
-		{"hook", "block-force-push", "", "gridctl pack add"},
+		{"hook", "block-force-push", "pack", "gridctl pack add"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -509,21 +510,21 @@ func TestProposals_RecordPaths(t *testing.T) {
 				t.Fatalf("path: %v", rec)
 			}
 			prov := rec["provenance"].(map[string]any)
-			if tc.provenance != "" && prov["kind"] != tc.provenance {
+			if prov["kind"] != tc.provenance {
 				t.Fatalf("provenance: %v", prov)
 			}
 			if tc.provenance == "pack" && prov["pack"] != "hook-pack" {
 				t.Fatalf("pack name: %v", prov)
 			}
 
-			targetBefore := c.snapshot(root)
+			registryBefore := c.snapshot(c.gridctl("registry"))
 			pinsBefore := c.snapshot(c.gridctl("pins"))
 			args := append([]string{"proposals", "approve", id}, extra...)
 			out := c.ok("", args...)
 			if !strings.Contains(out, "verdict recorded") || !strings.Contains(out, tc.hint) || !strings.Contains(out, "proposal:"+id) {
 				t.Fatalf("approve output:\n%s", out)
 			}
-			assertSameTree(t, "target", targetBefore, c.snapshot(root))
+			assertSameTree(t, "registry", registryBefore, c.snapshot(c.gridctl("registry")))
 			assertSameTree(t, "pins and approvals", pinsBefore, c.snapshot(c.gridctl("pins")))
 			var shown map[string]any
 			decodeProposalJSON(t, c.ok("", append([]string{"proposals", "show", id, "--format", "json"}, extra...)...), &shown)
