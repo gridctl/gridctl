@@ -371,6 +371,92 @@ func TestPreswapInputPathsMatchHelpers(t *testing.T) {
 	if gotToolApprovals != wantToolApprovals {
 		t.Fatalf("tool approvals = %s, helper = %s", gotToolApprovals, wantToolApprovals)
 	}
+	wantProposals, err := state.ProposalsDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in.ProposalsDir != wantProposals {
+		t.Fatalf("proposals dir = %s, helper = %s", in.ProposalsDir, wantProposals)
+	}
+}
+
+func TestProposalRefusals(t *testing.T) {
+	target := &versions.Schemas{DaemonState: 2, ProjectLock: 1, ImportLock: 8, ToolPins: "2", SkillPins: "1", Proposals: "1"}
+
+	t.Run("absent directory is silent", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "proposals")
+		got := mustPreswap(t, preswapInput{TargetTag: "v1.0.0", Target: target, ProposalsDir: dir})
+		if len(got.Refusals) != 0 || len(got.Warnings) != 0 {
+			t.Fatalf("result = %+v", got)
+		}
+	})
+
+	t.Run("newer file refuses with the path named", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "proposals")
+		newer := filepath.Join(dir, "p-000000000002.json")
+		writeJSON(t, filepath.Join(dir, "p-000000000001.json"), `{"version":"1","id":"p-000000000001"}`)
+		writeJSON(t, newer, `{"version":"2","id":"p-000000000002"}`)
+		writeJSON(t, filepath.Join(dir, ".p-000000000003-1.tmp"), `{"version":"9"}`)
+		got := mustPreswap(t, preswapInput{TargetTag: "v1.0.0", Target: target, ProposalsDir: dir})
+		if len(got.Refusals) != 1 {
+			t.Fatalf("refusals = %v", got.Refusals)
+		}
+		assertHas(t, got.Refusals, newer+" is version 2; v1.0.0 reads version 1. Delete or move the proposal file before rolling back.")
+
+		proceed, lines := rollbackRefused("v1.0.0", got, true)
+		if !proceed {
+			t.Fatal("force did not proceed")
+		}
+		assertHas(t, lines, "warning: "+newer+" is version 2")
+		if proceed, _ := rollbackRefused("v1.0.0", got, false); proceed {
+			t.Fatal("refusal proceeded without --force")
+		}
+	})
+
+	t.Run("target without the key warns once", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "proposals")
+		writeJSON(t, filepath.Join(dir, "p-000000000001.json"), `{"version":"2"}`)
+		writeJSON(t, filepath.Join(dir, "p-000000000002.json"), `{"version":"2"}`)
+		blank := *target
+		blank.Proposals = ""
+		got := mustPreswap(t, preswapInput{TargetTag: "v1.0.0-rc.5", Target: &blank, ProposalsDir: dir})
+		if len(got.Refusals) != 0 {
+			t.Fatalf("refusals = %v", got.Refusals)
+		}
+		count := 0
+		for _, line := range got.Warnings {
+			if strings.Contains(line, "proposal") {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Fatalf("proposal warnings = %d: %v", count, got.Warnings)
+		}
+		assertHas(t, got.Warnings, "v1.0.0-rc.5 does not advertise a proposals version; proposal compatibility is unknown")
+	})
+
+	t.Run("unparsable file warns", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "proposals")
+		writeJSON(t, filepath.Join(dir, "p-000000000001.json"), `not-json`)
+		writeJSON(t, filepath.Join(dir, "p-000000000002.json"), `{"version":"x"}`)
+		got := mustPreswap(t, preswapInput{TargetTag: "v1.0.0", Target: target, ProposalsDir: dir})
+		if len(got.Refusals) != 0 {
+			t.Fatalf("refusals = %v", got.Refusals)
+		}
+		assertHas(t, got.Warnings, "could not be parsed; proposal compatibility is unknown")
+		assertHas(t, got.Warnings, "which is not an integer; proposal compatibility is unknown")
+	})
+
+	t.Run("nil target does not check proposals", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "proposals")
+		writeJSON(t, filepath.Join(dir, "p-000000000001.json"), `{"version":"2"}`)
+		got := mustPreswap(t, preswapInput{TargetTag: "v0.1.0", ProposalsDir: dir})
+		for _, line := range append(got.Refusals, got.Warnings...) {
+			if strings.Contains(line, "proposal") {
+				t.Fatalf("nil target checked proposals: %v", got)
+			}
+		}
+	})
 }
 
 func preswapHome(t *testing.T) string {

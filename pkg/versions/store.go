@@ -76,6 +76,7 @@ type Schemas struct {
 	SkillPins    string `json:"skill_pins"`
 	PinApprovals string `json:"pin_approvals"`
 	ContextPins  string `json:"context_pins"`
+	Proposals    string `json:"proposals"`
 }
 
 // Entry is one retained binary.

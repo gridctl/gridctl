@@ -13,6 +13,7 @@ import (
 	"github.com/gridctl/gridctl/pkg/pinapprovals"
 	"github.com/gridctl/gridctl/pkg/pins"
 	"github.com/gridctl/gridctl/pkg/project"
+	"github.com/gridctl/gridctl/pkg/proposals"
 	"github.com/gridctl/gridctl/pkg/skillpins"
 	"github.com/gridctl/gridctl/pkg/skills"
 	"github.com/gridctl/gridctl/pkg/state"
@@ -39,6 +40,7 @@ func currentSchemas() *versions.Schemas {
 		SkillPins:    skillpins.FileVersion,
 		PinApprovals: pinapprovals.FileVersion,
 		ContextPins:  ctxpins.FileVersion,
+		Proposals:    proposals.FileVersion,
 	}
 }
 

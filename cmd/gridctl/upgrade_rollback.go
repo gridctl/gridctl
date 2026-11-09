@@ -139,6 +139,7 @@ func (u *upgrader) preswapInput(target string, schemas *versions.Schemas) (presw
 	}
 	in.SkillApprovals = state.SkillPinApprovalsPath
 	in.ToolApprovals = state.PinApprovalsPath
+	in.ProposalsDir = filepath.Join(home, ".gridctl", "proposals")
 	return in, nil
 }
 
