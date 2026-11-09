@@ -673,3 +673,48 @@ func TestProposalsCLI_SkillApproveRoutesThroughDaemon(t *testing.T) {
 		t.Fatalf("second approve = %d %s", res.code, res.stderr)
 	}
 }
+
+// TestProposalsCLI_ApproveFlagParsing runs approve through the root command
+// so the repeatable --evidence flag and the --json alias are parsed by cobra.
+func TestProposalsCLI_ApproveFlagParsing(t *testing.T) {
+	cliProposalHome(t)
+	reg := cliAddSkill(t, "triage", "Check the dashboard first.\n")
+	cliPinSkills(t, reg)
+	id := cliProposeID(t, cliCreateDoc(t, "skill", "triage", cliBase(t, "skill", "triage"), cliSkillDiff(t, "triage", "Check the dashboard first.", "Check the dashboard second."), nil))
+
+	t.Cleanup(func() {
+		proposalsApproveReason, proposalsApproveEvidence, proposalsApproveFormat = "", nil, ""
+		*proposalsApproveJSON = false
+		for _, name := range []string{"reason", "evidence", "format", "json"} {
+			proposalsApproveCmd.Flags().Lookup(name).Changed = false
+		}
+	})
+	var err error
+	out := captureStdout(t, func() {
+		_, _, err = executeCommand(t, "proposals", "approve", id, "--reason", "reviewed", "--evidence", "pr:1", "--evidence", "pr:2", "--json")
+	})
+	if err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	var p proposals.Proposal
+	if err := json.Unmarshal([]byte(out), &p); err != nil || p.Status != proposals.StatusApproved {
+		t.Fatalf("approve --json output = %v %s", err, out)
+	}
+	ps := skillpins.New(cliProposalStack)
+	if err := ps.Load(); err != nil {
+		t.Fatal(err)
+	}
+	pin, _ := ps.Get("triage")
+	if len(pin.Approvals) == 0 {
+		t.Fatal("no approval entry")
+	}
+	refs := strings.Join(pin.Approvals[0].Evidence, ",")
+	for _, want := range []string{"proposal:" + id, "pr:1", "pr:2"} {
+		if !strings.Contains(refs, want) {
+			t.Fatalf("approval evidence %q missing %q", refs, want)
+		}
+	}
+	if pin.Approvals[0].Reason != "reviewed" {
+		t.Fatalf("approval reason = %q", pin.Approvals[0].Reason)
+	}
+}

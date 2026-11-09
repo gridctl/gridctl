@@ -126,7 +126,7 @@ func (f *proposalAPIFixture) read(path string) string {
 
 func (f *proposalAPIFixture) hash(kind, name string) string {
 	f.t.Helper()
-	targets := &proposals.Targets{Registry: f.reg, Context: f.mgr, LockPath: f.lockPath}
+	targets := &proposals.Targets{Registry: f.reg, Context: f.mgr, HookPins: f.hp, LockPath: f.lockPath}
 	target, err := targets.Resolve(f.t.Context(), kind, name)
 	if err != nil {
 		f.t.Fatal(err)
@@ -524,6 +524,75 @@ func TestProposalsAPI_RecordPathWritesNothing(t *testing.T) {
 	}
 	if f.read(f.skillFile("vendored")) != skillBefore || f.read(pinPath) != pinBefore {
 		t.Fatal("record approve wrote the target or the pin file")
+	}
+}
+
+func TestProposalsAPI_ContextApplyAndHookRecord(t *testing.T) {
+	f := newProposalAPIFixture(t)
+	ctx := t.Context()
+
+	if err := f.mgr.SaveCanonical("# Rules\n\nUse tabs.\n"); err != nil {
+		t.Fatal(err)
+	}
+	before := f.read(f.mgr.CanonicalPath())
+	body := createDoc(t, "context", ctxpins.CanonicalName, f.hash("context", ctxpins.CanonicalName),
+		proposalUnifiedDiff(t, ctxpins.CanonicalName, before, "# Rules\n\nUse spaces.\n"), nil)
+	rec := doJSON(t, f.srv, http.MethodPost, "/api/proposals", body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("context create = %d %s", rec.Code, rec.Body.String())
+	}
+	ctxProposal := decodeProposal(t, rec.Body.Bytes())
+	if ctxProposal.Path != proposals.PathApply {
+		t.Fatalf("context path = %s", ctxProposal.Path)
+	}
+	rec = doJSON(t, f.srv, http.MethodPost, "/api/proposals/"+ctxProposal.ID+"/approve", `{"approved_by":"reviewer"}`)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"applied":true`) {
+		t.Fatalf("context approve = %d %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(f.read(f.mgr.CanonicalPath()), "Use spaces.") {
+		t.Fatal("AGENTS.md not updated")
+	}
+	rec = doJSON(t, f.srv, http.MethodGet, "/api/context/pins/"+ctxpins.CanonicalName, "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"pinned"`) {
+		t.Fatalf("context pin after approve = %d %s", rec.Code, rec.Body.String())
+	}
+
+	hookDir := filepath.Join(f.regDir, "hooks", "block-push")
+	if err := os.MkdirAll(hookDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hookDir, "hook.json"), []byte(`{"event":"PreToolUse","command":"./check.sh"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!/bin/sh\nexit 0\n"
+	scriptPath := filepath.Join(hookDir, "check.sh")
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.hp.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.hp.Pin(ctx, hookpins.PinRequest{Name: "block-push", Dir: hookDir, Source: hookpins.SourceGit}); err != nil {
+		t.Fatal(err)
+	}
+	hookPinFile := filepath.Join(f.pinsDir, "hooks", "global.json")
+	hookPinBefore := f.read(hookPinFile)
+	body = createDoc(t, "hook", "block-push", f.hash("hook", "block-push"),
+		proposalUnifiedDiff(t, "check.sh", script, "#!/bin/sh\nexit 1\n"), nil)
+	rec = doJSON(t, f.srv, http.MethodPost, "/api/proposals", body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("hook create = %d %s", rec.Code, rec.Body.String())
+	}
+	hookProposal := decodeProposal(t, rec.Body.Bytes())
+	if hookProposal.Path != proposals.PathRecord {
+		t.Fatalf("hook path = %s", hookProposal.Path)
+	}
+	rec = doJSON(t, f.srv, http.MethodPost, "/api/proposals/"+hookProposal.ID+"/approve", `{"approved_by":"reviewer"}`)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"applied":false`) {
+		t.Fatalf("hook approve = %d %s", rec.Code, rec.Body.String())
+	}
+	if f.read(scriptPath) != script || f.read(hookPinFile) != hookPinBefore {
+		t.Fatal("hook record approve changed the hook or its pin")
 	}
 }
 
