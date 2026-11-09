@@ -1,6 +1,6 @@
 # REST API Reference
 
-The gridctl gateway exposes a REST API for managing stacks, secrets, skills, packs, schema, skill, and context pins, the global context (including rule fragments), agent projection and client wiring, usage telemetry, traces, run records, optimize findings, daemon reset, live tool invocation and discovery, and MCP protocol interactions. By default the gateway listens on port `8180`.
+The gridctl gateway exposes a REST API for managing stacks, secrets, skills, packs, schema, skill, and context pins, staged proposals, the global context (including rule fragments), agent projection and client wiring, usage telemetry, traces, run records, optimize findings, daemon reset, live tool invocation and discovery, and MCP protocol interactions. By default the gateway listens on port `8180`.
 
 ## Authentication
 
@@ -2893,6 +2893,51 @@ Success is `200`:
 #### `DELETE /api/context/pins/{name}`
 
 Deletes the pin record (`204`). The approvals log is left in place. The next write pass re-pins the fragment. `404` when no pin exists. `500` when the store cannot be read or the delete fails.
+
+### Proposals
+
+Staged changes to one governed document (a registry skill, a context fragment or `AGENTS.md` when fragments mode is off, or an imported hook), stored at `~/.gridctl/proposals/<id>.json`. Stackless and authenticated like every `/api/` route. The daemon holds no proposal state; every call reloads the store. Backs `gridctl propose` and `gridctl proposals`.
+
+Error bodies are `{"error": "<text>"}`. Status mapping across these routes: `400` for a validation refusal (invalid field, `kind: agent`, an unsupported diff, a credential-shaped or overlong value, more than 15 evidence references, a missing reject reason, a reason required by findings, invalid JSON, or an oversized body); `404` for an unknown or malformed id, or a missing target; `409` for a stale base, unreviewed pin drift on the apply path, or a proposal that is not pending; `422` when the diff does not apply (a hunk mismatch, a `SKILL.md` or fragment that does not parse after the apply, or a target write that failed and was restored); `500` for a re-pin failure after the target was written (the body still carries the updated record) and for a write failure whose restore also failed; `503` when the registry or the relevant pin store is not available.
+
+#### `POST /api/proposals`
+
+Stages a proposal. Body (at most 512 KiB):
+
+```json
+{
+  "kind": "skill",
+  "target": "incident-triage",
+  "base_hash": "<composite hash from 'gridctl proposals base skill incident-triage'>",
+  "diff": "--- a/SKILL.md\n+++ b/SKILL.md\n@@ -8,1 +8,1 @@\n-Page the on-call owner.\n+Page the on-call owner within five minutes.\n",
+  "classification": "knowledge",
+  "prevalence": {"sessions": 14, "runs": 6},
+  "evidence": ["session:abc123"],
+  "reason": "seen in 14 sessions",
+  "source": "dream",
+  "created_by": "curator"
+}
+```
+
+`201` with the stored record: `id`, `version`, `kind`, `target`, `base_hash`, `base_current`, `diff`, `classification`, `prevalence`, `evidence`, `reason`, `source`, `created_at`, `created_by`, `created_by_source`, `status` (`pending`), `path` (`apply` or `record`), `provenance` (`kind` one of `local`, `local-import`, `git`, `pack`, with `pack` or `source_dir` when known), `findings`, `verdict` (`null`), and `files`. A verified OAuth principal wins over a declared `created_by`. A diff that does not apply to a current base is `422`; a stale base is stored with `base_current: false`.
+
+#### `GET /api/proposals`
+
+`200` with `{"schema_version": 1, "proposals": [...], "skipped": [{"path", "category"}], "truncated": false}`, pending first then newest first. Query `status` (`pending`, `approved`, `rejected`, or `all`) and `kind` filter the list; an unknown `status` is `400`. `skipped` names files that failed to load (`corrupt`, `newer_version`, `permission`, `unreadable`), never their contents.
+
+#### `GET /api/proposals/{id}`
+
+`200` with the record, `base_current` refreshed against the target, and a computed `pin_status` (`pinned`, `drift`, `unpinned`, or `unknown` when the pin store is unavailable) that is never stored. `404` for an unknown id.
+
+#### `POST /api/proposals/{id}/approve`
+
+Body: `{ "reason": "<replaces the proposal's reason when non-empty>", "evidence": ["<opaque ref>"], "approved_by": "<name>" }`. Attribution order matches skill pins. On the apply path the target is written, re-pinned, and the approvals log entry carries the effective reason and evidence plus `proposal:<id>`; a skill change then refreshes the gateway's registry view and skill pin sync. On the record path nothing is written and no pin store or log is touched.
+
+`200` with the updated record plus `approved_by`, `approved_by_source`, `evidence_count` (references on the verdict), and `applied`. `500` after a re-pin failure carries the same fields plus `error`, with `status: approved` and `verdict.pin_error` set.
+
+#### `POST /api/proposals/{id}/reject`
+
+Body: `{ "reason": "<required>", "approved_by": "<name>" }`. `200` with the updated record (`status: rejected`) plus `approved_by`, `approved_by_source`, and `evidence_count` (`0`). Nothing is written to the target or any approvals log.
 
 ### Global Context
 
