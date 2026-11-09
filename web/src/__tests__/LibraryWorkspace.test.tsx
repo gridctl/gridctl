@@ -25,6 +25,8 @@ vi.mock('../components/ui/Toast', () => ({
 vi.mock('../lib/api', () => ({
   fetchRegistryStatus: vi.fn().mockResolvedValue({ totalSkills: 0, activeSkills: 0 }),
   fetchPacks: vi.fn().mockResolvedValue([]),
+  // The kind switch's pending-proposal badge.
+  fetchProposals: vi.fn().mockResolvedValue({ schema_version: 1, proposals: [], skipped: [], truncated: false }),
   fetchRegistrySkills: vi.fn().mockResolvedValue([]),
   fetchSkillSources: vi.fn().mockResolvedValue([]),
   updateSkillSource: vi.fn().mockResolvedValue({ source: 'acme-skills', results: [] }),

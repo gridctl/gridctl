@@ -51,6 +51,7 @@ import { fetchPacks } from '../../lib/api';
 import { AgentsWorkspace } from '../registry/agents/AgentsWorkspace';
 import { HooksWorkspace } from '../registry/hooks/HooksWorkspace';
 import { PacksWorkspace } from '../registry/packs/PacksWorkspace';
+import { ProposalsWorkspace } from '../registry/proposals/ProposalsWorkspace';
 import { hasAnyCategory, skillCategory } from '../../lib/skillMeta';
 import {
   coldWindowCaveat,
@@ -506,7 +507,7 @@ export function LibraryWorkspace() {
   // clear the shared ?selected param behind the agents dialogs, or silently
   // eat a press on an invisible skills multi-selection.
   useEffect(() => {
-    if (kind === 'agent' || kind === 'hook' || kind === 'pack') return;
+    if (kind === 'agent' || kind === 'hook' || kind === 'pack' || kind === 'proposal') return;
     if (!selectedName && selectedNames.size === 0) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || showEditor) return;
@@ -856,6 +857,9 @@ export function LibraryWorkspace() {
   }
   if (kind === 'pack') {
     return <PacksWorkspace onKindChange={setKind} />;
+  }
+  if (kind === 'proposal') {
+    return <ProposalsWorkspace onKindChange={setKind} />;
   }
 
   const inspector = (

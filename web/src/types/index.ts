@@ -812,6 +812,81 @@ export interface HookPinDiff {
   findings: PinFinding[];
 }
 
+// Proposals mirror GET /api/proposals and GET /api/proposals/{id}: a staged
+// change to one governed document, held until a human approves or rejects
+// it. diff, evidence, reason, source, and findings are proposer-controlled
+// text and must render through escapeNonPrintable.
+export type ProposalKind = 'skill' | 'context' | 'hook';
+export type ProposalStatus = 'pending' | 'approved' | 'rejected';
+export type ProposalPath = 'apply' | 'record';
+export type ProposalPinStatus = 'pinned' | 'drift' | 'unpinned' | 'unknown';
+
+export interface ProposalProvenance {
+  kind: 'local' | 'local-import' | 'git' | 'pack';
+  pack?: string;
+  source_dir?: string;
+}
+
+export interface ProposalVerdict {
+  at: string;
+  by?: string;
+  by_source?: string;
+  reason?: string;
+  evidence?: string[];
+  applied: boolean;
+  approved_hash?: string;
+  new_hash?: string;
+  stack?: string;
+  pin_error?: string;
+}
+
+export interface Proposal {
+  id: string;
+  version: string;
+  kind: ProposalKind;
+  target: string;
+  base_hash: string;
+  base_current: boolean;
+  diff: string;
+  classification: 'knowledge' | 'guarantee';
+  prevalence: { sessions: number; runs: number };
+  evidence: string[] | null;
+  reason?: string;
+  source?: string;
+  created_at: string;
+  created_by?: string;
+  created_by_source?: string;
+  status: ProposalStatus;
+  path: ProposalPath;
+  provenance: ProposalProvenance;
+  findings: PinFinding[] | null;
+  verdict: ProposalVerdict | null;
+  files: string[] | null;
+  // Computed by the single-proposal GET only; absent from list rows.
+  pin_status?: ProposalPinStatus;
+}
+
+export interface ProposalSkipped {
+  path: string;
+  category: 'corrupt' | 'newer_version' | 'permission' | 'unreadable';
+}
+
+export interface ProposalList {
+  schema_version: number;
+  proposals: Proposal[];
+  skipped: ProposalSkipped[];
+  truncated: boolean;
+}
+
+// Response of POST /api/proposals/{id}/approve and /reject: the updated
+// record plus approval attribution.
+export interface ProposalVerdictResponse extends Proposal {
+  approved_by: string;
+  approved_by_source: string;
+  evidence_count: number;
+  applied?: boolean;
+}
+
 // Response of POST /api/project/agents/adopt.
 export interface AgentAdoptResult {
   agent: string;

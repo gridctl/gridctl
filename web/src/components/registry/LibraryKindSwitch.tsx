@@ -1,11 +1,13 @@
 import { cn } from '../../lib/cn';
 import type { RegistryKind } from '../../lib/registryKind';
+import { usePendingProposalCount } from './proposals/usePendingProposalCount';
 
 const KIND_OPTIONS: { key: RegistryKind; label: string }[] = [
   { key: 'skill', label: 'Skills' },
   { key: 'agent', label: 'Agents' },
   { key: 'hook', label: 'Hooks' },
   { key: 'pack', label: 'Packs' },
+  { key: 'proposal', label: 'Proposals' },
 ];
 
 /**
@@ -15,14 +17,21 @@ const KIND_OPTIONS: { key: RegistryKind; label: string }[] = [
  * for the Agents catalog, which starts empty on nearly every install.
  * Styled at the eyebrow's scale with the workspace's aria-pressed button
  * treatment (GroupByControl / SortControl).
+ *
+ * The Proposals option carries a pending-count badge. The Proposals segment
+ * passes its own live count; every other segment loads it once on mount.
  */
 export function LibraryKindSwitch({
   kind,
   onChange,
+  pendingProposals,
 }: {
   kind: RegistryKind;
   onChange: (kind: RegistryKind) => void;
+  pendingProposals?: number;
 }) {
+  const fetched = usePendingProposalCount(pendingProposals === undefined);
+  const pending = pendingProposals ?? fetched ?? 0;
   return (
     <div className="flex items-center gap-1" role="group" aria-label="Library catalog kind">
       {KIND_OPTIONS.map((opt) => (
@@ -31,13 +40,21 @@ export function LibraryKindSwitch({
           onClick={() => onChange(opt.key)}
           aria-pressed={kind === opt.key}
           className={cn(
-            'px-2 py-1 rounded-md text-3xs uppercase tracking-[0.25em] font-medium transition-colors border',
+            'px-2 py-1 rounded-md text-3xs uppercase tracking-[0.25em] font-medium transition-colors border inline-flex items-center gap-1.5',
             kind === opt.key
               ? 'bg-primary/10 text-primary border-primary/25'
               : 'text-text-muted/60 hover:text-text-secondary hover:bg-surface-highlight border-transparent',
           )}
         >
           {opt.label}
+          {opt.key === 'proposal' && pending > 0 && (
+            <span
+              aria-label={`${pending} pending`}
+              className="min-w-4 px-1 rounded-full bg-status-pending/15 text-status-pending text-3xs tracking-normal font-semibold"
+            >
+              {pending}
+            </span>
+          )}
         </button>
       ))}
     </div>
