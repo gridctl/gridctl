@@ -196,6 +196,8 @@ func init() {
 		skillCmd:     groupSkills,
 		packCmd:      groupSkills,
 		activateCmd:  groupSkills,
+		proposeCmd:   groupSkills,
+		proposalsCmd: groupSkills,
 		varCmd:       groupConfig,
 		vaultCmd:     groupConfig, // hidden; grouped for completeness
 		pinsCmd:      groupConfig,

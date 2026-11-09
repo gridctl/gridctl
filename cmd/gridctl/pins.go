@@ -961,12 +961,16 @@ func printDaemonApproval(body []byte, fallbackCount int) {
 }
 
 func printRecordedApproval(name, source string, evidenceCount int) {
+	fprintRecordedApproval(os.Stdout, name, source, evidenceCount)
+}
+
+func fprintRecordedApproval(w io.Writer, name, source string, evidenceCount int) {
 	refs := fmt.Sprintf("%d reference(s)", evidenceCount)
 	if name == "" {
-		fmt.Printf("  recorded approval, %s\n", refs)
+		fmt.Fprintf(w, "  recorded approval, %s\n", refs)
 		return
 	}
-	fmt.Printf("  recorded approval by %s (%s), %s\n", name, source, refs)
+	fmt.Fprintf(w, "  recorded approval by %s (%s), %s\n", name, source, refs)
 }
 
 func renderLastApproval(w io.Writer, entry *pinapprovals.Entry) {
