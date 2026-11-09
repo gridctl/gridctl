@@ -4347,6 +4347,7 @@ HTTP middleware and routing errors can be plain text, including `401 Unauthorize
 | `409` | Resource conflict (e.g., duplicate name), or `restart_required` for gateway security changes |
 | `413` | Request body exceeds the `/api/tools/call` 2 MiB envelope |
 | `415` | Unsupported content type on `/api/tools/call` (must be `application/json`) |
+| `422` | Well-formed request whose content cannot be processed (an unknown server or tool in a scope, a confirm token, a PyPI project, a pack requirement, or a proposal diff that does not apply) |
 | `423` | Vault is locked |
 | `503` | Service unavailable (OAuth verification unavailable, runtime not configured, reload or initialization handler unavailable, or tools call/discover with no gateway) |
 
