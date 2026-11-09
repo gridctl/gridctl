@@ -10,6 +10,7 @@ type Inputs struct {
 	Pins        *PinView
 	SkillPins   *SkillPinView
 	ContextPins *ContextPinView
+	Proposals   *ProposalView
 	Startup     *StartupView
 	Execution   []ExecutionView
 }
@@ -152,6 +153,13 @@ type ContextPinRecordView struct {
 	PinnedAt       time.Time
 	LastVerifiedAt time.Time
 	FindingCodes   []string
+}
+
+// ProposalView counts pending proposals in the stackless proposal store.
+// It carries no target name, diff, reason, or evidence.
+type ProposalView struct {
+	Available bool
+	Pending   int
 }
 
 // StartupView is a value-free active startup security snapshot.

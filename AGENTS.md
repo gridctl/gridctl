@@ -94,10 +94,13 @@ The shape of the codebase from the outside in:
 
 ```
 cmd/gridctl/        Cobra CLI entry points, one file per subcommand (apply, serve, call, tools, link, var, skill, ctx, pack, project, optimize, runs, …).
-                    ctx_pins.go is `gridctl ctx pins`. embed.go pulls in cmd/gridctl/web/dist via go:embed under the embed_web build tag.
+                    ctx_pins.go is `gridctl ctx pins`. proposals.go is `gridctl propose` and `gridctl proposals`; a skill
+                    approve routes through the running daemon's API. embed.go pulls in cmd/gridctl/web/dist via go:embed under the embed_web build tag.
 cmd/scenarioverify/ Repository test utility that checks designated Go test identities against a completed `go test -json` capture. Not a gridctl subcommand.
 internal/api/       REST handlers backing the web UI (one file per resource: stack, skills, vault, pins, context_pins, telemetry, traces, runs, tools_call, tools_discover, …).
                     hooks.go serves `/api/registry/hooks` and `/api/project/hooks`. hookpins.go serves `/api/hook-pins`.
+                    proposals.go serves `/api/proposals` over the live pin stores and refreshes the registry router after
+                    a skill apply; it also fills the `proposal.pending` security-report view.
                     context_pins.go serves `/api/context/pins`.
                     Python source validation, resolution previews, generated files, and status provenance live in
                     python_sources.go. The Server struct in api.go wires together every pkg/* subsystem the UI needs.

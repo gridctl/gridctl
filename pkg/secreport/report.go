@@ -68,6 +68,7 @@ const (
 	PredExecutionAvailability = "execution.availability"
 	PredExecutionEnforcement  = "execution.enforcement"
 	PredPolicyDeclared        = "policy.declared"
+	PredProposalPending       = "proposal.pending"
 )
 
 // PredicateInventory is the finite named check catalog. Coverage "complete"
@@ -98,6 +99,7 @@ var PredicateInventory = []string{
 	PredExecutionAvailability,
 	PredExecutionEnforcement,
 	PredPolicyDeclared,
+	PredProposalPending,
 }
 
 // FailPredicates are the only predicates that may produce exit-one failures.
@@ -181,6 +183,7 @@ type CheckFacts struct {
 	RecordedOutcome    string   `json:"recorded_outcome,omitempty"`
 	Instance           string   `json:"instance,omitempty"`
 	Revision           string   `json:"revision,omitempty"`
+	PendingProposals   *int     `json:"pending_proposals,omitempty"`
 }
 
 // Subject is a bounded identity for the check.
