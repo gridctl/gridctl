@@ -418,3 +418,29 @@ func TestVerifyApprove_RejectsPathName(t *testing.T) {
 		t.Fatalf("approve = %v", err)
 	}
 }
+
+func TestCurrentCompositeHash_NeedsNoStore(t *testing.T) {
+	dir := t.TempDir()
+	reg := filepath.Join(dir, "registry")
+	writeHook(t, filepath.Join(reg, "hooks", "block"), `{"name":"block","description":"d","dialect":"claude-code"}`, "#!/bin/sh\nexit 0\n")
+
+	got, err := CurrentCompositeHash("block", reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ps := NewWithPath(dir)
+	if err := ps.Pin(t.Context(), PinRequest{Name: "block", Dir: filepath.Join(reg, "hooks", "block"), Source: SourceLocal}); err != nil {
+		t.Fatal(err)
+	}
+	pin, ok := ps.Get("block")
+	if !ok || got == "" || pin.CompositeHash != got {
+		t.Fatalf("hash = %q, pinned = %+v", got, pin)
+	}
+	viaStore, err := ps.CurrentCompositeHash("block", reg)
+	if err != nil || viaStore != got {
+		t.Fatalf("store hash = %q, %v; want %q", viaStore, err, got)
+	}
+	if _, err := CurrentCompositeHash("../escape", reg); err == nil {
+		t.Fatal("escaped name accepted")
+	}
+}

@@ -248,6 +248,9 @@ func validateCreate(req CreateRequest) (*Proposal, error) {
 	if err != nil {
 		return nil, fmt.Errorf("proposals: %w", err)
 	}
+	if err := checkEvidenceCount(len(evidence)); err != nil {
+		return nil, err
+	}
 	if err := pinapprovals.ValidateReason(req.Reason); err != nil {
 		return nil, fmt.Errorf("proposals: %w", err)
 	}

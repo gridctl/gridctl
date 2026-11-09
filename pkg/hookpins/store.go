@@ -380,6 +380,12 @@ func (s *Store) Diff(name, registryDir string) (*VerifyResult, error) {
 
 // CurrentCompositeHash is the approval fingerprint of the hook's current bytes.
 func (s *Store) CurrentCompositeHash(name, registryDir string) (string, error) {
+	return CurrentCompositeHash(name, registryDir)
+}
+
+// CurrentCompositeHash is the approval fingerprint of the hook's current
+// bytes under registryDir. It reads no pin file, so it needs no Store.
+func CurrentCompositeHash(name, registryDir string) (string, error) {
 	dir, err := registryHookDir(registryDir, name)
 	if err != nil {
 		return "", err

@@ -600,8 +600,9 @@ func (t *skillTarget) Write(ctx context.Context, applied map[string][]byte) (fun
 		order = append(order, "SKILL.md")
 	}
 	type prior struct {
-		data   []byte
-		exists bool
+		data    []byte
+		exists  bool
+		newDirs []string
 	}
 	priors := make(map[string]prior, len(order))
 	for _, p := range order {
@@ -609,7 +610,11 @@ func (t *skillTarget) Write(ctx context.Context, applied map[string][]byte) (fun
 		if err != nil {
 			return nil, err
 		}
-		priors[p] = prior{data: data, exists: ok}
+		pr := prior{data: data, exists: ok}
+		if !ok {
+			pr.newDirs = t.missingParents(p)
+		}
+		priors[p] = pr
 	}
 	var touched []string
 	restore := func() (restored, stillChanged []string) {
@@ -621,6 +626,12 @@ func (t *skillTarget) Write(ctx context.Context, applied map[string][]byte) (fun
 				rerr = t.writeFile(t.name, p, pr.data)
 			} else if derr := t.deleteFile(t.name, p); derr != nil && !errors.Is(derr, registry.ErrNotFound) {
 				rerr = derr
+			} else {
+				// Remove directories the write created; one that still
+				// holds another added file stays until that file goes.
+				for _, d := range pr.newDirs {
+					_ = os.Remove(filepath.Join(t.dir, filepath.FromSlash(d)))
+				}
 			}
 			if rerr != nil {
 				stillChanged = append(stillChanged, p)
@@ -633,10 +644,10 @@ func (t *skillTarget) Write(ctx context.Context, applied map[string][]byte) (fun
 		return restored, stillChanged
 	}
 	for _, p := range order {
-		touched = append(touched, p)
 		if err := ctx.Err(); err != nil {
 			return restore, &fileWriteError{File: p, Err: err}
 		}
+		touched = append(touched, p)
 		if p == "SKILL.md" {
 			cp := *sk
 			if err := t.saveSkill(&cp); err != nil {
@@ -649,6 +660,19 @@ func (t *skillTarget) Write(ctx context.Context, applied map[string][]byte) (fun
 		}
 	}
 	return nil, nil
+}
+
+// missingParents lists the parent directories of rel that do not exist
+// yet, deepest first, so a restore can remove what the write created.
+func (t *skillTarget) missingParents(rel string) []string {
+	var out []string
+	for d := path.Dir(rel); d != "." && d != "/"; d = path.Dir(d) {
+		if _, err := os.Lstat(filepath.Join(t.dir, filepath.FromSlash(d))); err == nil {
+			break
+		}
+		out = append(out, d)
+	}
+	return out
 }
 
 func (t *skillTarget) Repin(ctx context.Context, req RepinRequest) error {
@@ -888,18 +912,11 @@ func (t *hookTarget) Kind() string  { return KindHook }
 func (t *hookTarget) Name() string  { return t.name }
 func (t *hookTarget) Stack() string { return "" }
 
-func (t *hookTarget) store() *hookpins.Store {
-	if t.pins != nil {
-		return t.pins
-	}
-	return hookpins.New()
-}
-
 func (t *hookTarget) CurrentHash(ctx context.Context) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	h, err := t.store().CurrentCompositeHash(t.name, t.registryDir)
+	h, err := hookpins.CurrentCompositeHash(t.name, t.registryDir)
 	if err != nil {
 		return "", fmt.Errorf("proposals: hashing hook %q: %w", t.name, err)
 	}

@@ -111,7 +111,7 @@ func TestCreate_ValidationRefusals(t *testing.T) {
 		{"credential creator", func(r *CreateRequest) { r.CreatedBy = "Bearer abc" }, pinapprovals.ErrCredentialShaped, ""},
 		{"too much evidence", func(r *CreateRequest) {
 			r.Evidence = nil
-			for i := 0; i < 17; i++ {
+			for i := 0; i < MaxEvidence+1; i++ {
 				r.Evidence = append(r.Evidence, "ref-"+string(rune('a'+i)))
 			}
 		}, pinapprovals.ErrTooManyReferences, ""},

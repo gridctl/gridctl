@@ -85,6 +85,10 @@ const (
 	MaxSourceBytes = 256
 	// MaxListFiles caps how many proposal files List reads.
 	MaxListFiles = 10000
+	// MaxEvidence caps a proposal's evidence references, including any an
+	// approver adds. The approvals log allows 16; one slot is held for
+	// the synthetic proposal:<id> reference an apply-path approve adds.
+	MaxEvidence = 15
 )
 
 // Sentinel errors. Callers map them with errors.Is; the wrapped text says

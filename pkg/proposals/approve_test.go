@@ -3,6 +3,8 @@ package proposals
 import (
 	"context"
 	"errors"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -616,22 +618,53 @@ func TestApprove_CanonicalAgentsMD(t *testing.T) {
 	}
 }
 
-func TestApprove_EvidenceOverflowRefusedBeforeWrite(t *testing.T) {
+func TestApprove_EvidenceBudgetHoldsProposalSlot(t *testing.T) {
+	refs := func(n int) []string {
+		out := make([]string, 0, n)
+		for i := 0; i < n; i++ {
+			out = append(out, "ref-"+string(rune('a'+i)))
+		}
+		return out
+	}
 	f := newFixture(t)
 	f.addSkill("triage", triageBody, nil)
 	base := f.currentHash(KindSkill, "triage")
-	req := skillRequest("triage", base, f.skillDiff("triage", "Page the on-call owner.", "Page the incident commander."))
-	req.Evidence = nil
-	for i := 0; i < 16; i++ {
-		req.Evidence = append(req.Evidence, "ref-"+string(rune('a'+i)))
+	diff := f.skillDiff("triage", "Page the on-call owner.", "Page the incident commander.")
+
+	over := skillRequest("triage", base, diff)
+	over.Evidence = refs(MaxEvidence + 1)
+	if _, err := f.store.Create(f.ctx(), over, f.targets); !errors.Is(err, pinapprovals.ErrTooManyReferences) || !strings.Contains(err.Error(), "proposal:<id>") {
+		t.Fatalf("create with %d references err = %v", MaxEvidence+1, err)
 	}
-	p := f.create(req)
+
+	full := skillRequest("triage", base, diff)
+	full.Evidence = refs(MaxEvidence)
+	p := f.create(full)
 	before := treeDigest(t, f.regDir)
-	if _, err := f.store.Approve(f.ctx(), p.ID, approver(), f.targets); !errors.Is(err, pinapprovals.ErrTooManyReferences) {
-		t.Fatalf("err = %v", err)
+	extra := approver()
+	extra.Evidence = []string{"ticket:INC-9"}
+	_, err := f.store.Approve(f.ctx(), p.ID, extra, f.targets)
+	if !errors.Is(err, pinapprovals.ErrTooManyReferences) || !strings.Contains(err.Error(), "drop approver extras") {
+		t.Fatalf("approve with an extra reference err = %v", err)
 	}
 	if treeDigest(t, f.regDir) != before {
 		t.Fatal("overflow refusal wrote the target")
+	}
+
+	got, err := f.store.Approve(f.ctx(), p.ID, approver(), f.targets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Verdict.Applied || len(got.Verdict.Evidence) != MaxEvidence {
+		t.Fatalf("verdict = %+v", got.Verdict)
+	}
+	pin, ok := f.sp.Get("triage")
+	if !ok || len(pin.Approvals) == 0 {
+		t.Fatalf("pin = %+v", pin)
+	}
+	logged := pin.Approvals[0].Evidence
+	if len(logged) != MaxEvidence+1 || logged[len(logged)-1] != "proposal:"+p.ID {
+		t.Fatalf("log evidence = %v", logged)
 	}
 }
 
@@ -691,5 +724,193 @@ func TestWriteError_Message(t *testing.T) {
 	}
 	if !errors.Is(err, ErrApplyFailed) || !err.RestoreFailed() {
 		t.Fatal("WriteError contract")
+	}
+}
+
+func TestApprove_FailedSkillSaveRestoresEveryFile(t *testing.T) {
+	f := newFixture(t)
+	f.addSkill("triage", triageBody, map[string]string{"references/a.md": "a1\n"})
+	f.pinSkills()
+	base := f.currentHash(KindSkill, "triage")
+	diff := f.skillDiff("triage", "Page the on-call owner.", "Page the incident commander.") +
+		genDiff(t, "references/a.md", "a1\n", "a2\n", false) +
+		genDiff(t, "references/new/b.md", "", "b\n", true)
+	p := f.create(skillRequest("triage", base, diff))
+	beforeSkill := treeDigest(t, f.regDir)
+	beforePin := readOrEmpty(t, f.skillPinFile())
+	skillMD := filepath.Join(f.skillDir("triage"), "SKILL.md")
+
+	resolver := resolverFunc(func(ctx context.Context, kind, name string) (Target, error) {
+		target, err := f.targets.Resolve(ctx, kind, name)
+		if err != nil {
+			return nil, err
+		}
+		st := target.(*skillTarget)
+		// Simulate a save that lands bytes and then fails.
+		st.saveSkill = func(*registry.AgentSkill) error {
+			if err := os.WriteFile(skillMD, []byte("---\nname: triage\n---\npartial\n"), 0o644); err != nil {
+				return err
+			}
+			return errors.New("disk full")
+		}
+		return st, nil
+	})
+	_, err := f.store.Approve(f.ctx(), p.ID, approver(), resolver)
+	var werr *WriteError
+	if !errors.As(err, &werr) || werr.File != "SKILL.md" || werr.RestoreFailed() {
+		t.Fatalf("err = %v", err)
+	}
+	if strings.Join(werr.Restored, ",") != "SKILL.md,references/a.md,references/new/b.md" {
+		t.Fatalf("restored = %v", werr.Restored)
+	}
+	if treeDigest(t, f.regDir) != beforeSkill {
+		t.Fatal("files were not restored to their prior bytes")
+	}
+	if _, err := os.Stat(filepath.Join(f.skillDir("triage"), "references", "new")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("created directory left behind: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(f.skillDir("triage"), "references")); err != nil {
+		t.Fatalf("pre-existing directory removed: %v", err)
+	}
+	sk, err := f.reg.GetSkill("triage")
+	if err != nil || !strings.Contains(sk.Body, "on-call owner") {
+		t.Fatalf("registry cache = %+v, %v", sk, err)
+	}
+	if readOrEmpty(t, f.skillPinFile()) != beforePin {
+		t.Fatal("pin record changed")
+	}
+	if got, _ := f.store.Get(f.ctx(), p.ID); got.Status != StatusPending {
+		t.Fatalf("proposal = %+v", got)
+	}
+}
+
+func TestApprove_CancelledWriteKeepsCause(t *testing.T) {
+	f := newFixture(t)
+	f.addSkill("triage", triageBody, map[string]string{"references/a.md": "a1\n"})
+	base := f.currentHash(KindSkill, "triage")
+	diff := f.skillDiff("triage", "Page the on-call owner.", "Page the incident commander.") +
+		genDiff(t, "references/a.md", "a1\n", "a2\n", false) +
+		genDiff(t, "references/b.md", "", "b\n", true)
+	p := f.create(skillRequest("triage", base, diff))
+	beforeSkill := treeDigest(t, f.regDir)
+
+	ctx, cancel := context.WithCancel(f.ctx())
+	defer cancel()
+	resolver := resolverFunc(func(rctx context.Context, kind, name string) (Target, error) {
+		target, err := f.targets.Resolve(rctx, kind, name)
+		if err != nil {
+			return nil, err
+		}
+		st := target.(*skillTarget)
+		real := st.writeFile
+		st.writeFile = func(skill, p string, data []byte) error {
+			err := real(skill, p, data)
+			cancel()
+			return err
+		}
+		return st, nil
+	})
+	_, err := f.store.Approve(ctx, p.ID, approver(), resolver)
+	if !errors.Is(err, ErrApplyFailed) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v", err)
+	}
+	var werr *WriteError
+	if !errors.As(err, &werr) || werr.File != "references/b.md" {
+		t.Fatalf("write error = %+v", werr)
+	}
+	if strings.Join(werr.Restored, ",") != "references/a.md" {
+		t.Fatalf("restored = %v; an unwritten file must not be reported", werr.Restored)
+	}
+	if treeDigest(t, f.regDir) != beforeSkill {
+		t.Fatal("files were not restored to their prior bytes")
+	}
+}
+
+// pinnedFragment adds a fragment, pins it, and returns its path and base.
+func pinnedFragment(t *testing.T, f *fixture, name, raw string) (string, string) {
+	t.Helper()
+	if _, err := f.mgr.AddFragment(name, raw); err != nil {
+		t.Fatal(err)
+	}
+	src, err := (&contextTarget{name: name, mgr: f.mgr, lockPath: f.lockPath}).source(f.ctx())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.cp.Sync(f.ctx(), src); err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(f.mgr.FragmentsDir(), name+".md"), f.currentHash(KindContext, name)
+}
+
+func fragmentRequest(t *testing.T, name, base, before string) CreateRequest {
+	return CreateRequest{
+		Kind:           KindContext,
+		Target:         name,
+		BaseHash:       base,
+		Diff:           genDiff(t, name+".md", before, strings.Replace(before, "Use signed commits.", "Sign every commit.", 1), false),
+		Classification: ClassGuarantee,
+	}
+}
+
+func TestApprove_ContextStaleAndDrift(t *testing.T) {
+	f := newFixture(t)
+	path, base := pinnedFragment(t, f, "commit-conventions", "Use signed commits.\n")
+	before := readOrEmpty(t, path)
+	p := f.create(fragmentRequest(t, "commit-conventions", base, before))
+
+	// An out-of-band edit makes the base stale.
+	edited := before + "Keep subjects short.\n"
+	if err := os.WriteFile(path, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := f.store.Approve(f.ctx(), p.ID, approver(), f.targets)
+	if !errors.Is(err, ErrBaseStale) || !strings.Contains(err.Error(), "gridctl ctx pins diff commit-conventions --format json") {
+		t.Fatalf("stale err = %v", err)
+	}
+	if readOrEmpty(t, path) != edited {
+		t.Fatal("stale refusal wrote the fragment")
+	}
+
+	// A proposal against the edited bytes still meets the unreviewed drift.
+	beforePin := readOrEmpty(t, filepath.Join(f.pinsDir, "context", "global.json"))
+	q := f.create(fragmentRequest(t, "commit-conventions", f.currentHash(KindContext, "commit-conventions"), edited))
+	_, err = f.store.Approve(f.ctx(), q.ID, approver(), f.targets)
+	if !errors.Is(err, ErrTargetDrift) || !strings.Contains(err.Error(), "gridctl ctx pins diff commit-conventions") {
+		t.Fatalf("drift err = %v", err)
+	}
+	if readOrEmpty(t, path) != edited || readOrEmpty(t, filepath.Join(f.pinsDir, "context", "global.json")) != beforePin {
+		t.Fatal("drift refusal wrote the fragment or its pin")
+	}
+	for _, id := range []string{p.ID, q.ID} {
+		if got, _ := f.store.Get(f.ctx(), id); got.Status != StatusPending {
+			t.Fatalf("proposal %s = %+v", id, got)
+		}
+	}
+}
+
+func TestApprove_ContextPinErrorAfterWrite(t *testing.T) {
+	f := newFixture(t)
+	path, base := pinnedFragment(t, f, "commit-conventions", "Use signed commits.\n")
+	p := f.create(fragmentRequest(t, "commit-conventions", base, readOrEmpty(t, path)))
+	resolver := resolverFunc(func(ctx context.Context, kind, name string) (Target, error) {
+		target, err := f.targets.Resolve(ctx, kind, name)
+		if err != nil {
+			return nil, err
+		}
+		return failingRepin{target}, nil
+	})
+	got, err := f.store.Approve(f.ctx(), p.ID, approver(), resolver)
+	if !errors.Is(err, ErrPinFailed) || !strings.Contains(err.Error(), "gridctl ctx pins approve commit-conventions") {
+		t.Fatalf("err = %v", err)
+	}
+	if got == nil || got.Status != StatusApproved || !got.Verdict.Applied || got.Verdict.PinError == "" {
+		t.Fatalf("proposal = %+v", got)
+	}
+	if !strings.Contains(readOrEmpty(t, path), "Sign every commit.") {
+		t.Fatal("fragment was not written")
+	}
+	target, _ := f.targets.Resolve(f.ctx(), KindContext, "commit-conventions")
+	if status, _ := target.PinStatus(f.ctx()); status != PinStatusDrift {
+		t.Fatalf("pin status after pin error = %s", status)
 	}
 }

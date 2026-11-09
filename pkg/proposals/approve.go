@@ -35,11 +35,21 @@ func (e *WriteError) Error() string {
 	return b.String()
 }
 
-// Unwrap lets errors.Is match ErrApplyFailed.
-func (e *WriteError) Unwrap() error { return ErrApplyFailed }
+// Unwrap lets errors.Is match ErrApplyFailed and the write's own cause,
+// such as context.Canceled or fs.ErrPermission.
+func (e *WriteError) Unwrap() []error { return []error{ErrApplyFailed, e.Err} }
 
 // RestoreFailed reports whether any file is still changed.
 func (e *WriteError) RestoreFailed() bool { return len(e.StillChanged) > 0 }
+
+// checkEvidenceCount refuses more than MaxEvidence references with
+// pinapprovals.ErrTooManyReferences.
+func checkEvidenceCount(n int) error {
+	if n > MaxEvidence {
+		return fmt.Errorf("proposals: at most %d evidence references are allowed (one more slot is held for proposal:<id>); remove extras and retry: %w", MaxEvidence, pinapprovals.ErrTooManyReferences)
+	}
+	return nil
+}
 
 func joinList(items []string) string {
 	switch len(items) {
@@ -122,6 +132,9 @@ func (s *Store) Approve(ctx context.Context, id string, req ApproveRequest, targ
 		evidence, err := pinapprovals.ValidateReferences(append(append([]string(nil), p.Evidence...), extra...))
 		if err != nil {
 			return fmt.Errorf("proposals: %w", err)
+		}
+		if err := checkEvidenceCount(len(evidence)); err != nil {
+			return fmt.Errorf("proposals: proposal %s holds %d evidence reference(s); drop approver extras so the total stays within the limit: %w", p.ID, len(p.Evidence), err)
 		}
 		if len(p.Findings) > 0 && reason == "" {
 			return fmt.Errorf("proposals: proposal %s carries %d advisory finding(s); pass --reason to approve over them: %w", p.ID, len(p.Findings), ErrReasonRequired)
