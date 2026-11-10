@@ -341,6 +341,81 @@ func TestUpgradeRollback_StateAware(t *testing.T) {
 		}
 		assertVersion(ctx, t, bin, home, "v9.0.2")
 	})
+
+	// Proposals are stackless: no daemon state file is needed for the check.
+	writeNewerProposal := func(t *testing.T, home string) string {
+		t.Helper()
+		dir := filepath.Join(home, ".gridctl", "proposals")
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, "p-aaaaaaaaaaaa.json")
+		if err := os.WriteFile(path, []byte("{\"id\":\"p-aaaaaaaaaaaa\",\"version\":\"2\"}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	t.Run("proposals", func(t *testing.T) {
+		home := filepath.Join(dir, "proposals-home")
+		bin := upgradedInstall(ctx, t, home, newBin, copyOld)
+		path := writeNewerProposal(t, home)
+		stdout, stderr, code := runUpgrade(ctx, t, bin, home, "", "", "upgrade", "--rollback", "--yes")
+		if code != 2 {
+			t.Fatalf("proposal refusal exit = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+		}
+		if !strings.Contains(stderr, path+" is version 2; v9.0.1 reads version 1. Delete or move the proposal file before rolling back.") ||
+			!strings.Contains(stderr, "Rollback to v9.0.1 refused:") {
+			t.Fatalf("stderr = %s", stderr)
+		}
+		assertVersion(ctx, t, bin, home, "v9.0.2")
+
+		stdout, stderr, code = runUpgrade(ctx, t, bin, home, "", "", "upgrade", "--rollback", "--yes", "--force")
+		if code != 0 {
+			t.Fatalf("forced rollback exit = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+		}
+		if !strings.Contains(stderr, "warning: "+path+" is version 2") {
+			t.Fatalf("stderr = %s", stderr)
+		}
+		assertVersion(ctx, t, bin, home, "v9.0.1")
+	})
+
+	t.Run("proposals unadvertised", func(t *testing.T) {
+		home := filepath.Join(dir, "proposals-unknown-home")
+		bin := upgradedInstall(ctx, t, home, newBin, copyOld)
+		writeNewerProposal(t, home)
+		// An entry retained before proposals existed has no proposals key.
+		manifest := filepath.Join(home, ".gridctl", "versions", "manifest.json")
+		data, err := os.ReadFile(manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var man map[string]any
+		if err := json.Unmarshal(data, &man); err != nil {
+			t.Fatal(err)
+		}
+		for _, raw := range man["entries"].([]any) {
+			entry := raw.(map[string]any)
+			if schemas, ok := entry["schemas"].(map[string]any); ok && entry["tag"] == "v9.0.1" {
+				delete(schemas, "proposals")
+			}
+		}
+		data, err = json.Marshal(man)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(manifest, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		stdout, stderr, code := runUpgrade(ctx, t, bin, home, "", "", "upgrade", "--rollback", "--yes")
+		if code != 0 {
+			t.Fatalf("rollback exit = %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+		}
+		if n := strings.Count(stderr, "v9.0.1 does not advertise a proposals version"); n != 1 {
+			t.Fatalf("want one unadvertised warning, got %d\nstderr: %s", n, stderr)
+		}
+		assertVersion(ctx, t, bin, home, "v9.0.1")
+	})
 }
 
 // upgradePair installs newBin over oldBin through a local release server so

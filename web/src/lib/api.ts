@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, SessionsResponse, RegistryAgent, AgentProjectionStatus, AgentSyncResult, AgentUnsyncResult, AgentAdoptResult, RegistryHook, RegistryHookList, HookProjectionStatus, HookSyncResult, HookUnsyncResult, HookPin, HookPinDiff, SecurityFinding, WiringRow, WiringAdoptResult, SecurityReport } from '../types';
+import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, SessionsResponse, RegistryAgent, AgentProjectionStatus, AgentSyncResult, AgentUnsyncResult, AgentAdoptResult, RegistryHook, RegistryHookList, HookProjectionStatus, HookSyncResult, HookUnsyncResult, HookPin, HookPinDiff, SecurityFinding, WiringRow, WiringAdoptResult, SecurityReport, Proposal, ProposalList, ProposalVerdictResponse } from '../types';
 
 import { gatewayRequest, AuthError, GatewayRequestError } from './gatewayRequest';
 import { useAuthStore } from '../stores/useAuthStore';
@@ -1080,6 +1080,46 @@ export async function approveHookPin(name: string, expectHash: string, reason: s
     expect: expectHash,
     reason,
   });
+}
+
+// --- Proposals (staged changes to governed documents; created by `gridctl propose`) ---
+
+export async function fetchProposals(filter?: { status?: string; kind?: string }): Promise<ProposalList> {
+  const params = new URLSearchParams();
+  if (filter?.status) params.set('status', filter.status);
+  if (filter?.kind) params.set('kind', filter.kind);
+  const query = params.toString();
+  return fetchJSON<ProposalList>(`/api/proposals${query ? `?${query}` : ''}`);
+}
+
+export async function fetchProposal(id: string): Promise<Proposal> {
+  return fetchJSON<Proposal>(`/api/proposals/${encodeURIComponent(id)}`);
+}
+
+/**
+ * Approve a pending proposal. Throws HTTPError carrying the server text so
+ * the UI can branch on 409 (stale base, pin drift, not pending), 400 (input
+ * refusal or reason required), and 422 (the diff did not apply).
+ * POST /api/proposals/{id}/approve
+ */
+export async function approveProposal(
+  id: string,
+  reason?: string,
+  evidence?: string[],
+): Promise<ProposalVerdictResponse> {
+  return mutateJSON<ProposalVerdictResponse>(`/api/proposals/${encodeURIComponent(id)}/approve`, 'POST', {
+    reason: reason ?? '',
+    ...(evidence && evidence.length > 0 ? { evidence } : {}),
+  });
+}
+
+/**
+ * Reject a pending proposal. The reason is required and recorded on the
+ * proposal only.
+ * POST /api/proposals/{id}/reject
+ */
+export async function rejectProposal(id: string, reason: string): Promise<ProposalVerdictResponse> {
+  return mutateJSON<ProposalVerdictResponse>(`/api/proposals/${encodeURIComponent(id)}/reject`, 'POST', { reason });
 }
 
 // --- Wiring ownership (REST face of `gridctl project --kind wiring`) ---
