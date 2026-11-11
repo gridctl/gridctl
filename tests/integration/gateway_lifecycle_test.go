@@ -219,8 +219,9 @@ func TestGatewayGracefulShutdown(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", mcp.NewStreamableHTTPServer(gw, nil))
 	srv := &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", gatewayPort),
-		Handler: mux,
+		Addr:              fmt.Sprintf("127.0.0.1:%d", gatewayPort),
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	srvDone := make(chan error, 1)
@@ -234,7 +235,12 @@ func TestGatewayGracefulShutdown(t *testing.T) {
 	// The streamable transport requires an initialize handshake first; the
 	// assigned session ID comes back in the Mcp-Session-Id response header.
 	initBody := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"lifecycle-test","version":"0.0.1"},"capabilities":{}}}`
-	initResp, err := http.Post(mcpURL, "application/json", strings.NewReader(initBody))
+	initReq, err := http.NewRequestWithContext(ctx, http.MethodPost, mcpURL, strings.NewReader(initBody))
+	if err != nil {
+		t.Fatalf("building initialize request: %v", err)
+	}
+	initReq.Header.Set("Content-Type", "application/json")
+	initResp, err := http.DefaultClient.Do(initReq)
 	if err != nil {
 		t.Fatalf("POST initialize to gateway: %v", err)
 	}

@@ -57,9 +57,9 @@ type listenSubscriber struct {
 	// not change for a full-mode subscriber under code mode.
 	scopedFP string
 	pending  listenKinds
-	wake      chan struct{}
-	cancel    context.CancelFunc
-	graceful  atomic.Bool
+	wake     chan struct{}
+	cancel   context.CancelFunc
+	graceful atomic.Bool
 }
 
 // listenRegistry tracks open upstream listen streams and enforces the

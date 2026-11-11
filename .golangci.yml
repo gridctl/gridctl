@@ -71,6 +71,12 @@ linters:
           - gosec
         path: "cmd/gridctl/ctx\\.go"
         text: "G702"
+      # G702: command injection taint: the A2A CLI fixture runs the binary named by the documented
+      # GRIDCTL_A2A_FIXTURE_BINARY override, the same trust domain as the shell running the suite
+      - linters:
+          - gosec
+        path: "tests/integration/a2a_cli_test\\.go"
+        text: "G702"
       # G703: path traversal taint — CLI operates on user-controlled trusted paths throughout
       - linters:
           - gosec
@@ -134,5 +140,11 @@ linters:
         path: "pkg/runs/recorder.go"
         text: "G118"
 
+formatters:
+  enable:
+    - gofmt
+
 run:
   timeout: 3m
+  build-tags:
+    - integration

@@ -758,4 +758,3 @@ func TestAccumulator_ReplaySnapshot_AllZeroIsNoop(t *testing.T) {
 		t.Errorf("all-zero replay created %d points; want 0", len(resp.Points))
 	}
 }
-

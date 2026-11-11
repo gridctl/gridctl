@@ -30,8 +30,8 @@ func newZed() *Zed {
 	}
 }
 
-func (z *Zed) Name() string     { return z.name }
-func (z *Zed) Slug() string     { return z.slug }
+func (z *Zed) Name() string      { return z.name }
+func (z *Zed) Slug() string      { return z.slug }
 func (z *Zed) NeedsBridge() bool { return false }
 
 func (z *Zed) Detect() (string, bool) {

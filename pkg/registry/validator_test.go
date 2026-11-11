@@ -241,7 +241,6 @@ func TestValidationResult_Error(t *testing.T) {
 	})
 }
 
-
 // containsSubstring checks if any string in the slice contains the given substring.
 func containsSubstring(strs []string, sub string) bool {
 	for _, s := range strs {

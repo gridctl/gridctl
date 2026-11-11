@@ -10,9 +10,9 @@ import (
 )
 
 const (
-	backupSuffix    = ".gridctl-backup-"
+	backupSuffix     = ".gridctl-backup-"
 	backupTimeFormat = "20060102-150405"
-	maxBackups      = 3
+	maxBackups       = 3
 )
 
 // createBackup copies the original file to a timestamped backup.

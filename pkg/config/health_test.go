@@ -207,8 +207,6 @@ func TestValidationResult_Counts(t *testing.T) {
 	assert.Equal(t, 1, result.WarningCount)
 }
 
-
-
 func TestValidateWithIssues_ExperimentalIssues(t *testing.T) {
 	base := func() *Stack {
 		return &Stack{

@@ -66,11 +66,11 @@ type SyncOptions struct {
 // SyncResult describes what happened (or would happen) for one
 // (agent, client) projection.
 type SyncResult struct {
-	Agent      string `json:"agent"`
-	Client     string `json:"client"`
-	Channel    string `json:"channel,omitempty"`
-	Target     string `json:"target,omitempty"`
-	Action     string `json:"action"`
+	Agent   string `json:"agent"`
+	Client  string `json:"client"`
+	Channel string `json:"channel,omitempty"`
+	Target  string `json:"target,omitempty"`
+	Action  string `json:"action"`
 	// Detail carries the lossy-render report (which canonical keys the
 	// target dialect dropped); empty for identity targets.
 	Detail     string `json:"detail,omitempty"`
@@ -108,9 +108,9 @@ type ProjectionStatus struct {
 	Render string `json:"render"`
 	// ModelValue is the model preference a policy rewrite wrote into the
 	// installed bytes; empty for pass-through projections.
-	ModelValue   string     `json:"model_value,omitempty"`
-	State        string     `json:"state"`
-	Detail       string     `json:"detail,omitempty"`
+	ModelValue string `json:"model_value,omitempty"`
+	State      string `json:"state"`
+	Detail     string `json:"detail,omitempty"`
 	// Pack names the pack that applied this projection; empty for
 	// projections made outside a pack. Additive provenance for UI chips.
 	Pack     string     `json:"pack,omitempty"`

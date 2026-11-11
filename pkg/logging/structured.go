@@ -133,13 +133,13 @@ func WithReplicaID(logger *slog.Logger, replicaID int) *slog.Logger {
 // LogEntry represents a structured log entry for frontend consumption.
 // This is the schema that the frontend expects when parsing logs.
 type LogEntry struct {
-	Level     string            `json:"level"`
-	Timestamp string            `json:"ts"`
-	Message   string            `json:"msg"`
-	Component string            `json:"component,omitempty"`
-	TraceID   string            `json:"trace_id,omitempty"`
-	Logger    string            `json:"logger,omitempty"`
-	Meta      map[string]any    `json:"meta,omitempty"`
+	Level     string         `json:"level"`
+	Timestamp string         `json:"ts"`
+	Message   string         `json:"msg"`
+	Component string         `json:"component,omitempty"`
+	TraceID   string         `json:"trace_id,omitempty"`
+	Logger    string         `json:"logger,omitempty"`
+	Meta      map[string]any `json:"meta,omitempty"`
 }
 
 // ParseLevel converts a string level to slog.Level.

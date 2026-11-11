@@ -31,8 +31,8 @@ func newGoose() *Goose {
 	}
 }
 
-func (g *Goose) Name() string     { return g.name }
-func (g *Goose) Slug() string     { return g.slug }
+func (g *Goose) Name() string      { return g.name }
+func (g *Goose) Slug() string      { return g.slug }
 func (g *Goose) NeedsBridge() bool { return false }
 
 func (g *Goose) Detect() (string, bool) {

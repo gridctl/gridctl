@@ -8,9 +8,9 @@ import (
 
 func TestStack_NeedsContainerRuntime(t *testing.T) {
 	tests := []struct {
-		name string
+		name  string
 		stack Stack
-		want bool
+		want  bool
 	}{
 		{
 			name:  "empty stack",
@@ -296,8 +296,3 @@ func TestStack_NonContainerWorkloads(t *testing.T) {
 		t.Fatalf("expected 2 non-container workloads, got %d", len(workloads))
 	}
 }
-
-
-
-
-

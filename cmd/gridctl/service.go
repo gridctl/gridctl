@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
-	"errors"
 	"os"
 	"os/signal"
 	"os/user"
@@ -30,9 +30,9 @@ import (
 const serviceUnsupportedMessage = "gridctl service is not supported on Windows; run 'gridctl apply' from a login session or use WSL2"
 
 const (
-	serviceExitOK         = 0
-	serviceExitAttention  = 1
-	serviceExitInfra      = 2
+	serviceExitOK        = 0
+	serviceExitAttention = 1
+	serviceExitInfra     = 2
 )
 
 var (

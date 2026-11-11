@@ -14,19 +14,19 @@ import (
 )
 
 type fakeSupervisor struct {
-	enableErr   error
-	disableErr  error
-	stopErr     error
-	restartErr  error
-	query       RuntimeState
-	queryErr    error
-	linger      string
-	enabled     []string
-	disabled    []string
-	stopped     []string
-	restarted   []string
-	reloaded    int
-	logsCalled  bool
+	enableErr  error
+	disableErr error
+	stopErr    error
+	restartErr error
+	query      RuntimeState
+	queryErr   error
+	linger     string
+	enabled    []string
+	disabled   []string
+	stopped    []string
+	restarted  []string
+	reloaded   int
+	logsCalled bool
 }
 
 func (f *fakeSupervisor) Enable(_ context.Context, spec Spec) error {

@@ -192,4 +192,3 @@ func TestValidateState(t *testing.T) {
 		})
 	}
 }
-

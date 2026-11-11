@@ -56,7 +56,7 @@ func TestStackConfigs_MaterializeOwnershipAndReuse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rt.Down(context.Background(), stackName)
+	defer func() { _ = rt.Down(context.Background(), stackName) }()
 
 	first, err := rt.Up(ctx, stack, runtime.UpOptions{BasePort: 22100})
 	if err != nil {
@@ -89,7 +89,7 @@ func TestStackConfigs_MaterializeOwnershipAndReuse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rt.Runtime().Remove(context.Background(), baseline.ID)
+	defer func() { _ = rt.Runtime().Remove(context.Background(), baseline.ID) }()
 	baseParent := execOutput(t, ctx, rt.DockerClient(), string(baseline.ID), []string{"stat", "-c", "%u %g %a", "/etc"})
 	if strings.TrimSpace(parent) != strings.TrimSpace(baseParent) {
 		t.Fatalf("/etc = %q, baseline %q", parent, baseParent)
@@ -158,7 +158,7 @@ func TestStackConfigs_HotReload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rt.Down(context.Background(), stackName)
+	defer func() { _ = rt.Down(context.Background(), stackName) }()
 	up, err := rt.Up(ctx, stack, runtime.UpOptions{BasePort: 22200})
 	if err != nil {
 		t.Fatal(err)
@@ -204,7 +204,7 @@ func TestStackConfigs_AutoscaleSpawn(t *testing.T) {
 	defer cancel()
 	stackName := "inttest-" + sanitizeName(t.Name())
 	netName := stackName + "-net"
-	defer rt.Down(context.Background(), stackName)
+	defer func() { _ = rt.Down(context.Background(), stackName) }()
 	if err := rt.Runtime().EnsureNetwork(ctx, netName, runtime.NetworkOptions{Driver: "bridge", Stack: stackName}); err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +262,7 @@ func TestStackConfigs_MissingFileLeavesNoContainer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rt.Down(context.Background(), stackName)
+	defer func() { _ = rt.Down(context.Background(), stackName) }()
 	_, err = rt.Up(ctx, stack, runtime.UpOptions{BasePort: 22300})
 	if err == nil || !strings.Contains(err.Error(), "prometheus") || !strings.Contains(err.Error(), "config 0") {
 		t.Fatalf("Up error = %v", err)

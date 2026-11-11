@@ -45,7 +45,7 @@ func startCallbackServer(t *testing.T, broker *mcpauth.Broker, port int) {
 	t.Helper()
 	mux := http.NewServeMux()
 	mux.Handle(mcpauth.CallbackPath, broker.CallbackHandler())
-	srv := &http.Server{Addr: fmt.Sprintf("127.0.0.1:%d", port), Handler: mux}
+	srv := &http.Server{Addr: fmt.Sprintf("127.0.0.1:%d", port), Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = srv.ListenAndServe() }()
 	t.Cleanup(func() { _ = srv.Close() })
 }
@@ -120,7 +120,11 @@ func TestOAuthBrokerFullFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BeginAuthorization: %v", err)
 	}
-	resp, err := http.Get(authorizeURL)
+	authReq, err := http.NewRequestWithContext(ctx, http.MethodGet, authorizeURL, nil)
+	if err != nil {
+		t.Fatalf("building authorization request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(authReq)
 	if err != nil {
 		t.Fatalf("driving authorization redirect: %v", err)
 	}
@@ -246,7 +250,11 @@ func TestOAuthDCRRefusedStaticClientFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BeginAuthorization with static client: %v", err)
 	}
-	resp, err := http.Get(authorizeURL)
+	authReq, err := http.NewRequestWithContext(ctx, http.MethodGet, authorizeURL, nil)
+	if err != nil {
+		t.Fatalf("building authorization request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(authReq)
 	if err != nil {
 		t.Fatalf("driving authorization redirect: %v", err)
 	}

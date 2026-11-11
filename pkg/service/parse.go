@@ -101,5 +101,3 @@ func ParseLinger(output string) string {
 	}
 	return "unknown"
 }
-
-

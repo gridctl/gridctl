@@ -1714,9 +1714,9 @@ func TestZed_Link_PreservesOtherSettings(t *testing.T) {
 
 	// Zed settings.json has lots of other settings
 	writeTestJSON(t, configPath, map[string]any{
-		"theme":     "One Dark",
-		"tab_size":  float64(4),
-		"vim_mode":  true,
+		"theme":    "One Dark",
+		"tab_size": float64(4),
+		"vim_mode": true,
 	})
 
 	z := newZed()
@@ -3565,7 +3565,7 @@ func TestContinueDev_Link_LegacySSEEntry_UpdatedWithoutForce(t *testing.T) {
 		"experimental": map[string]any{
 			"mcpServers": []any{
 				map[string]any{
-					"name": "gridctl",
+					"name":      "gridctl",
 					"transport": map[string]any{"type": "sse", "url": "http://localhost:8180/sse"},
 				},
 			},

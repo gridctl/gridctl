@@ -4,6 +4,10 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Build with Go 1.26.11 so govulncheck no longer reports GO-2026-6859 in net/http (Go 1.26.10). The language version stays 1.26.0. Suppressed Docker client findings are unchanged.
+
 ## [1.0.0-rc.6] - 2026-11-10
 
 ### Features

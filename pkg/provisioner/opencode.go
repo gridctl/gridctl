@@ -31,7 +31,7 @@ func newOpenCode() *OpenCode {
 
 func (o *OpenCode) Name() string      { return o.name }
 func (o *OpenCode) Slug() string      { return o.slug }
-func (o *OpenCode) NeedsBridge() bool  { return false }
+func (o *OpenCode) NeedsBridge() bool { return false }
 
 func (o *OpenCode) Detect() (string, bool) {
 	path := configPathForPlatform(o.paths)

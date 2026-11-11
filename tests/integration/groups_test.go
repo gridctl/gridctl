@@ -209,8 +209,8 @@ func TestToolGroups_EndToEnd(t *testing.T) {
 		// group surface, so the tool is simply absent) or, if anything got
 		// past it, the gateway's group membership check on re-entry.
 		if !denied.IsError ||
-			!(strings.Contains(denied.Content[0].Text, "not in group") ||
-				strings.Contains(denied.Content[0].Text, "access denied")) {
+			!strings.Contains(denied.Content[0].Text, "not in group") &&
+				!strings.Contains(denied.Content[0].Text, "access denied") {
 			t.Fatalf("sandboxed non-member call should be denied: %+v", denied.Content)
 		}
 	})

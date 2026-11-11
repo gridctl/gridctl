@@ -180,4 +180,3 @@ func TestRunAcceptance_NilEvaluator(t *testing.T) {
 		t.Errorf("Severity = %q, want error", report.Results[0].Severity)
 	}
 }
-

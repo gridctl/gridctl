@@ -17,7 +17,7 @@ func TestManagedLabels(t *testing.T) {
 			isMCPServer: true,
 			wantLabels: map[string]string{
 				LabelManaged:   "true",
-				LabelStack:  "test-topo",
+				LabelStack:     "test-topo",
 				LabelMCPServer: "my-server",
 			},
 		},
@@ -28,7 +28,7 @@ func TestManagedLabels(t *testing.T) {
 			isMCPServer: false,
 			wantLabels: map[string]string{
 				LabelManaged:  "true",
-				LabelStack: "prod",
+				LabelStack:    "prod",
 				LabelResource: "postgres",
 			},
 		},
@@ -61,7 +61,6 @@ func TestManagedLabels(t *testing.T) {
 		})
 	}
 }
-
 
 func TestContainerName(t *testing.T) {
 	tests := []struct {

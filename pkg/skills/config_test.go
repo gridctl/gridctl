@@ -195,9 +195,9 @@ func TestIsPinnedRef(t *testing.T) {
 		{"^1.0", false},
 		{"~1.2", false},
 		{"abc1234567890abc1234567890abc1234567890a", true}, // 40-char hex SHA
-		{"abc1234", false},                                 // short SHA, not pinned
+		{"abc1234", false}, // short SHA, not pinned
 		{"ABC1234567890ABC1234567890ABC1234567890A", true}, // uppercase hex
-		{"feature.x", true},                                // dot heuristic catches false positive
+		{"feature.x", true}, // dot heuristic catches false positive
 		{"not-hex-but-40-chars-long-1234567890123zz", false},
 	}
 

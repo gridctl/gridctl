@@ -111,4 +111,3 @@ func TestCallGates_NoGatesNilPath(t *testing.T) {
 		t.Fatalf("nil-gates call failed: err=%v result=%+v", err, result)
 	}
 }
-

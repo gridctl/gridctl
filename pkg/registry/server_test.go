@@ -349,4 +349,3 @@ func TestServer_ImplementsInterfaces(t *testing.T) {
 	var _ mcp.AgentClient = (*Server)(nil)
 	var _ mcp.PromptProvider = (*Server)(nil)
 }
-

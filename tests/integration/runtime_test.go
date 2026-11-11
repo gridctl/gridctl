@@ -4,7 +4,6 @@ package integration
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -204,9 +203,7 @@ func TestMultipleNetworks(t *testing.T) {
 
 // TestDockerNotAvailable verifies graceful handling when Docker is not available.
 func TestDockerNotAvailable(t *testing.T) {
-	origHost := os.Getenv("DOCKER_HOST")
-	os.Setenv("DOCKER_HOST", "tcp://invalid:99999")
-	defer os.Setenv("DOCKER_HOST", origHost)
+	t.Setenv("DOCKER_HOST", "tcp://invalid:99999")
 
 	rt, err := runtime.New()
 	if err != nil {
