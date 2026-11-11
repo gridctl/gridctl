@@ -235,7 +235,7 @@ Changes to Homebrew cask generation also require the pinned Linux-x86_64 GoRelea
 Changes to the declarative post-install step or its minimum Homebrew version also require real Homebrew load and installation acceptance on the declared floor and current stable. Cover the macOS step and Linux platform guard, and record exact Homebrew versions, operating systems, and architectures. Local fixtures do not replace the hosted release gates.
 
 Pull requests are automatically checked for:
-- Go linting and formatting (`golangci-lint` with `gosec` and the `gofmt` formatter), covering `integration`-tagged files; run `golangci-lint fmt` to fix format findings, since the lint output reports repeated format messages for at most three files
+- Go linting and formatting (`golangci-lint` with `gosec` and the `gofmt` formatter), covering `integration`-tagged files; run `golangci-lint fmt` to fix format findings; the lint output reports repeated format messages for at most three files, so use `golangci-lint fmt --diff ./...` or `gofmt -l` for the full list
 - Vulnerability scanning (`govulncheck`, `npm audit`)
 - Unit tests with race detection, plus overall and per-package coverage thresholds
 - Integration tests against both Docker and Podman
