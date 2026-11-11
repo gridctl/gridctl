@@ -104,49 +104,12 @@ jobs:
         with:
           version: 3.52.0
 
-      - name: Build Go binary
-        run: task build:go
-
-      - name: Validate example stacks
-        run: |
-          # Add example stack YAML files under examples/ to have them validated here.
-          # Exit codes: 0=valid, 1=errors (fail), 2=warnings only (pass)
-          # skills.yaml is a skill-source list and gridctl-pack.yaml a pack
-          # manifest (different schemas) — neither is a stack.
-          #
-          # gateway-remote.yaml is excluded because it is the one example that
-          # requires a secret: a non-loopback bind refuses to start without
-          # gateway.auth.token, and the variable it references cannot exist in
-          # CI, so validation reads the unset value as a missing required
-          # field. Giving it a default would ship a working credential in a
-          # public repo, which is worse than not validating the file.
-          # examples/stack-declaration-policy/policy.yaml is a declaration-policy
-          # document (different schema), not a stack. stack.yaml in that
-          # directory remains validated.
-          # examples/booster-pack/servers.yaml is a stack fragment, not a
-          # runnable stack. Fragments cannot declare name or network, so
-          # stack validation rejects the file on purpose. gridctl-pack.yaml
-          # in that directory remains excluded by name.
-          # examples/tracing/otel-collector-config.yaml is a collector config,
-          # not a stack. otel-collector.yaml in that directory remains validated.
-          mapfile -t files < <(find examples -name "*.yaml" -not -name "skills.yaml" -not -name "gridctl-pack.yaml" -not -name "gateway-remote.yaml" -not -path "examples/stack-declaration-policy/policy.yaml" -not -path "examples/booster-pack/servers.yaml" -not -path "examples/tracing/otel-collector-config.yaml" | sort)
-          if [ "${#files[@]}" -eq 0 ]; then
-            echo "No example stacks found, skipping validation"
-            exit 0
-          fi
-          failed=0
-          for f in "${files[@]}"; do
-            echo "Validating $f..."
-            ./gridctl validate "$f" && rc=0 || rc=$?
-            if [ "$rc" -eq 1 ]; then
-              echo "  FAILED: $f"
-              failed=1
-            fi
-          done
-          exit "$failed"
-
-      - name: Check example dependency references
-        run: bash scripts/check-example-refs.sh ./gridctl
+      - name: Check example stacks
+        # Builds ./gridctl, validates example stacks, and checks their
+        # dependency references. task verify runs the same task. The list of
+        # non-stack YAML excluded from both checks lives in
+        # scripts/example-stacks.sh.
+        run: task examples:check
 
   integration:
     runs-on: ubuntu-latest
