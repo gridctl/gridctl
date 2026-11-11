@@ -296,3 +296,143 @@ func TestCheckExampleRefsScript(t *testing.T) {
 		})
 	}
 }
+
+// writeLoggingGridctl writes a fake gridctl that appends the path it is asked
+// to validate to calls.log under root, prints stdout, and exits with rc.
+func writeLoggingGridctl(t *testing.T, root, stdout string, rc int) string {
+	t.Helper()
+	bin := filepath.Join(root, "gridctl")
+	body := "#!/bin/sh\nfor last; do :; done\nprintf '%s\\n' \"$last\" >> '" + filepath.Join(root, "calls.log") + "'\ncat <<'EOF'\n" + stdout + "\nEOF\nexit " + strconv.Itoa(rc) + "\n"
+	if err := os.WriteFile(bin, []byte(body), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return bin
+}
+
+func writeExampleFiles(t *testing.T, root string, rels []string) {
+	t.Helper()
+	for _, rel := range rels {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("name: t\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func readCallLog(t *testing.T, root string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(root, "calls.log"))
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+// nonStackExamples are the YAML files under examples/ that the shared helper
+// in scripts/example-stacks.sh excludes, by name and by path.
+var nonStackExamples = []string{
+	"examples/skills.yaml",
+	"examples/booster-pack/gridctl-pack.yaml",
+	"examples/gateways/gateway-remote.yaml",
+	"examples/stack-declaration-policy/policy.yaml",
+	"examples/booster-pack/servers.yaml",
+	"examples/tracing/otel-collector-config.yaml",
+}
+
+func TestValidateExamplesScript(t *testing.T) {
+	script := filepath.Join(repoRoot(t), "scripts", "validate-examples.sh")
+	const errorText = "name: name is required (fake validate error)"
+
+	tests := []struct {
+		name       string
+		files      []string
+		stdout     string
+		rc         int
+		noBinary   bool
+		wantFail   bool
+		wantOutput []string
+		wantCalled []string
+		notCalled  []string
+	}{
+		{name: "all pass", files: []string{"examples/stack.yaml", "examples/sub/other.yaml"}, stdout: "valid", rc: 0,
+			wantOutput: []string{"Validating examples/stack.yaml...", "Validating examples/sub/other.yaml...", "2 example stacks valid"},
+			wantCalled: []string{"examples/stack.yaml", "examples/sub/other.yaml"}},
+		{name: "warnings only", files: []string{"examples/stack.yaml"}, stdout: "warning: leftover", rc: 2,
+			wantOutput: []string{"1 example stacks valid"}},
+		{name: "validation error", files: []string{"examples/stack.yaml"}, stdout: errorText, rc: 1, wantFail: true,
+			wantOutput: []string{"FAILED: validation errors in examples/stack.yaml", errorText, "scripts/example-stacks.sh"}},
+		{name: "unexpected exit", files: []string{"examples/stack.yaml"}, stdout: "boom", rc: 3, wantFail: true,
+			wantOutput: []string{"unexpected exit 3 for examples/stack.yaml", "boom"}},
+		{name: "missing binary", files: []string{"examples/stack.yaml"}, noBinary: true, wantFail: true,
+			wantOutput: []string{"task build:go"}},
+		{name: "no stacks", files: []string{"examples/booster-pack/gridctl-pack.yaml"}, stdout: "valid", rc: 0, wantFail: true,
+			wantOutput: []string{"No example stacks found"}},
+		{name: "pack manifest skipped by name", files: []string{"examples/stack.yaml", "examples/pack/gridctl-pack.yaml"}, stdout: "valid", rc: 0,
+			wantCalled: []string{"examples/stack.yaml"}, notCalled: []string{"gridctl-pack.yaml"}},
+		{name: "path exclusions under absolute root", files: append([]string{"examples/stack.yaml"}, nonStackExamples...), stdout: errorText, rc: 1, wantFail: true,
+			wantCalled: []string{"examples/stack.yaml"}, notCalled: nonStackExamples},
+		{name: "non-stacks pass alongside valid stack", files: append([]string{"examples/stack.yaml"}, nonStackExamples...), stdout: "valid", rc: 0,
+			wantOutput: []string{"1 example stacks valid"}, wantCalled: []string{"examples/stack.yaml"}, notCalled: nonStackExamples},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeExampleFiles(t, root, tt.files)
+			bin := filepath.Join(root, "gridctl")
+			if !tt.noBinary {
+				bin = writeLoggingGridctl(t, root, tt.stdout, tt.rc)
+			}
+			cmd := exec.Command("bash", script, bin)
+			cmd.Env = append(os.Environ(), "GRIDCTL_CHECK_ROOT="+root)
+			out, err := cmd.CombinedOutput()
+			if tt.wantFail && err == nil {
+				t.Fatalf("expected failure\n%s", out)
+			}
+			if !tt.wantFail && err != nil {
+				t.Fatalf("unexpected failure: %v\n%s", err, out)
+			}
+			for _, want := range tt.wantOutput {
+				if !strings.Contains(string(out), want) {
+					t.Errorf("output does not contain %q\n%s", want, out)
+				}
+			}
+			calls := readCallLog(t, root)
+			for _, rel := range tt.wantCalled {
+				if !strings.Contains(calls, filepath.Join(root, filepath.FromSlash(rel))+"\n") {
+					t.Errorf("validate was not called for %s\ncalls:\n%s", rel, calls)
+				}
+			}
+			for _, rel := range tt.notCalled {
+				if strings.Contains(calls, filepath.FromSlash(rel)) {
+					t.Errorf("validate was called for excluded %s\ncalls:\n%s", rel, calls)
+				}
+			}
+		})
+	}
+}
+
+func TestCheckExampleRefsScriptSkipsNonStacks(t *testing.T) {
+	script := filepath.Join(repoRoot(t), "scripts", "check-example-refs.sh")
+	root := t.TempDir()
+	writeExampleFiles(t, root, append([]string{"examples/stack.yaml"}, nonStackExamples...))
+	if err := os.WriteFile(filepath.Join(root, "examples", "reference-exceptions.txt"), []byte("# none\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bin := writeLoggingGridctl(t, root, `{"valid":true,"errorCount":0,"warningCount":0,"issues":[]}`, 0)
+	cmd := exec.Command("bash", script, bin)
+	cmd.Env = append(os.Environ(), "GRIDCTL_CHECK_ROOT="+root)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("unexpected failure: %v\n%s", err, out)
+	}
+	calls := readCallLog(t, root)
+	if calls != filepath.Join(root, "examples", "stack.yaml")+"\n" {
+		t.Fatalf("refs check validated unexpected files:\n%s", calls)
+	}
+	if !strings.Contains(string(out), "(1 example stacks)") {
+		t.Errorf("output does not report the stack count\n%s", out)
+	}
+}

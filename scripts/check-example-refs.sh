@@ -61,16 +61,10 @@ is_excepted() {
   return 1
 }
 
-# booster-pack/servers.yaml is a stack fragment, not a runnable stack.
-# otel-collector-config.yaml is a collector config, not a stack.
-# Fragments cannot declare name or network, so validate would reject it.
-mapfile -t files < <(find "$CHECK_ROOT/examples" -name "*.yaml" \
-  -not -name "skills.yaml" \
-  -not -name "gridctl-pack.yaml" \
-  -not -name "gateway-remote.yaml" \
-  -not -path "*/stack-declaration-policy/policy.yaml" \
-  -not -path "*/tracing/otel-collector-config.yaml" \
-  -not -path "*/booster-pack/servers.yaml" | sort)
+# The exclusion list for non-stack YAML lives in scripts/example-stacks.sh.
+# shellcheck source=scripts/example-stacks.sh
+source "$ROOT/scripts/example-stacks.sh"
+mapfile -t files < <(example_stacks "$CHECK_ROOT")
 
 if [ "${#files[@]}" -eq 0 ]; then
   echo "No example stacks found" >&2
@@ -147,4 +141,4 @@ if [ "$failed" -ne 0 ]; then
   exit 1
 fi
 
-echo "Example dependency references are pinned or excepted."
+echo "Example dependency references are pinned or excepted (${#files[@]} example stacks)."
