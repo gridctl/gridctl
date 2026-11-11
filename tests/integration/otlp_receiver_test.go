@@ -97,7 +97,7 @@ func startOTLPReceiver(t *testing.T) (*otlpCapture, string) {
 		t.Fatal(err)
 	}
 	cap := &otlpCapture{}
-	srv := &http.Server{Handler: cap}
+	srv := &http.Server{Handler: cap, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -443,5 +443,3 @@ func waitForReady(t *testing.T, ctx context.Context, port int) {
 	}
 	t.Fatal("daemon did not become ready")
 }
-
-

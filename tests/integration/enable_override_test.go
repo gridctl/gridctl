@@ -278,7 +278,7 @@ func softInitialize(url string) (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
+	_, _ = io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("initialize %s: %d", url, resp.StatusCode)
 	}

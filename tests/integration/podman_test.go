@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -420,9 +419,7 @@ func TestRuntimeDetection_EnvVar(t *testing.T) {
 	}
 
 	// Set env var to the detected runtime type
-	origEnv := os.Getenv("GRIDCTL_RUNTIME")
-	os.Setenv("GRIDCTL_RUNTIME", string(info.Type))
-	defer os.Setenv("GRIDCTL_RUNTIME", origEnv)
+	t.Setenv("GRIDCTL_RUNTIME", string(info.Type))
 
 	envInfo, err := runtime.DetectRuntime(runtime.DetectOptions{})
 	if err != nil {

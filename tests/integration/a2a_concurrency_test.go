@@ -126,11 +126,12 @@ func TestA2AAdapter_CancelDuringResume(t *testing.T) {
 				if got := call("task_cancel", taskArgs); got["error"] != "operation_in_progress" {
 					t.Fatal("second cancel was admitted")
 				}
-				if outcome == "retirement" {
+				switch outcome {
+				case "retirement":
 					g.UnregisterMCPServer("agent")
-				} else if outcome == "send-first" {
+				case "send-first":
 					close(releaseSend)
-				} else {
+				default:
 					close(releaseCancel)
 					if outcome == "timeout" {
 						cancelRequest()

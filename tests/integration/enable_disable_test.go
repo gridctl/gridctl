@@ -423,7 +423,7 @@ func initializeMCP(t *testing.T, url string) string {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
+	_, _ = io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("initialize %s: %d", url, resp.StatusCode)
 	}

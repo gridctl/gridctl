@@ -91,7 +91,7 @@ func TestCLIToolsCall_HTTPAndProcess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	httpSrv := &http.Server{Handler: srv.Handler()}
+	httpSrv := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = httpSrv.Serve(ln) }()
 	t.Cleanup(func() {
 		shutdownCtx, done := context.WithTimeout(context.Background(), 5*time.Second)

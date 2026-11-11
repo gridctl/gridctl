@@ -165,7 +165,7 @@ func TestPolicyDispatch_EveryPath(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer resp.Body.Close()
-		io.Copy(io.Discard, resp.Body)
+		_, _ = io.Copy(io.Discard, resp.Body)
 		session := resp.Header.Get("Mcp-Session-Id")
 		if session == "" {
 			t.Fatalf("no session on %s (status %d)", path, resp.StatusCode)

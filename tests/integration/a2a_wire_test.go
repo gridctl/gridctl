@@ -163,7 +163,7 @@ func TestA2AWire_TwoOriginsAndNon2xx(t *testing.T) {
 			t.Error("missing card auth")
 		}
 		if r.URL.Path == "/redirect" {
-			http.Redirect(w, r, rpc.URL, 302)
+			http.Redirect(w, r, rpc.URL, http.StatusFound)
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]string{"protocolVersion": "0.3.0", "url": rpc.URL})

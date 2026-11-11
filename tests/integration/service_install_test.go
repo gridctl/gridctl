@@ -107,7 +107,11 @@ func TestServiceInstall_ForegroundAndUnit(t *testing.T) {
 	deadline := time.Now().Add(45 * time.Second)
 	ready := false
 	for time.Now().Before(deadline) {
-		resp, err := http.Get(readyURL)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, readyURL, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := http.DefaultClient.Do(req)
 		if err == nil {
 			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()

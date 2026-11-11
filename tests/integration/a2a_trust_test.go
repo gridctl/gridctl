@@ -183,9 +183,10 @@ func TestA2AAdapter_PinIOFailsClosed(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if stage == "registration-read" {
+			switch stage {
+			case "registration-read":
 				failRead()
-			} else if stage == "registration-write" {
+			case "registration-write":
 				failWrite()
 			}
 			err := g.RegisterMCPServer(t.Context(), mcp.MCPServerConfig{Name: "agent", A2A: true, A2AConfig: &mcp.A2AClientConfig{Card: f.server.URL}})

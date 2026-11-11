@@ -555,7 +555,11 @@ func serverPID(t *testing.T, base, name string) int {
 
 func getAuth(t *testing.T, url string) string {
 	t.Helper()
-	resp, err := http.Get(url)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
