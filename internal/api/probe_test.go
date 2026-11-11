@@ -39,9 +39,9 @@ func (c *recordingClient) Initialize(ctx context.Context) error {
 	return c.initErr
 }
 func (c *recordingClient) RefreshTools(context.Context) error { return c.listErr }
-func (c *recordingClient) Tools() []mcp.Tool                   { return c.tools }
-func (c *recordingClient) IsInitialized() bool                 { return true }
-func (c *recordingClient) ServerInfo() mcp.ServerInfo          { return mcp.ServerInfo{} }
+func (c *recordingClient) Tools() []mcp.Tool                  { return c.tools }
+func (c *recordingClient) IsInitialized() bool                { return true }
+func (c *recordingClient) ServerInfo() mcp.ServerInfo         { return mcp.ServerInfo{} }
 func (c *recordingClient) CallTool(context.Context, string, map[string]any) (*mcp.ToolCallResult, error) {
 	return nil, errors.New("not implemented")
 }

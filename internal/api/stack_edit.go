@@ -47,7 +47,6 @@ func wrapCandidateInvalid(err error) error {
 	return fmt.Errorf("validate candidate: %w", candidateInvalidError{err: err})
 }
 
-
 // stackEditBetweenReadsHook fires after the initial read and before the
 // pre-write re-read on every read-verify-write cycle in this package
 // (setServerTools, handleStackAppend). Production code leaves it nil; tests

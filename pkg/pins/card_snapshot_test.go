@@ -66,13 +66,13 @@ func TestNewCardSnapshot_Immutable(t *testing.T) {
 func TestCloneSnapshotTools_OpaqueFieldsIndependent(t *testing.T) {
 	readOnly := true
 	tools := []mcp.Tool{{
-		Name:         "send",
-		InputSchema:  json.RawMessage(`{"type":"object"}`),
-		Icons:        json.RawMessage(`[{"src":"icon.png"}]`),
-		Execution:    json.RawMessage(`{"taskSupport":"optional"}`),
-		Meta:         json.RawMessage(`{"ui":{"resourceUri":"ui://app"}}`),
-		Extra:        map[string]json.RawMessage{"future": json.RawMessage(`"a"`)},
-		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: &readOnly, Extra: map[string]json.RawMessage{"x-custom": json.RawMessage(`"a"`)}},
+		Name:        "send",
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Icons:       json.RawMessage(`[{"src":"icon.png"}]`),
+		Execution:   json.RawMessage(`{"taskSupport":"optional"}`),
+		Meta:        json.RawMessage(`{"ui":{"resourceUri":"ui://app"}}`),
+		Extra:       map[string]json.RawMessage{"future": json.RawMessage(`"a"`)},
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: &readOnly, Extra: map[string]json.RawMessage{"x-custom": json.RawMessage(`"a"`)}},
 	}}
 	cloned := cloneSnapshotTools(tools)
 	tools[0].Icons[0] = 'x'

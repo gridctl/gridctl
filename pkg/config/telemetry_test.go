@@ -17,11 +17,11 @@ func TestMCPServer_PersistResolvers(t *testing.T) {
 	// helper resolves the same way, so we exercise PersistLogs only and
 	// then spot-check the other two.
 	type cell struct {
-		name         string
-		stackPersist *bool // nil = no telemetry block on stack
-		serverPersist *bool // nil = no override; serverTelemetryAbsent makes the whole block nil
+		name                  string
+		stackPersist          *bool // nil = no telemetry block on stack
+		serverPersist         *bool // nil = no override; serverTelemetryAbsent makes the whole block nil
 		serverTelemetryAbsent bool
-		want bool
+		want                  bool
 	}
 
 	cells := []cell{

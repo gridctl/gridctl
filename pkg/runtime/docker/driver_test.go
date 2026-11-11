@@ -312,7 +312,7 @@ func TestDockerRuntime_Status_Stopped(t *testing.T) {
 					Labels: map[string]string{},
 				},
 				NetworkSettings: &container.NetworkSettings{
-					Networks:           map[string]*network.EndpointSettings{},
+					Networks: map[string]*network.EndpointSettings{},
 				},
 			},
 		},
@@ -341,7 +341,7 @@ func TestDockerRuntime_Status_Creating(t *testing.T) {
 					Labels: map[string]string{},
 				},
 				NetworkSettings: &container.NetworkSettings{
-					Networks:           map[string]*network.EndpointSettings{},
+					Networks: map[string]*network.EndpointSettings{},
 				},
 			},
 		},
@@ -370,7 +370,7 @@ func TestDockerRuntime_Status_Dead(t *testing.T) {
 					Labels: map[string]string{},
 				},
 				NetworkSettings: &container.NetworkSettings{
-					Networks:           map[string]*network.EndpointSettings{},
+					Networks: map[string]*network.EndpointSettings{},
 				},
 			},
 		},
@@ -399,7 +399,7 @@ func TestDockerRuntime_Status_Unknown(t *testing.T) {
 					Labels: map[string]string{},
 				},
 				NetworkSettings: &container.NetworkSettings{
-					Networks:           map[string]*network.EndpointSettings{},
+					Networks: map[string]*network.EndpointSettings{},
 				},
 			},
 		},
@@ -432,7 +432,7 @@ func TestDockerRuntime_Status_ResourceType(t *testing.T) {
 					},
 				},
 				NetworkSettings: &container.NetworkSettings{
-					Networks:           map[string]*network.EndpointSettings{},
+					Networks: map[string]*network.EndpointSettings{},
 				},
 			},
 		},
@@ -449,7 +449,6 @@ func TestDockerRuntime_Status_ResourceType(t *testing.T) {
 	}
 }
 
-
 func TestDockerRuntime_Status_NoPort(t *testing.T) {
 	mock := &MockDockerClient{
 		ContainerDetails: map[string]container.InspectResponse{
@@ -462,7 +461,7 @@ func TestDockerRuntime_Status_NoPort(t *testing.T) {
 					Labels: map[string]string{},
 				},
 				NetworkSettings: &container.NetworkSettings{
-					Networks:           map[string]*network.EndpointSettings{},
+					Networks: map[string]*network.EndpointSettings{},
 				},
 			},
 		},
@@ -684,7 +683,7 @@ func TestDockerRuntime_GetHostPort_NotMapped(t *testing.T) {
 				},
 				Config: &container.Config{Labels: map[string]string{}},
 				NetworkSettings: &container.NetworkSettings{
-					Networks:           map[string]*network.EndpointSettings{},
+					Networks: map[string]*network.EndpointSettings{},
 				},
 			},
 		},

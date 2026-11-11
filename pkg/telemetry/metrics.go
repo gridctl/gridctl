@@ -425,7 +425,6 @@ func isCounterReset(prev, current metrics.TokenCounts) bool {
 		current.TotalTokens < prev.TotalTokens
 }
 
-
 // toolUsageChanged reports whether the cumulative per-tool call counts for a
 // server differ between two snapshots. Comparing call counts alone suffices:
 // RecordToolCall bumps the count on every call, so a changed LastCalledAt
@@ -450,7 +449,6 @@ func toolUsageChanged(prev, current map[string]metrics.ToolStat) bool {
 	}
 	return false
 }
-
 
 // SeedFromFile reads up to the last n NDJSON entries from path and seeds
 // these surfaces atomically: cumulative per-server token totals (via

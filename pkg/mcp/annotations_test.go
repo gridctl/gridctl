@@ -74,14 +74,14 @@ func TestRouter_AnnotationsSurviveAggregation(t *testing.T) {
 	}
 	client := setupMockAgentClient(ctrl, "alpha", []Tool{
 		{
-			Name:         "read",
-			Description:  "reads",
-			InputSchema:  json.RawMessage(`{}`),
-			Annotations:  ann,
-			Icons:        icons,
-			Execution:    execution,
-			Meta:         meta,
-			Extra:        map[string]json.RawMessage{"future": json.RawMessage(`1`)},
+			Name:        "read",
+			Description: "reads",
+			InputSchema: json.RawMessage(`{}`),
+			Annotations: ann,
+			Icons:       icons,
+			Execution:   execution,
+			Meta:        meta,
+			Extra:       map[string]json.RawMessage{"future": json.RawMessage(`1`)},
 		},
 	})
 

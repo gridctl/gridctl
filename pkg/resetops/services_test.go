@@ -62,9 +62,9 @@ func TestExecute_DoesNotKillSupervisedDaemon(t *testing.T) {
 		Spec: service.Spec{
 			Platform: service.PlatformSystemd, Name: "netops", StackName: "netops",
 			Label: "dev.gridctl.netops", Binary: "/bin/gridctl",
-			Argv:    []string{"/bin/gridctl", "apply", "/stack.yaml", "--foreground", "--quiet", "--port", "8180", "--base-port", "9000"},
-			Env:     []service.KV{{Key: "GRIDCTL_HOME", Value: home}, {Key: "PATH", Value: "/bin"}},
-			Home:    home, UnitPath: home + "/gridctl-netops.service", StackFile: "/stack.yaml",
+			Argv: []string{"/bin/gridctl", "apply", "/stack.yaml", "--foreground", "--quiet", "--port", "8180", "--base-port", "9000"},
+			Env:  []service.KV{{Key: "GRIDCTL_HOME", Value: home}, {Key: "PATH", Value: "/bin"}},
+			Home: home, UnitPath: home + "/gridctl-netops.service", StackFile: "/stack.yaml",
 			Port: 8180, BasePort: 9000,
 		},
 		NoEnable: true,

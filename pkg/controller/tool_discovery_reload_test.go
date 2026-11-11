@@ -209,4 +209,3 @@ func waitReloadText(t *testing.T, buf *reloadBuf, needle string, n int, timeout 
 		time.Sleep(10 * time.Millisecond)
 	}
 }
-

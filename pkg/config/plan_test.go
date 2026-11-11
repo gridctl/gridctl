@@ -117,7 +117,6 @@ func TestComputePlan_ChangeServerPort(t *testing.T) {
 	assert.Contains(t, diff.Items[0].Details[0], "4000")
 }
 
-
 func TestComputePlan_AddResource(t *testing.T) {
 	current := &Stack{
 		Name:    "test",
@@ -135,7 +134,6 @@ func TestComputePlan_AddResource(t *testing.T) {
 	assert.True(t, diff.HasChanges)
 	assert.Equal(t, "resource", diff.Items[0].Kind)
 }
-
 
 func TestComputePlan_ChangeEnv(t *testing.T) {
 	current := &Stack{
@@ -254,7 +252,6 @@ func TestComputePlan_AdvancedNetworkAddRemove(t *testing.T) {
 	assert.True(t, added, "expected net3 added")
 	assert.True(t, removed, "expected net2 removed")
 }
-
 
 func TestComputePlan_MultipleChanges(t *testing.T) {
 	current := &Stack{

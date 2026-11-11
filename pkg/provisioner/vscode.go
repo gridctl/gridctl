@@ -32,7 +32,7 @@ func newVSCode() *VSCode {
 
 func (v *VSCode) Name() string      { return v.name }
 func (v *VSCode) Slug() string      { return v.slug }
-func (v *VSCode) NeedsBridge() bool  { return false }
+func (v *VSCode) NeedsBridge() bool { return false }
 
 func (v *VSCode) Detect() (string, bool) {
 	path := configPathForPlatform(v.paths)

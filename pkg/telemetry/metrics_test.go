@@ -483,8 +483,6 @@ func TestSeedFromFile_LegacyTokenOnly(t *testing.T) {
 
 }
 
-
-
 // TestMetricsSnapshotLine_OmitsToolUsageWhenEmpty pins the wire-format
 // guarantee for the tool_usage extension: a line with no per-tool activity
 // (and legacy files predating Audit Mode) serializes without the field, so
@@ -665,7 +663,6 @@ func TestMetricsFlusher_ToolUsagePersistence(t *testing.T) {
 		}
 	})
 }
-
 
 // writeMetricsLine appends one MetricsSnapshotLine as NDJSON to path.
 func writeMetricsLine(t *testing.T, path string, line MetricsSnapshotLine) {

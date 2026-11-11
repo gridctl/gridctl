@@ -41,7 +41,7 @@ func TestValidate_Headers(t *testing.T) {
 			},
 		},
 		{
-			name: "authorization without auth accepted",
+			name:  "authorization without auth accepted",
 			stack: externalServer(map[string]string{"Authorization": "Bearer synthetic"}, nil),
 		},
 		{

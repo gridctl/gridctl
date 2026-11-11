@@ -108,18 +108,18 @@ func Key(cfg config.MCPServer) string {
 // the canonical order — do not reorder without also bumping a cache version
 // (if one is introduced later) because that would invalidate existing keys.
 type canonicalShape struct {
-	Image         string              `json:"image,omitempty"`
-	Source        *config.Source      `json:"source,omitempty"`
-	URL           string              `json:"url,omitempty"`
-	Port          int                 `json:"port,omitempty"`
-	Transport     string              `json:"transport,omitempty"`
-	Command       []string            `json:"command,omitempty"`
-	Env           []kv                `json:"env,omitempty"`
-	BuildArgs     []kv                `json:"build_args,omitempty"`
-	SSH           *config.SSHConfig   `json:"ssh,omitempty"`
-	OpenAPI       *config.OpenAPIConfig `json:"openapi,omitempty"`
-	Replicas      int                 `json:"replicas,omitempty"`
-	ReadyTimeout  string              `json:"ready_timeout,omitempty"`
+	Image        string                `json:"image,omitempty"`
+	Source       *config.Source        `json:"source,omitempty"`
+	URL          string                `json:"url,omitempty"`
+	Port         int                   `json:"port,omitempty"`
+	Transport    string                `json:"transport,omitempty"`
+	Command      []string              `json:"command,omitempty"`
+	Env          []kv                  `json:"env,omitempty"`
+	BuildArgs    []kv                  `json:"build_args,omitempty"`
+	SSH          *config.SSHConfig     `json:"ssh,omitempty"`
+	OpenAPI      *config.OpenAPIConfig `json:"openapi,omitempty"`
+	Replicas     int                   `json:"replicas,omitempty"`
+	ReadyTimeout string                `json:"ready_timeout,omitempty"`
 }
 
 // kv is a sorted representation of a map used inside canonicalShape. Using a

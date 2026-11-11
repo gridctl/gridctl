@@ -24,7 +24,7 @@ type mcpServersProvisioner struct {
 
 func (p *mcpServersProvisioner) Name() string      { return p.name }
 func (p *mcpServersProvisioner) Slug() string      { return p.slug }
-func (p *mcpServersProvisioner) NeedsBridge() bool  { return p.bridge }
+func (p *mcpServersProvisioner) NeedsBridge() bool { return p.bridge }
 
 func (p *mcpServersProvisioner) Detect() (string, bool) {
 	path := configPathForPlatform(p.paths)

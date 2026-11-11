@@ -196,11 +196,11 @@ func NewAccumulator(maxDataPoints int) *Accumulator {
 		maxDataPoints = 10000
 	}
 	return &Accumulator{
-		startedAt:    time.Now(),
-		servers:      make(map[string]*serverCounters),
-		replicas:     make(map[string]map[int]*replicaCounters),
-		buckets:      make([]bucket, maxDataPoints),
-		maxSize:      maxDataPoints,
+		startedAt:   time.Now(),
+		servers:     make(map[string]*serverCounters),
+		replicas:    make(map[string]map[int]*replicaCounters),
+		buckets:     make([]bucket, maxDataPoints),
+		maxSize:     maxDataPoints,
 		serverBufs:  make(map[string]*serverBuffer),
 		clients:     make(map[string]*clientCounters),
 		toolUsage:   make(map[string]map[string]*toolUsage),
