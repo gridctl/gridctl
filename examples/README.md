@@ -126,7 +126,7 @@ Placeholder private or fake images stay as authored (`ghcr.io/org/...`, `example
 
 Excluded from this pin policy: commented sketches, local mock-server paths, host `sleep` commands, variable-only selectors, schematic `npx some-stdio-mcp-server` forms, API status payloads, and runtime-generated `gridctl link` client wiring. Public setup snippets, including the README Claude Desktop `npx` bridge, are pinned.
 
-Owner: repository maintainers. Cadence: when adding or changing runnable examples or public setup snippets; review pins when promoting a new upstream release, and at least quarterly. Check with `task examples:refs` (requires `./gridctl`).
+Owner: repository maintainers. Cadence: when adding or changing runnable examples or public setup snippets; review pins when promoting a new upstream release, and at least quarterly. Check with `task examples:check`, which builds `./gridctl`, validates every runnable example stack, and runs the pin check (`task examples:refs` alone requires an existing `./gridctl`). `task verify` and Gatekeeper run the same task. A new YAML file under `examples/` that is not a stack needs an exclusion in `scripts/example-stacks.sh`.
 
 ## 💻 Usage Pattern
 
