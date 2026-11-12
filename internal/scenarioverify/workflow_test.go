@@ -211,16 +211,24 @@ func TestWorkflowExampleStackExclusions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := string(workflow)
+	if !strings.Contains(string(workflow), "task examples:check") {
+		t.Error("gatekeeper workflow does not run task examples:check")
+	}
+	helper, err := os.ReadFile(filepath.Join(root, "scripts", "example-stacks.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(helper)
 	// These files live under examples/ but are not stacks. Stack validation
-	// rejects them on purpose; the gatekeeper find must skip them.
+	// rejects them on purpose; the shared helper must skip them. The pattern
+	// carries the $root prefix because find prints paths under that root.
 	for _, path := range []string{
 		"examples/stack-declaration-policy/policy.yaml",
 		"examples/booster-pack/servers.yaml",
 		"examples/tracing/otel-collector-config.yaml",
 	} {
-		if !strings.Contains(text, `-not -path "`+path+`"`) {
-			t.Errorf("example stack validation does not exclude non-stack %s", path)
+		if !strings.Contains(text, `-not -path "$root/`+path+`"`) {
+			t.Errorf("example stack helper does not exclude non-stack %s", path)
 		}
 		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(path))); err != nil {
 			t.Errorf("excluded example path missing: %s", path)

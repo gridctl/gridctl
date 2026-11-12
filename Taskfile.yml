@@ -107,14 +107,17 @@ tasks:
       - bash scripts/run-verified-tests.sh --lane unit --index tests/adversarial/index.yaml -- ./...
 
   verify:
-    desc: Canonical local gate (unit lane capture, lint, frontend tests, policy tests)
+    desc: Canonical local gate (example checks, unit lane capture, lint, frontend tests, policy tests)
     summary: |
-      Runs the same unit-lane capture and scenario verification Gatekeeper
-      uses, then backend and frontend lint, frontend tests, and the Python
-      policy tests (Python 3.11+, jsonschema 4.23.0, PyYAML 6.0.3). Each
-      runs once. `task test` is the human-readable loop and is not needed
-      before this. Integration suites stay separate: `task test:integration`.
+      Runs examples:check first (builds ./gridctl, validates example stacks,
+      and checks their dependency references, as Gatekeeper does), then the
+      same unit-lane capture and scenario verification Gatekeeper uses,
+      backend and frontend lint, frontend tests, and the Python policy
+      tests (Python 3.11+, jsonschema 4.23.0, PyYAML 6.0.3). Each runs once.
+      `task test` is the human-readable loop and is not needed before this.
+      Integration suites stay separate: `task test:integration`.
     cmds:
+      - task: examples:check
       - task: test:verify
       - task: lint
       - task: test:frontend
@@ -191,6 +194,28 @@ tasks:
       non-fatal. Requires ./gridctl (task build:go).
     cmds:
       - bash scripts/check-example-refs.sh ./gridctl
+
+  examples:validate:
+    desc: Validate example stacks with gridctl validate
+    summary: |
+      Runs gridctl validate against every runnable example stack listed by
+      scripts/example-stacks.sh, which also holds the exclusions for
+      non-stack YAML under examples/. Exit 0 (valid) and exit 2 (warnings
+      only) pass; validation errors and unexpected exits fail and print the
+      file and the validate output. Requires ./gridctl (task build:go).
+    cmds:
+      - bash scripts/validate-examples.sh ./gridctl
+
+  examples:check:
+    desc: Build gridctl and run both example checks (part of task verify)
+    summary: |
+      Runs build:go, then examples:validate, then examples:refs, in order.
+      build:go overwrites ./gridctl in the repository root (gitignored).
+      `task verify` runs this first, and Gatekeeper runs the same task.
+    cmds:
+      - task: build:go
+      - task: examples:validate
+      - task: examples:refs
 
   lint:
     desc: Lint backend and frontend

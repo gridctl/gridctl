@@ -61,7 +61,8 @@ Tasks live in `Taskfile.yml`; `task --list` shows the full catalog. The most com
 | `task dev` | Run Vite dev server for frontend development |
 | `task test` | Human-readable unit tests (race detector on, matching CI). Not needed before `task verify` |
 | `task test:verify` | Unit-lane JSON capture and scenario verification (included in `task verify`) |
-| `task verify` | Canonical local gate: unit-lane capture, lint, frontend tests, and policy tests, each once |
+| `task verify` | Canonical local gate: example checks, unit-lane capture, lint, frontend tests, and policy tests, each once |
+| `task examples:check` | Build `./gridctl`, then validate example stacks and check their dependency references (included in `task verify`) |
 | `task scenarios` | Print designated scenario IDs and focused `-run` commands |
 | `task test:coverage` | Run tests with coverage report |
 | `task test:frontend` | Run frontend tests (Vitest) |
@@ -115,13 +116,13 @@ Example: `feature/add-ssh-transport` or `fix/container-timeout`
 Run the local gate before submitting:
 
 ```bash
-task verify                # Local gate: unit capture, lint, frontend tests, policy tests
+task verify                # Local gate: example checks, unit capture, lint, frontend tests, policy tests
 task test                  # Human-readable unit tests (not needed before task verify)
 task test:integration      # Integration tests (requires Docker or Podman)
-task examples:refs         # Example image and package pin check (needs ./gridctl)
+task examples:check        # Build ./gridctl, validate example stacks, check image and package pins
 ```
 
-`task verify` runs the unit-lane capture, lint, frontend tests, and policy tests once each and stops at the first failure. `task test` is the human-readable loop. Designated Gatekeeper jobs capture `go test -json -count=1 -race` and check identities in `tests/adversarial/index.yaml`. The test, integration, conformance, podman-integration, and frontend jobs start together; the required job still aggregates every gate. Each designated lane prints a slowest-tests summary of names and elapsed seconds. Raw captures stay on the runner and are not uploaded. `task scenarios` prints focused reproduction commands. Those reruns are diagnostic; whole-suite CI remains acceptance. See [adversarial regression gates](docs/adversarial-regression-gates.md). Rename a required test in the same change as its index entry.
+`task verify` runs `examples:check` first (the same task Gatekeeper runs), then the unit-lane capture, lint, frontend tests, and policy tests once each and stops at the first failure. `task test` is the human-readable loop. Designated Gatekeeper jobs capture `go test -json -count=1 -race` and check identities in `tests/adversarial/index.yaml`. The test, integration, conformance, podman-integration, and frontend jobs start together; the required job still aggregates every gate. Each designated lane prints a slowest-tests summary of names and elapsed seconds. Raw captures stay on the runner and are not uploaded. `task scenarios` prints focused reproduction commands. Those reruns are diagnostic; whole-suite CI remains acceptance. See [adversarial regression gates](docs/adversarial-regression-gates.md). Rename a required test in the same change as its index entry.
 
 ### Example dependency references
 
@@ -129,7 +130,7 @@ Runnable example stacks and public setup snippets pin real container images to a
 
 `gridctl validate --check-mutable-refs` is an opt-in local diagnostic. Default `validate`, REST validation, health counts, and apply stay unchanged. Exact package versions are not a transitive lock, and a digest is content-addressed, not publisher-verified.
 
-Maintenance owner: repository maintainers. Cadence: when adding or changing runnable examples or public setup snippets; review pins when promoting a new upstream release, and at least quarterly. Documented placeholder exceptions live in `examples/reference-exceptions.txt`. CI runs `scripts/check-example-refs.sh` after building `./gridctl`; unexpected exits and validation errors fail. Unpinned selectors and unassessed in-scope image or package references fail unless listed in `examples/reference-exceptions.txt`. Local-development command wrappers and local paths are permitted. Unrelated existing example warnings stay non-fatal. The CLI diagnostic itself remains informational for unassessed selectors.
+Maintenance owner: repository maintainers. Cadence: when adding or changing runnable examples or public setup snippets; review pins when promoting a new upstream release, and at least quarterly. Documented placeholder exceptions live in `examples/reference-exceptions.txt`. `task examples:check` builds `./gridctl` and runs `scripts/check-example-refs.sh` after `scripts/validate-examples.sh`; `task verify` and Gatekeeper both run it. Unexpected exits and validation errors fail. Unpinned selectors and unassessed in-scope image or package references fail unless listed in `examples/reference-exceptions.txt`. Local-development command wrappers and local paths are permitted. Unrelated existing example warnings stay non-fatal. The CLI diagnostic itself remains informational for unassessed selectors.
 
 ### Experimental Feature Flags
 

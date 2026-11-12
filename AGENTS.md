@@ -25,11 +25,13 @@ Task (https://taskfile.dev) is the entry point for development builds and Go/fro
 | `task dev` | Runs the Vite dev server (`web/`) against a separately-running backend. |
 | `task test` | `go test -race ./...` with `TMPDIR` normalized to its physical path (unit tests only, same race detector CI runs). Human-readable loop; not needed before `task verify`. |
 | `task test:verify` | Unit-lane JSON capture plus `cmd/scenarioverify` against `tests/adversarial/index.yaml` (same path Gatekeeper uses). Included in `task verify`. |
-| `task verify` | Canonical local gate. Runs `test:verify`, `lint`, `test:frontend`, and the Python policy tests once each and stops at the first failure. Gatekeeper lanes start together and each designated lane prints a slowest-tests summary; raw captures stay on the runner. |
+| `task verify` | Canonical local gate. Runs `examples:check` first, then `test:verify`, `lint`, `test:frontend`, and the Python policy tests once each and stops at the first failure. Gatekeeper lanes start together and each designated lane prints a slowest-tests summary; raw captures stay on the runner. |
 | `task scenarios` | Prints designated scenario IDs and escaped focused `-run` commands. Focused reruns do not replace whole-suite acceptance. |
 | `task test:integration` | `go test -tags=integration -race -timeout 30m ./tests/integration/...`. The full suite requires Docker (or Podman); selected HTTP/subprocess suites need no container runtime. All use real dependencies per Article IV of `CONSTITUTION.md`; mocks are disallowed in `tests/integration/`. |
 | `task test:frontend` | `cd web && npm test` (Vitest). |
-| `task examples:refs` | Checks example stacks for unpinned or unassessed in-scope image and package selectors (`scripts/check-example-refs.sh`). Requires `./gridctl`. |
+| `task examples:refs` | Checks example stacks for unpinned or unassessed in-scope image and package selectors (`scripts/check-example-refs.sh`). Requires `./gridctl`; `task examples:check` builds it first. |
+| `task examples:validate` | Runs `gridctl validate` on every runnable example stack (`scripts/validate-examples.sh`); exit 2 (warnings only) passes. Requires `./gridctl`. |
+| `task examples:check` | Runs `build:go`, `examples:validate`, and `examples:refs` in order. Included in `task verify`; Gatekeeper's `test` job runs the same task. Non-stack YAML exclusions live in `scripts/example-stacks.sh`. |
 | `task images:python-runtime` | Validates the Python MCP runtime recipe, pins, and OCI workflow policy. Hosted amd64/arm64 image acceptance is separate. |
 | `task lint` | `golangci-lint run` plus `npm run lint` in `web/` (both CI-gated). |
 | `task generate` | Regenerates `go.uber.org/mock` mocks under `pkg/mcp/` and `pkg/runtime/`. Required after touching the interfaces they're generated from. |
@@ -39,7 +41,7 @@ Always test local changes with `task build` followed by `./gridctl …`. The `gr
 
 `gridctl serve` and `gridctl apply` daemonize by default. If you need a process you can ctrl-C (or that a test script can kill), pass `-f` / `--foreground`.
 
-`task verify` is the local gate before a pull request. It runs the unit-lane capture and scenario verification, backend and frontend lint, frontend tests, and the Python policy tests (Python 3.11+, jsonschema 4.23.0, PyYAML 6.0.3), each once, and stops at the first failure. `task test` is the human-readable loop and is not needed before `task verify`. Gatekeeper starts the test, integration, conformance, podman-integration, and frontend jobs together; the required job still aggregates every gate. A new push to the same pull request cancels the in-progress run. Other events, including pushes to main and the release workflow's Gatekeeper call, are not canceled. Each designated lane prints a slowest-tests summary of names and elapsed seconds. A missing capture, a jq failure, or a sort failure prints a one-line notice and does not fail the job. Raw captures stay on the runner and are not uploaded.
+`task verify` is the local gate before a pull request. It first runs `examples:check` (builds `./gridctl`, validates example stacks, and checks their dependency references, the same task Gatekeeper runs), then the unit-lane capture and scenario verification, backend and frontend lint, frontend tests, and the Python policy tests (Python 3.11+, jsonschema 4.23.0, PyYAML 6.0.3), each once, and stops at the first failure. `task test` is the human-readable loop and is not needed before `task verify`. Gatekeeper starts the test, integration, conformance, podman-integration, and frontend jobs together; the required job still aggregates every gate. A new push to the same pull request cancels the in-progress run. Other events, including pushes to main and the release workflow's Gatekeeper call, are not canceled. Each designated lane prints a slowest-tests summary of names and elapsed seconds. A missing capture, a jq failure, or a sort failure prints a one-line notice and does not fail the job. Raw captures stay on the runner and are not uploaded.
 
 Run a single Go test:
 
@@ -319,7 +321,9 @@ scripts/            Build/test helpers and release tooling: release.py owns gate
                     output contract; release-acceptance.py exercises authorized sandbox releases. mcp_runtime_python.py
                     owns the Python runtime image recipe, tag, and evidence policy. Discovered test_*.py files cover local
                     policy and validator regressions without invoking GoReleaser.
-                    check-example-refs.sh enforces pinned or excepted example image and package selectors after task build:go, including unassessed in-scope references.
+                    example-stacks.sh is the sourced helper that lists runnable example stacks and holds the non-stack exclusions.
+                    validate-examples.sh runs gridctl validate on each; check-example-refs.sh enforces pinned or excepted
+                    example image and package selectors, including unassessed in-scope references. Both run in task examples:check.
                     run-verified-tests.sh captures go test JSON and runs cmd/scenarioverify for designated Gatekeeper lanes.
 docs/               User-facing documentation (cli-reference, config-schema, api-reference, concepts, skills, hooks, packs, tools-workspace,
                     global-context, scaling, usage-observability, installation, release-verification,

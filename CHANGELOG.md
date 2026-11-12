@@ -4,6 +4,10 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Maintenance
+
+- `task verify` now builds `./gridctl` and validates example stacks and their dependency references first, through the new `task examples:check`, the same task the Gatekeeper `test` job runs. A YAML file under `examples/` that fails `gridctl validate` now fails locally with the file and its validation errors. `task examples:validate` runs stack validation alone. The list of non-stack YAML excluded from both checks lives once, in `scripts/example-stacks.sh`.
+
 ### Bug Fixes
 
 - Build with Go 1.26.11 so govulncheck no longer reports GO-2026-6859 in net/http (Go 1.26.10). The language version stays 1.26.0. Suppressed Docker client findings are unchanged.
