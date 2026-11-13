@@ -59,10 +59,11 @@ func hookErrorStatus(err error) int {
 }
 
 type hookUnsupportedClient struct {
-	Slug     string `json:"slug"`
-	Name     string `json:"name"`
-	Location string `json:"location"`
-	Detected bool   `json:"detected"`
+	Slug      string `json:"slug"`
+	Name      string `json:"name"`
+	Location  string `json:"location"`
+	CoveredBy string `json:"covered_by,omitempty"`
+	Detected  bool   `json:"detected"`
 }
 
 type hookFile struct {
@@ -179,10 +180,11 @@ func unsupportedClients(mgr *hooksync.Manager) []hookUnsupportedClient {
 	out := make([]hookUnsupportedClient, 0, len(hooksync.UnsupportedClients()))
 	for _, c := range hooksync.UnsupportedClients() {
 		out = append(out, hookUnsupportedClient{
-			Slug:     c.Slug,
-			Name:     c.Name,
-			Location: c.Location,
-			Detected: detected[c.Slug],
+			Slug:      c.Slug,
+			Name:      c.Name,
+			Location:  c.Location,
+			CoveredBy: c.CoveredBy,
+			Detected:  detected[c.Slug],
 		})
 	}
 	return out

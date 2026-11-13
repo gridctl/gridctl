@@ -132,6 +132,10 @@ func TestApply_UnsupportedHookIsInformational(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(home, ".gemini"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// Gemini CLI is detected by its settings file, not by ~/.gemini.
+	if err := os.WriteFile(filepath.Join(home, ".gemini", "settings.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	name := "block"
 	dir := filepath.Join(home, ".gridctl", "registry", "hooks", name)
 	if err := os.MkdirAll(filepath.Join(dir, "scripts"), 0o755); err != nil {
@@ -188,6 +192,86 @@ func TestApply_UnsupportedHookIsInformational(t *testing.T) {
 	}
 	if !copied || !unsupported {
 		t.Fatalf("rows = %+v", doc.Rows)
+	}
+}
+
+func TestApply_UnexpressibleHookIsInformational(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+	// OpenCode is detected; ~/.gemini/config is Antigravity's and must not
+	// produce a Gemini CLI row without ~/.gemini/settings.json.
+	for _, d := range []string{".claude", ".config/opencode", ".gemini/config", ".cursor"} {
+		if err := os.MkdirAll(filepath.Join(home, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	name := "stop"
+	dir := filepath.Join(home, ".gridctl", "registry", "hooks", name)
+	if err := os.MkdirAll(filepath.Join(dir, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "scripts", "run.sh"), []byte("#!/bin/sh\necho no\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(`{"name":"stop","description":"d","dialect":"claude-code","hooks":{"Stop":[{"hooks":[{"type":"command","command":"./scripts/run.sh"}]}]}}`)
+	if err := os.WriteFile(filepath.Join(dir, "hook.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pins := hookpins.NewWithPath(filepath.Join(home, ".gridctl", "pins"))
+	if err := pins.Pin(t.Context(), hookpins.PinRequest{Name: name, Dir: dir}); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(home, ".gridctl", "skills.lock.yaml")
+	lf := &skills.LockFile{Sources: map[string]skills.LockedSource{
+		"hook-pack": {
+			Repo: "https://example.com/hook-pack.git",
+			Pack: &skills.LockedPack{Name: "hook-pack", Hooks: []string{name}},
+		},
+	}}
+	if err := skills.WriteLockFile(lockPath, lf); err != nil {
+		t.Fatal(err)
+	}
+	mgrs := &Managers{
+		Home:     home,
+		LockPath: lockPath,
+		Hooks:    hooksync.NewManagerWithHome(home, filepath.Join(home, ".gridctl", "registry")),
+	}
+	doc, err := mgrs.Apply(t.Context(), "hook-pack", ApplyOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Applied != doc.Total {
+		t.Fatalf("applied %d/%d, want skipped-unexpressible counted as applied\nrows=%+v", doc.Applied, doc.Total, doc.Rows)
+	}
+	got := map[string]string{}
+	for _, row := range doc.Rows {
+		if row.Kind == "hook" {
+			got[row.Client] = row.Action + ": " + row.Detail
+		}
+	}
+	if got["opencode"] != `skipped-unexpressible: event "Stop" has no opencode mapping` {
+		t.Fatalf("opencode row = %q\nrows=%+v", got["opencode"], doc.Rows)
+	}
+	if !strings.HasPrefix(got["cursor"], "skipped-unsupported: covered by the claude-code projection") {
+		t.Fatalf("cursor row = %q", got["cursor"])
+	}
+	if _, ok := got["gemini"]; ok {
+		t.Fatalf("an Antigravity-only ~/.gemini produced a Gemini CLI row: %+v", doc.Rows)
+	}
+	if _, ok := got["antigravity"]; !ok {
+		t.Fatalf("antigravity row missing: %+v", doc.Rows)
+	}
+}
+
+func TestTallyRows_HookInformationalActions(t *testing.T) {
+	applied, failed := TallyRows([]Row{
+		{Action: hooksync.ActionSkippedUnsupported},
+		{Action: hooksync.ActionSkippedUnexpressible},
+		{Action: hooksync.ActionSkippedDrift},
+	})
+	if applied != 2 || failed != 1 {
+		t.Fatalf("applied=%d failed=%d", applied, failed)
 	}
 }
 
@@ -570,5 +654,17 @@ func assertHookProjection(t *testing.T, home, name string, want bool) {
 	}
 	if found != want {
 		t.Fatalf("projection present = %v, want %v", found, want)
+	}
+}
+
+func TestNameDriftedHookClients(t *testing.T) {
+	rows := []Row{
+		{Kind: "hook", Name: "block", Action: "skipped-drift"},
+		{Kind: "skill", Name: "block", Action: "skipped-drift"},
+		{Kind: "hook", Name: "other", Action: "removed", Client: "claude-code"},
+	}
+	nameDriftedHookClients(rows, map[string][]string{"block": {"claude-code", "opencode"}})
+	if rows[0].Client != "claude-code,opencode" || rows[1].Client != "" || rows[2].Client != "claude-code" {
+		t.Fatalf("rows = %+v", rows)
 	}
 }

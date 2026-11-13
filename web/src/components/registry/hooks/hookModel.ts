@@ -5,7 +5,7 @@ const CLIENT_NAMES: Record<string, string> = {
   gemini: 'Gemini CLI',
   cursor: 'Cursor',
   copilot: 'GitHub Copilot',
-  windsurf: 'Windsurf',
+  windsurf: 'Windsurf (Devin Local)',
   antigravity: 'Antigravity',
   opencode: 'OpenCode',
 };

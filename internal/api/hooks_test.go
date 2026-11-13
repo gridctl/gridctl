@@ -90,6 +90,41 @@ func TestHandleHooks_ListEmptyAndAdoptMissing(t *testing.T) {
 	}
 }
 
+func TestHandleHooks_ListCoveredBy(t *testing.T) {
+	srv, _, home := setupHookTestServer(t)
+	if err := os.MkdirAll(filepath.Join(home, ".cursor"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rec := doJSON(t, srv, http.MethodGet, "/api/registry/hooks", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list = %d: %s", rec.Code, rec.Body.String())
+	}
+	var raw struct {
+		UnsupportedClients []map[string]any `json:"unsupported_clients"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]map[string]any{}
+	for _, c := range raw.UnsupportedClients {
+		seen[c["slug"].(string)] = c
+	}
+	if _, ok := seen["opencode"]; ok {
+		t.Fatal("opencode is a target and must not be listed as unsupported")
+	}
+	for _, slug := range []string{"cursor", "windsurf"} {
+		if seen[slug]["covered_by"] != "claude-code" {
+			t.Fatalf("%s covered_by = %v", slug, seen[slug]["covered_by"])
+		}
+	}
+	if seen["cursor"]["detected"] != true {
+		t.Fatalf("cursor = %v", seen["cursor"])
+	}
+	if _, ok := seen["gemini"]["covered_by"]; ok {
+		t.Fatalf("covered_by must be omitted when empty: %v", seen["gemini"])
+	}
+}
+
 func TestHandleHooks_GetSyncAndPinReset(t *testing.T) {
 	srv, registryDir, home := setupHookTestServer(t)
 	seedHook(t, registryDir, "block", "#!/bin/sh\necho no\n")

@@ -53,7 +53,7 @@ func runHookProjectSync(ctx context.Context, stdout, stderr io.Writer, mgr *hook
 	}
 	if len(opts.Clients) == 0 {
 		for _, c := range mgr.DetectedUnsupported() {
-			fmt.Fprintf(stderr, "note: %s (%s) has a hook mechanism but is not a projection target in this release\n", c.Slug, c.Location)
+			fmt.Fprintln(stderr, c.CoveredNote())
 		}
 	}
 	rows := make([]hookSyncRow, len(results))
@@ -134,6 +134,7 @@ func hookProjectActionLabel(action string) string {
 		hooksync.ActionSkippedUnmanaged, hooksync.ActionError:
 		return "✗ " + action
 	default:
+		// skipped-unsupported and skipped-unexpressible are informational.
 		return "— " + action
 	}
 }
