@@ -534,64 +534,84 @@ func retainedSchemasFor(t *testing.T, home, tag string) *retainedSchemas {
 // a rollback to it is not refused and it reads OpenCode hook records.
 const preFeatureHookCommit = "d2c659e808a557ee2c810f19c38c7fd1a35b692b"
 
+// preCopilotHookCommit is the release with the OpenCode hook target and
+// without the Copilot CLI target (v1.0.0-rc.7). It reads Copilot CLI hook
+// records with the same lockfile version and revision.
+const preCopilotHookCommit = "ebe8af643acf92a1a56f9c54dcab9c74b3a9adf7"
+
+type pinnedHookBin struct {
+	once sync.Once
+	bin  string
+	err  error
+}
+
 var (
-	preFeatureOnce sync.Once
-	preFeatureBin  string
-	preFeatureErr  error
+	pinnedHookBinsMu sync.Mutex
+	pinnedHookBins   = map[string]*pinnedHookBin{}
 )
 
-// preFeatureHookBin race-builds the pre-feature commit from a git archive
-// of the repository. A shallow checkout fetches that one commit first.
+// preFeatureHookBin race-builds the pre-feature commit.
 func preFeatureHookBin(ctx context.Context, t *testing.T) string {
 	t.Helper()
-	preFeatureOnce.Do(func() {
-		root, err := filepath.Abs("../..")
-		if err != nil {
-			preFeatureErr = err
-			return
-		}
-		git := func(args ...string) ([]byte, error) {
-			cmd := exec.CommandContext(ctx, "git", args...)
-			cmd.Dir = root
-			return cmd.CombinedOutput()
-		}
-		if _, err := git("cat-file", "-e", preFeatureHookCommit+"^{commit}"); err != nil {
-			if out, ferr := git("fetch", "--no-tags", "--depth=1", "origin", preFeatureHookCommit); ferr != nil {
-				preFeatureErr = fmt.Errorf("fetching %s: %v\n%s", preFeatureHookCommit, ferr, out)
-				return
-			}
-		}
-		dir, err := os.MkdirTemp("", "gridctl-prefeature-*") //nolint:usetesting // shared across tests via sync.Once
-		if err != nil {
-			preFeatureErr = err
-			return
-		}
-		archive := filepath.Join(dir, "src.tar")
-		if out, err := git("archive", "--format=tar", "-o", archive, preFeatureHookCommit); err != nil {
-			preFeatureErr = fmt.Errorf("archiving %s: %v\n%s", preFeatureHookCommit, err, out)
-			return
-		}
-		src := filepath.Join(dir, "src")
-		if err := os.MkdirAll(src, 0o755); err != nil {
-			preFeatureErr = err
-			return
-		}
-		untar := exec.CommandContext(ctx, "tar", "-xf", archive, "-C", src)
-		if out, err := untar.CombinedOutput(); err != nil {
-			preFeatureErr = fmt.Errorf("extracting %s: %v\n%s", archive, err, out)
-			return
-		}
-		bin := filepath.Join(dir, "gridctl-prefeature")
-		if err := buildVersionedBin(ctx, src, bin, "v9.0.0"); err != nil {
-			preFeatureErr = err
-			return
-		}
-		preFeatureBin = bin
-	})
-	if preFeatureErr != nil {
-		t.Fatal(preFeatureErr)
+	return hookBinAt(ctx, t, preFeatureHookCommit)
+}
+
+// hookBinAt race-builds commit from a git archive of the repository, once
+// per process. A shallow checkout fetches that one commit first.
+func hookBinAt(ctx context.Context, t *testing.T, commit string) string {
+	t.Helper()
+	pinnedHookBinsMu.Lock()
+	p := pinnedHookBins[commit]
+	if p == nil {
+		p = &pinnedHookBin{}
+		pinnedHookBins[commit] = p
 	}
-	return preFeatureBin
+	pinnedHookBinsMu.Unlock()
+	p.once.Do(func() {
+		p.bin, p.err = buildHookBinAt(ctx, commit)
+	})
+	if p.err != nil {
+		t.Fatal(p.err)
+	}
+	return p.bin
+}
+
+func buildHookBinAt(ctx context.Context, commit string) (string, error) {
+	root, err := filepath.Abs("../..")
+	if err != nil {
+		return "", err
+	}
+	git := func(args ...string) ([]byte, error) {
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = root
+		return cmd.CombinedOutput()
+	}
+	if _, err := git("cat-file", "-e", commit+"^{commit}"); err != nil {
+		if out, ferr := git("fetch", "--no-tags", "--depth=1", "origin", commit); ferr != nil {
+			return "", fmt.Errorf("fetching %s: %v\n%s", commit, ferr, out)
+		}
+	}
+	dir, err := os.MkdirTemp("", "gridctl-prefeature-*") //nolint:usetesting // shared across tests via sync.Once
+	if err != nil {
+		return "", err
+	}
+	archive := filepath.Join(dir, "src.tar")
+	if out, err := git("archive", "--format=tar", "-o", archive, commit); err != nil {
+		return "", fmt.Errorf("archiving %s: %v\n%s", commit, err, out)
+	}
+	src := filepath.Join(dir, "src")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		return "", err
+	}
+	untar := exec.CommandContext(ctx, "tar", "-xf", archive, "-C", src)
+	if out, err := untar.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("extracting %s: %v\n%s", archive, err, out)
+	}
+	bin := filepath.Join(dir, "gridctl-prefeature")
+	if err := buildVersionedBin(ctx, src, bin, "v9.0.0"); err != nil {
+		return "", err
+	}
+	return bin, nil
 }
 
 // TestUpgradeRollback_HookSecondClientRecord runs a pre-feature child
@@ -671,6 +691,87 @@ func TestUpgradeRollback_HookSecondClientRecord(t *testing.T) {
 	}
 	if _, err := os.Stat(openCodeScriptDir(home)); !os.IsNotExist(err) {
 		t.Fatalf("opencode script copy remains: %v", err)
+	}
+}
+
+// TestUpgradeRollback_HookCopilotRecord runs a binary without the Copilot
+// CLI target (the pre-feature commit and v1.0.0-rc.7) against a home with
+// a Copilot CLI hook projection, then the current binary again. The older
+// binary reads the hook file as a settings file with no recorded groups,
+// refuses to unsync it, never deletes the file or its script copy, and its
+// lockfile rewrite does not change behavior after upgrade.
+func TestUpgradeRollback_HookCopilotRecord(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+	newBin := hookCLI(t)
+	for _, commit := range []string{preFeatureHookCommit, preCopilotHookCommit} {
+		t.Run(commit[:7], func(t *testing.T) {
+			oldBin := hookBinAt(ctx, t, commit)
+			home, _ := copilotHookHome(t, newBin)
+
+			if rows, code := hookSyncJSON(t, newBin, home, "block-force-push"); code != 0 || len(rows) != 2 {
+				t.Fatalf("sync exit %d rows %+v", code, rows)
+			}
+			file := copilotFilePath(home)
+			fileBytes, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			st, ok := hookStatusJSON(t, oldBin, home, "copilot")
+			if !ok || st.State != "target-missing" || !strings.HasPrefix(st.Detail, "the recorded groups were removed from the settings file") {
+				t.Fatalf("older status = %+v (found %v)", st, ok)
+			}
+			stdout, stderr, _ := runHookCLI(t, oldBin, home, "skill", "project", "unsync", "--kind", "hook", "block-force-push", "--clients", "copilot", "--format", "json")
+			var un struct {
+				Results []hookSyncDocRow `json:"results"`
+			}
+			if err := json.Unmarshal([]byte(stdout), &un); err != nil {
+				t.Fatalf("decode older unsync: %v\n%s\n%s", err, stdout, stderr)
+			}
+			if len(un.Results) != 1 || un.Results[0].Action != "error" || !strings.Contains(stdout, "client is no longer a projection target") {
+				t.Fatalf("older unsync = %s", stdout)
+			}
+			if got, err := os.ReadFile(file); err != nil || string(got) != string(fileBytes) {
+				t.Fatalf("older binary changed the hook file: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(copilotScriptDir(home), "scripts", "block.sh")); err != nil {
+				t.Fatalf("older binary removed the copilot script copy: %v", err)
+			}
+
+			// The older binary's next save rewrites every hook entry.
+			if stdout, stderr, code := runHookCLI(t, oldBin, home, "skill", "project", "sync", "--kind", "hook", "--clients", "claude-code", "block-force-push"); code != 0 {
+				t.Fatalf("older sync exit %d\n%s\n%s", code, stdout, stderr)
+			}
+
+			for _, client := range []string{"copilot", "claude-code"} {
+				if st, ok := hookStatusJSON(t, newBin, home, client); !ok || st.State != "in-sync" {
+					t.Fatalf("re-upgraded %s status = %+v (found %v)", client, st, ok)
+				}
+			}
+			if rows, code := hookSyncJSON(t, newBin, home, "--clients", "copilot", "block-force-push"); code != 0 || rows[0].Action != "unchanged" {
+				t.Fatalf("re-upgraded sync exit %d rows %+v", code, rows)
+			}
+			lock, err := os.ReadFile(filepath.Join(home, ".gridctl", "project.lock.yaml"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(lock), "path: "+file+"\n") {
+				t.Fatalf("current binary did not restore the entry:\n%s", lock)
+			}
+			if un := hookUnsyncJSON(t, newBin, home, "--clients", "copilot"); len(un) != 1 || un[0].Action != "removed" {
+				t.Fatalf("re-upgraded unsync = %+v", un)
+			}
+			if _, err := os.Stat(file); !os.IsNotExist(err) {
+				t.Fatalf("copilot hook file remains: %v", err)
+			}
+			if _, err := os.Stat(copilotScriptDir(home)); !os.IsNotExist(err) {
+				t.Fatalf("copilot script copy remains: %v", err)
+			}
+		})
 	}
 }
 
