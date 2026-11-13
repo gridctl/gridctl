@@ -4,7 +4,7 @@ const CLIENT_NAMES: Record<string, string> = {
   'claude-code': 'Claude Code',
   gemini: 'Gemini CLI',
   cursor: 'Cursor',
-  copilot: 'GitHub Copilot',
+  copilot: 'GitHub Copilot CLI',
   windsurf: 'Windsurf (Devin Local)',
   antigravity: 'Antigravity',
   opencode: 'OpenCode',

@@ -712,7 +712,7 @@ func TestSync_DefaultSkipsUndetectedTargetWhenAnotherIsDetected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(none) != 2 || !HasFailures(none) {
+	if len(none) != len(Targets()) || !HasFailures(none) {
 		t.Fatalf("no detected target = %+v", none)
 	}
 	for _, r := range none {

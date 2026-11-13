@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "type": "command",
+        "exec": "/home/u/.gridctl/hooks/block-force-push@copilot/scripts/a.sh",
+        "args": []
+      },
+      {
+        "type": "command",
+        "exec": "/home/u/.gridctl/hooks/block-force-push@copilot/scripts/b.sh",
+        "args": [],
+        "timeoutSec": 2
+      }
+    ],
+    "PostToolUse": [
+      {
+        "type": "command",
+        "exec": "/home/u/.gridctl/hooks/block-force-push@copilot/scripts/fmt.sh",
+        "args": [
+          "--check",
+          "a b"
+        ],
+        "matcher": "Write|Edit",
+        "timeoutSec": 30
+      }
+    ]
+  }
+}

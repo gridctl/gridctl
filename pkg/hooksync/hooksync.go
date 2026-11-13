@@ -7,8 +7,8 @@
 // Two channels exist. A merge-key target (Claude Code) owns matcher
 // groups inside a shared settings file; the write is an RFC 6902 patch on
 // the parsed hujson tree, so bytes outside the patched elements, including
-// comments, stay as they were found. A dedicated-file target (OpenCode)
-// owns one generated file per hook. The ownership decision table follows
+// comments, stay as they were found. A dedicated-file target (OpenCode,
+// Copilot CLI) owns one generated file per hook. The ownership decision table follows
 // pkg/wiring and pkg/agentsync, with the identical-value adopt branch
 // omitted: an unrecorded group or file is never claimed without --force.
 package hooksync
@@ -110,6 +110,15 @@ func Targets() []Target {
 			RenderClass: RenderLossy,
 			Render:      renderOpenCode,
 		},
+		{
+			Slug:        "copilot",
+			Name:        "GitHub Copilot CLI",
+			Path:        "~/.copilot/hooks/gridctl-" + nameToken + ".json",
+			DetectDirs:  []string{"~/.copilot"},
+			Channel:     ChannelDedicatedFile,
+			RenderClass: RenderLossy,
+			Render:      renderCopilot,
+		},
 	}
 }
 
@@ -121,7 +130,6 @@ func UnsupportedClients() []UnsupportedClient {
 	return []UnsupportedClient{
 		{Slug: "gemini", Name: "Gemini CLI", Location: "~/.gemini/settings.json hooks key", DetectFiles: []string{"~/.gemini/settings.json"}},
 		{Slug: "cursor", Name: "Cursor", Location: "reads ~/.claude/settings.json hooks (Cursor Settings → Agents → Third-Party Imports, on by default)", CoveredBy: "claude-code", DetectDirs: []string{"~/.cursor"}},
-		{Slug: "copilot", Name: "GitHub Copilot", Location: "~/.copilot/hooks/*.json", DetectDirs: []string{"~/.copilot"}},
 		{Slug: "windsurf", Name: "Windsurf (Devin Local)", Location: "~/.config/devin/config.json hooks key; reads ~/.claude/settings.json hooks when read_config_from.claude is on (default)", CoveredBy: "claude-code", DetectDirs: []string{"~/.codeium/windsurf", "~/.config/devin", "~/.devin"}},
 		{Slug: "antigravity", Name: "Antigravity", Location: "~/.gemini/config/hooks.json", DetectDirs: []string{"~/.gemini/config", "~/.gemini/antigravity"}},
 	}

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "type": "command",
+        "exec": "/home/u/.gridctl/hooks/block-force-push@copilot/a.sh",
+        "args": [],
+        "matcher": "Bash"
+      },
+      {
+        "type": "command",
+        "exec": "/home/u/.gridctl/hooks/block-force-push@copilot/b.sh",
+        "args": [],
+        "matcher": "*"
+      }
+    ]
+  }
+}
