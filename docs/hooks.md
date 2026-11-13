@@ -1,6 +1,6 @@
 # Hooks
 
-A hook is a directory `hooks/<name>/` in a pack repository. It holds `hook.json` and the scripts that file names. `gridctl pack add` imports the hooks the manifest selects into `~/.gridctl/registry/hooks/<name>/`, scans them, and pins the bytes. gridctl does not run the scripts. `gridctl pack apply` and `gridctl skill project sync --kind hook` copy the scripts into a gridctl-owned directory per client and write each detected target: matcher groups patched into Claude Code's user settings file, and a generated plugin for OpenCode. Execution belongs to the client.
+A hook is a directory `hooks/<name>/` in a pack repository. It holds `hook.json` and the scripts that file names. `gridctl pack add` imports the hooks the manifest selects into `~/.gridctl/registry/hooks/<name>/`, scans them, and pins the bytes. gridctl does not run the scripts. `gridctl pack apply` and `gridctl skill project sync --kind hook` copy the scripts into a gridctl-owned directory per client and write each detected target: matcher groups patched into Claude Code's user settings file, a generated plugin for OpenCode, and a generated hook file for GitHub Copilot CLI. Execution belongs to the client.
 
 `pack status` and `GET /api/packs/{name}` report a projected hook per client. A hook that was imported and never projected is a store-presence row (`in-sync`, detail `imported; not projected`). A name recorded on the pack but missing from the registry is `missing`, with detail `not in the hook registry; re-run 'gridctl pack add'`. A directory that is present but whose `hook.json` no longer validates is `drifted`. The detail is the parse error. The remediation is `review with 'gridctl skill pins diff <name> --kind hook' or remove with 'gridctl skill remove <name> --kind hook'`. A hook that was skipped at add is not recorded, so status does not list it.
 
@@ -63,12 +63,13 @@ The danger-pattern scanner runs over `hook.json` and every text file in the dire
 
 ## Projection
 
-Two targets exist:
+Three targets exist:
 
 | Slug | Channel | Render | Destination | Script copy | Detected when |
 |---|---|---|---|---|---|
 | `claude-code` | `merge-key` | `identity` | matcher groups in `~/.claude/settings.json` | `~/.gridctl/hooks/<name>/` | `~/.claude` is a directory |
 | `opencode` | `dedicated-file` | `lossy` | `~/.config/opencode/plugins/gridctl-hook-<name>.ts`, one file per hook | `~/.gridctl/hooks/<name>@opencode/` | `~/.config/opencode` is a directory |
+| `copilot` | `dedicated-file` | `lossy` | `~/.copilot/hooks/gridctl-<name>.json`, one file per hook | `~/.gridctl/hooks/<name>@copilot/` | `~/.copilot` is a directory |
 
 Each path is the `~` template expanded against `GRIDCTL_HOME` when that variable is set, otherwise the OS home. A sync with no `--clients` writes every detected target. An undetected target is silent when another target is detected; when none is, each target is `skipped-unavailable` with detail `client not initialized on this machine`, as is a named `--clients` target that is not detected. Clients without a target are reported and not written (see [Clients gridctl does not write](#clients-gridctl-does-not-write)). `gridctl pack apply` and REST `POST /api/packs/{name}/apply` project hooks to every detected target and add one `skipped-unsupported` row per detected client without a target. `DELETE /api/packs/{name}` unsyncs those projections before it removes the registry hook. A hook whose unsync rows are not all `removed` or `already-gone` is kept, listed in `kept`, and reported with the same refusal as `gridctl skill remove --kind hook`. `force` clears drift only. `dry_run` reports the keep instead of `would-remove`. `DELETE /api/registry/hooks/{name}` uses the same refusal as `gridctl skill remove --kind hook`: `409` when a projection is not retired, and `503` (`Hook projection not available`) when the projection manager cannot be built. See [Hook Registry](api-reference.md#hook-registry), [Hook Projection](api-reference.md#hook-projection), and [Hook Pins](api-reference.md#hook-pins).
 
@@ -98,7 +99,7 @@ Every settings write is an RFC 6902 patch on the parsed hujson tree, then `Pack`
 
 `project.lock.yaml` revision 4 records hook entries. For `claude-code`, `path` is `<settings path>#hooks/<name>` so several hooks share one file, and `channel` is `merge-key`. For a dedicated-file target, `path` and `config_path` are the generated file and `channel` is `dedicated-file`. `script_dir` is the script copy. `hashes` is the hash history of the owned region, newest last, capped at five: the canonical hash of the owned groups for `claude-code`, and `sha256:` plus the hex digest of the raw file bytes for a dedicated file. An older revision 3 file loads. Any rewrite of a lower revision, including a hook sync, stamps 4. A higher revision is kept. An older gridctl keeps a `hook` entry as an unknown kind and does not remove it.
 
-The stored `channel` is for display. gridctl reads a record's channel from its target table by client slug on every sync, status, and unsync, never from the entry, so an entry rewritten by an older binary behaves the same after upgrade. No lockfile revision bump accompanies the OpenCode target.
+The stored `channel` is for display. gridctl reads a record's channel from its target table by client slug on every sync, status, and unsync, never from the entry, so an entry rewritten by an older binary behaves the same after upgrade. No lockfile revision bump accompanies the OpenCode or Copilot CLI target.
 
 ### OpenCode
 
@@ -137,11 +138,65 @@ Sync verifies the pin first, as for Claude Code: an unapproved registry change i
 
 `unsync --kind hook <name> --clients opencode` removes the plugin when its hash is recorded, or with `--force`, after a backup, then backs up and removes `~/.gridctl/hooks/<name>@opencode/` and purges the record. A missing plugin is `already-gone` and also purges. An unrecorded hash without `--force` is `skipped-drift`. The `claude-code` record and `~/.gridctl/hooks/<name>/` are untouched, and the reverse holds for `--clients claude-code`.
 
-The template targets OpenCode V2 only. OpenCode 1 loads a different plugin package (`@opencode-ai/plugin`) and ignores this default export; gridctl does not detect the installed generation. The template was checked against the published `@opencode/plugin` 2.2.7 type declarations, which declare `execute.before` and `execute.after` callbacks of type `(input) => Promise<void> | void`. Manual acceptance remains: that a live OpenCode V2 session resolves the `@opencode/plugin` import for a discovered global `.ts` file with no `package.json` beside it, loads the plugin, and denies `git push --force` through the projected `block-force-push` hook, interactively and under `opencode run`, and what the model sees when `execute.before` throws.
+The template targets OpenCode V2 only. OpenCode 1 loads a different plugin package (`@opencode-ai/plugin`) and ignores this default export; gridctl does not detect the installed generation. The template was checked against the published `@opencode/plugin` 2.2.7 type declarations, which declare `execute.before` and `execute.after` callbacks of type `(input) => Promise<void> | void`. Manual acceptance was run on November 13, 2026 with OpenCode 2.2.6 and gridctl 1.0.0-rc.7: a discovered global `.ts` plugin with no `package.json` beside it loads and resolves its `@opencode/plugin` import; a throw from `execute.before` denies the call before it runs, and the model receives `gridctl hook block-force-push denied shell: <reason>`; the projected `block-force-push` hook denies a forced push under `opencode run --standalone` and in the long-running background service, while a push with `--force-with-lease` and unrelated commands run. The interactive TUI was not exercised separately.
 
-### Rolling back past the OpenCode target
+Because OpenCode drops `if`, a script that matches the raw payload text runs on every shell call. The example `block-force-push` script does exactly that, so on OpenCode it denies any shell call whose command text merely contains the forced-push string, for example a heredoc that writes documentation mentioning it. An author who needs precision must parse `tool_input.command` in the script.
 
-`gridctl upgrade --rollback` compares only the lockfile `version`, so it does not refuse a rollback to a release without the OpenCode target, and that binary reads the new records. It reports an `opencode` record as `drifted` (`settings file is not valid JSON or JSONC: ...`), its unsync returns `error` with `client is no longer a projection target`, and its unsync never deletes the plugin or `~/.gridctl/hooks/<name>@opencode/`. Its `gridctl reset --purge` still deletes `~/.gridctl`, script copy included, and leaves the plugin in `~/.config/opencode/plugins/` pointing at a missing script. Its next lockfile save stamps the entry `channel: merge-key` with a composite `path`; that changes nothing after re-upgrade, because the channel comes from the target table. Before rolling back, run `gridctl skill project unsync --kind hook --all --clients opencode` with the current binary, or re-upgrade later to retire the projection.
+### Copilot CLI
+
+GitHub Copilot CLI loads every `*.json` file in `~/.copilot/hooks/`. gridctl writes one generated hook file per hook there, `gridctl-<name>.json`, and does not edit Copilot's `settings.json` or any other file in that directory. A missing `hooks` directory is created at `0755`. The file is written atomically at mode `0644`: it carries script paths and arguments and no secret. `COPILOT_HOME` is not honored. The path is always the `~` template expanded against `GRIDCTL_HOME` or the OS home, so a user who sets `COPILOT_HOME` elsewhere must point it back at `~/.copilot` or Copilot will not load the file.
+
+The file is render output, not pinned content: a pure function of the pinned definition, the hook name, and the script directory. It is `encoding/json` output with a two-space indent and a trailing newline:
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "type": "command",
+        "exec": "/home/me/.gridctl/hooks/block-force-push@copilot/scripts/block-force-push.sh",
+        "args": [],
+        "matcher": "Bash"
+      }
+    ]
+  }
+}
+```
+
+Event keys are written `PreToolUse`, then `PostToolUse`, and handlers keep definition order, one flat entry per handler. Every handler uses `exec` with the absolute path of the copied script and an `args` array (`[]` when the author set none), so Copilot runs the script directly, without a shell. No handler carries a `command`, `bash`, or `powershell` string. `matcher` is the author's Claude matcher string as written, and is omitted when the matcher group had none. `timeoutSec` is the handler's `timeout` rounded up to whole seconds, and is omitted when the definition set no `timeout`, so Copilot applies its own default (30 seconds).
+
+The PascalCase event keys select Copilot's Claude-compatible mode: the script receives a snake_case, Claude-shaped payload (`hook_event_name`, `session_id`, `cwd`, `tool_name`, `tool_input`) with Claude tool names (`Bash`, `Read`, `Write`, `Edit`, `Grep`, `Glob`, `WebFetch`, `WebSearch`), and Copilot applies Claude matcher semantics itself. There is no tool table: every matcher, including a literal Copilot cannot map and a regular expression, passes through unchanged. Only `PreToolUse` and `PostToolUse` map. A group under any other event is dropped for Copilot (`event "Stop" has no copilot mapping`) and reported as for OpenCode: a hook with no expressible group is one `skipped-unexpressible` row and writes nothing, and a mixed hook is written with `dropped groups: <event>` in its row and status detail. `if` is a widening drop (`dropped if "<rule>": the handler runs on every matched call`), and `statusMessage`, `async`, `asyncRewake`, `onFailure`, and any passthrough key are reported as `lossy copilot render: dropped handler keys <k1>, <k2>`.
+
+Copilot treats a command `PreToolUse` hook as fail-closed: a crash or any non-zero exit denies the call, including exit `2`, even when stdout says allow. A timeout is fail-open. A script that exits `1` to mean "no decision" therefore denies every call it matches on Copilot. Allow with exit `0` and no output, as the [portable deny recipe](#portable-deny-recipe) does.
+
+Ownership, drift, unsync, pack removal, and reset follow the OpenCode section exactly, on `~/.copilot/hooks/gridctl-<name>.json` and `~/.gridctl/hooks/<name>@copilot/`. Backups go under `~/.gridctl/project-backups/hook-file/copilot/<name>/<timestamp>-gridctl-<name>.json`.
+
+Under Copilot's session sandbox, user hooks run inside the sandbox, and a hook can read the directory it was loaded from. The pinned script copy lives under `~/.gridctl/hooks/`, outside `~/.copilot/hooks/`, so a sandboxed session may not be able to read or run it. gridctl does not move the copy. Manual acceptance remains: no live Copilot CLI session has been run. It is unverified that Copilot loads a flat `exec` entry with a `matcher` under the PascalCase `PreToolUse` key (the reference shows flat handler lists and documents `matcher` for PascalCase events, but does not say whether the Claude nested group shape is required there), that the projected `block-force-push` hook denies a forced push, and how the hook behaves under the session sandbox.
+
+### Portable deny recipe
+
+No single JSON object is honored by every client, so the deny a script returns is the author's to make portable. A script that denies on every client gridctl writes or covers does all of the following on a match:
+
+1. Print one JSON object to stdout that carries both the flat pair and the nested block: `{"decision":"deny","reason":"<why>","hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"<why>"}}`.
+2. Write the reason to stderr.
+3. Exit `2`.
+
+When the call is allowed, exit `0` with no output on stdout or stderr. The example `examples/portable-pack/hooks/block-force-push/scripts/block-force-push.sh` follows this recipe.
+
+| Client | What denies the call |
+|---|---|
+| Claude Code | Exit `2` with the reason on stderr. Stdout JSON is read only on exit `0`. |
+| Cursor | Exit `2` with stderr, through the Claude Code projection. |
+| Devin (Windsurf) | Exit `2` with stderr, through the Claude Code projection. |
+| Gemini CLI (not a target) | Exit `2` with stderr. |
+| Copilot CLI | Any non-zero exit. |
+| OpenCode | Exit `2`, nested `hookSpecificOutput.permissionDecision` of `deny`, or flat `decision` of `deny` or `block`, through the generated plugin. |
+| Antigravity (not yet a target) | Flat `decision` of `deny`. Its exit-code behavior is unverified. |
+
+### Rolling back past a dedicated-file target
+
+`gridctl upgrade --rollback` compares only the lockfile `version`, so it does not refuse a rollback to a release without the OpenCode or Copilot CLI target, and that binary reads the new records. A record for a client it has no target for is read as a Claude Code settings file. An `opencode` plugin does not parse, so it is `drifted` (`settings file is not valid JSON or JSONC: ...`); a `copilot` hook file parses but holds no group gridctl recorded, so it is `target-missing` (`the recorded groups were removed from the settings file; ...`). Either way, its unsync returns `error` with `client is no longer a projection target`, and its unsync never deletes the generated file or `~/.gridctl/hooks/<name>@<client>/`. Its `gridctl reset --purge` still deletes `~/.gridctl`, script copy included, and leaves the generated file in the client directory pointing at a missing script. A release before the OpenCode target stamps the entry `channel: merge-key` with a composite `path` on its next lockfile save; that changes nothing after re-upgrade, because the channel comes from the target table. Before rolling back, run `gridctl skill project unsync --kind hook --all --clients opencode,copilot` with the current binary (name only the clients the older binary lacks), or re-upgrade later to retire the projection.
 
 ### Status and unsync
 
@@ -158,7 +213,7 @@ Exit `0` is clean, `1` is any row that needs attention, and `2` is infrastructur
 
 `unsync --kind hook` removes located groups whose hash is one gridctl recorded, drops an event array that became empty, removes the `hooks` key when nothing remains under it, and leaves every sibling byte untouched. A `hooks` object that still holds a user group, a user event array, or any other member is kept. An empty one is removed whether or not gridctl created it (a deliberate exception to the removal rule in `CONSTITUTION.md` Article XVI, since an empty object carries no user content and the lockfile does not record who created it), so a file that had no `hooks` key before sync returns to its original bytes, except a trailing comma on the previous last member, which sync consumed as a separator and unsync does not restore (the result stays JWCC-equivalent). It backs up and removes the script copy, then purges the record. Groups gridctl did not record are never deleted. `--force` removes located groups whose hash is not recorded. A recorded entry whose groups are already gone is `already-gone`. With no recorded projections, `unsync --kind hook --all` prints `Nothing to unsync.` and exits 0. A named unsync of a hook that is not projected exits 1 with `hook is not projected: <name> (check 'gridctl skill project status')`.
 
-`gridctl reset` unsyncs projected hooks after services are removed and daemons stop, and before the later deletions. It keys kept hooks by name: a hand edit on one client keeps that hook on every client unless `--force`, and each client's script copy goes only through that client's unsync. `--purge` retires in-sync settings groups and plugins before it deletes `~/.gridctl`. A hand-edited group or plugin is kept (`kept-drift`) unless `--force`, including under `--purge`. A hand-edited script copy is kept on the default tier; `--purge` still deletes it with `~/.gridctl`. A settings file that does not parse is reported as `failed` and left untouched; `--force` does not change that, and `--dry-run` shows the projection as `skipped`. The text preview lists that row under SKIPPED with its detail and does not count it as recreatable. The `hook` row's `script_dir` is the script copy. The pre-reset archive includes the settings file or plugin and that copy for a `would-remove` row.
+`gridctl reset` unsyncs projected hooks after services are removed and daemons stop, and before the later deletions. It keys kept hooks by name: a hand edit on one client keeps that hook on every client unless `--force`, and each client's script copy goes only through that client's unsync. `--purge` retires in-sync settings groups and generated files before it deletes `~/.gridctl`. A hand-edited group or generated file is kept (`kept-drift`) unless `--force`, including under `--purge`. A hand-edited script copy is kept on the default tier; `--purge` still deletes it with `~/.gridctl`. A settings file that does not parse is reported as `failed` and left untouched; `--force` does not change that, and `--dry-run` shows the projection as `skipped`. The text preview lists that row under SKIPPED with its detail and does not count it as recreatable. The `hook` row's `script_dir` is the script copy. The pre-reset archive includes the settings file or generated file and that copy for a `would-remove` row.
 
 `gridctl skill project adopt --kind hook` exits 1 with `adopt is not supported for hooks in this release; use --force to rewrite or unsync to remove`.
 
@@ -176,7 +231,6 @@ These clients have a hook mechanism and are reported, not written:
 | Slug | Native location | Detected when |
 |---|---|---|
 | `gemini` | `~/.gemini/settings.json hooks key` | `~/.gemini/settings.json` is a regular file |
-| `copilot` | `~/.copilot/hooks/*.json` | `~/.copilot` is a directory |
 | `antigravity` | `~/.gemini/config/hooks.json` | `~/.gemini/config` or `~/.gemini/antigravity` is a directory |
 
 Gemini CLI is detected by its settings file, not by `~/.gemini`, because `~/.gemini` is also the parent of every Antigravity location: an Antigravity-only home gets no Gemini CLI note and no Gemini CLI row.
@@ -195,7 +249,7 @@ metadata:
 
 Skill `metadata` is stored as strings. Nested values become compact JSON, so the registry round trip emits `requires` as `{"hooks":["block-force-push"]}`, not as the author's nested YAML. An agent declares the same key under `metadata` in its frontmatter. The agent reader uses the raw YAML node. A value that is not a string array is ignored. Do not put this list in a skill's `hooks` frontmatter key. That key is the Claude Code passthrough and is still dropped on rendered agent targets.
 
-`skill project status` and `sync` append one detail line per required hook that is not `in-sync` for that client: `requires hook <name>: not enforced on <client> (<reason>)`. Reason is `not projected`, `drifted`, `stale`, `pin drift`, or `client has no hook target`. A missing target is reported as `not projected`. A client with a hook target (`claude-code`, `opencode`) reports the hook's state there. `requires.hooks` reports enforcement of the expressible groups only: a hook that is `in-sync` on OpenCode with `dropped groups` in its detail counts as enforced, although the dropped groups do not run there. State, `needs_attention`, and exit codes do not change. Skill and agent JSON rows gain `requires_hooks` (declared names) and `unenforced_hooks` (names and reasons). Hook rows do not. If hook projection status cannot be read during sync, gridctl prints `warning: hook projection status unavailable: <err>` and skips those lines for that run. The sync exit code does not change.
+`skill project status` and `sync` append one detail line per required hook that is not `in-sync` for that client: `requires hook <name>: not enforced on <client> (<reason>)`. Reason is `not projected`, `drifted`, `stale`, `pin drift`, or `client has no hook target`. A missing target is reported as `not projected`. A client with a hook target (`claude-code`, `opencode`, `copilot`) reports the hook's state there. `requires.hooks` reports enforcement of the expressible groups only: a hook that is `in-sync` on OpenCode or Copilot CLI with `dropped groups` in its detail counts as enforced, although the dropped groups do not run there. State, `needs_attention`, and exit codes do not change. Skill and agent JSON rows gain `requires_hooks` (declared names) and `unenforced_hooks` (names and reasons). Hook rows do not. If hook projection status cannot be read during sync, gridctl prints `warning: hook projection status unavailable: <err>` and skips those lines for that run. The sync exit code does not change.
 
 Set `requires.gridctl` on a pack that selects hooks to `>=1.0.0-rc.5`, the release after 1.0.0-rc.4. An older `pack.Parse` ignores `hooks:` and imports the pack without them.
 
@@ -227,6 +281,6 @@ The Library workspace carries Skills, Agents, Hooks, Packs, and Proposals segmen
 
 ## What gridctl deliberately does not do
 
-gridctl never executes a hook, a script, or `hook.json`. It stores, scans, pins, and places. It does not interpose in a client's hook lifecycle. It does not translate the Claude Code dialect into Gemini CLI, Copilot, or Antigravity; those clients are reported, not written. The OpenCode render carries `PreToolUse` and `PostToolUse` groups with mapped matchers and names everything else it drops; it does not translate `if`, regular expression matchers, or output JSON between dialects, and it does not render an OpenCode `policies` or `permissions` block. It does not adopt unrecorded groups. It does not reconcile hook projections from the daemon. A registry change stays `stale` until an explicit sync or `pack apply`. It does not project project-scope settings (`.claude/settings.json`, `.opencode/plugins/`, and the other clients' project files). It does not import hooks from pack external `sources:`, from `skill add`, or from a user's existing settings file.
+gridctl never executes a hook, a script, or `hook.json`. It stores, scans, pins, and places. It does not interpose in a client's hook lifecycle. It does not translate the Claude Code dialect into Gemini CLI or Antigravity; those clients are reported, not written. The Copilot CLI render carries `PreToolUse` and `PostToolUse` groups with the matcher as written and does not translate output JSON. The OpenCode render carries `PreToolUse` and `PostToolUse` groups with mapped matchers and names everything else it drops; it does not translate `if`, regular expression matchers, or output JSON between dialects, and it does not render an OpenCode `policies` or `permissions` block. It does not adopt unrecorded groups. It does not reconcile hook projections from the daemon. A registry change stays `stale` until an explicit sync or `pack apply`. It does not project project-scope settings (`.claude/settings.json`, `.opencode/plugins/`, `.github/hooks/`, and the other clients' project files). It does not import hooks from pack external `sources:`, from `skill add`, or from a user's existing settings file.
 
-Content a client executes automatically on an event is scanned before installation, content-pinned, and projected only from approved bytes. The guarantees are the scoped lint rule that denies `os/exec` under `pkg/hooksync` and `pkg/hookpins`, the reconcile regression test, and the four designated scenarios `hooks-settings-merge-preserves-siblings`, `hooks-sync-projects-pinned-bytes-only`, `hooks-reconcile-ignores-projections`, and `hooks-opencode-plugin-derives-from-pinned-definition`. No constitution amendment is included in this change.
+Content a client executes automatically on an event is scanned before installation, content-pinned, and projected only from approved bytes. The guarantees are the scoped lint rule that denies `os/exec` under `pkg/hooksync` and `pkg/hookpins`, the reconcile regression test, and the five designated scenarios `hooks-settings-merge-preserves-siblings`, `hooks-sync-projects-pinned-bytes-only`, `hooks-reconcile-ignores-projections`, `hooks-opencode-plugin-derives-from-pinned-definition`, and `hooks-copilot-file-exec-form`. No constitution amendment is included in this change.
