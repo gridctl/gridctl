@@ -1155,9 +1155,9 @@ default tier keeps `~/.gridctl/packs/` and the import lockfile, so
 `gridctl pack apply <name>` starts it again. `--purge` removes that
 checkout; `gridctl pack add` then `gridctl pack apply` recreates it.
 Re-project hooks with `gridctl pack apply <name>` or `gridctl skill project sync --kind hook`.
-A purge that leaves groups in Claude Code settings, including a purge
-from an older build, makes those groups foreign once the lockfile is
-gone. Clear them with `gridctl pack add`, then
+A purge that leaves groups in Claude Code settings or an OpenCode hook
+plugin, including a purge from an older build, makes them foreign once
+the lockfile is gone. Clear them with `gridctl pack add`, then
 `gridctl skill project sync --kind hook --force`, then
 `gridctl skill project unsync --kind hook --all`.
 
