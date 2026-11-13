@@ -346,6 +346,7 @@ type hookWork struct {
 	fileExists  bool
 	fileCurrent string
 	renderNote  string
+	claimed     bool // an unrecorded file taken over with --force
 }
 
 func (m *Manager) syncClient(ctx context.Context, lf *LockFile, t Target, hooks []skills.InstalledHook, opts SyncOptions) ([]SyncResult, error) {

@@ -165,6 +165,32 @@ func TestSyncOpenCode_OwnershipTable(t *testing.T) {
 		}
 	})
 
+	t.Run("foreign file with the planned bytes", func(t *testing.T) {
+		home, _, mgr := openCodeHome(t)
+		syncOne(t, mgr, SyncOptions{Clients: []string{"opencode"}})
+		path := pluginPath(home, "block")
+		planned := mustRead(t, path)
+		if _, err := mgr.Unsync(t.Context(), []string{"block"}, UnsyncOptions{Clients: []string{"opencode"}}); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, planned, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if res := syncOne(t, mgr, SyncOptions{Clients: []string{"opencode"}}); res.Action != ActionSkippedForeign {
+			t.Fatalf("result = %+v", res)
+		}
+		forced := syncOne(t, mgr, SyncOptions{Clients: []string{"opencode"}, Force: true})
+		if forced.Action != ActionUpdated || forced.BackupPath == "" {
+			t.Fatalf("forced = %+v", forced)
+		}
+		if string(mustRead(t, forced.BackupPath)) != string(planned) {
+			t.Fatal("backup does not hold the claimed bytes")
+		}
+		if st := statusOf(t, mgr, "opencode"); st.State != StateInSync {
+			t.Fatalf("status after claim = %+v", st)
+		}
+	})
+
 	t.Run("hand edit", func(t *testing.T) {
 		home, _, mgr := openCodeHome(t)
 		syncOne(t, mgr, SyncOptions{Clients: []string{"opencode"}})

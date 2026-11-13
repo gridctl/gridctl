@@ -145,6 +145,7 @@ func (m *Manager) planFile(h skills.InstalledHook, t Target, lf *LockFile, opts 
 			return w
 		}
 		w.write = true
+		w.claimed = true
 		w.res.Action = ActionUpdated
 	case !exists:
 		w.write = true
@@ -182,12 +183,20 @@ func (m *Manager) planFile(h skills.InstalledHook, t Target, lf *LockFile, opts 
 }
 
 // applyFile writes the script copy, then the file when its bytes differ.
-// An existing file is backed up before it is replaced.
+// An existing file is backed up before it is replaced, and a claimed
+// foreign file is backed up even when its bytes already match.
 func (m *Manager) applyFile(t Target, w *hookWork) error {
 	if err := m.writeScripts(*w); err != nil {
 		return err
 	}
 	if w.fileExists && w.fileCurrent == w.plannedHash {
+		if w.claimed {
+			backup, err := m.backupFile(t.Slug, w.hook.Name, w.res.Target)
+			if err != nil {
+				return err
+			}
+			w.res.BackupPath = backup
+		}
 		return nil
 	}
 	path := w.res.Target

@@ -148,7 +148,7 @@ async function runRules(event: string, input: any, cwd: string): Promise<void> {
       if (event === "PreToolUse" && result.deny) {
         throw new Error("gridctl hook " + HOOK + " denied " + input.tool + ": " + result.reason)
       }
-      if (outcome.status !== 0 && outcome.status !== 2) {
+      if (outcome.status !== 0) {
         warn(handler, "exited with status " + String(outcome.status))
       } else if (result.unparsable) {
         warn(handler, "stdout is not JSON")
