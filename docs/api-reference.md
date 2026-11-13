@@ -3798,7 +3798,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project/hooks/s
 ]
 ```
 
-`detail` and `remediation` are omitted when empty. `pack` is omitted for a projection made outside a pack. No recorded projections returns `[]`. `channel` is `merge-key` (`claude-code`, matcher groups in a shared settings file) or `dedicated-file` (`opencode` and `copilot`, one generated file per hook, `target` is that file). `render` is `identity` or `lossy`. An `in-sync` lossy row carries the dropped groups and handler keys in `detail`. See [Hooks](hooks.md#opencode).
+`detail` and `remediation` are omitted when empty. `pack` is omitted for a projection made outside a pack. No recorded projections returns `[]`. `channel` is `merge-key` (`claude-code`, matcher groups in a shared settings file) or `dedicated-file` (`opencode` and `copilot`, one generated file per hook, `target` is that file). `render` is `identity` or `lossy`. An `in-sync` lossy row carries the dropped groups and handler keys in `detail`. See [OpenCode](hooks.md#opencode) and [Copilot CLI](hooks.md#copilot-cli) in Hooks.
 
 #### `POST /api/project/hooks/sync`
 
