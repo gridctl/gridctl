@@ -1207,7 +1207,7 @@ Security differences return HTTP `409` with the [restart-required envelope](#rel
 
 ### Reset
 
-REST half of `gridctl reset`: removes everything gridctl placed on the machine (projected skills, agents, and context rules, projected hook groups in Claude Code settings, generated OpenCode hook plugins, and their script copies, owned gateway entries in client MCP configs, installed user services, and every stack's daemons, containers, and networks). Services are disabled and stopped before daemons. Hook unsync runs before `purge: true` deletes `~/.gridctl`. A hand-edited hook group or plugin is `kept-drift` unless `force` is set, including when `purge` is set; drift on one client keeps that hook on every client. A hand-edited script copy is kept on the default tier; `purge: true` still deletes it with `~/.gridctl`. A settings file that does not parse is `failed` and left untouched; the preview shows that projection as `skipped`. A hook row includes optional `script_dir`, the script copy. The default tier preserves `~/.gridctl`; `purge: true` deletes it too. Both endpoints share the same engine and guards as the CLI; the web UI's Reset dialog is built on them.
+REST half of `gridctl reset`: removes everything gridctl placed on the machine (projected skills, agents, and context rules, projected hook groups in Claude Code settings, generated OpenCode hook plugins and Copilot CLI hook files, and their script copies, owned gateway entries in client MCP configs, installed user services, and every stack's daemons, containers, and networks). Services are disabled and stopped before daemons. Hook unsync runs before `purge: true` deletes `~/.gridctl`. A hand-edited hook group or generated file is `kept-drift` unless `force` is set, including when `purge` is set; drift on one client keeps that hook on every client. A hand-edited script copy is kept on the default tier; `purge: true` still deletes it with `~/.gridctl`. A settings file that does not parse is `failed` and left untouched; the preview shows that projection as `skipped`. A hook row includes optional `script_dir`, the script copy. The default tier preserves `~/.gridctl`; `purge: true` deletes it too. Both endpoints share the same engine and guards as the CLI; the web UI's Reset dialog is built on them.
 
 **Transport guards (both endpoints):** requests are accepted only from loopback connections; a request carrying an `Origin` header must be same-origin; and `Content-Type: application/json` is required (so the request can never be a CORS simple request). Violations return `403` (or `415` for the content type). These guards apply on top of gateway auth.
 
@@ -3742,7 +3742,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/registry/hooks
 }
 ```
 
-`unsupported_clients` lists clients without a hook target. `covered_by` names the target whose projection the client reads (`claude-code` for Cursor and Windsurf) and is omitted when empty. A hook target (`claude-code`, `opencode`) is never in this table.
+`unsupported_clients` lists clients without a hook target. `covered_by` names the target whose projection the client reads (`claude-code` for Cursor and Windsurf) and is omitted when empty. A hook target (`claude-code`, `opencode`, `copilot`) is never in this table.
 
 #### `GET /api/registry/hooks/{name}`
 
@@ -3798,7 +3798,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project/hooks/s
 ]
 ```
 
-`detail` and `remediation` are omitted when empty. `pack` is omitted for a projection made outside a pack. No recorded projections returns `[]`. `channel` is `merge-key` (`claude-code`, matcher groups in a shared settings file) or `dedicated-file` (`opencode`, one generated plugin per hook, `target` is that file). `render` is `identity` or `lossy`. An `in-sync` lossy row carries the dropped groups and handler keys in `detail`. See [Hooks](hooks.md#opencode).
+`detail` and `remediation` are omitted when empty. `pack` is omitted for a projection made outside a pack. No recorded projections returns `[]`. `channel` is `merge-key` (`claude-code`, matcher groups in a shared settings file) or `dedicated-file` (`opencode` and `copilot`, one generated file per hook, `target` is that file). `render` is `identity` or `lossy`. An `in-sync` lossy row carries the dropped groups and handler keys in `detail`. See [OpenCode](hooks.md#opencode) and [Copilot CLI](hooks.md#copilot-cli) in Hooks.
 
 #### `POST /api/project/hooks/sync`
 

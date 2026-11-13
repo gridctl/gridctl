@@ -444,3 +444,166 @@ func TestRenderOpenCode_RefusesInvalidName(t *testing.T) {
 		t.Fatal("an invalid hook name must not render")
 	}
 }
+
+const copilotScriptDir = "/home/u/.gridctl/hooks/block-force-push@copilot"
+
+func renderCopilotRaw(t *testing.T, raw, name string) rendered {
+	t.Helper()
+	target, ok := FindTarget("copilot")
+	if !ok {
+		t.Fatal("copilot is not a target")
+	}
+	r, err := renderFor(target, []byte(raw), name, copilotScriptDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+func TestRenderCopilot_Golden(t *testing.T) {
+	cases := map[string]string{
+		"block-force-push": identityFixtures["example"],
+		"every-key":        strings.Replace(identityFixtures["every-key"], `"name":"keys"`, `"name":"every-key"`, 1),
+		"two-groups-event": identityFixtures["two-groups-event"],
+	}
+	for name, raw := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := renderCopilotRaw(t, raw, name)
+			if len(r.Bytes) == 0 {
+				t.Fatalf("no file rendered: %+v", r)
+			}
+			assertHookGolden(t, filepath.Join("testdata", "copilot", name+".json"), r.Bytes)
+			if !bytes.HasSuffix(r.Bytes, []byte("}\n")) {
+				t.Fatal("rendered file must end with a newline")
+			}
+			pre := bytes.Index(r.Bytes, []byte(`"PreToolUse"`))
+			post := bytes.Index(r.Bytes, []byte(`"PostToolUse"`))
+			if pre >= 0 && post >= 0 && pre > post {
+				t.Fatal("PreToolUse must precede PostToolUse")
+			}
+		})
+	}
+}
+
+func TestRenderCopilot_Shape(t *testing.T) {
+	every := renderCopilotRaw(t, strings.Replace(identityFixtures["every-key"], `"name":"keys"`, `"name":"every-key"`, 1), "every-key")
+	var file copilotFile
+	if err := json.Unmarshal(every.Bytes, &file); err != nil {
+		t.Fatal(err)
+	}
+	str := func(s string) *string { return &s }
+	sec := func(v int64) *int64 { return &v }
+	want := copilotFile{
+		Version: 1,
+		Hooks: copilotHooks{
+			PreToolUse: []copilotHandler{
+				{Type: "command", Exec: filepath.Join(copilotScriptDir, "scripts", "a.sh"), Args: []string{}},
+				{Type: "command", Exec: filepath.Join(copilotScriptDir, "scripts", "b.sh"), Args: []string{}, TimeoutSec: sec(2)},
+			},
+			PostToolUse: []copilotHandler{
+				{Type: "command", Exec: filepath.Join(copilotScriptDir, "scripts", "fmt.sh"), Args: []string{"--check", "a b"}, Matcher: str("Write|Edit"), TimeoutSec: sec(30)},
+			},
+		},
+	}
+	if !reflect.DeepEqual(file, want) {
+		t.Fatalf("file = %+v, want %+v", file, want)
+	}
+	wantDetail := `dropped groups: Stop; lossy copilot render: dropped handler keys async, asyncRewake, custom, onFailure, statusMessage`
+	if every.detail() != wantDetail {
+		t.Fatalf("detail = %q, want %q", every.detail(), wantDetail)
+	}
+
+	example := renderCopilotRaw(t, identityFixtures["example"], "block-force-push")
+	if example.detail() != `dropped if "Bash(git push *)": the handler runs on every matched call` {
+		t.Fatalf("detail = %q", example.detail())
+	}
+
+	// Two groups under one event keep definition order, each handler
+	// carrying its own group's matcher as written.
+	two := renderCopilotRaw(t, identityFixtures["two-groups-event"], "two")
+	var twoFile copilotFile
+	if err := json.Unmarshal(two.Bytes, &twoFile); err != nil {
+		t.Fatal(err)
+	}
+	if len(twoFile.Hooks.PreToolUse) != 2 || *twoFile.Hooks.PreToolUse[0].Matcher != "Bash" || *twoFile.Hooks.PreToolUse[1].Matcher != "*" {
+		t.Fatalf("handlers = %+v", twoFile.Hooks.PreToolUse)
+	}
+}
+
+func TestRenderCopilot_MatcherPassesThrough(t *testing.T) {
+	for _, matcher := range []string{"", "*", "Task", "Bash|Task", "Notebook.*", "mcp__github__create_issue"} {
+		raw := `{"name":"h","description":"d","dialect":"claude-code","hooks":{"PreToolUse":[{"matcher":` + strconvQuote(matcher) + `,"hooks":[{"type":"command","command":"./a.sh"}]}]}}`
+		r := renderCopilotRaw(t, raw, "h")
+		if len(r.Unexpressible) != 0 || r.detail() != "" {
+			t.Fatalf("matcher %q: %+v", matcher, r)
+		}
+		var file copilotFile
+		if err := json.Unmarshal(r.Bytes, &file); err != nil {
+			t.Fatal(err)
+		}
+		got := file.Hooks.PreToolUse[0].Matcher
+		if got == nil || *got != matcher {
+			t.Fatalf("matcher %q rendered as %v", matcher, got)
+		}
+	}
+}
+
+func strconvQuote(s string) string {
+	data, _ := json.Marshal(s)
+	return string(data)
+}
+
+func TestRenderCopilot_Unexpressible(t *testing.T) {
+	cases := []struct {
+		name    string
+		hooks   string
+		bytes   bool
+		reasons string
+		detail  string
+	}{
+		{
+			name:    "stop only",
+			hooks:   `{"Stop":[{"hooks":[{"type":"command","command":"./a.sh"}]}]}`,
+			reasons: `event "Stop" has no copilot mapping`,
+		},
+		{
+			name:    "two events",
+			hooks:   `{"SessionStart":[{"hooks":[{"type":"command","command":"./a.sh"}]}],"Stop":[{"hooks":[{"type":"command","command":"./a.sh"}]}]}`,
+			reasons: `event "SessionStart" has no copilot mapping; event "Stop" has no copilot mapping`,
+		},
+		{
+			name:    "mixed",
+			hooks:   `{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"./a.sh"}]}],"Stop":[{"hooks":[{"type":"command","command":"./a.sh","statusMessage":"s"}]}]}`,
+			bytes:   true,
+			reasons: `event "Stop" has no copilot mapping`,
+			detail:  `dropped groups: Stop`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := `{"name":"h","description":"d","dialect":"claude-code","hooks":` + tc.hooks + `}`
+			r := renderCopilotRaw(t, raw, "h")
+			if (len(r.Bytes) > 0) != tc.bytes || r.expressible() != tc.bytes {
+				t.Fatalf("bytes = %d, want rendered=%v", len(r.Bytes), tc.bytes)
+			}
+			if got := strings.Join(r.Unexpressible, "; "); got != tc.reasons {
+				t.Fatalf("reasons = %q, want %q", got, tc.reasons)
+			}
+			if tc.bytes && r.detail() != tc.detail {
+				t.Fatalf("detail = %q, want %q", r.detail(), tc.detail)
+			}
+		})
+	}
+}
+
+func TestRenderCopilot_Deterministic(t *testing.T) {
+	for name, raw := range identityFixtures {
+		first := renderCopilotRaw(t, raw, "block-force-push")
+		for range 5 {
+			again := renderCopilotRaw(t, raw, "block-force-push")
+			if !bytes.Equal(first.Bytes, again.Bytes) || first.detail() != again.detail() {
+				t.Fatalf("%s: render is not deterministic", name)
+			}
+		}
+	}
+}

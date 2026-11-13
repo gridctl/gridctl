@@ -653,3 +653,16 @@ scenarios:
     budgets:
       max_payload_bytes: 65536
       max_duration: 5s
+  - id: hooks-copilot-file-exec-form
+    owner_package: pkg/hooksync
+    owner_issue: "1518"
+    package: github.com/gridctl/gridctl/pkg/hooksync
+    test: TestCopilotFile_ExecForm
+    lanes: [unit]
+    expected_boundary: every handler in the projected Copilot CLI hook file names the pinned script copy in exec with a discrete args array, and no handler carries a command, bash, or powershell shell string
+    nonclaims:
+      - does not prove Copilot CLI loads the flat exec entry under the PascalCase event key
+      - does not prove the script is readable under the Copilot CLI session sandbox
+    budgets:
+      max_payload_bytes: 65536
+      max_duration: 5s

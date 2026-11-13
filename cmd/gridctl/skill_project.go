@@ -111,14 +111,17 @@ is refused on rendered targets.
 
 Hook targets (--kind hook): 'claude-code' (~/.claude/settings.json,
 matcher groups patched in exec form, scripts copied to
-~/.gridctl/hooks/<name>/) and 'opencode'
+~/.gridctl/hooks/<name>/), 'opencode'
 (~/.config/opencode/plugins/gridctl-hook-<name>.ts, a generated plugin
 that runs the pinned script, scripts copied to
-~/.gridctl/hooks/<name>@opencode/). OpenCode carries PreToolUse and
+~/.gridctl/hooks/<name>@opencode/), and 'copilot'
+(~/.copilot/hooks/gridctl-<name>.json, a version 1 hook file in exec
+form, scripts copied to ~/.gridctl/hooks/<name>@copilot/; COPILOT_HOME
+is not honored). OpenCode and Copilot CLI carry PreToolUse and
 PostToolUse groups only; other groups are named in the row detail, and
 a hook with none is skipped-unexpressible. Cursor and Windsurf (Devin
 Local) read the claude-code projection and have no separate target.
-Gemini CLI, Copilot, and Antigravity are reported and not written.
+Gemini CLI and Antigravity are reported and not written.
 --copy does not apply to hooks. Adopt is refused.
 
 The MCP prompt channel is unchanged: clients that render prompts

@@ -1,6 +1,7 @@
 package pack
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -59,16 +60,55 @@ func TestExamplePackHook_DeniesForcePush(t *testing.T) {
 		{`git push origin main`, false},
 		{`git status --force`, false},
 	}
+	const reason = "git push --force is blocked by the network-eng pack"
 	for _, tc := range cases {
 		cmd := exec.CommandContext(t.Context(), script)
 		cmd.Stdin = strings.NewReader(`{"tool_input":{"command":"` + tc.command + `"}}`)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("%s: %v\n%s", tc.command, err, out)
+		var stdout, stderr strings.Builder
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		code := 0
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			code = exitErr.ExitCode()
+		} else if err != nil {
+			t.Fatalf("%s: %v", tc.command, err)
 		}
-		denied := strings.Contains(string(out), `"permissionDecision":"deny"`)
-		if denied != tc.deny {
-			t.Fatalf("%s deny = %v, output %s", tc.command, denied, out)
+		if !tc.deny {
+			// Allow is exit 0 with no output: some clients deny on any
+			// non-zero exit or on unexpected output.
+			if code != 0 || stdout.Len() != 0 || stderr.Len() != 0 {
+				t.Fatalf("%s: allow exited %d, stdout %q, stderr %q", tc.command, code, stdout.String(), stderr.String())
+			}
+			continue
+		}
+		if code != 2 {
+			t.Fatalf("%s: deny exited %d, want 2", tc.command, code)
+		}
+		if strings.TrimSpace(stderr.String()) != reason {
+			t.Fatalf("%s: stderr = %q, want the reason", tc.command, stderr.String())
+		}
+		var out struct {
+			Decision           string `json:"decision"`
+			Reason             string `json:"reason"`
+			HookSpecificOutput struct {
+				HookEventName            string `json:"hookEventName"`
+				PermissionDecision       string `json:"permissionDecision"`
+				PermissionDecisionReason string `json:"permissionDecisionReason"`
+			} `json:"hookSpecificOutput"`
+		}
+		if strings.Count(strings.TrimSpace(stdout.String()), "\n") != 0 {
+			t.Fatalf("%s: stdout must be one JSON object on one line: %q", tc.command, stdout.String())
+		}
+		if err := json.Unmarshal([]byte(stdout.String()), &out); err != nil {
+			t.Fatalf("%s: stdout is not JSON: %v\n%s", tc.command, err, stdout.String())
+		}
+		if out.Decision != "deny" || out.Reason != reason ||
+			out.HookSpecificOutput.HookEventName != "PreToolUse" ||
+			out.HookSpecificOutput.PermissionDecision != "deny" ||
+			out.HookSpecificOutput.PermissionDecisionReason != reason {
+			t.Fatalf("%s: deny object = %+v", tc.command, out)
 		}
 	}
 }

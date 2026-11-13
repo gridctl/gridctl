@@ -56,6 +56,8 @@ func TestSkillProjectHelp_ListsHookTargets(t *testing.T) {
 		"~/.claude/settings.json",
 		"~/.config/opencode/plugins/gridctl-hook-<name>.ts",
 		"~/.gridctl/hooks/<name>@opencode/",
+		"~/.copilot/hooks/gridctl-<name>.json",
+		"~/.gridctl/hooks/<name>@copilot/",
 		"read the claude-code projection",
 		"--copy does not apply to hooks",
 		"Adopt is refused",
