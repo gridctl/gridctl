@@ -200,9 +200,12 @@ pkg/project/        Unified projection engine: one lockfile (~/.gridctl/project.
 pkg/skillsync/      Projects active registry skills into native client skill directories (`gridctl skill project`).
 pkg/agentsync/      Projects imported agents to clients: identity copy for Claude Code, rendered dialects for
                     OpenCode, Copilot, and Gemini CLI (`gridctl skill project --kind agent`).
-pkg/hooksync/       Projects imported hooks into Claude Code settings (`gridctl skill project --kind hook`).
-                    Script copies live under ~/.gridctl/hooks/. Matcher groups are an RFC 6902 patch of
-                    ~/.claude/settings.json. gridctl never executes a hook. Other clients are reported.
+pkg/hooksync/       Projects imported hooks to client targets (`gridctl skill project --kind hook`). Claude Code is
+                    merge-key: matcher groups are an RFC 6902 patch of ~/.claude/settings.json. OpenCode is
+                    dedicated-file: render_opencode.go renders a versioned plugin that spawns the pinned script.
+                    Each (hook, client) owns its script copy (~/.gridctl/hooks/<name>[@<client>]/). The channel
+                    comes from the target table, never the lockfile entry. gridctl never executes a hook.
+                    Cursor and Windsurf are covered by the Claude Code projection; other clients are reported.
 pkg/contexts/       Global agent-context projection (`gridctl ctx`): one canonical file, or opt-in rule fragments
                     with multi-file and compiled per-client assembly. A narrow pinner hook runs before a real
                     sync. Fragments-mode migration renames an AGENTS.md pin to `00-default`.
