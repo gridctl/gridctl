@@ -529,6 +529,151 @@ func retainedSchemasFor(t *testing.T, home, tag string) *retainedSchemas {
 	return nil
 }
 
+// preFeatureHookCommit is main before hooks projected to any client but
+// Claude Code. Its binary reads the same lockfile version and revision, so
+// a rollback to it is not refused and it reads OpenCode hook records.
+const preFeatureHookCommit = "d2c659e808a557ee2c810f19c38c7fd1a35b692b"
+
+var (
+	preFeatureOnce sync.Once
+	preFeatureBin  string
+	preFeatureErr  error
+)
+
+// preFeatureHookBin race-builds the pre-feature commit from a git archive
+// of the repository. A shallow checkout fetches that one commit first.
+func preFeatureHookBin(ctx context.Context, t *testing.T) string {
+	t.Helper()
+	preFeatureOnce.Do(func() {
+		root, err := filepath.Abs("../..")
+		if err != nil {
+			preFeatureErr = err
+			return
+		}
+		git := func(args ...string) ([]byte, error) {
+			cmd := exec.CommandContext(ctx, "git", args...)
+			cmd.Dir = root
+			return cmd.CombinedOutput()
+		}
+		if _, err := git("cat-file", "-e", preFeatureHookCommit+"^{commit}"); err != nil {
+			if out, ferr := git("fetch", "--no-tags", "--depth=1", "origin", preFeatureHookCommit); ferr != nil {
+				preFeatureErr = fmt.Errorf("fetching %s: %v\n%s", preFeatureHookCommit, ferr, out)
+				return
+			}
+		}
+		dir, err := os.MkdirTemp("", "gridctl-prefeature-*") //nolint:usetesting // shared across tests via sync.Once
+		if err != nil {
+			preFeatureErr = err
+			return
+		}
+		archive := filepath.Join(dir, "src.tar")
+		if out, err := git("archive", "--format=tar", "-o", archive, preFeatureHookCommit); err != nil {
+			preFeatureErr = fmt.Errorf("archiving %s: %v\n%s", preFeatureHookCommit, err, out)
+			return
+		}
+		src := filepath.Join(dir, "src")
+		if err := os.MkdirAll(src, 0o755); err != nil {
+			preFeatureErr = err
+			return
+		}
+		untar := exec.CommandContext(ctx, "tar", "-xf", archive, "-C", src)
+		if out, err := untar.CombinedOutput(); err != nil {
+			preFeatureErr = fmt.Errorf("extracting %s: %v\n%s", archive, err, out)
+			return
+		}
+		bin := filepath.Join(dir, "gridctl-prefeature")
+		if err := buildVersionedBin(ctx, src, bin, "v9.0.0"); err != nil {
+			preFeatureErr = err
+			return
+		}
+		preFeatureBin = bin
+	})
+	if preFeatureErr != nil {
+		t.Fatal(preFeatureErr)
+	}
+	return preFeatureBin
+}
+
+// TestUpgradeRollback_HookSecondClientRecord runs a pre-feature child
+// against a home with an OpenCode hook projection, then the current
+// binary again. The older binary cannot delete the plugin or its script
+// copy, and its lockfile rewrite does not change behavior after upgrade.
+func TestUpgradeRollback_HookSecondClientRecord(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	oldBin := preFeatureHookBin(ctx, t)
+	newBin := hookCLI(t)
+	home, _ := openCodeHookHome(t, newBin)
+
+	if rows, code := hookSyncJSON(t, newBin, home, "block-force-push"); code != 0 || len(rows) != 2 {
+		t.Fatalf("sync exit %d rows %+v", code, rows)
+	}
+	plugin := openCodePluginPath(home)
+	pluginBytes, err := os.ReadFile(plugin)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	st, ok := hookStatusJSON(t, oldBin, home, "opencode")
+	if !ok || st.State != "drifted" || !strings.HasPrefix(st.Detail, "settings file is not valid JSON or JSONC") {
+		t.Fatalf("pre-feature status = %+v (found %v)", st, ok)
+	}
+	stdout, stderr, _ := runHookCLI(t, oldBin, home, "skill", "project", "unsync", "--kind", "hook", "block-force-push", "--clients", "opencode", "--format", "json")
+	var un struct {
+		Results []hookSyncDocRow `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &un); err != nil {
+		t.Fatalf("decode pre-feature unsync: %v\n%s\n%s", err, stdout, stderr)
+	}
+	if len(un.Results) != 1 || un.Results[0].Action != "error" || !strings.Contains(stdout, "client is no longer a projection target") {
+		t.Fatalf("pre-feature unsync = %s", stdout)
+	}
+	if got, err := os.ReadFile(plugin); err != nil || string(got) != string(pluginBytes) {
+		t.Fatalf("pre-feature binary changed the plugin: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(openCodeScriptDir(home), "scripts", "block.sh")); err != nil {
+		t.Fatalf("pre-feature binary removed the opencode script copy: %v", err)
+	}
+
+	// A pre-feature save stamps every hook entry merge-key with a
+	// composite path.
+	if stdout, stderr, code := runHookCLI(t, oldBin, home, "skill", "project", "sync", "--kind", "hook", "--clients", "claude-code", "block-force-push"); code != 0 {
+		t.Fatalf("pre-feature sync exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	lock, err := os.ReadFile(filepath.Join(home, ".gridctl", "project.lock.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(lock), "dedicated-file") || !strings.Contains(string(lock), plugin+"#hooks/block-force-push") {
+		t.Fatalf("pre-feature binary did not rewrite the entry:\n%s", lock)
+	}
+
+	for _, client := range []string{"opencode", "claude-code"} {
+		if st, ok := hookStatusJSON(t, newBin, home, client); !ok || st.State != "in-sync" {
+			t.Fatalf("re-upgraded %s status = %+v (found %v)", client, st, ok)
+		}
+	}
+	if rows, code := hookSyncJSON(t, newBin, home, "--clients", "opencode", "block-force-push"); code != 0 || rows[0].Action != "unchanged" {
+		t.Fatalf("re-upgraded sync exit %d rows %+v", code, rows)
+	}
+	lock, err = os.ReadFile(filepath.Join(home, ".gridctl", "project.lock.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(lock), "channel: dedicated-file") || !strings.Contains(string(lock), "path: "+plugin+"\n") {
+		t.Fatalf("current binary did not restore the entry:\n%s", lock)
+	}
+	if un := hookUnsyncJSON(t, newBin, home, "--clients", "opencode"); len(un) != 1 || un[0].Action != "removed" {
+		t.Fatalf("re-upgraded unsync = %+v", un)
+	}
+	if _, err := os.Stat(openCodeScriptDir(home)); !os.IsNotExist(err) {
+		t.Fatalf("opencode script copy remains: %v", err)
+	}
+}
+
 // versionedOld and versionedNew are race-built once per process. Repeating
 // the link for the second test copies about 90MB and was eating the podman
 // suite's remaining package-timeout budget.

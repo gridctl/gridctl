@@ -216,14 +216,16 @@ func filterForeign(names []string, kind string, foreign map[string]string, addRo
 }
 
 // TallyRows counts clean rows vs rows needing attention.
-// skipped-unsupported is informational: those clients are not writable
-// in this release, so the row is counted as applied. Exit 1 stays
-// reserved for rows the user can act on. runPackApply exits 1 when
-// Total > Applied, so an informational row does not fail the command.
+// skipped-unsupported and skipped-unexpressible are informational: the
+// client is not writable, or the target's dialect cannot carry the
+// imported definition, and neither is actionable from the apply side, so
+// the row is counted as applied. Exit 1 stays reserved for rows the user
+// can act on. runPackApply exits 1 when Total > Applied, so an
+// informational row does not fail the command.
 func TallyRows(rows []Row) (applied, failed int) {
 	for _, r := range rows {
 		switch {
-		case r.Action == hooksync.ActionSkippedUnsupported:
+		case r.Action == hooksync.ActionSkippedUnsupported, r.Action == hooksync.ActionSkippedUnexpressible:
 			applied++
 		case strings.HasPrefix(r.Action, "skipped") || r.Action == "error" || r.Action == "unresolved":
 			failed++

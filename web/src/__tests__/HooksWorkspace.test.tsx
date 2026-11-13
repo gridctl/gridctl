@@ -153,6 +153,44 @@ describe('HooksWorkspace', () => {
     });
   });
 
+  it('shows a target chip per projection and covered clients via their target', async () => {
+    vi.mocked(fetchRegistryHooks).mockResolvedValue({
+      ...list,
+      unsupported_clients: [
+        ...list.unsupported_clients,
+        {
+          slug: 'cursor',
+          name: 'Cursor',
+          location: 'reads ~/.claude/settings.json hooks',
+          covered_by: 'claude-code',
+          detected: true,
+        },
+      ],
+    });
+    vi.mocked(fetchHookProjectionStatus).mockResolvedValue([
+      inSync,
+      {
+        ...inSync,
+        client: 'opencode',
+        channel: 'dedicated-file',
+        render: 'lossy',
+        target: '/tmp/demo/.config/opencode/plugins/gridctl-hook-block-force-push.ts',
+        script_dir: '/tmp/demo/.gridctl/hooks/block-force-push@opencode',
+        detail: 'dropped if "Bash(git push *)": the handler runs on every matched call',
+      },
+    ]);
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect block-force-push' }));
+    fireEvent.click(await screen.findByRole('tab', { name: 'Projection' }));
+
+    expect(await screen.findAllByText('OpenCode')).not.toHaveLength(0);
+    const chips = screen.getByLabelText('Unsupported clients');
+    expect(chips).toHaveTextContent('Cursor via claude-code');
+    expect(chips).not.toHaveTextContent('OpenCode');
+    expect(screen.getByTitle('reads ~/.claude/settings.json hooks')).toHaveTextContent('Cursor via claude-code');
+  });
+
   it('disables approve when the hook is not pinned', async () => {
     vi.mocked(fetchHookPinDiff).mockRejectedValue(new HTTPError(404, 'No pin found for hook: block-force-push'));
     renderWorkspace();

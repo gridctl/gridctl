@@ -233,7 +233,7 @@ A lockfile that contains a local source is stamped version 6. A lockfile without
 
 `gridctl skill project` syncs selected active skills into native client skill directories, so one managed library works in clients that never fetch MCP prompts and auto-triggers in clients that read skills from disk.
 
-Nothing is projected by default. Unlike `gridctl ctx sync`, which projects one small file to every client, projecting all active skills would flood each client's skill discovery context, so the projection set is an explicit allow-list built by naming skills. `--kind hook` projects imported hooks into Claude Code settings instead. See [Hooks](hooks.md#projection). Hooks have no adopt.
+Nothing is projected by default. Unlike `gridctl ctx sync`, which projects one small file to every client, projecting all active skills would flood each client's skill discovery context, so the projection set is an explicit allow-list built by naming skills. `--kind hook` projects imported hooks instead: matcher groups into Claude Code settings, and a generated plugin per hook for OpenCode, each with its own script copy. See [Hooks](hooks.md#projection). Hooks have no adopt.
 
 ```bash
 gridctl skill project sync incident-triage                      # every available target

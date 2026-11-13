@@ -124,7 +124,7 @@ func (m *Managers) Apply(ctx context.Context, name string, opts ApplyOptions) (*
 		}
 		for _, c := range m.Hooks.DetectedUnsupported() {
 			for _, hookName := range hookNames {
-				addRow(Row{Kind: "hook", Name: hookName, Client: c.Slug, Action: hooksync.ActionSkippedUnsupported, Detail: c.Location})
+				addRow(Row{Kind: "hook", Name: hookName, Client: c.Slug, Action: hooksync.ActionSkippedUnsupported, Detail: c.Detail()})
 			}
 		}
 	}

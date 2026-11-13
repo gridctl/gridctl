@@ -742,10 +742,13 @@ export interface HookProjectionStatus {
   remediation?: string;
 }
 
+// HookUnsupportedClient is a client gridctl does not write hooks for.
+// covered_by names the target whose projection the client reads.
 export interface HookUnsupportedClient {
   slug: string;
   name: string;
   location: string;
+  covered_by?: string;
   detected: boolean;
 }
 

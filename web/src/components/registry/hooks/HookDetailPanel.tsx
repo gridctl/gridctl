@@ -224,7 +224,9 @@ function UnsupportedChips({ clients }: { clients: HookUnsupportedClient[] }) {
             title={c.location}
             className="text-3xs px-1.5 py-0.5 rounded border border-border/40 text-text-muted/80"
           >
-            {c.name}{c.detected ? '' : ' (not detected)'}
+            {c.name}
+            {c.covered_by ? ` via ${c.covered_by}` : ''}
+            {c.detected ? '' : ' (not detected)'}
           </span>
         ))}
       </div>

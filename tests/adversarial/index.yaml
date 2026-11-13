@@ -640,3 +640,16 @@ scenarios:
     budgets:
       max_payload_bytes: 65536
       max_duration: 5s
+  - id: hooks-opencode-plugin-derives-from-pinned-definition
+    owner_package: pkg/hooksync
+    owner_issue: "1518"
+    package: github.com/gridctl/gridctl/pkg/hooksync
+    test: TestOpenCodePlugin_DerivesFromPinnedDefinition
+    lanes: [unit]
+    expected_boundary: the projected OpenCode plugin bytes equal the render of the pinned hook definition, and an unapproved registry edit, even with --force, changes neither the plugin bytes nor its ownership record
+    nonclaims:
+      - does not prove OpenCode loads the plugin or resolves its import
+      - does not prove a thrown error from execute.before denies the tool call
+    budgets:
+      max_payload_bytes: 65536
+      max_duration: 5s

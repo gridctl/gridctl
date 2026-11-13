@@ -660,7 +660,12 @@ func TestSync_UnsupportedAndUnknown(t *testing.T) {
 	home, registry := testHome(t)
 	installHook(t, registry, "block", "#!/bin/sh\necho no\n")
 	pinHook(t, home, registry, "block")
+	// Gemini CLI is detected by its settings file, not by ~/.gemini,
+	// which is also the parent of every Antigravity location.
 	if err := os.MkdirAll(filepath.Join(home, ".gemini"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".gemini", "settings.json"), []byte("{}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	mgr := NewManagerWithHome(home, registry)

@@ -209,14 +209,15 @@ func plannedTreeHash(src string) (string, error) {
 	return project.HashScheme + hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// backupTree copies dir to a timestamped directory under
-// ~/.gridctl/project-backups/hook/<name>/ and keeps three.
-func backupTree(home, name, dir string) (string, error) {
+// backupTree copies a script copy to a timestamped directory under
+// ~/.gridctl/project-backups/hook/<base of dir>/ and keeps three. The
+// base is <name> for Claude Code and <name>@<client> for other targets.
+func backupTree(home, dir string) (string, error) {
 	info, err := os.Stat(dir)
 	if err != nil || !info.IsDir() {
 		return "", nil
 	}
-	dest := filepath.Join(home, ".gridctl", "project-backups", "hook", name, time.Now().UTC().Format(backupTimeFormat))
+	dest := filepath.Join(home, ".gridctl", "project-backups", "hook", filepath.Base(dir), time.Now().UTC().Format(backupTimeFormat))
 	if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 		return "", err
 	}

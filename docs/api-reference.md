@@ -1207,7 +1207,7 @@ Security differences return HTTP `409` with the [restart-required envelope](#rel
 
 ### Reset
 
-REST half of `gridctl reset`: removes everything gridctl placed on the machine (projected skills, agents, and context rules, projected hook groups in Claude Code settings and their script copies, owned gateway entries in client MCP configs, installed user services, and every stack's daemons, containers, and networks). Services are disabled and stopped before daemons. Hook unsync runs before `purge: true` deletes `~/.gridctl`. A hand-edited hook group is `kept-drift` unless `force` is set, including when `purge` is set. A hand-edited script copy is kept on the default tier; `purge: true` still deletes it with `~/.gridctl`. A settings file that does not parse is `failed` and left untouched; the preview shows that projection as `skipped`. A hook row includes optional `script_dir`, the script copy. The default tier preserves `~/.gridctl`; `purge: true` deletes it too. Both endpoints share the same engine and guards as the CLI; the web UI's Reset dialog is built on them.
+REST half of `gridctl reset`: removes everything gridctl placed on the machine (projected skills, agents, and context rules, projected hook groups in Claude Code settings, generated OpenCode hook plugins, and their script copies, owned gateway entries in client MCP configs, installed user services, and every stack's daemons, containers, and networks). Services are disabled and stopped before daemons. Hook unsync runs before `purge: true` deletes `~/.gridctl`. A hand-edited hook group or plugin is `kept-drift` unless `force` is set, including when `purge` is set; drift on one client keeps that hook on every client. A hand-edited script copy is kept on the default tier; `purge: true` still deletes it with `~/.gridctl`. A settings file that does not parse is `failed` and left untouched; the preview shows that projection as `skipped`. A hook row includes optional `script_dir`, the script copy. The default tier preserves `~/.gridctl`; `purge: true` deletes it too. Both endpoints share the same engine and guards as the CLI; the web UI's Reset dialog is built on them.
 
 **Transport guards (both endpoints):** requests are accepted only from loopback connections; a request carrying an `Origin` header must be same-origin; and `Content-Type: application/json` is required (so the request can never be a CORS simple request). Violations return `403` (or `415` for the content type). These guards apply on top of gateway auth.
 
@@ -3730,10 +3730,19 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/registry/hooks
       "name": "Gemini CLI",
       "location": "~/.gemini/settings.json hooks key",
       "detected": false
+    },
+    {
+      "slug": "cursor",
+      "name": "Cursor",
+      "location": "reads ~/.claude/settings.json hooks (Cursor Settings → Agents → Third-Party Imports, on by default)",
+      "covered_by": "claude-code",
+      "detected": true
     }
   ]
 }
 ```
+
+`unsupported_clients` lists clients without a hook target. `covered_by` names the target whose projection the client reads (`claude-code` for Cursor and Windsurf) and is omitted when empty. A hook target (`claude-code`, `opencode`) is never in this table.
 
 #### `GET /api/registry/hooks/{name}`
 
@@ -3789,7 +3798,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project/hooks/s
 ]
 ```
 
-`detail` and `remediation` are omitted when empty. `pack` is omitted for a projection made outside a pack. No recorded projections returns `[]`.
+`detail` and `remediation` are omitted when empty. `pack` is omitted for a projection made outside a pack. No recorded projections returns `[]`. `channel` is `merge-key` (`claude-code`, matcher groups in a shared settings file) or `dedicated-file` (`opencode`, one generated plugin per hook, `target` is that file). `render` is `identity` or `lossy`. An `in-sync` lossy row carries the dropped groups and handler keys in `detail`. See [Hooks](hooks.md#opencode).
 
 #### `POST /api/project/hooks/sync`
 
@@ -3803,11 +3812,11 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/project
   -d '{"hooks": ["block-force-push"], "clients": ["claude-code"], "force": false, "dry_run": false}'
 ```
 
-**Response:** an array, one row per hook and client: `client`, `action`, and optional `hook`, `channel`, `target`, `detail`, `remediation`, `backup_path`, `error`, `script_dir`. An unknown hook is `404` (`unknown hook: <name> (see 'gridctl skill list --kind hook')`). An unknown client is `400` (`unknown client: "<slug>" (known clients: ...)`). A newer project lockfile is `409`.
+**Response:** an array, one row per hook and client: `client`, `action`, and optional `hook`, `channel`, `target`, `detail`, `remediation`, `backup_path`, `error`, `script_dir`. `action` includes `skipped-unexpressible` for a hook the target's dialect cannot carry (the detail names each event or matcher token), and `skipped-unsupported` for a client without a target (the detail is the native location, prefixed `covered by the claude-code projection; ` for a covered client). An unknown hook is `404` (`unknown hook: <name> (see 'gridctl skill list --kind hook')`). An unknown client is `400` (`unknown client: "<slug>" (known clients: ...)`). A newer project lockfile is `409`.
 
 #### `POST /api/project/hooks/unsync`
 
-Removes recorded groups. Name `hooks` or set `all: true`. Also accepts `clients`, `force`, and `dry_run`. A body that names neither `hooks` nor `all` is `400` (`name hooks to unsync, or set all`). A named hook that is not projected is `409` (`hook is not projected: <name>`).
+Removes recorded groups or generated plugins, and each client's script copy. Name `hooks` or set `all: true`. Also accepts `clients`, `force`, and `dry_run`. A body that names neither `hooks` nor `all` is `400` (`name hooks to unsync, or set all`). A named hook that is not projected is `409` (`hook is not projected: <name>`).
 
 **Auth:** Yes
 
@@ -4072,7 +4081,7 @@ Projects one pack. Apply is additive and never transactional: each resource succ
 | `force` | bool | Overwrite drifted or foreign resources after backup (`--force`) |
 | `dry_run` | bool | Report what would change without writing (`--dry-run`) |
 
-An empty or absent body is a plain apply. **Response:** the apply document: `applied`, `total`, and per-resource `rows` (kind, name, client, action, detail, remediation). A carried stack is the first row. Over REST its action is `skipped-unavailable`, detail `stack deploy is not available over this interface`, remediation `run 'gridctl pack apply <name>' from the CLI`. The wiring row is `skipped-unavailable` with detail `pack stack is not running` and remediation `resolve the stack row above, then re-run 'gridctl pack apply <name>'`. Drifted resources are skipped with a remediation hint unless forced; resources tagged by a different pack are refused with the owning pack named. `pack apply` adds one hook row per hook and client, including `skipped-unsupported` for detected clients this release does not write. Those rows are counted in `applied`/`total`. Over the CLI they do not by themselves make the command exit 1. REST apply returns the same hook rows.
+An empty or absent body is a plain apply. **Response:** the apply document: `applied`, `total`, and per-resource `rows` (kind, name, client, action, detail, remediation). A carried stack is the first row. Over REST its action is `skipped-unavailable`, detail `stack deploy is not available over this interface`, remediation `run 'gridctl pack apply <name>' from the CLI`. The wiring row is `skipped-unavailable` with detail `pack stack is not running` and remediation `resolve the stack row above, then re-run 'gridctl pack apply <name>'`. Drifted resources are skipped with a remediation hint unless forced; resources tagged by a different pack are refused with the owning pack named. `pack apply` adds one hook row per hook and client, including `skipped-unsupported` for detected clients without a hook target and `skipped-unexpressible` for a hook a target's dialect cannot carry. Those rows are counted in `applied`/`total`. Over the CLI they do not by themselves make the command exit 1. REST apply returns the same hook rows.
 
 **Errors:** `404` - Pack not imported; `409` - Name collision; `422` - the recorded `requires.gridctl` is unsatisfied or invalid, and nothing is projected, including when `dry_run` is set. The body is `{"error":"..."}` with the same pack message as add. A pack imported before the field existed has no recorded floor and is not checked.
 

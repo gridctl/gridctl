@@ -24,11 +24,14 @@ const (
 	ActionSkippedUnmanaged   = "skipped-unmanaged"
 	ActionSkippedUnavailable = project.ActionSkippedUnavailable
 	ActionSkippedUnsupported = "skipped-unsupported"
-	ActionWouldCopy          = "would-copy"
-	ActionWouldUpdate        = project.ActionWouldUpdate
-	ActionWouldRemove        = "would-remove"
-	ActionAlreadyGone        = "already-gone"
-	ActionError              = project.ActionError
+	// ActionSkippedUnexpressible is a (hook, client) the target's dialect
+	// cannot carry: no group has a mapped event and matcher.
+	ActionSkippedUnexpressible = "skipped-unexpressible"
+	ActionWouldCopy            = "would-copy"
+	ActionWouldUpdate          = project.ActionWouldUpdate
+	ActionWouldRemove          = "would-remove"
+	ActionAlreadyGone          = "already-gone"
+	ActionError                = project.ActionError
 
 	StateInSync        = project.StateInSync
 	StateStale         = project.StateStale
@@ -152,7 +155,8 @@ func HasFailures(results []SyncResult) bool {
 	for _, r := range results {
 		switch r.Action {
 		case ActionError, ActionSkippedDrift, ActionSkippedForeign, ActionSkippedPinDrift,
-			ActionSkippedUnmanaged, ActionSkippedUnavailable, ActionSkippedUnsupported:
+			ActionSkippedUnmanaged, ActionSkippedUnavailable, ActionSkippedUnsupported,
+			ActionSkippedUnexpressible:
 			return true
 		}
 	}
@@ -247,6 +251,10 @@ func sortHooks(hooks []skills.InstalledHook) {
 	}
 }
 
+// resolveClients maps --clients to targets. With no slugs every
+// detected target is selected. Undetected targets are reported as
+// skipped-unavailable only when no target is detected, so adding a target
+// does not turn a clean sync on a machine without that client into exit 1.
 func (m *Manager) resolveClients(slugs []string) (targets []Target, unsupported []UnsupportedClient, skipped []Target, err error) {
 	if len(slugs) == 0 {
 		for _, t := range Targets() {
@@ -255,6 +263,9 @@ func (m *Manager) resolveClients(slugs []string) (targets []Target, unsupported 
 			} else {
 				skipped = append(skipped, t)
 			}
+		}
+		if len(targets) > 0 {
+			skipped = nil
 		}
 		return targets, nil, skipped, nil
 	}
@@ -279,7 +290,7 @@ func (m *Manager) resolveClients(slugs []string) (targets []Target, unsupported 
 func unavailableRows(home string, hooks []skills.InstalledHook, skipped []Target) []SyncResult {
 	var out []SyncResult
 	for _, t := range skipped {
-		target := t.settingsPath(home)
+		target := t.PathFor(home, nameToken)
 		if len(hooks) == 0 {
 			out = append(out, SyncResult{
 				Client: t.Slug, Target: target, Action: ActionSkippedUnavailable,
@@ -289,8 +300,8 @@ func unavailableRows(home string, hooks []skills.InstalledHook, skipped []Target
 		}
 		for _, h := range hooks {
 			out = append(out, SyncResult{
-				Hook: h.Name, Client: t.Slug, Channel: ChannelMergeKey,
-				Target: target, Action: ActionSkippedUnavailable,
+				Hook: h.Name, Client: t.Slug, Channel: t.Channel,
+				Target: t.PathFor(home, h.Name), Action: ActionSkippedUnavailable,
 				Detail: "client not initialized on this machine",
 			})
 		}
@@ -303,14 +314,14 @@ func unsupportedRows(hooks []skills.InstalledHook, clients []UnsupportedClient) 
 	for _, c := range clients {
 		if len(hooks) == 0 {
 			out = append(out, SyncResult{
-				Client: c.Slug, Action: ActionSkippedUnsupported, Detail: c.Location,
+				Client: c.Slug, Action: ActionSkippedUnsupported, Detail: c.Detail(),
 			})
 			continue
 		}
 		for _, h := range hooks {
 			out = append(out, SyncResult{
 				Hook: h.Name, Client: c.Slug, Channel: ChannelMergeKey,
-				Action: ActionSkippedUnsupported, Detail: c.Location,
+				Action: ActionSkippedUnsupported, Detail: c.Detail(),
 			})
 		}
 	}
@@ -330,10 +341,19 @@ type hookWork struct {
 	remove      bool
 	scriptsOnly bool
 	createdFile bool
+	// Dedicated-file channel.
+	fileBytes   []byte
+	fileExists  bool
+	fileCurrent string
+	renderNote  string
+	claimed     bool // an unrecorded file taken over with --force
 }
 
 func (m *Manager) syncClient(ctx context.Context, lf *LockFile, t Target, hooks []skills.InstalledHook, opts SyncOptions) ([]SyncResult, error) {
-	settingsPath := t.settingsPath(m.home)
+	if t.Channel == ChannelDedicatedFile {
+		return m.syncFiles(ctx, lf, t, hooks, opts)
+	}
+	settingsPath := t.PathFor(m.home, "")
 	sf, err := readSettings(settingsPath)
 	if err != nil {
 		return []SyncResult{{Client: t.Slug, Target: settingsPath, Action: ActionError, Error: err.Error()}}, nil
@@ -388,44 +408,26 @@ func (m *Manager) syncClient(ctx context.Context, lf *LockFile, t Target, hooks 
 }
 
 func (m *Manager) planHook(h skills.InstalledHook, t Target, sf *settingsFile, lf *LockFile, opts SyncOptions) hookWork {
-	settingsPath := t.settingsPath(m.home)
-	scriptDir := scriptDirFor(m.home, h.Name)
+	settingsPath := t.PathFor(m.home, h.Name)
+	scriptDir := scriptDirFor(m.home, h.Name, t.Slug)
 	w := hookWork{
 		hook:      h,
 		scriptDir: scriptDir,
 		res: SyncResult{
-			Hook: h.Name, Client: t.Slug, Channel: ChannelMergeKey,
+			Hook: h.Name, Client: t.Slug, Channel: t.Channel,
 			Target: settingsPath, ScriptDir: scriptDir,
 		},
 	}
-	if h.Err != "" || h.Definition == nil {
-		w.res.Action = ActionError
-		w.res.Error = h.Err
-		if w.res.Error == "" {
-			w.res.Error = "hook definition is not valid"
-		}
+	if !m.admitHook(&w) {
 		return w
 	}
-	ok, composite, detail, err := m.pinOK(h.Name)
+	r, err := renderFor(t, h.Definition.Raw, h.Name, scriptDir)
 	if err != nil {
 		w.res.Action = ActionError
 		w.res.Error = err.Error()
 		return w
 	}
-	if !ok {
-		w.res.Action = ActionSkippedPinDrift
-		w.res.Detail = detail
-		if composite != "" {
-			w.res.Remediation = fmt.Sprintf("gridctl skill pins approve %s --kind hook --expect %s", h.Name, composite)
-		}
-		return w
-	}
-	groups, err := renderDefinition(h.Definition.Raw, h.Name, scriptDir)
-	if err != nil {
-		w.res.Action = ActionError
-		w.res.Error = err.Error()
-		return w
-	}
+	groups := r.Groups
 	plannedHash, err := groupsHash(groups)
 	if err != nil {
 		w.res.Action = ActionError
@@ -540,6 +542,37 @@ func (m *Manager) planHook(h skills.InstalledHook, t Target, sf *settingsFile, l
 		}
 	}
 	return w
+}
+
+// admitHook refuses a broken definition and an unapproved pin. It
+// reports false with the row's action set when the hook must not be
+// rendered. A pin-drifted hook never reaches a renderer, so an unapproved
+// registry edit never changes projected bytes.
+func (m *Manager) admitHook(w *hookWork) bool {
+	h := w.hook
+	if h.Err != "" || h.Definition == nil {
+		w.res.Action = ActionError
+		w.res.Error = h.Err
+		if w.res.Error == "" {
+			w.res.Error = "hook definition is not valid"
+		}
+		return false
+	}
+	ok, composite, detail, err := m.pinOK(h.Name)
+	if err != nil {
+		w.res.Action = ActionError
+		w.res.Error = err.Error()
+		return false
+	}
+	if !ok {
+		w.res.Action = ActionSkippedPinDrift
+		w.res.Detail = detail
+		if composite != "" {
+			w.res.Remediation = fmt.Sprintf("gridctl skill pins approve %s --kind hook --expect %s", h.Name, composite)
+		}
+		return false
+	}
+	return true
 }
 
 func sameShape(located []locatedGroup, groups []renderedGroup) bool {
@@ -677,7 +710,7 @@ func (m *Manager) writeScripts(w hookWork) error {
 		return nil
 	}
 	if current != "" {
-		if _, err := backupTree(m.home, w.hook.Name, w.scriptDir); err != nil {
+		if _, err := backupTree(m.home, w.scriptDir); err != nil {
 			return err
 		}
 	}
@@ -811,6 +844,9 @@ func unsyncKeys(lf *LockFile, names []string, opts UnsyncOptions) ([]recordKey, 
 
 func (m *Manager) unsyncClient(lf *LockFile, client string, keys []recordKey, opts UnsyncOptions) ([]UnsyncResult, error) {
 	t, ok := FindTarget(client)
+	if ok && t.Channel == ChannelDedicatedFile {
+		return m.unsyncFiles(lf, t, keys, opts)
+	}
 	if !ok {
 		var out []UnsyncResult
 		for _, key := range keys {
@@ -819,7 +855,7 @@ func (m *Manager) unsyncClient(lf *LockFile, client string, keys []recordKey, op
 		}
 		return out, nil
 	}
-	settingsPath := t.settingsPath(m.home)
+	settingsPath := t.PathFor(m.home, "")
 	sf, err := readSettings(settingsPath)
 	if err != nil {
 		return nil, err
@@ -898,7 +934,7 @@ func (m *Manager) unsyncClient(lf *LockFile, client string, keys []recordKey, op
 			if !items[i].purge {
 				continue
 			}
-			if _, err := backupTree(m.home, items[i].key.name, items[i].entry.ScriptDir); err != nil {
+			if _, err := backupTree(m.home, items[i].entry.ScriptDir); err != nil {
 				return nil, err
 			}
 			if err := os.RemoveAll(items[i].entry.ScriptDir); err != nil {
@@ -973,11 +1009,18 @@ func (m *Manager) Statuses(ctx context.Context) ([]ProjectionStatus, error) {
 }
 
 func (m *Manager) statusFor(name, client string, entry *Entry) ProjectionStatus {
+	t, known := FindTarget(client)
+	if known && t.Channel == ChannelDedicatedFile {
+		return m.fileStatus(name, t, entry)
+	}
+	if !known {
+		t = Target{Channel: ChannelMergeKey, RenderClass: RenderIdentity}
+	}
 	ps := ProjectionStatus{
 		Hook:      name,
 		Client:    client,
-		Channel:   ChannelMergeKey,
-		Render:    RenderIdentity,
+		Channel:   t.Channel,
+		Render:    t.RenderClass,
 		Target:    entry.ConfigPath,
 		ScriptDir: entry.ScriptDir,
 		Pack:      entry.Pack,
@@ -985,7 +1028,7 @@ func (m *Manager) statusFor(name, client string, entry *Entry) ProjectionStatus 
 	}
 	synced := entry.SyncedAt
 	ps.SyncedAt = &synced
-	if t, ok := FindTarget(client); ok && !t.available(m.home) {
+	if known && !t.available(m.home) {
 		ps.State = StateTargetMissing
 		ps.Detail = "client not initialized on this machine; script directory " + entry.ScriptDir
 		return ps
@@ -1069,10 +1112,10 @@ func (m *Manager) statusFor(name, client string, entry *Entry) ProjectionStatus 
 			}
 		}
 		if hook != nil && hook.Definition != nil {
-			groups, rerr := renderDefinition(hook.Definition.Raw, name, entry.ScriptDir)
+			r, rerr := renderFor(t, hook.Definition.Raw, name, entry.ScriptDir)
 			if rerr != nil {
 				stale = append(stale, rerr.Error())
-			} else if planned, herr := groupsHash(groups); herr != nil {
+			} else if planned, herr := groupsHash(r.Groups); herr != nil {
 				stale = append(stale, herr.Error())
 			} else if planned != entry.latestHash() {
 				stale = append(stale, "planned render differs from the synced groups")

@@ -57,7 +57,7 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 	// Drift pre-check: a hand-edited projection means the user changed
 	// something gridctl would destroy; without force the whole resource
 	// (projections + registry entry) is kept.
-	driftedSkills, driftedAgents, driftedHooks, err := m.driftedPackResources(ctx)
+	driftedSkills, driftedAgents, driftedHooks, driftedHookClients, err := m.driftedPackResources(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -108,6 +108,7 @@ func (m *Managers) Remove(ctx context.Context, imp *skills.Importer, name string
 	removableSkills := splitKept(unionNames(locked.Skills, memberSkills), driftedSkills, opts.Force, "skill", &rows, &kept)
 	removableAgents := splitKept(unionNames(locked.Agents, memberAgents), driftedAgents, opts.Force, "agent", &rows, &kept)
 	removableHooks := splitKept(locked.Hooks, driftedHooks, opts.Force, "hook", &rows, &kept)
+	nameDriftedHookClients(rows, driftedHookClients)
 
 	if opts.DryRun {
 		for _, n := range removableSkills {
@@ -278,14 +279,15 @@ func skillPinDryRunDetail(imp *skills.Importer, name string) string {
 }
 
 // driftedPackResources reports which resources have a drifted projection
-// anywhere.
-func (m *Managers) driftedPackResources(ctx context.Context) (map[string]bool, map[string]bool, map[string]bool, error) {
+// anywhere, and for hooks which clients drifted.
+func (m *Managers) driftedPackResources(ctx context.Context) (map[string]bool, map[string]bool, map[string]bool, map[string][]string, error) {
 	driftedSkills := map[string]bool{}
 	driftedAgents := map[string]bool{}
 	driftedHooks := map[string]bool{}
+	driftedHookClients := map[string][]string{}
 	sst, err := m.Skills.Statuses(ctx)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	for _, s := range sst {
 		if s.State == skillsync.StateDrifted {
@@ -294,7 +296,7 @@ func (m *Managers) driftedPackResources(ctx context.Context) (map[string]bool, m
 	}
 	ast, err := m.Agents.Statuses(ctx)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	for _, s := range ast {
 		if s.State == agentsync.StateDrifted {
@@ -304,15 +306,27 @@ func (m *Managers) driftedPackResources(ctx context.Context) (map[string]bool, m
 	if m.Hooks != nil {
 		hst, herr := m.Hooks.Statuses(ctx)
 		if herr != nil {
-			return nil, nil, nil, herr
+			return nil, nil, nil, nil, herr
 		}
 		for _, s := range hst {
 			if s.State == hooksync.StateDrifted {
 				driftedHooks[s.Hook] = true
+				driftedHookClients[s.Hook] = append(driftedHookClients[s.Hook], s.Client)
 			}
 		}
 	}
-	return driftedSkills, driftedAgents, driftedHooks, nil
+	return driftedSkills, driftedAgents, driftedHooks, driftedHookClients, nil
+}
+
+// nameDriftedHookClients fills the client column of a hook's drift-kept
+// row, so the refusal names each client whose projection was edited.
+func nameDriftedHookClients(rows []Row, clients map[string][]string) {
+	for i := range rows {
+		r := &rows[i]
+		if r.Kind == "hook" && r.Action == "skipped-drift" && r.Client == "" {
+			r.Client = strings.Join(clients[r.Name], ",")
+		}
+	}
 }
 
 // unsyncPackHooks retracts pack-tagged hook projections before the

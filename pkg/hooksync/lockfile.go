@@ -16,9 +16,14 @@ type LockFile struct {
 
 // Entry is one recorded (hook, client) ownership record.
 type Entry struct {
-	// ConfigPath is the settings file. Path on the engine entry is the
-	// composite "<ConfigPath>#hooks/<name>" so several hooks share one file.
+	// ConfigPath is the client file. For a merge-key target, Path on the
+	// engine entry is the composite "<ConfigPath>#hooks/<name>" so several
+	// hooks share one file; for a dedicated-file target Path is ConfigPath.
 	ConfigPath string
+	// Channel is display only. saveView writes it from the target table,
+	// and every behavior branch reads the channel from FindTarget, so an
+	// entry rewritten by an older gridctl behaves the same after upgrade.
+	Channel string
 	// ScriptDir is the absolute script copy.
 	ScriptDir string
 	// Hashes is the canonical hash history of the owned groups, newest last.
@@ -72,6 +77,7 @@ func viewFromLock(pl *project.Lock) *LockFile {
 	for _, e := range pl.Entries(project.KindHook) {
 		lf.set(e.Source, e.Client, &Entry{
 			ConfigPath:  e.ConfigPath,
+			Channel:     e.Channel,
 			ScriptDir:   e.ScriptDir,
 			Hashes:      append([]string(nil), e.Hashes...),
 			TreeHash:    e.TreeHash,
@@ -87,12 +93,23 @@ func saveView(pl *project.Lock, lf *LockFile) error {
 	var entries []*project.Entry
 	for name, clients := range lf.Records {
 		for client, e := range clients {
+			channel := e.Channel
+			if t, ok := FindTarget(client); ok {
+				channel = t.Channel
+			}
+			if channel == "" {
+				channel = ChannelMergeKey
+			}
+			path := compositePath(e.ConfigPath, name)
+			if channel == ChannelDedicatedFile {
+				path = e.ConfigPath
+			}
 			entries = append(entries, &project.Entry{
 				Kind:             project.KindHook,
 				Client:           client,
 				Source:           name,
-				Path:             compositePath(e.ConfigPath, name),
-				Channel:          ChannelMergeKey,
+				Path:             path,
+				Channel:          channel,
 				ConfigPath:       e.ConfigPath,
 				ScriptDir:        e.ScriptDir,
 				Hashes:           e.Hashes,

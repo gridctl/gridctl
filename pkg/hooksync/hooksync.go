@@ -1,14 +1,16 @@
-// Package hooksync projects imported hooks into Claude Code settings.
-// It is the hook tenant of pkg/project: scripts are copied into a
-// gridctl-owned directory, and matcher groups are patched into the
-// hooks key of ~/.claude/settings.json with recorded, region-level
-// ownership. gridctl never executes a hook.
+// Package hooksync projects imported hooks into client hook
+// configuration. It is the hook tenant of pkg/project: scripts are copied
+// into a gridctl-owned directory per (hook, client), and the client's
+// configuration is written with recorded ownership. gridctl never
+// executes a hook.
 //
-// The ownership decision table follows pkg/wiring, with the
-// identical-value adopt branch omitted. An unrecorded group is never
-// claimed without --force. The settings write is an RFC 6902 patch on
-// the parsed hujson tree, so bytes outside the patched elements,
-// including comments, stay as they were found.
+// Two channels exist. A merge-key target (Claude Code) owns matcher
+// groups inside a shared settings file; the write is an RFC 6902 patch on
+// the parsed hujson tree, so bytes outside the patched elements, including
+// comments, stay as they were found. A dedicated-file target (OpenCode)
+// owns one generated file per hook. The ownership decision table follows
+// pkg/wiring and pkg/agentsync, with the identical-value adopt branch
+// omitted: an unrecorded group or file is never claimed without --force.
 package hooksync
 
 import (
@@ -17,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/gridctl/gridctl/pkg/hookpins"
@@ -35,58 +38,115 @@ var (
 // gridctl. Aliased from the engine so callers' errors.Is checks work.
 var ErrNewerLockVersion = project.ErrNewerLockVersion
 
-// ChannelMergeKey is the only hook channel: gridctl owns matcher groups
-// inside a shared settings file, never the file itself.
-const ChannelMergeKey = "merge-key"
+// Channels name how a target owns its region. A merge-key target owns
+// matcher groups inside a shared settings file, never the file itself. A
+// dedicated-file target owns one generated file per hook.
+const (
+	ChannelMergeKey      = "merge-key"
+	ChannelDedicatedFile = "dedicated-file"
+)
 
-// RenderIdentity is the only render class. The projected groups are the
-// definition's groups with absolute script paths, not a dialect translation.
-const RenderIdentity = "identity"
+// Render classes. Identity groups are the definition's groups with
+// absolute script paths. A lossy render is a dialect translation that
+// names every dropped group and handler key.
+const (
+	RenderIdentity = "identity"
+	RenderLossy    = "lossy"
+)
 
-// Target describes one client's settings file. Later dialect targets are
-// additive: this release has Claude Code only.
+// nameToken is replaced with the hook name in a dedicated-file Path.
+const nameToken = "<name>"
+
+// Target describes one client's hook destination.
 type Target struct {
 	Slug string
 	Name string
-	// SettingsPath is a ~-template expanded against the Manager's home.
-	SettingsPath string
+	// Path is a ~-template expanded against the Manager's home. A
+	// merge-key target names its shared settings file. A dedicated-file
+	// target carries <name>, replaced with the hook name.
+	Path string
 	// DetectDirs mark the client as initialized on this machine.
 	DetectDirs []string
+	// Channel is ChannelMergeKey or ChannelDedicatedFile. Every behavior
+	// branch reads it from this table, never from a lockfile entry.
+	Channel string
+	// RenderClass is RenderIdentity or RenderLossy, reported in status.
+	RenderClass string
+	// Render is the dialect renderer. Nil is the Claude Code identity render.
+	Render RenderFunc
 }
 
-// UnsupportedClient is a client with a hook mechanism this release does
-// not write. Sync reports it; it never creates the native file.
+// UnsupportedClient is a client with a hook mechanism gridctl does not
+// write. Sync reports it; it never creates the native file.
 type UnsupportedClient struct {
-	Slug       string
-	Name       string
-	Location   string
-	DetectDirs []string
+	Slug     string
+	Name     string
+	Location string
+	// CoveredBy names the target slug whose projection this client reads.
+	CoveredBy string
+	// The client is detected when any DetectDirs entry is a directory or
+	// any DetectFiles entry is a regular file.
+	DetectDirs  []string
+	DetectFiles []string
 }
 
 // Targets returns the projection targets in display order.
 func Targets() []Target {
 	return []Target{
 		{
-			Slug:         "claude-code",
-			Name:         "Claude Code",
-			SettingsPath: "~/.claude/settings.json",
-			DetectDirs:   []string{"~/.claude"},
+			Slug:        "claude-code",
+			Name:        "Claude Code",
+			Path:        "~/.claude/settings.json",
+			DetectDirs:  []string{"~/.claude"},
+			Channel:     ChannelMergeKey,
+			RenderClass: RenderIdentity,
+		},
+		{
+			Slug:        "opencode",
+			Name:        "OpenCode",
+			Path:        "~/.config/opencode/plugins/gridctl-hook-" + nameToken + ".ts",
+			DetectDirs:  []string{"~/.config/opencode"},
+			Channel:     ChannelDedicatedFile,
+			RenderClass: RenderLossy,
+			Render:      renderOpenCode,
 		},
 	}
 }
 
 // UnsupportedClients returns clients that have a hook mechanism and no
-// target in this release, in display order. Location is the native path
-// named in skipped-unsupported rows and the stderr note.
+// target, in display order. Location is the native path named in
+// skipped-unsupported rows and the stderr note. A covered client reads
+// the CoveredBy target's projection.
 func UnsupportedClients() []UnsupportedClient {
 	return []UnsupportedClient{
-		{Slug: "gemini", Name: "Gemini CLI", Location: "~/.gemini/settings.json hooks key", DetectDirs: []string{"~/.gemini"}},
-		{Slug: "cursor", Name: "Cursor", Location: "~/.cursor/hooks.json", DetectDirs: []string{"~/.cursor"}},
+		{Slug: "gemini", Name: "Gemini CLI", Location: "~/.gemini/settings.json hooks key", DetectFiles: []string{"~/.gemini/settings.json"}},
+		{Slug: "cursor", Name: "Cursor", Location: "reads ~/.claude/settings.json hooks (Cursor Settings → Agents → Third-Party Imports, on by default)", CoveredBy: "claude-code", DetectDirs: []string{"~/.cursor"}},
 		{Slug: "copilot", Name: "GitHub Copilot", Location: "~/.copilot/hooks/*.json", DetectDirs: []string{"~/.copilot"}},
-		{Slug: "windsurf", Name: "Windsurf", Location: "~/.codeium/windsurf/hooks.json", DetectDirs: []string{"~/.codeium/windsurf"}},
+		{Slug: "windsurf", Name: "Windsurf (Devin Local)", Location: "~/.config/devin/config.json hooks key; reads ~/.claude/settings.json hooks when read_config_from.claude is on (default)", CoveredBy: "claude-code", DetectDirs: []string{"~/.codeium/windsurf", "~/.config/devin", "~/.devin"}},
 		{Slug: "antigravity", Name: "Antigravity", Location: "~/.gemini/config/hooks.json", DetectDirs: []string{"~/.gemini/config", "~/.gemini/antigravity"}},
-		{Slug: "opencode", Name: "OpenCode", Location: "plugins only (~/.config/opencode/plugins/)", DetectDirs: []string{"~/.config/opencode"}},
 	}
+}
+
+// Detail is the skipped-unsupported row detail: the native location, and
+// for a covered client the target whose projection it reads.
+func (c UnsupportedClient) Detail() string {
+	if c.CoveredBy == "" {
+		return c.Location
+	}
+	return "covered by the " + c.CoveredBy + " projection; " + c.Location
+}
+
+// CoveredNote is the stderr note for a detected client. A covered client
+// names the projection it reads; any other names its native location.
+func (c UnsupportedClient) CoveredNote() string {
+	if c.CoveredBy != "" {
+		path := c.CoveredBy
+		if t, ok := FindTarget(c.CoveredBy); ok {
+			path = t.Path
+		}
+		return fmt.Sprintf("note: %s reads the %s projection (%s); no separate target", c.Slug, c.CoveredBy, path)
+	}
+	return fmt.Sprintf("note: %s (%s) has a hook mechanism but is not a projection target in this release", c.Slug, c.Location)
 }
 
 // FindTarget returns the projection target for slug.
@@ -130,21 +190,30 @@ func expandHome(home, template string) string {
 	return template
 }
 
-func (t Target) settingsPath(home string) string {
-	return expandHome(home, t.SettingsPath)
+// PathFor returns the target's destination for one hook: the shared
+// settings file for a merge-key target, the hook's own file otherwise.
+func (t Target) PathFor(home, hookName string) string {
+	return expandHome(home, strings.ReplaceAll(t.Path, nameToken, hookName))
 }
 
 func (t Target) available(home string) bool {
-	for _, d := range t.DetectDirs {
-		if info, err := os.Stat(expandHome(home, d)); err == nil && info.IsDir() {
+	return anyDir(home, t.DetectDirs)
+}
+
+func (c UnsupportedClient) detected(home string) bool {
+	if anyDir(home, c.DetectDirs) {
+		return true
+	}
+	for _, f := range c.DetectFiles {
+		if info, err := os.Stat(expandHome(home, f)); err == nil && info.Mode().IsRegular() {
 			return true
 		}
 	}
 	return false
 }
 
-func (c UnsupportedClient) detected(home string) bool {
-	for _, d := range c.DetectDirs {
+func anyDir(home string, dirs []string) bool {
+	for _, d := range dirs {
 		if info, err := os.Stat(expandHome(home, d)); err == nil && info.IsDir() {
 			return true
 		}
@@ -203,8 +272,8 @@ func (m *Manager) HasProjections(ctx context.Context) (bool, error) {
 	return len(lf.Records) > 0, nil
 }
 
-// DetectedUnsupported returns unsupported clients whose detect directory
-// exists under the manager home. The CLI prints one stderr note per row
+// DetectedUnsupported returns unsupported clients detected under the
+// manager home. The CLI prints one stderr note per row
 // when sync was not given --clients. Pack apply turns the same list into
 // skipped-unsupported rows.
 func (m *Manager) DetectedUnsupported() []UnsupportedClient {
@@ -217,7 +286,16 @@ func (m *Manager) DetectedUnsupported() []UnsupportedClient {
 	return out
 }
 
-// scriptDirFor is the gridctl-owned copy of one hook's scripts.
-func scriptDirFor(home, name string) string {
-	return filepath.Join(home, ".gridctl", "hooks", name)
+// scriptDirFor is the gridctl-owned copy of one hook's scripts for one
+// client. Claude Code keeps ~/.gridctl/hooks/<name>/; every other target
+// owns ~/.gridctl/hooks/<name>@<client>/. "@" is outside the hook name
+// charset, so no hook's copy collides with another hook's per-client copy.
+// Each (hook, client) record owns the directory it names, so syncing one
+// client never changes the bytes another client runs.
+func scriptDirFor(home, name, client string) string {
+	dir := name
+	if client != "claude-code" {
+		dir = name + "@" + client
+	}
+	return filepath.Join(home, ".gridctl", "hooks", dir)
 }

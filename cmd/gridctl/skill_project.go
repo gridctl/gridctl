@@ -109,11 +109,17 @@ copy) plus lossy rendered dialects for 'opencode', 'copilot', and
 'gemini'; dropped frontmatter keys are named in sync output, and adopt
 is refused on rendered targets.
 
-Hook targets (--kind hook): 'claude-code' (~/.claude/settings.json).
-Scripts are copied to ~/.gridctl/hooks/<name>/ and matcher groups are
-patched into the settings file in exec form. Gemini CLI, Cursor,
-Copilot, Windsurf, Antigravity, and OpenCode are reported and not
-written. Adopt is refused.
+Hook targets (--kind hook): 'claude-code' (~/.claude/settings.json,
+matcher groups patched in exec form, scripts copied to
+~/.gridctl/hooks/<name>/) and 'opencode'
+(~/.config/opencode/plugins/gridctl-hook-<name>.ts, a generated plugin
+that runs the pinned script, scripts copied to
+~/.gridctl/hooks/<name>@opencode/). OpenCode carries PreToolUse and
+PostToolUse groups only; other groups are named in the row detail, and
+a hook with none is skipped-unexpressible. Cursor and Windsurf (Devin
+Local) read the claude-code projection and have no separate target.
+Gemini CLI, Copilot, and Antigravity are reported and not written.
+--copy does not apply to hooks. Adopt is refused.
 
 The MCP prompt channel is unchanged: clients that render prompts
 (Gemini CLI, Cursor, Windsurf) keep receiving skills that way.`,
@@ -121,7 +127,8 @@ The MCP prompt channel is unchanged: clients that render prompts
   gridctl skill project sync my-skill --clients claude-code
   gridctl skill project sync                        Re-sync the projected set
   gridctl skill project sync --kind agent           Project every imported agent
-  gridctl skill project sync --kind hook            Project imported hooks to Claude Code
+  gridctl skill project sync --kind hook            Project imported hooks to every detected hook target
+  gridctl skill project sync --kind hook --clients opencode   Project hooks to OpenCode only
   gridctl skill project status                      Per-projection state (skills, agents, and hooks)
   gridctl skill project adopt my-skill --client antigravity   Pull a hand edit back
   gridctl skill project unsync --all                Remove every projection`,
@@ -412,7 +419,7 @@ func init() {
 	skillProjectUnsyncCmd.Flags().BoolVar(&skillProjectUnsyncAll, "all", false, "Remove every projection")
 	skillProjectUnsyncCmd.Flags().StringSliceVar(&skillProjectUnsyncClients, "clients", nil, "Only remove projections for these client slugs")
 	skillProjectUnsyncCmd.Flags().BoolVar(&skillProjectUnsyncDryRun, "dry-run", false, "Show what would be removed without writing")
-	skillProjectUnsyncCmd.Flags().BoolVar(&skillProjectUnsyncForce, "force", false, "Remove hand-edited hook groups (hooks only; other kinds ignore this flag)")
+	skillProjectUnsyncCmd.Flags().BoolVar(&skillProjectUnsyncForce, "force", false, "Remove hand-edited hook groups or hook files (hooks only; other kinds ignore this flag)")
 	skillProjectUnsyncCmd.Flags().StringVar(&skillProjectUnsyncFormat, "format", "", "Output format: 'json' for machine-readable output (default: text)")
 	skillProjectUnsyncCmd.Flags().StringVar(&skillProjectUnsyncKind, "kind", "skill", "Resource kind to unsync: skill, agent, or hook")
 	skillProjectUnsyncJSON = addJSONAlias(skillProjectUnsyncCmd)

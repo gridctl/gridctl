@@ -77,7 +77,12 @@ func TestRunPackApply_UnsupportedHookExitsZero(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// Gemini CLI is detected by its settings file, not by ~/.gemini,
+	// which is also the parent of every Antigravity location.
 	if err := os.MkdirAll(filepath.Join(home, ".gemini"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".gemini", "settings.json"), []byte("{}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	dir := filepath.Join(home, ".gridctl", "registry", "hooks", "block")
