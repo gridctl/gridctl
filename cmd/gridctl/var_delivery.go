@@ -158,7 +158,11 @@ func runVarExplain(cmd *cobra.Command, key, format, stackFile string) (int, erro
 		doc.Verdict, doc.Problems = &verdict, []string{problem}
 	} else if store.IsLocked() {
 		doc.ConsumerCoverage = "partial"
-		doc.Problems = append(doc.Problems, "store is locked; stored metadata and resolution are unknown")
+		var unlockedIn []string
+		if gateways, err := runningGatewayVarStates(cmd.Context()); err == nil {
+			unlockedIn = unlockedGatewayNames(gateways)
+		}
+		doc.Problems = append(doc.Problems, lockedExplainProblem(unlockedIn))
 	} else {
 		v, stored := store.GetVariable(key)
 		doc.Stored = &stored

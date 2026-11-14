@@ -47,6 +47,9 @@ type statusGatewayJSON struct {
 	// BinaryVersion is the gridctl version the daemon recorded. Empty in
 	// state files written before the field existed. Additive (Article VIII).
 	BinaryVersion string `json:"binary_version,omitempty"`
+	// Variables is the daemon's variable-store state from /api/var/status.
+	// Omitted when the gateway is stopped or the read fails. Additive.
+	Variables *gatewayVarStatus `json:"variables,omitempty"`
 }
 
 // statusContainerJSON is one container entry of `gridctl status --json`.
@@ -153,8 +156,13 @@ func runStatus(stack string, showReplicas, asJSON, plain bool) error {
 		var authWarn string
 		var toolDiscovery string
 		var statusReached bool
+		var variables *gatewayVarStatus
 		if status == "running" {
 			gw.CodeMode, toolDiscovery, features, extensions, override, authWarn, statusReached = queryGatewayStatus(s.Port)
+			if vs, err := readGatewayVarStatus(context.Background(), s); err == nil {
+				variables = &vs
+				gw.Vars = vs.label()
+			}
 		}
 		if authWarn != "" {
 			printer.Warn(authWarn, "stack", s.StackName)
@@ -172,6 +180,7 @@ func runStatus(stack string, showReplicas, asJSON, plain bool) error {
 			Extensions:    extensions,
 			Override:      override,
 			BinaryVersion: s.BinaryVersion,
+			Variables:     variables,
 		})
 		if !asJSON && status == "running" && s.BinaryVersion != "" && s.BinaryVersion != version {
 			line := restartLineForStatus(s, override, !statusReached)

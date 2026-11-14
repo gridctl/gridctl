@@ -601,8 +601,9 @@ func checkVault(ctx context.Context, checks *[]doctorCheck) {
 		return
 	}
 	switch {
-	case store.IsLocked():
-		*checks = append(*checks, doctorCheck{ID: "vault", Status: doctorStatusInfo, Message: "vault is locked (encrypted at rest); unlock via the web UI or GRIDCTL_VAULT_PASSPHRASE"})
+	case store.IsEncrypted():
+		gateways, _ := runningGatewayVarStates(ctx)
+		*checks = append(*checks, doctorCheck{ID: "vault", Status: doctorStatusInfo, Message: vaultDoctorMessage(gateways)})
 	case len(store.Keys()) > 0:
 		*checks = append(*checks, doctorCheck{ID: "vault", Status: doctorStatusInfo, Message: fmt.Sprintf("vault is unlocked (%d variable(s), plaintext on disk)", len(store.Keys()))})
 	default:

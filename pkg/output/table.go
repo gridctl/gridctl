@@ -28,6 +28,9 @@ type GatewaySummary struct {
 	// Version is the gridctl binary the daemon recorded. Empty for state
 	// files written before binary_version.
 	Version string
+	// Vars is the gateway's variable-store state: "plaintext", "locked",
+	// "unlocked (<source>)", or "unlocked". Empty renders as "-".
+	Vars string
 }
 
 // MCPServerRollup is one row of the rolled-up MCP-servers table shown by
@@ -131,9 +134,9 @@ func (p *Printer) Gateways(gateways []GatewaySummary) {
 	}
 
 	if hasCodeMode {
-		t.AppendHeader(table.Row{"Name", "Port", "PID", "Status", "Version", "Code Mode", "Started"})
+		t.AppendHeader(table.Row{"Name", "Port", "PID", "Status", "Version", "Vars", "Code Mode", "Started"})
 	} else {
-		t.AppendHeader(table.Row{"Name", "Port", "PID", "Status", "Version", "Started"})
+		t.AppendHeader(table.Row{"Name", "Port", "PID", "Status", "Version", "Vars", "Started"})
 	}
 
 	for _, g := range gateways {
@@ -141,10 +144,14 @@ func (p *Printer) Gateways(gateways []GatewaySummary) {
 		if p.cellColor() {
 			status = colorState(g.Status)
 		}
+		vars := g.Vars
+		if vars == "" {
+			vars = "-"
+		}
 		if hasCodeMode {
-			t.AppendRow(table.Row{g.Name, g.Port, g.PID, status, g.Version, g.CodeMode, g.Started})
+			t.AppendRow(table.Row{g.Name, g.Port, g.PID, status, g.Version, vars, g.CodeMode, g.Started})
 		} else {
-			t.AppendRow(table.Row{g.Name, g.Port, g.PID, status, g.Version, g.Started})
+			t.AppendRow(table.Row{g.Name, g.Port, g.PID, status, g.Version, vars, g.Started})
 		}
 	}
 
