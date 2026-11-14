@@ -29,6 +29,9 @@ interface VaultState {
   error: string | null;
   locked: boolean;
   encrypted: boolean;
+  // unlockSource is how the gateway unlocked an encrypted store, or null
+  // when locked, plaintext, or unrecorded.
+  unlockSource: string | null;
 
   setVariables: (variables: Variable[]) => void;
   setSets: (sets: VariableSet[]) => void;
@@ -40,6 +43,7 @@ interface VaultState {
   setError: (error: string | null) => void;
   setLocked: (locked: boolean) => void;
   setEncrypted: (encrypted: boolean) => void;
+  setUnlockSource: (source: string | null) => void;
 }
 
 export const useVaultStore = create<VaultState>()((set) => ({
@@ -53,6 +57,7 @@ export const useVaultStore = create<VaultState>()((set) => ({
   error: null,
   locked: false,
   encrypted: false,
+  unlockSource: null,
 
   setVariables: (variables) => set({ variables: variables ?? [], error: null }),
   setSets: (sets) => set({ sets: sets ?? [] }),
@@ -81,8 +86,10 @@ export const useVaultStore = create<VaultState>()((set) => ({
             usageLoaded: false,
             drift: [],
             recentlyEdited: {},
+            unlockSource: null,
           }
         : { locked },
     ),
   setEncrypted: (encrypted) => set({ encrypted }),
+  setUnlockSource: (unlockSource) => set({ unlockSource }),
 }));

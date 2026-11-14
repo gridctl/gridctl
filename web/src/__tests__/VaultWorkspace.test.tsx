@@ -29,6 +29,7 @@ vi.mock('../lib/api', async () => {
       .mockResolvedValue({ locked: false, encrypted: false }),
     unlockVariableStore: vi.fn().mockResolvedValue(undefined),
     lockVariableStore: vi.fn().mockResolvedValue(undefined),
+    relockVariableStore: vi.fn().mockResolvedValue({ status: 'locked' }),
     importVariables: vi.fn().mockResolvedValue({ imported: 0 }),
   };
 });
@@ -587,6 +588,120 @@ describe('VaultWorkspace — unencrypted secrets banner', () => {
     expect(
       screen.queryByText(/secret values are stored unencrypted/i),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('VaultWorkspace — Lock action', () => {
+  const variables = [{ key: 'API_KEY', type: 'string' as const, is_secret: true }];
+
+  function seed(encrypted: boolean, unlockSource: string | null = null) {
+    vi.mocked(api.fetchVariableStoreStatus).mockResolvedValue({
+      locked: false,
+      encrypted,
+      ...(unlockSource ? { unlock_source: unlockSource } : {}),
+    });
+    vi.mocked(api.fetchVariables).mockResolvedValue(variables);
+    vi.mocked(api.fetchVariableSets).mockResolvedValue([]);
+    vi.mocked(api.fetchVariableUsage).mockResolvedValue({});
+    vi.mocked(api.lockVariableStore).mockClear();
+    vi.mocked(api.relockVariableStore).mockClear();
+    useVaultStore.setState({
+      variables,
+      sets: [],
+      usage: {},
+      usageLoaded: true,
+      recentlyEdited: {},
+      loading: false,
+      error: null,
+      locked: false,
+      encrypted,
+      unlockSource,
+    });
+  }
+
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
+  it('relocks an encrypted store directly without opening a passphrase form', async () => {
+    seed(true, 'stdin');
+    renderWithToasts();
+    const lockBtn = await screen.findByRole('button', { name: 'Lock variables' });
+    // After relock the gateway reports the store locked.
+    vi.mocked(api.fetchVariableStoreStatus).mockResolvedValue({ locked: true, encrypted: true });
+    await act(async () => {
+      fireEvent.click(lockBtn);
+    });
+    expect(api.relockVariableStore).toHaveBeenCalledTimes(1);
+    expect(api.lockVariableStore).not.toHaveBeenCalled();
+    expect(screen.queryByPlaceholderText('New passphrase')).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Confirm passphrase')).not.toBeInTheDocument();
+    expect(await screen.findByPlaceholderText('Enter passphrase')).toBeInTheDocument();
+    const notifications = screen.getByRole('region', { name: 'Notifications' });
+    const toast = within(notifications).getByText('Variables locked');
+    // Toasts are module-global; dismiss so later tests start clean.
+    fireEvent.click(within(toast.closest('[role="status"]') as HTMLElement).getByRole('button', { name: 'Dismiss' }));
+    await waitFor(() =>
+      expect(within(notifications).queryByText('Variables locked')).not.toBeInTheDocument(),
+    );
+  });
+
+  it('does not report locked when the gateway was already locked', async () => {
+    seed(true);
+    vi.mocked(api.relockVariableStore).mockResolvedValueOnce({ status: 'already_locked' });
+    renderWithToasts();
+    const lockBtn = await screen.findByRole('button', { name: 'Lock variables' });
+    vi.mocked(api.fetchVariableStoreStatus).mockResolvedValue({ locked: true, encrypted: true });
+    await act(async () => {
+      fireEvent.click(lockBtn);
+    });
+    await screen.findByPlaceholderText('Enter passphrase');
+    expect(api.relockVariableStore).toHaveBeenCalledTimes(1);
+    const notifications = screen.getByRole('region', { name: 'Notifications' });
+    expect(within(notifications).queryByText('Variables locked')).not.toBeInTheDocument();
+  });
+
+  it('opens the encrypt form on a plaintext store and posts /api/var/lock', async () => {
+    seed(false);
+    renderWorkspace();
+    const header = (await screen.findByText('variables')).closest('header')!;
+    const encryptBtn = within(header).getByRole('button', { name: /^encrypt$/i });
+    fireEvent.click(encryptBtn);
+    fireEvent.change(await screen.findByPlaceholderText('New passphrase'), {
+      target: { value: 'long-enough-passphrase' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('Confirm passphrase'), {
+      target: { value: 'long-enough-passphrase' },
+    });
+    expect(screen.getByText(/set a passphrase to encrypt/i)).toBeInTheDocument();
+    expect(screen.queryByText(/re-enter passphrase to lock/i)).not.toBeInTheDocument();
+    const submit = screen
+      .getAllByRole('button', { name: /^encrypt$/i })
+      .find((b) => !header.contains(b))!;
+    await act(async () => {
+      fireEvent.click(submit);
+    });
+    expect(api.lockVariableStore).toHaveBeenCalledWith('long-enough-passphrase');
+    expect(api.relockVariableStore).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['stdin', 'Unlocked by prompt'],
+    ['environment', 'Unlocked by environment'],
+    ['passphrase_file', 'Unlocked by passphrase file'],
+    ['api', 'Unlocked through the API'],
+    ['cli', 'Unlocked by gridctl var unlock'],
+  ])('shows the unlock source %s in the header', async (source, label) => {
+    seed(true, source);
+    renderWorkspace();
+    expect(await screen.findByText(label)).toBeInTheDocument();
+  });
+
+  it('shows no unlock source when none is recorded', async () => {
+    seed(true);
+    renderWorkspace();
+    await screen.findByRole('button', { name: 'Lock variables' });
+    expect(screen.queryByText(/^Unlocked /)).not.toBeInTheDocument();
   });
 });
 

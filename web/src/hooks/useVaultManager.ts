@@ -17,6 +17,7 @@ import {
   isFeatureUnavailable,
   unlockVariableStore,
   lockVariableStore,
+  relockVariableStore,
   importVariables,
 } from '../lib/api';
 import type {
@@ -62,11 +63,16 @@ export interface UseVaultManagerResult {
   error: string | null;
   locked: boolean;
   encrypted: boolean;
+  unlockSource: string | null;
 
   // Actions
   refresh: () => Promise<void>;
   unlock: (passphrase: string) => Promise<UnlockResult>;
+  // lock encrypts a plaintext store with a new passphrase.
   lock: (passphrase: string) => Promise<void>;
+  // relock ends the unlocked session on an already encrypted store and
+  // resolves to the gateway's status ("locked" or "already_locked").
+  relock: () => Promise<string>;
   createVar: (input: CreateVariableInput) => Promise<void>;
   updateVar: (key: string, input: UpdateVariableInput) => Promise<void>;
   deleteVar: (key: string) => Promise<void>;
@@ -97,6 +103,7 @@ export function useVaultManager(
   const error = useVaultStore((s) => s.error);
   const locked = useVaultStore((s) => s.locked);
   const encrypted = useVaultStore((s) => s.encrypted);
+  const unlockSource = useVaultStore((s) => s.unlockSource);
 
   const onPlaintextLoaded = options?.onPlaintextLoaded;
 
@@ -107,6 +114,7 @@ export function useVaultManager(
       const status = await fetchVariableStoreStatus();
       useVaultStore.getState().setLocked(status.locked);
       useVaultStore.getState().setEncrypted(status.encrypted);
+      useVaultStore.getState().setUnlockSource(status.unlock_source || null);
 
       if (!status.locked) {
         // Usage is best-effort and parallel: a failure must not break the
@@ -200,6 +208,12 @@ export function useVaultManager(
     [refresh],
   );
 
+  const relock = useCallback(async (): Promise<string> => {
+    const result = await relockVariableStore();
+    await refresh();
+    return result.status;
+  }, [refresh]);
+
   const createVar = useCallback(
     async (input: CreateVariableInput) => {
       await createVariable(input);
@@ -278,9 +292,11 @@ export function useVaultManager(
     error,
     locked,
     encrypted,
+    unlockSource,
     refresh,
     unlock,
     lock,
+    relock,
     createVar,
     updateVar,
     deleteVar,
