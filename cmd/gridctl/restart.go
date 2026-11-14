@@ -5,17 +5,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/controller"
 	"github.com/gridctl/gridctl/pkg/project"
 	"github.com/gridctl/gridctl/pkg/service"
 	"github.com/gridctl/gridctl/pkg/state"
+	"github.com/gridctl/gridctl/pkg/vault"
 )
 
 const (
@@ -40,6 +46,10 @@ type restartPlan struct {
 	Notes []string
 	Spec  *service.Spec
 	Steps [][]string
+
+	// daemon is the recorded state of a plain or stackless daemon, used to
+	// read its variable store status before any step runs.
+	daemon *state.DaemonState
 }
 
 // buildRestartPlan is pure. entry is the service lookup result (nil when
@@ -294,7 +304,12 @@ func (u *upgrader) daemonPlans(ctx context.Context) ([]restartPlan, error) {
 			}
 		}
 		override, unread := u.readOverride(ctx, st)
-		plans = append(plans, buildRestartPlan(st, entry, override, unread, goos))
+		plan := buildRestartPlan(st, entry, override, unread, goos)
+		if plan.Spec == nil {
+			daemon := st
+			plan.daemon = &daemon
+		}
+		plans = append(plans, plan)
 	}
 	return plans, nil
 }
@@ -375,13 +390,26 @@ func readDaemonOverride(st state.DaemonState) (string, bool) {
 }
 
 func (u *upgrader) executeRestart(ctx context.Context, exePath string, plans []restartPlan) error {
-	var restarted []string
+	handoff, err := u.prepareVaultHandoff(ctx, exePath, plans)
+	if err != nil {
+		return u.restartStopped(nil, plans, err)
+	}
+	var restarted, refused []string
 	for i, plan := range plans {
 		if err := ctx.Err(); err != nil {
 			return u.restartStopped(restarted, plans[i:], err)
 		}
+		if reason, ok := handoff.refused[i]; ok {
+			fmt.Fprintf(u.stderr, "Not restarted: %s (%s)\n", plan.Name, reason)
+			refused = append(refused, plan.Name)
+			continue
+		}
+		pass := ""
+		if handoff.needs[i] {
+			pass = handoff.passphrase
+		}
 		fmt.Fprintf(u.stdout, "Restarting %s\n", plan.Name)
-		if err := u.restartOne(ctx, exePath, plan); err != nil {
+		if err := u.restartOne(ctx, exePath, plan, pass); err != nil {
 			fmt.Fprintf(u.stderr, "Not restarted: %s (%v)\n", plan.Name, err)
 			for _, later := range plans[i+1:] {
 				fmt.Fprintf(u.stderr, "Not restarted: %s (not attempted)\n", later.Name)
@@ -394,7 +422,140 @@ func (u *upgrader) executeRestart(ctx context.Context, exePath string, plans []r
 		restarted = append(restarted, plan.Name)
 		fmt.Fprintf(u.stdout, "Restarted %s\n", plan.Name)
 	}
+	if len(refused) > 0 {
+		if len(restarted) > 0 {
+			fmt.Fprintf(u.stdout, "Restarted: %s\n", strings.Join(restarted, ", "))
+		}
+		return fmt.Errorf("not restarted: %s", strings.Join(refused, ", "))
+	}
 	return nil
+}
+
+const (
+	restartRefusedNoPassphrase = "store is unlocked in the daemon and no passphrase is available here; set GRIDCTL_VAULT_PASSPHRASE_FILE or run in a terminal" // #nosec G101 -- message text, not a secret value
+	restartRefusedNoCapability = "target gridctl does not accept --passphrase-stdin; set GRIDCTL_VAULT_PASSPHRASE_FILE to restart it"                          // #nosec G101 -- message text, not a secret value
+)
+
+// vaultHandoff is the outcome of the pre-restart variable store check.
+// needs marks plans whose apply or serve step gets the passphrase on stdin;
+// refused maps a plan index to the reason it is skipped.
+type vaultHandoff struct {
+	passphrase string
+	needs      map[int]bool
+	refused    map[int]string
+}
+
+// restartPrompt prompts for the store passphrase on the terminal and
+// verifies it against store. Tests replace it.
+var restartPrompt = func(ctx context.Context, store *vault.Store, out io.Writer) (string, error) {
+	return controller.PromptPassphrase(ctx, store, os.Stdin, out)
+}
+
+// prepareVaultHandoff runs before any destroy. A plain or stackless daemon
+// that holds an encrypted store unlocked would come back locked unless the
+// new process gets the passphrase. The environment is inherited, so it
+// needs nothing more. Otherwise the target binary must accept
+// --passphrase-stdin, and on a terminal the passphrase is prompted for once
+// and verified. With a target that predates the flag, or without a
+// terminal, the daemon is refused and left running. A status read failure
+// is a note and the plan runs as before.
+func (u *upgrader) prepareVaultHandoff(ctx context.Context, exePath string, plans []restartPlan) (vaultHandoff, error) {
+	h := vaultHandoff{needs: map[int]bool{}, refused: map[int]string{}}
+	if os.Getenv("GRIDCTL_VAULT_PASSPHRASE") != "" || os.Getenv(vault.PassphraseFileEnv) != "" {
+		return h, nil
+	}
+	for i, plan := range plans {
+		if plan.Spec != nil || plan.daemon == nil {
+			continue
+		}
+		encrypted, locked, err := readDaemonVaultStatus(ctx, *plan.daemon)
+		if err != nil {
+			fmt.Fprintf(u.stderr, "note: could not read the variable store status of %s (%v); restarting it as before\n", plan.Name, err)
+			continue
+		}
+		if encrypted && !locked {
+			h.needs[i] = true
+		}
+	}
+	if len(h.needs) == 0 {
+		return h, nil
+	}
+	refuseAll := func(reason string) (vaultHandoff, error) {
+		for i := range h.needs {
+			h.refused[i] = reason
+		}
+		h.needs = map[int]bool{}
+		return h, nil
+	}
+	// The capability is checked first: a target that predates the flag
+	// cannot restart the daemon even from a terminal, so its refusal names
+	// the passphrase file, which works either way.
+	if !targetAcceptsPassphraseStdin(ctx, exePath) {
+		return refuseAll(restartRefusedNoCapability)
+	}
+	if u.isTTY == nil || !u.isTTY() {
+		return refuseAll(restartRefusedNoPassphrase)
+	}
+	store, err := loadVault()
+	if err != nil {
+		return h, err
+	}
+	if !store.IsLocked() {
+		// The local store is not encrypted, so there is nothing to verify
+		// against; a daemon that reported encrypted is refused.
+		return refuseAll(restartRefusedNoPassphrase)
+	}
+	promptCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	pass, err := restartPrompt(promptCtx, store, u.stderr)
+	if err != nil {
+		return h, err
+	}
+	h.passphrase = pass
+	return h, nil
+}
+
+// readDaemonVaultStatus reads /api/var/status from a running daemon.
+func readDaemonVaultStatus(ctx context.Context, st state.DaemonState) (encrypted, locked bool, err error) {
+	if err := ctx.Err(); err != nil {
+		return false, false, err
+	}
+	api := newDaemonAPIFor(st, 2*time.Second)
+	resp, err := api.Get(api.URL("/api/var/status"))
+	if err != nil {
+		return false, false, err
+	}
+	defer resp.Body.Close()
+	if authErr := api.describeUnauthorized(resp); authErr != nil {
+		return false, false, authErr
+	}
+	if resp.StatusCode != http.StatusOK {
+		return false, false, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	var body struct {
+		Encrypted bool `json:"encrypted"`
+		Locked    bool `json:"locked"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return false, false, err
+	}
+	return body.Encrypted, body.Locked, nil
+}
+
+// targetAcceptsPassphraseStdin probes the target binary once with
+// "apply --help". A binary that predates --passphrase-stdin would reject
+// the flag only after destroy had already stopped the daemon.
+func targetAcceptsPassphraseStdin(ctx context.Context, exePath string) bool {
+	probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	// #nosec G204 -- exePath is the binary just installed; argv is fixed.
+	cmd := exec.CommandContext(probeCtx, exePath, "apply", "--help")
+	cmd.Env = os.Environ()
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "--passphrase-stdin")
 }
 
 func (u *upgrader) restartStopped(restarted []string, remaining []restartPlan, err error) error {
@@ -407,16 +568,24 @@ func (u *upgrader) restartStopped(restarted []string, remaining []restartPlan, e
 	return err
 }
 
-func (u *upgrader) restartOne(ctx context.Context, exePath string, plan restartPlan) error {
+// restartOne runs one plan. A non-empty passphrase goes to each apply or
+// serve step on a stdin pipe with --passphrase-stdin, never in argv or env.
+func (u *upgrader) restartOne(ctx context.Context, exePath string, plan restartPlan, passphrase string) error {
 	if plan.Spec != nil {
 		return restartSupervisor().Restart(ctx, *plan.Spec)
 	}
 	for _, args := range plan.Steps {
+		if passphrase != "" && len(args) > 0 && (args[0] == "apply" || args[0] == "serve") {
+			args = append(append([]string{}, args...), "--passphrase-stdin")
+		}
 		// #nosec G204 -- exePath is the binary just installed; argv is destroy, apply, or serve.
 		cmd := exec.CommandContext(ctx, exePath, args...)
 		cmd.Env = os.Environ()
 		cmd.Stdout = u.stdout
 		cmd.Stderr = u.stderr
+		if slices.Contains(args, "--passphrase-stdin") {
+			cmd.Stdin = strings.NewReader(passphrase + "\n")
+		}
 		if err := cmd.Run(); err != nil {
 			return err
 		}
