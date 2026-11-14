@@ -24,6 +24,10 @@ type Store struct {
 	locked     bool   // true when secrets.enc exists and vault is not unlocked
 	encrypted  bool   // true when vault was loaded from secrets.enc (re-encrypt on save)
 	passphrase string // held in memory for re-encryption after modifications
+	// unlockSource records how an encrypted store was unlocked in this
+	// process (one of the UnlockSource* constants). Empty when locked,
+	// plaintext, or unlocked by a caller that did not record a source.
+	unlockSource string
 	// Cached mtime/size of the backing file; gates reload-on-read so external
 	// writes (e.g. CLI vault commands while the daemon is up) are picked up.
 	mtime time.Time
@@ -78,6 +82,7 @@ func (s *Store) Load() error {
 	s.sets = make(map[string]Set)
 	s.locked = false
 	s.encrypted = false
+	s.unlockSource = ""
 	s.mtime = time.Time{}
 	s.size = 0
 
@@ -746,6 +751,58 @@ func (s *Store) Unlock(passphrase string) error {
 	})
 }
 
+// Relock ends an unlocked session in memory: it drops the variables, sets,
+// passphrase, and unlock source and marks an encrypted store locked. The
+// backing file is not touched. A plaintext store returns ErrNotEncrypted;
+// an already locked store is a no-op that reports false.
+func (s *Store) Relock() (bool, error) {
+	var relocked bool
+	err := state.WithLock("vault", 5*time.Second, func() error {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.reloadOrWarn()
+
+		if !s.encrypted {
+			return ErrNotEncrypted
+		}
+		if s.locked {
+			return nil
+		}
+		s.locked = true
+		s.passphrase = ""
+		s.unlockSource = ""
+		s.variables = make(map[string]Variable)
+		s.sets = make(map[string]Set)
+		relocked = true
+		return nil
+	})
+	return relocked, err
+}
+
+// UnlockSource reports how the store was unlocked in this process, or ""
+// when it is locked, plaintext, or the unlocking caller recorded no source.
+func (s *Store) UnlockSource() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadOrWarn()
+	if !s.encrypted || s.locked {
+		return ""
+	}
+	return s.unlockSource
+}
+
+// SetUnlockSource records how an encrypted, unlocked store was unlocked.
+// Unlock sites call it after a successful Unlock or Lock. It is ignored on a
+// locked or plaintext store so a stale source can never outlive the session.
+func (s *Store) SetUnlockSource(source string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.encrypted || s.locked {
+		return
+	}
+	s.unlockSource = source
+}
+
 // ChangePassphrase re-encrypts the DEK with a new passphrase.
 func (s *Store) ChangePassphrase(oldPass, newPass string) error {
 	if !s.encrypted {
@@ -904,6 +961,7 @@ func (s *Store) reloadIfChanged() error {
 			s.encrypted = true
 			s.locked = true
 			s.passphrase = ""
+			s.unlockSource = ""
 			s.variables = make(map[string]Variable)
 			s.sets = make(map[string]Set)
 			s.mtime = info.ModTime()
@@ -930,6 +988,7 @@ func (s *Store) reloadIfChanged() error {
 			s.encrypted = false
 			s.locked = false
 			s.passphrase = ""
+			s.unlockSource = ""
 			return s.loadLocked()
 		}
 		if !info.ModTime().After(s.mtime) && info.Size() == s.size {

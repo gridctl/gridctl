@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"golang.org/x/crypto/argon2"
@@ -59,6 +60,10 @@ func Encrypt(key, plaintext []byte) (nonce, ciphertext []byte, err error) {
 	return nonce, ciphertext, nil
 }
 
+// ErrWrongPassphrase is returned when authenticated decryption fails, which
+// means a wrong passphrase or a corrupted file.
+var ErrWrongPassphrase = errors.New("wrong passphrase or corrupted vault")
+
 // Decrypt decrypts ciphertext with XChaCha20-Poly1305.
 func Decrypt(key, nonce, ciphertext []byte) ([]byte, error) {
 	aead, err := chacha20poly1305.NewX(key)
@@ -68,7 +73,7 @@ func Decrypt(key, nonce, ciphertext []byte) ([]byte, error) {
 
 	plaintext, err := aead.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		return nil, fmt.Errorf("wrong passphrase or corrupted vault")
+		return nil, ErrWrongPassphrase
 	}
 
 	return plaintext, nil
