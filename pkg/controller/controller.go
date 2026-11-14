@@ -42,6 +42,12 @@ func (a *vaultSetAdapter) Get(key string) (string, bool) {
 	return a.store.Get(key)
 }
 
+// IsLocked forwards the store's locked state so the loader reads the same
+// answer from either lookup.
+func (a *vaultSetAdapter) IsLocked() bool {
+	return a.store.IsLocked()
+}
+
 func (a *vaultSetAdapter) GetSetSecrets(setName string) []config.VaultSecret {
 	secrets := a.store.GetSetSecrets(setName)
 	result := make([]config.VaultSecret, len(secrets))
