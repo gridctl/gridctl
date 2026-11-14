@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/gridctl/gridctl/pkg/logging"
 	"github.com/gridctl/gridctl/pkg/vault"
 )
 
@@ -70,6 +71,9 @@ func (s *Server) handleVaultStatus(w http.ResponseWriter, _ *http.Request) {
 		status["secrets_count"] = count
 		status["sets_count"] = len(s.vaultStore.ListSets())
 	}
+	if source := s.vaultStore.UnlockSource(); source != "" {
+		status["unlock_source"] = source
+	}
 
 	writeJSON(w, status)
 }
@@ -84,6 +88,8 @@ func (s *Server) handleVaultUnlock(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		Passphrase string `json:"passphrase"`
+		// Source is optional: "cli" from gridctl var unlock, otherwise "api".
+		Source string `json:"source,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -92,6 +98,16 @@ func (s *Server) handleVaultUnlock(w http.ResponseWriter, r *http.Request) {
 
 	if req.Passphrase == "" {
 		writeJSONError(w, "Passphrase is required", http.StatusBadRequest)
+		return
+	}
+
+	source := vault.UnlockSourceAPI
+	switch req.Source {
+	case "", vault.UnlockSourceAPI:
+	case vault.UnlockSourceCLI:
+		source = vault.UnlockSourceCLI
+	default:
+		writeJSONError(w, `source must be "api" or "cli"`, http.StatusBadRequest)
 		return
 	}
 
@@ -104,6 +120,8 @@ func (s *Server) handleVaultUnlock(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, "wrong passphrase or corrupted vault", http.StatusUnauthorized)
 		return
 	}
+	s.vaultStore.SetUnlockSource(source)
+	logging.RegisterSensitiveValues(req.Passphrase)
 
 	writeJSON(w, map[string]string{"status": "unlocked"})
 }
@@ -133,6 +151,10 @@ func (s *Server) handleVaultLock(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, "Failed to lock variable store: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Lock leaves the store encrypted and unlocked in this process with the
+	// supplied passphrase, so the session is recorded as started here.
+	s.vaultStore.SetUnlockSource(vault.UnlockSourceAPI)
+	logging.RegisterSensitiveValues(req.Passphrase)
 
 	writeJSON(w, map[string]string{"status": "locked"})
 }
