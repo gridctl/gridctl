@@ -1,0 +1,25 @@
+{
+  "enabled": true,
+  "PreToolUse": [
+    {
+      "matcher": "run_command",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "'/home/u/.gridctl/hooks/block-force-push@antigravity/a.sh'",
+          "timeout": 600
+        }
+      ]
+    },
+    {
+      "matcher": "*",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "'/home/u/.gridctl/hooks/block-force-push@antigravity/b.sh'",
+          "timeout": 600
+        }
+      ]
+    }
+  ]
+}

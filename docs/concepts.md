@@ -42,7 +42,7 @@ The registry is the local store at `~/.gridctl/registry/` for skills, agents, an
 
 ## Projection
 
-Projection copies skills, agents, hooks, global context, and wiring onto client disks and records each destination in `~/.gridctl/project.lock.yaml`. A rewrite stamps revision 4, which adds hook entries. A higher revision is kept. Named skills use `gridctl skill project`, imported agents use `gridctl skill project sync --kind agent`, imported hooks use `gridctl skill project sync --kind hook` (Claude Code and OpenCode), global context uses `gridctl ctx sync`, and wiring uses `gridctl project sync --kind wiring`. Linking runs none of these commands ([Projecting skills into clients](skills.md#projecting-skills-into-clients), [Hooks](hooks.md#projection)).
+Projection copies skills, agents, hooks, global context, and wiring onto client disks and records each destination in `~/.gridctl/project.lock.yaml`. A rewrite stamps revision 4, which adds hook entries. A higher revision is kept. Named skills use `gridctl skill project`, imported agents use `gridctl skill project sync --kind agent`, imported hooks use `gridctl skill project sync --kind hook` (Claude Code, OpenCode, Copilot CLI, and Antigravity), global context uses `gridctl ctx sync`, and wiring uses `gridctl project sync --kind wiring`. Linking runs none of these commands ([Projecting skills into clients](skills.md#projecting-skills-into-clients), [Hooks](hooks.md#projection)).
 
 ## Group
 

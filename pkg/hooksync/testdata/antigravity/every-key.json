@@ -1,0 +1,32 @@
+{
+  "enabled": true,
+  "PreToolUse": [
+    {
+      "matcher": "*",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "'/home/u/.gridctl/hooks/block-force-push@antigravity/scripts/a.sh'",
+          "timeout": 600
+        },
+        {
+          "type": "command",
+          "command": "'/home/u/.gridctl/hooks/block-force-push@antigravity/scripts/b.sh'",
+          "timeout": 2
+        }
+      ]
+    }
+  ],
+  "PostToolUse": [
+    {
+      "matcher": "write_to_file|replace_file_content|multi_replace_file_content",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "'/home/u/.gridctl/hooks/block-force-push@antigravity/scripts/fmt.sh' '--check' 'a b'",
+          "timeout": 30
+        }
+      ]
+    }
+  ]
+}

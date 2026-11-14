@@ -4,11 +4,13 @@
 // configuration is written with recorded ownership. gridctl never
 // executes a hook.
 //
-// Two channels exist. A merge-key target (Claude Code) owns matcher
-// groups inside a shared settings file; the write is an RFC 6902 patch on
-// the parsed hujson tree, so bytes outside the patched elements, including
-// comments, stay as they were found. A dedicated-file target (OpenCode,
-// Copilot CLI) owns one generated file per hook. The ownership decision table follows
+// Two channels exist. A merge-key target owns a region inside a shared
+// file: matcher groups in a settings file (Claude Code), or one top-level
+// key per hook in a hooks file (Antigravity). The write is an RFC 6902
+// patch on the parsed hujson tree, so bytes outside the patched region,
+// including comments, stay as they were found. A dedicated-file target
+// (OpenCode, Copilot CLI) owns one generated file per hook. The ownership
+// decision table follows
 // pkg/wiring and pkg/agentsync, with the identical-value adopt branch
 // omitted: an unrecorded group or file is never claimed without --force.
 package hooksync
@@ -74,6 +76,10 @@ type Target struct {
 	RenderClass string
 	// Render is the dialect renderer. Nil is the Claude Code identity render.
 	Render RenderFunc
+	// Key names the top-level key a keyed merge-key target owns in its
+	// shared file, with <name> replaced by the hook name. Empty means the
+	// target owns matcher groups under the file's hooks key.
+	Key string
 }
 
 // UnsupportedClient is a client with a hook mechanism gridctl does not
@@ -119,6 +125,16 @@ func Targets() []Target {
 			RenderClass: RenderLossy,
 			Render:      renderCopilot,
 		},
+		{
+			Slug:        "antigravity",
+			Name:        "Antigravity",
+			Path:        "~/.gemini/config/hooks.json",
+			DetectDirs:  []string{"~/.gemini/config", "~/.gemini/antigravity", "~/.gemini/antigravity-cli", "~/.gemini/antigravity-ide"},
+			Channel:     ChannelMergeKey,
+			RenderClass: RenderLossy,
+			Render:      renderAntigravity,
+			Key:         "gridctl-" + nameToken,
+		},
 	}
 }
 
@@ -131,7 +147,6 @@ func UnsupportedClients() []UnsupportedClient {
 		{Slug: "gemini", Name: "Gemini CLI", Location: "~/.gemini/settings.json hooks key", DetectFiles: []string{"~/.gemini/settings.json"}},
 		{Slug: "cursor", Name: "Cursor", Location: "reads ~/.claude/settings.json hooks (Cursor Settings → Agents → Third-Party Imports, on by default)", CoveredBy: "claude-code", DetectDirs: []string{"~/.cursor"}},
 		{Slug: "windsurf", Name: "Windsurf (Devin Local)", Location: "~/.config/devin/config.json hooks key; reads ~/.claude/settings.json hooks when read_config_from.claude is on (default)", CoveredBy: "claude-code", DetectDirs: []string{"~/.codeium/windsurf", "~/.config/devin", "~/.devin"}},
-		{Slug: "antigravity", Name: "Antigravity", Location: "~/.gemini/config/hooks.json", DetectDirs: []string{"~/.gemini/config", "~/.gemini/antigravity"}},
 	}
 }
 
@@ -202,6 +217,16 @@ func expandHome(home, template string) string {
 // settings file for a merge-key target, the hook's own file otherwise.
 func (t Target) PathFor(home, hookName string) string {
 	return expandHome(home, strings.ReplaceAll(t.Path, nameToken, hookName))
+}
+
+// keyed reports whether the target owns one top-level key per hook.
+func (t Target) keyed() bool {
+	return t.Key != ""
+}
+
+// keyFor returns the top-level key a keyed target owns for one hook.
+func (t Target) keyFor(hookName string) string {
+	return strings.ReplaceAll(t.Key, nameToken, hookName)
 }
 
 func (t Target) available(home string) bool {

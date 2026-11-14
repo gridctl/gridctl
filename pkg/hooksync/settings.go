@@ -303,15 +303,59 @@ func separateNewKeys(before, after []byte, indent string) []byte {
 	if indent == "" {
 		indent = "  "
 	}
+	return separateInsertedKeys(before, after, func(key string) string {
+		if key == "hooks" {
+			return indent
+		}
+		return indent + indent
+	})
+}
+
+// separateInsertedKeys is separateNewKeys with the line indent of each
+// inserted key chosen by padFor. A keyed target inserts top-level keys,
+// so its pad is one indent unit.
+func separateInsertedKeys(before, after []byte, padFor func(key string) string) []byte {
 	out := after
 	for _, key := range insertedKeys(before, after) {
-		pad := indent
-		if key != "hooks" {
-			pad = indent + indent
-		}
-		out = separateKey(before, out, key, pad)
+		out = separateKey(before, out, key, padFor(key))
 	}
 	return out
+}
+
+// keyPointer is the RFC 6901 pointer to a top-level key.
+func keyPointer(key string) string {
+	return "/" + pointerEscape(key)
+}
+
+// valueAt decodes the value at pointer. ok is false when it is absent.
+func valueAt(sf *settingsFile, pointer string) (value any, ok bool, err error) {
+	if sf == nil || !sf.Parsed {
+		return nil, false, nil
+	}
+	el := sf.Tree.Find(pointer)
+	if el == nil {
+		return nil, false, nil
+	}
+	clone := el.Clone()
+	clone.Standardize()
+	dec := json.NewDecoder(bytes.NewReader(clone.Pack()))
+	dec.UseNumber()
+	if err := dec.Decode(&value); err != nil {
+		return nil, true, fmt.Errorf("decoding %s: %w", pointer, err)
+	}
+	return value, true, nil
+}
+
+// rootIsObject reports whether a parsed file's top-level value is a JSON
+// object, the only shape a keyed target can patch.
+func rootIsObject(sf *settingsFile) bool {
+	if sf == nil || !sf.Parsed {
+		return false
+	}
+	clone := sf.Tree.Clone()
+	clone.Standardize()
+	var obj map[string]json.RawMessage
+	return json.Unmarshal(clone.Pack(), &obj) == nil && obj != nil
 }
 
 func insertedKeys(before, after []byte) []string {
