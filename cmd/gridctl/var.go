@@ -181,8 +181,15 @@ var varLockCmd = &cobra.Command{
 
 var varUnlockCmd = &cobra.Command{
 	Use:   "unlock",
-	Short: "Decrypt the variable store for this session",
-	Long:  "Unlock an encrypted store by providing the passphrase. Variables are decrypted into memory.",
+	Short: "Verify the store passphrase (does not persist)",
+	Long: `Verify the passphrase of an encrypted store by decrypting it in this process only.
+No file is written and the store stays encrypted on disk, so the next command
+loads it locked again.
+
+apply and serve unlock the store when they start, from GRIDCTL_VAULT_PASSPHRASE
+or from the file named by GRIDCTL_VAULT_PASSPHRASE_FILE; plan and reload use
+that daemon's store. Other var subcommands read GRIDCTL_VAULT_PASSPHRASE or
+prompt in a terminal.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runVarUnlock()
 	},
@@ -696,7 +703,7 @@ func runVarUnlock() error {
 	}
 
 	printer := output.New()
-	printer.Info("Variable store unlocked", "variables", len(store.List()))
+	printer.Info("Passphrase verified; store unlocked in this process only, nothing persisted", "variables", len(store.List()))
 	return nil
 }
 

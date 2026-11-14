@@ -38,7 +38,7 @@ func ensureUnlocked(store *vault.Store) error {
 	pass := os.Getenv("GRIDCTL_VAULT_PASSPHRASE")
 	if pass == "" {
 		if !isatty.IsTerminal(os.Stdin.Fd()) {
-			return fmt.Errorf("vault is locked. Set GRIDCTL_VAULT_PASSPHRASE or run 'gridctl var unlock'")
+			return fmt.Errorf("vault is locked. Set GRIDCTL_VAULT_PASSPHRASE, or run this command in a terminal to be prompted")
 		}
 		fmt.Print("Vault passphrase: ")
 		raw, err := term.ReadPassword(int(os.Stdin.Fd()))
