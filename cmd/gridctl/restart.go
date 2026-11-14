@@ -432,8 +432,9 @@ func (u *upgrader) executeRestart(ctx context.Context, exePath string, plans []r
 }
 
 const (
-	restartRefusedNoPassphrase = "store is unlocked in the daemon and no passphrase is available here; set GRIDCTL_VAULT_PASSPHRASE_FILE or run in a terminal" // #nosec G101 -- message text, not a secret value
-	restartRefusedNoCapability = "target gridctl does not accept --passphrase-stdin; set GRIDCTL_VAULT_PASSPHRASE_FILE to restart it"                          // #nosec G101 -- message text, not a secret value
+	restartRefusedNoPassphrase    = "store is unlocked in the daemon and no passphrase is available here; set GRIDCTL_VAULT_PASSPHRASE_FILE or run in a terminal" // #nosec G101 -- message text, not a secret value
+	restartRefusedNoCapability    = "target gridctl does not accept --passphrase-stdin; set GRIDCTL_VAULT_PASSPHRASE_FILE to restart it"                          // #nosec G101 -- message text, not a secret value
+	restartRefusedStoreUnreadable = "local variable store could not be read; set GRIDCTL_VAULT_PASSPHRASE_FILE to restart it"                                     // #nosec G101 -- message text, not a secret value
 )
 
 // vaultHandoff is the outcome of the pre-restart variable store check.
@@ -498,7 +499,10 @@ func (u *upgrader) prepareVaultHandoff(ctx context.Context, exePath string, plan
 	}
 	store, err := loadVault()
 	if err != nil {
-		return h, err
+		// Only the daemons that need the passphrase are refused; the other
+		// plans still run.
+		fmt.Fprintf(u.stderr, "note: %v\n", err)
+		return refuseAll(restartRefusedStoreUnreadable)
 	}
 	if !store.IsLocked() {
 		// The local store is not encrypted, so there is nothing to verify

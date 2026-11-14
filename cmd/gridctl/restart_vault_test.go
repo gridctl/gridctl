@@ -224,6 +224,45 @@ func TestExecuteRestart_PromptCancelledRunsNothing(t *testing.T) {
 	}
 }
 
+func TestExecuteRestart_UnreadableLocalStoreRefusesOnlyNeedingDaemons(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("GRIDCTL_HOME", home)
+	t.Setenv("GRIDCTL_VAULT_PASSPHRASE", "")
+	t.Setenv(vault.PassphraseFileEnv, "")
+	dir := filepath.Join(home, ".gridctl", "vault")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "secrets.json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	unlocked := varStatusServer(t, `{"encrypted":true,"locked":false}`)
+	plaintext := varStatusServer(t, `{"encrypted":false,"locked":false}`)
+	exe, logPath := fakeTarget(t, true, restartPass)
+	calls := stubRestartPrompt(t, func(context.Context, *vault.Store) (string, error) { return "", errors.New("unexpected prompt") })
+
+	var stdout, stderr strings.Builder
+	u := &upgrader{stdout: &stdout, stderr: &stderr, isTTY: func() bool { return true }}
+	err := u.executeRestart(t.Context(), exe, []restartPlan{plainDaemonPlan("daily", unlocked), plainDaemonPlan("other", plaintext)})
+	if err == nil {
+		t.Fatal("expected an error for the refused daemon")
+	}
+	want := "Not restarted: daily (local variable store could not be read; set GRIDCTL_VAULT_PASSPHRASE_FILE to restart it)"
+	if !strings.Contains(stderr.String(), want) {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+	logged := readLog(t, logPath)
+	if strings.Contains(logged, "daily") {
+		t.Fatalf("refused daemon was touched:\n%s", logged)
+	}
+	if !strings.Contains(logged, "destroy other") || !strings.Contains(logged, "apply /tmp/other.yaml") {
+		t.Fatalf("other plan did not run:\n%s", logged)
+	}
+	if *calls != 0 {
+		t.Fatal("prompted with an unreadable store")
+	}
+}
+
 func TestExecuteRestart_EnvironmentPassphraseUnaffected(t *testing.T) {
 	restartEnv(t)
 	t.Setenv("GRIDCTL_VAULT_PASSPHRASE", restartPass)
