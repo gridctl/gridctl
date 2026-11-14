@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 
+	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/controller"
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/provisioner"
@@ -33,7 +35,12 @@ var (
 	applyFlash       bool
 	applyCodeMode    bool
 	applyLogFile     string
+
+	applyPassphraseStdin bool
 )
+
+// passphraseStdinUsage is the --passphrase-stdin help text on apply and serve.
+const passphraseStdinUsage = "Read the store passphrase from the first line of stdin (for wrappers; never on a terminal)" // #nosec G101 -- help text, not a secret value
 
 var applyCmd = &cobra.Command{
 	Use:   "apply [stack.yaml]",
@@ -87,6 +94,7 @@ func init() {
 	applyCmd.Flags().BoolVar(&applyFlash, "flash", false, "Auto-link detected LLM clients after apply")
 	applyCmd.Flags().BoolVar(&applyCodeMode, "code-mode", false, "Enable gateway code mode (replaces tools with search + execute meta-tools)")
 	applyCmd.Flags().StringVar(&applyLogFile, "log-file", "", "Path to log file for structured JSON output with automatic rotation")
+	applyCmd.Flags().BoolVar(&applyPassphraseStdin, "passphrase-stdin", false, passphraseStdinUsage)
 	addOverrideFlags(applyCmd)
 }
 
@@ -115,6 +123,7 @@ func runServeStackless() error {
 		DaemonChild:          applyDaemonChild,
 		LogFile:              applyLogFile,
 		LogLevel:             logLevel,
+		PassphraseStdin:      applyPassphraseStdin,
 	}
 	if err := applyOverrideFlags(&cfg); err != nil {
 		return err
@@ -150,6 +159,7 @@ func runApply(stackPath string) error {
 		Runtime:              runtimeFlag,
 		LogFile:              applyLogFile,
 		LogLevel:             logLevel,
+		PassphraseStdin:      applyPassphraseStdin,
 	}
 	if err := applyOverrideFlags(&cfg); err != nil {
 		return err
@@ -185,6 +195,9 @@ func runApply(stackPath string) error {
 	ctrl.SetWebFS(WebFS)
 
 	if err := ctrl.Deploy(ctx); err != nil {
+		if !applyDaemonChild {
+			return withTerminalPromptHint(err, stdinIsTerminal())
+		}
 		return err
 	}
 
@@ -226,6 +239,19 @@ func runApply(stackPath string) error {
 	}
 
 	return nil
+}
+
+// terminalPromptHint is appended to a locked-store apply failure when stdin
+// is not a terminal, where apply cannot prompt.
+const terminalPromptHint = "  Or run gridctl apply in a terminal to be prompted"
+
+// withTerminalPromptHint appends terminalPromptHint to a locked-store error
+// when stdin is not a terminal. errors.Is still matches the original error.
+func withTerminalPromptHint(err error, terminal bool) error {
+	if err == nil || terminal || !errors.Is(err, config.ErrVaultLocked) {
+		return err
+	}
+	return fmt.Errorf("%w\n%s", err, terminalPromptHint)
 }
 
 // flashLinkClients links all detected LLM clients after a successful apply.

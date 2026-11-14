@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	gitpkg "github.com/gridctl/gridctl/pkg/git"
 	"github.com/gridctl/gridctl/pkg/hooksync"
@@ -511,7 +513,12 @@ Exit codes:
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(ctxExitInfrastructure)
 		}
-		if exit := runPackApply(cmd.Context(), os.Stdout, os.Stderr, mgrs, args[0], packApplyForce, packApplyDryRun, packApplyClients, packApplyPort, cmd.Flags().Changed("port"), format, *packApplyPlain); exit != ctxExitOK {
+		// A signal-aware context lets ctrl-C cancel the launcher's
+		// passphrase prompt and restore the terminal.
+		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+		exit := runPackApply(ctx, os.Stdout, os.Stderr, mgrs, args[0], packApplyForce, packApplyDryRun, packApplyClients, packApplyPort, cmd.Flags().Changed("port"), format, *packApplyPlain)
+		stop()
+		if exit != ctxExitOK {
 			os.Exit(exit)
 		}
 		return nil

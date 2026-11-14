@@ -10,8 +10,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -164,7 +166,11 @@ func runPlan(ctx context.Context, stackPath string) error {
 	ctrl.SetVersion(version)
 	ctrl.SetWebFS(WebFS)
 
-	return ctrl.Deploy(context.Background())
+	// A signal-aware context lets ctrl-C cancel a passphrase prompt and
+	// restore the terminal instead of killing the process with echo off.
+	deployCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return ctrl.Deploy(deployCtx)
 }
 
 type planLayer struct {
