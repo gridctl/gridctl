@@ -199,8 +199,9 @@ func TestApply_UnexpressibleHookIsInformational(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("GRIDCTL_HOME", home)
-	// OpenCode is detected; ~/.gemini/config is Antigravity's and must not
-	// produce a Gemini CLI row without ~/.gemini/settings.json.
+	// OpenCode and Antigravity are detected; ~/.gemini/config is
+	// Antigravity's and must not produce a Gemini CLI row without
+	// ~/.gemini/settings.json.
 	for _, d := range []string{".claude", ".config/opencode", ".gemini/config", ".cursor"} {
 		if err := os.MkdirAll(filepath.Join(home, d), 0o755); err != nil {
 			t.Fatal(err)
@@ -259,8 +260,8 @@ func TestApply_UnexpressibleHookIsInformational(t *testing.T) {
 	if _, ok := got["gemini"]; ok {
 		t.Fatalf("an Antigravity-only ~/.gemini produced a Gemini CLI row: %+v", doc.Rows)
 	}
-	if _, ok := got["antigravity"]; !ok {
-		t.Fatalf("antigravity row missing: %+v", doc.Rows)
+	if got["antigravity"] != `skipped-unexpressible: event "Stop" has no antigravity mapping` {
+		t.Fatalf("antigravity row = %q\nrows=%+v", got["antigravity"], doc.Rows)
 	}
 }
 

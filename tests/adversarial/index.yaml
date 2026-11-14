@@ -666,3 +666,16 @@ scenarios:
     budgets:
       max_payload_bytes: 65536
       max_duration: 5s
+  - id: hooks-antigravity-key-preserves-siblings
+    owner_package: pkg/hooksync
+    owner_issue: "1518"
+    package: github.com/gridctl/gridctl/pkg/hooksync
+    test: TestAntigravityKey_PreservesSiblings
+    lanes: [unit]
+    expected_boundary: sync, an approved update, and unsync patch only the gridctl-<name> key in the shared Antigravity hooks file; every sibling key and comment keeps its bytes, and unsync restores the file the user had byte for byte
+    nonclaims:
+      - does not prove Antigravity loads a gridctl-<name> key with a single-quoted absolute command
+      - does not prove how Antigravity treats a non-zero exit or empty stdout from a PreToolUse command
+    budgets:
+      max_payload_bytes: 65536
+      max_duration: 5s

@@ -346,12 +346,18 @@ type hookWork struct {
 	fileExists  bool
 	fileCurrent string
 	renderNote  string
-	claimed     bool // an unrecorded file taken over with --force
+	claimed     bool // an unrecorded file or key taken over with --force
+	// Keyed merge-key channel. fileExists and fileCurrent describe the key.
+	key      string
+	keyValue any
 }
 
 func (m *Manager) syncClient(ctx context.Context, lf *LockFile, t Target, hooks []skills.InstalledHook, opts SyncOptions) ([]SyncResult, error) {
 	if t.Channel == ChannelDedicatedFile {
 		return m.syncFiles(ctx, lf, t, hooks, opts)
+	}
+	if t.keyed() {
+		return m.syncKeys(ctx, lf, t, hooks, opts)
 	}
 	settingsPath := t.PathFor(m.home, "")
 	sf, err := readSettings(settingsPath)
@@ -847,6 +853,9 @@ func (m *Manager) unsyncClient(lf *LockFile, client string, keys []recordKey, op
 	if ok && t.Channel == ChannelDedicatedFile {
 		return m.unsyncFiles(lf, t, keys, opts)
 	}
+	if ok && t.keyed() {
+		return m.unsyncKeyed(lf, t, keys, opts)
+	}
 	if !ok {
 		var out []UnsyncResult
 		for _, key := range keys {
@@ -1012,6 +1021,9 @@ func (m *Manager) statusFor(name, client string, entry *Entry) ProjectionStatus 
 	t, known := FindTarget(client)
 	if known && t.Channel == ChannelDedicatedFile {
 		return m.fileStatus(name, t, entry)
+	}
+	if known && t.keyed() {
+		return m.keyStatus(name, t, entry)
 	}
 	if !known {
 		t = Target{Channel: ChannelMergeKey, RenderClass: RenderIdentity}

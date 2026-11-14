@@ -114,14 +114,17 @@ matcher groups patched in exec form, scripts copied to
 ~/.gridctl/hooks/<name>/), 'opencode'
 (~/.config/opencode/plugins/gridctl-hook-<name>.ts, a generated plugin
 that runs the pinned script, scripts copied to
-~/.gridctl/hooks/<name>@opencode/), and 'copilot'
+~/.gridctl/hooks/<name>@opencode/), 'copilot'
 (~/.copilot/hooks/gridctl-<name>.json, a version 1 hook file in exec
 form, scripts copied to ~/.gridctl/hooks/<name>@copilot/; COPILOT_HOME
-is not honored). OpenCode and Copilot CLI carry PreToolUse and
-PostToolUse groups only; other groups are named in the row detail, and
-a hook with none is skipped-unexpressible. Cursor and Windsurf (Devin
-Local) read the claude-code projection and have no separate target.
-Gemini CLI and Antigravity are reported and not written.
+is not honored), and 'antigravity' (~/.gemini/config/hooks.json, one
+gridctl-<name> key patched in with single-quoted commands, scripts
+copied to ~/.gridctl/hooks/<name>@antigravity/). OpenCode, Copilot CLI,
+and Antigravity carry PreToolUse and PostToolUse groups only; other
+groups are named in the row detail, and a hook with none is
+skipped-unexpressible. Cursor and Windsurf (Devin Local)
+read the claude-code projection and have no separate target. Gemini
+CLI is reported and not written.
 --copy does not apply to hooks. Adopt is refused.
 
 The MCP prompt channel is unchanged: clients that render prompts

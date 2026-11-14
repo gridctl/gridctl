@@ -31,8 +31,8 @@ func TestRunHookProjectSync_CoveredClientNote(t *testing.T) {
 	if strings.Contains(stderr.String(), "note: gemini") {
 		t.Fatalf("an Antigravity-only ~/.gemini printed a Gemini CLI note: %q", stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "note: antigravity (") {
-		t.Fatalf("stderr = %q", stderr.String())
+	if strings.Contains(stderr.String(), "note: antigravity") {
+		t.Fatalf("antigravity is a hook target and must not get a note: %q", stderr.String())
 	}
 
 	stderr.Reset()
@@ -58,6 +58,9 @@ func TestSkillProjectHelp_ListsHookTargets(t *testing.T) {
 		"~/.gridctl/hooks/<name>@opencode/",
 		"~/.copilot/hooks/gridctl-<name>.json",
 		"~/.gridctl/hooks/<name>@copilot/",
+		"~/.gemini/config/hooks.json",
+		"gridctl-<name>",
+		"~/.gridctl/hooks/<name>@antigravity/",
 		"read the claude-code projection",
 		"--copy does not apply to hooks",
 		"Adopt is refused",

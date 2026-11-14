@@ -652,7 +652,7 @@ func TestDetection_CoveredAndGemini(t *testing.T) {
 	for _, c := range mgr.DetectedUnsupported() {
 		slugs = append(slugs, c.Slug)
 	}
-	if !reflect.DeepEqual(slugs, []string{"cursor", "windsurf", "antigravity"}) {
+	if !reflect.DeepEqual(slugs, []string{"cursor", "windsurf"}) {
 		t.Fatalf("detected = %v; an Antigravity-only ~/.gemini must not detect Gemini CLI", slugs)
 	}
 	if err := os.WriteFile(filepath.Join(home, ".gemini", "settings.json"), []byte("{}"), 0o644); err != nil {
@@ -679,8 +679,10 @@ func TestDetection_CoveredAndGemini(t *testing.T) {
 			t.Fatalf("covered row = %+v", r)
 		}
 	}
-	if _, ok := FindUnsupported("opencode"); ok {
-		t.Fatal("opencode is still listed as unsupported")
+	for _, slug := range []string{"opencode", "copilot", "antigravity"} {
+		if _, ok := FindUnsupported(slug); ok {
+			t.Fatalf("%s is still listed as unsupported", slug)
+		}
 	}
 	known := KnownSlugs()
 	slices.Sort(known)

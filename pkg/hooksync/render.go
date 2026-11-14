@@ -61,12 +61,14 @@ var consumedHandlerKeys = map[string]bool{
 type RenderFunc func(spec *hookSpec, name, scriptDir string) (rendered, error)
 
 // rendered is one target's render of one hook. A merge-key target fills
-// Groups; a dedicated-file target fills Bytes. Unexpressible holds the
-// reason for each group the dialect cannot carry, and DroppedGroups the
-// short label for it. A render with no Groups and no Bytes writes nothing.
+// Groups, or Value when it owns one top-level key; a dedicated-file target
+// fills Bytes. Unexpressible holds the reason for each group the dialect
+// cannot carry, and DroppedGroups the short label for it. A render with no
+// Groups, Bytes, or Value writes nothing.
 type rendered struct {
 	Groups        []renderedGroup
 	Bytes         []byte
+	Value         any
 	DroppedGroups []string
 	Unexpressible []string
 	DroppedIf     []string
@@ -75,7 +77,7 @@ type rendered struct {
 }
 
 func (r rendered) expressible() bool {
-	return len(r.Groups) > 0 || len(r.Bytes) > 0
+	return len(r.Groups) > 0 || len(r.Bytes) > 0 || r.Value != nil
 }
 
 // detail names what the render dropped. Empty for an identity render.
