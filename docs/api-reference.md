@@ -2171,7 +2171,7 @@ value.
 
 #### `POST /api/var/unlock`
 
-Unlocks an encrypted vault with a passphrase.
+Unlocks an encrypted vault with a passphrase. The unlock is held in the daemon's memory and nothing is written to disk, so a restarted daemon loads the store locked unless its environment carries `GRIDCTL_VAULT_PASSPHRASE` or `GRIDCTL_VAULT_PASSPHRASE_FILE`.
 
 **Auth:** Yes
 
