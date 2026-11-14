@@ -52,10 +52,11 @@ var (
 	termReadPassword           = term.ReadPassword
 )
 
-// isTerminal reports whether f is a terminal.
+// isTerminal reports whether f is a terminal that term.ReadPassword can
+// read. A Cygwin or MSYS pseudo-terminal is a Windows pipe, so it does not
+// count.
 func isTerminal(f *os.File) bool {
-	fd := f.Fd()
-	return isatty.IsTerminal(fd) || isatty.IsCygwinTerminal(fd)
+	return isatty.IsTerminal(f.Fd())
 }
 
 // readPassphraseStdin reads one line of at most passphraseStdinLimit bytes
