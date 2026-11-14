@@ -116,6 +116,15 @@ type Config struct {
 	// never sets it. Used by `gridctl apply` for post-ready client linking
 	// (declared link: reconcile and --flash).
 	OnReady func(port int)
+
+	// PassphraseStdin reads the store passphrase from the first line of
+	// stdin (--passphrase-stdin).
+	PassphraseStdin bool
+
+	// Passphrase is the store passphrase a daemon parent obtained from the
+	// prompt or from stdin, held only until Fork hands it to the child over
+	// a stdin pipe. Never serialized, logged, or passed in argv or env.
+	Passphrase string `json:"-" yaml:"-"`
 }
 
 // EffectiveBind resolves the listen address, defaulting to loopback.
@@ -208,14 +217,8 @@ func (sc *StackController) Serve(ctx context.Context) error {
 	}
 
 	// Load vault (best-effort; errors are non-fatal in stackless mode)
-	if vaultDir, err := state.VaultDir(); err == nil {
-		vaultStore := vault.NewStore(vaultDir)
-		if err := vaultStore.Load(); err == nil {
-			if err := unlockFromEnvironment(vaultStore); err != nil {
-				slog.Warn("vault passphrase from the environment was not applied; the store stays locked", "error", err)
-			}
-			sc.vaultStore = vaultStore
-		}
+	if err := sc.loadStacklessVault(ctx); err != nil {
+		return err
 	}
 
 	// Foreground mode: run gateway directly without daemonizing.
@@ -232,18 +235,46 @@ func (sc *StackController) Serve(ctx context.Context) error {
 	return sc.runStacklessDaemonMode()
 }
 
+// loadStacklessVault loads and unlocks the store for serve. Load and
+// environment failures are non-fatal; a --passphrase-stdin failure is fatal
+// because the caller asked for it explicitly. serve never prompts. A daemon
+// parent keeps the stdin passphrase in its config for Fork.
+func (sc *StackController) loadStacklessVault(ctx context.Context) error {
+	vaultDir, err := state.VaultDir()
+	if err != nil {
+		return sc.drainPassphraseStdin(ctx)
+	}
+	vaultStore := vault.NewStore(vaultDir)
+	if err := vaultStore.Load(); err != nil {
+		return sc.drainPassphraseStdin(ctx)
+	}
+	if err := unlockFromEnvironment(vaultStore); err != nil {
+		slog.Warn("vault passphrase from the environment was not applied; the store stays locked", "error", err)
+	}
+	pass, err := sc.acquirePassphrase(ctx, vaultStore, false, nil)
+	if err != nil {
+		return err
+	}
+	if !sc.config.DaemonChild && !sc.config.Foreground {
+		sc.config.Passphrase = pass
+	}
+	sc.vaultStore = vaultStore
+	return nil
+}
+
+// drainPassphraseStdin validates and discards a --passphrase-stdin line when
+// there is no store to unlock.
+func (sc *StackController) drainPassphraseStdin(ctx context.Context) error {
+	_, err := sc.acquirePassphrase(ctx, nil, false, nil)
+	return err
+}
+
 // runStacklessDaemonChild is the daemon child path for stackless mode.
 // It saves state and runs the gateway directly.
 func (sc *StackController) runStacklessDaemonChild(ctx context.Context) error {
 	// Load vault best-effort
-	if vaultDir, err := state.VaultDir(); err == nil {
-		vaultStore := vault.NewStore(vaultDir)
-		if err := vaultStore.Load(); err == nil {
-			if err := unlockFromEnvironment(vaultStore); err != nil {
-				slog.Warn("vault passphrase from the environment was not applied; the store stays locked", "error", err)
-			}
-			sc.vaultStore = vaultStore
-		}
+	if err := sc.loadStacklessVault(ctx); err != nil {
+		return err
 	}
 
 	st := &state.DaemonState{
@@ -360,6 +391,18 @@ func (sc *StackController) Deploy(ctx context.Context) error {
 	// the environment or a user-owned passphrase file.
 	if err := unlockFromEnvironment(vaultStore); err != nil {
 		return fmt.Errorf("unlocking vault: %w", err)
+	}
+
+	// Then from --passphrase-stdin, or a terminal prompt when the stack
+	// needs the store. A daemon parent forwards what it obtained to the
+	// child through Fork.
+	pass, err := sc.acquirePassphrase(ctx, vaultStore, true, func() bool { return stackNeedsStore(cfg) })
+	if err != nil {
+		return err
+	}
+	if !cfg.DaemonChild && !cfg.Foreground {
+		cfg.Passphrase = pass
+		sc.config.Passphrase = pass
 	}
 
 	sc.vaultStore = vaultStore

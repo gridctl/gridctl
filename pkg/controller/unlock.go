@@ -19,6 +19,7 @@ func unlockFromEnvironment(store *vault.Store) error {
 		if err := store.Unlock(pass); err != nil {
 			return fmt.Errorf("unlocking vault: %w", err)
 		}
+		recordUnlock(store, vault.UnlockSourceEnvironment, pass)
 		return nil
 	}
 	path := os.Getenv(vault.PassphraseFileEnv)
@@ -32,5 +33,6 @@ func unlockFromEnvironment(store *vault.Store) error {
 	if err := store.Unlock(pass); err != nil {
 		return fmt.Errorf("unlocking vault from %s: passphrase rejected", vault.PassphraseFileEnv)
 	}
+	recordUnlock(store, vault.UnlockSourcePassphraseFile, pass)
 	return nil
 }
