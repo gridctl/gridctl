@@ -102,8 +102,25 @@ func LoadStackData(data []byte, path string, opts ...LoadOption) (*Stack, error)
 		return nil, err
 	}
 
-	// Expand variable references in string values
-	unresolved, emptyVars, resolutionProblems := expandStackVarsResolved(stack, newReferenceResolver(cfg.vault))
+	// Whether the store is locked is read once per load: IsLocked takes the
+	// store mutex and may reread the store from disk.
+	locked := storeLocked(&cfg)
+
+	// Expand variable references in string values. Store references that
+	// fell back to the environment are recorded for the locked warning.
+	var envFallback []string
+	resolve := newReferenceResolver(cfg.vault)
+	if locked {
+		inner := resolve
+		resolve = func(name string, storeReference bool) ResolutionResult {
+			res := inner(name, storeReference)
+			if storeReference && res.Verdict == ResolutionEnvFallback {
+				envFallback = append(envFallback, name)
+			}
+			return res
+		}
+	}
+	unresolved, emptyVars, resolutionProblems := expandStackVarsResolved(stack, resolve)
 	if len(resolutionProblems) > 0 {
 		return nil, fmt.Errorf("resolving stack variable: %w", resolutionProblems[0])
 	}
@@ -111,6 +128,19 @@ func LoadStackData(data []byte, path string, opts ...LoadOption) (*Stack, error)
 	// A key consumed only by disabled servers or resources does not block
 	// deploy. A key with any enabled consumer still refuses.
 	unresolved = dropDisabledOnlyUnresolved(stack, unresolved)
+
+	if locked && cfg.vault != nil && len(unresolved) > 0 {
+		return nil, lockedStoreError(dedupeStrings(unresolved))
+	}
+
+	// Not gated on quiet: reload and plan always load quietly, and a value
+	// taken from the environment while the store is locked is a correctness
+	// signal rather than a hint.
+	if locked {
+		for _, key := range dedupeStrings(envFallback) {
+			slog.Warn("variable resolved from the environment because the variable store is locked", "var", key)
+		}
+	}
 
 	// Fail on unresolved variable references only if a store was provided.
 	if cfg.vault != nil && len(unresolved) > 0 {
@@ -140,11 +170,48 @@ func LoadStackData(data []byte, path string, opts ...LoadOption) (*Stack, error)
 	}
 
 	// Inject variable set secrets into container env
-	if stack.Secrets != nil && len(stack.Secrets.Sets) > 0 && cfg.vaultSet != nil {
-		injectSetSecrets(stack, cfg.vaultSet)
+	if stack.Secrets != nil && len(stack.Secrets.Sets) > 0 {
+		if locked {
+			slog.Warn("secrets.sets injected nothing because the variable store is locked")
+		}
+		if cfg.vaultSet != nil {
+			injectSetSecrets(stack, cfg.vaultSet)
+		}
 	}
 
 	return stack, nil
+}
+
+// ErrVaultLocked marks a load that left store references unresolved because
+// the variable store is locked. Test with errors.Is.
+var ErrVaultLocked = errors.New("variable store is locked")
+
+const passphraseEnv = "GRIDCTL_VAULT_PASSPHRASE" // #nosec G101 -- environment variable name, not a secret value
+
+// lockedStoreError names the unresolved keys and the environment variables
+// that unlock the store. It carries key names only, never values or paths.
+func lockedStoreError(keys []string) error {
+	msg := fmt.Sprintf("could not resolve: %s", strings.Join(keys, ", "))
+	msg += "\n  To fix: set " + passphraseEnv + ", or point " + vaultpkg.PassphraseFileEnv +
+		" at a passphrase file you own"
+	msg += "\n  Diagnose: gridctl var explain <KEY>"
+	return fmt.Errorf("%w; %s", ErrVaultLocked, msg)
+}
+
+type lockReporter interface {
+	IsLocked() bool
+}
+
+// storeLocked reports whether the configured store is locked. The vault
+// lookup decides when it can report; otherwise the set lookup does.
+func storeLocked(cfg *loadConfig) bool {
+	if l, ok := cfg.vault.(lockReporter); ok {
+		return l.IsLocked()
+	}
+	if l, ok := cfg.vaultSet.(lockReporter); ok {
+		return l.IsLocked()
+	}
+	return false
 }
 
 // dropDisabledOnlyUnresolved removes keys whose every consumer is a

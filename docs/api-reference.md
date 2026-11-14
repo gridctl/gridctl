@@ -39,7 +39,7 @@ The authentication middleware marks its own credential denials with `Gridctl-Aut
 
 ### Reload security results
 
-Unsupported static-security changes return HTTP `409`, `success: false`, `code: "restart_required"`, a value-free `message`, and `changed_fields` containing field names only. This applies to `/api/reload`, `/api/stack/initialize`, and save-first tool-scope, client-scope, and telemetry mutations. All these preflight responses also carry the structured `error` envelope with the same code, message, and fields. The saved file is preserved; it may differ from active startup settings. No reload side effects occur on this rejection. Resolution or validation failure returns `invalid_candidate` with HTTP `400` and `changed_fields: null`, preserving active state. When the failure is a stack validation error, both the top-level body and the nested `error` object include `errors`, each entry `field: message`. Other load failures omit `errors` so a resolved value is not echoed. Initialization's existing already-loaded conflict remains distinct from restart-required.
+Unsupported static-security changes return HTTP `409`, `success: false`, `code: "restart_required"`, a value-free `message`, and `changed_fields` containing field names only. This applies to `/api/reload`, `/api/stack/initialize`, and save-first tool-scope, client-scope, and telemetry mutations. All these preflight responses also carry the structured `error` envelope with the same code, message, and fields. The saved file is preserved; it may differ from active startup settings. No reload side effects occur on this rejection. Resolution or validation failure returns `invalid_candidate` with HTTP `400` and `changed_fields: null`, preserving active state. When the failure is a stack validation error, both the top-level body and the nested `error` object include `errors`, each entry `field: message`. A locked variable store is the one non-validation exception: both places carry `errors` with one entry, the locked-store message (`variable store is locked; could not resolve: <KEYS>` and its remedy lines), which names keys and no values. Other load failures omit `errors` so a resolved value is not echoed. Initialization's existing already-loaded conflict remains distinct from restart-required.
 
 Changed field names are `gateway.auth.enabled` (a diagnostic name, not a YAML key), `gateway.auth.type`, `gateway.auth.token`, `gateway.auth.header`, `gateway.auth.issuer`, `gateway.auth.audience`, `gateway.auth.jwks_url`, `gateway.auth.required_scopes`, `gateway.auth.identity_claim`, `gateway.bind`, `gateway.allowed_hosts`, `gateway.allowed_origins`, and `gateway.insecure_allow_unauthenticated`. Only differing fields are listed, in that order. Compare `code`, not message text. Recovery uses a [gateway process restart](troubleshooting.md#gateway-security-requires-a-restart) with the original startup options.
 
@@ -2171,7 +2171,7 @@ value.
 
 #### `POST /api/var/unlock`
 
-Unlocks an encrypted vault with a passphrase.
+Unlocks an encrypted vault with a passphrase. The unlock is held in the daemon's memory and nothing is written to disk, so a restarted daemon loads the store locked unless its environment carries `GRIDCTL_VAULT_PASSPHRASE` or `GRIDCTL_VAULT_PASSPHRASE_FILE`.
 
 **Auth:** Yes
 

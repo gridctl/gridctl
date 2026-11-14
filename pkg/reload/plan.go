@@ -56,6 +56,9 @@ func invalidCandidate(err error) *ReloadResult {
 		for _, item := range ve {
 			result.Errors = append(result.Errors, item.Error())
 		}
+	} else if errors.Is(err, config.ErrVaultLocked) {
+		// The locked-store error names keys only, so it is value-free.
+		result.Errors = append(result.Errors, err.Error())
 	}
 	return result
 }

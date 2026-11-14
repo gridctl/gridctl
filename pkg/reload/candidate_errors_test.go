@@ -2,6 +2,7 @@ package reload
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,6 +113,67 @@ mcp-servers:
 	}
 }
 
+func TestReload_LockedStoreReportsLockedInErrors(t *testing.T) {
+	t.Setenv("MISSING", "")
+	if err := os.Unsetenv("MISSING"); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "stack.yaml")
+	secret := "resolved-secret-value"
+	body := []byte(`version: "1"
+name: test-stack
+network:
+  name: test-net
+mcp-servers:
+  - name: vault
+    url: https://example.test/mcp
+    headers:
+      X-Tenant: "${var:MISSING}"
+      X-Note: "` + secret + `"
+`)
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	baseline := &config.Stack{Name: "active"}
+	h := NewHandler(path, baseline, mcp.NewGateway(), runtime.NewOrchestrator(nil, nil), 8180, 9000, lockedCandidateVault{}, nil)
+	result, err := h.Reload(context.Background())
+	if err != nil || result.Success || result.Code != "invalid_candidate" {
+		t.Fatalf("locked reload = %+v err=%v", result, err)
+	}
+	if h.CurrentConfig() != baseline {
+		t.Fatal("reload changed active config")
+	}
+	if result.Message != "candidate configuration could not be resolved or validated; active configuration is unchanged" {
+		t.Fatalf("message = %q", result.Message)
+	}
+	if len(result.Errors) != 1 {
+		t.Fatalf("errors = %#v, want one entry", result.Errors)
+	}
+	entry := result.Errors[0]
+	if !strings.Contains(entry, "locked") || !strings.Contains(entry, "MISSING") {
+		t.Fatalf("errors[0] = %q, want locked-store message naming MISSING", entry)
+	}
+	all := result.Message + "\n" + entry
+	if strings.Contains(all, secret) || strings.Contains(all, "missing variable(s)") {
+		t.Fatalf("result leaked a value or the missing-variable text: %q", all)
+	}
+
+	// Plan backs GET /api/stack/plan, whose 500 body carries this text.
+	_, planErr := h.Plan(context.Background())
+	if !errors.Is(planErr, config.ErrVaultLocked) {
+		t.Fatalf("plan err = %v, want ErrVaultLocked", planErr)
+	}
+	if text := planErr.Error(); strings.Contains(text, secret) || strings.Contains(text, "missing variable(s)") || !strings.Contains(text, "MISSING") {
+		t.Fatalf("plan err = %q", text)
+	}
+}
+
 type emptyCandidateVault struct{}
 
 func (emptyCandidateVault) Get(string) (string, bool) { return "", false }
+
+type lockedCandidateVault struct{}
+
+func (lockedCandidateVault) Get(string) (string, bool) { return "", false }
+func (lockedCandidateVault) IsLocked() bool            { return true }
