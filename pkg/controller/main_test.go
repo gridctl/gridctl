@@ -1,9 +1,11 @@
 package controller
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -14,6 +16,15 @@ import (
 func TestMain(m *testing.M) {
 	// A reap test starts this binary as a short-lived child. Exit before
 	// the HOME sandbox so the helper does not create a directory.
+	// The stdin helper exits 0 when its first stdin line equals the
+	// expected value and 4 otherwise.
+	if want, ok := os.LookupEnv("GRIDCTL_HELPER_STDIN_WANT"); ok {
+		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+		if strings.TrimSuffix(line, "\n") == want {
+			os.Exit(0)
+		}
+		os.Exit(4)
+	}
 	if os.Getenv("GRIDCTL_HELPER_PROCESS") == "1" {
 		code, err := strconv.Atoi(os.Getenv("GRIDCTL_HELPER_EXIT"))
 		if err != nil {

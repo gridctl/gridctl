@@ -134,38 +134,8 @@ func (d *DaemonManager) Fork(stack *config.Stack) (DaemonHandle, error) {
 		return DaemonHandle{}, fmt.Errorf("opening log file: %w", err)
 	}
 
-	args := []string{"apply", d.config.StackPath,
-		"--daemon-child",
-		"--port", strconv.Itoa(d.config.Port),
-		"--base-port", strconv.Itoa(d.config.BasePort)}
-	if d.config.NoExpand {
-		args = append(args, "--no-expand")
-	}
-	if d.config.Watch {
-		args = append(args, "--watch")
-	}
-	if d.config.NoOverride {
-		args = append(args, "--no-override")
-	} else if d.config.OverridePath != "" {
-		args = append(args, "--override", d.config.OverridePath)
-		if !d.config.OverrideRequired {
-			args = append(args, "--override-optional")
-		}
-	}
-	if d.config.LogFile != "" {
-		args = append(args, "--log-file", d.config.LogFile)
-	}
-	args = appendLogLevelArg(args, effectiveLogLevel(d.config))
-	cmd := exec.Command(exe, args...)
-
-	configureDaemonProcess(cmd)
-
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
-	cmd.Stdin = nil
-	cmd.Env = os.Environ()
-
-	return startDaemon(cmd, logFile)
+	cmd := newDaemonCmd(exe, d.forkArgs(), logFile)
+	return startDaemon(cmd, logFile, d.config.Passphrase)
 }
 
 // ForkStackless starts a stackless daemon child that runs only the HTTP API
@@ -190,6 +160,42 @@ func (d *DaemonManager) ForkStackless() (DaemonHandle, error) {
 		return DaemonHandle{}, fmt.Errorf("opening log file: %w", err)
 	}
 
+	cmd := newDaemonCmd(exe, d.stacklessArgs(), logFile)
+	return startDaemon(cmd, logFile, d.config.Passphrase)
+}
+
+// forkArgs is the daemon child argv for a stack. It carries
+// --passphrase-stdin, never the passphrase, when one is forwarded.
+func (d *DaemonManager) forkArgs() []string {
+	args := []string{"apply", d.config.StackPath,
+		"--daemon-child",
+		"--port", strconv.Itoa(d.config.Port),
+		"--base-port", strconv.Itoa(d.config.BasePort)}
+	if d.config.NoExpand {
+		args = append(args, "--no-expand")
+	}
+	if d.config.Watch {
+		args = append(args, "--watch")
+	}
+	if d.config.NoOverride {
+		args = append(args, "--no-override")
+	} else if d.config.OverridePath != "" {
+		args = append(args, "--override", d.config.OverridePath)
+		if !d.config.OverrideRequired {
+			args = append(args, "--override-optional")
+		}
+	}
+	if d.config.LogFile != "" {
+		args = append(args, "--log-file", d.config.LogFile)
+	}
+	if d.config.Passphrase != "" {
+		args = append(args, "--passphrase-stdin")
+	}
+	return appendLogLevelArg(args, effectiveLogLevel(d.config))
+}
+
+// stacklessArgs is the stackless daemon child argv.
+func (d *DaemonManager) stacklessArgs() []string {
 	args := []string{"serve",
 		"--daemon-child",
 		"--port", strconv.Itoa(d.config.Port),
@@ -197,29 +203,58 @@ func (d *DaemonManager) ForkStackless() (DaemonHandle, error) {
 	if d.config.LogFile != "" {
 		args = append(args, "--log-file", d.config.LogFile)
 	}
-	args = appendLogLevelArg(args, effectiveLogLevel(d.config))
+	if d.config.Passphrase != "" {
+		args = append(args, "--passphrase-stdin")
+	}
+	return appendLogLevelArg(args, effectiveLogLevel(d.config))
+}
+
+// newDaemonCmd builds the child command with stdout and stderr on logFile
+// and the parent's environment. Stdin is wired by startDaemon.
+func newDaemonCmd(exe string, args []string, logFile *os.File) *exec.Cmd {
 	cmd := exec.Command(exe, args...)
-
 	configureDaemonProcess(cmd)
-
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.Stdin = nil
 	cmd.Env = os.Environ()
-
-	return startDaemon(cmd, logFile)
+	return cmd
 }
 
 // startDaemon starts cmd with stdout and stderr already pointed at logFile.
 // The parent closes its copy of the log file; the child keeps its own
 // descriptor, so Wait has no pipes to drain. Exactly one goroutine calls
-// Wait.
-func startDaemon(cmd *exec.Cmd, logFile *os.File) (DaemonHandle, error) {
+// Wait. A non-empty passphrase goes to the child over a stdin pipe: the
+// read end is the child's stdin, and after Start a goroutine writes the
+// passphrase and a newline to the write end and closes it. A write error
+// (the child exited first) is ignored; the child reports a missing line.
+func startDaemon(cmd *exec.Cmd, logFile *os.File, passphrase string) (DaemonHandle, error) {
+	var pr, pw *os.File
+	if passphrase != "" {
+		var err error
+		pr, pw, err = os.Pipe()
+		if err != nil {
+			logFile.Close()
+			return DaemonHandle{}, fmt.Errorf("creating passphrase pipe: %w", err)
+		}
+		cmd.Stdin = pr
+	}
 	if err := cmd.Start(); err != nil {
 		logFile.Close()
+		if pr != nil {
+			pr.Close()
+			pw.Close()
+		}
 		return DaemonHandle{}, fmt.Errorf("starting daemon: %w", err)
 	}
 	logFile.Close()
+	if pr != nil {
+		pr.Close()
+		go func() {
+			_, _ = io.WriteString(pw, passphrase+"\n")
+			_ = pw.Close()
+		}()
+	}
 	return reapDaemon(cmd), nil
 }
 

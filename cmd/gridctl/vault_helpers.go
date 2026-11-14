@@ -1,15 +1,18 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
+	"github.com/gridctl/gridctl/pkg/controller"
 	"github.com/gridctl/gridctl/pkg/state"
 	"github.com/gridctl/gridctl/pkg/vault"
 
 	"github.com/mattn/go-isatty"
-	"golang.org/x/term"
 )
 
 // loadVault opens the gridctl variable store. The name is retained from the
@@ -29,7 +32,8 @@ func loadVault() (*vault.Store, error) {
 	return store, nil
 }
 
-// ensureUnlocked prompts for the passphrase when the store is locked.
+// ensureUnlocked unlocks a locked store from GRIDCTL_VAULT_PASSPHRASE, then
+// GRIDCTL_VAULT_PASSPHRASE_FILE, then a terminal prompt.
 func ensureUnlocked(store *vault.Store) error {
 	if !store.IsLocked() {
 		return nil
@@ -37,39 +41,88 @@ func ensureUnlocked(store *vault.Store) error {
 
 	pass := os.Getenv("GRIDCTL_VAULT_PASSPHRASE")
 	if pass == "" {
-		if !isatty.IsTerminal(os.Stdin.Fd()) {
+		filePass, ok, err := passphraseFromFile()
+		if err != nil {
+			return err
+		}
+		if ok {
+			if err := store.Unlock(filePass); err != nil {
+				return fmt.Errorf("unlocking vault from %s: passphrase rejected", vault.PassphraseFileEnv)
+			}
+			return nil
+		}
+	}
+	if pass == "" {
+		if !stdinIsTerminal() {
 			return fmt.Errorf("vault is locked. Set GRIDCTL_VAULT_PASSPHRASE, or run this command in a terminal to be prompted")
 		}
-		fmt.Print("Vault passphrase: ")
-		raw, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Println()
+		var err error
+		pass, err = readHiddenPassphrase("Vault passphrase: ")
 		if err != nil {
-			return fmt.Errorf("reading passphrase: %w", err)
+			return err
 		}
-		pass = string(raw)
 	}
 
 	return store.Unlock(pass)
 }
 
-// promptPassphrase reads a hidden passphrase from the terminal.
+// passphraseFromFile reads the file named by GRIDCTL_VAULT_PASSPHRASE_FILE.
+// ok is false when the variable is unset. Errors name the variable and the
+// problem, never the contents.
+func passphraseFromFile() (pass string, ok bool, err error) {
+	path := os.Getenv(vault.PassphraseFileEnv)
+	if path == "" {
+		return "", false, nil
+	}
+	pass, err = vault.ReadPassphraseFile(path)
+	if err != nil {
+		return "", false, fmt.Errorf("%s: %w", vault.PassphraseFileEnv, err)
+	}
+	return pass, true, nil
+}
+
+// passphraseFromEnvironment returns GRIDCTL_VAULT_PASSPHRASE, else the
+// contents of GRIDCTL_VAULT_PASSPHRASE_FILE. ok is false when neither is set.
+func passphraseFromEnvironment() (pass string, ok bool, err error) {
+	if pass := os.Getenv("GRIDCTL_VAULT_PASSPHRASE"); pass != "" {
+		return pass, true, nil
+	}
+	return passphraseFromFile()
+}
+
+// stdinIsTerminal is a seam for tests.
+var stdinIsTerminal = func() bool { return isatty.IsTerminal(os.Stdin.Fd()) }
+
+// readHiddenPassphrase prints prompt and reads a hidden line from the
+// terminal. ctrl-C cancels the read, restores the terminal, and returns
+// "passphrase entry cancelled" instead of killing the process with echo off.
+func readHiddenPassphrase(prompt string) (string, error) {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	fmt.Print(prompt)
+	raw, err := controller.ReadHidden(ctx, os.Stdin, os.Stdout)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
+// promptPassphrase returns GRIDCTL_VAULT_PASSPHRASE, the contents of
+// GRIDCTL_VAULT_PASSPHRASE_FILE, or a hidden passphrase read from the
+// terminal, in that order.
 func promptPassphrase(prompt string) (string, error) {
-	pass := os.Getenv("GRIDCTL_VAULT_PASSPHRASE")
-	if pass != "" {
+	pass, ok, err := passphraseFromEnvironment()
+	if err != nil {
+		return "", err
+	}
+	if ok {
 		return pass, nil
 	}
 
-	if !isatty.IsTerminal(os.Stdin.Fd()) {
+	if !stdinIsTerminal() {
 		return "", fmt.Errorf("interactive input required. Set GRIDCTL_VAULT_PASSPHRASE for non-interactive use")
 	}
-
-	fmt.Print(prompt)
-	raw, err := term.ReadPassword(int(os.Stdin.Fd()))
-	fmt.Println()
-	if err != nil {
-		return "", fmt.Errorf("reading input: %w", err)
-	}
-	return string(raw), nil
+	return readHiddenPassphrase(prompt)
 }
 
 // promptPassphraseConfirm reads a passphrase twice and confirms they match.
@@ -82,8 +135,8 @@ func promptPassphraseConfirm() (string, error) {
 		return "", fmt.Errorf("passphrase cannot be empty")
 	}
 
-	// Skip confirmation if using env var
-	if os.Getenv("GRIDCTL_VAULT_PASSPHRASE") != "" {
+	// Skip confirmation when the passphrase came from the environment.
+	if _, fromEnv, _ := passphraseFromEnvironment(); fromEnv {
 		return pass1, nil
 	}
 

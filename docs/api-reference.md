@@ -2161,13 +2161,20 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/status
   "encrypted": true,
   "variables_count": 12,
   "secrets_count": 12,
-  "sets_count": 2
+  "sets_count": 2,
+  "unlock_source": "stdin"
 }
 ```
 
 The counts are only included when the store is unlocked. `variables_count` is
 the canonical total; `secrets_count` is a compatibility alias with the same
-value.
+value. `unlock_source` (additive) reports how this daemon's encrypted store was
+unlocked: `environment` (`GRIDCTL_VAULT_PASSPHRASE`), `passphrase_file`
+(`GRIDCTL_VAULT_PASSPHRASE_FILE`), `stdin` (the `apply` prompt or
+`--passphrase-stdin`), `api` (`POST /api/var/unlock` or `POST /api/var/lock`),
+or `cli` (an unlock request with `"source": "cli"`). It is omitted when the
+store is locked, plaintext, or unlocked without a recorded source; treat an
+unlocked encrypted store without it as plainly unlocked.
 
 #### `POST /api/var/unlock`
 
@@ -2181,6 +2188,12 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/unl
   -d '{"passphrase": "my-secret-passphrase"}'
 ```
 
+The optional `source` field (additive) records how the session started and is
+reported as `unlock_source`: `"api"` (the default when omitted) or `"cli"`. Any
+other value returns 400. An already unlocked store returns
+`{"status": "already_unlocked"}` and keeps its recorded source. The daemon
+registers the passphrase for log redaction after a successful unlock.
+
 **Response:**
 ```json
 {"status": "unlocked"}
@@ -2188,7 +2201,8 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/unl
 
 #### `POST /api/var/lock`
 
-Encrypts the vault with a passphrase.
+Encrypts the vault with a passphrase. The store stays unlocked in this daemon
+afterward, and `unlock_source` reports `api`.
 
 **Auth:** Yes
 

@@ -1195,3 +1195,134 @@ func containsPath(paths []string, fragment string) bool {
 	}
 	return false
 }
+
+// TestUpgradeRollback_LockedStoreRestart starts a daemon that holds an
+// encrypted store unlocked from --passphrase-stdin. Without a terminal or a
+// passphrase variable, upgrade --restart refuses it and leaves it running;
+// with GRIDCTL_VAULT_PASSPHRASE it restarts and the new daemon reports the
+// environment as its unlock source. A rollback whose retained target
+// predates --passphrase-stdin refuses the daemon with the missing-capability
+// line before any destroy. No container runtime is required.
+func TestUpgradeRollback_LockedStoreRestart(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	if mockStdioBin == "" {
+		t.Fatal("mock stdio server was not built")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
+	dir := t.TempDir()
+	_, newBin := versionedBins(ctx, t)
+	payload, err := os.ReadFile(newBin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hits hitLog
+	srv := httptest.NewServer(releaseHandler(t, "v9.0.2", payload, &hits))
+	defer srv.Close()
+	releaseEnv := []string{
+		"GRIDCTL_UPGRADE_RELEASE_API=" + srv.URL + "/repos/gridctl/gridctl/releases?per_page=1",
+		"GRIDCTL_UPGRADE_DOWNLOAD_BASE=" + srv.URL + "/gridctl/gridctl/releases/download",
+	}
+
+	startUnlocked := func(t *testing.T, bin, home, name string) (stackPath string, port, pid int) {
+		t.Helper()
+		stackPath = writeVaultStack(t, home, name, mockStdioBin)
+		port = freePort(t)
+		env := vaultSessionEnv(home)
+		t.Cleanup(func() {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cleanupCancel()
+			_ = runCLI(cleanupCtx, t, bin, env, nil, "destroy", name)
+		})
+		r := runCLI(ctx, t, bin, env, strings.NewReader(vaultSessionPass+"\n"), "apply", stackPath, "--port", strconv.Itoa(port), "--passphrase-stdin", "--quiet")
+		if r.code != 0 {
+			t.Fatalf("apply exit = %d\n%s\n%s", r.code, r.stdout, r.stderr)
+		}
+		if st := getVarStatus(t, port); st.Locked || st.UnlockSource != "stdin" {
+			t.Fatalf("var status = %+v", st)
+		}
+		return stackPath, port, daemonPIDFromState(t, home, name)
+	}
+	assertStillRunning := func(t *testing.T, home, name string, port, pid int) {
+		t.Helper()
+		if got := daemonPIDFromState(t, home, name); got != pid {
+			t.Fatalf("daemon pid = %d, want %d (it was restarted)", got, pid)
+		}
+		if !state.IsRunning(&state.DaemonState{PID: pid}) {
+			t.Fatal("daemon stopped")
+		}
+		if st := getVarStatus(t, port); st.Locked || st.UnlockSource != "stdin" {
+			t.Fatalf("var status after refusal = %+v", st)
+		}
+	}
+
+	t.Run("restart", func(t *testing.T) {
+		home := filepath.Join(dir, "locked-home")
+		if err := os.MkdirAll(home, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		bin := filepath.Join(home, "gridctl")
+		if err := os.WriteFile(bin, payload, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		lockedVaultHome(ctx, t, bin, home)
+		const name = "locked-lab"
+		_, port, pid := startUnlocked(t, bin, home, name)
+
+		r := runCLI(ctx, t, bin, vaultSessionEnv(home, releaseEnv...), nil, "upgrade", "--restart", "--yes")
+		if r.code != 1 {
+			t.Fatalf("non-TTY restart exit = %d\n%s\n%s", r.code, r.stdout, r.stderr)
+		}
+		want := "Not restarted: " + name + " (store is unlocked in the daemon and no passphrase is available here; set GRIDCTL_VAULT_PASSPHRASE_FILE or run in a terminal)"
+		if !strings.Contains(r.stderr, want) {
+			t.Fatalf("stderr = %s", r.stderr)
+		}
+		assertStillRunning(t, home, name, port, pid)
+
+		r = runCLI(ctx, t, bin, vaultSessionEnv(home, append(releaseEnv, "GRIDCTL_VAULT_PASSPHRASE="+vaultSessionPass)...), nil, "upgrade", "--restart", "--yes")
+		if r.code != 0 || !strings.Contains(r.stdout, "Restarted "+name) {
+			t.Fatalf("restart with the environment exit = %d\n%s\n%s", r.code, r.stdout, r.stderr)
+		}
+		if got := daemonPIDFromState(t, home, name); got == pid {
+			t.Fatal("daemon was not replaced")
+		}
+		if st := getVarStatus(t, port); st.Locked || !st.Encrypted || st.UnlockSource != "environment" {
+			t.Fatalf("restarted var status = %+v", st)
+		}
+	})
+
+	t.Run("rollback to a target without the flag", func(t *testing.T) {
+		preFeature := hookBinAt(ctx, t, preAntigravityHookCommit)
+		home := filepath.Join(dir, "rollback-home")
+		if err := os.MkdirAll(home, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		bin := filepath.Join(home, "gridctl")
+		if err := copyFileMode(preFeature, bin, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		lockedVaultHome(ctx, t, newBin, home)
+		r := runCLI(ctx, t, bin, vaultSessionEnv(home, releaseEnv...), nil, "upgrade", "--yes", "--version", "v9.0.2")
+		if r.code != 0 {
+			t.Fatalf("upgrade exit = %d\n%s\n%s", r.code, r.stdout, r.stderr)
+		}
+		const name = "rollback-lab"
+		_, port, pid := startUnlocked(t, bin, home, name)
+
+		r = runCLI(ctx, t, bin, vaultSessionEnv(home), nil, "upgrade", "--rollback", "--restart", "--yes")
+		if r.code != 1 {
+			t.Fatalf("rollback --restart exit = %d\n%s\n%s", r.code, r.stdout, r.stderr)
+		}
+		want := "Not restarted: " + name + " (target gridctl does not accept --passphrase-stdin; set GRIDCTL_VAULT_PASSPHRASE_FILE to restart it)"
+		if !strings.Contains(r.stderr, want) {
+			t.Fatalf("stderr = %s\nstdout = %s", r.stderr, r.stdout)
+		}
+		if strings.Contains(r.stdout, "Restarting "+name) {
+			t.Fatalf("a step ran for the refused daemon:\n%s", r.stdout)
+		}
+		assertStillRunning(t, home, name, port, pid)
+	})
+}

@@ -187,9 +187,11 @@ No file is written and the store stays encrypted on disk, so the next command
 loads it locked again.
 
 apply and serve unlock the store when they start, from GRIDCTL_VAULT_PASSPHRASE
-or from the file named by GRIDCTL_VAULT_PASSPHRASE_FILE; plan and reload use
-that daemon's store. Other var subcommands read GRIDCTL_VAULT_PASSPHRASE or
-prompt in a terminal.`,
+or from the file named by GRIDCTL_VAULT_PASSPHRASE_FILE; apply otherwise
+prompts in a terminal when the stack needs the store, and the daemon keeps it
+unlocked until it stops. plan and reload use that daemon's store. Other var
+subcommands read GRIDCTL_VAULT_PASSPHRASE, then GRIDCTL_VAULT_PASSPHRASE_FILE,
+or prompt in a terminal.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runVarUnlock()
 	},
