@@ -222,11 +222,21 @@ gridctl var lock       # Encrypt with a passphrase
 gridctl var unlock     # Verify the passphrase (does not persist)
 ```
 
-An encrypted store loads locked in every process. For `gridctl apply` and
-`gridctl serve`, set `GRIDCTL_VAULT_PASSPHRASE`, or point
-`GRIDCTL_VAULT_PASSPHRASE_FILE` at a passphrase file you own. Without either,
-apply fails with `variable store is locked`. The `var` subcommands read
-`GRIDCTL_VAULT_PASSPHRASE` or prompt in a terminal.
+An encrypted store loads locked in every process. In a terminal,
+`gridctl apply` prompts once (`Variable store is locked. Passphrase: `) when the
+stack references the store, and the daemon keeps it unlocked until it stops.
+A script can pipe the passphrase instead:
+
+```bash
+printf '%s\n' "$PASS" | gridctl apply stack.yaml --passphrase-stdin
+```
+
+For unattended `gridctl apply` and `gridctl serve`, set
+`GRIDCTL_VAULT_PASSPHRASE`, or point `GRIDCTL_VAULT_PASSPHRASE_FILE` at a
+passphrase file you own. Without a terminal or either variable, apply fails with
+`variable store is locked`. The `var` subcommands read
+`GRIDCTL_VAULT_PASSPHRASE`, then `GRIDCTL_VAULT_PASSPHRASE_FILE`, or prompt in a
+terminal.
 
 ## 💻 Usage
 

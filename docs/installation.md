@@ -122,7 +122,7 @@ Linux user units cannot depend on the system Docker socket. The unit restarts on
 
 If the variable store is encrypted and the stack needs it (a `${var:}` reference, a `secrets.sets` entry, or a `source.auth.credential_ref` that contains `${var:` or `${vault:`), install refuses until you pass `--passphrase-file`. Create that file yourself, mode `0600` or stricter, owned by you, at most 4 KiB. The unit stores the path as `GRIDCTL_VAULT_PASSPHRASE_FILE`. Gridctl never creates, copies, or templates the file. Install reads it once to verify the passphrase. `status` and `doctor` do not read it. The daemon reads it at start. A `0644` file, a file owned by someone else, a symlink, a directory, or a file larger than 4 KiB is refused, and the error does not echo the contents. When both variables are set, `GRIDCTL_VAULT_PASSPHRASE` wins and the file is not read. A stack that does not need the store, and whose store is encrypted, installs with a note that the store stays locked. A plaintext store, or no store, does not print that note.
 
-`gridctl serve -f` logs a bad passphrase file and starts with the store locked. `gridctl apply -f` refuses to start.
+`gridctl serve -f` logs a bad passphrase file and starts with the store locked. `gridctl apply -f` refuses to start. A service never prompts and does not use `--passphrase-stdin`; the terminal prompt that `gridctl apply` shows in an interactive shell does not change any of the rules above, and `gridctl upgrade --restart` restarts a service through its supervisor, which reads the same passphrase file.
 
 After logout, a Linux user service stops unless linger is enabled. Install prints the hint and does not run `loginctl enable-linger` for you:
 
