@@ -219,10 +219,14 @@ Protect the store with passphrase-based encryption (XChaCha20-Poly1305 + Argon2i
 
 ```bash
 gridctl var lock       # Encrypt with a passphrase
-gridctl var unlock     # Decrypt for the session
+gridctl var unlock     # Verify the passphrase (does not persist)
 ```
 
-Set `GRIDCTL_VAULT_PASSPHRASE` to provide the passphrase non-interactively.
+An encrypted store loads locked in every process. For `gridctl apply` and
+`gridctl serve`, set `GRIDCTL_VAULT_PASSPHRASE`, or point
+`GRIDCTL_VAULT_PASSPHRASE_FILE` at a passphrase file you own. Without either,
+apply fails with `variable store is locked`. The `var` subcommands read
+`GRIDCTL_VAULT_PASSPHRASE` or prompt in a terminal.
 
 ## 💻 Usage
 

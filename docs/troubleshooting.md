@@ -392,7 +392,7 @@ gridctl service install --stack stack.yaml --passphrase-file ~/.gridctl-passphra
 
 The file must be a regular file, mode `0600` or stricter, owned by you, and at most 4 KiB. A `0644` file, a file owned by someone else, a symlink, a directory, or a file larger than 4 KiB is refused, and the error does not echo the contents. The other option is a plaintext store (`gridctl var ...`), which leaves values readable on disk.
 
-`gridctl apply -f` and `gridctl serve -f` honor `GRIDCTL_VAULT_PASSPHRASE_FILE` the same way. Apply refuses a bad file. Serve logs it and starts with the store locked.
+`gridctl apply -f` and `gridctl serve -f` honor `GRIDCTL_VAULT_PASSPHRASE_FILE` the same way. Apply refuses a bad file. Serve logs it and starts with the store locked. With a locked store and neither variable set, `apply`, `plan`, and `reload` fail with `variable store is locked; could not resolve: <KEYS>` for any stored reference. See [Vault is locked](#vault-is-locked).
 
 ---
 
@@ -789,8 +789,18 @@ If a filesystem write fails, the error lists already-written artifacts and the a
 
 **Symptoms:**
 
+`gridctl apply`, `gridctl plan` against a running daemon, `gridctl reload`, or `GET /api/stack/plan` fails with:
+
 ```
-vault is locked. Set GRIDCTL_VAULT_PASSPHRASE or run 'gridctl var unlock'
+variable store is locked; could not resolve: MY_TOKEN
+  To fix: set GRIDCTL_VAULT_PASSPHRASE, or point GRIDCTL_VAULT_PASSPHRASE_FILE at a passphrase file you own
+  Diagnose: gridctl var explain <KEY>
+```
+
+A `var` subcommand run without a terminal fails with:
+
+```
+vault is locked. Set GRIDCTL_VAULT_PASSPHRASE, or run this command in a terminal to be prompted
 ```
 
 Or via the API:
@@ -799,21 +809,35 @@ Or via the API:
 {"error": "vault is locked"}
 ```
 
+A store reference that is also set in the environment loads from the environment while the store is locked, and the daemon logs `variable resolved from the environment because the variable store is locked`. A stack with `secrets.sets` logs `secrets.sets injected nothing because the variable store is locked`.
+
 **Resolution:**
 
-Unlock the store before accessing secrets:
+An encrypted store loads locked in every new process. Do not run `gridctl var set` for a key that is already stored; that overwrites it. Give the process that loads the stack the passphrase instead.
 
-```bash
-gridctl var unlock
-```
-
-Or set the passphrase as an environment variable for non-interactive use:
+For `gridctl apply` and `gridctl serve`, set the passphrase in the environment:
 
 ```bash
 export GRIDCTL_VAULT_PASSPHRASE="your-passphrase"
 ```
 
-A user service does not inherit that variable. Point install at a file you own with `--passphrase-file`, or set `GRIDCTL_VAULT_PASSPHRASE_FILE` for `gridctl apply -f` and `gridctl serve -f`. See [Store is locked when the service starts](#store-is-locked-when-the-service-starts).
+Or keep it in a file you own and point `GRIDCTL_VAULT_PASSPHRASE_FILE` at it:
+
+```bash
+umask 077
+printf '%s\n' 'your passphrase' > ~/.gridctl-passphrase
+export GRIDCTL_VAULT_PASSPHRASE_FILE=~/.gridctl-passphrase
+```
+
+The file rules are the same as for the service (see below). The other option is a plaintext store, which leaves values readable on disk.
+
+The `var` subcommands (`var list`, `var get`, and the rest) read `GRIDCTL_VAULT_PASSPHRASE` or prompt in a terminal. They do not read `GRIDCTL_VAULT_PASSPHRASE_FILE`.
+
+`gridctl var unlock` only verifies the passphrase: it decrypts the store in that process and writes nothing, so the next command loads it locked again. It does not unlock the store for `apply`.
+
+Unlocking from the web UI lasts for the daemon's lifetime. A restarted daemon loads the store locked unless its environment carries `GRIDCTL_VAULT_PASSPHRASE` or `GRIDCTL_VAULT_PASSPHRASE_FILE`.
+
+A user service does not inherit either variable. Point install at a file you own with `--passphrase-file`. See [Store is locked when the service starts](#store-is-locked-when-the-service-starts).
 
 ### Wrong passphrase
 
