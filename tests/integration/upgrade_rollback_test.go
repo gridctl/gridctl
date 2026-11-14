@@ -539,6 +539,11 @@ const preFeatureHookCommit = "d2c659e808a557ee2c810f19c38c7fd1a35b692b"
 // records with the same lockfile version and revision.
 const preCopilotHookCommit = "ebe8af643acf92a1a56f9c54dcab9c74b3a9adf7"
 
+// preAntigravityHookCommit is the last commit with the OpenCode and
+// Copilot CLI hook targets and without the Antigravity target. It reads
+// Antigravity hook records with the same lockfile version and revision.
+const preAntigravityHookCommit = "5e9ae167bb3ee54d599c03584855980833dfc84e"
+
 type pinnedHookBin struct {
 	once sync.Once
 	bin  string
@@ -770,6 +775,87 @@ func TestUpgradeRollback_HookCopilotRecord(t *testing.T) {
 			}
 			if _, err := os.Stat(copilotScriptDir(home)); !os.IsNotExist(err) {
 				t.Fatalf("copilot script copy remains: %v", err)
+			}
+		})
+	}
+}
+
+// TestUpgradeRollback_HookAntigravityRecord runs a binary without the
+// Antigravity target (v1.0.0-rc.7 and the commit before the target) against
+// a home with an Antigravity hook projection, then the current binary
+// again. The older binary finds no recorded groups under a hooks key,
+// refuses to unsync the record, never edits the shared hooks file or
+// deletes the script copy, and its lockfile rewrite does not change
+// behavior after upgrade.
+func TestUpgradeRollback_HookAntigravityRecord(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+	newBin := hookCLI(t)
+	for _, commit := range []string{preCopilotHookCommit, preAntigravityHookCommit} {
+		t.Run(commit[:7], func(t *testing.T) {
+			oldBin := hookBinAt(ctx, t, commit)
+			home, _ := antigravityHookHome(t, newBin)
+			file := antigravityFilePath(home)
+			if err := os.WriteFile(file, []byte(antigravityUserFile), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			if rows, code := hookSyncJSON(t, newBin, home, "block-force-push"); code != 0 || len(rows) != 2 {
+				t.Fatalf("sync exit %d rows %+v", code, rows)
+			}
+			fileBytes, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			st, ok := hookStatusJSON(t, oldBin, home, "antigravity")
+			if !ok || st.State != "target-missing" || !strings.HasPrefix(st.Detail, "the recorded groups were removed from the settings file") {
+				t.Fatalf("older status = %+v (found %v)", st, ok)
+			}
+			stdout, stderr, _ := runHookCLI(t, oldBin, home, "skill", "project", "unsync", "--kind", "hook", "block-force-push", "--clients", "antigravity", "--format", "json")
+			var un struct {
+				Results []hookSyncDocRow `json:"results"`
+			}
+			if err := json.Unmarshal([]byte(stdout), &un); err != nil {
+				t.Fatalf("decode older unsync: %v\n%s\n%s", err, stdout, stderr)
+			}
+			if len(un.Results) != 1 || un.Results[0].Action != "error" || !strings.Contains(stdout, "client is no longer a projection target") {
+				t.Fatalf("older unsync = %s", stdout)
+			}
+			if got, err := os.ReadFile(file); err != nil || string(got) != string(fileBytes) {
+				t.Fatalf("older binary changed the hooks file: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(antigravityScriptDir(home), "scripts", "block.sh")); err != nil {
+				t.Fatalf("older binary removed the antigravity script copy: %v", err)
+			}
+
+			// The older binary's next save rewrites every hook entry.
+			if stdout, stderr, code := runHookCLI(t, oldBin, home, "skill", "project", "sync", "--kind", "hook", "--clients", "claude-code", "block-force-push"); code != 0 {
+				t.Fatalf("older sync exit %d\n%s\n%s", code, stdout, stderr)
+			}
+			if got, err := os.ReadFile(file); err != nil || string(got) != string(fileBytes) {
+				t.Fatalf("older sync changed the hooks file: %v", err)
+			}
+
+			for _, client := range []string{"antigravity", "claude-code"} {
+				if st, ok := hookStatusJSON(t, newBin, home, client); !ok || st.State != "in-sync" {
+					t.Fatalf("re-upgraded %s status = %+v (found %v)", client, st, ok)
+				}
+			}
+			if rows, code := hookSyncJSON(t, newBin, home, "--clients", "antigravity", "block-force-push"); code != 0 || rows[0].Action != "unchanged" {
+				t.Fatalf("re-upgraded sync exit %d rows %+v", code, rows)
+			}
+			if un := hookUnsyncJSON(t, newBin, home, "--clients", "antigravity"); len(un) != 1 || un[0].Action != "removed" {
+				t.Fatalf("re-upgraded unsync = %+v", un)
+			}
+			if got, _ := os.ReadFile(file); string(got) != antigravityUserFile {
+				t.Fatalf("re-upgraded unsync did not leave the siblings as they were:\n%s", got)
+			}
+			if _, err := os.Stat(antigravityScriptDir(home)); !os.IsNotExist(err) {
+				t.Fatalf("antigravity script copy remains: %v", err)
 			}
 		})
 	}
