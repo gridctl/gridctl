@@ -263,8 +263,49 @@ func TestVaultSession_PassphraseStdinHandOff(t *testing.T) {
 		t.Fatal("daemon log contains the passphrase")
 	}
 
+	// With both passphrase variables absent and no terminal, the var
+	// commands use the unlocked daemon.
+	gatewayVar := func(want string, args ...string) cliResult {
+		t.Helper()
+		r := runCLI(ctx, t, bin, env, nil, append([]string{"var"}, args...)...)
+		if r.code != 0 {
+			t.Fatalf("var %s exit = %d\n%s\n%s", strings.Join(args, " "), r.code, r.stdout, r.stderr)
+		}
+		if !strings.Contains(r.stdout, want) {
+			t.Fatalf("var %s stdout = %q, want %q", strings.Join(args, " "), r.stdout, want)
+		}
+		return r
+	}
+	gatewayVar("DEMO_TOKEN", "list")
+	if r := gatewayVar("stored-token", "get", "DEMO_TOKEN", "--plain"); r.stdout != "stored-token\n" {
+		t.Fatalf("var get --plain stdout = %q", r.stdout)
+	}
+	gatewayVar("Variable stored", "set", "ADDED_KEY", "--value", "added-value", "--set", "team")
+	gatewayVar("added-value", "get", "ADDED_KEY", "--plain")
+	gatewayVar("DEMO_TOKEN=stored-token", "export", "--plain")
+	gatewayVar("team", "sets", "list")
+	gatewayVar("stored-token", "run", "--only", "DEMO_TOKEN", "--no-redact", "--", "sh", "-c", `printf '%s' "$DEMO_TOKEN"`)
+	gatewayVar("Variable deleted", "delete", "ADDED_KEY", "--force")
+	gatewayVar("Variable stored", "set", "KEPT_KEY", "--value", "kept-value")
+
 	if r := runCLI(ctx, t, bin, env, nil, "destroy", stackPath); r.code != 0 {
 		t.Fatalf("destroy exit = %d\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
+
+	// With the gateway gone, the same command has no unlocked store to use.
+	r = runCLI(ctx, t, bin, env, nil, "var", "list")
+	want := "vault is locked. Set GRIDCTL_VAULT_PASSPHRASE or GRIDCTL_VAULT_PASSPHRASE_FILE, start the stack with gridctl apply, or run this command in a terminal to be prompted"
+	if r.code != 1 || !strings.Contains(r.stderr, want) {
+		t.Fatalf("var list after destroy: exit = %d\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
+
+	// The gateway wrote the shared file with the same passphrase.
+	local := vaultSessionEnv(home, "GRIDCTL_VAULT_PASSPHRASE="+vaultSessionPass)
+	if r := runCLI(ctx, t, bin, local, nil, "var", "get", "KEPT_KEY", "--plain"); r.code != 0 || r.stdout != "kept-value\n" {
+		t.Fatalf("local var get after destroy: exit = %d\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
+	if r := runCLI(ctx, t, bin, local, nil, "var", "get", "ADDED_KEY"); r.code == 0 {
+		t.Fatalf("deleted key still stored\n%s", r.stdout)
 	}
 }
 
