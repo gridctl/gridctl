@@ -437,7 +437,7 @@ func TestVaultSession_RelockAndUnlockAcrossGateways(t *testing.T) {
 			t.Fatalf("status variables for %s = %+v, want locked", name, v)
 		}
 	}
-	if table := runCLI(ctx, t, bin, env, nil, "status", "--plain"); !strings.Contains(table.stdout, "locked") {
+	if table := runCLI(ctx, t, bin, env, nil, "status", "--plain"); strings.Count(table.stdout, " locked") != 2 || strings.Contains(table.stdout, "unlocked") {
 		t.Fatalf("status table:\n%s", table.stdout)
 	}
 
@@ -494,7 +494,11 @@ func TestVaultSession_RelockAndUnlockAcrossGateways(t *testing.T) {
 		}
 	}
 
-	if r := runCLI(ctx, t, bin, env, nil, "doctor", "--json"); !strings.Contains(r.stdout, "unlocked in session-a (cli), session-b (cli)") {
+	low, high := "session-a", "session-b"
+	if ports[high] < ports[low] {
+		low, high = high, low
+	}
+	if r := runCLI(ctx, t, bin, env, nil, "doctor", "--json"); !strings.Contains(r.stdout, fmt.Sprintf("unlocked in %s (cli), %s (cli)", low, high)) {
 		t.Fatalf("doctor vault message missing gateway sessions:\n%s", r.stdout)
 	}
 	assertEncUnchanged("var unlock")
