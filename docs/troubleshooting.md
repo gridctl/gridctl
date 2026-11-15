@@ -803,11 +803,13 @@ When `gridctl apply` has no terminal on stdin, it adds one line:
   Or run gridctl apply in a terminal to be prompted
 ```
 
-A `var` subcommand run without a terminal fails with:
+A `var` subcommand run without a terminal, without either passphrase variable, and with no running gateway that holds the store unlocked fails with:
 
 ```
-vault is locked. Set GRIDCTL_VAULT_PASSPHRASE, or run this command in a terminal to be prompted
+vault is locked. Set GRIDCTL_VAULT_PASSPHRASE or GRIDCTL_VAULT_PASSPHRASE_FILE, start the stack with gridctl apply, or run this command in a terminal to be prompted
 ```
+
+Commands outside the `var` family that read the store (`gridctl skill`, `gridctl import`, and `gridctl add`) do not use a running gateway and keep the shorter `vault is locked. Set GRIDCTL_VAULT_PASSPHRASE, or run this command in a terminal to be prompted`.
 
 Or via the API:
 
@@ -847,7 +849,7 @@ export GRIDCTL_VAULT_PASSPHRASE_FILE=~/.gridctl-passphrase
 
 The file rules are the same as for the service (see below). The other option is a plaintext store, which leaves values readable on disk.
 
-The `var` subcommands (`var list`, `var get`, and the rest) read `GRIDCTL_VAULT_PASSPHRASE`, then `GRIDCTL_VAULT_PASSPHRASE_FILE`, then prompt in a terminal.
+The `var` subcommands (`var list`, `var get`, and the rest) read `GRIDCTL_VAULT_PASSPHRASE`, then `GRIDCTL_VAULT_PASSPHRASE_FILE`, then use a running gateway for this home that holds the store unlocked, then prompt in a terminal. After `gridctl apply` has unlocked a daemon, `var set`, `get`, `list`, `delete`, `import`, `export`, `sets`, `run`, and `scan` work through that daemon with no passphrase; run with `--log-level debug` to see which gateway was used. A gateway that is unreachable, answers 401 (an OAuth-mode gateway without `GRIDCTL_GATEWAY_TOKEN`), or reports the store locked is skipped. Any other gateway failure fails the command as `gateway <name>: <status> <message>` instead of prompting; fix or stop that gateway, or set `GRIDCTL_VAULT_PASSPHRASE`, which is always tried first.
 
 `gridctl var unlock` verifies the passphrase against the local store and then unlocks the store in every running gateway for this home, printing one line per gateway (`unlocked`, `already unlocked`, or `failed: <reason>`). Nothing is written to disk. With no gateway running it prints `No running gateway. Passphrase verified; gridctl apply will prompt for it when a stack needs the store.`, and nothing stays unlocked. `gridctl status` shows each gateway's state in the VARS column (`unlocked (cli)` after `var unlock`), and `gridctl doctor` lists which gateways hold the store unlocked. An OAuth-mode gateway that refuses the CLI reports `failed: unauthorized; set GRIDCTL_GATEWAY_TOKEN`; set that variable to a token from the issuer and run it again.
 
