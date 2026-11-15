@@ -324,15 +324,20 @@ func runVarCommand(cmd *cobra.Command, command []string) (int, error) {
 	if varRunNoRedact && varRunRedact {
 		return 3, fmt.Errorf("--redact and --no-redact are mutually exclusive")
 	}
-	store, err := loadVault()
+	store, err := openVarBackend(cmd.Context(), true)
 	if err != nil {
 		return 3, err
 	}
-	if err := ensureUnlocked(store); err != nil {
+	listed, err := store.List()
+	if err != nil {
 		return 3, err
 	}
-	selected, err := selectRunVariables(store.List())
+	selected, err := selectRunVariables(listed)
 	if err != nil {
+		return 3, err
+	}
+	// Selection runs on metadata, so a gateway sends only the selected values.
+	if selected, err = fetchVariableValues(store, selected); err != nil {
 		return 3, err
 	}
 	result, err := varrun.Run(cmd.Context(), varrun.Options{
@@ -405,18 +410,18 @@ func runVarScan(cmd *cobra.Command, paths []string, format string) (int, error) 
 		extra = vars
 		secretSkips = skips
 	}
+	// With --file the stored values are optional: a locked store with no
+	// passphrase source or unlocked gateway is skipped without prompting.
 	var stored []vault.Variable
-	if varScanFile == "" {
-		store, err := loadVault()
-		if err != nil {
+	store, err := openVarBackend(cmd.Context(), varScanFile == "")
+	switch {
+	case err == nil:
+		if stored, err = listVariableValues(store); err != nil {
 			return 2, err
 		}
-		if store.IsLocked() {
-			return 2, fmt.Errorf("variable store is locked; unlock it before scanning")
-		}
-		stored = store.List()
-	} else if store, err := loadVault(); err == nil && !store.IsLocked() {
-		stored = store.List()
+	case varScanFile != "" && errors.Is(err, errVarStoreLocked):
+	default:
+		return 2, err
 	}
 	result, err := varscan.Scan(cmd.Context(), append(stored, extra...), varscan.Options{Paths: paths, Staged: varScanStaged})
 	if err != nil {

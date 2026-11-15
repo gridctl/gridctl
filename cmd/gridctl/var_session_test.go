@@ -573,8 +573,11 @@ func TestLockedExplainProblem(t *testing.T) {
 	if got := lockedExplainProblem(nil); got != "store is locked; stored metadata and resolution are unknown" {
 		t.Fatalf("no gateway = %q", got)
 	}
-	if got := lockedExplainProblem([]string{"daily"}); got != "store is locked in this process; gateway daily holds it unlocked" {
+	if got := lockedExplainProblem([]string{"daily"}); got != "store is locked in this process; gateway daily holds it unlocked, so apply and var commands use the gateway" {
 		t.Fatalf("one gateway = %q", got)
+	}
+	if got := lockedExplainProblem([]string{"daily", "ops"}); got != "store is locked in this process; gateways daily, ops hold it unlocked, so apply and var commands use gateway daily" {
+		t.Fatalf("two gateways = %q", got)
 	}
 }
 
@@ -642,7 +645,7 @@ func TestRunVarExplain_LockedNamesUnlockedGateway(t *testing.T) {
 	if exit != 1 || !doc.Locked {
 		t.Fatalf("exit=%d doc=%+v", exit, doc)
 	}
-	want := "store is locked in this process; gateway daily holds it unlocked"
+	want := "store is locked in this process; gateway daily holds it unlocked, so apply and var commands use the gateway"
 	if len(doc.Problems) != 1 || doc.Problems[0] != want {
 		t.Fatalf("problems = %q, want [%q]", doc.Problems, want)
 	}

@@ -33,36 +33,23 @@ func loadVault() (*vault.Store, error) {
 }
 
 // ensureUnlocked unlocks a locked store from GRIDCTL_VAULT_PASSPHRASE, then
-// GRIDCTL_VAULT_PASSPHRASE_FILE, then a terminal prompt.
+// GRIDCTL_VAULT_PASSPHRASE_FILE, then a terminal prompt. It serves commands
+// outside the var family, which never use a running gateway; the var
+// subcommands resolve their store through openVarBackend.
 func ensureUnlocked(store *vault.Store) error {
 	if !store.IsLocked() {
 		return nil
 	}
-
-	pass := os.Getenv("GRIDCTL_VAULT_PASSPHRASE")
-	if pass == "" {
-		filePass, ok, err := passphraseFromFile()
-		if err != nil {
-			return err
-		}
-		if ok {
-			if err := store.Unlock(filePass); err != nil {
-				return fmt.Errorf("unlocking vault from %s: passphrase rejected", vault.PassphraseFileEnv)
-			}
-			return nil
-		}
+	if handled, err := unlockStoreFromEnvironment(store); handled || err != nil {
+		return err
 	}
-	if pass == "" {
-		if !stdinIsTerminal() {
-			return fmt.Errorf("vault is locked. Set GRIDCTL_VAULT_PASSPHRASE, or run this command in a terminal to be prompted")
-		}
-		var err error
-		pass, err = readHiddenPassphrase("Vault passphrase: ")
-		if err != nil {
-			return err
-		}
+	if !stdinIsTerminal() {
+		return fmt.Errorf("vault is locked. Set GRIDCTL_VAULT_PASSPHRASE, or run this command in a terminal to be prompted")
 	}
-
+	pass, err := readHiddenPassphrase("Vault passphrase: ")
+	if err != nil {
+		return err
+	}
 	return store.Unlock(pass)
 }
 
