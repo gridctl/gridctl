@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -524,26 +523,11 @@ func readDaemonVaultStatus(ctx context.Context, st state.DaemonState) (encrypted
 	if err := ctx.Err(); err != nil {
 		return false, false, err
 	}
-	api := newDaemonAPIFor(st, 2*time.Second)
-	resp, err := api.Get(api.URL("/api/var/status"))
+	status, err := readGatewayVarStatus(ctx, st)
 	if err != nil {
 		return false, false, err
 	}
-	defer resp.Body.Close()
-	if authErr := api.describeUnauthorized(resp); authErr != nil {
-		return false, false, authErr
-	}
-	if resp.StatusCode != http.StatusOK {
-		return false, false, fmt.Errorf("status %d", resp.StatusCode)
-	}
-	var body struct {
-		Encrypted bool `json:"encrypted"`
-		Locked    bool `json:"locked"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return false, false, err
-	}
-	return body.Encrypted, body.Locked, nil
+	return status.Encrypted, status.Locked, nil
 }
 
 // targetAcceptsPassphraseStdin probes the target binary once with

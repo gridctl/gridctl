@@ -4,12 +4,8 @@ import '@testing-library/jest-dom';
 import { VaultEncryptForm } from '../components/vault/VaultEncryptForm';
 import { VaultLockPrompt } from '../components/vault/VaultLockPrompt';
 
-function fillPassphrases(
-  passphrase: string,
-  confirm = passphrase,
-  placeholder = 'New passphrase',
-) {
-  fireEvent.change(screen.getByPlaceholderText(placeholder), {
+function fillPassphrases(passphrase: string, confirm = passphrase) {
+  fireEvent.change(screen.getByPlaceholderText('New passphrase'), {
     target: { value: passphrase },
   });
   fireEvent.change(screen.getByPlaceholderText('Confirm passphrase'), {
@@ -73,29 +69,15 @@ describe('VaultEncryptForm — encrypt mode', () => {
   });
 });
 
-describe('VaultEncryptForm — lock mode', () => {
-  it('shows re-lock copy and accepts a short existing passphrase', async () => {
-    const onLock = vi.fn().mockResolvedValue(undefined);
-    render(
-      <VaultEncryptForm mode="lock" onLock={onLock} onCancel={vi.fn()} />,
-    );
+describe('VaultEncryptForm — encrypt only', () => {
+  it('has no re-lock copy and always applies the length floor', () => {
+    render(<VaultEncryptForm onLock={vi.fn()} onCancel={vi.fn()} />);
     expect(
-      screen.getByText(/lock variables with your passphrase/i),
-    ).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Passphrase')).toBeInTheDocument();
-    expect(
-      screen.queryByPlaceholderText('New passphrase'),
+      screen.queryByText(/lock variables with your passphrase/i),
     ).not.toBeInTheDocument();
-
-    // The existing passphrase may predate the length floor — lock mode must
-    // not reject it.
-    fillPassphrases('old', 'old', 'Passphrase');
-    const submit = screen.getByRole('button', { name: /lock variables/i });
-    expect(submit).toBeEnabled();
-    await act(async () => {
-      fireEvent.click(submit);
-    });
-    expect(onLock).toHaveBeenCalledWith('old');
+    expect(screen.queryByPlaceholderText('Passphrase')).not.toBeInTheDocument();
+    fillPassphrases('old');
+    expect(screen.getByRole('button', { name: /^encrypt$/i })).toBeDisabled();
   });
 });
 

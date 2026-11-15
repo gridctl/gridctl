@@ -88,12 +88,37 @@ func TestPrinter_Gateways_WithData(t *testing.T) {
 	if !strings.Contains(got, "VERSION") {
 		t.Error("Gateways() should contain VERSION header")
 	}
+	if !strings.Contains(got, "VARS") {
+		t.Error("Gateways() should contain VARS header")
+	}
 	// Check data
 	if !strings.Contains(got, "my-topo") {
 		t.Error("Gateways() should contain gateway name")
 	}
 	if !strings.Contains(got, "8180") {
 		t.Error("Gateways() should contain port")
+	}
+}
+
+func TestPrinter_Gateways_VarsColumn(t *testing.T) {
+	var buf bytes.Buffer
+	p := NewWithWriter(&buf)
+	p.Gateways([]GatewaySummary{
+		{Name: "daily", Port: 8180, PID: 1, Status: "running", Vars: "unlocked (stdin)"},
+		{Name: "gone", Port: 8181, PID: 2, Status: "stopped"},
+	})
+	got := buf.String()
+	if !strings.Contains(got, "unlocked (stdin)") {
+		t.Errorf("missing vars state:\n%s", got)
+	}
+	var goneRow string
+	for _, line := range strings.Split(got, "\n") {
+		if strings.Contains(line, "gone") {
+			goneRow = line
+		}
+	}
+	if !strings.Contains(goneRow, " - ") {
+		t.Errorf("empty vars state should render as -: %q", goneRow)
 	}
 }
 

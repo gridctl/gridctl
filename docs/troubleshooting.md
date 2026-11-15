@@ -849,7 +849,9 @@ The file rules are the same as for the service (see below). The other option is 
 
 The `var` subcommands (`var list`, `var get`, and the rest) read `GRIDCTL_VAULT_PASSPHRASE`, then `GRIDCTL_VAULT_PASSPHRASE_FILE`, then prompt in a terminal.
 
-`gridctl var unlock` only verifies the passphrase: it decrypts the store in that process and writes nothing, so the next command loads it locked again. It does not unlock the store for `apply`.
+`gridctl var unlock` verifies the passphrase against the local store and then unlocks the store in every running gateway for this home, printing one line per gateway (`unlocked`, `already unlocked`, or `failed: <reason>`). Nothing is written to disk. With no gateway running it prints `No running gateway. Passphrase verified; gridctl apply will prompt for it when a stack needs the store.`, and nothing stays unlocked. `gridctl status` shows each gateway's state in the VARS column (`unlocked (cli)` after `var unlock`), and `gridctl doctor` lists which gateways hold the store unlocked. An OAuth-mode gateway that refuses the CLI reports `failed: unauthorized; set GRIDCTL_GATEWAY_TOKEN`; set that variable to a token from the issuer and run it again.
+
+To end the session without stopping the stack, run `gridctl var lock` on the encrypted store, or use the Lock action in the web UI. Each running gateway drops the passphrase and variables from memory (`POST /api/var/relock`); the file is not rewritten and no passphrase is asked for. `gridctl var lock` no longer re-encrypts an encrypted store; use `gridctl var change-passphrase` to rotate the passphrase.
 
 Unlocking from the web UI lasts for the daemon's lifetime. A restarted daemon loads the store locked unless its environment carries `GRIDCTL_VAULT_PASSPHRASE` or `GRIDCTL_VAULT_PASSPHRASE_FILE`.
 

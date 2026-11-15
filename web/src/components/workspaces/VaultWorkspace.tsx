@@ -116,9 +116,11 @@ export function VaultWorkspace() {
     error,
     locked,
     encrypted,
+    unlockSource,
     refresh,
     unlock,
     lock,
+    relock,
     createVar,
     updateVar,
     deleteVar,
@@ -360,14 +362,31 @@ export function VaultWorkspace() {
     [unlock],
   );
 
+  // Encrypts a plaintext store with a new passphrase. An encrypted store
+  // never goes through here: re-encrypting it with an unchecked passphrase
+  // would silently rotate it.
   const handleEncrypt = useCallback(
     async (passphrase: string) => {
       await lock(passphrase);
       setEncryptOpen(false);
-      showToast('success', encrypted ? 'Variables locked' : 'Variable store encrypted');
+      showToast('success', 'Variable store encrypted');
     },
-    [lock, encrypted],
+    [lock],
   );
+
+  // Ends the gateway's unlocked session on an encrypted store. Body-less;
+  // no passphrase form.
+  const handleRelock = useCallback(async () => {
+    try {
+      const status = await relock();
+      if (status === 'locked') showToast('success', 'Variables locked');
+    } catch (err) {
+      showToast(
+        'error',
+        err instanceof Error && err.message ? `Lock failed: ${err.message}` : 'Lock failed',
+      );
+    }
+  }, [relock]);
 
   const handleCreate = useCallback(
     async (input: Parameters<typeof createVar>[0]) => {
@@ -599,20 +618,21 @@ export function VaultWorkspace() {
             totalSets={allSets.length}
             locked={locked}
             encrypted={encrypted}
+            unlockSource={unlockSource}
             onRefresh={refresh}
             onOpenEncrypt={() => setEncryptOpen(true)}
+            onRelock={handleRelock}
             onOpenImport={() => setImportOpen(true)}
           />
 
           {/* Inline encrypt drawer slides in below the header when invoked. */}
-          {encryptOpen && !locked && (
+          {encryptOpen && !locked && !encrypted && (
             <div className="flex-shrink-0 px-6 py-3 border-b border-border-subtle bg-surface-elevated/40">
               <div className="max-w-md">
                 <p className="text-3xs uppercase tracking-[0.18em] text-text-muted mb-2">
-                  {encrypted ? 're-enter passphrase to lock' : 'set a passphrase to encrypt'}
+                  set a passphrase to encrypt
                 </p>
                 <VaultEncryptForm
-                  mode={encrypted ? 'lock' : 'encrypt'}
                   onLock={handleEncrypt}
                   onCancel={() => setEncryptOpen(false)}
                 />
@@ -914,10 +934,22 @@ interface VaultHeaderProps {
   totalSets: number;
   locked: boolean;
   encrypted: boolean;
+  unlockSource: string | null;
   onRefresh: () => void;
   onOpenEncrypt: () => void;
+  onRelock: () => void;
   onOpenImport: () => void;
 }
+
+// Header text for each recorded unlock source. An unknown or empty source
+// shows nothing extra.
+const UNLOCK_SOURCE_LABELS: Record<string, string> = {
+  stdin: 'Unlocked by prompt',
+  environment: 'Unlocked by environment',
+  passphrase_file: 'Unlocked by passphrase file',
+  api: 'Unlocked through the API',
+  cli: 'Unlocked by gridctl var unlock',
+};
 
 function VaultHeader({
   compact,
@@ -925,10 +957,14 @@ function VaultHeader({
   totalSets,
   locked,
   encrypted,
+  unlockSource,
   onRefresh,
   onOpenEncrypt,
+  onRelock,
   onOpenImport,
 }: VaultHeaderProps) {
+  const unlockLabel =
+    encrypted && !locked && unlockSource ? UNLOCK_SOURCE_LABELS[unlockSource] : undefined;
   return (
     <header
       className={cn(
@@ -954,6 +990,9 @@ function VaultHeader({
             encrypted
           </span>
         )}
+        {unlockLabel && (
+          <div className="font-mono text-3xs text-text-muted">{unlockLabel}</div>
+        )}
         {locked && (
           <span className="text-3xs font-mono px-1.5 py-0.5 rounded bg-primary/10 text-primary flex items-center gap-1">
             <Lock size={9} />
@@ -974,7 +1013,7 @@ function VaultHeader({
             {encrypted ? (
               <IconButton
                 icon={Lock}
-                onClick={onOpenEncrypt}
+                onClick={onRelock}
                 tooltip="Lock variables"
                 size="sm"
                 variant="ghost"

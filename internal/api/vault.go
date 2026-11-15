@@ -159,6 +159,30 @@ func (s *Server) handleVaultLock(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"status": "locked"})
 }
 
+// handleVaultRelock ends this process's unlocked session on an encrypted
+// store without touching the file. Body-less.
+// POST /api/var/relock (canonical only)
+func (s *Server) handleVaultRelock(w http.ResponseWriter, _ *http.Request) {
+	if s.vaultStore == nil {
+		writeJSONError(w, "Variable store not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	relocked, err := s.vaultStore.Relock()
+	switch {
+	case errors.Is(err, vault.ErrNotEncrypted):
+		writeJSONError(w, "store is not encrypted", http.StatusConflict)
+		return
+	case err != nil:
+		writeJSONError(w, "Failed to relock variable store: "+err.Error(), http.StatusInternalServerError)
+		return
+	case !relocked:
+		writeJSON(w, map[string]string{"status": "already_locked"})
+		return
+	}
+	writeJSON(w, map[string]string{"status": "locked"})
+}
+
 // variableEntry is the wire shape for /api/var list and detail responses.
 type variableEntry struct {
 	Key         string             `json:"key"`

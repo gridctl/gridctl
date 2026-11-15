@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/gridctl/gridctl/pkg/output"
 	"github.com/gridctl/gridctl/pkg/vault"
@@ -172,28 +174,57 @@ var varSetsDeleteCmd = &cobra.Command{
 
 var varLockCmd = &cobra.Command{
 	Use:   "lock",
-	Short: "Encrypt the variable store with a passphrase",
-	Long:  "Encrypt all variables at rest using envelope encryption (XChaCha20-Poly1305 + Argon2id).",
+	Short: "Encrypt the store, or lock it again in every running gateway",
+	Long: `On a plaintext store, take a new passphrase (GRIDCTL_VAULT_PASSPHRASE,
+GRIDCTL_VAULT_PASSPHRASE_FILE, or a terminal prompt) and encrypt all variables
+at rest using envelope encryption (XChaCha20-Poly1305 + Argon2id). Running
+gateways lock themselves on their next read of the store.
+
+On a store that is already encrypted, nothing is prompted for or rewritten:
+the unlocked session ends in every running gateway for this home, which drop
+the passphrase and variables from memory. Use change-passphrase to rotate it.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runVarLock()
+		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		return runVarLockSession(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr())
 	},
 }
 
+var (
+	varUnlockFormat string
+	varUnlockJSON   *bool
+)
+
 var varUnlockCmd = &cobra.Command{
 	Use:   "unlock",
-	Short: "Verify the store passphrase (does not persist)",
-	Long: `Verify the passphrase of an encrypted store by decrypting it in this process only.
-No file is written and the store stays encrypted on disk, so the next command
-loads it locked again.
+	Short: "Unlock the variable store in every running gateway",
+	Long: `Verify the passphrase of an encrypted store against the local file, then post it
+to each running gateway for this home. Each gateway keeps it only in its own
+memory until it stops or gridctl var lock ends the session; nothing is written
+to disk. With no gateway running, nothing stays unlocked, and gridctl apply
+prompts for the passphrase in a terminal when a stack needs the store.
 
-apply and serve unlock the store when they start, from GRIDCTL_VAULT_PASSPHRASE
-or from the file named by GRIDCTL_VAULT_PASSPHRASE_FILE; apply otherwise
-prompts in a terminal when the stack needs the store, and the daemon keeps it
-unlocked until it stops. plan and reload use that daemon's store. Other var
-subcommands read GRIDCTL_VAULT_PASSPHRASE, then GRIDCTL_VAULT_PASSPHRASE_FILE,
-or prompt in a terminal.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runVarUnlock()
+The passphrase comes from GRIDCTL_VAULT_PASSPHRASE, then the file named by
+GRIDCTL_VAULT_PASSPHRASE_FILE, then a terminal prompt.
+
+Exit codes: 0 when the passphrase verified and no gateway failed, 1 on a wrong
+or missing passphrase or any failed gateway, 2 when the state directory or
+local store cannot be read.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		format, err := resolveFormat(varUnlockFormat, cmd.Flags().Changed("format"), *varUnlockJSON)
+		if err == nil && format != "text" && format != "json" {
+			err = fmt.Errorf("unsupported format %q (use text or json)", format)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+		code := runVarUnlockSession(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), format)
+		stop()
+		if code != 0 {
+			os.Exit(code)
+		}
 	},
 }
 
@@ -235,6 +266,8 @@ func init() {
 	varCmd.AddCommand(varImportCmd)
 	varCmd.AddCommand(varExportCmd)
 	varCmd.AddCommand(varSetsCmd)
+	varUnlockCmd.Flags().StringVar(&varUnlockFormat, "format", "text", "Output format (text, json)")
+	varUnlockJSON = addJSONAlias(varUnlockCmd)
 	varCmd.AddCommand(varLockCmd)
 	varCmd.AddCommand(varUnlockCmd)
 	varCmd.AddCommand(varChangePassphraseCmd)
@@ -655,57 +688,6 @@ func runVarSetsDelete(name string) error {
 
 	printer := output.New()
 	printer.Info("Variable set deleted", "name", name)
-	return nil
-}
-
-func runVarLock() error {
-	store, err := loadVault()
-	if err != nil {
-		return err
-	}
-
-	if store.IsLocked() {
-		if err := ensureUnlocked(store); err != nil {
-			return err
-		}
-	}
-
-	pass, err := promptPassphraseConfirm()
-	if err != nil {
-		return err
-	}
-
-	if err := store.Lock(pass); err != nil {
-		return err
-	}
-
-	printer := output.New()
-	printer.Info("Variable store locked", "encryption", "XChaCha20-Poly1305", "kdf", "Argon2id")
-	return nil
-}
-
-func runVarUnlock() error {
-	store, err := loadVault()
-	if err != nil {
-		return err
-	}
-
-	if !store.IsLocked() {
-		fmt.Println("Variable store is already unlocked")
-		return nil
-	}
-
-	pass, err := promptPassphrase("Vault passphrase: ")
-	if err != nil {
-		return err
-	}
-
-	if err := store.Unlock(pass); err != nil {
-		return err
-	}
-
-	printer := output.New()
-	printer.Info("Passphrase verified; store unlocked in this process only, nothing persisted", "variables", len(store.List()))
 	return nil
 }
 

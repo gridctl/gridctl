@@ -218,9 +218,13 @@ Set scoping controls store-derived delivery. Local processes in these examples s
 Protect the store with passphrase-based encryption (XChaCha20-Poly1305 + Argon2id):
 
 ```bash
-gridctl var lock       # Encrypt with a passphrase
-gridctl var unlock     # Verify the passphrase (does not persist)
+gridctl var lock       # Encrypt with a passphrase; on an encrypted store, lock running gateways again
+gridctl var unlock     # Verify the passphrase and unlock it in every running gateway
 ```
+
+`gridctl status` shows each gateway's store state in the VARS column, for
+example `unlocked (stdin)` after a prompted `apply` or `unlocked (cli)` after
+`gridctl var unlock`.
 
 An encrypted store loads locked in every process. In a terminal,
 `gridctl apply` prompts once (`Variable store is locked. Passphrase: `) when the

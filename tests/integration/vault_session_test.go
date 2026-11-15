@@ -302,3 +302,221 @@ func TestVaultSession_ServePassphraseStdin(t *testing.T) {
 		t.Fatalf("stop exit = %d\n%s\n%s", r.code, r.stdout, r.stderr)
 	}
 }
+
+// statusVariables reads the per-gateway variables objects from
+// gridctl status --json, keyed by stack name.
+func statusVariables(ctx context.Context, t *testing.T, bin string, env []string) map[string]*varStatusBody {
+	t.Helper()
+	r := runCLI(ctx, t, bin, env, nil, "status", "--json")
+	if r.code != 0 {
+		t.Fatalf("status exit = %d\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
+	var report struct {
+		Gateways []struct {
+			Name      string         `json:"name"`
+			Variables *varStatusBody `json:"variables"`
+		} `json:"gateways"`
+	}
+	if err := json.Unmarshal([]byte(r.stdout), &report); err != nil {
+		t.Fatalf("status JSON: %v\n%s", err, r.stdout)
+	}
+	out := map[string]*varStatusBody{}
+	for _, g := range report.Gateways {
+		out[g.Name] = g.Variables
+	}
+	return out
+}
+
+// TestVaultSession_RelockAndUnlockAcrossGateways runs two daemons for one
+// home, ends their sessions with POST /api/var/relock and gridctl var lock,
+// and starts them again with gridctl var unlock. No container runtime is
+// required for the daemons.
+func TestVaultSession_RelockAndUnlockAcrossGateways(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	if mockStdioBin == "" {
+		t.Fatal("mock stdio server was not built")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
+	defer cancel()
+
+	root := repoRoot(t)
+	dir := t.TempDir()
+	bin := buildRaceBinary(t, ctx, filepath.Join(root, "cmd", "gridctl"), filepath.Join(dir, "gridctl"))
+	home := filepath.Join(dir, "home")
+	lockedVaultHome(ctx, t, bin, home)
+	env := vaultSessionEnv(home)
+	encPath := filepath.Join(home, ".gridctl", "vault", "secrets.enc")
+
+	names := []string{"session-a", "session-b"}
+	ports := map[string]int{}
+	stacks := map[string]string{}
+	for _, name := range names {
+		stacks[name] = writeVaultStack(t, dir, name, mockStdioBin)
+		ports[name] = freePort(t)
+	}
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cleanupCancel()
+		for _, name := range names {
+			_ = runCLI(cleanupCtx, t, bin, env, nil, "destroy", stacks[name])
+		}
+	})
+	for _, name := range names {
+		r := runCLI(ctx, t, bin, env, strings.NewReader(vaultSessionPass+"\n"), "apply", stacks[name], "--port", strconv.Itoa(ports[name]), "--passphrase-stdin", "--quiet")
+		if r.code != 0 {
+			t.Fatalf("apply %s exit = %d\n%s\n%s", name, r.code, r.stdout, r.stderr)
+		}
+		if st := getVarStatus(t, ports[name]); st.Locked || st.UnlockSource != "stdin" {
+			t.Fatalf("%s status = %+v", name, st)
+		}
+	}
+	encBefore, err := os.ReadFile(encPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEncUnchanged := func(step string) {
+		t.Helper()
+		after, err := os.ReadFile(encPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(encBefore, after) {
+			t.Fatalf("secrets.enc changed after %s", step)
+		}
+	}
+	noPassphrase := func(step string, r cliResult) {
+		t.Helper()
+		if strings.Contains(r.stdout+r.stderr, vaultSessionPass) {
+			t.Fatalf("%s output contains the passphrase", step)
+		}
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	// POST /api/var/relock on one daemon ends its session in memory only.
+	portA := ports["session-a"]
+	resp, err := client.Post(fmt.Sprintf("http://127.0.0.1:%d/api/var/relock", portA), "application/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || strings.TrimSpace(string(raw)) != `{"status":"locked"}` {
+		t.Fatalf("relock = %d %s", resp.StatusCode, raw)
+	}
+	resp, err = client.Get(fmt.Sprintf("http://127.0.0.1:%d/api/var", portA))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusLocked {
+		t.Fatalf("GET /api/var after relock = %d, want 423", resp.StatusCode)
+	}
+	assertEncUnchanged("POST /api/var/relock")
+
+	// var lock on an encrypted store prompts for nothing, rewrites nothing,
+	// and locks both gateways.
+	r := runCLI(ctx, t, bin, env, nil, "var", "lock")
+	noPassphrase("var lock", r)
+	if r.code != 0 {
+		t.Fatalf("var lock exit = %d\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
+	for _, name := range names {
+		if !strings.Contains(r.stdout, fmt.Sprintf("%s (%d)", name, ports[name])) {
+			t.Fatalf("var lock output missing %s:\n%s", name, r.stdout)
+		}
+	}
+	if !strings.Contains(r.stdout, "Locked in 2 running gateway(s)") {
+		t.Fatalf("var lock output = %q", r.stdout)
+	}
+	assertEncUnchanged("var lock")
+	vars := statusVariables(ctx, t, bin, env)
+	for _, name := range names {
+		if v := vars[name]; v == nil || !v.Locked || !v.Encrypted {
+			t.Fatalf("status variables for %s = %+v, want locked", name, v)
+		}
+	}
+	if table := runCLI(ctx, t, bin, env, nil, "status", "--plain"); strings.Count(table.stdout, " locked") != 2 || strings.Contains(table.stdout, "unlocked") {
+		t.Fatalf("status table:\n%s", table.stdout)
+	}
+
+	// var unlock posts the verified passphrase to both gateways.
+	withPass := vaultSessionEnv(home, "GRIDCTL_VAULT_PASSPHRASE="+vaultSessionPass)
+	r = runCLI(ctx, t, bin, withPass, nil, "var", "unlock")
+	noPassphrase("var unlock", r)
+	if r.code != 0 {
+		t.Fatalf("var unlock exit = %d\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
+	for _, name := range names {
+		if !strings.Contains(r.stdout, fmt.Sprintf("%s (%d): unlocked", name, ports[name])) {
+			t.Fatalf("var unlock output missing %s:\n%s", name, r.stdout)
+		}
+		if st := getVarStatus(t, ports[name]); st.Locked || st.UnlockSource != "cli" {
+			t.Fatalf("%s status after unlock = %+v", name, st)
+		}
+	}
+	vars = statusVariables(ctx, t, bin, env)
+	for _, name := range names {
+		if v := vars[name]; v == nil || v.Locked || v.UnlockSource != "cli" {
+			t.Fatalf("status variables for %s = %+v, want unlocked (cli)", name, v)
+		}
+	}
+	table := runCLI(ctx, t, bin, env, nil, "status", "--plain")
+	if strings.Count(table.stdout, "unlocked (cli)") != 2 {
+		t.Fatalf("status table:\n%s", table.stdout)
+	}
+
+	r = runCLI(ctx, t, bin, withPass, nil, "var", "unlock", "--format", "json")
+	noPassphrase("var unlock --format json", r)
+	if r.code != 0 {
+		t.Fatalf("var unlock --format json exit = %d\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
+	var doc struct {
+		SchemaVersion int  `json:"schema_version"`
+		Verified      bool `json:"verified"`
+		Gateways      []struct {
+			Stack  string `json:"stack"`
+			Port   int    `json:"port"`
+			Status string `json:"status"`
+			Error  string `json:"error"`
+		} `json:"gateways"`
+	}
+	if err := json.Unmarshal([]byte(r.stdout), &doc); err != nil {
+		t.Fatalf("var unlock JSON: %v\n%s", err, r.stdout)
+	}
+	if doc.SchemaVersion != 1 || !doc.Verified || len(doc.Gateways) != 2 {
+		t.Fatalf("var unlock JSON = %+v", doc)
+	}
+	for _, g := range doc.Gateways {
+		if g.Port != ports[g.Stack] || g.Status != "already_unlocked" || g.Error != "" {
+			t.Fatalf("gateway entry = %+v", g)
+		}
+	}
+
+	low, high := "session-a", "session-b"
+	if ports[high] < ports[low] {
+		low, high = high, low
+	}
+	if r := runCLI(ctx, t, bin, env, nil, "doctor", "--json"); !strings.Contains(r.stdout, fmt.Sprintf("unlocked in %s (cli), %s (cli)", low, high)) {
+		t.Fatalf("doctor vault message missing gateway sessions:\n%s", r.stdout)
+	}
+	assertEncUnchanged("var unlock")
+
+	for _, name := range names {
+		if r := runCLI(ctx, t, bin, env, nil, "destroy", stacks[name]); r.code != 0 {
+			t.Fatalf("destroy %s exit = %d\n%s\n%s", name, r.code, r.stdout, r.stderr)
+		}
+	}
+
+	// With no gateway running, the session verbs report it and succeed.
+	r = runCLI(ctx, t, bin, withPass, nil, "var", "unlock")
+	if r.code != 0 || !strings.Contains(r.stdout, "No running gateway. Passphrase verified") {
+		t.Fatalf("var unlock without gateways exit = %d\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
+	r = runCLI(ctx, t, bin, env, nil, "var", "lock")
+	if r.code != 0 || !strings.Contains(r.stdout, "no running gateway") {
+		t.Fatalf("var lock without gateways exit = %d\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
+	assertEncUnchanged("var lock without gateways")
+}

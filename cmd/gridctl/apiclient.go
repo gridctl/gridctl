@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -94,6 +95,16 @@ func (a *daemonAPI) URL(path string) string {
 // Do issues a request with credentials attached.
 func (a *daemonAPI) Do(method, url string, body io.Reader) (*http.Response, error) {
 	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return nil, err
+	}
+	a.authorize(req)
+	return a.client.Do(req)
+}
+
+// DoContext issues a request bound to ctx with credentials attached.
+func (a *daemonAPI) DoContext(ctx context.Context, method, url string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return nil, err
 	}

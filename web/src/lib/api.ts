@@ -1395,6 +1395,9 @@ export interface VariableStoreStatus {
   encrypted: boolean;
   variables_count?: number;
   sets_count?: number;
+  // How an encrypted store was unlocked in the gateway: environment,
+  // passphrase_file, stdin, api, or cli. Omitted when locked or plaintext.
+  unlock_source?: string;
 }
 
 export async function fetchVariableStoreStatus(): Promise<VariableStoreStatus> {
@@ -1407,6 +1410,12 @@ export async function unlockVariableStore(passphrase: string): Promise<{ status:
 
 export async function lockVariableStore(passphrase: string): Promise<{ status: string }> {
   return mutateJSON<{ status: string }>('/api/var/lock', 'POST', { passphrase });
+}
+
+// relockVariableStore ends the gateway's unlocked session on an encrypted
+// store without re-encrypting it. Resolves to "locked" or "already_locked".
+export async function relockVariableStore(): Promise<{ status: string }> {
+  return mutateJSON<{ status: string }>('/api/var/relock', 'POST');
 }
 
 export interface ImportVariableInput {

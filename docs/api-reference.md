@@ -2172,7 +2172,8 @@ value. `unlock_source` (additive) reports how this daemon's encrypted store was
 unlocked: `environment` (`GRIDCTL_VAULT_PASSPHRASE`), `passphrase_file`
 (`GRIDCTL_VAULT_PASSPHRASE_FILE`), `stdin` (the `apply` prompt or
 `--passphrase-stdin`), `api` (`POST /api/var/unlock` or `POST /api/var/lock`),
-or `cli` (an unlock request with `"source": "cli"`). It is omitted when the
+or `cli` (an unlock request with `"source": "cli"`, which `gridctl var unlock`
+sends). It is omitted when the
 store is locked, plaintext, or unlocked without a recorded source; treat an
 unlocked encrypted store without it as plainly unlocked.
 
@@ -2216,6 +2217,41 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/loc
 ```json
 {"status": "locked"}
 ```
+
+On a store that is already encrypted this re-encrypts it with whatever
+passphrase the request carries, without checking it against the current one.
+To end an unlocked session, use `POST /api/var/relock`; to rotate the
+passphrase, use `gridctl var change-passphrase`.
+
+#### `POST /api/var/relock`
+
+Ends this daemon's unlocked session on an encrypted store. The daemon drops
+the variables, sets, passphrase, and unlock source from memory and reports the
+store locked; the file on disk is not touched. The request has no body.
+Canonical only: there is no `/api/vault/relock` alias. Additive.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var/relock
+```
+
+**Response:**
+```json
+{"status": "locked"}
+```
+
+| Store state | Status | Body |
+|---|---|---|
+| Encrypted, unlocked | 200 | `{"status": "locked"}` |
+| Encrypted, already locked | 200 | `{"status": "already_locked"}` |
+| Plaintext | 409 | `{"error": "store is not encrypted"}` |
+| No store configured | 503 | `{"error": "Variable store not available"}` |
+
+After a relock, every endpoint that needs the unlocked store answers `423 Locked`
+until `POST /api/var/unlock` (or `gridctl var unlock`) supplies the passphrase.
+`gridctl var lock` calls this route on every running gateway when the store is
+already encrypted.
 
 #### `GET /api/var`
 
@@ -2549,7 +2585,7 @@ its value:
 }
 ```
 
-When the vault is locked, all endpoints except `status`, `unlock`, and `lock` return `423 Locked`:
+When the vault is locked, all endpoints except `status`, `unlock`, `lock`, and `relock` return `423 Locked`:
 ```json
 {
   "error": "vault is locked",

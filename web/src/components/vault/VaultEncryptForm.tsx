@@ -3,17 +3,13 @@ import { Lock } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Button } from '../ui/Button';
 
-// First-time encryption enforces a minimum passphrase length; re-locking an
-// already-encrypted vault must accept the existing passphrase whatever its
-// length, so the floor applies to 'encrypt' mode only.
+// First-time encryption enforces a minimum passphrase length and nudges
+// toward a longer one. An already encrypted store is locked again through
+// relock, which takes no passphrase, so this form only ever encrypts.
 const MIN_PASSPHRASE_LENGTH = 8;
 const RECOMMENDED_PASSPHRASE_LENGTH = 12;
 
 export interface VaultEncryptFormProps {
-  // 'encrypt' sets a passphrase for the first time; 'lock' re-locks an
-  // already-encrypted vault with its existing passphrase. Copy and validation
-  // follow the mode.
-  mode?: 'encrypt' | 'lock';
   onLock: (passphrase: string) => Promise<void>;
   onCancel: () => void;
   className?: string;
@@ -23,7 +19,6 @@ export interface VaultEncryptFormProps {
 // detached page when the user clicks "Encrypt." Owns its own passphrase
 // state so the parent doesn't have to thread it through.
 export function VaultEncryptForm({
-  mode = 'encrypt',
   onLock,
   onCancel,
   className,
@@ -33,9 +28,7 @@ export function VaultEncryptForm({
   const [error, setError] = useState<string | null>(null);
   const [isLocking, setIsLocking] = useState(false);
 
-  const encrypting = mode === 'encrypt';
-  const tooShort =
-    encrypting && passphrase.trim().length < MIN_PASSPHRASE_LENGTH;
+  const tooShort = passphrase.trim().length < MIN_PASSPHRASE_LENGTH;
 
   const reset = () => {
     setPassphrase('');
@@ -58,7 +51,7 @@ export function VaultEncryptForm({
       await onLock(passphrase.trim());
       reset();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to lock variables');
+      setError(err instanceof Error ? err.message : 'Failed to encrypt variables');
     } finally {
       setIsLocking(false);
     }
@@ -72,7 +65,7 @@ export function VaultEncryptForm({
   // Non-blocking strength guidance for first-time encryption: a hard floor at
   // 8 characters, a nudge up to 12.
   const guidance =
-    encrypting && passphrase.length > 0
+    passphrase.length > 0
       ? tooShort
         ? `Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters.`
         : passphrase.trim().length < RECOMMENDED_PASSPHRASE_LENGTH
@@ -83,9 +76,7 @@ export function VaultEncryptForm({
   return (
     <div className={cn('space-y-2', className)}>
       <div className="text-xs text-text-secondary mb-2">
-        {encrypting
-          ? 'Encrypt the variable store with a passphrase:'
-          : 'Lock variables with your passphrase:'}
+        Encrypt the variable store with a passphrase:
       </div>
       <input
         type="password"
@@ -94,8 +85,8 @@ export function VaultEncryptForm({
           setPassphrase(e.target.value);
           setError(null);
         }}
-        placeholder={encrypting ? 'New passphrase' : 'Passphrase'}
-        aria-label={encrypting ? 'New passphrase' : 'Passphrase'}
+        placeholder="New passphrase"
+        aria-label="New passphrase"
         autoFocus
         className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:ring-1 focus:ring-primary/30 outline-none transition-colors"
       />
@@ -140,13 +131,7 @@ export function VaultEncryptForm({
           }
         >
           <Lock size={12} />
-          {encrypting
-            ? isLocking
-              ? 'Encrypting...'
-              : 'Encrypt'
-            : isLocking
-              ? 'Locking...'
-              : 'Lock variables'}
+          {isLocking ? 'Encrypting...' : 'Encrypt'}
         </Button>
       </div>
     </div>
