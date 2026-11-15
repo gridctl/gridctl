@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -26,7 +27,13 @@ var varCmd = &cobra.Command{
 in the gridctl store. Reference them from stack YAML using ${var:KEY}.
 
 Secrets are encrypted at rest (when the vault is locked) and redacted in logs.
-Plaintext variables are visible in logs and the web UI.`,
+Plaintext variables are visible in logs and the web UI.
+
+When an encrypted store is locked in this process, set, get, list, delete,
+import, export, sets, run, and scan use GRIDCTL_VAULT_PASSPHRASE, then
+GRIDCTL_VAULT_PASSPHRASE_FILE, then a running gateway for this home that
+holds the store unlocked, then a terminal prompt. change-passphrase and
+explain always use the local store.`,
 	// Subcommands handle their own errors; cobra's default of printing usage
 	// after every RunE error would drown out validation messages.
 	SilenceUsage: true,
@@ -67,7 +74,7 @@ list, number, or bool.`,
   gridctl var set FEATURES --type list --value "a,b,c"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runVarSet(args[0])
+		return runVarSet(cmd.Context(), args[0])
 	},
 }
 
@@ -79,7 +86,7 @@ var varGetCmd = &cobra.Command{
 unmasked.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runVarGet(args[0])
+		return runVarGet(cmd.Context(), args[0])
 	},
 }
 
@@ -92,7 +99,7 @@ var varListCmd = &cobra.Command{
 		if varListFmt, err = resolveFormat(varListFmt, cmd.Flags().Changed("format"), *varListJSON); err != nil {
 			return err
 		}
-		return runVarList()
+		return runVarList(cmd.Context())
 	},
 }
 
@@ -104,7 +111,7 @@ var varDeleteCmd = &cobra.Command{
 	Long:  "Remove a variable from the store.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runVarDelete(args[0])
+		return runVarDelete(cmd.Context(), args[0])
 	},
 }
 
@@ -124,7 +131,7 @@ The .json flavor accepts either the legacy {"KEY": "value"} map (everything
 imports as secret/string) or the v2 shape {"variables": [...]}.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runVarImport(args[0])
+		return runVarImport(cmd.Context(), args[0])
 	},
 }
 
@@ -135,7 +142,7 @@ var varExportCmd = &cobra.Command{
 actual values. The .env flavor includes # @public / # @type markers when
 needed; the .json flavor writes the v2 {"variables": [...]} shape.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runVarExport()
+		return runVarExport(cmd.Context())
 	},
 }
 
@@ -149,7 +156,7 @@ var varSetsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List variable sets",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runVarSetsList()
+		return runVarSetsList(cmd.Context())
 	},
 }
 
@@ -158,7 +165,7 @@ var varSetsCreateCmd = &cobra.Command{
 	Short: "Create a variable set",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runVarSetsCreate(args[0])
+		return runVarSetsCreate(cmd.Context(), args[0])
 	},
 }
 
@@ -168,7 +175,7 @@ var varSetsDeleteCmd = &cobra.Command{
 	Long:  "Delete a variable set. Variables in the set are unassigned but not deleted.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runVarSetsDelete(args[0])
+		return runVarSetsDelete(cmd.Context(), args[0])
 	},
 }
 
@@ -320,7 +327,7 @@ func validateAndNormalize(typeName, value string) (string, error) {
 	}
 }
 
-func runVarSet(key string) error {
+func runVarSet(ctx context.Context, key string) error {
 	if vault.IsInternalCredential(key) {
 		return vault.NewInternalCredentialError(key)
 	}
@@ -328,12 +335,8 @@ func runVarSet(key string) error {
 		return fmt.Errorf("--secret and --plaintext are mutually exclusive")
 	}
 
-	store, err := loadVault()
+	store, err := openVarBackend(ctx, true)
 	if err != nil {
-		return err
-	}
-
-	if err := ensureUnlocked(store); err != nil {
 		return err
 	}
 
@@ -396,17 +399,16 @@ func runVarSet(key string) error {
 	return nil
 }
 
-func runVarGet(key string) error {
-	store, err := loadVault()
+func runVarGet(ctx context.Context, key string) error {
+	store, err := openVarBackend(ctx, true)
 	if err != nil {
 		return err
 	}
 
-	if err := ensureUnlocked(store); err != nil {
+	v, ok, err := store.GetVariable(key)
+	if err != nil {
 		return err
 	}
-
-	v, ok := store.GetVariable(key)
 	if !ok {
 		return fmt.Errorf("variable %q not found", key)
 	}
@@ -427,17 +429,16 @@ func runVarGet(key string) error {
 	return nil
 }
 
-func runVarList() error {
-	store, err := loadVault()
+func runVarList(ctx context.Context) error {
+	store, err := openVarBackend(ctx, true)
 	if err != nil {
 		return err
 	}
 
-	if err := ensureUnlocked(store); err != nil {
+	vars, err := store.List()
+	if err != nil {
 		return err
 	}
-
-	vars := store.List()
 
 	if varListFmt == "json" {
 		type entry struct {
@@ -477,17 +478,17 @@ func runVarList() error {
 	return nil
 }
 
-func runVarDelete(key string) error {
-	store, err := loadVault()
+func runVarDelete(ctx context.Context, key string) error {
+	store, err := openVarBackend(ctx, true)
 	if err != nil {
 		return err
 	}
 
-	if err := ensureUnlocked(store); err != nil {
+	exists, err := store.Has(key)
+	if err != nil {
 		return err
 	}
-
-	if !store.Has(key) {
+	if !exists {
 		return fmt.Errorf("variable %q not found", key)
 	}
 
@@ -511,13 +512,9 @@ func runVarDelete(key string) error {
 	return nil
 }
 
-func runVarImport(file string) error {
-	store, err := loadVault()
+func runVarImport(ctx context.Context, file string) error {
+	store, err := openVarBackend(ctx, true)
 	if err != nil {
-		return err
-	}
-
-	if err := ensureUnlocked(store); err != nil {
 		return err
 	}
 
@@ -539,17 +536,16 @@ func runVarImport(file string) error {
 	return nil
 }
 
-func runVarExport() error {
-	store, err := loadVault()
+func runVarExport(ctx context.Context) error {
+	store, err := openVarBackend(ctx, true)
 	if err != nil {
 		return err
 	}
 
-	if err := ensureUnlocked(store); err != nil {
+	allVars, err := listVariableValues(store)
+	if err != nil {
 		return err
 	}
-
-	allVars := store.List()
 	vars := make([]vault.Variable, 0, len(allVars))
 	var omitted []string
 	for _, v := range allVars {
@@ -628,17 +624,16 @@ func runVarExport() error {
 	return nil
 }
 
-func runVarSetsList() error {
-	store, err := loadVault()
+func runVarSetsList(ctx context.Context) error {
+	store, err := openVarBackend(ctx, true)
 	if err != nil {
 		return err
 	}
 
-	if err := ensureUnlocked(store); err != nil {
+	sets, err := store.ListSets()
+	if err != nil {
 		return err
 	}
-
-	sets := store.ListSets()
 	if len(sets) == 0 {
 		fmt.Println("No variable sets defined")
 		return nil
@@ -653,13 +648,9 @@ func runVarSetsList() error {
 	return nil
 }
 
-func runVarSetsCreate(name string) error {
-	store, err := loadVault()
+func runVarSetsCreate(ctx context.Context, name string) error {
+	store, err := openVarBackend(ctx, true)
 	if err != nil {
-		return err
-	}
-
-	if err := ensureUnlocked(store); err != nil {
 		return err
 	}
 
@@ -672,13 +663,9 @@ func runVarSetsCreate(name string) error {
 	return nil
 }
 
-func runVarSetsDelete(name string) error {
-	store, err := loadVault()
+func runVarSetsDelete(ctx context.Context, name string) error {
+	store, err := openVarBackend(ctx, true)
 	if err != nil {
-		return err
-	}
-
-	if err := ensureUnlocked(store); err != nil {
 		return err
 	}
 

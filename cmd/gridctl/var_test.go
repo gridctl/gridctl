@@ -21,7 +21,7 @@ func TestRunVarExport_DeniedOnlyJSONRemainsValid(t *testing.T) {
 	t.Cleanup(func() { varExportFmt, varExportPlain = previousFormat, previousPlain })
 
 	var runErr error
-	out := captureStdout(t, func() { runErr = runVarExport() })
+	out := captureStdout(t, func() { runErr = runVarExport(context.Background()) })
 	if runErr != nil {
 		t.Fatal(runErr)
 	}
@@ -48,7 +48,7 @@ func TestRunVarExport_EnvWarningsUseStderr(t *testing.T) {
 
 	var runErr error
 	stderr := captureStderr(t, func() {
-		stdout := captureStdout(t, func() { runErr = runVarExport() })
+		stdout := captureStdout(t, func() { runErr = runVarExport(context.Background()) })
 		if stdout != "# @public\nSAFE=safe-value\n" {
 			t.Fatalf("stdout = %q, want clean env content", stdout)
 		}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -165,11 +166,11 @@ func TestVarListAndSet_HonorPassphraseFile(t *testing.T) {
 	t.Cleanup(func() { varSetValue = prevValue })
 
 	var err error
-	captureStdout(t, func() { err = runVarSet("ADDED") })
+	captureStdout(t, func() { err = runVarSet(context.Background(), "ADDED") })
 	if err != nil {
 		t.Fatalf("var set: %v", err)
 	}
-	out := captureStdout(t, func() { err = runVarList() })
+	out := captureStdout(t, func() { err = runVarList(context.Background()) })
 	if err != nil {
 		t.Fatalf("var list: %v", err)
 	}
@@ -178,7 +179,7 @@ func TestVarListAndSet_HonorPassphraseFile(t *testing.T) {
 	}
 
 	t.Setenv(vault.PassphraseFileEnv, writePassphraseFile(t, "file-secret-value\n"))
-	captureStdout(t, func() { err = runVarList() })
+	captureStdout(t, func() { err = runVarList(context.Background()) })
 	if err == nil || strings.Contains(err.Error(), "file-secret-value") {
 		t.Fatalf("bad file: err = %v", err)
 	}

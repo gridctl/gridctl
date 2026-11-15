@@ -398,8 +398,9 @@ func lockedExplainProblem(unlockedIn []string) string {
 	case 0:
 		return "store is locked; stored metadata and resolution are unknown"
 	case 1:
-		return "store is locked in this process; gateway " + unlockedIn[0] + " holds it unlocked"
+		return "store is locked in this process; gateway " + unlockedIn[0] + " holds it unlocked, so apply and var commands use the gateway"
 	default:
-		return "store is locked in this process; gateways " + strings.Join(unlockedIn, ", ") + " hold it unlocked"
+		// Var commands use the lowest port, which runningGateways lists first.
+		return "store is locked in this process; gateways " + strings.Join(unlockedIn, ", ") + " hold it unlocked, so apply and var commands use gateway " + unlockedIn[0]
 	}
 }
