@@ -239,8 +239,11 @@ For unattended `gridctl apply` and `gridctl serve`, set
 `GRIDCTL_VAULT_PASSPHRASE`, or point `GRIDCTL_VAULT_PASSPHRASE_FILE` at a
 passphrase file you own. Without a terminal or either variable, apply fails with
 `variable store is locked`. The `var` subcommands read
-`GRIDCTL_VAULT_PASSPHRASE`, then `GRIDCTL_VAULT_PASSPHRASE_FILE`, or prompt in a
-terminal.
+`GRIDCTL_VAULT_PASSPHRASE`, then `GRIDCTL_VAULT_PASSPHRASE_FILE`, then use a
+running gateway for this home that holds the store unlocked, or prompt in a
+terminal. After one `gridctl apply`, `var list`, `var get`, `var set`, and the
+rest work through that daemon with no passphrase (`var change-passphrase` and
+`var explain` stay local).
 
 ## 💻 Usage
 
