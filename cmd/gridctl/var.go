@@ -542,18 +542,22 @@ func runVarExport(ctx context.Context) error {
 		return err
 	}
 
-	allVars, err := listVariableValues(store)
+	listed, err := store.List()
 	if err != nil {
 		return err
 	}
-	vars := make([]vault.Variable, 0, len(allVars))
+	vars := make([]vault.Variable, 0, len(listed))
 	var omitted []string
-	for _, v := range allVars {
+	for _, v := range listed {
 		if vault.IsInternalCredential(v.Key) {
 			omitted = append(omitted, v.Key)
 			continue
 		}
 		vars = append(vars, v)
+	}
+	// Reserved keys are dropped on metadata, so a gateway never sends their values.
+	if vars, err = fetchVariableValues(store, vars); err != nil {
+		return err
 	}
 	switch varExportFmt {
 	case "json":

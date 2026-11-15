@@ -337,6 +337,36 @@ func TestVarBackend_RunFetchesOnlySelectedValues(t *testing.T) {
 	}
 }
 
+func TestVarBackend_ExportSkipsReservedValues(t *testing.T) {
+	nonTTYStdin(t)
+	sessionHome(t)
+	g := startFakeGateway(t, "daily", gatewayVarStatus{Encrypted: true}, nil)
+	g.respond = func(w http.ResponseWriter, r *http.Request) bool {
+		switch r.URL.Path {
+		case "/api/var":
+			fmt.Fprint(w, `[{"key":"A","type":"string","is_secret":false},{"key":"GRIDCTL_TOKEN","type":"string","is_secret":true}]`)
+		case "/api/var/A":
+			fmt.Fprint(w, `{"key":"A","value":"alpha","type":"string","is_secret":false}`)
+		case "/api/var/GRIDCTL_TOKEN":
+			fmt.Fprint(w, `{"key":"GRIDCTL_TOKEN","value":"reserved","type":"string","is_secret":true}`)
+		default:
+			return false
+		}
+		return true
+	}
+	setVarFlags(t, func() { varExportFmt, varExportPlain = "env", true })
+
+	out := varOutput(t, func() error { return runVarExport(context.Background()) })
+	if !strings.Contains(out, "alpha") || strings.Contains(out, "reserved") {
+		t.Fatalf("output = %q", out)
+	}
+	for _, req := range g.seen() {
+		if strings.HasPrefix(req, "GET /api/var/GRIDCTL_TOKEN") {
+			t.Fatalf("fetched a reserved value: %v", g.seen())
+		}
+	}
+}
+
 func TestOpenVarBackend_ResolutionOrder(t *testing.T) {
 	t.Run("plaintext store stays local", func(t *testing.T) {
 		home := t.TempDir()
