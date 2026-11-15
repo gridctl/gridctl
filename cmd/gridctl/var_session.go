@@ -231,6 +231,7 @@ func runVarUnlockSession(ctx context.Context, stdout, stderr io.Writer, format s
 	pass, err := promptPassphrase("Vault passphrase: ")
 	if err != nil {
 		fmt.Fprintln(stderr, err)
+		emit()
 		return 1
 	}
 	if err := store.Unlock(pass); err != nil {

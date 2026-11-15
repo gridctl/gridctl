@@ -340,6 +340,22 @@ func TestRunVarUnlockSession_NoPassphraseWithoutTerminal(t *testing.T) {
 	if !strings.Contains(stderr.String(), "GRIDCTL_VAULT_PASSPHRASE") {
 		t.Fatalf("stderr = %q", stderr.String())
 	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := runVarUnlockSession(context.Background(), &stdout, &stderr, "json"); code != 1 {
+		t.Fatalf("json exit = %d, want 1", code)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &doc); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout.String())
+	}
+	if doc["schema_version"] != float64(1) || doc["verified"] != false {
+		t.Fatalf("doc = %v", doc)
+	}
+	if gws, ok := doc["gateways"].([]any); !ok || len(gws) != 0 {
+		t.Fatalf("gateways = %v", doc["gateways"])
+	}
 }
 
 func TestRunVarUnlockSession_NoRunningGateway(t *testing.T) {
