@@ -6,7 +6,7 @@ All notable changes to gridctl will be documented in this file.
 
 ### Maintenance
 
-- The Gatekeeper frontend audit now runs `scripts/npm-audit-gate.py` over `npm audit --json`. The bar is unchanged: any high or critical advisory fails. A reviewed entry in `web/audit-exceptions.json` can accept one named advisory that has no patched release, for at most 30 days, and the gate fails on an expired entry or on one whose advisory the report no longer carries. The first entry accepts GHSA-fc5q-39xc-vjpf (picomatch, reached only through the vite and vitest development toolchain) until 2026-12-02.
+- The Gatekeeper frontend audit now runs `scripts/npm-audit-gate.py` over `npm audit --json`. The bar is unchanged: any high or critical advisory fails. A reviewed entry in `web/audit-exceptions.json` can accept one named advisory that has no patched release, for at most 30 days, and the gate fails on an expired entry or on one whose advisory the report no longer carries. The file ships empty: GHSA-fc5q-39xc-vjpf (picomatch), the advisory that prompted it, was withdrawn on 2026-11-18.
 
 ### Bug Fixes
 
