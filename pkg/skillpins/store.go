@@ -239,6 +239,67 @@ func (ps *Store) GetAll() map[string]*SkillPin {
 	return out
 }
 
+// Current returns the same deep-copied snapshot as GetAll with each
+// record's Status recomputed against src, the way Sync compares digests. It
+// never writes the pin file and leaves every other field as stored,
+// including LastVerifiedAt. A skill missing from src keeps its stored
+// status; any other lookup failure, or content that cannot be hashed, reads
+// as drift (fail closed, as Sync does).
+func (ps *Store) Current(src SkillSource) map[string]*SkillPin {
+	ps.mu.RLock()
+	names := make([]string, 0, len(ps.data.Skills))
+	for name := range ps.data.Skills {
+		names = append(names, name)
+	}
+	ps.mu.RUnlock()
+
+	type digests struct {
+		skillHash string
+		files     []FileDigest
+		failed    bool
+		missing   bool
+	}
+	live := make(map[string]digests, len(names))
+	for _, name := range names {
+		sk, err := src.GetSkill(name)
+		if errors.Is(err, registry.ErrNotFound) {
+			live[name] = digests{missing: true}
+			continue
+		}
+		if err != nil {
+			live[name] = digests{failed: true}
+			continue
+		}
+		skillHash, files, err := ComputeDigests(src, sk)
+		if err != nil {
+			live[name] = digests{failed: true}
+			continue
+		}
+		live[name] = digests{skillHash: skillHash, files: files}
+	}
+
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+
+	out := make(map[string]*SkillPin, len(ps.data.Skills))
+	for name, pin := range ps.data.Skills {
+		cp := copySkillPin(pin)
+		d, ok := live[name]
+		switch {
+		case !ok || d.missing:
+			// Pinned after the digest pass, or absent from src: keep stored.
+		case d.failed:
+			cp.Status = StatusDrift
+		case d.skillHash != pin.SkillHash || !equalFileDigests(pin.Files, d.files):
+			cp.Status = StatusDrift
+		default:
+			cp.Status = StatusPinned
+		}
+		out[name] = cp
+	}
+	return out
+}
+
 // Get returns a deep-copied pin for one skill.
 func (ps *Store) Get(name string) (*SkillPin, bool) {
 	ps.mu.RLock()
