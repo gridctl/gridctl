@@ -2794,7 +2794,7 @@ TOFU content pins for registry skill documents: per-file digests over the canoni
 
 #### `GET /api/skill-pins`
 
-Every skill pin, keyed by skill name. Returns `200` with an empty object when skill pinning is not wired (the UI polls this endpoint).
+Every skill pin, keyed by skill name, with the status recorded by the daemon's last sync (`gridctl skill pins list` recomputes status against the registry on disk). Returns `200` with an empty object when skill pinning is not wired (the UI polls this endpoint).
 
 ```json
 {
