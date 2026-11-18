@@ -4,6 +4,10 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- `gridctl skill pins list` now reports drift against the registry on disk instead of the status stored by the daemon's last sync, so a `pack add`, `skill update`, or hand edit shows as drift without `skill pins verify`, with or without a running daemon. Previously the listing stayed `pinned` until the stack's daemon synced, which never happened for a stopped stack. `list` still never writes the pin file or the approvals log; `last_verified_at` and the `LAST VERIFIED` column remain the time of the daemon's last sync, a pinned skill missing from the registry keeps its stored status, and content that cannot be hashed lists as `drift`. `list --format json` keeps `schema_version` 1 and the same fields, and exit codes are unchanged. This matches the documented pin behavior, so it ships as a bug fix under Article VIII.
+
 ## [1.0.0-rc.8] - 2026-11-16
 
 ### Features
