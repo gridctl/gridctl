@@ -2,12 +2,14 @@ name: NPM Audit Fix
 
 # Keeps web/package-lock.json ahead of fresh npm advisories without a
 # maintainer pushing lockfile bumps into whatever PR happens to be open.
-# The gatekeeper frontend job fails on `npm audit --audit-level=high`, and
+# The gatekeeper frontend job fails on any high or critical advisory, and
 # advisories land faster than PRs merge, so every new advisory otherwise
 # blocks an unrelated branch. Weekly (plus on-demand via workflow_dispatch
 # when a mid-week advisory bites), this applies semver-compatible fixes and
 # - only when the lockfile actually changed - opens or updates a single
 # reviewable PR. The audit gate itself stays; this keeps main passing it.
+# When an update clears an advisory listed in web/audit-exceptions.json,
+# the gate fails that PR until the now-unused entry is removed from it.
 
 on:
   schedule:

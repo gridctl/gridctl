@@ -237,7 +237,7 @@ Changes to the declarative post-install step or its minimum Homebrew version als
 
 Pull requests are automatically checked for:
 - Go linting and formatting (`golangci-lint` with `gosec` and the `gofmt` formatter), covering `integration`-tagged files; run `golangci-lint fmt` to fix format findings; the lint output reports repeated format messages for at most three files, so use `golangci-lint fmt --diff ./...` or `gofmt -l` for the full list
-- Vulnerability scanning (`govulncheck`, `npm audit`)
+- Vulnerability scanning (`govulncheck`, `npm audit`). The frontend audit fails on any high or critical advisory. `web/audit-exceptions.json` may accept a named advisory that has no patched release, with a reason and an expiry at most 30 days ahead; `scripts/npm-audit-gate.py` fails on an expired entry and on an entry the audit no longer needs, so remove an entry in the same pull request that clears its advisory
 - Unit tests with race detection, plus overall and per-package coverage thresholds
 - Integration tests against both Docker and Podman
 - Frontend type check, lint, tests, and build
