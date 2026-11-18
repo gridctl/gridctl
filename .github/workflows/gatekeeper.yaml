@@ -427,8 +427,18 @@ jobs:
         run: npx vitest run --coverage
         working-directory: web
 
+      # Same bar as `npm audit --audit-level=high`: any high or critical
+      # advisory fails. The gate script also accepts the dated entries in
+      # web/audit-exceptions.json, for advisories with no patched release.
       - name: Security audit
-        run: npm audit --audit-level=high
+        run: |
+          status=0
+          npm audit --json > "$RUNNER_TEMP/npm-audit.json" || status=$?
+          if (( status > 1 )); then
+            cat "$RUNNER_TEMP/npm-audit.json"
+            exit "$status"
+          fi
+          python3 ../scripts/npm-audit-gate.py --report "$RUNNER_TEMP/npm-audit.json" --exceptions audit-exceptions.json
         working-directory: web
 
       - name: Build

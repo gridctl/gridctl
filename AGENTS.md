@@ -334,6 +334,8 @@ scripts/            Build/test helpers and release tooling: release.py owns gate
                     validate-examples.sh runs gridctl validate on each; check-example-refs.sh enforces pinned or excepted
                     example image and package selectors, including unassessed in-scope references. Both run in task examples:check.
                     run-verified-tests.sh captures go test JSON and runs cmd/scenarioverify for designated Gatekeeper lanes.
+                    npm-audit-gate.py gates the Gatekeeper frontend audit at high severity over `npm audit --json`, with
+                    dated per-advisory exceptions in web/audit-exceptions.json (expired or unused entries fail).
 docs/               User-facing documentation (cli-reference, config-schema, api-reference, concepts, skills, hooks, packs, tools-workspace,
                     global-context, scaling, usage-observability, installation, release-verification,
                     project-status, troubleshooting, proposals, execution, mcp-runtime-python, security/threat-model, security-evidence,
