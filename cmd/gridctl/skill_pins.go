@@ -65,6 +65,11 @@ var skillPinsListCmd = &cobra.Command{
 	Short: "List pin status for all skills in a stack",
 	Long: `List pin status for every pinned skill.
 
+Status is checked against the registry on disk at the time of the call, so a
+content change shows as drift without a daemon sync; list never writes the pin
+file. LAST VERIFIED (last_verified_at) is the time of the daemon's last sync.
+A pinned skill missing from the registry keeps its stored status.
+
 Default output is a styled table; use '--format json' for machine-readable
 output including per-file digests, provenance, and advisory findings.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -82,7 +87,7 @@ output including per-file digests, provenance, and advisory findings.`,
 		if skillPinsKind == skillKindHook {
 			return runHookPinsList(format)
 		}
-		return runSkillPinsList(format)
+		return runSkillPinsList(os.Stdout, format)
 	},
 }
 
@@ -303,15 +308,16 @@ type skillPinsListDoc struct {
 	Skills        map[string]*skillpins.SkillPin `json:"skills"`
 }
 
-func runSkillPinsList(format string) error {
-	stackName, ps, _, err := loadSkillPinsForCLI()
+func runSkillPinsList(stdout io.Writer, format string) error {
+	stackName, ps, reg, err := loadSkillPinsForCLI()
 	if err != nil {
 		return err
 	}
-	skills := ps.GetAll()
+	// Live status, read-only: a running daemon owns the pin file.
+	skills := ps.Current(reg)
 
 	if strings.EqualFold(format, "json") {
-		return output.EncodeJSON(os.Stdout, skillPinsListDoc{
+		return output.EncodeJSON(stdout, skillPinsListDoc{
 			SchemaVersion: skillPinsJSONSchemaVersion,
 			Stack:         stackName,
 			Skills:        skills,
@@ -319,11 +325,11 @@ func runSkillPinsList(format string) error {
 	}
 
 	if len(skills) == 0 {
-		fmt.Printf("No skill pins found for stack '%s'. Start the stack to pin registry skills.\n", stackName)
+		fmt.Fprintf(stdout, "No skill pins found for stack '%s'. Start the stack to pin registry skills.\n", stackName)
 		return nil
 	}
 
-	t := output.NewTableWriter(os.Stdout, *skillPinsListPlain)
+	t := output.NewTableWriter(stdout, *skillPinsListPlain)
 	t.AppendHeader(table.Row{"SKILL", "STATUS", "SOURCE", "FILES", "FINDINGS", "LAST VERIFIED"})
 	for _, name := range sortedMapKeys(skills) {
 		pin := skills[name]

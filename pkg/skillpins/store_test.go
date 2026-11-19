@@ -972,3 +972,138 @@ func TestResetOnDisk_SkipsAndReports(t *testing.T) {
 		t.Fatal("alpha survived in the reset stack")
 	}
 }
+
+// TestCurrent_RecomputesWithoutWriting: Current reports live drift for a
+// SKILL.md or supporting-file edit, and the stored record stays untouched.
+func TestCurrent_RecomputesWithoutWriting(t *testing.T) {
+	edits := map[string]func(t *testing.T, reg *registry.Store){
+		"skill_md": func(t *testing.T, reg *registry.Store) {
+			writeSkill(t, reg, "benign", strings.Replace(benignSkill, "Nothing suspicious here.", "Something changed.", 1))
+		},
+		"supporting_file": func(t *testing.T, reg *registry.Store) {
+			writeSupportingFile(t, reg, "benign", "scripts/run.sh", []byte("echo changed\n"))
+		},
+	}
+	for name, edit := range edits {
+		t.Run(name, func(t *testing.T) {
+			reg := newTestRegistry(t)
+			writeSkill(t, reg, "benign", benignSkill)
+			writeSupportingFile(t, reg, "benign", "scripts/run.sh", []byte("echo ok\n"))
+			dir := t.TempDir()
+			ps := NewWithPath(dir, "teststack")
+			if _, err := ps.Sync(reg); err != nil {
+				t.Fatalf("sync: %v", err)
+			}
+			stored, _ := ps.Get("benign")
+			if stored.Status != StatusPinned {
+				t.Fatalf("stored status = %q, want pinned", stored.Status)
+			}
+
+			if got := ps.Current(reg)["benign"].Status; got != StatusPinned {
+				t.Fatalf("unchanged content: status = %q, want pinned", got)
+			}
+
+			edit(t, reg)
+			cur := ps.Current(reg)
+			if got := cur["benign"].Status; got != StatusDrift {
+				t.Fatalf("status = %q, want drift", got)
+			}
+			if !cur["benign"].LastVerifiedAt.Equal(stored.LastVerifiedAt) {
+				t.Fatalf("LastVerifiedAt changed: %v -> %v", stored.LastVerifiedAt, cur["benign"].LastVerifiedAt)
+			}
+			if cur["benign"].CompositeHash != stored.CompositeHash {
+				t.Fatal("CompositeHash changed")
+			}
+
+			// The in-memory record and the file on disk are both unchanged.
+			if mem, _ := ps.Get("benign"); mem.Status != StatusPinned {
+				t.Fatalf("in-memory status = %q, want pinned", mem.Status)
+			}
+			fresh := NewWithPath(dir, "teststack")
+			if err := fresh.Load(); err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			disk, ok := fresh.Get("benign")
+			if !ok || disk.Status != StatusPinned {
+				t.Fatalf("stored record = %+v, want pinned", disk)
+			}
+			if !disk.LastVerifiedAt.Equal(stored.LastVerifiedAt) {
+				t.Fatalf("stored LastVerifiedAt changed: %v -> %v", stored.LastVerifiedAt, disk.LastVerifiedAt)
+			}
+		})
+	}
+}
+
+// TestCurrent_MissingSkillKeepsStoredStatus: a pinned skill absent from the
+// registry is reported with its stored status, not as drift.
+func TestCurrent_MissingSkillKeepsStoredStatus(t *testing.T) {
+	for _, status := range []string{StatusPinned, StatusDrift} {
+		t.Run(status, func(t *testing.T) {
+			reg := newTestRegistry(t)
+			writeSkill(t, reg, "benign", benignSkill)
+			ps := newTestStore(t)
+			if _, err := ps.Sync(reg); err != nil {
+				t.Fatalf("sync: %v", err)
+			}
+			if status == StatusDrift {
+				writeSkill(t, reg, "benign", strings.Replace(benignSkill, "Nothing suspicious here.", "Edited.", 1))
+				if _, err := ps.Sync(reg); err != nil {
+					t.Fatalf("sync drift: %v", err)
+				}
+			}
+
+			if err := os.RemoveAll(filepath.Join(reg.Dir(), "skills", "benign")); err != nil {
+				t.Fatalf("removing skill: %v", err)
+			}
+			if err := reg.Load(); err != nil {
+				t.Fatalf("reloading registry: %v", err)
+			}
+			pin, ok := ps.Current(reg)["benign"]
+			if !ok {
+				t.Fatal("missing skill dropped from Current")
+			}
+			if pin.Status != status {
+				t.Fatalf("status = %q, want stored %q", pin.Status, status)
+			}
+		})
+	}
+}
+
+// TestCurrent_UnreadableFileIsDrift: content that cannot be hashed reads as
+// drift, matching Sync's fail-closed rule.
+func TestCurrent_UnreadableFileIsDrift(t *testing.T) {
+	reg := newTestRegistry(t)
+	writeSkill(t, reg, "benign", benignSkill)
+	ps := newTestStore(t)
+	if _, err := ps.Sync(reg); err != nil {
+		t.Fatalf("first sync: %v", err)
+	}
+	writeSupportingFile(t, reg, "benign", "scripts/gone.sh", []byte("content"))
+
+	if got := ps.Current(unreadableSkillSource{reg})["benign"].Status; got != StatusDrift {
+		t.Fatalf("status = %q, want drift", got)
+	}
+	if mem, _ := ps.Get("benign"); mem.Status != StatusPinned {
+		t.Fatalf("in-memory status = %q, want pinned", mem.Status)
+	}
+}
+
+// TestCurrent_LookupFailureIsDrift: a source error other than not-found must
+// not read as pinned or as missing.
+func TestCurrent_LookupFailureIsDrift(t *testing.T) {
+	reg := newTestRegistry(t)
+	writeSkill(t, reg, "benign", benignSkill)
+	ps := newTestStore(t)
+	if _, err := ps.Sync(reg); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if got := ps.Current(failingLookupSource{reg})["benign"].Status; got != StatusDrift {
+		t.Fatalf("status = %q, want drift", got)
+	}
+}
+
+type failingLookupSource struct{ *registry.Store }
+
+func (s failingLookupSource) GetSkill(string) (*registry.AgentSkill, error) {
+	return nil, errors.New("registry read failed")
+}
