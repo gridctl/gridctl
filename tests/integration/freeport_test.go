@@ -24,12 +24,17 @@ func TestFreePort_RefusesPortHeldOnAnotherAddress(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	hold, err := net.Listen("tcp6", "[::1]:0")
+	// Pick the port with the wildcard probe so it is free on every address;
+	// a kernel-chosen [::1]:0 port may already be held on IPv4.
+	p, err := pickFreePort(ctx, &net.ListenConfig{})
+	if err != nil {
+		t.Fatalf("pickFreePort: %v", err)
+	}
+	hold, err := net.Listen("tcp6", fmt.Sprintf("[::1]:%d", p))
 	if err != nil {
 		t.Skipf("host has no IPv6 loopback: %v", err)
 	}
 	defer hold.Close()
-	p := hold.Addr().(*net.TCPAddr).Port
 
 	lc := net.ListenConfig{
 		Control: func(network, address string, c syscall.RawConn) error {
