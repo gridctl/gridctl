@@ -87,16 +87,29 @@ func runIntegrationTests(m *testing.M) int {
 	return m.Run()
 }
 
-// freePort returns an OS-assigned free TCP port on localhost.
+// freePort returns an OS-assigned TCP port that is free on every address.
+// The probe binds the wildcard because consumers such as the mock MCP server
+// bind ":<port>", and Linux lets a loopback-only bind succeed on a port that
+// another process holds on a different address, where the wildcard bind fails.
 func freePort(t *testing.T) int {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+	port, err := pickFreePort(context.Background(), &net.ListenConfig{})
 	if err != nil {
 		t.Fatalf("freePort: %v", err)
 	}
+	return port
+}
+
+// pickFreePort binds an ephemeral wildcard port with lc, closes it, and
+// returns the port. Listen errors are returned unwrapped.
+func pickFreePort(ctx context.Context, lc *net.ListenConfig) (int, error) {
+	l, err := lc.Listen(ctx, "tcp", ":0")
+	if err != nil {
+		return 0, err
+	}
 	port := l.Addr().(*net.TCPAddr).Port
 	l.Close()
-	return port
+	return port, nil
 }
 
 // startMockServer starts a mock server binary as a subprocess and registers
