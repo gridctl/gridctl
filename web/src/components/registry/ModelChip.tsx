@@ -96,9 +96,16 @@ const TARGET_NAMES: Record<string, string> = {
 /**
  * Per-target honor rows: what each projection target does with a model
  * preference, straight from the wire matrix so silence never reads as
- * support. Renders nothing without a matrix.
+ * support. A target with a stack client value (agents' rendered targets)
+ * is annotated with that value. Renders nothing without a matrix.
  */
-export function ModelHonorList({ honor }: { honor: Record<string, string> | undefined | null }) {
+export function ModelHonorList({
+  honor,
+  clients,
+}: {
+  honor: Record<string, string> | undefined | null;
+  clients?: ModelPreference['clients'] | null;
+}) {
   const entries = Object.entries(honor ?? {}).sort(([a], [b]) => a.localeCompare(b));
   if (entries.length === 0) return null;
   return (
@@ -117,6 +124,12 @@ export function ModelHonorList({ honor }: { honor: Record<string, string> | unde
             )}
           >
             {HONOR_LABELS[status] ?? status}
+            {clients?.[slug]?.value && (
+              <span className="text-primary" data-testid={`model-honor-client-${slug}`}>
+                {' '}
+                · stack value {clients[slug].value}
+              </span>
+            )}
           </span>
         </li>
       ))}

@@ -170,7 +170,7 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
                     </span>
                   </div>
                 )}
-                <ModelHonorList honor={modelPref.honor} />
+                <ModelHonorList honor={modelPref.honor} clients={modelPref.clients} />
                 <p className="text-3xs text-text-muted/70">
                   A preference is a durable default per projection target; clients keep their own
                   resolution order and may override it.
