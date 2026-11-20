@@ -452,9 +452,19 @@ func syncModelPolicies(stackPath string) (skillPol, agentPol *registry.ModelPoli
 	if stackPath == "" {
 		return nil, nil, nil
 	}
-	stack, _, err := config.ValidateStackFile(stackPath)
+	stack, result, err := config.ValidateStackFile(stackPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("loading --stack %s: %w", stackPath, err)
+	}
+	// Structural model_preferences errors (a misplaced or unknown clients
+	// key, an empty client value) would otherwise project a policy the
+	// author did not write; unrelated stack errors do not block a sync.
+	if result != nil {
+		for _, iss := range result.Issues {
+			if iss.Severity == config.SeverityError && strings.HasPrefix(iss.Field, "model_preferences") {
+				return nil, nil, fmt.Errorf("loading --stack %s: %s: %s (run 'gridctl validate %s')", stackPath, iss.Field, iss.Message, stackPath)
+			}
+		}
 	}
 	skillPol, agentPol = stack.ModelPolicies()
 	return skillPol, agentPol, nil
@@ -467,6 +477,17 @@ func channelLabel(channel, reason string) string {
 		return channel + " (model policy)"
 	}
 	return channel
+}
+
+// agentChannelLabel renders an agent row's channel. Agents are always
+// copies, so no channel is policy-forced; a row whose installed bytes
+// carry a model policy rewrite (identity or rendered) is labeled the
+// same way a policy-forced skill copy is. The JSON channel stays "copy".
+func agentChannelLabel(s agentsync.ProjectionStatus) string {
+	if s.ModelValue != "" {
+		return s.Channel + " (model policy)"
+	}
+	return s.Channel
 }
 
 // newSkillProjectManager loads the registry and builds the projection
@@ -704,9 +725,7 @@ func runSkillProjectStatus(ctx context.Context, stdout, stderr io.Writer, mgr *s
 			t.AppendRow(table.Row{s.Skill, s.Client, channelLabel(s.Channel, s.ChannelReason), s.Render, skillProjectStateLabel(s), s.Target})
 		}
 		for _, s := range agentStatuses {
-			// Agents are always copies; the channel is never policy-forced,
-			// so no reason label applies (a rewrite surfaces via detail).
-			t.AppendRow(table.Row{s.Agent + " (agent)", s.Client, s.Channel, s.Render, agentProjectStateLabel(s), s.Target})
+			t.AppendRow(table.Row{s.Agent + " (agent)", s.Client, agentChannelLabel(s), s.Render, agentProjectStateLabel(s), s.Target})
 		}
 		for _, s := range hookStatuses {
 			t.AppendRow(table.Row{s.Hook + " (hook)", s.Client, s.Channel, s.Render, hookProjectStateLabel(s), s.Target})
