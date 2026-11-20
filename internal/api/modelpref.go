@@ -11,11 +11,14 @@ import (
 // default or override decides the value; the UI never guesses), and
 // the per-target honor matrix keyed by target slug. The whole object is
 // omitted when there is neither a declaration nor a policy resolution,
-// so older frontends see nothing new.
+// so older frontends see nothing new. Clients (agents only) carries the
+// stack's per-rendered-target values from model_preferences.agents.clients,
+// keyed by target slug, only for targets that resolve one.
 type modelPreferenceView struct {
-	Declared *modelDeclarationView `json:"declared,omitempty"`
-	Resolved *modelResolutionView  `json:"resolved,omitempty"`
-	Honor    map[string]string     `json:"honor"`
+	Declared *modelDeclarationView           `json:"declared,omitempty"`
+	Resolved *modelResolutionView            `json:"resolved,omitempty"`
+	Clients  map[string]*modelResolutionView `json:"clients,omitempty"`
+	Honor    map[string]string               `json:"honor"`
 }
 
 // modelDeclarationView is the author-declared preference.
@@ -98,5 +101,24 @@ func (s *Server) agentModelPreference(a skills.InstalledAgent) *modelPreferenceV
 		pref = &registry.ModelPreference{Values: []string{v}, SourceKey: registry.ModelSourceTopLevel}
 	}
 	_, pol := s.currentModelPolicies()
-	return modelPreferenceWire(a.Name, pref, pol, registry.AgentHonorMatrix())
+	view := modelPreferenceWire(a.Name, pref, pol, registry.AgentHonorMatrix())
+	var clients map[string]*modelResolutionView
+	for _, slug := range registry.RenderedAgentTargets() {
+		if v, res := pol.ResolveClient(slug, a.Name); v != "" {
+			if clients == nil {
+				clients = map[string]*modelResolutionView{}
+			}
+			clients[slug] = &modelResolutionView{Value: v, Resolution: res}
+		}
+	}
+	if clients == nil {
+		return view
+	}
+	// A client-only configuration still yields a view: the stack decided
+	// something for this agent even with no declaration or resolution.
+	if view == nil {
+		view = &modelPreferenceView{Honor: honorWire(registry.AgentHonorMatrix())}
+	}
+	view.Clients = clients
+	return view
 }

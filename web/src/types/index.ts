@@ -608,12 +608,15 @@ export interface AgentSkill {
 // declaration; resolved appears only when a loaded stack policy default or
 // override decides the value (an author declaration a policy leaves
 // untouched stays declared-only); honor maps projection target slugs to
-// what each target does with the key. The whole object is absent when
-// nothing is declared and no policy resolves — older backends simply never
-// send it.
+// what each target does with the key. Clients (agents only) maps rendered
+// target slugs to the stack's model_preferences.agents.clients value for
+// that target; present only for targets that resolve one, and never sent by
+// older backends. The whole object is absent when nothing is declared and
+// no policy resolves; older backends simply never send it.
 export interface ModelPreference {
   declared?: { value: string; sourceKey: string };
   resolved?: { value: string; resolution: 'default' | 'override' };
+  clients?: Record<string, { value: string; resolution: 'default' | 'override' }>;
   honor?: Record<string, string>;
 }
 

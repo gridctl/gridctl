@@ -110,4 +110,19 @@ describe('AgentDetailPanel model preference', () => {
     expect(screen.getByText('model')).toBeInTheDocument();
     expect(screen.getByText('opus')).toBeInTheDocument();
   });
+
+  it('shows the stack client value on the OpenCode honor row', () => {
+    renderAgentPanel({
+      ...AGENT,
+      modelPreference: {
+        ...PREF,
+        honor: { 'claude-code': 'honored', opencode: 'dropped-on-render' },
+        clients: { opencode: { value: 'anthropic/claude-sonnet-5-5', resolution: 'default' } },
+      },
+    });
+    expect(screen.getByTestId('model-honor-list')).toHaveTextContent(
+      'OpenCodedropped on render · stack value anthropic/claude-sonnet-5-5',
+    );
+  });
 });
+

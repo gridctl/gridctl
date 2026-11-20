@@ -98,4 +98,31 @@ describe('ModelHonorList', () => {
     expect(list).toHaveTextContent('some-new-client');
     expect(list).toHaveTextContent('dropped on render');
   });
+
+  it('annotates targets that carry a stack client value', () => {
+    render(
+      <ModelHonorList
+        honor={{ 'claude-code': 'honored', opencode: 'dropped-on-render', gemini: 'dropped-on-render' }}
+        clients={{ opencode: { value: 'anthropic/claude-sonnet-5-5', resolution: 'default' } }}
+      />,
+    );
+    const items = screen.getByTestId('model-honor-list').querySelectorAll('li');
+    // Sorted: claude-code, gemini, opencode.
+    expect(items[2]).toHaveTextContent('OpenCode');
+    expect(items[2]).toHaveTextContent('dropped on render · stack value anthropic/claude-sonnet-5-5');
+    expect(items[1]).toHaveTextContent('Gemini CLI');
+    expect(items[1]).not.toHaveTextContent('stack value');
+    expect(items[0]).not.toHaveTextContent('stack value');
+    expect(screen.getByTestId('model-honor-client-opencode')).toBeInTheDocument();
+  });
+
+  it('renders unchanged without clients (older backend)', () => {
+    const honor = { opencode: 'dropped-on-render', 'claude-code': 'honored' };
+    const { container: without } = render(<ModelHonorList honor={honor} />);
+    const { container: withNull } = render(<ModelHonorList honor={honor} clients={null} />);
+    const { container: withEmpty } = render(<ModelHonorList honor={honor} clients={{}} />);
+    expect(without.innerHTML).toBe(withNull.innerHTML);
+    expect(without.innerHTML).toBe(withEmpty.innerHTML);
+    expect(without).not.toHaveTextContent('stack value');
+  });
 });

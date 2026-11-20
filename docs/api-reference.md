@@ -2861,11 +2861,12 @@ Registry skill and agent responses also carry a `modelPreference` object when th
 "modelPreference": {
   "declared": { "value": "opus", "sourceKey": "model" },
   "resolved": { "value": "sonnet", "resolution": "override" },
+  "clients": { "opencode": { "value": "anthropic/claude-sonnet-5-5", "resolution": "default" } },
   "honor": { "claude-code": "honored", "opencode": "dropped-on-render" }
 }
 ```
 
-`declared` is the author's frontmatter declaration (`sourceKey` is `model`, `metadata.preferred-model`, or `metadata.model`). `resolved` appears only when a loaded stack policy default or override decides the value; `resolution` names the winning source (`default` | `override`), and an author declaration a policy leaves untouched stays `declared`-only. `honor` maps projection target slugs to what each target does with the preference (`honored` | `ignored` | `unknown` | `dropped-on-render`).
+`declared` is the author's frontmatter declaration (`sourceKey` is `model`, `metadata.preferred-model`, or `metadata.model`). `resolved` appears only when a loaded stack policy default or override decides the value; `resolution` names the winning source (`default` | `override`), and an author declaration a policy leaves untouched stays `declared`-only. `honor` maps projection target slugs to what each target does with the preference (`honored` | `ignored` | `unknown` | `dropped-on-render`). `clients` (agent responses only) maps rendered target slugs to the loaded stack's `model_preferences.agents.clients` value for that agent, with `resolution` `default` or `override`; it is present only for targets that resolve a value, so it is omitted without a loaded stack or a `clients` block. Like `resolved`, it reports the stack's declared value independent of `rewrite`; with `rewrite: false` nothing is written to the projected file. A client value alone makes `modelPreference` present.
 
 ### Context Pins
 

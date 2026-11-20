@@ -841,14 +841,16 @@ func DeniedActiveSkillWarnings(stack *config.Stack) []string {
 //     scope naming how many items resolve a preference while some of
 //     that kind's projection targets ignore or drop the key. Aggregate
 //     by design: a per-item warning would repeat the same fact for
-//     every skill in the registry. Surfacing-only scopes (rewrite
-//     false) project nothing and are skipped.
+//     every skill in the registry. The agents line counts per rendered
+//     target, leaving out targets where every resolving agent has a
+//     model_preferences.agents.clients value. Surfacing-only scopes
+//     (rewrite false) project nothing and are skipped.
 //   - model-preference-portability: an active skill declares top-level
 //     `model:`, which spec-strict consumers outside Claude Code reject
 //     (`metadata` is the portable placement, string values only).
 //
-// All findings are advisory; the cmd layer appends them as warnings that
-// never block a deploy. Best-effort: an unreadable registry yields
+// All findings are advisory; the cmd layer appends them as warnings
+// (validate exits 2 while any remains) that never block a deploy. Best-effort: an unreadable registry yields
 // nothing.
 func ModelPreferenceWarnings(stack *config.Stack) []string {
 	if stack == nil || stack.ModelPreferences == nil {
@@ -895,19 +897,33 @@ func ModelPreferenceWarnings(stack *config.Stack) []string {
 
 	agentRewrite := stack.ModelPreferences.Agents != nil && stack.ModelPreferences.Agents.Rewrite
 	if drop := dropTargetsOf(registry.AgentHonorMatrix()); agentRewrite && len(drop) > 0 {
-		resolving := 0
-		if agents, err := skills.ListAgents(registryDir); err == nil {
+		var agents []skills.InstalledAgent
+		if listed, err := skills.ListAgents(registryDir); err == nil {
+			agents = listed
+		}
+		// Per target: an agent counts where it resolves a top-level
+		// preference but that target has no client value for it (the
+		// render drops the author's key; only a client value is written).
+		var unhonored []string
+		for _, slug := range drop {
+			count := 0
 			for _, a := range agents {
 				declared, _ := a.Definition.DeclaredModel()
-				if resolved, _ := agentPolicy.Resolve(a.Name, declared); resolved != "" {
-					resolving++
+				if resolved, _ := agentPolicy.Resolve(a.Name, declared); resolved == "" {
+					continue
+				}
+				if v, _ := agentPolicy.ResolveClient(slug, a.Name); v == "" {
+					count++
 				}
 			}
+			if count > 0 {
+				unhonored = append(unhonored, fmt.Sprintf("%s (%d agent(s))", slug, count))
+			}
 		}
-		if resolving > 0 {
+		if len(unhonored) > 0 {
 			warnings = append(warnings, fmt.Sprintf(
-				"model-preference-unhonored: %d imported agent(s) resolve a model preference under rewrite; rendered dialects drop the key by design: %s",
-				resolving, strings.Join(drop, ", ")))
+				"model-preference-unhonored: imported agents resolve a model preference under rewrite, but these rendered targets drop the author's key and have no client value: %s; set model_preferences.agents.clients.<slug>",
+				strings.Join(unhonored, ", ")))
 		}
 	}
 

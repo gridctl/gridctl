@@ -52,9 +52,19 @@ type Rendered struct {
 
 // RenderFunc converts a parsed canonical agent definition into one
 // client's native dialect. Renders must be pure and deterministic:
-// the same definition always yields the same bytes, or drift detection
-// manufactures false positives on every sync.
-type RenderFunc func(def *skills.AgentDefinition) (Rendered, error)
+// the same definition and options always yield the same bytes, or drift
+// detection manufactures false positives on every sync.
+type RenderFunc func(def *skills.AgentDefinition, opts RenderOptions) (Rendered, error)
+
+// RenderOptions carry the per-projection inputs a render takes beyond
+// the canonical definition. The zero value renders exactly the
+// pass-through dialect.
+type RenderOptions struct {
+	// Model is the client-vocabulary model value to write as the
+	// rendered `model:` key (from model_preferences.agents.clients under
+	// rewrite). Empty means no model key.
+	Model string
+}
 
 // Target describes one client's native agents directory. Each agent
 // becomes a single file AgentsPath/<file name>, always copied (no

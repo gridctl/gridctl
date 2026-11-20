@@ -17,11 +17,14 @@ import (
 // never by ranging a map), and explicit loss — every canonical
 // frontmatter key the dialect cannot express lands in Rendered.Dropped.
 //
-// The `model` key is deliberately dropped on every rendered target:
+// The author's `model` key is never carried to a rendered target:
 // model vocabularies are client-specific (Claude aliases like "sonnet"
 // mean nothing to OpenCode's provider/model IDs or Gemini's model
 // names), and passing one through would break the agent harder than
-// omitting it. The agent body is always carried verbatim.
+// omitting it. A rendered file carries `model` only when the caller
+// passes an explicit client value (RenderOptions.Model, resolved from
+// model_preferences.agents.clients); otherwise the key is dropped and
+// reported. The agent body is always carried verbatim.
 
 // renderOpenCode emits the OpenCode agent dialect
 // (~/.config/opencode/agents/<name>.md). OpenCode has no name key (the
@@ -29,43 +32,46 @@ import (
 // whose semantics do not map from Claude's tools list; rather than
 // invent a partial mapping that could over-grant, tools are dropped and
 // OpenCode's defaults apply.
-func renderOpenCode(def *skills.AgentDefinition) (Rendered, error) {
+func renderOpenCode(def *skills.AgentDefinition, opts RenderOptions) (Rendered, error) {
 	var b strings.Builder
 	b.WriteString("---\n")
 	writeScalarField(&b, "description", def.Description)
 	writeScalarField(&b, "mode", "subagent")
+	// name is structural (filename); every Extra key drops except a
+	// model the policy supplied.
+	consumed := writeModelField(&b, opts)
 	b.WriteString("---\n\n")
 	b.WriteString(def.Body)
 
 	return Rendered{
 		Bytes:   []byte(b.String()),
-		Dropped: droppedKeys(def, nil), // name is structural (filename); every Extra key drops
+		Dropped: droppedKeys(def, consumed),
 	}, nil
 }
 
 // renderCopilot emits the Copilot custom-agent dialect
 // (~/.copilot/agents/<name>.agent.md). Claude's comma-separated tools
 // string becomes Copilot's YAML array.
-func renderCopilot(def *skills.AgentDefinition) (Rendered, error) {
-	return renderNameDescriptionTools(def)
+func renderCopilot(def *skills.AgentDefinition, opts RenderOptions) (Rendered, error) {
+	return renderNameDescriptionTools(def, opts)
 }
 
 // renderGemini emits the Gemini CLI subagent dialect
 // (~/.gemini/agents/<name>.md), which is near-isomorphic to Claude's:
 // name, description, and a tools array carry over.
-func renderGemini(def *skills.AgentDefinition) (Rendered, error) {
-	return renderNameDescriptionTools(def)
+func renderGemini(def *skills.AgentDefinition, opts RenderOptions) (Rendered, error) {
+	return renderNameDescriptionTools(def, opts)
 }
 
 // renderNameDescriptionTools is the shared shape for dialects carrying
 // name, description, and a tools array.
-func renderNameDescriptionTools(def *skills.AgentDefinition) (Rendered, error) {
+func renderNameDescriptionTools(def *skills.AgentDefinition, opts RenderOptions) (Rendered, error) {
 	var b strings.Builder
 	b.WriteString("---\n")
 	writeScalarField(&b, "name", def.Name)
 	writeScalarField(&b, "description", def.Description)
 
-	consumed := map[string]bool{}
+	consumed := writeModelField(&b, opts)
 	if tools, ok := claudeToolsList(def); ok {
 		writeListField(&b, "tools", tools)
 		consumed["tools"] = true
@@ -74,6 +80,19 @@ func renderNameDescriptionTools(def *skills.AgentDefinition) (Rendered, error) {
 	b.WriteString(def.Body)
 
 	return Rendered{Bytes: []byte(b.String()), Dropped: droppedKeys(def, consumed)}, nil
+}
+
+// writeModelField emits the policy-supplied client model value, if any,
+// and returns the consumed-keys map with "model" marked so the author's
+// declaration is not reported as dropped: the key is present, carrying
+// the client value instead.
+func writeModelField(b *strings.Builder, opts RenderOptions) map[string]bool {
+	consumed := map[string]bool{}
+	if opts.Model != "" {
+		writeScalarField(b, "model", opts.Model)
+		consumed["model"] = true
+	}
+	return consumed
 }
 
 // claudeToolsList reads the canonical tools key: Claude Code writes a
