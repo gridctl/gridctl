@@ -1,5 +1,11 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertCircle } from 'lucide-react';
+import { isChunkLoadError } from '../../lib/chunkReload';
+
+// Seam over the hard page reload so tests can observe it without jsdom
+// navigation errors (same pattern as ResetDialog's pageReload).
+// eslint-disable-next-line react-refresh/only-export-components -- test seam; exported for unit tests alongside the boundary
+export const boundaryReload = { current: () => window.location.reload() };
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -57,6 +63,33 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       ? 'h-full w-full bg-background flex items-center justify-center p-8'
       : 'h-screen w-screen bg-background flex items-center justify-center';
 
+    // A failed code-split chunk means the UI changed under this tab (an
+    // upgrade or a rebuild). React.lazy keeps the rejected import and the
+    // browser caches the failed module fetch, so an in-place retry cannot
+    // recover; offer a reload in both variants and keep the raw message out
+    // of the visible text.
+    if (isChunkLoadError(error)) {
+      return (
+        <div className={container}>
+          <div className="text-center p-8 max-w-md">
+            <div className="p-4 rounded-xl bg-status-pending/10 border border-status-pending/20 inline-block mb-4">
+              <AlertCircle size={32} className="text-status-pending" />
+            </div>
+            <h1 className="text-lg text-text-primary mb-2">Reload needed</h1>
+            <p className="text-sm text-text-secondary mb-4" title={error.message}>
+              The web UI changed since this tab was loaded. Reload the page to continue.
+            </p>
+            <button
+              onClick={() => boundaryReload.current()}
+              className="px-4 py-2 bg-primary text-background rounded-lg font-medium hover:bg-primary-light transition-colors"
+            >
+              Reload
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className={container}>
         <div className="text-center p-8 max-w-md">
@@ -68,7 +101,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             {error.message}
           </pre>
           <button
-            onClick={inline ? this.handleRetry : () => window.location.reload()}
+            onClick={inline ? this.handleRetry : () => boundaryReload.current()}
             className="px-4 py-2 bg-primary text-background rounded-lg font-medium hover:bg-primary-light transition-colors"
           >
             {inline ? 'Try again' : 'Reload Window'}

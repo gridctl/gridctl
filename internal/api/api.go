@@ -1256,9 +1256,27 @@ func spaHandler(fileServer http.Handler, staticFS fs.FS) http.Handler {
 		}
 
 		// Check if file exists
-		if _, err := fs.Stat(staticFS, path); err != nil {
+		info, err := fs.Stat(staticFS, path)
+		if err != nil {
+			// A missing hashed asset is a stale bundle: answer 404 so the
+			// module load fails cleanly instead of receiving index.html.
+			if strings.HasPrefix(path, "assets/") {
+				w.Header().Set("Cache-Control", "no-store")
+				http.NotFound(w, r)
+				return
+			}
 			// File doesn't exist, serve index.html for SPA routing
 			r.URL.Path = "/"
+			path = "index.html"
+		}
+
+		switch {
+		case path == "index.html":
+			// The shell names the current hashed assets; always revalidate it.
+			w.Header().Set("Cache-Control", "no-cache")
+		case strings.HasPrefix(path, "assets/") && !info.IsDir():
+			// Vite names every file under assets/ by content hash.
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		}
 
 		fileServer.ServeHTTP(w, r)

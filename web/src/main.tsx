@@ -3,11 +3,13 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
 import './index.css';
 import { migratePreferences } from './lib/preferences';
+import { installChunkReload } from './lib/chunkReload';
 import { CommandRegistryProvider } from './hooks/useCommandRegistry';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { AppRoutes } from './routes';
 
 migratePreferences();
+installChunkReload();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
