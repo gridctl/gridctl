@@ -61,6 +61,18 @@ describe('installChunkReload', () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
+  it('treats a stored time ahead of the clock as no recent reload', () => {
+    const reload = vi.fn();
+    const storage = memoryStorage();
+    storage.setItem(CHUNK_RELOAD_KEY, String(2_000_000));
+    uninstall = installChunkReload({ reload, storage, now: () => 1_000_000 });
+
+    const event = dispatchPreloadError();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(storage.getItem(CHUNK_RELOAD_KEY)).toBe(String(1_000_000));
+    expect(event.defaultPrevented).toBe(false);
+  });
+
   it('never reloads when storage is unavailable', () => {
     const reload = vi.fn();
     const storage = {

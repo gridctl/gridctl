@@ -34,7 +34,9 @@ export function installChunkReload(options: ChunkReloadOptions = {}): () => void
       const last = Number(storage.getItem(CHUNK_RELOAD_KEY));
       const at = now();
       // A reload inside the guard window did not help; stop to avoid a loop.
-      if (Number.isFinite(last) && last > 0 && at - last < windowMs) return;
+      // A stored time ahead of the clock (a clock step back) is not recent.
+      const elapsed = at - last;
+      if (Number.isFinite(last) && last > 0 && elapsed >= 0 && elapsed < windowMs) return;
       storage.setItem(CHUNK_RELOAD_KEY, String(at));
     } catch {
       // Without storage the guard cannot hold, so never reload.
