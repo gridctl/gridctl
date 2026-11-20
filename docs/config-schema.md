@@ -1938,6 +1938,13 @@ model_preferences:
   agents:
     rewrite: true
     default: sonnet
+    clients:                 # agents only: values in each rendered client's own vocabulary
+      opencode:
+        default: anthropic/claude-sonnet-5-5
+        overrides:
+          reviewer: anthropic/claude-opus-5-5#high
+      gemini:
+        default: inherit
 ```
 
 ### Fields
@@ -1950,15 +1957,24 @@ Each scope (`skills`, `agents`) carries the same three fields:
 | `default` | string | no | - | Preference applied where the author declared nothing. High blast radius with `rewrite: true`: every projected skill without a declared model is rewritten and forced to copy channel. Prefer `overrides` for early adoption. |
 | `overrides` | map | no | - | Exact registry name to preference, applied regardless of the author's declaration, in either direction. Unknown names warn but never error (the skill may arrive later via pack). |
 
+The `agents` scope also accepts `clients`, a map from rendered agent target slug (`opencode`, `copilot`, `gemini`) to an object with two optional fields:
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `default` | string | no | - | Value written as the `model:` key of every agent rendered for that client. |
+| `overrides` | map | no | - | Exact agent name to value for that client; a non-empty override beats the client `default`. |
+
+Client values use the client's own model vocabulary and are written verbatim: OpenCode takes `provider/model` with an optional `#variant` suffix (run `opencode models` for exact IDs), Copilot a model name, and Gemini CLI a model ID or `inherit`. Gridctl never translates a Claude alias into a client value, and the author's declared `model:` never reaches a rendered file. Omitting `clients` keeps rendered output byte-identical to a stack without it.
+
 Values are Claude Code model aliases (`default`, `best`, `fable`, `sonnet`, `opus`, `haiku`, `sonnet[1m]`, `opus[1m]`, `opusplan`, `inherit`) or full model IDs. Alias resolution is provider-conditional; gridctl never claims which concrete version an alias resolves to.
 
 ### Semantics
 
-Resolution per name: an override beats the author's declaration beats `default`. With `rewrite: true`, `gridctl skill project sync` writes the resolved preference into the projected file's frontmatter, never into the registry canonical, which stays byte-identical (skill pins hash the canonical, so policy can never trip pin drift). A skill projection whose resolved preference differs from its stored frontmatter cannot stay a symlink (the link points at the canonical), so it is forced to copy channel with the reason shown in status output as `copy (model policy)`. Rendered agent dialects (OpenCode, Copilot, Gemini CLI) continue to drop `model` (their vocabularies are not Claude's), reported per sync and in the honor matrix; the rewrite applies to identity copies only.
+Resolution per name: an override beats the author's declaration beats `default`. With `rewrite: true`, `gridctl skill project sync` writes the resolved preference into the projected file's frontmatter, never into the registry canonical, which stays byte-identical (skill pins hash the canonical, so policy can never trip pin drift). A skill projection whose resolved preference differs from its stored frontmatter cannot stay a symlink (the link points at the canonical), so it is forced to copy channel with the reason shown in status output as `copy (model policy)`. Rendered agent dialects (OpenCode, Copilot, Gemini CLI) drop the author's `model` (their vocabularies are not Claude's), reported per sync and in the honor matrix; the top-level `default` and `overrides` rewrite identity copies only. With `rewrite: true`, a rendered agent projection carries `model:` only when `clients.<slug>` resolves a value for that agent (`overrides[name]`, then `default`): the render writes it after `mode` on OpenCode and after `description` on Copilot and Gemini CLI, the lock entry records it as `model_value`, and the sync row detail reads `model preference "<value>" applied (policy)`, adding `author declared "<value>" is not carried` when the canonical declares one. With `rewrite: true`, no top-level `default` or `overrides`, and only `clients` set, the identity copy stays byte-identical to the canonical.
 
-Policy binding: the daemon compiles the block from its loaded stack and applies it on every projection reconcile, including reconciles triggered by hot reload and manual `gridctl reload`; `gridctl skill project sync --stack <path>` applies it from the CLI, and `skill project status --stack <path>` judges staleness against it. A sync running without stack context never reverts a rewritten projection (status shows `model policy: unknown (no stack loaded)`); the explicit off switch is `rewrite: false` (or removing the covering default/override), which reconciles projections back to pass-through and restores symlink channel on the next policy-aware sync. Edits hot-reload without container restarts. The block is not inherited across `extends` (matching `clients`/`groups`/`limits`/`skills`).
+Policy binding: the daemon compiles the block from its loaded stack and applies it on every projection reconcile, including reconciles triggered by hot reload and manual `gridctl reload`; `gridctl skill project sync --stack <path>` applies it from the CLI, and `skill project status --stack <path>` judges staleness against it. A sync running without stack context never reverts a rewritten projection (status shows `model policy: unknown (no stack loaded)`); the explicit off switch is `rewrite: false` (or removing the covering default/override), which reconciles projections back to pass-through and restores symlink channel on the next policy-aware sync. Removing a `clients` value does the same for rendered agent projections, which return to the bytes a stack without `clients` renders. Under a loaded stack, `skill project status` judges every agent projection, rendered ones included, against the bytes a sync would write now: a `model_value` change reads `stale` with `model preference policy changed`, and any other difference (a gridctl upgrade that changes renderer output) reads `stale` with `projection output changed`. Edits hot-reload without container restarts. The block is not inherited across `extends` (matching `clients`/`groups`/`limits`/`skills`).
 
-Advisory lint (never blocks a deploy): `model-preference-unknown-alias` (a value is neither a known alias nor shaped like a model ID), `model-preference-unhonored` (a preference resolves for targets that ignore or drop it), and `model-preference-portability` (top-level `model:` in a SKILL.md is rejected by spec-strict consumers outside Claude Code; `metadata` is the portable placement).
+Lint is advisory, with one exception. The advisory findings are `model-preference-unknown-alias` (a top-level value is neither a known alias nor shaped like a model ID; client values are never alias-checked), `model-preference-client-value-shape` (an OpenCode client value is not shaped like `provider/model[#variant]`), `model-preference-unhonored` (agents resolve a top-level preference under rewrite for a rendered target that has no `clients` value, listed per target with the remedy `set model_preferences.agents.clients.<slug>`; skills list the targets that ignore the key), and `model-preference-portability` (top-level `model:` in a SKILL.md is rejected by spec-strict consumers outside Claude Code; `metadata` is the portable placement). Warnings never block a deploy, and `gridctl validate` exits `2` while any remains. The exception is structural errors inside `clients`: a key that is not a rendered agent target (including `claude-code`, which takes the top-level fields), a `clients` block under `skills`, and an empty value or an entry with no value. These are validation errors (`gridctl validate` exits `1`), and `gridctl apply`, hot reload, and `skill project sync --stack` refuse the stack.
 
 ## Link (declared clients)
 

@@ -20,6 +20,7 @@
 # The daemon applies the policy on every projection reconcile. From the
 # CLI without a daemon, pass the stack explicitly:
 #   gridctl skill project sync --stack examples/registry/model-preferences.yaml
+#   gridctl skill project sync --kind agent --stack examples/registry/model-preferences.yaml
 #
 # Removing the block (or setting rewrite: false) reconciles projections
 # back to pass-through and restores symlink channel on the next
@@ -44,3 +45,13 @@ model_preferences:
   agents:
     rewrite: true
     default: sonnet              # agents without a declaration get sonnet
+    # Rendered agent targets (OpenCode, Copilot, Gemini CLI) never carry
+    # the Claude alias above. Give each client its own value, in that
+    # client's model vocabulary; targets without one carry no model key.
+    clients:
+      opencode:
+        default: anthropic/claude-sonnet-5-5           # provider/model[#variant]
+        overrides:
+          code-reviewer: anthropic/claude-opus-5-5#high
+      gemini:
+        default: inherit                               # use the session model
