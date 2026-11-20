@@ -17,6 +17,19 @@ type ModelPolicy struct {
 	// Overrides maps exact registry names to the preference applied
 	// regardless of the author's declaration, in either direction.
 	Overrides map[string]string
+	// Clients maps rendered agent target slugs (RenderedAgentTargets) to
+	// explicit values in that client's own model vocabulary. Agents
+	// scope only; never translated from Default or Overrides.
+	Clients map[string]ClientModelPolicy
+}
+
+// ClientModelPolicy is one rendered client's model preference: values
+// are written verbatim into that client's rendered frontmatter.
+type ClientModelPolicy struct {
+	// Default applies to every agent without an override.
+	Default string
+	// Overrides maps exact agent names to the value for that agent.
+	Overrides map[string]string
 }
 
 // Resolution provenance values, shared with the REST surface.
@@ -41,6 +54,28 @@ func (p *ModelPolicy) Resolve(name, declared string) (value, resolution string) 
 	}
 	if p != nil && p.Default != "" {
 		return p.Default, ResolutionDefault
+	}
+	return "", ""
+}
+
+// ResolveClient answers the client-specific value for one agent on one
+// rendered target: a non-empty override beats the client default. The
+// author's declaration never contributes (its vocabulary belongs to
+// the identity target). Resolution is "override", "default", or "" when
+// no value applies. Rewrite is not consulted; callers gate on it.
+func (p *ModelPolicy) ResolveClient(slug, name string) (value, resolution string) {
+	if p == nil {
+		return "", ""
+	}
+	c, ok := p.Clients[slug]
+	if !ok {
+		return "", ""
+	}
+	if v := c.Overrides[name]; v != "" {
+		return v, ResolutionOverride
+	}
+	if c.Default != "" {
+		return c.Default, ResolutionDefault
 	}
 	return "", ""
 }

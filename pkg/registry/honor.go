@@ -41,12 +41,35 @@ var skillHonor = map[string]HonorStatus{
 //     rides the same identity copy with unverified honor semantics, so
 //     the identity target stays "honored" for its primary consumer.
 //   - opencode, copilot, gemini: rendered dialects deliberately drop
-//     `model` (pkg/agentsync/render.go).
+//     the author's `model` (pkg/agentsync/render.go); only an explicit
+//     model_preferences.agents.clients value is written there.
 var agentHonor = map[string]HonorStatus{
 	"claude-code": HonorHonored,
 	"opencode":    HonorDropped,
 	"copilot":     HonorDropped,
 	"gemini":      HonorDropped,
+}
+
+// renderedAgentTargets are the agent projection targets that render a
+// client dialect rather than copying the canonical file, sorted. They
+// are the only valid keys of model_preferences.agents.clients; pkg/agentsync
+// carries an exhaustiveness test against its target table.
+var renderedAgentTargets = []string{"copilot", "gemini", "opencode"}
+
+// RenderedAgentTargets returns the rendered agent target slugs, sorted.
+func RenderedAgentTargets() []string {
+	return append([]string(nil), renderedAgentTargets...)
+}
+
+// IsRenderedAgentTarget reports whether slug names a rendered agent
+// target.
+func IsRenderedAgentTarget(slug string) bool {
+	for _, s := range renderedAgentTargets {
+		if s == slug {
+			return true
+		}
+	}
+	return false
 }
 
 // SkillHonor returns the honor status for one skill projection target
