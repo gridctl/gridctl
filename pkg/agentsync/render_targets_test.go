@@ -352,7 +352,7 @@ func TestRender_FlowUnsafeToolItemsQuoted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := renderCopilot(def)
+	got, err := renderCopilot(def, RenderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

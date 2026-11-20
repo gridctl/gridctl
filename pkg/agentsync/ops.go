@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gridctl/gridctl/pkg/project"
+	"github.com/gridctl/gridctl/pkg/registry"
 	"github.com/gridctl/gridctl/pkg/skills"
 )
 
@@ -71,8 +72,9 @@ type SyncResult struct {
 	Channel string `json:"channel,omitempty"`
 	Target  string `json:"target,omitempty"`
 	Action  string `json:"action"`
-	// Detail carries the lossy-render report (which canonical keys the
-	// target dialect dropped); empty for identity targets.
+	// Detail carries the model preference report (policy segment first)
+	// and the lossy-render report (which canonical keys the target
+	// dialect dropped), joined by "; ".
 	Detail     string `json:"detail,omitempty"`
 	BackupPath string `json:"backup_path,omitempty"`
 	Error      string `json:"error,omitempty"`
@@ -363,46 +365,12 @@ func (m *Manager) materialize(a skills.InstalledAgent, t Target, lf *LockFile, o
 	}
 	srcHash := contentHash(src)
 
-	// Identity targets install the canonical bytes; rendered targets
-	// install the client dialect. CanonicalHash always tracks the canon
-	// (staleness), InstalledHash whatever was written (drift).
-	install := src
-	var detail string
-	modelValue := ""
-	if t.Render != nil {
-		def, perr := skills.ParseAgentMD(src)
-		if perr != nil {
-			res.Action, res.Error = ActionError, fmt.Sprintf("rendering for %s: %v", t.Slug, perr)
-			return res
-		}
-		// The store directory name is the agent's identity (it names the
-		// projected files and the lock entries); rendered frontmatter
-		// must carry it even when the canonical file omits or disagrees
-		// on the name key.
-		def.Name = a.Name
-		rendered, rerr := t.Render(def)
-		if rerr != nil {
-			res.Action, res.Error = ActionError, fmt.Sprintf("rendering for %s: %v", t.Slug, rerr)
-			return res
-		}
-		install = rendered.Bytes
-		detail = lossyDetail(t.Slug, rendered.Dropped)
-	} else if m.modelPolicy != nil {
-		// Model preference policy applies to identity install bytes only:
-		// rendered dialects deliberately drop the key (see render.go).
-		declared, scalarOK := declaredAgentModel(src)
-		if resolved, need := m.modelPolicy.NeedsRewrite(a.Name, declared); need {
-			switch rewritten, ok := rewriteAgentModel(src, resolved); {
-			case !scalarOK:
-				detail = "model preference not applied: existing model value is not a single-line scalar"
-			case ok:
-				install = rewritten
-				modelValue = resolved
-				detail = fmt.Sprintf("model preference %q applied (policy)", resolved)
-			default:
-				detail = "model preference not applied: frontmatter is not line-rewritable"
-			}
-		}
+	// CanonicalHash always tracks the canon (staleness), InstalledHash
+	// whatever was written (drift).
+	install, modelValue, detail, err := expectedInstall(a.Name, src, t, m.modelPolicy)
+	if err != nil {
+		res.Action, res.Error = ActionError, err.Error()
+		return res
 	}
 	installHash := contentHash(install)
 
@@ -508,6 +476,71 @@ func (m *Manager) materialize(a skills.InstalledAgent, t Target, lf *LockFile, o
 		res.Action = ActionCopied
 	}
 	return res
+}
+
+// expectedInstall computes the bytes one (agent, target) projection
+// installs under pol, the model value a policy wrote into them (empty
+// for pass-through), and the human detail for the sync row. Sync and
+// status share it so they can never disagree on what a projection
+// should hold. Identity targets install the canonical bytes, with the
+// top-level model line rewritten under policy; rendered targets install
+// the client dialect, carrying a model key only for an explicit
+// model_preferences.agents.clients value under rewrite.
+func expectedInstall(name string, src []byte, t Target, pol *registry.ModelPolicy) (install []byte, modelValue, detail string, err error) {
+	if t.Render != nil {
+		def, perr := skills.ParseAgentMD(src)
+		if perr != nil {
+			return nil, "", "", fmt.Errorf("rendering for %s: %w", t.Slug, perr)
+		}
+		// The store directory name is the agent's identity (it names the
+		// projected files and the lock entries); rendered frontmatter
+		// must carry it even when the canonical file omits or disagrees
+		// on the name key.
+		def.Name = name
+		// NeedsRewrite is deliberately not consulted: it compares against
+		// the author's Claude-vocabulary declaration, which would suppress
+		// a client value that happens to equal it ("inherit").
+		var opts RenderOptions
+		if pol != nil && pol.Rewrite {
+			opts.Model, _ = pol.ResolveClient(t.Slug, name)
+		}
+		rendered, rerr := t.Render(def, opts)
+		if rerr != nil {
+			return nil, "", "", fmt.Errorf("rendering for %s: %w", t.Slug, rerr)
+		}
+		lossy := lossyDetail(t.Slug, rendered.Dropped)
+		if opts.Model == "" {
+			return rendered.Bytes, "", lossy, nil
+		}
+		if declared, ok := def.DeclaredModel(); ok && declared != "" {
+			detail = fmt.Sprintf("model preference %q applied (policy; author declared %q is not carried)", opts.Model, declared)
+		} else {
+			detail = fmt.Sprintf("model preference %q applied (policy)", opts.Model)
+		}
+		if lossy != "" {
+			detail += "; " + lossy
+		}
+		return rendered.Bytes, opts.Model, detail, nil
+	}
+
+	install = src
+	if pol == nil {
+		return install, "", "", nil
+	}
+	declared, scalarOK := declaredAgentModel(src)
+	if resolved, need := pol.NeedsRewrite(name, declared); need {
+		switch rewritten, ok := rewriteAgentModel(src, resolved); {
+		case !scalarOK:
+			detail = "model preference not applied: existing model value is not a single-line scalar"
+		case ok:
+			install = rewritten
+			modelValue = resolved
+			detail = fmt.Sprintf("model preference %q applied (policy)", resolved)
+		default:
+			detail = "model preference not applied: frontmatter is not line-rewritable"
+		}
+	}
+	return install, modelValue, detail, nil
 }
 
 // record updates the lock entry for one projection. On identity targets
@@ -620,27 +653,30 @@ func (m *Manager) statusFor(agent, client string, entry *Entry) ProjectionStatus
 		return ps
 	}
 
-	// Model preference policy checks apply to identity targets only:
-	// rendered dialects drop the key, so policy never changes their
-	// expected bytes.
-	if t, tok := FindTarget(client); tok && t.Render == nil {
-		if pol := m.currentModelPolicy(); pol == nil {
-			if entry.ModelValue != "" {
-				ps.Detail = "model policy: unknown (no stack loaded); rewritten projection preserved"
-			}
-		} else {
-			expected := src
-			declared, scalarOK := declaredAgentModel(src)
-			if resolved, need := pol.NeedsRewrite(agent, declared); need && scalarOK {
-				if rewritten, rok := rewriteAgentModel(src, resolved); rok {
-					expected = rewritten
-				}
-			}
-			if contentHash(expected) != entry.InstalledHash {
-				ps.State = StateStale
+	// Without stack context the expected bytes are unknown: a rewritten
+	// projection is preserved by sync, so status names that rather than
+	// judging it. Under a loaded policy every projection is judged
+	// against exactly what a sync would install now.
+	pol := m.currentModelPolicy()
+	if pol == nil {
+		if entry.ModelValue != "" {
+			ps.Detail = "model policy: unknown (no stack loaded); rewritten projection preserved"
+		}
+	} else if t, tok := FindTarget(client); tok {
+		expected, modelValue, _, xerr := expectedInstall(agent, src, t, pol)
+		if xerr != nil {
+			ps.State = StateStale
+			ps.Detail = xerr.Error()
+			return ps
+		}
+		if contentHash(expected) != entry.InstalledHash {
+			ps.State = StateStale
+			if modelValue != entry.ModelValue {
 				ps.Detail = "model preference policy changed; run 'gridctl skill project sync --kind agent'"
-				return ps
+			} else {
+				ps.Detail = "projection output changed; run 'gridctl skill project sync --kind agent'"
 			}
+			return ps
 		}
 	}
 	ps.State = StateInSync

@@ -34,7 +34,7 @@ func parseTestAgent(t *testing.T) *skills.AgentDefinition {
 
 func TestRenderOpenCode_Golden(t *testing.T) {
 	def := parseTestAgent(t)
-	got, err := renderOpenCode(def)
+	got, err := renderOpenCode(def, RenderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ Focus on correctness first.
 
 func TestRenderCopilot_Golden(t *testing.T) {
 	def := parseTestAgent(t)
-	got, err := renderCopilot(def)
+	got, err := renderCopilot(def, RenderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestRenderGemini_ToolsArrayInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := renderGemini(def)
+	got, err := renderGemini(def, RenderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,11 +108,11 @@ func TestRender_Deterministic(t *testing.T) {
 		if tt.Render == nil {
 			continue
 		}
-		a, err := tt.Render(def)
+		a, err := tt.Render(def, RenderOptions{})
 		if err != nil {
 			t.Fatalf("%s: %v", tt.Slug, err)
 		}
-		b, err := tt.Render(def)
+		b, err := tt.Render(def, RenderOptions{})
 		if err != nil {
 			t.Fatalf("%s: %v", tt.Slug, err)
 		}
@@ -130,7 +130,7 @@ func TestRender_QuotesUnsafeScalars(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := renderCopilot(def)
+	got, err := renderCopilot(def, RenderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestRender_NoToolsKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := renderCopilot(def)
+	got, err := renderCopilot(def, RenderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
