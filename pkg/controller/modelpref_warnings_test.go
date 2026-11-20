@@ -88,22 +88,62 @@ func TestModelPreferenceWarnings_UnhonoredGatedOnRewrite(t *testing.T) {
 	}
 }
 
-func TestModelPreferenceWarnings_AgentsScopeAggregates(t *testing.T) {
-	stageWarningsRegistry(t, nil, "opus")
-	got := ModelPreferenceWarnings(warningsStack(&config.ModelPreferencesConfig{
-		Agents: &config.ModelPreferenceScope{Rewrite: true, Default: "sonnet"},
-	}))
-	found := false
+func agentUnhonored(t *testing.T, got []string) []string {
+	t.Helper()
+	var out []string
 	for _, w := range got {
-		if strings.Contains(w, "model-preference-unhonored") && strings.Contains(w, "1 imported agent(s)") {
-			found = true
-			if !strings.Contains(w, "opencode") || !strings.Contains(w, "gemini") {
-				t.Errorf("agent aggregate should name the rendered dialects: %q", w)
-			}
+		if strings.Contains(w, "model-preference-unhonored") && strings.Contains(w, "agents") {
+			out = append(out, w)
 		}
 	}
-	if !found {
-		t.Fatalf("expected an agent-scope unhonored aggregate, got %v", got)
+	return out
+}
+
+func TestModelPreferenceWarnings_AgentsScopeAggregates(t *testing.T) {
+	stageWarningsRegistry(t, nil, "opus")
+	got := agentUnhonored(t, ModelPreferenceWarnings(warningsStack(&config.ModelPreferencesConfig{
+		Agents: &config.ModelPreferenceScope{Rewrite: true, Default: "sonnet"},
+	})))
+	if len(got) != 1 {
+		t.Fatalf("expected one agent-scope unhonored line, got %v", got)
+	}
+	for _, want := range []string{"copilot (1 agent(s))", "gemini (1 agent(s))", "opencode (1 agent(s))", "set model_preferences.agents.clients.<slug>"} {
+		if !strings.Contains(got[0], want) {
+			t.Errorf("agent line should contain %q: %q", want, got[0])
+		}
+	}
+}
+
+func TestModelPreferenceWarnings_AgentsPerTargetClients(t *testing.T) {
+	stageWarningsRegistry(t, nil, "opus")
+	client := func(v string) *config.ModelPreferenceClient { return &config.ModelPreferenceClient{Default: v} }
+
+	// Only opencode has a client value: copilot and gemini stay listed.
+	got := agentUnhonored(t, ModelPreferenceWarnings(warningsStack(&config.ModelPreferencesConfig{
+		Agents: &config.ModelPreferenceScope{Rewrite: true, Default: "sonnet", Clients: map[string]*config.ModelPreferenceClient{
+			"opencode": client("anthropic/claude-sonnet-5-5"),
+		}},
+	})))
+	if len(got) != 1 {
+		t.Fatalf("expected exactly one agent unhonored line, got %v", got)
+	}
+	if !strings.Contains(got[0], "copilot (1 agent(s))") || !strings.Contains(got[0], "gemini (1 agent(s))") || strings.Contains(got[0], "opencode") {
+		t.Errorf("line should name copilot and gemini only: %q", got[0])
+	}
+	if !strings.Contains(got[0], "model_preferences.agents.clients.<slug>") {
+		t.Errorf("line should name the remedy: %q", got[0])
+	}
+
+	// An override-only client value covers the named agent.
+	got = agentUnhonored(t, ModelPreferenceWarnings(warningsStack(&config.ModelPreferencesConfig{
+		Agents: &config.ModelPreferenceScope{Rewrite: true, Default: "sonnet", Clients: map[string]*config.ModelPreferenceClient{
+			"opencode": client("anthropic/claude-sonnet-5-5"),
+			"copilot":  {Overrides: map[string]string{"helper": "gpt-5"}},
+			"gemini":   client("inherit"),
+		}},
+	})))
+	if len(got) != 0 {
+		t.Fatalf("every target covered: no unhonored line expected, got %v", got)
 	}
 }
 
