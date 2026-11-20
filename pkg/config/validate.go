@@ -354,6 +354,8 @@ func Validate(s *Stack) error {
 		errs = append(errs, validateRunsConfig(s.Runs)...)
 	}
 
+	errs = append(errs, validateModelPreferenceClients(s.ModelPreferences)...)
+
 	// Gateway auth validation
 	if s.Gateway != nil && s.Gateway.Auth != nil {
 		errs = append(errs, validateGatewayAuth(s.Gateway.Auth)...)

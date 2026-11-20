@@ -2,7 +2,10 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"os"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -273,12 +276,18 @@ func (r *ValidationResult) addHiddenToolWarnings(s *Stack) {
 }
 
 // addModelPreferencesIssues reports on the `model_preferences:` block.
-// All findings are advisory (warnings and info; the block can never
-// fail validation): model alias vocabularies churn on client-release
-// timescales, and an unknown override name may simply arrive later via
-// pack. The value check is `model-preference-unknown-alias`; content
-// checks that need the registry (unhonored targets, portability) join
-// at the cmd layer like the skills-policy apply warnings.
+// Findings are advisory (warnings and info): model alias vocabularies
+// churn on client-release timescales, and an unknown override name may
+// simply arrive later via pack. The one exception is structural errors
+// inside a `clients` sub-block (a key that is not a rendered agent
+// target, a `clients` key under skills, or an empty value), which
+// Validate reports as errors (validateModelPreferenceClients) because
+// they can never take effect. The alias check
+// is `model-preference-unknown-alias` (top-level values only; client
+// values use each client's own vocabulary and only the OpenCode shape
+// is linted, as `model-preference-client-value-shape`); content checks
+// that need the registry (unhonored targets, portability) join at the
+// cmd layer like the skills-policy apply warnings.
 func (r *ValidationResult) addModelPreferencesIssues(s *Stack) {
 	if s.ModelPreferences == nil {
 		return
@@ -307,10 +316,14 @@ func (r *ValidationResult) addModelPreferencesIssues(s *Stack) {
 		for _, k := range keys {
 			warnValue("model_preferences."+name+".overrides."+k, scope.Overrides[k])
 		}
+		clientSlugs := r.addModelPreferenceClientIssues(name, scope.Clients)
 		if scope.Rewrite {
 			detail := fmt.Sprintf("%d override(s)", len(scope.Overrides))
 			if scope.Default != "" {
 				detail += fmt.Sprintf(", default %q applies to every projected %s with no declared preference (affected projections are forced to copy channel)", scope.Default, strings.TrimSuffix(name, "s"))
+			}
+			if len(clientSlugs) > 0 {
+				detail += ", client values for: " + strings.Join(clientSlugs, ", ")
 			}
 			r.Issues = append(r.Issues, ValidationIssue{
 				Field:    "model_preferences." + name,
@@ -321,6 +334,53 @@ func (r *ValidationResult) addModelPreferencesIssues(s *Stack) {
 	}
 	checkScope("skills", s.ModelPreferences.Skills)
 	checkScope("agents", s.ModelPreferences.Agents)
+}
+
+// openCodeModelShape matches OpenCode's provider/model[#variant] model
+// reference: provider and model non-empty, no whitespace anywhere.
+var openCodeModelShape = regexp.MustCompile(`^[^/\s#]+/[^\s#]+(#[^\s#]+)?$`)
+
+// addModelPreferenceClientIssues adds the advisory findings for one
+// scope's `clients` sub-block and returns the rendered target slugs that
+// carry at least one value, sorted. Structural problems are errors
+// reported by Validate (validateModelPreferenceClients). Client values
+// are never checked against the Claude alias list; only the OpenCode
+// shape is linted.
+func (r *ValidationResult) addModelPreferenceClientIssues(scope string, clients map[string]*ModelPreferenceClient) []string {
+	if scope != "agents" || len(clients) == 0 {
+		return nil
+	}
+	var withValues []string
+	for _, slug := range registry.RenderedAgentTargets() {
+		c := clients[slug]
+		if c == nil {
+			continue
+		}
+		base := "model_preferences.agents.clients." + slug
+		has := false
+		check := func(field, value string) {
+			if strings.TrimSpace(value) == "" {
+				return
+			}
+			has = true
+			if slug == "opencode" && !openCodeModelShape.MatchString(value) {
+				r.Issues = append(r.Issues, ValidationIssue{
+					Field:    field,
+					Message:  fmt.Sprintf("model-preference-client-value-shape: %q is not shaped like provider/model[#variant]; run 'opencode models' for exact IDs", value),
+					Severity: SeverityWarning,
+				})
+				r.WarningCount++
+			}
+		}
+		check(base+".default", c.Default)
+		for _, n := range slices.Sorted(maps.Keys(c.Overrides)) {
+			check(base+".overrides."+n, c.Overrides[n])
+		}
+		if has {
+			withValues = append(withValues, slug)
+		}
+	}
+	return withValues
 }
 
 // addSkillsPolicyIssues reports on the `skills:` exposure block. Validate has

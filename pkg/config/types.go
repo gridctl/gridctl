@@ -250,6 +250,21 @@ type ModelPreferenceScope struct {
 	// Unknown names warn at validate time but never error: the skill may
 	// arrive later via pack.
 	Overrides map[string]string `yaml:"overrides,omitempty" json:"overrides,omitempty"`
+	// Clients maps rendered agent target slugs (opencode, copilot,
+	// gemini) to explicit values in that client's model vocabulary,
+	// written into rendered agent projections under Rewrite. Valid only
+	// under the agents scope; Default and Overrides never translate into
+	// it. Absent = rendered targets carry no model key.
+	Clients map[string]*ModelPreferenceClient `yaml:"clients,omitempty" json:"clients,omitempty"`
+}
+
+// ModelPreferenceClient is one rendered client's model preference.
+// Values are written verbatim and never checked against Claude aliases.
+type ModelPreferenceClient struct {
+	// Default applies to every agent without an override.
+	Default string `yaml:"default,omitempty" json:"default,omitempty"`
+	// Overrides maps exact agent names to the value for that agent.
+	Overrides map[string]string `yaml:"overrides,omitempty" json:"overrides,omitempty"`
 }
 
 // LimitsConfig is the optional top-level `limits:` block: declarative rate

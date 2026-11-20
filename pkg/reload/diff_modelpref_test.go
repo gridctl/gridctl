@@ -66,3 +66,30 @@ func TestComputeDiff_ModelPreferencesOverrideEdit(t *testing.T) {
 		t.Error("an override edit must flag the change")
 	}
 }
+
+func TestComputeDiff_ModelPreferencesClientsEdit(t *testing.T) {
+	mk := func(def, override string) *config.ModelPreferencesConfig {
+		c := &config.ModelPreferenceClient{Default: def}
+		if override != "" {
+			c.Overrides = map[string]string{"reviewer": override}
+		}
+		return &config.ModelPreferencesConfig{
+			Agents: &config.ModelPreferenceScope{Rewrite: true, Clients: map[string]*config.ModelPreferenceClient{"opencode": c}},
+		}
+	}
+	base := mk("anthropic/claude-sonnet-5-5", "")
+	for name, next := range map[string]*config.ModelPreferencesConfig{
+		"default edit":  mk("anthropic/claude-opus-5-5", ""),
+		"override edit": mk("anthropic/claude-sonnet-5-5", "anthropic/claude-opus-5-5#high"),
+		"clients removed": {
+			Agents: &config.ModelPreferenceScope{Rewrite: true},
+		},
+	} {
+		if !ComputeDiff(modelPrefTestStack(base), modelPrefTestStack(next)).ModelPreferencesChanged {
+			t.Errorf("%s inside clients must flag the change", name)
+		}
+	}
+	if ComputeDiff(modelPrefTestStack(base), modelPrefTestStack(mk("anthropic/claude-sonnet-5-5", ""))).ModelPreferencesChanged {
+		t.Error("identical clients blocks must not flag a change")
+	}
+}
