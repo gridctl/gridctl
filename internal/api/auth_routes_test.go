@@ -163,12 +163,15 @@ func TestAuthHandler_RouteMatrix(t *testing.T) {
 				}
 			}
 			require.Zero(t, s.streamableServer.SessionCount())
-			for _, path := range []string{"/", "/assets/app.js", "/tools", "/groups-lookalike/release/mcp", "/mcpx", "/apiary/status", "/health", "/ready"} {
+			for _, path := range []string{"/", "/assets/app.js", "/assets/missing.js", "/tools", "/groups-lookalike/release/mcp", "/mcpx", "/apiary/status", "/health", "/ready"} {
 				w := httptest.NewRecorder()
 				h.ServeHTTP(w, loopbackRequest(http.MethodGet, path, nil))
 				want := http.StatusOK
-				if path == "/ready" {
+				switch path {
+				case "/ready":
 					want = http.StatusServiceUnavailable // No stack is loaded.
+				case "/assets/missing.js":
+					want = http.StatusNotFound // A stale asset is not the SPA shell.
 				}
 				require.Equal(t, want, w.Code, path)
 			}

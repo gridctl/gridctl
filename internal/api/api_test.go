@@ -1907,3 +1907,103 @@ func TestRegisterStaticMIMETypes_Woff2(t *testing.T) {
 		t.Fatalf("Content-Type = %q, want font/woff2", got)
 	}
 }
+
+func TestSPAHandler_MissingAssetIs404(t *testing.T) {
+	static := fstest.MapFS{
+		"index.html":           {Data: []byte("shell")},
+		"favicon.png":          {Data: []byte("png")},
+		"assets/app-abc.js":    {Data: []byte("js")},
+		"assets/fonts/a.woff2": {Data: []byte("font")},
+	}
+	direct := spaHandler(http.FileServer(http.FS(static)), static)
+	srv := NewServer(mcp.NewGateway(), static)
+	t.Cleanup(srv.Close)
+	layered := srv.Handler()
+
+	assertMissingAsset := func(t *testing.T, rec *httptest.ResponseRecorder) {
+		t.Helper()
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404", rec.Code)
+		}
+		if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+			t.Fatalf("Cache-Control = %q, want no-store", got)
+		}
+		if strings.Contains(rec.Body.String(), "shell") {
+			t.Fatalf("body = %q, want no index.html", rec.Body.String())
+		}
+		if ct := rec.Header().Get("Content-Type"); strings.HasPrefix(ct, "text/html") {
+			t.Fatalf("Content-Type = %q, want non-HTML", ct)
+		}
+	}
+	assertShell := func(t *testing.T, rec *httptest.ResponseRecorder) {
+		t.Helper()
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		if rec.Body.String() != "shell" {
+			t.Fatalf("body = %q, want shell", rec.Body.String())
+		}
+		if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+			t.Fatalf("Content-Type = %q, want text/html", ct)
+		}
+		if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
+			t.Fatalf("Cache-Control = %q, want no-cache", got)
+		}
+	}
+	serve := func(h http.Handler, r *http.Request) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, r)
+		return rec
+	}
+
+	t.Run("missing asset", func(t *testing.T) {
+		assertMissingAsset(t, serve(direct, httptest.NewRequest(http.MethodGet, "/assets/app-old.js", nil)))
+	})
+	for _, path := range []string{"/library", "/", "/library/skill.with.dot", "/tools"} {
+		t.Run("shell "+path, func(t *testing.T) {
+			assertShell(t, serve(direct, httptest.NewRequest(http.MethodGet, path, nil)))
+		})
+	}
+	t.Run("existing asset", func(t *testing.T) {
+		rec := serve(direct, httptest.NewRequest(http.MethodGet, "/assets/app-abc.js", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		if rec.Body.String() != "js" {
+			t.Fatalf("body = %q, want js", rec.Body.String())
+		}
+		if got := rec.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
+			t.Fatalf("Cache-Control = %q, want immutable", got)
+		}
+	})
+	t.Run("unhashed file", func(t *testing.T) {
+		rec := serve(direct, httptest.NewRequest(http.MethodGet, "/favicon.png", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		if got := rec.Header().Get("Cache-Control"); got != "" {
+			t.Fatalf("Cache-Control = %q, want unset", got)
+		}
+	})
+	t.Run("assets directory trailing slash", func(t *testing.T) {
+		assertMissingAsset(t, serve(direct, httptest.NewRequest(http.MethodGet, "/assets/", nil)))
+	})
+	// A directory is never marked immutable; the file server redirects it.
+	for _, path := range []string{"/assets", "/assets/fonts"} {
+		t.Run("directory "+path, func(t *testing.T) {
+			rec := serve(direct, httptest.NewRequest(http.MethodGet, path, nil))
+			if rec.Code != http.StatusMovedPermanently {
+				t.Fatalf("status = %d, want 301", rec.Code)
+			}
+			if got := rec.Header().Get("Cache-Control"); got != "" {
+				t.Fatalf("Cache-Control = %q, want unset", got)
+			}
+		})
+	}
+	t.Run("layered missing asset", func(t *testing.T) {
+		assertMissingAsset(t, serve(layered, loopbackRequest(http.MethodGet, "/assets/app-old.js", nil)))
+	})
+	t.Run("layered shell", func(t *testing.T) {
+		assertShell(t, serve(layered, loopbackRequest(http.MethodGet, "/library", nil)))
+	})
+}

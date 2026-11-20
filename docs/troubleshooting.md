@@ -1022,6 +1022,21 @@ The request for that workspace failed. `gridctl apply` restarts the daemon and i
 3. Read the text under the title. On Pins, the Library skills list, and Tools, a connection failure says "Gateway connection unavailable". On Variables, Connections, and Logs, a connection failure says "Gateway connection failed. Check connectivity, TLS, and browser access policy." An HTTP failure on Variables and Connections says `API error: <status> <statusText>`. Logs says `Logs fetch failed: <status> <statusText>`. Run history does not show that text. It uses "Run history is unreadable. This is not an empty history.", so a failed read is not an empty history. A credential rejection does not use this state.
 4. A banner means the last refresh failed and the previous Pins, Library skills, Tools, or Variables data is still on screen. An unsaved Tools whitelist edit stays mounted. Run history and Logs replace the list instead. The Pins server tab and skills tab fail independently. Connections does not poll wiring. After clients have loaded, only the sessions axis changes until the next health refresh (a mount, a mutation, or Retry). If that refresh fails before any wiring rows have loaded, the Ownership badge and the Wiring summary say "unavailable", and the Wiring body reads "Wiring status could not be loaded." Retry keeps that text until the new result arrives.
 
+### A workspace says "Reload needed"
+
+**Symptoms:**
+
+A workspace, dialog, or popout window shows the heading "Reload needed", the text "The web UI changed since this tab was loaded. Reload the page to continue.", and a Reload button.
+
+**Causes:**
+
+The gateway was upgraded or rebuilt while the tab was open, so the files this tab expects are no longer served. The tab reloads itself once when this happens. The page stays on "Reload needed" when that reload did not go through, for example because an unsaved editor's leave prompt was answered with Stay, or because the tab already reloaded for the same reason in the last 30 seconds.
+
+**Resolution:**
+
+1. Use the Reload button, or reload the page in the browser. Save or discard any unsaved edits first if the browser asks before leaving.
+2. A tab that was still running a release before this fix shows the older "Something went wrong" page with a module URL such as `Failed to fetch dynamically imported module: http://localhost:8180/assets/<name>.js`, and its Try again button does not help. Reload the page in the browser once. Automatic recovery applies to upgrades after this release.
+
 ### Grouped MCP requests return 401
 
 With `gateway.auth` configured, grouped endpoints now require the same credential as `/mcp` and `/api/`. Clients that previously reached `/groups/{name}/mcp` or `/groups/{name}/sse` without a credential must attach it to every request, including SSE negotiation, stream reconnection, and DELETE. Use `Authorization: Bearer <token>` for `type: bearer`, or the raw token in the configured header for `type: api_key` (default: `Authorization`). A session ID or replay ID does not replace the credential.

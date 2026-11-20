@@ -1,12 +1,12 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Server, Database, Wrench, Radio, Monitor, Code, Library, ExternalLink } from 'lucide-react';
+import { Server, Database, Wrench, Radio, Monitor, Code } from 'lucide-react';
 // Named import only — @lobehub/icons sets `sideEffects: false`, so Vite
 // tree-shakes this down to the MCP icon module (see lib/clientIcons.tsx).
 import { MCP } from '@lobehub/icons';
 import { cn } from '../../lib/cn';
 import { StatusDot } from '../ui/StatusDot';
-import { useWindowManager } from '../../hooks/useWindowManager';
+import { SkillsRow } from './SkillsRow';
 import type { GatewayNodeData } from '../../types';
 
 interface GatewayNodeProps {
@@ -15,8 +15,6 @@ interface GatewayNodeProps {
 }
 
 const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
-  const { openDetachedWindow } = useWindowManager();
-
   return (
     <div
       className={cn(
@@ -119,26 +117,7 @@ const GatewayNode = memo(({ data, selected }: GatewayNodeProps) => {
 
         {/* Skills (Library) */}
         {(data.totalSkills ?? 0) > 0 && (
-          <button
-            type="button"
-            className="flex items-center justify-between group cursor-pointer hover:bg-primary/5 rounded-md transition-colors px-1 -mx-1 w-full text-left"
-            onClick={(e) => { e.stopPropagation(); openDetachedWindow('registry'); }}
-            title="Open skills dashboard"
-            aria-label="Open skills dashboard"
-          >
-            <div className="flex items-center gap-2.5">
-              <div className="p-1.5 rounded-lg bg-surface-overlay-2 border border-border-subtle group-hover:bg-primary/15 group-hover:border-primary/20 transition-colors">
-                <Library size={12} className="text-text-secondary group-hover:text-primary/70 transition-colors" />
-              </div>
-              <span className="text-xs text-text-secondary font-medium">Skills</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="text-sm font-bold text-text-primary tabular-nums">
-                {data.activeSkills ?? 0}<span className="text-text-muted font-normal">/{data.totalSkills}</span>
-              </span>
-              <ExternalLink size={9} className="text-text-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover-none:opacity-100 transition-opacity" />
-            </div>
-          </button>
+          <SkillsRow activeSkills={data.activeSkills ?? 0} totalSkills={data.totalSkills ?? 0} />
         )}
 
         {/* Read-only status footer. These pills reflect gateway state and are

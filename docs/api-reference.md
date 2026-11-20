@@ -4373,7 +4373,7 @@ session-based SSE message endpoint was retired with the legacy transport.
 
 #### `GET /`
 
-Serves the embedded web UI. Unmatched paths fall back to `index.html` for SPA routing, but paths within protected namespaces still pass through authentication first. Static assets are served with appropriate content types.
+Serves the embedded web UI. Unmatched paths fall back to `index.html` for SPA routing, but paths within protected namespaces still pass through authentication first. A missing file under `/assets/` returns 404 with `Cache-Control: no-store` instead of falling back. Static assets are served with appropriate content types. `index.html` is served with `Cache-Control: no-cache`, and existing files under `/assets/` (named by content hash) with `Cache-Control: public, max-age=31536000, immutable`.
 
 **Auth:** No (UI shell, assets, and deep links outside protected namespaces)
 

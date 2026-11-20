@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router';
 import '@testing-library/jest-dom';
 
 // React Flow primitives are mocked the same way the other node-component tests
@@ -10,7 +11,11 @@ vi.mock('@xyflow/react', () => ({
 }));
 
 import GatewayNode from '../components/graph/GatewayNode';
-import type { GatewayNodeData } from '../types';
+import { AccessLens } from '../components/stack/AccessLens';
+import { useUIStore } from '../stores/useUIStore';
+import { useAccessLensStore } from '../stores/useAccessLensStore';
+import { useStackStore } from '../stores/useStackStore';
+import type { ClientStatus, GatewayNodeData } from '../types';
 
 const baseData: GatewayNodeData = {
   type: 'gateway',
@@ -68,17 +73,114 @@ describe('GatewayNode', () => {
     expect(screen.queryByText('Deferred discovery')).not.toBeInTheDocument();
   });
 
-  it('renders the Skills row as a labeled button', () => {
-    renderNode({ ...baseData, totalSkills: 4, activeSkills: 2 });
-    const button = screen.getByRole('button', { name: 'Open skills dashboard' });
-    expect(button.tagName).toBe('BUTTON');
-    expect(button).toHaveTextContent('Skills');
-  });
-
   it('keeps Gateway Active as a read-only status pill', () => {
     renderNode();
     const active = screen.getByText('Gateway Active').closest('[role="status"]');
     expect(active).not.toBeNull();
     expect(active!.className).not.toMatch(/cursor-pointer/);
+  });
+});
+
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location">{location.pathname}</div>;
+}
+
+// The Skills row navigates in-shell, so it needs a router; the cases above
+// render with no skills and stay router-free.
+function renderWithRouter(data: GatewayNodeData, extra?: React.ReactNode) {
+  return render(
+    <MemoryRouter initialEntries={['/stack']}>
+      <GatewayNode data={data} />
+      {extra}
+      <Routes>
+        <Route path="*" element={<LocationProbe />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+const withSkills: GatewayNodeData = { ...baseData, totalSkills: 4, activeSkills: 2 };
+
+describe('GatewayNode Skills row', () => {
+  beforeEach(() => {
+    useAccessLensStore.getState().clearDraft();
+    useAccessLensStore.setState({ enabled: false, isSaving: false, exitNavTarget: null });
+    useUIStore.setState({ registryDetached: false, sidebarOpen: true });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    useAccessLensStore.getState().clearDraft();
+    useAccessLensStore.setState({ enabled: false, exitNavTarget: null });
+  });
+
+  it('renders the Skills row as a labeled button', () => {
+    renderWithRouter(withSkills);
+    const button = screen.getByRole('button', { name: 'Open skills in the Library' });
+    expect(button.tagName).toBe('BUTTON');
+    expect(button).toHaveTextContent('Skills');
+    expect(button).toHaveTextContent('2/4');
+    expect(button).toHaveClass('nodrag');
+  });
+
+  it('navigates to the Library workspace in-shell without opening a window', () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    renderWithRouter(withSkills);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open skills in the Library' }));
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/library');
+    expect(open).not.toHaveBeenCalled();
+    expect(useUIStore.getState().registryDetached).toBe(false);
+    expect(useUIStore.getState().sidebarOpen).toBe(true);
+  });
+
+  it('routes through the Access Lens guard when the draft is dirty', () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    useAccessLensStore.setState({ enabled: true, clientSlug: 'x', draft: ['a'], baseline: [] });
+    renderWithRouter(withSkills);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open skills in the Library' }));
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/stack');
+    expect(useAccessLensStore.getState().exitNavTarget).toBe('/library');
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it('navigates to the Library once the dirty draft is discarded', () => {
+    const cursor: ClientStatus = {
+      name: 'Cursor',
+      slug: 'cursor',
+      detected: true,
+      linked: true,
+      transport: 'native HTTP',
+      effectiveScope: { configured: true, unscoped: false, servers: ['github'], tools: ['github__search'] },
+    };
+    useStackStore.setState({ clients: [cursor], selectedNodeId: null });
+    renderWithRouter(
+      withSkills,
+      <AccessLens
+        servers={[
+          { name: 'github', transport: 'http', initialized: true, toolCount: 1, tools: ['search'] },
+          { name: 'gitlab', transport: 'http', initialized: true, toolCount: 1, tools: ['list'] },
+        ]}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle Access Lens' }));
+    act(() => {
+      useStackStore.setState({ selectedNodeId: 'client-cursor' });
+    });
+    act(() => {
+      useAccessLensStore.getState().toggleServer('gitlab');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open skills in the Library' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/stack');
+    expect(screen.getByText(/Leave Access Lens and discard unsaved access changes/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/library');
+    expect(useAccessLensStore.getState().exitNavTarget).toBeNull();
   });
 });
