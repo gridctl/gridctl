@@ -1910,9 +1910,10 @@ func TestRegisterStaticMIMETypes_Woff2(t *testing.T) {
 
 func TestSPAHandler_MissingAssetIs404(t *testing.T) {
 	static := fstest.MapFS{
-		"index.html":        {Data: []byte("shell")},
-		"favicon.png":       {Data: []byte("png")},
-		"assets/app-abc.js": {Data: []byte("js")},
+		"index.html":           {Data: []byte("shell")},
+		"favicon.png":          {Data: []byte("png")},
+		"assets/app-abc.js":    {Data: []byte("js")},
+		"assets/fonts/a.woff2": {Data: []byte("font")},
 	}
 	direct := spaHandler(http.FileServer(http.FS(static)), static)
 	srv := NewServer(mcp.NewGateway(), static)
@@ -1984,6 +1985,21 @@ func TestSPAHandler_MissingAssetIs404(t *testing.T) {
 			t.Fatalf("Cache-Control = %q, want unset", got)
 		}
 	})
+	t.Run("assets directory trailing slash", func(t *testing.T) {
+		assertMissingAsset(t, serve(direct, httptest.NewRequest(http.MethodGet, "/assets/", nil)))
+	})
+	// A directory is never marked immutable; the file server redirects it.
+	for _, path := range []string{"/assets", "/assets/fonts"} {
+		t.Run("directory "+path, func(t *testing.T) {
+			rec := serve(direct, httptest.NewRequest(http.MethodGet, path, nil))
+			if rec.Code != http.StatusMovedPermanently {
+				t.Fatalf("status = %d, want 301", rec.Code)
+			}
+			if got := rec.Header().Get("Cache-Control"); got != "" {
+				t.Fatalf("Cache-Control = %q, want unset", got)
+			}
+		})
+	}
 	t.Run("layered missing asset", func(t *testing.T) {
 		assertMissingAsset(t, serve(layered, loopbackRequest(http.MethodGet, "/assets/app-old.js", nil)))
 	})
