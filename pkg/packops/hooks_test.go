@@ -732,7 +732,7 @@ func TestAdd_ChangedHookIsHeld(t *testing.T) {
 		t.Fatalf("pin = %+v ok=%v", pin, ok)
 	}
 
-	// Unchanged bytes on the next add report nothing held.
+	// A repeat add of the same unapproved bytes stays held.
 	mgrs, imp = freshEnv(t, mgrs.Home)
 	third, err := mgrs.Add(ctx, imp, AddOptions{Repo: repo})
 	if err != nil {

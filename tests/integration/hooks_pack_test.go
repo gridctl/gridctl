@@ -1201,3 +1201,36 @@ func TestHooksPack_ReimportHoldsChangedScript(t *testing.T) {
 		t.Fatalf("pin status after skill update = %q", st)
 	}
 }
+
+// A bulk skill update (no name) reaches the pack's hooks through a skill of
+// that pack and holds a changed hook through the bulk print path.
+func TestHooksPack_BulkUpdateHoldsChangedScript(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	bin := hookCLI(t)
+	home := t.TempDir()
+	modes := map[string]os.FileMode{"hooks/block-force-push/scripts/block.sh": 0o755}
+	repo := commitPack(t, hookPackFiles("#!/bin/sh\nexit 0\n", ""), modes)
+	if stdout, stderr, code := runHookCLI(t, bin, home, "pack", "add", repo); code != 0 {
+		t.Fatalf("pack add exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	if st := hookPinStatus(t, bin, home); st != "pinned" {
+		t.Fatalf("pin status after first add = %q", st)
+	}
+
+	commitPackChange(t, repo, map[string]string{
+		"hooks/block-force-push/scripts/block.sh": "#!/bin/sh\necho bulk\nexit 0\n",
+	}, modes)
+	stdout, stderr, code := runHookCLI(t, bin, home, "skill", "update")
+	combined := stdout + stderr
+	if code != 0 || !strings.Contains(combined, "Held hook block-force-push") || strings.Contains(combined, "Updated hook") {
+		t.Fatalf("bulk skill update exit %d\n%s", code, combined)
+	}
+	if !strings.Contains(combined, "--expect") {
+		t.Fatalf("bulk skill update omitted the approve remediation\n%s", combined)
+	}
+	if st := hookPinStatus(t, bin, home); st != "drift" {
+		t.Fatalf("pin status after bulk skill update = %q", st)
+	}
+}
