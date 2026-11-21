@@ -413,7 +413,8 @@ export function PackImportWizard() {
   if (step === 'done' && installed) {
     const skipped = installed.doc.skipped ?? [];
     const unresolved = installed.doc.unresolved ?? [];
-    const clean = skipped.length === 0 && unresolved.length === 0;
+    const held = installed.doc.held_hooks ?? [];
+    const clean = skipped.length === 0 && unresolved.length === 0 && held.length === 0;
     return (
       <div className="max-w-lg mx-auto flex flex-col gap-4 py-4 items-center text-center">
         {clean ? (
@@ -441,6 +442,12 @@ export function PackImportWizard() {
         {unresolved.length > 0 && (
           <p className="text-2xs text-status-pending">
             Unresolved: {unresolved.join(', ')}
+          </p>
+        )}
+        {held.length > 0 && (
+          <p className="text-2xs text-status-pending max-w-sm">
+            Held for pin approval: {held.map((h) => h.name).join(', ')}. Review and approve
+            in the Pins workspace before Apply projects them.
           </p>
         )}
         <div className="flex items-center gap-2">

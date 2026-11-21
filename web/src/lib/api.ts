@@ -3543,8 +3543,15 @@ export interface PackAddDoc {
   unresolved?: string[];
   skipped?: string[];
   warnings?: string[];
+  held_hooks?: PackHeldHook[];
   stack?: PackStackSummary;
   sources?: PackSourceSummary[];
+}
+
+/** A hook whose re-imported bytes differ from its pin; held until approved. */
+export interface PackHeldHook {
+  name: string;
+  composite_hash: string;
 }
 
 export interface PackApplyDoc {
