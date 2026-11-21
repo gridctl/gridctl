@@ -596,7 +596,7 @@ func buildHookBinAt(ctx context.Context, commit string) (string, error) {
 			return "", fmt.Errorf("fetching %s: %v\n%s", commit, ferr, out)
 		}
 	}
-	dir, err := os.MkdirTemp("", "gridctl-prefeature-*") //nolint:usetesting // shared across tests via sync.Once
+	dir, err := sharedTempDir("prefeature")
 	if err != nil {
 		return "", err
 	}
@@ -614,6 +614,13 @@ func buildHookBinAt(ctx context.Context, commit string) (string, error) {
 	}
 	bin := filepath.Join(dir, "gridctl-prefeature")
 	if err := buildVersionedBin(ctx, src, bin, "v9.0.0"); err != nil {
+		return "", err
+	}
+	// Only the binary is needed for the rest of the run.
+	if err := os.Remove(archive); err != nil {
+		return "", err
+	}
+	if err := os.RemoveAll(src); err != nil {
 		return "", err
 	}
 	return bin, nil
@@ -879,7 +886,7 @@ func versionedBins(ctx context.Context, t *testing.T) (oldBin, newBin string) {
 			versionedErr = err
 			return
 		}
-		dir, err := os.MkdirTemp("", "gridctl-versioned-*")
+		dir, err := sharedTempDir("versioned")
 		if err != nil {
 			versionedErr = err
 			return

@@ -30,20 +30,37 @@ var (
 )
 
 // TestMain compiles the mock server binaries once for the entire integration
-// test suite and cleans up after all tests complete. A failure to prepare the
-// binaries fails the whole suite rather than letting dependent tests skip,
-// so CI cannot go green while the mock servers do not compile.
+// test suite and cleans up after all tests complete. It owns one per-run temp
+// root that holds every directory shared across tests (see sharedTempDir) and
+// removes it on every return path. A failure to prepare the binaries fails
+// the whole suite rather than letting dependent tests skip, so CI cannot go
+// green while the mock servers do not compile.
 func TestMain(m *testing.M) {
 	os.Exit(runIntegrationTests(m))
 }
 
-func runIntegrationTests(m *testing.M) int {
-	tmpDir, err := os.MkdirTemp("", "gridctl-transport-*")
+func runIntegrationTests(m *testing.M) (code int) {
+	sweepStaleSuiteRoots(os.TempDir(), time.Now().Add(-suiteTmpStaleAge))
+	root, err := os.MkdirTemp("", suiteTmpPrefix+"*")
+	if err != nil {
+		log.Printf("failed to create the suite temp root: %v", err)
+		return 1
+	}
+	suiteTmpRoot = root
+	defer func() {
+		if err := os.RemoveAll(root); err != nil {
+			log.Printf("failed to remove the suite temp root %s: %v", root, err)
+			if code == 0 {
+				code = 1
+			}
+		}
+	}()
+
+	tmpDir, err := sharedTempDir("mock-servers")
 	if err != nil {
 		log.Printf("failed to create temp dir for mock binaries: %v", err)
 		return 1
 	}
-	defer os.RemoveAll(tmpDir)
 
 	cwd, err := os.Getwd()
 	if err != nil {
