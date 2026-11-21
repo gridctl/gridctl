@@ -176,6 +176,38 @@ type ImportResult struct {
 	ImportedHooks   []ImportedHook `json:"importedHooks,omitempty"`
 	SkippedHooks    []SkippedHook  `json:"skippedHooks,omitempty"`
 	DiscoveredHooks int            `json:"discoveredHooks,omitempty"`
+	// HeldHooks lists imported hooks whose new bytes differ from their
+	// pin. The registry holds the new bytes; the pin keeps the approved
+	// ones until skill pins approve. Each also appears in ImportedHooks.
+	HeldHooks []HeldHook `json:"heldHooks,omitempty"`
+}
+
+// HeldHook records an imported hook waiting for pin approval.
+// CompositeHash is the fingerprint of the installed bytes, the value
+// approve --expect binds to.
+type HeldHook struct {
+	Name          string `json:"name"`
+	CompositeHash string `json:"compositeHash"`
+	Reason        string `json:"reason"`
+}
+
+// HeldHookWarning is the warning an import records for a held hook.
+func HeldHookWarning(name, compositeHash string) string {
+	return fmt.Sprintf("%s: content changed since it was pinned; projection waits for 'gridctl skill pins approve %s --kind hook --expect %s'",
+		name, name, compositeHash)
+}
+
+// IsHeldHook reports whether name is in HeldHooks.
+func (r *ImportResult) IsHeldHook(name string) bool {
+	if r == nil {
+		return false
+	}
+	for _, h := range r.HeldHooks {
+		if h.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // ImportedHook records a successfully imported hook definition.
@@ -1014,14 +1046,28 @@ func (imp *Importer) importHooks(ctx context.Context, result *CloneResult, opts 
 		if opts.Kind == SourceKindLocal {
 			source = hookpins.SourceLocal
 		}
-		if err := hookpins.New().Pin(ctx, hookpins.PinRequest{
+		pinErr := hookpins.New().Pin(ctx, hookpins.PinRequest{
 			Name:     name,
 			Dir:      dest,
 			Findings: hookPinFindings(scan.Findings),
 			Source:   source,
 			Origin:   &skillpins.OriginRef{Repo: origin.Repo, Ref: origin.Ref, CommitSHA: origin.CommitSHA},
-		}); err != nil {
-			return fmt.Errorf("pinning hook %s: %w", name, err)
+		})
+		switch {
+		case errors.Is(pinErr, hookpins.ErrPinDrift):
+			comp, cerr := hookpins.CurrentCompositeHash(name, imp.registryDir)
+			if cerr != nil {
+				return fmt.Errorf("hashing held hook %s: %w", name, cerr)
+			}
+			importResult.HeldHooks = append(importResult.HeldHooks, HeldHook{
+				Name:          name,
+				CompositeHash: comp,
+				Reason:        "content changed since it was pinned",
+			})
+			importResult.Warnings = append(importResult.Warnings, HeldHookWarning(name, comp))
+			imp.logger.Info("held hook pending approval", "name", name)
+		case pinErr != nil:
+			return fmt.Errorf("pinning hook %s: %w", name, pinErr)
 		}
 		imported := ImportedHook{Name: name, Path: discovered.Path, Origin: origin}
 		if len(scan.Findings) > 0 {
@@ -1272,6 +1318,7 @@ func (imp *Importer) Update(ctx context.Context, skillName string, dryRun, force
 	if hookResult != nil {
 		result.ImportedHooks = append(result.ImportedHooks, hookResult.ImportedHooks...)
 		result.SkippedHooks = append(result.SkippedHooks, hookResult.SkippedHooks...)
+		result.HeldHooks = append(result.HeldHooks, hookResult.HeldHooks...)
 		result.Warnings = append(result.Warnings, hookResult.Warnings...)
 	}
 	return result, nil

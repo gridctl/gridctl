@@ -165,9 +165,10 @@ func TestHooksPack_ProjectCopilot(t *testing.T) {
 	commitPackChange(t, repo, map[string]string{
 		"hooks/block-force-push/scripts/block.sh": "#!/bin/sh\necho approved\nexit 0\n",
 	}, map[string]os.FileMode{"hooks/block-force-push/scripts/block.sh": 0o755})
-	if stdout, stderr, code := runHookCLI(t, bin, home, "skill", "update", "block-force-push"); code != 0 {
+	if stdout, stderr, code := runHookCLI(t, bin, home, "skill", "update", "block-force-push"); code != 0 || !strings.Contains(stdout+stderr, "Held hook block-force-push") {
 		t.Fatalf("update exit %d\n%s\n%s", code, stdout, stderr)
 	}
+	approveHeldHook(t, bin, home, "")
 	if rows, code := hookSyncJSON(t, bin, home, "--clients", "copilot", "block-force-push"); code != 0 || rows[0].Action != "updated" {
 		t.Fatalf("copilot resync exit %d rows %+v", code, rows)
 	}

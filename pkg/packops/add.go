@@ -71,6 +71,7 @@ type AddDoc struct {
 	Agents         []string                                    `json:"agents"`
 	Rules          []string                                    `json:"rules,omitempty"`
 	Hooks          []string                                    `json:"hooks,omitempty"`
+	HeldHooks      []HeldHook                                  `json:"held_hooks,omitempty"`
 	Wiring         bool                                        `json:"wiring"`
 	Unresolved     []string                                    `json:"unresolved,omitempty"`
 	Skipped        []string                                    `json:"skipped,omitempty"`
@@ -80,6 +81,13 @@ type AddDoc struct {
 	Stack          *StackSummary                               `json:"stack,omitempty"`
 	Sources        []SourceSummary                             `json:"sources,omitempty"`
 	Lock           *LockSummary                                `json:"lock,omitempty"`
+}
+
+// HeldHook is an imported hook whose new bytes wait for pin approval.
+// CompositeHash is the value skill pins approve --expect binds to.
+type HeldHook struct {
+	Name          string `json:"name"`
+	CompositeHash string `json:"composite_hash"`
 }
 
 // VariableRequirement is a value-free prerequisite reported after import.
@@ -731,6 +739,9 @@ func appendImportSkips(doc *AddDoc, result *skills.ImportResult) {
 	}
 	for _, s := range result.SkippedHooks {
 		doc.Skipped = append(doc.Skipped, fmt.Sprintf("%s (hook): %s", s.Name, s.Reason))
+	}
+	for _, h := range result.HeldHooks {
+		doc.HeldHooks = append(doc.HeldHooks, HeldHook{Name: h.Name, CompositeHash: h.CompositeHash})
 	}
 	doc.Warnings = append(doc.Warnings, result.Warnings...)
 }

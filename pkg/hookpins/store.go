@@ -36,6 +36,7 @@ var (
 	ErrHashMismatch      = errors.New("hook content changed since the reviewed diff")
 	ErrReasonRequired    = errors.New("approving a hook with unresolved findings requires a reason")
 	ErrDigestUnavailable = errors.New("hook content could not be hashed")
+	ErrPinDrift          = errors.New("hook content changed since it was pinned; approve with gridctl skill pins approve <name> --kind hook")
 )
 
 // Store manages TOFU content pins for hooks. Writes hold a file lock and
@@ -202,9 +203,11 @@ func (s *Store) Pins() map[string]*HookPin {
 	return out
 }
 
-// Pin records the bytes currently installed in req.Dir. An accepted import
-// calls this, including when the bytes changed. It does not append an
-// approval entry.
+// Pin records the bytes currently installed in req.Dir on an accepted
+// import. With no existing record it pins on first use; with equal bytes it
+// refreshes the record. When the bytes differ from an existing pin, it keeps
+// the pinned bytes, marks the record drift, saves, and returns ErrPinDrift:
+// only Approve moves a pin to new bytes. It does not append an approval entry.
 func (s *Store) Pin(ctx context.Context, req PinRequest) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -229,8 +232,18 @@ func (s *Store) Pin(ctx context.Context, req PinRequest) error {
 			return err
 		}
 		now := time.Now().UTC()
+		comp := composite(defHash, files)
+		existing := s.data.Hooks[req.Name]
+		if existing != nil && composite(existing.DefinitionHash, existing.Files) != comp {
+			existing.Status = StatusDrift
+			existing.LastVerifiedAt = now
+			if err := s.saveLocked(); err != nil {
+				return err
+			}
+			return fmt.Errorf("hookpins: hook %q: %w", req.Name, ErrPinDrift)
+		}
 		pinnedAt := now
-		if existing := s.data.Hooks[req.Name]; existing != nil && !existing.PinnedAt.IsZero() {
+		if existing != nil && !existing.PinnedAt.IsZero() {
 			pinnedAt = existing.PinnedAt
 		}
 		source := req.Source
@@ -253,7 +266,7 @@ func (s *Store) Pin(ctx context.Context, req PinRequest) error {
 			Findings:       append([]pins.Finding(nil), req.Findings...),
 		}
 		pin.Approvals = pinapprovals.CloneEntries(s.log.History(req.Name))
-		pin.CompositeHash = composite(defHash, files)
+		pin.CompositeHash = comp
 		s.data.Hooks[req.Name] = pin
 		return s.saveLocked()
 	})

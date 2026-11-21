@@ -126,10 +126,16 @@ export function PackUpdateDialog({ packName, origin, onClose, onUpdated }: PackU
       });
       for (const note of res.notes ?? []) showToast('success', note);
       const skipped = res.doc.skipped ?? [];
+      const held = res.doc.held_hooks ?? [];
+      const caveats: string[] = [];
+      if (skipped.length > 0) caveats.push(`${skipped.length} skipped (locally modified or refused)`);
+      if (held.length > 0) {
+        caveats.push(`${held.length} hook${held.length === 1 ? '' : 's'} held for pin approval`);
+      }
       showToast(
-        skipped.length > 0 ? 'warning' : 'success',
-        skipped.length > 0
-          ? `Updated ${packName}; ${skipped.length} skipped (locally modified or refused)`
+        caveats.length > 0 ? 'warning' : 'success',
+        caveats.length > 0
+          ? `Updated ${packName}; ${caveats.join('; ')}`
           : `Updated ${packName} from its origin`,
       );
       onUpdated();

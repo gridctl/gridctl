@@ -17,6 +17,7 @@ vi.mock('../lib/api', async () => {
 vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn() }));
 
 import { previewPack, addPack, HTTPError } from '../lib/api';
+import { showToast } from '../components/ui/Toast';
 
 const mockPreview = vi.mocked(previewPack);
 const mockAdd = vi.mocked(addPack);
@@ -243,5 +244,37 @@ describe('PackUpdateDialog — vault picker keyboard handling', () => {
     const notCancelled = fireEvent.keyDown(filter, { key: 'Tab', shiftKey: true });
 
     expect(notCancelled).toBe(true);
+  });
+});
+
+describe('PackUpdateDialog held hooks', () => {
+  beforeEach(() => {
+    mockPreview.mockReset();
+    mockAdd.mockReset();
+    vi.mocked(showToast).mockReset();
+  });
+
+  it('warns rather than reporting a clean update when a hook is held', async () => {
+    mockPreview.mockResolvedValueOnce(resolved);
+    mockAdd.mockResolvedValueOnce({
+      doc: {
+        pack: 'team-pack',
+        skills: [],
+        agents: [],
+        wiring: false,
+        held_hooks: [{ name: 'block-force-push', composite_hash: 'sha256:abc' }],
+      },
+      notes: [],
+    });
+    renderDialog();
+
+    await waitFor(() => screen.getByText(/0 skills, 0 agents/));
+    fireEvent.click(screen.getByRole('button', { name: /update from origin/i }));
+
+    await waitFor(() => expect(mockAdd).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('warning', 'Updated team-pack; 1 hook held for pin approval'),
+    );
+    expect(showToast).not.toHaveBeenCalledWith('success', 'Updated team-pack from its origin');
   });
 });
