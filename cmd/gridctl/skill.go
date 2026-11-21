@@ -592,6 +592,38 @@ func printHookImportHint(n int) {
 	fmt.Println(skills.HookImportHint(n))
 }
 
+// printHeldHooks prints one line per hook whose new bytes wait for pin
+// approval. A held hook never prints Updated hook.
+func printHeldHooks(held []skills.HeldHook) {
+	for _, h := range held {
+		fmt.Print(heldHookLine(h))
+	}
+}
+
+func heldHookLine(h skills.HeldHook) string {
+	return fmt.Sprintf("Held hook %s: content changed since it was pinned; approve with gridctl skill pins approve %s --kind hook --expect %s\n",
+		h.Name, h.Name, h.CompositeHash)
+}
+
+// updateWarnings drops the held-hook warnings that the Held hook lines
+// already carry.
+func updateWarnings(result *skills.ImportResult) []string {
+	if len(result.HeldHooks) == 0 {
+		return result.Warnings
+	}
+	held := make(map[string]bool, len(result.HeldHooks))
+	for _, h := range result.HeldHooks {
+		held[skills.HeldHookWarning(h.Name, h.CompositeHash)] = true
+	}
+	out := make([]string, 0, len(result.Warnings))
+	for _, w := range result.Warnings {
+		if !held[w] {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
 func printSkippedHooks(skipped []skills.SkippedHook) {
 	for _, s := range skipped {
 		fmt.Printf("Skipped: %s (hook): %s\n", s.Name, s.Reason)
@@ -1064,7 +1096,7 @@ func runSkillUpdate(ctx context.Context, name string) error {
 		if result == nil {
 			return nil
 		}
-		for _, w := range result.Warnings {
+		for _, w := range updateWarnings(result) {
 			printer.Info(w)
 		}
 		for _, imported := range result.Imported {
@@ -1074,8 +1106,12 @@ func runSkillUpdate(ctx context.Context, name string) error {
 			printer.Info("Updated agent", "name", imported.Name)
 		}
 		for _, imported := range result.ImportedHooks {
+			if result.IsHeldHook(imported.Name) {
+				continue
+			}
 			printer.Info("Updated hook", "name", imported.Name)
 		}
+		printHeldHooks(result.HeldHooks)
 		printSkippedHooks(result.SkippedHooks)
 		if len(result.SkippedHooks) > 0 {
 			return fmt.Errorf("hook update skipped")
@@ -1173,7 +1209,7 @@ func runSkillUpdate(ctx context.Context, name string) error {
 			syncedSources[sr.source] = true
 			continue
 		}
-		for _, w := range result.Warnings {
+		for _, w := range updateWarnings(result) {
 			printer.Info(w)
 		}
 		for _, imported := range result.Imported {
@@ -1185,8 +1221,12 @@ func runSkillUpdate(ctx context.Context, name string) error {
 			updatedSkills++
 		}
 		for _, imported := range result.ImportedHooks {
+			if result.IsHeldHook(imported.Name) {
+				continue
+			}
 			printer.Info("Updated hook", "name", imported.Name)
 		}
+		printHeldHooks(result.HeldHooks)
 		skippedHooks = append(skippedHooks, result.SkippedHooks...)
 		if !failedSources[sr.source] {
 			syncedSources[sr.source] = true

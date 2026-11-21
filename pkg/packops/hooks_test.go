@@ -1,6 +1,7 @@
 package packops
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -668,4 +669,93 @@ func TestNameDriftedHookClients(t *testing.T) {
 	if rows[0].Client != "claude-code,opencode" || rows[1].Client != "" || rows[2].Client != "claude-code" {
 		t.Fatalf("rows = %+v", rows)
 	}
+}
+
+func TestAdd_ChangedHookIsHeld(t *testing.T) {
+	t.Setenv("GRIDCTL_HOME", "")
+	mgrs, imp := testEnv(t)
+	ctx := t.Context()
+	manifest := "apiVersion: gridctl.dev/v1\nkind: Pack\nname: hook-pack\nhooks: [block]\n"
+	hook := `{"name":"block","description":"d","dialect":"claude-code","hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"./scripts/run.sh"}]}]}}`
+	repo := packFixture(t, manifest, map[string]string{"hooks/block/hook.json": hook})
+	commitExecutable(t, repo, "hooks/block/scripts/run.sh", "#!/bin/sh\nexit 0\n")
+
+	first, err := mgrs.Add(ctx, imp, AddOptions{Repo: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Doc.HeldHooks) != 0 || len(first.Doc.Hooks) != 1 {
+		t.Fatalf("first add doc = %+v", first.Doc)
+	}
+
+	commitExecutable(t, repo, "hooks/block/scripts/run.sh", "#!/bin/sh\necho changed\nexit 0\n")
+	mgrs, imp = freshEnv(t, mgrs.Home)
+	second, err := mgrs.Add(ctx, imp, AddOptions{Repo: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Doc.HeldHooks) != 1 || second.Doc.HeldHooks[0].Name != "block" {
+		t.Fatalf("held_hooks = %+v", second.Doc.HeldHooks)
+	}
+	want, err := hookpins.CurrentCompositeHash("block", filepath.Join(mgrs.Home, ".gridctl", "skills"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Doc.HeldHooks[0].CompositeHash != want {
+		t.Fatalf("composite = %q, want %q", second.Doc.HeldHooks[0].CompositeHash, want)
+	}
+	if len(second.Doc.Hooks) != 1 || second.Doc.Hooks[0] != "block" {
+		t.Fatalf("held hook dropped from hooks: %v", second.Doc.Hooks)
+	}
+	warned := false
+	for _, w := range second.Doc.Warnings {
+		if strings.Contains(w, "--expect "+want) {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Fatalf("warnings = %v", second.Doc.Warnings)
+	}
+	raw, err := json.Marshal(second.Doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"held_hooks":[{"name":"block","composite_hash":"`+want+`"}]`) {
+		t.Fatalf("doc json = %s", raw)
+	}
+	store := hookpins.New()
+	if err := store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	pin, ok := store.Get("block")
+	if !ok || pin.Status != hookpins.StatusDrift || len(pin.Approvals) != 0 {
+		t.Fatalf("pin = %+v ok=%v", pin, ok)
+	}
+
+	// Unchanged bytes on the next add report nothing held.
+	mgrs, imp = freshEnv(t, mgrs.Home)
+	third, err := mgrs.Add(ctx, imp, AddOptions{Repo: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(third.Doc.HeldHooks) != 1 {
+		t.Fatalf("still-unapproved bytes should stay held: %+v", third.Doc.HeldHooks)
+	}
+}
+
+func commitExecutable(t *testing.T, repo, path, content string) {
+	t.Helper()
+	full := filepath.Join(repo, path)
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// os.WriteFile keeps an existing file's mode, so create it executable
+	// first and let commitRepoFile write and stage the content.
+	if err := os.WriteFile(full, nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(full, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	commitRepoFile(t, repo, path, content)
 }

@@ -247,3 +247,100 @@ func hookPackRepoWithScript(t *testing.T, script string) string {
 	}
 	return dir
 }
+
+func TestHandlePackAdd_ReportsHeldHook(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	registryDir := filepath.Join(home, ".gridctl", "registry")
+	store := registry.NewStore(registryDir)
+	regServer := registry.New(store)
+	if err := regServer.Initialize(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	srv, _ := setupRegistryTestServer(t)
+	srv.SetRegistryServer(regServer)
+	srv.SetSkillSourcePaths(skills.LockFilePath(), filepath.Join(home, ".gridctl", "skills.yaml"))
+
+	repo := hookPackRepo(t)
+	rec := doJSON(t, srv, http.MethodPost, "/api/packs", `{"repo":`+jsonQuote(repo)+`}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("add = %d: %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "held_hooks") {
+		t.Fatalf("first add held a hook: %s", rec.Body.String())
+	}
+	rec = doJSON(t, srv, http.MethodPost, "/api/packs/hook-pack/apply", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("apply = %d: %s", rec.Code, rec.Body.String())
+	}
+	script := filepath.Join(home, ".gridctl", "hooks", "block-force-push", "scripts", "block.sh")
+	before, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	commitHookScript(t, repo, "#!/bin/sh\necho changed\n")
+	rec = doJSON(t, srv, http.MethodPost, "/api/packs", `{"repo":`+jsonQuote(repo)+`}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("re-add = %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Doc struct {
+			HeldHooks []struct {
+				Name          string `json:"name"`
+				CompositeHash string `json:"composite_hash"`
+			} `json:"held_hooks"`
+		} `json:"doc"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	doc := body.Doc
+	want, err := hookpins.CurrentCompositeHash("block-force-push", registryDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.HeldHooks) != 1 || doc.HeldHooks[0].Name != "block-force-push" || doc.HeldHooks[0].CompositeHash != want {
+		t.Fatalf("held_hooks = %+v, want composite %s\nbody = %s", doc.HeldHooks, want, rec.Body.String())
+	}
+
+	rec = doJSON(t, srv, http.MethodPost, "/api/packs/hook-pack/apply", "")
+	if !strings.Contains(rec.Body.String(), `"skipped-pin-drift"`) {
+		t.Fatalf("apply after held add = %d: %s", rec.Code, rec.Body.String())
+	}
+	after, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("held hook was projected:\n%s", after)
+	}
+}
+
+func commitHookScript(t *testing.T, dir, script string) {
+	t.Helper()
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := "hooks/block-force-push/scripts/block.sh"
+	if err := os.WriteFile(filepath.Join(dir, path), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Add(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Commit("update", &git.CommitOptions{
+		Author: &object.Signature{Name: "test", Email: "test@test.com"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
