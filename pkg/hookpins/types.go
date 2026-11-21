@@ -1,7 +1,8 @@
 // Package hookpins records TOFU content pins for imported hooks at
-// ~/.gridctl/pins/hooks/global.json. A pin is written by the import that
-// installs the hook. A later byte change made any other way is pin drift
-// until a human approves it. gridctl never executes a hook.
+// ~/.gridctl/pins/hooks/global.json. Pinned bytes are written only by the
+// first import that installs the hook and by Approve. A later byte change,
+// including one installed by a re-import, is pin drift until a human
+// approves it. gridctl never executes a hook.
 package hookpins
 
 import (
@@ -83,7 +84,7 @@ func (d *HookDiff) DocumentChanged() bool {
 }
 
 // SyncResult summarizes one verify pass over pinned hooks. Sync does not
-// re-pin changed bytes; that happens only on an accepted import or approve.
+// re-pin changed bytes; only the first import and Approve write pinned bytes.
 type SyncResult struct {
 	Drifted []string
 	Missing []string

@@ -444,3 +444,138 @@ func TestCurrentCompositeHash_NeedsNoStore(t *testing.T) {
 		t.Fatal("escaped name accepted")
 	}
 }
+
+func TestPin_ChangedBytesHoldsPinAsDrift(t *testing.T) {
+	dir := t.TempDir()
+	reg := filepath.Join(dir, "registry")
+	hookDir := filepath.Join(reg, "hooks", "block")
+	body := `{"name":"block"}`
+	writeHook(t, hookDir, body, "#!/bin/sh\nexit 0\n")
+	ps := NewWithPath(dir)
+	if err := ps.Load(); err != nil {
+		t.Fatal(err)
+	}
+	finding := pins.Finding{Code: "hook-scan", Severity: pins.SeverityWarn, Message: "old"}
+	if err := ps.Pin(t.Context(), PinRequest{Name: "block", Dir: hookDir, Source: SourceLocal, Findings: []pins.Finding{finding}}); err != nil {
+		t.Fatal(err)
+	}
+	first, _ := ps.Get("block")
+
+	writeHook(t, hookDir, `{"name":"block","description":"changed"}`, "#!/bin/sh\necho changed\n")
+	err := ps.Pin(t.Context(), PinRequest{Name: "block", Dir: hookDir, Source: SourceLocal})
+	if !errors.Is(err, ErrPinDrift) {
+		t.Fatalf("re-pin with changed bytes = %v, want ErrPinDrift", err)
+	}
+	got, ok := ps.Get("block")
+	if !ok || got.Status != StatusDrift {
+		t.Fatalf("pin = %+v ok=%v, want drift", got, ok)
+	}
+	if got.Document != body || got.DefinitionHash != first.DefinitionHash || !equalDigests(got.Files, first.Files) {
+		t.Fatalf("held pin replaced pinned bytes: %+v", got)
+	}
+	if len(got.Findings) != 1 || got.Findings[0].Message != "old" {
+		t.Fatalf("held pin findings = %+v", got.Findings)
+	}
+	if len(got.Approvals) != 0 {
+		t.Fatalf("held pin recorded approvals %+v", got.Approvals)
+	}
+
+	// The drift status is saved, not only held in memory.
+	fresh := NewWithPath(dir)
+	if err := fresh.Load(); err != nil {
+		t.Fatal(err)
+	}
+	saved, _ := fresh.Get("block")
+	if saved == nil || saved.Status != StatusDrift || saved.Document != body {
+		t.Fatalf("saved pin = %+v", saved)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "approvals", "hooks", "global.json")); !os.IsNotExist(err) {
+		t.Fatalf("held pin wrote an approvals log: %v", err)
+	}
+
+	// Approve is the only path to the new bytes.
+	vr, err := ps.Verify("block", reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ps.Approve(t.Context(), "block", reg, ApproveRequest{ExpectedHash: vr.CompositeHash, Scanned: true}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = ps.Get("block")
+	if got.Status != StatusPinned || got.CompositeHash != vr.CompositeHash {
+		t.Fatalf("approved pin = %+v", got)
+	}
+}
+
+func TestPin_EqualBytesRefreshes(t *testing.T) {
+	dir := t.TempDir()
+	reg := filepath.Join(dir, "registry")
+	hookDir := filepath.Join(reg, "hooks", "block")
+	writeHook(t, hookDir, `{"name":"block"}`, "#!/bin/sh\nexit 0\n")
+	ps := NewWithPath(dir)
+	if err := ps.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if err := ps.Pin(t.Context(), PinRequest{Name: "block", Dir: hookDir, Source: SourceLocal}); err != nil {
+		t.Fatal(err)
+	}
+	first, _ := ps.Get("block")
+	origin := &skillpins.OriginRef{Repo: "https://example.com/pack", Ref: "main", CommitSHA: "def"}
+	if err := ps.Pin(t.Context(), PinRequest{Name: "block", Dir: hookDir, Origin: origin}); err != nil {
+		t.Fatalf("re-pin with equal bytes = %v", err)
+	}
+	got, _ := ps.Get("block")
+	if got.Status != StatusPinned || got.CompositeHash != first.CompositeHash {
+		t.Fatalf("pin = %+v", got)
+	}
+	if got.Origin == nil || got.Origin.CommitSHA != "def" || !got.PinnedAt.Equal(first.PinnedAt) {
+		t.Fatalf("refresh did not update origin or kept wrong pinned_at: %+v", got)
+	}
+}
+
+func TestPin_ChangedBytesHeldWithoutStoredComposite(t *testing.T) {
+	dir := t.TempDir()
+	reg := filepath.Join(dir, "registry")
+	hookDir := filepath.Join(reg, "hooks", "block")
+	body := `{"name":"block"}`
+	writeHook(t, hookDir, body, "#!/bin/sh\nexit 0\n")
+	ps := NewWithPath(dir)
+	if err := ps.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if err := ps.Pin(t.Context(), PinRequest{Name: "block", Dir: hookDir, Source: SourceLocal}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Strip composite_hash by hand, as a hand-edited record would.
+	pinPath := filepath.Join(dir, "hooks", "global.json")
+	raw, err := os.ReadFile(pinPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	rec := doc["hooks"].(map[string]any)["block"].(map[string]any)
+	if _, ok := rec["composite_hash"]; !ok {
+		t.Fatal("fixture pin file has no composite_hash to strip")
+	}
+	delete(rec, "composite_hash")
+	raw, err = json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pinPath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	writeHook(t, hookDir, body, "#!/bin/sh\necho changed\n")
+	if err := ps.Pin(t.Context(), PinRequest{Name: "block", Dir: hookDir, Source: SourceLocal}); !errors.Is(err, ErrPinDrift) {
+		t.Fatalf("re-pin without stored composite = %v, want ErrPinDrift", err)
+	}
+	got, _ := ps.Get("block")
+	if got.Status != StatusDrift || got.Document != body {
+		t.Fatalf("pin = %+v", got)
+	}
+}

@@ -429,9 +429,83 @@ func TestHooksPack_UpdateReportsSkippedHook(t *testing.T) {
 	}
 	stdout, stderr, code = runHookCLI(t, bin, home, "skill", "update", "--trust", "block-force-push")
 	combined = stdout + stderr
-	if code != 0 || !strings.Contains(combined, "Updated hook") {
+	if code != 0 || !strings.Contains(combined, "Held hook block-force-push") || strings.Contains(combined, "Updated hook") {
 		t.Fatalf("trusted update exit %d\n%s", code, combined)
 	}
+	// --trust gates only the scan: the pin holds, and approving content
+	// with a finding still needs a reason.
+	if st := hookPinStatus(t, bin, home); st != "drift" {
+		t.Fatalf("pin status after trusted update = %q, want drift", st)
+	}
+	hash := hookDiffComposite(t, bin, home)
+	stdout, stderr, code = runHookCLI(t, bin, home, "skill", "pins", "approve", "block-force-push", "--kind", "hook", "--expect", hash)
+	if code == 0 || !strings.Contains(stdout+stderr, "reason") {
+		t.Fatalf("approve without --reason exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	approveHeldHook(t, bin, home, "reviewed the chmod")
+	if st := hookPinStatus(t, bin, home); st != "pinned" {
+		t.Fatalf("pin status after approve = %q, want pinned", st)
+	}
+}
+
+// hookDiffComposite returns the composite hash skill pins diff reports for
+// the fixture hook's current registry bytes.
+func hookDiffComposite(t *testing.T, bin, home string) string {
+	t.Helper()
+	// diff exits 1 when the hook has drifted and still prints the document.
+	out, errOut, code := runHookCLI(t, bin, home, "skill", "pins", "diff", "block-force-push", "--kind", "hook", "--format", "json")
+	if code != 0 && code != 1 {
+		t.Fatalf("diff exit %d\n%s\n%s", code, out, errOut)
+	}
+	var diff struct {
+		CompositeHash string `json:"composite_hash"`
+	}
+	if err := json.Unmarshal([]byte(out), &diff); err != nil || diff.CompositeHash == "" {
+		t.Fatalf("diff json: %v\n%s", err, out)
+	}
+	return diff.CompositeHash
+}
+
+// approveHeldHook approves the fixture hook's current bytes, bound to the
+// reviewed composite hash. An empty reason omits --reason.
+func approveHeldHook(t *testing.T, bin, home, reason string) {
+	t.Helper()
+	args := []string{"skill", "pins", "approve", "block-force-push", "--kind", "hook", "--expect", hookDiffComposite(t, bin, home)}
+	if reason != "" {
+		args = append(args, "--reason", reason)
+	}
+	if out, errOut, code := runHookCLI(t, bin, home, args...); code != 0 {
+		t.Fatalf("approve exit %d\n%s\n%s", code, out, errOut)
+	}
+}
+
+type hookPinListEntry struct {
+	Status    string            `json:"status"`
+	Approvals []json.RawMessage `json:"approvals"`
+}
+
+func hookPinEntry(t *testing.T, bin, home string) hookPinListEntry {
+	t.Helper()
+	out, errOut, code := runHookCLI(t, bin, home, "skill", "pins", "list", "--kind", "hook", "--format", "json")
+	if code != 0 {
+		t.Fatalf("pins list exit %d\n%s\n%s", code, out, errOut)
+	}
+	var doc struct {
+		Hooks map[string]hookPinListEntry `json:"hooks"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatalf("pins list json: %v\n%s", err, out)
+	}
+	e, ok := doc.Hooks["block-force-push"]
+	if !ok {
+		t.Fatalf("block-force-push not in pins list:\n%s", out)
+	}
+	return e
+}
+
+func hookPinStatus(t *testing.T, bin, home string) string {
+	t.Helper()
+	return hookPinEntry(t, bin, home).Status
 }
 
 func TestHooksPack_BrokenHookRemovable(t *testing.T) {
@@ -935,4 +1009,228 @@ func hookResetArchive(t *testing.T, archive string) map[string]bool {
 		names[hdr.Name] = true
 	}
 	return names
+}
+
+func TestHooksPack_ReimportHoldsChangedScript(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	bin := hookCLI(t)
+	home := t.TempDir()
+	modes := map[string]os.FileMode{"hooks/block-force-push/scripts/block.sh": 0o755}
+	// No skill in this fixture: a re-added skill is skipped as existing,
+	// which would make every re-add partial and hide the hook's exit code.
+	files := hookPackFiles("#!/bin/sh\nexit 0\n", "")
+	delete(files, "skills/alpha/SKILL.md")
+	repo := commitPack(t, files, modes)
+	if stdout, stderr, code := runHookCLI(t, bin, home, "pack", "add", repo); code != 0 {
+		t.Fatalf("pack add exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	for _, d := range []string{".claude", ".config/opencode"} {
+		if err := os.MkdirAll(filepath.Join(home, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	settings := filepath.Join(home, ".claude", "settings.json")
+	if err := os.WriteFile(settings, []byte(hookResetSettings()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if stdout, stderr, code := runHookCLI(t, bin, home, "pack", "apply", "hook-pack"); code != 0 {
+		t.Fatalf("pack apply exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	copies := []string{
+		filepath.Join(claudeScriptDir(home), "scripts", "block.sh"),
+		filepath.Join(openCodeScriptDir(home), "scripts", "block.sh"),
+	}
+	for _, c := range copies {
+		if got, err := os.ReadFile(c); err != nil || !strings.Contains(string(got), "exit 0") {
+			t.Fatalf("projected copy %s = %q, %v", c, got, err)
+		}
+	}
+	entries := []string{settings, openCodePluginPath(home)}
+	snapshot := func() map[string]string {
+		out := map[string]string{}
+		for _, p := range append(append([]string(nil), copies...), entries...) {
+			b, err := os.ReadFile(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out[p] = string(b)
+		}
+		return out
+	}
+	projected := snapshot()
+
+	// An upstream script change is held on re-import.
+	commitPackChange(t, repo, map[string]string{
+		"hooks/block-force-push/scripts/block.sh": "#!/bin/sh\necho changed\nexit 0\n",
+	}, modes)
+	stdout, stderr, code := runHookCLI(t, bin, home, "pack", "add", repo)
+	combined := stdout + stderr
+	if code != 0 {
+		t.Fatalf("held pack add exit %d\n%s", code, combined)
+	}
+	if !strings.Contains(combined, "block-force-push: content changed since it was pinned") || !strings.Contains(combined, "--expect") {
+		t.Fatalf("held pack add output:\n%s", combined)
+	}
+	stdout, stderr, code = runHookCLI(t, bin, home, "pack", "add", repo, "--format", "json")
+	if code != 0 {
+		t.Fatalf("held pack add json exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	var added struct {
+		Hooks     []string `json:"hooks"`
+		HeldHooks []struct {
+			Name          string `json:"name"`
+			CompositeHash string `json:"composite_hash"`
+		} `json:"held_hooks"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &added); err != nil {
+		t.Fatalf("decode add: %v\n%s", err, stdout)
+	}
+	if len(added.HeldHooks) != 1 || added.HeldHooks[0].Name != "block-force-push" || added.HeldHooks[0].CompositeHash == "" {
+		t.Fatalf("held_hooks = %+v\n%s", added.HeldHooks, stdout)
+	}
+	if !containsString(added.Hooks, "block-force-push") {
+		t.Fatalf("held hook dropped from hooks: %v", added.Hooks)
+	}
+	registryScript := filepath.Join(home, ".gridctl", "registry", "hooks", "block-force-push", "scripts", "block.sh")
+	if got, err := os.ReadFile(registryScript); err != nil || !strings.Contains(string(got), "echo changed") {
+		t.Fatalf("registry did not receive the new bytes: %q, %v", got, err)
+	}
+
+	// The pin keeps the old bytes and reports drift with no approval.
+	stdout, stderr, code = runHookCLI(t, bin, home, "skill", "pins", "verify", "--kind", "hook")
+	if code != 1 || !strings.Contains(stdout+stderr, "pin drift detected") {
+		t.Fatalf("verify exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	entry := hookPinEntry(t, bin, home)
+	if entry.Status != "drift" || len(entry.Approvals) != 0 {
+		t.Fatalf("pin entry = %+v", entry)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".gridctl", "pins", "approvals", "hooks", "global.json")); !os.IsNotExist(err) {
+		t.Fatalf("held import wrote the approvals log: %v", err)
+	}
+
+	// Projection refuses on every target and leaves the copies alone.
+	stdout, stderr, code = runHookCLI(t, bin, home, "pack", "apply", "hook-pack", "--format", "json")
+	if code != 1 {
+		t.Fatalf("held pack apply exit %d, want 1\n%s\n%s", code, stdout, stderr)
+	}
+	var applied packDoc
+	if err := json.Unmarshal([]byte(stdout), &applied); err != nil {
+		t.Fatalf("decode apply: %v\n%s", err, stdout)
+	}
+	hookRows := 0
+	for _, r := range applied.Rows {
+		if r.Kind != "hook" {
+			continue
+		}
+		hookRows++
+		if r.Action != "skipped-pin-drift" || !strings.Contains(r.Remediation, "--expect "+added.HeldHooks[0].CompositeHash) {
+			t.Fatalf("hook row = %+v", r)
+		}
+	}
+	if hookRows == 0 {
+		t.Fatalf("apply produced no hook rows: %+v", applied.Rows)
+	}
+	rows, code := hookSyncJSON(t, bin, home, "block-force-push")
+	if code != 1 || len(rows) == 0 {
+		t.Fatalf("held sync exit %d rows %+v", code, rows)
+	}
+	for _, r := range rows {
+		if r.Action != "skipped-pin-drift" {
+			t.Fatalf("held sync row = %+v", r)
+		}
+	}
+	for p, want := range projected {
+		if got, _ := os.ReadFile(p); string(got) != want {
+			t.Fatalf("held hook changed %s:\n%s", p, got)
+		}
+	}
+
+	// Approval bound to the reviewed hash re-pins, and apply projects it.
+	hash := hookDiffComposite(t, bin, home)
+	if hash != added.HeldHooks[0].CompositeHash {
+		t.Fatalf("diff composite %s != held composite %s", hash, added.HeldHooks[0].CompositeHash)
+	}
+	if stdout, stderr, code := runHookCLI(t, bin, home, "skill", "pins", "approve", "block-force-push", "--kind", "hook", "--expect", hash, "--reason", "reviewed"); code != 0 {
+		t.Fatalf("approve exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	stdout, stderr, code = runHookCLI(t, bin, home, "pack", "apply", "hook-pack", "--format", "json")
+	if code != 0 {
+		t.Fatalf("approved pack apply exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	applied = packDoc{}
+	if err := json.Unmarshal([]byte(stdout), &applied); err != nil {
+		t.Fatalf("decode apply: %v\n%s", err, stdout)
+	}
+	for _, r := range applied.Rows {
+		if r.Kind == "hook" && r.Action != "updated" {
+			t.Fatalf("approved hook row = %+v", r)
+		}
+	}
+	for _, c := range copies {
+		if got, err := os.ReadFile(c); err != nil || !strings.Contains(string(got), "echo changed") {
+			t.Fatalf("approved copy %s = %q, %v", c, got, err)
+		}
+	}
+	log, err := os.ReadFile(filepath.Join(home, ".gridctl", "pins", "approvals", "hooks", "global.json"))
+	if err != nil || !strings.Contains(string(log), "reviewed") {
+		t.Fatalf("approvals log = %q, %v", log, err)
+	}
+
+	// An unchanged re-import holds nothing.
+	stdout, stderr, code = runHookCLI(t, bin, home, "pack", "add", repo, "--format", "json")
+	if code != 0 || strings.Contains(stdout, "held_hooks") {
+		t.Fatalf("unchanged pack add exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	if st := hookPinStatus(t, bin, home); st != "pinned" {
+		t.Fatalf("pin status after unchanged add = %q", st)
+	}
+
+	// skill update holds the same way.
+	commitPackChange(t, repo, map[string]string{
+		"hooks/block-force-push/scripts/block.sh": "#!/bin/sh\necho again\nexit 0\n",
+	}, modes)
+	stdout, stderr, code = runHookCLI(t, bin, home, "skill", "update", "block-force-push")
+	combined = stdout + stderr
+	if code != 0 || !strings.Contains(combined, "Held hook block-force-push") || strings.Contains(combined, "Updated hook") {
+		t.Fatalf("skill update exit %d\n%s", code, combined)
+	}
+	if st := hookPinStatus(t, bin, home); st != "drift" {
+		t.Fatalf("pin status after skill update = %q", st)
+	}
+}
+
+// A bulk skill update (no name) reaches the pack's hooks through a skill of
+// that pack and holds a changed hook through the bulk print path.
+func TestHooksPack_BulkUpdateHoldsChangedScript(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	bin := hookCLI(t)
+	home := t.TempDir()
+	modes := map[string]os.FileMode{"hooks/block-force-push/scripts/block.sh": 0o755}
+	repo := commitPack(t, hookPackFiles("#!/bin/sh\nexit 0\n", ""), modes)
+	if stdout, stderr, code := runHookCLI(t, bin, home, "pack", "add", repo); code != 0 {
+		t.Fatalf("pack add exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	if st := hookPinStatus(t, bin, home); st != "pinned" {
+		t.Fatalf("pin status after first add = %q", st)
+	}
+
+	commitPackChange(t, repo, map[string]string{
+		"hooks/block-force-push/scripts/block.sh": "#!/bin/sh\necho bulk\nexit 0\n",
+	}, modes)
+	stdout, stderr, code := runHookCLI(t, bin, home, "skill", "update")
+	combined := stdout + stderr
+	if code != 0 || !strings.Contains(combined, "Held hook block-force-push") || strings.Contains(combined, "Updated hook") {
+		t.Fatalf("bulk skill update exit %d\n%s", code, combined)
+	}
+	if !strings.Contains(combined, "--expect") {
+		t.Fatalf("bulk skill update omitted the approve remediation\n%s", combined)
+	}
+	if st := hookPinStatus(t, bin, home); st != "drift" {
+		t.Fatalf("pin status after bulk skill update = %q", st)
+	}
 }

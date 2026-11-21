@@ -493,6 +493,30 @@ describe('PackImportWizard', () => {
     });
   });
 
+  it('lists held hooks on the done step instead of a clean import', async () => {
+    vi.mocked(previewPack).mockResolvedValue({ ...previewResult, rules: [] });
+    vi.mocked(addPack).mockResolvedValue({
+      doc: {
+        pack: 'team-pack',
+        skills: ['alpha'],
+        agents: [],
+        wiring: false,
+        held_hooks: [{ name: 'block-force-push', composite_hash: 'sha256:abc' }],
+      },
+      notes: [],
+    });
+    renderWizard();
+
+    fireEvent.change(screen.getByLabelText('Pack repository URL'), {
+      target: { value: 'https://github.com/acme/team-pack' },
+    });
+    fireEvent.click(screen.getByText('Preview pack'));
+    fireEvent.click(await screen.findByText('Import pack'));
+
+    expect(await screen.findByText('Pack partially imported')).toBeInTheDocument();
+    expect(screen.getByText(/Held for pin approval: block-force-push/)).toBeInTheDocument();
+  });
+
   it('renders the manifest-missing 422 message inline', async () => {
     vi.mocked(previewPack).mockRejectedValue(
       new HTTPError(422, 'no gridctl-pack.yaml found at the repository root'),
