@@ -53,12 +53,13 @@ The danger-pattern scanner runs over `hook.json` and every text file in the dire
 
 ### Re-import holds changed bytes
 
-The first import of a hook pins it on first use, with no approval. A later accepted `pack add`, `skill update`, or `POST /api/packs` whose bytes match the pin refreshes the record and stays `pinned`. One whose bytes differ from the pin is held:
+The first import of a hook pins it on first use, with no approval. A later accepted `pack add`, `skill update`, `POST /api/packs`, or REST skill source update (`POST /api/skills/sources/update` and `POST /api/skills/sources/{name}/update`) whose bytes match the pin refreshes the record and stays `pinned`. One whose bytes differ from the pin is held:
 
 - The registry copy receives the new bytes and `.origin.json` records the new commit, so `gridctl skill pins diff <name> --kind hook` reviews the right content.
 - The pin keeps the previously approved bytes, findings, and reason, and its status becomes `drift`. No approvals entry is written.
 - `pack add` exits 0 when nothing else is partial and prints `Warning: <name>: content changed since it was pinned; projection waits for 'gridctl skill pins approve <name> --kind hook --expect <composite_hash>'`. JSON adds `held_hooks`, an array of `{name, composite_hash}` where `composite_hash` fingerprints the installed bytes. The held hook stays in `hooks` and in the pack record.
 - `pack apply` and `skill project sync --kind hook` report `skipped-pin-drift` with the `--expect` remediation for every target, and exit 1 until approval, because every `skipped*` hook row counts as failed. The projected script copy and client entry stay as they were.
+- A REST skill source update reports the hold as a line in that skill's `warnings`, with the same `--expect` remediation; its response has no `held_hooks` field.
 - `gridctl skill pins approve <name> --kind hook --expect <composite_hash>` re-pins, with `--reason` when the current scan has findings. The next `pack apply` or sync projects the new bytes.
 
 `--trust` does not change this: a trusted re-import with a finding is held the same way, and its approve requires `--reason`. To re-trust a hook on first use instead, run `gridctl skill pins reset <name> --kind hook` and then `pack add`. Deleting the registry directory while the pin survives does not reset trust; the next import is held.
@@ -320,7 +321,7 @@ Set `requires.gridctl` on a pack that selects hooks to `>=1.0.0-rc.5`, the relea
 
 ## Pins
 
-Hook pins live at `~/.gridctl/pins/hooks/global.json` (file version `1`). They are not stack-scoped. The subdirectory keeps the file disjoint from the tool pin file of a stack named `hooks`. Only the first import that installs a hook and `approve` write pinned bytes. A later `pack add`, `skill update`, or `POST /api/packs` that installs different bytes is held as pin drift (see [Re-import holds changed bytes](#re-import-holds-changed-bytes)), and so is a hand edit. Either stays drift until approved. Approval history is at `~/.gridctl/pins/approvals/hooks/global.json`.
+Hook pins live at `~/.gridctl/pins/hooks/global.json` (file version `1`). They are not stack-scoped. The subdirectory keeps the file disjoint from the tool pin file of a stack named `hooks`. Only the first import that installs a hook and `approve` write pinned bytes. A later `pack add`, `skill update`, `POST /api/packs`, or REST skill source update that installs different bytes is held as pin drift (see [Re-import holds changed bytes](#re-import-holds-changed-bytes)), and so is a hand edit. Either stays drift until approved. Approval history is at `~/.gridctl/pins/approvals/hooks/global.json`.
 
 Each record carries `definition_hash` (SHA-256 of `hook.json`), per-file digests, the `hook.json` text, provenance, findings, and status (`pinned` or `drift`). A file whose version is newer than `1` is refused with `hook pin file written by a newer gridctl`. Version `1` and a missing file load.
 

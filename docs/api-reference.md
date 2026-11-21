@@ -3311,7 +3311,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 #### `POST /api/skills/sources/update`
 
-Syncs every imported source in parallel (respects pinned refs). Optional body: `{force: true, skills: ["name"], auth: {...}}`. A failed fetch is recorded on that skill's `error` and counts in `failedSources`, rather than as up to date. A local source is re-read from its path, including its agents, and does not fetch. A drifted local skill is skipped as `local edits` without advancing hashes unless `force` is true.
+Syncs every imported source in parallel (respects pinned refs). Optional body: `{force: true, skills: ["name"], auth: {...}}`. A failed fetch is recorded on that skill's `error` and counts in `failedSources`, rather than as up to date. A local source is re-read from its path, including its agents, and does not fetch. A drifted local skill is skipped as `local edits` without advancing hashes unless `force` is true. A source update of a pack repository re-imports that pack's hooks; a hook whose bytes differ from its pin is held as pin drift (see [Re-import holds changed bytes](hooks.md#re-import-holds-changed-bytes)) and reported as a line in that skill's `warnings`. The response has no `held_hooks` field.
 
 **Auth:** Yes
 
@@ -3347,7 +3347,7 @@ Checks whether a source has upstream changes without applying them.
 
 #### `POST /api/skills/sources/{name}/update`
 
-Applies available updates for one source. Locally edited (drifted) skills are skipped unless `force: true`. A git skip advances tracking to the latest commit. A local skip does not advance hashes, and `force: true` backs up `SKILL.md` as `SKILL.md.pre-local`. A local source also refreshes its agents. A failed fetch is reported on that skill's `error`, not as up to date.
+Applies available updates for one source. Locally edited (drifted) skills are skipped unless `force: true`. A git skip advances tracking to the latest commit. A local skip does not advance hashes, and `force: true` backs up `SKILL.md` as `SKILL.md.pre-local`. A local source also refreshes its agents. A failed fetch is reported on that skill's `error`, not as up to date. A source update of a pack repository re-imports that pack's hooks; a hook whose bytes differ from its pin is held as pin drift (see [Re-import holds changed bytes](hooks.md#re-import-holds-changed-bytes)) and reported as a line in that skill's `warnings`. The response has no `held_hooks` field.
 
 **Auth:** Yes
 
