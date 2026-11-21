@@ -26,7 +26,7 @@ A rule fragment is one markdown file in the opt-in library at `~/.gridctl/contex
 
 ## Hook
 
-A hook is a directory `hooks/<name>/` in a pack repository, holding `hook.json` and the scripts that file names. `gridctl pack add` imports the names listed under `hooks:` into `~/.gridctl/registry/hooks/<name>/`, scans them, and pins the bytes. `gridctl skill project sync --kind hook` and `gridctl pack apply` copy the scripts per client, patch matcher groups into `~/.claude/settings.json`, and write a generated plugin under `~/.config/opencode/plugins/`. gridctl does not execute a hook ([Hooks](hooks.md)).
+A hook is a directory `hooks/<name>/` in a pack repository, holding `hook.json` and the scripts that file names. `gridctl pack add` imports the names listed under `hooks:` into `~/.gridctl/registry/hooks/<name>/`, scans them, and pins the bytes on first import. A later import with changed bytes is held as pin drift until `gridctl skill pins approve`. `gridctl skill project sync --kind hook` and `gridctl pack apply` copy the scripts per client, patch matcher groups into `~/.claude/settings.json`, and write a generated plugin under `~/.config/opencode/plugins/`. gridctl does not execute a hook ([Hooks](hooks.md)).
 
 ## Global context
 
