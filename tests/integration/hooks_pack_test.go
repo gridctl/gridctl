@@ -30,7 +30,7 @@ var (
 func hookCLI(t *testing.T) string {
 	t.Helper()
 	hookCLIOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "gridctl-hooks-cli-") //nolint:usetesting // shared across tests via sync.Once; t.TempDir would be removed after the first caller
+		dir, err := sharedTempDir("hooks-cli")
 		if err != nil {
 			hookCLIErr = err
 			return
