@@ -508,7 +508,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
 
               {/* Preview Panel */}
               <Panel defaultSize={45} minSize={30}>
-                <YAMLPreview yaml={expertMode ? yamlContent : generatedYaml} />
+                <YAMLPreview yaml={expertMode ? yamlContent : generatedYaml} resourceType={selectedType ?? 'stack'} />
               </Panel>
             </PanelGroup>
           ) : (

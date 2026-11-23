@@ -1,10 +1,14 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { act, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { YAMLPreview } from '../components/wizard/YAMLPreview';
+import { validateStackResource, validateStackSpec } from '../lib/api';
+import type { ValidationResult } from '../types';
 
-vi.mock('../lib/api', () => ({
+vi.mock('../lib/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/api')>()),
   validateStackSpec: vi.fn().mockResolvedValue({ issues: [] }),
+  validateStackResource: vi.fn().mockResolvedValue({ issues: [] }),
 }));
 
 describe('YAMLPreview', () => {
@@ -40,5 +44,90 @@ describe('YAMLPreview', () => {
 
     const contentSpans = container.querySelectorAll('span.whitespace-pre');
     expect(contentSpans.length).toBeGreaterThan(0);
+  });
+});
+
+describe('YAMLPreview validation', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.mocked(validateStackSpec).mockClear();
+    vi.mocked(validateStackResource).mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const valid: ValidationResult = { valid: true, errorCount: 0, warningCount: 0, issues: [] };
+
+  it('validates a server fragment with the fragment validator, as Review does', async () => {
+    vi.mocked(validateStackResource).mockResolvedValue(valid);
+    render(<YAMLPreview yaml={'name: github\nimage: ghcr.io/github/github-mcp-server\n'} resourceType="mcp-server" />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+
+    expect(validateStackResource).toHaveBeenCalledWith('name: github\nimage: ghcr.io/github/github-mcp-server\n', 'mcp-server');
+    expect(validateStackSpec).not.toHaveBeenCalled();
+    expect(screen.getByText('Valid')).toBeInTheDocument();
+  });
+
+  it('keeps the whole-stack validator for stack YAML', async () => {
+    render(<YAMLPreview yaml={'version: "1"\nname: daily\n'} resourceType="stack" />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+
+    expect(validateStackSpec).toHaveBeenCalledTimes(1);
+    expect(validateStackResource).not.toHaveBeenCalled();
+  });
+
+  it('ignores a late response for older YAML', async () => {
+    let resolveFirst: (value: ValidationResult) => void = () => {};
+    let resolveSecond: (value: ValidationResult) => void = () => {};
+    vi.mocked(validateStackResource)
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSecond = resolve; }));
+    const { rerender } = render(<YAMLPreview yaml={'name: old\nimagee: x\n'} resourceType="mcp-server" />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    rerender(<YAMLPreview yaml={'name: new\nimage: x\n'} resourceType="mcp-server" />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+
+    await act(async () => {
+      resolveSecond({ valid: false, errorCount: 0, warningCount: 1, issues: [{ field: 'image', message: 'second response', severity: 'warning' }] });
+    });
+    await act(async () => {
+      resolveFirst({ valid: false, errorCount: 1, warningCount: 0, issues: [{ field: 'imagee', message: 'first response', severity: 'error' }] });
+    });
+
+    expect(screen.getByText('second response')).toBeInTheDocument();
+    expect(screen.queryByText('first response')).not.toBeInTheDocument();
+  });
+
+  it('keeps the spinner while the current request is pending after a stale one resolves', async () => {
+    let resolveFirst: (value: ValidationResult) => void = () => {};
+    vi.mocked(validateStackResource)
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }))
+      .mockImplementationOnce(() => new Promise(() => {}));
+    const { rerender, container } = render(<YAMLPreview yaml={'name: old\n'} resourceType="resource" />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    rerender(<YAMLPreview yaml={'name: new\n'} resourceType="resource" />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    await act(async () => {
+      resolveFirst(valid);
+    });
+
+    expect(container.querySelector('.animate-spin')).not.toBeNull();
+    expect(screen.queryByText('Valid')).not.toBeInTheDocument();
   });
 });
