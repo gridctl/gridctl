@@ -1978,6 +1978,9 @@ export async function addSkillSource(source: {
   path?: string;
   trust?: boolean;
   noActivate?: boolean;
+  /** Skill names imported as draft. Each must also appear in `selected`
+   *  when `selected` is non-empty. */
+  noActivateSkills?: string[];
   selected?: string[];
   /** Agent names to import. Required alongside `selected`: a skill selection
    *  alone skips agents (legacy importer contract). */

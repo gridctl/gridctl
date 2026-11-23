@@ -3,7 +3,6 @@ import {
   BookOpen,
   CheckCircle2,
   AlertTriangle,
-  Shield,
   ShieldAlert,
   ChevronDown,
   ChevronRight,
@@ -116,19 +115,29 @@ export function BrowseStep({ previews, selected, onSelectionChange }: BrowseStep
                   )}
                 </button>
 
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
+                {/* Info: a sibling button so keyboard users can change the
+                    preview without nesting it inside the checkbox button */}
+                <button
+                  type="button"
+                  aria-label={`Preview ${preview.name}`}
+                  aria-current={isActive ? 'true' : undefined}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActivePreview(preview.name);
+                  }}
+                  className="flex-1 min-w-0 text-left rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+                >
+                  <span className="flex items-center gap-1.5">
                     <span className="text-xs font-medium text-text-primary truncate">
                       {preview.name}
                     </span>
-                  </div>
+                  </span>
                   {preview.description && (
-                    <p className="text-3xs text-text-muted truncate mt-0.5">
+                    <span className="block text-3xs text-text-muted truncate mt-0.5">
                       {preview.description}
-                    </p>
+                    </span>
                   )}
-                </div>
+                </button>
 
                 {/* Status badges */}
                 <div className="flex items-center gap-1 flex-shrink-0">
@@ -179,9 +188,11 @@ export function BrowseStep({ previews, selected, onSelectionChange }: BrowseStep
                       flagged
                     </span>
                   ) : (
-                    <span className="text-3xs px-1.5 py-0.5 rounded-full bg-status-running/10 text-status-running flex items-center gap-1">
-                      <Shield size={8} />
-                      safe
+                    <span
+                      className="text-3xs px-1.5 py-0.5 rounded-full bg-surface-overlay-2 text-text-muted"
+                      title="Heuristic scan of SKILL.md found nothing. Supporting files are scanned at import."
+                    >
+                      no findings
                     </span>
                   )}
                 </div>
