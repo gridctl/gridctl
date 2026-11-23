@@ -1301,7 +1301,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 }
 ```
 
-Invalid YAML, unresolved variables, and invalid resource fields also return `200` with `valid: false` and one or more `{field, message, severity}` issues. An issue may include `line` when the failure names a source line. Malformed JSON, an oversized body, or an unsupported `resourceType` returns `400`.
+Invalid YAML, unresolved variables, and invalid resource field values also return `200` with `valid: false` and one or more `{field, message, severity}` issues. An issue may include `line` when the failure names a source line. An unknown or mistyped key in the resource block returns `400` with the same validation result body (`valid: false` and its issues), not an `error` string. Malformed JSON, an oversized body, or an unsupported `resourceType` returns `400` with `{error}`.
 
 For MCP servers with valid execution declarations, this response includes the same desired-only `execution` map as full-stack validation. Review uses these backend-normalized settings from the proposed YAML.
 
@@ -1526,7 +1526,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8180/api/stack/append
 ```
 
-`resourceType` must be `mcp-server` or `resource`. Returns `422` with a `validation` object when the post-append stack would be invalid.
+`resourceType` must be `mcp-server` or `resource`. Returns `422` with `{error, validation}` when the post-append stack would be invalid (for example, a duplicate name); `validation` is a `ValidationResult` with every issue. An unknown or mistyped key in the snippet returns `400` with a `ValidationResult` body. Other rejections return `{error}`. The wizard's Review step shows the message and every returned issue in a persistent alert.
 
 #### `POST /api/stack/initialize`
 
