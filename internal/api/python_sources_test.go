@@ -69,6 +69,31 @@ func TestHandleStackResourceValidate_InvalidSnippet(t *testing.T) {
 	}
 }
 
+func TestHandleStackResourceValidate_UnknownFieldReturnsIssues(t *testing.T) {
+	srv := newTestServer(t)
+	body := `{"resourceType":"mcp-server","yaml":"name: fetch\nimage: alpine\nimagee: alpine\n"}`
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, loopbackRequest(http.MethodPost, "/api/stack/resource/validate", strings.NewReader(body)))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var result struct {
+		Valid  bool `json:"valid"`
+		Issues []struct {
+			Field    string `json:"field"`
+			Message  string `json:"message"`
+			Severity string `json:"severity"`
+		} `json:"issues"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Valid || len(result.Issues) == 0 || !strings.Contains(result.Issues[0].Field+result.Issues[0].Message, "imagee") || result.Issues[0].Severity != "error" {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
 func TestHandlePythonPackageVersions(t *testing.T) {
 	srv := newTestServer(t)
 	srv.pythonSources = &stubPythonSourcePlanner{versions: &builder.PyPIVersions{
