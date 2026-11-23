@@ -316,10 +316,9 @@ try {
           check(visible.length === m.counters.length, `${where}: not every status item is visible`, { visible, counters: m.counters });
           check(visible.at(-1).startsWith('Updated'), `${where}: Updated is not the last visible item`, visible);
         }
-      } else {
-        if (width === 1024 && truncated.length > 0) {
-          check(visible.length === 0, `${where}: alert labels truncated while counters are visible`, { truncated, visible });
-        }
+      }
+      if (truncated.length > 0) {
+        check(visible.length === 0, `${where}: alert labels truncated while counters are visible`, { truncated, visible });
       }
       // Counters drop only for lack of room: the first hidden item must not
       // fit in what is left of the first line (buttons carry -mx-1).
@@ -368,6 +367,24 @@ try {
   const q = await quiet.evaluate(measure, []);
   check(q.alertGroup.display === 'none' && q.alertGroup.children === 0, 'quiet fixture: alert group renders a box', q.alertGroup);
   check(q.dividers === 1, `quiet fixture: ${q.dividers} dividers after the connection pill`, q);
+
+  // The shell's column track must not grow with any child's minimum width,
+  // not only the status bar's: add a wide grid child and remeasure.
+  const wide = await quiet.evaluate(() => {
+    const shell = document.querySelector('main').parentElement;
+    const probe = document.createElement('div');
+    probe.style.cssText = 'min-width: 3000px; grid-row: 2; grid-column: 1; visibility: hidden';
+    shell.appendChild(probe);
+    const result = {
+      inner: innerWidth,
+      header: document.querySelector('header').getBoundingClientRect().width,
+      main: document.querySelector('main').getBoundingClientRect().width,
+      shellScrollWidth: shell.scrollWidth,
+    };
+    probe.remove();
+    return result;
+  });
+  check(wide.header === wide.inner && wide.main === wide.inner, `wide grid child: header is ${wide.header} px and main is ${wide.main} px in a ${wide.inner} px window`, wide);
   await quiet.close();
 
   assert.deepEqual(failures, []);
