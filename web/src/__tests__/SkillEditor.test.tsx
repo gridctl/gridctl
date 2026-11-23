@@ -112,6 +112,66 @@ describe('SkillEditor body hydration', () => {
     expect(fetchRegistrySkill).not.toHaveBeenCalled();
   });
 
+  // Every call site clears `skill` on close, so the reopen goes through the
+  // closed editor's '' seed. The second fetch differs from the first: a reopen
+  // that adopts the earlier open's body would show '# Old' and write it back
+  // over the saved edit.
+  it('reloads the stored body when reopened on the same skill after a save', async () => {
+    vi.mocked(fetchRegistrySkill).mockResolvedValue({ ...LIST_SKILL, body: '# Old' });
+    const { rerender } = render(
+      <SkillEditor isOpen onClose={() => {}} onSaved={() => {}} skill={LIST_SKILL} />,
+    );
+    await waitFor(() => expect(bodyField()).toHaveValue('# Old'));
+
+    fireEvent.change(bodyField(), { target: { value: '# Edited' } });
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(updateRegistrySkill).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(updateRegistrySkill).mock.calls[0][1].body).toBe('# Edited');
+
+    rerender(<SkillEditor isOpen={false} onClose={() => {}} onSaved={() => {}} />);
+    let resolveFetch: (s: AgentSkill) => void = () => {};
+    vi.mocked(fetchRegistrySkill).mockReturnValue(
+      new Promise<AgentSkill>((resolve) => { resolveFetch = resolve; }),
+    );
+    rerender(<SkillEditor isOpen onClose={() => {}} onSaved={() => {}} skill={LIST_SKILL} />);
+
+    expect(saveButton()).toBeDisabled();
+    expect(bodyField()).toHaveAttribute('readonly');
+    expect(bodyField()).not.toHaveValue('# Old');
+    expect(fetchRegistrySkill).toHaveBeenCalledTimes(2);
+
+    resolveFetch({ ...LIST_SKILL, body: '# Edited' });
+    await waitFor(() => expect(bodyField()).toHaveValue('# Edited'));
+    await waitFor(() => expect(saveButton()).toBeEnabled());
+
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(updateRegistrySkill).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(updateRegistrySkill).mock.calls[1][1].body).toBe('# Edited');
+  });
+
+  // Same reopen, with the skill left set while closed.
+  it('reloads the stored body when reopened with the skill still set', async () => {
+    vi.mocked(fetchRegistrySkill).mockResolvedValue({ ...LIST_SKILL, body: '# Old' });
+    const { rerender } = render(
+      <SkillEditor isOpen onClose={() => {}} onSaved={() => {}} skill={LIST_SKILL} />,
+    );
+    await waitFor(() => expect(bodyField()).toHaveValue('# Old'));
+
+    rerender(<SkillEditor isOpen={false} onClose={() => {}} onSaved={() => {}} skill={LIST_SKILL} />);
+    let resolveFetch: (s: AgentSkill) => void = () => {};
+    vi.mocked(fetchRegistrySkill).mockReturnValue(
+      new Promise<AgentSkill>((resolve) => { resolveFetch = resolve; }),
+    );
+    rerender(<SkillEditor isOpen onClose={() => {}} onSaved={() => {}} skill={LIST_SKILL} />);
+
+    expect(saveButton()).toBeDisabled();
+    expect(bodyField()).not.toHaveValue('# Old');
+
+    resolveFetch({ ...LIST_SKILL, body: '# Changed elsewhere' });
+    await waitFor(() => expect(bodyField()).toHaveValue('# Changed elsewhere'));
+    expect(saveButton()).toBeEnabled();
+  });
+
   // Reopening resets every field, so a hydration keyed only on the skill name
   // would decline to re-adopt and leave the editor empty over real content.
   it('re-hydrates when the editor is reopened on the same skill', async () => {
@@ -194,6 +254,26 @@ describe('SkillEditor discard guard', () => {
     const onClose = vi.fn();
     render(<SkillEditor isOpen onClose={onClose} onSaved={() => {}} skill={LIST_SKILL} />);
     await waitFor(() => expect(bodyField()).toHaveValue('# Triage\n\nReal instructions.'));
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
+  // The reopened editor's baseline is the body fetched for this open, so a
+  // hydrated reopen is clean even though the previous open saw other text.
+  it('closes a reopened skill without a discard prompt once it has hydrated', async () => {
+    const onClose = vi.fn();
+    vi.mocked(fetchRegistrySkill).mockResolvedValue({ ...LIST_SKILL, body: '# Old' });
+    const { rerender } = render(
+      <SkillEditor isOpen onClose={onClose} onSaved={() => {}} skill={LIST_SKILL} />,
+    );
+    await waitFor(() => expect(bodyField()).toHaveValue('# Old'));
+
+    rerender(<SkillEditor isOpen={false} onClose={onClose} onSaved={() => {}} />);
+    vi.mocked(fetchRegistrySkill).mockResolvedValue({ ...LIST_SKILL, body: '# Edited' });
+    rerender(<SkillEditor isOpen onClose={onClose} onSaved={() => {}} skill={LIST_SKILL} />);
+    await waitFor(() => expect(bodyField()).toHaveValue('# Edited'));
 
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);

@@ -71,6 +71,12 @@ export interface SkillDetailPanelProps {
    * tests render it bare); the workspace wires it to navigate.
    */
   onOpenPinDrift?: (skillName: string) => void;
+  /**
+   * Bumped by the workspace after an in-window change to skill bodies (an
+   * editor save, take upstream, or a sync). A change refetches the selected
+   * skill's body while the current one stays visible.
+   */
+  bodyRevision?: number;
 }
 
 /**
@@ -93,6 +99,7 @@ export function SkillDetailPanel({
   onSelectRelated,
   onRefresh,
   onOpenPinDrift,
+  bodyRevision,
 }: SkillDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<SkillTab>('overview');
   const [viewSource, setViewSource] = useState(false);
@@ -139,6 +146,7 @@ export function SkillDetailPanel({
     skill?.name ?? null,
     true,
     skill?.body,
+    bodyRevision,
   );
 
   // Re-run the owning source's update so a package missing its supporting files

@@ -437,6 +437,7 @@ export function LibraryWorkspace() {
   // Global Context management surface (canonical AGENTS.md sync).
   const [showGlobalContext, setShowGlobalContext] = useState(false);
   const [editingSkill, setEditingSkill] = useState<AgentSkill | undefined>();
+  const [bodyRevision, setBodyRevision] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   // Bulk disable is reversible but wide: from the "Never used" facet a single
@@ -542,6 +543,7 @@ export function LibraryWorkspace() {
   // Refresh registry + sources together — used after an inline source update so
   // the "update available" badge clears and any new/removed skills appear.
   const refreshAll = useCallback(async () => {
+    setBodyRevision((n) => n + 1);
     await refreshRegistry();
     try {
       const srcs = await fetchSkillSources();
@@ -877,6 +879,7 @@ export function LibraryWorkspace() {
       onSelectRelated={(name) => setSelectedName(name)}
       onRefresh={refreshAll}
       onOpenPinDrift={(name) => navigate(skillPinsUrl(name, 'drift'))}
+      bodyRevision={bodyRevision}
     />
   );
 

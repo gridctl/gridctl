@@ -31,16 +31,38 @@ interface Resolved {
  * Instructions tab being open, the editor being mounted), mirroring how
  * SkillFileTree defers its file listing until the Files tab is selected.
  *
- * State is written only inside the async loader after an await tick, never
- * synchronously in the effect body, so mounting cannot cascade an extra render.
+ * A result belongs to the fetch cycle that produced it. A cycle starts when
+ * the hook goes from not fetching to fetching or the skill name changes; the
+ * previous result is dropped and the hook reports loading until the new
+ * response lands, so a reopened surface never shows a body fetched for an
+ * earlier open. `revision` restarts the request without starting a new cycle:
+ * the previous body stays visible until the new response replaces it, which
+ * lets a caller pick up a change it made without flashing a loading state.
+ *
+ * State is written only inside the async loader after an await tick, or during
+ * render when the cycle changes, never synchronously in the effect body, so
+ * mounting cannot cascade an extra render.
  */
 export function useSkillBody(
   skillName: string | null,
   enabled: boolean,
   seed?: string,
+  revision = 0,
 ): SkillBodyState {
   const [resolved, setResolved] = useState<Resolved | null>(null);
   const needsFetch = enabled && !!skillName && seed === undefined;
+
+  // Drop the previous cycle's result during render. Clearing it and recording
+  // the new cycle in the same branch converges in one extra pass, and reading
+  // `fresh` below keeps this pass from returning the stale body either.
+  const cycle = needsFetch ? skillName : null;
+  const [seenCycle, setSeenCycle] = useState(cycle);
+  const cycleChanged = seenCycle !== cycle;
+  if (cycleChanged) {
+    setSeenCycle(cycle);
+    setResolved(null);
+  }
+  const fresh = cycleChanged ? null : resolved;
 
   useEffect(() => {
     if (!needsFetch || !skillName) return;
@@ -59,12 +81,12 @@ export function useSkillBody(
     return () => {
       active = false;
     };
-  }, [skillName, needsFetch]);
+  }, [skillName, needsFetch, revision]);
 
   if (seed !== undefined) return { body: seed, loading: false, error: null };
   // A result for a different skill is stale by definition — the selection moved
   // while the request was in flight — so it reads as "still loading" here.
-  const current = resolved?.name === skillName ? resolved : null;
+  const current = fresh?.name === skillName ? fresh : null;
   return {
     body: current?.body ?? null,
     loading: needsFetch && current === null,

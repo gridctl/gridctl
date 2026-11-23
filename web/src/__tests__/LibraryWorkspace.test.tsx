@@ -1,13 +1,20 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { LibraryWorkspace } from '../components/workspaces/LibraryWorkspace';
 import { requestGatewayPoll } from '../hooks/usePolling';
 import { useRegistryStore } from '../stores/useRegistryStore';
 import { useUIStore } from '../stores/useUIStore';
 import { useWizardStore } from '../stores/useWizardStore';
-import { setRegistrySkillsBatch, fetchSkillUsage, syncAllSources } from '../lib/api';
+import {
+  setRegistrySkillsBatch,
+  fetchSkillUsage,
+  syncAllSources,
+  fetchRegistrySkill,
+  fetchRegistrySkills,
+  disableRegistrySkill,
+} from '../lib/api';
 import { showToast } from '../components/ui/Toast';
 import { CommandRegistryProvider } from '../hooks/useCommandRegistry';
 import type { AgentSkill, SkillSourceStatus } from '../types';
@@ -55,11 +62,17 @@ vi.mock('../lib/api', () => ({
 // SkillEditor is heavy and unrelated to the workspace's URL-state behavior.
 // Stub so we can detect "mounted with this skill".
 vi.mock('../components/registry/SkillEditor', () => ({
-  SkillEditor: ({ isOpen, skill, onClose }: { isOpen: boolean; skill?: AgentSkill; onClose: () => void }) =>
+  SkillEditor: ({ isOpen, skill, onClose, onSaved }: {
+    isOpen: boolean;
+    skill?: AgentSkill;
+    onClose: () => void;
+    onSaved: () => void;
+  }) =>
     isOpen ? (
       <div data-testid="skill-editor">
         <span data-testid="editing-skill-name">{skill?.name ?? ''}</span>
         <button onClick={onClose}>close-editor</button>
+        <button onClick={onSaved}>save-editor</button>
       </div>
     ) : null,
 }));
@@ -308,6 +321,34 @@ describe('LibraryWorkspace', () => {
       fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
       await waitFor(() => expect(screen.getByTestId('skill-editor')).toBeInTheDocument());
       expect(screen.getByTestId('editing-skill-name').textContent).toBe('incident-triage');
+    });
+
+    // The inspector's skill name does not change across a save, so the
+    // workspace has to tell it to reload the body.
+    it('refetches the inspector body after an editor save', async () => {
+      vi.mocked(fetchRegistrySkills).mockResolvedValueOnce(SAMPLE_SKILLS);
+      renderAt('/library?selected=incident-triage');
+      await waitFor(() => expect(fetchRegistrySkill).toHaveBeenCalledTimes(1));
+
+      fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+      fireEvent.click(await screen.findByRole('button', { name: 'save-editor' }));
+      await waitFor(() => expect(fetchRegistrySkill).toHaveBeenCalledTimes(2));
+      expect(fetchRegistrySkill).toHaveBeenLastCalledWith('incident-triage');
+    });
+
+    // Enable, disable, and delete refresh the registry without touching bodies.
+    it('does not refetch the inspector body after a state toggle', async () => {
+      vi.mocked(fetchRegistrySkills).mockResolvedValueOnce(SAMPLE_SKILLS);
+      renderAt('/library?selected=incident-triage');
+      await waitFor(() => expect(fetchRegistrySkill).toHaveBeenCalledTimes(1));
+      const listReads = vi.mocked(fetchRegistrySkills).mock.calls.length;
+
+      const inspector = screen.getByRole('complementary', { name: 'Skill details' });
+      fireEvent.click(within(inspector).getByRole('button', { name: /disable skill/i }));
+      await waitFor(() => expect(disableRegistrySkill).toHaveBeenCalled());
+      await waitFor(() => expect(fetchRegistrySkills).toHaveBeenCalledTimes(listReads + 1));
+      await act(async () => {});
+      expect(fetchRegistrySkill).toHaveBeenCalledTimes(1);
     });
   });
 

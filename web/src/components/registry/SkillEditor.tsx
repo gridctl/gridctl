@@ -597,8 +597,10 @@ export function SkillEditor({
   // frame later, and in that frame `bodyLoading` is already false while `body`
   // is still '' — a click landing there would save an empty body over the
   // skill's real instructions. Adjusting state during render re-renders before
-  // anything commits, so that window never exists. Keyed by skill name, so it
-  // runs once per opened skill and never clobbers subsequent user edits.
+  // anything commits, so that window never exists. The reset effect clears
+  // `hydratedFor` on every open, and useSkillBody reports loading on each new
+  // fetch cycle, so the adopted body is always the one fetched for this open.
+  // Adoption then runs once per open and never clobbers subsequent user edits.
   if (needsBodyHydration && fetchedBody !== null && hydratedFor !== skill.name) {
     setHydratedFor(skill.name);
     setBody(fetchedBody);
