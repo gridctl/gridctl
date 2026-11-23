@@ -14,10 +14,52 @@ import {
 import { cn } from '../../../lib/cn';
 import { Button } from '../../ui/Button';
 import { showToast } from '../../ui/Toast';
-import { validateStackSpec, validateStackResource, appendToStack, saveStack, initializeStack, StackAlreadyActiveError, resolvePythonSource, fetchStatus, type PythonResolution } from '../../../lib/api';
+import { validateStackSpec, validateStackResource, appendToStack, saveStack, initializeStack, StackAlreadyActiveError, StackAppendError, resolvePythonSource, fetchStatus, isStackFragmentType, type PythonResolution } from '../../../lib/api';
 import type { ValidationIssue, ExecutionReport } from '../../../types';
 import type { MCPServerFormData } from '../../../lib/yaml-builder';
 import { describeError, isCancellation } from '../../../lib/describeError';
+import { useStackStore } from '../../../stores/useStackStore';
+
+/** Top-level `name:` of a server or resource fragment, with quotes and a trailing comment removed. */
+function topLevelName(yaml: string): string {
+  const match = yaml.match(/^name:[ \t]*(.*)$/m);
+  if (!match) return '';
+  const value = match[1].replace(/\s+#.*$/, '').trim();
+  const quoted = value.match(/^(['"])(.*)\1$/);
+  return (quoted ? quoted[2] : value).trim();
+}
+
+function IssueList({ issues }: { issues: ValidationIssue[] }) {
+  return (
+    <div className="space-y-1.5">
+      {issues.map((issue, i) => (
+        <div
+          key={i}
+          className={cn(
+            'flex items-start gap-2 px-3 py-2 rounded-lg text-xs',
+            issue.severity === 'error'
+              ? 'bg-status-error/5 text-status-error'
+              : issue.severity === 'warning'
+                ? 'bg-status-pending/5 text-status-pending'
+                : 'bg-secondary/5 text-secondary',
+          )}
+        >
+          {issue.severity === 'error' ? (
+            <AlertCircle size={11} className="flex-shrink-0 mt-0.5" />
+          ) : (
+            <AlertTriangle size={11} className="flex-shrink-0 mt-0.5" />
+          )}
+          <div>
+            <span className="font-medium">{issue.field}</span>
+            <span className="mx-1 text-text-muted">—</span>
+            {issue.message}
+            {issue.line && !issue.message.includes(`line ${issue.line}`) ? ` (line ${issue.line})` : ''}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 interface ReviewStepProps {
   yaml: string;
@@ -52,8 +94,13 @@ export function ReviewStep({
   const [buildState, setBuildState] = useState<'idle' | 'waiting' | 'pending' | 'failed' | 'complete'>('idle');
   const [appendedResourceName, setAppendedResourceName] = useState('');
   const [deployError, setDeployError] = useState('');
+  const [deployIssues, setDeployIssues] = useState<ValidationIssue[]>([]);
   const [failurePhase, setFailurePhase] = useState('');
   const resolutionErrorRef = useRef<HTMLParagraphElement>(null);
+  const deployErrorRef = useRef<HTMLDivElement>(null);
+  const validateGeneration = useRef(0);
+  const mcpServers = useStackStore((s) => s.mcpServers);
+  const stackResources = useStackStore((s) => s.resources);
   const pythonSource = server?.source &&
     (server.source.type === 'pypi' || server.source.runtime === 'python') &&
     !server.source.dockerfile;
@@ -73,20 +120,22 @@ export function ReviewStep({
   }
 
   const validate = useCallback(async () => {
+    const generation = ++validateGeneration.current;
     if (!yaml.trim()) return;
     try {
-      const result = resourceType === 'mcp-server' || resourceType === 'resource'
+      const result = isStackFragmentType(resourceType)
         ? await validateStackResource(yaml, resourceType)
         : await validateStackSpec(yaml);
+      if (generation !== validateGeneration.current) return;
       setIssues(result.issues || []);
       setExecutionPreview({ yaml, reports: result.execution ?? {} });
-    } catch {
+    } catch (err) {
+      if (generation !== validateGeneration.current) return;
       setIssues([
-        { field: 'yaml', message: 'Validation unavailable', severity: 'warning' },
+        { field: 'yaml', message: `Validation unavailable. ${describeError(err, 'Validation').text}`, severity: 'warning' },
       ]);
-    } finally {
-      setValidating(false);
     }
+    setValidating(false);
   }, [resourceType, yaml]);
 
   useEffect(() => {
@@ -114,12 +163,22 @@ export function ReviewStep({
   }, [sourceKey]);
 
   useEffect(() => {
-    if (resolutionError || deployError) resolutionErrorRef.current?.focus();
+    if (deployError) deployErrorRef.current?.focus();
+    else if (resolutionError) resolutionErrorRef.current?.focus();
   }, [resolutionError, deployError]);
 
   const errorCount = issues.filter((i) => i.severity === 'error').length;
   const warningCount = issues.filter((i) => i.severity === 'warning').length;
   const hasErrors = errorCount > 0;
+
+  // Advisory only: the store lists what the gateway reports, and the append
+  // response stays the authority. Skipped after an append, when the name is
+  // expected to be present and "Check deployment" must stay usable.
+  const deployName = isStackFragmentType(resourceType) && !appendedResourceName ? topLevelName(yaml) : '';
+  const nameConflict = Boolean(deployName) && [
+    ...(mcpServers ?? []),
+    ...(stackResources ?? []),
+  ].some((item) => item.name === deployName);
 
   const handleDownload = () => {
     const fileName =
@@ -151,6 +210,7 @@ export function ReviewStep({
     setDeploying(true);
     setBuildState('waiting');
     setDeployError('');
+    setDeployIssues([]);
     setFailurePhase('');
     let activePhase = appendedResourceName
       ? 'Building image, starting container, or connecting server'
@@ -190,6 +250,7 @@ export function ReviewStep({
       const message = err instanceof Error ? err.message : 'Deploy failed';
       setFailurePhase(activePhase);
       setDeployError(message);
+      setDeployIssues(err instanceof StackAppendError ? err.issues : []);
       showToast('error', message);
     } finally {
       setDeploying(false);
@@ -307,34 +368,7 @@ export function ReviewStep({
       </div>
 
       {/* Issues List */}
-      {issues.length > 0 && !validating && (
-        <div className="space-y-1.5">
-          {issues.map((issue, i) => (
-            <div
-              key={i}
-              className={cn(
-                'flex items-start gap-2 px-3 py-2 rounded-lg text-xs',
-                issue.severity === 'error'
-                  ? 'bg-status-error/5 text-status-error'
-                  : issue.severity === 'warning'
-                    ? 'bg-status-pending/5 text-status-pending'
-                    : 'bg-secondary/5 text-secondary',
-              )}
-            >
-              {issue.severity === 'error' ? (
-                <AlertCircle size={11} className="flex-shrink-0 mt-0.5" />
-              ) : (
-                <AlertTriangle size={11} className="flex-shrink-0 mt-0.5" />
-              )}
-              <div>
-                <span className="font-medium">{issue.field}</span>
-                <span className="mx-1 text-text-muted">—</span>
-                {issue.message}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      {issues.length > 0 && !validating && <IssueList issues={issues} />}
 
       {/* Resource Summary */}
       <div className="bg-surface-overlay-2 border border-border-subtle rounded-xl p-4">
@@ -383,6 +417,23 @@ export function ReviewStep({
         </div>
       </div>
 
+      {nameConflict && (
+        <div className="flex items-start gap-2 px-4 py-3 rounded-xl border border-status-error/20 bg-status-error/5 text-xs text-status-error" role="alert">
+          <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+          <span>A server or resource named '{deployName}' already exists in this stack. Choose a different name.</span>
+        </div>
+      )}
+
+      {resourceType !== 'stack' && deployError && (
+        <div ref={deployErrorRef} tabIndex={-1} className="space-y-2 p-4 rounded-xl border border-status-error/20 bg-status-error/5" role="alert">
+          <div className="flex items-start gap-2 text-xs text-status-error">
+            <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+            <span>{failurePhase ? `${failurePhase} failed: ${deployError}` : deployError}</span>
+          </div>
+          {deployIssues.length > 0 && <IssueList issues={deployIssues} />}
+        </div>
+      )}
+
       {pythonSource && (
         <div className="rounded-xl border border-primary/20 bg-primary/[0.03] p-4 space-y-3" aria-live="polite">
           <div className="flex items-center justify-between gap-3">
@@ -392,9 +443,9 @@ export function ReviewStep({
             {buildState === 'pending' && <span className="text-3xs text-status-pending">Deployment is still in progress</span>}
             {buildState === 'complete' && <span className="text-3xs text-status-running">Connected</span>}
           </div>
-          {(resolutionError || deployError) && (
+          {resolutionError && (
             <p ref={resolutionErrorRef} tabIndex={-1} className="text-xs text-status-error" role="alert">
-              {deployError && failurePhase ? `${failurePhase} failed: ${deployError}` : resolutionError}
+              {resolutionError}
             </p>
           )}
           {currentResolution && (
@@ -458,7 +509,7 @@ export function ReviewStep({
             variant="primary"
             size="sm"
             onClick={handleDeploy}
-            disabled={hasErrors || validating || deploying || Boolean(pythonSource && (!currentResolution || resolutionError))}
+            disabled={hasErrors || validating || deploying || nameConflict || Boolean(pythonSource && (!currentResolution || resolutionError))}
             className="ml-auto"
           >
             {deploying ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />}
