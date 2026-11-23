@@ -707,6 +707,85 @@ func TestStore_SetVariable_RejectsInvalidType(t *testing.T) {
 	}
 }
 
+func TestStore_CreateVariable_StoresNewKeyAndSet(t *testing.T) {
+	store := NewStore(t.TempDir())
+
+	if err := store.CreateVariable(Variable{
+		Key: "API_KEY", Value: "first", Type: TypeString, IsSecret: true, Set: "prod",
+	}); err != nil {
+		t.Fatalf("CreateVariable() error: %v", err)
+	}
+
+	v, ok := store.GetVariable("API_KEY")
+	if !ok {
+		t.Fatal("CreateVariable did not store the variable")
+	}
+	if v.Value != "first" || v.Set != "prod" || !v.IsSecret || v.Type != TypeString {
+		t.Errorf("stored = %+v, want value first, set prod, secret string", v)
+	}
+	if v.LastRotated == "" {
+		t.Error("CreateVariable did not stamp LastRotated")
+	}
+	found := false
+	for _, s := range store.ListSets() {
+		if s.Name == "prod" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("CreateVariable did not auto-create set prod")
+	}
+}
+
+func TestStore_CreateVariable_RejectsExistingKey(t *testing.T) {
+	store := NewStore(t.TempDir())
+
+	original := Variable{
+		Key: "API_KEY", Value: "original-secret", Type: TypeJSON, IsSecret: true,
+		Set: "prod", Description: "upstream token", Docs: "https://example.com",
+		Example: "{}", Deprecated: "use NEW_KEY",
+	}
+	if err := store.SetVariable(original); err != nil {
+		t.Fatalf("SetVariable() error: %v", err)
+	}
+	before, _ := store.GetVariable("API_KEY")
+
+	err := store.CreateVariable(Variable{Key: "API_KEY", Value: "replacement-secret", Type: TypeString})
+	if !errors.Is(err, ErrVariableExists) {
+		t.Fatalf("CreateVariable() error = %v, want ErrVariableExists", err)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "API_KEY") {
+		t.Errorf("error %q does not name the key", msg)
+	}
+	if strings.Contains(msg, "original-secret") || strings.Contains(msg, "replacement-secret") {
+		t.Errorf("error %q leaks a value", msg)
+	}
+
+	after, _ := store.GetVariable("API_KEY")
+	if after != before {
+		t.Errorf("stored record changed:\n got  %+v\n want %+v", after, before)
+	}
+}
+
+func TestStore_CreateVariable_Validation(t *testing.T) {
+	store := NewStore(t.TempDir())
+
+	if err := store.CreateVariable(Variable{Key: "K", Value: "v", Type: "weird"}); err == nil {
+		t.Error("CreateVariable accepted invalid type")
+	}
+	if err := store.CreateVariable(Variable{Value: "v"}); err == nil {
+		t.Error("CreateVariable accepted an empty key")
+	}
+	var denied *InternalCredentialError
+	if err := store.CreateVariable(Variable{Key: "GRIDCTL_VAULT_PASSPHRASE", Value: "v"}); !errors.As(err, &denied) {
+		t.Errorf("CreateVariable(reserved) error = %v, want InternalCredentialError", err)
+	}
+	if got := store.List(); len(got) != 0 {
+		t.Fatalf("rejected creates changed store: %v", got)
+	}
+}
+
 func TestStore_ImportVariables(t *testing.T) {
 	store := NewStore(t.TempDir())
 

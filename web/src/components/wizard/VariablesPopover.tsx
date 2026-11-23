@@ -1,9 +1,9 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { KeyRound, Search, Plus, X, Loader2, Check } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useVaultStore } from '../../stores/useVaultStore';
-import { fetchVariables, createVariable } from '../../lib/api';
+import { fetchVariables, createVariable, updateVariable, HTTPError } from '../../lib/api';
 import type { VariableType } from '../../lib/api';
 import { VariableVisibilityIcon } from '../vault/VariableVisibilityIcon';
 import { VariableTypeBadge } from '../vault/VariableTypeBadge';
@@ -12,6 +12,7 @@ import { VariableSecretToggle } from '../vault/VariableSecretToggle';
 import { SecretGenerator } from '../vault/SecretGenerator';
 import { VariableValueInput } from '../vault/VariableValueInput';
 import { validateVariableInput } from '../vault/variableTypeHelpers';
+import { describeReplace } from '../vault/replaceSummary';
 
 interface VariablesPopoverProps {
   onSelect: (reference: string) => void;
@@ -43,7 +44,9 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
   const [newType, setNewType] = useState<VariableType>('string');
   const [newIsSecret, setNewIsSecret] = useState(true);
   const [valueValid, setValueValid] = useState(true);
+  const [replaceArmed, setReplaceArmed] = useState(false);
   const [position, setPosition] = useState<PopoverPosition | null>(null);
+  const conflictNoticeId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const variables = useVaultStore((s) => s.variables);
@@ -73,6 +76,9 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
   // Drop the stale position when the popover closes (state adjustment during
   // render; commits with the close, no extra frame).
   if (!open && position !== null) setPosition(null);
+  // A replace confirmation never outlives the popover: the list is refetched
+  // on reopen, so the summary it armed against may no longer hold.
+  if (!open && replaceArmed) setReplaceArmed(false);
 
   // Compute position on open; reposition on scroll or resize. Layout effect
   // because the position comes from a DOM measurement and must land before
@@ -113,41 +119,102 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
     [onSelect],
   );
 
-  const handleCreate = useCallback(async () => {
-    if (!newKey || !newValue) return;
+  // The list can be stale or absent (its fetch failing is swallowed), so this
+  // is a hint only; the server's create_only refusal is the real guard.
+  const conflict = newKey
+    ? (variables ?? []).find((v) => v.key === newKey)
+    : undefined;
+
+  const resetCreateForm = useCallback(() => {
+    setCreating(false);
+    setNewKey('');
+    setNewValue('');
+    setNewType('string');
+    setNewIsSecret(true);
+    setReplaceArmed(false);
+    setError(null);
+  }, []);
+
+  const insertAndClose = useCallback(
+    (key: string) => {
+      onSelect(`\${var:${key}}`);
+      setOpen(false);
+      resetCreateForm();
+    },
+    [onSelect, resetCreateForm],
+  );
+
+  const validateNew = useCallback(() => {
+    if (!newKey || !newValue) return null;
     if (!/^[A-Z][A-Z0-9_]*$/.test(newKey)) {
       setError('Key must be uppercase alphanumeric with underscores');
-      return;
+      return null;
     }
     const validation = validateVariableInput(newType, newValue);
     if (!validation.ok) {
       setError(validation.error);
-      return;
+      return null;
     }
+    return validation.normalized;
+  }, [newKey, newValue, newType]);
+
+  const handleCreate = useCallback(async () => {
+    // Enter in the value widget lands here too, so the guard cannot live on
+    // the button alone.
+    if (conflict) return;
+    const value = validateNew();
+    if (value === null) return;
     setSaving(true);
     setError(null);
     try {
       await createVariable({
         key: newKey,
-        value: validation.normalized,
+        value,
         type: newType,
         isSecret: newIsSecret,
+        createOnly: true,
       });
       const updated = await fetchVariables();
       setVariables(updated);
-      onSelect(`\${var:${newKey}}`);
-      setOpen(false);
-      setCreating(false);
-      setNewKey('');
-      setNewValue('');
-      setNewType('string');
-      setNewIsSecret(true);
+      insertAndClose(newKey);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create variable');
+      if (e instanceof HTTPError && e.status === 409) {
+        // Created elsewhere since the list loaded: reload so the conflict
+        // state renders, and insert nothing.
+        try {
+          const updated = await fetchVariables();
+          setVariables(updated);
+          if (!updated.some((v) => v.key === newKey)) setError(e.message);
+        } catch {
+          setError(e.message);
+        }
+      } else {
+        setError(e instanceof Error ? e.message : 'Failed to create variable');
+      }
     } finally {
       setSaving(false);
     }
-  }, [newKey, newValue, newType, newIsSecret, onSelect, setVariables]);
+  }, [conflict, validateNew, newKey, newType, newIsSecret, setVariables, insertAndClose]);
+
+  // Replace goes through PUT (partial update) rather than the POST upsert,
+  // so the description, docs, example, deprecation note, and set survive.
+  const handleReplace = useCallback(async () => {
+    if (!conflict) return;
+    const value = validateNew();
+    if (value === null) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await updateVariable(newKey, { value, type: newType, isSecret: newIsSecret });
+      const updated = await fetchVariables();
+      setVariables(updated);
+      insertAndClose(newKey);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to replace variable');
+    } finally {
+      setSaving(false);
+    }
+  }, [conflict, validateNew, newKey, newType, newIsSecret, setVariables, insertAndClose]);
 
   // Switching into/out of bool clears the value — its "true"/"false" is
   // widget-managed, not user-typed, so it shouldn't bleed into other types.
@@ -157,6 +224,7 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
       setError(null);
     }
     setNewType(next);
+    setReplaceArmed(false);
   };
 
   const filtered = (variables ?? []).filter((s) =>
@@ -264,6 +332,7 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
               aria-label="Cancel new variable"
               onClick={() => {
                 setCreating(false);
+                setReplaceArmed(false);
                 setError(null);
               }}
               className="text-text-muted hover:text-text-secondary"
@@ -274,17 +343,28 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
           <input
             type="text"
             value={newKey}
-            onChange={(e) => setNewKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))}
+            onChange={(e) => {
+              setNewKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''));
+              setReplaceArmed(false);
+              setError(null);
+            }}
             placeholder="VARIABLE_KEY"
             aria-label="Variable key"
+            aria-describedby={conflict ? conflictNoticeId : undefined}
             className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors"
           />
+          {conflict && (
+            <p id={conflictNoticeId} role="status" className="text-3xs text-status-pending">
+              {conflict.key} already exists.
+            </p>
+          )}
           <VariableValueInput
             type={newType}
             value={newValue}
             onChange={(v) => {
               setNewValue(v);
               setError(null);
+              setReplaceArmed(false);
             }}
             isSecret={newIsSecret}
             revealed={showValue}
@@ -297,10 +377,19 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
             <VariableTypeSelector value={newType} onChange={handleTypeChange} />
           </div>
           <div className="flex flex-wrap items-center gap-1">
-            <VariableSecretToggle isSecret={newIsSecret} onChange={setNewIsSecret} />
+            <VariableSecretToggle
+              isSecret={newIsSecret}
+              onChange={(next) => {
+                setNewIsSecret(next);
+                setReplaceArmed(false);
+              }}
+            />
             {newType === 'string' && (
               <SecretGenerator
-                onGenerate={setNewValue}
+                onGenerate={(v) => {
+                  setNewValue(v);
+                  setReplaceArmed(false);
+                }}
                 onReveal={() => setShowValue(true)}
               />
             )}
@@ -308,16 +397,86 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
           {error && (
             <p className="text-3xs text-status-error">{error}</p>
           )}
+          {conflict ? (
+            <>
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => insertAndClose(conflict.key)}
+                  disabled={saving}
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200',
+                    'bg-secondary/20 text-secondary hover:bg-secondary/30',
+                    'disabled:opacity-40 disabled:cursor-not-allowed',
+                  )}
+                >
+                  <Check size={12} />
+                  Insert existing
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReplaceArmed(true)}
+                  disabled={!newValue || !valueValid || saving || replaceArmed}
+                  className={cn(
+                    'flex-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
+                    'text-status-error border border-status-error/25 hover:bg-status-error/10',
+                    'disabled:opacity-40 disabled:cursor-not-allowed',
+                  )}
+                >
+                  Replace value…
+                </button>
+              </div>
+              {replaceArmed && (
+                <div
+                  role="group"
+                  aria-label={`Confirm replacing ${conflict.key}`}
+                  className="rounded-lg border border-status-error/25 bg-status-error/5 px-2.5 py-2 space-y-2"
+                >
+                  <ul className="text-3xs text-text-secondary space-y-0.5">
+                    {describeReplace(conflict, { type: newType, isSecret: newIsSecret }).map(
+                      (line) => (
+                        <li key={line}>{line}</li>
+                      ),
+                    )}
+                  </ul>
+                  <div className="flex justify-end gap-1.5">
+                    <button
+                      type="button"
+                      aria-label="Cancel replace"
+                      onClick={() => setReplaceArmed(false)}
+                      disabled={saving}
+                      className="rounded-lg px-2.5 py-1 text-xs text-text-secondary hover:text-text-primary hover:bg-surface-overlay-2 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleReplace()}
+                      disabled={!newValue || !valueValid || saving}
+                      className={cn(
+                        'flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors',
+                        'bg-status-error text-white hover:bg-status-error/80',
+                        'disabled:opacity-40 disabled:cursor-not-allowed',
+                      )}
+                    >
+                      {saving && <Loader2 size={12} className="animate-spin" />}
+                      Replace & Insert
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : null}
           <button
             onClick={handleCreate}
-            disabled={!newKey || !newValue || !valueValid || saving}
+            disabled={!newKey || !newValue || !valueValid || saving || conflict !== undefined}
             className={cn(
               'w-full flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200',
               'bg-secondary/20 text-secondary hover:bg-secondary/30',
               'disabled:opacity-40 disabled:cursor-not-allowed',
             )}
           >
-            {saving ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+            {saving && !conflict ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
             Create & Insert
           </button>
         </div>

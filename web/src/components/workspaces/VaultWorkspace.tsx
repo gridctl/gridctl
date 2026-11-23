@@ -31,7 +31,7 @@ import { WorkspaceShell } from '../layout/WorkspaceShell';
 import { EmptyState, FailedState, FailureBanner } from '../ui/EmptyState';
 import { NewSetForm } from '../vault/NewSetForm';
 import { VariableInspector } from '../vault/VariableInspector';
-import { VariableQuickAddForm } from '../vault/VariableQuickAddForm';
+import { VariableQuickAddForm, type QuickAddInput } from '../vault/VariableQuickAddForm';
 import { VariableRow, VARIABLE_ROW_GRID } from '../vault/VariableRow';
 import { ProviderReferences } from '../vault/ProviderReferences';
 import { VaultEncryptForm } from '../vault/VaultEncryptForm';
@@ -59,7 +59,7 @@ import {
   REF_FILTERS,
   type RefFilter,
 } from '../../lib/varFilter';
-import type { Consumer, Variable } from '../../lib/api';
+import { HTTPError, type Consumer, type Variable } from '../../lib/api';
 
 const ALL_SETS_KEY = '__all__';
 // URL sentinel for the "Unassigned" rail filter (?set=__none__). Like
@@ -390,12 +390,32 @@ export function VaultWorkspace() {
   }, [relock]);
 
   const handleCreate = useCallback(
-    async (input: Parameters<typeof createVar>[0]) => {
-      await createVar(input);
+    async ({ replace, ...input }: QuickAddInput) => {
+      if (replace) {
+        // PUT, not the POST upsert: a partial update keeps the description,
+        // docs, example, deprecation note, and (when no set is chosen) the set.
+        await updateVar(input.key, {
+          value: input.value,
+          type: input.type,
+          isSecret: input.isSecret,
+          ...(input.set ? { set: input.set } : {}),
+        });
+        showToast('success', `Variable "${input.key}" replaced`);
+        setAddOneOpen(false);
+        return;
+      }
+      try {
+        await createVar({ ...input, createOnly: true });
+      } catch (err) {
+        // createVar throws before its own refresh. Reload so the form finds
+        // the entry it collided with and can offer Replace from it.
+        if (err instanceof HTTPError && err.status === 409) await refresh();
+        throw err;
+      }
       showToast('success', `Variable "${input.key}" created`);
       setAddOneOpen(false);
     },
-    [createVar],
+    [createVar, updateVar, refresh],
   );
 
   const handleDeleteConfirm = useCallback(async () => {
@@ -765,6 +785,7 @@ export function VaultWorkspace() {
                   <div className="pt-2 border-t border-border-subtle/40">
                     <VariableQuickAddForm
                       setNames={setNames}
+                      existingVariables={allVariables}
                       onSubmit={handleCreate}
                       onCancel={() => setAddOneOpen(false)}
                       className="max-w-2xl"

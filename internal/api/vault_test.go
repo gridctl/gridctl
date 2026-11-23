@@ -659,6 +659,121 @@ func TestHandleVar_CreateRoundtripsTypeAndIsSecret(t *testing.T) {
 	}
 }
 
+func newVarTestServer(t *testing.T) (http.Handler, *vault.Store) {
+	t.Helper()
+	store := vault.NewStore(t.TempDir())
+	if err := store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{vaultStore: store}
+	return server.Handler(), store
+}
+
+func postVar(t *testing.T, handler http.Handler, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := loopbackRequest(http.MethodPost, "/api/var", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	return w
+}
+
+// TestHandleVar_CreateOnlyRefusesExistingKey asserts create_only turns an
+// existing key into a 409 that names the key, leaks no value, and leaves the
+// stored record untouched.
+func TestHandleVar_CreateOnlyRefusesExistingKey(t *testing.T) {
+	handler, store := newVarTestServer(t)
+	if err := store.SetVariable(vault.Variable{
+		Key: "K", Value: "stored-secret", Type: vault.TypeJSON, IsSecret: true,
+		Set: "prod", Description: "keep me",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := store.GetVariable("K")
+
+	w := postVar(t, handler, `{"key":"K","value":"new","create_only":true}`)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (body=%q)", w.Code, w.Body.String())
+	}
+	raw := w.Body.String()
+	var got map[string]any
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatal(err)
+	}
+	msg, _ := got["error"].(string)
+	if !strings.Contains(msg, `"K"`) {
+		t.Errorf("error = %q, want it to name K", msg)
+	}
+	if strings.Contains(raw, "new") || strings.Contains(raw, "stored-secret") {
+		t.Errorf("409 body leaks a value: %s", raw)
+	}
+
+	req := loopbackRequest(http.MethodGet, "/api/var/K", nil)
+	gw := httptest.NewRecorder()
+	handler.ServeHTTP(gw, req)
+	if gw.Code != http.StatusOK {
+		t.Fatalf("GET status = %d", gw.Code)
+	}
+	var rec map[string]any
+	if err := json.NewDecoder(gw.Body).Decode(&rec); err != nil {
+		t.Fatal(err)
+	}
+	if rec["value"] != "stored-secret" || rec["type"] != "json" {
+		t.Errorf("GET after 409 = %v, want original record", rec)
+	}
+	if after, _ := store.GetVariable("K"); after != before {
+		t.Errorf("stored record changed:\n got  %+v\n want %+v", after, before)
+	}
+}
+
+// TestHandleVar_CreateOnlyNewKey asserts create_only on a fresh key keeps the
+// existing 201 response shape.
+func TestHandleVar_CreateOnlyNewKey(t *testing.T) {
+	handler, store := newVarTestServer(t)
+
+	w := postVar(t, handler, `{"key":"K","value":"v","create_only":true}`)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 (body=%q)", w.Code, w.Body.String())
+	}
+	var got map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"key": "K", "type": "string", "is_secret": true, "status": "created"}
+	if len(got) != len(want) {
+		t.Errorf("body = %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("body[%q] = %v, want %v", k, got[k], v)
+		}
+	}
+	if v, ok := store.Get("K"); !ok || v != "v" {
+		t.Errorf("stored = %q, %v; want v", v, ok)
+	}
+}
+
+// TestHandleVar_CreateWithoutCreateOnlyUpserts pins the unchanged default:
+// POST /api/var replaces an existing key and still answers 201.
+func TestHandleVar_CreateWithoutCreateOnlyUpserts(t *testing.T) {
+	handler, store := newVarTestServer(t)
+
+	for _, body := range []string{
+		`{"key":"K","value":"first"}`,
+		`{"key":"K","value":"second","create_only":false}`,
+	} {
+		w := postVar(t, handler, body)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("status = %d, want 201 (body=%q)", w.Code, w.Body.String())
+		}
+		if !strings.Contains(w.Body.String(), `"status":"created"`) {
+			t.Errorf("body = %q, want status created", w.Body.String())
+		}
+	}
+	if v, _ := store.Get("K"); v != "second" {
+		t.Errorf("value = %q, want second", v)
+	}
+}
+
 // TestHandleVar_CreateDefaultsToSecret asserts the secure default (Article XII):
 // a POST without an explicit is_secret stores the variable as a secret.
 func TestHandleVar_CreateDefaultsToSecret(t *testing.T) {
