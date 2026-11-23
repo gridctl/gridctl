@@ -1345,15 +1345,10 @@ export function SkillEditor({
                   )}
                 </Popover>
               </div>
-            ) : validation && (
-              <span
-                className={cn(
-                  'text-xs flex items-center gap-1',
-                  validation.valid ? 'text-status-running' : 'text-status-error',
-                )}
-              >
-                {validation.valid ? <Check size={12} /> : <AlertCircle size={12} />}
-                {validation.valid ? 'Valid' : '0 error(s)'}
+            ) : validation?.valid && (
+              <span className="text-xs flex items-center gap-1 text-status-running">
+                <Check size={12} />
+                Valid
               </span>
             )}
           </div>
