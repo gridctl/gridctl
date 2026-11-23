@@ -470,6 +470,24 @@ describe('SkillImportWizard activation and trust', () => {
     expect(screen.getByRole('group', { name: 'Security findings' })).not.toHaveTextContent('flagged-two');
   });
 
+  it('clears the acknowledgment when a new preview loads', async () => {
+    await toConfigure();
+    fireEvent.click(ack());
+    expect(ack()).toBeChecked();
+
+    fireEvent.click(screen.getByRole('button', { name: /Back/ }));
+    await screen.findByRole('checkbox', { name: 'Select flagged-two' });
+    fireEvent.click(screen.getByRole('button', { name: /Back/ }));
+    fireEvent.change(await screen.findByPlaceholderText('https://github.com/owner/repo'), { target: { value: REPO } });
+    fireEvent.click(screen.getByText('Scan for Skills'));
+    await waitFor(() => expect(previewSkillSource).toHaveBeenCalledTimes(2));
+    fireEvent.click(await screen.findByRole('button', { name: /Next/ }));
+    await screen.findByText('Configure Skills');
+
+    expect(ack()).not.toBeChecked();
+    expect(install()).toBeDisabled();
+  });
+
   it('installs clean skills from Browse without trust', async () => {
     await scan({ skills: [makePreview({ name: 'clean-a' }), makePreview({ name: 'clean-b' })] });
     fireEvent.click(screen.getByRole('button', { name: /Install 2 Skills/ }));

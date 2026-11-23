@@ -130,6 +130,30 @@ func TestImporter_Import_NoActivateSkillsPreserveState(t *testing.T) {
 	assert.Equal(t, registry.StateActive, sk.State, "PreserveState must win over NoActivateSkills")
 }
 
+func TestImporter_Import_NoActivateSkillsMatchesRename(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	store, regDir := setupTestRegistry(t)
+	lockPath := filepath.Join(regDir, "skills.lock.yaml")
+	repo := initRepoWithSkillContent(t, map[string]string{
+		"skills/only/SKILL.md": "---\nname: only-skill\ndescription: only skill\n---\n\nBody.\n",
+	})
+
+	imp := NewImporter(store, regDir, lockPath, slog.Default())
+	result, err := imp.Import(context.Background(), ImportOptions{
+		Repo:             repo,
+		Rename:           "renamed",
+		NoActivateSkills: []string{"renamed"},
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Imported, 1)
+	assert.Equal(t, "renamed", result.Imported[0].Name)
+	assert.Empty(t, noActivateWarnings(result.Warnings))
+
+	sk, err := store.GetSkill("renamed")
+	require.NoError(t, err)
+	assert.Equal(t, registry.StateDraft, sk.State)
+}
+
 func TestImporter_Import_NoActivateSkillsUnmatchedWarns(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	store, regDir := setupTestRegistry(t)
