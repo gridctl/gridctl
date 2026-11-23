@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
 import { useState } from 'react';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
-import { useListNav } from '../hooks/useListNav';
+import { listNavProps, listNavRowProps, useListNav } from '../hooks/useListNav';
 
 beforeEach(() => {
   cleanup();
@@ -10,20 +10,24 @@ beforeEach(() => {
 
 interface HarnessProps {
   itemCount?: number;
+  initialIndex?: number;
   onEnter?: () => void;
   onEdit?: () => void;
   onToggle?: () => void;
+  onEscape?: () => void;
   enabled?: boolean;
 }
 
 function Harness({
   itemCount = 3,
+  initialIndex = 0,
   onEnter,
   onEdit,
   onToggle,
+  onEscape,
   enabled = true,
 }: HarnessProps) {
-  const [index, setIndex] = useState(0);
+  const [index, setIndex] = useState(initialIndex);
   useListNav({
     itemCount,
     selectedIndex: index,
@@ -31,9 +35,48 @@ function Harness({
     onEnter,
     onEdit,
     onToggle,
+    onEscape,
     enabled,
   });
-  return <div data-testid="index">{index}</div>;
+  return (
+    <>
+      <div data-testid="index">{index}</div>
+      <button data-testid="outside">outside</button>
+      <div {...listNavProps}>
+        <div tabIndex={0} data-testid="row">
+          row
+          <button data-testid="row-btn">act</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// Rows are focusable marked rows exposing aria-selected, like VariableRow.
+function RowsHarness({ itemCount = 3 }: { itemCount?: number }) {
+  const [index, setIndex] = useState(0);
+  useListNav({ itemCount, selectedIndex: index, setSelectedIndex: setIndex });
+  return (
+    <>
+      <div data-testid="index">{index}</div>
+      <button data-testid="outside">outside</button>
+      <div role="listbox" {...listNavProps}>
+        {Array.from({ length: itemCount }, (_, i) => (
+          <div
+            key={i}
+            role="option"
+            tabIndex={0}
+            aria-selected={i === index}
+            data-testid={`row-${i}`}
+            {...listNavRowProps}
+          >
+            row {i}
+            <button data-testid={`row-btn-${i}`}>act</button>
+          </div>
+        ))}
+      </div>
+    </>
+  );
 }
 
 function getIndex(): number {
@@ -138,5 +181,177 @@ describe('useListNav', () => {
     render(<Harness itemCount={3} />);
     fireEvent.keyDown(document, { key: 'ArrowDown', metaKey: true });
     expect(getIndex()).toBe(0);
+  });
+
+  describe('target scoping', () => {
+    it('leaves Enter on a focused control outside the list alone', () => {
+      const onEnter = vi.fn();
+      render(<Harness onEnter={onEnter} />);
+      const outside = screen.getByTestId('outside');
+      outside.focus();
+      expect(fireEvent.keyDown(outside, { key: 'Enter' })).toBe(true);
+      expect(onEnter).not.toHaveBeenCalled();
+    });
+
+    it('runs onEnter from the document, the body, and a non-control row', () => {
+      const onEnter = vi.fn();
+      render(<Harness onEnter={onEnter} />);
+      expect(fireEvent.keyDown(document, { key: 'Enter' })).toBe(false);
+      expect(onEnter).toHaveBeenCalledTimes(1);
+      expect(fireEvent.keyDown(document.body, { key: 'Enter' })).toBe(false);
+      expect(onEnter).toHaveBeenCalledTimes(2);
+      const row = screen.getByTestId('row');
+      row.focus();
+      expect(fireEvent.keyDown(row, { key: 'Enter' })).toBe(false);
+      expect(onEnter).toHaveBeenCalledTimes(3);
+    });
+
+    it('leaves Enter on a control inside the list alone', () => {
+      const onEnter = vi.fn();
+      render(<Harness onEnter={onEnter} />);
+      const btn = screen.getByTestId('row-btn');
+      btn.focus();
+      expect(fireEvent.keyDown(btn, { key: 'Enter' })).toBe(true);
+      expect(onEnter).not.toHaveBeenCalled();
+    });
+
+    it('does not cancel Enter when there is no onEnter', () => {
+      render(<Harness />);
+      expect(fireEvent.keyDown(document, { key: 'Enter' })).toBe(true);
+    });
+
+    it('ignores arrows, Home, and End on a control outside the list', () => {
+      render(<Harness initialIndex={1} />);
+      const outside = screen.getByTestId('outside');
+      outside.focus();
+      for (const key of ['ArrowDown', 'ArrowUp', 'Home', 'End']) {
+        expect(fireEvent.keyDown(outside, { key })).toBe(true);
+        expect(getIndex()).toBe(1);
+      }
+    });
+
+    it('moves the selection with arrows from inside the list', () => {
+      render(<Harness />);
+      const row = screen.getByTestId('row');
+      row.focus();
+      expect(fireEvent.keyDown(row, { key: 'ArrowDown' })).toBe(false);
+      expect(getIndex()).toBe(1);
+      expect(fireEvent.keyDown(row, { key: 'End' })).toBe(false);
+      expect(getIndex()).toBe(2);
+    });
+
+    it('moves the selection with j and k from a control outside the list', () => {
+      render(<Harness />);
+      const outside = screen.getByTestId('outside');
+      outside.focus();
+      fireEvent.keyDown(outside, { key: 'j' });
+      expect(getIndex()).toBe(1);
+      fireEvent.keyDown(outside, { key: 'k' });
+      expect(getIndex()).toBe(0);
+    });
+
+    it('runs e and d only on the page or inside the list', () => {
+      const onEdit = vi.fn();
+      const onToggle = vi.fn();
+      render(<Harness onEdit={onEdit} onToggle={onToggle} />);
+      const outside = screen.getByTestId('outside');
+      outside.focus();
+      expect(fireEvent.keyDown(outside, { key: 'e' })).toBe(true);
+      expect(fireEvent.keyDown(outside, { key: 'd' })).toBe(true);
+      expect(onEdit).not.toHaveBeenCalled();
+      expect(onToggle).not.toHaveBeenCalled();
+      const row = screen.getByTestId('row');
+      row.focus();
+      fireEvent.keyDown(row, { key: 'e' });
+      fireEvent.keyDown(row, { key: 'd' });
+      expect(onEdit).toHaveBeenCalledTimes(1);
+      expect(onToggle).toHaveBeenCalledTimes(1);
+    });
+
+    it('still runs Escape from a control outside the list', () => {
+      const onEscape = vi.fn();
+      render(<Harness onEscape={onEscape} />);
+      const outside = screen.getByTestId('outside');
+      outside.focus();
+      fireEvent.keyDown(outside, { key: 'Escape' });
+      expect(onEscape).toHaveBeenCalledTimes(1);
+    });
+
+    it('defers to a component handler that already cancelled the key', () => {
+      render(
+        <>
+          <Harness />
+          <div onKeyDown={(e) => e.preventDefault()}>
+            <span tabIndex={0} data-testid="child">child</span>
+          </div>
+        </>,
+      );
+      const child = screen.getByTestId('child');
+      child.focus();
+      fireEvent.keyDown(child, { key: 'j' });
+      expect(getIndex()).toBe(0);
+    });
+  });
+
+  describe('negative selectedIndex', () => {
+    it('selects the last row on ArrowUp', () => {
+      render(<Harness initialIndex={-1} />);
+      fireEvent.keyDown(document, { key: 'ArrowUp' });
+      expect(getIndex()).toBe(2);
+    });
+
+    it('selects the first row on ArrowDown', () => {
+      render(<Harness initialIndex={-1} />);
+      fireEvent.keyDown(document, { key: 'ArrowDown' });
+      expect(getIndex()).toBe(0);
+    });
+
+    it('applies the same rule to j and k', () => {
+      const { unmount } = render(<Harness initialIndex={-1} />);
+      fireEvent.keyDown(document, { key: 'k' });
+      expect(getIndex()).toBe(2);
+      unmount();
+      render(<Harness initialIndex={-1} />);
+      fireEvent.keyDown(document, { key: 'j' });
+      expect(getIndex()).toBe(0);
+    });
+  });
+
+  describe('focus follows selection', () => {
+    it('moves focus to the newly selected row when a row has focus', () => {
+      render(<RowsHarness />);
+      const row0 = screen.getByTestId('row-0');
+      row0.focus();
+      fireEvent.keyDown(row0, { key: 'ArrowDown' });
+      expect(getIndex()).toBe(1);
+      expect(screen.getByTestId('row-1')).toHaveFocus();
+      fireEvent.keyDown(document.activeElement!, { key: 'End' });
+      expect(screen.getByTestId('row-2')).toHaveFocus();
+    });
+
+    it('keeps focus on a control outside the list', () => {
+      render(<RowsHarness />);
+      const outside = screen.getByTestId('outside');
+      outside.focus();
+      fireEvent.keyDown(outside, { key: 'j' });
+      expect(getIndex()).toBe(1);
+      expect(outside).toHaveFocus();
+    });
+
+    it('keeps focus on a control nested in a row', () => {
+      render(<RowsHarness />);
+      const btn = screen.getByTestId('row-btn-0');
+      btn.focus();
+      fireEvent.keyDown(btn, { key: 'j' });
+      expect(getIndex()).toBe(1);
+      expect(btn).toHaveFocus();
+    });
+
+    it('never moves focus into the list from the page', () => {
+      render(<RowsHarness />);
+      fireEvent.keyDown(document, { key: 'ArrowDown' });
+      expect(getIndex()).toBe(1);
+      expect(document.body).toHaveFocus();
+    });
   });
 });

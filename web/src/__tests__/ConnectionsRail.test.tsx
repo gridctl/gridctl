@@ -51,4 +51,39 @@ describe('ConnectionsRail connect toggle', () => {
     expect(onToggle).toHaveBeenCalledTimes(1);
     expect(onSelect).not.toHaveBeenCalled();
   });
+
+  it('leaves Enter and Space on the toggle to the toggle', () => {
+    const onSelect = vi.fn();
+    const client: ClientStatus = {
+      name: 'Claude',
+      slug: 'claude',
+      detected: true,
+      linked: false,
+      transport: 'http',
+    };
+    render(
+      <ConnectionsRail
+        clients={[client]}
+        totalCount={1}
+        activeSlug={null}
+        onSelect={onSelect}
+        healthOf={() => ({ attention: false, reasons: [] })}
+        hasLiveActivity={() => false}
+        desiredOf={() => false}
+        onToggle={() => {}}
+        attentionOnly={false}
+        onToggleAttention={() => {}}
+      />,
+    );
+
+    const toggle = screen.getByRole('switch', { name: 'Link Claude' });
+    toggle.focus();
+    expect(fireEvent.keyDown(toggle, { key: 'Enter' })).toBe(true);
+    expect(fireEvent.keyDown(toggle, { key: ' ' })).toBe(true);
+    expect(onSelect).not.toHaveBeenCalled();
+
+    const row = screen.getByRole('button', { name: 'Inspect Claude' });
+    expect(fireEvent.keyDown(row, { key: 'Enter' })).toBe(false);
+    expect(onSelect).toHaveBeenCalledWith('claude');
+  });
 });

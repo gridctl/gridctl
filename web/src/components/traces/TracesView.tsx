@@ -27,7 +27,7 @@ import { useAuthStore } from '../../stores/useAuthStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useTextZoom } from '../../hooks/useTextZoom';
 import { TRACES_TEXT_ZOOM } from '../../lib/textZoomDefaults';
-import { useListNav } from '../../hooks/useListNav';
+import { listNavProps, useListNav } from '../../hooks/useListNav';
 import { useDismiss } from '../../hooks/useDismiss';
 import { useContainerWidth } from '../../hooks/useContainerWidth';
 import { useWorkspaceLayout } from '../../hooks/useWorkspaceLayout';
@@ -595,6 +595,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                     role="grid"
                     aria-label="Traces"
                     tabIndex={0}
+                    {...listNavProps}
                     aria-activedescendant={activeNavId ? `trace-row-${activeNavId}` : undefined}
                     className="w-full focus-visible:outline-2 focus-visible:outline-primary/60"
                   >

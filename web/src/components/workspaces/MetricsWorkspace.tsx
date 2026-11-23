@@ -318,8 +318,8 @@ export function MetricsWorkspace() {
   // Rows for the active selectable scope (clients/servers/tools), used by the
   // inspector lookup and keyboard navigation. Tools uses the FILTERED rows so
   // arrows never step through hidden entries; a ?selected row excluded by a
-  // filter yields findIndex -1, and useListNav's clamp lands the next
-  // ArrowDown on row 0 (the LogStream precedent — deliberate).
+  // filter yields findIndex -1, so the next ArrowDown lands on row 0 and
+  // ArrowUp on the last row (useListNav's no-selection rule).
   const activeRows: BreakdownRow[] = useMemo(
     () =>
       scope === 'servers' ? serverRows : scope === 'clients' ? clientRows : scope === 'tools' ? filteredToolRows : [],
