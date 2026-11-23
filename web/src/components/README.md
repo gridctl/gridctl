@@ -149,7 +149,8 @@ workspaces. Reach for them before duplicating UI:
 | `Tabs` / `Tab` / `TabPanel` | `components/ui/` | Keyboard-operable tab lists. Arrow keys move and select. `InspectorTabList` / `InspectorTabButton` are wrappers that keep inspector chrome |
 | `EmptyState` | `components/ui/` | Anywhere a "no items / no selection" affordance is needed |
 | `FailedState` | `components/ui/` | Failed fetch with nothing loaded. Title is `<feature> unavailable`, with Retry when `onRetry` is set. Not a spinner or an empty collection |
-| `FailureBanner` | `components/ui/` | Failed refresh when data is already on screen: one alert row and Retry |
+| `FailureBanner` | `components/ui/` | Failed refresh when data is already on screen: one alert row and Retry. `lastUpdated` adds a static "Last updated HH:MM:SS"; `className` overrides the default margins |
+| `refreshPhase` | `lib/refreshPhase.ts` | The single definition of the rule above. Maps `{ error, hasLoaded }` to `loading` (skeleton), `failed` (`FailedState`), `stale` (data plus `FailureBanner`), or `ready`. `hasLoaded` means a load completed for what is selected now |
 | `Popover` | `components/ui/` | Theme picker, telemetry pill, overlays menu, log level filter, log view options. Escape and a programmatic close return focus to the trigger; an outside click does not |
 | `Field` | `components/ui/` | Label, control, error, then help. Owns the required marker and wires `htmlFor`, `aria-invalid`, and `aria-describedby`. Pass plain label text. A different sibling order keeps its wrapper and uses `useId` |
 | `IconButton` | `components/ui/` | Requires `tooltip` or `ariaLabel`, and renders `type="button"`. `title` alone is not an accessible name. `size="lg"` is a 44 px square, border included; the default size stays `md` |

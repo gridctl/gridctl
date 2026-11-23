@@ -120,17 +120,35 @@ export function FailedState({
 export function FailureBanner({
   message,
   onRetry,
+  lastUpdated,
+  className,
 }: {
   message: string;
   onRetry: () => void;
+  /** Time of the last successful load; shown as absolute local time. */
+  lastUpdated?: Date | number | null;
+  className?: string;
 }) {
+  const updatedMs = lastUpdated instanceof Date ? lastUpdated.getTime() : lastUpdated;
+  const updatedLabel =
+    typeof updatedMs === 'number' && Number.isFinite(updatedMs) && updatedMs > 0
+      ? new Date(updatedMs).toLocaleTimeString()
+      : null;
   return (
     <div
       role="alert"
-      className="mx-6 mt-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-status-error/10 border border-status-error/20 text-xs text-status-error"
+      className={cn(
+        'mx-6 mt-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-status-error/10 border border-status-error/20 text-xs text-status-error',
+        className,
+      )}
     >
       <AlertCircle size={12} className="flex-shrink-0" />
-      <span className="flex-1 min-w-0 text-left">{message}</span>
+      <span className="flex-1 min-w-0 text-left">
+        {message}
+        {updatedLabel && (
+          <span className="ml-2 text-text-muted">Last updated {updatedLabel}</span>
+        )}
+      </span>
       <Button variant="secondary" size="sm" onClick={onRetry}>
         Retry
       </Button>
