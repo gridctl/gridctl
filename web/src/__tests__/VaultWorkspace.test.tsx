@@ -1319,3 +1319,89 @@ describe('VaultWorkspace — server deep link with scoped sets', () => {
     expect(screen.queryByText('SCOPED_TO_GITHUB')).not.toBeInTheDocument();
   });
 });
+
+describe('VaultWorkspace — Add one on an existing key', () => {
+  const dbUrl = { key: 'DB_URL', type: 'string' as const, is_secret: true };
+  const apiKey = { key: 'API_KEY', type: 'json' as const, is_secret: true, set: 'prod' };
+
+  beforeEach(() => {
+    vi.mocked(api.fetchVariableStoreStatus).mockResolvedValue({ locked: false, encrypted: false });
+    vi.mocked(api.fetchVariableSets).mockResolvedValue([{ name: 'prod', count: 1 }]);
+    vi.mocked(api.fetchVariableUsage).mockResolvedValue({});
+    vi.mocked(api.createVariable).mockReset();
+    vi.mocked(api.createVariable).mockResolvedValue(undefined);
+    vi.mocked(api.updateVariable).mockReset();
+    vi.mocked(api.updateVariable).mockResolvedValue(undefined);
+    useVaultStore.setState({
+      variables: null,
+      sets: null,
+      usage: {},
+      recentlyEdited: {},
+      loading: false,
+      error: null,
+      locked: false,
+      encrypted: false,
+    });
+  });
+
+  async function openAddOne() {
+    renderWithToasts();
+    fireEvent.click(await screen.findByRole('button', { name: 'Add one' }));
+    const keyInput = screen.getByLabelText('Variable key');
+    const form = keyInput.closest('form')!;
+    return { keyInput, form };
+  }
+
+  it('refreshes a stale list on 409 and offers Replace… without writing', async () => {
+    vi.mocked(api.fetchVariables).mockResolvedValue([dbUrl]);
+    const { keyInput, form } = await openAddOne();
+    await screen.findByText('DB_URL');
+
+    vi.mocked(api.createVariable).mockRejectedValueOnce(
+      new api.HTTPError(409, 'variable "API_KEY" already exists'),
+    );
+    vi.mocked(api.fetchVariables).mockResolvedValue([apiKey, dbUrl]);
+
+    fireEvent.change(keyInput, { target: { value: 'API_KEY' } });
+    fireEvent.change(within(form).getByPlaceholderText('secret value'), {
+      target: { value: 'new-value' },
+    });
+    fireEvent.click(within(form).getByRole('button', { name: 'Add' }));
+
+    await waitFor(() =>
+      expect(within(form).getByRole('status')).toHaveTextContent('API_KEY already exists.'),
+    );
+    expect(within(form).getByRole('status')).not.toHaveTextContent('Refresh the list');
+    expect(within(form).getByRole('button', { name: 'Replace…' })).toBeEnabled();
+    expect(api.createVariable).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'API_KEY', createOnly: true }),
+    );
+    expect(vi.mocked(api.createVariable).mock.calls[0][0]).not.toHaveProperty('replace');
+    expect(screen.getByLabelText('Variable key')).toHaveValue('API_KEY');
+    expect(screen.queryByText(/created/)).not.toBeInTheDocument();
+    expect(api.updateVariable).not.toHaveBeenCalled();
+  });
+
+  it('replaces through a partial update that keeps the stored set', async () => {
+    vi.mocked(api.fetchVariables).mockResolvedValue([apiKey, dbUrl]);
+    const { keyInput, form } = await openAddOne();
+    await screen.findByText('DB_URL');
+
+    fireEvent.change(keyInput, { target: { value: 'API_KEY' } });
+    fireEvent.change(within(form).getByPlaceholderText('secret value'), {
+      target: { value: 'new-value' },
+    });
+    expect(within(form).getByRole('button', { name: 'Add' })).toBeDisabled();
+    fireEvent.click(within(form).getByRole('button', { name: 'Replace…' }));
+    fireEvent.click(within(form).getByRole('button', { name: 'Replace API_KEY' }));
+
+    await waitFor(() => expect(api.updateVariable).toHaveBeenCalledTimes(1));
+    expect(api.updateVariable).toHaveBeenCalledWith('API_KEY', {
+      value: 'new-value',
+      type: 'string',
+      isSecret: true,
+    });
+    expect(api.createVariable).not.toHaveBeenCalled();
+    expect(await screen.findByText('Variable "API_KEY" replaced')).toBeInTheDocument();
+  });
+});

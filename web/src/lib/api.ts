@@ -1323,6 +1323,9 @@ export interface CreateVariableInput {
 	docs?: string;
 	example?: string;
 	deprecated?: string;
+  // Refuse to replace an existing key: the server answers 409 instead of
+  // overwriting it.
+  createOnly?: boolean;
 }
 
 export async function createVariable(input: CreateVariableInput): Promise<void> {
@@ -1334,6 +1337,7 @@ export async function createVariable(input: CreateVariableInput): Promise<void> 
 	if (input.docs !== undefined) body.docs = input.docs;
 	if (input.example !== undefined) body.example = input.example;
 	if (input.deprecated !== undefined) body.deprecated = input.deprecated;
+  if (input.createOnly) body.create_only = true;
   await mutateJSON<unknown>('/api/var', 'POST', body);
 }
 

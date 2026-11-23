@@ -3,15 +3,23 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import '@testing-library/jest-dom';
 import { VariablesPopover } from '../components/wizard/VariablesPopover';
 import { useVaultStore } from '../stores/useVaultStore';
+import * as api from '../lib/api';
 
-vi.mock('../lib/api', () => ({
-  fetchVariables: vi.fn().mockResolvedValue([
-    { key: 'API_TOKEN', type: 'string', is_secret: true },
-    { key: 'DB_PASSWORD', type: 'string', is_secret: true },
-    { key: 'REDIS_URL', type: 'string', is_secret: true },
-  ]),
-  createVariable: vi.fn().mockResolvedValue(undefined),
-}));
+const seeded = [
+  { key: 'API_TOKEN', type: 'string' as const, is_secret: true },
+  { key: 'DB_PASSWORD', type: 'string' as const, is_secret: true },
+  { key: 'REDIS_URL', type: 'string' as const, is_secret: true },
+];
+
+vi.mock('../lib/api', async () => {
+  const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api');
+  return {
+    ...actual,
+    fetchVariables: vi.fn(),
+    createVariable: vi.fn(),
+    updateVariable: vi.fn(),
+  };
+});
 
 type OnSelect = (reference: string) => void;
 
@@ -21,6 +29,12 @@ describe('VariablesPopover', () => {
   beforeEach(() => {
     onSelect = vi.fn<OnSelect>();
     useVaultStore.setState({ variables: null });
+    vi.mocked(api.fetchVariables).mockReset();
+    vi.mocked(api.fetchVariables).mockResolvedValue(seeded);
+    vi.mocked(api.createVariable).mockReset();
+    vi.mocked(api.createVariable).mockResolvedValue(undefined);
+    vi.mocked(api.updateVariable).mockReset();
+    vi.mocked(api.updateVariable).mockResolvedValue(undefined);
   });
 
   it('renders the insert-variable trigger button', () => {
@@ -230,6 +244,107 @@ describe('VariablesPopover', () => {
 
       expect(valueInput.value).toHaveLength(24);
       // The create form (and popover) are still open.
+      expect(screen.getByPlaceholderText('VARIABLE_KEY')).toBeInTheDocument();
+    });
+  });
+
+  describe('existing key in the create form', () => {
+    const openCreateFormWithStore = async () => {
+      useVaultStore.setState({ variables: seeded });
+      render(<VariablesPopover onSelect={onSelect} />);
+      fireEvent.click(screen.getByTitle('Insert variable'));
+      await screen.findByText('API_TOKEN');
+      fireEvent.click(screen.getByText('Create New Variable'));
+    };
+
+    const typeKeyAndValue = (key: string, value: string) => {
+      fireEvent.change(screen.getByPlaceholderText('VARIABLE_KEY'), { target: { value: key } });
+      fireEvent.change(screen.getByPlaceholderText('secret value'), { target: { value } });
+    };
+
+    it('shows the conflict, disables Create & Insert, and ignores Enter', async () => {
+      await openCreateFormWithStore();
+      typeKeyAndValue('API_TOKEN', 'new-value');
+
+      expect(screen.getByRole('status')).toHaveTextContent('API_TOKEN already exists.');
+      expect(screen.getByRole('button', { name: /Create & Insert/ })).toBeDisabled();
+      fireEvent.keyDown(screen.getByPlaceholderText('secret value'), { key: 'Enter' });
+      expect(api.createVariable).not.toHaveBeenCalled();
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+
+    it('inserts the existing reference without writing', async () => {
+      await openCreateFormWithStore();
+      typeKeyAndValue('API_TOKEN', 'new-value');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Insert existing' }));
+      expect(onSelect).toHaveBeenCalledWith('${var:API_TOKEN}');
+      expect(api.createVariable).not.toHaveBeenCalled();
+      expect(api.updateVariable).not.toHaveBeenCalled();
+      expect(screen.queryByPlaceholderText('Filter variables...')).not.toBeInTheDocument();
+    });
+
+    it('replaces through a partial update with no set after confirming', async () => {
+      await openCreateFormWithStore();
+      typeKeyAndValue('API_TOKEN', 'new-value');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Replace value…' }));
+      expect(api.updateVariable).not.toHaveBeenCalled();
+      const confirm = screen.getByRole('group', { name: 'Confirm replacing API_TOKEN' });
+      expect(confirm).toHaveTextContent('The current value is replaced and cannot be recovered.');
+      expect(confirm).not.toHaveTextContent('Set:');
+
+      fireEvent.click(within(confirm).getByRole('button', { name: 'Replace & Insert' }));
+      await waitFor(() => expect(onSelect).toHaveBeenCalledWith('${var:API_TOKEN}'));
+      expect(api.updateVariable).toHaveBeenCalledTimes(1);
+      const [key, input] = vi.mocked(api.updateVariable).mock.calls[0];
+      expect(key).toBe('API_TOKEN');
+      expect(input).toEqual({ value: 'new-value', type: 'string', isSecret: true });
+      expect(input).not.toHaveProperty('set');
+      expect(api.createVariable).not.toHaveBeenCalled();
+    });
+
+    it('disarms the confirmation when the value changes', async () => {
+      await openCreateFormWithStore();
+      typeKeyAndValue('API_TOKEN', 'new-value');
+      fireEvent.click(screen.getByRole('button', { name: 'Replace value…' }));
+      fireEvent.change(screen.getByPlaceholderText('secret value'), { target: { value: 'other' } });
+      expect(screen.queryByRole('group', { name: /Confirm replacing/ })).toBeNull();
+    });
+
+    it('creates a new key with createOnly', async () => {
+      await openCreateFormWithStore();
+      typeKeyAndValue('NEW_TOKEN', 'v');
+
+      fireEvent.click(screen.getByRole('button', { name: /Create & Insert/ }));
+      await waitFor(() => expect(onSelect).toHaveBeenCalledWith('${var:NEW_TOKEN}'));
+      expect(api.createVariable).toHaveBeenCalledWith({
+        key: 'NEW_TOKEN',
+        value: 'v',
+        type: 'string',
+        isSecret: true,
+        createOnly: true,
+      });
+    });
+
+    it('does not insert when the server reports the key exists', async () => {
+      // The list never loaded, so only the server knows the key exists.
+      vi.mocked(api.fetchVariables).mockRejectedValueOnce(new Error('offline'));
+      render(<VariablesPopover onSelect={onSelect} />);
+      fireEvent.click(screen.getByTitle('Insert variable'));
+      fireEvent.click(await screen.findByText('Create New Variable'));
+
+      vi.mocked(api.createVariable).mockRejectedValueOnce(
+        new api.HTTPError(409, 'variable "API_TOKEN" already exists'),
+      );
+      typeKeyAndValue('API_TOKEN', 'new-value');
+      fireEvent.click(screen.getByRole('button', { name: /Create & Insert/ }));
+
+      await waitFor(() =>
+        expect(screen.getByRole('status')).toHaveTextContent('API_TOKEN already exists.'),
+      );
+      expect(onSelect).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Insert existing' })).toBeInTheDocument();
       expect(screen.getByPlaceholderText('VARIABLE_KEY')).toBeInTheDocument();
     });
   });
