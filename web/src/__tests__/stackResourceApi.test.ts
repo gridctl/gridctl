@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { appendToStack, AuthError, HTTPError, StackAppendError, validateStackResource } from '../lib/api';
+import { appendToStack, HTTPError, StackAppendError, validateStackResource } from '../lib/api';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -43,11 +43,11 @@ describe('validateStackResource', () => {
     expect(err).toEqual(expect.objectContaining({ status: 500 }));
   });
 
-  it('rejects a 401 as an authentication error', async () => {
+  it('rejects a 401 with HTTPError status 401', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'unauthorized' }, 401)));
 
     const err = await validateStackResource('name: x\n', 'mcp-server').catch((e: unknown) => e);
-    expect(err instanceof HTTPError || err instanceof AuthError).toBe(true);
+    expect(err).toBeInstanceOf(HTTPError);
     expect(err).toEqual(expect.objectContaining({ status: 401 }));
   });
 });
