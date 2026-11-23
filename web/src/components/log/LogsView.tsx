@@ -4,6 +4,8 @@ import { useLogFontSize } from '../../hooks/useLogFontSize';
 import { useDismiss } from '../../hooks/useDismiss';
 import { IconButton } from '../ui/IconButton';
 import { showToast } from '../ui/Toast';
+import { FailureBanner } from '../ui/EmptyState';
+import { refreshPhase } from '../../lib/refreshPhase';
 import { downloadTextFile, logExportFilename } from '../../lib/download';
 import { LogFilterBar } from './LogFilterBar';
 import { LogStream } from './LogStream';
@@ -34,6 +36,7 @@ export function LogsView({
   toolbarExtra,
 }: LogsViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const phase = refreshPhase({ error: view.error, hasLoaded: view.hasLoaded });
   const searchInputRef = useRef<HTMLInputElement>(null);
   const { fontSize, zoomIn, zoomOut, resetZoom, isMin, isMax, isDefault } =
     useLogFontSize(containerRef);
@@ -179,10 +182,20 @@ export function LogsView({
         )}
       </LogFilterBar>
 
+      {phase === 'stale' && view.error && (
+        <FailureBanner
+          message={view.error}
+          onRetry={view.refresh}
+          lastUpdated={view.lastLoadedAt}
+          className="mx-3 mt-2 mb-2 flex-shrink-0"
+        />
+      )}
+
       <LogStream
         logs={view.filteredLogs}
         isLoading={view.isLoading}
         error={view.error}
+        hasLoaded={view.hasLoaded}
         onRetry={view.refresh}
         hasActiveFilter={view.hasActiveFilter}
         onClearFilter={view.clearFilters}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } fro
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ScrollText, Terminal } from 'lucide-react';
 import { EmptyState, FailedState } from '../ui/EmptyState';
+import { refreshPhase } from '../../lib/refreshPhase';
 import { listNavProps, useListNav } from '../../hooks/useListNav';
 import { LogLine } from './LogLine';
 import { GATEWAY_LOG_SOURCE, logEntryKeys, logSourceOf, type ParsedLog } from './logTypes';
@@ -16,6 +17,8 @@ interface LogStreamProps {
   logs: ParsedLog[];
   isLoading: boolean;
   error: string | null;
+  /** A load has completed; defaults to `logs.length > 0` for direct callers. */
+  hasLoaded?: boolean;
   onRetry?: () => void;
   /** True when a search/trace filter is hiding entries. */
   hasActiveFilter?: boolean;
@@ -56,6 +59,7 @@ export function LogStream({
   logs,
   isLoading,
   error,
+  hasLoaded,
   onRetry,
   hasActiveFilter,
   onClearFilter,
@@ -79,6 +83,8 @@ export function LogStream({
   windowSize,
   onFocusSearch,
 }: LogStreamProps) {
+  const phase = refreshPhase({ error, hasLoaded: hasLoaded ?? logs.length > 0 });
+  const showData = phase === 'ready' || phase === 'stale';
   const [autoScroll, setAutoScroll] = useState(true);
   // Keyboard cursor tracks entry identity, not array position: the poll
   // replaces the array every tick, so an index would drift to another line.
@@ -176,20 +182,21 @@ export function LogStream({
       style={{ '--log-font-size': `${fontSize}px` } as React.CSSProperties}
     >
       {/* Loading state */}
-      {isLoading && logs.length === 0 && !error && (
+      {phase === 'loading' && isLoading && logs.length === 0 && (
         <div className="flex items-center gap-2 p-4 text-text-muted text-xs">
           <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
           Loading logs...
         </div>
       )}
 
-      {/* Error state */}
-      {error && (
+      {/* Error state: nothing loaded. A failed refresh keeps the rows and
+          the host renders a banner outside this scroll container. */}
+      {phase === 'failed' && error && (
         <FailedState feature="Logs" message={error} onRetry={onRetry} inline />
       )}
 
       {/* Empty states, most specific filter first */}
-      {!isLoading && !error && logs.length === 0 && (
+      {(showData || (phase === 'loading' && !isLoading)) && logs.length === 0 && (
         traceFilter ? (
           <EmptyState
             icon={ScrollText}
@@ -245,7 +252,7 @@ export function LogStream({
       )}
 
       {/* Log entries */}
-      {!error && logs.length > 0 && (
+      {showData && logs.length > 0 && (
         virtualize ? (
           <>
             {header}

@@ -23,6 +23,8 @@ interface UseLogStreamResult {
   bufferCapacity: number;
   /** Epoch ms of the last completed load; anchors client-side time windows. */
   lastLoadedAt: number;
+  /** True once a load has completed; survives `clear()`. */
+  hasLoaded: boolean;
   refresh: () => void;
   clear: () => void;
 }
@@ -103,5 +105,15 @@ export function useLogStream({ active, paused = false, lines = DEFAULT_LOG_WINDO
     });
   }, []);
 
-  return { logs, isLoading, error, bufferTotal, bufferCapacity, lastLoadedAt, refresh: fetchLogs, clear };
+  return {
+    logs,
+    isLoading,
+    error,
+    bufferTotal,
+    bufferCapacity,
+    lastLoadedAt,
+    hasLoaded: lastLoadedAt > 0,
+    refresh: fetchLogs,
+    clear,
+  };
 }
