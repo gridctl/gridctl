@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Download,
   CheckCircle2,
+  AlertCircle,
   AlertTriangle,
   Loader2,
 } from 'lucide-react';
@@ -53,6 +54,7 @@ export function SkillImportWizard() {
 
   // Install state
   const [installing, setInstalling] = useState(false);
+  const [installError, setInstallError] = useState('');
   const [installResult, setInstallResult] = useState<{
     imported: string[];
     skipped: { name: string; reason: string }[];
@@ -97,6 +99,7 @@ export function SkillImportWizard() {
       setSelectedAgents(autoAgents);
       setAgentsTrustAck(false);
       setConfigs(configMap);
+      setInstallError('');
       setStep('browse');
     },
     [],
@@ -105,6 +108,7 @@ export function SkillImportWizard() {
   const handleInstall = useCallback(async () => {
     setInstalling(true);
     setInstallResult(null);
+    setInstallError('');
 
     try {
       const hasFlagged =
@@ -134,6 +138,7 @@ export function SkillImportWizard() {
         importedAgents,
         skippedAgents,
       });
+      setStep('install');
 
       // Refresh registry (agents included, so the Agents segment shows the
       // import without a reload)
@@ -159,13 +164,15 @@ export function SkillImportWizard() {
         showToast('success', `Imported ${parts.join(', ')}`);
       }
     } catch (err) {
+      // A rejected import stays on the submitting step with every selection
+      // intact, so the footer Install button is the retry.
       if (!isCancellation(err)) {
         const described = describeError(err, 'Import');
+        setInstallError(described.text);
         showToast('error', described.text, { detail: described.fullDetail });
       }
     } finally {
       setInstalling(false);
-      setStep('install');
     }
   }, [repoUrl, ref, path, previews, selected, agentPreviews, selectedAgents, auth]);
 
@@ -303,6 +310,13 @@ export function SkillImportWizard() {
           />
         )}
       </div>
+
+      {installError && (step === 'browse' || step === 'configure') && (
+        <div className="flex items-start gap-1.5 pt-3 text-status-error text-3xs" role="alert">
+          <AlertCircle size={12} className="flex-shrink-0 mt-0.5" />
+          <span>{installError}</span>
+        </div>
+      )}
 
       {/* Footer */}
       {step !== 'install' && (

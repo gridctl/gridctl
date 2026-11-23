@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, OptimizeReport, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, SessionsResponse, RegistryAgent, AgentProjectionStatus, AgentSyncResult, AgentUnsyncResult, AgentAdoptResult, RegistryHook, RegistryHookList, HookProjectionStatus, HookSyncResult, HookUnsyncResult, HookPin, HookPinDiff, SecurityFinding, WiringRow, WiringAdoptResult, SecurityReport, Proposal, ProposalList, ProposalVerdictResponse } from '../types';
+import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, OptimizeReport, ValidationIssue, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, SessionsResponse, RegistryAgent, AgentProjectionStatus, AgentSyncResult, AgentUnsyncResult, AgentAdoptResult, RegistryHook, RegistryHookList, HookProjectionStatus, HookSyncResult, HookUnsyncResult, HookPin, HookPinDiff, SecurityFinding, WiringRow, WiringAdoptResult, SecurityReport, Proposal, ProposalList, ProposalVerdictResponse } from '../types';
 
 import { gatewayRequest, AuthError, GatewayRequestError } from './gatewayRequest';
 import { useAuthStore } from '../stores/useAuthStore';
@@ -1474,11 +1474,61 @@ export async function validateStackSpec(yamlContent: string): Promise<Validation
   return response.json();
 }
 
+/** True when the wizard validates this type as a fragment rather than a whole stack. */
+export function isStackFragmentType(resourceType: string | null | undefined): resourceType is 'mcp-server' | 'resource' {
+  return resourceType === 'mcp-server' || resourceType === 'resource';
+}
+
+function hasIssueList(data: unknown): data is { issues: ValidationIssue[] } {
+  return !!data && typeof data === 'object' && Array.isArray((data as { issues?: unknown }).issues);
+}
+
+/**
+ * Validate one server or resource fragment.
+ * POST /api/stack/resource/validate
+ *
+ * A strict-decode failure (unknown field, type mismatch) answers 400 with a
+ * validation result; that body resolves like a 200 so its issues render.
+ */
 export async function validateStackResource(
   yaml: string,
   resourceType: 'mcp-server' | 'resource',
 ): Promise<ValidationResult> {
-  return mutateJSON<ValidationResult>('/api/stack/resource/validate', 'POST', { yaml, resourceType });
+  const endpoint = '/api/stack/resource/validate';
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    method: 'POST',
+    headers: buildHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ yaml, resourceType }),
+  });
+
+  if (response.status === 401) throw new AuthError('Authentication required');
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 400 && hasIssueList(data)) return data as ValidationResult;
+    throw new HTTPError(
+      response.status,
+      data.error || `POST ${endpoint} failed: ${response.status}`,
+      gitErrorExtra(data),
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * StackAppendError carries the issues the gateway returned when it rejected
+ * an append: the post-append validation (422) or a strict-decode failure (400).
+ */
+export class StackAppendError extends Error {
+  status: number;
+  issues: ValidationIssue[];
+  constructor(status: number, message: string, issues: ValidationIssue[]) {
+    super(message);
+    this.name = 'StackAppendError';
+    this.status = status;
+    this.issues = issues;
+  }
 }
 
 /**
@@ -1494,12 +1544,19 @@ export async function appendToStack(yaml: string, resourceType: string): Promise
 
   if (response.status === 401) throw new AuthError('Authentication required');
 
-  const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.error || `Deploy failed: ${response.status}`);
+    const data = await response.json().catch(() => ({}));
+    const validation = data?.validation;
+    const issues: ValidationIssue[] = hasIssueList(validation)
+      ? validation.issues
+      : hasIssueList(data) ? data.issues : [];
+    const message = typeof data?.error === 'string' && data.error
+      ? data.error
+      : issues.length > 0 ? 'The YAML was rejected' : `Deploy failed: ${response.status}`;
+    throw new StackAppendError(response.status, message, issues);
   }
 
-  return data;
+  return response.json();
 }
 
 /**

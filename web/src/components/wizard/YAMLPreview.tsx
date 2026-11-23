@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import { validateStackSpec } from '../../lib/api';
+import { validateStackResource, validateStackSpec, isStackFragmentType } from '../../lib/api';
 import type { ValidationIssue } from '../../types';
 
 interface YAMLPreviewProps {
   yaml: string;
+  /** Wizard resource type; server and resource fragments use the fragment validator, as Review does. */
+  resourceType?: string;
   className?: string;
 }
 
@@ -32,31 +34,34 @@ function highlightYAML(yaml: string): Array<{ lineNum: number; html: string }> {
   });
 }
 
-export function YAMLPreview({ yaml, className }: YAMLPreviewProps) {
+export function YAMLPreview({ yaml, resourceType, className }: YAMLPreviewProps) {
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [validating, setValidating] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  // Only the latest request may update state; older responses are dropped.
+  const generationRef = useRef(0);
 
   const validate = useCallback(async (content: string) => {
+    const generation = ++generationRef.current;
     if (!content.trim()) {
       setIssues([]);
+      setValidating(false);
       return;
     }
 
-    abortRef.current?.abort();
-    abortRef.current = new AbortController();
-
     setValidating(true);
     try {
-      const result = await validateStackSpec(content);
+      const result = isStackFragmentType(resourceType)
+        ? await validateStackResource(content, resourceType)
+        : await validateStackSpec(content);
+      if (generation !== generationRef.current) return;
       setIssues(result.issues || []);
     } catch {
-      // Validation failed silently — network error or abort
-    } finally {
-      setValidating(false);
+      // Validation failed silently (network error); the Review step reports it
+      if (generation !== generationRef.current) return;
     }
-  }, []);
+    setValidating(false);
+  }, [resourceType]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
