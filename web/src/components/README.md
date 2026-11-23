@@ -196,8 +196,10 @@ workspace-specific props.
   page or inside the marked element, and Enter on a focused control (a
   button, a link, or a row with a control role) is left to that control. A
   row that is itself a control handles its own Enter, as `VariableRow`
-  does. Focus follows the selection only from a marked row that exposes
-  `aria-selected="true"` or `aria-current="true"` when selected. Don't put
+  does. When a list key moves the selection, focus follows it only from a
+  marked row that exposes `aria-selected="true"` or `aria-current="true"`
+  when selected; an index that shifts because rows changed leaves focus
+  where it is. Don't put
   toolbars or filters inside the marked element.
 - Use Tailwind **semantic tokens** (`bg-primary`, `text-secondary`,
   `border-status-error`, `bg-surface-overlay-2`, `stroke-chart-blue`) -

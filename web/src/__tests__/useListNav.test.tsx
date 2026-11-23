@@ -79,6 +79,33 @@ function RowsHarness({ itemCount = 3 }: { itemCount?: number }) {
   );
 }
 
+// Selection is held by key, as in the workspaces, so rows added ahead of it
+// shift the index without changing what is selected.
+function KeyedRowsHarness({ items }: { items: string[] }) {
+  const [selected, setSelected] = useState(items[0]);
+  useListNav({
+    itemCount: items.length,
+    selectedIndex: items.indexOf(selected),
+    setSelectedIndex: (i) => setSelected(items[i]),
+  });
+  return (
+    <div role="listbox" {...listNavProps}>
+      {items.map((item) => (
+        <div
+          key={item}
+          role="option"
+          tabIndex={0}
+          aria-selected={item === selected}
+          data-testid={`row-${item}`}
+          {...listNavRowProps}
+        >
+          {item}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function getIndex(): number {
   return Number(screen.getByTestId('index').textContent);
 }
@@ -345,6 +372,17 @@ describe('useListNav', () => {
       fireEvent.keyDown(btn, { key: 'j' });
       expect(getIndex()).toBe(1);
       expect(btn).toHaveFocus();
+    });
+
+    it('keeps focus on a row when the rows shift under an unchanged selection', () => {
+      const { rerender } = render(<KeyedRowsHarness items={['a', 'b', 'c']} />);
+      const rowC = screen.getByTestId('row-c');
+      rowC.focus();
+      rerender(<KeyedRowsHarness items={['z', 'a', 'b', 'c']} />);
+      expect(screen.getByTestId('row-a')).toHaveAttribute('aria-selected', 'true');
+      expect(rowC).toHaveFocus();
+      fireEvent.keyDown(rowC, { key: 'ArrowDown' });
+      expect(screen.getByTestId('row-b')).toHaveFocus();
     });
 
     it('never moves focus into the list from the page', () => {

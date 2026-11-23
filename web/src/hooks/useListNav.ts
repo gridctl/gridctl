@@ -82,9 +82,10 @@ function isSelectedRow(el: Element): boolean {
  * focused control (button, link, row with a control role) so it activates
  * natively. j, k, '/', and Escape act from any non-text target.
  *
- * When the selection changes while a row marked with listNavRowProps has
- * focus, focus moves to the newly selected row of the same list, so the
- * focused and highlighted rows never diverge.
+ * When a key handled here moves the selection while a row marked with
+ * listNavRowProps has focus, focus moves to the newly selected row of the
+ * same list, so the focused and highlighted rows never diverge. An index
+ * that shifts because the rows changed (a poll, a sort) leaves focus alone.
  *
  * Bindings:
  *   ArrowDown / ArrowUp (aliases j / k) — move selection, wraps at ends;
@@ -118,12 +119,16 @@ export function useListNav({
   });
 
   // Child rows commit before this effect runs, so the selected row already
-  // carries its aria-selected / aria-current value.
+  // carries its aria-selected / aria-current value. requestedIndex is the
+  // index a key handled below asked for; any index change clears it.
   const lastIndex = useRef(selectedIndex);
+  const requestedIndex = useRef<number | null>(null);
   useEffect(() => {
     if (lastIndex.current === selectedIndex) return;
     lastIndex.current = selectedIndex;
-    if (!enabled) return;
+    const requested = requestedIndex.current;
+    requestedIndex.current = null;
+    if (!enabled || requested !== selectedIndex) return;
     const active = document.activeElement;
     if (!(active instanceof HTMLElement) || !active.matches(ROW_SELECTOR)) return;
     const list = active.closest(LIST_SELECTOR);
@@ -161,6 +166,10 @@ export function useListNav({
       }
       if (itemCount <= 0) return;
 
+      const select = (n: number) => {
+        requestedIndex.current = n;
+        setSelectedIndex(n);
+      };
       const clamp = (n: number) => ((n % itemCount) + itemCount) % itemCount;
       const next = () => (selectedIndex < 0 ? 0 : clamp(selectedIndex + 1));
       const prev = () => (selectedIndex < 0 ? itemCount - 1 : clamp(selectedIndex - 1));
@@ -168,31 +177,31 @@ export function useListNav({
       switch (e.key) {
         case 'j':
           e.preventDefault();
-          setSelectedIndex(next());
+          select(next());
           return;
         case 'k':
           e.preventDefault();
-          setSelectedIndex(prev());
+          select(prev());
           return;
         case 'ArrowDown':
           if (!scoped) return;
           e.preventDefault();
-          setSelectedIndex(next());
+          select(next());
           return;
         case 'ArrowUp':
           if (!scoped) return;
           e.preventDefault();
-          setSelectedIndex(prev());
+          select(prev());
           return;
         case 'Home':
           if (!scoped) return;
           e.preventDefault();
-          setSelectedIndex(0);
+          select(0);
           return;
         case 'End':
           if (!scoped) return;
           e.preventDefault();
-          setSelectedIndex(itemCount - 1);
+          select(itemCount - 1);
           return;
         case 'Enter':
           if (onEnter && scoped && !onControl) {
