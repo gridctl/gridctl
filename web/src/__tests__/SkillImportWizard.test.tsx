@@ -1,17 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { BrowseStep } from '../components/wizard/steps/BrowseStep';
 import { SkillImportWizard } from '../components/wizard/steps/SkillImportWizard';
 import type { SkillPreview } from '../types';
+import { addSkillSource, previewSkillSource } from '../lib/api';
+import { showToast } from '../components/ui/Toast';
 
 // Mock API calls
-vi.mock('../lib/api', () => ({
+vi.mock('../lib/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/api')>()),
   fetchSkillSources: vi.fn().mockResolvedValue([]),
   previewSkillSource: vi.fn(),
   addSkillSource: vi.fn(),
   fetchRegistrySkills: vi.fn().mockResolvedValue([]),
   fetchRegistryStatus: vi.fn().mockResolvedValue({}),
+  fetchRegistryAgents: vi.fn().mockResolvedValue([]),
+  fetchAgentProjectionStatus: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock('../stores/useRegistryStore', () => ({
@@ -19,11 +24,13 @@ vi.mock('../stores/useRegistryStore', () => ({
     getState: () => ({
       setStatus: vi.fn(),
       setSkills: vi.fn(),
+      setAgents: vi.fn(),
+      setAgentStatuses: vi.fn(),
     }),
   }),
 }));
 
-vi.mock('../../ui/Toast', () => ({
+vi.mock('../components/ui/Toast', () => ({
   showToast: vi.fn(),
 }));
 
@@ -256,5 +263,81 @@ describe('BrowseStep', () => {
       />,
     );
     expect(screen.getByText('Select a skill to preview')).toBeInTheDocument();
+  });
+});
+
+describe('SkillImportWizard install failures', () => {
+  const REPO = 'https://github.com/owner/repo';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(previewSkillSource).mockResolvedValue({ skills: [makePreview()] } as never);
+  });
+
+  async function scanToBrowse() {
+    render(<SkillImportWizard />);
+    fireEvent.change(screen.getByPlaceholderText('https://github.com/owner/repo'), { target: { value: REPO } });
+    fireEvent.click(screen.getByText('Scan for Skills'));
+    return screen.findByRole('button', { name: /Install 1 Skill/ });
+  }
+
+  it('stays on Browse with an alert and retries with the same request', async () => {
+    vi.mocked(addSkillSource)
+      .mockRejectedValueOnce(new Error('clone failed: repository not found'))
+      .mockRejectedValueOnce(new Error('still failing'));
+    const install = await scanToBrowse();
+
+    fireEvent.click(install);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Import failed: clone failed: repository not found.');
+    expect(screen.getByText('1 skill found')).toBeInTheDocument();
+    const retry = screen.getByRole('button', { name: /Install 1 Skill/ });
+    expect(retry).not.toBeDisabled();
+    expect(showToast).toHaveBeenCalledWith('error', 'Import failed: clone failed: repository not found.', { detail: undefined });
+
+    fireEvent.click(retry);
+    await waitFor(() => expect(addSkillSource).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Import failed: still failing.');
+    const [first, second] = vi.mocked(addSkillSource).mock.calls.map(([req]) => req);
+    expect(second).toEqual(first);
+    expect(second).toEqual(expect.objectContaining({ repo: REPO, selected: ['test-skill'] }));
+  });
+
+  it('clears the alert when a new attempt starts', async () => {
+    let resolveSecond: (value: unknown) => void = () => {};
+    vi.mocked(addSkillSource)
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSecond = resolve; }) as never);
+    const install = await scanToBrowse();
+    fireEvent.click(install);
+    await screen.findByRole('alert');
+
+    fireEvent.click(screen.getByRole('button', { name: /Install 1 Skill/ }));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    resolveSecond({ imported: [{ name: 'test-skill' }] });
+    expect(await screen.findByText('Import Complete')).toBeInTheDocument();
+  });
+
+  it('stays on Browse without an alert when the import is cancelled', async () => {
+    vi.mocked(addSkillSource).mockRejectedValueOnce(new DOMException('aborted', 'AbortError'));
+    const install = await scanToBrowse();
+    fireEvent.click(install);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Install 1 Skill/ })).not.toBeDisabled());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByText('1 skill found')).toBeInTheDocument();
+    expect(showToast).not.toHaveBeenCalledWith('error', expect.anything(), expect.anything());
+  });
+
+  it('shows the results step when the import succeeds', async () => {
+    vi.mocked(addSkillSource).mockResolvedValueOnce({ imported: [{ name: 'test-skill' }] } as never);
+    const install = await scanToBrowse();
+    fireEvent.click(install);
+
+    expect(await screen.findByText('Import Complete')).toBeInTheDocument();
+    expect(screen.getByText('test-skill')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(showToast).toHaveBeenCalledWith('success', 'Imported 1 skill');
   });
 });
