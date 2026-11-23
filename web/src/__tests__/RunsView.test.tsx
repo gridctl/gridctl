@@ -266,9 +266,16 @@ describe('RunsView', () => {
     expect(screen.queryByText('Run history unavailable')).not.toBeInTheDocument();
     expect(screen.getByText(/History: refresh failed/)).toBeInTheDocument();
 
-    vi.mocked(fetchRuns).mockResolvedValue({ records: [record], warnings: [], partial: false, wipeEpoch: 0 });
+    let resolveRetry: (value: Awaited<ReturnType<typeof fetchRuns>>) => void = () => {};
+    vi.mocked(fetchRuns).mockReturnValue(new Promise((resolve) => { resolveRetry = resolve; }));
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(screen.getByText(/History: refresh failed/)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('runs store offline');
+    await act(async () => {
+      resolveRetry({ records: [record], warnings: [], partial: false, wipeEpoch: 0 });
+    });
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(screen.getByText(/History: readable/)).toBeInTheDocument();
   });
 
   it('keeps rows when Load older fails', async () => {

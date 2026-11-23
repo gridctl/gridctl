@@ -108,7 +108,9 @@ export const useRunsStore = create<RunsState>()((set, get) => ({
   load: async (opts) => {
     const seq = get().loadSeq + 1;
     const generation = useAuthStore.getState().generation;
-    set({ loadSeq: seq, isLoading: true, error: null });
+    // The error stays until a load succeeds, so a retry while stale does not
+    // briefly report the history as readable.
+    set({ loadSeq: seq, isLoading: true });
     const append = Boolean(opts?.append);
     const { filters, nextCursor } = get();
     let list: RunListResponse | null = null;
