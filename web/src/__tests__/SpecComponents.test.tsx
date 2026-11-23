@@ -385,6 +385,22 @@ describe('SpecDiffModal', () => {
     expect(screen.queryByText(/No drift/)).not.toBeInTheDocument();
   });
 
+  it('compare mode tolerates a null items list and shows the override file', async () => {
+    vi.mocked(fetchStackPlan).mockResolvedValue({
+      hasChanges: false,
+      items: null,
+      summary: 'No changes detected.',
+      override: '/tmp/stack.override.yaml',
+    } as unknown as PlanDiff);
+    useSpecStore.getState().openCompareModal();
+    render(<SpecDiffModal onApply={vi.fn()} />);
+    expect(
+      await screen.findByText(/Servers, resources, gateway settings, and networks in the stack file match the running gateway/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/does not resolve \$\{secret:\} references/)).toBeInTheDocument();
+    expect(screen.getByText(/Override file merged/)).toHaveTextContent('/tmp/stack.override.yaml');
+  });
+
   it('compare mode shows the error and retries on Retry', async () => {
     vi.mocked(fetchStackPlan)
       .mockRejectedValueOnce(new Error('Failed to load stack file: bad yaml'))

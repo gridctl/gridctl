@@ -110,4 +110,14 @@ describe('reload and plan error messages', () => {
 
     await expect(fetchStackPlan()).resolves.toEqual(plan);
   });
+
+  it('normalizes a null items list from an empty plan to an empty array', async () => {
+    mockResponse(200, { hasChanges: false, items: null, summary: 'No changes detected.' });
+
+    await expect(fetchStackPlan()).resolves.toEqual({
+      hasChanges: false,
+      items: [],
+      summary: 'No changes detected.',
+    });
+  });
 });

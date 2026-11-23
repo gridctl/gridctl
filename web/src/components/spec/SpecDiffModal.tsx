@@ -54,17 +54,12 @@ function groupByKind(items: DiffItem[]): Array<[string, DiffItem[]]> {
 }
 
 function countAction(plan: PlanDiff | null, action: DiffAction): number {
-  return plan?.items.filter((i) => i.action === action).length ?? 0;
+  return plan?.items?.filter((i) => i.action === action).length ?? 0;
 }
 
 function PlanList({ plan }: { plan: PlanDiff }) {
   return (
     <div className="space-y-5">
-      {plan.override && (
-        <p className="text-xs text-text-muted">
-          Override file merged: <span className="font-mono text-text-secondary">{plan.override}</span>
-        </p>
-      )}
       {groupByKind(plan.items).map(([kind, items]) => (
         <section key={kind} aria-label={KIND_LABELS[kind] ?? kind}>
           <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted mb-2">
@@ -184,7 +179,7 @@ export function SpecDiffModal({ onApply, onDismiss }: SpecDiffModalProps) {
     ? describeError(planError, isCompareMode ? 'Compare' : 'Reload preview')
     : null;
   const showPlan = !planLoading && !described && plan !== null;
-  const hasItems = showPlan && plan.items.length > 0;
+  const hasItems = showPlan && (plan.items?.length ?? 0) > 0;
   const addedCount = countAction(plan, 'add');
   const changedCount = countAction(plan, 'change');
   const removedCount = countAction(plan, 'remove');
@@ -248,6 +243,11 @@ export function SpecDiffModal({ onApply, onDismiss }: SpecDiffModalProps) {
           </div>
         ) : showPlan ? (
           <div className="space-y-5">
+            {plan.override && (
+              <p className="text-xs text-text-muted">
+                Override file merged: <span className="font-mono text-text-secondary">{plan.override}</span>
+              </p>
+            )}
             {hasItems ? (
               <PlanList plan={plan} />
             ) : (

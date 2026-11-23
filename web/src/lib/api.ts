@@ -1641,7 +1641,9 @@ export async function fetchStackPlan(): Promise<PlanDiff> {
     );
   }
 
-  return response.json();
+  // The server encodes an empty plan as `items: null`.
+  const data = await response.json();
+  return { ...data, items: Array.isArray(data?.items) ? data.items : [] };
 }
 
 /**
