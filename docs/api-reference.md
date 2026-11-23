@@ -3291,12 +3291,14 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/skills/sources
 
 Imports skills (and agent definitions) from a git repository, or from an absolute local directory on the daemon host. `selected` restricts the import to named skills; `selectedAgents` restricts it to named agents. A skill selection alone deliberately skips agents (the importer's legacy contract), so a caller importing both kinds names both. A relative local path returns 400 (`local skill paths must be absolute`). A path inside the gridctl home returns 400 (`refusing to import from inside the gridctl home`). `ref` or `path` on a local directory returns 400 (`local sources do not accept ref or path`). A git repository root stays on the git path. A known location root (the directory in the client location table, not a child of one) uses that row's source name, the same rule as `gridctl skill add`. A source-name collision returns 409. The body has no source-name field; rename with `gridctl skill add --source-name`. Anyone who can reach this endpoint can import any `SKILL.md` tree the daemon can read. On the default loopback listener with no token, that is every local process. A later local import error, including a directory with nothing to import, returns 400 with the error text. Git failures still use the git error mapper.
 
+Imported skills are `active` by default. `noActivate: true` imports every skill as `draft`. `noActivateSkills` (optional array of skill names) imports only the named skills as `draft` and leaves the rest `active`; names match the imported skill name. When `selected` is non-empty, every `noActivateSkills` name must also be in `selected`, or the request returns 400 naming the skill, before any clone or import. A listed name that matches no skill considered by the import adds a warning such as `<name>: noActivateSkills names a skill that was not found in this import`; a listed skill that is skipped (for example for security findings without `trust`) is reported only in `skipped`. `trust` applies to every skill and agent in the request.
+
 **Auth:** Yes
 
 ```bash
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"repo": "https://github.com/org/skills", "ref": "main", "trust": false, "selected": ["code-review"], "selectedAgents": ["reviewer"]}' \
+  -d '{"repo": "https://github.com/org/skills", "ref": "main", "trust": false, "selected": ["code-review", "lint-fix"], "noActivateSkills": ["lint-fix"], "selectedAgents": ["reviewer"]}' \
   http://localhost:8180/api/skills/sources
 ```
 
