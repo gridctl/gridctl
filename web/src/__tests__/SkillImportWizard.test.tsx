@@ -330,6 +330,33 @@ describe('SkillImportWizard install failures', () => {
     expect(showToast).not.toHaveBeenCalledWith('error', expect.anything(), expect.anything());
   });
 
+  it('stays on Configure with an alert and retries with trust when a flagged import fails', async () => {
+    vi.mocked(previewSkillSource).mockResolvedValue({
+      skills: [makePreview({ findings: [{ severity: 'warning', description: 'runs a shell command' }] as never })],
+    } as never);
+    vi.mocked(addSkillSource)
+      .mockRejectedValueOnce(new Error('clone failed'))
+      .mockRejectedValueOnce(new Error('still failing'));
+    const next = await scanToBrowse();
+    fireEvent.click(next);
+    expect(await screen.findByText('Configure Skills')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Install 1 Skill/ }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Import failed: clone failed.');
+    expect(screen.getByText('Configure Skills')).toBeInTheDocument();
+    const retry = screen.getByRole('button', { name: /Install 1 Skill/ });
+    expect(retry).not.toBeDisabled();
+
+    fireEvent.click(retry);
+    await waitFor(() => expect(addSkillSource).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Import failed: still failing.');
+    expect(screen.getByText('Configure Skills')).toBeInTheDocument();
+    const [first, second] = vi.mocked(addSkillSource).mock.calls.map(([req]) => req);
+    expect(second).toEqual(first);
+    expect(second).toEqual(expect.objectContaining({ repo: REPO, selected: ['test-skill'], trust: true }));
+  });
+
   it('shows the results step when the import succeeds', async () => {
     vi.mocked(addSkillSource).mockResolvedValueOnce({ imported: [{ name: 'test-skill' }] } as never);
     const install = await scanToBrowse();
