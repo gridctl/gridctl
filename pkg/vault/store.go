@@ -2,6 +2,7 @@ package vault
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -319,11 +320,27 @@ func (s *Store) SetWithSet(key, value, setName string) error {
 	})
 }
 
+// ErrVariableExists is returned by CreateVariable when the key is already
+// stored.
+var ErrVariableExists = errors.New("already exists")
+
 // SetVariable adds or updates a variable with full metadata control. All
 // fields are taken from v; existing entries are fully replaced. Used by the
 // CLI/API when callers want to thread type and sensitivity explicitly.
 // Auto-creates referenced sets so callers don't need a separate CreateSet.
 func (s *Store) SetVariable(v Variable) error {
+	return s.writeVariable(v, false)
+}
+
+// CreateVariable stores v only when its key does not exist yet. It applies
+// the same validation and set auto-creation as SetVariable. For an existing
+// key it returns an error wrapping ErrVariableExists and leaves the stored
+// record untouched. The check and the write share one lock.
+func (s *Store) CreateVariable(v Variable) error {
+	return s.writeVariable(v, true)
+}
+
+func (s *Store) writeVariable(v Variable, createOnly bool) error {
 	if v.Key == "" {
 		return fmt.Errorf("variable key cannot be empty")
 	}
@@ -343,6 +360,12 @@ func (s *Store) SetVariable(v Variable) error {
 
 		if err := s.loadLocked(); err != nil {
 			return err
+		}
+
+		if createOnly {
+			if _, exists := s.variables[v.Key]; exists {
+				return fmt.Errorf("variable %q %w", v.Key, ErrVariableExists)
+			}
 		}
 
 		s.variables[v.Key] = stampAgainstStored(v, s.variables)

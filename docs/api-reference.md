@@ -2289,18 +2289,36 @@ whose value has not changed since rotation tracking was added.
 Creates a variable. Variables default to `type: "string"` and
 `is_secret: true` when those fields are omitted.
 
+If a variable with the same key already exists, this route replaces it unless
+`create_only` is `true`. A replace through this route overwrites every field:
+omitted fields such as `set`, `description`, `docs`, `example`, and
+`deprecated` are cleared. Use `PUT /api/var/{key}` for a partial update.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `create_only` | boolean | Optional, default `false`. When `true`, an existing key is refused with `409 Conflict` and left unchanged. |
+
 **Auth:** Yes | **Requires:** Vault unlocked
 
 ```bash
 curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/var \
   -H "Content-Type: application/json" \
-  -d '{"key": "DB_PASSWORD", "value": "secret123", "type": "string", "is_secret": true, "set": "production", "description": "Database password"}'
+  -d '{"key": "DB_PASSWORD", "value": "secret123", "type": "string", "is_secret": true, "set": "production", "description": "Database password", "create_only": true}'
 ```
 
 **Response:** `201 Created`
 ```json
 {"key": "DB_PASSWORD", "type": "string", "is_secret": true, "status": "created"}
 ```
+
+The response is the same whether the variable was created or replaced.
+
+**Response (`create_only` and the key exists):** `409 Conflict`
+```json
+{"error": "variable \"DB_PASSWORD\" already exists"}
+```
+
+The error names the key and never includes a value.
 
 Key names must match `[a-zA-Z_][a-zA-Z0-9_]*`.
 Names beginning with `GRIDCTL_`, plus `OP_CONNECT_TOKEN` and

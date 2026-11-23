@@ -229,7 +229,9 @@ func (s *Server) handleVaultList(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, entries)
 }
 
-// handleVaultCreate creates a new variable.
+// handleVaultCreate creates a variable, or replaces every field of an existing
+// one with the same key. With create_only set, an existing key is refused
+// with 409 and left untouched.
 // POST /api/var
 func (s *Server) handleVaultCreate(w http.ResponseWriter, r *http.Request) {
 	if s.vaultStore == nil {
@@ -253,6 +255,7 @@ func (s *Server) handleVaultCreate(w http.ResponseWriter, r *http.Request) {
 		Docs        string             `json:"docs,omitempty"`
 		Example     string             `json:"example,omitempty"`
 		Deprecated  string             `json:"deprecated,omitempty"`
+		CreateOnly  bool               `json:"create_only"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -292,7 +295,15 @@ func (s *Server) handleVaultCreate(w http.ResponseWriter, r *http.Request) {
 		Example:     req.Example,
 		Deprecated:  req.Deprecated,
 	}
-	if err := s.vaultStore.SetVariable(v); err != nil {
+	save := s.vaultStore.SetVariable
+	if req.CreateOnly {
+		save = s.vaultStore.CreateVariable
+	}
+	if err := save(v); err != nil {
+		if errors.Is(err, vault.ErrVariableExists) {
+			writeJSONError(w, err.Error(), http.StatusConflict)
+			return
+		}
 		writeVariableMutationError(w, "Failed to save variable", err)
 		return
 	}
