@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SHORTCUT_BINDINGS, SHORTCUT_SCOPE } from '../lib/shortcuts';
+import { SHORTCUT_BINDINGS, SHORTCUT_SCOPE, SHORTCUT_SCOPE_ORDER } from '../lib/shortcuts';
 import { WORKSPACE_CONFIG } from '../types/workspace';
 
 function pairKey(keys: string[], scope: string): string {
@@ -46,5 +46,11 @@ describe('SHORTCUT_BINDINGS', () => {
     expect(rows.map((row) => row.keys)).toEqual(
       WORKSPACE_CONFIG.map((workspace) => ['⌘', workspace.shortcutKey]),
     );
+  });
+
+  it('lists the Pins approve chord under its own scope', () => {
+    expect(SHORTCUT_SCOPE_ORDER).toContain(SHORTCUT_SCOPE.pins);
+    const rows = SHORTCUT_BINDINGS.filter((binding) => binding.scope === SHORTCUT_SCOPE.pins);
+    expect(rows).toEqual([{ keys: ['⌘', 'Enter'], label: 'Approve drift', scope: 'Pins' }]);
   });
 });

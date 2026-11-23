@@ -5,6 +5,7 @@ import { getClientIcon } from '../../lib/clientIcons';
 import type { ClientStatus } from '../../types';
 import { Badge } from '../ui/Badge';
 import { Switch } from '../ui/Switch';
+import { listNavProps, listNavRowProps } from '../../hooks/useListNav';
 import { clientBadges, isConnected, type ClientHealth } from './connectionsModel';
 
 // ClientBrandIcon resolves the brand mark per render via createElement so no
@@ -108,7 +109,7 @@ export function ConnectionsRail({
         </button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark px-2 py-2 space-y-0.5">
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark px-2 py-2 space-y-0.5" {...listNavProps}>
         {clients.map((c) => {
           const health = healthOf(c.slug);
           return (
@@ -121,7 +122,10 @@ export function ConnectionsRail({
               role="button"
               tabIndex={0}
               onClick={() => onSelect(c.slug)}
+              {...listNavRowProps}
               onKeyDown={(e) => {
+                // Keys from the nested connect switch are its own.
+                if (e.target !== e.currentTarget) return;
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
                   onSelect(c.slug);

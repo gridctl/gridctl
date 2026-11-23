@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import '@testing-library/jest-dom';
 import { MetricsWorkspace } from '../components/workspaces/MetricsWorkspace';
@@ -196,6 +196,31 @@ describe('MetricsWorkspace', () => {
     // Selecting a row opens the inspector.
     fireEvent.click(screen.getByText('github'));
     expect(await screen.findByLabelText('Close inspector')).toBeInTheDocument();
+  });
+
+  it('selects the last row on ArrowUp with nothing selected', async () => {
+    renderAt('/metrics?scope=servers');
+    await screen.findByText('Per-Server · session totals');
+    const rows = () => screen.getAllByRole('row').filter((r) => r.hasAttribute('aria-selected'));
+    expect(rows().length).toBeGreaterThan(1);
+    expect(rows().every((r) => r.getAttribute('aria-selected') === 'false')).toBe(true);
+
+    fireEvent.keyDown(document, { key: 'ArrowUp' });
+    await waitFor(() => expect(rows().at(-1)).toHaveAttribute('aria-selected', 'true'));
+  });
+
+  it('moves focus with the selection after a row is clicked', async () => {
+    renderAt('/metrics?scope=servers');
+    await screen.findByText('Per-Server · session totals');
+    const rows = () => screen.getAllByRole('row').filter((r) => r.hasAttribute('aria-selected'));
+    const first = rows()[0];
+    fireEvent.click(first);
+    first.focus();
+    await waitFor(() => expect(rows()[0]).toHaveAttribute('aria-selected', 'true'));
+
+    fireEvent.keyDown(first, { key: 'ArrowDown' });
+    await waitFor(() => expect(rows()[1]).toHaveAttribute('aria-selected', 'true'));
+    expect(rows()[1]).toHaveFocus();
   });
 
   it('explains an empty per-entity series instead of hiding the sparkline', async () => {

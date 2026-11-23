@@ -4,6 +4,7 @@ import type { ContextPin, ServerPins, SkillPin } from '../../lib/api';
 import { countServerAlertFindings, countSkillAlertFindings, contextHasAlertFindings } from '../../stores/usePinsStore';
 import { formatRelativeTime } from '../../lib/time';
 import { pinStatusMeta } from './pinStatus';
+import { listNavProps, listNavRowProps } from '../../hooks/useListNav';
 
 // ---------------------------------------------------------------------------
 // Left rail: kind toggle + attention toggle + server or skill rows
@@ -93,7 +94,7 @@ export function PinsRail({
         </button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark px-2 py-2 space-y-0.5">
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark px-2 py-2 space-y-0.5" {...listNavProps}>
         {kind === 'server' &&
           entries.map(([name, sp]) => (
             <RailRow
@@ -205,6 +206,7 @@ function RailRow({
     <button
       onClick={() => onSelect(name)}
       aria-current={active}
+      {...listNavRowProps}
       title={outside ? 'Not in the attention filter' : undefined}
       className={cn(
         'w-full flex flex-col gap-0.5 px-3 py-1.5 rounded-md text-left transition-colors',

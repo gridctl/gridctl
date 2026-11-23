@@ -2,6 +2,7 @@ import { createElement, useEffect, useLayoutEffect, useRef } from 'react';
 import { CheckCircle2, Copy, Download, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
 import { useCommandRegistry } from '../../hooks/useCommandRegistry';
 import { showToast } from '../ui/Toast';
+import { PINS_APPROVE_KEYS } from '../../lib/shortcuts';
 import type { PaletteCommand } from '../../types/palette';
 import {
   APPROVE_BUTTON_ID,
@@ -35,8 +36,31 @@ function clickById(id: string, missingMessage: string): void {
   el.click();
 }
 
+// approveChordHandler runs Ctrl/Cmd+Enter through the rendered Approve button.
+// Text inputs are not exempt: the reason and evidence fields sit next to the
+// button, and the chord submits from them. Dialogs keep their own keys, and on
+// a link the chord is the browser's open-in-new-tab gesture. A held chord
+// approves once: auto-repeat keydowns are cancelled and do nothing.
+function approveChordHandler(e: KeyboardEvent): void {
+  if (e.defaultPrevented || e.key !== 'Enter' || e.altKey) return;
+  if (!e.metaKey && !e.ctrlKey) return;
+  const target = e.target;
+  if (
+    target instanceof Element &&
+    target.closest('[role="dialog"], [role="alertdialog"], a[href]') !== null
+  ) {
+    return;
+  }
+  const el = document.getElementById(APPROVE_BUTTON_ID);
+  if (!(el instanceof HTMLButtonElement) || el.disabled) return;
+  e.preventDefault();
+  if (e.repeat) return;
+  el.click();
+}
+
 /**
- * Workspace-scoped palette commands for /pins. Registered once on mount (live
+ * Workspace-scoped palette commands for /pins, plus the Ctrl/Cmd+Enter
+ * approve chord. Registered once on mount (live
  * values are read through refs so poll-driven re-renders never churn the
  * registry), unregistered on unmount so other workspaces never see them.
  */
@@ -65,6 +89,7 @@ export function usePinsCommands({
         workspaces: ['pins'],
         icon: createElement(CheckCircle2, { size: 14 }),
         keywords: ['approve', 'drift', 'repin', 'accept'],
+        shortcut: PINS_APPROVE_KEYS,
         onSelect: () =>
           clickById(APPROVE_BUTTON_ID, 'No reviewable drift on the selected server'),
       },
@@ -132,4 +157,9 @@ export function usePinsCommands({
     registerCommands('pins-workspace', commands);
     return () => unregisterCommands('pins-workspace');
   }, [registerCommands, unregisterCommands]);
+
+  useEffect(() => {
+    document.addEventListener('keydown', approveChordHandler);
+    return () => document.removeEventListener('keydown', approveChordHandler);
+  }, []);
 }

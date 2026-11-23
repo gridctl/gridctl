@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { act, cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MemoryRouter } from 'react-router';
 import ConnectionsWorkspace from '../components/workspaces/ConnectionsWorkspace';
@@ -231,6 +231,26 @@ describe('ConnectionsWorkspace', () => {
     // Undetected clients still get a rail row (with a disabled toggle);
     // the "not installed" detail lives in the detail pane now.
     expect(screen.getByText('Zed')).toBeInTheDocument();
+  });
+
+  it('moves focus with the selection and keeps it on a focused connect switch', async () => {
+    renderWorkspace();
+    const rows = () => screen.getAllByRole('button', { name: /^Inspect / });
+    fireEvent.click(rows()[0]);
+    rows()[0].focus();
+    await waitFor(() => expect(rows()[0]).toHaveAttribute('aria-current', 'true'));
+
+    fireEvent.keyDown(rows()[0], { key: 'ArrowDown' });
+    await waitFor(() => expect(rows()[1]).toHaveAttribute('aria-current', 'true'));
+    expect(rows()[1]).toHaveFocus();
+    expect(fireEvent.keyDown(rows()[1], { key: 'Enter' })).toBe(false);
+    expect(rows()[1]).toHaveAttribute('aria-current', 'true');
+
+    const toggle = within(rows()[1]).getByRole('switch');
+    toggle.focus();
+    fireEvent.keyDown(toggle, { key: 'j' });
+    await waitFor(() => expect(rows()[2]).toHaveAttribute('aria-current', 'true'));
+    expect(toggle).toHaveFocus();
   });
 
   it('disables the toggle for undetected clients', () => {

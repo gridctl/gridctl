@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef } from 'react';
 import { Link2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { listNavRowProps } from '../../hooks/useListNav';
 import { VariableTypeBadge } from './VariableTypeBadge';
 import { VariableVisibilityIcon } from './VariableVisibilityIcon';
 import type { Variable } from '../../lib/api';
@@ -14,6 +15,8 @@ export interface VariableRowProps {
   variable: Variable;
   selected: boolean;
   onSelect: (key: string) => void;
+  // Enter on the focused row: select it and open it for editing.
+  onActivate?: (key: string) => void;
   // Pre-computed preview text: the actual value for loaded plaintext, a
   // fixed-length mask for secrets — never the raw secret.
   preview: string;
@@ -28,6 +31,7 @@ export const VariableRow = memo(function VariableRow({
   variable,
   selected,
   onSelect,
+  onActivate,
   preview,
   consumerCount,
   compact,
@@ -45,7 +49,14 @@ export const VariableRow = memo(function VariableRow({
       type="button"
       role="option"
       aria-selected={selected}
+      {...listNavRowProps}
       onClick={() => onSelect(variable.key)}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' || !onActivate) return;
+        if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+        e.preventDefault();
+        onActivate(variable.key);
+      }}
       className={cn(
         'w-full text-left px-6 border-l-2 border-b border-border-subtle/40 transition-colors',
         'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40 focus-visible:ring-inset',

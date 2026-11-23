@@ -166,6 +166,39 @@ describe('PinsWorkspace skills kind', () => {
     });
   });
 
+  it('approves a skill with Ctrl+Enter only once the Approve button is enabled', async () => {
+    vi.spyOn(api, 'fetchSkillPinDiff').mockResolvedValue({
+      ...triageDiff,
+      findings: [
+        {
+          code: 'P001',
+          severity: 'warn',
+          confidence: 'high',
+          field: 'body',
+          message: 'hidden-instruction phrasing',
+        },
+      ],
+    });
+    const approve = vi.spyOn(api, 'approveSkillPin').mockResolvedValue(undefined);
+    vi.spyOn(api, 'fetchSkillPins').mockResolvedValue({});
+    renderWorkspace('/pins?kind=skill&skill=incident-triage');
+
+    const approveBtn = await screen.findByRole('button', { name: 'Approve' });
+    expect(approveBtn).toHaveAttribute('aria-keyshortcuts', 'Control+Enter Meta+Enter');
+    expect((approveBtn.nextElementSibling as HTMLElement).textContent).toBe('⌘Enter');
+
+    const reason = screen.getByLabelText('Approval reason');
+    // Disabled: the chord does nothing and leaves the event alone.
+    expect(fireEvent.keyDown(reason, { key: 'Enter', ctrlKey: true })).toBe(true);
+
+    fireEvent.change(reason, { target: { value: 'training material' } });
+    expect(fireEvent.keyDown(reason, { key: 'Enter', ctrlKey: true })).toBe(false);
+    await waitFor(() => {
+      expect(approve).toHaveBeenCalledWith('incident-triage', 'reviewed-composite', 'training material');
+    });
+    expect(approve).toHaveBeenCalledTimes(1);
+  });
+
   it('reloads the diff for re-review on a stale-hash 409', async () => {
     const fetchDiff = vi.spyOn(api, 'fetchSkillPinDiff').mockResolvedValue(triageDiff);
     vi.spyOn(api, 'approveSkillPin').mockRejectedValue(

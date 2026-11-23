@@ -2,6 +2,7 @@ import { type ComponentType, type ReactNode } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown, Recycle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { listNavProps, listNavRowProps } from '../../hooks/useListNav';
 import { formatCompactNumber } from '../../lib/format';
 import { AreaChart } from '../chart/AreaChart';
 import type { AvailableChartColorsKeys } from '../chart/chartColors';
@@ -356,13 +357,14 @@ export function BreakdownTable({
           <SortableHeader label="Total" column="total" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" />
         </tr>
       </thead>
-      <tbody>
+      <tbody {...(onSelectRow ? listNavProps : {})}>
         {rows.map((row) => {
           const selected = selectedName === row.name;
           return (
             <tr
               key={row.name}
               aria-selected={onSelectRow ? selected : undefined}
+              {...(onSelectRow ? listNavRowProps : {})}
               onClick={onSelectRow ? () => onSelectRow(row.name) : undefined}
               // Selectable rows are keyboard-reachable in place (Enter/Space),
               // complementing the workspace-level arrow-key navigation. Only

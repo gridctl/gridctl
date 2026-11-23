@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } fro
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ScrollText, Terminal } from 'lucide-react';
 import { EmptyState, FailedState } from '../ui/EmptyState';
-import { useListNav } from '../../hooks/useListNav';
+import { listNavProps, useListNav } from '../../hooks/useListNav';
 import { LogLine } from './LogLine';
 import { GATEWAY_LOG_SOURCE, logEntryKeys, logSourceOf, type ParsedLog } from './logTypes';
 
@@ -253,6 +253,7 @@ export function LogStream({
               role="grid"
               aria-label="Log entries"
               tabIndex={0}
+              {...listNavProps}
               aria-activedescendant={navIndex >= 0 ? `log-row-${navIndex}` : undefined}
               className="relative w-full rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
               style={{ height: virtualizer.getTotalSize() }}
@@ -280,6 +281,7 @@ export function LogStream({
             role="grid"
             aria-label="Log entries"
             tabIndex={0}
+            {...listNavProps}
             aria-activedescendant={navIndex >= 0 ? `log-row-${navIndex}` : undefined}
             className="divide-y divide-border/20 rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
           >

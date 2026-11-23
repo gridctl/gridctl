@@ -31,7 +31,7 @@ import { PinsRail, type PinsKind } from '../pins/PinsRail';
 import { PinsServerDetail, TOOLS_SECTION_ID } from '../pins/PinsServerDetail';
 import { PinsSkillDetail } from '../pins/PinsSkillDetail';
 import { PinsContextDetail } from '../pins/PinsContextDetail';
-import { APPROVE_BUTTON_ID, DRIFT_SECTION_ID } from '../pins/PinsDriftSection';
+import { DRIFT_SECTION_ID } from '../pins/PinsDriftSection';
 import { usePinsCommands } from '../pins/usePinsCommands';
 import { showToast } from '../ui/Toast';
 import { describeError, isCancellation } from '../../lib/describeError';
@@ -368,19 +368,6 @@ export function PinsWorkspace() {
     setSelectedIndex: (i) => {
       const name = activeVisible[i]?.[0];
       if (name) applySelection(name);
-    },
-    onEnter: () => {
-      // useListNav preventDefaults Enter at the document level, which also
-      // cancels native button activation - so the second Enter must click
-      // programmatically or a keyboard-only user could focus Approve but
-      // never press it.
-      const approve = document.getElementById(APPROVE_BUTTON_ID);
-      if (!approve) return;
-      if (document.activeElement === approve) {
-        (approve as HTMLButtonElement).click();
-      } else {
-        approve.focus();
-      }
     },
   });
 

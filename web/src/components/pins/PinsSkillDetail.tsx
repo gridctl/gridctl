@@ -15,9 +15,15 @@ import { escapeNonPrintable, shortPinHash } from '../../lib/nonPrintable';
 import { formatRelativeTime } from '../../lib/time';
 import { pinStatusMeta } from './pinStatus';
 import { FindingsList } from './PinFindings';
-import { APPROVE_BUTTON_ID, DRIFT_SECTION_ID } from './PinsDriftSection';
+import {
+  APPROVE_ARIA_KEYSHORTCUTS,
+  APPROVE_BUTTON_ID,
+  DRIFT_SECTION_ID,
+} from './PinsDriftSection';
 import { RESET_BUTTON_ID, TOOLS_SECTION_ID } from './PinsServerDetail';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { ShortcutKeys } from '../ui/ShortcutKeys';
+import { PINS_APPROVE_KEYS } from '../../lib/shortcuts';
 import { describeError, isCancellation } from '../../lib/describeError';
 import { showToast } from '../ui/Toast';
 import { ApprovalFields, PinApprovalHistory } from './PinApprovalHistory';
@@ -239,9 +245,9 @@ function SkillDriftSection({ skillName }: { skillName: string }) {
     diff !== null && (diff.old_document ?? '') !== (diff.new_document ?? '');
 
   const doApprove = async () => {
-    // The in-flight guard lives here rather than in `disabled`: the
-    // workspace's Enter binding clicks this button programmatically, and a
-    // disabled button would swallow the programmatic click silently.
+    // The in-flight guard lives here rather than in `disabled`, so a repeated
+    // click, Ctrl/Cmd+Enter, or palette command during an approve is a no-op
+    // while the button keeps focus.
     if (!diff || isApproving) return;
     setIsApproving(true);
     try {
@@ -301,6 +307,7 @@ function SkillDriftSection({ skillName }: { skillName: string }) {
             onClick={() => void doApprove()}
             disabled={diff === null || loadError || (needsReason && reason.trim() === '')}
             aria-busy={isApproving}
+            aria-keyshortcuts={APPROVE_ARIA_KEYSHORTCUTS}
             title={
               needsReason
                 ? 'Approving over unresolved advisory findings requires a reason'
@@ -310,6 +317,9 @@ function SkillDriftSection({ skillName }: { skillName: string }) {
           >
             {isApproving ? 'Approving…' : 'Approve'}
           </button>
+          <span aria-hidden="true" title="Ctrl or Cmd + Enter approves" className="h-6 flex items-center">
+            <ShortcutKeys keys={PINS_APPROVE_KEYS} />
+          </span>
         </div>
       </div>
 

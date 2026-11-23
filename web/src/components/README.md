@@ -190,6 +190,17 @@ workspace-specific props.
 - Register workspace-specific command-palette entries via
   `useCommandRegistry().registerCommands(scope, commands)` on mount; clean
   up on unmount. See `useLibraryCommands` for the pattern.
+- Spread `listNavProps` from `hooks/useListNav.ts` on the element that
+  holds a `useListNav` list's rows, and `listNavRowProps` on each focusable
+  row. Arrows, Home, End, `e`, `d`, and Enter act only when focus is on the
+  page or inside the marked element, and Enter on a focused control (a
+  button, a link, or a row with a control role) is left to that control. A
+  row that is itself a control handles its own Enter, as `VariableRow`
+  does. When a list key moves the selection, focus follows it only from a
+  marked row that exposes `aria-selected="true"` or `aria-current="true"`
+  when selected; an index that shifts because rows changed leaves focus
+  where it is. Don't put
+  toolbars or filters inside the marked element.
 - Use Tailwind **semantic tokens** (`bg-primary`, `text-secondary`,
   `border-status-error`, `bg-surface-overlay-2`, `stroke-chart-blue`) -
   never raw palette classes such as `bg-amber-500`. Card tints use
